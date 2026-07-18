@@ -31,6 +31,11 @@ ignore = true
 crate = "webpki-roots"
 allow = ["CDLA-Permissive-2.0"]
 
+# redis-rs 使用该实现做内部哈希；Boost 许可证为 OSI 认可的宽松许可证。
+[[licenses.exceptions]]
+crate = "xxhash-rust"
+allow = ["BSL-1.0"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
