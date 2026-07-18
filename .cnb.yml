@@ -51,7 +51,71 @@
         - name: 检查最低 Rust 版本
           script: cargo +1.95.0 check --workspace --all-targets --all-features --locked
 
-  pull_request:
+    - name: SQLite 迁移冒烟
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write
+          - rust-cargo:/usr/local/cargo/git:copy-on-write
+          - rust-db-sqlite-1.97.1:./target:copy-on-write
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 运行 SQLite 迁移冒烟
+          script: bash tools/ci/run-db-migration-test.sh sqlite
+
+    - name: PostgreSQL 迁移冒烟
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      services:
+        - docker
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write
+          - rust-cargo:/usr/local/cargo/git:copy-on-write
+          - rust-db-postgres-1.97.1:./target:copy-on-write
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 运行 PostgreSQL 迁移冒烟
+          script: bash tools/ci/run-db-migration-test.sh postgres
+
+    - name: MySQL 迁移冒烟
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      services:
+        - docker
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write
+          - rust-cargo:/usr/local/cargo/git:copy-on-write
+          - rust-db-mysql-1.97.1:./target:copy-on-write
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 运行 MySQL 迁移冒烟
+          script: bash tools/ci/run-db-migration-test.sh mysql
+
+  pull_request.target:
     - name: Rust 质量门禁
       runner:
         tags: cnb:arch:amd64
@@ -71,6 +135,12 @@
         CARGO_TERM_COLOR: always
         RUST_BACKTRACE: "1"
       stages:
+        - name: 检出 PR 预合并代码
+          script: |
+            test -n "${CNB_PULL_REQUEST_MERGE_SHA:-}"
+            git fetch --no-tags --depth 1 origin "${CNB_PULL_REQUEST_MERGE_SHA}"
+            git checkout --detach "${CNB_PULL_REQUEST_MERGE_SHA}"
+            test "$(git rev-parse HEAD)" = "${CNB_PULL_REQUEST_MERGE_SHA}"
         - name: 检查格式
           script: cargo fmt --all -- --check
         - name: 检查 crate 依赖边界
@@ -102,8 +172,99 @@
         CARGO_TERM_COLOR: always
         RUST_BACKTRACE: "1"
       stages:
+        - name: 检出 PR 预合并代码
+          script: |
+            test -n "${CNB_PULL_REQUEST_MERGE_SHA:-}"
+            git fetch --no-tags --depth 1 origin "${CNB_PULL_REQUEST_MERGE_SHA}"
+            git checkout --detach "${CNB_PULL_REQUEST_MERGE_SHA}"
+            test "$(git rev-parse HEAD)" = "${CNB_PULL_REQUEST_MERGE_SHA}"
         - name: 检查最低 Rust 版本
           script: cargo +1.95.0 check --workspace --all-targets --all-features --locked
+
+    - name: SQLite 迁移冒烟
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      sandbox: true
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write-read-only
+          - rust-cargo:/usr/local/cargo/git:copy-on-write-read-only
+          - rust-db-sqlite-1.97.1:./target:copy-on-write-read-only
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 检出 PR 预合并代码
+          script: |
+            test -n "${CNB_PULL_REQUEST_MERGE_SHA:-}"
+            git fetch --no-tags --depth 1 origin "${CNB_PULL_REQUEST_MERGE_SHA}"
+            git checkout --detach "${CNB_PULL_REQUEST_MERGE_SHA}"
+            test "$(git rev-parse HEAD)" = "${CNB_PULL_REQUEST_MERGE_SHA}"
+        - name: 运行 SQLite 迁移冒烟
+          script: bash tools/ci/run-db-migration-test.sh sqlite
+
+    - name: PostgreSQL 迁移冒烟
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      sandbox: true
+      services:
+        - docker
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write-read-only
+          - rust-cargo:/usr/local/cargo/git:copy-on-write-read-only
+          - rust-db-postgres-1.97.1:./target:copy-on-write-read-only
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 检出 PR 预合并代码
+          script: |
+            test -n "${CNB_PULL_REQUEST_MERGE_SHA:-}"
+            git fetch --no-tags --depth 1 origin "${CNB_PULL_REQUEST_MERGE_SHA}"
+            git checkout --detach "${CNB_PULL_REQUEST_MERGE_SHA}"
+            test "$(git rev-parse HEAD)" = "${CNB_PULL_REQUEST_MERGE_SHA}"
+        - name: 运行 PostgreSQL 迁移冒烟
+          script: bash tools/ci/run-db-migration-test.sh postgres
+
+    - name: MySQL 迁移冒烟
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      sandbox: true
+      services:
+        - docker
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write-read-only
+          - rust-cargo:/usr/local/cargo/git:copy-on-write-read-only
+          - rust-db-mysql-1.97.1:./target:copy-on-write-read-only
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 检出 PR 预合并代码
+          script: |
+            test -n "${CNB_PULL_REQUEST_MERGE_SHA:-}"
+            git fetch --no-tags --depth 1 origin "${CNB_PULL_REQUEST_MERGE_SHA}"
+            git checkout --detach "${CNB_PULL_REQUEST_MERGE_SHA}"
+            test "$(git rev-parse HEAD)" = "${CNB_PULL_REQUEST_MERGE_SHA}"
+        - name: 运行 MySQL 迁移冒烟
+          script: bash tools/ci/run-db-migration-test.sh mysql
 
 "**":
   web_trigger_ci:
@@ -159,3 +320,70 @@
       stages:
         - name: 检查最低 Rust 版本
           script: cargo +1.95.0 check --workspace --all-targets --all-features --locked
+
+    - name: SQLite 迁移冒烟
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      sandbox: true
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write-read-only
+          - rust-cargo:/usr/local/cargo/git:copy-on-write-read-only
+          - rust-db-sqlite-1.97.1:./target:copy-on-write-read-only
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 运行 SQLite 迁移冒烟
+          script: bash tools/ci/run-db-migration-test.sh sqlite
+
+    - name: PostgreSQL 迁移冒烟
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      sandbox: true
+      services:
+        - docker
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write-read-only
+          - rust-cargo:/usr/local/cargo/git:copy-on-write-read-only
+          - rust-db-postgres-1.97.1:./target:copy-on-write-read-only
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 运行 PostgreSQL 迁移冒烟
+          script: bash tools/ci/run-db-migration-test.sh postgres
+
+    - name: MySQL 迁移冒烟
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      sandbox: true
+      services:
+        - docker
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write-read-only
+          - rust-cargo:/usr/local/cargo/git:copy-on-write-read-only
+          - rust-db-mysql-1.97.1:./target:copy-on-write-read-only
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 运行 MySQL 迁移冒烟
+          script: bash tools/ci/run-db-migration-test.sh mysql

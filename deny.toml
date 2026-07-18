@@ -5,7 +5,10 @@ all-features = true
 unmaintained = "workspace"
 unsound = "all"
 yanked = "deny"
-ignore = []
+unused-ignored-advisory = "deny"
+ignore = [
+    { id = "RUSTSEC-2023-0071", reason = "SQLx MySQL 仅执行 RSA 公钥加密，不执行该公告涉及的私钥运算。" },
+]
 
 [licenses]
 confidence-threshold = 0.93
@@ -23,6 +26,10 @@ allow = [
 
 [licenses.private]
 ignore = true
+
+[[licenses.exceptions]]
+crate = "webpki-roots"
+allow = ["CDLA-Permissive-2.0"]
 
 [bans]
 multiple-versions = "warn"
