@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+    branches: [master, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  rust-quality:
+    name: Rust quality gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy
+          rustc --version --verbose
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Install workspace tools
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-nextest@0.9.140,cargo-deny@0.20.2
+          fallback: none
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Check crate dependency policy
+        run: cargo run --locked --package xtask -- check-deps
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+      - name: Run tests
+        run: cargo nextest run --workspace --all-features --locked
+
+      - name: Run documentation tests
+        run: cargo test --workspace --all-features --doc --locked
+
+      - name: Audit dependencies
+        run: cargo deny --all-features --locked check advisories bans licenses sources
+
+  msrv:
+    name: Minimum supported Rust version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install MSRV toolchain
+        id: msrv
+        shell: bash
+        run: |
+          msrv="$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)"
+          test -n "$msrv"
+          if [[ "$msrv" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            toolchain="${msrv}.0"
+          else
+            toolchain="$msrv"
+          fi
+          rustup toolchain install "$toolchain" --profile minimal
+          echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: msrv
+
+      - name: Check workspace with MSRV
+        shell: bash
+        run: |
+          toolchain="${{ steps.msrv.outputs.toolchain }}"
+          cargo +"$toolchain" check --workspace --all-targets --all-features --locked

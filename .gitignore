@@ -1,3 +1,12 @@
 reference/
 .claude/
 design/
+
+/target/
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+*.profraw
+.DS_Store
