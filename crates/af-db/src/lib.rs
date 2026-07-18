@@ -1,6 +1,7 @@
 //! 数据库连接池、迁移、实体与仓储边界。
 
 mod connection;
+mod entity;
 mod error;
 mod migration;
 mod options;

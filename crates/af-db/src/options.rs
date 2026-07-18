@@ -196,6 +196,10 @@ impl DatabaseOptions {
         if let Some(timeout) = self.pool.max_lifetime {
             options.max_lifetime(timeout);
         }
+        if self.dialect == DatabaseDialect::MySql {
+            // DATETIME 不携带时区，必须覆盖 URL 参数并统一为 UTC 会话。
+            options.map_sqlx_mysql_opts(|options| options.timezone(Some("+00:00".to_owned())));
+        }
         Ok(options)
     }
 }

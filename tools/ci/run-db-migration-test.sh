@@ -6,7 +6,7 @@ readonly POSTGRES_IMAGE="docker.io/library/postgres:17.10-bookworm@sha256:67870d
 readonly MYSQL_IMAGE="docker.io/library/mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e"
 readonly TEST_USER="anyflows"
 readonly TEST_PASSWORD="anyflows_ci"
-readonly TEST_DATABASE="anyflows"
+readonly TEST_DATABASE="anyflows_migration_test_ci"
 readonly SMOKE_TEST_NAME="migration::tests::migration_runner_smoke"
 
 container_name=""
@@ -96,6 +96,7 @@ run_smoke_test() {
 
     AF_TEST_DATABASE_URL="${database_url}" \
     AF_REQUIRE_LIVE_DATABASE=1 \
+    AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST=1 \
     cargo test --locked --package af-db --lib "${SMOKE_TEST_NAME}" -- --exact --include-ignored
 }
 
@@ -125,7 +126,7 @@ if [[ -z "${database_url}" ]]; then
                 --env MYSQL_DATABASE="${TEST_DATABASE}" \
                 "${MYSQL_IMAGE}" >/dev/null
             wait_for_mysql
-            database_url="mysql://${TEST_USER}:${TEST_PASSWORD}@$(url_host "$(docker_daemon_host)"):$(published_port 3306)/${TEST_DATABASE}"
+            database_url="mysql://${TEST_USER}:${TEST_PASSWORD}@$(url_host "$(docker_daemon_host)"):$(published_port 3306)/${TEST_DATABASE}?timezone=%2B08:00"
             ;;
         *)
             echo "用法：$0 <sqlite|postgres|mysql>" >&2
