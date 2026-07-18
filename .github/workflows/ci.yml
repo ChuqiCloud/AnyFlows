@@ -98,3 +98,75 @@ jobs:
         run: |
           toolchain="${{ steps.msrv.outputs.toolchain }}"
           cargo +"$toolchain" check --workspace --all-targets --all-features --locked
+
+  database-migrations:
+    name: Database migrations (${{ matrix.dialect }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dialect: sqlite
+            database_url: "sqlite::memory:"
+            postgres_image: ""
+            mysql_image: ""
+          - dialect: postgres
+            database_url: postgres://anyflows:anyflows_ci@127.0.0.1:5432/anyflows
+            postgres_image: postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010
+            mysql_image: ""
+          - dialect: mysql
+            database_url: mysql://anyflows:anyflows_ci@127.0.0.1:3306/anyflows
+            postgres_image: ""
+            mysql_image: mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e
+    services:
+      postgres:
+        image: ${{ matrix.postgres_image }}
+        env:
+          POSTGRES_USER: anyflows
+          POSTGRES_PASSWORD: anyflows_ci
+          POSTGRES_DB: anyflows
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U anyflows -d anyflows"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+      mysql:
+        image: ${{ matrix.mysql_image }}
+        env:
+          MYSQL_USER: anyflows
+          MYSQL_PASSWORD: anyflows_ci
+          MYSQL_ROOT_PASSWORD: root_ci
+          MYSQL_DATABASE: anyflows
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -u root -proot_ci --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+
+      - name: Cache database test artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: database-${{ matrix.dialect }}
+
+      - name: Run migration smoke test
+        env:
+          AF_TEST_DATABASE_URL: ${{ matrix.database_url }}
+          AF_REQUIRE_LIVE_DATABASE: "1"
+        run: bash tools/ci/run-db-migration-test.sh "${{ matrix.dialect }}"
