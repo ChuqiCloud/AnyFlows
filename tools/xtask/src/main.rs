@@ -230,6 +230,7 @@ fn validate_workspace(
         }
 
         if !dependency.internal
+            && dependency.to != "reqwest"
             && let Some(allowed) = allowed_external_dependencies(&dependency.from)
             && !allowed.contains(&dependency.to.as_str())
         {
@@ -246,6 +247,15 @@ fn validate_workspace(
                 from: dependency.from.clone(),
                 to: dependency.to.clone(),
                 rule: "http-framework-owned-by-af-http",
+                detail: dependency.detail(),
+            });
+        }
+
+        if dependency.to == "reqwest" && dependency.from != "af-httpclient" {
+            violations.push(Violation {
+                from: dependency.from.clone(),
+                to: dependency.to.clone(),
+                rule: "http-client-owned-by-af-httpclient",
                 detail: dependency.detail(),
             });
         }
@@ -411,7 +421,7 @@ mod tests {
     fn rejects_external_dependency_from_domain() {
         let violations = validate_workspace(
             &baseline_workspace(),
-            &[dependency("af-domain", "reqwest", false)],
+            &[dependency("af-domain", "serde", false)],
         );
 
         assert_eq!(violations.len(), 1);
@@ -430,6 +440,17 @@ mod tests {
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule, "http-framework-owned-by-af-http");
+    }
+
+    #[test]
+    fn rejects_reqwest_outside_httpclient_crate() {
+        let violations = validate_workspace(
+            &baseline_workspace(),
+            &[dependency("af-relay", "reqwest", false)],
+        );
+
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].rule, "http-client-owned-by-af-httpclient");
     }
 
     #[test]
