@@ -112,11 +112,11 @@ jobs:
             postgres_image: ""
             mysql_image: ""
           - dialect: postgres
-            database_url: postgres://anyflows:anyflows_ci@127.0.0.1:5432/anyflows
+            database_url: postgres://anyflows:anyflows_ci@127.0.0.1:5432/anyflows_migration_test_ci
             postgres_image: postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010
             mysql_image: ""
           - dialect: mysql
-            database_url: mysql://anyflows:anyflows_ci@127.0.0.1:3306/anyflows
+            database_url: mysql://anyflows:anyflows_ci@127.0.0.1:3306/anyflows_migration_test_ci?timezone=%2B08:00
             postgres_image: ""
             mysql_image: mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e
     services:
@@ -125,11 +125,11 @@ jobs:
         env:
           POSTGRES_USER: anyflows
           POSTGRES_PASSWORD: anyflows_ci
-          POSTGRES_DB: anyflows
+          POSTGRES_DB: anyflows_migration_test_ci
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U anyflows -d anyflows"
+          --health-cmd "pg_isready -U anyflows -d anyflows_migration_test_ci"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 30
@@ -139,7 +139,7 @@ jobs:
           MYSQL_USER: anyflows
           MYSQL_PASSWORD: anyflows_ci
           MYSQL_ROOT_PASSWORD: root_ci
-          MYSQL_DATABASE: anyflows
+          MYSQL_DATABASE: anyflows_migration_test_ci
         ports:
           - 3306:3306
         options: >-

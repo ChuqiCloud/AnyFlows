@@ -160,13 +160,15 @@ mod tests {
     async fn close_timeout_is_enforced_while_a_transaction_is_held() -> Result<(), Box<dyn Error>> {
         let options =
             DatabaseOptions::new("sqlite::memory:")?.with_close_timeout(Duration::from_millis(1));
-        let pool = connect(&options).await?;
+        let mut pool = connect(&options).await?;
         let transaction = pool.connection().begin().await?;
 
         let error = pool.clone().close().await.unwrap_err();
         assert!(matches!(error, DatabaseError::CloseTimeout { .. }));
 
         transaction.rollback().await?;
+        // 超时断言使用极短预算，最终清理需容纳并发测试下的连接归还调度。
+        pool.close_timeout = Duration::from_secs(1);
         pool.close().await?;
         Ok(())
     }
