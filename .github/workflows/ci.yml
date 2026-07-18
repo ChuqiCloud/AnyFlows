@@ -170,3 +170,40 @@ jobs:
           AF_TEST_DATABASE_URL: ${{ matrix.database_url }}
           AF_REQUIRE_LIVE_DATABASE: "1"
         run: bash tools/ci/run-db-migration-test.sh "${{ matrix.dialect }}"
+
+  cache-redis:
+    name: Redis cache smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      redis:
+        image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+
+      - name: Cache Redis test artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: cache-redis
+
+      - name: Run Redis cache smoke test
+        env:
+          AF_TEST_REDIS_URL: redis://127.0.0.1:6379/
+        run: bash tools/ci/run-cache-redis-test.sh

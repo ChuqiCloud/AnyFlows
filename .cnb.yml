@@ -115,6 +115,28 @@
         - name: 运行 MySQL 迁移冒烟
           script: bash tools/ci/run-db-migration-test.sh mysql
 
+    - name: Redis 缓存冒烟
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      services:
+        - docker
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write
+          - rust-cargo:/usr/local/cargo/git:copy-on-write
+          - rust-cache-redis-1.97.1:./target:copy-on-write
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 运行 Redis 缓存冒烟
+          script: bash tools/ci/run-cache-redis-test.sh
+
   pull_request.target:
     - name: Rust 质量门禁
       runner:
@@ -266,6 +288,35 @@
         - name: 运行 MySQL 迁移冒烟
           script: bash tools/ci/run-db-migration-test.sh mysql
 
+    - name: Redis 缓存冒烟
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      sandbox: true
+      services:
+        - docker
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write-read-only
+          - rust-cargo:/usr/local/cargo/git:copy-on-write-read-only
+          - rust-cache-redis-1.97.1:./target:copy-on-write-read-only
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 检出 PR 预合并代码
+          script: |
+            test -n "${CNB_PULL_REQUEST_MERGE_SHA:-}"
+            git fetch --no-tags --depth 1 origin "${CNB_PULL_REQUEST_MERGE_SHA}"
+            git checkout --detach "${CNB_PULL_REQUEST_MERGE_SHA}"
+            test "$(git rev-parse HEAD)" = "${CNB_PULL_REQUEST_MERGE_SHA}"
+        - name: 运行 Redis 缓存冒烟
+          script: bash tools/ci/run-cache-redis-test.sh
+
 "**":
   web_trigger_ci:
     - name: Rust 质量门禁
@@ -387,3 +438,26 @@
       stages:
         - name: 运行 MySQL 迁移冒烟
           script: bash tools/ci/run-db-migration-test.sh mysql
+
+    - name: Redis 缓存冒烟
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      sandbox: true
+      services:
+        - docker
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write-read-only
+          - rust-cargo:/usr/local/cargo/git:copy-on-write-read-only
+          - rust-cache-redis-1.97.1:./target:copy-on-write-read-only
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 运行 Redis 缓存冒烟
+          script: bash tools/ci/run-cache-redis-test.sh
