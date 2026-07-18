@@ -1,0 +1,161 @@
+"(master|develop)":
+  push:
+    - name: Rust 质量门禁
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write
+          - rust-cargo:/usr/local/cargo/git:copy-on-write
+          - rust-advisories:/usr/local/cargo/advisory-dbs:copy-on-write
+          - rust-quality-1.97.1:./target:copy-on-write
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 检查格式
+          script: cargo fmt --all -- --check
+        - name: 检查 crate 依赖边界
+          script: cargo run --locked --package xtask -- check-deps
+        - name: 运行 Clippy
+          script: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        - name: 运行测试
+          script: cargo nextest run --workspace --all-features --locked
+        - name: 运行文档测试
+          script: cargo test --workspace --all-features --doc --locked
+        - name: 审计依赖
+          script: cargo deny --all-features --locked check advisories bans licenses sources
+
+    - name: 最低 Rust 版本
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write
+          - rust-cargo:/usr/local/cargo/git:copy-on-write
+          - rust-msrv-1.95.0:./target:copy-on-write
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 检查最低 Rust 版本
+          script: cargo +1.95.0 check --workspace --all-targets --all-features --locked
+
+  pull_request:
+    - name: Rust 质量门禁
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      sandbox: true
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write-read-only
+          - rust-cargo:/usr/local/cargo/git:copy-on-write-read-only
+          - rust-advisories:/usr/local/cargo/advisory-dbs:copy-on-write-read-only
+          - rust-quality-1.97.1:./target:copy-on-write-read-only
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 检查格式
+          script: cargo fmt --all -- --check
+        - name: 检查 crate 依赖边界
+          script: cargo run --locked --package xtask -- check-deps
+        - name: 运行 Clippy
+          script: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        - name: 运行测试
+          script: cargo nextest run --workspace --all-features --locked
+        - name: 运行文档测试
+          script: cargo test --workspace --all-features --doc --locked
+        - name: 审计依赖
+          script: cargo deny --all-features --locked check advisories bans licenses sources
+
+    - name: 最低 Rust 版本
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      sandbox: true
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write-read-only
+          - rust-cargo:/usr/local/cargo/git:copy-on-write-read-only
+          - rust-msrv-1.95.0:./target:copy-on-write-read-only
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 检查最低 Rust 版本
+          script: cargo +1.95.0 check --workspace --all-targets --all-features --locked
+
+"**":
+  web_trigger_ci:
+    - name: Rust 质量门禁
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      sandbox: true
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write-read-only
+          - rust-cargo:/usr/local/cargo/git:copy-on-write-read-only
+          - rust-advisories:/usr/local/cargo/advisory-dbs:copy-on-write-read-only
+          - rust-quality-1.97.1:./target:copy-on-write-read-only
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 检查格式
+          script: cargo fmt --all -- --check
+        - name: 检查 crate 依赖边界
+          script: cargo run --locked --package xtask -- check-deps
+        - name: 运行 Clippy
+          script: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        - name: 运行测试
+          script: cargo nextest run --workspace --all-features --locked
+        - name: 运行文档测试
+          script: cargo test --workspace --all-features --doc --locked
+        - name: 审计依赖
+          script: cargo deny --all-features --locked check advisories bans licenses sources
+
+    - name: 最低 Rust 版本
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      sandbox: true
+      docker:
+        build:
+          dockerfile: ./.cnb/ci.Dockerfile
+          by:
+            - ./.cnb/ci.Dockerfile
+        volumes:
+          - rust-cargo:/usr/local/cargo/registry:copy-on-write-read-only
+          - rust-cargo:/usr/local/cargo/git:copy-on-write-read-only
+          - rust-msrv-1.95.0:./target:copy-on-write-read-only
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "1"
+      stages:
+        - name: 检查最低 Rust 版本
+          script: cargo +1.95.0 check --workspace --all-targets --all-features --locked
