@@ -75,9 +75,8 @@ impl CanonicalRequest {
         mut self,
         raw_passthrough: Option<(Protocol, Map<String, Value>)>,
     ) -> Self {
-        self.raw_passthrough = raw_passthrough.map(|(source_protocol, fields)| RawPassthrough {
-            source_protocol,
-            fields,
+        self.raw_passthrough = raw_passthrough.map(|(source_protocol, fields)| {
+            RawPassthrough::new_validated(source_protocol, fields)
         });
         self
     }
@@ -242,6 +241,14 @@ pub struct RawPassthrough {
 }
 
 impl RawPassthrough {
+    /// 创建已由协议边界完成校验的同源字段集合。
+    pub(crate) fn new_validated(source_protocol: Protocol, fields: Map<String, Value>) -> Self {
+        Self {
+            source_protocol,
+            fields,
+        }
+    }
+
     /// 返回这些字段所属的入站协议。
     #[must_use]
     pub const fn source_protocol(&self) -> Protocol {

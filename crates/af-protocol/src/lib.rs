@@ -3,6 +3,7 @@
 mod canonical;
 pub mod openai_chat;
 mod request;
+mod response;
 mod stream;
 mod usage;
 
@@ -14,6 +15,7 @@ pub use request::{
     Attachment, ReasoningConfig, ReasoningConfigError, ReasoningEffort, RequestMetadata, Sampling,
     SamplingError, ToolChoice, ToolDef,
 };
+pub use response::{CanonicalResponse, ResponseChoice};
 pub use stream::{CanonicalStreamEvent, ContentDelta, FinishReason};
 pub use usage::{TokenCount, Usage, UsageDetails, UsageError, UsageSemantics, UsageSource};
 

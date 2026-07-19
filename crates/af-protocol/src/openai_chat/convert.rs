@@ -23,26 +23,26 @@ use crate::{
 };
 
 const MAX_MODEL_BYTES: usize = 256;
-const MAX_MESSAGES: usize = 256;
-const MAX_PARTS_PER_MESSAGE: usize = 128;
-const MAX_CONTENT_BLOCKS: usize = 1_024;
-const MAX_TEXT_BYTES: usize = 1024 * 1024;
-const MAX_TOTAL_TEXT_BYTES: usize = 8 * 1024 * 1024;
-const MAX_TOOLS: usize = 128;
-const MAX_TOOL_CALLS: usize = 128;
-const MAX_TOOL_DESCRIPTION_BYTES: usize = 8 * 1024;
+pub(super) const MAX_MESSAGES: usize = 256;
+pub(super) const MAX_PARTS_PER_MESSAGE: usize = 128;
+pub(super) const MAX_CONTENT_BLOCKS: usize = 1_024;
+pub(super) const MAX_TEXT_BYTES: usize = 1024 * 1024;
+pub(super) const MAX_TOTAL_TEXT_BYTES: usize = 8 * 1024 * 1024;
+pub(super) const MAX_TOOLS: usize = 128;
+pub(super) const MAX_TOOL_CALLS: usize = 128;
+pub(super) const MAX_TOOL_DESCRIPTION_BYTES: usize = 8 * 1024;
 const MAX_TOOL_CALL_ID_BYTES: usize = 256;
-const MAX_ARGUMENT_BYTES: usize = 256 * 1024;
-const MAX_TOTAL_ARGUMENT_BYTES: usize = 2 * 1024 * 1024;
-const MAX_TOTAL_ARGUMENT_NODES: usize = 32_768;
+pub(super) const MAX_ARGUMENT_BYTES: usize = 256 * 1024;
+pub(super) const MAX_TOTAL_ARGUMENT_BYTES: usize = 2 * 1024 * 1024;
+pub(super) const MAX_TOTAL_ARGUMENT_NODES: usize = 32_768;
 const MAX_SCHEMA_BYTES: usize = 64 * 1024;
 const MAX_TOTAL_SCHEMA_BYTES: usize = 512 * 1024;
-const MAX_STOP_SEQUENCES: usize = 4;
-const MAX_STOP_BYTES: usize = 1024;
-const MAX_OUTPUT_TOKENS: i64 = 1_000_000;
-const MAX_USER_ID_BYTES: usize = 512;
-const MAX_MEDIA_URL_BYTES: usize = 8 * 1024;
-const MAX_MEDIA_BYTES: usize = 20 * 1024 * 1024;
+pub(super) const MAX_STOP_SEQUENCES: usize = 4;
+pub(super) const MAX_STOP_BYTES: usize = 1024;
+pub(super) const MAX_OUTPUT_TOKENS: i64 = 1_000_000;
+pub(super) const MAX_USER_ID_BYTES: usize = 512;
+pub(super) const MAX_MEDIA_URL_BYTES: usize = 8 * 1024;
+pub(super) const MAX_MEDIA_BYTES: usize = 20 * 1024 * 1024;
 const MAX_RAW_FIELDS: usize = 32;
 const MAX_RAW_BYTES: usize = 64 * 1024;
 const MAX_RAW_DEPTH: usize = 8;
@@ -53,7 +53,7 @@ const MAX_METADATA_FIELDS: usize = 16;
 const MAX_METADATA_KEY_BYTES: usize = 64;
 const MAX_METADATA_VALUE_BYTES: usize = 512;
 
-const ARGUMENT_JSON_LIMITS: JsonLimits = JsonLimits {
+pub(super) const ARGUMENT_JSON_LIMITS: JsonLimits = JsonLimits {
     max_depth: 16,
     max_nodes: 4_096,
     max_object_entries: 1_024,
@@ -138,7 +138,7 @@ pub(super) fn convert_request(
     Ok(request.with_validated_raw_passthrough(raw.map(|fields| (Protocol::OpenAiChat, fields))))
 }
 
-fn validate_model(model: &str) -> Result<(), ParseRequestError> {
+pub(super) fn validate_model(model: &str) -> Result<(), ParseRequestError> {
     if model.is_empty()
         || model.len() > MAX_MODEL_BYTES
         || model.chars().any(char::is_control)
@@ -298,7 +298,7 @@ fn convert_tools(
     Ok((converted, names))
 }
 
-fn validate_tool_name(name: &str) -> Result<(), ParseRequestError> {
+pub(super) fn validate_tool_name(name: &str) -> Result<(), ParseRequestError> {
     if name.is_empty()
         || name.len() > 64
         || !name
@@ -310,7 +310,7 @@ fn validate_tool_name(name: &str) -> Result<(), ParseRequestError> {
     Ok(())
 }
 
-fn validate_schema(
+pub(super) fn validate_schema(
     schema: &Value,
     total_schema_bytes: &mut usize,
 ) -> Result<(), ParseRequestError> {
@@ -622,7 +622,7 @@ fn map_argument_error(error: BoundedJsonError) -> ParseRequestError {
     }
 }
 
-fn validate_call_id(id: &str) -> Result<(), ParseRequestError> {
+pub(super) fn validate_call_id(id: &str) -> Result<(), ParseRequestError> {
     if id.is_empty() || id.len() > MAX_TOOL_CALL_ID_BYTES || id.chars().any(char::is_control) {
         return Err(ParseRequestError::InvalidValue);
     }
@@ -741,7 +741,7 @@ fn validate_base64(
     state.add_media_bytes(decoded.len())
 }
 
-fn normalize_remote_media_url(value: &str) -> Result<String, ParseRequestError> {
+pub(super) fn normalize_remote_media_url(value: &str) -> Result<String, ParseRequestError> {
     if value.trim() != value || value.contains('\\') {
         return Err(ParseRequestError::InvalidValue);
     }
@@ -774,14 +774,30 @@ fn validate_raw(
             return Err(ParseRequestError::InvalidValue);
         }
     }
-    validate_raw_semantics(&extra)?;
+    validate_raw_fields(&extra)?;
+    Ok(Some(extra))
+}
 
-    let encoded = serde_json::to_vec(&extra).map_err(|_| ParseRequestError::InvalidValue)?;
+/// 校验待合并到 OpenAI Chat 请求的同源 raw 字段。
+pub(super) fn validate_raw_fields(extra: &Map<String, Value>) -> Result<(), ParseRequestError> {
+    if extra.len() > MAX_RAW_FIELDS {
+        return Err(ParseRequestError::StructureLimitExceeded);
+    }
+    for key in extra.keys() {
+        if UNSUPPORTED_TOP_LEVEL_FIELDS.contains(&key.as_str()) {
+            return Err(ParseRequestError::UnsupportedFeature);
+        }
+        if !RAW_FIELD_ALLOWLIST.contains(&key.as_str()) {
+            return Err(ParseRequestError::InvalidValue);
+        }
+    }
+    validate_raw_semantics(extra)?;
+
+    let encoded = serde_json::to_vec(extra).map_err(|_| ParseRequestError::InvalidValue)?;
     if encoded.len() > MAX_RAW_BYTES {
         return Err(ParseRequestError::StructureLimitExceeded);
     }
-    validate_raw_values(&extra)?;
-    Ok(Some(extra))
+    validate_raw_values(extra)
 }
 
 fn validate_raw_semantics(extra: &Map<String, Value>) -> Result<(), ParseRequestError> {
@@ -919,7 +935,7 @@ fn validate_raw_values(extra: &Map<String, Value>) -> Result<(), ParseRequestErr
     Ok(())
 }
 
-fn validate_value_shape(
+pub(super) fn validate_value_shape(
     value: &Value,
     max_depth: usize,
     max_nodes: usize,
