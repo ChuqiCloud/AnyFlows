@@ -57,7 +57,9 @@ where
     D: Deserializer<'de>,
     T: FromStr<Err = ParseEnumError> + StringEnum,
 {
-    deserializer.deserialize_str(StringEnumVisitor(PhantomData))
+    deserializer
+        .deserialize_str(StringEnumVisitor(PhantomData))
+        .map_err(|_| serde::de::Error::custom(ParseEnumError::new(T::NAME)))
 }
 
 macro_rules! string_enum {
@@ -216,6 +218,26 @@ string_enum! {
         Assistant => "assistant",
         /// 工具执行结果。
         Tool => "tool",
+    }
+}
+
+string_enum! {
+    /// API 客户端可依赖的稳定公开错误码；不包含内部诊断文案。
+    pub enum PublicErrorCode {
+        /// 请求结构或参数无效。
+        InvalidRequest => "invalid_request",
+        /// API Key 无效、过期或已禁用。
+        InvalidApiKey => "invalid_api_key",
+        /// 可用额度不足。
+        InsufficientQuota => "insufficient_quota",
+        /// 请求的模型不存在或不可用。
+        ModelNotFound => "model_not_found",
+        /// 当前没有可用上游。
+        UpstreamUnavailable => "upstream_unavailable",
+        /// 请求受到网关或上游限流。
+        RateLimited => "rate_limited",
+        /// 服务内部错误。
+        InternalError => "internal_error",
     }
 }
 
