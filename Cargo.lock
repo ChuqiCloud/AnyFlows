@@ -37,6 +37,7 @@ dependencies = [
 name = "af-config"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "figment",
  "serde",
  "thiserror",
