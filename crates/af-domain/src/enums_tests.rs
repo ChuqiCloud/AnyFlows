@@ -75,6 +75,7 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
         Role::ALL,
         [
             (Role::System, "system"),
+            (Role::Developer, "developer"),
             (Role::User, "user"),
             (Role::Assistant, "assistant"),
             (Role::Tool, "tool"),

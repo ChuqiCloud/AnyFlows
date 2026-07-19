@@ -294,6 +294,7 @@ fn allowed_restricted_external_dependency(dependency: &DeclaredDependency) -> bo
         ("af-domain", "serde", "normal")
             | ("af-domain", "serde_json", "dev")
             | ("af-domain", "thiserror", "normal")
+            | ("af-protocol", "serde_json", "normal")
     );
     reviewed && dependency.target.is_none() && !dependency.optional && dependency.alias.is_none()
 }
@@ -450,6 +451,15 @@ mod tests {
     }
 
     #[test]
+    fn accepts_reviewed_protocol_dependency() {
+        let serde_json = dependency("af-protocol", "serde_json", false);
+
+        let violations = validate_workspace(&baseline_workspace(), &[serde_json]);
+
+        assert!(violations.is_empty());
+    }
+
+    #[test]
     fn rejects_unreviewed_external_dependency_from_domain() {
         let violations = validate_workspace(
             &baseline_workspace(),
@@ -553,6 +563,43 @@ mod tests {
             "optional=true",
             "target=cfg(unix)",
             "alias=thiserror_alias",
+        ] {
+            assert!(
+                violations
+                    .iter()
+                    .any(|violation| violation.detail.contains(detail))
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_unreviewed_protocol_dependency_shapes() {
+        let mut wrong_kind = dependency("af-protocol", "serde_json", false);
+        wrong_kind.kind = "dev".to_owned();
+        let mut optional = dependency("af-protocol", "serde_json", false);
+        optional.optional = true;
+        let mut targeted = dependency("af-protocol", "serde_json", false);
+        targeted.target = Some("cfg(unix)".to_owned());
+        let mut aliased = dependency("af-protocol", "serde_json", false);
+        aliased.alias = Some("serde_json_alias".to_owned());
+
+        let violations = validate_workspace(
+            &baseline_workspace(),
+            &[wrong_kind, optional, targeted, aliased],
+        );
+
+        assert_eq!(violations.len(), 4);
+        assert!(
+            violations
+                .iter()
+                .all(|violation| violation.rule
+                    == "restricted-crate-external-dependency-not-allowed")
+        );
+        for detail in [
+            "kind=dev",
+            "optional=true",
+            "target=cfg(unix)",
+            "alias=serde_json_alias",
         ] {
             assert!(
                 violations

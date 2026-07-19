@@ -89,6 +89,10 @@ dependencies = [
 [[package]]
 name = "af-protocol"
 version = "0.1.0"
+dependencies = [
+ "af-domain",
+ "serde_json",
+]
 
 [[package]]
 name = "af-relay"
