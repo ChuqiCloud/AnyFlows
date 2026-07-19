@@ -171,8 +171,8 @@ pub enum ContentBlock {
     Image {
         /// 图片来源。
         source: MediaSource,
-        /// 已校验的媒体类型。
-        mime_type: String,
+        /// 已校验的可选媒体类型；远程 URL 通常不提供该信息。
+        mime_type: Option<String>,
     },
     /// 音频内容。
     Audio {

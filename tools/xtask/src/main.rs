@@ -294,7 +294,10 @@ fn allowed_restricted_external_dependency(dependency: &DeclaredDependency) -> bo
         ("af-domain", "serde", "normal")
             | ("af-domain", "serde_json", "dev")
             | ("af-domain", "thiserror", "normal")
+            | ("af-protocol", "base64", "normal")
+            | ("af-protocol", "serde", "normal")
             | ("af-protocol", "serde_json", "normal")
+            | ("af-protocol", "url", "normal")
     );
     reviewed && dependency.target.is_none() && !dependency.optional && dependency.alias.is_none()
 }
@@ -451,10 +454,11 @@ mod tests {
     }
 
     #[test]
-    fn accepts_reviewed_protocol_dependency() {
-        let serde_json = dependency("af-protocol", "serde_json", false);
+    fn accepts_reviewed_protocol_dependencies() {
+        let dependencies = ["base64", "serde", "serde_json", "url"]
+            .map(|name| dependency("af-protocol", name, false));
 
-        let violations = validate_workspace(&baseline_workspace(), &[serde_json]);
+        let violations = validate_workspace(&baseline_workspace(), &dependencies);
 
         assert!(violations.is_empty());
     }
@@ -574,21 +578,24 @@ mod tests {
 
     #[test]
     fn rejects_unreviewed_protocol_dependency_shapes() {
-        let mut wrong_kind = dependency("af-protocol", "serde_json", false);
-        wrong_kind.kind = "dev".to_owned();
-        let mut optional = dependency("af-protocol", "serde_json", false);
-        optional.optional = true;
-        let mut targeted = dependency("af-protocol", "serde_json", false);
-        targeted.target = Some("cfg(unix)".to_owned());
-        let mut aliased = dependency("af-protocol", "serde_json", false);
-        aliased.alias = Some("serde_json_alias".to_owned());
+        let dependencies = ["base64", "serde", "serde_json", "url"]
+            .into_iter()
+            .flat_map(|name| {
+                let mut wrong_kind = dependency("af-protocol", name, false);
+                wrong_kind.kind = "dev".to_owned();
+                let mut optional = dependency("af-protocol", name, false);
+                optional.optional = true;
+                let mut targeted = dependency("af-protocol", name, false);
+                targeted.target = Some("cfg(unix)".to_owned());
+                let mut aliased = dependency("af-protocol", name, false);
+                aliased.alias = Some(format!("{name}_alias"));
+                [wrong_kind, optional, targeted, aliased]
+            })
+            .collect::<Vec<_>>();
 
-        let violations = validate_workspace(
-            &baseline_workspace(),
-            &[wrong_kind, optional, targeted, aliased],
-        );
+        let violations = validate_workspace(&baseline_workspace(), &dependencies);
 
-        assert_eq!(violations.len(), 4);
+        assert_eq!(violations.len(), 16);
         assert!(
             violations
                 .iter()
@@ -599,7 +606,10 @@ mod tests {
             "kind=dev",
             "optional=true",
             "target=cfg(unix)",
+            "alias=base64_alias",
+            "alias=serde_alias",
             "alias=serde_json_alias",
+            "alias=url_alias",
         ] {
             assert!(
                 violations
