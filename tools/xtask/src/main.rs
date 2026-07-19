@@ -259,6 +259,15 @@ fn validate_workspace(
                 detail: dependency.detail(),
             });
         }
+
+        if dependency.to == "metrics" && dependency.from != "af-telemetry" {
+            violations.push(Violation {
+                from: dependency.from.clone(),
+                to: dependency.to.clone(),
+                rule: "metrics-facade-owned-by-af-telemetry",
+                detail: dependency.detail(),
+            });
+        }
     }
 
     violations.sort();
@@ -451,6 +460,17 @@ mod tests {
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule, "http-client-owned-by-af-httpclient");
+    }
+
+    #[test]
+    fn rejects_metrics_facade_outside_telemetry_crate() {
+        let violations = validate_workspace(
+            &baseline_workspace(),
+            &[dependency("af-relay", "metrics", false)],
+        );
+
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].rule, "metrics-facade-owned-by-af-telemetry");
     }
 
     #[test]
