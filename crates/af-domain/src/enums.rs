@@ -212,6 +212,8 @@ string_enum! {
     pub enum Role {
         /// 系统级指令。
         System => "system",
+        /// 高于终端用户输入的开发者级指令。
+        Developer => "developer",
         /// 终端用户输入。
         User => "user",
         /// 模型回复。
