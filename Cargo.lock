@@ -100,6 +100,13 @@ version = "0.1.0"
 [[package]]
 name = "af-telemetry"
 version = "0.1.0"
+dependencies = [
+ "af-config",
+ "serde_json",
+ "thiserror",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "aho-corasick"
