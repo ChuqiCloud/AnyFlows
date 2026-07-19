@@ -273,6 +273,42 @@ mod tests {
     }
 
     #[test]
+    fn otel_switch_is_rejected_until_shared_redaction_is_available() {
+        with_clean_env(|_| {
+            let path = temp_file(
+                "[telemetry.otel]\nenabled = true\nendpoint = 'https://collector-secret@example.invalid'\n[database]\nurl = 'sqlite::memory:'\n",
+            );
+            let error = load_from(&path).unwrap_err();
+            let rendered = format!("{error:?}\n{error}");
+            let _ = fs::remove_file(path);
+
+            assert_eq!(error, ConfigError::Invalid);
+            assert!(!rendered.contains("collector-secret"));
+            assert!(!rendered.contains("telemetry.otel"));
+        });
+    }
+
+    #[test]
+    fn otel_environment_switch_is_rejected_without_echoing_values() {
+        with_clean_env(|jail| {
+            jail.set_env("AF_TELEMETRY__OTEL__ENABLED", "true");
+            jail.set_env(
+                "AF_TELEMETRY__OTEL__ENDPOINT",
+                "https://environment-collector-secret@example.invalid",
+            );
+            let path = temp_file("[database]\nurl = 'sqlite::memory:'\n");
+            let error = load_from(&path).unwrap_err();
+            let rendered = format!("{error:?}\n{error}");
+            let _ = fs::remove_file(path);
+
+            assert_eq!(error, ConfigError::Invalid);
+            assert!(!rendered.contains("environment-collector-secret"));
+            assert!(!rendered.contains("OTEL"));
+            assert!(!rendered.contains("otel"));
+        });
+    }
+
+    #[test]
     fn explicit_missing_file_is_typed_without_content() {
         with_clean_env(|_| {
             let path = env::temp_dir().join(format!(
