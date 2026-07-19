@@ -114,7 +114,7 @@ fn content_blocks_cover_multimodal_tools_thinking_and_cache_hints() {
         ContentBlock::Text("text".to_owned()),
         ContentBlock::Image {
             source: MediaSource::Url("https://example.invalid/image".to_owned()),
-            mime_type: "image/png".to_owned(),
+            mime_type: Some("image/png".to_owned()),
         },
         ContentBlock::Audio {
             source: MediaSource::Base64("audio-data".to_owned()),
@@ -166,7 +166,7 @@ fn sensitive_canonical_values_are_redacted_from_debug() {
         ContentBlock::Text(canaries[1].to_owned()),
         ContentBlock::Image {
             source: MediaSource::Url(canaries[2].to_owned()),
-            mime_type: canaries[4].to_owned(),
+            mime_type: Some(canaries[4].to_owned()),
         },
         ContentBlock::Audio {
             source: MediaSource::Base64(canaries[3].to_owned()),

@@ -91,7 +91,10 @@ name = "af-protocol"
 version = "0.1.0"
 dependencies = [
  "af-domain",
+ "base64",
+ "serde",
  "serde_json",
+ "url",
 ]
 
 [[package]]

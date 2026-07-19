@@ -1,6 +1,7 @@
 //! 协议纯净的规范请求、响应与流式转换。
 
 mod canonical;
+pub mod openai_chat;
 mod request;
 mod stream;
 mod usage;
