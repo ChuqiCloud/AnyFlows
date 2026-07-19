@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::{ChannelType, CredentialKind, Operation, Protocol, Role, Status};
+use crate::{ChannelType, CredentialKind, Operation, Protocol, PublicErrorCode, Role, Status};
 
 macro_rules! assert_string_enum_contract {
     ($type:ty, $all:expr, [$(($value:path, $wire:literal)),+ $(,)?]) => {{
@@ -80,6 +80,19 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
             (Role::Tool, "tool"),
         ]
     );
+    assert_string_enum_contract!(
+        PublicErrorCode,
+        PublicErrorCode::ALL,
+        [
+            (PublicErrorCode::InvalidRequest, "invalid_request"),
+            (PublicErrorCode::InvalidApiKey, "invalid_api_key"),
+            (PublicErrorCode::InsufficientQuota, "insufficient_quota"),
+            (PublicErrorCode::ModelNotFound, "model_not_found"),
+            (PublicErrorCode::UpstreamUnavailable, "upstream_unavailable"),
+            (PublicErrorCode::RateLimited, "rate_limited"),
+            (PublicErrorCode::InternalError, "internal_error"),
+        ]
+    );
 }
 
 #[test]
@@ -105,7 +118,41 @@ fn string_enums_reject_unknown_case_aliases_and_non_strings() {
             assert!(!serde_error.contains(invalid));
         }
     }
-    assert!(serde_json::from_str::<Protocol>("1").is_err());
+    let type_canary = "4242424242424242";
+    let serde_error = serde_json::from_str::<Protocol>(type_canary)
+        .unwrap_err()
+        .to_string();
+    assert!(!serde_error.contains(type_canary));
+}
+
+#[test]
+fn public_error_codes_reject_unknown_case_aliases_and_non_strings() {
+    for invalid in [
+        "",
+        "InvalidRequest",
+        "invalid-request",
+        "invalid request",
+        " invalid_request",
+        "public-error-secret-canary",
+    ] {
+        let error = invalid.parse::<PublicErrorCode>().unwrap_err();
+        let rendered = format!("{error:?}\n{error}");
+        assert_eq!(error.enum_name(), "PublicErrorCode");
+        if !invalid.is_empty() {
+            assert!(!rendered.contains(invalid));
+        }
+        let serde_error = serde_json::from_str::<PublicErrorCode>(&format!("\"{invalid}\""))
+            .unwrap_err()
+            .to_string();
+        if !invalid.is_empty() {
+            assert!(!serde_error.contains(invalid));
+        }
+    }
+    let type_canary = "3131313131313131";
+    let serde_error = serde_json::from_str::<PublicErrorCode>(type_canary)
+        .unwrap_err()
+        .to_string();
+    assert!(!serde_error.contains(type_canary));
 }
 
 #[test]
