@@ -231,8 +231,8 @@ fn validate_workspace(
 
         if !dependency.internal
             && dependency.to != "reqwest"
-            && let Some(allowed) = allowed_external_dependencies(&dependency.from)
-            && !allowed.contains(&dependency.to.as_str())
+            && restricts_external_dependencies(&dependency.from)
+            && !allowed_restricted_external_dependency(dependency)
         {
             violations.push(Violation {
                 from: dependency.from.clone(),
@@ -279,12 +279,21 @@ fn is_product_crate(name: &str) -> bool {
     PRODUCT_CRATES.contains(&name)
 }
 
-fn allowed_external_dependencies(name: &str) -> Option<&'static [&'static str]> {
-    // 这些 crate 默认拒绝外部依赖；每项新增依赖都必须同步审查策略。
-    match name {
-        "af-adapter" | "af-domain" | "af-protocol" => Some(&[]),
-        _ => None,
-    }
+fn restricts_external_dependencies(name: &str) -> bool {
+    matches!(name, "af-adapter" | "af-domain" | "af-protocol")
+}
+
+fn allowed_restricted_external_dependency(dependency: &DeclaredDependency) -> bool {
+    // 受限 crate 的例外精确到依赖种类，防止测试工具进入生产或构建依赖。
+    let reviewed = matches!(
+        (
+            dependency.from.as_str(),
+            dependency.to.as_str(),
+            dependency.kind.as_str(),
+        ),
+        ("af-domain", "serde", "normal") | ("af-domain", "serde_json", "dev")
+    );
+    reviewed && dependency.target.is_none() && !dependency.optional && dependency.alias.is_none()
 }
 
 fn allowed_internal_dependencies(name: &str) -> &'static [&'static str] {
@@ -427,16 +436,89 @@ mod tests {
     }
 
     #[test]
-    fn rejects_external_dependency_from_domain() {
+    fn accepts_reviewed_domain_serialization_dependencies() {
+        let serde = dependency("af-domain", "serde", false);
+        let mut serde_json = dependency("af-domain", "serde_json", false);
+        serde_json.kind = "dev".to_owned();
+
+        let violations = validate_workspace(&baseline_workspace(), &[serde, serde_json]);
+
+        assert!(violations.is_empty());
+    }
+
+    #[test]
+    fn rejects_unreviewed_external_dependency_from_domain() {
         let violations = validate_workspace(
             &baseline_workspace(),
-            &[dependency("af-domain", "serde", false)],
+            &[dependency("af-domain", "tokio", false)],
         );
 
         assert_eq!(violations.len(), 1);
         assert_eq!(
             violations[0].rule,
             "restricted-crate-external-dependency-not-allowed"
+        );
+    }
+
+    #[test]
+    fn rejects_domain_serialization_dependencies_in_wrong_sections() {
+        let serde_json = dependency("af-domain", "serde_json", false);
+        let mut serde = dependency("af-domain", "serde", false);
+        serde.kind = "build".to_owned();
+
+        let violations = validate_workspace(&baseline_workspace(), &[serde_json, serde]);
+
+        assert_eq!(violations.len(), 2);
+        assert!(
+            violations
+                .iter()
+                .all(|violation| violation.rule
+                    == "restricted-crate-external-dependency-not-allowed")
+        );
+        assert!(
+            violations
+                .iter()
+                .any(|violation| violation.detail.contains("kind=build"))
+        );
+        assert!(
+            violations
+                .iter()
+                .any(|violation| violation.detail.contains("kind=normal"))
+        );
+    }
+
+    #[test]
+    fn rejects_unreviewed_domain_serialization_dependency_shapes() {
+        let mut optional = dependency("af-domain", "serde", false);
+        optional.optional = true;
+        let mut targeted = dependency("af-domain", "serde", false);
+        targeted.target = Some("cfg(unix)".to_owned());
+        let mut aliased = dependency("af-domain", "serde", false);
+        aliased.alias = Some("serde_alias".to_owned());
+
+        let violations = validate_workspace(&baseline_workspace(), &[optional, targeted, aliased]);
+
+        assert_eq!(violations.len(), 3);
+        assert!(
+            violations
+                .iter()
+                .all(|violation| violation.rule
+                    == "restricted-crate-external-dependency-not-allowed")
+        );
+        assert!(
+            violations
+                .iter()
+                .any(|violation| violation.detail.contains("optional=true"))
+        );
+        assert!(
+            violations
+                .iter()
+                .any(|violation| violation.detail.contains("target=cfg(unix)"))
+        );
+        assert!(
+            violations
+                .iter()
+                .any(|violation| violation.detail.contains("alias=serde_alias"))
         );
     }
 

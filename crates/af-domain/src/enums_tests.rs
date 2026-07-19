@@ -1,0 +1,148 @@
+use std::collections::HashSet;
+
+use crate::{ChannelType, CredentialKind, Operation, Protocol, Role, Status};
+
+macro_rules! assert_string_enum_contract {
+    ($type:ty, $all:expr, [$(($value:path, $wire:literal)),+ $(,)?]) => {{
+        let expected = [$($value),+];
+        assert_eq!($all, expected.as_slice());
+
+        let mut wire_values = HashSet::new();
+        $(
+            let value: $type = $value;
+            assert_eq!(value.as_str(), $wire);
+            assert_eq!(value.to_string(), $wire);
+            assert_eq!($wire.parse::<$type>(), Ok(value));
+            assert_eq!(serde_json::to_string(&value).unwrap(), concat!("\"", $wire, "\""));
+            assert_eq!(serde_json::from_str::<$type>(concat!("\"", $wire, "\"")).unwrap(), value);
+            assert!(wire_values.insert($wire));
+        )+
+    }};
+}
+
+#[test]
+fn string_enums_have_unique_stable_parse_and_json_contracts() {
+    assert_string_enum_contract!(
+        Protocol,
+        Protocol::ALL,
+        [
+            (Protocol::OpenAiChat, "openai_chat"),
+            (Protocol::OpenAiResponses, "openai_responses"),
+            (Protocol::Anthropic, "anthropic"),
+            (Protocol::Gemini, "gemini"),
+        ]
+    );
+    assert_string_enum_contract!(
+        Operation,
+        Operation::ALL,
+        [
+            (Operation::Chat, "chat"),
+            (Operation::Responses, "responses"),
+            (Operation::Embedding, "embedding"),
+            (Operation::Image, "image"),
+            (Operation::Audio, "audio"),
+            (Operation::Rerank, "rerank"),
+            (Operation::Video, "video"),
+            (Operation::CountTokens, "count_tokens"),
+        ]
+    );
+    assert_string_enum_contract!(
+        ChannelType,
+        ChannelType::ALL,
+        [
+            (ChannelType::OpenAi, "openai"),
+            (ChannelType::Anthropic, "anthropic"),
+            (ChannelType::Gemini, "gemini"),
+            (ChannelType::Bedrock, "bedrock"),
+            (ChannelType::Vertex, "vertex"),
+            (ChannelType::Custom, "custom"),
+        ]
+    );
+    assert_string_enum_contract!(
+        CredentialKind,
+        CredentialKind::ALL,
+        [
+            (CredentialKind::ApiKey, "api_key"),
+            (CredentialKind::Oauth, "oauth"),
+            (CredentialKind::SetupToken, "setup_token"),
+            (CredentialKind::Bedrock, "bedrock"),
+            (CredentialKind::ServiceAccount, "service_account"),
+            (CredentialKind::Upstream, "upstream"),
+        ]
+    );
+    assert_string_enum_contract!(
+        Role,
+        Role::ALL,
+        [
+            (Role::System, "system"),
+            (Role::User, "user"),
+            (Role::Assistant, "assistant"),
+            (Role::Tool, "tool"),
+        ]
+    );
+}
+
+#[test]
+fn string_enums_reject_unknown_case_aliases_and_non_strings() {
+    for invalid in [
+        "",
+        "OpenAiChat",
+        "open_ai_chat",
+        "openai-chat",
+        " openai_chat",
+        "domain-enum-secret-canary",
+    ] {
+        let error = invalid.parse::<Protocol>().unwrap_err();
+        let rendered = format!("{error:?}\n{error}");
+        assert_eq!(error.enum_name(), "Protocol");
+        if !invalid.is_empty() {
+            assert!(!rendered.contains(invalid));
+        }
+        let serde_error = serde_json::from_str::<Protocol>(&format!("\"{invalid}\""))
+            .unwrap_err()
+            .to_string();
+        if !invalid.is_empty() {
+            assert!(!serde_error.contains(invalid));
+        }
+    }
+    assert!(serde_json::from_str::<Protocol>("1").is_err());
+}
+
+#[test]
+fn status_uses_fail_closed_database_and_json_codes() {
+    assert_eq!(
+        Status::ALL,
+        &[Status::Enabled, Status::Disabled, Status::AutoDisabled]
+    );
+    assert_eq!(Status::default(), Status::Disabled);
+    assert!(Status::Enabled.is_enabled());
+    assert!(!Status::Disabled.is_enabled());
+    assert!(!Status::AutoDisabled.is_enabled());
+
+    for (status, code, display) in [
+        (Status::Enabled, 1_i16, "启用"),
+        (Status::Disabled, 2_i16, "禁用"),
+        (Status::AutoDisabled, 3_i16, "自动禁用"),
+    ] {
+        assert_eq!(status.code(), code);
+        assert_eq!(i16::from(status), code);
+        assert_eq!(Status::try_from(code), Ok(status));
+        assert_eq!(status.to_string(), display);
+        assert_eq!(serde_json::to_string(&status).unwrap(), code.to_string());
+        assert_eq!(
+            serde_json::from_str::<Status>(&code.to_string()).unwrap(),
+            status
+        );
+    }
+
+    for invalid in [i16::MIN, -1, 0, 4, i16::MAX] {
+        let error = Status::try_from(invalid).unwrap_err();
+        assert_eq!(error.enum_name(), "Status");
+        assert!(serde_json::from_str::<Status>(&invalid.to_string()).is_err());
+    }
+    let type_canary = "status-secret-canary";
+    let serde_error = serde_json::from_str::<Status>(&format!("\"{type_canary}\""))
+        .unwrap_err()
+        .to_string();
+    assert!(!serde_error.contains(type_canary));
+}
