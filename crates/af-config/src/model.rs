@@ -29,6 +29,46 @@ impl Default for ServerConfig {
     }
 }
 
+/// AnyFlows 自身结构化日志的最高详细级别。
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    /// 完全关闭 tracing 输出。
+    Off,
+    /// 仅输出错误。
+    Error,
+    /// 输出警告与错误。
+    Warn,
+    /// 输出生产默认的信息、警告与错误。
+    #[default]
+    Info,
+    /// 输出调试及以上级别。
+    Debug,
+    /// 输出全部 tracing 事件。
+    Trace,
+}
+
+/// tracing 启动设置；运行期调整通过 telemetry reload handle 完成。
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct TelemetrySettings {
+    level: LogLevel,
+}
+
+impl TelemetrySettings {
+    /// 使用指定日志级别构造设置。
+    #[must_use]
+    pub const fn new(level: LogLevel) -> Self {
+        Self { level }
+    }
+
+    /// 返回 AnyFlows 自身日志的最高详细级别。
+    #[must_use]
+    pub const fn level(&self) -> LogLevel {
+        self.level
+    }
+}
+
 /// 数据库启动配置。
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -108,6 +148,8 @@ impl HttpClientSettings {
 pub struct AppConfig {
     #[serde(default)]
     server: ServerConfig,
+    #[serde(default)]
+    telemetry: TelemetrySettings,
     database: DatabaseConfig,
     #[serde(default)]
     redis: RedisSettings,
@@ -120,6 +162,12 @@ impl AppConfig {
     #[must_use]
     pub const fn server(&self) -> &ServerConfig {
         &self.server
+    }
+
+    /// 返回 tracing 启动设置。
+    #[must_use]
+    pub const fn telemetry(&self) -> &TelemetrySettings {
+        &self.telemetry
     }
 
     /// 返回数据库配置。

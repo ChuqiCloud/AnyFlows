@@ -11,7 +11,7 @@ use figment::{
 };
 use serde::Serialize;
 
-use crate::{AppConfig, ConfigError, HttpClientSettings, ServerConfig};
+use crate::{AppConfig, ConfigError, HttpClientSettings, ServerConfig, TelemetrySettings};
 
 /// 默认配置文件名；文件不存在时仅使用默认值与环境变量。
 pub const DEFAULT_CONFIG_FILE: &str = "anyflows.toml";
@@ -23,6 +23,7 @@ pub const ENV_PREFIX: &str = "AF_";
 #[derive(Default, Serialize)]
 struct ConfigDefaults {
     server: ServerConfig,
+    telemetry: TelemetrySettings,
     database: DatabaseDefaults,
     redis: RedisDefaults,
     http_client: HttpClientSettings,
@@ -120,6 +121,8 @@ fn known_field(path: &str) -> Option<&'static str> {
     Some(match path {
         "server" => "server",
         "server.bind" => "server.bind",
+        "telemetry" => "telemetry",
+        "telemetry.level" => "telemetry.level",
         "database" => "database",
         "database.url" => "database.url",
         "database.migration_timeout_secs" => "database.migration_timeout_secs",
@@ -146,6 +149,7 @@ mod tests {
     use figment::Jail;
 
     use super::*;
+    use crate::LogLevel;
 
     static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
     const CHILD_MARKER: &str = "ANYFLOWS_CONFIG_CHILD";
@@ -180,6 +184,7 @@ mod tests {
             let _ = fs::remove_file(path);
 
             assert_eq!(config.server().bind().to_string(), "127.0.0.1:8080");
+            assert_eq!(config.telemetry().level(), LogLevel::Info);
             assert_eq!(config.database().migration_timeout_secs(), None);
             assert!(config.redis().url().is_none());
             assert_eq!(config.http_client().max_cached_clients(), None);
@@ -191,12 +196,13 @@ mod tests {
     fn toml_values_override_defaults() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[server]\nbind = '0.0.0.0:9000'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\n",
+                "[server]\nbind = '0.0.0.0:9000'\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
 
             assert_eq!(config.server().bind().to_string(), "0.0.0.0:9000");
+            assert_eq!(config.telemetry().level(), LogLevel::Debug);
             assert_eq!(config.database().migration_timeout_secs(), Some(42));
             assert_eq!(config.http_client().max_cached_clients(), Some(7));
             assert_eq!(config.http_client().read_timeout_secs(), Some(8));
@@ -208,6 +214,7 @@ mod tests {
         if env::var_os(CHILD_MARKER).is_some() {
             let config = load().unwrap();
             assert_eq!(config.server().bind().to_string(), "0.0.0.0:7070");
+            assert_eq!(config.telemetry().level(), LogLevel::Warn);
             assert_eq!(config.http_client().max_cached_clients(), Some(3));
             assert_eq!(
                 config.database().url().expose(),
@@ -228,6 +235,7 @@ mod tests {
                 .env(CHILD_MARKER, "1")
                 .env(CONFIG_FILE_ENV, &path)
                 .env("AF_SERVER__BIND", "0.0.0.0:7070")
+                .env("AF_TELEMETRY__LEVEL", "warn")
                 .env(
                     "AF_DATABASE__URL",
                     "postgres://env-user:env-secret@db/env-app",
@@ -241,6 +249,26 @@ mod tests {
                 "隔离测试失败: {}",
                 String::from_utf8_lossy(&output.stderr)
             );
+        });
+    }
+
+    #[test]
+    fn invalid_telemetry_level_is_typed_without_echoing_value() {
+        with_clean_env(|_| {
+            let path = temp_file(
+                "[telemetry]\nlevel = 'private-level-canary'\n[database]\nurl = 'sqlite::memory:'\n",
+            );
+            let error = load_from(&path).unwrap_err();
+            let rendered = format!("{error:?}\n{error}");
+            let _ = fs::remove_file(path);
+
+            assert_eq!(
+                error,
+                ConfigError::InvalidField {
+                    field: "telemetry.level",
+                }
+            );
+            assert!(!rendered.contains("private-level-canary"));
         });
     }
 
