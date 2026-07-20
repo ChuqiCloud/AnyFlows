@@ -2,6 +2,8 @@ use std::fmt;
 
 use thiserror::Error;
 
+use crate::resolver::{DnsFailureKind, dns_failure_kind};
+
 /// HTTP 超时阶段，用于配置校验与稳定错误分类。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
@@ -40,6 +42,12 @@ pub enum HttpClientError {
     ClientBuild,
     #[error("HTTP Client 缓存锁不可用")]
     PoolUnavailable,
+    #[cfg(test)]
+    #[error("上游目标地址例外超过容量限制")]
+    TooManyTargetAddressExceptions,
+    #[cfg(test)]
+    #[error("上游目标地址不允许加入测试例外")]
+    InvalidTargetAddressException,
 }
 
 /// 不携带 URL、Header、请求体或底层错误链的 HTTP 传输错误。
@@ -50,6 +58,12 @@ pub enum HttpTransportError {
     InvalidRequestTarget,
     #[error("HTTP 请求方法不受支持")]
     UnsupportedRequestMethod,
+    #[error("HTTP 上游目标地址被安全策略阻断")]
+    TargetAddressBlocked,
+    #[error("HTTP 上游目标解析失败")]
+    TargetResolution,
+    #[error("HTTP 代理端解析上游域名未获授权")]
+    RemoteDnsDenied,
     #[error("HTTP 建连超时")]
     ConnectTimeout,
     #[error("HTTP 读取超时")]
@@ -74,13 +88,24 @@ impl HttpTransportError {
         )
     }
 
-    /// 返回错误是否发生在建连阶段。
+    /// 返回错误是否属于可重试的建连故障；安全策略拒绝不属于该类。
     #[must_use]
     pub const fn is_connect(&self) -> bool {
-        matches!(self, Self::ConnectTimeout | Self::Connect)
+        matches!(
+            self,
+            Self::ConnectTimeout | Self::TargetResolution | Self::Connect
+        )
     }
 
     pub(crate) fn from_send(error: &reqwest::Error) -> Self {
+        if let Some(kind) = dns_failure_kind(error) {
+            return match kind {
+                DnsFailureKind::Blocked => Self::TargetAddressBlocked,
+                DnsFailureKind::Lookup | DnsFailureKind::Empty | DnsFailureKind::TooMany => {
+                    Self::TargetResolution
+                }
+            };
+        }
         if error.is_timeout() && error.is_connect() {
             Self::ConnectTimeout
         } else if error.is_timeout() {

@@ -1,16 +1,17 @@
 use std::{
     io::{Read, Write},
-    net::{TcpListener, TcpStream},
+    net::{SocketAddr, TcpListener, TcpStream},
     thread,
     time::Duration,
 };
 
 use af_adapter::{
-    Adaptor, AdaptorError, AdaptorResult, AdaptorSendExt, Bytes, ChannelType, Credential,
-    CredentialKind, HeaderMap, HeaderName, HeaderValue, MAX_UPSTREAM_RESPONSE_BODY_BYTES, Method,
-    OpenAiAdaptor, Operation, Protocol, RelayContext, ResponseMode, StatusCode, UpstreamRequest,
+    Adaptor, AdaptorError, AdaptorResult, AdaptorSendExt, AdaptorTransportError, Bytes,
+    ChannelType, Credential, CredentialKind, HeaderMap, HeaderName, HeaderValue,
+    MAX_UPSTREAM_RESPONSE_BODY_BYTES, Method, OpenAiAdaptor, Operation, Protocol, RelayContext,
+    ResponseMode, StatusCode, UpstreamRequest,
 };
-use af_httpclient::{HttpClientConfig, HttpClientPool};
+use af_httpclient::{HttpClientConfig, HttpClientPool, ProxyConfig, RemoteDnsPolicy};
 
 const SERVER_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -62,30 +63,33 @@ impl Adaptor for TestAdaptor {
 async fn object_safe_adaptor_uses_managed_default_transport() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
-    let server = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        stream.set_read_timeout(Some(SERVER_TIMEOUT)).unwrap();
-        let request = read_request(&mut stream);
-        assert!(request.starts_with("POST /proxy/openai/v1/chat/completions HTTP/1.1"));
-        assert!(
-            request
-                .to_ascii_lowercase()
-                .contains("authorization: bearer loopback-secret")
-        );
-        assert!(request.ends_with(r#"{"model":"test-model"}"#));
-        stream
+    let server =
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(SERVER_TIMEOUT)).unwrap();
+            let request = read_request(&mut stream);
+            assert!(request.starts_with(
+                "POST http://upstream.example/proxy/openai/v1/chat/completions HTTP/1.1"
+            ));
+            assert!(
+                request
+                    .to_ascii_lowercase()
+                    .contains("authorization: bearer loopback-secret")
+            );
+            assert!(request.ends_with(r#"{"model":"test-model"}"#));
+            stream
             .write_all(
                 b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\nConnection: close\r\n\r\nresponse-ok",
             )
             .unwrap();
-        stream.flush().unwrap();
-    });
+            stream.flush().unwrap();
+        });
 
     let client = HttpClientPool::default()
-        .get(&HttpClientConfig::default())
+        .get(&loopback_proxy_config(address))
         .unwrap();
     let context = RelayContext::new(client)
-        .with_base_url(format!("http://{address}/proxy/openai"))
+        .with_base_url("http://upstream.example/proxy/openai")
         .unwrap()
         .with_request_id("request-loopback")
         .unwrap();
@@ -132,7 +136,11 @@ async fn openai_adaptor_builds_and_sends_chat_request() {
         stream.set_read_timeout(Some(SERVER_TIMEOUT)).unwrap();
         let request = read_request(&mut stream);
         let lowercase = request.to_ascii_lowercase();
-        assert!(request.starts_with("POST /proxy/openai/v1/chat/completions HTTP/1.1"));
+        assert!(
+            request.starts_with(
+                "POST http://upstream.example/proxy/openai/v1/chat/completions HTTP/1.1"
+            )
+        );
         assert!(lowercase.contains("authorization: bearer openai-loopback-secret"));
         assert!(lowercase.contains("content-type: application/json"));
         assert!(lowercase.contains("accept: application/json"));
@@ -147,10 +155,10 @@ async fn openai_adaptor_builds_and_sends_chat_request() {
     });
 
     let client = HttpClientPool::default()
-        .get(&HttpClientConfig::default())
+        .get(&loopback_proxy_config(address))
         .unwrap();
     let context = RelayContext::new(client)
-        .with_base_url(format!("http://{address}/proxy/openai"))
+        .with_base_url("http://upstream.example/proxy/openai")
         .unwrap()
         .with_request_id("request-openai-loopback")
         .unwrap();
@@ -190,7 +198,7 @@ async fn default_transport_collects_non_streaming_response() {
         let (mut stream, _) = listener.accept().unwrap();
         stream.set_read_timeout(Some(SERVER_TIMEOUT)).unwrap();
         let request = read_request(&mut stream);
-        assert!(request.starts_with("GET /full HTTP/1.1"));
+        assert!(request.starts_with("GET http://upstream.example/full HTTP/1.1"));
         stream
             .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nfull-ok")
             .unwrap();
@@ -198,12 +206,12 @@ async fn default_transport_collects_non_streaming_response() {
     });
 
     let client = HttpClientPool::default()
-        .get(&HttpClientConfig::default())
+        .get(&loopback_proxy_config(address))
         .unwrap();
     let context = RelayContext::new(client);
     let request = UpstreamRequest::new(
         Method::GET,
-        format!("http://{address}/full"),
+        "http://upstream.example/full",
         HeaderMap::new(),
         None,
     )
@@ -227,7 +235,7 @@ async fn default_transport_rejects_declared_oversized_response() {
         let (mut stream, _) = listener.accept().unwrap();
         stream.set_read_timeout(Some(SERVER_TIMEOUT)).unwrap();
         let request = read_request(&mut stream);
-        assert!(request.starts_with("GET /oversized HTTP/1.1"));
+        assert!(request.starts_with("GET http://upstream.example/oversized HTTP/1.1"));
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
             MAX_UPSTREAM_RESPONSE_BODY_BYTES + 1
@@ -237,12 +245,12 @@ async fn default_transport_rejects_declared_oversized_response() {
     });
 
     let client = HttpClientPool::default()
-        .get(&HttpClientConfig::default())
+        .get(&loopback_proxy_config(address))
         .unwrap();
     let context = RelayContext::new(client);
     let request = UpstreamRequest::new(
         Method::GET,
-        format!("http://{address}/oversized"),
+        "http://upstream.example/oversized",
         HeaderMap::new(),
         None,
     )
@@ -274,6 +282,41 @@ fn adaptor_rejects_wrong_credential_kind_without_exposing_secret() {
     );
     let rendered = format!("{error:?}\n{error}\n{credential:?}");
     assert!(!rendered.contains("oauth-secret"));
+}
+
+#[tokio::test]
+async fn managed_transport_rejects_private_upstream_by_default() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let context = RelayContext::new(
+        HttpClientPool::default()
+            .get(&HttpClientConfig::default())
+            .unwrap(),
+    );
+    let target = format!("http://{address}/blocked?token=adapter-secret");
+    let request = UpstreamRequest::new(Method::GET, &target, HeaderMap::new(), None).unwrap();
+
+    let error = TestAdaptor.send(request, &context).await.unwrap_err();
+    assert_eq!(
+        error,
+        AdaptorError::Transport(AdaptorTransportError::TargetAddressBlocked)
+    );
+    let rendered = format!("{error:?}\n{error}");
+    assert!(!rendered.contains(&target));
+    assert!(!rendered.contains("adapter-secret"));
+    assert!(matches!(
+        listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    ));
+}
+
+fn loopback_proxy_config(address: SocketAddr) -> HttpClientConfig {
+    HttpClientConfig::new(
+        ProxyConfig::parse(format!("http://{address}")).unwrap(),
+        af_httpclient::HttpTimeouts::default(),
+    )
+    .with_remote_dns_policy(RemoteDnsPolicy::TrustProxy)
 }
 
 fn read_request(stream: &mut TcpStream) -> String {

@@ -93,6 +93,7 @@ dependencies = [
  "rustls",
  "thiserror",
  "tokio",
+ "url",
 ]
 
 [[package]]

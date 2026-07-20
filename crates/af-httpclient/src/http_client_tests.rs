@@ -6,9 +6,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use af_httpclient::{
+use crate::{
     HeaderMap, HttpClientConfig, HttpClientPool, HttpResponse, HttpTimeouts, HttpTransportError,
-    Method, PooledClient, ProxyConfig, StatusCode,
+    Method, PooledClient, ProxyConfig, RemoteDnsPolicy, StatusCode, TargetAddressPolicy,
 };
 
 const SERVER_TIMEOUT: Duration = Duration::from_secs(5);
@@ -41,6 +41,34 @@ async fn cached_client_reuses_the_same_http_connection() {
 }
 
 #[tokio::test]
+async fn local_dns_exception_keeps_the_original_http_host() {
+    let listener = loopback_listener();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let mut stream = accept_with_timeout(&listener, SERVER_TIMEOUT);
+        let request = read_request_head(&mut stream);
+        assert!(request.starts_with("GET /resolved HTTP/1.1"));
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains(&format!("\r\nhost: localhost:{}\r\n", address.port()))
+        );
+        write_response(
+            &mut stream,
+            "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        );
+    });
+
+    let config = direct_config(Duration::from_secs(1), Duration::from_secs(2));
+    let target = format!("http://localhost:{}/resolved", address.port());
+    let response = send_get(&HttpClientPool::default().get(&config).unwrap(), &target)
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    server.join().unwrap();
+}
+
+#[tokio::test]
 async fn required_proxy_routes_without_touching_the_origin() {
     let origin = loopback_listener();
     let origin_address = origin.local_addr().unwrap();
@@ -59,7 +87,7 @@ async fn required_proxy_routes_without_touching_the_origin() {
     });
 
     let proxy = ProxyConfig::parse(format!("http://user:secret@{proxy_address}")).unwrap();
-    let config = HttpClientConfig::new(
+    let config = loopback_config(
         proxy,
         test_timeouts(Duration::from_secs(1), Duration::from_secs(2)),
     );
@@ -98,7 +126,7 @@ async fn required_proxy_failure_never_falls_back_to_direct() {
 
     let proxy =
         ProxyConfig::parse(format!("http://proxy-user:proxy-secret@{proxy_address}")).unwrap();
-    let config = HttpClientConfig::new(
+    let config = loopback_config(
         proxy,
         test_timeouts(Duration::from_millis(300), Duration::from_secs(1)),
     );
@@ -285,7 +313,7 @@ async fn socks5_and_socks5h_keep_dns_resolution_semantics_distinct() {
         let proxy_address = listener.local_addr().unwrap();
         let proxy_server = socks_proxy_server(listener);
         let proxy = ProxyConfig::parse(format!("{scheme}://{proxy_address}")).unwrap();
-        let config = HttpClientConfig::new(
+        let mut config = loopback_config(
             proxy,
             HttpTimeouts::new(
                 Duration::from_secs(1),
@@ -294,6 +322,9 @@ async fn socks5_and_socks5h_keep_dns_resolution_semantics_distinct() {
             )
             .unwrap(),
         );
+        if expect_remote_dns {
+            config = config.with_remote_dns_policy(RemoteDnsPolicy::TrustProxy);
+        }
         let target = "http://localhost/socks-target?token=socks-secret";
 
         let response = send_get(&HttpClientPool::default().get(&config).unwrap(), target)
@@ -328,7 +359,7 @@ async fn connect_timeout_covers_a_stalled_socks_handshake() {
         let _ = wait_for_release.recv_timeout(SERVER_TIMEOUT);
     });
     let proxy = ProxyConfig::parse(format!("socks5h://{proxy_address}")).unwrap();
-    let config = HttpClientConfig::new(
+    let config = loopback_config(
         proxy,
         HttpTimeouts::new(
             Duration::from_millis(500),
@@ -336,7 +367,8 @@ async fn connect_timeout_covers_a_stalled_socks_handshake() {
             Duration::from_secs(4),
         )
         .unwrap(),
-    );
+    )
+    .with_remote_dns_policy(RemoteDnsPolicy::TrustProxy);
     let target = "http://localhost/connect-timeout?token=connect-secret";
 
     let error = send_get(&HttpClientPool::default().get(&config).unwrap(), target)
@@ -348,8 +380,178 @@ async fn connect_timeout_covers_a_stalled_socks_handshake() {
     proxy_server.join().unwrap();
 }
 
+#[tokio::test]
+async fn public_only_policy_rejects_loopback_literals_before_connecting() {
+    let listener = loopback_listener();
+    let address = listener.local_addr().unwrap();
+    let monitor = monitor_listener(listener, Duration::from_millis(300));
+    let client = HttpClientPool::default()
+        .get(&HttpClientConfig::new(
+            ProxyConfig::direct(),
+            test_timeouts(Duration::from_secs(1), Duration::from_secs(2)),
+        ))
+        .unwrap();
+
+    let target = format!("http://{address}/blocked?token=target-secret");
+    let error = send_get(&client, &target).await.unwrap_err();
+    assert_eq!(error, HttpTransportError::TargetAddressBlocked);
+    assert_transport_error_redacted(&error, &[&target, "target-secret"]);
+    assert!(!monitor.join().unwrap());
+}
+
+#[tokio::test]
+async fn local_dns_rejection_maps_to_a_stable_redacted_error() {
+    let listener = loopback_listener();
+    let port = listener.local_addr().unwrap().port();
+    let monitor = monitor_listener(listener, Duration::from_millis(300));
+    let client = HttpClientPool::default()
+        .get(&HttpClientConfig::new(
+            ProxyConfig::direct(),
+            test_timeouts(Duration::from_secs(1), Duration::from_secs(2)),
+        ))
+        .unwrap();
+
+    let target = format!("http://localhost:{port}/blocked?token=dns-secret");
+    let error = send_get(&client, &target).await.unwrap_err();
+    assert_eq!(error, HttpTransportError::TargetAddressBlocked);
+    assert_transport_error_redacted(&error, &[&target, "localhost", "dns-secret"]);
+    assert!(!monitor.join().unwrap());
+}
+
+#[tokio::test]
+async fn nonstandard_loopback_literals_are_normalized_then_rejected() {
+    let client = HttpClientPool::default()
+        .get(&HttpClientConfig::new(
+            ProxyConfig::direct(),
+            test_timeouts(Duration::from_secs(1), Duration::from_secs(2)),
+        ))
+        .unwrap();
+
+    for target in [
+        "http://127.1/blocked",
+        "http://2130706433/blocked",
+        "http://0x7f000001/blocked",
+        "http://0177.0.0.1/blocked",
+    ] {
+        assert_eq!(
+            send_get(&client, target).await.unwrap_err(),
+            HttpTransportError::TargetAddressBlocked,
+            "未阻断 {target}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn remote_dns_proxy_rejects_domains_until_explicitly_trusted() {
+    let denied_proxy = loopback_listener();
+    let denied_proxy_address = denied_proxy.local_addr().unwrap();
+    let denied_monitor = monitor_listener(denied_proxy, Duration::from_millis(300));
+    let denied_config = HttpClientConfig::new(
+        ProxyConfig::parse(format!("http://{denied_proxy_address}")).unwrap(),
+        test_timeouts(Duration::from_secs(1), Duration::from_secs(2)),
+    );
+    let denied = send_get(
+        &HttpClientPool::default().get(&denied_config).unwrap(),
+        "http://public.example/denied?token=remote-secret",
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(denied, HttpTransportError::RemoteDnsDenied);
+    assert_transport_error_redacted(&denied, &["public.example", "remote-secret"]);
+    assert!(!denied_monitor.join().unwrap());
+
+    let trusted_proxy = loopback_listener();
+    let trusted_proxy_address = trusted_proxy.local_addr().unwrap();
+    let proxy_server = thread::spawn(move || {
+        let mut stream = accept_with_timeout(&trusted_proxy, SERVER_TIMEOUT);
+        let request = read_request_head(&mut stream);
+        write_response(
+            &mut stream,
+            "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+        );
+        request
+    });
+    let trusted_config = HttpClientConfig::new(
+        ProxyConfig::parse(format!("http://{trusted_proxy_address}")).unwrap(),
+        test_timeouts(Duration::from_secs(1), Duration::from_secs(2)),
+    )
+    .with_remote_dns_policy(RemoteDnsPolicy::TrustProxy);
+    let response = send_get(
+        &HttpClientPool::default().get(&trusted_config).unwrap(),
+        "http://public.example/trusted",
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(
+        proxy_server
+            .join()
+            .unwrap()
+            .starts_with("GET http://public.example/trusted HTTP/1.1")
+    );
+}
+
+#[tokio::test]
+async fn every_remote_dns_proxy_scheme_denies_domains_by_default() {
+    for scheme in ["http", "https", "socks5h"] {
+        let config = HttpClientConfig::new(
+            ProxyConfig::parse(format!("{scheme}://127.0.0.1:9")).unwrap(),
+            test_timeouts(Duration::from_secs(1), Duration::from_secs(2)),
+        );
+        let error = send_get(
+            &HttpClientPool::default().get(&config).unwrap(),
+            "https://public.example/blocked",
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error, HttpTransportError::RemoteDnsDenied, "协议 {scheme}");
+    }
+}
+
+#[tokio::test]
+async fn socks5_local_dns_blocks_private_answer_before_touching_proxy() {
+    let proxy = loopback_listener();
+    let proxy_address = proxy.local_addr().unwrap();
+    let monitor = monitor_listener(proxy, Duration::from_millis(300));
+    let config = HttpClientConfig::new(
+        ProxyConfig::parse(format!("socks5://{proxy_address}")).unwrap(),
+        test_timeouts(Duration::from_secs(1), Duration::from_secs(2)),
+    );
+
+    let error = send_get(
+        &HttpClientPool::default().get(&config).unwrap(),
+        "http://localhost/private",
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error, HttpTransportError::TargetAddressBlocked);
+    assert!(!monitor.join().unwrap());
+}
+
+#[tokio::test]
+async fn socks5_proxy_host_exemption_cannot_be_reused_as_the_target() {
+    let config = HttpClientConfig::new(
+        ProxyConfig::parse("socks5://proxy.example:1080").unwrap(),
+        test_timeouts(Duration::from_secs(1), Duration::from_secs(2)),
+    );
+    let client = HttpClientPool::default().get(&config).unwrap();
+    let target = "http://PROXY.EXAMPLE./must-not-use-proxy-exemption";
+
+    assert_eq!(
+        send_get(&client, target).await.unwrap_err(),
+        HttpTransportError::TargetAddressBlocked
+    );
+}
+
 fn direct_config(read: Duration, request: Duration) -> HttpClientConfig {
-    HttpClientConfig::new(ProxyConfig::direct(), test_timeouts(read, request))
+    loopback_config(ProxyConfig::direct(), test_timeouts(read, request))
+}
+
+fn loopback_config(proxy: ProxyConfig, timeouts: HttpTimeouts) -> HttpClientConfig {
+    HttpClientConfig::new(proxy, timeouts).with_target_address_policy(
+        TargetAddressPolicy::allow_exact(["127.0.0.1".parse().unwrap(), "::1".parse().unwrap()])
+            .unwrap(),
+    )
 }
 
 fn test_timeouts(read: Duration, request: Duration) -> HttpTimeouts {
@@ -419,6 +621,11 @@ fn socks_proxy_server(listener: TcpListener) -> thread::JoinHandle<(u8, String)>
         stream.flush().unwrap();
         let request = read_request_head(&mut stream);
         assert!(request.starts_with("GET /socks-target?token=socks-secret HTTP/1.1"));
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("\r\nhost: localhost\r\n")
+        );
         write_response(
             &mut stream,
             "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",

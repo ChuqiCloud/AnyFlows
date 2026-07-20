@@ -1,6 +1,7 @@
 use std::{
     fmt,
     future::{Future, poll_fn},
+    net::IpAddr,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -11,8 +12,12 @@ use futures_core::Stream;
 use http::{HeaderMap, Method, StatusCode, Version};
 use reqwest::{Body, Client, Request, Response, Url};
 use tokio::time::{Sleep, sleep};
+use url::Host;
 
-use crate::HttpTransportError;
+use crate::{
+    HttpTransportError, RemoteDnsPolicy, TargetAddressPolicy, TargetDnsStrategy,
+    address::is_target_address_allowed, resolver::normalize_dns_name,
+};
 
 type ReqwestBodyStream =
     Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static>>;
@@ -22,17 +27,32 @@ type ReqwestBodyStream =
 pub struct PooledClient {
     inner: Client,
     request_timeout: Duration,
+    target_address_policy: TargetAddressPolicy,
+    target_dns_strategy: TargetDnsStrategy,
+    remote_dns_policy: RemoteDnsPolicy,
+    proxy_host: Option<String>,
 }
 
 impl PooledClient {
-    pub(crate) const fn new(inner: Client, request_timeout: Duration) -> Self {
+    pub(crate) fn new(
+        inner: Client,
+        request_timeout: Duration,
+        target_address_policy: TargetAddressPolicy,
+        target_dns_strategy: TargetDnsStrategy,
+        remote_dns_policy: RemoteDnsPolicy,
+        proxy_host: Option<String>,
+    ) -> Self {
         Self {
             inner,
             request_timeout,
+            target_address_policy,
+            target_dns_strategy,
+            remote_dns_policy,
+            proxy_host,
         }
     }
 
-    /// 按池配置发送上游请求；目标必须来自已经过业务校验的运维配置。
+    /// 按池配置发送上游请求；建连前会执行字面量或域名目标安全策略。
     ///
     /// 原始传输错误会在本 crate 内立即分类并丢弃，避免 URL 或凭据进入错误日志。
     pub async fn execute(
@@ -46,6 +66,7 @@ impl PooledClient {
             return Err(HttpTransportError::UnsupportedRequestMethod);
         }
         let target = parse_target(target)?;
+        self.validate_target(&target)?;
         let mut request = Request::new(method, target);
         *request.headers_mut() = headers;
         *request.body_mut() = body;
@@ -61,6 +82,37 @@ impl PooledClient {
         };
         Ok(HttpResponse::new(response, request_timeout))
     }
+
+    fn validate_target(&self, target: &Url) -> Result<(), HttpTransportError> {
+        match target.host() {
+            Some(Host::Ipv4(address)) => self.validate_literal_address(IpAddr::V4(address)),
+            Some(Host::Ipv6(address)) => self.validate_literal_address(IpAddr::V6(address)),
+            Some(Host::Domain(host)) => self.validate_domain_target(host),
+            None => Err(HttpTransportError::InvalidRequestTarget),
+        }
+    }
+
+    fn validate_literal_address(&self, address: IpAddr) -> Result<(), HttpTransportError> {
+        if !is_target_address_allowed(address, &self.target_address_policy) {
+            return Err(HttpTransportError::TargetAddressBlocked);
+        }
+        Ok(())
+    }
+
+    fn validate_domain_target(&self, host: &str) -> Result<(), HttpTransportError> {
+        let host = normalize_dns_name(host);
+        if self.target_dns_strategy == TargetDnsStrategy::Local {
+            // SOCKS5 的代理主机豁免不能被同名上游复用，否则会绕过目标地址校验。
+            if self.proxy_host.as_deref() == Some(host.as_str()) {
+                return Err(HttpTransportError::TargetAddressBlocked);
+            }
+            return Ok(());
+        }
+        if self.remote_dns_policy == RemoteDnsPolicy::Deny {
+            return Err(HttpTransportError::RemoteDnsDenied);
+        }
+        Ok(())
+    }
 }
 
 impl fmt::Debug for PooledClient {
@@ -68,6 +120,9 @@ impl fmt::Debug for PooledClient {
         formatter
             .debug_struct("PooledClient")
             .field("transport", &"<managed>")
+            .field("target_address_policy", &self.target_address_policy)
+            .field("target_dns_strategy", &self.target_dns_strategy)
+            .field("remote_dns_policy", &self.remote_dns_policy)
             .finish()
     }
 }
@@ -214,6 +269,7 @@ fn parse_target(target: &str) -> Result<Url, HttpTransportError> {
     if !matches!(target.scheme(), "http" | "https")
         || !target.username().is_empty()
         || target.password().is_some()
+        || target.port() == Some(0)
     {
         return Err(HttpTransportError::InvalidRequestTarget);
     }
