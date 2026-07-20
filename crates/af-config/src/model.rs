@@ -9,6 +9,8 @@ use crate::{ConfigError, CorsOriginError, SecretString};
 pub const DEFAULT_SHUTDOWN_TIMEOUT_SECS: u64 = 30;
 /// 服务优雅关闭允许配置的硬上限。
 pub const MAX_SHUTDOWN_TIMEOUT_SECS: u64 = 300;
+/// 数据库健康检查允许配置的硬上限。
+pub const MAX_DATABASE_HEALTH_CHECK_TIMEOUT_SECS: u64 = 30;
 /// OpenAI-compatible 上游基础地址的最大 UTF-8 字节数。
 pub const MAX_OPENAI_UPSTREAM_BASE_URL_BYTES: usize = 2_048;
 /// M0 单上游模型标识的最大 UTF-8 字节数。
@@ -195,6 +197,7 @@ impl TelemetrySettings {
 pub struct DatabaseConfig {
     url: SecretString,
     migration_timeout_secs: Option<u64>,
+    health_check_timeout_secs: Option<u64>,
 }
 
 impl DatabaseConfig {
@@ -208,6 +211,12 @@ impl DatabaseConfig {
     #[must_use]
     pub const fn migration_timeout_secs(&self) -> Option<u64> {
         self.migration_timeout_secs
+    }
+
+    /// 返回数据库健康检查截止时间覆盖（秒）；缺省时沿用数据库层默认值。
+    #[must_use]
+    pub const fn health_check_timeout_secs(&self) -> Option<u64> {
+        self.health_check_timeout_secs
     }
 }
 
@@ -398,6 +407,20 @@ impl AppConfig {
         if self.database.migration_timeout_secs == Some(0) {
             return Err(ConfigError::NonPositive {
                 field: "database.migration_timeout_secs",
+            });
+        }
+        if self.database.health_check_timeout_secs == Some(0) {
+            return Err(ConfigError::NonPositive {
+                field: "database.health_check_timeout_secs",
+            });
+        }
+        if self
+            .database
+            .health_check_timeout_secs
+            .is_some_and(|seconds| seconds > MAX_DATABASE_HEALTH_CHECK_TIMEOUT_SECS)
+        {
+            return Err(ConfigError::OutOfRange {
+                field: "database.health_check_timeout_secs",
             });
         }
         if let Some(url) = self.redis.url()

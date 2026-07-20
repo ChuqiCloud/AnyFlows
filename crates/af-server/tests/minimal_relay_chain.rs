@@ -3,14 +3,18 @@ use std::{
     fs,
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream as StdTcpStream},
-    sync::{Arc, mpsc},
+    sync::{
+        Arc,
+        mpsc::{self, TryRecvError},
+    },
     thread,
     time::{Duration, Instant},
 };
 
 use af_config::ServerConfig;
 use af_http::{
-    HttpListener, REQUEST_ID_HEADER_NAME, ServeOutcome, build_router, serve_with_graceful_shutdown,
+    HEALTH_PATH, HttpListener, READINESS_PATH, REQUEST_ID_HEADER_NAME, ReadinessFuture,
+    ReadinessHandle, ReadinessProbe, ServeOutcome, build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
 use af_relay::RelayService;
@@ -39,6 +43,14 @@ struct RawResponse {
     status: u16,
     headers: BTreeMap<String, String>,
     body: Vec<u8>,
+}
+
+struct AlwaysReadyProbe;
+
+impl ReadinessProbe for AlwaysReadyProbe {
+    fn check(&self) -> ReadinessFuture<'_> {
+        Box::pin(async { true })
+    }
 }
 
 #[tokio::test]
@@ -73,7 +85,7 @@ async fn full_chain_forwards_normalized_request_and_returns_validated_response()
     fs::write(
         &config_path,
         format!(
-            "[server]\nbind = '127.0.0.1:0'\ncors_allowed_origins = ['https://console.example']\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = 'sqlite::memory:'\n[openai_upstream]\nbase_url = '{UPSTREAM_BASE_URL}'\nmodel = '{UPSTREAM_MODEL}'\napi_key = '{UPSTREAM_KEY}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n"
+            "[server]\nbind = '127.0.0.1:0'\ncors_allowed_origins = ['https://console.example']\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = 'sqlite::memory:'\nhealth_check_timeout_secs = 1\n[openai_upstream]\nbase_url = '{UPSTREAM_BASE_URL}'\nmodel = '{UPSTREAM_MODEL}'\napi_key = '{UPSTREAM_KEY}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n"
         ),
     )
     .unwrap();
@@ -97,6 +109,31 @@ async fn full_chain_forwards_normalized_request_and_returns_validated_response()
     let server = tokio::spawn(bootstrap.serve(async move {
         let _ = shutdown_rx.await;
     }));
+
+    for (path, expected_body) in [
+        (HEALTH_PATH, br#"{"status":"ok"}"#.as_slice()),
+        (READINESS_PATH, br#"{"status":"ready"}"#.as_slice()),
+    ] {
+        let probe = send_request(
+            address,
+            "GET",
+            path,
+            b"",
+            &[("Origin", "https://console.example")],
+        )
+        .await;
+        assert_eq!(probe.status, 200);
+        assert_eq!(probe.body, expected_body);
+        assert_eq!(
+            probe.headers["content-type"],
+            "application/json; charset=utf-8"
+        );
+        assert_eq!(probe.headers["cache-control"], "no-store");
+        assert!(!probe.headers.contains_key("access-control-allow-origin"));
+        assert!(probe.headers.contains_key(REQUEST_ID_HEADER_NAME));
+    }
+    assert!(matches!(captured.try_recv(), Err(TryRecvError::Empty)));
+
     let inbound = br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}]}"#;
     let response = send_request(
         address,
@@ -289,7 +326,9 @@ async fn start_server(
     let relay = Arc::new(
         RelayService::new(client, UPSTREAM_BASE_URL, UPSTREAM_MODEL, UPSTREAM_KEY).unwrap(),
     );
-    let router = build_router(&server_config, relay);
+    let readiness = ReadinessHandle::new(AlwaysReadyProbe);
+    readiness.mark_ready();
+    let router = build_router(&server_config, relay, readiness);
     let listener = HttpListener::bind("127.0.0.1:0".parse().unwrap()).unwrap();
     let address = listener.local_addr();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();

@@ -6,7 +6,8 @@ use af_db::{
     connect_and_migrate,
 };
 use af_http::{
-    HttpListener, HttpRouter, ServeError, ServeOutcome, build_router, serve_with_graceful_shutdown,
+    HttpListener, HttpRouter, ReadinessHandle, ServeError, ServeOutcome, build_router,
+    serve_with_graceful_shutdown,
 };
 use af_httpclient::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
@@ -17,6 +18,7 @@ use af_relay::{RelayBuildError, RelayService};
 use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
 use thiserror::Error;
 
+use crate::readiness::DatabaseReadinessProbe;
 use crate::{
     BackgroundTaskSupervisor, ShutdownController, SupervisorError, SupervisorShutdown,
     system_shutdown_signal,
@@ -57,6 +59,7 @@ pub struct Supervised {
 pub struct RouterReady {
     runtime: Supervised,
     router: HttpRouter,
+    readiness: ReadinessHandle,
 }
 
 /// HTTP 监听器已绑定，可以读取实际地址并开始服务。
@@ -64,6 +67,7 @@ pub struct ListenerReady {
     runtime: Supervised,
     router: HttpRouter,
     listener: HttpListener,
+    readiness: ReadinessHandle,
 }
 
 /// 分阶段服务构建器；每个转换消费前一阶段，禁止跳过初始化顺序。
@@ -240,7 +244,13 @@ impl Bootstrap<Supervised> {
     /// 构建完整 HTTP Router；此后只允许进入监听阶段。
     #[must_use]
     pub fn build_router(self) -> Bootstrap<RouterReady> {
-        let router = build_router(self.config.server(), Arc::clone(&self.stage.relay));
+        let probe = DatabaseReadinessProbe::new(self.stage.infrastructure.database.clone());
+        let readiness = ReadinessHandle::new(probe);
+        let router = build_router(
+            self.config.server(),
+            Arc::clone(&self.stage.relay),
+            readiness.clone(),
+        );
         let Bootstrap {
             config,
             shutdown_timeout,
@@ -254,6 +264,7 @@ impl Bootstrap<Supervised> {
             stage: RouterReady {
                 runtime: stage,
                 router,
+                readiness,
             },
         }
     }
@@ -270,7 +281,12 @@ impl Bootstrap<RouterReady> {
             shutdown,
             stage,
         } = self;
-        let RouterReady { runtime, router } = stage;
+        let RouterReady {
+            runtime,
+            router,
+            readiness,
+        } = stage;
+        readiness.mark_ready();
         Ok(Bootstrap {
             config,
             shutdown_timeout,
@@ -279,6 +295,7 @@ impl Bootstrap<RouterReady> {
                 runtime,
                 router,
                 listener,
+                readiness,
             },
         })
     }
@@ -310,12 +327,14 @@ impl Bootstrap<ListenerReady> {
             runtime,
             router,
             listener,
+            readiness,
         } = stage;
         let Supervised {
             infrastructure,
             supervisor,
             relay: _,
         } = runtime;
+        let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
         let http =
             serve_with_graceful_shutdown(listener, router, shutdown_signal, shutdown_timeout);
 
@@ -328,6 +347,14 @@ impl Bootstrap<ListenerReady> {
         )
         .await
     }
+}
+
+async fn begin_draining_on_signal<F>(signal: F, readiness: ReadinessHandle)
+where
+    F: Future<Output = ()>,
+{
+    signal.await;
+    readiness.begin_draining();
 }
 
 async fn run_http_and_shutdown<H>(
@@ -387,8 +414,15 @@ impl<S> Bootstrap<S> {
 }
 
 fn database_options(config: &AppConfig) -> Result<DatabaseOptions, BootstrapError> {
-    DatabaseOptions::new(config.database().url().expose().to_owned())
-        .map_err(BootstrapError::DatabaseOptions)
+    let options = DatabaseOptions::new(config.database().url().expose().to_owned())
+        .map_err(BootstrapError::DatabaseOptions)?;
+    Ok(
+        if let Some(seconds) = config.database().health_check_timeout_secs() {
+            options.with_health_check_timeout(Duration::from_secs(seconds))
+        } else {
+            options
+        },
+    )
 }
 
 fn migration_options(config: &AppConfig) -> Result<MigrationOptions, BootstrapError> {
@@ -517,11 +551,20 @@ mod tests {
         },
     };
 
-    use tokio::sync::Notify;
+    use af_http::{ReadinessFuture, ReadinessProbe};
+    use tokio::sync::{Notify, oneshot};
 
     use super::*;
 
     static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
+
+    struct AlwaysReadyProbe;
+
+    impl ReadinessProbe for AlwaysReadyProbe {
+        fn check(&self) -> ReadinessFuture<'_> {
+            Box::pin(async { true })
+        }
+    }
 
     fn config_file(database_url: &str) -> PathBuf {
         let serial = NEXT_FILE.fetch_add(1, Ordering::Relaxed);
@@ -562,6 +605,26 @@ mod tests {
         assert!(
             BootstrapError::Supervisor(SupervisorError::ForceStopTimeout).requires_immediate_exit()
         );
+    }
+
+    #[tokio::test]
+    async fn shutdown_signal_marks_readiness_draining_before_completion() {
+        let readiness = ReadinessHandle::new(AlwaysReadyProbe);
+        readiness.mark_ready();
+        let (signal, signal_rx) = oneshot::channel();
+        let task = tokio::spawn(begin_draining_on_signal(
+            async move {
+                let _ = signal_rx.await;
+            },
+            readiness.clone(),
+        ));
+
+        assert!(!readiness.is_draining());
+        signal.send(()).unwrap();
+        task.await.unwrap();
+        assert!(readiness.is_draining());
+        readiness.mark_ready();
+        assert!(readiness.is_draining());
     }
 
     #[tokio::test]
