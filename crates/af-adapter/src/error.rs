@@ -12,6 +12,15 @@ pub enum AdaptorTransportError {
     /// 请求方法不受支持。
     #[error("上游请求方法不受支持")]
     UnsupportedRequestMethod,
+    /// 目标解析到被安全策略阻断的地址。
+    #[error("上游目标地址被安全策略阻断")]
+    TargetAddressBlocked,
+    /// 上游域名解析失败或返回无效地址集合。
+    #[error("上游目标解析失败")]
+    TargetResolution,
+    /// 代理端 DNS 未获得显式信任授权。
+    #[error("代理端解析上游域名未获授权")]
+    RemoteDnsDenied,
     /// 建连阶段超时。
     #[error("上游建连超时")]
     ConnectTimeout,
@@ -37,6 +46,9 @@ impl From<HttpTransportError> for AdaptorTransportError {
         match error {
             HttpTransportError::InvalidRequestTarget => Self::InvalidRequestTarget,
             HttpTransportError::UnsupportedRequestMethod => Self::UnsupportedRequestMethod,
+            HttpTransportError::TargetAddressBlocked => Self::TargetAddressBlocked,
+            HttpTransportError::TargetResolution => Self::TargetResolution,
+            HttpTransportError::RemoteDnsDenied => Self::RemoteDnsDenied,
             HttpTransportError::ConnectTimeout => Self::ConnectTimeout,
             HttpTransportError::ReadTimeout => Self::ReadTimeout,
             HttpTransportError::RequestTimeout => Self::RequestTimeout,

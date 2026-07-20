@@ -8,7 +8,10 @@ use std::{
 use lru::LruCache;
 use reqwest::{Client as ReqwestClient, Proxy, redirect::Policy, retry};
 
-use crate::{HttpClientConfig, HttpClientError, PooledClient};
+use crate::{
+    HttpClientConfig, HttpClientError, PooledClient, TargetDnsStrategy,
+    resolver::{ValidatedResolver, normalize_dns_name},
+};
 
 /// 默认最多缓存 128 种代理与超时组合。
 pub const DEFAULT_MAX_CACHED_CLIENTS: usize = 128;
@@ -17,7 +20,7 @@ pub const DEFAULT_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 /// 每个上游主机默认最多保留 10 条空闲连接。
 pub const DEFAULT_POOL_MAX_IDLE_PER_HOST: usize = 10;
 
-/// 按代理身份与超时配置复用 reqwest Client 的严格容量 LRU。
+/// 按代理、超时与目标安全策略复用 reqwest Client 的严格容量 LRU。
 pub struct HttpClientPool {
     clients: Mutex<LruCache<HttpClientConfig, PooledClient>>,
     capacity: NonZeroUsize,
@@ -101,8 +104,17 @@ impl fmt::Debug for HttpClientPool {
 }
 
 fn build_client(config: &HttpClientConfig) -> Result<PooledClient, HttpClientError> {
+    build_client_with_resolver(config, None)
+}
+
+fn build_client_with_resolver(
+    config: &HttpClientConfig,
+    resolver_override: Option<ValidatedResolver>,
+) -> Result<PooledClient, HttpClientError> {
     ensure_tls_provider()?;
     let timeouts = config.timeouts();
+    let target_dns_strategy = config.proxy().target_dns_strategy();
+    let proxy_host = config.proxy().endpoint_host().map(normalize_dns_name);
     let mut builder = ReqwestClient::builder()
         .no_proxy()
         .redirect(Policy::none())
@@ -114,15 +126,30 @@ fn build_client(config: &HttpClientConfig) -> Result<PooledClient, HttpClientErr
         .pool_idle_timeout(DEFAULT_POOL_IDLE_TIMEOUT)
         .pool_max_idle_per_host(DEFAULT_POOL_MAX_IDLE_PER_HOST);
 
+    if target_dns_strategy == TargetDnsStrategy::Local {
+        let resolver = resolver_override.unwrap_or_else(|| {
+            ValidatedResolver::system(
+                config.target_address_policy().clone(),
+                proxy_host.as_deref(),
+            )
+        });
+        builder = builder.dns_resolver(resolver);
+    }
+
     if let Some(endpoint) = config.proxy().required_endpoint() {
         let proxy = Proxy::all(endpoint.clone()).map_err(|_| HttpClientError::ClientBuild)?;
         builder = builder.proxy(proxy);
     }
 
-    builder
-        .build()
-        .map(|client| PooledClient::new(client, timeouts.request()))
-        .map_err(|_| HttpClientError::ClientBuild)
+    let client = builder.build().map_err(|_| HttpClientError::ClientBuild)?;
+    Ok(PooledClient::new(
+        client,
+        timeouts.request(),
+        config.target_address_policy().clone(),
+        target_dns_strategy,
+        config.remote_dns_policy(),
+        proxy_host,
+    ))
 }
 
 fn ensure_tls_provider() -> Result<(), HttpClientError> {
@@ -137,10 +164,19 @@ fn ensure_tls_provider() -> Result<(), HttpClientError> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{
+        collections::VecDeque,
+        io::{Read, Write},
+        net::{SocketAddr, TcpListener},
+        sync::{Arc, Mutex},
+        thread,
+        time::Duration,
+    };
+
+    use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 
     use super::*;
-    use crate::{HttpTimeouts, ProxyConfig};
+    use crate::{HeaderMap, HttpTimeouts, HttpTransportError, Method, ProxyConfig};
 
     fn config(connect_millis: u64) -> HttpClientConfig {
         HttpClientConfig::new(
@@ -205,5 +241,99 @@ mod tests {
 
         pool.clear().unwrap();
         assert!(pool.is_empty().unwrap());
+    }
+
+    #[test]
+    fn separates_clients_by_target_security_policy() {
+        let pool = HttpClientPool::new(4).unwrap();
+        let base = config(10);
+        let trusted = base
+            .clone()
+            .with_remote_dns_policy(crate::RemoteDnsPolicy::TrustProxy);
+        let exception = base.clone().with_target_address_policy(
+            crate::TargetAddressPolicy::allow_exact(["127.0.0.1".parse().unwrap()]).unwrap(),
+        );
+
+        pool.get(&base).unwrap();
+        pool.get(&trusted).unwrap();
+        pool.get(&exception).unwrap();
+        assert_eq!(pool.len().unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn closed_connection_rechecks_and_blocks_rebinding_answer() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 512];
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                let read = stream.read(&mut buffer).unwrap();
+                assert!(read > 0);
+                request.extend_from_slice(&buffer[..read]);
+            }
+            stream
+                .write_all(
+                    b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
+        });
+
+        let answers = SequenceResolver::new(vec![
+            vec![SocketAddr::from(([127, 0, 0, 1], 0))],
+            vec![SocketAddr::from(([127, 0, 0, 2], 0))],
+        ]);
+        let policy =
+            crate::TargetAddressPolicy::allow_exact(["127.0.0.1".parse().unwrap()]).unwrap();
+        let config = HttpClientConfig::new(
+            ProxyConfig::direct(),
+            HttpTimeouts::new(
+                Duration::from_secs(1),
+                Duration::from_secs(1),
+                Duration::from_secs(2),
+            )
+            .unwrap(),
+        )
+        .with_target_address_policy(policy.clone());
+        let resolver = ValidatedResolver::new(Arc::new(answers), policy, None);
+        let client = build_client_with_resolver(&config, Some(resolver)).unwrap();
+        let target = format!("http://rebind.example:{port}/resource");
+
+        client
+            .execute(Method::GET, &target, HeaderMap::new(), None)
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
+        server.join().unwrap();
+        assert_eq!(
+            client
+                .execute(Method::GET, &target, HeaderMap::new(), None)
+                .await
+                .unwrap_err(),
+            HttpTransportError::TargetAddressBlocked
+        );
+    }
+
+    #[derive(Clone)]
+    struct SequenceResolver {
+        answers: Arc<Mutex<VecDeque<Vec<SocketAddr>>>>,
+    }
+
+    impl SequenceResolver {
+        fn new(answers: Vec<Vec<SocketAddr>>) -> Self {
+            Self {
+                answers: Arc::new(Mutex::new(answers.into())),
+            }
+        }
+    }
+
+    impl Resolve for SequenceResolver {
+        fn resolve(&self, _name: Name) -> Resolving {
+            let answer = self.answers.lock().unwrap().pop_front().unwrap();
+            Box::pin(async move { Ok(Box::new(answer.into_iter()) as Addrs) })
+        }
     }
 }

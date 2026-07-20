@@ -1,7 +1,9 @@
-use std::{fmt, time::Duration};
+use std::{fmt, net::IpAddr, time::Duration};
 
 use reqwest::Url;
 
+#[cfg(test)]
+use crate::address::is_test_loopback_exception;
 use crate::{HttpClientError, TimeoutPhase};
 
 /// TCP 建连与代理握手的默认超时。
@@ -10,6 +12,93 @@ pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const DEFAULT_READ_TIMEOUT: Duration = Duration::from_secs(300);
 /// 从建连开始到响应体结束的默认总超时。
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(900);
+/// 单个测试 Client 最多允许 32 个精确环回地址。
+#[cfg(test)]
+pub(crate) const MAX_TARGET_ADDRESS_EXCEPTIONS: usize = 32;
+
+/// 代理端解析上游域名时的信任策略。
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum RemoteDnsPolicy {
+    /// 默认拒绝本进程无法验证和固定的代理端 DNS。
+    #[default]
+    Deny,
+    /// 将解析与私网阻断责任显式委托给受信出口代理。
+    TrustProxy,
+}
+
+/// 上游目标域名的实际解析位置。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TargetDnsStrategy {
+    /// 由本进程解析，校验后的同一地址集直接交给连接器。
+    Local,
+    /// 由 HTTP(S) 或 SOCKS5H 代理解析，本进程无法观察最终地址。
+    Proxy,
+}
+
+/// 生产配置只允许普通公网地址；内部测试可注入精确环回地址。
+#[derive(Clone, Eq, Hash, PartialEq)]
+pub(crate) struct TargetAddressPolicy {
+    exact_exceptions: Vec<IpAddr>,
+}
+
+impl TargetAddressPolicy {
+    /// 创建不含任何非公网例外的默认策略。
+    #[must_use]
+    pub const fn public_only() -> Self {
+        Self {
+            exact_exceptions: Vec::new(),
+        }
+    }
+
+    /// 仅供 crate 内回环测试注入精确地址，生产构建不存在该入口。
+    #[cfg(test)]
+    pub(crate) fn allow_exact(
+        addresses: impl IntoIterator<Item = IpAddr>,
+    ) -> Result<Self, HttpClientError> {
+        let mut exact_exceptions: Vec<_> = addresses
+            .into_iter()
+            .take(MAX_TARGET_ADDRESS_EXCEPTIONS + 1)
+            .collect();
+        if exact_exceptions.len() > MAX_TARGET_ADDRESS_EXCEPTIONS {
+            return Err(HttpClientError::TooManyTargetAddressExceptions);
+        }
+        if exact_exceptions
+            .iter()
+            .any(|address| !is_test_loopback_exception(*address))
+        {
+            return Err(HttpClientError::InvalidTargetAddressException);
+        }
+        exact_exceptions.sort_unstable();
+        exact_exceptions.dedup();
+        Ok(Self { exact_exceptions })
+    }
+
+    /// 返回已配置的精确地址例外数量，不暴露具体网络拓扑。
+    #[must_use]
+    pub const fn exception_count(&self) -> usize {
+        self.exact_exceptions.len()
+    }
+
+    pub(crate) fn contains_exception(&self, address: &IpAddr) -> bool {
+        self.exact_exceptions.binary_search(address).is_ok()
+    }
+}
+
+impl Default for TargetAddressPolicy {
+    fn default() -> Self {
+        Self::public_only()
+    }
+}
+
+impl fmt::Debug for TargetAddressPolicy {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("TargetAddressPolicy")
+            .field("mode", &"public-only")
+            .field("exact_exception_count", &self.exception_count())
+            .finish()
+    }
+}
 
 /// 建连、逐次读取与整体请求的三层超时。
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -136,11 +225,27 @@ impl ProxyConfig {
         }
     }
 
+    /// 返回上游目标域名由本机还是代理端解析。
+    #[must_use]
+    pub fn target_dns_strategy(&self) -> TargetDnsStrategy {
+        match &self.route {
+            ProxyRoute::Direct => TargetDnsStrategy::Local,
+            ProxyRoute::Required(endpoint) if endpoint.scheme() == "socks5" => {
+                TargetDnsStrategy::Local
+            }
+            ProxyRoute::Required(_) => TargetDnsStrategy::Proxy,
+        }
+    }
+
     pub(crate) fn required_endpoint(&self) -> Option<&Url> {
         match &self.route {
             ProxyRoute::Direct => None,
             ProxyRoute::Required(endpoint) => Some(endpoint),
         }
+    }
+
+    pub(crate) fn endpoint_host(&self) -> Option<&str> {
+        self.required_endpoint().and_then(Url::host_str)
     }
 }
 
@@ -163,18 +268,25 @@ impl fmt::Debug for ProxyConfig {
     }
 }
 
-/// 决定 Client 复用身份的代理与超时配置。
+/// 决定 Client 复用身份的代理、超时与目标安全配置。
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct HttpClientConfig {
     proxy: ProxyConfig,
     timeouts: HttpTimeouts,
+    target_address_policy: TargetAddressPolicy,
+    remote_dns_policy: RemoteDnsPolicy,
 }
 
 impl HttpClientConfig {
-    /// 创建 Client 配置；代理身份与全部超时都会参与缓存 key。
+    /// 创建默认只允许公网目标且拒绝代理端 DNS 的 Client 配置。
     #[must_use]
     pub const fn new(proxy: ProxyConfig, timeouts: HttpTimeouts) -> Self {
-        Self { proxy, timeouts }
+        Self {
+            proxy,
+            timeouts,
+            target_address_policy: TargetAddressPolicy::public_only(),
+            remote_dns_policy: RemoteDnsPolicy::Deny,
+        }
     }
 
     /// 返回直连或强制代理配置。
@@ -187,6 +299,31 @@ impl HttpClientConfig {
     #[must_use]
     pub const fn timeouts(&self) -> HttpTimeouts {
         self.timeouts
+    }
+
+    /// 仅供 crate 内回环测试设置精确地址，生产构建不存在该入口。
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn with_target_address_policy(mut self, policy: TargetAddressPolicy) -> Self {
+        self.target_address_policy = policy;
+        self
+    }
+
+    /// 设置代理端 DNS 策略；信任模式要求代理侧执行等价的私网阻断。
+    #[must_use]
+    pub const fn with_remote_dns_policy(mut self, policy: RemoteDnsPolicy) -> Self {
+        self.remote_dns_policy = policy;
+        self
+    }
+
+    pub(crate) const fn target_address_policy(&self) -> &TargetAddressPolicy {
+        &self.target_address_policy
+    }
+
+    /// 返回代理端 DNS 策略。
+    #[must_use]
+    pub const fn remote_dns_policy(&self) -> RemoteDnsPolicy {
+        self.remote_dns_policy
     }
 }
 
@@ -202,6 +339,8 @@ impl fmt::Debug for HttpClientConfig {
             .debug_struct("HttpClientConfig")
             .field("proxy", &self.proxy)
             .field("timeouts", &self.timeouts)
+            .field("target_address_policy", &self.target_address_policy)
+            .field("remote_dns_policy", &self.remote_dns_policy)
             .finish()
     }
 }
@@ -298,6 +437,82 @@ mod tests {
             assert!(!debug.contains("secret"));
             assert!(!debug.contains("proxy.example"));
             assert!(debug.contains("redacted"));
+        }
+    }
+
+    #[test]
+    fn target_policies_are_strict_by_default_and_normalize_exceptions() {
+        let first = "127.0.0.1".parse().unwrap();
+        let second = "::1".parse().unwrap();
+        let policy = TargetAddressPolicy::allow_exact([second, first, first]).unwrap();
+        assert_eq!(policy.exception_count(), 2);
+
+        let config = HttpClientConfig::default()
+            .with_target_address_policy(policy)
+            .with_remote_dns_policy(RemoteDnsPolicy::TrustProxy);
+        assert_eq!(config.target_address_policy().exception_count(), 2);
+        assert_eq!(config.remote_dns_policy(), RemoteDnsPolicy::TrustProxy);
+
+        let debug = format!("{config:?}");
+        assert!(!debug.contains("127.0.0.1"));
+        assert!(!debug.contains("::1"));
+    }
+
+    #[test]
+    fn rejects_excessive_target_address_exceptions() {
+        let addresses = (0..=MAX_TARGET_ADDRESS_EXCEPTIONS).map(|index| {
+            IpAddr::V4(std::net::Ipv4Addr::new(
+                10,
+                0,
+                0,
+                u8::try_from(index + 1).unwrap(),
+            ))
+        });
+        assert_eq!(
+            TargetAddressPolicy::allow_exact(addresses).unwrap_err(),
+            HttpClientError::TooManyTargetAddressExceptions
+        );
+    }
+
+    #[test]
+    fn target_address_exceptions_are_limited_to_loopback_tests() {
+        for address in [
+            "0.0.0.0",
+            "10.0.0.1",
+            "100.100.100.200",
+            "169.254.169.254",
+            "224.0.0.1",
+            "::",
+            "fd00:ec2::254",
+            "fe80::1",
+            "ff02::1",
+        ] {
+            assert_eq!(
+                TargetAddressPolicy::allow_exact([address.parse().unwrap()]).unwrap_err(),
+                HttpClientError::InvalidTargetAddressException,
+                "意外接受 {address}"
+            );
+        }
+    }
+
+    #[test]
+    fn proxy_schemes_expose_target_dns_strategy() {
+        assert_eq!(
+            ProxyConfig::direct().target_dns_strategy(),
+            TargetDnsStrategy::Local
+        );
+        for (scheme, strategy) in [
+            ("socks5", TargetDnsStrategy::Local),
+            ("socks5h", TargetDnsStrategy::Proxy),
+            ("http", TargetDnsStrategy::Proxy),
+            ("https", TargetDnsStrategy::Proxy),
+        ] {
+            assert_eq!(
+                ProxyConfig::parse(format!("{scheme}://proxy.example"))
+                    .unwrap()
+                    .target_dns_strategy(),
+                strategy
+            );
         }
     }
 }
