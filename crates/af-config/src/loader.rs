@@ -121,6 +121,11 @@ fn known_field(path: &str) -> Option<&'static str> {
     Some(match path {
         "server" => "server",
         "server.bind" => "server.bind",
+        path if path == "server.cors_allowed_origins"
+            || path.starts_with("server.cors_allowed_origins.") =>
+        {
+            "server.cors_allowed_origins"
+        }
         "telemetry" => "telemetry",
         "telemetry.level" => "telemetry.level",
         "database" => "database",
@@ -184,6 +189,7 @@ mod tests {
             let _ = fs::remove_file(path);
 
             assert_eq!(config.server().bind().to_string(), "127.0.0.1:8080");
+            assert!(config.server().cors_allowed_origins().is_empty());
             assert_eq!(config.telemetry().level(), LogLevel::Info);
             assert_eq!(config.database().migration_timeout_secs(), None);
             assert!(config.redis().url().is_none());
@@ -196,12 +202,16 @@ mod tests {
     fn toml_values_override_defaults() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[server]\nbind = '0.0.0.0:9000'\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\n",
+                "[server]\nbind = '0.0.0.0:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
 
             assert_eq!(config.server().bind().to_string(), "0.0.0.0:9000");
+            assert_eq!(
+                config.server().cors_allowed_origins()[0].as_str(),
+                "https://console.example"
+            );
             assert_eq!(config.telemetry().level(), LogLevel::Debug);
             assert_eq!(config.database().migration_timeout_secs(), Some(42));
             assert_eq!(config.http_client().max_cached_clients(), Some(7));
@@ -214,6 +224,10 @@ mod tests {
         if env::var_os(CHILD_MARKER).is_some() {
             let config = load().unwrap();
             assert_eq!(config.server().bind().to_string(), "0.0.0.0:7070");
+            assert_eq!(
+                config.server().cors_allowed_origins()[0].as_str(),
+                "http://localhost:5173"
+            );
             assert_eq!(config.telemetry().level(), LogLevel::Warn);
             assert_eq!(config.http_client().max_cached_clients(), Some(3));
             assert_eq!(
@@ -235,6 +249,10 @@ mod tests {
                 .env(CHILD_MARKER, "1")
                 .env(CONFIG_FILE_ENV, &path)
                 .env("AF_SERVER__BIND", "0.0.0.0:7070")
+                .env(
+                    "AF_SERVER__CORS_ALLOWED_ORIGINS",
+                    "[\"http://localhost:5173\"]",
+                )
                 .env("AF_TELEMETRY__LEVEL", "warn")
                 .env(
                     "AF_DATABASE__URL",
@@ -269,6 +287,26 @@ mod tests {
                 }
             );
             assert!(!rendered.contains("private-level-canary"));
+        });
+    }
+
+    #[test]
+    fn invalid_cors_origin_is_typed_without_echoing_value() {
+        with_clean_env(|_| {
+            let path = temp_file(
+                "[server]\ncors_allowed_origins = ['https://origin-secret.example/path']\n[database]\nurl = 'sqlite::memory:'\n",
+            );
+            let error = load_from(&path).unwrap_err();
+            let rendered = format!("{error:?}\n{error}");
+            let _ = fs::remove_file(path);
+
+            assert_eq!(
+                error,
+                ConfigError::InvalidField {
+                    field: "server.cors_allowed_origins",
+                }
+            );
+            assert!(!rendered.contains("origin-secret"));
         });
     }
 
@@ -325,13 +363,14 @@ mod tests {
     fn debug_output_redacts_database_and_redis_urls() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[database]\nurl = 'postgres://user:database-secret@db/app'\n[redis]\nurl = 'redis://user:redis-secret@cache/0'\n",
+                "[server]\ncors_allowed_origins = ['https://cors-host-secret.example']\n[database]\nurl = 'postgres://user:database-secret@db/app'\n[redis]\nurl = 'redis://user:redis-secret@cache/0'\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
             let debug = format!("{config:?}");
             assert!(!debug.contains("database-secret"));
             assert!(!debug.contains("redis-secret"));
+            assert!(!debug.contains("cors-host-secret"));
             assert!(debug.contains("redacted"));
         });
     }

@@ -2,6 +2,11 @@ use std::io;
 
 use thiserror::Error;
 
+/// CORS 来源未满足严格 Origin 契约。
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+#[error("CORS 来源无效")]
+pub struct CorsOriginError;
+
 /// 配置加载与校验错误；错误内容不会携带配置值或底层解析器原文。
 #[non_exhaustive]
 #[derive(Debug, Error, Eq, PartialEq)]

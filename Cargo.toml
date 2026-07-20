@@ -29,6 +29,12 @@ publish = false
 [workspace.dependencies]
 argon2 = { version = "0.5.3", default-features = false, features = ["password-hash"] }
 async-trait = "0.1.89"
+axum = { version = "0.8.9", default-features = false, features = [
+    "http1",
+    "matched-path",
+    "tokio",
+    "tracing",
+] }
 base64 = "0.22.1"
 bytes = "1.11.1"
 cargo_metadata = "0.23.1"
@@ -77,9 +83,16 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 thiserror = "2.0.18"
 tokio = { version = "1.53.0", features = ["macros", "net", "rt", "sync", "time"] }
+tower = { version = "0.5.3", features = ["util"] }
+tower-http = { version = "0.7.0", default-features = false, features = [
+    "cors",
+    "limit",
+    "trace",
+] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 url = "2.5.8"
+uuid = { version = "1.24.0", default-features = false, features = ["std", "v4"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

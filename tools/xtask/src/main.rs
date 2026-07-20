@@ -352,6 +352,7 @@ fn allowed_internal_dependencies(name: &str) -> &'static [&'static str] {
             "af-domain",
             "af-protocol",
             "af-relay",
+            "af-telemetry",
         ],
         "af-server" => &PRODUCT_CRATES,
         _ => &[],
@@ -650,6 +651,16 @@ mod tests {
 
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].rule, "http-framework-owned-by-af-http");
+    }
+
+    #[test]
+    fn accepts_http_dependency_on_telemetry_contracts() {
+        let violations = validate_workspace(
+            &baseline_workspace(),
+            &[dependency("af-http", "af-telemetry", true)],
+        );
+
+        assert!(violations.is_empty());
     }
 
     #[test]
