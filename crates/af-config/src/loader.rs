@@ -11,7 +11,7 @@ use figment::{
 };
 use serde::Serialize;
 
-use crate::{AppConfig, ConfigError, ServerConfig, TelemetrySettings};
+use crate::{AppConfig, AuthSettings, ConfigError, ServerConfig, TelemetrySettings};
 
 /// 默认配置文件名；文件不存在时仅使用默认值与环境变量。
 pub const DEFAULT_CONFIG_FILE: &str = "anyflows.toml";
@@ -26,6 +26,7 @@ struct ConfigDefaults {
     telemetry: TelemetrySettings,
     database: DatabaseDefaults,
     redis: RedisDefaults,
+    auth: AuthSettings,
     http_client: HttpClientDefaults,
 }
 
@@ -145,6 +146,9 @@ fn known_field(path: &str) -> Option<&'static str> {
         "database.health_check_timeout_secs" => "database.health_check_timeout_secs",
         "redis" => "redis",
         "redis.url" => "redis.url",
+        "auth" => "auth",
+        "auth.allow_query_api_key" => "auth.allow_query_api_key",
+        "auth.lookup_timeout_secs" => "auth.lookup_timeout_secs",
         "openai_upstream" => "openai_upstream",
         "openai_upstream.base_url" => "openai_upstream.base_url",
         "openai_upstream.model" => "openai_upstream.model",
@@ -218,6 +222,8 @@ mod tests {
             assert_eq!(config.database().migration_timeout_secs(), None);
             assert_eq!(config.database().health_check_timeout_secs(), None);
             assert!(config.redis().url().is_none());
+            assert!(!config.auth().allow_query_api_key());
+            assert_eq!(config.auth().lookup_timeout_secs(), 2);
             assert_eq!(
                 config.openai_upstream().base_url(),
                 "https://upstream.example"
@@ -235,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn unauthenticated_m0_service_rejects_non_loopback_bind() {
+    fn base_authentication_still_rejects_non_loopback_bind() {
         with_clean_env(|_| {
             for bind in ["0.0.0.0:8080", "[::]:8080", "192.0.2.10:8080"] {
                 let path = temp_file(&format!(
@@ -355,7 +361,7 @@ mod tests {
     fn toml_values_override_defaults() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
+                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[auth]\nallow_query_api_key = true\nlookup_timeout_secs = 7\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
@@ -369,6 +375,8 @@ mod tests {
             assert_eq!(config.server().shutdown_timeout_secs(), 45);
             assert_eq!(config.database().migration_timeout_secs(), Some(42));
             assert_eq!(config.database().health_check_timeout_secs(), Some(3));
+            assert!(config.auth().allow_query_api_key());
+            assert_eq!(config.auth().lookup_timeout_secs(), 7);
             assert_eq!(config.http_client().max_cached_clients(), Some(7));
             assert_eq!(config.http_client().read_timeout_secs(), Some(8));
             assert_eq!(
@@ -389,6 +397,8 @@ mod tests {
             );
             assert_eq!(config.telemetry().level(), LogLevel::Warn);
             assert_eq!(config.server().shutdown_timeout_secs(), 12);
+            assert!(config.auth().allow_query_api_key());
+            assert_eq!(config.auth().lookup_timeout_secs(), 9);
             assert_eq!(config.http_client().max_cached_clients(), Some(3));
             assert_eq!(
                 config.openai_upstream().base_url(),
@@ -412,7 +422,7 @@ mod tests {
 
         with_clean_env(|_| {
             let path = temp_file(
-                "[server]\nbind = '127.0.0.1:8080'\n[database]\nurl = 'sqlite::memory:'\n[http_client]\nmax_cached_clients = 2\n",
+                "[server]\nbind = '127.0.0.1:8080'\n[database]\nurl = 'sqlite::memory:'\n[auth]\nallow_query_api_key = false\nlookup_timeout_secs = 3\n[http_client]\nmax_cached_clients = 2\n",
             );
             let output = Command::new(env::current_exe().unwrap())
                 .arg("--exact")
@@ -428,6 +438,8 @@ mod tests {
                     "[\"http://localhost:5173\"]",
                 )
                 .env("AF_TELEMETRY__LEVEL", "warn")
+                .env("AF_AUTH__ALLOW_QUERY_API_KEY", "true")
+                .env("AF_AUTH__LOOKUP_TIMEOUT_SECS", "9")
                 .env(
                     "AF_DATABASE__URL",
                     "postgres://env-user:env-secret@db/env-app",
@@ -488,6 +500,32 @@ mod tests {
                 }
             );
             assert!(!rendered.contains("health-timeout-secret"));
+        });
+    }
+
+    #[test]
+    fn invalid_auth_types_are_typed_without_echoing_values() {
+        with_clean_env(|_| {
+            for (field, body, canary) in [
+                (
+                    "auth.allow_query_api_key",
+                    "[database]\nurl = 'sqlite::memory:'\n[auth]\nallow_query_api_key = 'auth-bool-secret'\n",
+                    "auth-bool-secret",
+                ),
+                (
+                    "auth.lookup_timeout_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[auth]\nlookup_timeout_secs = 'auth-timeout-secret'\n",
+                    "auth-timeout-secret",
+                ),
+            ] {
+                let path = temp_file(body);
+                let error = load_from(&path).unwrap_err();
+                let rendered = format!("{error:?}\n{error}");
+                let _ = fs::remove_file(path);
+
+                assert_eq!(error, ConfigError::InvalidField { field });
+                assert!(!rendered.contains(canary));
+            }
         });
     }
 
@@ -564,7 +602,7 @@ mod tests {
     fn debug_output_redacts_database_and_redis_urls() {
         with_clean_env(|_| {
             let path = raw_temp_file(
-                "[server]\ncors_allowed_origins = ['https://cors-host-secret.example']\n[database]\nurl = 'postgres://user:database-secret@db/app'\n[redis]\nurl = 'redis://user:redis-secret@cache/0'\n[openai_upstream]\nbase_url = 'https://upstream-host-secret.example'\nmodel = 'model-secret-canary'\napi_key = 'upstream-key-secret'\n[http_client]\nproxy_url = 'socks5://proxy-user:proxy-secret@127.0.0.1:10808'\n",
+                "[server]\ncors_allowed_origins = ['https://cors-host-secret.example']\n[database]\nurl = 'postgres://user:database-secret@db/app'\n[redis]\nurl = 'redis://user:redis-secret@cache/0'\n[auth]\nallow_query_api_key = true\nlookup_timeout_secs = 9\n[openai_upstream]\nbase_url = 'https://upstream-host-secret.example'\nmodel = 'model-secret-canary'\napi_key = 'upstream-key-secret'\n[http_client]\nproxy_url = 'socks5://proxy-user:proxy-secret@127.0.0.1:10808'\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
@@ -577,6 +615,24 @@ mod tests {
             assert!(!debug.contains("upstream-key-secret"));
             assert!(!debug.contains("proxy-secret"));
             assert!(debug.contains("redacted"));
+            assert!(debug.contains("allow_query_api_key: true"));
+            assert!(debug.contains("lookup_timeout_secs: 9"));
+        });
+    }
+
+    #[test]
+    fn rejects_unknown_auth_fields_without_echoing_names_or_values() {
+        with_clean_env(|_| {
+            let path = temp_file(
+                "[database]\nurl = 'sqlite::memory:'\n[auth]\nunknown_auth_secret = 'auth-value-secret'\n",
+            );
+            let error = load_from(&path).unwrap_err();
+            let rendered = format!("{error:?}\n{error}");
+            let _ = fs::remove_file(path);
+
+            assert_eq!(error, ConfigError::Invalid);
+            assert!(!rendered.contains("unknown_auth_secret"));
+            assert!(!rendered.contains("auth-value-secret"));
         });
     }
 
@@ -689,6 +745,10 @@ mod tests {
                     "[database]\nurl = 'sqlite::memory:'\nhealth_check_timeout_secs = 0\n",
                 ),
                 (
+                    "auth.lookup_timeout_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[auth]\nlookup_timeout_secs = 0\n",
+                ),
+                (
                     "http_client.max_cached_clients",
                     "[database]\nurl = 'sqlite::memory:'\n[http_client]\nmax_cached_clients = 0\n",
                 ),
@@ -733,6 +793,23 @@ mod tests {
                 error,
                 ConfigError::OutOfRange {
                     field: "database.health_check_timeout_secs"
+                }
+            );
+        });
+    }
+
+    #[test]
+    fn rejects_auth_lookup_timeout_above_hard_limit() {
+        with_clean_env(|_| {
+            let path = temp_file(
+                "[database]\nurl = 'sqlite::memory:'\n[auth]\nlookup_timeout_secs = 31\n",
+            );
+            let error = load_from(&path).unwrap_err();
+            let _ = fs::remove_file(path);
+            assert_eq!(
+                error,
+                ConfigError::OutOfRange {
+                    field: "auth.lookup_timeout_secs"
                 }
             );
         });

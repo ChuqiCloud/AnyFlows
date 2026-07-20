@@ -1,49 +1,26 @@
+pub mod support;
+
 use std::{
-    collections::BTreeMap,
-    fs,
-    io::{Read, Write},
-    net::{SocketAddr, TcpListener, TcpStream as StdTcpStream},
-    sync::{
-        Arc,
-        mpsc::{self, TryRecvError},
-    },
-    thread,
-    time::{Duration, Instant},
+    net::{SocketAddr, TcpListener},
+    sync::Arc,
+    time::Duration,
 };
 
+use af_admin::{ApiKeyDigest, TokenAuthenticationFuture, TokenAuthenticator};
 use af_config::ServerConfig;
+use af_domain::{GatewayPrincipal, GroupId, TokenId, UserId};
 use af_http::{
-    HEALTH_PATH, HttpListener, READINESS_PATH, REQUEST_ID_HEADER_NAME, ReadinessFuture,
-    ReadinessHandle, ReadinessProbe, ServeOutcome, build_router, serve_with_graceful_shutdown,
+    HttpListener, QueryApiKeyPolicy, ReadinessFuture, ReadinessHandle, ReadinessProbe,
+    ServeOutcome, build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
 use af_relay::RelayService;
-use af_server::{Bootstrap, SupervisorShutdown};
-use serde_json::{Value, json};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
-    sync::oneshot,
-    time::timeout,
+use serde_json::Value;
+use support::{
+    CLIENT_KEY, GROUP_ID, IO_TIMEOUT, TOKEN_ID, UPSTREAM_BASE_URL, UPSTREAM_KEY, UPSTREAM_MODEL,
+    USER_ID, send_request, spawn_proxy,
 };
-
-const IO_TIMEOUT: Duration = Duration::from_secs(5);
-const UPSTREAM_BASE_URL: &str = "http://upstream.example/proxy";
-const UPSTREAM_MODEL: &str = "test-model";
-const UPSTREAM_KEY: &str = "configured-upstream-key";
-
-#[derive(Debug)]
-struct CapturedRequest {
-    head: String,
-    body: Vec<u8>,
-}
-
-#[derive(Debug)]
-struct RawResponse {
-    status: u16,
-    headers: BTreeMap<String, String>,
-    body: Vec<u8>,
-}
+use tokio::{sync::oneshot, time::timeout};
 
 struct AlwaysReadyProbe;
 
@@ -53,146 +30,18 @@ impl ReadinessProbe for AlwaysReadyProbe {
     }
 }
 
-#[tokio::test]
-async fn full_chain_forwards_normalized_request_and_returns_validated_response() {
-    let upstream_body = serde_json::to_vec(&json!({
-        "id": "chatcmpl-test",
-        "object": "chat.completion",
-        "created": 1_700_000_000,
-        "model": UPSTREAM_MODEL,
-        "choices": [{
-            "index": 0,
-            "message": { "role": "assistant", "content": "hello" },
-            "finish_reason": "stop"
-        }],
-        "usage": { "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2 }
-    }))
-    .unwrap();
-    let (proxy_address, captured, proxy) = spawn_proxy(
-        "200 OK",
-        &upstream_body,
-        &[
-            ("Content-Type", "application/json"),
-            ("Set-Cookie", "upstream-cookie-secret=1"),
-            ("Server", "private-upstream"),
-            ("X-Request-ID", "upstream-selected-request-id"),
-        ],
-    );
-    let config_path = std::env::temp_dir().join(format!(
-        "anyflows-minimal-relay-chain-{}.toml",
-        std::process::id()
-    ));
-    fs::write(
-        &config_path,
-        format!(
-            "[server]\nbind = '127.0.0.1:0'\ncors_allowed_origins = ['https://console.example']\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = 'sqlite::memory:'\nhealth_check_timeout_secs = 1\n[openai_upstream]\nbase_url = '{UPSTREAM_BASE_URL}'\nmodel = '{UPSTREAM_MODEL}'\napi_key = '{UPSTREAM_KEY}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n"
-        ),
-    )
-    .unwrap();
-    let config = af_config::load_from(&config_path).unwrap();
-    let _ = fs::remove_file(config_path);
-    let bootstrap = Bootstrap::new(config)
-        .unwrap()
-        .init_telemetry()
-        .unwrap()
-        .connect_database()
-        .await
-        .unwrap()
-        .init_relay()
-        .unwrap()
-        .start_supervisor()
-        .build_router()
-        .bind()
-        .unwrap();
-    let address = bootstrap.local_addr();
-    let (shutdown, shutdown_rx) = oneshot::channel();
-    let server = tokio::spawn(bootstrap.serve(async move {
-        let _ = shutdown_rx.await;
-    }));
+struct AlwaysAuthenticates;
 
-    for (path, expected_body) in [
-        (HEALTH_PATH, br#"{"status":"ok"}"#.as_slice()),
-        (READINESS_PATH, br#"{"status":"ready"}"#.as_slice()),
-    ] {
-        let probe = send_request(
-            address,
-            "GET",
-            path,
-            b"",
-            &[("Origin", "https://console.example")],
-        )
-        .await;
-        assert_eq!(probe.status, 200);
-        assert_eq!(probe.body, expected_body);
-        assert_eq!(
-            probe.headers["content-type"],
-            "application/json; charset=utf-8"
-        );
-        assert_eq!(probe.headers["cache-control"], "no-store");
-        assert!(!probe.headers.contains_key("access-control-allow-origin"));
-        assert!(probe.headers.contains_key(REQUEST_ID_HEADER_NAME));
+impl TokenAuthenticator for AlwaysAuthenticates {
+    fn authenticate<'a>(&'a self, _digest: &'a ApiKeyDigest) -> TokenAuthenticationFuture<'a> {
+        Box::pin(async {
+            Ok(GatewayPrincipal::new(
+                TokenId::new(TOKEN_ID).unwrap(),
+                UserId::new(USER_ID).unwrap(),
+                GroupId::new(GROUP_ID).unwrap(),
+            ))
+        })
     }
-    assert!(matches!(captured.try_recv(), Err(TryRecvError::Empty)));
-
-    let inbound = br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}]}"#;
-    let response = send_request(
-        address,
-        "POST",
-        "/v1/chat/completions",
-        inbound,
-        &[
-            ("Content-Type", "application/json"),
-            ("Authorization", "Bearer client-key-secret"),
-            ("Cookie", "client-cookie-secret=1"),
-            ("X-API-Key", "client-api-key-secret"),
-            ("X-Request-ID", "client-selected-request-id"),
-            ("Origin", "https://console.example"),
-        ],
-    )
-    .await;
-    shutdown.send(()).unwrap();
-    let report = timeout(IO_TIMEOUT, server).await.unwrap().unwrap().unwrap();
-    assert_eq!(report.http, ServeOutcome::Drained);
-    assert_eq!(report.background, SupervisorShutdown::Drained);
-    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
-    proxy.join().unwrap();
-
-    assert_eq!(response.status, 200);
-    assert_eq!(response.body, upstream_body);
-    assert_eq!(response.headers["content-type"], "application/json");
-    assert_eq!(
-        response.headers["access-control-allow-origin"],
-        "https://console.example"
-    );
-    let request_id = &response.headers[REQUEST_ID_HEADER_NAME];
-    assert_ne!(request_id, "client-selected-request-id");
-    assert!(!response.headers.contains_key("set-cookie"));
-    assert_ne!(
-        response.headers.get("server").map(String::as_str),
-        Some("private-upstream")
-    );
-
-    let head_lower = upstream.head.to_ascii_lowercase();
-    assert!(
-        upstream
-            .head
-            .starts_with("POST http://upstream.example/proxy/v1/chat/completions HTTP/1.1")
-    );
-    assert!(head_lower.contains("authorization: bearer configured-upstream-key"));
-    assert!(head_lower.contains(&format!("x-request-id: {request_id}").to_ascii_lowercase()));
-    for forbidden in [
-        "client-key-secret",
-        "client-cookie-secret",
-        "client-api-key-secret",
-        "client-selected-request-id",
-        "origin: https://console.example",
-    ] {
-        assert!(!head_lower.contains(forbidden));
-    }
-    let outbound: Value = serde_json::from_slice(&upstream.body).unwrap();
-    assert_eq!(outbound["model"], UPSTREAM_MODEL);
-    assert_eq!(outbound["stream"], false);
-    assert_eq!(outbound["messages"][0]["content"], "hello");
 }
 
 #[tokio::test]
@@ -202,6 +51,7 @@ async fn invalid_requests_and_wrong_model_never_reach_upstream() {
     let (address, shutdown, server) =
         start_server(proxy.local_addr().unwrap(), ServerConfig::default()).await;
 
+    let authorization = format!("Bearer {CLIENT_KEY}");
     for (method, body, expected_status, expected_code) in [
         (
             "POST",
@@ -228,7 +78,10 @@ async fn invalid_requests_and_wrong_model_never_reach_upstream() {
             method,
             "/v1/chat/completions",
             body,
-            &[("Content-Type", "application/json")],
+            &[
+                ("Content-Type", "application/json"),
+                ("Authorization", &authorization),
+            ],
         )
         .await;
         assert_eq!(response.status, expected_status);
@@ -284,12 +137,16 @@ async fn upstream_errors_are_classified_without_forwarding_private_bodies() {
         );
         let (address, shutdown, server) =
             start_server(proxy_address, ServerConfig::default()).await;
+        let authorization = format!("Bearer {CLIENT_KEY}");
         let response = send_request(
             address,
             "POST",
             "/v1/chat/completions",
             br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}]}"#,
-            &[("Content-Type", "application/json")],
+            &[
+                ("Content-Type", "application/json"),
+                ("Authorization", &authorization),
+            ],
         )
         .await;
         stop_server(shutdown, server).await;
@@ -328,7 +185,13 @@ async fn start_server(
     );
     let readiness = ReadinessHandle::new(AlwaysReadyProbe);
     readiness.mark_ready();
-    let router = build_router(&server_config, relay, readiness);
+    let router = build_router(
+        &server_config,
+        relay,
+        readiness,
+        Arc::new(AlwaysAuthenticates),
+        QueryApiKeyPolicy::Deny,
+    );
     let listener = HttpListener::bind("127.0.0.1:0".parse().unwrap()).unwrap();
     let address = listener.local_addr();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
@@ -352,157 +215,4 @@ async fn stop_server(
         timeout(IO_TIMEOUT, server).await.unwrap().unwrap().unwrap(),
         ServeOutcome::Drained
     );
-}
-
-async fn send_request(
-    address: SocketAddr,
-    method: &str,
-    path: &str,
-    body: &[u8],
-    headers: &[(&str, &str)],
-) -> RawResponse {
-    let deadline = Instant::now() + IO_TIMEOUT;
-    let mut stream = loop {
-        match TcpStream::connect(address).await {
-            Ok(stream) => break stream,
-            Err(error) => {
-                assert!(Instant::now() < deadline, "等待测试服务监听超时: {error}");
-                tokio::time::sleep(Duration::from_millis(2)).await;
-            }
-        }
-    };
-    let mut request = format!(
-        "{method} {path} HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\nConnection: close\r\n",
-        body.len()
-    );
-    for (name, value) in headers {
-        request.push_str(name);
-        request.push_str(": ");
-        request.push_str(value);
-        request.push_str("\r\n");
-    }
-    request.push_str("\r\n");
-    stream.write_all(request.as_bytes()).await.unwrap();
-    stream.write_all(body).await.unwrap();
-
-    let mut bytes = Vec::new();
-    timeout(IO_TIMEOUT, stream.read_to_end(&mut bytes))
-        .await
-        .unwrap()
-        .unwrap();
-    parse_response(bytes)
-}
-
-fn parse_response(bytes: Vec<u8>) -> RawResponse {
-    let header_end = bytes
-        .windows(4)
-        .position(|window| window == b"\r\n\r\n")
-        .map(|index| index + 4)
-        .unwrap();
-    let head = String::from_utf8(bytes[..header_end].to_vec()).unwrap();
-    let mut lines = head.lines();
-    let status = lines
-        .next()
-        .unwrap()
-        .split_whitespace()
-        .nth(1)
-        .unwrap()
-        .parse()
-        .unwrap();
-    let headers = lines
-        .filter_map(|line| line.split_once(':'))
-        .map(|(name, value)| (name.to_ascii_lowercase(), value.trim().to_owned()))
-        .collect();
-    RawResponse {
-        status,
-        headers,
-        body: bytes[header_end..].to_vec(),
-    }
-}
-
-fn spawn_proxy(
-    status_line: &str,
-    body: &[u8],
-    headers: &[(&str, &str)],
-) -> (
-    SocketAddr,
-    mpsc::Receiver<CapturedRequest>,
-    thread::JoinHandle<()>,
-) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.set_nonblocking(true).unwrap();
-    let address = listener.local_addr().unwrap();
-    let status_line = status_line.to_owned();
-    let body = body.to_vec();
-    let headers = headers
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect::<Vec<_>>();
-    let (captured_tx, captured_rx) = mpsc::channel();
-    let handle = thread::spawn(move || {
-        let deadline = Instant::now() + IO_TIMEOUT;
-        let (mut stream, _) = loop {
-            match listener.accept() {
-                Ok(connection) => break connection,
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    assert!(Instant::now() < deadline, "本地测试代理等待连接超时");
-                    thread::sleep(Duration::from_millis(1));
-                }
-                Err(error) => panic!("本地测试代理接受连接失败: {error}"),
-            }
-        };
-        stream.set_nonblocking(false).unwrap();
-        stream.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
-        stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
-        let captured = read_proxy_request(&mut stream);
-        captured_tx.send(captured).unwrap();
-
-        let mut response = format!(
-            "HTTP/1.1 {status_line}\r\nContent-Length: {}\r\nConnection: close\r\n",
-            body.len()
-        );
-        for (name, value) in headers {
-            response.push_str(&name);
-            response.push_str(": ");
-            response.push_str(&value);
-            response.push_str("\r\n");
-        }
-        response.push_str("\r\n");
-        stream.write_all(response.as_bytes()).unwrap();
-        stream.write_all(&body).unwrap();
-        stream.flush().unwrap();
-    });
-    (address, captured_rx, handle)
-}
-
-fn read_proxy_request(stream: &mut StdTcpStream) -> CapturedRequest {
-    let mut request = Vec::with_capacity(1_024);
-    let mut buffer = [0_u8; 512];
-    let header_end = loop {
-        let read = stream.read(&mut buffer).unwrap();
-        assert!(read > 0, "代理请求头尚未结束时连接已关闭");
-        request.extend_from_slice(&buffer[..read]);
-        assert!(request.len() <= 64 * 1024, "代理测试请求头超过限制");
-        if let Some(index) = request.windows(4).position(|window| window == b"\r\n\r\n") {
-            break index + 4;
-        }
-    };
-    let head = String::from_utf8(request[..header_end].to_vec()).unwrap();
-    let content_length = head
-        .lines()
-        .find_map(|line| {
-            let (name, value) = line.split_once(':')?;
-            name.eq_ignore_ascii_case("content-length")
-                .then(|| value.trim().parse::<usize>().unwrap())
-        })
-        .unwrap_or(0);
-    while request.len() < header_end + content_length {
-        let read = stream.read(&mut buffer).unwrap();
-        assert!(read > 0, "代理请求体尚未结束时连接已关闭");
-        request.extend_from_slice(&buffer[..read]);
-    }
-    CapturedRequest {
-        head,
-        body: request[header_end..header_end + content_length].to_vec(),
-    }
 }

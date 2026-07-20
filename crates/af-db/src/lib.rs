@@ -1,11 +1,18 @@
 //! 数据库连接池、迁移、实体与仓储边界。
 
+mod auth;
+#[cfg(test)]
+mod auth_tests;
 mod connection;
 mod entity;
 mod error;
 mod migration;
 mod options;
 
+pub use auth::{
+    TokenAuthLookup, TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,
+    TokenAuthRepositoryConfigError, TokenAuthRepositoryError,
+};
 pub use connection::DatabasePool;
 pub(crate) use connection::connect;
 pub use error::{DatabaseError, DatabaseOptionsError};

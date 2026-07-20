@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use af_domain::GatewayPrincipal;
 use af_relay::RelayService;
 use af_telemetry::RequestId;
 use axum::{
@@ -27,11 +28,12 @@ impl HttpState {
 pub(crate) async fn chat_completions(
     State(state): State<HttpState>,
     Extension(request_id): Extension<RequestId>,
+    Extension(principal): Extension<GatewayPrincipal>,
     body: Bytes,
 ) -> Result<Response, OpenAiHttpError> {
     let response = state
         .relay
-        .chat_completions(body, request_id.as_str())
+        .chat_completions(&principal, body, request_id.as_str())
         .await
         .map_err(OpenAiHttpError::from)?;
     Ok((

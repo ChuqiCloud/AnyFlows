@@ -11,11 +11,15 @@ pub const DEFAULT_SHUTDOWN_TIMEOUT_SECS: u64 = 30;
 pub const MAX_SHUTDOWN_TIMEOUT_SECS: u64 = 300;
 /// 数据库健康检查允许配置的硬上限。
 pub const MAX_DATABASE_HEALTH_CHECK_TIMEOUT_SECS: u64 = 30;
+/// 令牌认证仓储查询的默认超时时间。
+pub const DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS: u64 = 2;
+/// 令牌认证仓储查询允许配置的硬上限。
+pub const MAX_AUTH_LOOKUP_TIMEOUT_SECS: u64 = 30;
 /// OpenAI-compatible 上游基础地址的最大 UTF-8 字节数。
 pub const MAX_OPENAI_UPSTREAM_BASE_URL_BYTES: usize = 2_048;
-/// M0 单上游模型标识的最大 UTF-8 字节数。
+/// 静态单上游模型标识的最大 UTF-8 字节数。
 pub const MAX_OPENAI_UPSTREAM_MODEL_BYTES: usize = 256;
-/// M0 单上游 API Key 的最大 UTF-8 字节数。
+/// 静态单上游 API Key 的最大 UTF-8 字节数。
 pub const MAX_OPENAI_UPSTREAM_API_KEY_BYTES: usize = 16 * 1_024;
 
 /// 经过规范化的 HTTP(S) CORS Origin，不包含路径、凭据或通配语义。
@@ -235,7 +239,38 @@ impl RedisSettings {
     }
 }
 
-/// M0 唯一 OpenAI-compatible 上游的启动期配置。
+/// 下游 API Key 认证的静态设置。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct AuthSettings {
+    allow_query_api_key: bool,
+    lookup_timeout_secs: u64,
+}
+
+impl AuthSettings {
+    /// 返回是否允许通过查询参数传递 API Key。
+    #[must_use]
+    pub const fn allow_query_api_key(&self) -> bool {
+        self.allow_query_api_key
+    }
+
+    /// 返回认证仓储查询的硬超时秒数。
+    #[must_use]
+    pub const fn lookup_timeout_secs(&self) -> u64 {
+        self.lookup_timeout_secs
+    }
+}
+
+impl Default for AuthSettings {
+    fn default() -> Self {
+        Self {
+            allow_query_api_key: false,
+            lookup_timeout_secs: DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS,
+        }
+    }
+}
+
+/// 当前唯一 OpenAI-compatible 上游的启动期配置。
 ///
 /// 渠道仓储、凭据解密和选路在 M1 落地前，本配置提供一条明确且可删除的静态入口。
 /// URL、模型和密钥均按敏感运行参数处理，调试输出只显示是否已配置。
@@ -254,7 +289,7 @@ impl OpenAiUpstreamConfig {
         &self.base_url
     }
 
-    /// 返回 M0 唯一允许转发的模型；调用方不得写入日志。
+    /// 返回当前唯一允许转发的模型；调用方不得写入日志。
     #[must_use]
     pub fn model(&self) -> &str {
         &self.model
@@ -339,6 +374,8 @@ pub struct AppConfig {
     database: DatabaseConfig,
     #[serde(default)]
     redis: RedisSettings,
+    #[serde(default)]
+    auth: AuthSettings,
     openai_upstream: OpenAiUpstreamConfig,
     #[serde(default)]
     http_client: HttpClientSettings,
@@ -369,7 +406,13 @@ impl AppConfig {
         &self.redis
     }
 
-    /// 返回 M0 唯一 OpenAI-compatible 上游配置。
+    /// 返回下游 API Key 认证设置。
+    #[must_use]
+    pub const fn auth(&self) -> &AuthSettings {
+        &self.auth
+    }
+
+    /// 返回当前唯一 OpenAI-compatible 上游配置。
     #[must_use]
     pub const fn openai_upstream(&self) -> &OpenAiUpstreamConfig {
         &self.openai_upstream
@@ -383,7 +426,7 @@ impl AppConfig {
 
     /// 校验敏感文本与所有受控数值，确保错误在启动期暴露。
     pub fn validate(&self) -> Result<(), ConfigError> {
-        // M0 尚无下游鉴权，禁止把静态付费上游能力暴露到非本机监听地址。
+        // 基础鉴权不代表公网安全闭环已完成，当前仍只允许本机监听。
         if !self.server.bind.ip().is_loopback() {
             return Err(ConfigError::InvalidField {
                 field: "server.bind",
@@ -427,6 +470,16 @@ impl AppConfig {
             && url.expose().trim().is_empty()
         {
             return Err(ConfigError::EmptyValue { field: "redis.url" });
+        }
+        if self.auth.lookup_timeout_secs == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "auth.lookup_timeout_secs",
+            });
+        }
+        if self.auth.lookup_timeout_secs > MAX_AUTH_LOOKUP_TIMEOUT_SECS {
+            return Err(ConfigError::OutOfRange {
+                field: "auth.lookup_timeout_secs",
+            });
         }
         validate_openai_upstream(&self.openai_upstream)?;
         if self.http_client.max_cached_clients == Some(0) {

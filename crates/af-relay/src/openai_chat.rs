@@ -5,7 +5,7 @@ use af_adapter::{
     HeaderMap, Method, OpenAiAdaptorSettings, Operation, PooledClient, RelayContext, StatusCode,
     UpstreamRequest, get_adaptor,
 };
-use af_domain::{AfError, UpstreamError, UpstreamServerStatus};
+use af_domain::{AfError, GatewayPrincipal, UpstreamError, UpstreamServerStatus};
 use af_protocol::openai_chat::{
     OpenAiUpstreamErrorKind, build_request, classify_error_response, parse_request, parse_response,
 };
@@ -51,9 +51,13 @@ impl RelayService {
         })
     }
 
-    /// 转发一次非流式 OpenAI Chat 请求，并返回经过协议校验的同协议响应。
+    /// 转发一次已认证的非流式 OpenAI Chat 请求，并返回经过协议校验的同协议响应。
+    ///
+    /// 身份参数用于强制调用方保留请求归属，当前静态单上游阶段不会把它写入
+    /// `RelayContext`、适配器或上游请求。
     pub async fn chat_completions(
         &self,
+        _principal: &GatewayPrincipal,
         inbound_body: Bytes,
         request_id: &str,
     ) -> Result<OpenAiChatResponse, AfError> {

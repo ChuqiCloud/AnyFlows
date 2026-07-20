@@ -17,7 +17,10 @@ use crate::entity::{
     TokenHash, abilities, channel_groups, channel_models, channels, credentials, groups, options,
     tokens, users,
 };
-use crate::{DatabaseOptions, PoolOptions, connect};
+use crate::{
+    DatabaseOptions, PoolOptions, TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository,
+    connect,
+};
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
@@ -29,6 +32,7 @@ const TOKEN_HASH_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 const TOKEN_HASH_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOKEN_HASH_C: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const TOKEN_HASH_D: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+const TOKEN_HASH_E: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 const CORE_TABLES: [&str; 9] = [
     "groups",
     "users",
@@ -151,6 +155,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     );
 
     assert_updated_at_behaviors(pool.connection()).await?;
+    exercise_token_auth_repository(&pool).await?;
     exercise_core_schema(pool.connection()).await?;
 
     Migrator::down(pool.connection(), None).await?;
@@ -163,6 +168,46 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_core_tables_absent(pool.connection()).await?;
 
     pool.close().await?;
+    Ok(())
+}
+
+/// 在现有三方言迁移流水线中执行一次真实联表鉴权，防止方言差异只在生产暴露。
+async fn exercise_token_auth_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let group = group_active_model("auth-smoke-group", "鉴权冒烟分组")
+        .insert(pool.connection())
+        .await?;
+    let mut user = user_active_model(
+        group.id,
+        "auth-smoke-user",
+        "auth-smoke@example.com",
+        "invite-auth-smoke",
+    );
+    user.status = Set(1);
+    let user = user.insert(pool.connection()).await?;
+    let mut token = token_active_model(user.id, group.id, TOKEN_HASH_E, "auth-smoke-token");
+    token.status = Set(1);
+    let token = token.insert(pool.connection()).await?;
+
+    let repository = TokenAuthRepository::new(pool.clone(), Duration::from_secs(2))?;
+    let outcome = repository
+        .lookup(&TokenAuthLookup::new(TOKEN_HASH_E)?)
+        .await?;
+    let TokenAuthLookupOutcome::Authenticated(principal) = outcome else {
+        return Err("三方言令牌鉴权冒烟未返回已认证主体".into());
+    };
+    assert_eq!(principal.token_id().get(), token.id);
+    assert_eq!(principal.user_id().get(), user.id);
+    assert_eq!(principal.group_id().get(), group.id);
+
+    tokens::Entity::delete_by_id(token.id)
+        .exec(pool.connection())
+        .await?;
+    users::Entity::delete_by_id(user.id)
+        .exec(pool.connection())
+        .await?;
+    groups::Entity::delete_by_id(group.id)
+        .exec(pool.connection())
+        .await?;
     Ok(())
 }
 

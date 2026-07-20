@@ -6,8 +6,8 @@ mod shutdown;
 mod supervisor;
 
 pub use bootstrap::{
-    Bootstrap, BootstrapError, Configured, DatabaseReady, ListenerReady, RelayReady, RouterReady,
-    ShutdownReport, Supervised, TelemetryReady, run,
+    AuthenticationReady, Bootstrap, BootstrapError, Configured, DatabaseReady, ListenerReady,
+    RelayReady, RouterReady, ShutdownReport, Supervised, TelemetryReady, run,
 };
 pub use shutdown::{ShutdownController, system_shutdown_signal};
 pub use supervisor::{BackgroundTaskSupervisor, SupervisorError, SupervisorShutdown};
