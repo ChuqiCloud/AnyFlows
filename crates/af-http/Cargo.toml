@@ -7,6 +7,7 @@ publish.workspace = true
 
 [dependencies]
 af-config = { path = "../af-config", version = "0.1.0" }
+af-domain = { path = "../af-domain", version = "0.1.0" }
 af-protocol = { path = "../af-protocol", version = "0.1.0" }
 af-telemetry = { path = "../af-telemetry", version = "0.1.0" }
 axum.workspace = true
@@ -16,6 +17,7 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 tokio.workspace = true
 tower.workspace = true
 tracing-subscriber.workspace = true
