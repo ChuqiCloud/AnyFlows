@@ -8,7 +8,7 @@ use std::{
 use af_adapter::{
     Adaptor, AdaptorError, AdaptorResult, AdaptorSendExt, Bytes, ChannelType, Credential,
     CredentialKind, HeaderMap, HeaderName, HeaderValue, MAX_UPSTREAM_RESPONSE_BODY_BYTES, Method,
-    Operation, Protocol, RelayContext, ResponseMode, StatusCode, UpstreamRequest,
+    OpenAiAdaptor, Operation, Protocol, RelayContext, ResponseMode, StatusCode, UpstreamRequest,
 };
 use af_httpclient::{HttpClientConfig, HttpClientPool};
 
@@ -118,6 +118,65 @@ async fn object_safe_adaptor_uses_managed_default_transport() {
     assert_eq!(
         body.into_bytes().await.unwrap(),
         Bytes::from_static(b"response-ok")
+    );
+
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn openai_adaptor_builds_and_sends_chat_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(SERVER_TIMEOUT)).unwrap();
+        let request = read_request(&mut stream);
+        let lowercase = request.to_ascii_lowercase();
+        assert!(request.starts_with("POST /proxy/openai/v1/chat/completions HTTP/1.1"));
+        assert!(lowercase.contains("authorization: bearer openai-loopback-secret"));
+        assert!(lowercase.contains("content-type: application/json"));
+        assert!(lowercase.contains("accept: application/json"));
+        assert!(lowercase.contains("x-request-id: request-openai-loopback"));
+        assert!(request.ends_with(r#"{"model":"gpt-test","messages":[]}"#));
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 14\r\nConnection: close\r\n\r\n{\"choices\":[]}",
+            )
+            .unwrap();
+        stream.flush().unwrap();
+    });
+
+    let client = HttpClientPool::default()
+        .get(&HttpClientConfig::default())
+        .unwrap();
+    let context = RelayContext::new(client)
+        .with_base_url(format!("http://{address}/proxy/openai"))
+        .unwrap()
+        .with_request_id("request-openai-loopback")
+        .unwrap();
+    let adaptor = OpenAiAdaptor::with_supported_models(["gpt-test"]);
+    assert_eq!(adaptor.supported_models(), ["gpt-test"]);
+    let mut headers = HeaderMap::new();
+    adaptor
+        .setup_headers(
+            &mut headers,
+            &Credential::api_key("openai-loopback-secret").unwrap(),
+            &context,
+        )
+        .unwrap();
+    let request = UpstreamRequest::new(
+        Method::POST,
+        adaptor.build_url(&context, Operation::Chat).unwrap(),
+        headers,
+        Some(Bytes::from_static(br#"{"model":"gpt-test","messages":[]}"#)),
+    )
+    .unwrap();
+    let response = adaptor.send(request, &context).await.unwrap();
+    let body = response.into_body();
+    assert!(!body.is_streaming());
+    assert_eq!(
+        body.into_bytes().await.unwrap(),
+        Bytes::from_static(br#"{"choices":[]}"#)
     );
 
     server.join().unwrap();
