@@ -15,17 +15,33 @@ use crate::middleware::{
 /// M0 OpenAI Chat 业务路由的默认请求正文上限，与协议解析预算共享单一常量。
 pub const DEFAULT_REQUEST_BODY_LIMIT_BYTES: usize = MAX_BODY_BYTES;
 
+/// 已完成中间件装配的 HTTP 路由。
+///
+/// Axum 类型只在 `af-http` 内部流转，服务编排层通过本 crate 提供的监听入口使用它，
+/// 避免框架依赖向 `af-server` 泄漏。
+pub struct HttpRouter(Router);
+
+impl HttpRouter {
+    pub(crate) fn new(router: Router) -> Self {
+        Self(router)
+    }
+
+    pub(crate) fn into_router(self) -> Router {
+        self.0
+    }
+}
+
 /// 构建尚未挂载业务 handler 的 HTTP Router 骨架。
 ///
 /// 后续业务与运维路由应分别加入 `public_routes` 和 `operations_routes`，确保
 /// CORS 永远不会扩散到 `/metrics`、健康检查等运维端点。
-pub fn build_router(config: &ServerConfig) -> Router {
-    build_router_with_routes(
+pub fn build_router(config: &ServerConfig) -> HttpRouter {
+    HttpRouter::new(build_router_with_routes(
         Router::new(),
         Router::new(),
         config,
         DEFAULT_REQUEST_BODY_LIMIT_BYTES,
-    )
+    ))
 }
 
 pub(crate) fn build_router_with_routes(

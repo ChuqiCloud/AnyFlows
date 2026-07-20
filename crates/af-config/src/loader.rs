@@ -121,6 +121,7 @@ fn known_field(path: &str) -> Option<&'static str> {
     Some(match path {
         "server" => "server",
         "server.bind" => "server.bind",
+        "server.shutdown_timeout_secs" => "server.shutdown_timeout_secs",
         path if path == "server.cors_allowed_origins"
             || path.starts_with("server.cors_allowed_origins.") =>
         {
@@ -190,6 +191,7 @@ mod tests {
 
             assert_eq!(config.server().bind().to_string(), "127.0.0.1:8080");
             assert!(config.server().cors_allowed_origins().is_empty());
+            assert_eq!(config.server().shutdown_timeout_secs(), 30);
             assert_eq!(config.telemetry().level(), LogLevel::Info);
             assert_eq!(config.database().migration_timeout_secs(), None);
             assert!(config.redis().url().is_none());
@@ -202,7 +204,7 @@ mod tests {
     fn toml_values_override_defaults() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[server]\nbind = '0.0.0.0:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\n",
+                "[server]\nbind = '0.0.0.0:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
@@ -213,6 +215,7 @@ mod tests {
                 "https://console.example"
             );
             assert_eq!(config.telemetry().level(), LogLevel::Debug);
+            assert_eq!(config.server().shutdown_timeout_secs(), 45);
             assert_eq!(config.database().migration_timeout_secs(), Some(42));
             assert_eq!(config.http_client().max_cached_clients(), Some(7));
             assert_eq!(config.http_client().read_timeout_secs(), Some(8));
@@ -229,6 +232,7 @@ mod tests {
                 "http://localhost:5173"
             );
             assert_eq!(config.telemetry().level(), LogLevel::Warn);
+            assert_eq!(config.server().shutdown_timeout_secs(), 12);
             assert_eq!(config.http_client().max_cached_clients(), Some(3));
             assert_eq!(
                 config.database().url().expose(),
@@ -249,6 +253,7 @@ mod tests {
                 .env(CHILD_MARKER, "1")
                 .env(CONFIG_FILE_ENV, &path)
                 .env("AF_SERVER__BIND", "0.0.0.0:7070")
+                .env("AF_SERVER__SHUTDOWN_TIMEOUT_SECS", "12")
                 .env(
                     "AF_SERVER__CORS_ALLOWED_ORIGINS",
                     "[\"http://localhost:5173\"]",
@@ -469,6 +474,10 @@ mod tests {
         with_clean_env(|_| {
             for (field, body) in [
                 (
+                    "server.shutdown_timeout_secs",
+                    "[server]\nshutdown_timeout_secs = 0\n[database]\nurl = 'sqlite::memory:'\n",
+                ),
+                (
                     "database.migration_timeout_secs",
                     "[database]\nurl = 'sqlite::memory:'\nmigration_timeout_secs = 0\n",
                 ),
@@ -486,6 +495,23 @@ mod tests {
                 let _ = fs::remove_file(path);
                 assert_eq!(error, ConfigError::NonPositive { field });
             }
+        });
+    }
+
+    #[test]
+    fn rejects_shutdown_timeout_above_hard_limit() {
+        with_clean_env(|_| {
+            let path = temp_file(
+                "[server]\nshutdown_timeout_secs = 301\n[database]\nurl = 'sqlite::memory:'\n",
+            );
+            let error = load_from(&path).unwrap_err();
+            let _ = fs::remove_file(path);
+            assert_eq!(
+                error,
+                ConfigError::OutOfRange {
+                    field: "server.shutdown_timeout_secs"
+                }
+            );
         });
     }
 

@@ -5,6 +5,11 @@ use url::Url;
 
 use crate::{ConfigError, CorsOriginError, SecretString};
 
+/// 服务优雅关闭的默认排空时间。
+pub const DEFAULT_SHUTDOWN_TIMEOUT_SECS: u64 = 30;
+/// 服务优雅关闭允许配置的硬上限。
+pub const MAX_SHUTDOWN_TIMEOUT_SECS: u64 = 300;
+
 /// 经过规范化的 HTTP(S) CORS Origin，不包含路径、凭据或通配语义。
 #[derive(Clone, Eq, Hash, PartialEq, Serialize)]
 #[serde(transparent)]
@@ -93,6 +98,7 @@ impl fmt::Debug for CorsOrigin {
 pub struct ServerConfig {
     bind: SocketAddr,
     cors_allowed_origins: Vec<CorsOrigin>,
+    shutdown_timeout_secs: u64,
 }
 
 impl ServerConfig {
@@ -106,6 +112,12 @@ impl ServerConfig {
     #[must_use]
     pub fn cors_allowed_origins(&self) -> &[CorsOrigin] {
         &self.cors_allowed_origins
+    }
+
+    /// 返回收到关闭信号后等待在途请求完成的秒数。
+    #[must_use]
+    pub const fn shutdown_timeout_secs(&self) -> u64 {
+        self.shutdown_timeout_secs
     }
 
     /// 替换业务路由 CORS 白名单，供嵌入式启动与测试构造使用。
@@ -126,6 +138,7 @@ impl Default for ServerConfig {
                 .parse()
                 .expect("内建监听地址必须是有效的 SocketAddr"),
             cors_allowed_origins: Vec::new(),
+            shutdown_timeout_secs: DEFAULT_SHUTDOWN_TIMEOUT_SECS,
         }
     }
 }
@@ -291,6 +304,16 @@ impl AppConfig {
 
     /// 校验敏感文本与所有受控数值，确保错误在启动期暴露。
     pub fn validate(&self) -> Result<(), ConfigError> {
+        if self.server.shutdown_timeout_secs == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "server.shutdown_timeout_secs",
+            });
+        }
+        if self.server.shutdown_timeout_secs > MAX_SHUTDOWN_TIMEOUT_SECS {
+            return Err(ConfigError::OutOfRange {
+                field: "server.shutdown_timeout_secs",
+            });
+        }
         if self.database.url.expose().trim().is_empty() {
             return Err(ConfigError::EmptyValue {
                 field: "database.url",
