@@ -9,6 +9,7 @@ publish.workspace = true
 af-config = { path = "../af-config", version = "0.1.0" }
 af-domain = { path = "../af-domain", version = "0.1.0" }
 af-protocol = { path = "../af-protocol", version = "0.1.0" }
+af-relay = { path = "../af-relay", version = "0.1.0" }
 af-telemetry = { path = "../af-telemetry", version = "0.1.0" }
 axum-server.workspace = true
 axum.workspace = true

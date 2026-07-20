@@ -11,12 +11,14 @@ mod bounded_json;
 mod build;
 mod convert;
 mod error;
+mod error_response;
 mod parse_response;
 mod response_wire;
 mod wire;
 
 pub use build::{BuildRequestError, build_request};
 pub use error::encode_error;
+pub use error_response::{OpenAiUpstreamErrorKind, classify_error_response};
 pub use parse_response::{ParseResponseError, parse_response};
 
 #[cfg(test)]

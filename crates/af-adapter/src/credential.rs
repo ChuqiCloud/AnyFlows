@@ -32,6 +32,7 @@ impl SecretString {
         if value.is_empty()
             || value.len() > MAX_CREDENTIAL_SECRET_BYTES
             || value.trim() != value
+            || !value.is_ascii()
             || value.bytes().any(|byte| byte.is_ascii_control())
         {
             return Err(AdaptorError::InvalidCredential);
@@ -123,7 +124,13 @@ mod tests {
             Credential::api_key("x".repeat(MAX_CREDENTIAL_SECRET_BYTES + 1)),
             Err(AdaptorError::InvalidCredential)
         );
-        for invalid in [" token", "token ", "token\nsecret", "token\0secret"] {
+        for invalid in [
+            " token",
+            "token ",
+            "token\nsecret",
+            "token\0secret",
+            "非 ASCII 令牌",
+        ] {
             assert_eq!(
                 Credential::oauth(invalid),
                 Err(AdaptorError::InvalidCredential)

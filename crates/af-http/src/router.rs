@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use af_config::ServerConfig;
 use af_protocol::openai_chat::MAX_BODY_BYTES;
-use axum::{Router, extract::DefaultBodyLimit, middleware};
+use af_relay::RelayService;
+use axum::{Router, extract::DefaultBodyLimit, middleware, routing::post};
 use http::{
     HeaderName, HeaderValue, Method,
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
@@ -11,6 +14,7 @@ use crate::middleware::{
     AllowedOrigins, LogHttpResponse, MakeHttpSpan, assign_request_id, enforce_allowed_origin,
     request_id_header,
 };
+use crate::{chat_completions::HttpState, chat_completions::chat_completions};
 
 /// M0 OpenAI Chat 业务路由的默认请求正文上限，与协议解析预算共享单一常量。
 pub const DEFAULT_REQUEST_BODY_LIMIT_BYTES: usize = MAX_BODY_BYTES;
@@ -31,13 +35,16 @@ impl HttpRouter {
     }
 }
 
-/// 构建尚未挂载业务 handler 的 HTTP Router 骨架。
+/// 构建包含 M0 OpenAI Chat 非流式入口的 HTTP Router。
 ///
 /// 后续业务与运维路由应分别加入 `public_routes` 和 `operations_routes`，确保
 /// CORS 永远不会扩散到 `/metrics`、健康检查等运维端点。
-pub fn build_router(config: &ServerConfig) -> HttpRouter {
+pub fn build_router(config: &ServerConfig, relay: Arc<RelayService>) -> HttpRouter {
+    let public_routes = Router::new()
+        .route("/v1/chat/completions", post(chat_completions))
+        .with_state(HttpState::new(relay));
     HttpRouter::new(build_router_with_routes(
-        Router::new(),
+        public_routes,
         Router::new(),
         config,
         DEFAULT_REQUEST_BODY_LIMIT_BYTES,

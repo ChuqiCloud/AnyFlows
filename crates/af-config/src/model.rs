@@ -9,6 +9,12 @@ use crate::{ConfigError, CorsOriginError, SecretString};
 pub const DEFAULT_SHUTDOWN_TIMEOUT_SECS: u64 = 30;
 /// 服务优雅关闭允许配置的硬上限。
 pub const MAX_SHUTDOWN_TIMEOUT_SECS: u64 = 300;
+/// OpenAI-compatible 上游基础地址的最大 UTF-8 字节数。
+pub const MAX_OPENAI_UPSTREAM_BASE_URL_BYTES: usize = 2_048;
+/// M0 单上游模型标识的最大 UTF-8 字节数。
+pub const MAX_OPENAI_UPSTREAM_MODEL_BYTES: usize = 256;
+/// M0 单上游 API Key 的最大 UTF-8 字节数。
+pub const MAX_OPENAI_UPSTREAM_API_KEY_BYTES: usize = 16 * 1_024;
 
 /// 经过规范化的 HTTP(S) CORS Origin，不包含路径、凭据或通配语义。
 #[derive(Clone, Eq, Hash, PartialEq, Serialize)]
@@ -220,14 +226,59 @@ impl RedisSettings {
     }
 }
 
+/// M0 唯一 OpenAI-compatible 上游的启动期配置。
+///
+/// 渠道仓储、凭据解密和选路在 M1 落地前，本配置提供一条明确且可删除的静态入口。
+/// URL、模型和密钥均按敏感运行参数处理，调试输出只显示是否已配置。
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenAiUpstreamConfig {
+    base_url: String,
+    model: String,
+    api_key: SecretString,
+}
+
+impl OpenAiUpstreamConfig {
+    /// 返回 OpenAI-compatible 服务根或反向代理前缀；调用方不得写入日志。
+    #[must_use]
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// 返回 M0 唯一允许转发的模型；调用方不得写入日志。
+    #[must_use]
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    /// 返回上游 API Key；只应在构造适配器凭据时短暂读取明文。
+    #[must_use]
+    pub const fn api_key(&self) -> &SecretString {
+        &self.api_key
+    }
+}
+
+impl fmt::Debug for OpenAiUpstreamConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OpenAiUpstreamConfig")
+            .field("base_url", &"<已配置>")
+            .field("model", &"<已配置>")
+            .field("api_key", &"<已脱敏>")
+            .finish()
+    }
+}
+
 /// HTTP 客户端池与三段超时配置。
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct HttpClientSettings {
     max_cached_clients: Option<usize>,
     connect_timeout_secs: Option<u64>,
     read_timeout_secs: Option<u64>,
     request_timeout_secs: Option<u64>,
+    proxy_url: Option<SecretString>,
+    trust_proxy_dns: bool,
 }
 
 impl HttpClientSettings {
@@ -254,6 +305,18 @@ impl HttpClientSettings {
     pub const fn request_timeout_secs(&self) -> Option<u64> {
         self.request_timeout_secs
     }
+
+    /// 返回显式强制代理地址；缺省时直连且忽略系统代理环境变量。
+    #[must_use]
+    pub fn proxy_url(&self) -> Option<&SecretString> {
+        self.proxy_url.as_ref()
+    }
+
+    /// 返回是否将目标域名解析与私网阻断责任委托给受信代理。
+    #[must_use]
+    pub const fn trust_proxy_dns(&self) -> bool {
+        self.trust_proxy_dns
+    }
 }
 
 /// 应用启动期配置。运营期 Option 热更新不属于此类型。
@@ -267,6 +330,7 @@ pub struct AppConfig {
     database: DatabaseConfig,
     #[serde(default)]
     redis: RedisSettings,
+    openai_upstream: OpenAiUpstreamConfig,
     #[serde(default)]
     http_client: HttpClientSettings,
 }
@@ -296,6 +360,12 @@ impl AppConfig {
         &self.redis
     }
 
+    /// 返回 M0 唯一 OpenAI-compatible 上游配置。
+    #[must_use]
+    pub const fn openai_upstream(&self) -> &OpenAiUpstreamConfig {
+        &self.openai_upstream
+    }
+
     /// 返回 HTTP 客户端配置。
     #[must_use]
     pub const fn http_client(&self) -> &HttpClientSettings {
@@ -304,6 +374,12 @@ impl AppConfig {
 
     /// 校验敏感文本与所有受控数值，确保错误在启动期暴露。
     pub fn validate(&self) -> Result<(), ConfigError> {
+        // M0 尚无下游鉴权，禁止把静态付费上游能力暴露到非本机监听地址。
+        if !self.server.bind.ip().is_loopback() {
+            return Err(ConfigError::InvalidField {
+                field: "server.bind",
+            });
+        }
         if self.server.shutdown_timeout_secs == 0 {
             return Err(ConfigError::NonPositive {
                 field: "server.shutdown_timeout_secs",
@@ -329,6 +405,7 @@ impl AppConfig {
         {
             return Err(ConfigError::EmptyValue { field: "redis.url" });
         }
+        validate_openai_upstream(&self.openai_upstream)?;
         if self.http_client.max_cached_clients == Some(0) {
             return Err(ConfigError::NonPositive {
                 field: "http_client.max_cached_clients",
@@ -352,8 +429,98 @@ impl AppConfig {
                 return Err(ConfigError::NonPositive { field });
             }
         }
+        validate_proxy_settings(&self.http_client)?;
         Ok(())
     }
+}
+
+fn validate_openai_upstream(config: &OpenAiUpstreamConfig) -> Result<(), ConfigError> {
+    validate_nonempty_text(
+        &config.base_url,
+        "openai_upstream.base_url",
+        MAX_OPENAI_UPSTREAM_BASE_URL_BYTES,
+    )?;
+    let parsed = Url::parse(&config.base_url).map_err(|_| ConfigError::InvalidField {
+        field: "openai_upstream.base_url",
+    })?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || !parsed.has_host()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || parsed.port() == Some(0)
+    {
+        return Err(ConfigError::InvalidField {
+            field: "openai_upstream.base_url",
+        });
+    }
+    validate_nonempty_text(
+        &config.model,
+        "openai_upstream.model",
+        MAX_OPENAI_UPSTREAM_MODEL_BYTES,
+    )?;
+    validate_nonempty_text(
+        config.api_key.expose(),
+        "openai_upstream.api_key",
+        MAX_OPENAI_UPSTREAM_API_KEY_BYTES,
+    )?;
+    if !config.api_key.expose().is_ascii() {
+        return Err(ConfigError::InvalidField {
+            field: "openai_upstream.api_key",
+        });
+    }
+    Ok(())
+}
+
+fn validate_proxy_settings(settings: &HttpClientSettings) -> Result<(), ConfigError> {
+    let Some(proxy_url) = settings.proxy_url() else {
+        if settings.trust_proxy_dns {
+            return Err(ConfigError::InvalidField {
+                field: "http_client.trust_proxy_dns",
+            });
+        }
+        return Ok(());
+    };
+    let value = proxy_url.expose();
+    validate_nonempty_text(value, "http_client.proxy_url", 2_048)?;
+    let parsed = Url::parse(value).map_err(|_| ConfigError::InvalidField {
+        field: "http_client.proxy_url",
+    })?;
+    let supported_scheme = matches!(parsed.scheme(), "http" | "https" | "socks5" | "socks5h");
+    if !supported_scheme
+        || !parsed.has_host()
+        || !matches!(parsed.path(), "" | "/")
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || parsed.port() == Some(0)
+    {
+        return Err(ConfigError::InvalidField {
+            field: "http_client.proxy_url",
+        });
+    }
+
+    let proxy_resolves_target = matches!(parsed.scheme(), "http" | "https" | "socks5h");
+    if settings.trust_proxy_dns != proxy_resolves_target {
+        return Err(ConfigError::InvalidField {
+            field: "http_client.trust_proxy_dns",
+        });
+    }
+    Ok(())
+}
+
+fn validate_nonempty_text(
+    value: &str,
+    field: &'static str,
+    max_bytes: usize,
+) -> Result<(), ConfigError> {
+    if value.is_empty() {
+        return Err(ConfigError::EmptyValue { field });
+    }
+    if value.len() > max_bytes || value.trim() != value || value.chars().any(char::is_control) {
+        return Err(ConfigError::InvalidField { field });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
