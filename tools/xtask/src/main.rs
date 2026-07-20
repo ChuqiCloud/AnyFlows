@@ -294,6 +294,11 @@ fn allowed_restricted_external_dependency(dependency: &DeclaredDependency) -> bo
         ("af-domain", "serde", "normal")
             | ("af-domain", "serde_json", "dev")
             | ("af-domain", "thiserror", "normal")
+            | ("af-adapter", "async-trait", "normal")
+            | ("af-adapter", "futures-core", "normal")
+            | ("af-adapter", "thiserror", "normal")
+            | ("af-adapter", "url", "normal")
+            | ("af-adapter", "tokio", "dev")
             | ("af-protocol", "base64", "normal")
             | ("af-protocol", "serde", "normal")
             | ("af-protocol", "serde_json", "normal")
@@ -449,6 +454,23 @@ mod tests {
         let thiserror = dependency("af-domain", "thiserror", false);
 
         let violations = validate_workspace(&baseline_workspace(), &[serde, serde_json, thiserror]);
+
+        assert!(violations.is_empty());
+    }
+
+    #[test]
+    fn accepts_reviewed_adapter_dependencies() {
+        let mut tokio = dependency("af-adapter", "tokio", false);
+        tokio.kind = "dev".to_owned();
+        let dependencies = [
+            dependency("af-adapter", "async-trait", false),
+            dependency("af-adapter", "futures-core", false),
+            dependency("af-adapter", "thiserror", false),
+            dependency("af-adapter", "url", false),
+            tokio,
+        ];
+
+        let violations = validate_workspace(&baseline_workspace(), &dependencies);
 
         assert!(violations.is_empty());
     }

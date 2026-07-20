@@ -9,6 +9,15 @@ version = "0.1.0"
 [[package]]
 name = "af-adapter"
 version = "0.1.0"
+dependencies = [
+ "af-domain",
+ "af-httpclient",
+ "async-trait",
+ "futures-core",
+ "thiserror",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "af-admin"
