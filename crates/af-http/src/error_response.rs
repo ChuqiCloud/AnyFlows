@@ -3,6 +3,8 @@ use af_protocol::openai_chat;
 use axum::{Json, response::IntoResponse};
 use http::StatusCode;
 
+use crate::ApiKeyExtractionError;
+
 /// 将统一领域错误转换为 OpenAI 兼容 HTTP 响应的本地封装。
 ///
 /// 业务 handler 应返回该类型，框架自身产生的 CORS、路由和正文限制错误不在此处重写。
@@ -12,6 +14,12 @@ pub struct OpenAiHttpError(MappedError);
 impl From<AfError> for OpenAiHttpError {
     fn from(error: AfError) -> Self {
         Self(classify_error(error))
+    }
+}
+
+impl From<ApiKeyExtractionError> for OpenAiHttpError {
+    fn from(_: ApiKeyExtractionError) -> Self {
+        Self::from(AfError::InvalidApiKey)
     }
 }
 
@@ -73,6 +81,9 @@ fn classify_error(error: AfError) -> MappedError {
     match error {
         AfError::InvalidRequest => {
             MappedError::new(PublicErrorCode::InvalidRequest, "invalid_request")
+        }
+        AfError::InvalidApiKey => {
+            MappedError::new(PublicErrorCode::InvalidApiKey, "invalid_api_key")
         }
         AfError::Upstream(error) => classify_upstream_error(error),
         AfError::Internal => MappedError::new(PublicErrorCode::InternalError, "internal"),

@@ -22,6 +22,13 @@ dependencies = [
 [[package]]
 name = "af-admin"
 version = "0.1.0"
+dependencies = [
+ "base64",
+ "getrandom 0.4.3",
+ "sha2",
+ "thiserror",
+ "zeroize",
+]
 
 [[package]]
 name = "af-analytics"
@@ -82,6 +89,7 @@ dependencies = [
 name = "af-http"
 version = "0.1.0"
 dependencies = [
+ "af-admin",
  "af-config",
  "af-domain",
  "af-protocol",
@@ -97,6 +105,7 @@ dependencies = [
  "tower-http 0.7.0",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 

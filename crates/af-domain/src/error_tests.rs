@@ -86,7 +86,9 @@ fn domain_errors_are_thread_safe_static_errors() {
     assert_error::<AfError>();
     assert_error::<UpstreamError>();
     assert_eq!(AfError::InvalidRequest.to_string(), "请求无效");
+    assert_eq!(AfError::InvalidApiKey.to_string(), "下游 API Key 无效");
     assert_eq!(AfError::Internal.to_string(), "服务内部错误");
     assert!(AfError::InvalidRequest.source().is_none());
+    assert!(AfError::InvalidApiKey.source().is_none());
     assert!(AfError::Internal.source().is_none());
 }
