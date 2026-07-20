@@ -14,6 +14,8 @@ pub use error::{ConfigError, CorsOriginError};
 pub use loader::{CONFIG_FILE_ENV, DEFAULT_CONFIG_FILE, ENV_PREFIX, load, load_from};
 pub use model::{
     AppConfig, CorsOrigin, DEFAULT_SHUTDOWN_TIMEOUT_SECS, DatabaseConfig, HttpClientSettings,
-    LogLevel, MAX_SHUTDOWN_TIMEOUT_SECS, RedisSettings, ServerConfig, TelemetrySettings,
+    LogLevel, MAX_OPENAI_UPSTREAM_API_KEY_BYTES, MAX_OPENAI_UPSTREAM_BASE_URL_BYTES,
+    MAX_OPENAI_UPSTREAM_MODEL_BYTES, MAX_SHUTDOWN_TIMEOUT_SECS, OpenAiUpstreamConfig,
+    RedisSettings, ServerConfig, TelemetrySettings,
 };
 pub use secret::SecretString;

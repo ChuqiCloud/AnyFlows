@@ -1,4 +1,4 @@
-use std::{future::Future, time::Duration};
+use std::{future::Future, sync::Arc, time::Duration};
 
 use af_config::{AppConfig, ConfigError};
 use af_db::{
@@ -8,6 +8,12 @@ use af_db::{
 use af_http::{
     HttpListener, HttpRouter, ServeError, ServeOutcome, build_router, serve_with_graceful_shutdown,
 };
+use af_httpclient::{
+    DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
+    DEFAULT_REQUEST_TIMEOUT, HttpClientConfig, HttpClientError, HttpClientPool, HttpTimeouts,
+    PooledClient, ProxyConfig, RemoteDnsPolicy,
+};
+use af_relay::{RelayBuildError, RelayService};
 use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
 use thiserror::Error;
 
@@ -34,9 +40,16 @@ pub struct DatabaseReady {
     database: DatabasePool,
 }
 
+/// M0 单上游 relay 已完成安全配置与受控 HTTP Client 装配。
+pub struct RelayReady {
+    infrastructure: DatabaseReady,
+    relay: Arc<RelayService>,
+}
+
 /// 后台任务监督域已经建立，当前没有注册尚未实现的业务循环。
 pub struct Supervised {
     infrastructure: DatabaseReady,
+    relay: Arc<RelayService>,
     supervisor: BackgroundTaskSupervisor,
 }
 
@@ -44,6 +57,13 @@ pub struct Supervised {
 pub struct RouterReady {
     runtime: Supervised,
     router: HttpRouter,
+}
+
+/// HTTP 监听器已绑定，可以读取实际地址并开始服务。
+pub struct ListenerReady {
+    runtime: Supervised,
+    router: HttpRouter,
+    listener: HttpListener,
 }
 
 /// 分阶段服务构建器；每个转换消费前一阶段，禁止跳过初始化顺序。
@@ -90,6 +110,12 @@ pub enum BootstrapError {
     /// HTTP 监听、服务或强制关闭失败。
     #[error("HTTP 服务生命周期操作失败")]
     Http(#[source] ServeError),
+    /// 受控上游 HTTP Client 配置或构造失败。
+    #[error("初始化上游 HTTP Client 失败")]
+    HttpClient(#[source] HttpClientError),
+    /// M0 单上游 relay 配置或构造失败。
+    #[error("初始化 M0 单上游转发服务失败")]
+    Relay(#[source] RelayBuildError),
     /// 后台任务强制关闭失败。
     #[error("后台任务生命周期操作失败")]
     Supervisor(#[source] SupervisorError),
@@ -161,6 +187,28 @@ impl Bootstrap<TelemetryReady> {
 }
 
 impl Bootstrap<DatabaseReady> {
+    /// 使用启动期静态单上游配置建立 M0 非流式 relay。
+    pub fn init_relay(self) -> Result<Bootstrap<RelayReady>, BootstrapError> {
+        let relay = Arc::new(build_relay(&self.config)?);
+        let Bootstrap {
+            config,
+            shutdown_timeout,
+            shutdown,
+            stage,
+        } = self;
+        Ok(Bootstrap {
+            config,
+            shutdown_timeout,
+            shutdown,
+            stage: RelayReady {
+                infrastructure: stage,
+                relay,
+            },
+        })
+    }
+}
+
+impl Bootstrap<RelayReady> {
     /// 建立后台任务监督域；后续任务必须通过该域注册并共享关闭信号。
     #[must_use]
     pub fn start_supervisor(self) -> Bootstrap<Supervised> {
@@ -171,12 +219,17 @@ impl Bootstrap<DatabaseReady> {
             stage,
         } = self;
         let supervisor = BackgroundTaskSupervisor::new(shutdown.clone());
+        let RelayReady {
+            infrastructure,
+            relay,
+        } = stage;
         Bootstrap {
             config,
             shutdown_timeout,
             shutdown,
             stage: Supervised {
-                infrastructure: stage,
+                infrastructure,
+                relay,
                 supervisor,
             },
         }
@@ -187,7 +240,7 @@ impl Bootstrap<Supervised> {
     /// 构建完整 HTTP Router；此后只允许进入监听阶段。
     #[must_use]
     pub fn build_router(self) -> Bootstrap<RouterReady> {
-        let router = build_router(self.config.server());
+        let router = build_router(self.config.server(), Arc::clone(&self.stage.relay));
         let Bootstrap {
             config,
             shutdown_timeout,
@@ -207,7 +260,38 @@ impl Bootstrap<Supervised> {
 }
 
 impl Bootstrap<RouterReady> {
-    /// 绑定端口、运行 HTTP 服务，并按顺序排空请求、停止任务、关闭数据库。
+    /// 绑定配置的监听地址；端口为零时可在下一阶段读取系统分配的实际端口。
+    pub fn bind(self) -> Result<Bootstrap<ListenerReady>, BootstrapError> {
+        let listener =
+            HttpListener::bind(self.config.server().bind()).map_err(BootstrapError::Http)?;
+        let Bootstrap {
+            config,
+            shutdown_timeout,
+            shutdown,
+            stage,
+        } = self;
+        let RouterReady { runtime, router } = stage;
+        Ok(Bootstrap {
+            config,
+            shutdown_timeout,
+            shutdown,
+            stage: ListenerReady {
+                runtime,
+                router,
+                listener,
+            },
+        })
+    }
+}
+
+impl Bootstrap<ListenerReady> {
+    /// 返回已绑定监听器的实际地址。
+    #[must_use]
+    pub const fn local_addr(&self) -> std::net::SocketAddr {
+        self.stage.listener.local_addr()
+    }
+
+    /// 运行 HTTP 服务，并按顺序排空请求、停止任务、关闭数据库。
     ///
     /// 若强制停止后仍无法确认 HTTP 连接或后台任务已经退出，本方法会记录固定脱敏
     /// 分类并直接以状态码 1 结束进程，不会返回 `Result`。该终态无法在嵌入宿主内
@@ -217,31 +301,23 @@ impl Bootstrap<RouterReady> {
         F: Future<Output = ()> + Send + 'static,
     {
         let Bootstrap {
-            config,
+            config: _,
             shutdown_timeout,
             shutdown,
             stage,
         } = self;
-        let listener = HttpListener::bind(config.server().bind());
-        let RouterReady { runtime, router } = stage;
+        let ListenerReady {
+            runtime,
+            router,
+            listener,
+        } = stage;
         let Supervised {
             infrastructure,
             supervisor,
+            relay: _,
         } = runtime;
-        let http = async move {
-            match listener {
-                Ok(listener) => {
-                    serve_with_graceful_shutdown(
-                        listener,
-                        router,
-                        shutdown_signal,
-                        shutdown_timeout,
-                    )
-                    .await
-                }
-                Err(error) => Err(error),
-            }
-        };
+        let http =
+            serve_with_graceful_shutdown(listener, router, shutdown_signal, shutdown_timeout);
 
         run_http_and_shutdown(
             http,
@@ -325,6 +401,55 @@ fn migration_options(config: &AppConfig) -> Result<MigrationOptions, BootstrapEr
     )
 }
 
+fn build_relay(config: &AppConfig) -> Result<RelayService, BootstrapError> {
+    let client = build_http_client(config)?;
+    let upstream = config.openai_upstream();
+    RelayService::new(
+        client,
+        upstream.base_url(),
+        upstream.model(),
+        upstream.api_key().expose(),
+    )
+    .map_err(BootstrapError::Relay)
+}
+
+fn build_http_client(config: &AppConfig) -> Result<PooledClient, BootstrapError> {
+    let settings = config.http_client();
+    let timeouts = HttpTimeouts::new(
+        settings
+            .connect_timeout_secs()
+            .map_or(DEFAULT_CONNECT_TIMEOUT, Duration::from_secs),
+        settings
+            .read_timeout_secs()
+            .map_or(DEFAULT_READ_TIMEOUT, Duration::from_secs),
+        settings
+            .request_timeout_secs()
+            .map_or(DEFAULT_REQUEST_TIMEOUT, Duration::from_secs),
+    )
+    .map_err(BootstrapError::HttpClient)?;
+    let proxy = settings
+        .proxy_url()
+        .map_or_else(
+            || Ok(ProxyConfig::direct()),
+            |url| ProxyConfig::parse(url.expose()),
+        )
+        .map_err(BootstrapError::HttpClient)?;
+    let remote_dns_policy = if settings.trust_proxy_dns() {
+        RemoteDnsPolicy::TrustProxy
+    } else {
+        RemoteDnsPolicy::Deny
+    };
+    let client_config =
+        HttpClientConfig::new(proxy, timeouts).with_remote_dns_policy(remote_dns_policy);
+    let pool = HttpClientPool::new(
+        settings
+            .max_cached_clients()
+            .unwrap_or(DEFAULT_MAX_CACHED_CLIENTS),
+    )
+    .map_err(BootstrapError::HttpClient)?;
+    pool.get(&client_config).map_err(BootstrapError::HttpClient)
+}
+
 fn terminate_unconfirmed_shutdown(error_kind: &'static str) -> ! {
     tracing::error!(
         error_kind,
@@ -340,8 +465,10 @@ pub async fn run() -> Result<(), BootstrapError> {
         .init_telemetry()?
         .connect_database()
         .await?
+        .init_relay()?
         .start_supervisor()
         .build_router()
+        .bind()?
         .serve(system_shutdown_signal())
         .await?;
     log_shutdown_report(report);
@@ -405,7 +532,7 @@ mod tests {
         fs::write(
             &path,
             format!(
-                "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{database_url}'\n"
+                "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{database_url}'\n[openai_upstream]\nbase_url = 'https://upstream.example'\nmodel = 'test-model'\napi_key = 'test-upstream-key'\n"
             ),
         )
         .unwrap();
@@ -450,8 +577,12 @@ mod tests {
             .connect_database()
             .await
             .unwrap()
+            .init_relay()
+            .unwrap()
             .start_supervisor()
             .build_router()
+            .bind()
+            .unwrap()
             .serve(async {})
             .await
             .unwrap();

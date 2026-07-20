@@ -9,11 +9,16 @@ publish.workspace = true
 af-config = { path = "../af-config", version = "0.1.0" }
 af-db = { path = "../af-db", version = "0.1.0" }
 af-http = { path = "../af-http", version = "0.1.0" }
+af-httpclient = { path = "../af-httpclient", version = "0.1.0" }
+af-relay = { path = "../af-relay", version = "0.1.0" }
 af-telemetry = { path = "../af-telemetry", version = "0.1.0" }
 futures-util.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true

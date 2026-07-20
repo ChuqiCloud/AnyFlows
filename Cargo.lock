@@ -85,6 +85,7 @@ dependencies = [
  "af-config",
  "af-domain",
  "af-protocol",
+ "af-relay",
  "af-telemetry",
  "axum",
  "axum-server",
@@ -128,6 +129,13 @@ dependencies = [
 [[package]]
 name = "af-relay"
 version = "0.1.0"
+dependencies = [
+ "af-adapter",
+ "af-domain",
+ "af-protocol",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "af-scheduler"
@@ -140,8 +148,11 @@ dependencies = [
  "af-config",
  "af-db",
  "af-http",
+ "af-httpclient",
+ "af-relay",
  "af-telemetry",
  "futures-util",
+ "serde_json",
  "thiserror",
  "tokio",
  "tracing",

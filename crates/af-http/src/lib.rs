@@ -1,5 +1,6 @@
 //! HTTP 路由、中间件、提取器与响应映射。
 
+mod chat_completions;
 mod error_response;
 mod middleware;
 mod router;

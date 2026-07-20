@@ -11,7 +11,7 @@ use figment::{
 };
 use serde::Serialize;
 
-use crate::{AppConfig, ConfigError, HttpClientSettings, ServerConfig, TelemetrySettings};
+use crate::{AppConfig, ConfigError, ServerConfig, TelemetrySettings};
 
 /// 默认配置文件名；文件不存在时仅使用默认值与环境变量。
 pub const DEFAULT_CONFIG_FILE: &str = "anyflows.toml";
@@ -26,7 +26,7 @@ struct ConfigDefaults {
     telemetry: TelemetrySettings,
     database: DatabaseDefaults,
     redis: RedisDefaults,
-    http_client: HttpClientSettings,
+    http_client: HttpClientDefaults,
 }
 
 #[derive(Default, Serialize)]
@@ -37,6 +37,16 @@ struct DatabaseDefaults {
 #[derive(Default, Serialize)]
 struct RedisDefaults {
     url: Option<String>,
+}
+
+#[derive(Default, Serialize)]
+struct HttpClientDefaults {
+    max_cached_clients: Option<usize>,
+    connect_timeout_secs: Option<u64>,
+    read_timeout_secs: Option<u64>,
+    request_timeout_secs: Option<u64>,
+    proxy_url: Option<String>,
+    trust_proxy_dns: bool,
 }
 
 /// 加载默认文件与环境变量覆盖后的应用配置。
@@ -134,11 +144,17 @@ fn known_field(path: &str) -> Option<&'static str> {
         "database.migration_timeout_secs" => "database.migration_timeout_secs",
         "redis" => "redis",
         "redis.url" => "redis.url",
+        "openai_upstream" => "openai_upstream",
+        "openai_upstream.base_url" => "openai_upstream.base_url",
+        "openai_upstream.model" => "openai_upstream.model",
+        "openai_upstream.api_key" => "openai_upstream.api_key",
         "http_client" => "http_client",
         "http_client.max_cached_clients" => "http_client.max_cached_clients",
         "http_client.connect_timeout_secs" => "http_client.connect_timeout_secs",
         "http_client.read_timeout_secs" => "http_client.read_timeout_secs",
         "http_client.request_timeout_secs" => "http_client.request_timeout_secs",
+        "http_client.proxy_url" => "http_client.proxy_url",
+        "http_client.trust_proxy_dns" => "http_client.trust_proxy_dns",
         _ => return None,
     })
 }
@@ -159,8 +175,13 @@ mod tests {
 
     static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
     const CHILD_MARKER: &str = "ANYFLOWS_CONFIG_CHILD";
+    const TEST_OPENAI_UPSTREAM: &str = "\n[openai_upstream]\nbase_url = 'https://upstream.example'\nmodel = 'test-model'\napi_key = 'test-upstream-key'\n";
 
     fn temp_file(contents: &str) -> PathBuf {
+        raw_temp_file(&format!("{contents}{TEST_OPENAI_UPSTREAM}"))
+    }
+
+    fn raw_temp_file(contents: &str) -> PathBuf {
         let serial = NEXT_FILE.fetch_add(1, Ordering::Relaxed);
         let path = env::temp_dir().join(format!(
             "anyflows-config-{}-{serial}.toml",
@@ -195,8 +216,136 @@ mod tests {
             assert_eq!(config.telemetry().level(), LogLevel::Info);
             assert_eq!(config.database().migration_timeout_secs(), None);
             assert!(config.redis().url().is_none());
+            assert_eq!(
+                config.openai_upstream().base_url(),
+                "https://upstream.example"
+            );
+            assert_eq!(config.openai_upstream().model(), "test-model");
+            assert_eq!(
+                config.openai_upstream().api_key().expose(),
+                "test-upstream-key"
+            );
             assert_eq!(config.http_client().max_cached_clients(), None);
             assert_eq!(config.http_client().request_timeout_secs(), None);
+            assert!(config.http_client().proxy_url().is_none());
+            assert!(!config.http_client().trust_proxy_dns());
+        });
+    }
+
+    #[test]
+    fn unauthenticated_m0_service_rejects_non_loopback_bind() {
+        with_clean_env(|_| {
+            for bind in ["0.0.0.0:8080", "[::]:8080", "192.0.2.10:8080"] {
+                let path = temp_file(&format!(
+                    "[server]\nbind = '{bind}'\n[database]\nurl = 'sqlite::memory:'\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(
+                    error,
+                    ConfigError::InvalidField {
+                        field: "server.bind"
+                    }
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn openai_upstream_is_required_and_each_field_is_typed() {
+        with_clean_env(|_| {
+            let missing_section = raw_temp_file("[database]\nurl = 'sqlite::memory:'\n");
+            let error = load_from(&missing_section).unwrap_err();
+            let _ = fs::remove_file(missing_section);
+            assert_eq!(
+                error,
+                ConfigError::InvalidField {
+                    field: "openai_upstream"
+                }
+            );
+
+            for (field, body) in [
+                (
+                    "openai_upstream.base_url",
+                    "[database]\nurl = 'sqlite::memory:'\n[openai_upstream]\nmodel = 'test-model'\napi_key = 'test-key'\n",
+                ),
+                (
+                    "openai_upstream.model",
+                    "[database]\nurl = 'sqlite::memory:'\n[openai_upstream]\nbase_url = 'https://upstream.example'\napi_key = 'test-key'\n",
+                ),
+                (
+                    "openai_upstream.api_key",
+                    "[database]\nurl = 'sqlite::memory:'\n[openai_upstream]\nbase_url = 'https://upstream.example'\nmodel = 'test-model'\n",
+                ),
+            ] {
+                let path = raw_temp_file(body);
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(error, ConfigError::InvalidField { field });
+            }
+        });
+    }
+
+    #[test]
+    fn rejects_invalid_openai_upstream_without_echoing_values() {
+        with_clean_env(|_| {
+            for (field, body, canary) in [
+                (
+                    "openai_upstream.base_url",
+                    "[database]\nurl = 'sqlite::memory:'\n[openai_upstream]\nbase_url = 'https://user:base-url-secret@upstream.example'\nmodel = 'test-model'\napi_key = 'test-key'\n",
+                    "base-url-secret",
+                ),
+                (
+                    "openai_upstream.model",
+                    "[database]\nurl = 'sqlite::memory:'\n[openai_upstream]\nbase_url = 'https://upstream.example'\nmodel = ' model-secret '\napi_key = 'test-key'\n",
+                    "model-secret",
+                ),
+                (
+                    "openai_upstream.api_key",
+                    "[database]\nurl = 'sqlite::memory:'\n[openai_upstream]\nbase_url = 'https://upstream.example'\nmodel = 'test-model'\napi_key = ' key-secret '\n",
+                    "key-secret",
+                ),
+                (
+                    "openai_upstream.api_key",
+                    "[database]\nurl = 'sqlite::memory:'\n[openai_upstream]\nbase_url = 'https://upstream.example'\nmodel = 'test-model'\napi_key = '非 ASCII 密钥'\n",
+                    "非 ASCII 密钥",
+                ),
+            ] {
+                let path = raw_temp_file(body);
+                let error = load_from(&path).unwrap_err();
+                let rendered = format!("{error:?}\n{error}");
+                let _ = fs::remove_file(path);
+                assert_eq!(error, ConfigError::InvalidField { field });
+                assert!(!rendered.contains(canary));
+            }
+        });
+    }
+
+    #[test]
+    fn proxy_dns_delegation_must_match_the_proxy_scheme() {
+        with_clean_env(|_| {
+            for body in [
+                "[database]\nurl = 'sqlite::memory:'\n[http_client]\nproxy_url = 'http://127.0.0.1:10808'\n",
+                "[database]\nurl = 'sqlite::memory:'\n[http_client]\nproxy_url = 'socks5://127.0.0.1:10808'\ntrust_proxy_dns = true\n",
+                "[database]\nurl = 'sqlite::memory:'\n[http_client]\ntrust_proxy_dns = true\n",
+            ] {
+                let path = temp_file(body);
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(
+                    error,
+                    ConfigError::InvalidField {
+                        field: "http_client.trust_proxy_dns"
+                    }
+                );
+            }
+
+            let path = temp_file(
+                "[database]\nurl = 'sqlite::memory:'\n[http_client]\nproxy_url = 'http://127.0.0.1:10808'\ntrust_proxy_dns = true\n",
+            );
+            let config = load_from(&path).unwrap();
+            let _ = fs::remove_file(path);
+            assert!(config.http_client().trust_proxy_dns());
         });
     }
 
@@ -204,12 +353,12 @@ mod tests {
     fn toml_values_override_defaults() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[server]\nbind = '0.0.0.0:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\n",
+                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
 
-            assert_eq!(config.server().bind().to_string(), "0.0.0.0:9000");
+            assert_eq!(config.server().bind().to_string(), "127.0.0.2:9000");
             assert_eq!(
                 config.server().cors_allowed_origins()[0].as_str(),
                 "https://console.example"
@@ -219,6 +368,10 @@ mod tests {
             assert_eq!(config.database().migration_timeout_secs(), Some(42));
             assert_eq!(config.http_client().max_cached_clients(), Some(7));
             assert_eq!(config.http_client().read_timeout_secs(), Some(8));
+            assert_eq!(
+                config.http_client().proxy_url().unwrap().expose(),
+                "socks5://127.0.0.1:10808"
+            );
         });
     }
 
@@ -226,7 +379,7 @@ mod tests {
     fn environment_values_override_toml_in_an_isolated_process() {
         if env::var_os(CHILD_MARKER).is_some() {
             let config = load().unwrap();
-            assert_eq!(config.server().bind().to_string(), "0.0.0.0:7070");
+            assert_eq!(config.server().bind().to_string(), "127.0.0.2:7070");
             assert_eq!(
                 config.server().cors_allowed_origins()[0].as_str(),
                 "http://localhost:5173"
@@ -234,6 +387,19 @@ mod tests {
             assert_eq!(config.telemetry().level(), LogLevel::Warn);
             assert_eq!(config.server().shutdown_timeout_secs(), 12);
             assert_eq!(config.http_client().max_cached_clients(), Some(3));
+            assert_eq!(
+                config.openai_upstream().base_url(),
+                "https://environment-upstream.example"
+            );
+            assert_eq!(config.openai_upstream().model(), "environment-model");
+            assert_eq!(
+                config.openai_upstream().api_key().expose(),
+                "environment-upstream-key"
+            );
+            assert_eq!(
+                config.http_client().proxy_url().unwrap().expose(),
+                "socks5://127.0.0.1:10808"
+            );
             assert_eq!(
                 config.database().url().expose(),
                 "postgres://env-user:env-secret@db/env-app"
@@ -252,7 +418,7 @@ mod tests {
                 .env_clear()
                 .env(CHILD_MARKER, "1")
                 .env(CONFIG_FILE_ENV, &path)
-                .env("AF_SERVER__BIND", "0.0.0.0:7070")
+                .env("AF_SERVER__BIND", "127.0.0.2:7070")
                 .env("AF_SERVER__SHUTDOWN_TIMEOUT_SECS", "12")
                 .env(
                     "AF_SERVER__CORS_ALLOWED_ORIGINS",
@@ -263,7 +429,14 @@ mod tests {
                     "AF_DATABASE__URL",
                     "postgres://env-user:env-secret@db/env-app",
                 )
+                .env(
+                    "AF_OPENAI_UPSTREAM__BASE_URL",
+                    "https://environment-upstream.example",
+                )
+                .env("AF_OPENAI_UPSTREAM__MODEL", "environment-model")
+                .env("AF_OPENAI_UPSTREAM__API_KEY", "environment-upstream-key")
                 .env("AF_HTTP_CLIENT__MAX_CACHED_CLIENTS", "3")
+                .env("AF_HTTP_CLIENT__PROXY_URL", "socks5://127.0.0.1:10808")
                 .output()
                 .expect("必须能启动隔离配置测试进程");
             let _ = fs::remove_file(path);
@@ -367,8 +540,8 @@ mod tests {
     #[test]
     fn debug_output_redacts_database_and_redis_urls() {
         with_clean_env(|_| {
-            let path = temp_file(
-                "[server]\ncors_allowed_origins = ['https://cors-host-secret.example']\n[database]\nurl = 'postgres://user:database-secret@db/app'\n[redis]\nurl = 'redis://user:redis-secret@cache/0'\n",
+            let path = raw_temp_file(
+                "[server]\ncors_allowed_origins = ['https://cors-host-secret.example']\n[database]\nurl = 'postgres://user:database-secret@db/app'\n[redis]\nurl = 'redis://user:redis-secret@cache/0'\n[openai_upstream]\nbase_url = 'https://upstream-host-secret.example'\nmodel = 'model-secret-canary'\napi_key = 'upstream-key-secret'\n[http_client]\nproxy_url = 'socks5://proxy-user:proxy-secret@127.0.0.1:10808'\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
@@ -376,6 +549,10 @@ mod tests {
             assert!(!debug.contains("database-secret"));
             assert!(!debug.contains("redis-secret"));
             assert!(!debug.contains("cors-host-secret"));
+            assert!(!debug.contains("upstream-host-secret"));
+            assert!(!debug.contains("model-secret-canary"));
+            assert!(!debug.contains("upstream-key-secret"));
+            assert!(!debug.contains("proxy-secret"));
             assert!(debug.contains("redacted"));
         });
     }
@@ -440,6 +617,9 @@ mod tests {
         with_clean_env(|jail| {
             assert!(!Path::new(DEFAULT_CONFIG_FILE).exists());
             jail.set_env("AF_DATABASE__URL", "sqlite::memory:");
+            jail.set_env("AF_OPENAI_UPSTREAM__BASE_URL", "https://upstream.example");
+            jail.set_env("AF_OPENAI_UPSTREAM__MODEL", "test-model");
+            jail.set_env("AF_OPENAI_UPSTREAM__API_KEY", "test-upstream-key");
             let config = load().unwrap();
             assert_eq!(config.database().url().expose(), "sqlite::memory:");
         });
