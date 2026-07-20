@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use crate::{
-    REQUEST_ID_HEADER_NAME,
+    ApiKeyExtractionError, REQUEST_ID_HEADER_NAME,
     error_response::{MappedError, OpenAiHttpError},
     router::build_router_with_routes,
 };
@@ -39,6 +39,13 @@ fn error_cases() -> Vec<ErrorCase> {
             code: PublicErrorCode::InvalidRequest,
             kind: "invalid_request_error",
             message: "Invalid request.",
+        },
+        ErrorCase {
+            error: AfError::InvalidApiKey,
+            status: StatusCode::UNAUTHORIZED,
+            code: PublicErrorCode::InvalidApiKey,
+            kind: "invalid_request_error",
+            message: "Invalid API key.",
         },
         upstream_case(
             UpstreamError::RateLimited,
@@ -157,6 +164,37 @@ fn public_error_metadata_covers_every_stable_code() {
         assert_eq!(mapped.status(), status);
         assert_eq!(mapped.message(), message);
         assert!(message.is_ascii());
+    }
+}
+
+#[tokio::test]
+async fn every_presentation_failure_uses_one_invalid_api_key_response() {
+    let mut expected = None;
+    for error in [
+        ApiKeyExtractionError::Missing,
+        ApiKeyExtractionError::Malformed,
+        ApiKeyExtractionError::Ambiguous,
+        ApiKeyExtractionError::QueryDenied,
+    ] {
+        let response = OpenAiHttpError::from(error).into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = response_json(response).await;
+        assert_eq!(
+            body,
+            json!({
+                "error": {
+                    "message": "Invalid API key.",
+                    "type": "invalid_request_error",
+                    "param": null,
+                    "code": "invalid_api_key",
+                }
+            })
+        );
+        if let Some(expected) = &expected {
+            assert_eq!(&body, expected);
+        } else {
+            expected = Some(body);
+        }
     }
 }
 

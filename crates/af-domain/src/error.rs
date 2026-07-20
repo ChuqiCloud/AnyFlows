@@ -89,6 +89,9 @@ pub enum AfError {
     /// 客户端请求无法进入后续业务流程。
     #[error("请求无效")]
     InvalidRequest,
+    /// 下游 API Key 缺失、格式无效或未通过认证。
+    #[error("下游 API Key 无效")]
+    InvalidApiKey,
     /// 已归一化且不含原始上游内容的故障。
     #[error("{0}")]
     Upstream(#[from] UpstreamError),
