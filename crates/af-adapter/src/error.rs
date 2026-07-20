@@ -1,4 +1,4 @@
-use af_domain::{CredentialKind, Operation};
+use af_domain::{ChannelType, CredentialKind, Operation};
 use af_httpclient::HttpTransportError;
 use thiserror::Error;
 
@@ -64,6 +64,9 @@ impl From<HttpTransportError> for AdaptorTransportError {
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 #[non_exhaustive]
 pub enum AdaptorError {
+    /// 当前版本尚未实现该渠道适配器。
+    #[error("适配器不支持渠道 {channel_type}")]
+    UnsupportedChannel { channel_type: ChannelType },
     /// 上游基础地址不是受支持的 HTTP(S) 地址。
     #[error("上游基础地址无效")]
     InvalidBaseUrl,
