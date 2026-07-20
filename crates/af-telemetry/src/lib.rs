@@ -4,6 +4,7 @@ mod error;
 mod fields;
 mod logging;
 mod metrics;
+mod panic_hook;
 mod request;
 
 pub use af_config::{LogLevel, TelemetrySettings};
@@ -16,6 +17,7 @@ pub use metrics::{
     QUOTA_CONSUMED_TOTAL, REQUEST_DURATION_SECONDS, REQUESTS_TOTAL, UPSTREAM_ERRORS_TOTAL,
     init_metrics,
 };
+pub use panic_hook::install_redacted_panic_hook;
 pub use request::{RequestId, request_span};
 
 #[cfg(test)]

@@ -34,4 +34,8 @@ pub enum ConfigError {
     /// 配置项必须为正数。
     #[error("配置项必须大于零: {field}")]
     NonPositive { field: &'static str },
+
+    /// 配置项超出服务允许的固定边界。
+    #[error("配置项超出允许范围: {field}")]
+    OutOfRange { field: &'static str },
 }

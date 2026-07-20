@@ -13,7 +13,7 @@ pub use dynamic_options::{
 pub use error::{ConfigError, CorsOriginError};
 pub use loader::{CONFIG_FILE_ENV, DEFAULT_CONFIG_FILE, ENV_PREFIX, load, load_from};
 pub use model::{
-    AppConfig, CorsOrigin, DatabaseConfig, HttpClientSettings, LogLevel, RedisSettings,
-    ServerConfig, TelemetrySettings,
+    AppConfig, CorsOrigin, DEFAULT_SHUTDOWN_TIMEOUT_SECS, DatabaseConfig, HttpClientSettings,
+    LogLevel, MAX_SHUTDOWN_TIMEOUT_SECS, RedisSettings, ServerConfig, TelemetrySettings,
 };
 pub use secret::SecretString;
