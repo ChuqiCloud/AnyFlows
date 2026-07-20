@@ -24,7 +24,8 @@ mod response_tests;
 #[cfg(test)]
 mod tests;
 
-const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
+/// OpenAI Chat 请求与非流式响应的最大正文大小。
+pub const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 const REQUEST_JSON_LIMITS: JsonLimits = JsonLimits {
     max_depth: 32,
     max_nodes: 100_000,
