@@ -10,6 +10,7 @@ use std::{
 };
 
 use af_config::{CorsOrigin, ServerConfig};
+use af_domain::AfError;
 use af_telemetry::RequestId;
 use axum::{
     Router,
@@ -35,7 +36,8 @@ use tracing_subscriber::{
 };
 
 use crate::{
-    DEFAULT_REQUEST_BODY_LIMIT_BYTES, REQUEST_ID_HEADER_NAME, router::build_router_with_routes,
+    DEFAULT_REQUEST_BODY_LIMIT_BYTES, OpenAiHttpError, REQUEST_ID_HEADER_NAME,
+    router::build_router_with_routes,
 };
 
 const ALLOWED_ORIGIN: &str = "https://console.example";
@@ -54,6 +56,7 @@ fn test_router(origins: &[&str], body_limit: usize) -> Router {
         .route("/request-id", get(observe_request_id))
         .route("/body", post(consume_body))
         .route("/echo/{value}", post(consume_body))
+        .route("/mapped-error/{value}", post(mapped_error))
         .route("/method-only", get(empty_response))
         .route("/large-response", get(large_response));
     let operations_routes = Router::new().route("/ops", get(empty_response));
@@ -90,6 +93,10 @@ async fn consume_body(_: Bytes) -> StatusCode {
 
 async fn empty_response() -> StatusCode {
     StatusCode::NO_CONTENT
+}
+
+async fn mapped_error() -> Result<StatusCode, OpenAiHttpError> {
+    Err(AfError::InvalidRequest.into())
 }
 
 async fn large_response() -> Response {
@@ -581,14 +588,39 @@ fn logs_only_canonical_request_metadata_and_keeps_request_span() {
             request_id(&rejected);
             to_bytes(rejected.into_body(), usize::MAX).await.unwrap();
 
+            let mapped = test_router(&[], 64)
+                .oneshot(
+                    Request::builder()
+                        .method(Method::POST)
+                        .uri("/mapped-error/error-path-secret?query=error-query-secret")
+                        .header(AUTHORIZATION, "Bearer error-authorization-secret")
+                        .header(COOKIE, "session=error-cookie-secret")
+                        .header(USER_AGENT, "error-user-agent-secret")
+                        .header("x-api-key", "error-api-key-secret")
+                        .header(REQUEST_ID_HEADER_NAME, "error-client-request-secret")
+                        .body(Body::from("error-body-secret"))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(mapped.status(), StatusCode::BAD_REQUEST);
+            let mapped_request_id = request_id(&mapped);
+            to_bytes(mapped.into_body(), usize::MAX).await.unwrap();
+
             let logs = output.text();
             assert!(logs.contains("af_http::middleware"));
+            assert!(logs.contains("af_http::error_response"));
             assert!(logs.contains("HTTP 请求完成"));
             assert!(logs.contains("/echo/{value}"), "安全日志内容: {logs}");
+            assert!(logs.contains("/mapped-error/{value}"));
             assert!(logs.contains("status_code=204"));
+            assert!(logs.contains("status_code=400"));
             assert!(logs.contains("status_code=413"));
             assert!(logs.contains("response_latency_ms"));
             assert!(logs.contains(&canonical));
+            assert!(logs.contains(&mapped_request_id));
+            assert!(logs.contains("error_code=\"invalid_request\""));
+            assert!(logs.contains("error_kind=\"invalid_request\""));
             for secret in [
                 "path-secret",
                 "query-secret",
@@ -599,6 +631,14 @@ fn logs_only_canonical_request_metadata_and_keeps_request_span() {
                 "client-request-secret",
                 "body-secret",
                 "overflow-body-secret",
+                "error-path-secret",
+                "error-query-secret",
+                "error-authorization-secret",
+                "error-cookie-secret",
+                "error-user-agent-secret",
+                "error-api-key-secret",
+                "error-client-request-secret",
+                "error-body-secret",
             ] {
                 assert!(!logs.contains(secret), "日志泄露了测试敏感值: {secret}");
             }
