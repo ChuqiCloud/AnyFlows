@@ -142,6 +142,7 @@ fn known_field(path: &str) -> Option<&'static str> {
         "database" => "database",
         "database.url" => "database.url",
         "database.migration_timeout_secs" => "database.migration_timeout_secs",
+        "database.health_check_timeout_secs" => "database.health_check_timeout_secs",
         "redis" => "redis",
         "redis.url" => "redis.url",
         "openai_upstream" => "openai_upstream",
@@ -215,6 +216,7 @@ mod tests {
             assert_eq!(config.server().shutdown_timeout_secs(), 30);
             assert_eq!(config.telemetry().level(), LogLevel::Info);
             assert_eq!(config.database().migration_timeout_secs(), None);
+            assert_eq!(config.database().health_check_timeout_secs(), None);
             assert!(config.redis().url().is_none());
             assert_eq!(
                 config.openai_upstream().base_url(),
@@ -353,7 +355,7 @@ mod tests {
     fn toml_values_override_defaults() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
+                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
@@ -366,6 +368,7 @@ mod tests {
             assert_eq!(config.telemetry().level(), LogLevel::Debug);
             assert_eq!(config.server().shutdown_timeout_secs(), 45);
             assert_eq!(config.database().migration_timeout_secs(), Some(42));
+            assert_eq!(config.database().health_check_timeout_secs(), Some(3));
             assert_eq!(config.http_client().max_cached_clients(), Some(7));
             assert_eq!(config.http_client().read_timeout_secs(), Some(8));
             assert_eq!(
@@ -465,6 +468,26 @@ mod tests {
                 }
             );
             assert!(!rendered.contains("private-level-canary"));
+        });
+    }
+
+    #[test]
+    fn invalid_database_health_timeout_is_typed_without_echoing_value() {
+        with_clean_env(|_| {
+            let path = temp_file(
+                "[database]\nurl = 'sqlite::memory:'\nhealth_check_timeout_secs = 'health-timeout-secret'\n",
+            );
+            let error = load_from(&path).unwrap_err();
+            let rendered = format!("{error:?}\n{error}");
+            let _ = fs::remove_file(path);
+
+            assert_eq!(
+                error,
+                ConfigError::InvalidField {
+                    field: "database.health_check_timeout_secs",
+                }
+            );
+            assert!(!rendered.contains("health-timeout-secret"));
         });
     }
 
@@ -662,6 +685,10 @@ mod tests {
                     "[database]\nurl = 'sqlite::memory:'\nmigration_timeout_secs = 0\n",
                 ),
                 (
+                    "database.health_check_timeout_secs",
+                    "[database]\nurl = 'sqlite::memory:'\nhealth_check_timeout_secs = 0\n",
+                ),
+                (
                     "http_client.max_cached_clients",
                     "[database]\nurl = 'sqlite::memory:'\n[http_client]\nmax_cached_clients = 0\n",
                 ),
@@ -690,6 +717,22 @@ mod tests {
                 error,
                 ConfigError::OutOfRange {
                     field: "server.shutdown_timeout_secs"
+                }
+            );
+        });
+    }
+
+    #[test]
+    fn rejects_database_health_timeout_above_hard_limit() {
+        with_clean_env(|_| {
+            let path =
+                temp_file("[database]\nurl = 'sqlite::memory:'\nhealth_check_timeout_secs = 31\n");
+            let error = load_from(&path).unwrap_err();
+            let _ = fs::remove_file(path);
+            assert_eq!(
+                error,
+                ConfigError::OutOfRange {
+                    field: "database.health_check_timeout_secs"
                 }
             );
         });

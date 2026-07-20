@@ -172,4 +172,20 @@ mod tests {
         pool.close().await?;
         Ok(())
     }
+
+    #[tokio::test]
+    async fn health_check_timeout_is_enforced_while_pool_is_exhausted() -> Result<(), Box<dyn Error>>
+    {
+        let options = DatabaseOptions::new("sqlite::memory:")?;
+        let mut pool = connect(&options).await?;
+        pool.health_check_timeout = Duration::from_millis(1);
+        let transaction = pool.connection().begin().await?;
+
+        let error = pool.ping().await.unwrap_err();
+        assert!(matches!(error, DatabaseError::HealthCheckTimeout { .. }));
+
+        transaction.rollback().await?;
+        pool.close().await?;
+        Ok(())
+    }
 }
