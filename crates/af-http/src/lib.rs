@@ -2,6 +2,7 @@
 
 mod authentication;
 mod chat_completions;
+mod client_ip;
 mod credentials;
 mod error_response;
 mod middleware;
@@ -20,6 +21,8 @@ pub use serve::{HttpListener, ServeError, ServeOutcome, serve_with_graceful_shut
 
 #[cfg(test)]
 mod authentication_tests;
+#[cfg(test)]
+mod client_ip_tests;
 #[cfg(test)]
 mod credentials_tests;
 #[cfg(test)]

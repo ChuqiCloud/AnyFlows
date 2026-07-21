@@ -132,11 +132,17 @@ fn known_field(path: &str) -> Option<&'static str> {
     Some(match path {
         "server" => "server",
         "server.bind" => "server.bind",
+        "server.client_ip_source" => "server.client_ip_source",
         "server.shutdown_timeout_secs" => "server.shutdown_timeout_secs",
         path if path == "server.cors_allowed_origins"
             || path.starts_with("server.cors_allowed_origins.") =>
         {
             "server.cors_allowed_origins"
+        }
+        path if path == "server.trusted_proxy_cidrs"
+            || path.starts_with("server.trusted_proxy_cidrs.") =>
+        {
+            "server.trusted_proxy_cidrs"
         }
         "telemetry" => "telemetry",
         "telemetry.level" => "telemetry.level",
@@ -176,7 +182,7 @@ mod tests {
     use figment::Jail;
 
     use super::*;
-    use crate::LogLevel;
+    use crate::{ClientIpSource, LogLevel, MAX_TRUSTED_PROXY_CIDRS};
 
     static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
     const CHILD_MARKER: &str = "ANYFLOWS_CONFIG_CHILD";
@@ -218,6 +224,8 @@ mod tests {
             assert_eq!(config.server().bind().to_string(), "127.0.0.1:8080");
             assert!(config.server().cors_allowed_origins().is_empty());
             assert_eq!(config.server().shutdown_timeout_secs(), 30);
+            assert_eq!(config.server().client_ip_source(), ClientIpSource::Peer);
+            assert!(config.server().trusted_proxy_cidrs().is_empty());
             assert_eq!(config.telemetry().level(), LogLevel::Info);
             assert_eq!(config.database().migration_timeout_secs(), None);
             assert_eq!(config.database().health_check_timeout_secs(), None);
@@ -255,6 +263,92 @@ mod tests {
                         field: "server.bind"
                     }
                 );
+            }
+        });
+    }
+
+    #[test]
+    fn trusted_proxy_source_requires_a_bounded_static_network_set() {
+        with_clean_env(|_| {
+            let valid = temp_file(
+                "[server]\nclient_ip_source = 'x-forwarded-for'\ntrusted_proxy_cidrs = ['10.23.45.0/24', '2001:db8::/48']\n[database]\nurl = 'sqlite::memory:'\n",
+            );
+            let config = load_from(&valid).unwrap();
+            let _ = fs::remove_file(valid);
+            assert_eq!(
+                config.server().client_ip_source(),
+                ClientIpSource::XForwardedFor
+            );
+            assert_eq!(config.server().trusted_proxy_cidrs().len(), 2);
+            let debug = format!("{:?}", config.server());
+            assert!(!debug.contains("10.23.45"));
+            assert!(!debug.contains("2001:db8"));
+
+            for (field, server) in [
+                (
+                    "server.trusted_proxy_cidrs",
+                    "trusted_proxy_cidrs = ['127.0.0.1/32']",
+                ),
+                (
+                    "server.client_ip_source",
+                    "client_ip_source = 'x-forwarded-for'",
+                ),
+                (
+                    "server.trusted_proxy_cidrs",
+                    "client_ip_source = 'x-forwarded-for'\ntrusted_proxy_cidrs = ['0.0.0.0/0']",
+                ),
+                (
+                    "server.trusted_proxy_cidrs",
+                    "client_ip_source = 'x-forwarded-for'\ntrusted_proxy_cidrs = ['::/0']",
+                ),
+                (
+                    "server.trusted_proxy_cidrs",
+                    "client_ip_source = 'x-forwarded-for'\ntrusted_proxy_cidrs = ['::ffff:0.0.0.0/96']",
+                ),
+            ] {
+                let path = temp_file(&format!(
+                    "[server]\n{server}\n[database]\nurl = 'sqlite::memory:'\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(error, ConfigError::InvalidField { field });
+            }
+
+            let networks = (0..=MAX_TRUSTED_PROXY_CIDRS)
+                .map(|index| format!("'10.0.{}.0/24'", index % 256))
+                .collect::<Vec<_>>()
+                .join(",");
+            let too_many = temp_file(&format!(
+                "[server]\nclient_ip_source = 'x-forwarded-for'\ntrusted_proxy_cidrs = [{networks}]\n[database]\nurl = 'sqlite::memory:'\n"
+            ));
+            let error = load_from(&too_many).unwrap_err();
+            let _ = fs::remove_file(too_many);
+            assert_eq!(
+                error,
+                ConfigError::OutOfRange {
+                    field: "server.trusted_proxy_cidrs"
+                }
+            );
+
+            for (field, value) in [
+                ("server.client_ip_source", "proxy-source-canary"),
+                ("server.trusted_proxy_cidrs", "192.0.2.1/proxy-cidr-canary"),
+            ] {
+                let server = if field.ends_with("source") {
+                    format!("client_ip_source = '{value}'")
+                } else {
+                    format!(
+                        "client_ip_source = 'x-forwarded-for'\ntrusted_proxy_cidrs = ['{value}']"
+                    )
+                };
+                let path = temp_file(&format!(
+                    "[server]\n{server}\n[database]\nurl = 'sqlite::memory:'\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let rendered = format!("{error:?}\n{error}");
+                let _ = fs::remove_file(path);
+                assert_eq!(error, ConfigError::InvalidField { field });
+                assert!(!rendered.contains(value));
             }
         });
     }
@@ -397,6 +491,11 @@ mod tests {
             );
             assert_eq!(config.telemetry().level(), LogLevel::Warn);
             assert_eq!(config.server().shutdown_timeout_secs(), 12);
+            assert_eq!(
+                config.server().client_ip_source(),
+                ClientIpSource::XForwardedFor
+            );
+            assert_eq!(config.server().trusted_proxy_cidrs().len(), 1);
             assert!(config.auth().allow_query_api_key());
             assert_eq!(config.auth().lookup_timeout_secs(), 9);
             assert_eq!(config.http_client().max_cached_clients(), Some(3));
@@ -433,6 +532,8 @@ mod tests {
                 .env(CONFIG_FILE_ENV, &path)
                 .env("AF_SERVER__BIND", "127.0.0.2:7070")
                 .env("AF_SERVER__SHUTDOWN_TIMEOUT_SECS", "12")
+                .env("AF_SERVER__CLIENT_IP_SOURCE", "x-forwarded-for")
+                .env("AF_SERVER__TRUSTED_PROXY_CIDRS", "[\"127.0.0.0/8\"]")
                 .env(
                     "AF_SERVER__CORS_ALLOWED_ORIGINS",
                     "[\"http://localhost:5173\"]",

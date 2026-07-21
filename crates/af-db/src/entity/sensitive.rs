@@ -1,5 +1,6 @@
 use std::{collections::HashSet, fmt};
 
+use af_domain::{IpCidr, TrustedClientIp};
 use argon2::{
     Algorithm, MIN_SALT_LEN, Params, Version, password_hash::PasswordHash as ParsedPasswordHash,
 };
@@ -27,6 +28,11 @@ const ENVELOPE_FIELDS: [&str; 5] = ["version", "algorithm", "key_id", "nonce", "
 const MAX_HEADER_OVERRIDE_COUNT: usize = 64;
 const MAX_HEADER_NAME_LENGTH: usize = 200;
 const MAX_HEADER_VALUE_LENGTH: usize = 8_192;
+const MAX_TOKEN_IP_ALLOWLIST_COUNT: usize = 64;
+const MAX_TOKEN_IP_ALLOWLIST_TEXT_BYTES: usize = 4_096;
+/// PostgreSQL/MySQL 文本化会在数组分隔符后补空格，按其最坏结构开销保留上限。
+pub(crate) const MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES: i64 =
+    (MAX_TOKEN_IP_ALLOWLIST_TEXT_BYTES + MAX_TOKEN_IP_ALLOWLIST_COUNT * 4) as i64;
 const FORBIDDEN_OVERRIDE_HEADERS: &[&str] = &[
     "authorization",
     "proxy-authorization",
@@ -61,6 +67,9 @@ pub(crate) enum SensitiveValueError {
     /// 令牌哈希不是规范化的 SHA-256 十六进制编码。
     #[error("令牌哈希必须是 64 位小写十六进制字符串")]
     InvalidTokenHash,
+    /// 令牌 IP 白名单不是受限的非空 IP/CIDR 字符串数组。
+    #[error("令牌 IP 白名单格式无效")]
+    InvalidTokenIpAllowlist,
     /// 渠道基础地址无效、使用了不支持的协议或携带敏感 URL 组件。
     #[error("渠道基础地址必须是无凭据、查询串和片段的 HTTP(S) URL")]
     InvalidChannelBaseUrl,
@@ -202,6 +211,57 @@ impl TokenHash {
 }
 
 impl fmt::Debug for TokenHash {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("<redacted>")
+    }
+}
+
+/// 已完整校验且禁止日志输出的令牌 IP/CIDR 白名单。
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct TokenIpAllowlist {
+    raw: Json,
+    rules: Box<[IpCidr]>,
+}
+
+impl TokenIpAllowlist {
+    /// 校验非空数组、数量、总文本预算以及每一条 IP/CIDR。
+    pub(crate) fn validate(value: Json) -> Result<Self, SensitiveValueError> {
+        let Json::Array(entries) = &value else {
+            return Err(SensitiveValueError::InvalidTokenIpAllowlist);
+        };
+        if entries.is_empty() || entries.len() > MAX_TOKEN_IP_ALLOWLIST_COUNT {
+            return Err(SensitiveValueError::InvalidTokenIpAllowlist);
+        }
+
+        let mut total_text_bytes = 0_usize;
+        let mut rules = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let Json::String(entry) = entry else {
+                return Err(SensitiveValueError::InvalidTokenIpAllowlist);
+            };
+            total_text_bytes = total_text_bytes
+                .checked_add(entry.len())
+                .filter(|total| *total <= MAX_TOKEN_IP_ALLOWLIST_TEXT_BYTES)
+                .ok_or(SensitiveValueError::InvalidTokenIpAllowlist)?;
+            let rule = entry
+                .parse::<IpCidr>()
+                .map_err(|_| SensitiveValueError::InvalidTokenIpAllowlist)?;
+            rules.push(rule);
+        }
+
+        Ok(Self {
+            raw: value,
+            rules: rules.into_boxed_slice(),
+        })
+    }
+
+    /// 判断可信客户端 IP 是否命中任意一条完整校验后的规则。
+    pub(crate) fn allows(&self, client_ip: TrustedClientIp) -> bool {
+        self.rules.iter().any(|rule| rule.contains(client_ip))
+    }
+}
+
+impl fmt::Debug for TokenIpAllowlist {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("<redacted>")
     }
@@ -493,6 +553,48 @@ impl_validated_string_value!(ChannelBaseUrl, parse, ColumnType::Text);
 impl_validated_json_value!(EncryptedJson, from_envelope);
 impl_validated_json_value!(HeaderOverrides, validate);
 
+impl From<TokenIpAllowlist> for Value {
+    fn from(source: TokenIpAllowlist) -> Self {
+        source.raw.into()
+    }
+}
+
+impl TryGetable for TokenIpAllowlist {
+    fn try_get_by<I>(result: &QueryResult, index: I) -> Result<Self, TryGetError>
+    where
+        I: ColIdx,
+    {
+        let raw = <Json as TryGetable>::try_get_by(result, index)?;
+        Self::validate(raw)
+            .map_err(|error| invalid_db_value("Json", stringify!(TokenIpAllowlist), error))
+    }
+}
+
+impl ValueType for TokenIpAllowlist {
+    fn try_from(value: Value) -> Result<Self, ValueTypeErr> {
+        let raw = <Json as ValueType>::try_from(value)?;
+        Self::validate(raw).map_err(|_| ValueTypeErr)
+    }
+
+    fn type_name() -> String {
+        stringify!(TokenIpAllowlist).to_owned()
+    }
+
+    fn array_type() -> ArrayType {
+        ArrayType::Json
+    }
+
+    fn column_type() -> ColumnType {
+        ColumnType::JsonBinary
+    }
+}
+
+impl Nullable for TokenIpAllowlist {
+    fn null() -> Value {
+        <Json as Nullable>::null()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -509,6 +611,9 @@ mod tests {
         let settings = SensitiveJson::from(Json::String("sensitive-settings".to_owned()));
         let base_url = ChannelBaseUrl::parse("https://api.example.com").unwrap();
         let headers = HeaderOverrides::validate(Json::Object(Default::default())).unwrap();
+        let allowlist =
+            TokenIpAllowlist::validate(Json::Array(vec![Json::String("192.0.2.0/24".to_owned())]))
+                .unwrap();
 
         for rendered in [
             format!("{text:?}"),
@@ -518,6 +623,7 @@ mod tests {
             format!("{settings:?}"),
             format!("{base_url:?}"),
             format!("{headers:?}"),
+            format!("{allowlist:?}"),
         ] {
             assert_eq!(rendered, "<redacted>");
         }
@@ -548,6 +654,13 @@ mod tests {
         assert!(PasswordHash::parse(&TEST_PASSWORD_HASH.replace("argon2id", "argon2i")).is_err());
         assert!(TokenHash::parse("plaintext-token").is_err());
         assert!(TokenHash::parse(&"A".repeat(64)).is_err());
+        for invalid in [
+            Json::Null,
+            Json::Array(Vec::new()),
+            Json::Array(vec![Json::String("invalid-ip".to_owned())]),
+        ] {
+            assert!(TokenIpAllowlist::validate(invalid).is_err());
+        }
         assert!(ChannelBaseUrl::parse("https://user:password@example.com").is_err());
         assert!(ChannelBaseUrl::parse("https://example.com?api_key=secret").is_err());
         assert!(ChannelBaseUrl::parse("https://example.com#secret").is_err());

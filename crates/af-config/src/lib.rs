@@ -13,11 +13,11 @@ pub use dynamic_options::{
 pub use error::{ConfigError, CorsOriginError};
 pub use loader::{CONFIG_FILE_ENV, DEFAULT_CONFIG_FILE, ENV_PREFIX, load, load_from};
 pub use model::{
-    AppConfig, AuthSettings, CorsOrigin, DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS,
+    AppConfig, AuthSettings, ClientIpSource, CorsOrigin, DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS,
     DEFAULT_SHUTDOWN_TIMEOUT_SECS, DatabaseConfig, HttpClientSettings, LogLevel,
     MAX_AUTH_LOOKUP_TIMEOUT_SECS, MAX_DATABASE_HEALTH_CHECK_TIMEOUT_SECS,
     MAX_OPENAI_UPSTREAM_API_KEY_BYTES, MAX_OPENAI_UPSTREAM_BASE_URL_BYTES,
-    MAX_OPENAI_UPSTREAM_MODEL_BYTES, MAX_SHUTDOWN_TIMEOUT_SECS, OpenAiUpstreamConfig,
-    RedisSettings, ServerConfig, TelemetrySettings,
+    MAX_OPENAI_UPSTREAM_MODEL_BYTES, MAX_SHUTDOWN_TIMEOUT_SECS, MAX_TRUSTED_PROXY_CIDRS,
+    OpenAiUpstreamConfig, RedisSettings, ServerConfig, TelemetrySettings,
 };
 pub use secret::SecretString;

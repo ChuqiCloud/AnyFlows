@@ -8,6 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
+use crate::client_ip::{ClientIpResolutionError, ClientIpResolver};
 use crate::{OpenAiHttpError, QueryApiKeyPolicy, extract_presented_api_key};
 
 /// HTTP API Key 鉴权中间件所需的不可变状态。
@@ -15,6 +16,7 @@ use crate::{OpenAiHttpError, QueryApiKeyPolicy, extract_presented_api_key};
 pub(crate) struct AuthenticationState {
     authenticator: Arc<dyn TokenAuthenticator>,
     query_api_key_policy: QueryApiKeyPolicy,
+    client_ip_resolver: ClientIpResolver,
 }
 
 impl AuthenticationState {
@@ -22,20 +24,36 @@ impl AuthenticationState {
     pub(crate) fn new(
         authenticator: Arc<dyn TokenAuthenticator>,
         query_api_key_policy: QueryApiKeyPolicy,
+        server_config: &af_config::ServerConfig,
     ) -> Self {
         Self {
             authenticator,
             query_api_key_policy,
+            client_ip_resolver: ClientIpResolver::from_config(server_config),
         }
     }
 }
 
-/// 从唯一凭据载体完成认证，并把已验证身份注入请求扩展。
+/// 从 TCP/代理边界和唯一凭据载体完成认证，并把已验证身份注入请求扩展。
 pub(crate) async fn authenticate_api_key(
     State(state): State<AuthenticationState>,
     mut request: Request,
     next: Next,
 ) -> Response {
+    let client_ip = match state.client_ip_resolver.resolve(&mut request) {
+        Ok(client_ip) => client_ip,
+        Err(ClientIpResolutionError::MissingPeer) => {
+            tracing::error!(
+                target: "af_http::authentication",
+                error_kind = "client_ip_missing_peer",
+                "HTTP 服务入口缺少 TCP 对端信息"
+            );
+            return OpenAiHttpError::from(AfError::Internal).into_response();
+        }
+        Err(ClientIpResolutionError::InvalidProxyChain) => {
+            return OpenAiHttpError::from(AfError::InvalidApiKey).into_response();
+        }
+    };
     let presented = match extract_presented_api_key(&mut request, state.query_api_key_policy) {
         Ok(presented) => presented,
         Err(error) => return OpenAiHttpError::from(error).into_response(),
@@ -45,7 +63,7 @@ pub(crate) async fn authenticate_api_key(
     let digest = presented.digest();
     drop(presented);
 
-    let authentication = state.authenticator.authenticate(&digest).await;
+    let authentication = state.authenticator.authenticate(&digest, client_ip).await;
     // 鉴权结束即释放摘要，不让它跟随 handler 和转发生命周期。
     drop(digest);
 

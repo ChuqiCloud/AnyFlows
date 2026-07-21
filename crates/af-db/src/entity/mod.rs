@@ -21,8 +21,8 @@ pub(crate) mod users;
 mod sensitive;
 
 pub(crate) use sensitive::{
-    ChannelBaseUrl, EncryptedJson, HeaderOverrides, PasswordHash, SensitiveJson, SensitiveString,
-    TokenHash,
+    ChannelBaseUrl, EncryptedJson, HeaderOverrides, MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES,
+    PasswordHash, SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist,
 };
 
 macro_rules! impl_updated_at_behavior {

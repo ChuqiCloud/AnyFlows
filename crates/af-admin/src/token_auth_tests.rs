@@ -1,4 +1,4 @@
-use af_domain::{GatewayPrincipal, GroupId, TokenId, UserId};
+use af_domain::{GatewayPrincipal, GroupId, TokenId, TrustedClientIp, UserId};
 
 use crate::{
     ApiKeyDigest, PresentedApiKey, TokenAuthenticationError, TokenAuthenticationFuture,
@@ -12,7 +12,11 @@ struct FixedAuthenticator {
 }
 
 impl TokenAuthenticator for FixedAuthenticator {
-    fn authenticate<'a>(&'a self, _digest: &'a ApiKeyDigest) -> TokenAuthenticationFuture<'a> {
+    fn authenticate<'a>(
+        &'a self,
+        _digest: &'a ApiKeyDigest,
+        _client_ip: TrustedClientIp,
+    ) -> TokenAuthenticationFuture<'a> {
         let result = self.result;
         Box::pin(async move { result })
     }
@@ -26,8 +30,12 @@ fn principal() -> GatewayPrincipal {
     )
 }
 
+fn client_ip() -> TrustedClientIp {
+    TrustedClientIp::new("192.0.2.10".parse().unwrap())
+}
+
 #[tokio::test]
-async fn token_authenticator_is_object_safe_and_accepts_only_digest() {
+async fn token_authenticator_is_object_safe_and_accepts_digest_with_trusted_ip() {
     let authenticator: &dyn TokenAuthenticator = &FixedAuthenticator {
         result: Ok(principal()),
     };
@@ -35,7 +43,10 @@ async fn token_authenticator_is_object_safe_and_accepts_only_digest() {
     let digest = presented.digest();
     drop(presented);
 
-    assert_eq!(authenticator.authenticate(&digest).await, Ok(principal()));
+    assert_eq!(
+        authenticator.authenticate(&digest, client_ip()).await,
+        Ok(principal())
+    );
 }
 
 #[tokio::test]
@@ -48,9 +59,13 @@ async fn authentication_error_contract_is_closed_and_secret_free() {
     let secret = presented.expose_secret().to_owned();
     drop(presented);
 
-    let error = authenticator.authenticate(&digest).await.unwrap_err();
+    let error = authenticator
+        .authenticate(&digest, client_ip())
+        .await
+        .unwrap_err();
     let rendered = format!("{error:?}\n{error}");
     assert_eq!(error, TokenAuthenticationError::InvalidApiKey);
     assert!(!rendered.contains(&secret));
     assert!(!rendered.contains(digest.as_str()));
+    assert!(!rendered.contains("192.0.2.10"));
 }

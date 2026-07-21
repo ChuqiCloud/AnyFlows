@@ -8,7 +8,7 @@ use std::{
 
 use af_admin::{ApiKeyDigest, TokenAuthenticationFuture, TokenAuthenticator};
 use af_config::ServerConfig;
-use af_domain::{GatewayPrincipal, GroupId, TokenId, UserId};
+use af_domain::{GatewayPrincipal, GroupId, TokenId, TrustedClientIp, UserId};
 use af_http::{
     HttpListener, QueryApiKeyPolicy, ReadinessFuture, ReadinessHandle, ReadinessProbe,
     ServeOutcome, build_router, serve_with_graceful_shutdown,
@@ -33,7 +33,11 @@ impl ReadinessProbe for AlwaysReadyProbe {
 struct AlwaysAuthenticates;
 
 impl TokenAuthenticator for AlwaysAuthenticates {
-    fn authenticate<'a>(&'a self, _digest: &'a ApiKeyDigest) -> TokenAuthenticationFuture<'a> {
+    fn authenticate<'a>(
+        &'a self,
+        _digest: &'a ApiKeyDigest,
+        _client_ip: TrustedClientIp,
+    ) -> TokenAuthenticationFuture<'a> {
         Box::pin(async {
             Ok(GatewayPrincipal::new(
                 TokenId::new(TOKEN_ID).unwrap(),

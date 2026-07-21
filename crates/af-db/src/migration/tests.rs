@@ -2,6 +2,7 @@ use std::env;
 use std::error::Error;
 use std::time::Duration;
 
+use af_domain::TrustedClientIp;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::entity::prelude::{Json, TimeDateTimeWithTimeZone, TimeTime};
 use sea_orm::{
@@ -14,8 +15,8 @@ use url::Url;
 use super::*;
 use crate::entity::{
     ChannelBaseUrl, EncryptedJson, HeaderOverrides, PasswordHash, SensitiveJson, SensitiveString,
-    TokenHash, abilities, channel_groups, channel_models, channels, credentials, groups, options,
-    tokens, users,
+    TokenHash, TokenIpAllowlist, abilities, channel_groups, channel_models, channels, credentials,
+    groups, options, tokens, users,
 };
 use crate::{
     DatabaseOptions, PoolOptions, TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository,
@@ -94,7 +95,11 @@ async fn migration_deadline_fails_without_retrying() -> Result<(), Box<dyn Error
 async fn generated_active_models_redact_sensitive_payloads() {
     let credential = credential_active_model(1, "credential-ciphertext");
     let user = user_active_model(1, "user", "user@example.com", "invite-a");
-    let token = token_active_model(1, 1, TOKEN_HASH_A, "token-a");
+    let mut token = token_active_model(1, 1, TOKEN_HASH_A, "token-a");
+    token.allow_ips = Set(Some(
+        TokenIpAllowlist::validate(Json::Array(vec![Json::String("192.0.2.0/24".to_owned())]))
+            .unwrap(),
+    ));
     let option = option_active_model("site.name", "option-value");
     let mut channel = channel_active_model("debug-channel");
     channel.base_url = Set(Some(
@@ -120,6 +125,7 @@ async fn generated_active_models_redact_sensitive_payloads() {
         assert!(rendered.contains("<redacted>"));
         assert!(!rendered.contains(secret));
     }
+    assert!(!format!("{token:?}").contains("192.0.2.0"));
 }
 
 #[tokio::test]
@@ -186,11 +192,18 @@ async fn exercise_token_auth_repository(pool: &DatabasePool) -> Result<(), Box<d
     let user = user.insert(pool.connection()).await?;
     let mut token = token_active_model(user.id, group.id, TOKEN_HASH_E, "auth-smoke-token");
     token.status = Set(1);
+    token.allow_ips = Set(Some(TokenIpAllowlist::validate(Json::Array(vec![
+        Json::String("192.0.2.0/24".to_owned()),
+        Json::String("2001:db8::/32".to_owned()),
+    ]))?));
     let token = token.insert(pool.connection()).await?;
 
     let repository = TokenAuthRepository::new(pool.clone(), Duration::from_secs(2))?;
     let outcome = repository
-        .lookup(&TokenAuthLookup::new(TOKEN_HASH_E)?)
+        .lookup(
+            &TokenAuthLookup::new(TOKEN_HASH_E)?,
+            TrustedClientIp::new("192.0.2.10".parse()?),
+        )
         .await?;
     let TokenAuthLookupOutcome::Authenticated(principal) = outcome else {
         return Err("三方言令牌鉴权冒烟未返回已认证主体".into());
@@ -198,6 +211,15 @@ async fn exercise_token_auth_repository(pool: &DatabasePool) -> Result<(), Box<d
     assert_eq!(principal.token_id().get(), token.id);
     assert_eq!(principal.user_id().get(), user.id);
     assert_eq!(principal.group_id().get(), group.id);
+    assert_eq!(
+        repository
+            .lookup(
+                &TokenAuthLookup::new(TOKEN_HASH_E)?,
+                TrustedClientIp::new("198.51.100.10".parse()?),
+            )
+            .await?,
+        TokenAuthLookupOutcome::Rejected
+    );
 
     tokens::Entity::delete_by_id(token.id)
         .exec(pool.connection())

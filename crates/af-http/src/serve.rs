@@ -84,7 +84,11 @@ where
         .map_err(ServeError::Io)?
         .http1_only()
         .handle(handle.clone())
-        .serve(router.into_router().into_make_service());
+        .serve(
+            router
+                .into_router()
+                .into_make_service_with_connect_info::<SocketAddr>(),
+        );
     let signal_handle = handle.clone();
     let graceful_signal = async move {
         shutdown.await;
@@ -149,7 +153,7 @@ mod tests {
         atomic::{AtomicBool, Ordering},
     };
 
-    use axum::{Router, routing::get};
+    use axum::{Router, extract::ConnectInfo, routing::get};
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         net::TcpStream,
@@ -170,6 +174,45 @@ mod tests {
         .await
         .unwrap_err();
         assert!(matches!(error, ServeError::ZeroDrainTimeout));
+    }
+
+    #[tokio::test]
+    async fn real_tcp_requests_receive_their_peer_address() {
+        let router = Router::new().route(
+            "/peer",
+            get(|ConnectInfo(peer): ConnectInfo<SocketAddr>| async move {
+                if peer.ip().is_loopback() {
+                    "peer-ok"
+                } else {
+                    "peer-invalid"
+                }
+            }),
+        );
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let listener = HttpListener::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let address = listener.local_addr();
+        let server = tokio::spawn(serve_with_graceful_shutdown(
+            listener,
+            HttpRouter::new(router),
+            async move {
+                let _ = shutdown_rx.await;
+            },
+            Duration::from_secs(1),
+        ));
+
+        let mut client = TcpStream::connect(address).await.unwrap();
+        client
+            .write_all(b"GET /peer HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).await.unwrap();
+        let response = String::from_utf8(response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 OK"));
+        assert!(response.ends_with("peer-ok"));
+
+        shutdown_tx.send(()).unwrap();
+        assert_eq!(server.await.unwrap().unwrap(), ServeOutcome::Drained);
     }
 
     #[tokio::test]

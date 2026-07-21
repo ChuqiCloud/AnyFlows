@@ -1,10 +1,10 @@
 use std::{fmt, time::Duration};
 
-use af_domain::{GatewayPrincipal, GroupId, TokenId, UserId};
+use af_domain::{GatewayPrincipal, GroupId, TokenId, TrustedClientIp, UserId};
 use sea_orm::{
-    ConnectionTrait, DbErr, QueryResult,
+    ConnectionTrait, DbBackend, DbErr, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
-    sea_query::{Alias, Expr, Func, Query, SelectStatement},
+    sea_query::{Alias, Expr, ExprTrait, Func, Query, SelectStatement, SimpleExpr},
 };
 use thiserror::Error;
 use tokio::time::timeout;
@@ -12,7 +12,9 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool,
-    entity::{TokenHash, groups, tokens, users},
+    entity::{
+        MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES, TokenHash, TokenIpAllowlist, groups, tokens, users,
+    },
 };
 
 /// 只携带规范 SHA-256 摘要的令牌鉴权查询值。
@@ -47,9 +49,9 @@ pub enum TokenAuthLookupError {
 /// 完成持久化校验后的令牌鉴权结果。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TokenAuthLookupOutcome {
-    /// 令牌、用户和有效分组均已通过校验。
+    /// 令牌、用户、有效分组和客户端 IP 均已通过校验。
     Authenticated(GatewayPrincipal),
-    /// Key 不存在，或关联记录已禁用、软删除或过期。
+    /// Key 不存在，或状态、软删除、过期、客户端 IP 不允许继续访问。
     Rejected,
 }
 
@@ -75,7 +77,7 @@ pub enum TokenAuthRepositoryError {
     Invariant,
 }
 
-/// 使用数据库持久化状态校验下游 API Key 的仓储。
+/// 使用数据库持久化状态与可信客户端 IP 校验下游 API Key 的仓储。
 #[derive(Clone)]
 pub struct TokenAuthRepository {
     pool: DatabasePool,
@@ -97,12 +99,13 @@ impl TokenAuthRepository {
         })
     }
 
-    /// 按完整摘要查询并原子校验令牌、所属用户和有效分组。
+    /// 按完整摘要查询并校验令牌、所属用户、有效分组和客户端 IP。
     pub async fn lookup(
         &self,
         lookup: &TokenAuthLookup,
+        client_ip: TrustedClientIp,
     ) -> Result<TokenAuthLookupOutcome, TokenAuthRepositoryError> {
-        match timeout(self.lookup_timeout, self.lookup_inner(lookup)).await {
+        match timeout(self.lookup_timeout, self.lookup_inner(lookup, client_ip)).await {
             Ok(result) => result,
             Err(_) => Err(record_internal_error(TokenAuthRepositoryError::Timeout)),
         }
@@ -111,11 +114,11 @@ impl TokenAuthRepository {
     async fn lookup_inner(
         &self,
         lookup: &TokenAuthLookup,
+        client_ip: TrustedClientIp,
     ) -> Result<TokenAuthLookupOutcome, TokenAuthRepositoryError> {
         let connection = self.pool.connection();
-        let statement = connection
-            .get_database_backend()
-            .build(&lookup_query(lookup));
+        let database_backend = connection.get_database_backend();
+        let statement = database_backend.build(&lookup_query(database_backend, lookup));
         let mut results = connection
             .query_all(statement)
             .with_subscriber(NoSubscriber::default())
@@ -132,7 +135,7 @@ impl TokenAuthRepository {
         };
         let row = TokenAuthRow::try_from_query_result(&result)
             .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
-        row.validate()
+        row.validate(client_ip)
     }
 }
 
@@ -146,7 +149,10 @@ impl fmt::Debug for TokenAuthRepository {
 }
 
 /// 构造只读取鉴权所需字段的单语句查询，避免加载用户密码和 TOTP 等敏感列。
-fn lookup_query(lookup: &TokenAuthLookup) -> SelectStatement {
+fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> SelectStatement {
+    let allow_ips_length = token_allow_ips_serialized_length(database_backend);
+    let allow_ips_column = || Expr::col((tokens::Entity, tokens::Column::AllowIps));
+
     Query::select()
         .expr_as(
             Expr::col((tokens::Entity, tokens::Column::Id)),
@@ -163,6 +169,26 @@ fn lookup_query(lookup: &TokenAuthLookup) -> SelectStatement {
         .expr_as(
             Expr::col((tokens::Entity, tokens::Column::DeletedAt)),
             Alias::new("token_deleted_at"),
+        )
+        .expr_as(
+            Expr::case(
+                allow_ips_length
+                    .clone()
+                    .lte(MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES),
+                allow_ips_column(),
+            )
+            .finally(Expr::value(Option::<sea_orm::JsonValue>::None)),
+            Alias::new("token_allow_ips"),
+        )
+        .expr_as(
+            Expr::case(
+                allow_ips_column()
+                    .is_not_null()
+                    .and(allow_ips_length.gt(MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES)),
+                true,
+            )
+            .finally(false),
+            Alias::new("token_allow_ips_oversized"),
         )
         .expr_as(
             Expr::col((users::Entity, users::Column::Id)),
@@ -202,11 +228,30 @@ fn lookup_query(lookup: &TokenAuthLookup) -> SelectStatement {
         .to_owned()
 }
 
+/// 按数据库方言计算 JSON 序列化后的字节长度，避免把超大白名单传回应用层。
+fn token_allow_ips_serialized_length(database_backend: DbBackend) -> SimpleExpr {
+    let allow_ips = Expr::col((tokens::Entity, tokens::Column::AllowIps));
+    match database_backend {
+        DbBackend::Postgres => Func::cust(Alias::new("OCTET_LENGTH"))
+            .arg(allow_ips.cast_as(Alias::new("TEXT")))
+            .into(),
+        DbBackend::MySql => Func::cust(Alias::new("OCTET_LENGTH"))
+            .arg(allow_ips.cast_as(Alias::new("CHAR")))
+            .into(),
+        DbBackend::Sqlite => {
+            // SQLite 保留 JSON 原始文本，额外空白同样计入持久化字节上限。
+            Func::char_length(allow_ips.cast_as(Alias::new("BLOB"))).into()
+        }
+    }
+}
+
 struct TokenAuthRow {
     token_id: i64,
     token_status: i16,
     token_expired_at: Option<TimeDateTimeWithTimeZone>,
     token_deleted_at: Option<TimeDateTimeWithTimeZone>,
+    token_allow_ips: Option<TokenIpAllowlist>,
+    token_allow_ips_oversized: bool,
     user_id: Option<i64>,
     user_status: Option<i16>,
     user_deleted_at: Option<TimeDateTimeWithTimeZone>,
@@ -221,6 +266,8 @@ impl TokenAuthRow {
             token_status: result.try_get("", "token_status")?,
             token_expired_at: result.try_get("", "token_expired_at")?,
             token_deleted_at: result.try_get("", "token_deleted_at")?,
+            token_allow_ips: result.try_get("", "token_allow_ips")?,
+            token_allow_ips_oversized: result.try_get("", "token_allow_ips_oversized")?,
             user_id: result.try_get("", "user_id")?,
             user_status: result.try_get("", "user_status")?,
             user_deleted_at: result.try_get("", "user_deleted_at")?,
@@ -229,8 +276,18 @@ impl TokenAuthRow {
         })
     }
 
-    fn validate(self) -> Result<TokenAuthLookupOutcome, TokenAuthRepositoryError> {
+    fn validate(
+        self,
+        client_ip: TrustedClientIp,
+    ) -> Result<TokenAuthLookupOutcome, TokenAuthRepositoryError> {
+        if self.token_allow_ips_oversized {
+            return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
+        }
         let token_enabled = enabled_or_rejected(self.token_status)?;
+        let ip_allowed = self
+            .token_allow_ips
+            .as_ref()
+            .is_none_or(|allowlist| allowlist.allows(client_ip));
         let Some(user_id) = self.user_id else {
             return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
         };
@@ -258,6 +315,7 @@ impl TokenAuthRow {
             || !user_enabled
             || self.user_deleted_at.is_some()
             || self.group_deleted_at.is_some()
+            || !ip_allowed
         {
             return Ok(TokenAuthLookupOutcome::Rejected);
         }
@@ -287,4 +345,42 @@ fn record_internal_error(error: TokenAuthRepositoryError) -> TokenAuthRepository
         "令牌鉴权仓储发生内部错误"
     );
     error
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn allowlist_size_guard_uses_each_database_byte_length_dialect() {
+        let lookup = TokenAuthLookup::new(
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        )
+        .expect("固定摘要必须有效");
+        let cases = [
+            (
+                DbBackend::Postgres,
+                "OCTET_LENGTH(CAST(\"tokens\".\"allow_ips\" AS TEXT))",
+            ),
+            (
+                DbBackend::MySql,
+                "OCTET_LENGTH(CAST(`tokens`.`allow_ips` AS CHAR))",
+            ),
+            (
+                DbBackend::Sqlite,
+                "LENGTH(CAST(\"tokens\".\"allow_ips\" AS BLOB))",
+            ),
+        ];
+
+        for (database_backend, length_expression) in cases {
+            let statement = database_backend.build(&lookup_query(database_backend, &lookup));
+            let rendered = statement.to_string();
+            assert_eq!(statement.sql.matches(length_expression).count(), 2);
+            assert!(rendered.contains("<= 4352"), "{rendered}");
+            assert!(rendered.contains("> 4352"), "{rendered}");
+            assert!(rendered.contains("ELSE NULL END)"), "{rendered}");
+            assert!(rendered.contains("ELSE FALSE END)"), "{rendered}");
+            assert!(statement.sql.contains("token_allow_ips_oversized"));
+        }
+    }
 }

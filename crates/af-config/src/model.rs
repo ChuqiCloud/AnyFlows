@@ -1,5 +1,6 @@
 use std::{fmt, net::SocketAddr, str::FromStr};
 
+use af_domain::IpCidr;
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use url::Url;
 
@@ -15,6 +16,8 @@ pub const MAX_DATABASE_HEALTH_CHECK_TIMEOUT_SECS: u64 = 30;
 pub const DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS: u64 = 2;
 /// 令牌认证仓储查询允许配置的硬上限。
 pub const MAX_AUTH_LOOKUP_TIMEOUT_SECS: u64 = 30;
+/// 单实例允许配置的静态可信前置代理网络上限。
+pub const MAX_TRUSTED_PROXY_CIDRS: usize = 64;
 /// OpenAI-compatible 上游基础地址的最大 UTF-8 字节数。
 pub const MAX_OPENAI_UPSTREAM_BASE_URL_BYTES: usize = 2_048;
 /// 静态单上游模型标识的最大 UTF-8 字节数。
@@ -104,12 +107,25 @@ impl fmt::Debug for CorsOrigin {
     }
 }
 
-/// 服务监听配置。
+/// 鉴权使用的可信客户端 IP 来源。
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClientIpSource {
+    /// 只使用 TCP 连接对端，完全忽略转发地址请求头。
+    #[default]
+    Peer,
+    /// 仅在 TCP 对端属于静态可信代理网络时解析 `X-Forwarded-For`。
+    XForwardedFor,
+}
+
+/// 服务监听与入站网络信任配置。
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ServerConfig {
     bind: SocketAddr,
     cors_allowed_origins: Vec<CorsOrigin>,
+    client_ip_source: ClientIpSource,
+    trusted_proxy_cidrs: Vec<IpCidr>,
     shutdown_timeout_secs: u64,
 }
 
@@ -124,6 +140,18 @@ impl ServerConfig {
     #[must_use]
     pub fn cors_allowed_origins(&self) -> &[CorsOrigin] {
         &self.cors_allowed_origins
+    }
+
+    /// 返回鉴权使用的可信客户端 IP 来源。
+    #[must_use]
+    pub const fn client_ip_source(&self) -> ClientIpSource {
+        self.client_ip_source
+    }
+
+    /// 返回允许提供转发地址链的静态可信 TCP 对端网络。
+    #[must_use]
+    pub fn trusted_proxy_cidrs(&self) -> &[IpCidr] {
+        &self.trusted_proxy_cidrs
     }
 
     /// 返回收到关闭信号后等待在途请求完成的秒数。
@@ -141,6 +169,18 @@ impl ServerConfig {
         self.cors_allowed_origins = origins.into_iter().collect();
         self
     }
+
+    /// 替换可信客户端 IP 来源与代理网络，供嵌入式启动和测试构造使用。
+    #[must_use]
+    pub fn with_client_ip_source(
+        mut self,
+        source: ClientIpSource,
+        trusted_proxy_cidrs: impl IntoIterator<Item = IpCidr>,
+    ) -> Self {
+        self.client_ip_source = source;
+        self.trusted_proxy_cidrs = trusted_proxy_cidrs.into_iter().collect();
+        self
+    }
 }
 
 impl Default for ServerConfig {
@@ -150,6 +190,8 @@ impl Default for ServerConfig {
                 .parse()
                 .expect("内建监听地址必须是有效的 SocketAddr"),
             cors_allowed_origins: Vec::new(),
+            client_ip_source: ClientIpSource::Peer,
+            trusted_proxy_cidrs: Vec::new(),
             shutdown_timeout_secs: DEFAULT_SHUTDOWN_TIMEOUT_SECS,
         }
     }
@@ -441,6 +483,34 @@ impl AppConfig {
             return Err(ConfigError::OutOfRange {
                 field: "server.shutdown_timeout_secs",
             });
+        }
+        if self.server.trusted_proxy_cidrs.len() > MAX_TRUSTED_PROXY_CIDRS {
+            return Err(ConfigError::OutOfRange {
+                field: "server.trusted_proxy_cidrs",
+            });
+        }
+        if self
+            .server
+            .trusted_proxy_cidrs
+            .iter()
+            .any(|network| network.is_universal())
+        {
+            return Err(ConfigError::InvalidField {
+                field: "server.trusted_proxy_cidrs",
+            });
+        }
+        match self.server.client_ip_source {
+            ClientIpSource::Peer if !self.server.trusted_proxy_cidrs.is_empty() => {
+                return Err(ConfigError::InvalidField {
+                    field: "server.trusted_proxy_cidrs",
+                });
+            }
+            ClientIpSource::XForwardedFor if self.server.trusted_proxy_cidrs.is_empty() => {
+                return Err(ConfigError::InvalidField {
+                    field: "server.client_ip_source",
+                });
+            }
+            ClientIpSource::Peer | ClientIpSource::XForwardedFor => {}
         }
         if self.database.url.expose().trim().is_empty() {
             return Err(ConfigError::EmptyValue {

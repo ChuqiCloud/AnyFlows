@@ -15,6 +15,8 @@ use sea_orm::{
 use tracing::{Level, instrument::WithSubscriber};
 use tracing_subscriber::fmt::format::FmtSpan;
 
+use af_domain::TrustedClientIp;
+
 use crate::{
     DatabaseOptions, DatabasePool, MigrationOptions, TokenAuthLookup, TokenAuthLookupError,
     TokenAuthLookupOutcome, TokenAuthRepository, TokenAuthRepositoryConfigError,
@@ -24,6 +26,14 @@ use crate::{
 
 const VALID_HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const UNKNOWN_HASH: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+
+fn test_client_ip() -> TrustedClientIp {
+    client_ip("192.0.2.10")
+}
+
+fn client_ip(value: &str) -> TrustedClientIp {
+    TrustedClientIp::new(value.parse().unwrap())
+}
 
 struct Fixture {
     pool: DatabasePool,
@@ -75,6 +85,14 @@ fn lookup_value_requires_canonical_digest_and_redacts_debug() {
 #[tokio::test]
 async fn lookup_digest_never_enters_trace_output() -> Result<(), Box<dyn Error>> {
     let fixture = fixture_with_sqlx_logging(Duration::from_secs(1), true).await?;
+    set_token_column(
+        &fixture,
+        tokens::Column::AllowIps,
+        Expr::value(JsonValue::Array(vec![JsonValue::String(
+            "192.0.2.0/24".to_owned(),
+        )])),
+    )
+    .await?;
     let captured = Arc::new(Mutex::new(Vec::new()));
     let writer_buffer = Arc::clone(&captured);
     let subscriber = tracing_subscriber::fmt()
@@ -88,7 +106,7 @@ async fn lookup_digest_never_enters_trace_output() -> Result<(), Box<dyn Error>>
     assert!(matches!(
         fixture
             .repository
-            .lookup(&fixture.lookup)
+            .lookup(&fixture.lookup, test_client_ip())
             .with_subscriber(subscriber)
             .await?,
         TokenAuthLookupOutcome::Authenticated(_)
@@ -96,6 +114,8 @@ async fn lookup_digest_never_enters_trace_output() -> Result<(), Box<dyn Error>>
     let trace_output =
         String::from_utf8(captured.lock().expect("日志捕获缓冲区锁不应中毒").clone())?;
     assert!(!trace_output.contains(VALID_HASH));
+    assert!(!trace_output.contains("192.0.2.10"));
+    assert!(!trace_output.contains("192.0.2.0/24"));
     for identifier in [fixture.token_id, fixture.user_id, fixture.token_group_id] {
         assert!(!trace_output.contains(&identifier.to_string()));
     }
@@ -109,7 +129,10 @@ async fn valid_lookup_uses_token_override_and_user_default_group() -> Result<(),
     let fixture = fixture(Duration::from_secs(1)).await?;
 
     assert_authenticated_group(
-        fixture.repository.lookup(&fixture.lookup).await?,
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await?,
         fixture.token_id,
         fixture.user_id,
         fixture.token_group_id,
@@ -124,7 +147,10 @@ async fn valid_lookup_uses_token_override_and_user_default_group() -> Result<(),
     token.update(fixture.pool.connection()).await?;
 
     assert_authenticated_group(
-        fixture.repository.lookup(&fixture.lookup).await?,
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await?,
         fixture.token_id,
         fixture.user_id,
         fixture.default_group_id,
@@ -137,7 +163,10 @@ async fn valid_lookup_uses_token_override_and_user_default_group() -> Result<(),
     )
     .await?;
     assert_authenticated_group(
-        fixture.repository.lookup(&fixture.lookup).await?,
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await?,
         fixture.token_id,
         fixture.user_id,
         fixture.default_group_id,
@@ -147,11 +176,191 @@ async fn valid_lookup_uses_token_override_and_user_default_group() -> Result<(),
 }
 
 #[tokio::test]
+async fn ip_allowlist_supports_exact_cidr_ipv6_and_mapped_addresses() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture(Duration::from_secs(1)).await?;
+
+    // SQL NULL 是唯一“不限制 IP”的持久化表示。
+    assert!(matches!(
+        fixture
+            .repository
+            .lookup(&fixture.lookup, client_ip("2001:db8:ffff::1"))
+            .await?,
+        TokenAuthLookupOutcome::Authenticated(_)
+    ));
+
+    set_token_column(
+        &fixture,
+        tokens::Column::AllowIps,
+        Expr::value(JsonValue::Array(vec![
+            JsonValue::String("192.0.2.10".to_owned()),
+            JsonValue::String("2001:db8:1::1/48".to_owned()),
+            JsonValue::String("::ffff:198.51.100.0/120".to_owned()),
+        ])),
+    )
+    .await?;
+
+    for allowed in [
+        "192.0.2.10",
+        "2001:db8:1::ffff",
+        "198.51.100.9",
+        "::ffff:198.51.100.9",
+    ] {
+        assert!(matches!(
+            fixture
+                .repository
+                .lookup(&fixture.lookup, client_ip(allowed))
+                .await?,
+            TokenAuthLookupOutcome::Authenticated(_)
+        ));
+    }
+    for rejected in ["192.0.2.11", "2001:db8:2::1", "198.51.101.1"] {
+        assert_eq!(
+            fixture
+                .repository
+                .lookup(&fixture.lookup, client_ip(rejected))
+                .await?,
+            TokenAuthLookupOutcome::Rejected
+        );
+    }
+
+    for (rule, allowed, rejected) in [
+        ("0.0.0.0/0", "203.0.113.9", "2001:db8::9"),
+        ("::/0", "2001:db8::9", "203.0.113.9"),
+    ] {
+        set_token_column(
+            &fixture,
+            tokens::Column::AllowIps,
+            Expr::value(JsonValue::Array(vec![JsonValue::String(rule.to_owned())])),
+        )
+        .await?;
+        assert!(matches!(
+            fixture
+                .repository
+                .lookup(&fixture.lookup, client_ip(allowed))
+                .await?,
+            TokenAuthLookupOutcome::Authenticated(_)
+        ));
+        assert_eq!(
+            fixture
+                .repository
+                .lookup(&fixture.lookup, client_ip(rejected))
+                .await?,
+            TokenAuthLookupOutcome::Rejected
+        );
+    }
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn malformed_or_unbounded_ip_allowlists_are_internal() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    let invalid_values = vec![
+        JsonValue::Null,
+        JsonValue::Array(Vec::new()),
+        JsonValue::Object(Default::default()),
+        JsonValue::Array(vec![JsonValue::from(7)]),
+        JsonValue::Array(vec![JsonValue::String(String::new())]),
+        JsonValue::Array(vec![JsonValue::String(" 192.0.2.1".to_owned())]),
+        JsonValue::Array(vec![JsonValue::String("192.0.2.1/33".to_owned())]),
+        JsonValue::Array(vec![JsonValue::String("::ffff:192.0.2.1/95".to_owned())]),
+        JsonValue::Array(vec![JsonValue::String("1".repeat(4_097))]),
+    ];
+
+    for value in invalid_values {
+        set_token_column(&fixture, tokens::Column::AllowIps, Expr::value(value)).await?;
+        assert_repository_error(&fixture, TokenAuthRepositoryError::Invariant).await;
+    }
+
+    // 数据损坏优先于业务禁用态，禁止把坏白名单伪装成普通 401。
+    set_token_column(&fixture, tokens::Column::Status, Expr::value(2_i16)).await?;
+    set_token_column(
+        &fixture,
+        tokens::Column::AllowIps,
+        Expr::value(JsonValue::Null),
+    )
+    .await?;
+    assert_repository_error(&fixture, TokenAuthRepositoryError::Invariant).await;
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn ip_allowlist_accepts_64_entries_and_rejects_65() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    let entries = (0..64)
+        .map(|index| JsonValue::String(format!("192.0.2.{index}")))
+        .collect::<Vec<_>>();
+
+    set_token_column(
+        &fixture,
+        tokens::Column::AllowIps,
+        Expr::value(JsonValue::Array(entries.clone())),
+    )
+    .await?;
+    assert!(matches!(
+        fixture
+            .repository
+            .lookup(&fixture.lookup, client_ip("192.0.2.63"))
+            .await?,
+        TokenAuthLookupOutcome::Authenticated(_)
+    ));
+
+    let mut oversized_count = entries;
+    oversized_count.push(JsonValue::String("192.0.2.64".to_owned()));
+    set_token_column(
+        &fixture,
+        tokens::Column::AllowIps,
+        Expr::value(JsonValue::Array(oversized_count)),
+    )
+    .await?;
+    assert_repository_error(&fixture, TokenAuthRepositoryError::Invariant).await;
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn oversized_serialized_ip_allowlist_is_internal() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    set_token_column(
+        &fixture,
+        tokens::Column::AllowIps,
+        Expr::value(JsonValue::Array(vec![JsonValue::String("x".repeat(8_192))])),
+    )
+    .await?;
+
+    assert_repository_error(&fixture, TokenAuthRepositoryError::Invariant).await;
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn malformed_sqlite_json_allowlist_is_internal() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    fixture
+        .pool
+        .connection()
+        .execute_unprepared("UPDATE tokens SET allow_ips = 'not-json' WHERE key_hash IS NOT NULL")
+        .await?;
+
+    assert_repository_error(&fixture, TokenAuthRepositoryError::Invariant).await;
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn unknown_disabled_deleted_and_expired_tokens_are_rejected() -> Result<(), Box<dyn Error>> {
     let fixture = fixture(Duration::from_secs(1)).await?;
     let unknown = TokenAuthLookup::new(UNKNOWN_HASH)?;
     assert_eq!(
-        fixture.repository.lookup(&unknown).await?,
+        fixture
+            .repository
+            .lookup(&unknown, test_client_ip())
+            .await?,
         TokenAuthLookupOutcome::Rejected
     );
 
@@ -312,7 +521,9 @@ async fn lookup_timeout_and_closed_pool_are_internal() -> Result<(), Box<dyn Err
     let recovery_repository =
         TokenAuthRepository::new(timeout_fixture.pool.clone(), Duration::from_secs(1))?;
     assert!(matches!(
-        recovery_repository.lookup(&timeout_fixture.lookup).await?,
+        recovery_repository
+            .lookup(&timeout_fixture.lookup, test_client_ip())
+            .await?,
         TokenAuthLookupOutcome::Authenticated(_)
     ));
     timeout_fixture.pool.close().await?;
@@ -470,7 +681,10 @@ async fn set_group_deleted(fixture: &Fixture, group_id: i64) -> Result<(), DbErr
 
 async fn assert_rejected(fixture: &Fixture) -> Result<(), TokenAuthRepositoryError> {
     assert_eq!(
-        fixture.repository.lookup(&fixture.lookup).await?,
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await?,
         TokenAuthLookupOutcome::Rejected
     );
     Ok(())
@@ -478,7 +692,10 @@ async fn assert_rejected(fixture: &Fixture) -> Result<(), TokenAuthRepositoryErr
 
 async fn assert_repository_error(fixture: &Fixture, expected: TokenAuthRepositoryError) {
     assert_eq!(
-        fixture.repository.lookup(&fixture.lookup).await,
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await,
         Err(expected)
     );
 }
