@@ -15,7 +15,10 @@ use sea_orm::{
 use tracing::{Level, instrument::WithSubscriber};
 use tracing_subscriber::fmt::format::FmtSpan;
 
-use af_domain::TrustedClientIp;
+use af_domain::{
+    MAX_MODEL_NAME_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_COUNT, MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES,
+    TokenModelPolicy, TrustedClientIp,
+};
 
 use crate::{
     DatabaseOptions, DatabasePool, MigrationOptions, TokenAuthLookup, TokenAuthLookupError,
@@ -85,6 +88,15 @@ fn lookup_value_requires_canonical_digest_and_redacts_debug() {
 #[tokio::test]
 async fn lookup_digest_never_enters_trace_output() -> Result<(), Box<dyn Error>> {
     let fixture = fixture_with_sqlx_logging(Duration::from_secs(1), true).await?;
+    let model_canary = "private-model-policy-canary";
+    set_token_column(
+        &fixture,
+        tokens::Column::ModelLimits,
+        Expr::value(JsonValue::Array(vec![JsonValue::String(
+            model_canary.to_owned(),
+        )])),
+    )
+    .await?;
     set_token_column(
         &fixture,
         tokens::Column::AllowIps,
@@ -109,13 +121,14 @@ async fn lookup_digest_never_enters_trace_output() -> Result<(), Box<dyn Error>>
             .lookup(&fixture.lookup, test_client_ip())
             .with_subscriber(subscriber)
             .await?,
-        TokenAuthLookupOutcome::Authenticated(_)
+        TokenAuthLookupOutcome::Authenticated { .. }
     ));
     let trace_output =
         String::from_utf8(captured.lock().expect("日志捕获缓冲区锁不应中毒").clone())?;
     assert!(!trace_output.contains(VALID_HASH));
     assert!(!trace_output.contains("192.0.2.10"));
     assert!(!trace_output.contains("192.0.2.0/24"));
+    assert!(!trace_output.contains(model_canary));
     for identifier in [fixture.token_id, fixture.user_id, fixture.token_group_id] {
         assert!(!trace_output.contains(&identifier.to_string()));
     }
@@ -176,6 +189,146 @@ async fn valid_lookup_uses_token_override_and_user_default_group() -> Result<(),
 }
 
 #[tokio::test]
+async fn model_policy_null_is_unrestricted_and_allowlist_matches_exactly()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(1)).await?;
+
+    let unrestricted = authenticated_model_policy(
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await?,
+    );
+    assert!(unrestricted.allows("任意规范模型"));
+
+    set_token_column(
+        &fixture,
+        tokens::Column::ModelLimits,
+        Expr::value(JsonValue::Array(vec![
+            JsonValue::String("gpt-test".to_owned()),
+            JsonValue::String("gpt-test".to_owned()),
+            JsonValue::String("Custom-Model".to_owned()),
+        ])),
+    )
+    .await?;
+    let restricted = authenticated_model_policy(
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await?,
+    );
+    assert!(restricted.allows("gpt-test"));
+    assert!(restricted.allows("Custom-Model"));
+    assert!(!restricted.allows("GPT-TEST"));
+    assert!(!restricted.allows("gpt-test "));
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn malformed_or_unbounded_model_allowlists_are_internal() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    let invalid_values = vec![
+        JsonValue::Null,
+        JsonValue::Array(Vec::new()),
+        JsonValue::Object(Default::default()),
+        JsonValue::Array(vec![JsonValue::from(7)]),
+        JsonValue::Array(vec![JsonValue::String(String::new())]),
+        JsonValue::Array(vec![JsonValue::String(" leading-space".to_owned())]),
+        JsonValue::Array(vec![JsonValue::String("line\nbreak".to_owned())]),
+        JsonValue::Array(vec![JsonValue::String(
+            "x".repeat(MAX_MODEL_NAME_BYTES + 1),
+        )]),
+        JsonValue::Array(vec![
+            JsonValue::String("x".repeat(MAX_MODEL_NAME_BYTES));
+            MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES
+                / MAX_MODEL_NAME_BYTES
+                + 1
+        ]),
+    ];
+
+    for value in invalid_values {
+        set_token_column(&fixture, tokens::Column::ModelLimits, Expr::value(value)).await?;
+        assert_repository_error(&fixture, TokenAuthRepositoryError::Invariant).await;
+    }
+
+    // 损坏策略优先于令牌禁用态，禁止被普通鉴权拒绝掩盖。
+    set_token_column(&fixture, tokens::Column::Status, Expr::value(2_i16)).await?;
+    set_token_column(
+        &fixture,
+        tokens::Column::ModelLimits,
+        Expr::value(JsonValue::Null),
+    )
+    .await?;
+    assert_repository_error(&fixture, TokenAuthRepositoryError::Invariant).await;
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn model_allowlist_accepts_512_entries_and_rejects_513() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    let entries = (0..MAX_TOKEN_MODEL_ALLOWLIST_COUNT)
+        .map(|index| JsonValue::String(format!("model-{index}")))
+        .collect::<Vec<_>>();
+
+    set_token_column(
+        &fixture,
+        tokens::Column::ModelLimits,
+        Expr::value(JsonValue::Array(entries.clone())),
+    )
+    .await?;
+    let policy = authenticated_model_policy(
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await?,
+    );
+    assert!(policy.allows("model-511"));
+
+    let mut oversized_count = entries;
+    oversized_count.push(JsonValue::String("model-overflow".to_owned()));
+    set_token_column(
+        &fixture,
+        tokens::Column::ModelLimits,
+        Expr::value(JsonValue::Array(oversized_count)),
+    )
+    .await?;
+    assert_repository_error(&fixture, TokenAuthRepositoryError::Invariant).await;
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn oversized_or_malformed_sqlite_model_policy_is_internal() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    set_token_column(
+        &fixture,
+        tokens::Column::ModelLimits,
+        Expr::value(JsonValue::Array(vec![JsonValue::String(
+            "x".repeat(70 * 1024),
+        )])),
+    )
+    .await?;
+    assert_repository_error(&fixture, TokenAuthRepositoryError::Invariant).await;
+
+    fixture
+        .pool
+        .connection()
+        .execute_unprepared(
+            "UPDATE tokens SET model_limits = 'not-json' WHERE key_hash IS NOT NULL",
+        )
+        .await?;
+    assert_repository_error(&fixture, TokenAuthRepositoryError::Invariant).await;
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn ip_allowlist_supports_exact_cidr_ipv6_and_mapped_addresses() -> Result<(), Box<dyn Error>>
 {
     let fixture = fixture(Duration::from_secs(1)).await?;
@@ -186,7 +339,7 @@ async fn ip_allowlist_supports_exact_cidr_ipv6_and_mapped_addresses() -> Result<
             .repository
             .lookup(&fixture.lookup, client_ip("2001:db8:ffff::1"))
             .await?,
-        TokenAuthLookupOutcome::Authenticated(_)
+        TokenAuthLookupOutcome::Authenticated { .. }
     ));
 
     set_token_column(
@@ -211,7 +364,7 @@ async fn ip_allowlist_supports_exact_cidr_ipv6_and_mapped_addresses() -> Result<
                 .repository
                 .lookup(&fixture.lookup, client_ip(allowed))
                 .await?,
-            TokenAuthLookupOutcome::Authenticated(_)
+            TokenAuthLookupOutcome::Authenticated { .. }
         ));
     }
     for rejected in ["192.0.2.11", "2001:db8:2::1", "198.51.101.1"] {
@@ -239,7 +392,7 @@ async fn ip_allowlist_supports_exact_cidr_ipv6_and_mapped_addresses() -> Result<
                 .repository
                 .lookup(&fixture.lookup, client_ip(allowed))
                 .await?,
-            TokenAuthLookupOutcome::Authenticated(_)
+            TokenAuthLookupOutcome::Authenticated { .. }
         ));
         assert_eq!(
             fixture
@@ -306,7 +459,7 @@ async fn ip_allowlist_accepts_64_entries_and_rejects_65() -> Result<(), Box<dyn 
             .repository
             .lookup(&fixture.lookup, client_ip("192.0.2.63"))
             .await?,
-        TokenAuthLookupOutcome::Authenticated(_)
+        TokenAuthLookupOutcome::Authenticated { .. }
     ));
 
     let mut oversized_count = entries;
@@ -524,7 +677,7 @@ async fn lookup_timeout_and_closed_pool_are_internal() -> Result<(), Box<dyn Err
         recovery_repository
             .lookup(&timeout_fixture.lookup, test_client_ip())
             .await?,
-        TokenAuthLookupOutcome::Authenticated(_)
+        TokenAuthLookupOutcome::Authenticated { .. }
     ));
     timeout_fixture.pool.close().await?;
 
@@ -706,10 +859,22 @@ fn assert_authenticated_group(
     user_id: i64,
     group_id: i64,
 ) {
-    let TokenAuthLookupOutcome::Authenticated(principal) = outcome else {
+    let TokenAuthLookupOutcome::Authenticated {
+        principal,
+        model_policy,
+    } = outcome
+    else {
         panic!("有效令牌必须返回已认证主体");
     };
     assert_eq!(principal.token_id().get(), token_id);
     assert_eq!(principal.user_id().get(), user_id);
     assert_eq!(principal.group_id().get(), group_id);
+    assert!(model_policy.allows("任意规范模型"));
+}
+
+fn authenticated_model_policy(outcome: TokenAuthLookupOutcome) -> TokenModelPolicy {
+    let TokenAuthLookupOutcome::Authenticated { model_policy, .. } = outcome else {
+        panic!("有效令牌必须返回模型策略快照");
+    };
+    model_policy
 }

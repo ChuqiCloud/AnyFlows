@@ -85,6 +85,9 @@ fn classify_error(error: AfError) -> MappedError {
         AfError::InvalidApiKey => {
             MappedError::new(PublicErrorCode::InvalidApiKey, "invalid_api_key")
         }
+        AfError::ModelNotAllowed => {
+            MappedError::new(PublicErrorCode::ModelNotFound, "token_model_not_allowed")
+        }
         AfError::Upstream(error) => classify_upstream_error(error),
         AfError::Internal => MappedError::new(PublicErrorCode::InternalError, "internal"),
     }

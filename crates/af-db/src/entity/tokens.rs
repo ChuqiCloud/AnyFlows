@@ -2,7 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
-use super::{TokenHash, TokenIpAllowlist};
+use super::{TokenHash, TokenIpAllowlist, TokenModelAllowlist};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "tokens")]
@@ -23,7 +23,7 @@ pub struct Model {
     pub used_quota: i64,
     pub expired_at: Option<TimeDateTimeWithTimeZone>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
-    pub model_limits: Option<Json>,
+    pub model_limits: Option<TokenModelAllowlist>,
     #[sea_orm(column_type = "JsonBinary", nullable)]
     pub allow_ips: Option<TokenIpAllowlist>,
     pub cross_group_retry: bool,

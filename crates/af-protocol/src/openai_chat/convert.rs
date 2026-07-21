@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use af_domain::{Operation, Protocol, Role};
+use af_domain::{MAX_MODEL_NAME_BYTES, Operation, Protocol, Role};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Map, Value};
 use url::Url;
@@ -22,7 +22,6 @@ use crate::{
     RequestMetadata, Sampling, TokenCount, ToolChoice, ToolDef,
 };
 
-const MAX_MODEL_BYTES: usize = 256;
 pub(super) const MAX_MESSAGES: usize = 256;
 pub(super) const MAX_PARTS_PER_MESSAGE: usize = 128;
 pub(super) const MAX_CONTENT_BLOCKS: usize = 1_024;
@@ -140,7 +139,7 @@ pub(super) fn convert_request(
 
 pub(super) fn validate_model(model: &str) -> Result<(), ParseRequestError> {
     if model.is_empty()
-        || model.len() > MAX_MODEL_BYTES
+        || model.len() > MAX_MODEL_NAME_BYTES
         || model.chars().any(char::is_control)
         || model.trim() != model
     {

@@ -29,6 +29,7 @@ const BOUNDARY_KEY_CANARY: &str = "boundary-key-canary";
 const LOOPBACK_ALLOWLIST: &str = r#"["127.0.0.1/32"]"#;
 const TRUSTED_CLIENT_IP: &str = "127.0.0.1";
 const SPOOFED_CLIENT_IP: &str = "198.51.100.7";
+const MODEL_POLICY_CANARY: &str = "policy-only-private-model";
 
 static NEXT_DATABASE: AtomicU64 = AtomicU64::new(0);
 
@@ -282,6 +283,106 @@ async fn full_chain_forwards_normalized_request_and_returns_validated_response()
     assert_internal_error(&invalid_allowlist);
     assert!(matches!(captured.try_recv(), Err(TryRecvError::Empty)));
 
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET model_limits = ? WHERE id = ?",
+        vec![
+            json!([MODEL_POLICY_CANARY]).to_string().into(),
+            TOKEN_ID.into(),
+        ],
+    )
+    .await;
+    let malformed_before_policy = send_request(
+        address,
+        "POST",
+        "/v1/chat/completions",
+        br#"{"model":"test-model","model":"other-model","messages":[]}"#,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &authorization),
+            ("Origin", "https://console.example"),
+        ],
+    )
+    .await;
+    assert_invalid_request(&malformed_before_policy);
+    assert!(matches!(captured.try_recv(), Err(TryRecvError::Empty)));
+
+    let denied_model = send_request(
+        address,
+        "POST",
+        "/v1/chat/completions",
+        inbound,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &authorization),
+            ("Origin", "https://console.example"),
+        ],
+    )
+    .await;
+    assert_model_not_found(&denied_model);
+    assert!(matches!(captured.try_recv(), Err(TryRecvError::Empty)));
+
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET model_limits = ? WHERE id = ?",
+        vec![
+            json!([UPSTREAM_MODEL.to_ascii_uppercase()])
+                .to_string()
+                .into(),
+            TOKEN_ID.into(),
+        ],
+    )
+    .await;
+    let case_mismatch = send_request(
+        address,
+        "POST",
+        "/v1/chat/completions",
+        inbound,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &authorization),
+            ("Origin", "https://console.example"),
+        ],
+    )
+    .await;
+    assert_model_not_found(&case_mismatch);
+    assert!(matches!(captured.try_recv(), Err(TryRecvError::Empty)));
+
+    // 损坏模型策略必须先于禁用态失败为内部错误，不能伪装成普通 401。
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET status = ?, model_limits = ? WHERE id = ?",
+        vec![2_i16.into(), "null".into(), TOKEN_ID.into()],
+    )
+    .await;
+    let invalid_model_policy = send_request(
+        address,
+        "POST",
+        "/v1/chat/completions",
+        inbound,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &authorization),
+            ("Origin", "https://console.example"),
+        ],
+    )
+    .await;
+    assert_internal_error(&invalid_model_policy);
+    assert!(matches!(captured.try_recv(), Err(TryRecvError::Empty)));
+
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET status = ?, model_limits = ? WHERE id = ?",
+        vec![
+            1_i16.into(),
+            json!([UPSTREAM_MODEL, MODEL_POLICY_CANARY, UPSTREAM_MODEL])
+                .to_string()
+                .into(),
+            TOKEN_ID.into(),
+        ],
+    )
+    .await;
+
     let response = send_request(
         address,
         "POST",
@@ -408,6 +509,7 @@ async fn full_chain_forwards_normalized_request_and_returns_validated_response()
         LOOPBACK_ALLOWLIST,
         TRUSTED_CLIENT_IP,
         SPOOFED_CLIENT_IP,
+        MODEL_POLICY_CANARY,
     ] {
         assert!(!head_lower.contains(forbidden));
     }
@@ -562,6 +664,35 @@ fn assert_internal_error(response: &RawResponse) {
     assert_no_auth_canaries(response);
 }
 
+fn assert_invalid_request(response: &RawResponse) {
+    assert_eq!(response.status, 400);
+    let value: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(value["error"]["code"], "invalid_request");
+    assert_eq!(value["error"]["type"], "invalid_request_error");
+    assert!(response.headers.contains_key(REQUEST_ID_HEADER_NAME));
+    assert_no_auth_canaries(response);
+}
+
+fn assert_model_not_found(response: &RawResponse) {
+    assert_eq!(response.status, 404);
+    let value: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(value["error"]["code"], "model_not_found");
+    assert_eq!(value["error"]["type"], "invalid_request_error");
+    assert_eq!(
+        value["error"]["message"],
+        "The requested model was not found or is unavailable."
+    );
+    assert_eq!(
+        response.headers["access-control-allow-origin"],
+        "https://console.example"
+    );
+    assert!(response.headers.contains_key(REQUEST_ID_HEADER_NAME));
+    let rendered = String::from_utf8_lossy(&response.body);
+    assert!(!rendered.contains(UPSTREAM_MODEL));
+    assert!(!rendered.contains(MODEL_POLICY_CANARY));
+    assert_no_auth_canaries(response);
+}
+
 fn assert_no_auth_canaries(response: &RawResponse) {
     let rendered = format!(
         "{:?}\n{}",
@@ -576,6 +707,7 @@ fn assert_no_auth_canaries(response: &RawResponse) {
         LOOPBACK_ALLOWLIST,
         TRUSTED_CLIENT_IP,
         SPOOFED_CLIENT_IP,
+        MODEL_POLICY_CANARY,
     ] {
         assert!(!rendered.contains(forbidden));
     }

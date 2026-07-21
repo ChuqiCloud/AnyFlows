@@ -1,14 +1,14 @@
-use af_domain::{GatewayPrincipal, GroupId, TokenId, TrustedClientIp, UserId};
+use af_domain::{GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId};
 
 use crate::{
-    ApiKeyDigest, PresentedApiKey, TokenAuthenticationError, TokenAuthenticationFuture,
-    TokenAuthenticator,
+    ApiKeyDigest, PresentedApiKey, TokenAuthentication, TokenAuthenticationError,
+    TokenAuthenticationFuture, TokenAuthenticator,
 };
 
 const TEST_KEY: &str = "sk-af-AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
 
 struct FixedAuthenticator {
-    result: Result<GatewayPrincipal, TokenAuthenticationError>,
+    result: Result<TokenAuthentication, TokenAuthenticationError>,
 }
 
 impl TokenAuthenticator for FixedAuthenticator {
@@ -17,7 +17,7 @@ impl TokenAuthenticator for FixedAuthenticator {
         _digest: &'a ApiKeyDigest,
         _client_ip: TrustedClientIp,
     ) -> TokenAuthenticationFuture<'a> {
-        let result = self.result;
+        let result = self.result.clone();
         Box::pin(async move { result })
     }
 }
@@ -30,6 +30,10 @@ fn principal() -> GatewayPrincipal {
     )
 }
 
+fn authentication() -> TokenAuthentication {
+    TokenAuthentication::new(principal(), TokenModelPolicy::unrestricted())
+}
+
 fn client_ip() -> TrustedClientIp {
     TrustedClientIp::new("192.0.2.10".parse().unwrap())
 }
@@ -37,7 +41,7 @@ fn client_ip() -> TrustedClientIp {
 #[tokio::test]
 async fn token_authenticator_is_object_safe_and_accepts_digest_with_trusted_ip() {
     let authenticator: &dyn TokenAuthenticator = &FixedAuthenticator {
-        result: Ok(principal()),
+        result: Ok(authentication()),
     };
     let presented = PresentedApiKey::parse(TEST_KEY).unwrap();
     let digest = presented.digest();
@@ -45,7 +49,11 @@ async fn token_authenticator_is_object_safe_and_accepts_digest_with_trusted_ip()
 
     assert_eq!(
         authenticator.authenticate(&digest, client_ip()).await,
-        Ok(principal())
+        Ok(authentication())
+    );
+    assert_eq!(
+        format!("{:?}", authentication()),
+        "TokenAuthentication(<redacted>)"
     );
 }
 

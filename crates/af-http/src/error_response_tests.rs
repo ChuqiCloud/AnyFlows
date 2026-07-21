@@ -47,6 +47,13 @@ fn error_cases() -> Vec<ErrorCase> {
             kind: "invalid_request_error",
             message: "Invalid API key.",
         },
+        ErrorCase {
+            error: AfError::ModelNotAllowed,
+            status: StatusCode::NOT_FOUND,
+            code: PublicErrorCode::ModelNotFound,
+            kind: "invalid_request_error",
+            message: "The requested model was not found or is unavailable.",
+        },
         upstream_case(
             UpstreamError::RateLimited,
             StatusCode::TOO_MANY_REQUESTS,

@@ -6,9 +6,9 @@ use std::{
     time::Duration,
 };
 
-use af_admin::{ApiKeyDigest, TokenAuthenticationFuture, TokenAuthenticator};
+use af_admin::{ApiKeyDigest, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator};
 use af_config::ServerConfig;
-use af_domain::{GatewayPrincipal, GroupId, TokenId, TrustedClientIp, UserId};
+use af_domain::{GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId};
 use af_http::{
     HttpListener, QueryApiKeyPolicy, ReadinessFuture, ReadinessHandle, ReadinessProbe,
     ServeOutcome, build_router, serve_with_graceful_shutdown,
@@ -39,10 +39,13 @@ impl TokenAuthenticator for AlwaysAuthenticates {
         _client_ip: TrustedClientIp,
     ) -> TokenAuthenticationFuture<'a> {
         Box::pin(async {
-            Ok(GatewayPrincipal::new(
-                TokenId::new(TOKEN_ID).unwrap(),
-                UserId::new(USER_ID).unwrap(),
-                GroupId::new(GROUP_ID).unwrap(),
+            Ok(TokenAuthentication::new(
+                GatewayPrincipal::new(
+                    TokenId::new(TOKEN_ID).unwrap(),
+                    UserId::new(USER_ID).unwrap(),
+                    GroupId::new(GROUP_ID).unwrap(),
+                ),
+                TokenModelPolicy::unrestricted(),
             ))
         })
     }

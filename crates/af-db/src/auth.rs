@@ -1,6 +1,6 @@
 use std::{fmt, time::Duration};
 
-use af_domain::{GatewayPrincipal, GroupId, TokenId, TrustedClientIp, UserId};
+use af_domain::{GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId};
 use sea_orm::{
     ConnectionTrait, DbBackend, DbErr, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -13,7 +13,8 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     DatabasePool,
     entity::{
-        MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES, TokenHash, TokenIpAllowlist, groups, tokens, users,
+        MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES,
+        TokenHash, TokenIpAllowlist, TokenModelAllowlist, groups, tokens, users,
     },
 };
 
@@ -47,10 +48,15 @@ pub enum TokenAuthLookupError {
 }
 
 /// 完成持久化校验后的令牌鉴权结果。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TokenAuthLookupOutcome {
-    /// 令牌、用户、有效分组和客户端 IP 均已通过校验。
-    Authenticated(GatewayPrincipal),
+    /// 令牌、用户、有效分组和客户端 IP 均已通过校验，并携带本次请求的策略快照。
+    Authenticated {
+        /// 已验证且只携带稳定标识的网关主体。
+        principal: GatewayPrincipal,
+        /// 已完整解码的不可变令牌模型策略。
+        model_policy: TokenModelPolicy,
+    },
     /// Key 不存在，或状态、软删除、过期、客户端 IP 不允许继续访问。
     Rejected,
 }
@@ -150,7 +156,10 @@ impl fmt::Debug for TokenAuthRepository {
 
 /// 构造只读取鉴权所需字段的单语句查询，避免加载用户密码和 TOTP 等敏感列。
 fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> SelectStatement {
-    let allow_ips_length = token_allow_ips_serialized_length(database_backend);
+    let model_limits_length =
+        token_json_serialized_length(database_backend, tokens::Column::ModelLimits);
+    let allow_ips_length = token_json_serialized_length(database_backend, tokens::Column::AllowIps);
+    let model_limits_column = || Expr::col((tokens::Entity, tokens::Column::ModelLimits));
     let allow_ips_column = || Expr::col((tokens::Entity, tokens::Column::AllowIps));
 
     Query::select()
@@ -169,6 +178,26 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
         .expr_as(
             Expr::col((tokens::Entity, tokens::Column::DeletedAt)),
             Alias::new("token_deleted_at"),
+        )
+        .expr_as(
+            Expr::case(
+                model_limits_length
+                    .clone()
+                    .lte(MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES),
+                model_limits_column(),
+            )
+            .finally(Expr::value(Option::<sea_orm::JsonValue>::None)),
+            Alias::new("token_model_limits"),
+        )
+        .expr_as(
+            Expr::case(
+                model_limits_column()
+                    .is_not_null()
+                    .and(model_limits_length.gt(MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES)),
+                true,
+            )
+            .finally(false),
+            Alias::new("token_model_limits_oversized"),
         )
         .expr_as(
             Expr::case(
@@ -229,18 +258,18 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
 }
 
 /// 按数据库方言计算 JSON 序列化后的字节长度，避免把超大白名单传回应用层。
-fn token_allow_ips_serialized_length(database_backend: DbBackend) -> SimpleExpr {
-    let allow_ips = Expr::col((tokens::Entity, tokens::Column::AllowIps));
+fn token_json_serialized_length(database_backend: DbBackend, column: tokens::Column) -> SimpleExpr {
+    let value = Expr::col((tokens::Entity, column));
     match database_backend {
         DbBackend::Postgres => Func::cust(Alias::new("OCTET_LENGTH"))
-            .arg(allow_ips.cast_as(Alias::new("TEXT")))
+            .arg(value.cast_as(Alias::new("TEXT")))
             .into(),
         DbBackend::MySql => Func::cust(Alias::new("OCTET_LENGTH"))
-            .arg(allow_ips.cast_as(Alias::new("CHAR")))
+            .arg(value.cast_as(Alias::new("CHAR")))
             .into(),
         DbBackend::Sqlite => {
-            // SQLite 保留 JSON 原始文本，额外空白同样计入持久化字节上限。
-            Func::char_length(allow_ips.cast_as(Alias::new("BLOB"))).into()
+            // SQLite 保留 JSON 原始文本，额外空白与转义同样计入持久化字节上限。
+            Func::char_length(value.cast_as(Alias::new("BLOB"))).into()
         }
     }
 }
@@ -250,6 +279,8 @@ struct TokenAuthRow {
     token_status: i16,
     token_expired_at: Option<TimeDateTimeWithTimeZone>,
     token_deleted_at: Option<TimeDateTimeWithTimeZone>,
+    token_model_limits: Option<TokenModelAllowlist>,
+    token_model_limits_oversized: bool,
     token_allow_ips: Option<TokenIpAllowlist>,
     token_allow_ips_oversized: bool,
     user_id: Option<i64>,
@@ -266,6 +297,8 @@ impl TokenAuthRow {
             token_status: result.try_get("", "token_status")?,
             token_expired_at: result.try_get("", "token_expired_at")?,
             token_deleted_at: result.try_get("", "token_deleted_at")?,
+            token_model_limits: result.try_get("", "token_model_limits")?,
+            token_model_limits_oversized: result.try_get("", "token_model_limits_oversized")?,
             token_allow_ips: result.try_get("", "token_allow_ips")?,
             token_allow_ips_oversized: result.try_get("", "token_allow_ips_oversized")?,
             user_id: result.try_get("", "user_id")?,
@@ -280,9 +313,13 @@ impl TokenAuthRow {
         self,
         client_ip: TrustedClientIp,
     ) -> Result<TokenAuthLookupOutcome, TokenAuthRepositoryError> {
-        if self.token_allow_ips_oversized {
+        if self.token_model_limits_oversized || self.token_allow_ips_oversized {
             return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
         }
+        let model_policy = self.token_model_limits.map_or_else(
+            TokenModelPolicy::unrestricted,
+            TokenModelAllowlist::into_policy,
+        );
         let token_enabled = enabled_or_rejected(self.token_status)?;
         let ip_allowed = self
             .token_allow_ips
@@ -319,7 +356,10 @@ impl TokenAuthRow {
         {
             return Ok(TokenAuthLookupOutcome::Rejected);
         }
-        Ok(TokenAuthLookupOutcome::Authenticated(principal))
+        Ok(TokenAuthLookupOutcome::Authenticated {
+            principal,
+            model_policy,
+        })
     }
 }
 
@@ -352,7 +392,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn allowlist_size_guard_uses_each_database_byte_length_dialect() {
+    fn allowlist_size_guards_use_each_database_byte_length_dialect() {
         let lookup = TokenAuthLookup::new(
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         )
@@ -376,10 +416,15 @@ mod tests {
             let statement = database_backend.build(&lookup_query(database_backend, &lookup));
             let rendered = statement.to_string();
             assert_eq!(statement.sql.matches(length_expression).count(), 2);
+            let model_length_expression = length_expression.replace("allow_ips", "model_limits");
+            assert_eq!(statement.sql.matches(&model_length_expression).count(), 2);
             assert!(rendered.contains("<= 4352"), "{rendered}");
             assert!(rendered.contains("> 4352"), "{rendered}");
-            assert!(rendered.contains("ELSE NULL END)"), "{rendered}");
-            assert!(rendered.contains("ELSE FALSE END)"), "{rendered}");
+            assert!(rendered.contains("<= 69632"), "{rendered}");
+            assert!(rendered.contains("> 69632"), "{rendered}");
+            assert_eq!(rendered.matches("ELSE NULL END)").count(), 2);
+            assert_eq!(rendered.matches("ELSE FALSE END)").count(), 2);
+            assert!(statement.sql.contains("token_model_limits_oversized"));
             assert!(statement.sql.contains("token_allow_ips_oversized"));
         }
     }
