@@ -18,6 +18,8 @@ pub enum QuotaMathOperation {
     UsdConversion,
     /// 按 token 数和每百万 token 单价换算额度。
     TokenConversion,
+    /// 按多个 token 分项和倍率解析最终定价。
+    PricingResolution,
     /// 非负额度与业务因子相乘。
     Multiplication,
 }
@@ -29,6 +31,7 @@ impl QuotaMathOperation {
         match self {
             Self::UsdConversion => "quota_from_usd",
             Self::TokenConversion => "quota_from_tokens",
+            Self::PricingResolution => "pricing_resolution",
             Self::Multiplication => "checked_mul_quota",
         }
     }
@@ -144,6 +147,83 @@ fn quota_from_decimal(
     let units = i64::try_from(quota).map_err(|_| QuotaClamp::overflow(operation))?;
 
     Quota::new(units).map_err(Into::into)
+}
+
+/// Ratio 模式固定的五类 token 分项计算结果。
+pub(crate) struct TokenPricingResult {
+    pub(crate) quota: Quota,
+    pub(crate) component_usd: [Decimal; 5],
+    pub(crate) total_usd: Decimal,
+}
+
+/// 按真实美元单价和百万分比倍率计算五类 token 的最终额度。
+///
+/// 分项 Decimal 成本全部完成 checked 运算后才汇总，并且只在最终总金额处执行一次
+/// quota 整数舍入。该入口只服务定价解析器，不暴露配置或持久化语义。
+pub(crate) fn quota_from_token_components(
+    components: [(i64, Decimal); 5],
+    ratio_micros: [i64; 3],
+) -> Result<TokenPricingResult, QuotaMathError> {
+    if ratio_micros.into_iter().any(|ratio| ratio < 0)
+        || components
+            .into_iter()
+            .any(|(tokens, price)| tokens < 0 || price < Decimal::ZERO)
+    {
+        return Err(QuotaError::Negative.into());
+    }
+
+    if ratio_micros.into_iter().any(|ratio| ratio == 0) {
+        return Ok(TokenPricingResult {
+            quota: Quota::ZERO,
+            component_usd: [Decimal::ZERO; 5],
+            total_usd: Decimal::ZERO,
+        });
+    }
+
+    let mut weighted_components = [Decimal::ZERO; 5];
+    let mut weighted_total = Decimal::ZERO;
+    for (index, (tokens, price)) in components.into_iter().enumerate() {
+        let weighted = Decimal::from(tokens)
+            .checked_mul(price)
+            .ok_or_else(pricing_overflow)?;
+        weighted_total = weighted_total
+            .checked_add(weighted)
+            .ok_or_else(pricing_overflow)?;
+        weighted_components[index] = weighted;
+    }
+
+    // 倍率可能把低于 Decimal 最小精度的单价重新放大，必须推迟百万 token 除法。
+    let total_usd = apply_pricing_ratios(weighted_total, ratio_micros)?;
+    let mut component_usd = [Decimal::ZERO; 5];
+    for (index, weighted) in weighted_components.into_iter().enumerate() {
+        component_usd[index] = apply_pricing_ratios(weighted, ratio_micros)?;
+    }
+
+    let quota = quota_from_usd_for(total_usd, QuotaMathOperation::PricingResolution)?;
+    Ok(TokenPricingResult {
+        quota,
+        component_usd,
+        total_usd,
+    })
+}
+
+fn apply_pricing_ratios(
+    weighted_cost: Decimal,
+    ratio_micros: [i64; 3],
+) -> Result<Decimal, QuotaMathError> {
+    let mut cost = weighted_cost;
+    for ratio in ratio_micros {
+        cost = cost
+            .checked_mul(Decimal::new(ratio, 6))
+            .ok_or_else(pricing_overflow)?;
+    }
+
+    cost.checked_div(Decimal::from(TOKENS_PER_MILLION))
+        .ok_or_else(|| pricing_overflow().into())
+}
+
+const fn pricing_overflow() -> QuotaClamp {
+    QuotaClamp::overflow(QuotaMathOperation::PricingResolution)
 }
 
 /// 按每百万 token 的美元单价换算 token 消耗额度。
