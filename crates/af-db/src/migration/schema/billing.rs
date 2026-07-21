@@ -153,11 +153,32 @@ fn reservation_state_check() -> SimpleExpr {
 fn idempotency_key_format_check(database_backend: DbBackend) -> SimpleExpr {
     match database_backend {
         DbBackend::Postgres => Expr::cust(r#""idempotency_key" ~ '^[0-9a-f]{32}$'"#),
-        DbBackend::MySql => Expr::cust(
-            "CHAR_LENGTH(`idempotency_key`) = 32 AND `idempotency_key` REGEXP BINARY '^[0-9a-f]{32}$'",
-        ),
+        DbBackend::MySql => {
+            // MySQL 8.0.22 起拒绝 binary 正则参数，大小写语义由表级 utf8mb4_bin 保证。
+            Expr::cust(
+                "CHAR_LENGTH(`idempotency_key`) = 32 AND `idempotency_key` REGEXP '^[0-9a-f]{32}$'",
+            )
+        }
         DbBackend::Sqlite => Expr::cust(
             r#"length("idempotency_key") = 32 AND "idempotency_key" NOT GLOB '*[^0-9a-f]*'"#,
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mysql_idempotency_key_check_uses_non_binary_case_sensitive_regex() {
+        let rendered = Query::select()
+            .expr(idempotency_key_format_check(DbBackend::MySql))
+            .to_owned()
+            .to_string(MysqlQueryBuilder);
+
+        assert_eq!(
+            rendered,
+            "SELECT CHAR_LENGTH(`idempotency_key`) = 32 AND `idempotency_key` REGEXP '^[0-9a-f]{32}$'"
+        );
     }
 }
