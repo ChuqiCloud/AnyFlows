@@ -42,6 +42,7 @@ name = "af-billing"
 version = "0.1.0"
 dependencies = [
  "af-domain",
+ "af-protocol",
  "rust_decimal",
  "thiserror",
 ]
