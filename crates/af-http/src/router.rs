@@ -50,7 +50,7 @@ pub fn build_router(
     query_api_key_policy: QueryApiKeyPolicy,
 ) -> HttpRouter {
     let authentication = middleware::from_fn_with_state(
-        AuthenticationState::new(authenticator, query_api_key_policy),
+        AuthenticationState::new(authenticator, query_api_key_policy, config),
         authenticate_api_key,
     );
     let public_routes = Router::new()

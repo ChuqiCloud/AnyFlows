@@ -1,18 +1,21 @@
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
+use std::{
+    net::SocketAddr,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 use af_admin::{
     ApiKeyDigest, PresentedApiKey, TokenAuthenticationError, TokenAuthenticationFuture,
     TokenAuthenticator,
 };
-use af_config::{CorsOrigin, ServerConfig};
-use af_domain::{GatewayPrincipal, GroupId, TokenId, UserId};
+use af_config::{ClientIpSource, CorsOrigin, ServerConfig};
+use af_domain::{GatewayPrincipal, GroupId, IpCidr, TokenId, TrustedClientIp, UserId};
 use axum::{
-    Router,
+    Extension, Router,
     body::{Body, to_bytes},
-    extract::Extension,
+    extract::ConnectInfo,
     middleware,
     response::Response,
     routing::{get, post},
@@ -37,6 +40,7 @@ use crate::{
 
 const TEST_KEY: &str = "sk-af-AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
 const ALLOWED_ORIGIN: &str = "https://console.example";
+const TEST_PEER_IP: &str = "192.0.2.10";
 
 #[derive(Clone, Copy)]
 enum AuthenticationOutcome {
@@ -49,6 +53,7 @@ struct FakeAuthenticator {
     outcome: AuthenticationOutcome,
     calls: AtomicUsize,
     digests: Mutex<Vec<String>>,
+    client_ips: Mutex<Vec<TrustedClientIp>>,
 }
 
 struct AlwaysReadyProbe;
@@ -65,6 +70,7 @@ impl FakeAuthenticator {
             outcome,
             calls: AtomicUsize::new(0),
             digests: Mutex::new(Vec::new()),
+            client_ips: Mutex::new(Vec::new()),
         }
     }
 
@@ -75,15 +81,24 @@ impl FakeAuthenticator {
     fn digests(&self) -> Vec<String> {
         self.digests.lock().unwrap().clone()
     }
+
+    fn client_ips(&self) -> Vec<TrustedClientIp> {
+        self.client_ips.lock().unwrap().clone()
+    }
 }
 
 impl TokenAuthenticator for FakeAuthenticator {
-    fn authenticate<'a>(&'a self, digest: &'a ApiKeyDigest) -> TokenAuthenticationFuture<'a> {
+    fn authenticate<'a>(
+        &'a self,
+        digest: &'a ApiKeyDigest,
+        client_ip: TrustedClientIp,
+    ) -> TokenAuthenticationFuture<'a> {
         self.calls.fetch_add(1, Ordering::Relaxed);
         self.digests
             .lock()
             .unwrap()
             .push(digest.as_str().to_owned());
+        self.client_ips.lock().unwrap().push(client_ip);
         let outcome = self.outcome;
         Box::pin(async move {
             match outcome {
@@ -119,8 +134,25 @@ fn authenticated_router(
     origins: &[&str],
     body_limit: usize,
 ) -> Router {
+    let config = server_config(origins);
+    authenticated_router_with_network(
+        authenticator,
+        query_policy,
+        config,
+        body_limit,
+        Some(TEST_PEER_IP),
+    )
+}
+
+fn authenticated_router_with_network(
+    authenticator: Arc<FakeAuthenticator>,
+    query_policy: QueryApiKeyPolicy,
+    config: ServerConfig,
+    body_limit: usize,
+    peer_ip: Option<&str>,
+) -> Router {
     let authentication = middleware::from_fn_with_state(
-        AuthenticationState::new(authenticator, query_policy),
+        AuthenticationState::new(authenticator, query_policy, &config),
         authenticate_api_key,
     );
     let public_routes = Router::new().route(
@@ -130,16 +162,19 @@ fn authenticated_router(
     let readiness = ReadinessHandle::new(AlwaysReadyProbe);
     readiness.mark_ready();
     let operations_routes = operations_router(readiness).route("/ops", get(operations_handler));
-    build_router_with_routes(
-        public_routes,
-        operations_routes,
-        &server_config(origins),
-        body_limit,
-    )
+    let router = build_router_with_routes(public_routes, operations_routes, &config, body_limit);
+    match peer_ip {
+        Some(peer_ip) => router.layer(Extension(ConnectInfo(SocketAddr::new(
+            peer_ip.parse().unwrap(),
+            45123,
+        )))),
+        None => router,
+    }
 }
 
 async fn protected_handler(
     Extension(principal): Extension<GatewayPrincipal>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
     headers: HeaderMap,
     uri: Uri,
 ) -> StatusCode {
@@ -147,6 +182,9 @@ async fn protected_handler(
     assert!(headers.get(AUTHORIZATION).is_none());
     assert!(headers.get("x-api-key").is_none());
     assert!(headers.get("x-goog-api-key").is_none());
+    assert!(headers.get("x-forwarded-for").is_none());
+    assert!(headers.get("forwarded").is_none());
+    assert!(peer.is_none());
     assert!(!uri.to_string().contains(TEST_KEY));
     StatusCode::NO_CONTENT
 }
@@ -160,6 +198,8 @@ fn bearer_request(uri: &str) -> Request<Body> {
         .method(Method::POST)
         .uri(uri)
         .header(AUTHORIZATION, format!("Bearer {TEST_KEY}"))
+        .header("x-forwarded-for", "198.51.100.7")
+        .header("forwarded", "for=198.51.100.7")
         .body(Body::empty())
         .unwrap()
 }
@@ -196,6 +236,10 @@ async fn valid_key_is_hashed_once_and_verified_principal_reaches_handler() {
     assert_request_id(&response);
     assert_eq!(authenticator.calls(), 1);
     assert_eq!(authenticator.digests(), vec![expected_digest()]);
+    assert_eq!(
+        authenticator.client_ips(),
+        vec![TrustedClientIp::new(TEST_PEER_IP.parse().unwrap())]
+    );
 }
 
 #[tokio::test]
@@ -305,6 +349,83 @@ async fn presentation_and_repository_failures_use_closed_openai_errors() {
     }
 }
 
+#[tokio::test]
+async fn missing_peer_is_internal_and_never_invokes_authenticator() {
+    let authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::Success));
+    let response = authenticated_router_with_network(
+        Arc::clone(&authenticator),
+        QueryApiKeyPolicy::Deny,
+        server_config(&[ALLOWED_ORIGIN]),
+        64,
+        None,
+    )
+    .oneshot({
+        let mut request = bearer_request("/protected");
+        request
+            .headers_mut()
+            .insert(ORIGIN, HeaderValue::from_static(ALLOWED_ORIGIN));
+        request
+    })
+    .await
+    .unwrap();
+
+    assert_auth_error(
+        response,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "An internal server error occurred.",
+        "server_error",
+        "internal_error",
+    )
+    .await;
+    assert_eq!(authenticator.calls(), 0);
+    assert!(authenticator.client_ips().is_empty());
+}
+
+#[tokio::test]
+async fn trusted_xff_chain_is_resolved_before_authentication() {
+    let config = ServerConfig::default().with_client_ip_source(
+        ClientIpSource::XForwardedFor,
+        ["10.0.0.0/8".parse::<IpCidr>().unwrap()],
+    );
+    let authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::Success));
+    let router = authenticated_router_with_network(
+        Arc::clone(&authenticator),
+        QueryApiKeyPolicy::Deny,
+        config.clone(),
+        64,
+        Some("10.0.0.3"),
+    );
+    let mut request = bearer_request("/protected");
+    request.headers_mut().insert(
+        "x-forwarded-for",
+        HeaderValue::from_static("198.51.100.99, 203.0.113.7, 10.0.0.2"),
+    );
+    let response = router.oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        authenticator.client_ips(),
+        vec![TrustedClientIp::new("203.0.113.7".parse().unwrap())]
+    );
+
+    let rejected_authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::Success));
+    let mut invalid = bearer_request("/protected");
+    invalid
+        .headers_mut()
+        .insert("x-forwarded-for", HeaderValue::from_static("10.0.0.2"));
+    let response = authenticated_router_with_network(
+        Arc::clone(&rejected_authenticator),
+        QueryApiKeyPolicy::Deny,
+        config,
+        64,
+        Some("10.0.0.3"),
+    )
+    .oneshot(invalid)
+    .await
+    .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(rejected_authenticator.calls(), 0);
+}
+
 async fn assert_auth_error(
     response: Response,
     status: StatusCode,
@@ -345,11 +466,12 @@ async fn assert_auth_error(
 async fn outer_boundaries_and_operations_never_invoke_authenticator() {
     const BODY_LIMIT: usize = 16;
     let authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::Success));
-    let router = authenticated_router(
+    let router = authenticated_router_with_network(
         Arc::clone(&authenticator),
         QueryApiKeyPolicy::Deny,
-        &[ALLOWED_ORIGIN],
+        server_config(&[ALLOWED_ORIGIN]),
         BODY_LIMIT,
+        None,
     );
 
     let preflight = router
@@ -360,6 +482,7 @@ async fn outer_boundaries_and_operations_never_invoke_authenticator() {
                 .uri("/protected")
                 .header(ORIGIN, ALLOWED_ORIGIN)
                 .header(ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                .header("x-forwarded-for", "invalid,")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -375,6 +498,7 @@ async fn outer_boundaries_and_operations_never_invoke_authenticator() {
                 .method(Method::POST)
                 .uri("/protected")
                 .header(ORIGIN, "https://evil.example")
+                .header("x-forwarded-for", "invalid,")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -390,6 +514,7 @@ async fn outer_boundaries_and_operations_never_invoke_authenticator() {
                 .method(Method::POST)
                 .uri("/protected")
                 .header(CONTENT_LENGTH, BODY_LIMIT + 1)
+                .header("x-forwarded-for", "invalid,")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -403,6 +528,7 @@ async fn outer_boundaries_and_operations_never_invoke_authenticator() {
         .oneshot(
             Request::builder()
                 .uri("/missing")
+                .header("x-forwarded-for", "invalid,")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -416,6 +542,7 @@ async fn outer_boundaries_and_operations_never_invoke_authenticator() {
         .oneshot(
             Request::builder()
                 .uri("/protected")
+                .header("x-forwarded-for", "invalid,")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -435,6 +562,7 @@ async fn outer_boundaries_and_operations_never_invoke_authenticator() {
                 Request::builder()
                     .uri(path)
                     .header(ORIGIN, ALLOWED_ORIGIN)
+                    .header("x-forwarded-for", "invalid,")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -458,4 +586,5 @@ async fn outer_boundaries_and_operations_never_invoke_authenticator() {
 
     assert_eq!(authenticator.calls(), 0);
     assert!(authenticator.digests().is_empty());
+    assert!(authenticator.client_ips().is_empty());
 }

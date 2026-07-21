@@ -56,6 +56,7 @@ dependencies = [
 name = "af-config"
 version = "0.1.0"
 dependencies = [
+ "af-domain",
  "async-trait",
  "figment",
  "serde",

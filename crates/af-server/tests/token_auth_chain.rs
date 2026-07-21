@@ -26,6 +26,9 @@ use tokio::{sync::oneshot, time::timeout};
 const UNKNOWN_CLIENT_KEY: &str = "sk-af--_________________________________________8";
 const CLIENT_KEY_DIGEST: &str = "58e7607fb7ed996d551ba517addbcf51a35206b43706e233737d242773845efa";
 const BOUNDARY_KEY_CANARY: &str = "boundary-key-canary";
+const LOOPBACK_ALLOWLIST: &str = r#"["127.0.0.1/32"]"#;
+const TRUSTED_CLIENT_IP: &str = "127.0.0.1";
+const SPOOFED_CLIENT_IP: &str = "198.51.100.7";
 
 static NEXT_DATABASE: AtomicU64 = AtomicU64::new(0);
 
@@ -224,6 +227,61 @@ async fn full_chain_forwards_normalized_request_and_returns_validated_response()
     assert!(matches!(captured.try_recv(), Err(TryRecvError::Empty)));
 
     let authorization = format!("Bearer {CLIENT_KEY}");
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET allow_ips = ? WHERE id = ?",
+        vec![r#"["198.51.100.0/24"]"#.into(), TOKEN_ID.into()],
+    )
+    .await;
+    let spoofed = send_request(
+        address,
+        "POST",
+        "/v1/chat/completions",
+        inbound,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &authorization),
+            ("Origin", "https://console.example"),
+            ("X-Forwarded-For", SPOOFED_CLIENT_IP),
+        ],
+    )
+    .await;
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET allow_ips = ? WHERE id = ?",
+        vec![LOOPBACK_ALLOWLIST.into(), TOKEN_ID.into()],
+    )
+    .await;
+    assert_invalid_api_key(&spoofed);
+    assert!(matches!(captured.try_recv(), Err(TryRecvError::Empty)));
+
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET allow_ips = ? WHERE id = ?",
+        vec!["null".into(), TOKEN_ID.into()],
+    )
+    .await;
+    let invalid_allowlist = send_request(
+        address,
+        "POST",
+        "/v1/chat/completions",
+        inbound,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &authorization),
+            ("Origin", "https://console.example"),
+        ],
+    )
+    .await;
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET allow_ips = ? WHERE id = ?",
+        vec![LOOPBACK_ALLOWLIST.into(), TOKEN_ID.into()],
+    )
+    .await;
+    assert_internal_error(&invalid_allowlist);
+    assert!(matches!(captured.try_recv(), Err(TryRecvError::Empty)));
+
     let response = send_request(
         address,
         "POST",
@@ -235,6 +293,8 @@ async fn full_chain_forwards_normalized_request_and_returns_validated_response()
             ("Cookie", "client-cookie-secret=1"),
             ("X-Request-ID", "client-selected-request-id"),
             ("Origin", "https://console.example"),
+            ("X-Forwarded-For", SPOOFED_CLIENT_IP),
+            ("Forwarded", "for=198.51.100.7"),
         ],
     )
     .await;
@@ -343,6 +403,11 @@ async fn full_chain_forwards_normalized_request_and_returns_validated_response()
         "client-cookie-secret",
         "client-selected-request-id",
         "origin: https://console.example",
+        "x-forwarded-for",
+        "forwarded:",
+        LOOPBACK_ALLOWLIST,
+        TRUSTED_CLIENT_IP,
+        SPOOFED_CLIENT_IP,
     ] {
         assert!(!head_lower.contains(forbidden));
     }
@@ -410,7 +475,7 @@ async fn seed_valid_token(database_url: &str) {
     connection
         .execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "INSERT INTO tokens (id, user_id, key_hash, key_prefix, name, status) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO tokens (id, user_id, key_hash, key_prefix, name, status, allow_ips) VALUES (?, ?, ?, ?, ?, ?, ?)",
             [
                 TOKEN_ID.into(),
                 USER_ID.into(),
@@ -418,6 +483,7 @@ async fn seed_valid_token(database_url: &str) {
                 "sk-af-AAECAwQFBgcI".into(),
                 "gateway-token".into(),
                 1_i16.into(),
+                LOOPBACK_ALLOWLIST.into(),
             ],
         ))
         .await
@@ -507,6 +573,9 @@ fn assert_no_auth_canaries(response: &RawResponse) {
         UNKNOWN_CLIENT_KEY,
         CLIENT_KEY_DIGEST,
         BOUNDARY_KEY_CANARY,
+        LOOPBACK_ALLOWLIST,
+        TRUSTED_CLIENT_IP,
+        SPOOFED_CLIENT_IP,
     ] {
         assert!(!rendered.contains(forbidden));
     }

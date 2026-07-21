@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+af-domain = { path = "../af-domain", version = "0.1.0" }
 async-trait.workspace = true
 figment.workspace = true
 serde.workspace = true
