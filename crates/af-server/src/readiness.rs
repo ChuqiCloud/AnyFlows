@@ -1,7 +1,7 @@
 use af_db::DatabasePool;
 use af_http::{ReadinessFuture, ReadinessProbe};
 
-/// 通过 af-db 的有界 ping 检查 M0 唯一运行依赖。
+/// 通过 af-db 的有界 ping 检查当前唯一外部运行依赖。
 pub(crate) struct DatabaseReadinessProbe {
     database: DatabasePool,
 }

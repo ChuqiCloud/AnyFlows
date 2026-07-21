@@ -2,17 +2,21 @@
 
 mod enums;
 mod error;
+mod principal;
 mod quota;
 
 pub use enums::{
     ChannelType, CredentialKind, Operation, ParseEnumError, Protocol, PublicErrorCode, Role, Status,
 };
 pub use error::{AfError, UpstreamError, UpstreamServerStatus};
+pub use principal::{GatewayPrincipal, GroupId, PrincipalIdError, TokenId, UserId};
 pub use quota::{Quota, QuotaDelta, QuotaError};
 
 #[cfg(test)]
 mod enums_tests;
 #[cfg(test)]
 mod error_tests;
+#[cfg(test)]
+mod principal_tests;
 #[cfg(test)]
 mod quota_tests;

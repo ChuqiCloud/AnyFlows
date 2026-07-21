@@ -1,5 +1,6 @@
 //! HTTP 路由、中间件、提取器与响应映射。
 
+mod authentication;
 mod chat_completions;
 mod credentials;
 mod error_response;
@@ -17,6 +18,8 @@ pub use operations::{
 pub use router::{DEFAULT_REQUEST_BODY_LIMIT_BYTES, HttpRouter, build_router};
 pub use serve::{HttpListener, ServeError, ServeOutcome, serve_with_graceful_shutdown};
 
+#[cfg(test)]
+mod authentication_tests;
 #[cfg(test)]
 mod credentials_tests;
 #[cfg(test)]

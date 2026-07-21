@@ -23,10 +23,13 @@ dependencies = [
 name = "af-admin"
 version = "0.1.0"
 dependencies = [
+ "af-db",
+ "af-domain",
  "base64",
  "getrandom 0.4.3",
  "sha2",
  "thiserror",
+ "tokio",
  "zeroize",
 ]
 
@@ -64,6 +67,7 @@ dependencies = [
 name = "af-db"
 version = "0.1.0"
 dependencies = [
+ "af-domain",
  "argon2",
  "base64",
  "http",
@@ -154,13 +158,16 @@ version = "0.1.0"
 name = "af-server"
 version = "0.1.0"
 dependencies = [
+ "af-admin",
  "af-config",
  "af-db",
+ "af-domain",
  "af-http",
  "af-httpclient",
  "af-relay",
  "af-telemetry",
  "futures-util",
+ "sea-orm",
  "serde_json",
  "thiserror",
  "tokio",

@@ -1,13 +1,14 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
+use af_admin::{DatabaseTokenAuthenticator, TokenAuthenticator};
 use af_config::{AppConfig, ConfigError};
 use af_db::{
     DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool, MigrationOptions,
-    connect_and_migrate,
+    TokenAuthRepository, TokenAuthRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
-    HttpListener, HttpRouter, ReadinessHandle, ServeError, ServeOutcome, build_router,
-    serve_with_graceful_shutdown,
+    HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle, ServeError, ServeOutcome,
+    build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
@@ -36,21 +37,28 @@ pub struct TelemetryReady {
 /// 已连接数据库并执行全部待处理迁移。
 ///
 /// 动态 Option、缓存连接与预热的真实实现应在本阶段之后、监督器启动之前插入；
-/// 当前 M0 尚无相应 Source/Repository，因此不会用空操作冒充这些阶段。
+/// 当前仍无相应 Source/Repository，因此不会用空操作冒充这些阶段。
 pub struct DatabaseReady {
     _telemetry: TelemetryReady,
     database: DatabasePool,
 }
 
-/// M0 单上游 relay 已完成安全配置与受控 HTTP Client 装配。
-pub struct RelayReady {
+/// 已使用数据库连接池装配令牌认证服务。
+pub struct AuthenticationReady {
     infrastructure: DatabaseReady,
+    authenticator: Arc<dyn TokenAuthenticator>,
+    query_api_key_policy: QueryApiKeyPolicy,
+}
+
+/// 当前静态单上游 relay 已完成安全配置与受控 HTTP Client 装配。
+pub struct RelayReady {
+    infrastructure: AuthenticationReady,
     relay: Arc<RelayService>,
 }
 
 /// 后台任务监督域已经建立，当前没有注册尚未实现的业务循环。
 pub struct Supervised {
-    infrastructure: DatabaseReady,
+    infrastructure: AuthenticationReady,
     relay: Arc<RelayService>,
     supervisor: BackgroundTaskSupervisor,
 }
@@ -77,6 +85,14 @@ pub struct ListenerReady {
 ///
 /// fn cannot_skip_database(bootstrap: Bootstrap<Configured>) {
 ///     let _ = bootstrap.build_router();
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use af_server::{Bootstrap, DatabaseReady};
+///
+/// fn cannot_skip_authentication(bootstrap: Bootstrap<DatabaseReady>) {
+///     let _ = bootstrap.init_relay();
 /// }
 /// ```
 pub struct Bootstrap<S> {
@@ -111,14 +127,17 @@ pub enum BootstrapError {
     /// 数据库连接、迁移或关闭失败。
     #[error("数据库生命周期操作失败")]
     Database(#[source] DatabaseError),
+    /// 令牌仓储的启动参数无效。
+    #[error("令牌认证启动参数无效")]
+    Authentication(#[source] TokenAuthRepositoryConfigError),
     /// HTTP 监听、服务或强制关闭失败。
     #[error("HTTP 服务生命周期操作失败")]
     Http(#[source] ServeError),
     /// 受控上游 HTTP Client 配置或构造失败。
     #[error("初始化上游 HTTP Client 失败")]
     HttpClient(#[source] HttpClientError),
-    /// M0 单上游 relay 配置或构造失败。
-    #[error("初始化 M0 单上游转发服务失败")]
+    /// 当前静态单上游 relay 配置或构造失败。
+    #[error("初始化静态单上游转发服务失败")]
     Relay(#[source] RelayBuildError),
     /// 后台任务强制关闭失败。
     #[error("后台任务生命周期操作失败")]
@@ -191,7 +210,44 @@ impl Bootstrap<TelemetryReady> {
 }
 
 impl Bootstrap<DatabaseReady> {
-    /// 使用启动期静态单上游配置建立 M0 非流式 relay。
+    /// 使用同一数据库连接池装配令牌认证，并固定查询截止时间与 carrier 策略。
+    pub fn init_authentication(self) -> Result<Bootstrap<AuthenticationReady>, BootstrapError> {
+        let auth = self.config.auth();
+        let repository = TokenAuthRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::Authentication)?;
+        let query_api_key_policy = if auth.allow_query_api_key() {
+            tracing::warn!(
+                security_setting = "query_api_key_enabled",
+                "已启用查询参数 API Key，前置代理必须关闭或脱敏查询串日志"
+            );
+            QueryApiKeyPolicy::Allow
+        } else {
+            QueryApiKeyPolicy::Deny
+        };
+        let Bootstrap {
+            config,
+            shutdown_timeout,
+            shutdown,
+            stage,
+        } = self;
+        Ok(Bootstrap {
+            config,
+            shutdown_timeout,
+            shutdown,
+            stage: AuthenticationReady {
+                infrastructure: stage,
+                authenticator: Arc::new(DatabaseTokenAuthenticator::new(repository)),
+                query_api_key_policy,
+            },
+        })
+    }
+}
+
+impl Bootstrap<AuthenticationReady> {
+    /// 使用启动期静态单上游配置建立非流式 relay。
     pub fn init_relay(self) -> Result<Bootstrap<RelayReady>, BootstrapError> {
         let relay = Arc::new(build_relay(&self.config)?);
         let Bootstrap {
@@ -244,12 +300,15 @@ impl Bootstrap<Supervised> {
     /// 构建完整 HTTP Router；此后只允许进入监听阶段。
     #[must_use]
     pub fn build_router(self) -> Bootstrap<RouterReady> {
-        let probe = DatabaseReadinessProbe::new(self.stage.infrastructure.database.clone());
+        let probe =
+            DatabaseReadinessProbe::new(self.stage.infrastructure.infrastructure.database.clone());
         let readiness = ReadinessHandle::new(probe);
         let router = build_router(
             self.config.server(),
             Arc::clone(&self.stage.relay),
             readiness.clone(),
+            Arc::clone(&self.stage.infrastructure.authenticator),
+            self.stage.infrastructure.query_api_key_policy,
         );
         let Bootstrap {
             config,
@@ -342,7 +401,7 @@ impl Bootstrap<ListenerReady> {
             http,
             shutdown,
             supervisor,
-            infrastructure.database,
+            infrastructure.infrastructure.database,
             shutdown_timeout,
         )
         .await
@@ -499,6 +558,7 @@ pub async fn run() -> Result<(), BootstrapError> {
         .init_telemetry()?
         .connect_database()
         .await?
+        .init_authentication()?
         .init_relay()?
         .start_supervisor()
         .build_router()
@@ -639,6 +699,8 @@ mod tests {
             .unwrap()
             .connect_database()
             .await
+            .unwrap()
+            .init_authentication()
             .unwrap()
             .init_relay()
             .unwrap()

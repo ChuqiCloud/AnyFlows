@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use af_admin::TokenAuthenticator;
 use af_config::ServerConfig;
 use af_protocol::openai_chat::MAX_BODY_BYTES;
 use af_relay::RelayService;
@@ -10,14 +11,15 @@ use http::{
 };
 use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLayer};
 
+use crate::authentication::{AuthenticationState, authenticate_api_key};
 use crate::middleware::{
     AllowedOrigins, LogHttpResponse, MakeHttpSpan, assign_request_id, enforce_allowed_origin,
     request_id_header,
 };
 use crate::operations::{ReadinessHandle, operations_router};
-use crate::{chat_completions::HttpState, chat_completions::chat_completions};
+use crate::{QueryApiKeyPolicy, chat_completions::HttpState, chat_completions::chat_completions};
 
-/// M0 OpenAI Chat 业务路由的默认请求正文上限，与协议解析预算共享单一常量。
+/// OpenAI Chat 业务路由的默认请求正文上限，与协议解析预算共享单一常量。
 pub const DEFAULT_REQUEST_BODY_LIMIT_BYTES: usize = MAX_BODY_BYTES;
 
 /// 已完成中间件装配的 HTTP 路由。
@@ -36,17 +38,27 @@ impl HttpRouter {
     }
 }
 
-/// 构建包含 M0 OpenAI Chat 非流式入口及健康检查的 HTTP Router。
+/// 构建包含已鉴权 OpenAI Chat 非流式入口及健康检查的 HTTP Router。
 ///
 /// 后续业务与运维路由应分别加入 `public_routes` 和 `operations_routes`，确保
-/// CORS 永远不会扩散到 `/metrics`、健康检查等运维端点。
+/// 鉴权与 CORS 永远不会扩散到 `/metrics`、健康检查等运维端点。
 pub fn build_router(
     config: &ServerConfig,
     relay: Arc<RelayService>,
     readiness: ReadinessHandle,
+    authenticator: Arc<dyn TokenAuthenticator>,
+    query_api_key_policy: QueryApiKeyPolicy,
 ) -> HttpRouter {
+    let authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(authenticator, query_api_key_policy),
+        authenticate_api_key,
+    );
     let public_routes = Router::new()
-        .route("/v1/chat/completions", post(chat_completions))
+        .route(
+            "/v1/chat/completions",
+            // 只包裹已注册的 POST endpoint，不把路径级 405 改写为 401。
+            post(chat_completions).route_layer(authentication),
+        )
         .with_state(HttpState::new(relay));
     HttpRouter::new(build_router_with_routes(
         public_routes,
