@@ -54,6 +54,13 @@ fn error_cases() -> Vec<ErrorCase> {
             kind: "invalid_request_error",
             message: "The requested model was not found or is unavailable.",
         },
+        ErrorCase {
+            error: AfError::InsufficientQuota,
+            status: StatusCode::TOO_MANY_REQUESTS,
+            code: PublicErrorCode::InsufficientQuota,
+            kind: "insufficient_quota",
+            message: "Insufficient quota.",
+        },
         upstream_case(
             UpstreamError::RateLimited,
             StatusCode::TOO_MANY_REQUESTS,

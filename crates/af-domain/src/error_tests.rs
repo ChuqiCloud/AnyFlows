@@ -91,9 +91,11 @@ fn domain_errors_are_thread_safe_static_errors() {
         AfError::ModelNotAllowed.to_string(),
         "下游令牌不允许请求的模型"
     );
+    assert_eq!(AfError::InsufficientQuota.to_string(), "下游可用额度不足");
     assert_eq!(AfError::Internal.to_string(), "服务内部错误");
     assert!(AfError::InvalidRequest.source().is_none());
     assert!(AfError::InvalidApiKey.source().is_none());
     assert!(AfError::ModelNotAllowed.source().is_none());
+    assert!(AfError::InsufficientQuota.source().is_none());
     assert!(AfError::Internal.source().is_none());
 }

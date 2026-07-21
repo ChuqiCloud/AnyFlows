@@ -1,5 +1,6 @@
 //! 无 IO 的领域类型、值对象与错误。
 
+mod billing;
 mod enums;
 mod error;
 mod network;
@@ -20,6 +21,8 @@ pub use token_policy::{
 };
 
 #[cfg(test)]
+mod billing_tests;
+#[cfg(test)]
 mod enums_tests;
 #[cfg(test)]
 mod error_tests;
@@ -31,3 +34,4 @@ mod principal_tests;
 mod quota_tests;
 #[cfg(test)]
 mod token_policy_tests;
+pub use billing::{BillingReservationId, BillingReservationIdError};

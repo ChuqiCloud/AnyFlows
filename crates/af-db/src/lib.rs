@@ -8,6 +8,9 @@ mod entity;
 mod error;
 mod migration;
 mod options;
+mod quota;
+#[cfg(test)]
+mod quota_tests;
 
 pub use auth::{
     TokenAuthLookup, TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,
@@ -18,6 +21,9 @@ pub(crate) use connection::connect;
 pub use error::{DatabaseError, DatabaseOptionsError};
 pub use migration::{MigrationOptions, run_pending_migrations};
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
+pub use quota::{
+    QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationStatus,
+};
 
 /// 连接数据库并执行全部待处理迁移。
 ///

@@ -1,8 +1,11 @@
 use std::env;
 use std::error::Error;
+use std::sync::Arc;
 use std::time::Duration;
 
-use af_domain::TrustedClientIp;
+use af_domain::{
+    BillingReservationId, GatewayPrincipal, GroupId, Quota, TokenId, TrustedClientIp, UserId,
+};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::entity::prelude::{Json, TimeDateTimeWithTimeZone, TimeTime};
 use sea_orm::{
@@ -14,13 +17,13 @@ use url::Url;
 
 use super::*;
 use crate::entity::{
-    ChannelBaseUrl, EncryptedJson, HeaderOverrides, PasswordHash, SensitiveJson, SensitiveString,
-    TokenHash, TokenIpAllowlist, abilities, channel_groups, channel_models, channels, credentials,
-    groups, options, tokens, users,
+    BillingReservationKey, ChannelBaseUrl, EncryptedJson, HeaderOverrides, PasswordHash,
+    SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, abilities, billing_reservations,
+    channel_groups, channel_models, channels, credentials, groups, options, tokens, users,
 };
 use crate::{
-    DatabaseOptions, PoolOptions, TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository,
-    connect,
+    DatabaseOptions, PoolOptions, QuotaMutationOutcome, QuotaRepository, QuotaReservationStatus,
+    TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository, connect,
 };
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
@@ -34,7 +37,11 @@ const TOKEN_HASH_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 const TOKEN_HASH_C: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const TOKEN_HASH_D: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
 const TOKEN_HASH_E: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-const CORE_TABLES: [&str; 9] = [
+const RESERVATION_KEY_A: &str = "11111111111111111111111111111111";
+const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
+const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
+const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
+const CORE_TABLES: [&str; 10] = [
     "groups",
     "users",
     "channels",
@@ -44,6 +51,7 @@ const CORE_TABLES: [&str; 9] = [
     "channel_groups",
     "abilities",
     "options",
+    "billing_reservations",
 ];
 
 struct SlowMigrator;
@@ -101,6 +109,7 @@ async fn generated_active_models_redact_sensitive_payloads() {
             .unwrap(),
     ));
     let option = option_active_model("site.name", "option-value");
+    let reservation = reservation_active_model(RESERVATION_KEY_A, 1, 1, 1, 10, 10);
     let mut channel = channel_active_model("debug-channel");
     channel.base_url = Set(Some(
         ChannelBaseUrl::parse("https://api.example.com/channel-secret").unwrap(),
@@ -121,6 +130,7 @@ async fn generated_active_models_redact_sensitive_payloads() {
         (format!("{token:?}"), TOKEN_HASH_A),
         (format!("{option:?}"), "option-value"),
         (format!("{channel:?}"), "channel-secret"),
+        (format!("{reservation:?}"), RESERVATION_KEY_A),
     ] {
         assert!(rendered.contains("<redacted>"));
         assert!(!rendered.contains(secret));
@@ -136,8 +146,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         &database_url,
         env::var(ALLOW_DESTRUCTIVE_MIGRATION_TEST).ok().as_deref(),
     )?;
+    let is_sqlite = database_url.starts_with("sqlite:");
     let options = DatabaseOptions::new(database_url)?.with_pool_options(PoolOptions {
-        max_connections: 1,
+        // SQLite 内存库必须固定单连接；网络数据库使用多连接覆盖真实锁竞争。
+        max_connections: if is_sqlite { 1 } else { 4 },
         min_connections: 1,
         ..PoolOptions::default()
     });
@@ -162,6 +174,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
 
     assert_updated_at_behaviors(pool.connection()).await?;
     exercise_token_auth_repository(&pool).await?;
+    exercise_quota_repository(&pool).await?;
     exercise_core_schema(pool.connection()).await?;
 
     Migrator::down(pool.connection(), None).await?;
@@ -174,6 +187,134 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_core_tables_absent(pool.connection()).await?;
 
     pool.close().await?;
+    Ok(())
+}
+
+/// 在三方言隔离数据库中执行并发预扣、结算、退款及终态重放。
+async fn exercise_quota_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let group = group_active_model("quota-smoke-group", "额度仓储冒烟分组")
+        .insert(pool.connection())
+        .await?;
+    let mut user = user_active_model(
+        group.id,
+        "quota-smoke-user",
+        "quota-smoke@example.com",
+        "invite-quota-smoke",
+    );
+    user.status = Set(1);
+    user.quota = Set(200);
+    let user = user.insert(pool.connection()).await?;
+    let mut token = token_active_model(user.id, group.id, TOKEN_HASH_D, "quota-smoke-token");
+    token.status = Set(1);
+    token.remain_quota = Set(200);
+    let token = token.insert(pool.connection()).await?;
+    let principal = GatewayPrincipal::new(
+        TokenId::new(token.id)?,
+        UserId::new(user.id)?,
+        GroupId::new(group.id)?,
+    );
+    let settled_id = BillingReservationId::new([0xd1; 16])?;
+    let refunded_id = BillingReservationId::new([0xd2; 16])?;
+    let repository = QuotaRepository::new(pool.clone());
+
+    let barrier = Arc::new(tokio::sync::Barrier::new(3));
+    let first_repository = repository.clone();
+    let first_barrier = Arc::clone(&barrier);
+    let first = tokio::spawn(async move {
+        first_barrier.wait().await;
+        first_repository
+            .precharge(settled_id, principal, Quota::new(40).unwrap())
+            .await
+    });
+    let second_repository = repository.clone();
+    let second_barrier = Arc::clone(&barrier);
+    let second = tokio::spawn(async move {
+        second_barrier.wait().await;
+        second_repository
+            .precharge(refunded_id, principal, Quota::new(40).unwrap())
+            .await
+    });
+    barrier.wait().await;
+    assert_eq!(first.await??, QuotaMutationOutcome::Applied);
+    assert_eq!(second.await??, QuotaMutationOutcome::Applied);
+
+    let barrier = Arc::new(tokio::sync::Barrier::new(3));
+    let settle_repository = repository.clone();
+    let settle_barrier = Arc::clone(&barrier);
+    let settle = tokio::spawn(async move {
+        settle_barrier.wait().await;
+        settle_repository
+            .settle(settled_id, Quota::new(50).unwrap())
+            .await
+    });
+    let refund_repository = repository.clone();
+    let refund_barrier = Arc::clone(&barrier);
+    let refund = tokio::spawn(async move {
+        refund_barrier.wait().await;
+        refund_repository.refund(refunded_id).await
+    });
+    barrier.wait().await;
+    assert_eq!(settle.await??, QuotaMutationOutcome::Applied);
+    assert_eq!(refund.await??, QuotaMutationOutcome::Applied);
+    assert_eq!(
+        repository
+            .settle(settled_id, Quota::new(50).unwrap())
+            .await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Settled)
+    );
+    assert_eq!(
+        repository.refund(refunded_id).await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Refunded)
+    );
+
+    let user = users::Entity::find_by_id(user.id)
+        .one(pool.connection())
+        .await?
+        .expect("额度冒烟用户必须存在");
+    let token = tokens::Entity::find_by_id(token.id)
+        .one(pool.connection())
+        .await?
+        .expect("额度冒烟令牌必须存在");
+    assert_eq!(
+        (
+            user.quota,
+            user.used_quota,
+            user.frozen_quota,
+            user.request_count
+        ),
+        (150, 50, 0, 1)
+    );
+    assert_eq!((token.remain_quota, token.used_quota), (150, 50));
+
+    for (id, expected_status) in [
+        (settled_id, QuotaReservationStatus::Settled),
+        (refunded_id, QuotaReservationStatus::Refunded),
+    ] {
+        let key = BillingReservationKey::parse(&id.persistence_key())?;
+        let reservation = billing_reservations::Entity::find_by_id(key.clone())
+            .one(pool.connection())
+            .await?
+            .expect("额度冒烟预留记录必须存在");
+        let finalized_at = reservation
+            .finalized_at
+            .expect("额度冒烟终态必须记录完成时间");
+        assert_eq!(reservation.status, expected_status.code());
+        assert!(reservation.updated_at >= reservation.created_at);
+        assert!(finalized_at >= reservation.created_at);
+        assert_eq!(finalized_at, reservation.updated_at);
+        billing_reservations::Entity::delete_by_id(key)
+            .exec(pool.connection())
+            .await?;
+    }
+    tokens::Entity::delete_by_id(token.id)
+        .exec(pool.connection())
+        .await?;
+    users::Entity::delete_by_id(user.id)
+        .exec(pool.connection())
+        .await?;
+    groups::Entity::delete_by_id(group.id)
+        .exec(pool.connection())
+        .await?;
     Ok(())
 }
 
@@ -359,6 +500,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<channel_groups::Column>(&manager, "channel_groups").await?;
     assert_entity_columns::<abilities::Column>(&manager, "abilities").await?;
     assert_entity_columns::<options::Column>(&manager, "options").await?;
+    assert_entity_columns::<billing_reservations::Column>(&manager, "billing_reservations").await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -372,6 +514,18 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("tokens", "uq_tokens_key_hash"),
         ("credentials", "idx_credentials_channel_status_schedulable"),
         ("abilities", "idx_abilities_group_model_enabled"),
+        (
+            "billing_reservations",
+            "idx_billing_reservations_status_expires",
+        ),
+        (
+            "billing_reservations",
+            "idx_billing_reservations_user_created",
+        ),
+        (
+            "billing_reservations",
+            "idx_billing_reservations_token_created",
+        ),
     ] {
         assert!(
             manager.has_index(table, index).await?,
@@ -428,6 +582,7 @@ async fn assert_updated_at_behaviors(connection: &DatabaseConnection) -> Result<
     }
 
     assert_behavior!(abilities::ActiveModel);
+    assert_behavior!(billing_reservations::ActiveModel);
     assert_behavior!(channel_groups::ActiveModel);
     assert_behavior!(channel_models::ActiveModel);
     assert_behavior!(channels::ActiveModel);
@@ -518,6 +673,16 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
     assert_eq!(token.status, 2);
     assert_eq!(token.expired_at, Some(future_expiration()));
     assert_debug_redacted(&token, TOKEN_HASH_A);
+
+    let reservation =
+        reservation_active_model(RESERVATION_KEY_A, user.id, token.id, group.id, 100, 100)
+            .insert(connection)
+            .await?;
+    assert_eq!(reservation.status, 1);
+    assert_eq!(reservation.actual_quota, None);
+    assert_eq!(reservation.finalized_at, None);
+    assert_debug_redacted(&reservation, RESERVATION_KEY_A);
+    assert_billing_reservation_constraints(connection, user.id, token.id, group.id).await?;
 
     channel_models::ActiveModel {
         channel_id: Set(channel.id),
@@ -960,6 +1125,185 @@ async fn assert_persistence_constraints(
     Ok(())
 }
 
+async fn assert_billing_reservation_constraints(
+    connection: &DatabaseConnection,
+    user_id: i64,
+    token_id: i64,
+    group_id: i64,
+) -> Result<(), DbErr> {
+    for invalid_key in [
+        "00000000000000000000000000000000",
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "gggggggggggggggggggggggggggggggg",
+        "1111111111111111111111111111111",
+        "111111111111111111111111111111111",
+    ] {
+        // 绕过实体值对象，确认数据库本身仍会拒绝非规范幂等键。
+        let statement = Query::insert()
+            .into_table(billing_reservations::Entity)
+            .columns([
+                billing_reservations::Column::IdempotencyKey,
+                billing_reservations::Column::UserId,
+                billing_reservations::Column::TokenId,
+                billing_reservations::Column::GroupId,
+                billing_reservations::Column::ReservedQuota,
+                billing_reservations::Column::ExpiresAt,
+            ])
+            .values_panic([
+                invalid_key.into(),
+                user_id.into(),
+                token_id.into(),
+                group_id.into(),
+                10_i64.into(),
+                future_expiration().into(),
+            ])
+            .to_owned();
+        assert!(
+            connection
+                .execute(connection.get_database_backend().build(&statement))
+                .await
+                .is_err()
+        );
+    }
+
+    assert!(
+        reservation_active_model(RESERVATION_KEY_A, user_id, token_id, group_id, 100, 100,)
+            .insert(connection)
+            .await
+            .is_err()
+    );
+
+    let pending = reservation_active_model(RESERVATION_KEY_B, user_id, token_id, group_id, 100, 0)
+        .insert(connection)
+        .await?;
+    let mut pending_update = pending.into_active_model();
+    pending_update.status = Set(2);
+    pending_update.actual_quota = Set(Some(80));
+    let pending = pending_update.update(connection).await?;
+    let mut settled_update = pending.into_active_model();
+    settled_update.status = Set(3);
+    settled_update.finalized_at = Set(Some(fixed_finalization_time()));
+    settled_update.update(connection).await?;
+
+    let mut invalid_reserved =
+        reservation_active_model(RESERVATION_KEY_C, user_id, token_id, group_id, 1, 0);
+    invalid_reserved.reserved_quota = Set(0);
+    assert!(invalid_reserved.insert(connection).await.is_err());
+
+    let invalid_token_reserved =
+        reservation_active_model(RESERVATION_KEY_D, user_id, token_id, group_id, 100, 50);
+    assert!(invalid_token_reserved.insert(connection).await.is_err());
+
+    let mut missing_actual = reservation_active_model(
+        "55555555555555555555555555555555",
+        user_id,
+        token_id,
+        group_id,
+        100,
+        100,
+    );
+    missing_actual.status = Set(2);
+    assert!(missing_actual.insert(connection).await.is_err());
+
+    let mut invalid_refund = reservation_active_model(
+        "66666666666666666666666666666666",
+        user_id,
+        token_id,
+        group_id,
+        100,
+        100,
+    );
+    invalid_refund.status = Set(4);
+    invalid_refund.actual_quota = Set(Some(0));
+    invalid_refund.finalized_at = Set(Some(fixed_finalization_time()));
+    assert!(invalid_refund.insert(connection).await.is_err());
+
+    let missing_user = reservation_active_model(
+        "77777777777777777777777777777777",
+        i64::MAX,
+        token_id,
+        group_id,
+        100,
+        100,
+    );
+    assert!(missing_user.insert(connection).await.is_err());
+
+    let missing_token = reservation_active_model(
+        "88888888888888888888888888888888",
+        user_id,
+        i64::MAX,
+        group_id,
+        100,
+        100,
+    );
+    assert!(missing_token.insert(connection).await.is_err());
+
+    let missing_group = reservation_active_model(
+        "99999999999999999999999999999999",
+        user_id,
+        token_id,
+        i64::MAX,
+        100,
+        100,
+    );
+    assert!(missing_group.insert(connection).await.is_err());
+
+    let mut negative_actual = reservation_active_model(
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        user_id,
+        token_id,
+        group_id,
+        100,
+        100,
+    );
+    negative_actual.status = Set(2);
+    negative_actual.actual_quota = Set(Some(-1));
+    assert!(negative_actual.insert(connection).await.is_err());
+
+    let mut negative_token_reserved = reservation_active_model(
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        user_id,
+        token_id,
+        group_id,
+        100,
+        100,
+    );
+    negative_token_reserved.token_reserved_quota = Set(-1);
+    assert!(negative_token_reserved.insert(connection).await.is_err());
+
+    let mut invalid_status = reservation_active_model(
+        "cccccccccccccccccccccccccccccccc",
+        user_id,
+        token_id,
+        group_id,
+        100,
+        100,
+    );
+    invalid_status.status = Set(5);
+    assert!(invalid_status.insert(connection).await.is_err());
+
+    // 计费记录必须阻止主体被硬删除，否则迟到重放将失去退款和审计依据。
+    assert!(
+        tokens::Entity::delete_by_id(token_id)
+            .exec(connection)
+            .await
+            .is_err()
+    );
+    assert!(
+        users::Entity::delete_by_id(user_id)
+            .exec(connection)
+            .await
+            .is_err()
+    );
+    assert!(
+        groups::Entity::delete_by_id(group_id)
+            .exec(connection)
+            .await
+            .is_err()
+    );
+    Ok(())
+}
+
 async fn assert_invalid_sensitive_rows_fail_closed(
     connection: &DatabaseConnection,
     group_id: i64,
@@ -1310,6 +1654,26 @@ fn token_active_model(
     }
 }
 
+fn reservation_active_model(
+    idempotency_key: &str,
+    user_id: i64,
+    token_id: i64,
+    group_id: i64,
+    reserved_quota: i64,
+    token_reserved_quota: i64,
+) -> billing_reservations::ActiveModel {
+    billing_reservations::ActiveModel {
+        idempotency_key: Set(BillingReservationKey::parse(idempotency_key).unwrap()),
+        user_id: Set(user_id),
+        token_id: Set(token_id),
+        group_id: Set(group_id),
+        reserved_quota: Set(reserved_quota),
+        token_reserved_quota: Set(token_reserved_quota),
+        expires_at: Set(future_expiration()),
+        ..Default::default()
+    }
+}
+
 fn option_active_model(key: &str, value: &str) -> options::ActiveModel {
     options::ActiveModel {
         key: Set(key.to_owned()),
@@ -1353,6 +1717,11 @@ fn future_expiration() -> TimeDateTimeWithTimeZone {
 fn historical_audit_time() -> TimeDateTimeWithTimeZone {
     TimeDateTimeWithTimeZone::from_unix_timestamp(946_684_800)
         .expect("固定的 2000-01-01 时间戳必须有效")
+}
+
+fn fixed_finalization_time() -> TimeDateTimeWithTimeZone {
+    TimeDateTimeWithTimeZone::from_unix_timestamp(1_893_456_000)
+        .expect("固定的 2030-01-01 时间戳必须有效")
 }
 
 fn fixed_peak_time() -> TimeTime {

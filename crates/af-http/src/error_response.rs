@@ -88,6 +88,9 @@ fn classify_error(error: AfError) -> MappedError {
         AfError::ModelNotAllowed => {
             MappedError::new(PublicErrorCode::ModelNotFound, "token_model_not_allowed")
         }
+        AfError::InsufficientQuota => {
+            MappedError::new(PublicErrorCode::InsufficientQuota, "insufficient_quota")
+        }
         AfError::Upstream(error) => classify_upstream_error(error),
         AfError::Internal => MappedError::new(PublicErrorCode::InternalError, "internal"),
     }
