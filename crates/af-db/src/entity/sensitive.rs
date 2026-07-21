@@ -1,6 +1,9 @@
 use std::{collections::HashSet, fmt};
 
-use af_domain::{IpCidr, TrustedClientIp};
+use af_domain::{
+    IpCidr, MAX_TOKEN_MODEL_ALLOWLIST_COUNT, MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES,
+    TokenModelPolicy, TrustedClientIp,
+};
 use argon2::{
     Algorithm, MIN_SALT_LEN, Params, Version, password_hash::PasswordHash as ParsedPasswordHash,
 };
@@ -33,6 +36,10 @@ const MAX_TOKEN_IP_ALLOWLIST_TEXT_BYTES: usize = 4_096;
 /// PostgreSQL/MySQL 文本化会在数组分隔符后补空格，按其最坏结构开销保留上限。
 pub(crate) const MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES: i64 =
     (MAX_TOKEN_IP_ALLOWLIST_TEXT_BYTES + MAX_TOKEN_IP_ALLOWLIST_COUNT * 4) as i64;
+/// 覆盖 32 KiB 模型文本的 JSON 转义与 512 项结构开销，并限制异常持久化表示。
+pub(crate) const MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES: i64 =
+    (MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES * 2 + MAX_TOKEN_MODEL_ALLOWLIST_COUNT * 4 + 2 * 1024)
+        as i64;
 const FORBIDDEN_OVERRIDE_HEADERS: &[&str] = &[
     "authorization",
     "proxy-authorization",
@@ -70,6 +77,9 @@ pub(crate) enum SensitiveValueError {
     /// 令牌 IP 白名单不是受限的非空 IP/CIDR 字符串数组。
     #[error("令牌 IP 白名单格式无效")]
     InvalidTokenIpAllowlist,
+    /// 令牌模型白名单不是受限的非空 Canonical 模型名数组。
+    #[error("令牌模型白名单格式无效")]
+    InvalidTokenModelAllowlist,
     /// 渠道基础地址无效、使用了不支持的协议或携带敏感 URL 组件。
     #[error("渠道基础地址必须是无凭据、查询串和片段的 HTTP(S) URL")]
     InvalidChannelBaseUrl,
@@ -211,6 +221,46 @@ impl TokenHash {
 }
 
 impl fmt::Debug for TokenHash {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("<redacted>")
+    }
+}
+
+/// 已完整校验且禁止日志输出的令牌模型白名单。
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct TokenModelAllowlist {
+    raw: Json,
+    policy: TokenModelPolicy,
+}
+
+impl TokenModelAllowlist {
+    /// 校验非空数组、条目数量以及每个 Canonical 模型名。
+    pub(crate) fn validate(value: Json) -> Result<Self, SensitiveValueError> {
+        let Json::Array(entries) = &value else {
+            return Err(SensitiveValueError::InvalidTokenModelAllowlist);
+        };
+        if entries.is_empty() || entries.len() > MAX_TOKEN_MODEL_ALLOWLIST_COUNT {
+            return Err(SensitiveValueError::InvalidTokenModelAllowlist);
+        }
+        let models = entries
+            .iter()
+            .map(|entry| match entry {
+                Json::String(model) => Ok(model.clone()),
+                _ => Err(SensitiveValueError::InvalidTokenModelAllowlist),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let policy = TokenModelPolicy::try_from_allowlist(models)
+            .map_err(|_| SensitiveValueError::InvalidTokenModelAllowlist)?;
+        Ok(Self { raw: value, policy })
+    }
+
+    /// 消费持久化包装并返回不可变策略快照。
+    pub(crate) fn into_policy(self) -> TokenModelPolicy {
+        self.policy
+    }
+}
+
+impl fmt::Debug for TokenModelAllowlist {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("<redacted>")
     }
@@ -595,6 +645,48 @@ impl Nullable for TokenIpAllowlist {
     }
 }
 
+impl From<TokenModelAllowlist> for Value {
+    fn from(source: TokenModelAllowlist) -> Self {
+        source.raw.into()
+    }
+}
+
+impl TryGetable for TokenModelAllowlist {
+    fn try_get_by<I>(result: &QueryResult, index: I) -> Result<Self, TryGetError>
+    where
+        I: ColIdx,
+    {
+        let raw = <Json as TryGetable>::try_get_by(result, index)?;
+        Self::validate(raw)
+            .map_err(|error| invalid_db_value("Json", stringify!(TokenModelAllowlist), error))
+    }
+}
+
+impl ValueType for TokenModelAllowlist {
+    fn try_from(value: Value) -> Result<Self, ValueTypeErr> {
+        let raw = <Json as ValueType>::try_from(value)?;
+        Self::validate(raw).map_err(|_| ValueTypeErr)
+    }
+
+    fn type_name() -> String {
+        stringify!(TokenModelAllowlist).to_owned()
+    }
+
+    fn array_type() -> ArrayType {
+        ArrayType::Json
+    }
+
+    fn column_type() -> ColumnType {
+        ColumnType::JsonBinary
+    }
+}
+
+impl Nullable for TokenModelAllowlist {
+    fn null() -> Value {
+        <Json as Nullable>::null()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -614,6 +706,10 @@ mod tests {
         let allowlist =
             TokenIpAllowlist::validate(Json::Array(vec![Json::String("192.0.2.0/24".to_owned())]))
                 .unwrap();
+        let model_allowlist = TokenModelAllowlist::validate(Json::Array(vec![Json::String(
+            "private-model".to_owned(),
+        )]))
+        .unwrap();
 
         for rendered in [
             format!("{text:?}"),
@@ -624,6 +720,7 @@ mod tests {
             format!("{base_url:?}"),
             format!("{headers:?}"),
             format!("{allowlist:?}"),
+            format!("{model_allowlist:?}"),
         ] {
             assert_eq!(rendered, "<redacted>");
         }
@@ -660,6 +757,14 @@ mod tests {
             Json::Array(vec![Json::String("invalid-ip".to_owned())]),
         ] {
             assert!(TokenIpAllowlist::validate(invalid).is_err());
+        }
+        for invalid in [
+            Json::Null,
+            Json::Array(Vec::new()),
+            Json::Array(vec![Json::String(" invalid-model".to_owned())]),
+            Json::Array(vec![Json::Bool(true)]),
+        ] {
+            assert!(TokenModelAllowlist::validate(invalid).is_err());
         }
         assert!(ChannelBaseUrl::parse("https://user:password@example.com").is_err());
         assert!(ChannelBaseUrl::parse("https://example.com?api_key=secret").is_err());

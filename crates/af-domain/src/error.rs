@@ -92,6 +92,9 @@ pub enum AfError {
     /// 下游 API Key 缺失、格式无效或未通过认证。
     #[error("下游 API Key 无效")]
     InvalidApiKey,
+    /// 请求模型未被当前下游令牌策略允许。
+    #[error("下游令牌不允许请求的模型")]
+    ModelNotAllowed,
     /// 已归一化且不含原始上游内容的故障。
     #[error("{0}")]
     Upstream(#[from] UpstreamError),

@@ -5,14 +5,17 @@ use af_adapter::{
     HeaderMap, Method, OpenAiAdaptorSettings, Operation, PooledClient, RelayContext, StatusCode,
     UpstreamRequest, get_adaptor,
 };
-use af_domain::{AfError, GatewayPrincipal, UpstreamError, UpstreamServerStatus};
-use af_protocol::openai_chat::{
-    OpenAiUpstreamErrorKind, build_request, classify_error_response, parse_request, parse_response,
+use af_domain::{
+    AfError, GatewayPrincipal, MAX_MODEL_NAME_BYTES, UpstreamError, UpstreamServerStatus,
+};
+use af_protocol::{
+    CanonicalRequest,
+    openai_chat::{
+        OpenAiUpstreamErrorKind, build_request, classify_error_response, parse_response,
+    },
 };
 
 use crate::RelayBuildError;
-
-const MAX_MODEL_BYTES: usize = 256;
 
 /// M0 单 OpenAI-compatible 上游的非流式转发服务。
 ///
@@ -51,17 +54,16 @@ impl RelayService {
         })
     }
 
-    /// 转发一次已认证的非流式 OpenAI Chat 请求，并返回经过协议校验的同协议响应。
+    /// 转发一次已认证且完成入站规范化的非流式请求，并返回经过协议校验的同协议响应。
     ///
     /// 身份参数用于强制调用方保留请求归属，当前静态单上游阶段不会把它写入
     /// `RelayContext`、适配器或上游请求。
     pub async fn chat_completions(
         &self,
         _principal: &GatewayPrincipal,
-        inbound_body: Bytes,
+        canonical: CanonicalRequest,
         request_id: &str,
     ) -> Result<OpenAiChatResponse, AfError> {
-        let canonical = parse_request(&inbound_body).map_err(|_| AfError::InvalidRequest)?;
         if canonical.model != self.model {
             return Err(UpstreamError::ModelUnsupported.into());
         }
@@ -144,7 +146,7 @@ impl fmt::Debug for OpenAiChatResponse {
 
 fn is_valid_model(model: &str) -> bool {
     !model.is_empty()
-        && model.len() <= MAX_MODEL_BYTES
+        && model.len() <= MAX_MODEL_NAME_BYTES
         && model.trim() == model
         && !model.chars().any(char::is_control)
 }
@@ -207,7 +209,7 @@ mod tests {
         for model in ["", " gpt-test", "gpt-test ", "gpt\ntest"] {
             assert!(!is_valid_model(model));
         }
-        assert!(!is_valid_model(&"x".repeat(MAX_MODEL_BYTES + 1)));
+        assert!(!is_valid_model(&"x".repeat(MAX_MODEL_NAME_BYTES + 1)));
     }
 
     #[test]

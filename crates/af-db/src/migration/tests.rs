@@ -205,12 +205,17 @@ async fn exercise_token_auth_repository(pool: &DatabasePool) -> Result<(), Box<d
             TrustedClientIp::new("192.0.2.10".parse()?),
         )
         .await?;
-    let TokenAuthLookupOutcome::Authenticated(principal) = outcome else {
+    let TokenAuthLookupOutcome::Authenticated {
+        principal,
+        model_policy,
+    } = outcome
+    else {
         return Err("三方言令牌鉴权冒烟未返回已认证主体".into());
     };
     assert_eq!(principal.token_id().get(), token.id);
     assert_eq!(principal.user_id().get(), user.id);
     assert_eq!(principal.group_id().get(), group.id);
+    assert!(model_policy.allows("auth-smoke-model"));
     assert_eq!(
         repository
             .lookup(

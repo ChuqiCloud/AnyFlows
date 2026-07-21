@@ -5,6 +5,7 @@ mod error;
 mod network;
 mod principal;
 mod quota;
+mod token_policy;
 
 pub use enums::{
     ChannelType, CredentialKind, Operation, ParseEnumError, Protocol, PublicErrorCode, Role, Status,
@@ -13,6 +14,10 @@ pub use error::{AfError, UpstreamError, UpstreamServerStatus};
 pub use network::{IpCidr, IpCidrParseError, TrustedClientIp};
 pub use principal::{GatewayPrincipal, GroupId, PrincipalIdError, TokenId, UserId};
 pub use quota::{Quota, QuotaDelta, QuotaError};
+pub use token_policy::{
+    MAX_MODEL_NAME_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_COUNT, MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES,
+    TokenModelPolicy, TokenModelPolicyError,
+};
 
 #[cfg(test)]
 mod enums_tests;
@@ -24,3 +29,5 @@ mod network_tests;
 mod principal_tests;
 #[cfg(test)]
 mod quota_tests;
+#[cfg(test)]
+mod token_policy_tests;

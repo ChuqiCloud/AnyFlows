@@ -7,11 +7,13 @@ use std::{
 };
 
 use af_admin::{
-    ApiKeyDigest, PresentedApiKey, TokenAuthenticationError, TokenAuthenticationFuture,
-    TokenAuthenticator,
+    ApiKeyDigest, PresentedApiKey, TokenAuthentication, TokenAuthenticationError,
+    TokenAuthenticationFuture, TokenAuthenticator,
 };
 use af_config::{ClientIpSource, CorsOrigin, ServerConfig};
-use af_domain::{GatewayPrincipal, GroupId, IpCidr, TokenId, TrustedClientIp, UserId};
+use af_domain::{
+    GatewayPrincipal, GroupId, IpCidr, TokenId, TokenModelPolicy, TrustedClientIp, UserId,
+};
 use axum::{
     Extension, Router,
     body::{Body, to_bytes},
@@ -102,7 +104,7 @@ impl TokenAuthenticator for FakeAuthenticator {
         let outcome = self.outcome;
         Box::pin(async move {
             match outcome {
-                AuthenticationOutcome::Success => Ok(test_principal()),
+                AuthenticationOutcome::Success => Ok(test_authentication()),
                 AuthenticationOutcome::InvalidApiKey => {
                     Err(TokenAuthenticationError::InvalidApiKey)
                 }
@@ -118,6 +120,10 @@ fn test_principal() -> GatewayPrincipal {
         UserId::new(22).unwrap(),
         GroupId::new(33).unwrap(),
     )
+}
+
+fn test_authentication() -> TokenAuthentication {
+    TokenAuthentication::new(test_principal(), TokenModelPolicy::unrestricted())
 }
 
 fn server_config(origins: &[&str]) -> ServerConfig {
@@ -173,12 +179,13 @@ fn authenticated_router_with_network(
 }
 
 async fn protected_handler(
-    Extension(principal): Extension<GatewayPrincipal>,
+    Extension(authentication): Extension<TokenAuthentication>,
     peer: Option<Extension<ConnectInfo<SocketAddr>>>,
     headers: HeaderMap,
     uri: Uri,
 ) -> StatusCode {
-    assert_eq!(principal, test_principal());
+    assert_eq!(authentication.principal(), test_principal());
+    assert!(authentication.model_policy().allows("test-model"));
     assert!(headers.get(AUTHORIZATION).is_none());
     assert!(headers.get("x-api-key").is_none());
     assert!(headers.get("x-goog-api-key").is_none());

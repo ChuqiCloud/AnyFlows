@@ -8,8 +8,8 @@ pub use api_key::{
     PresentedApiKey,
 };
 pub use token_auth::{
-    DatabaseTokenAuthenticator, TokenAuthenticationError, TokenAuthenticationFuture,
-    TokenAuthenticator,
+    DatabaseTokenAuthenticator, TokenAuthentication, TokenAuthenticationError,
+    TokenAuthenticationFuture, TokenAuthenticator,
 };
 
 #[cfg(test)]

@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use af_domain::GatewayPrincipal;
+use af_admin::TokenAuthentication;
+use af_domain::AfError;
+use af_protocol::openai_chat::parse_request;
 use af_relay::RelayService;
 use af_telemetry::RequestId;
 use axum::{
@@ -24,16 +26,22 @@ impl HttpState {
     }
 }
 
-/// 接收原始受限字节并交给协议感知 relay，保留重复键与结构预算检查。
+/// 解析受限正文、执行请求级令牌策略，再把 Canonical 请求交给 Relay。
 pub(crate) async fn chat_completions(
     State(state): State<HttpState>,
     Extension(request_id): Extension<RequestId>,
-    Extension(principal): Extension<GatewayPrincipal>,
+    Extension(authentication): Extension<TokenAuthentication>,
     body: Bytes,
 ) -> Result<Response, OpenAiHttpError> {
+    let canonical =
+        parse_request(&body).map_err(|_| OpenAiHttpError::from(AfError::InvalidRequest))?;
+    if !authentication.model_policy().allows(&canonical.model) {
+        return Err(OpenAiHttpError::from(AfError::ModelNotAllowed));
+    }
+    let principal = authentication.principal();
     let response = state
         .relay
-        .chat_completions(&principal, body, request_id.as_str())
+        .chat_completions(&principal, canonical, request_id.as_str())
         .await
         .map_err(OpenAiHttpError::from)?;
     Ok((

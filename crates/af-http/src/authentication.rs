@@ -68,8 +68,8 @@ pub(crate) async fn authenticate_api_key(
     drop(digest);
 
     match authentication {
-        Ok(principal) => {
-            request.extensions_mut().insert(principal);
+        Ok(authentication) => {
+            request.extensions_mut().insert(authentication);
             next.run(request).await
         }
         Err(TokenAuthenticationError::InvalidApiKey) => {

@@ -1,6 +1,6 @@
 use std::{fmt, net::SocketAddr, str::FromStr};
 
-use af_domain::IpCidr;
+use af_domain::{IpCidr, MAX_MODEL_NAME_BYTES};
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use url::Url;
 
@@ -21,7 +21,7 @@ pub const MAX_TRUSTED_PROXY_CIDRS: usize = 64;
 /// OpenAI-compatible 上游基础地址的最大 UTF-8 字节数。
 pub const MAX_OPENAI_UPSTREAM_BASE_URL_BYTES: usize = 2_048;
 /// 静态单上游模型标识的最大 UTF-8 字节数。
-pub const MAX_OPENAI_UPSTREAM_MODEL_BYTES: usize = 256;
+pub const MAX_OPENAI_UPSTREAM_MODEL_BYTES: usize = MAX_MODEL_NAME_BYTES;
 /// 静态单上游 API Key 的最大 UTF-8 字节数。
 pub const MAX_OPENAI_UPSTREAM_API_KEY_BYTES: usize = 16 * 1_024;
 
