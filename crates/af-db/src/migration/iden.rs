@@ -308,3 +308,33 @@ pub(in crate::migration) mod options {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod billing_reservations {
+    use super::DeriveIden;
+
+    /// `billing_reservations` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "billing_reservations")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// `billing_reservations` 初始迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        IdempotencyKey,
+        UserId,
+        TokenId,
+        GroupId,
+        Status,
+        ReservedQuota,
+        TokenReservedQuota,
+        ActualQuota,
+        ExpiresAt,
+        FinalizedAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}

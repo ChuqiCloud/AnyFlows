@@ -10,7 +10,7 @@ use argon2::{
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use http::header::{HeaderName, HeaderValue};
 use sea_orm::{
-    ColIdx, DbErr, QueryResult, TryGetError, TryGetable, Value,
+    ColIdx, DbErr, QueryResult, TryFromU64, TryGetError, TryGetable, Value,
     entity::prelude::{DeriveValueType, Json},
     sea_query::{ArrayType, ColumnType, Nullable, StringLen, ValueType, ValueTypeErr},
 };
@@ -74,6 +74,9 @@ pub(crate) enum SensitiveValueError {
     /// 令牌哈希不是规范化的 SHA-256 十六进制编码。
     #[error("令牌哈希必须是 64 位小写十六进制字符串")]
     InvalidTokenHash,
+    /// 计费预留键不是非零的 128 位规范化十六进制编码。
+    #[error("计费预留键必须是非零的 32 位小写十六进制字符串")]
+    InvalidBillingReservationKey,
     /// 令牌 IP 白名单不是受限的非空 IP/CIDR 字符串数组。
     #[error("令牌 IP 白名单格式无效")]
     InvalidTokenIpAllowlist,
@@ -223,6 +226,38 @@ impl TokenHash {
 impl fmt::Debug for TokenHash {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("<redacted>")
+    }
+}
+
+/// 经过格式校验且禁止日志输出的计费预留幂等键。
+#[derive(Clone, PartialEq, Eq)]
+pub struct BillingReservationKey(String);
+
+impl BillingReservationKey {
+    /// 解析非全零的 32 位小写十六进制幂等键。
+    pub(crate) fn parse(value: &str) -> Result<Self, SensitiveValueError> {
+        if value.len() == 32
+            && value
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+            && value.bytes().any(|byte| byte != b'0')
+        {
+            return Ok(Self(value.to_owned()));
+        }
+        Err(SensitiveValueError::InvalidBillingReservationKey)
+    }
+}
+
+impl fmt::Debug for BillingReservationKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("<redacted>")
+    }
+}
+
+impl TryFromU64 for BillingReservationKey {
+    fn try_from_u64(_: u64) -> Result<Self, DbErr> {
+        // 幂等键不是自增主键，拒绝 SeaORM 将插入结果误转成业务标识。
+        Err(DbErr::ConvertFromU64("BillingReservationKey"))
     }
 }
 
@@ -598,6 +633,7 @@ fn invalid_db_value(
 }
 
 impl_validated_string_value!(TokenHash, parse, ColumnType::Char(Some(64)));
+impl_validated_string_value!(BillingReservationKey, parse, ColumnType::Char(Some(32)));
 impl_validated_string_value!(PasswordHash, parse, ColumnType::String(StringLen::N(255)));
 impl_validated_string_value!(ChannelBaseUrl, parse, ColumnType::Text);
 impl_validated_json_value!(EncryptedJson, from_envelope);
@@ -699,6 +735,7 @@ mod tests {
         let text = SensitiveString::from("sensitive-token");
         let password_hash = PasswordHash::parse(TEST_PASSWORD_HASH).unwrap();
         let token_hash = TokenHash::parse(&"a".repeat(64)).unwrap();
+        let reservation_key = BillingReservationKey::parse(&"b".repeat(32)).unwrap();
         let json = EncryptedJson::from_envelope(encrypted_envelope()).unwrap();
         let settings = SensitiveJson::from(Json::String("sensitive-settings".to_owned()));
         let base_url = ChannelBaseUrl::parse("https://api.example.com").unwrap();
@@ -715,6 +752,7 @@ mod tests {
             format!("{text:?}"),
             format!("{password_hash:?}"),
             format!("{token_hash:?}"),
+            format!("{reservation_key:?}"),
             format!("{json:?}"),
             format!("{settings:?}"),
             format!("{base_url:?}"),
@@ -751,6 +789,15 @@ mod tests {
         assert!(PasswordHash::parse(&TEST_PASSWORD_HASH.replace("argon2id", "argon2i")).is_err());
         assert!(TokenHash::parse("plaintext-token").is_err());
         assert!(TokenHash::parse(&"A".repeat(64)).is_err());
+        for invalid_key in [
+            "0".repeat(32),
+            "A".repeat(32),
+            "g".repeat(32),
+            "a".repeat(31),
+            "a".repeat(33),
+        ] {
+            assert!(BillingReservationKey::parse(&invalid_key).is_err());
+        }
         for invalid in [
             Json::Null,
             Json::Array(Vec::new()),
@@ -858,6 +905,9 @@ mod tests {
     #[test]
     fn database_value_conversion_revalidates_payloads() {
         assert!(<TokenHash as ValueType>::try_from(Value::from("z".repeat(64))).is_err());
+        assert!(
+            <BillingReservationKey as ValueType>::try_from(Value::from("0".repeat(32))).is_err()
+        );
         assert!(
             <PasswordHash as ValueType>::try_from(Value::from("raw-password".to_owned())).is_err()
         );

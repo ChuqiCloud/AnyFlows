@@ -2,8 +2,38 @@ use sea_orm::{ConnectionTrait, DbBackend};
 use sea_orm_migration::prelude::*;
 
 use crate::migration::iden::{
-    abilities, channel_groups, channel_models, channels, credentials, groups, tokens, users,
+    abilities, billing_reservations, channel_groups, channel_models, channels, credentials, groups,
+    tokens, users,
 };
+
+pub(in crate::migration) async fn create_billing_reservations_indexes(
+    manager: &SchemaManager<'_>,
+) -> Result<(), DbErr> {
+    create_indexes(
+        manager,
+        [
+            Index::create()
+                .name("idx_billing_reservations_status_expires")
+                .table(billing_reservations::Entity)
+                .col(billing_reservations::Column::Status)
+                .col(billing_reservations::Column::ExpiresAt)
+                .to_owned(),
+            Index::create()
+                .name("idx_billing_reservations_user_created")
+                .table(billing_reservations::Entity)
+                .col(billing_reservations::Column::UserId)
+                .col(billing_reservations::Column::CreatedAt)
+                .to_owned(),
+            Index::create()
+                .name("idx_billing_reservations_token_created")
+                .table(billing_reservations::Entity)
+                .col(billing_reservations::Column::TokenId)
+                .col(billing_reservations::Column::CreatedAt)
+                .to_owned(),
+        ],
+    )
+    .await
+}
 
 pub(in crate::migration) async fn create_groups_indexes(
     manager: &SchemaManager<'_>,

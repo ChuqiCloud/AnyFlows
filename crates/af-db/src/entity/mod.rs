@@ -9,6 +9,7 @@
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 pub(crate) mod abilities;
+pub(crate) mod billing_reservations;
 pub(crate) mod channel_groups;
 pub(crate) mod channel_models;
 pub(crate) mod channels;
@@ -21,9 +22,9 @@ pub(crate) mod users;
 mod sensitive;
 
 pub(crate) use sensitive::{
-    ChannelBaseUrl, EncryptedJson, HeaderOverrides, MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES,
-    MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES, PasswordHash, SensitiveJson, SensitiveString,
-    TokenHash, TokenIpAllowlist, TokenModelAllowlist,
+    BillingReservationKey, ChannelBaseUrl, EncryptedJson, HeaderOverrides,
+    MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES,
+    PasswordHash, SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, TokenModelAllowlist,
 };
 
 macro_rules! impl_updated_at_behavior {
@@ -151,6 +152,7 @@ fn changed_reference(reference: &ActiveValue<Option<i64>>, insert: bool) -> Opti
 
 impl_updated_at_behavior!(
     abilities::ActiveModel => validate_default,
+    billing_reservations::ActiveModel => validate_default,
     channel_groups::ActiveModel => validate_default,
     channel_models::ActiveModel => validate_default,
     channels::ActiveModel => validate_default,

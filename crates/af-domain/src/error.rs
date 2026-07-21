@@ -95,6 +95,9 @@ pub enum AfError {
     /// 请求模型未被当前下游令牌策略允许。
     #[error("下游令牌不允许请求的模型")]
     ModelNotAllowed,
+    /// 用户钱包或下游令牌额度不足，无法继续发送请求。
+    #[error("下游可用额度不足")]
+    InsufficientQuota,
     /// 已归一化且不含原始上游内容的故障。
     #[error("{0}")]
     Upstream(#[from] UpstreamError),

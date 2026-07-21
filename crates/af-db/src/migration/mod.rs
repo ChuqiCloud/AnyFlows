@@ -15,6 +15,7 @@ mod m20260718_000006_create_channel_models;
 mod m20260718_000007_create_channel_groups;
 mod m20260718_000008_create_abilities;
 mod m20260718_000009_create_options;
+mod m20260718_000010_create_billing_reservations;
 mod schema;
 
 #[cfg(test)]
@@ -67,6 +68,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260718_000007_create_channel_groups::Migration),
             Box::new(m20260718_000008_create_abilities::Migration),
             Box::new(m20260718_000009_create_options::Migration),
+            Box::new(m20260718_000010_create_billing_reservations::Migration),
         ]
     }
 }

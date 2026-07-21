@@ -40,6 +40,11 @@ version = "0.1.0"
 [[package]]
 name = "af-billing"
 version = "0.1.0"
+dependencies = [
+ "af-domain",
+ "rust_decimal",
+ "thiserror",
+]
 
 [[package]]
 name = "af-cache"

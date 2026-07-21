@@ -1,15 +1,16 @@
 use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 
+mod billing;
 mod identity;
 mod indexes;
 mod routing;
 
 pub(super) use identity::{create_groups, create_options, create_tokens, create_users};
 pub(super) use indexes::{
-    create_abilities_indexes, create_channel_groups_indexes, create_channel_models_indexes,
-    create_channels_indexes, create_credentials_indexes, create_groups_indexes,
-    create_tokens_indexes, create_users_indexes,
+    create_abilities_indexes, create_billing_reservations_indexes, create_channel_groups_indexes,
+    create_channel_models_indexes, create_channels_indexes, create_credentials_indexes,
+    create_groups_indexes, create_tokens_indexes, create_users_indexes,
 };
 pub(super) use routing::{
     create_abilities, create_channel_groups, create_channel_models, create_channels,
@@ -72,3 +73,4 @@ where
     }
     definition
 }
+pub(super) use billing::create_billing_reservations;
