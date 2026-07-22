@@ -2,11 +2,11 @@ use std::fmt;
 
 use thiserror::Error;
 
-/// 网关主体标识构造错误；不保留外部提供的原始数值。
+/// 网关主体或渠道标识构造错误；不保留外部提供的原始数值。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum PrincipalIdError {
-    /// 数据库标识必须是正整数。
-    #[error("网关主体标识必须大于零")]
+    /// 数据库实体标识必须是正整数。
+    #[error("领域实体标识必须大于零")]
     NonPositive,
 }
 
@@ -62,6 +62,11 @@ principal_id! {
 principal_id! {
     /// 本次请求使用的有效分组标识。
     GroupId
+}
+
+principal_id! {
+    /// 本次请求实际使用的上游渠道标识。
+    ChannelId
 }
 
 /// 已完成令牌、用户与有效分组校验的网关请求主体。
