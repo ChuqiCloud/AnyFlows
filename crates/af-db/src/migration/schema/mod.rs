@@ -5,6 +5,7 @@ mod billing;
 mod billing_batch;
 mod identity;
 mod indexes;
+mod pricing;
 mod routing;
 
 pub(super) use identity::{create_groups, create_options, create_tokens, create_users};
@@ -76,3 +77,4 @@ where
 }
 pub(super) use billing::create_billing_reservations;
 pub(super) use billing_batch::create_billing_batch_checkpoints;
+pub(super) use pricing::create_model_prices;

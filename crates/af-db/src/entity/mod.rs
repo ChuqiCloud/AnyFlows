@@ -6,6 +6,7 @@
 // 仓储层尚未落地前，部分实体仅用于声明稳定表结构；保持模块私有并局部关闭死代码告警。
 #![allow(dead_code)]
 
+use rust_decimal::Decimal;
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 pub(crate) mod abilities;
@@ -16,6 +17,7 @@ pub(crate) mod channel_models;
 pub(crate) mod channels;
 pub(crate) mod credentials;
 pub(crate) mod groups;
+pub(crate) mod model_prices;
 pub(crate) mod options;
 pub(crate) mod tokens;
 pub(crate) mod users;
@@ -25,8 +27,8 @@ mod sensitive;
 pub(crate) use sensitive::{
     BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
     EncryptedJson, HeaderOverrides, MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES,
-    MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES, PasswordHash, SensitiveJson, SensitiveString,
-    TokenHash, TokenIpAllowlist, TokenModelAllowlist,
+    MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES, PasswordHash, SensitiveDecimal, SensitiveJson,
+    SensitiveString, TokenHash, TokenIpAllowlist, TokenModelAllowlist,
 };
 
 macro_rules! impl_updated_at_behavior {
@@ -133,6 +135,88 @@ where
     Ok(())
 }
 
+async fn validate_model_price<C>(
+    model: &model_prices::ActiveModel,
+    database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let Some(model_name) = model.model.try_as_ref() else {
+        return Err(DbErr::Custom("模型价格名称无效".to_owned()));
+    };
+    if !crate::model_price::is_valid_model_name(model_name.as_str()) {
+        return Err(DbErr::Custom("模型价格名称无效".to_owned()));
+    }
+
+    // MySQL 5.7 会忽略 CHECK；更新时合并当前行，防止局部 ActiveModel 绕过跨列约束。
+    let persisted = if insert {
+        None
+    } else {
+        Some(
+            model_prices::Entity::find_by_id(model_name.clone())
+                .one(database)
+                .await?
+                .ok_or_else(|| DbErr::Custom("模型价格记录不存在".to_owned()))?,
+        )
+    };
+    let billing_mode = model
+        .billing_mode
+        .try_as_ref()
+        .copied()
+        .or_else(|| persisted.as_ref().map(|record| record.billing_mode))
+        .ok_or_else(|| DbErr::Custom("模型价格计费模式无效".to_owned()))?;
+    let prices = [
+        effective_price(
+            &model.input_price,
+            persisted.as_ref().map(|row| row.input_price),
+        ),
+        effective_price(
+            &model.output_price,
+            persisted.as_ref().map(|row| row.output_price),
+        ),
+        effective_price(
+            &model.cache_read_price,
+            persisted.as_ref().map(|row| row.cache_read_price),
+        ),
+        effective_price(
+            &model.cache_creation_5m_price,
+            persisted.as_ref().map(|row| row.cache_creation_5m_price),
+        ),
+        effective_price(
+            &model.cache_creation_1h_price,
+            persisted.as_ref().map(|row| row.cache_creation_1h_price),
+        ),
+    ];
+    let version = model
+        .version
+        .try_as_ref()
+        .copied()
+        .or_else(|| persisted.as_ref().map(|record| record.version))
+        .unwrap_or(1);
+    if !matches!(billing_mode, 1 | 2)
+        || version < 1
+        || prices.iter().any(|price| *price < Decimal::ZERO)
+        || (billing_mode == 2 && prices.iter().any(|price| !price.is_zero()))
+    {
+        return Err(DbErr::Custom("模型价格状态无效".to_owned()));
+    }
+    Ok(())
+}
+
+fn effective_price(
+    active: &ActiveValue<SensitiveDecimal>,
+    persisted: Option<SensitiveDecimal>,
+) -> Decimal {
+    active
+        .try_as_ref()
+        .copied()
+        .or(persisted)
+        .map(SensitiveDecimal::expose)
+        .unwrap_or(Decimal::ZERO)
+}
+
 /// MySQL 无法用 CHECK 约束自增主键，自引用在持久化入口补充拒绝。
 fn validate_not_self_reference(
     id: &ActiveValue<i64>,
@@ -161,6 +245,7 @@ impl_updated_at_behavior!(
     channels::ActiveModel => validate_default,
     credentials::ActiveModel => validate_credential,
     groups::ActiveModel => validate_group,
+    model_prices::ActiveModel => validate_model_price,
     options::ActiveModel => validate_default,
     tokens::ActiveModel => validate_default,
     users::ActiveModel => validate_user,
