@@ -22,7 +22,7 @@ use crate::{
     UsageDetails, UsageSemantics, UsageSource,
 };
 
-const MAX_RESPONSE_CHOICES: usize = 128;
+pub(super) const MAX_RESPONSE_CHOICES: usize = 128;
 const MAX_RESPONSE_ID_BYTES: usize = 256;
 const MAX_RESPONSE_FINGERPRINT_BYTES: usize = 256;
 const RESPONSE_JSON_LIMITS: JsonLimits = JsonLimits {
@@ -175,7 +175,7 @@ fn convert_response(wire: ChatResponseWire) -> Result<CanonicalResponse, ParseRe
     .with_validated_raw_passthrough(raw.map(|fields| (Protocol::OpenAiChat, fields))))
 }
 
-fn validate_response_id(id: &str) -> Result<(), ParseResponseError> {
+pub(super) fn validate_response_id(id: &str) -> Result<(), ParseResponseError> {
     if id.is_empty()
         || id.len() > MAX_RESPONSE_ID_BYTES
         || id.trim() != id
@@ -270,7 +270,9 @@ fn convert_choice(
     Ok(ResponseChoice::new(index, message, reason))
 }
 
-fn convert_finish_reason(reason: FinishReasonWire) -> Result<FinishReason, ParseResponseError> {
+pub(super) fn convert_finish_reason(
+    reason: FinishReasonWire,
+) -> Result<FinishReason, ParseResponseError> {
     match reason {
         FinishReasonWire::Stop => Ok(FinishReason::Stop),
         FinishReasonWire::Length => Ok(FinishReason::Length),
@@ -342,7 +344,9 @@ fn convert_message(
     Ok(Message::new(af_domain::Role::Assistant, content))
 }
 
-fn convert_usage(usage: Option<CompletionUsageWire>) -> Result<Option<Usage>, ParseResponseError> {
+pub(super) fn convert_usage(
+    usage: Option<CompletionUsageWire>,
+) -> Result<Option<Usage>, ParseResponseError> {
     let Some(usage) = usage else {
         return Ok(None);
     };

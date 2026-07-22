@@ -14,12 +14,17 @@ mod error;
 mod error_response;
 mod parse_response;
 mod response_wire;
+mod streaming;
 mod wire;
 
 pub use build::{BuildRequestError, build_request};
 pub use error::encode_error;
 pub use error_response::{OpenAiUpstreamErrorKind, classify_error_response};
 pub use parse_response::{ParseResponseError, parse_response};
+pub use streaming::{
+    DEFAULT_MAX_SSE_EVENT_BYTES, EncodeStreamError, MAX_SSE_EVENT_BYTES, OpenAiChatStreamDecoder,
+    OpenAiChatStreamEncoder, ParseStreamError, SseEvent, SseParseError, SseParser,
+};
 
 #[cfg(test)]
 mod build_tests;
