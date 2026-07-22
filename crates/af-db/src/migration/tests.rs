@@ -4,7 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use af_domain::{
-    BillingReservationId, GatewayPrincipal, GroupId, Quota, TokenId, TrustedClientIp, UserId,
+    BillingReservationId, ChannelId, GatewayPrincipal, GroupId, Quota, QuotaDelta, TokenId,
+    TrustedClientIp, UserId,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::entity::prelude::{Json, TimeDateTimeWithTimeZone, TimeTime};
@@ -17,13 +18,16 @@ use url::Url;
 
 use super::*;
 use crate::entity::{
-    BillingReservationKey, ChannelBaseUrl, EncryptedJson, HeaderOverrides, PasswordHash,
-    SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, abilities, billing_reservations,
-    channel_groups, channel_models, channels, credentials, groups, options, tokens, users,
+    BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
+    EncryptedJson, HeaderOverrides, PasswordHash, SensitiveJson, SensitiveString, TokenHash,
+    TokenIpAllowlist, abilities, billing_batch_checkpoints, billing_reservations, channel_groups,
+    channel_models, channels, credentials, groups, options, tokens, users,
 };
 use crate::{
+    BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome, ChannelBillingWrite,
     DatabaseOptions, PoolOptions, QuotaMutationOutcome, QuotaRepository, QuotaReservationStatus,
-    TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository, connect,
+    TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository, TokenBillingWrite,
+    UserBillingWrite, connect,
 };
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
@@ -41,7 +45,7 @@ const RESERVATION_KEY_A: &str = "11111111111111111111111111111111";
 const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
-const CORE_TABLES: [&str; 10] = [
+const CORE_TABLES: [&str; 11] = [
     "groups",
     "users",
     "channels",
@@ -52,6 +56,7 @@ const CORE_TABLES: [&str; 10] = [
     "abilities",
     "options",
     "billing_reservations",
+    "billing_batch_checkpoints",
 ];
 
 struct SlowMigrator;
@@ -110,6 +115,14 @@ async fn generated_active_models_redact_sensitive_payloads() {
     ));
     let option = option_active_model("site.name", "option-value");
     let reservation = reservation_active_model(RESERVATION_KEY_A, 1, 1, 1, 10, 10);
+    let checkpoint = billing_batch_checkpoints::ActiveModel {
+        writer_key: Set(BillingBatchWriterKey::parse(&"c".repeat(32)).unwrap()),
+        last_start_sequence: Set(1),
+        last_end_sequence: Set(1),
+        last_event_count: Set(1),
+        last_fingerprint: Set(BillingBatchFingerprint::parse(&"d".repeat(64)).unwrap()),
+        ..Default::default()
+    };
     let mut channel = channel_active_model("debug-channel");
     channel.base_url = Set(Some(
         ChannelBaseUrl::parse("https://api.example.com/channel-secret").unwrap(),
@@ -131,6 +144,8 @@ async fn generated_active_models_redact_sensitive_payloads() {
         (format!("{option:?}"), "option-value"),
         (format!("{channel:?}"), "channel-secret"),
         (format!("{reservation:?}"), RESERVATION_KEY_A),
+        (format!("{checkpoint:?}"), &"c".repeat(32)),
+        (format!("{checkpoint:?}"), &"d".repeat(64)),
     ] {
         assert!(rendered.contains("<redacted>"));
         assert!(!rendered.contains(secret));
@@ -175,6 +190,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_updated_at_behaviors(pool.connection()).await?;
     exercise_token_auth_repository(&pool).await?;
     exercise_quota_repository(&pool).await?;
+    exercise_billing_batch_repository(&pool).await?;
     exercise_core_schema(pool.connection()).await?;
 
     Migrator::down(pool.connection(), None).await?;
@@ -188,6 +204,143 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
 
     pool.close().await?;
     Ok(())
+}
+
+/// 在三方言隔离数据库中验证 checkpoint、主体增量与并发重放处于同一事务边界。
+async fn exercise_billing_batch_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let group = group_active_model("batch-smoke-group", "批量落盘冒烟分组")
+        .insert(pool.connection())
+        .await?;
+    let mut user = user_active_model(
+        group.id,
+        "batch-smoke-user",
+        "batch-smoke@example.com",
+        "invite-batch-smoke",
+    );
+    user.status = Set(1);
+    user.quota = Set(200);
+    let user = user.insert(pool.connection()).await?;
+    let mut token = token_active_model(user.id, group.id, TOKEN_HASH_C, "batch-smoke-token");
+    token.status = Set(1);
+    token.remain_quota = Set(200);
+    let token = token.insert(pool.connection()).await?;
+    let channel = channel_active_model("batch-smoke-channel")
+        .insert(pool.connection())
+        .await?;
+    let repository = BillingBatchRepository::new(pool.clone());
+    let writer_id = [0xe1; 16];
+    let first = billing_batch_write(writer_id, 1, 2, &user, &token, &channel, 10, 2)?;
+
+    assert_eq!(
+        repository.apply(&first).await?,
+        BillingBatchWriteOutcome::Applied
+    );
+    assert_eq!(
+        repository.apply(&first).await?,
+        BillingBatchWriteOutcome::Existing
+    );
+
+    let next = Arc::new(billing_batch_write(
+        writer_id, 3, 3, &user, &token, &channel, 5, 1,
+    )?);
+    let barrier = Arc::new(tokio::sync::Barrier::new(5));
+    let mut tasks = Vec::new();
+    for _ in 0..4 {
+        let repository = repository.clone();
+        let batch = Arc::clone(&next);
+        let barrier = Arc::clone(&barrier);
+        tasks.push(tokio::spawn(async move {
+            barrier.wait().await;
+            repository.apply(&batch).await
+        }));
+    }
+    barrier.wait().await;
+    let mut applied = 0;
+    let mut existing = 0;
+    for task in tasks {
+        match task.await?? {
+            BillingBatchWriteOutcome::Applied => applied += 1,
+            BillingBatchWriteOutcome::Existing => existing += 1,
+        }
+    }
+    assert_eq!((applied, existing), (1, 3));
+
+    let user = users::Entity::find_by_id(user.id)
+        .one(pool.connection())
+        .await?
+        .expect("批量落盘冒烟用户必须存在");
+    let token = tokens::Entity::find_by_id(token.id)
+        .one(pool.connection())
+        .await?
+        .expect("批量落盘冒烟令牌必须存在");
+    let channel = channels::Entity::find_by_id(channel.id)
+        .one(pool.connection())
+        .await?
+        .expect("批量落盘冒烟渠道必须存在");
+    assert_eq!(
+        (user.quota, user.used_quota, user.request_count),
+        (185, 15, 3)
+    );
+    assert_eq!((token.remain_quota, token.used_quota), (185, 15));
+    assert_eq!(channel.used_quota, 15);
+
+    billing_batch_checkpoints::Entity::delete_by_id(BillingBatchWriterKey::parse(
+        &first.writer_key(),
+    )?)
+    .exec(pool.connection())
+    .await?;
+    tokens::Entity::delete_by_id(token.id)
+        .exec(pool.connection())
+        .await?;
+    users::Entity::delete_by_id(user.id)
+        .exec(pool.connection())
+        .await?;
+    channels::Entity::delete_by_id(channel.id)
+        .exec(pool.connection())
+        .await?;
+    groups::Entity::delete_by_id(group.id)
+        .exec(pool.connection())
+        .await?;
+    Ok(())
+}
+
+fn billing_batch_write(
+    writer_id: [u8; 16],
+    start_sequence: u64,
+    end_sequence: u64,
+    user: &users::Model,
+    token: &tokens::Model,
+    channel: &channels::Model,
+    used_quota: i64,
+    request_count: i64,
+) -> Result<BillingBatchWrite, Box<dyn Error>> {
+    let event_ids = (start_sequence..=end_sequence)
+        .map(|sequence| {
+            let marker = <u8 as TryFrom<u64>>::try_from(sequence).unwrap_or(0xfe);
+            BillingReservationId::new([marker; 16])
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(BillingBatchWrite::new(
+        writer_id,
+        start_sequence,
+        end_sequence,
+        event_ids,
+        vec![UserBillingWrite::new(
+            UserId::new(user.id)?,
+            QuotaDelta::new(-used_quota)?,
+            QuotaDelta::new(used_quota)?,
+            request_count,
+        )?],
+        vec![TokenBillingWrite::new(
+            TokenId::new(token.id)?,
+            QuotaDelta::new(-used_quota)?,
+            QuotaDelta::new(used_quota)?,
+        )?],
+        vec![ChannelBillingWrite::new(
+            ChannelId::new(channel.id)?,
+            QuotaDelta::new(used_quota)?,
+        )?],
+    )?)
 }
 
 /// 在三方言隔离数据库中执行并发预扣、结算、退款及终态重放。
@@ -501,6 +654,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<abilities::Column>(&manager, "abilities").await?;
     assert_entity_columns::<options::Column>(&manager, "options").await?;
     assert_entity_columns::<billing_reservations::Column>(&manager, "billing_reservations").await?;
+    assert_entity_columns::<billing_batch_checkpoints::Column>(
+        &manager,
+        "billing_batch_checkpoints",
+    )
+    .await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -582,6 +740,7 @@ async fn assert_updated_at_behaviors(connection: &DatabaseConnection) -> Result<
     }
 
     assert_behavior!(abilities::ActiveModel);
+    assert_behavior!(billing_batch_checkpoints::ActiveModel);
     assert_behavior!(billing_reservations::ActiveModel);
     assert_behavior!(channel_groups::ActiveModel);
     assert_behavior!(channel_models::ActiveModel);

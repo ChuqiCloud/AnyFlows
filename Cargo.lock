@@ -41,6 +41,7 @@ version = "0.1.0"
 name = "af-billing"
 version = "0.1.0"
 dependencies = [
+ "af-db",
  "af-domain",
  "af-protocol",
  "fs2",
@@ -83,6 +84,7 @@ dependencies = [
  "http",
  "sea-orm",
  "sea-orm-migration",
+ "sha2",
  "thiserror",
  "tokio",
  "tracing",

@@ -77,6 +77,12 @@ pub(crate) enum SensitiveValueError {
     /// 计费预留键不是非零的 128 位规范化十六进制编码。
     #[error("计费预留键必须是非零的 32 位小写十六进制字符串")]
     InvalidBillingReservationKey,
+    /// 批量落盘 writer 键不是非零的 128 位规范化十六进制编码。
+    #[error("计费批量 writer 键必须是非零的 32 位小写十六进制字符串")]
+    InvalidBillingBatchWriterKey,
+    /// 批量内容指纹不是规范化的 SHA-256 十六进制编码。
+    #[error("计费批量指纹必须是 64 位小写十六进制字符串")]
+    InvalidBillingBatchFingerprint,
     /// 令牌 IP 白名单不是受限的非空 IP/CIDR 字符串数组。
     #[error("令牌 IP 白名单格式无效")]
     InvalidTokenIpAllowlist,
@@ -258,6 +264,61 @@ impl TryFromU64 for BillingReservationKey {
     fn try_from_u64(_: u64) -> Result<Self, DbErr> {
         // 幂等键不是自增主键，拒绝 SeaORM 将插入结果误转成业务标识。
         Err(DbErr::ConvertFromU64("BillingReservationKey"))
+    }
+}
+
+/// 经过格式校验且禁止日志输出的批量落盘 writer 持久化键。
+#[derive(Clone, PartialEq, Eq)]
+pub struct BillingBatchWriterKey(String);
+
+impl BillingBatchWriterKey {
+    /// 解析非全零的 32 位小写十六进制 writer 键。
+    pub(crate) fn parse(value: &str) -> Result<Self, SensitiveValueError> {
+        if value.len() == 32
+            && value
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+            && value.bytes().any(|byte| byte != b'0')
+        {
+            return Ok(Self(value.to_owned()));
+        }
+        Err(SensitiveValueError::InvalidBillingBatchWriterKey)
+    }
+}
+
+impl fmt::Debug for BillingBatchWriterKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("<redacted>")
+    }
+}
+
+impl TryFromU64 for BillingBatchWriterKey {
+    fn try_from_u64(_: u64) -> Result<Self, DbErr> {
+        Err(DbErr::ConvertFromU64("BillingBatchWriterKey"))
+    }
+}
+
+/// 经过格式校验且禁止日志输出的批量内容 SHA-256 指纹。
+#[derive(Clone, PartialEq, Eq)]
+pub struct BillingBatchFingerprint(String);
+
+impl BillingBatchFingerprint {
+    /// 解析固定长度的小写 SHA-256 十六进制指纹。
+    pub(crate) fn parse(value: &str) -> Result<Self, SensitiveValueError> {
+        if value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        {
+            return Ok(Self(value.to_owned()));
+        }
+        Err(SensitiveValueError::InvalidBillingBatchFingerprint)
+    }
+}
+
+impl fmt::Debug for BillingBatchFingerprint {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("<redacted>")
     }
 }
 
@@ -634,6 +695,8 @@ fn invalid_db_value(
 
 impl_validated_string_value!(TokenHash, parse, ColumnType::Char(Some(64)));
 impl_validated_string_value!(BillingReservationKey, parse, ColumnType::Char(Some(32)));
+impl_validated_string_value!(BillingBatchWriterKey, parse, ColumnType::Char(Some(32)));
+impl_validated_string_value!(BillingBatchFingerprint, parse, ColumnType::Char(Some(64)));
 impl_validated_string_value!(PasswordHash, parse, ColumnType::String(StringLen::N(255)));
 impl_validated_string_value!(ChannelBaseUrl, parse, ColumnType::Text);
 impl_validated_json_value!(EncryptedJson, from_envelope);
@@ -736,6 +799,8 @@ mod tests {
         let password_hash = PasswordHash::parse(TEST_PASSWORD_HASH).unwrap();
         let token_hash = TokenHash::parse(&"a".repeat(64)).unwrap();
         let reservation_key = BillingReservationKey::parse(&"b".repeat(32)).unwrap();
+        let writer_key = BillingBatchWriterKey::parse(&"c".repeat(32)).unwrap();
+        let batch_fingerprint = BillingBatchFingerprint::parse(&"d".repeat(64)).unwrap();
         let json = EncryptedJson::from_envelope(encrypted_envelope()).unwrap();
         let settings = SensitiveJson::from(Json::String("sensitive-settings".to_owned()));
         let base_url = ChannelBaseUrl::parse("https://api.example.com").unwrap();
@@ -753,6 +818,8 @@ mod tests {
             format!("{password_hash:?}"),
             format!("{token_hash:?}"),
             format!("{reservation_key:?}"),
+            format!("{writer_key:?}"),
+            format!("{batch_fingerprint:?}"),
             format!("{json:?}"),
             format!("{settings:?}"),
             format!("{base_url:?}"),
@@ -797,7 +864,11 @@ mod tests {
             "a".repeat(33),
         ] {
             assert!(BillingReservationKey::parse(&invalid_key).is_err());
+            assert!(BillingBatchWriterKey::parse(&invalid_key).is_err());
         }
+        assert!(BillingBatchFingerprint::parse(&"A".repeat(64)).is_err());
+        assert!(BillingBatchFingerprint::parse(&"g".repeat(64)).is_err());
+        assert!(BillingBatchFingerprint::parse(&"a".repeat(63)).is_err());
         for invalid in [
             Json::Null,
             Json::Array(Vec::new()),
@@ -907,6 +978,12 @@ mod tests {
         assert!(<TokenHash as ValueType>::try_from(Value::from("z".repeat(64))).is_err());
         assert!(
             <BillingReservationKey as ValueType>::try_from(Value::from("0".repeat(32))).is_err()
+        );
+        assert!(
+            <BillingBatchWriterKey as ValueType>::try_from(Value::from("0".repeat(32))).is_err()
+        );
+        assert!(
+            <BillingBatchFingerprint as ValueType>::try_from(Value::from("A".repeat(64))).is_err()
         );
         assert!(
             <PasswordHash as ValueType>::try_from(Value::from("raw-password".to_owned())).is_err()

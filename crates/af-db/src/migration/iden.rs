@@ -338,3 +338,28 @@ pub(in crate::migration) mod billing_reservations {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod billing_batch_checkpoints {
+    use super::DeriveIden;
+
+    /// `billing_batch_checkpoints` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "billing_batch_checkpoints")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 批量落盘检查点迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        WriterKey,
+        LastStartSequence,
+        LastEndSequence,
+        LastEventCount,
+        LastFingerprint,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
