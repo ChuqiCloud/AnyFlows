@@ -9,6 +9,7 @@ mod middleware;
 mod operations;
 mod router;
 mod serve;
+mod streaming;
 
 pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presented_api_key};
 pub use error_response::OpenAiHttpError;

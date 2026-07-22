@@ -24,16 +24,13 @@ use crate::{
     CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningEffort, ToolChoice, ToolDef,
 };
 
-/// 将 Canonical 请求构造为非流式 OpenAI Chat Completions JSON。
+/// 将 Canonical 请求构造为 OpenAI Chat Completions JSON。
 ///
 /// Canonical 字段可由调用方直接构造，因此本函数会重新校验所有协议边界，
 /// 并在合并同源 raw 前再次检查字段冲突。
 pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestError> {
     if request.operation != Operation::Chat {
         return Err(BuildRequestError::UnsupportedOperation);
-    }
-    if request.stream {
-        return Err(BuildRequestError::StreamingNotSupported);
     }
     validate_model(&request.model).map_err(map_request_validation_error)?;
     if !request.attachments.is_empty() {
@@ -52,7 +49,7 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
     let mut root = Map::new();
     root.insert("model".to_owned(), Value::String(request.model.clone()));
     root.insert("messages".to_owned(), Value::Array(messages));
-    root.insert("stream".to_owned(), Value::Bool(false));
+    root.insert("stream".to_owned(), Value::Bool(request.stream));
     if !tools.is_empty() {
         root.insert("tools".to_owned(), Value::Array(tools));
     }
@@ -824,8 +821,6 @@ fn map_request_validation_error(error: ParseRequestError) -> BuildRequestError {
 pub enum BuildRequestError {
     /// Canonical 操作不是 Chat。
     UnsupportedOperation,
-    /// 当前构造器只支持非流式请求。
-    StreamingNotSupported,
     /// Canonical 字段的类型、取值或关联关系无效。
     InvalidValue,
     /// Canonical 请求超过协议结构预算。
@@ -842,7 +837,6 @@ impl fmt::Display for BuildRequestError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnsupportedOperation => formatter.write_str("请求操作不是 Chat"),
-            Self::StreamingNotSupported => formatter.write_str("当前构造器不支持流式请求"),
             Self::InvalidValue => formatter.write_str("Canonical 请求字段值无效"),
             Self::StructureLimitExceeded => formatter.write_str("Canonical 请求结构超过限制"),
             Self::UnsupportedFeature => formatter.write_str("Canonical 请求包含当前不支持的特性"),

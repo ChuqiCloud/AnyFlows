@@ -337,13 +337,13 @@ fn rejects_unknown_top_level_and_nested_fields() {
 }
 
 #[test]
-fn rejects_streaming_in_non_streaming_slice() {
-    let error = parse_request(
+fn preserves_explicit_streaming_mode() {
+    let request = parse_request(
         br#"{"model":"gpt-test","messages":[{"role":"user","content":"hello"}],"stream":true}"#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(error, ParseRequestError::UnsupportedFeature);
+    assert!(request.stream);
 }
 
 #[test]

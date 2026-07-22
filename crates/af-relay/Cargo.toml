@@ -9,8 +9,10 @@ publish.workspace = true
 af-adapter = { path = "../af-adapter", version = "0.1.0" }
 af-domain = { path = "../af-domain", version = "0.1.0" }
 af-protocol = { path = "../af-protocol", version = "0.1.0" }
+futures-core.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true

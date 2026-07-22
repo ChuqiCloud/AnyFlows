@@ -159,7 +159,7 @@ fn round_trips_multimodal_messages_and_tool_results() {
 }
 
 #[test]
-fn rejects_wrong_operation_streaming_and_unmapped_request_fields() {
+fn rejects_wrong_operation_and_unmapped_request_fields() {
     let mut wrong_operation = minimal_request();
     wrong_operation.operation = Operation::Responses;
     assert_eq!(
@@ -169,9 +169,11 @@ fn rejects_wrong_operation_streaming_and_unmapped_request_fields() {
 
     let mut streaming = minimal_request();
     streaming.stream = true;
+    let streaming_value = build_request(&streaming).unwrap();
+    assert_eq!(streaming_value["stream"], true);
     assert_eq!(
-        build_request(&streaming),
-        Err(BuildRequestError::StreamingNotSupported)
+        parse_request(&serde_json::to_vec(&streaming_value).unwrap()).unwrap(),
+        streaming
     );
 
     let mut attachments = minimal_request();
