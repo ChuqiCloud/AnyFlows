@@ -11,7 +11,9 @@ use figment::{
 };
 use serde::Serialize;
 
-use crate::{AppConfig, AuthSettings, ConfigError, ServerConfig, TelemetrySettings};
+use crate::{
+    AppConfig, AuthSettings, BillingSettings, ConfigError, ServerConfig, TelemetrySettings,
+};
 
 /// 默认配置文件名；文件不存在时仅使用默认值与环境变量。
 pub const DEFAULT_CONFIG_FILE: &str = "anyflows.toml";
@@ -25,6 +27,7 @@ struct ConfigDefaults {
     server: ServerConfig,
     telemetry: TelemetrySettings,
     database: DatabaseDefaults,
+    billing: BillingSettings,
     redis: RedisDefaults,
     auth: AuthSettings,
     http_client: HttpClientDefaults,
@@ -150,6 +153,11 @@ fn known_field(path: &str) -> Option<&'static str> {
         "database.url" => "database.url",
         "database.migration_timeout_secs" => "database.migration_timeout_secs",
         "database.health_check_timeout_secs" => "database.health_check_timeout_secs",
+        "billing" => "billing",
+        "billing.batch_enabled" => "billing.batch_enabled",
+        "billing.flush_interval_secs" => "billing.flush_interval_secs",
+        "billing.flush_timeout_secs" => "billing.flush_timeout_secs",
+        "billing.wal_directory" => "billing.wal_directory",
         "redis" => "redis",
         "redis.url" => "redis.url",
         "auth" => "auth",
@@ -229,6 +237,13 @@ mod tests {
             assert_eq!(config.telemetry().level(), LogLevel::Info);
             assert_eq!(config.database().migration_timeout_secs(), None);
             assert_eq!(config.database().health_check_timeout_secs(), None);
+            assert!(!config.billing().batch_enabled());
+            assert_eq!(config.billing().flush_interval_secs(), 5);
+            assert_eq!(config.billing().flush_timeout_secs(), 30);
+            assert_eq!(
+                config.billing().wal_directory(),
+                Path::new("data/billing-wal")
+            );
             assert!(config.redis().url().is_none());
             assert!(!config.auth().allow_query_api_key());
             assert_eq!(config.auth().lookup_timeout_secs(), 2);
@@ -455,7 +470,7 @@ mod tests {
     fn toml_values_override_defaults() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[auth]\nallow_query_api_key = true\nlookup_timeout_secs = 7\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
+                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[billing]\nbatch_enabled = true\nflush_interval_secs = 11\nflush_timeout_secs = 17\nwal_directory = 'private-billing-wal'\n[auth]\nallow_query_api_key = true\nlookup_timeout_secs = 7\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
@@ -469,6 +484,14 @@ mod tests {
             assert_eq!(config.server().shutdown_timeout_secs(), 45);
             assert_eq!(config.database().migration_timeout_secs(), Some(42));
             assert_eq!(config.database().health_check_timeout_secs(), Some(3));
+            assert!(config.billing().batch_enabled());
+            assert_eq!(config.billing().flush_interval_secs(), 11);
+            assert_eq!(config.billing().flush_timeout_secs(), 17);
+            assert_eq!(
+                config.billing().wal_directory(),
+                Path::new("private-billing-wal")
+            );
+            assert!(!format!("{:?}", config.billing()).contains("private-billing-wal"));
             assert!(config.auth().allow_query_api_key());
             assert_eq!(config.auth().lookup_timeout_secs(), 7);
             assert_eq!(config.http_client().max_cached_clients(), Some(7));
@@ -498,6 +521,13 @@ mod tests {
             assert_eq!(config.server().trusted_proxy_cidrs().len(), 1);
             assert!(config.auth().allow_query_api_key());
             assert_eq!(config.auth().lookup_timeout_secs(), 9);
+            assert!(config.billing().batch_enabled());
+            assert_eq!(config.billing().flush_interval_secs(), 19);
+            assert_eq!(config.billing().flush_timeout_secs(), 23);
+            assert_eq!(
+                config.billing().wal_directory(),
+                Path::new("environment-billing-wal")
+            );
             assert_eq!(config.http_client().max_cached_clients(), Some(3));
             assert_eq!(
                 config.openai_upstream().base_url(),
@@ -541,6 +571,10 @@ mod tests {
                 .env("AF_TELEMETRY__LEVEL", "warn")
                 .env("AF_AUTH__ALLOW_QUERY_API_KEY", "true")
                 .env("AF_AUTH__LOOKUP_TIMEOUT_SECS", "9")
+                .env("AF_BILLING__BATCH_ENABLED", "true")
+                .env("AF_BILLING__FLUSH_INTERVAL_SECS", "19")
+                .env("AF_BILLING__FLUSH_TIMEOUT_SECS", "23")
+                .env("AF_BILLING__WAL_DIRECTORY", "environment-billing-wal")
                 .env(
                     "AF_DATABASE__URL",
                     "postgres://env-user:env-secret@db/env-app",
@@ -850,6 +884,14 @@ mod tests {
                     "[database]\nurl = 'sqlite::memory:'\n[auth]\nlookup_timeout_secs = 0\n",
                 ),
                 (
+                    "billing.flush_interval_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[billing]\nflush_interval_secs = 0\n",
+                ),
+                (
+                    "billing.flush_timeout_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[billing]\nflush_timeout_secs = 0\n",
+                ),
+                (
                     "http_client.max_cached_clients",
                     "[database]\nurl = 'sqlite::memory:'\n[http_client]\nmax_cached_clients = 0\n",
                 ),
@@ -913,6 +955,52 @@ mod tests {
                     field: "auth.lookup_timeout_secs"
                 }
             );
+        });
+    }
+
+    #[test]
+    fn rejects_invalid_billing_settings_without_echoing_wal_directory() {
+        with_clean_env(|_| {
+            for (field, body) in [
+                (
+                    "billing.flush_interval_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[billing]\nflush_interval_secs = 3601\n",
+                ),
+                (
+                    "billing.flush_timeout_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[billing]\nflush_timeout_secs = 301\n",
+                ),
+            ] {
+                let path = temp_file(body);
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(error, ConfigError::OutOfRange { field });
+            }
+
+            let path =
+                temp_file("[database]\nurl = 'sqlite::memory:'\n[billing]\nwal_directory = ''\n");
+            let error = load_from(&path).unwrap_err();
+            let _ = fs::remove_file(path);
+            assert_eq!(
+                error,
+                ConfigError::EmptyValue {
+                    field: "billing.wal_directory"
+                }
+            );
+            let canary = "billing-path-secret-canary";
+            let path = temp_file(&format!(
+                "[database]\nurl = 'sqlite::memory:'\n[billing]\nwal_directory = '{canary}'\nflush_timeout_secs = 'invalid'\n"
+            ));
+            let error = load_from(&path).unwrap_err();
+            let rendered = format!("{error:?}\n{error}");
+            let _ = fs::remove_file(path);
+            assert_eq!(
+                error,
+                ConfigError::InvalidField {
+                    field: "billing.flush_timeout_secs"
+                }
+            );
+            assert!(!rendered.contains(canary));
         });
     }
 

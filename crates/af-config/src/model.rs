@@ -1,4 +1,9 @@
-use std::{fmt, net::SocketAddr, str::FromStr};
+use std::{
+    fmt,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use af_domain::{IpCidr, MAX_MODEL_NAME_BYTES};
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
@@ -16,6 +21,14 @@ pub const MAX_DATABASE_HEALTH_CHECK_TIMEOUT_SECS: u64 = 30;
 pub const DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS: u64 = 2;
 /// 令牌认证仓储查询允许配置的硬上限。
 pub const MAX_AUTH_LOOKUP_TIMEOUT_SECS: u64 = 30;
+/// 计费 WAL 批量落库的默认周期。
+pub const DEFAULT_BILLING_FLUSH_INTERVAL_SECS: u64 = 5;
+/// 计费 WAL 单次启动恢复或关闭收尾的默认截止时间。
+pub const DEFAULT_BILLING_FLUSH_TIMEOUT_SECS: u64 = 30;
+/// 计费 WAL 批量落库周期允许配置的硬上限。
+pub const MAX_BILLING_FLUSH_INTERVAL_SECS: u64 = 3_600;
+/// 计费 WAL 启动恢复或关闭收尾允许配置的硬上限。
+pub const MAX_BILLING_FLUSH_TIMEOUT_SECS: u64 = 300;
 /// 单实例允许配置的静态可信前置代理网络上限。
 pub const MAX_TRUSTED_PROXY_CIDRS: usize = 64;
 /// OpenAI-compatible 上游基础地址的最大 UTF-8 字节数。
@@ -266,6 +279,65 @@ impl DatabaseConfig {
     }
 }
 
+/// 计费增量 WAL 与落库节奏的启动期设置。
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct BillingSettings {
+    batch_enabled: bool,
+    flush_interval_secs: u64,
+    flush_timeout_secs: u64,
+    wal_directory: PathBuf,
+}
+
+impl BillingSettings {
+    /// 返回是否由后台任务按周期合并落库。
+    #[must_use]
+    pub const fn batch_enabled(&self) -> bool {
+        self.batch_enabled
+    }
+
+    /// 返回批量模式的周期 flush 秒数。
+    #[must_use]
+    pub const fn flush_interval_secs(&self) -> u64 {
+        self.flush_interval_secs
+    }
+
+    /// 返回启动恢复与关闭最终 flush 共用的硬截止秒数。
+    #[must_use]
+    pub const fn flush_timeout_secs(&self) -> u64 {
+        self.flush_timeout_secs
+    }
+
+    /// 返回本实例独占的 WAL 目录；调用方不得将路径写入日志或错误。
+    #[must_use]
+    pub fn wal_directory(&self) -> &Path {
+        &self.wal_directory
+    }
+}
+
+impl Default for BillingSettings {
+    fn default() -> Self {
+        Self {
+            batch_enabled: false,
+            flush_interval_secs: DEFAULT_BILLING_FLUSH_INTERVAL_SECS,
+            flush_timeout_secs: DEFAULT_BILLING_FLUSH_TIMEOUT_SECS,
+            wal_directory: PathBuf::from("data/billing-wal"),
+        }
+    }
+}
+
+impl fmt::Debug for BillingSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BillingSettings")
+            .field("batch_enabled", &self.batch_enabled)
+            .field("flush_interval_secs", &self.flush_interval_secs)
+            .field("flush_timeout_secs", &self.flush_timeout_secs)
+            .field("wal_directory", &"<已配置>")
+            .finish()
+    }
+}
+
 /// 可选 Redis 连接配置；缺省时由缓存层运行在本地模式。
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -415,6 +487,8 @@ pub struct AppConfig {
     telemetry: TelemetrySettings,
     database: DatabaseConfig,
     #[serde(default)]
+    billing: BillingSettings,
+    #[serde(default)]
     redis: RedisSettings,
     #[serde(default)]
     auth: AuthSettings,
@@ -440,6 +514,12 @@ impl AppConfig {
     #[must_use]
     pub const fn database(&self) -> &DatabaseConfig {
         &self.database
+    }
+
+    /// 返回计费 WAL 与落库节奏设置。
+    #[must_use]
+    pub const fn billing(&self) -> &BillingSettings {
+        &self.billing
     }
 
     /// 返回可选 Redis 配置。
@@ -534,6 +614,31 @@ impl AppConfig {
         {
             return Err(ConfigError::OutOfRange {
                 field: "database.health_check_timeout_secs",
+            });
+        }
+        if self.billing.flush_interval_secs == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "billing.flush_interval_secs",
+            });
+        }
+        if self.billing.flush_interval_secs > MAX_BILLING_FLUSH_INTERVAL_SECS {
+            return Err(ConfigError::OutOfRange {
+                field: "billing.flush_interval_secs",
+            });
+        }
+        if self.billing.flush_timeout_secs == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "billing.flush_timeout_secs",
+            });
+        }
+        if self.billing.flush_timeout_secs > MAX_BILLING_FLUSH_TIMEOUT_SECS {
+            return Err(ConfigError::OutOfRange {
+                field: "billing.flush_timeout_secs",
+            });
+        }
+        if self.billing.wal_directory.as_os_str().is_empty() {
+            return Err(ConfigError::EmptyValue {
+                field: "billing.wal_directory",
             });
         }
         if let Some(url) = self.redis.url()

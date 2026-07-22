@@ -54,6 +54,10 @@ impl TestDatabase {
             url: format!("sqlite://{sqlite_path}?mode=rwc"),
         }
     }
+
+    fn billing_wal_directory(&self) -> std::path::PathBuf {
+        self.path.with_extension("billing-wal")
+    }
 }
 
 impl Drop for TestDatabase {
@@ -62,6 +66,7 @@ impl Drop for TestDatabase {
             let candidate = std::path::PathBuf::from(format!("{}{}", self.path.display(), suffix));
             let _ = fs::remove_file(candidate);
         }
+        let _ = fs::remove_dir_all(self.billing_wal_directory());
     }
 }
 
@@ -100,8 +105,12 @@ async fn full_chain_forwards_normalized_request_and_returns_validated_response()
     fs::write(
         &config_path,
         format!(
-            "[server]\nbind = '127.0.0.1:0'\ncors_allowed_origins = ['https://console.example']\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[auth]\nlookup_timeout_secs = 1\n[openai_upstream]\nbase_url = '{UPSTREAM_BASE_URL}'\nmodel = '{UPSTREAM_MODEL}'\napi_key = '{UPSTREAM_KEY}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n",
-            database.url
+            "[server]\nbind = '127.0.0.1:0'\ncors_allowed_origins = ['https://console.example']\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[auth]\nlookup_timeout_secs = 1\n[openai_upstream]\nbase_url = '{UPSTREAM_BASE_URL}'\nmodel = '{UPSTREAM_MODEL}'\napi_key = '{UPSTREAM_KEY}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n",
+            database.url,
+            database
+                .billing_wal_directory()
+                .to_string_lossy()
+                .replace('\\', "/")
         ),
     )
     .unwrap();
@@ -117,6 +126,9 @@ async fn full_chain_forwards_normalized_request_and_returns_validated_response()
         .init_authentication()
         .unwrap()
         .init_relay()
+        .unwrap()
+        .init_billing()
+        .await
         .unwrap()
         .start_supervisor()
         .build_router()
