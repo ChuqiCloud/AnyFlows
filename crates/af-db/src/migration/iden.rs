@@ -363,3 +363,33 @@ pub(in crate::migration) mod billing_batch_checkpoints {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod model_prices {
+    use super::DeriveIden;
+
+    /// `model_prices` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "model_prices")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 模型定价目录初始迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Model,
+        BillingMode,
+        InputPrice,
+        OutputPrice,
+        CacheReadPrice,
+        #[sea_orm(iden = "cache_creation_5m_price")]
+        CacheCreation5mPrice,
+        #[sea_orm(iden = "cache_creation_1h_price")]
+        CacheCreation1hPrice,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}

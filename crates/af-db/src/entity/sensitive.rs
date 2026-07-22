@@ -9,6 +9,7 @@ use argon2::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use http::header::{HeaderName, HeaderValue};
+use rust_decimal::Decimal;
 use sea_orm::{
     ColIdx, DbErr, QueryResult, TryFromU64, TryGetError, TryGetable, Value,
     entity::prelude::{DeriveValueType, Json},
@@ -111,7 +112,7 @@ pub(crate) enum SensitiveValueError {
 
 /// 禁止通过 `Debug` 暴露的敏感文本。
 #[derive(Clone, PartialEq, Eq, DeriveValueType)]
-pub(crate) struct SensitiveString(String);
+pub struct SensitiveString(String);
 
 impl From<String> for SensitiveString {
     fn from(value: String) -> Self {
@@ -125,7 +126,44 @@ impl From<&str> for SensitiveString {
     }
 }
 
+impl SensitiveString {
+    /// 返回仅供已审查仓储校验和转换使用的原始文本。
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFromU64 for SensitiveString {
+    fn try_from_u64(_: u64) -> Result<Self, DbErr> {
+        // 文本主键不是自增标识，拒绝 SeaORM 将插入结果误转成敏感文本。
+        Err(DbErr::ConvertFromU64("SensitiveString"))
+    }
+}
+
 impl fmt::Debug for SensitiveString {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("<redacted>")
+    }
+}
+
+/// 禁止通过实体与 ActiveModel 调试输出暴露的高精度价格。
+#[derive(Clone, Copy, PartialEq, Eq, DeriveValueType)]
+pub(crate) struct SensitiveDecimal(Decimal);
+
+impl SensitiveDecimal {
+    /// 返回仅供已审查仓储转换使用的高精度值。
+    pub(crate) const fn expose(self) -> Decimal {
+        self.0
+    }
+}
+
+impl From<Decimal> for SensitiveDecimal {
+    fn from(value: Decimal) -> Self {
+        Self(value)
+    }
+}
+
+impl fmt::Debug for SensitiveDecimal {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("<redacted>")
     }

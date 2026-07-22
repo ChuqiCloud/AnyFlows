@@ -17,6 +17,7 @@ mod m20260718_000008_create_abilities;
 mod m20260718_000009_create_options;
 mod m20260718_000010_create_billing_reservations;
 mod m20260722_000011_create_billing_batch_checkpoints;
+mod m20260722_000012_create_model_prices;
 mod schema;
 
 #[cfg(test)]
@@ -71,6 +72,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260718_000009_create_options::Migration),
             Box::new(m20260718_000010_create_billing_reservations::Migration),
             Box::new(m20260722_000011_create_billing_batch_checkpoints::Migration),
+            Box::new(m20260722_000012_create_model_prices::Migration),
         ]
     }
 }

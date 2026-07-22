@@ -8,6 +8,7 @@ use af_domain::{
     TrustedClientIp, UserId,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use rust_decimal::Decimal;
 use sea_orm::entity::prelude::{Json, TimeDateTimeWithTimeZone, TimeTime};
 use sea_orm::{
     ActiveModelBehavior, ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbBackend,
@@ -19,15 +20,16 @@ use url::Url;
 use super::*;
 use crate::entity::{
     BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
-    EncryptedJson, HeaderOverrides, PasswordHash, SensitiveJson, SensitiveString, TokenHash,
-    TokenIpAllowlist, abilities, billing_batch_checkpoints, billing_reservations, channel_groups,
-    channel_models, channels, credentials, groups, options, tokens, users,
+    EncryptedJson, HeaderOverrides, PasswordHash, SensitiveDecimal, SensitiveJson, SensitiveString,
+    TokenHash, TokenIpAllowlist, abilities, billing_batch_checkpoints, billing_reservations,
+    channel_groups, channel_models, channels, credentials, groups, model_prices, options, tokens,
+    users,
 };
 use crate::{
     BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome, ChannelBillingWrite,
-    DatabaseOptions, PoolOptions, QuotaMutationOutcome, QuotaRepository, QuotaReservationStatus,
-    TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository, TokenBillingWrite,
-    UserBillingWrite, connect,
+    DatabaseOptions, ModelPriceBillingMode, ModelPriceRepository, PoolOptions,
+    QuotaMutationOutcome, QuotaRepository, QuotaReservationStatus, TokenAuthLookup,
+    TokenAuthLookupOutcome, TokenAuthRepository, TokenBillingWrite, UserBillingWrite, connect,
 };
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
@@ -45,7 +47,7 @@ const RESERVATION_KEY_A: &str = "11111111111111111111111111111111";
 const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
-const CORE_TABLES: [&str; 11] = [
+const CORE_TABLES: [&str; 12] = [
     "groups",
     "users",
     "channels",
@@ -57,6 +59,7 @@ const CORE_TABLES: [&str; 11] = [
     "options",
     "billing_reservations",
     "billing_batch_checkpoints",
+    "model_prices",
 ];
 
 struct SlowMigrator;
@@ -123,6 +126,17 @@ async fn generated_active_models_redact_sensitive_payloads() {
         last_fingerprint: Set(BillingBatchFingerprint::parse(&"d".repeat(64)).unwrap()),
         ..Default::default()
     };
+    let model_price = model_prices::ActiveModel {
+        model: Set(SensitiveString::from("debug-model-secret")),
+        billing_mode: Set(1),
+        input_price: Set(SensitiveDecimal::from(Decimal::from(123_456_789_i64))),
+        output_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        cache_read_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        cache_creation_5m_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        cache_creation_1h_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        version: Set(1),
+        ..Default::default()
+    };
     let mut channel = channel_active_model("debug-channel");
     channel.base_url = Set(Some(
         ChannelBaseUrl::parse("https://api.example.com/channel-secret").unwrap(),
@@ -146,6 +160,8 @@ async fn generated_active_models_redact_sensitive_payloads() {
         (format!("{reservation:?}"), RESERVATION_KEY_A),
         (format!("{checkpoint:?}"), &"c".repeat(32)),
         (format!("{checkpoint:?}"), &"d".repeat(64)),
+        (format!("{model_price:?}"), "debug-model-secret"),
+        (format!("{model_price:?}"), "123456789"),
     ] {
         assert!(rendered.contains("<redacted>"));
         assert!(!rendered.contains(secret));
@@ -191,6 +207,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     exercise_token_auth_repository(&pool).await?;
     exercise_quota_repository(&pool).await?;
     exercise_billing_batch_repository(&pool).await?;
+    exercise_model_price_repository(&pool).await?;
     exercise_core_schema(pool.connection()).await?;
 
     Migrator::down(pool.connection(), None).await?;
@@ -203,6 +220,89 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_core_tables_absent(pool.connection()).await?;
 
     pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "仅由显式启用的隔离数据库模型价格流水线执行"]
+async fn model_price_migration_smoke() -> Result<(), Box<dyn Error>> {
+    let database_url = test_database_url();
+    validate_destructive_test_target(
+        &database_url,
+        env::var(ALLOW_DESTRUCTIVE_MIGRATION_TEST).ok().as_deref(),
+    )?;
+    let is_sqlite = database_url.starts_with("sqlite:");
+    let options = DatabaseOptions::new(database_url)?.with_pool_options(PoolOptions {
+        max_connections: if is_sqlite { 1 } else { 4 },
+        min_connections: 1,
+        ..PoolOptions::default()
+    });
+    let pool = connect(&options).await?;
+    let manager = SchemaManager::new(pool.connection());
+    let migration = m20260722_000012_create_model_prices::Migration;
+
+    migration.up(&manager).await?;
+    assert!(manager.has_table("model_prices").await?);
+    exercise_model_price_repository(&pool).await?;
+    migration.down(&manager).await?;
+    assert!(!manager.has_table("model_prices").await?);
+
+    pool.close().await?;
+    Ok(())
+}
+
+/// 在三方言隔离数据库中验证高精度价格与显式免费模式读取一致。
+async fn exercise_model_price_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    model_prices::ActiveModel {
+        model: Set(SensitiveString::from("smoke-priced-model")),
+        billing_mode: Set(1),
+        input_price: Set(SensitiveDecimal::from(Decimal::new(1, 28))),
+        output_price: Set(SensitiveDecimal::from(Decimal::new(25, 1))),
+        cache_read_price: Set(SensitiveDecimal::from(Decimal::new(3, 2))),
+        cache_creation_5m_price: Set(SensitiveDecimal::from(Decimal::new(375, 2))),
+        cache_creation_1h_price: Set(SensitiveDecimal::from(Decimal::from(6))),
+        version: Set(9),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    model_prices::ActiveModel {
+        model: Set(SensitiveString::from("smoke-free-model")),
+        billing_mode: Set(2),
+        input_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        output_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        cache_read_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        cache_creation_5m_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        cache_creation_1h_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        version: Set(4),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+
+    let records = ModelPriceRepository::new(pool.clone()).load_all().await?;
+    let priced = records
+        .iter()
+        .find(|record| record.model() == "smoke-priced-model")
+        .ok_or("定价模型必须存在")?;
+    assert_eq!(priced.billing_mode(), ModelPriceBillingMode::PerToken);
+    assert_eq!(
+        priced.prices(),
+        [
+            Decimal::new(1, 28),
+            Decimal::new(25, 1),
+            Decimal::new(3, 2),
+            Decimal::new(375, 2),
+            Decimal::from(6),
+        ]
+    );
+    assert_eq!(priced.version(), 9);
+    let free = records
+        .iter()
+        .find(|record| record.model() == "smoke-free-model")
+        .ok_or("免费模型必须存在")?;
+    assert_eq!(free.billing_mode(), ModelPriceBillingMode::Free);
+    assert_eq!(free.prices(), [Decimal::ZERO; 5]);
     Ok(())
 }
 
