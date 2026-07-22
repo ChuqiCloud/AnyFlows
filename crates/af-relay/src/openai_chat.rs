@@ -1,21 +1,20 @@
 use std::{fmt, sync::Arc};
 
 use af_adapter::{
-    Adaptor, AdaptorError, AdaptorSendExt, AdaptorSettings, Bytes, ChannelType, Credential,
-    HeaderMap, Method, OpenAiAdaptorSettings, Operation, PooledClient, RelayContext, StatusCode,
-    UpstreamRequest, get_adaptor,
+    Adaptor, AdaptorSendExt, AdaptorSettings, Bytes, ChannelType, Credential, HeaderMap, Method,
+    OpenAiAdaptorSettings, Operation, PooledClient, RelayContext, StatusCode, UpstreamRequest,
+    get_adaptor,
 };
-use af_domain::{
-    AfError, GatewayPrincipal, MAX_MODEL_NAME_BYTES, UpstreamError, UpstreamServerStatus,
-};
+use af_domain::{AfError, GatewayPrincipal, MAX_MODEL_NAME_BYTES, UpstreamError};
 use af_protocol::{
     CanonicalRequest,
-    openai_chat::{
-        OpenAiUpstreamErrorKind, build_request, classify_error_response, parse_response,
-    },
+    openai_chat::{build_request, parse_response},
 };
 
-use crate::RelayBuildError;
+use crate::{
+    RelayBuildError,
+    error::{classify_upstream_status, map_adaptor_error},
+};
 
 /// M0 单 OpenAI-compatible 上游的非流式转发服务。
 ///
@@ -91,13 +90,13 @@ impl RelayService {
             .adaptor
             .send(request, &context)
             .await
-            .map_err(map_adaptor_error)?;
+            .map_err(|error| AfError::from(map_adaptor_error(error)))?;
         let status = response.status();
         let body = response
             .into_body()
             .into_bytes()
             .await
-            .map_err(map_adaptor_error)?;
+            .map_err(|error| AfError::from(map_adaptor_error(error)))?;
 
         if status != StatusCode::OK {
             return Err(classify_upstream_status(status, &body).into());
@@ -151,56 +150,10 @@ fn is_valid_model(model: &str) -> bool {
         && !model.chars().any(char::is_control)
 }
 
-fn map_adaptor_error(error: AdaptorError) -> AfError {
-    match error {
-        AdaptorError::Transport(_) => UpstreamError::Network.into(),
-        AdaptorError::InvalidResponseHeader | AdaptorError::ResponseBodyTooLarge => {
-            UpstreamError::ProtocolError.into()
-        }
-        _ => AfError::Internal,
-    }
-}
-
-fn classify_upstream_status(status: StatusCode, body: &[u8]) -> UpstreamError {
-    let signal = classify_error_response(body);
-    match (status, signal) {
-        (
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN,
-            OpenAiUpstreamErrorKind::AuthRevoked,
-        ) => return UpstreamError::AuthRevoked,
-        (StatusCode::TOO_MANY_REQUESTS, OpenAiUpstreamErrorKind::QuotaExhausted) => {
-            return UpstreamError::QuotaExhausted;
-        }
-        (StatusCode::TOO_MANY_REQUESTS, OpenAiUpstreamErrorKind::RateLimited) => {
-            return UpstreamError::RateLimited;
-        }
-        (StatusCode::NOT_FOUND, OpenAiUpstreamErrorKind::ModelUnsupported) => {
-            return UpstreamError::ModelUnsupported;
-        }
-        _ => {}
-    }
-
-    match status.as_u16() {
-        400 | 422 => UpstreamError::BadRequest,
-        // 未知 401/403 可能来自 IP 或区域策略，不能触发永久凭据禁用。
-        401 => UpstreamError::AuthExpired,
-        403 => UpstreamError::ProtocolError,
-        402 => UpstreamError::QuotaExhausted,
-        408 => UpstreamError::Network,
-        // 未知 404 更可能是路径配置错误；未知 429 才按暂时过载处理。
-        404 => UpstreamError::ProtocolError,
-        429 => UpstreamError::Overloaded,
-        529 => UpstreamError::Overloaded,
-        value @ 500..=599 => UpstreamError::ServerError {
-            status: UpstreamServerStatus::new(value)
-                .expect("500..=599 必须始终满足上游服务器状态约束"),
-        },
-        _ => UpstreamError::ProtocolError,
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use af_domain::UpstreamServerStatus;
+
     use super::*;
 
     #[test]
@@ -303,11 +256,15 @@ mod tests {
     #[test]
     fn response_boundary_errors_map_without_payloads() {
         assert_eq!(
-            map_adaptor_error(AdaptorError::InvalidResponseHeader),
+            AfError::from(map_adaptor_error(
+                af_adapter::AdaptorError::InvalidResponseHeader
+            )),
             AfError::from(UpstreamError::ProtocolError)
         );
         assert_eq!(
-            map_adaptor_error(AdaptorError::ResponseBodyTooLarge),
+            AfError::from(map_adaptor_error(
+                af_adapter::AdaptorError::ResponseBodyTooLarge
+            )),
             AfError::from(UpstreamError::ProtocolError)
         );
     }
