@@ -2,6 +2,7 @@
 
 mod batch;
 mod billing_session;
+mod database_sink;
 mod pricing;
 pub mod quota_math;
 
@@ -15,6 +16,7 @@ pub use billing_session::{
     BillingSession, BillingSessionError, BillingSessionState, RefundSignalOutcome,
     RefundSignalPort, SettlementRequest,
 };
+pub use database_sink::DatabaseBillingBatchSink;
 pub use pricing::{
     BillingMode, CostBreakdown, PriceData, PricingContext, PricingError, PricingRatio,
     PricingRatios, PricingResolver, RatioPricingResolver, TokenPrices,

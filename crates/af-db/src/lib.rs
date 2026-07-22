@@ -3,6 +3,9 @@
 mod auth;
 #[cfg(test)]
 mod auth_tests;
+mod billing_batch;
+#[cfg(test)]
+mod billing_batch_tests;
 mod connection;
 mod entity;
 mod error;
@@ -15,6 +18,10 @@ mod quota_tests;
 pub use auth::{
     TokenAuthLookup, TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,
     TokenAuthRepositoryConfigError, TokenAuthRepositoryError,
+};
+pub use billing_batch::{
+    BillingBatchRepository, BillingBatchRepositoryError, BillingBatchWrite, BillingBatchWriteError,
+    BillingBatchWriteOutcome, ChannelBillingWrite, TokenBillingWrite, UserBillingWrite,
 };
 pub use connection::DatabasePool;
 pub(crate) use connection::connect;

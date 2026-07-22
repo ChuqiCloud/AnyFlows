@@ -2,6 +2,7 @@ use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 
 mod billing;
+mod billing_batch;
 mod identity;
 mod indexes;
 mod routing;
@@ -74,3 +75,4 @@ where
     definition
 }
 pub(super) use billing::create_billing_reservations;
+pub(super) use billing_batch::create_billing_batch_checkpoints;
