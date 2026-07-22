@@ -360,6 +360,65 @@ async fn repeated_refund_and_settlement_have_no_extra_side_effects() -> Result<(
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_identical_settlements_mutate_balances_once() -> Result<(), Box<dyn Error>> {
+    let config = FixtureConfig::default();
+    let database = TestDatabase::new();
+    let fixture = concurrent_fixture(&database, config).await?;
+    let id = reservation_id(58);
+    fixture
+        .repository
+        .precharge(id, fixture.principal, quota(30))
+        .await?;
+
+    let results = concurrent_settlements(&fixture, id, quota(20), 8).await?;
+
+    assert_terminal_replay_results(results, QuotaReservationStatus::Settled, 8);
+    assert_eq!(
+        account_snapshot(&fixture.pool, fixture.principal).await?,
+        after_settlement(config, 20)
+    );
+    assert_eq!(
+        reservation_snapshot(&fixture.pool, id).await?,
+        Some(ReservationSnapshot {
+            status: status_code(QuotaReservationStatus::Settled),
+            reserved_quota: 30,
+            token_reserved_quota: 30,
+            actual_quota: Some(20),
+            finalized: true,
+        })
+    );
+
+    fixture.close().await?;
+    drop(database);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_identical_refunds_restore_balances_once() -> Result<(), Box<dyn Error>> {
+    let config = FixtureConfig::default();
+    let database = TestDatabase::new();
+    let fixture = concurrent_fixture(&database, config).await?;
+    let id = reservation_id(59);
+    fixture
+        .repository
+        .precharge(id, fixture.principal, quota(30))
+        .await?;
+
+    let results = concurrent_refunds(&fixture, id, 8).await?;
+
+    assert_terminal_replay_results(results, QuotaReservationStatus::Refunded, 8);
+    assert_eq!(
+        account_snapshot(&fixture.pool, fixture.principal).await?,
+        initial_snapshot(config)
+    );
+    assert_eq!(reservation_count(&fixture.pool).await?, 1);
+
+    fixture.close().await?;
+    drop(database);
+    Ok(())
+}
+
 #[tokio::test]
 async fn outcome_unknown_after_commit_replays_without_duplicate_mutation()
 -> Result<(), Box<dyn Error>> {
@@ -1254,6 +1313,73 @@ async fn concurrent_precharges(
         results.push(result?);
     }
     Ok(results)
+}
+
+async fn concurrent_settlements(
+    fixture: &Fixture,
+    id: BillingReservationId,
+    actual: Quota,
+    attempts: usize,
+) -> Result<Vec<Result<QuotaMutationOutcome, QuotaRepositoryError>>, tokio::task::JoinError> {
+    let barrier = Arc::new(Barrier::new(attempts + 1));
+    let mut tasks = JoinSet::new();
+    for _ in 0..attempts {
+        let repository = fixture.repository.clone();
+        let barrier = Arc::clone(&barrier);
+        tasks.spawn(async move {
+            barrier.wait().await;
+            repository.settle(id, actual).await
+        });
+    }
+    barrier.wait().await;
+
+    let mut results = Vec::with_capacity(attempts);
+    while let Some(result) = tasks.join_next().await {
+        results.push(result?);
+    }
+    Ok(results)
+}
+
+async fn concurrent_refunds(
+    fixture: &Fixture,
+    id: BillingReservationId,
+    attempts: usize,
+) -> Result<Vec<Result<QuotaMutationOutcome, QuotaRepositoryError>>, tokio::task::JoinError> {
+    let barrier = Arc::new(Barrier::new(attempts + 1));
+    let mut tasks = JoinSet::new();
+    for _ in 0..attempts {
+        let repository = fixture.repository.clone();
+        let barrier = Arc::clone(&barrier);
+        tasks.spawn(async move {
+            barrier.wait().await;
+            repository.refund(id).await
+        });
+    }
+    barrier.wait().await;
+
+    let mut results = Vec::with_capacity(attempts);
+    while let Some(result) = tasks.join_next().await {
+        results.push(result?);
+    }
+    Ok(results)
+}
+
+fn assert_terminal_replay_results(
+    results: Vec<Result<QuotaMutationOutcome, QuotaRepositoryError>>,
+    status: QuotaReservationStatus,
+    attempts: usize,
+) {
+    let mut applied = 0;
+    let mut replayed = 0;
+    for result in results {
+        match result {
+            Ok(QuotaMutationOutcome::Applied) => applied += 1,
+            Ok(QuotaMutationOutcome::Existing(existing)) if existing == status => replayed += 1,
+            outcome => panic!("并发终态重放返回意外结果：{outcome:?}"),
+        }
+    }
+    assert_eq!(applied, 1);
+    assert_eq!(replayed, attempts - 1);
 }
 
 fn quota(units: i64) -> Quota {

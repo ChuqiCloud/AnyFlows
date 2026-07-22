@@ -14,6 +14,8 @@ pub use pricing::{
 };
 
 #[cfg(test)]
+mod billing_invariants_tests;
+#[cfg(test)]
 mod billing_session_tests;
 #[cfg(test)]
 mod pricing_tests;
