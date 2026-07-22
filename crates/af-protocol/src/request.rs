@@ -53,6 +53,31 @@ impl fmt::Debug for ToolChoice {
     }
 }
 
+/// 客户端对流式响应的协议无关偏好。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StreamOptions {
+    include_usage: bool,
+}
+
+impl StreamOptions {
+    /// 未请求任何可选流式数据的显式空配置。
+    pub const EMPTY: Self = Self {
+        include_usage: false,
+    };
+
+    /// 构造流式响应偏好。
+    #[must_use]
+    pub const fn new(include_usage: bool) -> Self {
+        Self { include_usage }
+    }
+
+    /// 返回客户端是否要求在流末接收完整 usage。
+    #[must_use]
+    pub const fn include_usage(&self) -> bool {
+        self.include_usage
+    }
+}
+
 /// 跨协议归一化的推理强度。
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReasoningEffort {

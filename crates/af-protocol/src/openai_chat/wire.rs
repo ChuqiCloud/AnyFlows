@@ -58,9 +58,21 @@ pub(super) struct ChatRequestWire {
     /// 是否请求流式响应。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) stream: Field<bool>,
+    /// 流末 usage 等可选数据。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) stream_options: Field<StreamOptionsWire>,
     /// 等待静态白名单校验的顶层扩展字段。
     #[serde(flatten)]
     pub(super) extra: Map<String, Value>,
+}
+
+/// OpenAI Chat 流式响应选项。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct StreamOptionsWire {
+    /// 是否要求在 `[DONE]` 前返回完整 usage 块。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) include_usage: Field<bool>,
 }
 
 /// 按角色闭合分派的消息。

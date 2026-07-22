@@ -102,7 +102,7 @@ pub(super) struct EncodedChunk<'a> {
     pub(super) model: &'a str,
     pub(super) choices: Vec<EncodedChoice<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) usage: Option<EncodedUsage>,
+    pub(super) usage: Option<Option<EncodedUsage>>,
 }
 
 #[derive(Serialize)]

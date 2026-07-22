@@ -67,14 +67,16 @@ fn uses_known_unsupported_feature(value: &Value) -> bool {
     let Some(request) = value.as_object() else {
         return false;
     };
-    if [
-        "function_call",
-        "functions",
-        "prompt_cache_breakpoint",
-        "stream_options",
-    ]
-    .iter()
-    .any(|key| request.contains_key(*key))
+    if ["function_call", "functions", "prompt_cache_breakpoint"]
+        .iter()
+        .any(|key| request.contains_key(*key))
+    {
+        return true;
+    }
+    if request
+        .get("stream_options")
+        .and_then(Value::as_object)
+        .is_some_and(|options| options.contains_key("include_obfuscation"))
     {
         return true;
     }

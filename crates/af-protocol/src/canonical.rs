@@ -3,7 +3,9 @@ use std::{error::Error, fmt};
 use af_domain::{Operation, Protocol, Role};
 use serde_json::{Map, Value};
 
-use crate::request::{Attachment, ReasoningConfig, RequestMetadata, Sampling, ToolChoice, ToolDef};
+use crate::request::{
+    Attachment, ReasoningConfig, RequestMetadata, Sampling, StreamOptions, ToolChoice, ToolDef,
+};
 
 /// 一次请求的协议无关中间表示。
 ///
@@ -43,6 +45,8 @@ pub struct CanonicalRequest {
     pub sampling: Sampling,
     /// 客户端是否请求流式响应。
     pub stream: bool,
+    /// 客户端对流末 usage 等可选数据的偏好。
+    pub stream_options: StreamOptions,
     /// 未内联到消息内容中的多模态附件。
     pub attachments: Vec<Attachment>,
     /// 用于会话粘性等网关能力的请求元数据。
@@ -63,6 +67,7 @@ impl CanonicalRequest {
             reasoning: None,
             sampling: Sampling::EMPTY,
             stream,
+            stream_options: StreamOptions::EMPTY,
             attachments: Vec::new(),
             metadata: RequestMetadata::EMPTY,
             raw_passthrough: None,
@@ -100,6 +105,7 @@ impl fmt::Debug for CanonicalRequest {
             .field("reasoning", &self.reasoning)
             .field("sampling", &self.sampling)
             .field("stream", &self.stream)
+            .field("stream_options", &self.stream_options)
             .field("attachment_count", &self.attachments.len())
             .field("metadata", &self.metadata)
             .field("raw_passthrough", &self.raw_passthrough)

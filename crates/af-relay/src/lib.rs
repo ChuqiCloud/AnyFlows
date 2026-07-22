@@ -3,11 +3,13 @@
 mod error;
 mod openai_chat;
 mod openai_chat_stream;
+mod openai_chat_usage;
 mod state_machine;
 
 pub use error::{RelayBuildError, RelayError};
 pub use openai_chat::{OpenAiChatResponse, RelayService};
 pub use openai_chat_stream::OpenAiChatStream;
+pub use openai_chat_usage::{OpenAiChatUsageHandle, UsageResolutionError};
 pub use state_machine::{
     RelayCandidate, RelayRequest, RelayResponse, RelayState, RelayStateMachine,
 };

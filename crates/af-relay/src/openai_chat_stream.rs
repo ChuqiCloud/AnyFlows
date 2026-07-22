@@ -16,6 +16,10 @@ use af_protocol::{
 use futures_core::Stream;
 
 use crate::error::map_adaptor_error;
+use crate::openai_chat_usage::{
+    OpenAiChatUsageEstimator, OpenAiChatUsageHandle, UsageResolutionError, UsageSender,
+    usage_channel,
+};
 
 /// 已完成 OpenAI Chat 协议转换的下游 SSE 字节流。
 ///
@@ -25,19 +29,34 @@ pub struct OpenAiChatStream {
     source: Option<StreamSource>,
     decoder: OpenAiChatStreamDecoder,
     encoder: OpenAiChatStreamEncoder,
+    usage_estimator: OpenAiChatUsageEstimator,
+    usage_sender: Option<UsageSender>,
+    include_usage: bool,
     prefetched: VecDeque<Bytes>,
     terminated: bool,
 }
 
 impl OpenAiChatStream {
-    pub(crate) fn new(source: UpstreamBody, encoder: OpenAiChatStreamEncoder) -> Self {
-        Self {
-            source: Some(StreamSource::from(source)),
-            decoder: OpenAiChatStreamDecoder::new(),
-            encoder,
-            prefetched: VecDeque::new(),
-            terminated: false,
-        }
+    pub(crate) fn new(
+        source: UpstreamBody,
+        encoder: OpenAiChatStreamEncoder,
+        usage_estimator: OpenAiChatUsageEstimator,
+        include_usage: bool,
+    ) -> (Self, OpenAiChatUsageHandle) {
+        let (usage_sender, usage_handle) = usage_channel();
+        (
+            Self {
+                source: Some(StreamSource::from(source)),
+                decoder: OpenAiChatStreamDecoder::new(),
+                encoder: encoder.with_usage_null_fields(include_usage),
+                usage_estimator,
+                usage_sender: Some(usage_sender),
+                include_usage,
+                prefetched: VecDeque::new(),
+                terminated: false,
+            },
+            usage_handle,
+        )
     }
 
     /// 在 HTTP 成功响应提交前读取并验证首个可交付 SSE 事件。
@@ -65,15 +84,55 @@ impl OpenAiChatStream {
             .map_err(|_| UpstreamError::ProtocolError)?;
         let mut output = Vec::new();
         let mut completed = false;
+        let mut resolved_usage = None;
         for event in events {
-            completed |= matches!(event, CanonicalStreamEvent::StreamEnd);
-            output.extend(
-                self.encoder
-                    .encode(event)
-                    .map_err(|_| UpstreamError::ProtocolError)?,
-            );
+            match event {
+                CanonicalStreamEvent::Usage(usage) => {
+                    self.usage_estimator
+                        .observe(&CanonicalStreamEvent::Usage(usage));
+                    if self.include_usage {
+                        output.extend(
+                            self.encoder
+                                .encode(CanonicalStreamEvent::Usage(usage))
+                                .map_err(|_| UpstreamError::ProtocolError)?,
+                        );
+                    }
+                }
+                CanonicalStreamEvent::StreamEnd => {
+                    let upstream_usage_seen = self.usage_estimator.has_upstream_usage();
+                    let usage = self.usage_estimator.resolve();
+                    if self.include_usage
+                        && !upstream_usage_seen
+                        && let Ok(estimated) = usage
+                    {
+                        output.extend(
+                            self.encoder
+                                .encode(CanonicalStreamEvent::Usage(estimated))
+                                .map_err(|_| UpstreamError::ProtocolError)?,
+                        );
+                    }
+                    output.extend(
+                        self.encoder
+                            .encode(CanonicalStreamEvent::StreamEnd)
+                            .map_err(|_| UpstreamError::ProtocolError)?,
+                    );
+                    resolved_usage = Some(usage);
+                    completed = true;
+                }
+                event => {
+                    self.usage_estimator.observe(&event);
+                    output.extend(
+                        self.encoder
+                            .encode(event)
+                            .map_err(|_| UpstreamError::ProtocolError)?,
+                    );
+                }
+            }
         }
         if completed {
+            if let (Some(sender), Some(usage)) = (self.usage_sender.take(), resolved_usage) {
+                let _ = sender.send(usage);
+            }
             // `[DONE]` 已经定义逻辑终点，立即丢弃底层响应体以传播取消。
             self.source = None;
             self.terminated = true;
@@ -82,6 +141,9 @@ impl OpenAiChatStream {
     }
 
     fn fail(&mut self, error: UpstreamError) -> Poll<Option<Result<Bytes, UpstreamError>>> {
+        if let Some(sender) = self.usage_sender.take() {
+            let _ = sender.send(Err(UsageResolutionError::Interrupted));
+        }
         self.source = None;
         self.terminated = true;
         Poll::Ready(Some(Err(error)))
@@ -117,11 +179,11 @@ impl Stream for OpenAiChatStream {
                 }
                 Poll::Ready(None) => {
                     self.source = None;
+                    if self.decoder.finish().is_err() {
+                        return self.fail(UpstreamError::ProtocolError);
+                    }
                     self.terminated = true;
-                    return match self.decoder.finish() {
-                        Ok(()) => Poll::Ready(None),
-                        Err(_) => Poll::Ready(Some(Err(UpstreamError::ProtocolError))),
-                    };
+                    return Poll::Ready(None);
                 }
             }
         }
@@ -133,6 +195,7 @@ impl fmt::Debug for OpenAiChatStream {
         formatter
             .debug_struct("OpenAiChatStream")
             .field("prefetched_chunks", &self.prefetched.len())
+            .field("include_usage", &self.include_usage)
             .field("terminated", &self.terminated)
             .finish()
     }
@@ -164,12 +227,26 @@ impl StreamSource {
 #[cfg(test)]
 mod tests {
     use af_adapter::{HeaderMap, StatusCode, UpstreamResponse};
+    use af_domain::{Operation, Role};
+    use af_protocol::{CanonicalRequest, ContentBlock, Message, UsageSource};
 
     use super::*;
 
     fn encoder() -> OpenAiChatStreamEncoder {
         OpenAiChatStreamEncoder::new("chatcmpl-relay-test", "gpt-relay-test", 1_700_000_000)
             .unwrap()
+    }
+
+    fn estimator() -> OpenAiChatUsageEstimator {
+        OpenAiChatUsageEstimator::new(&CanonicalRequest::new(
+            Operation::Chat,
+            "gpt-4o".to_owned(),
+            vec![Message::new(
+                Role::User,
+                vec![ContentBlock::Text("question".to_owned())],
+            )],
+            true,
+        ))
     }
 
     #[tokio::test]
@@ -191,10 +268,9 @@ mod tests {
             ]),
         )
         .unwrap();
-        let mut stream = OpenAiChatStream::new(response.into_body(), encoder())
-            .prefetch_first(Duration::from_secs(1))
-            .await
-            .unwrap();
+        let (stream, usage) =
+            OpenAiChatStream::new(response.into_body(), encoder(), estimator(), false);
+        let mut stream = stream.prefetch_first(Duration::from_secs(1)).await.unwrap();
 
         let mut output = Vec::new();
         while let Some(chunk) = stream.next_chunk().await {
@@ -205,8 +281,13 @@ mod tests {
         assert!(output.contains("gpt-relay-test"));
         assert!(output.contains("answer"));
         assert!(output.ends_with("data: [DONE]\n\n"));
+        assert!(!output.contains("\"usage\""));
         assert!(!output.contains("upstream-private-id"));
         assert!(!output.contains("upstream-private-model"));
+        assert_eq!(
+            usage.resolve().await.unwrap().source(),
+            UsageSource::Estimated
+        );
     }
 
     #[tokio::test]
@@ -217,11 +298,17 @@ mod tests {
             Bytes::from_static(b"data: {\"private\":\"payload\"}\n\n"),
         )
         .unwrap();
-        let error = OpenAiChatStream::new(response.into_body(), encoder())
+        let (stream, usage) =
+            OpenAiChatStream::new(response.into_body(), encoder(), estimator(), false);
+        let error = stream
             .prefetch_first(Duration::from_secs(1))
             .await
             .unwrap_err();
         assert_eq!(error, UpstreamError::ProtocolError);
+        assert_eq!(
+            usage.resolve().await,
+            Err(UsageResolutionError::Interrupted)
+        );
     }
 
     #[tokio::test]
@@ -229,11 +316,84 @@ mod tests {
         let response =
             UpstreamResponse::stream(StatusCode::OK, HeaderMap::new(), TestStream::pending())
                 .unwrap();
-        let error = OpenAiChatStream::new(response.into_body(), encoder())
+        let (stream, usage) =
+            OpenAiChatStream::new(response.into_body(), encoder(), estimator(), false);
+        let error = stream
             .prefetch_first(Duration::from_millis(20))
             .await
             .unwrap_err();
         assert_eq!(error, UpstreamError::Network);
+        assert_eq!(
+            usage.resolve().await,
+            Err(UsageResolutionError::Interrupted)
+        );
+    }
+
+    #[tokio::test]
+    async fn unexpected_eof_resolves_usage_as_interrupted() {
+        let body = Bytes::from_static(
+            b"data: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+        );
+        let response = UpstreamResponse::full(StatusCode::OK, HeaderMap::new(), body).unwrap();
+        let (stream, usage) =
+            OpenAiChatStream::new(response.into_body(), encoder(), estimator(), false);
+        let mut stream = stream.prefetch_first(Duration::from_secs(1)).await.unwrap();
+
+        assert!(matches!(stream.next_chunk().await, Some(Ok(_))));
+        assert_eq!(
+            stream.next_chunk().await,
+            Some(Err(UpstreamError::ProtocolError))
+        );
+        assert_eq!(
+            usage.resolve().await,
+            Err(UsageResolutionError::Interrupted)
+        );
+    }
+
+    #[tokio::test]
+    async fn requested_usage_emits_estimated_chunk_before_done() {
+        let body = b"data: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"answer\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
+        let response =
+            UpstreamResponse::full(StatusCode::OK, HeaderMap::new(), Bytes::from_static(body))
+                .unwrap();
+        let (stream, usage) =
+            OpenAiChatStream::new(response.into_body(), encoder(), estimator(), true);
+        let mut stream = stream.prefetch_first(Duration::from_secs(1)).await.unwrap();
+
+        let mut output = Vec::new();
+        while let Some(chunk) = stream.next_chunk().await {
+            output.extend(chunk.unwrap());
+        }
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("\"choices\":[]"));
+        assert!(output.contains("\"prompt_tokens\""));
+        assert!(output.ends_with("data: [DONE]\n\n"));
+        assert_eq!(
+            usage.resolve().await.unwrap().source(),
+            UsageSource::Estimated
+        );
+    }
+
+    #[tokio::test]
+    async fn upstream_usage_is_preferred_and_hidden_when_client_did_not_request_it() {
+        let body = b"data: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"answer\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":7,\"total_tokens\":18}}\n\ndata: [DONE]\n\n";
+        let response =
+            UpstreamResponse::full(StatusCode::OK, HeaderMap::new(), Bytes::from_static(body))
+                .unwrap();
+        let (stream, usage) =
+            OpenAiChatStream::new(response.into_body(), encoder(), estimator(), false);
+        let mut stream = stream.prefetch_first(Duration::from_secs(1)).await.unwrap();
+
+        let mut output = Vec::new();
+        while let Some(chunk) = stream.next_chunk().await {
+            output.extend(chunk.unwrap());
+        }
+        let output = String::from_utf8(output).unwrap();
+        assert!(!output.contains("\"prompt_tokens\":11"));
+        let usage = usage.resolve().await.unwrap();
+        assert_eq!(usage.source(), UsageSource::Upstream);
+        assert_eq!(usage.input_tokens().get(), 11);
+        assert_eq!(usage.output_tokens().get(), 7);
     }
 
     struct TestStream {
