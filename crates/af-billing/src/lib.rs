@@ -3,6 +3,7 @@
 mod batch;
 mod billing_session;
 mod database_sink;
+mod lifecycle;
 mod model_price_cache;
 mod pricing;
 pub mod quota_math;
@@ -18,6 +19,11 @@ pub use billing_session::{
     RefundSignalPort, SettlementRequest,
 };
 pub use database_sink::DatabaseBillingBatchSink;
+pub use lifecycle::{
+    BillingCompletion, BillingLifecycleError, BillingLifecycleState, BillingRequestLifecycle,
+    BillingRequestPlan, BillingSettlementError, BillingSettlementFuture, BillingSettlementPort,
+    BillingUsageRecord, UsageRecordOutcome, UsageRecordPort,
+};
 pub use model_price_cache::{
     ModelPrice, ModelPriceCache, ModelPriceCacheError, ModelPriceSnapshot, ModelPriceSource,
     ModelPriceSourceError, ModelPriceSourceFuture, ModelPriceSourceRecord,
@@ -33,6 +39,8 @@ mod batch_tests;
 mod billing_invariants_tests;
 #[cfg(test)]
 mod billing_session_tests;
+#[cfg(test)]
+mod lifecycle_tests;
 #[cfg(test)]
 mod model_price_cache_tests;
 #[cfg(test)]

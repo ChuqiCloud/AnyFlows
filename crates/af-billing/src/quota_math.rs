@@ -97,6 +97,21 @@ pub enum QuotaMathError {
     Clamp(#[from] QuotaClamp),
 }
 
+/// 用户可控计费乘数的业务上限校验错误。
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum QuotaFactorError {
+    /// 调用方提供的业务上限为负数。
+    #[error("计费乘数上限无效")]
+    InvalidLimit,
+    /// 用户乘数为负数或超过业务上限。
+    #[error("计费乘数超出允许范围")]
+    FactorOutOfRange,
+    /// 通过上限校验后的额度乘法越界。
+    #[error(transparent)]
+    Math(#[from] QuotaMathError),
+}
+
 impl QuotaMathError {
     /// 返回统一领域额度错误，供上层稳定分类。
     #[must_use]
@@ -263,4 +278,22 @@ pub fn checked_mul_quota(base: Quota, factor: i64) -> Result<Quota, QuotaMathErr
         .ok_or_else(|| QuotaClamp::overflow(QuotaMathOperation::Multiplication))?;
 
     Quota::new(units).map_err(Into::into)
+}
+
+/// 校验用户可控乘数的业务上限后再执行 checked 额度乘法。
+///
+/// PerCall 图片张数、视频时长、分辨率等外部输入必须调用本入口，禁止先乘后截断。
+/// 上限由对应业务协议固定提供，不得来自同一个用户请求。
+pub fn checked_mul_quota_with_limit(
+    base: Quota,
+    factor: i64,
+    maximum_factor: i64,
+) -> Result<Quota, QuotaFactorError> {
+    if maximum_factor < 0 {
+        return Err(QuotaFactorError::InvalidLimit);
+    }
+    if factor < 0 || factor > maximum_factor {
+        return Err(QuotaFactorError::FactorOutOfRange);
+    }
+    checked_mul_quota(base, factor).map_err(Into::into)
 }

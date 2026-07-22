@@ -2,8 +2,8 @@ use af_domain::{Quota, QuotaError};
 use rust_decimal::Decimal;
 
 use crate::quota_math::{
-    QUOTA_PER_USD, QuotaClampKind, QuotaMathError, QuotaMathOperation, checked_mul_quota,
-    quota_from_tokens, quota_from_usd,
+    QUOTA_PER_USD, QuotaClampKind, QuotaFactorError, QuotaMathError, QuotaMathOperation,
+    checked_mul_quota, checked_mul_quota_with_limit, quota_from_tokens, quota_from_usd,
 };
 
 #[test]
@@ -105,6 +105,28 @@ fn quota_multiplier_preserves_boundaries_without_wrapping() {
     assert_clamp(
         checked_mul_quota(maximum, 2).unwrap_err(),
         QuotaMathOperation::Multiplication,
+    );
+}
+
+#[test]
+fn user_controlled_factor_is_rejected_before_quota_multiplication() {
+    let base = Quota::new(i64::MAX).unwrap();
+
+    assert_eq!(
+        checked_mul_quota_with_limit(base, 11, 10),
+        Err(QuotaFactorError::FactorOutOfRange)
+    );
+    assert_eq!(
+        checked_mul_quota_with_limit(base, -1, 10),
+        Err(QuotaFactorError::FactorOutOfRange)
+    );
+    assert_eq!(
+        checked_mul_quota_with_limit(base, 1, -1),
+        Err(QuotaFactorError::InvalidLimit)
+    );
+    assert_eq!(
+        checked_mul_quota_with_limit(Quota::new(7).unwrap(), 10, 10),
+        Ok(Quota::new(70).unwrap())
     );
 }
 
