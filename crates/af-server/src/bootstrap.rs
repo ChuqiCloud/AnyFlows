@@ -21,8 +21,8 @@ use thiserror::Error;
 
 use crate::readiness::DatabaseReadinessProbe;
 use crate::{
-    BackgroundTaskSupervisor, ShutdownController, SupervisorError, SupervisorShutdown,
-    system_shutdown_signal,
+    BackgroundTaskSupervisor, BillingFlushReport, BillingRuntime, BillingRuntimeError,
+    ShutdownController, SupervisorError, SupervisorShutdown, system_shutdown_signal,
 };
 
 /// 已加载并校验静态配置。
@@ -56,10 +56,18 @@ pub struct RelayReady {
     relay: Arc<RelayService>,
 }
 
-/// 后台任务监督域已经建立，当前没有注册尚未实现的业务循环。
+/// 计费 WAL 已打开，历史积压已在开始监听前恢复完成。
+pub struct BillingReady {
+    infrastructure: AuthenticationReady,
+    relay: Arc<RelayService>,
+    billing: BillingRuntime,
+}
+
+/// 后台任务监督域已经建立，批量模式的周期 flush 已注册。
 pub struct Supervised {
     infrastructure: AuthenticationReady,
     relay: Arc<RelayService>,
+    billing: BillingRuntime,
     supervisor: BackgroundTaskSupervisor,
 }
 
@@ -109,6 +117,8 @@ pub struct ShutdownReport {
     pub http: ServeOutcome,
     /// 后台任务的收尾方式。
     pub background: SupervisorShutdown,
+    /// 数据库关闭前最终确认的计费 WAL 批次。
+    pub billing: BillingFlushReport,
 }
 
 /// 顶层启动、监听与资源关闭错误。
@@ -139,6 +149,15 @@ pub enum BootstrapError {
     /// 当前静态单上游 relay 配置或构造失败。
     #[error("初始化静态单上游转发服务失败")]
     Relay(#[source] RelayBuildError),
+    /// 计费 WAL 或数据库 sink 初始化、恢复或落库失败。
+    #[error("计费运行时生命周期操作失败")]
+    Billing(#[source] BillingRuntimeError),
+    /// 启动期 WAL 恢复超过配置的硬截止时间。
+    #[error("启动期计费 WAL 恢复超时")]
+    BillingStartupFlushTimeout,
+    /// 关闭前最终 WAL flush 超过配置的硬截止时间。
+    #[error("关闭前计费 WAL 刷新超时")]
+    BillingShutdownFlushTimeout,
     /// 后台任务强制关闭失败。
     #[error("后台任务生命周期操作失败")]
     Supervisor(#[source] SupervisorError),
@@ -269,7 +288,39 @@ impl Bootstrap<AuthenticationReady> {
 }
 
 impl Bootstrap<RelayReady> {
-    /// 建立后台任务监督域；后续任务必须通过该域注册并共享关闭信号。
+    /// 打开计费 WAL，并在进入监听阶段前有界恢复上次未确认的增量。
+    pub async fn init_billing(self) -> Result<Bootstrap<BillingReady>, BootstrapError> {
+        let billing = BillingRuntime::open(
+            self.config.billing(),
+            self.stage.infrastructure.infrastructure.database.clone(),
+        )
+        .map_err(BootstrapError::Billing)?;
+        let flush_timeout = Duration::from_secs(self.config.billing().flush_timeout_secs());
+        tokio::time::timeout(flush_timeout, billing.flush_all())
+            .await
+            .map_err(|_| BootstrapError::BillingStartupFlushTimeout)?
+            .map_err(BootstrapError::Billing)?;
+        let Bootstrap {
+            config,
+            shutdown_timeout,
+            shutdown,
+            stage,
+        } = self;
+        Ok(Bootstrap {
+            config,
+            shutdown_timeout,
+            shutdown,
+            stage: BillingReady {
+                infrastructure: stage.infrastructure,
+                relay: stage.relay,
+                billing,
+            },
+        })
+    }
+}
+
+impl Bootstrap<BillingReady> {
+    /// 建立后台任务监督域；批量模式在该域注册周期 flush 并共享关闭信号。
     #[must_use]
     pub fn start_supervisor(self) -> Bootstrap<Supervised> {
         let Bootstrap {
@@ -278,11 +329,25 @@ impl Bootstrap<RelayReady> {
             shutdown,
             stage,
         } = self;
-        let supervisor = BackgroundTaskSupervisor::new(shutdown.clone());
-        let RelayReady {
+        let mut supervisor = BackgroundTaskSupervisor::new(shutdown.clone());
+        let BillingReady {
             infrastructure,
             relay,
+            billing,
         } = stage;
+        if billing.batch_enabled() {
+            supervisor.spawn("billing-flush", {
+                let billing = billing.clone();
+                move |task_shutdown| {
+                    let billing = billing.clone();
+                    async move {
+                        if let Err(error) = billing.run_periodic_flush(task_shutdown).await {
+                            tracing::error!(error_kind = error.error_kind(), "计费周期刷新失败");
+                        }
+                    }
+                }
+            });
+        }
         Bootstrap {
             config,
             shutdown_timeout,
@@ -290,6 +355,7 @@ impl Bootstrap<RelayReady> {
             stage: Supervised {
                 infrastructure,
                 relay,
+                billing,
                 supervisor,
             },
         }
@@ -376,6 +442,7 @@ impl Bootstrap<ListenerReady> {
     where
         F: Future<Output = ()> + Send + 'static,
     {
+        let billing_flush_timeout = Duration::from_secs(self.config.billing().flush_timeout_secs());
         let Bootstrap {
             config: _,
             shutdown_timeout,
@@ -391,6 +458,7 @@ impl Bootstrap<ListenerReady> {
         let Supervised {
             infrastructure,
             supervisor,
+            billing,
             relay: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
@@ -401,8 +469,10 @@ impl Bootstrap<ListenerReady> {
             http,
             shutdown,
             supervisor,
+            billing,
             infrastructure.infrastructure.database,
             shutdown_timeout,
+            billing_flush_timeout,
         )
         .await
     }
@@ -420,8 +490,10 @@ async fn run_http_and_shutdown<H>(
     http: H,
     shutdown: ShutdownController,
     supervisor: BackgroundTaskSupervisor,
+    billing: BillingRuntime,
     database: DatabasePool,
     shutdown_timeout: Duration,
+    billing_flush_timeout: Duration,
 ) -> Result<ShutdownReport, BootstrapError>
 where
     H: Future<Output = Result<ServeOutcome, ServeError>>,
@@ -445,17 +517,42 @@ where
             terminate_unconfirmed_shutdown("background_force_stop_timeout");
         }
     };
+    // 周期任务已确认退出后再执行最终 flush；超时取消只会留下可安全重放的 WAL。
+    let billing_result =
+        match tokio::time::timeout(billing_flush_timeout, billing.flush_all()).await {
+            Ok(result) => result.map_err(BootstrapError::Billing),
+            Err(_) => Err(BootstrapError::BillingShutdownFlushTimeout),
+        };
     let database_result = database.close().await;
-    match (http_result, database_result) {
-        (Ok(http), Ok(())) => Ok(ShutdownReport { http, background }),
-        (Ok(_), Err(error)) => Err(BootstrapError::Database(error)),
-        (Err(error), Ok(())) => Err(BootstrapError::Http(error)),
-        (Err(error), Err(_)) => {
-            // 主 HTTP 错误决定启动/服务失败原因，清理错误只记录固定分类。
+    match (http_result, billing_result, database_result) {
+        (Ok(http), Ok(billing), Ok(())) => Ok(ShutdownReport {
+            http,
+            background,
+            billing,
+        }),
+        (Ok(_), Ok(_), Err(error)) => Err(BootstrapError::Database(error)),
+        (Ok(_), Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(error), Err(_)) => {
             tracing::error!(
-                error_kind = "database_close_after_http_error",
-                "HTTP 失败后的数据库关闭也失败"
+                error_kind = "database_close_after_billing_error",
+                "计费收尾失败后的数据库关闭也失败"
             );
+            Err(error)
+        }
+        (Err(error), billing_result, database_result) => {
+            // 主 HTTP 错误决定服务失败原因，两个清理错误只记录固定分类。
+            if billing_result.is_err() {
+                tracing::error!(
+                    error_kind = "billing_flush_after_http_error",
+                    "HTTP 失败后的计费收尾也失败"
+                );
+            }
+            if database_result.is_err() {
+                tracing::error!(
+                    error_kind = "database_close_after_http_error",
+                    "HTTP 失败后的数据库关闭也失败"
+                );
+            }
             Err(BootstrapError::Http(error))
         }
     }
@@ -560,6 +657,8 @@ pub async fn run() -> Result<(), BootstrapError> {
         .await?
         .init_authentication()?
         .init_relay()?
+        .init_billing()
+        .await?
         .start_supervisor()
         .build_router()
         .bind()?
@@ -598,6 +697,11 @@ fn log_shutdown_report(report: ShutdownReport) {
             );
         }
     }
+    tracing::info!(
+        confirmed_batches = report.billing.confirmed_batches(),
+        confirmed_events = report.billing.confirmed_events(),
+        "关闭前计费 WAL 已完成最终刷新"
+    );
 }
 
 #[cfg(test)]
@@ -611,6 +715,11 @@ mod tests {
         },
     };
 
+    use af_billing::{
+        BillingBatch, BillingBatchApplyOutcome, BillingBatchEvent, BillingBatchSink,
+        BillingBatchSinkFuture, FileBillingBatcher, UserBillingDelta,
+    };
+    use af_domain::{BillingReservationId, QuotaDelta, UserId};
     use af_http::{ReadinessFuture, ReadinessProbe};
     use tokio::sync::{Notify, oneshot};
 
@@ -619,6 +728,19 @@ mod tests {
     static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
 
     struct AlwaysReadyProbe;
+
+    struct OrderedBillingSink {
+        events: Arc<Mutex<Vec<&'static str>>>,
+    }
+
+    impl BillingBatchSink for OrderedBillingSink {
+        fn apply<'a>(&'a self, _batch: &'a BillingBatch) -> BillingBatchSinkFuture<'a> {
+            Box::pin(async move {
+                self.events.lock().unwrap().push("billing_flushed");
+                Ok(BillingBatchApplyOutcome::Applied)
+            })
+        }
+    }
 
     impl ReadinessProbe for AlwaysReadyProbe {
         fn check(&self) -> ReadinessFuture<'_> {
@@ -632,14 +754,21 @@ mod tests {
             "anyflows-bootstrap-{}-{serial}.toml",
             std::process::id()
         ));
+        let wal_directory = billing_wal_directory(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
         fs::write(
             &path,
             format!(
-                "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{database_url}'\n[openai_upstream]\nbase_url = 'https://upstream.example'\nmodel = 'test-model'\napi_key = 'test-upstream-key'\n"
+                "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{database_url}'\n[billing]\nwal_directory = '{wal_directory}'\n[openai_upstream]\nbase_url = 'https://upstream.example'\nmodel = 'test-model'\napi_key = 'test-upstream-key'\n"
             ),
         )
         .unwrap();
         path
+    }
+
+    fn billing_wal_directory(config_path: &std::path::Path) -> PathBuf {
+        config_path.with_extension("billing-wal")
     }
 
     #[test]
@@ -691,6 +820,7 @@ mod tests {
     async fn current_stages_start_and_shutdown_in_order() {
         let path = config_file("sqlite::memory:");
         let config = af_config::load_from(&path).unwrap();
+        let wal_directory = billing_wal_directory(&path);
         let _ = fs::remove_file(path);
 
         let report = Bootstrap::new(config)
@@ -704,6 +834,9 @@ mod tests {
             .unwrap()
             .init_relay()
             .unwrap()
+            .init_billing()
+            .await
+            .unwrap()
             .start_supervisor()
             .build_router()
             .bind()
@@ -713,6 +846,8 @@ mod tests {
             .unwrap();
         assert_eq!(report.http, ServeOutcome::Drained);
         assert_eq!(report.background, SupervisorShutdown::Drained);
+        assert_eq!(report.billing, BillingFlushReport::default());
+        let _ = fs::remove_dir_all(wal_directory);
     }
 
     #[tokio::test]
@@ -726,6 +861,20 @@ mod tests {
         let observer = database.clone();
         let shutdown = ShutdownController::new();
         let events = Arc::new(Mutex::new(Vec::new()));
+        let serial = NEXT_FILE.fetch_add(1, Ordering::Relaxed);
+        let wal_directory = std::env::temp_dir().join(format!(
+            "anyflows-bootstrap-order-{}-{serial}",
+            std::process::id()
+        ));
+        let batcher = FileBillingBatcher::open(
+            &wal_directory,
+            Arc::new(OrderedBillingSink {
+                events: Arc::clone(&events),
+            }),
+        )
+        .unwrap();
+        let billing = BillingRuntime::from_batcher(batcher, true, Duration::from_secs(1));
+        billing.record(billing_event()).await.unwrap();
         let started = Arc::new(Notify::new());
         let mut supervisor = BackgroundTaskSupervisor::new(shutdown.clone());
         supervisor.spawn("order-test", {
@@ -753,7 +902,9 @@ mod tests {
             },
             shutdown,
             supervisor,
+            billing,
             database,
+            Duration::from_secs(1),
             Duration::from_secs(1),
         )
         .await;
@@ -761,8 +912,75 @@ mod tests {
         assert!(matches!(result, Err(BootstrapError::Http(_))));
         assert_eq!(
             events.lock().unwrap().as_slice(),
-            ["http_finished", "background_stopped"]
+            ["http_finished", "background_stopped", "billing_flushed"]
         );
         assert!(observer.ping().await.is_err());
+        let _ = fs::remove_dir_all(wal_directory);
+    }
+
+    #[tokio::test]
+    async fn shutdown_final_flush_reports_pending_events_before_database_close() {
+        let database = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let observer = database.clone();
+        let shutdown = ShutdownController::new();
+        let supervisor = BackgroundTaskSupervisor::new(shutdown.clone());
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let serial = NEXT_FILE.fetch_add(1, Ordering::Relaxed);
+        let wal_directory = std::env::temp_dir().join(format!(
+            "anyflows-bootstrap-final-flush-{}-{serial}",
+            std::process::id()
+        ));
+        let batcher = FileBillingBatcher::open(
+            &wal_directory,
+            Arc::new(OrderedBillingSink {
+                events: Arc::clone(&events),
+            }),
+        )
+        .unwrap();
+        let billing = BillingRuntime::from_batcher(batcher, true, Duration::from_secs(1));
+        billing.record(billing_event()).await.unwrap();
+
+        let report = run_http_and_shutdown(
+            async { Ok(ServeOutcome::Drained) },
+            shutdown,
+            supervisor,
+            billing,
+            database,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report.billing.confirmed_batches(), 1);
+        assert_eq!(report.billing.confirmed_events(), 1);
+        assert_eq!(events.lock().unwrap().as_slice(), ["billing_flushed"]);
+        assert!(observer.ping().await.is_err());
+        let _ = fs::remove_dir_all(wal_directory);
+    }
+
+    fn billing_event() -> BillingBatchEvent {
+        let mut event_id = [0_u8; 16];
+        event_id[15] = 1;
+        BillingBatchEvent::new(
+            BillingReservationId::new(event_id).unwrap(),
+            Some(
+                UserBillingDelta::new(
+                    UserId::new(1).unwrap(),
+                    QuotaDelta::new(-1).unwrap(),
+                    QuotaDelta::new(1).unwrap(),
+                    1,
+                )
+                .unwrap(),
+            ),
+            None,
+            None,
+        )
+        .unwrap()
     }
 }

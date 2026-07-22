@@ -1,13 +1,15 @@
 //! AnyFlows 进程启动编排、后台任务监督与优雅关闭。
 
+mod billing_runtime;
 mod bootstrap;
 mod readiness;
 mod shutdown;
 mod supervisor;
 
+pub use billing_runtime::{BillingFlushReport, BillingRuntime, BillingRuntimeError};
 pub use bootstrap::{
-    AuthenticationReady, Bootstrap, BootstrapError, Configured, DatabaseReady, ListenerReady,
-    RelayReady, RouterReady, ShutdownReport, Supervised, TelemetryReady, run,
+    AuthenticationReady, BillingReady, Bootstrap, BootstrapError, Configured, DatabaseReady,
+    ListenerReady, RelayReady, RouterReady, ShutdownReport, Supervised, TelemetryReady, run,
 };
 pub use shutdown::{ShutdownController, system_shutdown_signal};
 pub use supervisor::{BackgroundTaskSupervisor, SupervisorError, SupervisorShutdown};

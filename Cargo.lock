@@ -171,6 +171,7 @@ name = "af-server"
 version = "0.1.0"
 dependencies = [
  "af-admin",
+ "af-billing",
  "af-config",
  "af-db",
  "af-domain",
