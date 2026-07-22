@@ -339,11 +339,39 @@ fn rejects_unknown_top_level_and_nested_fields() {
 #[test]
 fn preserves_explicit_streaming_mode() {
     let request = parse_request(
-        br#"{"model":"gpt-test","messages":[{"role":"user","content":"hello"}],"stream":true}"#,
+        br#"{"model":"gpt-test","messages":[{"role":"user","content":"hello"}],"stream":true,"stream_options":{"include_usage":true}}"#,
     )
     .unwrap();
 
     assert!(request.stream);
+    assert!(request.stream_options.include_usage());
+}
+
+#[test]
+fn stream_options_require_stream_and_reject_unknown_fields() {
+    assert_eq!(
+        parse_request(
+            br#"{"model":"gpt-test","messages":[{"role":"user","content":"hello"}],"stream_options":{"include_usage":true}}"#,
+        ),
+        Err(ParseRequestError::InvalidValue)
+    );
+    assert_eq!(
+        parse_request(
+            br#"{"model":"gpt-test","messages":[{"role":"user","content":"hello"}],"stream_options":{"include_usage":false}}"#,
+        ),
+        Err(ParseRequestError::InvalidValue)
+    );
+    let disabled = parse_request(
+        br#"{"model":"gpt-test","messages":[{"role":"user","content":"hello"}],"stream":true,"stream_options":{"include_usage":false}}"#,
+    )
+    .unwrap();
+    assert!(!disabled.stream_options.include_usage());
+    assert_eq!(
+        parse_request(
+            br#"{"model":"gpt-test","messages":[{"role":"user","content":"hello"}],"stream":true,"stream_options":{"include_obfuscation":false}}"#,
+        ),
+        Err(ParseRequestError::UnsupportedFeature)
+    );
 }
 
 #[test]

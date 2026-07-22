@@ -12,14 +12,14 @@ use super::{
         AssistantContentWire, AssistantMessageWire, ChatRequestWire, DeveloperMessageWire, Field,
         FunctionDefinitionWire, FunctionTypeWire, ImageDetailWire, InputAudioFormatWire,
         MessageWire, NamedFunctionWire, NamedToolChoiceWire, ReasoningEffortWire, StopWire,
-        SystemMessageWire, TextContentWire, TextPartWire, ToolCallWire, ToolChoiceModeWire,
-        ToolChoiceWire, ToolMessageWire, ToolWire, UserContentPartWire, UserContentWire,
-        UserMessageWire,
+        StreamOptionsWire, SystemMessageWire, TextContentWire, TextPartWire, ToolCallWire,
+        ToolChoiceModeWire, ToolChoiceWire, ToolMessageWire, ToolWire, UserContentPartWire,
+        UserContentWire, UserMessageWire,
     },
 };
 use crate::{
     CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningConfig, ReasoningEffort,
-    RequestMetadata, Sampling, TokenCount, ToolChoice, ToolDef,
+    RequestMetadata, Sampling, StreamOptions, TokenCount, ToolChoice, ToolDef,
 };
 
 pub(super) const MAX_MESSAGES: usize = 256;
@@ -89,7 +89,6 @@ const UNSUPPORTED_TOP_LEVEL_FIELDS: &[&str] = &[
     "prompt_cache_breakpoint",
     "prompt_cache_options",
     "response_format",
-    "stream_options",
     "web_search_options",
 ];
 
@@ -125,6 +124,7 @@ pub(super) fn convert_request(
         wire.stop,
     )?;
     let stream = convert_stream(wire.stream)?;
+    let stream_options = convert_stream_options(wire.stream_options, stream)?;
     let metadata = convert_metadata(wire.user)?;
     let messages = convert_messages(wire.messages)?;
 
@@ -133,8 +133,26 @@ pub(super) fn convert_request(
     request.tool_choice = tool_choice;
     request.reasoning = reasoning;
     request.sampling = sampling;
+    request.stream_options = stream_options;
     request.metadata = metadata;
     Ok(request.with_validated_raw_passthrough(raw.map(|fields| (Protocol::OpenAiChat, fields))))
+}
+
+fn convert_stream_options(
+    options: Field<StreamOptionsWire>,
+    stream: bool,
+) -> Result<StreamOptions, ParseRequestError> {
+    let Field::Value(options) = options else {
+        return Ok(StreamOptions::EMPTY);
+    };
+    if !stream {
+        return Err(ParseRequestError::InvalidValue);
+    }
+    let include_usage = match options.include_usage {
+        Field::Missing | Field::Value(false) => false,
+        Field::Value(true) => true,
+    };
+    Ok(StreamOptions::new(include_usage))
 }
 
 pub(super) fn validate_model(model: &str) -> Result<(), ParseRequestError> {

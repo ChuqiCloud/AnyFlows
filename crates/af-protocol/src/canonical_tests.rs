@@ -18,6 +18,7 @@ fn new_request_uses_explicit_canonical_defaults() {
     assert_eq!(request.sampling.top_p(), None);
     assert_eq!(request.sampling.max_output_tokens(), None);
     assert!(request.sampling.stop_sequences().is_empty());
+    assert_eq!(request.stream_options, crate::StreamOptions::EMPTY);
     assert!(request.attachments.is_empty());
     assert_eq!(request.metadata, RequestMetadata::EMPTY);
     assert_eq!(request.raw_passthrough(), None);

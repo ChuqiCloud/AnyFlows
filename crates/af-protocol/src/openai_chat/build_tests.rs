@@ -7,6 +7,7 @@ use serde_json::{Map, Value, json};
 use super::{BuildRequestError, build_request, parse_request};
 use crate::{
     Attachment, CacheHint, CanonicalRequest, ContentBlock, MediaSource, Message, RequestMetadata,
+    StreamOptions,
 };
 
 fn parsed_request(value: Value) -> CanonicalRequest {
@@ -169,11 +170,20 @@ fn rejects_wrong_operation_and_unmapped_request_fields() {
 
     let mut streaming = minimal_request();
     streaming.stream = true;
+    streaming.stream_options = StreamOptions::new(true);
     let streaming_value = build_request(&streaming).unwrap();
     assert_eq!(streaming_value["stream"], true);
+    assert_eq!(streaming_value["stream_options"]["include_usage"], true);
     assert_eq!(
         parse_request(&serde_json::to_vec(&streaming_value).unwrap()).unwrap(),
         streaming
+    );
+
+    let mut invalid_options = minimal_request();
+    invalid_options.stream_options = StreamOptions::new(true);
+    assert_eq!(
+        build_request(&invalid_options),
+        Err(BuildRequestError::InvalidValue)
     );
 
     let mut attachments = minimal_request();

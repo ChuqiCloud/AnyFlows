@@ -55,11 +55,11 @@ pub(crate) async fn chat_completions(
         .await
         .map_err(OpenAiHttpError::from)?;
     match response {
-        OpenAiChatResponse::Full(body) => {
+        OpenAiChatResponse::Full { body, usage: _ } => {
             Ok((StatusCode::OK, [(CONTENT_TYPE, "application/json")], body).into_response())
         }
-        OpenAiChatResponse::Stream(stream) => {
-            let mut response = openai_chat_body(stream, state.stream_delivery).into_response();
+        OpenAiChatResponse::Stream { body, usage: _ } => {
+            let mut response = openai_chat_body(body, state.stream_delivery).into_response();
             response.headers_mut().insert(
                 CONTENT_TYPE,
                 HeaderValue::from_static("text/event-stream; charset=utf-8"),

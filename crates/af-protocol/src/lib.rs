@@ -13,7 +13,7 @@ pub use canonical::{
 };
 pub use request::{
     Attachment, ReasoningConfig, ReasoningConfigError, ReasoningEffort, RequestMetadata, Sampling,
-    SamplingError, ToolChoice, ToolDef,
+    SamplingError, StreamOptions, ToolChoice, ToolDef,
 };
 pub use response::{CanonicalResponse, ResponseChoice};
 pub use stream::{CanonicalStreamEvent, ContentDelta, FinishReason};

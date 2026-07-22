@@ -11,13 +11,14 @@ use af_adapter::{
 };
 use af_domain::{AfError, GatewayPrincipal, MAX_MODEL_NAME_BYTES, UpstreamError};
 use af_protocol::{
-    CanonicalRequest,
+    CanonicalRequest, StreamOptions,
     openai_chat::{OpenAiChatStreamEncoder, build_request, parse_response},
 };
 
 use crate::{
-    OpenAiChatStream, RelayBuildError,
+    OpenAiChatStream, OpenAiChatUsageHandle, RelayBuildError, UsageResolutionError,
     error::{classify_upstream_status, map_adaptor_error},
+    openai_chat_usage::OpenAiChatUsageEstimator,
 };
 
 const STREAM_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -66,16 +67,23 @@ impl RelayService {
     pub async fn chat_completions(
         &self,
         _principal: &GatewayPrincipal,
-        canonical: CanonicalRequest,
+        mut canonical: CanonicalRequest,
         request_id: &str,
     ) -> Result<OpenAiChatResponse, AfError> {
         if canonical.model != self.model {
             return Err(UpstreamError::ModelUnsupported.into());
         }
+        let include_usage = canonical.stream_options.include_usage();
+        if canonical.stream {
+            // 上游 usage 是内部结算优先数据；客户端是否可见由 include_usage 单独控制。
+            canonical.stream_options = StreamOptions::new(true);
+        }
         let outbound_value = build_request(&canonical).map_err(|_| AfError::InvalidRequest)?;
         let outbound_body = serde_json::to_vec(&outbound_value)
             .map(Bytes::from)
             .map_err(|_| AfError::Internal)?;
+        // 先由协议构造器完成全部容量与结构校验，再让 tokenizer 处理规范化请求。
+        let usage_estimator = OpenAiChatUsageEstimator::new(&canonical);
 
         let context = self
             .context
@@ -118,11 +126,20 @@ impl RelayService {
             let response_id = format!("chatcmpl-{request_id}");
             let encoder = OpenAiChatStreamEncoder::new(response_id, &canonical.model, created)
                 .map_err(|_| AfError::Internal)?;
-            let stream = OpenAiChatStream::new(response.into_body(), encoder)
+            let (stream, usage) = OpenAiChatStream::new(
+                response.into_body(),
+                encoder,
+                usage_estimator,
+                include_usage,
+            );
+            let stream = stream
                 .prefetch_first(STREAM_FIRST_EVENT_TIMEOUT)
                 .await
                 .map_err(AfError::from)?;
-            return Ok(OpenAiChatResponse::Stream(Box::new(stream)));
+            return Ok(OpenAiChatResponse::Stream {
+                body: Box::new(stream),
+                usage,
+            });
         }
 
         let body = response
@@ -130,8 +147,9 @@ impl RelayService {
             .into_bytes()
             .await
             .map_err(|error| AfError::from(map_adaptor_error(error)))?;
-        parse_response(&body).map_err(|_| UpstreamError::ProtocolError)?;
-        Ok(OpenAiChatResponse::Full(body))
+        let canonical_response = parse_response(&body).map_err(|_| UpstreamError::ProtocolError)?;
+        let usage = usage_estimator.resolve_response(&canonical_response);
+        Ok(OpenAiChatResponse::Full { body, usage })
     }
 }
 
@@ -150,23 +168,33 @@ impl fmt::Debug for RelayService {
 /// 已完成 OpenAI Chat 协议校验的完整或流式同协议响应。
 pub enum OpenAiChatResponse {
     /// 完整解析通过后保留的非流式 JSON 字节。
-    Full(Bytes),
+    Full {
+        /// 写入下游的原始同协议响应。
+        body: Bytes,
+        /// 上游 usage 或本地受控估算结果。
+        usage: Result<af_protocol::Usage, UsageResolutionError>,
+    },
     /// 按 Canonical 事件逐段转换的 SSE 字节流。
-    Stream(Box<OpenAiChatStream>),
+    Stream {
+        /// 写入下游的 Canonical 重编码流。
+        body: Box<OpenAiChatStream>,
+        /// 流完整结束后只可消费一次的 usage 结果。
+        usage: OpenAiChatUsageHandle,
+    },
 }
 
 impl fmt::Debug for OpenAiChatResponse {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Full(body) => formatter
+            Self::Full { body, usage: _ } => formatter
                 .debug_struct("OpenAiChatResponse")
                 .field("mode", &"full")
                 .field("body_bytes", &body.len())
                 .finish(),
-            Self::Stream(stream) => formatter
+            Self::Stream { body, usage: _ } => formatter
                 .debug_struct("OpenAiChatResponse")
                 .field("mode", &"stream")
-                .field("body", stream)
+                .field("body", body)
                 .finish(),
         }
     }
@@ -282,7 +310,10 @@ mod tests {
 
     #[test]
     fn verified_response_debug_never_contains_body() {
-        let response = OpenAiChatResponse::Full(Bytes::from_static(b"response-body-secret"));
+        let response = OpenAiChatResponse::Full {
+            body: Bytes::from_static(b"response-body-secret"),
+            usage: Err(UsageResolutionError::EstimationFailed),
+        };
         let debug = format!("{response:?}");
         assert!(debug.contains("body_bytes"));
         assert!(!debug.contains("response-body-secret"));

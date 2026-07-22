@@ -457,6 +457,27 @@ fn encoder_emits_openai_shape_and_exact_done_marker() {
 }
 
 #[test]
+fn encoder_can_emit_null_usage_on_regular_chunks() {
+    let mut encoder = OpenAiChatStreamEncoder::new("chatcmpl-usage-null", "gpt-usage", 42)
+        .unwrap()
+        .with_usage_null_fields(true);
+    let role = encoder
+        .encode(CanonicalStreamEvent::MessageStart {
+            choice_index: 0,
+            role: Role::Assistant,
+        })
+        .unwrap();
+    let data = role
+        .strip_prefix(b"data: ")
+        .and_then(|data| data.strip_suffix(b"\n\n"))
+        .unwrap();
+    let value: Value = serde_json::from_slice(data).unwrap();
+
+    assert!(value.get("usage").is_some());
+    assert!(value["usage"].is_null());
+}
+
+#[test]
 fn encoder_rejects_unsupported_events_invalid_sequences_and_reuse() {
     assert_eq!(
         OpenAiChatStreamEncoder::new("", "private-model", 0).unwrap_err(),

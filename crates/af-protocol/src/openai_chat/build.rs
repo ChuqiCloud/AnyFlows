@@ -50,6 +50,18 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
     root.insert("model".to_owned(), Value::String(request.model.clone()));
     root.insert("messages".to_owned(), Value::Array(messages));
     root.insert("stream".to_owned(), Value::Bool(request.stream));
+    if request.stream_options.include_usage() {
+        if !request.stream {
+            return Err(BuildRequestError::InvalidValue);
+        }
+        root.insert(
+            "stream_options".to_owned(),
+            Value::Object(Map::from_iter([(
+                "include_usage".to_owned(),
+                Value::Bool(true),
+            )])),
+        );
+    }
     if !tools.is_empty() {
         root.insert("tools".to_owned(), Value::Array(tools));
     }

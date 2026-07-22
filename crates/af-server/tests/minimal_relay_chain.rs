@@ -73,7 +73,7 @@ async fn invalid_requests_and_wrong_model_never_reach_upstream() {
         ),
         (
             "POST",
-            br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}],"stream":true,"stream_options":{"include_usage":true}}"#.as_slice(),
+            br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}],"stream":true,"stream_options":{"include_obfuscation":false}}"#.as_slice(),
             400,
             "invalid_request",
         ),
@@ -127,8 +127,7 @@ data: [DONE]
     let (proxy_address, captured, release, proxy) = spawn_streaming_proxy(first, rest);
     let (address, shutdown, server) = start_server(proxy_address, ServerConfig::default()).await;
     let authorization = format!("Bearer {CLIENT_KEY}");
-    let request_body =
-        br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}],"stream":true}"#;
+    let request_body = br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}],"stream":true,"stream_options":{"include_usage":true}}"#;
     let mut client = connect_and_send(address, request_body, &authorization).await;
 
     let first_response = read_until(&mut client, b"first-part").await;
@@ -146,6 +145,7 @@ data: [DONE]
     let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
     let upstream_json: Value = serde_json::from_slice(&upstream.body).unwrap();
     assert_eq!(upstream_json["stream"], true);
+    assert_eq!(upstream_json["stream_options"]["include_usage"], true);
     release.send(()).unwrap();
 
     let mut complete = first_response;
@@ -155,6 +155,8 @@ data: [DONE]
         .unwrap();
     let complete = String::from_utf8_lossy(&complete);
     assert!(complete.contains("second-part"));
+    assert!(complete.contains("\"usage\":{"));
+    assert!(complete.contains("\"prompt_tokens\""));
     assert!(complete.contains("data: [DONE]"));
     assert!(complete.contains("chat.completion.chunk"));
     assert!(!complete.contains("upstream-private-id"));
@@ -175,8 +177,12 @@ async fn client_disconnect_aborts_pending_upstream_stream() {
         br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}],"stream":true}"#;
     let mut client = connect_and_send(address, request_body, &authorization).await;
     let response = read_until(&mut client, b"abort-first-part").await;
-    assert!(!String::from_utf8_lossy(&response).contains("abort-private-id"));
-    captured.recv_timeout(IO_TIMEOUT).unwrap();
+    let response = String::from_utf8_lossy(&response);
+    assert!(!response.contains("abort-private-id"));
+    assert!(!response.contains("\"usage\""));
+    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    let upstream_json: Value = serde_json::from_slice(&upstream.body).unwrap();
+    assert_eq!(upstream_json["stream_options"]["include_usage"], true);
     drop(client);
 
     timeout(IO_TIMEOUT, async {

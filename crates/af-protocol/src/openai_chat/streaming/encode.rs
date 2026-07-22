@@ -29,6 +29,7 @@ pub struct OpenAiChatStreamEncoder {
     choices: BTreeMap<u32, ChoiceState>,
     totals: EncodeTotals,
     usage_seen: bool,
+    include_usage_null: bool,
     done: bool,
     failed: bool,
 }
@@ -46,9 +47,20 @@ impl OpenAiChatStreamEncoder {
             choices: BTreeMap::new(),
             totals: EncodeTotals::default(),
             usage_seen: false,
+            include_usage_null: false,
             done: false,
             failed: false,
         })
+    }
+
+    /// 控制普通 JSON chunk 是否显式输出 `usage: null`。
+    ///
+    /// OpenAI 的 `stream_options.include_usage` 契约要求最终 usage 块之前的其他
+    /// JSON chunk 均携带空 usage；未请求时保持字段缺省。
+    #[must_use]
+    pub const fn with_usage_null_fields(mut self, enabled: bool) -> Self {
+        self.include_usage_null = enabled;
+        self
     }
 
     /// 编码一个 Canonical 事件；工具结束事件只更新状态，因此可能返回空字节。
@@ -84,6 +96,7 @@ impl OpenAiChatStreamEncoder {
                         ..EncodedDelta::default()
                     },
                     None,
+                    self.include_usage_null,
                 )?;
                 self.choices.insert(choice_index, ChoiceState::default());
                 Ok(bytes)
@@ -112,6 +125,7 @@ impl OpenAiChatStreamEncoder {
                         ..EncodedDelta::default()
                     },
                     None,
+                    self.include_usage_null,
                 )
             }
             CanonicalStreamEvent::ReasoningDelta {
@@ -139,6 +153,7 @@ impl OpenAiChatStreamEncoder {
                         ..EncodedDelta::default()
                     },
                     None,
+                    self.include_usage_null,
                 )
             }
             CanonicalStreamEvent::ToolCallStart {
@@ -172,6 +187,7 @@ impl OpenAiChatStreamEncoder {
                         ..EncodedDelta::default()
                     },
                     None,
+                    self.include_usage_null,
                 )?;
                 state.tools.insert(tool_index, ToolState::default());
                 self.totals.tool_calls += 1;
@@ -215,6 +231,7 @@ impl OpenAiChatStreamEncoder {
                         ..EncodedDelta::default()
                     },
                     None,
+                    self.include_usage_null,
                 )?;
                 tool.arguments.push_str(&partial_json);
                 self.totals.argument_bytes = next_total_bytes;
@@ -260,6 +277,7 @@ impl OpenAiChatStreamEncoder {
                     choice_index,
                     EncodedDelta::default(),
                     Some(finish_reason(reason)),
+                    self.include_usage_null,
                 )?;
                 state.finished = true;
                 Ok(bytes)
@@ -297,6 +315,7 @@ impl fmt::Debug for OpenAiChatStreamEncoder {
             .field("metadata", &"<已脱敏>")
             .field("choice_count", &self.choices.len())
             .field("usage_seen", &self.usage_seen)
+            .field("include_usage_null", &self.include_usage_null)
             .field("done", &self.done)
             .field("failed", &self.failed)
             .finish()
@@ -413,6 +432,7 @@ fn encode_choice_chunk(
     choice_index: u32,
     delta: EncodedDelta<'_>,
     finish_reason: Option<&'static str>,
+    include_usage_null: bool,
 ) -> Result<Vec<u8>, EncodeStreamError> {
     encode_chunk(EncodedChunk {
         id: &identity.id,
@@ -425,7 +445,7 @@ fn encode_choice_chunk(
             logprobs: None,
             finish_reason,
         }],
-        usage: None,
+        usage: include_usage_null.then_some(None),
     })
 }
 
@@ -439,7 +459,7 @@ fn encode_usage_chunk(
         created: identity.created,
         model: &identity.model,
         choices: Vec::new(),
-        usage: Some(usage),
+        usage: Some(Some(usage)),
     })
 }
 
