@@ -114,6 +114,8 @@ dependencies = [
  "af-telemetry",
  "axum",
  "axum-server",
+ "futures-core",
+ "futures-util",
  "http",
  "serde_json",
  "thiserror",
@@ -159,8 +161,10 @@ dependencies = [
  "af-adapter",
  "af-domain",
  "af-protocol",
+ "futures-core",
  "serde_json",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

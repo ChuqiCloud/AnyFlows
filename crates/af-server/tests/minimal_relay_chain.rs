@@ -18,9 +18,14 @@ use af_relay::RelayService;
 use serde_json::Value;
 use support::{
     CLIENT_KEY, GROUP_ID, IO_TIMEOUT, TOKEN_ID, UPSTREAM_BASE_URL, UPSTREAM_KEY, UPSTREAM_MODEL,
-    USER_ID, send_request, spawn_proxy,
+    USER_ID, send_request, spawn_abort_observing_proxy, spawn_proxy, spawn_streaming_proxy,
 };
-use tokio::{sync::oneshot, time::timeout};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+    sync::oneshot,
+    time::timeout,
+};
 
 struct AlwaysReadyProbe;
 
@@ -68,7 +73,7 @@ async fn invalid_requests_and_wrong_model_never_reach_upstream() {
         ),
         (
             "POST",
-            br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}],"stream":true}"#.as_slice(),
+            br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}],"stream":true,"stream_options":{"include_usage":true}}"#.as_slice(),
             400,
             "invalid_request",
         ),
@@ -105,6 +110,117 @@ async fn invalid_requests_and_wrong_model_never_reach_upstream() {
         proxy.accept().unwrap_err().kind(),
         std::io::ErrorKind::WouldBlock
     ));
+}
+
+#[tokio::test]
+async fn streaming_response_is_incremental_canonical_and_unbuffered() {
+    let first = br#"data: {"id":"upstream-private-id","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":"first-part"},"finish_reason":null}]}
+
+"#;
+    let rest = br#"data: {"id":"upstream-private-id","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"content":"second-part"},"finish_reason":null}]}
+
+data: {"id":"upstream-private-id","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+
+"#;
+    let (proxy_address, captured, release, proxy) = spawn_streaming_proxy(first, rest);
+    let (address, shutdown, server) = start_server(proxy_address, ServerConfig::default()).await;
+    let authorization = format!("Bearer {CLIENT_KEY}");
+    let request_body =
+        br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}],"stream":true}"#;
+    let mut client = connect_and_send(address, request_body, &authorization).await;
+
+    let first_response = read_until(&mut client, b"first-part").await;
+    let first_text = String::from_utf8_lossy(&first_response);
+    let first_lower = first_text.to_ascii_lowercase();
+    assert!(first_lower.starts_with("http/1.1 200"));
+    assert!(first_lower.contains("content-type: text/event-stream; charset=utf-8"));
+    assert!(first_lower.contains("cache-control: no-cache, no-transform"));
+    assert!(first_lower.contains("x-accel-buffering: no"));
+    assert!(!first_lower.contains("content-encoding:"));
+    assert!(!first_text.contains("second-part"));
+    assert!(!first_text.contains("[DONE]"));
+    assert!(!first_text.contains("upstream-private-id"));
+
+    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    let upstream_json: Value = serde_json::from_slice(&upstream.body).unwrap();
+    assert_eq!(upstream_json["stream"], true);
+    release.send(()).unwrap();
+
+    let mut complete = first_response;
+    timeout(IO_TIMEOUT, client.read_to_end(&mut complete))
+        .await
+        .unwrap()
+        .unwrap();
+    let complete = String::from_utf8_lossy(&complete);
+    assert!(complete.contains("second-part"));
+    assert!(complete.contains("data: [DONE]"));
+    assert!(complete.contains("chat.completion.chunk"));
+    assert!(!complete.contains("upstream-private-id"));
+
+    stop_server(shutdown, server).await;
+    proxy.join().unwrap();
+}
+
+#[tokio::test]
+async fn client_disconnect_aborts_pending_upstream_stream() {
+    let first = br#"data: {"id":"abort-private-id","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":"abort-first-part"},"finish_reason":null}]}
+
+"#;
+    let (proxy_address, captured, aborted, proxy) = spawn_abort_observing_proxy(first);
+    let (address, shutdown, server) = start_server(proxy_address, ServerConfig::default()).await;
+    let authorization = format!("Bearer {CLIENT_KEY}");
+    let request_body =
+        br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}],"stream":true}"#;
+    let mut client = connect_and_send(address, request_body, &authorization).await;
+    let response = read_until(&mut client, b"abort-first-part").await;
+    assert!(!String::from_utf8_lossy(&response).contains("abort-private-id"));
+    captured.recv_timeout(IO_TIMEOUT).unwrap();
+    drop(client);
+
+    timeout(IO_TIMEOUT, async {
+        loop {
+            if aborted.try_recv().is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    stop_server(shutdown, server).await;
+    proxy.join().unwrap();
+}
+
+async fn connect_and_send(address: SocketAddr, body: &[u8], authorization: &str) -> TcpStream {
+    let mut client = TcpStream::connect(address).await.unwrap();
+    let request = format!(
+        "POST /v1/chat/completions HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nAuthorization: {authorization}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    client.write_all(request.as_bytes()).await.unwrap();
+    client.write_all(body).await.unwrap();
+    client
+}
+
+async fn read_until(client: &mut TcpStream, needle: &[u8]) -> Vec<u8> {
+    timeout(IO_TIMEOUT, async {
+        let mut response = Vec::new();
+        let mut buffer = [0_u8; 1_024];
+        while !response
+            .windows(needle.len())
+            .any(|window| window == needle)
+        {
+            let read = client.read(&mut buffer).await.unwrap();
+            assert!(read > 0, "SSE 目标内容到达前连接已关闭");
+            response.extend_from_slice(&buffer[..read]);
+        }
+        response
+    })
+    .await
+    .unwrap()
 }
 
 #[tokio::test]

@@ -1,22 +1,28 @@
-use std::{fmt, sync::Arc};
+use std::{
+    fmt,
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use af_adapter::{
     Adaptor, AdaptorSendExt, AdaptorSettings, Bytes, ChannelType, Credential, HeaderMap, Method,
-    OpenAiAdaptorSettings, Operation, PooledClient, RelayContext, StatusCode, UpstreamRequest,
-    get_adaptor,
+    OpenAiAdaptorSettings, Operation, PooledClient, RelayContext, ResponseMode, StatusCode,
+    UpstreamRequest, get_adaptor,
 };
 use af_domain::{AfError, GatewayPrincipal, MAX_MODEL_NAME_BYTES, UpstreamError};
 use af_protocol::{
     CanonicalRequest,
-    openai_chat::{build_request, parse_response},
+    openai_chat::{OpenAiChatStreamEncoder, build_request, parse_response},
 };
 
 use crate::{
-    RelayBuildError,
+    OpenAiChatStream, RelayBuildError,
     error::{classify_upstream_status, map_adaptor_error},
 };
 
-/// M0 单 OpenAI-compatible 上游的非流式转发服务。
+const STREAM_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// 静态单 OpenAI-compatible 上游的完整与流式转发服务。
 ///
 /// 本类型刻意不包含鉴权、计费、调度、重试或数据库渠道读取；这些能力将在 M1
 /// 替换静态单上游装配，但 HTTP 层仍只依赖本 crate 的转发入口。
@@ -53,7 +59,7 @@ impl RelayService {
         })
     }
 
-    /// 转发一次已认证且完成入站规范化的非流式请求，并返回经过协议校验的同协议响应。
+    /// 转发一次已认证且完成入站规范化的请求，并返回经过协议校验的同协议响应。
     ///
     /// 身份参数用于强制调用方保留请求归属，当前静态单上游阶段不会把它写入
     /// `RelayContext`、适配器或上游请求。
@@ -84,25 +90,48 @@ impl RelayService {
             .adaptor
             .build_url(&context, Operation::Chat)
             .map_err(|_| AfError::Internal)?;
+        let response_mode = if canonical.stream {
+            ResponseMode::Stream
+        } else {
+            ResponseMode::Full
+        };
         let request = UpstreamRequest::new(Method::POST, target, headers, Some(outbound_body))
-            .map_err(|_| AfError::Internal)?;
+            .map_err(|_| AfError::Internal)?
+            .with_response_mode(response_mode);
         let response = self
             .adaptor
             .send(request, &context)
             .await
             .map_err(|error| AfError::from(map_adaptor_error(error)))?;
         let status = response.status();
+        if status != StatusCode::OK {
+            let body = response
+                .into_body()
+                .into_bytes()
+                .await
+                .map_err(|error| AfError::from(map_adaptor_error(error)))?;
+            return Err(classify_upstream_status(status, &body).into());
+        }
+
+        if canonical.stream {
+            let created = unix_timestamp()?;
+            let response_id = format!("chatcmpl-{request_id}");
+            let encoder = OpenAiChatStreamEncoder::new(response_id, &canonical.model, created)
+                .map_err(|_| AfError::Internal)?;
+            let stream = OpenAiChatStream::new(response.into_body(), encoder)
+                .prefetch_first(STREAM_FIRST_EVENT_TIMEOUT)
+                .await
+                .map_err(AfError::from)?;
+            return Ok(OpenAiChatResponse::Stream(Box::new(stream)));
+        }
+
         let body = response
             .into_body()
             .into_bytes()
             .await
             .map_err(|error| AfError::from(map_adaptor_error(error)))?;
-
-        if status != StatusCode::OK {
-            return Err(classify_upstream_status(status, &body).into());
-        }
         parse_response(&body).map_err(|_| UpstreamError::ProtocolError)?;
-        Ok(OpenAiChatResponse { body })
+        Ok(OpenAiChatResponse::Full(body))
     }
 }
 
@@ -118,28 +147,28 @@ impl fmt::Debug for RelayService {
     }
 }
 
-/// 已完成 OpenAI Chat 协议校验的非流式同协议响应。
-///
-/// 当前协议层尚无成功响应 encoder，因此只允许 OpenAI Chat → OpenAI Chat 在完整
-/// 解析成功后保留原始字节；未来跨协议响应不得复用本类型。
-pub struct OpenAiChatResponse {
-    body: Bytes,
-}
-
-impl OpenAiChatResponse {
-    /// 消费响应并返回可写入 HTTP body 的已验证 JSON 字节。
-    #[must_use]
-    pub fn into_body(self) -> Bytes {
-        self.body
-    }
+/// 已完成 OpenAI Chat 协议校验的完整或流式同协议响应。
+pub enum OpenAiChatResponse {
+    /// 完整解析通过后保留的非流式 JSON 字节。
+    Full(Bytes),
+    /// 按 Canonical 事件逐段转换的 SSE 字节流。
+    Stream(Box<OpenAiChatStream>),
 }
 
 impl fmt::Debug for OpenAiChatResponse {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("OpenAiChatResponse")
-            .field("body_bytes", &self.body.len())
-            .finish()
+        match self {
+            Self::Full(body) => formatter
+                .debug_struct("OpenAiChatResponse")
+                .field("mode", &"full")
+                .field("body_bytes", &body.len())
+                .finish(),
+            Self::Stream(stream) => formatter
+                .debug_struct("OpenAiChatResponse")
+                .field("mode", &"stream")
+                .field("body", stream)
+                .finish(),
+        }
     }
 }
 
@@ -148,6 +177,14 @@ fn is_valid_model(model: &str) -> bool {
         && model.len() <= MAX_MODEL_NAME_BYTES
         && model.trim() == model
         && !model.chars().any(char::is_control)
+}
+
+fn unix_timestamp() -> Result<i64, AfError> {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| AfError::Internal)?
+        .as_secs();
+    i64::try_from(seconds).map_err(|_| AfError::Internal)
 }
 
 #[cfg(test)]
@@ -245,9 +282,7 @@ mod tests {
 
     #[test]
     fn verified_response_debug_never_contains_body() {
-        let response = OpenAiChatResponse {
-            body: Bytes::from_static(b"response-body-secret"),
-        };
+        let response = OpenAiChatResponse::Full(Bytes::from_static(b"response-body-secret"));
         let debug = format!("{response:?}");
         assert!(debug.contains("body_bytes"));
         assert!(!debug.contains("response-body-secret"));

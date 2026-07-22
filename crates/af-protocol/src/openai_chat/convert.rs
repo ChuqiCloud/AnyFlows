@@ -151,7 +151,7 @@ pub(super) fn validate_model(model: &str) -> Result<(), ParseRequestError> {
 fn convert_stream(stream: Field<bool>) -> Result<bool, ParseRequestError> {
     match stream {
         Field::Missing | Field::Value(false) => Ok(false),
-        Field::Value(true) => Err(ParseRequestError::UnsupportedFeature),
+        Field::Value(true) => Ok(true),
     }
 }
 

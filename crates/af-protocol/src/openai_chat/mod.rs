@@ -46,10 +46,10 @@ const REQUEST_JSON_LIMITS: JsonLimits = JsonLimits {
     max_key_bytes: 1_024,
 };
 
-/// 解析非流式 OpenAI Chat Completions 请求。
+/// 解析 OpenAI Chat Completions 请求。
 ///
 /// 本函数是协议输入的信任边界，会拒绝重复 JSON 键、结构超限、未知字段和
-/// 当前 Canonical IR 无法无损表达的请求特性。
+/// 当前 Canonical IR 无法无损表达的请求特性；`stream` 模式会保留到 Canonical。
 pub fn parse_request(body: &[u8]) -> Result<CanonicalRequest, ParseRequestError> {
     if body.len() > MAX_BODY_BYTES {
         return Err(ParseRequestError::BodyTooLarge);

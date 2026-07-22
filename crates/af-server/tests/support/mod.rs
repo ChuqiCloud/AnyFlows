@@ -162,6 +162,73 @@ pub fn spawn_proxy(
     (address, captured_rx, handle)
 }
 
+/// 启动分两段发送的 SSE 上游；第二段只在测试显式放行后写出。
+pub fn spawn_streaming_proxy(
+    first: &[u8],
+    rest: &[u8],
+) -> (
+    SocketAddr,
+    mpsc::Receiver<CapturedRequest>,
+    mpsc::Sender<()>,
+    thread::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let first = first.to_vec();
+    let rest = rest.to_vec();
+    let (captured_tx, captured_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
+        stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
+        captured_tx.send(read_proxy_request(&mut stream)).unwrap();
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n",
+            )
+            .unwrap();
+        stream.write_all(&first).unwrap();
+        stream.flush().unwrap();
+        release_rx.recv_timeout(IO_TIMEOUT).unwrap();
+        stream.write_all(&rest).unwrap();
+        stream.flush().unwrap();
+    });
+    (address, captured_rx, release_tx, handle)
+}
+
+/// 启动在首段 SSE 后等待连接关闭的上游，用于验证客户端断连传播。
+pub fn spawn_abort_observing_proxy(
+    first: &[u8],
+) -> (
+    SocketAddr,
+    mpsc::Receiver<CapturedRequest>,
+    mpsc::Receiver<()>,
+    thread::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let first = first.to_vec();
+    let (captured_tx, captured_rx) = mpsc::channel();
+    let (aborted_tx, aborted_rx) = mpsc::channel();
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
+        stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
+        captured_tx.send(read_proxy_request(&mut stream)).unwrap();
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\n")
+            .unwrap();
+        stream.write_all(&first).unwrap();
+        stream.flush().unwrap();
+
+        let mut byte = [0_u8; 1];
+        assert_eq!(stream.read(&mut byte).unwrap(), 0, "上游连接未随客户端断开");
+        aborted_tx.send(()).unwrap();
+    });
+    (address, captured_rx, aborted_rx, handle)
+}
+
 fn read_proxy_request(stream: &mut StdTcpStream) -> CapturedRequest {
     let mut request = Vec::with_capacity(1_024);
     let mut buffer = [0_u8; 512];
