@@ -44,6 +44,7 @@ figment = { version = "0.10.19", default-features = false, features = [
     "env",
     "toml",
 ] }
+fs2 = "0.4.3"
 futures-core = "0.3.32"
 futures-util = "0.3.32"
 getrandom = "0.4.3"

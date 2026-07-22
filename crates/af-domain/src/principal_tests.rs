@@ -1,4 +1,4 @@
-use super::{GatewayPrincipal, GroupId, PrincipalIdError, TokenId, UserId};
+use super::{ChannelId, GatewayPrincipal, GroupId, PrincipalIdError, TokenId, UserId};
 
 #[test]
 fn principal_ids_accept_only_positive_values() {
@@ -12,6 +12,7 @@ fn principal_ids_accept_only_positive_values() {
     assert_eq!(TokenId::new(1).unwrap().get(), 1);
     assert_eq!(UserId::try_from(i64::MAX).unwrap().get(), i64::MAX);
     assert_eq!(GroupId::new(42).unwrap().get(), 42);
+    assert_eq!(ChannelId::new(7).unwrap().get(), 7);
 }
 
 #[test]
@@ -38,11 +39,13 @@ fn principal_debug_output_redacts_all_identifiers() {
         format!("{:?}", principal.token_id()),
         format!("{:?}", principal.user_id()),
         format!("{:?}", principal.group_id()),
+        format!("{:?}", ChannelId::new(400_004).unwrap()),
         format!("{principal:?}"),
     ] {
         assert!(rendered.contains("<redacted>"));
         assert!(!rendered.contains("100001"));
         assert!(!rendered.contains("200002"));
         assert!(!rendered.contains("300003"));
+        assert!(!rendered.contains("400004"));
     }
 }
