@@ -9,6 +9,9 @@ mod billing_batch_tests;
 mod connection;
 mod entity;
 mod error;
+mod group_pricing;
+#[cfg(test)]
+mod group_pricing_tests;
 mod migration;
 mod model_price;
 #[cfg(test)]
@@ -29,6 +32,11 @@ pub use billing_batch::{
 pub use connection::DatabasePool;
 pub(crate) use connection::connect;
 pub use error::{DatabaseError, DatabaseOptionsError};
+pub use group_pricing::{
+    GroupModelRatioRecord, GroupPeakPricingRecord, GroupPricingCatalog, GroupPricingRecord,
+    GroupPricingRepository, GroupPricingRepositoryError, MAX_GROUP_MODEL_RATIO_ENTRIES,
+    MAX_GROUP_PRICING_ENTRIES,
+};
 pub use migration::{MigrationOptions, run_pending_migrations};
 pub use model_price::{
     MAX_MODEL_PRICE_ENTRIES, ModelPriceBillingMode, ModelPriceRecord, ModelPriceRepository,

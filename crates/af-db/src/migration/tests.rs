@@ -22,13 +22,13 @@ use crate::entity::{
     BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
     EncryptedJson, HeaderOverrides, PasswordHash, SensitiveDecimal, SensitiveJson, SensitiveString,
     TokenHash, TokenIpAllowlist, abilities, billing_batch_checkpoints, billing_reservations,
-    channel_groups, channel_models, channels, credentials, groups, model_prices, options, tokens,
-    users,
+    channel_groups, channel_models, channels, credentials, group_model_ratios, groups,
+    model_prices, options, tokens, users,
 };
 use crate::{
     BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome, ChannelBillingWrite,
-    DatabaseOptions, ModelPriceBillingMode, ModelPriceRepository, PoolOptions,
-    QuotaMutationOutcome, QuotaRepository, QuotaReservationStatus, TokenAuthLookup,
+    DatabaseOptions, GroupPricingRepository, ModelPriceBillingMode, ModelPriceRepository,
+    PoolOptions, QuotaMutationOutcome, QuotaRepository, QuotaReservationStatus, TokenAuthLookup,
     TokenAuthLookupOutcome, TokenAuthRepository, TokenBillingWrite, UserBillingWrite, connect,
 };
 
@@ -47,7 +47,7 @@ const RESERVATION_KEY_A: &str = "11111111111111111111111111111111";
 const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
-const CORE_TABLES: [&str; 12] = [
+const CORE_TABLES: [&str; 13] = [
     "groups",
     "users",
     "channels",
@@ -60,6 +60,7 @@ const CORE_TABLES: [&str; 12] = [
     "billing_reservations",
     "billing_batch_checkpoints",
     "model_prices",
+    "group_model_ratios",
 ];
 
 struct SlowMigrator;
@@ -251,6 +252,38 @@ async fn model_price_migration_smoke() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[tokio::test]
+#[ignore = "仅由显式启用的隔离数据库分组计费流水线执行"]
+async fn group_pricing_migration_smoke() -> Result<(), Box<dyn Error>> {
+    let database_url = test_database_url();
+    validate_destructive_test_target(
+        &database_url,
+        env::var(ALLOW_DESTRUCTIVE_MIGRATION_TEST).ok().as_deref(),
+    )?;
+    let options = DatabaseOptions::new(database_url)?.with_pool_options(PoolOptions {
+        min_connections: 1,
+        max_connections: 4,
+        ..PoolOptions::default()
+    });
+    let pool = connect(&options).await?;
+    let manager = SchemaManager::new(pool.connection());
+    let groups_migration = m20260718_000001_create_groups::Migration;
+    let group_pricing_migration = m20260723_000013_create_group_model_ratios::Migration;
+
+    groups_migration.up(&manager).await?;
+    group_pricing_migration.up(&manager).await?;
+    assert!(manager.has_table("groups").await?);
+    assert!(manager.has_table("group_model_ratios").await?);
+    exercise_group_pricing_repository(&pool).await?;
+    group_pricing_migration.down(&manager).await?;
+    assert!(!manager.has_table("group_model_ratios").await?);
+    groups_migration.down(&manager).await?;
+    assert!(!manager.has_table("groups").await?);
+
+    pool.close().await?;
+    Ok(())
+}
+
 /// 在三方言隔离数据库中验证高精度价格与显式免费模式读取一致。
 async fn exercise_model_price_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
     model_prices::ActiveModel {
@@ -303,6 +336,35 @@ async fn exercise_model_price_repository(pool: &DatabasePool) -> Result<(), Box<
         .ok_or("免费模型必须存在")?;
     assert_eq!(free.billing_mode(), ModelPriceBillingMode::Free);
     assert_eq!(free.prices(), [Decimal::ZERO; 5]);
+    Ok(())
+}
+
+/// 在三方言隔离数据库中验证分组基础、高峰与跨分组附加倍率读取一致。
+async fn exercise_group_pricing_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let source = group_active_model("smoke-source", "冒烟来源分组")
+        .insert(pool.connection())
+        .await?;
+    let mut target = group_active_model("smoke-target", "冒烟目标分组");
+    target.ratio_micros = Set(1_200_000);
+    target.peak_ratio_micros = Set(Some(2_000_000));
+    target.peak_start = Set(Some(fixed_peak_time()));
+    target.peak_end = Set(Some(fixed_peak_end_time()));
+    let target = target.insert(pool.connection()).await?;
+    group_model_ratios::ActiveModel {
+        source_group_id: Set(source.id),
+        target_group_id: Set(target.id),
+        ratio_micros: Set(750_000),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+
+    let catalog = GroupPricingRepository::new(pool.clone())
+        .load_snapshot()
+        .await?;
+    assert_eq!(catalog.groups().len(), 2);
+    assert_eq!(catalog.group_model_ratios().len(), 1);
+    assert_eq!(catalog.group_model_ratios()[0].ratio_micros(), 750_000);
     Ok(())
 }
 
@@ -759,6 +821,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         "billing_batch_checkpoints",
     )
     .await?;
+    assert_entity_columns::<group_model_ratios::Column>(&manager, "group_model_ratios").await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -784,6 +847,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "billing_reservations",
             "idx_billing_reservations_token_created",
         ),
+        ("group_model_ratios", "idx_group_model_ratios_target"),
     ] {
         assert!(
             manager.has_index(table, index).await?,
@@ -846,6 +910,7 @@ async fn assert_updated_at_behaviors(connection: &DatabaseConnection) -> Result<
     assert_behavior!(channel_models::ActiveModel);
     assert_behavior!(channels::ActiveModel);
     assert_behavior!(credentials::ActiveModel);
+    assert_behavior!(group_model_ratios::ActiveModel);
     assert_behavior!(groups::ActiveModel);
     assert_behavior!(options::ActiveModel);
     assert_behavior!(tokens::ActiveModel);
@@ -858,6 +923,14 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
         .insert(connection)
         .await?;
     assert_eq!(group.ratio_micros, 1_000_000);
+    group_model_ratios::ActiveModel {
+        source_group_id: Set(group.id),
+        target_group_id: Set(group.id),
+        ratio_micros: Set(1_000_000),
+        ..Default::default()
+    }
+    .insert(connection)
+    .await?;
     assert!(
         group_active_model("default", "重复分组")
             .insert(connection)
