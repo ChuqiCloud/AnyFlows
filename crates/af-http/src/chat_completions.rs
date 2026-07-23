@@ -3,7 +3,7 @@ use std::sync::Arc;
 use af_admin::TokenAuthentication;
 use af_domain::AfError;
 use af_protocol::openai_chat::parse_request;
-use af_relay::{OpenAiChatResponse, RelayService};
+use af_relay::OpenAiChatResponse;
 use af_telemetry::RequestId;
 use axum::{
     body::Bytes,
@@ -16,21 +16,21 @@ use http::{
 };
 
 use crate::{
-    OpenAiHttpError,
+    ChatService, OpenAiHttpError,
     streaming::{StreamDeliveryPolicy, openai_chat_body},
 };
 
 /// HTTP 层持有的框架私有服务状态。
 #[derive(Clone)]
 pub(crate) struct HttpState {
-    relay: Arc<RelayService>,
+    chat: Arc<dyn ChatService>,
     stream_delivery: StreamDeliveryPolicy,
 }
 
 impl HttpState {
-    pub(crate) fn new(relay: Arc<RelayService>) -> Self {
+    pub(crate) fn new(chat: Arc<dyn ChatService>) -> Self {
         Self {
-            relay,
+            chat,
             stream_delivery: StreamDeliveryPolicy::default(),
         }
     }
@@ -50,7 +50,7 @@ pub(crate) async fn chat_completions(
     }
     let principal = authentication.principal();
     let response = state
-        .relay
+        .chat
         .chat_completions(&principal, canonical, request_id.as_str())
         .await
         .map_err(OpenAiHttpError::from)?;

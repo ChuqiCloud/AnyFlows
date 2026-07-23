@@ -17,8 +17,8 @@ mod ports;
 mod records;
 
 pub use ports::{
-    BillingSettlementError, BillingSettlementFuture, BillingSettlementPort, UsageRecordOutcome,
-    UsageRecordPort,
+    BillingPrechargeError, BillingPrechargeFuture, BillingPrechargePort, BillingSettlementError,
+    BillingSettlementFuture, BillingSettlementPort, UsageRecordOutcome, UsageRecordPort,
 };
 pub use records::{BillingCompletion, BillingUsageRecord};
 
@@ -261,6 +261,7 @@ impl BillingRequestLifecycle {
             }
             UsageRecordOutcome::Saturated => Err(BillingLifecycleError::UsageRecordSaturated),
             UsageRecordOutcome::Closed => Err(BillingLifecycleError::UsageRecordClosed),
+            UsageRecordOutcome::Conflict => Err(BillingLifecycleError::UsageRecordConflict),
         }
     }
 }
@@ -313,6 +314,9 @@ pub enum BillingLifecycleError {
     /// 用量记录端口已经关闭。
     #[error("用量记录端口已关闭")]
     UsageRecordClosed,
+    /// 用量记录幂等键已经绑定了不同的内容。
+    #[error("用量记录幂等键冲突")]
+    UsageRecordConflict,
     /// 用量记录端口违反了不得 panic 的契约。
     #[error("用量记录端口异常")]
     UsageRecordPanicked,

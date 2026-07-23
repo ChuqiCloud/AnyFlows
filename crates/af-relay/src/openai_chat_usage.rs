@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, fmt};
 use af_protocol::{
     CanonicalRequest, CanonicalResponse, CanonicalStreamEvent, ContentBlock, ContentDelta, Message,
     TokenCount, ToolChoice, Usage, UsageDetails, UsageSemantics, UsageSource,
+    openai_chat::MAX_OUTPUT_TOKENS,
 };
 use thiserror::Error;
 use tiktoken_rs::{
@@ -70,6 +71,36 @@ pub(crate) struct OpenAiChatUsageEstimator {
     input_tokens: Result<TokenCount, UsageResolutionError>,
     output: OutputAccumulator,
     upstream_usage: Option<Usage>,
+}
+
+/// 按请求边界估算一次 Chat 调用的最大规范化 usage。
+///
+/// 输入令牌复用当前有界 tokenizer；未声明输出上限时使用协议硬上限，避免把缺失参数
+/// 静默当成零额度或免费请求。该函数只做纯计算，不执行定价、预扣或任何持久化 IO。
+pub fn estimate_openai_chat_request_upper_bound(
+    request: &CanonicalRequest,
+) -> Result<Usage, UsageResolutionError> {
+    let estimator = OpenAiChatUsageEstimator::new(request);
+    let input_tokens = estimator.input_tokens?;
+    let output_tokens = request
+        .sampling
+        .max_output_tokens()
+        .unwrap_or_else(|| TokenCount::new(MAX_OUTPUT_TOKENS).expect("协议输出上限必须有效"));
+    Usage::new(
+        input_tokens,
+        output_tokens,
+        UsageDetails::new(
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+        ),
+        UsageSource::Estimated,
+        UsageSemantics::Inclusive,
+    )
+    .map_err(|_| UsageResolutionError::Overflow)
 }
 
 impl OpenAiChatUsageEstimator {
@@ -527,6 +558,27 @@ mod tests {
     }
 
     #[test]
+    fn request_upper_bound_uses_protocol_cap_when_output_is_unspecified() {
+        let request = text_request("gpt-4o");
+        let upper_bound = estimate_openai_chat_request_upper_bound(&request).unwrap();
+
+        assert_eq!(upper_bound.input_tokens().get(), 9);
+        assert_eq!(upper_bound.output_tokens().get(), MAX_OUTPUT_TOKENS);
+        assert_eq!(upper_bound.source(), UsageSource::Estimated);
+    }
+
+    #[test]
+    fn request_upper_bound_preserves_explicit_output_cap() {
+        let mut request = text_request("gpt-4o");
+        request.sampling =
+            af_protocol::Sampling::new(None, None, Some(TokenCount::new(321).unwrap()), Vec::new())
+                .unwrap();
+
+        let upper_bound = estimate_openai_chat_request_upper_bound(&request).unwrap();
+        assert_eq!(upper_bound.output_tokens().get(), 321);
+    }
+
+    #[test]
     fn text_fixture_pins_chat_overhead_and_tokenizer_result() {
         let mut estimator = OpenAiChatUsageEstimator::new(&text_request("gpt-4o"));
         estimator.observe(&CanonicalStreamEvent::MessageStart {
@@ -632,10 +684,8 @@ mod tests {
             )],
             true,
         );
-        let estimator = OpenAiChatUsageEstimator::new(&request);
-
         assert_eq!(
-            estimator.resolve(),
+            estimate_openai_chat_request_upper_bound(&request),
             Err(UsageResolutionError::UnsupportedContent)
         );
     }

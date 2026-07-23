@@ -2,6 +2,7 @@
 
 mod authentication;
 mod chat_completions;
+mod chat_service;
 mod client_ip;
 mod credentials;
 mod error_response;
@@ -11,6 +12,7 @@ mod router;
 mod serve;
 mod streaming;
 
+pub use chat_service::{ChatService, ChatServiceFuture};
 pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presented_api_key};
 pub use error_response::OpenAiHttpError;
 pub use middleware::REQUEST_ID_HEADER_NAME;

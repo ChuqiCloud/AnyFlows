@@ -371,7 +371,7 @@ impl Bootstrap<Supervised> {
         let readiness = ReadinessHandle::new(probe);
         let router = build_router(
             self.config.server(),
-            Arc::clone(&self.stage.relay),
+            self.stage.relay.clone(),
             readiness.clone(),
             Arc::clone(&self.stage.infrastructure.authenticator),
             self.stage.infrastructure.query_api_key_policy,

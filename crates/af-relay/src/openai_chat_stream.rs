@@ -10,7 +10,7 @@ use std::{
 use af_adapter::{AdaptorResult, Bytes, UpstreamBody, UpstreamBodyStream};
 use af_domain::UpstreamError;
 use af_protocol::{
-    CanonicalStreamEvent,
+    CanonicalStreamEvent, Usage,
     openai_chat::{OpenAiChatStreamDecoder, OpenAiChatStreamEncoder},
 };
 use futures_core::Stream;
@@ -20,6 +20,15 @@ use crate::openai_chat_usage::{
     OpenAiChatUsageEstimator, OpenAiChatUsageHandle, UsageResolutionError, UsageSender,
     usage_channel,
 };
+
+/// OpenAI Chat 流结束或中断时接收最终 usage 的一次性回调。
+///
+/// 回调由流对象消费；若流在终点前被丢弃，回调也会随其所有权一起丢弃，调用方可以借此
+/// 保留计费生命周期的 RAII 收尾责任。
+pub trait OpenAiChatCompletionHook: Send + 'static {
+    /// 接收上游 usage 或闭合的中断分类；实现不得依赖原始响应字节。
+    fn on_complete(self: Box<Self>, usage: Result<Usage, UsageResolutionError>);
+}
 
 /// 已完成 OpenAI Chat 协议转换的下游 SSE 字节流。
 ///
@@ -31,6 +40,7 @@ pub struct OpenAiChatStream {
     encoder: OpenAiChatStreamEncoder,
     usage_estimator: OpenAiChatUsageEstimator,
     usage_sender: Option<UsageSender>,
+    completion_hook: Option<Box<dyn OpenAiChatCompletionHook>>,
     include_usage: bool,
     prefetched: VecDeque<Bytes>,
     terminated: bool,
@@ -51,12 +61,19 @@ impl OpenAiChatStream {
                 encoder: encoder.with_usage_null_fields(include_usage),
                 usage_estimator,
                 usage_sender: Some(usage_sender),
+                completion_hook: None,
                 include_usage,
                 prefetched: VecDeque::new(),
                 terminated: false,
             },
             usage_handle,
         )
+    }
+
+    /// 为流结束时的计费或审计收尾安装一次性回调。
+    pub fn with_completion_hook(mut self, hook: Box<dyn OpenAiChatCompletionHook>) -> Self {
+        self.completion_hook = Some(hook);
+        self
     }
 
     /// 在 HTTP 成功响应提交前读取并验证首个可交付 SSE 事件。
@@ -133,6 +150,9 @@ impl OpenAiChatStream {
             if let (Some(sender), Some(usage)) = (self.usage_sender.take(), resolved_usage) {
                 let _ = sender.send(usage);
             }
+            if let Some(hook) = self.completion_hook.take() {
+                hook.on_complete(resolved_usage.expect("流结束时必须固化 usage 结果"));
+            }
             // `[DONE]` 已经定义逻辑终点，立即丢弃底层响应体以传播取消。
             self.source = None;
             self.terminated = true;
@@ -143,6 +163,9 @@ impl OpenAiChatStream {
     fn fail(&mut self, error: UpstreamError) -> Poll<Option<Result<Bytes, UpstreamError>>> {
         if let Some(sender) = self.usage_sender.take() {
             let _ = sender.send(Err(UsageResolutionError::Interrupted));
+        }
+        if let Some(hook) = self.completion_hook.take() {
+            hook.on_complete(Err(UsageResolutionError::Interrupted));
         }
         self.source = None;
         self.terminated = true;
@@ -229,6 +252,7 @@ mod tests {
     use af_adapter::{HeaderMap, StatusCode, UpstreamResponse};
     use af_domain::{Operation, Role};
     use af_protocol::{CanonicalRequest, ContentBlock, Message, UsageSource};
+    use tokio::sync::oneshot;
 
     use super::*;
 
@@ -247,6 +271,17 @@ mod tests {
             )],
             true,
         ))
+    }
+
+    struct RecordingHook {
+        sender: oneshot::Sender<Result<Usage, UsageResolutionError>>,
+    }
+
+    impl OpenAiChatCompletionHook for RecordingHook {
+        fn on_complete(self: Box<Self>, usage: Result<Usage, UsageResolutionError>) {
+            let Self { sender } = *self;
+            let _ = sender.send(usage);
+        }
     }
 
     #[tokio::test]
@@ -288,6 +323,29 @@ mod tests {
             usage.resolve().await.unwrap().source(),
             UsageSource::Estimated
         );
+    }
+
+    #[tokio::test]
+    async fn completion_hook_receives_the_same_terminal_usage_once() {
+        let body = Bytes::from_static(
+            b"data: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"answer\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+        );
+        let response = UpstreamResponse::full(StatusCode::OK, HeaderMap::new(), body).unwrap();
+        let (stream, usage) =
+            OpenAiChatStream::new(response.into_body(), encoder(), estimator(), false);
+        let (sender, completed) = oneshot::channel();
+        let mut stream = stream
+            .with_completion_hook(Box::new(RecordingHook { sender }))
+            .prefetch_first(Duration::from_secs(1))
+            .await
+            .unwrap();
+
+        while let Some(chunk) = stream.next_chunk().await {
+            chunk.unwrap();
+        }
+        let from_handle = usage.resolve().await.unwrap();
+        let from_hook = completed.await.unwrap().unwrap();
+        assert_eq!(from_hook, from_handle);
     }
 
     #[tokio::test]

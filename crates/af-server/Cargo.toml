@@ -10,20 +10,23 @@ af-admin = { path = "../af-admin", version = "0.1.0" }
 af-billing = { path = "../af-billing", version = "0.1.0" }
 af-config = { path = "../af-config", version = "0.1.0" }
 af-db = { path = "../af-db", version = "0.1.0" }
+af-domain = { path = "../af-domain", version = "0.1.0" }
 af-http = { path = "../af-http", version = "0.1.0" }
 af-httpclient = { path = "../af-httpclient", version = "0.1.0" }
+af-protocol = { path = "../af-protocol", version = "0.1.0" }
 af-relay = { path = "../af-relay", version = "0.1.0" }
 af-telemetry = { path = "../af-telemetry", version = "0.1.0" }
 futures-util.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 af-adapter = { path = "../af-adapter", version = "0.1.0" }
-af-domain = { path = "../af-domain", version = "0.1.0" }
 sea-orm.workspace = true
 serde_json.workspace = true
+rust_decimal.workspace = true
 
 [lints]
 workspace = true

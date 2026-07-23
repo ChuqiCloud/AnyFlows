@@ -16,7 +16,7 @@ pub struct BillingUsageRecord {
 }
 
 impl BillingUsageRecord {
-    pub(super) const fn new(
+    pub(crate) const fn new(
         event_id: BillingReservationId,
         principal: GatewayPrincipal,
         usage: Usage,

@@ -184,14 +184,17 @@ dependencies = [
  "af-domain",
  "af-http",
  "af-httpclient",
+ "af-protocol",
  "af-relay",
  "af-telemetry",
  "futures-util",
+ "rust_decimal",
  "sea-orm",
  "serde_json",
  "thiserror",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

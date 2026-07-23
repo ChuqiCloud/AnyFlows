@@ -3,7 +3,6 @@ use std::sync::Arc;
 use af_admin::TokenAuthenticator;
 use af_config::ServerConfig;
 use af_protocol::openai_chat::MAX_BODY_BYTES;
-use af_relay::RelayService;
 use axum::{Router, extract::DefaultBodyLimit, middleware, routing::post};
 use http::{
     HeaderName, HeaderValue, Method,
@@ -17,7 +16,9 @@ use crate::middleware::{
     request_id_header,
 };
 use crate::operations::{ReadinessHandle, operations_router};
-use crate::{QueryApiKeyPolicy, chat_completions::HttpState, chat_completions::chat_completions};
+use crate::{
+    ChatService, QueryApiKeyPolicy, chat_completions::HttpState, chat_completions::chat_completions,
+};
 
 /// OpenAI Chat 业务路由的默认请求正文上限，与协议解析预算共享单一常量。
 pub const DEFAULT_REQUEST_BODY_LIMIT_BYTES: usize = MAX_BODY_BYTES;
@@ -44,7 +45,7 @@ impl HttpRouter {
 /// 鉴权与 CORS 永远不会扩散到 `/metrics`、健康检查等运维端点。
 pub fn build_router(
     config: &ServerConfig,
-    relay: Arc<RelayService>,
+    chat: Arc<dyn ChatService>,
     readiness: ReadinessHandle,
     authenticator: Arc<dyn TokenAuthenticator>,
     query_api_key_policy: QueryApiKeyPolicy,
@@ -59,7 +60,7 @@ pub fn build_router(
             // 只包裹已注册的 POST endpoint，不把路径级 405 改写为 401。
             post(chat_completions).route_layer(authentication),
         )
-        .with_state(HttpState::new(relay));
+        .with_state(HttpState::new(chat));
     HttpRouter::new(build_router_with_routes(
         public_routes,
         operations_router(readiness),
