@@ -45,9 +45,11 @@ dependencies = [
  "af-domain",
  "af-protocol",
  "fs2",
+ "futures-util",
  "rust_decimal",
  "thiserror",
  "tokio",
+ "tracing",
  "uuid",
 ]
 

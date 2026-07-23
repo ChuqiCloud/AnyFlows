@@ -7,6 +7,7 @@ mod identity;
 mod indexes;
 mod pricing;
 mod routing;
+mod usage;
 
 pub(super) use identity::{create_groups, create_options, create_tokens, create_users};
 pub(super) use indexes::{
@@ -78,3 +79,4 @@ where
 pub(super) use billing::create_billing_reservations;
 pub(super) use billing_batch::create_billing_batch_checkpoints;
 pub(super) use pricing::{create_group_model_ratios, create_model_prices};
+pub(super) use usage::{create_usage_logs, create_usage_logs_indexes};

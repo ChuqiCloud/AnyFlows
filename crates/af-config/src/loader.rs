@@ -157,6 +157,8 @@ fn known_field(path: &str) -> Option<&'static str> {
         "billing.batch_enabled" => "billing.batch_enabled",
         "billing.flush_interval_secs" => "billing.flush_interval_secs",
         "billing.flush_timeout_secs" => "billing.flush_timeout_secs",
+        "billing.usage_record_queue_capacity" => "billing.usage_record_queue_capacity",
+        "billing.usage_record_worker_count" => "billing.usage_record_worker_count",
         "billing.wal_directory" => "billing.wal_directory",
         "redis" => "redis",
         "redis.url" => "redis.url",
@@ -240,6 +242,8 @@ mod tests {
             assert!(!config.billing().batch_enabled());
             assert_eq!(config.billing().flush_interval_secs(), 5);
             assert_eq!(config.billing().flush_timeout_secs(), 30);
+            assert_eq!(config.billing().usage_record_queue_capacity(), 4_096);
+            assert_eq!(config.billing().usage_record_worker_count(), 1);
             assert_eq!(
                 config.billing().wal_directory(),
                 Path::new("data/billing-wal")
@@ -892,6 +896,14 @@ mod tests {
                     "[database]\nurl = 'sqlite::memory:'\n[billing]\nflush_timeout_secs = 0\n",
                 ),
                 (
+                    "billing.usage_record_queue_capacity",
+                    "[database]\nurl = 'sqlite::memory:'\n[billing]\nusage_record_queue_capacity = 0\n",
+                ),
+                (
+                    "billing.usage_record_worker_count",
+                    "[database]\nurl = 'sqlite::memory:'\n[billing]\nusage_record_worker_count = 0\n",
+                ),
+                (
                     "http_client.max_cached_clients",
                     "[database]\nurl = 'sqlite::memory:'\n[http_client]\nmax_cached_clients = 0\n",
                 ),
@@ -969,6 +981,14 @@ mod tests {
                 (
                     "billing.flush_timeout_secs",
                     "[database]\nurl = 'sqlite::memory:'\n[billing]\nflush_timeout_secs = 301\n",
+                ),
+                (
+                    "billing.usage_record_queue_capacity",
+                    "[database]\nurl = 'sqlite::memory:'\n[billing]\nusage_record_queue_capacity = 1000001\n",
+                ),
+                (
+                    "billing.usage_record_worker_count",
+                    "[database]\nurl = 'sqlite::memory:'\n[billing]\nusage_record_worker_count = 65\n",
                 ),
             ] {
                 let path = temp_file(body);

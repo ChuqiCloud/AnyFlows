@@ -29,6 +29,14 @@ pub const DEFAULT_BILLING_FLUSH_TIMEOUT_SECS: u64 = 30;
 pub const MAX_BILLING_FLUSH_INTERVAL_SECS: u64 = 3_600;
 /// 计费 WAL 启动恢复或关闭收尾允许配置的硬上限。
 pub const MAX_BILLING_FLUSH_TIMEOUT_SECS: u64 = 300;
+/// 用量记录内存接收队列的默认容量。
+pub const DEFAULT_USAGE_RECORD_QUEUE_CAPACITY: usize = 4_096;
+/// 单实例用量记录队列允许配置的硬容量上限。
+pub const MAX_USAGE_RECORD_QUEUE_CAPACITY: usize = 1_000_000;
+/// 默认用量记录持久化 worker 数量。
+pub const DEFAULT_USAGE_RECORD_WORKER_COUNT: usize = 1;
+/// 单实例用量记录持久化 worker 数量硬上限。
+pub const MAX_USAGE_RECORD_WORKER_COUNT: usize = 64;
 /// 单实例允许配置的静态可信前置代理网络上限。
 pub const MAX_TRUSTED_PROXY_CIDRS: usize = 64;
 /// OpenAI-compatible 上游基础地址的最大 UTF-8 字节数。
@@ -286,6 +294,8 @@ pub struct BillingSettings {
     batch_enabled: bool,
     flush_interval_secs: u64,
     flush_timeout_secs: u64,
+    usage_record_queue_capacity: usize,
+    usage_record_worker_count: usize,
     wal_directory: PathBuf,
 }
 
@@ -308,6 +318,18 @@ impl BillingSettings {
         self.flush_timeout_secs
     }
 
+    /// 返回用量记录非阻塞接收队列的最大未确认事实数。
+    #[must_use]
+    pub const fn usage_record_queue_capacity(&self) -> usize {
+        self.usage_record_queue_capacity
+    }
+
+    /// 返回并发运行的用量记录持久化 worker 数量。
+    #[must_use]
+    pub const fn usage_record_worker_count(&self) -> usize {
+        self.usage_record_worker_count
+    }
+
     /// 返回本实例独占的 WAL 目录；调用方不得将路径写入日志或错误。
     #[must_use]
     pub fn wal_directory(&self) -> &Path {
@@ -321,6 +343,8 @@ impl Default for BillingSettings {
             batch_enabled: false,
             flush_interval_secs: DEFAULT_BILLING_FLUSH_INTERVAL_SECS,
             flush_timeout_secs: DEFAULT_BILLING_FLUSH_TIMEOUT_SECS,
+            usage_record_queue_capacity: DEFAULT_USAGE_RECORD_QUEUE_CAPACITY,
+            usage_record_worker_count: DEFAULT_USAGE_RECORD_WORKER_COUNT,
             wal_directory: PathBuf::from("data/billing-wal"),
         }
     }
@@ -333,6 +357,11 @@ impl fmt::Debug for BillingSettings {
             .field("batch_enabled", &self.batch_enabled)
             .field("flush_interval_secs", &self.flush_interval_secs)
             .field("flush_timeout_secs", &self.flush_timeout_secs)
+            .field(
+                "usage_record_queue_capacity",
+                &self.usage_record_queue_capacity,
+            )
+            .field("usage_record_worker_count", &self.usage_record_worker_count)
             .field("wal_directory", &"<已配置>")
             .finish()
     }
@@ -634,6 +663,26 @@ impl AppConfig {
         if self.billing.flush_timeout_secs > MAX_BILLING_FLUSH_TIMEOUT_SECS {
             return Err(ConfigError::OutOfRange {
                 field: "billing.flush_timeout_secs",
+            });
+        }
+        if self.billing.usage_record_queue_capacity == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "billing.usage_record_queue_capacity",
+            });
+        }
+        if self.billing.usage_record_queue_capacity > MAX_USAGE_RECORD_QUEUE_CAPACITY {
+            return Err(ConfigError::OutOfRange {
+                field: "billing.usage_record_queue_capacity",
+            });
+        }
+        if self.billing.usage_record_worker_count == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "billing.usage_record_worker_count",
+            });
+        }
+        if self.billing.usage_record_worker_count > MAX_USAGE_RECORD_WORKER_COUNT {
+            return Err(ConfigError::OutOfRange {
+                field: "billing.usage_record_worker_count",
             });
         }
         if self.billing.wal_directory.as_os_str().is_empty() {
