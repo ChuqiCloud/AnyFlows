@@ -2,10 +2,12 @@
 
 mod candidate;
 mod database;
+mod retry;
 mod weighted;
 
 pub use candidate::SchedulerCandidate;
 pub use database::{DatabaseWeightedScheduler, DatabaseWeightedSchedulerError};
+pub use retry::{RetrySelection, WeightedRetryPlan, WeightedRetryPlanError};
 pub use weighted::{
     MAX_SCHEDULER_CANDIDATES, WEIGHT_BASE, WeightedSelection, WeightedSelectionError,
     WeightedStrategy,
