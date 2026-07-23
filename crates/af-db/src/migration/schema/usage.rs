@@ -139,7 +139,7 @@ where
 
 fn hex_format_check(database_backend: DbBackend) -> SimpleExpr {
     match database_backend {
-        DbBackend::Postgres => Expr::cust(r#"\"event_id\" ~ '^[0-9a-f]{32}$'"#),
+        DbBackend::Postgres => Expr::cust(r#""event_id" ~ '^[0-9a-f]{32}$'"#),
         DbBackend::MySql => {
             Expr::cust("CHAR_LENGTH(`event_id`) = 32 AND `event_id` REGEXP '^[0-9a-f]{32}$'")
         }
@@ -152,6 +152,16 @@ fn hex_format_check(database_backend: DbBackend) -> SimpleExpr {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn postgres_event_id_check_uses_identifier_quotes_without_backslashes() {
+        let rendered = Query::select()
+            .expr(hex_format_check(DbBackend::Postgres))
+            .to_owned()
+            .to_string(PostgresQueryBuilder);
+        assert!(rendered.contains(r#""event_id" ~ '^[0-9a-f]{32}$'"#));
+        assert!(!rendered.contains('\\'));
+    }
 
     #[test]
     fn mysql_event_id_check_does_not_use_binary_regex_operands() {
