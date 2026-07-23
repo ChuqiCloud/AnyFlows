@@ -173,6 +173,12 @@ dependencies = [
 [[package]]
 name = "af-scheduler"
 version = "0.1.0"
+dependencies = [
+ "af-db",
+ "af-domain",
+ "getrandom 0.4.3",
+ "thiserror",
+]
 
 [[package]]
 name = "af-server"
