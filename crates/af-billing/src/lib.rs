@@ -7,6 +7,7 @@ mod lifecycle;
 mod model_price_cache;
 mod pricing;
 pub mod quota_math;
+mod usage_record_queue;
 
 pub use batch::{
     BillingBatch, BillingBatchApplyOutcome, BillingBatchError, BillingBatchEvent,
@@ -20,9 +21,10 @@ pub use billing_session::{
 };
 pub use database_sink::DatabaseBillingBatchSink;
 pub use lifecycle::{
-    BillingCompletion, BillingLifecycleError, BillingLifecycleState, BillingRequestLifecycle,
-    BillingRequestPlan, BillingSettlementError, BillingSettlementFuture, BillingSettlementPort,
-    BillingUsageRecord, UsageRecordOutcome, UsageRecordPort,
+    BillingCompletion, BillingLifecycleError, BillingLifecycleState, BillingPrechargeError,
+    BillingPrechargeFuture, BillingPrechargePort, BillingRequestLifecycle, BillingRequestPlan,
+    BillingSettlementError, BillingSettlementFuture, BillingSettlementPort, BillingUsageRecord,
+    UsageRecordOutcome, UsageRecordPort,
 };
 pub use model_price_cache::{
     ModelPrice, ModelPriceCache, ModelPriceCacheError, ModelPriceSnapshot, ModelPriceSource,
@@ -31,6 +33,9 @@ pub use model_price_cache::{
 pub use pricing::{
     BillingMode, CostBreakdown, PriceData, PricingContext, PricingError, PricingRatio,
     PricingRatios, PricingResolver, RatioPricingResolver, TokenPrices,
+};
+pub use usage_record_queue::{
+    UsageRecordDelivery, UsageRecordQueue, UsageRecordQueueError, UsageRecordReceiver,
 };
 
 #[cfg(test)]
