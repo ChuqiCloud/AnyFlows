@@ -1,7 +1,7 @@
 use std::{
     collections::VecDeque,
     fmt,
-    future::poll_fn,
+    future::{Future, poll_fn},
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
@@ -21,13 +21,19 @@ use crate::openai_chat_usage::{
     usage_channel,
 };
 
+/// OpenAI Chat 流结束回调执行异步收尾的对象安全 Future。
+pub type OpenAiChatCompletionFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+
 /// OpenAI Chat 流结束或中断时接收最终 usage 的一次性回调。
 ///
 /// 回调由流对象消费；若流在终点前被丢弃，回调也会随其所有权一起丢弃，调用方可以借此
-/// 保留计费生命周期的 RAII 收尾责任。
+/// 保留计费生命周期的 RAII 收尾责任。流到达终点后会等待返回的 Future，再真正返回 EOF。
 pub trait OpenAiChatCompletionHook: Send + 'static {
     /// 接收上游 usage 或闭合的中断分类；实现不得依赖原始响应字节。
-    fn on_complete(self: Box<Self>, usage: Result<Usage, UsageResolutionError>);
+    fn on_complete(
+        self: Box<Self>,
+        usage: Result<Usage, UsageResolutionError>,
+    ) -> OpenAiChatCompletionFuture;
 }
 
 /// 已完成 OpenAI Chat 协议转换的下游 SSE 字节流。
@@ -41,6 +47,8 @@ pub struct OpenAiChatStream {
     usage_estimator: OpenAiChatUsageEstimator,
     usage_sender: Option<UsageSender>,
     completion_hook: Option<Box<dyn OpenAiChatCompletionHook>>,
+    completion_future: Option<OpenAiChatCompletionFuture>,
+    pending_terminal_error: Option<UpstreamError>,
     include_usage: bool,
     prefetched: VecDeque<Bytes>,
     terminated: bool,
@@ -62,6 +70,8 @@ impl OpenAiChatStream {
                 usage_estimator,
                 usage_sender: Some(usage_sender),
                 completion_hook: None,
+                completion_future: None,
+                pending_terminal_error: None,
                 include_usage,
                 prefetched: VecDeque::new(),
                 terminated: false,
@@ -147,29 +157,53 @@ impl OpenAiChatStream {
             }
         }
         if completed {
-            if let (Some(sender), Some(usage)) = (self.usage_sender.take(), resolved_usage) {
-                let _ = sender.send(usage);
-            }
-            if let Some(hook) = self.completion_hook.take() {
-                hook.on_complete(resolved_usage.expect("流结束时必须固化 usage 结果"));
-            }
+            self.begin_completion(resolved_usage.expect("流结束时必须固化 usage 结果"));
             // `[DONE]` 已经定义逻辑终点，立即丢弃底层响应体以传播取消。
             self.source = None;
-            self.terminated = true;
+            if self.completion_future.is_none() {
+                self.terminated = true;
+            }
         }
         Ok((!output.is_empty()).then(|| Bytes::from(output)))
     }
 
-    fn fail(&mut self, error: UpstreamError) -> Poll<Option<Result<Bytes, UpstreamError>>> {
+    fn fail(
+        &mut self,
+        error: UpstreamError,
+        context: &mut Context<'_>,
+    ) -> Poll<Option<Result<Bytes, UpstreamError>>> {
+        self.begin_completion(Err(UsageResolutionError::Interrupted));
+        self.source = None;
+        self.pending_terminal_error = Some(error);
+        self.poll_terminal_completion(context)
+    }
+
+    fn begin_completion(&mut self, usage: Result<Usage, UsageResolutionError>) {
         if let Some(sender) = self.usage_sender.take() {
-            let _ = sender.send(Err(UsageResolutionError::Interrupted));
+            let _ = sender.send(usage);
         }
         if let Some(hook) = self.completion_hook.take() {
-            hook.on_complete(Err(UsageResolutionError::Interrupted));
+            self.completion_future = Some(hook.on_complete(usage));
         }
-        self.source = None;
+    }
+
+    fn poll_terminal_completion(
+        &mut self,
+        context: &mut Context<'_>,
+    ) -> Poll<Option<Result<Bytes, UpstreamError>>> {
+        if let Some(future) = &mut self.completion_future {
+            match future.as_mut().poll(context) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(()) => {
+                    self.completion_future = None;
+                }
+            }
+        }
         self.terminated = true;
-        Poll::Ready(Some(Err(error)))
+        if let Some(error) = self.pending_terminal_error.take() {
+            return Poll::Ready(Some(Err(error)));
+        }
+        Poll::Ready(None)
     }
 }
 
@@ -179,6 +213,9 @@ impl Stream for OpenAiChatStream {
     fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if let Some(bytes) = self.prefetched.pop_front() {
             return Poll::Ready(Some(Ok(bytes)));
+        }
+        if self.completion_future.is_some() {
+            return self.poll_terminal_completion(context);
         }
         if self.terminated {
             return Poll::Ready(None);
@@ -195,15 +232,15 @@ impl Stream for OpenAiChatStream {
                 Poll::Ready(Some(Ok(bytes))) => match self.transform(&bytes) {
                     Ok(Some(output)) => return Poll::Ready(Some(Ok(output))),
                     Ok(None) => {}
-                    Err(error) => return self.fail(error),
+                    Err(error) => return self.fail(error, context),
                 },
                 Poll::Ready(Some(Err(error))) => {
-                    return self.fail(map_adaptor_error(error));
+                    return self.fail(map_adaptor_error(error), context);
                 }
                 Poll::Ready(None) => {
                     self.source = None;
                     if self.decoder.finish().is_err() {
-                        return self.fail(UpstreamError::ProtocolError);
+                        return self.fail(UpstreamError::ProtocolError, context);
                     }
                     self.terminated = true;
                     return Poll::Ready(None);
@@ -249,10 +286,15 @@ impl StreamSource {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
     use af_adapter::{HeaderMap, StatusCode, UpstreamResponse};
     use af_domain::{Operation, Role};
     use af_protocol::{CanonicalRequest, ContentBlock, Message, UsageSource};
-    use tokio::sync::oneshot;
+    use tokio::sync::{Notify, oneshot};
 
     use super::*;
 
@@ -278,9 +320,33 @@ mod tests {
     }
 
     impl OpenAiChatCompletionHook for RecordingHook {
-        fn on_complete(self: Box<Self>, usage: Result<Usage, UsageResolutionError>) {
-            let Self { sender } = *self;
-            let _ = sender.send(usage);
+        fn on_complete(
+            self: Box<Self>,
+            usage: Result<Usage, UsageResolutionError>,
+        ) -> OpenAiChatCompletionFuture {
+            Box::pin(async move {
+                let Self { sender } = *self;
+                let _ = sender.send(usage);
+            })
+        }
+    }
+
+    struct DelayedHook {
+        entered: Arc<Notify>,
+        release: Arc<Notify>,
+        completed: Arc<AtomicBool>,
+    }
+
+    impl OpenAiChatCompletionHook for DelayedHook {
+        fn on_complete(
+            self: Box<Self>,
+            _usage: Result<Usage, UsageResolutionError>,
+        ) -> OpenAiChatCompletionFuture {
+            Box::pin(async move {
+                self.entered.notify_waiters();
+                self.release.notified().await;
+                self.completed.store(true, Ordering::Release);
+            })
         }
     }
 
@@ -346,6 +412,39 @@ mod tests {
         let from_handle = usage.resolve().await.unwrap();
         let from_hook = completed.await.unwrap().unwrap();
         assert_eq!(from_hook, from_handle);
+    }
+
+    #[tokio::test]
+    async fn stream_eof_waits_for_completion_hook() {
+        let body = Bytes::from_static(
+            b"data: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"answer\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+        );
+        let response = UpstreamResponse::full(StatusCode::OK, HeaderMap::new(), body).unwrap();
+        let (stream, _usage) =
+            OpenAiChatStream::new(response.into_body(), encoder(), estimator(), false);
+        let entered = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let completed = Arc::new(AtomicBool::new(false));
+        let mut stream = stream
+            .with_completion_hook(Box::new(DelayedHook {
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+                completed: Arc::clone(&completed),
+            }))
+            .prefetch_first(Duration::from_secs(1))
+            .await
+            .unwrap();
+
+        assert!(matches!(stream.next_chunk().await, Some(Ok(_))));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), stream.next_chunk())
+                .await
+                .is_err()
+        );
+        assert!(!completed.load(Ordering::Acquire));
+        release.notify_one();
+        assert_eq!(stream.next_chunk().await, None);
+        assert!(completed.load(Ordering::Acquire));
     }
 
     #[tokio::test]

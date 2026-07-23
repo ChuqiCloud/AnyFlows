@@ -8,7 +8,9 @@ mod state_machine;
 
 pub use error::{RelayBuildError, RelayError};
 pub use openai_chat::{OpenAiChatResponse, RelayService};
-pub use openai_chat_stream::{OpenAiChatCompletionHook, OpenAiChatStream};
+pub use openai_chat_stream::{
+    OpenAiChatCompletionFuture, OpenAiChatCompletionHook, OpenAiChatStream,
+};
 pub use openai_chat_usage::{
     OpenAiChatUsageHandle, UsageResolutionError, estimate_openai_chat_request_upper_bound,
 };

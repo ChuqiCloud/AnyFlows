@@ -9,6 +9,8 @@ mod model_price_cache;
 mod pricing;
 mod pricing_snapshot;
 pub mod quota_math;
+mod refund_signal_consumer;
+mod refund_signal_queue;
 mod usage_record_consumer;
 mod usage_record_database_sink;
 mod usage_record_queue;
@@ -46,6 +48,13 @@ pub use pricing::{
 pub use pricing_snapshot::{
     CachedRequestPricingSnapshotSource, RequestPricingSnapshot, RequestPricingSnapshotError,
     RequestPricingSnapshotSource,
+};
+pub use refund_signal_consumer::{
+    RefundSignalConsumer, RefundSignalConsumerError, RefundSignalSink, RefundSignalSinkError,
+    RefundSignalSinkFuture,
+};
+pub use refund_signal_queue::{
+    RefundSignalDelivery, RefundSignalQueue, RefundSignalQueueError, RefundSignalReceiver,
 };
 pub use usage_record_consumer::{
     UsageRecordConsumer, UsageRecordConsumerError, UsageRecordSink, UsageRecordSinkError,

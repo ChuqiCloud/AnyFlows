@@ -574,12 +574,30 @@ async fn seed_valid_token(database_url: &str) {
     connection
         .execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "INSERT INTO users (id, username, status, default_group_id, aff_code, settings) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO model_prices (model, billing_mode, input_price, output_price, cache_read_price, cache_creation_5m_price, cache_creation_1h_price, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                "test-model".into(),
+                1_i16.into(),
+                "0.000001".into(),
+                "0.000001".into(),
+                "0".into(),
+                "0".into(),
+                "0".into(),
+                1_i64.into(),
+            ],
+        ))
+        .await
+        .unwrap();
+    connection
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO users (id, username, status, default_group_id, quota, aff_code, settings) VALUES (?, ?, ?, ?, ?, ?, ?)",
             [
                 USER_ID.into(),
                 "gateway-user".into(),
                 1_i16.into(),
                 GROUP_ID.into(),
+                1_000_000_000_i64.into(),
                 "gateway-aff".into(),
                 "{}".into(),
             ],
@@ -589,7 +607,7 @@ async fn seed_valid_token(database_url: &str) {
     connection
         .execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "INSERT INTO tokens (id, user_id, key_hash, key_prefix, name, status, allow_ips) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO tokens (id, user_id, key_hash, key_prefix, name, status, remain_quota, allow_ips) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 TOKEN_ID.into(),
                 USER_ID.into(),
@@ -597,6 +615,7 @@ async fn seed_valid_token(database_url: &str) {
                 "sk-af-AAECAwQFBgcI".into(),
                 "gateway-token".into(),
                 1_i16.into(),
+                1_000_000_000_i64.into(),
                 LOOPBACK_ALLOWLIST.into(),
             ],
         ))
@@ -645,6 +664,11 @@ async fn assert_rejected_after_mutation(
 
 async fn drop_tokens_table(database_url: &str) {
     let connection = Database::connect(database_url).await.unwrap();
+    // 成功计费请求已经产生关联预留；故障注入只需要破坏认证查询，不验证外键删除策略。
+    connection
+        .execute_unprepared("PRAGMA foreign_keys = OFF")
+        .await
+        .unwrap();
     connection
         .execute_unprepared("DROP TABLE tokens")
         .await
