@@ -16,6 +16,7 @@ pub(crate) mod channel_groups;
 pub(crate) mod channel_models;
 pub(crate) mod channels;
 pub(crate) mod credentials;
+pub(crate) mod group_model_ratios;
 pub(crate) mod groups;
 pub(crate) mod model_prices;
 pub(crate) mod options;
@@ -71,20 +72,81 @@ async fn validate_group<C>(
 where
     C: ConnectionTrait,
 {
-    let Some(reference_id) = changed_reference(&model.fallback_group_id, insert) else {
-        return Ok(());
-    };
-    validate_not_self_reference(&model.id, reference_id, "fallback_group_id")?;
-    if groups::Entity::find_by_id(reference_id)
-        .one(database)
-        .await?
-        .is_none()
-    {
-        return Err(DbErr::Custom(
-            "fallback_group_id 必须引用已存在的分组".to_owned(),
-        ));
+    validate_group_pricing(model, database, insert).await?;
+    if let Some(reference_id) = changed_reference(&model.fallback_group_id, insert) {
+        validate_not_self_reference(&model.id, reference_id, "fallback_group_id")?;
+        if groups::Entity::find_by_id(reference_id)
+            .one(database)
+            .await?
+            .is_none()
+        {
+            return Err(DbErr::Custom(
+                "fallback_group_id 必须引用已存在的分组".to_owned(),
+            ));
+        }
     }
     Ok(())
+}
+
+async fn validate_group_pricing<C>(
+    model: &groups::ActiveModel,
+    database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if model
+        .ratio_micros
+        .try_as_ref()
+        .is_some_and(|ratio| *ratio < 0)
+    {
+        return Err(DbErr::Custom("分组基础倍率不能为负数".to_owned()));
+    }
+    let peak_changed = insert
+        || model.peak_ratio_micros.is_set()
+        || model.peak_start.is_set()
+        || model.peak_end.is_set();
+    if !peak_changed {
+        return Ok(());
+    }
+
+    // 局部更新必须与当前行合并后再校验，避免只改一个字段绕过跨列不变量。
+    let persisted = if insert {
+        None
+    } else {
+        let id = model
+            .id
+            .try_as_ref()
+            .copied()
+            .ok_or_else(|| DbErr::Custom("分组计费更新缺少标识".to_owned()))?;
+        Some(
+            groups::Entity::find_by_id(id)
+                .one(database)
+                .await?
+                .ok_or_else(|| DbErr::Custom("分组计费记录不存在".to_owned()))?,
+        )
+    };
+    let peak_ratio = model
+        .peak_ratio_micros
+        .try_as_ref()
+        .copied()
+        .unwrap_or_else(|| persisted.as_ref().and_then(|row| row.peak_ratio_micros));
+    let peak_start = model
+        .peak_start
+        .try_as_ref()
+        .copied()
+        .unwrap_or_else(|| persisted.as_ref().and_then(|row| row.peak_start));
+    let peak_end = model
+        .peak_end
+        .try_as_ref()
+        .copied()
+        .unwrap_or_else(|| persisted.as_ref().and_then(|row| row.peak_end));
+    match (peak_ratio, peak_start, peak_end) {
+        (None, None, None) => Ok(()),
+        (Some(ratio), Some(start), Some(end)) if ratio >= 0 && start != end => Ok(()),
+        _ => Err(DbErr::Custom("分组高峰倍率窗口无效".to_owned())),
+    }
 }
 
 async fn validate_user<C>(
@@ -131,6 +193,24 @@ where
         && parent.channel_id != *channel_id
     {
         return Err(DbErr::Custom("parent_id 必须引用同一渠道的凭据".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_group_model_ratio<C>(
+    model: &group_model_ratios::ActiveModel,
+    _database: &C,
+    _insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if model
+        .ratio_micros
+        .try_as_ref()
+        .is_some_and(|ratio| *ratio < 0)
+    {
+        return Err(DbErr::Custom("分组附加倍率不能为负数".to_owned()));
     }
     Ok(())
 }
@@ -244,6 +324,7 @@ impl_updated_at_behavior!(
     channel_models::ActiveModel => validate_default,
     channels::ActiveModel => validate_default,
     credentials::ActiveModel => validate_credential,
+    group_model_ratios::ActiveModel => validate_group_model_ratio,
     groups::ActiveModel => validate_group,
     model_prices::ActiveModel => validate_model_price,
     options::ActiveModel => validate_default,

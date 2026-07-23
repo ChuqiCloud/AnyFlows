@@ -77,4 +77,4 @@ where
 }
 pub(super) use billing::create_billing_reservations;
 pub(super) use billing_batch::create_billing_batch_checkpoints;
-pub(super) use pricing::create_model_prices;
+pub(super) use pricing::{create_group_model_ratios, create_model_prices};

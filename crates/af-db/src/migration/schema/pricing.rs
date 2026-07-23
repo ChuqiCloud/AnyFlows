@@ -1,7 +1,7 @@
 use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 
-use crate::migration::iden::model_prices;
+use crate::migration::iden::{group_model_ratios, groups, model_prices};
 
 use super::{table, timestamp};
 
@@ -62,6 +62,70 @@ pub(in crate::migration) async fn create_model_prices(
                 .col(timestamp(manager, model_prices::Column::UpdatedAt))
                 // 模式 2 表示显式免费，禁止同时留下会被误读的非零单价。
                 .check(free_prices_are_zero)
+                .to_owned(),
+        )
+        .await
+}
+
+/// 创建来源分组到实际计费分组的附加倍率表。
+pub(in crate::migration) async fn create_group_model_ratios(
+    manager: &SchemaManager<'_>,
+) -> Result<(), DbErr> {
+    let statement = table(manager, group_model_ratios::Entity)
+        .col(
+            ColumnDef::new(group_model_ratios::Column::SourceGroupId)
+                .big_integer()
+                .not_null(),
+        )
+        .col(
+            ColumnDef::new(group_model_ratios::Column::TargetGroupId)
+                .big_integer()
+                .not_null(),
+        )
+        .col(
+            ColumnDef::new(group_model_ratios::Column::RatioMicros)
+                .big_integer()
+                .not_null()
+                .check(Expr::col(group_model_ratios::Column::RatioMicros).gte(0_i64)),
+        )
+        .col(timestamp(manager, group_model_ratios::Column::CreatedAt))
+        .col(timestamp(manager, group_model_ratios::Column::UpdatedAt))
+        .primary_key(
+            Index::create()
+                .name("pk_group_model_ratios")
+                .col(group_model_ratios::Column::SourceGroupId)
+                .col(group_model_ratios::Column::TargetGroupId),
+        )
+        .foreign_key(
+            ForeignKey::create()
+                .name("fk_group_model_ratios_source")
+                .from(
+                    group_model_ratios::Entity,
+                    group_model_ratios::Column::SourceGroupId,
+                )
+                .to(groups::Entity, groups::Column::Id)
+                .on_update(ForeignKeyAction::Cascade)
+                .on_delete(ForeignKeyAction::Cascade),
+        )
+        .foreign_key(
+            ForeignKey::create()
+                .name("fk_group_model_ratios_target")
+                .from(
+                    group_model_ratios::Entity,
+                    group_model_ratios::Column::TargetGroupId,
+                )
+                .to(groups::Entity, groups::Column::Id)
+                .on_update(ForeignKeyAction::Cascade)
+                .on_delete(ForeignKeyAction::Cascade),
+        )
+        .to_owned();
+    manager.create_table(statement).await?;
+    manager
+        .create_index(
+            Index::create()
+                .name("idx_group_model_ratios_target")
+                .table(group_model_ratios::Entity)
+                .col(group_model_ratios::Column::TargetGroupId)
                 .to_owned(),
         )
         .await
