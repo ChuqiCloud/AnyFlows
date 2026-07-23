@@ -1,14 +1,18 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use af_billing::{
     BillingLifecycleError, BillingPrechargeError, BillingPrechargePort, BillingRequestLifecycle,
-    BillingRequestPlan, BillingSettlementPort, PricingResolver, RefundSignalPort, UsageRecordPort,
+    BillingRequestPlan, BillingSettlementPort, RefundSignalPort, RequestPricingSnapshotError,
+    RequestPricingSnapshotSource, UsageRecordPort,
 };
 use af_domain::{AfError, BillingReservationId, GatewayPrincipal};
 use af_http::{ChatService, ChatServiceFuture};
 use af_protocol::{CanonicalRequest, Usage};
 use af_relay::{
-    OpenAiChatCompletionHook, OpenAiChatResponse, UsageResolutionError,
+    OpenAiChatCompletionFuture, OpenAiChatCompletionHook, OpenAiChatResponse, UsageResolutionError,
     estimate_openai_chat_request_upper_bound,
 };
 use tokio::time::sleep;
@@ -17,6 +21,7 @@ use uuid::Uuid;
 const MAX_PRECHARGE_ATTEMPTS: usize = 3;
 const MAX_COMPLETION_ATTEMPTS: usize = 3;
 const RETRY_DELAY: Duration = Duration::from_millis(20);
+const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
 
 /// 已装配计费依赖的 Chat 服务装饰器。
 ///
@@ -25,7 +30,7 @@ const RETRY_DELAY: Duration = Duration::from_millis(20);
 /// 本类型不会把未知价格当作免费。
 pub struct BillingChatService {
     inner: Arc<dyn ChatService>,
-    resolver: Arc<dyn PricingResolver>,
+    pricing_source: Arc<dyn RequestPricingSnapshotSource>,
     precharge: Option<Arc<dyn BillingPrechargePort>>,
     refund: Option<Arc<dyn RefundSignalPort>>,
     settlement: Option<Arc<dyn BillingSettlementPort>>,
@@ -33,11 +38,11 @@ pub struct BillingChatService {
 }
 
 impl BillingChatService {
-    /// 使用显式定价解析器与计费端口创建装饰器。
+    /// 使用请求级定价快照来源与计费端口创建装饰器。
     #[must_use]
     pub fn new(
         inner: Arc<dyn ChatService>,
-        resolver: Arc<dyn PricingResolver>,
+        pricing_source: Arc<dyn RequestPricingSnapshotSource>,
         precharge: Option<Arc<dyn BillingPrechargePort>>,
         refund: Option<Arc<dyn RefundSignalPort>>,
         settlement: Option<Arc<dyn BillingSettlementPort>>,
@@ -45,7 +50,7 @@ impl BillingChatService {
     ) -> Self {
         Self {
             inner,
-            resolver,
+            pricing_source,
             precharge,
             refund,
             settlement,
@@ -61,7 +66,20 @@ impl BillingChatService {
     ) -> Result<OpenAiChatResponse, AfError> {
         let upper_bound =
             estimate_openai_chat_request_upper_bound(&request).map_err(map_upper_bound_error)?;
-        let plan = BillingRequestPlan::prepare(self.resolver.clone(), &upper_bound)
+        // M1 当前仍是单上游静态调度，真实 scheduler 落地后应把 target_group_id
+        // 替换为候选渠道实际计费分组，不能继续默认等同于来源分组。
+        let source_group_id = principal.group_id();
+        let target_group_id = principal.group_id();
+        let snapshot = self
+            .pricing_source
+            .capture(
+                &request.model,
+                source_group_id,
+                target_group_id,
+                current_utc_day_second()?,
+            )
+            .map_err(map_snapshot_error)?;
+        let plan = BillingRequestPlan::prepare(Arc::new(snapshot.resolver()), &upper_bound)
             .map_err(map_lifecycle_error)?;
         let reservation_id = new_reservation_id()?;
         let mut lifecycle = match plan.precharge_quota() {
@@ -132,28 +150,25 @@ struct BillingStreamCompletionHook {
 }
 
 impl OpenAiChatCompletionHook for BillingStreamCompletionHook {
-    fn on_complete(mut self: Box<Self>, usage: Result<Usage, UsageResolutionError>) {
-        let Some(mut lifecycle) = self.lifecycle.take() else {
-            return;
-        };
-        let Ok(usage) = usage else {
-            drop(lifecycle);
-            return;
-        };
-        match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                let task = async move {
-                    if complete_with_retries(&mut lifecycle, usage).await.is_err() {
-                        tracing::error!(
-                            error_kind = "billing_stream_completion_failed",
-                            "流式响应结束后的计费完成失败"
-                        );
-                    }
-                };
-                drop(handle.spawn(task));
+    fn on_complete(
+        mut self: Box<Self>,
+        usage: Result<Usage, UsageResolutionError>,
+    ) -> OpenAiChatCompletionFuture {
+        Box::pin(async move {
+            let Some(mut lifecycle) = self.lifecycle.take() else {
+                return;
+            };
+            let Ok(usage) = usage else {
+                drop(lifecycle);
+                return;
+            };
+            if complete_with_retries(&mut lifecycle, usage).await.is_err() {
+                tracing::error!(
+                    error_kind = "billing_stream_completion_failed",
+                    "流式响应结束后的计费完成失败"
+                );
             }
-            Err(_) => drop(lifecycle),
-        }
+        })
     }
 }
 
@@ -207,6 +222,14 @@ fn new_reservation_id() -> Result<BillingReservationId, AfError> {
     BillingReservationId::new(Uuid::new_v4().into_bytes()).map_err(|_| AfError::Internal)
 }
 
+fn current_utc_day_second() -> Result<u32, AfError> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| AfError::Internal)?;
+    let second = elapsed.as_secs() % SECONDS_PER_DAY;
+    u32::try_from(second).map_err(|_| AfError::Internal)
+}
+
 fn map_upper_bound_error(error: UsageResolutionError) -> AfError {
     match error {
         UsageResolutionError::UnsupportedContent => AfError::InvalidRequest,
@@ -215,6 +238,10 @@ fn map_upper_bound_error(error: UsageResolutionError) -> AfError {
         | UsageResolutionError::Overflow
         | UsageResolutionError::EstimationFailed => AfError::Internal,
     }
+}
+
+fn map_snapshot_error(_error: RequestPricingSnapshotError) -> AfError {
+    AfError::Internal
 }
 
 fn map_precharge_error(error: BillingPrechargeError) -> AfError {
@@ -253,9 +280,11 @@ mod tests {
 
     use af_adapter::Bytes;
     use af_billing::{
-        BillingPrechargeFuture, BillingPrechargePort, BillingSettlementFuture,
-        BillingSettlementPort, BillingUsageRecord, PricingRatio, PricingRatios,
-        RatioPricingResolver, RefundSignalOutcome, TokenPrices, UsageRecordOutcome,
+        BillingMode, BillingPrechargeFuture, BillingPrechargePort, BillingSettlementFuture,
+        BillingSettlementPort, BillingUsageRecord, CachedRequestPricingSnapshotSource,
+        GroupPricingCache, GroupPricingSource, GroupPricingSourceCatalog, GroupPricingSourceFuture,
+        GroupPricingSourceRecord, ModelPriceCache, ModelPriceSource, ModelPriceSourceFuture,
+        ModelPriceSourceRecord, PricingRatio, RefundSignalOutcome, TokenPrices, UsageRecordOutcome,
     };
     use af_domain::{GroupId, Operation, Quota, Role, TokenId, UserId};
     use af_http::{ChatService, ChatServiceFuture};
@@ -345,7 +374,7 @@ mod tests {
         let settlement = Arc::new(SettlementStub::default());
         let service = BillingChatService::new(
             Arc::new(FullStub),
-            Arc::new(metered_resolver()),
+            Arc::new(metered_snapshot_source().await),
             Some(precharge.clone()),
             Some(Arc::new(RefundStub)),
             Some(settlement.clone()),
@@ -408,17 +437,64 @@ mod tests {
         .unwrap()
     }
 
-    fn metered_resolver() -> RatioPricingResolver {
-        RatioPricingResolver::metered(
-            TokenPrices::new(
-                Decimal::new(1, 6),
-                Decimal::new(1, 6),
-                Decimal::ZERO,
-                Decimal::ZERO,
-                Decimal::ZERO,
-            )
-            .unwrap(),
-            PricingRatios::new(PricingRatio::ONE, PricingRatio::ONE, PricingRatio::ONE),
+    #[derive(Clone)]
+    struct StaticModelPriceSource {
+        records: Vec<ModelPriceSourceRecord>,
+    }
+
+    impl ModelPriceSource for StaticModelPriceSource {
+        fn load<'a>(&'a self) -> ModelPriceSourceFuture<'a> {
+            let records = self.records.clone();
+            Box::pin(async move { Ok(records) })
+        }
+    }
+
+    #[derive(Clone)]
+    struct StaticGroupPricingSource {
+        catalog: GroupPricingSourceCatalog,
+    }
+
+    impl GroupPricingSource for StaticGroupPricingSource {
+        fn load<'a>(&'a self) -> GroupPricingSourceFuture<'a> {
+            let catalog = self.catalog.clone();
+            Box::pin(async move { Ok(catalog) })
+        }
+    }
+
+    async fn metered_snapshot_source() -> CachedRequestPricingSnapshotSource {
+        let prices = TokenPrices::new(
+            Decimal::new(1, 6),
+            Decimal::new(1, 6),
+            Decimal::ZERO,
+            Decimal::ZERO,
+            Decimal::ZERO,
         )
+        .unwrap();
+        let model_prices = ModelPriceCache::load(Arc::new(StaticModelPriceSource {
+            records: vec![
+                ModelPriceSourceRecord::new(
+                    "gpt-test".to_owned(),
+                    BillingMode::PerToken,
+                    prices,
+                    1,
+                )
+                .unwrap(),
+            ],
+        }))
+        .await
+        .unwrap();
+        let group_pricing = GroupPricingCache::load(Arc::new(StaticGroupPricingSource {
+            catalog: GroupPricingSourceCatalog::new(
+                vec![GroupPricingSourceRecord::new(
+                    GroupId::new(3).unwrap(),
+                    PricingRatio::ONE,
+                    None,
+                )],
+                Vec::new(),
+            ),
+        }))
+        .await
+        .unwrap();
+        CachedRequestPricingSnapshotSource::new(model_prices, group_pricing)
     }
 }

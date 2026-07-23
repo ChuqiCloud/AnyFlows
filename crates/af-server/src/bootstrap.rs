@@ -2,17 +2,21 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_admin::{DatabaseTokenAuthenticator, TokenAuthenticator};
 use af_billing::{
-    DatabaseUsageRecordSink, UsageRecordConsumer, UsageRecordConsumerError, UsageRecordQueue,
-    UsageRecordQueueError,
+    BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
+    DatabaseUsageRecordSink, GroupPricingCache, GroupPricingCacheError, ModelPriceCache,
+    ModelPriceCacheError, RefundSignalConsumer, RefundSignalConsumerError, RefundSignalPort,
+    RefundSignalQueue, RefundSignalQueueError, RefundSignalSink, UsageRecordConsumer,
+    UsageRecordConsumerError, UsageRecordPort, UsageRecordQueue, UsageRecordQueueError,
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
     DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool, MigrationOptions,
-    TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository, connect_and_migrate,
+    QuotaRepository, TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository,
+    connect_and_migrate,
 };
 use af_http::{
-    HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle, ServeError, ServeOutcome,
-    build_router, serve_with_graceful_shutdown,
+    ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle, ServeError,
+    ServeOutcome, build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
@@ -25,11 +29,12 @@ use thiserror::Error;
 
 use crate::readiness::DatabaseReadinessProbe;
 use crate::{
-    BackgroundTaskSupervisor, BillingFlushReport, BillingRuntime, BillingRuntimeError,
-    ShutdownController, SupervisorError, SupervisorShutdown, system_shutdown_signal,
+    BackgroundTaskSupervisor, BillingChatService, BillingFlushReport, BillingRuntime,
+    BillingRuntimeError, ShutdownController, SupervisorError, SupervisorShutdown,
+    system_shutdown_signal,
 };
 
-const USAGE_RECORD_RETRY_DELAY: Duration = Duration::from_millis(100);
+const BILLING_QUEUE_RETRY_DELAY: Duration = Duration::from_millis(100);
 
 /// 已加载并校验静态配置。
 pub struct Configured;
@@ -62,22 +67,25 @@ pub struct RelayReady {
     relay: Arc<RelayService>,
 }
 
-/// 计费 WAL 已打开，历史积压已在开始监听前恢复完成。
+/// 计费 WAL、定价缓存、额度仓储及内部可靠队列均已完成装配。
 pub struct BillingReady {
     infrastructure: AuthenticationReady,
-    relay: Arc<RelayService>,
+    chat: Arc<dyn ChatService>,
     billing: BillingRuntime,
     usage_record_queue: UsageRecordQueue,
     usage_record_consumer: UsageRecordConsumer,
     usage_record_worker_count: usize,
+    refund_signal_queue: RefundSignalQueue,
+    refund_signal_consumer: RefundSignalConsumer,
 }
 
-/// 后台任务监督域已经建立，批量模式的周期 flush 已注册。
+/// 后台任务监督域已经建立，周期 flush、用量持久化与退款补偿 worker 已注册。
 pub struct Supervised {
     infrastructure: AuthenticationReady,
-    relay: Arc<RelayService>,
+    chat: Arc<dyn ChatService>,
     billing: BillingRuntime,
     usage_record_queue: UsageRecordQueue,
+    refund_signal_queue: RefundSignalQueue,
     supervisor: BackgroundTaskSupervisor,
 }
 
@@ -174,9 +182,24 @@ pub enum BootstrapError {
     /// 用量记录消费者配置无效。
     #[error("初始化用量记录消费者失败")]
     UsageRecordConsumer(#[source] UsageRecordConsumerError),
+    /// 模型定价缓存首轮加载失败。
+    #[error("初始化模型定价缓存失败")]
+    ModelPriceCache(#[source] ModelPriceCacheError),
+    /// 分组计费缓存首轮加载失败。
+    #[error("初始化分组计费缓存失败")]
+    GroupPricingCache(#[source] GroupPricingCacheError),
+    /// 内部退款信号队列容量配置无效。
+    #[error("初始化退款信号队列失败")]
+    RefundSignalQueue(#[source] RefundSignalQueueError),
+    /// 内部退款信号消费者配置无效。
+    #[error("初始化退款信号消费者失败")]
+    RefundSignalConsumer(#[source] RefundSignalConsumerError),
     /// 关闭截止到达时仍有未获持久化确认的用量事实。
     #[error("用量记录未能在关闭截止前排空")]
     UsageRecordDrainIncomplete,
+    /// 关闭截止到达时仍有未完成的内部退款补偿信号。
+    #[error("退款信号未能在关闭截止前排空")]
+    RefundSignalDrainIncomplete,
     /// 后台任务强制关闭失败。
     #[error("后台任务生命周期操作失败")]
     Supervisor(#[source] SupervisorError),
@@ -307,7 +330,7 @@ impl Bootstrap<AuthenticationReady> {
 }
 
 impl Bootstrap<RelayReady> {
-    /// 打开计费 WAL，并在进入监听阶段前有界恢复上次未确认的增量。
+    /// 打开计费 WAL、加载定价缓存并装配生产预扣、结算与内部补偿链路。
     pub async fn init_billing(self) -> Result<Bootstrap<BillingReady>, BootstrapError> {
         let billing = BillingRuntime::open(
             self.config.billing(),
@@ -322,15 +345,54 @@ impl Bootstrap<RelayReady> {
         let (usage_record_queue, usage_record_receiver) =
             UsageRecordQueue::bounded(self.config.billing().usage_record_queue_capacity())
                 .map_err(BootstrapError::UsageRecordQueue)?;
+        let (refund_signal_queue, refund_signal_receiver) =
+            RefundSignalQueue::bounded(self.config.billing().usage_record_queue_capacity())
+                .map_err(BootstrapError::RefundSignalQueue)?;
+        let model_prices = ModelPriceCache::load_from_database(
+            self.stage.infrastructure.infrastructure.database.clone(),
+        )
+        .await
+        .map_err(BootstrapError::ModelPriceCache)?;
+        let group_pricing = GroupPricingCache::load_from_database(
+            self.stage.infrastructure.infrastructure.database.clone(),
+        )
+        .await
+        .map_err(BootstrapError::GroupPricingCache)?;
+        let pricing_source = Arc::new(CachedRequestPricingSnapshotSource::new(
+            model_prices,
+            group_pricing,
+        ));
+        let quota_repository = Arc::new(QuotaRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+        ));
+        let precharge_port: Arc<dyn BillingPrechargePort> = quota_repository.clone();
+        let settlement_port: Arc<dyn BillingSettlementPort> = quota_repository.clone();
+        let refund_sink: Arc<dyn RefundSignalSink> = quota_repository.clone();
+        let refund_port: Arc<dyn RefundSignalPort> = Arc::new(refund_signal_queue.clone());
+        let usage_port: Arc<dyn UsageRecordPort> = Arc::new(usage_record_queue.clone());
         let usage_record_consumer = UsageRecordConsumer::new(
             usage_record_receiver,
             Arc::new(DatabaseUsageRecordSink::new(UsageLogRepository::new(
                 self.stage.infrastructure.infrastructure.database.clone(),
             ))),
-            USAGE_RECORD_RETRY_DELAY,
+            BILLING_QUEUE_RETRY_DELAY,
         )
         .map_err(BootstrapError::UsageRecordConsumer)?;
+        let refund_signal_consumer = RefundSignalConsumer::new(
+            refund_signal_receiver,
+            refund_sink,
+            BILLING_QUEUE_RETRY_DELAY,
+        )
+        .map_err(BootstrapError::RefundSignalConsumer)?;
         let usage_record_worker_count = self.config.billing().usage_record_worker_count();
+        let chat: Arc<dyn ChatService> = Arc::new(BillingChatService::new(
+            self.stage.relay.clone(),
+            pricing_source,
+            Some(precharge_port),
+            Some(refund_port),
+            Some(settlement_port),
+            usage_port,
+        ));
         let Bootstrap {
             config,
             shutdown_timeout,
@@ -343,11 +405,13 @@ impl Bootstrap<RelayReady> {
             shutdown,
             stage: BillingReady {
                 infrastructure: stage.infrastructure,
-                relay: stage.relay,
+                chat,
                 billing,
                 usage_record_queue,
                 usage_record_consumer,
                 usage_record_worker_count,
+                refund_signal_queue,
+                refund_signal_consumer,
             },
         })
     }
@@ -366,11 +430,13 @@ impl Bootstrap<BillingReady> {
         let mut supervisor = BackgroundTaskSupervisor::new(shutdown.clone());
         let BillingReady {
             infrastructure,
-            relay,
+            chat,
             billing,
             usage_record_queue,
             usage_record_consumer,
             usage_record_worker_count,
+            refund_signal_queue,
+            refund_signal_consumer,
         } = stage;
         if billing.batch_enabled() {
             supervisor.spawn("billing-flush", {
@@ -396,15 +462,25 @@ impl Bootstrap<BillingReady> {
                 }
             });
         }
+        supervisor.spawn_drainable("refund-signal-consume", {
+            let refund_signal_consumer = refund_signal_consumer.clone();
+            move |_| {
+                let refund_signal_consumer = refund_signal_consumer.clone();
+                async move {
+                    refund_signal_consumer.run().await;
+                }
+            }
+        });
         Bootstrap {
             config,
             shutdown_timeout,
             shutdown,
             stage: Supervised {
                 infrastructure,
-                relay,
+                chat,
                 billing,
                 usage_record_queue,
+                refund_signal_queue,
                 supervisor,
             },
         }
@@ -420,7 +496,7 @@ impl Bootstrap<Supervised> {
         let readiness = ReadinessHandle::new(probe);
         let router = build_router(
             self.config.server(),
-            self.stage.relay.clone(),
+            self.stage.chat.clone(),
             readiness.clone(),
             Arc::clone(&self.stage.infrastructure.authenticator),
             self.stage.infrastructure.query_api_key_policy,
@@ -509,7 +585,8 @@ impl Bootstrap<ListenerReady> {
             supervisor,
             billing,
             usage_record_queue,
-            relay: _,
+            refund_signal_queue,
+            chat: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
         let http =
@@ -517,11 +594,14 @@ impl Bootstrap<ListenerReady> {
 
         run_http_and_shutdown(
             http,
-            shutdown,
-            supervisor,
-            billing,
-            usage_record_queue,
-            infrastructure.infrastructure.database,
+            RuntimeShutdownResources {
+                shutdown,
+                supervisor,
+                billing,
+                usage_record_queue,
+                refund_signal_queue,
+                database: infrastructure.infrastructure.database,
+            },
             shutdown_timeout,
             billing_flush_timeout,
         )
@@ -537,27 +617,43 @@ where
     readiness.begin_draining();
 }
 
-async fn run_http_and_shutdown<H>(
-    http: H,
+/// HTTP 停止后仍需按顺序排空并关闭的运行期资源。
+struct RuntimeShutdownResources {
     shutdown: ShutdownController,
     supervisor: BackgroundTaskSupervisor,
     billing: BillingRuntime,
     usage_record_queue: UsageRecordQueue,
+    refund_signal_queue: RefundSignalQueue,
     database: DatabasePool,
+}
+
+async fn run_http_and_shutdown<H>(
+    http: H,
+    resources: RuntimeShutdownResources,
     shutdown_timeout: Duration,
     billing_flush_timeout: Duration,
 ) -> Result<ShutdownReport, BootstrapError>
 where
     H: Future<Output = Result<ServeOutcome, ServeError>>,
 {
+    let RuntimeShutdownResources {
+        shutdown,
+        supervisor,
+        billing,
+        usage_record_queue,
+        refund_signal_queue,
+        database,
+    } = resources;
     let http_result = http.await;
 
-    // HTTP 排空后不再有新的 lifecycle 完成回调；先封闭入口，让消费者可靠排空已接收事实。
+    // HTTP 排空后不再有新的 lifecycle 完成回调；先封闭两个入口，让消费者可靠排空已接收事实。
     usage_record_queue.close();
+    refund_signal_queue.close();
     // 队列关闭后再停止其他后台任务，消费者会忽略该信号直到队列返回空。
     let _ = shutdown.trigger();
     let background_result = supervisor.shutdown(shutdown_timeout).await;
     let usage_records_drained = usage_record_queue.is_drained();
+    let refund_signals_drained = refund_signal_queue.is_drained();
 
     // 无法确认请求或后台任务已经终止时，禁止析构仍可能被使用的运行期资源。
     let http_result = match http_result {
@@ -582,6 +678,9 @@ where
     match (http_result, billing_result, database_result) {
         (Ok(_), Ok(_), Ok(())) if !usage_records_drained => {
             Err(BootstrapError::UsageRecordDrainIncomplete)
+        }
+        (Ok(_), Ok(_), Ok(())) if !refund_signals_drained => {
+            Err(BootstrapError::RefundSignalDrainIncomplete)
         }
         (Ok(http), Ok(billing), Ok(())) => Ok(ShutdownReport {
             http,
@@ -776,8 +875,9 @@ mod tests {
     use af_billing::{
         BillingBatch, BillingBatchApplyOutcome, BillingBatchEvent, BillingBatchSink,
         BillingBatchSinkFuture, BillingRequestPlan, BillingUsageRecord, FileBillingBatcher,
-        RatioPricingResolver, UsageRecordConsumer, UsageRecordQueue, UsageRecordSink,
-        UsageRecordSinkFuture, UserBillingDelta,
+        RatioPricingResolver, RefundSignalConsumer, RefundSignalOutcome, RefundSignalPort,
+        RefundSignalQueue, RefundSignalSink, RefundSignalSinkFuture, UsageRecordConsumer,
+        UsageRecordQueue, UsageRecordSink, UsageRecordSinkFuture, UserBillingDelta,
     };
     use af_domain::{BillingReservationId, GatewayPrincipal, GroupId, QuotaDelta, TokenId, UserId};
     use af_http::{ReadinessFuture, ReadinessProbe};
@@ -799,6 +899,11 @@ mod tests {
         release: Arc<Notify>,
     }
 
+    struct OrderedRefundSink {
+        events: Arc<Mutex<Vec<&'static str>>>,
+        release: Arc<Notify>,
+    }
+
     impl BillingBatchSink for OrderedBillingSink {
         fn apply<'a>(&'a self, _batch: &'a BillingBatch) -> BillingBatchSinkFuture<'a> {
             Box::pin(async move {
@@ -813,6 +918,19 @@ mod tests {
             Box::pin(async move {
                 self.release.notified().await;
                 self.events.lock().unwrap().push("usage_persisted");
+                Ok(())
+            })
+        }
+    }
+
+    impl RefundSignalSink for OrderedRefundSink {
+        fn refund<'a>(
+            &'a self,
+            _reservation_id: BillingReservationId,
+        ) -> RefundSignalSinkFuture<'a> {
+            Box::pin(async move {
+                self.release.notified().await;
+                self.events.lock().unwrap().push("refund_persisted");
                 Ok(())
             })
         }
@@ -951,6 +1069,7 @@ mod tests {
         .unwrap();
         let billing = BillingRuntime::from_batcher(batcher, true, Duration::from_secs(1));
         let (usage_record_queue, _) = UsageRecordQueue::bounded(1).unwrap();
+        let (refund_signal_queue, _) = RefundSignalQueue::bounded(1).unwrap();
         billing.record(billing_event()).await.unwrap();
         let started = Arc::new(Notify::new());
         let mut supervisor = BackgroundTaskSupervisor::new(shutdown.clone());
@@ -977,11 +1096,14 @@ mod tests {
                 http_events.lock().unwrap().push("http_finished");
                 Err(ServeError::Io(std::io::Error::other("primary-http-secret")))
             },
-            shutdown,
-            supervisor,
-            billing,
-            usage_record_queue,
-            database,
+            RuntimeShutdownResources {
+                shutdown,
+                supervisor,
+                billing,
+                usage_record_queue,
+                refund_signal_queue,
+                database,
+            },
             Duration::from_secs(1),
             Duration::from_secs(1),
         )
@@ -1023,14 +1145,18 @@ mod tests {
         let billing = BillingRuntime::from_batcher(batcher, true, Duration::from_secs(1));
         billing.record(billing_event()).await.unwrap();
         let (usage_record_queue, _) = UsageRecordQueue::bounded(1).unwrap();
+        let (refund_signal_queue, _) = RefundSignalQueue::bounded(1).unwrap();
 
         let report = run_http_and_shutdown(
             async { Ok(ServeOutcome::Drained) },
-            shutdown,
-            supervisor,
-            billing,
-            usage_record_queue,
-            database,
+            RuntimeShutdownResources {
+                shutdown,
+                supervisor,
+                billing,
+                usage_record_queue,
+                refund_signal_queue,
+                database,
+            },
             Duration::from_secs(1),
             Duration::from_secs(1),
         )
@@ -1072,6 +1198,7 @@ mod tests {
         billing.record(billing_event()).await.unwrap();
 
         let (usage_record_queue, receiver) = UsageRecordQueue::bounded(1).unwrap();
+        let (refund_signal_queue, _) = RefundSignalQueue::bounded(1).unwrap();
         let usage = usage();
         let mut lifecycle =
             BillingRequestPlan::prepare(Arc::new(RatioPricingResolver::free()), &usage)
@@ -1110,11 +1237,14 @@ mod tests {
                 release.notify_one();
                 Ok(ServeOutcome::Drained)
             },
-            shutdown,
-            supervisor,
-            billing,
-            usage_record_queue,
-            database,
+            RuntimeShutdownResources {
+                shutdown,
+                supervisor,
+                billing,
+                usage_record_queue,
+                refund_signal_queue,
+                database,
+            },
             Duration::from_secs(1),
             Duration::from_secs(1),
         )
@@ -1125,6 +1255,84 @@ mod tests {
         assert_eq!(
             events.lock().unwrap().as_slice(),
             ["http_finished", "usage_persisted", "billing_flushed"]
+        );
+        assert!(observer.ping().await.is_err());
+        let _ = fs::remove_dir_all(wal_directory);
+    }
+
+    #[tokio::test]
+    async fn shutdown_drains_refund_queue_after_http_and_before_final_billing_flush() {
+        let database = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let observer = database.clone();
+        let shutdown = ShutdownController::new();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let release = Arc::new(Notify::new());
+        let serial = NEXT_FILE.fetch_add(1, Ordering::Relaxed);
+        let wal_directory = std::env::temp_dir().join(format!(
+            "anyflows-bootstrap-refund-order-{}-{serial}",
+            std::process::id()
+        ));
+        let batcher = FileBillingBatcher::open(
+            &wal_directory,
+            Arc::new(OrderedBillingSink {
+                events: Arc::clone(&events),
+            }),
+        )
+        .unwrap();
+        let billing = BillingRuntime::from_batcher(batcher, true, Duration::from_secs(1));
+        billing.record(billing_event()).await.unwrap();
+
+        let (usage_record_queue, _) = UsageRecordQueue::bounded(1).unwrap();
+        let (refund_signal_queue, receiver) = RefundSignalQueue::bounded(1).unwrap();
+        assert_eq!(
+            refund_signal_queue.try_signal_refund(BillingReservationId::new([8; 16]).unwrap()),
+            RefundSignalOutcome::Accepted
+        );
+        let consumer = RefundSignalConsumer::new(
+            receiver,
+            Arc::new(OrderedRefundSink {
+                events: Arc::clone(&events),
+                release: Arc::clone(&release),
+            }),
+            Duration::from_millis(1),
+        )
+        .unwrap();
+        let mut supervisor = BackgroundTaskSupervisor::new(shutdown.clone());
+        supervisor.spawn_drainable("refund-order-test", move |_| {
+            let consumer = consumer.clone();
+            async move { consumer.run().await }
+        });
+
+        let http_events = Arc::clone(&events);
+        let report = run_http_and_shutdown(
+            async move {
+                http_events.lock().unwrap().push("http_finished");
+                release.notify_one();
+                Ok(ServeOutcome::Drained)
+            },
+            RuntimeShutdownResources {
+                shutdown,
+                supervisor,
+                billing,
+                usage_record_queue,
+                refund_signal_queue,
+                database,
+            },
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report.background, SupervisorShutdown::Drained);
+        assert_eq!(
+            events.lock().unwrap().as_slice(),
+            ["http_finished", "refund_persisted", "billing_flushed"]
         );
         assert!(observer.ping().await.is_err());
         let _ = fs::remove_dir_all(wal_directory);
