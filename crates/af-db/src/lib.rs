@@ -20,6 +20,9 @@ mod options;
 mod quota;
 #[cfg(test)]
 mod quota_tests;
+mod scheduler_ability;
+#[cfg(test)]
+mod scheduler_ability_tests;
 mod usage_log;
 #[cfg(test)]
 mod usage_log_tests;
@@ -48,6 +51,10 @@ pub use model_price::{
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
 pub use quota::{
     QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationStatus,
+};
+pub use scheduler_ability::{
+    MAX_SCHEDULER_ABILITY_ENTRIES, SchedulerAbilityRecord, SchedulerAbilityRepository,
+    SchedulerAbilityRepositoryError,
 };
 pub use usage_log::{
     UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics,
