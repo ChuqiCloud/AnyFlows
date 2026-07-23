@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 use url::Url;
 
 use super::{
-    ParseRequestError,
+    MAX_OUTPUT_TOKENS, ParseRequestError,
     bounded_json::{BoundedJsonError, JsonLimits, parse_value},
     wire::{
         AssistantContentWire, AssistantMessageWire, ChatRequestWire, DeveloperMessageWire, Field,
@@ -38,7 +38,6 @@ const MAX_SCHEMA_BYTES: usize = 64 * 1024;
 const MAX_TOTAL_SCHEMA_BYTES: usize = 512 * 1024;
 pub(super) const MAX_STOP_SEQUENCES: usize = 4;
 pub(super) const MAX_STOP_BYTES: usize = 1024;
-pub(super) const MAX_OUTPUT_TOKENS: i64 = 1_000_000;
 pub(super) const MAX_USER_ID_BYTES: usize = 512;
 pub(super) const MAX_MEDIA_URL_BYTES: usize = 8 * 1024;
 pub(super) const MAX_MEDIA_BYTES: usize = 20 * 1024 * 1024;
