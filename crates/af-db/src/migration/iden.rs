@@ -416,3 +416,42 @@ pub(in crate::migration) mod group_model_ratios {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod usage_logs {
+    use super::DeriveIden;
+
+    /// `usage_logs` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "usage_logs")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 用量日志最小持久化事实的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        EventId,
+        EventType,
+        UserId,
+        TokenId,
+        GroupId,
+        BillingMode,
+        InputTokens,
+        OutputTokens,
+        CacheRead,
+        #[sea_orm(iden = "cache_creation_5m")]
+        CacheCreation5m,
+        #[sea_orm(iden = "cache_creation_1h")]
+        CacheCreation1h,
+        ReasoningTokens,
+        AudioInputTokens,
+        AudioOutputTokens,
+        UsageSource,
+        UsageSemantics,
+        Quota,
+        CreatedAt,
+    }
+}

@@ -23,13 +23,15 @@ use crate::entity::{
     EncryptedJson, HeaderOverrides, PasswordHash, SensitiveDecimal, SensitiveJson, SensitiveString,
     TokenHash, TokenIpAllowlist, abilities, billing_batch_checkpoints, billing_reservations,
     channel_groups, channel_models, channels, credentials, group_model_ratios, groups,
-    model_prices, options, tokens, users,
+    model_prices, options, tokens, usage_logs, users,
 };
 use crate::{
     BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome, ChannelBillingWrite,
     DatabaseOptions, GroupPricingRepository, ModelPriceBillingMode, ModelPriceRepository,
     PoolOptions, QuotaMutationOutcome, QuotaRepository, QuotaReservationStatus, TokenAuthLookup,
-    TokenAuthLookupOutcome, TokenAuthRepository, TokenBillingWrite, UserBillingWrite, connect,
+    TokenAuthLookupOutcome, TokenAuthRepository, TokenBillingWrite, UsageLogBillingMode,
+    UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage,
+    UsageLogWrite, UsageLogWriteOutcome, UserBillingWrite, connect,
 };
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
@@ -47,7 +49,7 @@ const RESERVATION_KEY_A: &str = "11111111111111111111111111111111";
 const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
-const CORE_TABLES: [&str; 13] = [
+const CORE_TABLES: [&str; 14] = [
     "groups",
     "users",
     "channels",
@@ -61,6 +63,7 @@ const CORE_TABLES: [&str; 13] = [
     "billing_batch_checkpoints",
     "model_prices",
     "group_model_ratios",
+    "usage_logs",
 ];
 
 struct SlowMigrator;
@@ -209,6 +212,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     exercise_quota_repository(&pool).await?;
     exercise_billing_batch_repository(&pool).await?;
     exercise_model_price_repository(&pool).await?;
+    exercise_usage_log_repository(&pool).await?;
     exercise_core_schema(pool.connection()).await?;
 
     Migrator::down(pool.connection(), None).await?;
@@ -284,6 +288,44 @@ async fn group_pricing_migration_smoke() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[tokio::test]
+#[ignore = "仅由显式启用的隔离数据库用量日志流水线执行"]
+async fn usage_log_migration_smoke() -> Result<(), Box<dyn Error>> {
+    let database_url = test_database_url();
+    validate_destructive_test_target(
+        &database_url,
+        env::var(ALLOW_DESTRUCTIVE_MIGRATION_TEST).ok().as_deref(),
+    )?;
+    let options = DatabaseOptions::new(database_url)?.with_pool_options(PoolOptions {
+        min_connections: 1,
+        max_connections: 4,
+        ..PoolOptions::default()
+    });
+    let pool = connect(&options).await?;
+    let manager = SchemaManager::new(pool.connection());
+    let groups_migration = m20260718_000001_create_groups::Migration;
+    let users_migration = m20260718_000002_create_users::Migration;
+    let tokens_migration = m20260718_000005_create_tokens::Migration;
+    let usage_migration = m20260723_000014_create_usage_logs::Migration;
+
+    // 仅迁移 usage_logs 的外键依赖，允许本机旧 MySQL 独立验证新表。
+    groups_migration.up(&manager).await?;
+    users_migration.up(&manager).await?;
+    tokens_migration.up(&manager).await?;
+    usage_migration.up(&manager).await?;
+    assert!(manager.has_table("usage_logs").await?);
+    exercise_usage_log_repository(&pool).await?;
+
+    usage_migration.down(&manager).await?;
+    tokens_migration.down(&manager).await?;
+    users_migration.down(&manager).await?;
+    groups_migration.down(&manager).await?;
+    assert!(!manager.has_table("usage_logs").await?);
+
+    pool.close().await?;
+    Ok(())
+}
+
 /// 在三方言隔离数据库中验证高精度价格与显式免费模式读取一致。
 async fn exercise_model_price_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
     model_prices::ActiveModel {
@@ -336,6 +378,81 @@ async fn exercise_model_price_repository(pool: &DatabasePool) -> Result<(), Box<
         .ok_or("免费模型必须存在")?;
     assert_eq!(free.billing_mode(), ModelPriceBillingMode::Free);
     assert_eq!(free.prices(), [Decimal::ZERO; 5]);
+    Ok(())
+}
+
+/// 在三方言实库中验证用量事实的幂等追加与冲突拒绝。
+async fn exercise_usage_log_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let group = group_active_model("usage-smoke-group", "用量日志冒烟分组")
+        .insert(pool.connection())
+        .await?;
+    let mut user = user_active_model(
+        group.id,
+        "usage-smoke-user",
+        "usage-smoke@example.com",
+        "invite-usage-smoke",
+    );
+    user.status = Set(1);
+    let user = user.insert(pool.connection()).await?;
+    let mut token = token_active_model(user.id, group.id, TOKEN_HASH_C, "usage-smoke-token");
+    token.status = Set(1);
+    let token = token.insert(pool.connection()).await?;
+    let principal = GatewayPrincipal::new(
+        TokenId::new(token.id)?,
+        UserId::new(user.id)?,
+        GroupId::new(group.id)?,
+    );
+    let repository = UsageLogRepository::new(pool.clone());
+    let event_id = BillingReservationId::new([0xc1; 16])?;
+    let usage = UsageLogUsage::new(10, 2, 3, 4, 5, 1, 0, 0)?;
+    let write = UsageLogWrite::new(
+        event_id,
+        principal,
+        UsageLogBillingMode::PerToken,
+        usage,
+        UsageLogSource::Upstream,
+        UsageLogSemantics::Inclusive,
+        Quota::new(7)?,
+    );
+
+    assert_eq!(
+        repository.record(&write).await?,
+        UsageLogWriteOutcome::Applied
+    );
+    assert_eq!(
+        repository.record(&write).await?,
+        UsageLogWriteOutcome::Existing
+    );
+    assert_eq!(
+        usage_logs::Entity::find().count(pool.connection()).await?,
+        1
+    );
+    let conflicting_write = UsageLogWrite::new(
+        event_id,
+        principal,
+        UsageLogBillingMode::PerToken,
+        usage,
+        UsageLogSource::Upstream,
+        UsageLogSemantics::Inclusive,
+        Quota::new(8)?,
+    );
+    assert_eq!(
+        repository.record(&conflicting_write).await,
+        Err(UsageLogRepositoryError::Conflict)
+    );
+
+    usage_logs::Entity::delete_many()
+        .exec(pool.connection())
+        .await?;
+    tokens::Entity::delete_by_id(token.id)
+        .exec(pool.connection())
+        .await?;
+    users::Entity::delete_by_id(user.id)
+        .exec(pool.connection())
+        .await?;
+    groups::Entity::delete_by_id(group.id)
+        .exec(pool.connection())
+        .await?;
     Ok(())
 }
 

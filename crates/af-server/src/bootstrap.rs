@@ -1,10 +1,14 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
 use af_admin::{DatabaseTokenAuthenticator, TokenAuthenticator};
+use af_billing::{
+    DatabaseUsageRecordSink, UsageRecordConsumer, UsageRecordConsumerError, UsageRecordQueue,
+    UsageRecordQueueError,
+};
 use af_config::{AppConfig, ConfigError};
 use af_db::{
     DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool, MigrationOptions,
-    TokenAuthRepository, TokenAuthRepositoryConfigError, connect_and_migrate,
+    TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository, connect_and_migrate,
 };
 use af_http::{
     HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle, ServeError, ServeOutcome,
@@ -24,6 +28,8 @@ use crate::{
     BackgroundTaskSupervisor, BillingFlushReport, BillingRuntime, BillingRuntimeError,
     ShutdownController, SupervisorError, SupervisorShutdown, system_shutdown_signal,
 };
+
+const USAGE_RECORD_RETRY_DELAY: Duration = Duration::from_millis(100);
 
 /// 已加载并校验静态配置。
 pub struct Configured;
@@ -61,6 +67,9 @@ pub struct BillingReady {
     infrastructure: AuthenticationReady,
     relay: Arc<RelayService>,
     billing: BillingRuntime,
+    usage_record_queue: UsageRecordQueue,
+    usage_record_consumer: UsageRecordConsumer,
+    usage_record_worker_count: usize,
 }
 
 /// 后台任务监督域已经建立，批量模式的周期 flush 已注册。
@@ -68,6 +77,7 @@ pub struct Supervised {
     infrastructure: AuthenticationReady,
     relay: Arc<RelayService>,
     billing: BillingRuntime,
+    usage_record_queue: UsageRecordQueue,
     supervisor: BackgroundTaskSupervisor,
 }
 
@@ -158,6 +168,15 @@ pub enum BootstrapError {
     /// 关闭前最终 WAL flush 超过配置的硬截止时间。
     #[error("关闭前计费 WAL 刷新超时")]
     BillingShutdownFlushTimeout,
+    /// 用量记录队列容量配置无效。
+    #[error("初始化用量记录队列失败")]
+    UsageRecordQueue(#[source] UsageRecordQueueError),
+    /// 用量记录消费者配置无效。
+    #[error("初始化用量记录消费者失败")]
+    UsageRecordConsumer(#[source] UsageRecordConsumerError),
+    /// 关闭截止到达时仍有未获持久化确认的用量事实。
+    #[error("用量记录未能在关闭截止前排空")]
+    UsageRecordDrainIncomplete,
     /// 后台任务强制关闭失败。
     #[error("后台任务生命周期操作失败")]
     Supervisor(#[source] SupervisorError),
@@ -300,6 +319,18 @@ impl Bootstrap<RelayReady> {
             .await
             .map_err(|_| BootstrapError::BillingStartupFlushTimeout)?
             .map_err(BootstrapError::Billing)?;
+        let (usage_record_queue, usage_record_receiver) =
+            UsageRecordQueue::bounded(self.config.billing().usage_record_queue_capacity())
+                .map_err(BootstrapError::UsageRecordQueue)?;
+        let usage_record_consumer = UsageRecordConsumer::new(
+            usage_record_receiver,
+            Arc::new(DatabaseUsageRecordSink::new(UsageLogRepository::new(
+                self.stage.infrastructure.infrastructure.database.clone(),
+            ))),
+            USAGE_RECORD_RETRY_DELAY,
+        )
+        .map_err(BootstrapError::UsageRecordConsumer)?;
+        let usage_record_worker_count = self.config.billing().usage_record_worker_count();
         let Bootstrap {
             config,
             shutdown_timeout,
@@ -314,6 +345,9 @@ impl Bootstrap<RelayReady> {
                 infrastructure: stage.infrastructure,
                 relay: stage.relay,
                 billing,
+                usage_record_queue,
+                usage_record_consumer,
+                usage_record_worker_count,
             },
         })
     }
@@ -334,6 +368,9 @@ impl Bootstrap<BillingReady> {
             infrastructure,
             relay,
             billing,
+            usage_record_queue,
+            usage_record_consumer,
+            usage_record_worker_count,
         } = stage;
         if billing.batch_enabled() {
             supervisor.spawn("billing-flush", {
@@ -348,6 +385,17 @@ impl Bootstrap<BillingReady> {
                 }
             });
         }
+        for _ in 0..usage_record_worker_count {
+            supervisor.spawn_drainable("usage-record-persist", {
+                let usage_record_consumer = usage_record_consumer.clone();
+                move |_| {
+                    let usage_record_consumer = usage_record_consumer.clone();
+                    async move {
+                        usage_record_consumer.run().await;
+                    }
+                }
+            });
+        }
         Bootstrap {
             config,
             shutdown_timeout,
@@ -356,6 +404,7 @@ impl Bootstrap<BillingReady> {
                 infrastructure,
                 relay,
                 billing,
+                usage_record_queue,
                 supervisor,
             },
         }
@@ -459,6 +508,7 @@ impl Bootstrap<ListenerReady> {
             infrastructure,
             supervisor,
             billing,
+            usage_record_queue,
             relay: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
@@ -470,6 +520,7 @@ impl Bootstrap<ListenerReady> {
             shutdown,
             supervisor,
             billing,
+            usage_record_queue,
             infrastructure.infrastructure.database,
             shutdown_timeout,
             billing_flush_timeout,
@@ -491,6 +542,7 @@ async fn run_http_and_shutdown<H>(
     shutdown: ShutdownController,
     supervisor: BackgroundTaskSupervisor,
     billing: BillingRuntime,
+    usage_record_queue: UsageRecordQueue,
     database: DatabasePool,
     shutdown_timeout: Duration,
     billing_flush_timeout: Duration,
@@ -500,9 +552,12 @@ where
 {
     let http_result = http.await;
 
-    // HTTP 无论正常结束还是失败，都必须先封闭后台任务，再关闭数据库。
+    // HTTP 排空后不再有新的 lifecycle 完成回调；先封闭入口，让消费者可靠排空已接收事实。
+    usage_record_queue.close();
+    // 队列关闭后再停止其他后台任务，消费者会忽略该信号直到队列返回空。
     let _ = shutdown.trigger();
     let background_result = supervisor.shutdown(shutdown_timeout).await;
+    let usage_records_drained = usage_record_queue.is_drained();
 
     // 无法确认请求或后台任务已经终止时，禁止析构仍可能被使用的运行期资源。
     let http_result = match http_result {
@@ -525,6 +580,9 @@ where
         };
     let database_result = database.close().await;
     match (http_result, billing_result, database_result) {
+        (Ok(_), Ok(_), Ok(())) if !usage_records_drained => {
+            Err(BootstrapError::UsageRecordDrainIncomplete)
+        }
         (Ok(http), Ok(billing), Ok(())) => Ok(ShutdownReport {
             http,
             background,
@@ -717,10 +775,13 @@ mod tests {
 
     use af_billing::{
         BillingBatch, BillingBatchApplyOutcome, BillingBatchEvent, BillingBatchSink,
-        BillingBatchSinkFuture, FileBillingBatcher, UserBillingDelta,
+        BillingBatchSinkFuture, BillingRequestPlan, BillingUsageRecord, FileBillingBatcher,
+        RatioPricingResolver, UsageRecordConsumer, UsageRecordQueue, UsageRecordSink,
+        UsageRecordSinkFuture, UserBillingDelta,
     };
-    use af_domain::{BillingReservationId, QuotaDelta, UserId};
+    use af_domain::{BillingReservationId, GatewayPrincipal, GroupId, QuotaDelta, TokenId, UserId};
     use af_http::{ReadinessFuture, ReadinessProbe};
+    use af_protocol::{TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};
     use tokio::sync::{Notify, oneshot};
 
     use super::*;
@@ -733,11 +794,26 @@ mod tests {
         events: Arc<Mutex<Vec<&'static str>>>,
     }
 
+    struct OrderedUsageSink {
+        events: Arc<Mutex<Vec<&'static str>>>,
+        release: Arc<Notify>,
+    }
+
     impl BillingBatchSink for OrderedBillingSink {
         fn apply<'a>(&'a self, _batch: &'a BillingBatch) -> BillingBatchSinkFuture<'a> {
             Box::pin(async move {
                 self.events.lock().unwrap().push("billing_flushed");
                 Ok(BillingBatchApplyOutcome::Applied)
+            })
+        }
+    }
+
+    impl UsageRecordSink for OrderedUsageSink {
+        fn persist<'a>(&'a self, _record: BillingUsageRecord) -> UsageRecordSinkFuture<'a> {
+            Box::pin(async move {
+                self.release.notified().await;
+                self.events.lock().unwrap().push("usage_persisted");
+                Ok(())
             })
         }
     }
@@ -874,6 +950,7 @@ mod tests {
         )
         .unwrap();
         let billing = BillingRuntime::from_batcher(batcher, true, Duration::from_secs(1));
+        let (usage_record_queue, _) = UsageRecordQueue::bounded(1).unwrap();
         billing.record(billing_event()).await.unwrap();
         let started = Arc::new(Notify::new());
         let mut supervisor = BackgroundTaskSupervisor::new(shutdown.clone());
@@ -903,6 +980,7 @@ mod tests {
             shutdown,
             supervisor,
             billing,
+            usage_record_queue,
             database,
             Duration::from_secs(1),
             Duration::from_secs(1),
@@ -944,12 +1022,14 @@ mod tests {
         .unwrap();
         let billing = BillingRuntime::from_batcher(batcher, true, Duration::from_secs(1));
         billing.record(billing_event()).await.unwrap();
+        let (usage_record_queue, _) = UsageRecordQueue::bounded(1).unwrap();
 
         let report = run_http_and_shutdown(
             async { Ok(ServeOutcome::Drained) },
             shutdown,
             supervisor,
             billing,
+            usage_record_queue,
             database,
             Duration::from_secs(1),
             Duration::from_secs(1),
@@ -960,6 +1040,92 @@ mod tests {
         assert_eq!(report.billing.confirmed_batches(), 1);
         assert_eq!(report.billing.confirmed_events(), 1);
         assert_eq!(events.lock().unwrap().as_slice(), ["billing_flushed"]);
+        assert!(observer.ping().await.is_err());
+        let _ = fs::remove_dir_all(wal_directory);
+    }
+
+    #[tokio::test]
+    async fn shutdown_drains_usage_queue_after_http_and_before_final_billing_flush() {
+        let database = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let observer = database.clone();
+        let shutdown = ShutdownController::new();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let release = Arc::new(Notify::new());
+        let serial = NEXT_FILE.fetch_add(1, Ordering::Relaxed);
+        let wal_directory = std::env::temp_dir().join(format!(
+            "anyflows-bootstrap-usage-order-{}-{serial}",
+            std::process::id()
+        ));
+        let batcher = FileBillingBatcher::open(
+            &wal_directory,
+            Arc::new(OrderedBillingSink {
+                events: Arc::clone(&events),
+            }),
+        )
+        .unwrap();
+        let billing = BillingRuntime::from_batcher(batcher, true, Duration::from_secs(1));
+        billing.record(billing_event()).await.unwrap();
+
+        let (usage_record_queue, receiver) = UsageRecordQueue::bounded(1).unwrap();
+        let usage = usage();
+        let mut lifecycle =
+            BillingRequestPlan::prepare(Arc::new(RatioPricingResolver::free()), &usage)
+                .unwrap()
+                .start_free(
+                    GatewayPrincipal::new(
+                        TokenId::new(1).unwrap(),
+                        UserId::new(2).unwrap(),
+                        GroupId::new(3).unwrap(),
+                    ),
+                    BillingReservationId::new([7; 16]).unwrap(),
+                    Arc::new(usage_record_queue.clone()),
+                )
+                .unwrap();
+        let _ = lifecycle.complete(usage).await.unwrap();
+
+        let consumer = UsageRecordConsumer::new(
+            receiver,
+            Arc::new(OrderedUsageSink {
+                events: Arc::clone(&events),
+                release: Arc::clone(&release),
+            }),
+            Duration::from_millis(1),
+        )
+        .unwrap();
+        let mut supervisor = BackgroundTaskSupervisor::new(shutdown.clone());
+        supervisor.spawn_drainable("usage-order-test", move |_| {
+            let consumer = consumer.clone();
+            async move { consumer.run().await }
+        });
+
+        let http_events = Arc::clone(&events);
+        let report = run_http_and_shutdown(
+            async move {
+                http_events.lock().unwrap().push("http_finished");
+                release.notify_one();
+                Ok(ServeOutcome::Drained)
+            },
+            shutdown,
+            supervisor,
+            billing,
+            usage_record_queue,
+            database,
+            Duration::from_secs(1),
+            Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(report.background, SupervisorShutdown::Drained);
+        assert_eq!(
+            events.lock().unwrap().as_slice(),
+            ["http_finished", "usage_persisted", "billing_flushed"]
+        );
         assert!(observer.ping().await.is_err());
         let _ = fs::remove_dir_all(wal_directory);
     }
@@ -980,6 +1146,24 @@ mod tests {
             ),
             None,
             None,
+        )
+        .unwrap()
+    }
+
+    fn usage() -> Usage {
+        Usage::new(
+            TokenCount::new(3).unwrap(),
+            TokenCount::new(2).unwrap(),
+            UsageDetails::new(
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+            ),
+            UsageSource::Estimated,
+            UsageSemantics::Inclusive,
         )
         .unwrap()
     }

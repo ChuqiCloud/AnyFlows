@@ -69,7 +69,7 @@ impl UsageRecordQueue {
         ))
     }
 
-    /// 永久关闭接收端；已在途投递仍可确认，未确认投递不再重新入队。
+    /// 关闭接收入口；已在途投递仍会在未确认时重新入队，供消费者排空。
     pub fn close(&self) {
         let mut state = lock_state(&self.inner);
         state.closed = true;
@@ -80,6 +80,12 @@ impl UsageRecordQueue {
     #[must_use]
     pub fn is_closed(&self) -> bool {
         lock_state(&self.inner).closed
+    }
+
+    /// 返回所有已接收投递是否都已经获得确认。
+    #[must_use]
+    pub fn is_drained(&self) -> bool {
+        lock_state(&self.inner).entries.is_empty()
     }
 }
 
@@ -176,7 +182,9 @@ impl UsageRecordDelivery {
         if removed {
             state.entries.remove(&self.record.event_id());
         }
-        self.acknowledged = true;
+        if removed {
+            self.acknowledged = true;
+        }
         removed
     }
 }
@@ -194,11 +202,9 @@ impl Drop for UsageRecordDelivery {
             return;
         }
         entry.in_flight = false;
-        if !state.closed {
-            state.pending.push_back(self.record.event_id());
-            drop(state);
-            self.queue.inner.notify.notify_one();
-        }
+        state.pending.push_back(self.record.event_id());
+        drop(state);
+        self.queue.inner.notify.notify_one();
     }
 }
 
@@ -264,6 +270,21 @@ mod tests {
         let (queue, receiver) = UsageRecordQueue::bounded(1).unwrap();
         queue.close();
         assert_eq!(queue.try_record(record(4, 1)), UsageRecordOutcome::Closed);
+        assert!(receiver.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn close_keeps_unacknowledged_delivery_available_for_drain() {
+        let (queue, receiver) = UsageRecordQueue::bounded(1).unwrap();
+        let queued = record(5, 1);
+        assert_eq!(queue.try_record(queued), UsageRecordOutcome::Accepted);
+        let delivery = receiver.recv().await.unwrap();
+        queue.close();
+        drop(delivery);
+
+        let redelivered = receiver.recv().await.unwrap();
+        assert_eq!(redelivered.record(), queued);
+        assert!(redelivered.acknowledge());
         assert!(receiver.recv().await.is_none());
     }
 

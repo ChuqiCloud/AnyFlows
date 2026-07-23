@@ -20,6 +20,9 @@ mod options;
 mod quota;
 #[cfg(test)]
 mod quota_tests;
+mod usage_log;
+#[cfg(test)]
+mod usage_log_tests;
 
 pub use auth::{
     TokenAuthLookup, TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,
@@ -45,6 +48,10 @@ pub use model_price::{
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
 pub use quota::{
     QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationStatus,
+};
+pub use usage_log::{
+    UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics,
+    UsageLogSource, UsageLogUsage, UsageLogWrite, UsageLogWriteError, UsageLogWriteOutcome,
 };
 
 /// 连接数据库并执行全部待处理迁移。

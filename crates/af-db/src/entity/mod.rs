@@ -21,6 +21,7 @@ pub(crate) mod groups;
 pub(crate) mod model_prices;
 pub(crate) mod options;
 pub(crate) mod tokens;
+pub(crate) mod usage_logs;
 pub(crate) mod users;
 
 mod sensitive;
@@ -285,6 +286,50 @@ where
     Ok(())
 }
 
+async fn validate_usage_log<C>(
+    model: &usage_logs::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 用量日志只追加；MySQL 5.7 忽略 CHECK 时仍由 ORM 写入口拒绝非法值和更新。
+    if !insert {
+        return Err(DbErr::Custom("用量日志不允许更新".to_owned()));
+    }
+    let valid_modes = matches!(model.billing_mode.try_as_ref(), Some(1 | 2));
+    let valid_event_type = matches!(model.event_type.try_as_ref(), Some(1));
+    let valid_source = matches!(model.usage_source.try_as_ref(), Some(1 | 2));
+    let valid_semantics = matches!(model.usage_semantics.try_as_ref(), Some(1 | 2));
+    let non_negative = [
+        model.input_tokens.try_as_ref(),
+        model.output_tokens.try_as_ref(),
+        model.cache_read.try_as_ref(),
+        model.cache_creation_5m.try_as_ref(),
+        model.cache_creation_1h.try_as_ref(),
+        model.reasoning_tokens.try_as_ref(),
+        model.audio_input_tokens.try_as_ref(),
+        model.audio_output_tokens.try_as_ref(),
+        model.quota.try_as_ref(),
+    ]
+    .iter()
+    .all(|value| matches!(value, Some(value) if **value >= 0));
+    if model.event_id.try_as_ref().is_none()
+        || model.user_id.try_as_ref().is_none()
+        || model.token_id.try_as_ref().is_none()
+        || model.group_id.try_as_ref().is_none()
+        || !valid_event_type
+        || !valid_modes
+        || !valid_source
+        || !valid_semantics
+        || !non_negative
+    {
+        return Err(DbErr::Custom("用量日志状态无效".to_owned()));
+    }
+    Ok(())
+}
+
 fn effective_price(
     active: &ActiveValue<SensitiveDecimal>,
     persisted: Option<SensitiveDecimal>,
@@ -331,3 +376,14 @@ impl_updated_at_behavior!(
     tokens::ActiveModel => validate_default,
     users::ActiveModel => validate_user,
 );
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for usage_logs::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_usage_log(&self, database, insert).await?;
+        Ok(self)
+    }
+}

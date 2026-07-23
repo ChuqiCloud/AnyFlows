@@ -66,18 +66,47 @@ impl BackgroundTaskSupervisor {
         F: Fn(ShutdownController) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
+        self.spawn_inner(task_kind, factory, false);
+    }
+
+    /// 注册关闭阶段仍必须至少运行一次并完成业务排空的长期任务。
+    ///
+    /// 若任务在关闭阶段 panic，监督器会继续退避重启，直到任务正常返回或上层关闭
+    /// 截止时间取消整个 Future。适用于队列消费者，不适用于收到关闭信号就应停止的周期任务。
+    pub fn spawn_drainable<F, Fut>(&mut self, task_kind: &'static str, factory: F)
+    where
+        F: Fn(ShutdownController) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        self.spawn_inner(task_kind, factory, true);
+    }
+
+    fn spawn_inner<F, Fut>(&mut self, task_kind: &'static str, factory: F, drain_on_shutdown: bool)
+    where
+        F: Fn(ShutdownController) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
         let shutdown = self.shutdown.clone();
         let restart_delay = self.restart_delay;
         self.tasks.spawn(async move {
             loop {
-                if shutdown.is_triggered() {
+                if shutdown.is_triggered() && !drain_on_shutdown {
                     return;
                 }
                 let result = AssertUnwindSafe(async { factory(shutdown.clone()).await })
                     .catch_unwind()
                     .await;
                 if shutdown.is_triggered() {
-                    return;
+                    if result.is_ok() || !drain_on_shutdown {
+                        return;
+                    }
+                    tracing::error!(
+                        task_kind,
+                        error_kind = "task_panic_during_drain",
+                        "排空任务异常退出，将在关闭截止前重启"
+                    );
+                    sleep(restart_delay).await;
+                    continue;
                 }
                 if result.is_err() {
                     tracing::error!(task_kind, error_kind = "task_panic", "后台任务异常退出");
@@ -197,6 +226,28 @@ mod tests {
             SupervisorShutdown::TimedOut
         );
         assert_eq!(dropped.load(Ordering::Acquire), 1);
+    }
+
+    #[tokio::test]
+    async fn drainable_task_runs_even_when_shutdown_precedes_first_poll() {
+        let shutdown = ShutdownController::new();
+        let runs = Arc::new(AtomicUsize::new(0));
+        let mut supervisor = BackgroundTaskSupervisor::new(shutdown);
+        supervisor.spawn_drainable("drain-test", {
+            let runs = Arc::clone(&runs);
+            move |_| {
+                let runs = Arc::clone(&runs);
+                async move {
+                    runs.fetch_add(1, Ordering::AcqRel);
+                }
+            }
+        });
+
+        assert_eq!(
+            supervisor.shutdown(Duration::from_secs(1)).await.unwrap(),
+            SupervisorShutdown::Drained
+        );
+        assert_eq!(runs.load(Ordering::Acquire), 1);
     }
 
     struct DropCounter(Arc<AtomicUsize>);
