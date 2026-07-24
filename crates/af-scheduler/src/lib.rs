@@ -4,6 +4,7 @@ mod auto_ban;
 mod candidate;
 mod database;
 mod failure;
+mod probe;
 mod retry;
 mod weighted;
 
@@ -16,6 +17,12 @@ pub use candidate::SchedulerCandidate;
 pub use database::{DatabaseWeightedScheduler, DatabaseWeightedSchedulerError};
 pub use failure::{
     DEFAULT_TRANSIENT_SERVER_RETRY_LIMIT, FailureAction, FailureContext, FailurePolicy,
+};
+pub use probe::{
+    ChannelProbe, ChannelProbeRunReport, ChannelProbeStatus, ChannelProbeStore,
+    ChannelProbeSupervisor, ChannelProbeSupervisorConfig, ChannelProbeSupervisorConfigError,
+    ChannelProbeSupervisorError, DEFAULT_CHANNEL_PROBE_BATCH_SIZE, DEFAULT_CHANNEL_PROBE_INTERVAL,
+    DEFAULT_CHANNEL_PROBE_TIMEOUT,
 };
 pub use retry::{RetrySelection, WeightedRetryPlan, WeightedRetryPlanError};
 pub use weighted::{

@@ -49,6 +49,18 @@ pub struct ChannelProbeLease {
 }
 
 impl ChannelProbeLease {
+    /// 为非数据库仓储实现或测试构造探活租约。
+    ///
+    /// 生产数据库仓储仍以 `load_probe_candidates` 为标准来源；恢复阶段会再次用时间戳
+    /// 做 CAS 校验，因此调用方不能仅凭渠道 ID 绕过旧探活保护。
+    #[must_use]
+    pub const fn new(channel_id: ChannelId, auto_disabled_at: TimeDateTimeWithTimeZone) -> Self {
+        Self {
+            channel_id,
+            auto_disabled_at,
+        }
+    }
+
     /// 返回本次应探活的渠道标识。
     #[must_use]
     pub const fn channel_id(&self) -> ChannelId {

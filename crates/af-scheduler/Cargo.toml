@@ -10,9 +10,11 @@ af-db = { path = "../af-db", version = "0.1.0" }
 af-domain = { path = "../af-domain", version = "0.1.0" }
 getrandom.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true
+sea-orm.workspace = true
 
 [lints]
 workspace = true
