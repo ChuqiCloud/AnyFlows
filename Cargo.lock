@@ -177,8 +177,10 @@ dependencies = [
  "af-db",
  "af-domain",
  "getrandom 0.4.3",
+ "sea-orm",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
