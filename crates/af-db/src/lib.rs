@@ -6,6 +6,9 @@ mod auth_tests;
 mod billing_batch;
 #[cfg(test)]
 mod billing_batch_tests;
+mod channel_state;
+#[cfg(test)]
+mod channel_state_tests;
 mod connection;
 mod entity;
 mod error;
@@ -34,6 +37,10 @@ pub use auth::{
 pub use billing_batch::{
     BillingBatchRepository, BillingBatchRepositoryError, BillingBatchWrite, BillingBatchWriteError,
     BillingBatchWriteOutcome, ChannelBillingWrite, TokenBillingWrite, UserBillingWrite,
+};
+pub use channel_state::{
+    ChannelAutoDisableOutcome, ChannelProbeLease, ChannelProbeRecoveryOutcome,
+    ChannelStateRepository, ChannelStateRepositoryError, MAX_CHANNEL_PROBE_BATCH,
 };
 pub use connection::DatabasePool;
 pub(crate) use connection::connect;
