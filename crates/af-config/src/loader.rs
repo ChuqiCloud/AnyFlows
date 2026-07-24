@@ -12,7 +12,8 @@ use figment::{
 use serde::Serialize;
 
 use crate::{
-    AppConfig, AuthSettings, BillingSettings, ConfigError, ServerConfig, TelemetrySettings,
+    AppConfig, AuthSettings, BillingSettings, ChannelProbeSettings, ConfigError, ServerConfig,
+    TelemetrySettings,
 };
 
 /// 默认配置文件名；文件不存在时仅使用默认值与环境变量。
@@ -28,6 +29,7 @@ struct ConfigDefaults {
     telemetry: TelemetrySettings,
     database: DatabaseDefaults,
     billing: BillingSettings,
+    channel_probe: ChannelProbeSettings,
     redis: RedisDefaults,
     auth: AuthSettings,
     http_client: HttpClientDefaults,
@@ -160,6 +162,11 @@ fn known_field(path: &str) -> Option<&'static str> {
         "billing.usage_record_queue_capacity" => "billing.usage_record_queue_capacity",
         "billing.usage_record_worker_count" => "billing.usage_record_worker_count",
         "billing.wal_directory" => "billing.wal_directory",
+        "channel_probe" => "channel_probe",
+        "channel_probe.enabled" => "channel_probe.enabled",
+        "channel_probe.batch_size" => "channel_probe.batch_size",
+        "channel_probe.interval_secs" => "channel_probe.interval_secs",
+        "channel_probe.probe_timeout_secs" => "channel_probe.probe_timeout_secs",
         "redis" => "redis",
         "redis.url" => "redis.url",
         "auth" => "auth",
@@ -248,6 +255,10 @@ mod tests {
                 config.billing().wal_directory(),
                 Path::new("data/billing-wal")
             );
+            assert!(!config.channel_probe().enabled());
+            assert_eq!(config.channel_probe().batch_size(), 16);
+            assert_eq!(config.channel_probe().interval_secs(), 60);
+            assert_eq!(config.channel_probe().probe_timeout_secs(), 10);
             assert!(config.redis().url().is_none());
             assert!(!config.auth().allow_query_api_key());
             assert_eq!(config.auth().lookup_timeout_secs(), 2);
@@ -532,6 +543,10 @@ mod tests {
                 config.billing().wal_directory(),
                 Path::new("environment-billing-wal")
             );
+            assert!(config.channel_probe().enabled());
+            assert_eq!(config.channel_probe().batch_size(), 8);
+            assert_eq!(config.channel_probe().interval_secs(), 120);
+            assert_eq!(config.channel_probe().probe_timeout_secs(), 15);
             assert_eq!(config.http_client().max_cached_clients(), Some(3));
             assert_eq!(
                 config.openai_upstream().base_url(),
@@ -579,6 +594,10 @@ mod tests {
                 .env("AF_BILLING__FLUSH_INTERVAL_SECS", "19")
                 .env("AF_BILLING__FLUSH_TIMEOUT_SECS", "23")
                 .env("AF_BILLING__WAL_DIRECTORY", "environment-billing-wal")
+                .env("AF_CHANNEL_PROBE__ENABLED", "true")
+                .env("AF_CHANNEL_PROBE__BATCH_SIZE", "8")
+                .env("AF_CHANNEL_PROBE__INTERVAL_SECS", "120")
+                .env("AF_CHANNEL_PROBE__PROBE_TIMEOUT_SECS", "15")
                 .env(
                     "AF_DATABASE__URL",
                     "postgres://env-user:env-secret@db/env-app",
@@ -904,6 +923,18 @@ mod tests {
                     "[database]\nurl = 'sqlite::memory:'\n[billing]\nusage_record_worker_count = 0\n",
                 ),
                 (
+                    "channel_probe.batch_size",
+                    "[database]\nurl = 'sqlite::memory:'\n[channel_probe]\nbatch_size = 0\n",
+                ),
+                (
+                    "channel_probe.interval_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[channel_probe]\ninterval_secs = 0\n",
+                ),
+                (
+                    "channel_probe.probe_timeout_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[channel_probe]\nprobe_timeout_secs = 0\n",
+                ),
+                (
                     "http_client.max_cached_clients",
                     "[database]\nurl = 'sqlite::memory:'\n[http_client]\nmax_cached_clients = 0\n",
                 ),
@@ -989,6 +1020,18 @@ mod tests {
                 (
                     "billing.usage_record_worker_count",
                     "[database]\nurl = 'sqlite::memory:'\n[billing]\nusage_record_worker_count = 65\n",
+                ),
+                (
+                    "channel_probe.batch_size",
+                    "[database]\nurl = 'sqlite::memory:'\n[channel_probe]\nbatch_size = 65\n",
+                ),
+                (
+                    "channel_probe.interval_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[channel_probe]\ninterval_secs = 3601\n",
+                ),
+                (
+                    "channel_probe.probe_timeout_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[channel_probe]\nprobe_timeout_secs = 301\n",
                 ),
             ] {
                 let path = temp_file(body);

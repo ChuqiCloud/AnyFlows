@@ -10,10 +10,11 @@ use af_billing::{
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
-    DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool, MigrationOptions,
-    QuotaRepository, TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository,
-    connect_and_migrate,
+    ChannelStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
+    MigrationOptions, QuotaRepository, TokenAuthRepository, TokenAuthRepositoryConfigError,
+    UsageLogRepository, connect_and_migrate,
 };
+use af_domain::ChannelId;
 use af_http::{
     ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle, ServeError,
     ServeOutcome, build_router, serve_with_graceful_shutdown,
@@ -24,6 +25,9 @@ use af_httpclient::{
     PooledClient, ProxyConfig, RemoteDnsPolicy,
 };
 use af_relay::{RelayBuildError, RelayService};
+use af_scheduler::{
+    ChannelProbe, ChannelProbeStatus, ChannelProbeSupervisor, ChannelProbeSupervisorConfig,
+};
 use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
 use thiserror::Error;
 
@@ -35,6 +39,21 @@ use crate::{
 };
 
 const BILLING_QUEUE_RETRY_DELAY: Duration = Duration::from_millis(100);
+
+/// 凭据解密尚未接入生产探活时使用的失败关闭端口。
+#[derive(Clone, Copy, Debug, Default)]
+struct CredentialUnavailableChannelProbe;
+
+impl ChannelProbe for CredentialUnavailableChannelProbe {
+    async fn check(&self, channel_id: ChannelId) -> ChannelProbeStatus {
+        tracing::debug!(
+            channel_id = channel_id.get(),
+            probe_result = "credential_unavailable",
+            "渠道探活凭据尚不可用，本轮保持自动禁用状态"
+        );
+        ChannelProbeStatus::Unhealthy
+    }
+}
 
 /// 已加载并校验静态配置。
 pub struct Configured;
@@ -79,7 +98,7 @@ pub struct BillingReady {
     refund_signal_consumer: RefundSignalConsumer,
 }
 
-/// 后台任务监督域已经建立，周期 flush、用量持久化与退款补偿 worker 已注册。
+/// 后台任务监督域已经建立，周期 flush、渠道探活、用量持久化与退款补偿 worker 已注册。
 pub struct Supervised {
     infrastructure: AuthenticationReady,
     chat: Arc<dyn ChatService>,
@@ -471,6 +490,18 @@ impl Bootstrap<BillingReady> {
                 }
             }
         });
+        if config.channel_probe().enabled() {
+            tracing::warn!(
+                probe_mode = "fail_closed",
+                "渠道探活已启用，但凭据解密尚未接线；当前不会自动恢复渠道"
+            );
+            spawn_channel_probe_task(
+                &mut supervisor,
+                infrastructure.infrastructure.database.clone(),
+                channel_probe_config(&config),
+                CredentialUnavailableChannelProbe,
+            );
+        }
         Bootstrap {
             config,
             shutdown_timeout,
@@ -485,6 +516,37 @@ impl Bootstrap<BillingReady> {
             },
         }
     }
+}
+
+/// 注册可重建且响应统一关闭信号的渠道探活周期任务。
+fn spawn_channel_probe_task<P>(
+    supervisor: &mut BackgroundTaskSupervisor,
+    database: DatabasePool,
+    probe_config: ChannelProbeSupervisorConfig,
+    probe: P,
+) where
+    P: ChannelProbe + Clone + Send + Sync + 'static,
+{
+    supervisor.spawn("channel-probe", move |task_shutdown| {
+        let store = ChannelStateRepository::new(database.clone());
+        let probe = probe.clone();
+        async move {
+            ChannelProbeSupervisor::new(store, probe, probe_config)
+                .run_periodic_until(task_shutdown.cancelled())
+                .await;
+        }
+    });
+}
+
+/// 将已校验的启动配置转换为调度层的强类型探活边界。
+fn channel_probe_config(config: &AppConfig) -> ChannelProbeSupervisorConfig {
+    let settings = config.channel_probe();
+    ChannelProbeSupervisorConfig::new(
+        settings.batch_size(),
+        Duration::from_secs(settings.interval_secs()),
+        Duration::from_secs(settings.probe_timeout_secs()),
+    )
+    .expect("已校验的渠道探活配置必须满足调度层边界")
 }
 
 impl Bootstrap<Supervised> {
@@ -1042,6 +1104,36 @@ mod tests {
         assert_eq!(report.background, SupervisorShutdown::Drained);
         assert_eq!(report.billing, BillingFlushReport::default());
         let _ = fs::remove_dir_all(wal_directory);
+    }
+
+    #[tokio::test]
+    async fn channel_probe_task_is_registered_and_cancellable() {
+        let database = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let shutdown = ShutdownController::new();
+        let mut supervisor = BackgroundTaskSupervisor::new(shutdown);
+        spawn_channel_probe_task(
+            &mut supervisor,
+            database.clone(),
+            ChannelProbeSupervisorConfig::new(
+                1,
+                Duration::from_secs(3_600),
+                Duration::from_secs(1),
+            )
+            .unwrap(),
+            CredentialUnavailableChannelProbe,
+        );
+
+        assert_eq!(supervisor.task_count(), 1);
+        assert_eq!(
+            supervisor.shutdown(Duration::from_secs(1)).await.unwrap(),
+            SupervisorShutdown::Drained
+        );
+        database.close().await.unwrap();
     }
 
     #[tokio::test]
