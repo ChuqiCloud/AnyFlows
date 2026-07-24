@@ -178,6 +178,7 @@ dependencies = [
  "af-domain",
  "getrandom 0.4.3",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

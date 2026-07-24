@@ -1,11 +1,17 @@
 //! 候选选路、健康状态、并发控制与调度快照。
 
+mod auto_ban;
 mod candidate;
 mod database;
 mod failure;
 mod retry;
 mod weighted;
 
+pub use auto_ban::{
+    AutoBanPolicy, AutoBanPolicyError, AutoBanRule, ChannelAutoDisableStore,
+    ChannelFailureCoordinator, ChannelFailureOutcome, ChannelStateEffectOutcome,
+    MAX_AUTO_BAN_RULES,
+};
 pub use candidate::SchedulerCandidate;
 pub use database::{DatabaseWeightedScheduler, DatabaseWeightedSchedulerError};
 pub use failure::{
