@@ -3,6 +3,9 @@
 mod billing_chat;
 mod billing_runtime;
 mod bootstrap;
+mod channel_probe;
+#[cfg(test)]
+mod channel_probe_tests;
 mod readiness;
 mod shutdown;
 mod supervisor;

@@ -505,6 +505,33 @@ impl EncryptedJson {
         }
         Ok(Self(value))
     }
+
+    /// 返回已验证封套的密钥标识、nonce 与带认证标签密文。
+    pub(crate) fn envelope_parts(
+        &self,
+    ) -> Result<(String, [u8; XCHACHA20_POLY1305_NONCE_LENGTH], Vec<u8>), SensitiveValueError> {
+        let Json::Object(fields) = &self.0 else {
+            return Err(SensitiveValueError::InvalidEnvelope { field: "object" });
+        };
+        let key_id = fields
+            .get("key_id")
+            .and_then(Json::as_str)
+            .ok_or(SensitiveValueError::InvalidEnvelope { field: "key_id" })?
+            .to_owned();
+        let nonce = decode_envelope_field(
+            fields.get("nonce"),
+            "nonce",
+            XCHACHA20_POLY1305_NONCE_LENGTH,
+        )?
+        .try_into()
+        .map_err(|_| SensitiveValueError::InvalidEnvelope { field: "nonce" })?;
+        let ciphertext = decode_envelope_field(
+            fields.get("ciphertext"),
+            "ciphertext",
+            MAX_ENCRYPTED_PAYLOAD_LENGTH,
+        )?;
+        Ok((key_id, nonce, ciphertext))
+    }
 }
 
 /// 解码无填充 Base64URL 封套字段，并在分配前限制编码后长度。
@@ -570,6 +597,11 @@ impl ChannelBaseUrl {
         }
         Ok(Self(parsed.into()))
     }
+
+    /// 返回已校验的渠道基础地址；调用方不得写入日志。
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl fmt::Debug for ChannelBaseUrl {
@@ -615,6 +647,22 @@ impl HeaderOverrides {
                 .map_err(|_| SensitiveValueError::InvalidHeaderValue)?;
         }
         Ok(Self(value))
+    }
+
+    /// 返回已通过认证头、长度和 hop-by-hop 约束的字符串头列表。
+    pub(crate) fn pairs(&self) -> Result<Vec<(String, String)>, SensitiveValueError> {
+        let Json::Object(headers) = &self.0 else {
+            return Err(SensitiveValueError::InvalidHeaderOverrides);
+        };
+        headers
+            .iter()
+            .map(|(name, value)| {
+                let value = value
+                    .as_str()
+                    .ok_or(SensitiveValueError::InvalidHeaderValue)?;
+                Ok((name.clone(), value.to_owned()))
+            })
+            .collect()
     }
 }
 

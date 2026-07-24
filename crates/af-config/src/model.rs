@@ -6,8 +6,10 @@ use std::{
 };
 
 use af_domain::{IpCidr, MAX_MODEL_NAME_BYTES};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use url::Url;
+use zeroize::Zeroize as _;
 
 use crate::{ConfigError, CorsOriginError, SecretString};
 
@@ -51,6 +53,10 @@ pub const MAX_CHANNEL_PROBE_BATCH_SIZE: usize = 64;
 pub const MAX_CHANNEL_PROBE_INTERVAL_SECS: u64 = 3_600;
 /// 单渠道探活超时允许配置的硬上限。
 pub const MAX_CHANNEL_PROBE_TIMEOUT_SECS: u64 = 300;
+/// XChaCha20-Poly1305 使用的固定密钥长度。
+pub const CREDENTIAL_ENCRYPTION_KEY_BYTES: usize = 32;
+/// 凭据密钥标识允许配置的最大 ASCII 字节数。
+pub const MAX_CREDENTIAL_ENCRYPTION_KEY_ID_BYTES: usize = 512;
 /// 单实例允许配置的静态可信前置代理网络上限。
 pub const MAX_TRUSTED_PROXY_CIDRS: usize = 64;
 /// OpenAI-compatible 上游基础地址的最大 UTF-8 字节数。
@@ -411,6 +417,46 @@ impl Default for ChannelProbeSettings {
     }
 }
 
+/// 凭据密文解密使用的单密钥 v1 启动配置。
+///
+/// 探活关闭时允许保持未配置；启用真实探活时 `key_id` 与 `key` 必须同时存在，
+/// 其中 `key` 是 32 字节原始密钥的 Base64URL 无填充文本。
+#[derive(Clone, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CredentialEncryptionSettings {
+    key_id: Option<String>,
+    key: Option<SecretString>,
+}
+
+impl CredentialEncryptionSettings {
+    /// 返回密文封套选择密钥时使用的稳定标识。
+    #[must_use]
+    pub fn key_id(&self) -> Option<&str> {
+        self.key_id.as_deref()
+    }
+
+    /// 返回受保护的 Base64URL 密钥文本。
+    #[must_use]
+    pub fn key(&self) -> Option<&SecretString> {
+        self.key.as_ref()
+    }
+
+    /// 返回当前是否已完整配置密钥标识和密钥材料。
+    #[must_use]
+    pub const fn is_configured(&self) -> bool {
+        self.key_id.is_some() && self.key.is_some()
+    }
+}
+
+impl fmt::Debug for CredentialEncryptionSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CredentialEncryptionSettings")
+            .field("configured", &self.is_configured())
+            .finish()
+    }
+}
+
 impl fmt::Debug for BillingSettings {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -581,6 +627,8 @@ pub struct AppConfig {
     #[serde(default)]
     channel_probe: ChannelProbeSettings,
     #[serde(default)]
+    credential_encryption: CredentialEncryptionSettings,
+    #[serde(default)]
     redis: RedisSettings,
     #[serde(default)]
     auth: AuthSettings,
@@ -618,6 +666,12 @@ impl AppConfig {
     #[must_use]
     pub const fn channel_probe(&self) -> &ChannelProbeSettings {
         &self.channel_probe
+    }
+
+    /// 返回凭据密文解密使用的启动密钥设置。
+    #[must_use]
+    pub const fn credential_encryption(&self) -> &CredentialEncryptionSettings {
+        &self.credential_encryption
     }
 
     /// 返回可选 Redis 配置。
@@ -789,6 +843,7 @@ impl AppConfig {
                 field: "channel_probe.probe_timeout_secs",
             });
         }
+        validate_credential_encryption(&self.credential_encryption, self.channel_probe.enabled)?;
         if let Some(url) = self.redis.url()
             && url.expose().trim().is_empty()
         {
@@ -830,6 +885,46 @@ impl AppConfig {
         }
         validate_proxy_settings(&self.http_client)?;
         Ok(())
+    }
+}
+
+fn validate_credential_encryption(
+    settings: &CredentialEncryptionSettings,
+    required: bool,
+) -> Result<(), ConfigError> {
+    match (settings.key_id(), settings.key()) {
+        (None, None) if required => Err(ConfigError::EmptyValue {
+            field: "credential_encryption.key",
+        }),
+        (None, None) => Ok(()),
+        (Some(_), None) | (None, Some(_)) => Err(ConfigError::InvalidField {
+            field: "credential_encryption",
+        }),
+        (Some(key_id), Some(key)) => {
+            if key_id.is_empty()
+                || key_id.len() > MAX_CREDENTIAL_ENCRYPTION_KEY_ID_BYTES
+                || key_id.trim() != key_id
+                || !key_id
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+            {
+                return Err(ConfigError::InvalidField {
+                    field: "credential_encryption.key_id",
+                });
+            }
+
+            let mut decoded = [0_u8; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+            let valid = URL_SAFE_NO_PAD
+                .decode_slice(key.expose(), &mut decoded)
+                .is_ok_and(|length| length == CREDENTIAL_ENCRYPTION_KEY_BYTES);
+            decoded.zeroize();
+            if !valid {
+                return Err(ConfigError::InvalidField {
+                    field: "credential_encryption.key",
+                });
+            }
+            Ok(())
+        }
     }
 }
 

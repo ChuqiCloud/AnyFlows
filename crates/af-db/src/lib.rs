@@ -10,6 +10,9 @@ mod channel_state;
 #[cfg(test)]
 mod channel_state_tests;
 mod connection;
+mod credential_probe;
+#[cfg(test)]
+mod credential_probe_tests;
 mod entity;
 mod error;
 mod group_pricing;
@@ -44,6 +47,12 @@ pub use channel_state::{
 };
 pub use connection::DatabasePool;
 pub(crate) use connection::connect;
+pub use credential_probe::{
+    CREDENTIAL_ENVELOPE_NONCE_BYTES, CREDENTIAL_ENVELOPE_TAG_BYTES, ChannelProbeHeader,
+    ChannelProbeTargetRecord, ChannelProbeTargetRepository, ChannelProbeTargetRepositoryError,
+    EncryptedCredentialEnvelope, EncryptedCredentialEnvelopeError,
+    MAX_CREDENTIAL_ENVELOPE_CIPHERTEXT_BYTES, MAX_CREDENTIAL_ENVELOPE_KEY_ID_BYTES,
+};
 pub use error::{DatabaseError, DatabaseOptionsError};
 pub use group_pricing::{
     GroupModelRatioRecord, GroupPeakPricingRecord, GroupPricingCatalog, GroupPricingRecord,

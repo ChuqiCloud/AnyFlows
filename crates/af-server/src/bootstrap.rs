@@ -1,5 +1,6 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
+use af_account::CredentialDecryptor;
 use af_admin::{DatabaseTokenAuthenticator, TokenAuthenticator};
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
@@ -14,7 +15,6 @@ use af_db::{
     MigrationOptions, QuotaRepository, TokenAuthRepository, TokenAuthRepositoryConfigError,
     UsageLogRepository, connect_and_migrate,
 };
-use af_domain::ChannelId;
 use af_http::{
     ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle, ServeError,
     ServeOutcome, build_router, serve_with_graceful_shutdown,
@@ -25,9 +25,7 @@ use af_httpclient::{
     PooledClient, ProxyConfig, RemoteDnsPolicy,
 };
 use af_relay::{RelayBuildError, RelayService};
-use af_scheduler::{
-    ChannelProbe, ChannelProbeStatus, ChannelProbeSupervisor, ChannelProbeSupervisorConfig,
-};
+use af_scheduler::{ChannelProbe, ChannelProbeSupervisor, ChannelProbeSupervisorConfig};
 use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
 use thiserror::Error;
 
@@ -35,25 +33,10 @@ use crate::readiness::DatabaseReadinessProbe;
 use crate::{
     BackgroundTaskSupervisor, BillingChatService, BillingFlushReport, BillingRuntime,
     BillingRuntimeError, ShutdownController, SupervisorError, SupervisorShutdown,
-    system_shutdown_signal,
+    channel_probe::DatabaseChannelProbe, system_shutdown_signal,
 };
 
 const BILLING_QUEUE_RETRY_DELAY: Duration = Duration::from_millis(100);
-
-/// 凭据解密尚未接入生产探活时使用的失败关闭端口。
-#[derive(Clone, Copy, Debug, Default)]
-struct CredentialUnavailableChannelProbe;
-
-impl ChannelProbe for CredentialUnavailableChannelProbe {
-    async fn check(&self, channel_id: ChannelId) -> ChannelProbeStatus {
-        tracing::debug!(
-            channel_id = channel_id.get(),
-            probe_result = "credential_unavailable",
-            "渠道探活凭据尚不可用，本轮保持自动禁用状态"
-        );
-        ChannelProbeStatus::Unhealthy
-    }
-}
 
 /// 已加载并校验静态配置。
 pub struct Configured;
@@ -84,6 +67,7 @@ pub struct AuthenticationReady {
 pub struct RelayReady {
     infrastructure: AuthenticationReady,
     relay: Arc<RelayService>,
+    upstream_client: PooledClient,
 }
 
 /// 计费 WAL、定价缓存、额度仓储及内部可靠队列均已完成装配。
@@ -96,6 +80,7 @@ pub struct BillingReady {
     usage_record_worker_count: usize,
     refund_signal_queue: RefundSignalQueue,
     refund_signal_consumer: RefundSignalConsumer,
+    upstream_client: PooledClient,
 }
 
 /// 后台任务监督域已经建立，周期 flush、渠道探活、用量持久化与退款补偿 worker 已注册。
@@ -329,7 +314,8 @@ impl Bootstrap<DatabaseReady> {
 impl Bootstrap<AuthenticationReady> {
     /// 使用启动期静态单上游配置建立非流式 relay。
     pub fn init_relay(self) -> Result<Bootstrap<RelayReady>, BootstrapError> {
-        let relay = Arc::new(build_relay(&self.config)?);
+        let upstream_client = build_http_client(&self.config)?;
+        let relay = Arc::new(build_relay(&self.config, upstream_client.clone())?);
         let Bootstrap {
             config,
             shutdown_timeout,
@@ -343,6 +329,7 @@ impl Bootstrap<AuthenticationReady> {
             stage: RelayReady {
                 infrastructure: stage,
                 relay,
+                upstream_client,
             },
         })
     }
@@ -431,6 +418,7 @@ impl Bootstrap<RelayReady> {
                 usage_record_worker_count,
                 refund_signal_queue,
                 refund_signal_consumer,
+                upstream_client: stage.upstream_client,
             },
         })
     }
@@ -456,6 +444,7 @@ impl Bootstrap<BillingReady> {
             usage_record_worker_count,
             refund_signal_queue,
             refund_signal_consumer,
+            upstream_client,
         } = stage;
         if billing.batch_enabled() {
             supervisor.spawn("billing-flush", {
@@ -491,15 +480,18 @@ impl Bootstrap<BillingReady> {
             }
         });
         if config.channel_probe().enabled() {
-            tracing::warn!(
-                probe_mode = "fail_closed",
-                "渠道探活已启用，但凭据解密尚未接线；当前不会自动恢复渠道"
+            let decryptor = CredentialDecryptor::new(config.credential_encryption())
+                .expect("已校验的探活配置必须包含有效凭据解密密钥");
+            let probe = DatabaseChannelProbe::new(
+                infrastructure.infrastructure.database.clone(),
+                decryptor,
+                upstream_client,
             );
             spawn_channel_probe_task(
                 &mut supervisor,
                 infrastructure.infrastructure.database.clone(),
                 channel_probe_config(&config),
-                CredentialUnavailableChannelProbe,
+                probe,
             );
         }
         Bootstrap {
@@ -810,8 +802,7 @@ fn migration_options(config: &AppConfig) -> Result<MigrationOptions, BootstrapEr
     )
 }
 
-fn build_relay(config: &AppConfig) -> Result<RelayService, BootstrapError> {
-    let client = build_http_client(config)?;
+fn build_relay(config: &AppConfig, client: PooledClient) -> Result<RelayService, BootstrapError> {
     let upstream = config.openai_upstream();
     RelayService::new(
         client,
@@ -952,6 +943,9 @@ mod tests {
 
     struct AlwaysReadyProbe;
 
+    #[derive(Clone, Copy)]
+    struct TestUnhealthyChannelProbe;
+
     struct OrderedBillingSink {
         events: Arc<Mutex<Vec<&'static str>>>,
     }
@@ -1001,6 +995,15 @@ mod tests {
     impl ReadinessProbe for AlwaysReadyProbe {
         fn check(&self) -> ReadinessFuture<'_> {
             Box::pin(async { true })
+        }
+    }
+
+    impl ChannelProbe for TestUnhealthyChannelProbe {
+        async fn check(
+            &self,
+            _channel_id: af_domain::ChannelId,
+        ) -> af_scheduler::ChannelProbeStatus {
+            af_scheduler::ChannelProbeStatus::Unhealthy
         }
     }
 
@@ -1125,7 +1128,7 @@ mod tests {
                 Duration::from_secs(1),
             )
             .unwrap(),
-            CredentialUnavailableChannelProbe,
+            TestUnhealthyChannelProbe,
         );
 
         assert_eq!(supervisor.task_count(), 1);
