@@ -37,6 +37,20 @@ pub const MAX_USAGE_RECORD_QUEUE_CAPACITY: usize = 1_000_000;
 pub const DEFAULT_USAGE_RECORD_WORKER_COUNT: usize = 1;
 /// 单实例用量记录持久化 worker 数量硬上限。
 pub const MAX_USAGE_RECORD_WORKER_COUNT: usize = 64;
+/// 渠道探活后台任务默认关闭，避免凭据运行时尚未接线时产生无效调用。
+pub const DEFAULT_CHANNEL_PROBE_ENABLED: bool = false;
+/// 渠道探活默认单轮批次。
+pub const DEFAULT_CHANNEL_PROBE_BATCH_SIZE: usize = 16;
+/// 渠道探活默认执行周期。
+pub const DEFAULT_CHANNEL_PROBE_INTERVAL_SECS: u64 = 60;
+/// 单渠道探活默认硬超时。
+pub const DEFAULT_CHANNEL_PROBE_TIMEOUT_SECS: u64 = 10;
+/// 单轮渠道探活批次的仓储硬上限。
+pub const MAX_CHANNEL_PROBE_BATCH_SIZE: usize = 64;
+/// 渠道探活执行周期允许配置的硬上限。
+pub const MAX_CHANNEL_PROBE_INTERVAL_SECS: u64 = 3_600;
+/// 单渠道探活超时允许配置的硬上限。
+pub const MAX_CHANNEL_PROBE_TIMEOUT_SECS: u64 = 300;
 /// 单实例允许配置的静态可信前置代理网络上限。
 pub const MAX_TRUSTED_PROXY_CIDRS: usize = 64;
 /// OpenAI-compatible 上游基础地址的最大 UTF-8 字节数。
@@ -350,6 +364,53 @@ impl Default for BillingSettings {
     }
 }
 
+/// 自动禁用渠道的周期探活设置。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ChannelProbeSettings {
+    enabled: bool,
+    batch_size: usize,
+    interval_secs: u64,
+    probe_timeout_secs: u64,
+}
+
+impl ChannelProbeSettings {
+    /// 返回是否注册渠道探活后台任务。
+    #[must_use]
+    pub const fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// 返回单轮读取的最大自动禁用渠道数量。
+    #[must_use]
+    pub const fn batch_size(&self) -> usize {
+        self.batch_size
+    }
+
+    /// 返回两轮探活之间的等待秒数。
+    #[must_use]
+    pub const fn interval_secs(&self) -> u64 {
+        self.interval_secs
+    }
+
+    /// 返回单渠道探活允许占用的最大秒数。
+    #[must_use]
+    pub const fn probe_timeout_secs(&self) -> u64 {
+        self.probe_timeout_secs
+    }
+}
+
+impl Default for ChannelProbeSettings {
+    fn default() -> Self {
+        Self {
+            enabled: DEFAULT_CHANNEL_PROBE_ENABLED,
+            batch_size: DEFAULT_CHANNEL_PROBE_BATCH_SIZE,
+            interval_secs: DEFAULT_CHANNEL_PROBE_INTERVAL_SECS,
+            probe_timeout_secs: DEFAULT_CHANNEL_PROBE_TIMEOUT_SECS,
+        }
+    }
+}
+
 impl fmt::Debug for BillingSettings {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -518,6 +579,8 @@ pub struct AppConfig {
     #[serde(default)]
     billing: BillingSettings,
     #[serde(default)]
+    channel_probe: ChannelProbeSettings,
+    #[serde(default)]
     redis: RedisSettings,
     #[serde(default)]
     auth: AuthSettings,
@@ -549,6 +612,12 @@ impl AppConfig {
     #[must_use]
     pub const fn billing(&self) -> &BillingSettings {
         &self.billing
+    }
+
+    /// 返回自动禁用渠道的周期探活设置。
+    #[must_use]
+    pub const fn channel_probe(&self) -> &ChannelProbeSettings {
+        &self.channel_probe
     }
 
     /// 返回可选 Redis 配置。
@@ -688,6 +757,36 @@ impl AppConfig {
         if self.billing.wal_directory.as_os_str().is_empty() {
             return Err(ConfigError::EmptyValue {
                 field: "billing.wal_directory",
+            });
+        }
+        if self.channel_probe.batch_size == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "channel_probe.batch_size",
+            });
+        }
+        if self.channel_probe.batch_size > MAX_CHANNEL_PROBE_BATCH_SIZE {
+            return Err(ConfigError::OutOfRange {
+                field: "channel_probe.batch_size",
+            });
+        }
+        if self.channel_probe.interval_secs == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "channel_probe.interval_secs",
+            });
+        }
+        if self.channel_probe.interval_secs > MAX_CHANNEL_PROBE_INTERVAL_SECS {
+            return Err(ConfigError::OutOfRange {
+                field: "channel_probe.interval_secs",
+            });
+        }
+        if self.channel_probe.probe_timeout_secs == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "channel_probe.probe_timeout_secs",
+            });
+        }
+        if self.channel_probe.probe_timeout_secs > MAX_CHANNEL_PROBE_TIMEOUT_SECS {
+            return Err(ConfigError::OutOfRange {
+                field: "channel_probe.probe_timeout_secs",
             });
         }
         if let Some(url) = self.redis.url()

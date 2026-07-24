@@ -15,6 +15,7 @@ af-http = { path = "../af-http", version = "0.1.0" }
 af-httpclient = { path = "../af-httpclient", version = "0.1.0" }
 af-protocol = { path = "../af-protocol", version = "0.1.0" }
 af-relay = { path = "../af-relay", version = "0.1.0" }
+af-scheduler = { path = "../af-scheduler", version = "0.1.0" }
 af-telemetry = { path = "../af-telemetry", version = "0.1.0" }
 futures-util.workspace = true
 thiserror.workspace = true

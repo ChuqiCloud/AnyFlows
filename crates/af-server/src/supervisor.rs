@@ -57,6 +57,12 @@ impl BackgroundTaskSupervisor {
         self
     }
 
+    /// 返回当前注册的长期任务数量，仅供同 crate 回归测试核对接线。
+    #[cfg(test)]
+    pub(crate) fn task_count(&self) -> usize {
+        self.tasks.len()
+    }
+
     /// 注册一个可重建的长期任务。
     ///
     /// 工厂每次收到同一个关闭域的新句柄。任务应自行监听关闭并完成业务收尾；若未能

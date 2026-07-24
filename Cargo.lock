@@ -198,6 +198,7 @@ dependencies = [
  "af-httpclient",
  "af-protocol",
  "af-relay",
+ "af-scheduler",
  "af-telemetry",
  "futures-util",
  "rust_decimal",
