@@ -27,6 +27,7 @@ rust-version = "1.95"
 publish = false
 
 [workspace.dependencies]
+aho-corasick = { version = "1.1.4", default-features = false, features = ["std"] }
 argon2 = { version = "0.5.3", default-features = false, features = ["password-hash"] }
 async-trait = "0.1.89"
 axum = { version = "0.8.9", default-features = false, features = [

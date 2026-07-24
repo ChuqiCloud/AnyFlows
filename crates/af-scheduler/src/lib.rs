@@ -1,6 +1,7 @@
 //! 候选选路、健康状态、并发控制与调度快照。
 
 mod auto_ban;
+mod auto_ban_keyword;
 mod candidate;
 mod database;
 mod failure;
@@ -12,6 +13,10 @@ pub use auto_ban::{
     AutoBanPolicy, AutoBanPolicyError, AutoBanRule, ChannelAutoDisableStore,
     ChannelFailureCoordinator, ChannelFailureOutcome, ChannelStateEffectOutcome,
     MAX_AUTO_BAN_RULES,
+};
+pub use auto_ban_keyword::{
+    AutoBanEvidence, AutoBanEvidenceError, MAX_AUTO_BAN_EVIDENCE_BYTES, MAX_AUTO_BAN_KEYWORD_BYTES,
+    MAX_AUTO_BAN_KEYWORD_TOTAL_BYTES,
 };
 pub use candidate::SchedulerCandidate;
 pub use database::{DatabaseWeightedScheduler, DatabaseWeightedSchedulerError};
