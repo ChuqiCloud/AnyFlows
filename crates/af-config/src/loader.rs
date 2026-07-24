@@ -30,6 +30,7 @@ struct ConfigDefaults {
     database: DatabaseDefaults,
     billing: BillingSettings,
     channel_probe: ChannelProbeSettings,
+    credential_encryption: CredentialEncryptionDefaults,
     redis: RedisDefaults,
     auth: AuthSettings,
     http_client: HttpClientDefaults,
@@ -43,6 +44,12 @@ struct DatabaseDefaults {
 #[derive(Default, Serialize)]
 struct RedisDefaults {
     url: Option<String>,
+}
+
+#[derive(Default, Serialize)]
+struct CredentialEncryptionDefaults {
+    key_id: Option<String>,
+    key: Option<String>,
 }
 
 #[derive(Default, Serialize)]
@@ -167,6 +174,9 @@ fn known_field(path: &str) -> Option<&'static str> {
         "channel_probe.batch_size" => "channel_probe.batch_size",
         "channel_probe.interval_secs" => "channel_probe.interval_secs",
         "channel_probe.probe_timeout_secs" => "channel_probe.probe_timeout_secs",
+        "credential_encryption" => "credential_encryption",
+        "credential_encryption.key_id" => "credential_encryption.key_id",
+        "credential_encryption.key" => "credential_encryption.key",
         "redis" => "redis",
         "redis.url" => "redis.url",
         "auth" => "auth",
@@ -259,6 +269,7 @@ mod tests {
             assert_eq!(config.channel_probe().batch_size(), 16);
             assert_eq!(config.channel_probe().interval_secs(), 60);
             assert_eq!(config.channel_probe().probe_timeout_secs(), 10);
+            assert!(!config.credential_encryption().is_configured());
             assert!(config.redis().url().is_none());
             assert!(!config.auth().allow_query_api_key());
             assert_eq!(config.auth().lookup_timeout_secs(), 2);
@@ -547,6 +558,11 @@ mod tests {
             assert_eq!(config.channel_probe().batch_size(), 8);
             assert_eq!(config.channel_probe().interval_secs(), 120);
             assert_eq!(config.channel_probe().probe_timeout_secs(), 15);
+            assert_eq!(config.credential_encryption().key_id(), Some("primary"));
+            assert_eq!(
+                config.credential_encryption().key().unwrap().expose(),
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            );
             assert_eq!(config.http_client().max_cached_clients(), Some(3));
             assert_eq!(
                 config.openai_upstream().base_url(),
@@ -598,6 +614,11 @@ mod tests {
                 .env("AF_CHANNEL_PROBE__BATCH_SIZE", "8")
                 .env("AF_CHANNEL_PROBE__INTERVAL_SECS", "120")
                 .env("AF_CHANNEL_PROBE__PROBE_TIMEOUT_SECS", "15")
+                .env("AF_CREDENTIAL_ENCRYPTION__KEY_ID", "primary")
+                .env(
+                    "AF_CREDENTIAL_ENCRYPTION__KEY",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                )
                 .env(
                     "AF_DATABASE__URL",
                     "postgres://env-user:env-secret@db/env-app",
@@ -1061,6 +1082,37 @@ mod tests {
                 error,
                 ConfigError::InvalidField {
                     field: "billing.flush_timeout_secs"
+                }
+            );
+            assert!(!rendered.contains(canary));
+        });
+    }
+
+    #[test]
+    fn enabled_channel_probe_requires_a_valid_redacted_credential_key() {
+        with_clean_env(|_| {
+            let path =
+                temp_file("[database]\nurl = 'sqlite::memory:'\n[channel_probe]\nenabled = true\n");
+            let error = load_from(&path).unwrap_err();
+            let _ = fs::remove_file(path);
+            assert_eq!(
+                error,
+                ConfigError::EmptyValue {
+                    field: "credential_encryption.key"
+                }
+            );
+
+            let canary = "credential-key-secret-canary";
+            let path = temp_file(&format!(
+                "[database]\nurl = 'sqlite::memory:'\n[channel_probe]\nenabled = true\n[credential_encryption]\nkey_id = 'primary'\nkey = '{canary}'\n"
+            ));
+            let error = load_from(&path).unwrap_err();
+            let rendered = format!("{error:?}\n{error}");
+            let _ = fs::remove_file(path);
+            assert_eq!(
+                error,
+                ConfigError::InvalidField {
+                    field: "credential_encryption.key"
                 }
             );
             assert!(!rendered.contains(canary));
