@@ -11,5 +11,8 @@ af-domain = { path = "../af-domain", version = "0.1.0" }
 getrandom.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+tokio.workspace = true
+
 [lints]
 workspace = true
