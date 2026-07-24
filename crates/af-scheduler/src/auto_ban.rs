@@ -4,7 +4,10 @@ use af_db::{ChannelAutoDisableOutcome, ChannelStateRepository, ChannelStateRepos
 use af_domain::{ChannelId, UpstreamError, UpstreamServerStatus};
 use thiserror::Error;
 
-use crate::{FailureAction, FailureContext, FailurePolicy};
+use crate::{
+    AutoBanEvidence, FailureAction, FailureContext, FailurePolicy,
+    auto_ban_keyword::{AutoBanKeywordBuildError, AutoBanKeywordMatcher},
+};
 
 /// 单份自动禁用策略允许的结构化规则上限。
 pub const MAX_AUTO_BAN_RULES: usize = 64;
@@ -41,29 +44,75 @@ pub enum AutoBanPolicyError {
     /// 输入规则数量超过单份策略的安全上限。
     #[error("自动禁用规则数量超过上限")]
     TooManyRules,
+    /// 关键词为空、含控制字符或超过单条长度上限。
+    #[error("自动禁用关键词无效")]
+    InvalidKeyword,
+    /// 全部关键词超过单份策略允许的总字节上限。
+    #[error("自动禁用关键词总长度超过上限")]
+    TooManyKeywordBytes,
+    /// 有界关键词集合无法构造匹配器。
+    #[error("自动禁用关键词匹配器构造失败")]
+    KeywordMatcherBuild,
 }
 
 /// 有界、无原始错误文本的渠道自动禁用策略。
 #[derive(Clone, Default, Eq, PartialEq)]
 pub struct AutoBanPolicy {
     rules: BTreeSet<AutoBanRule>,
+    keyword_matcher: Option<AutoBanKeywordMatcher>,
 }
 
 impl AutoBanPolicy {
     /// 校验规则容量并创建不可变策略；重复规则会被安全去重。
     pub fn new(rules: Vec<AutoBanRule>) -> Result<Self, AutoBanPolicyError> {
-        if rules.len() > MAX_AUTO_BAN_RULES {
+        Self::with_keywords(rules, Vec::new())
+    }
+
+    /// 校验结构化规则与关键词容量并创建不可变策略。
+    ///
+    /// 关键词仅作为结构化分类未命中时的兜底，且只能匹配调用方显式构造的
+    /// [`AutoBanEvidence`]；输入计数在去重前检查，避免重复配置绕过容量限制。
+    pub fn with_keywords(
+        rules: Vec<AutoBanRule>,
+        keywords: Vec<String>,
+    ) -> Result<Self, AutoBanPolicyError> {
+        if rules
+            .len()
+            .checked_add(keywords.len())
+            .is_none_or(|count| count > MAX_AUTO_BAN_RULES)
+        {
             return Err(AutoBanPolicyError::TooManyRules);
         }
+        let keyword_matcher =
+            AutoBanKeywordMatcher::build(keywords).map_err(|error| match error {
+                AutoBanKeywordBuildError::InvalidKeyword => AutoBanPolicyError::InvalidKeyword,
+                AutoBanKeywordBuildError::TooManyBytes => AutoBanPolicyError::TooManyKeywordBytes,
+                AutoBanKeywordBuildError::MatcherBuild => AutoBanPolicyError::KeywordMatcherBuild,
+            })?;
         Ok(Self {
             rules: rules.into_iter().collect(),
+            keyword_matcher,
         })
     }
 
     /// 返回去重后的结构化规则数量。
     #[must_use]
     pub fn rule_count(&self) -> usize {
+        self.structured_rule_count() + self.keyword_count()
+    }
+
+    /// 返回去重后的结构化规则数量。
+    #[must_use]
+    pub fn structured_rule_count(&self) -> usize {
         self.rules.len()
+    }
+
+    /// 返回去重后的关键词规则数量。
+    #[must_use]
+    pub fn keyword_count(&self) -> usize {
+        self.keyword_matcher
+            .as_ref()
+            .map_or(0, AutoBanKeywordMatcher::len)
     }
 
     /// 判断当前故障是否应在请求动作之外触发渠道自动禁用。
@@ -72,13 +121,36 @@ impl AutoBanPolicy {
     /// 或显式配置的协议终止错误，才允许进入持久化副作用。
     #[must_use]
     pub fn should_auto_disable(&self, error: UpstreamError, action: FailureAction) -> bool {
+        self.should_auto_disable_with_evidence(error, action, None)
+    }
+
+    /// 先匹配闭合结构化规则，再对受限脱敏证据执行关键词兜底。
+    ///
+    /// `BadRequest` 属于客户端输入边界，即使证据命中关键词也不得改变渠道状态。
+    #[must_use]
+    pub fn should_auto_disable_with_evidence(
+        &self,
+        error: UpstreamError,
+        action: FailureAction,
+        evidence: Option<&AutoBanEvidence>,
+    ) -> bool {
         if matches!(
             action,
             FailureAction::RetrySameChannel | FailureAction::RefreshAuthAndRetry
         ) {
             return false;
         }
-        structured_rule(error).is_some_and(|rule| self.rules.contains(&rule))
+        if structured_rule(error).is_some_and(|rule| self.rules.contains(&rule)) {
+            return true;
+        }
+        if error == UpstreamError::BadRequest {
+            return false;
+        }
+        evidence.is_some_and(|evidence| {
+            self.keyword_matcher
+                .as_ref()
+                .is_some_and(|matcher| matcher.is_match(evidence))
+        })
     }
 }
 
@@ -86,7 +158,8 @@ impl fmt::Debug for AutoBanPolicy {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("AutoBanPolicy")
-            .field("rule_count", &self.rules.len())
+            .field("structured_rule_count", &self.structured_rule_count())
+            .field("keyword_rule_count", &self.keyword_count())
             .finish()
     }
 }
@@ -183,8 +256,23 @@ where
         error: UpstreamError,
         context: FailureContext,
     ) -> ChannelFailureOutcome {
+        self.handle_failure_with_evidence(channel_id, error, context, None)
+            .await
+    }
+
+    /// 计算请求动作，并在补救耗尽后使用结构化规则或受限证据执行状态副作用。
+    pub async fn handle_failure_with_evidence(
+        &self,
+        channel_id: ChannelId,
+        error: UpstreamError,
+        context: FailureContext,
+        evidence: Option<&AutoBanEvidence>,
+    ) -> ChannelFailureOutcome {
         let action = self.failure_policy.action_for(error, context);
-        let state_effect = if self.auto_ban_policy.should_auto_disable(error, action) {
+        let state_effect = if self
+            .auto_ban_policy
+            .should_auto_disable_with_evidence(error, action, evidence)
+        {
             match self.store.auto_disable(channel_id).await {
                 Ok(outcome) => ChannelStateEffectOutcome::Completed(outcome),
                 Err(error) => ChannelStateEffectOutcome::Failed(error),
@@ -207,7 +295,14 @@ impl<S> fmt::Debug for ChannelFailureCoordinator<S> {
                 "transient_server_retry_limit",
                 &self.failure_policy.transient_server_retry_limit(),
             )
-            .field("auto_ban_rule_count", &self.auto_ban_policy.rule_count())
+            .field(
+                "auto_ban_structured_rule_count",
+                &self.auto_ban_policy.structured_rule_count(),
+            )
+            .field(
+                "auto_ban_keyword_rule_count",
+                &self.auto_ban_policy.keyword_count(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -244,6 +339,13 @@ mod tests {
         assert_eq!(duplicated.rule_count(), 1);
         assert_eq!(
             AutoBanPolicy::new(vec![AutoBanRule::Network; MAX_AUTO_BAN_RULES + 1]),
+            Err(AutoBanPolicyError::TooManyRules)
+        );
+        assert_eq!(
+            AutoBanPolicy::with_keywords(
+                Vec::new(),
+                vec!["revoked".to_owned(); MAX_AUTO_BAN_RULES + 1]
+            ),
             Err(AutoBanPolicyError::TooManyRules)
         );
     }
@@ -289,6 +391,69 @@ mod tests {
             UpstreamError::AuthExpired,
             failure_policy.action_for(UpstreamError::AuthExpired, FailureContext::new(0, false))
         ));
+    }
+
+    #[test]
+    fn keyword_fallback_requires_explicit_evidence_and_never_matches_bad_request() {
+        let policy = AutoBanPolicy::with_keywords(
+            Vec::new(),
+            vec![
+                "workspace disabled".to_owned(),
+                "quota exhausted".to_owned(),
+            ],
+        )
+        .unwrap();
+        let matching =
+            AutoBanEvidence::from_redacted_text("error_code: workspace disabled").unwrap();
+        let unrelated = AutoBanEvidence::from_redacted_text("temporary network issue").unwrap();
+
+        assert_eq!(policy.keyword_count(), 2);
+        assert!(!policy.should_auto_disable(UpstreamError::AuthRevoked, FailureAction::Failover));
+        assert!(policy.should_auto_disable_with_evidence(
+            UpstreamError::AuthRevoked,
+            FailureAction::Failover,
+            Some(&matching)
+        ));
+        assert!(!policy.should_auto_disable_with_evidence(
+            UpstreamError::AuthRevoked,
+            FailureAction::Failover,
+            Some(&unrelated)
+        ));
+        assert!(!policy.should_auto_disable_with_evidence(
+            UpstreamError::BadRequest,
+            FailureAction::Terminate,
+            Some(&matching)
+        ));
+        assert!(!policy.should_auto_disable_with_evidence(
+            UpstreamError::AuthExpired,
+            FailureAction::RefreshAuthAndRetry,
+            Some(&matching)
+        ));
+        assert!(!policy.should_auto_disable_with_evidence(
+            server_error(503),
+            FailureAction::RetrySameChannel,
+            Some(&matching)
+        ));
+    }
+
+    #[test]
+    fn structured_rules_take_effect_without_keyword_evidence() {
+        let policy = AutoBanPolicy::with_keywords(
+            vec![AutoBanRule::AuthRevoked],
+            vec!["workspace disabled".to_owned()],
+        )
+        .unwrap();
+
+        assert!(policy.should_auto_disable_with_evidence(
+            UpstreamError::AuthRevoked,
+            FailureAction::Failover,
+            None
+        ));
+        assert_eq!(policy.rule_count(), 2);
+        assert_eq!(
+            format!("{policy:?}"),
+            "AutoBanPolicy { structured_rule_count: 1, keyword_rule_count: 1 }"
+        );
     }
 
     #[tokio::test]
@@ -342,6 +507,34 @@ mod tests {
         assert_eq!(failover.action(), FailureAction::Failover);
         assert_eq!(
             failover.state_effect(),
+            ChannelStateEffectOutcome::Completed(ChannelAutoDisableOutcome::Disabled)
+        );
+        assert_eq!(store.calls(), vec![channel_id]);
+    }
+
+    #[tokio::test]
+    async fn coordinator_uses_keyword_evidence_without_changing_request_action() {
+        let store = FakeStore::new(Ok(ChannelAutoDisableOutcome::Disabled));
+        let coordinator = ChannelFailureCoordinator::new(
+            FailurePolicy::default(),
+            AutoBanPolicy::with_keywords(Vec::new(), vec!["account revoked".to_owned()]).unwrap(),
+            store.clone(),
+        );
+        let channel_id = ChannelId::new(43).unwrap();
+        let evidence = AutoBanEvidence::from_redacted_text("code: account revoked").unwrap();
+
+        let outcome = coordinator
+            .handle_failure_with_evidence(
+                channel_id,
+                UpstreamError::AuthRevoked,
+                FailureContext::default(),
+                Some(&evidence),
+            )
+            .await;
+
+        assert_eq!(outcome.action(), FailureAction::Failover);
+        assert_eq!(
+            outcome.state_effect(),
             ChannelStateEffectOutcome::Completed(ChannelAutoDisableOutcome::Disabled)
         );
         assert_eq!(store.calls(), vec![channel_id]);
