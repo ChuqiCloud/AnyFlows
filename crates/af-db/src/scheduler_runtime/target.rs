@@ -1,0 +1,243 @@
+use std::fmt;
+
+use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol};
+use sea_orm::entity::prelude::Json;
+use thiserror::Error;
+
+use crate::{
+    credential_probe::EncryptedCredentialEnvelope,
+    entity::{ChannelBaseUrl, HeaderOverrides},
+};
+
+/// 渠道转发时需要附加的非认证请求头。
+#[derive(Clone, Eq, PartialEq)]
+pub struct SchedulerRuntimeHeader {
+    name: String,
+    value: String,
+}
+
+impl SchedulerRuntimeHeader {
+    /// 返回已验证的规范头名。
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// 返回已验证的头值；调用方不得写入日志。
+    #[must_use]
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+}
+
+impl fmt::Debug for SchedulerRuntimeHeader {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SchedulerRuntimeHeader")
+            .field("name", &self.name)
+            .field("value", &"<已脱敏>")
+            .finish()
+    }
+}
+
+/// 渠道运行时目标构造失败；错误不携带 URL、Header 或凭据内容。
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+#[error("渠道运行时目标无效")]
+pub struct SchedulerRuntimeTargetRecordError;
+
+/// 已校验且仍保持密文形态的运行时凭据。
+#[derive(Clone, Eq, PartialEq)]
+pub struct SchedulerRuntimeCredentialRecord {
+    credential_id: i64,
+    credential_kind: CredentialKind,
+    envelope: EncryptedCredentialEnvelope,
+    proxy_required: bool,
+}
+
+impl SchedulerRuntimeCredentialRecord {
+    /// 校验当前 M1 支持的凭据类型和持久化标识后构造记录。
+    pub fn new(
+        credential_id: i64,
+        credential_kind: CredentialKind,
+        envelope: EncryptedCredentialEnvelope,
+        proxy_required: bool,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if credential_id <= 0
+            || !matches!(
+                credential_kind,
+                CredentialKind::ApiKey | CredentialKind::Oauth
+            )
+        {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        Ok(Self {
+            credential_id,
+            credential_kind,
+            envelope,
+            proxy_required,
+        })
+    }
+
+    /// 返回凭据数据库标识，用于绑定密文 AAD。
+    #[must_use]
+    pub const fn credential_id(&self) -> i64 {
+        self.credential_id
+    }
+
+    /// 返回数据库声明的凭据类型。
+    #[must_use]
+    pub const fn credential_kind(&self) -> CredentialKind {
+        self.credential_kind
+    }
+
+    /// 返回版本化密文封套。
+    #[must_use]
+    pub const fn envelope(&self) -> &EncryptedCredentialEnvelope {
+        &self.envelope
+    }
+
+    /// 返回该凭据是否绑定专属代理。
+    #[must_use]
+    pub const fn proxy_required(&self) -> bool {
+        self.proxy_required
+    }
+}
+
+impl fmt::Debug for SchedulerRuntimeCredentialRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SchedulerRuntimeCredentialRecord")
+            .field("credential_id", &self.credential_id)
+            .field("credential_kind", &self.credential_kind)
+            .field("envelope", &self.envelope)
+            .field("proxy_required", &self.proxy_required)
+            .finish()
+    }
+}
+
+/// 已从数据库读取并校验的渠道运行时目标。
+#[derive(Clone, Eq, PartialEq)]
+pub struct SchedulerRuntimeTargetRecord {
+    channel_id: ChannelId,
+    channel_type: ChannelType,
+    protocol: Protocol,
+    base_url: Option<String>,
+    credential: SchedulerRuntimeCredentialRecord,
+    headers: Vec<SchedulerRuntimeHeader>,
+}
+
+impl SchedulerRuntimeTargetRecord {
+    /// 校验当前 M1 支持的 OpenAI Chat 目标及安全 Header 后构造记录。
+    pub fn new(
+        channel_id: ChannelId,
+        channel_type: ChannelType,
+        protocol: Protocol,
+        base_url: Option<String>,
+        credential: SchedulerRuntimeCredentialRecord,
+        headers: Vec<(String, String)>,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if channel_type != ChannelType::OpenAi || protocol != Protocol::OpenAiChat {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        let base_url = base_url
+            .map(|value| {
+                ChannelBaseUrl::parse(&value)
+                    .map(|validated| validated.as_str().to_owned())
+                    .map_err(|_| SchedulerRuntimeTargetRecordError)
+            })
+            .transpose()?;
+        let header_count = headers.len();
+        let header_json = Json::Object(
+            headers
+                .into_iter()
+                .map(|(name, value)| (name, Json::String(value)))
+                .collect(),
+        );
+        let headers = HeaderOverrides::validate(header_json)
+            .map_err(|_| SchedulerRuntimeTargetRecordError)?
+            .pairs()
+            .map_err(|_| SchedulerRuntimeTargetRecordError)?
+            .into_iter()
+            .map(|(name, value)| SchedulerRuntimeHeader { name, value })
+            .collect::<Vec<_>>();
+        if headers.len() != header_count {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        Ok(Self {
+            channel_id,
+            channel_type,
+            protocol,
+            base_url,
+            credential,
+            headers,
+        })
+    }
+
+    /// 返回目标渠道标识。
+    #[must_use]
+    pub const fn channel_id(&self) -> ChannelId {
+        self.channel_id
+    }
+
+    /// 返回凭据数据库标识，用于绑定密文 AAD。
+    #[must_use]
+    pub const fn credential_id(&self) -> i64 {
+        self.credential.credential_id()
+    }
+
+    /// 返回渠道适配器类型。
+    #[must_use]
+    pub const fn channel_type(&self) -> ChannelType {
+        self.channel_type
+    }
+
+    /// 返回渠道原生协议。
+    #[must_use]
+    pub const fn protocol(&self) -> Protocol {
+        self.protocol
+    }
+
+    /// 返回可选基础地址；调用方不得写入日志。
+    #[must_use]
+    pub fn base_url(&self) -> Option<&str> {
+        self.base_url.as_deref()
+    }
+
+    /// 返回数据库声明的凭据类型。
+    #[must_use]
+    pub const fn credential_kind(&self) -> CredentialKind {
+        self.credential.credential_kind()
+    }
+
+    /// 返回版本化密文封套。
+    #[must_use]
+    pub const fn envelope(&self) -> &EncryptedCredentialEnvelope {
+        self.credential.envelope()
+    }
+
+    /// 返回已验证的非认证请求头覆盖。
+    #[must_use]
+    pub fn headers(&self) -> &[SchedulerRuntimeHeader] {
+        &self.headers
+    }
+
+    /// 返回该凭据是否绑定专属代理；为 true 时生产转发不得回退直连。
+    #[must_use]
+    pub const fn proxy_required(&self) -> bool {
+        self.credential.proxy_required()
+    }
+}
+
+impl fmt::Debug for SchedulerRuntimeTargetRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SchedulerRuntimeTargetRecord")
+            .field("channel_id", &self.channel_id)
+            .field("channel_type", &self.channel_type)
+            .field("protocol", &self.protocol)
+            .field("base_url", &self.base_url.as_ref().map(|_| "<已脱敏>"))
+            .field("credential", &self.credential)
+            .field("header_count", &self.headers.len())
+            .finish()
+    }
+}

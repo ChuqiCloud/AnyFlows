@@ -30,8 +30,6 @@ mod scheduler_ability;
 #[cfg(test)]
 mod scheduler_ability_tests;
 mod scheduler_runtime;
-#[cfg(test)]
-mod scheduler_runtime_tests;
 mod usage_log;
 #[cfg(test)]
 mod usage_log_tests;
