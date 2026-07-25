@@ -25,7 +25,10 @@ use af_httpclient::{
     PooledClient, ProxyConfig, RemoteDnsPolicy,
 };
 use af_relay::{RelayBuildError, RelayService};
-use af_scheduler::{ChannelProbe, ChannelProbeSupervisor, ChannelProbeSupervisorConfig};
+use af_scheduler::{
+    ChannelIndexCacheError, ChannelIndexRefreshConfig, ChannelIndexRefreshSupervisor, ChannelProbe,
+    ChannelProbeSupervisor, ChannelProbeSupervisorConfig, InMemoryChannelIndex,
+};
 use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
 use thiserror::Error;
 
@@ -81,15 +84,17 @@ pub struct BillingReady {
     refund_signal_queue: RefundSignalQueue,
     refund_signal_consumer: RefundSignalConsumer,
     upstream_client: PooledClient,
+    channel_index: InMemoryChannelIndex,
 }
 
-/// 后台任务监督域已经建立，周期 flush、渠道探活、用量持久化与退款补偿 worker 已注册。
+/// 后台任务监督域已经建立，周期 flush、渠道索引、渠道探活与可靠队列 worker 已注册。
 pub struct Supervised {
     infrastructure: AuthenticationReady,
     chat: Arc<dyn ChatService>,
     billing: BillingRuntime,
     usage_record_queue: UsageRecordQueue,
     refund_signal_queue: RefundSignalQueue,
+    _channel_index: InMemoryChannelIndex,
     supervisor: BackgroundTaskSupervisor,
 }
 
@@ -192,6 +197,9 @@ pub enum BootstrapError {
     /// 分组计费缓存首轮加载失败。
     #[error("初始化分组计费缓存失败")]
     GroupPricingCache(#[source] GroupPricingCacheError),
+    /// 渠道索引首轮全量加载失败。
+    #[error("初始化渠道索引失败")]
+    ChannelIndex(#[source] ChannelIndexCacheError),
     /// 内部退款信号队列容量配置无效。
     #[error("初始化退款信号队列失败")]
     RefundSignalQueue(#[source] RefundSignalQueueError),
@@ -364,6 +372,11 @@ impl Bootstrap<RelayReady> {
         )
         .await
         .map_err(BootstrapError::GroupPricingCache)?;
+        let channel_index = InMemoryChannelIndex::load_from_database(
+            self.stage.infrastructure.infrastructure.database.clone(),
+        )
+        .await
+        .map_err(BootstrapError::ChannelIndex)?;
         let pricing_source = Arc::new(CachedRequestPricingSnapshotSource::new(
             model_prices,
             group_pricing,
@@ -419,6 +432,7 @@ impl Bootstrap<RelayReady> {
                 refund_signal_queue,
                 refund_signal_consumer,
                 upstream_client: stage.upstream_client,
+                channel_index,
             },
         })
     }
@@ -445,7 +459,13 @@ impl Bootstrap<BillingReady> {
             refund_signal_queue,
             refund_signal_consumer,
             upstream_client,
+            channel_index,
         } = stage;
+        spawn_channel_index_refresh_task(
+            &mut supervisor,
+            channel_index.clone(),
+            ChannelIndexRefreshConfig::default(),
+        );
         if billing.batch_enabled() {
             supervisor.spawn("billing-flush", {
                 let billing = billing.clone();
@@ -504,10 +524,25 @@ impl Bootstrap<BillingReady> {
                 billing,
                 usage_record_queue,
                 refund_signal_queue,
+                _channel_index: channel_index,
                 supervisor,
             },
         }
     }
+}
+
+/// 注册可重建且响应统一关闭信号的渠道索引周期任务。
+fn spawn_channel_index_refresh_task(
+    supervisor: &mut BackgroundTaskSupervisor,
+    index: InMemoryChannelIndex,
+    refresh_config: ChannelIndexRefreshConfig,
+) {
+    supervisor.spawn("channel-index-refresh", move |task_shutdown| {
+        let runner = ChannelIndexRefreshSupervisor::new(index.clone(), refresh_config);
+        async move {
+            runner.run_periodic_until(task_shutdown.cancelled()).await;
+        }
+    });
 }
 
 /// 注册可重建且响应统一关闭信号的渠道探活周期任务。
@@ -641,6 +676,7 @@ impl Bootstrap<ListenerReady> {
             usage_record_queue,
             refund_signal_queue,
             chat: _,
+            _channel_index: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
         let http =
@@ -1129,6 +1165,33 @@ mod tests {
             )
             .unwrap(),
             TestUnhealthyChannelProbe,
+        );
+
+        assert_eq!(supervisor.task_count(), 1);
+        assert_eq!(
+            supervisor.shutdown(Duration::from_secs(1)).await.unwrap(),
+            SupervisorShutdown::Drained
+        );
+        database.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn channel_index_refresh_task_is_registered_and_cancellable() {
+        let database = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let index = InMemoryChannelIndex::load_from_database(database.clone())
+            .await
+            .unwrap();
+        let shutdown = ShutdownController::new();
+        let mut supervisor = BackgroundTaskSupervisor::new(shutdown);
+        spawn_channel_index_refresh_task(
+            &mut supervisor,
+            index,
+            ChannelIndexRefreshConfig::new(Duration::from_secs(3_600)).unwrap(),
         );
 
         assert_eq!(supervisor.task_count(), 1);

@@ -17,6 +17,8 @@ use crate::{
 const DEFAULT_LOAD_TIMEOUT: Duration = Duration::from_secs(5);
 /// 单次调度查询允许返回的候选上限，与 relay 有界候选状态机保持一致。
 pub const MAX_SCHEDULER_ABILITY_ENTRIES: usize = 64;
+/// 一次全量渠道索引重建允许读取的能力总数，防止损坏数据造成无界内存占用。
+pub const MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES: usize = 200_000;
 
 /// 已通过数据库读取边界校验的调度能力候选。
 #[derive(Clone, Eq, PartialEq)]
@@ -62,14 +64,10 @@ impl SchedulerAbilityRecord {
     fn try_from_models(
         ability: abilities::Model,
         channel: channels::Model,
-        expected_group_id: GroupId,
-        expected_model: &str,
     ) -> Result<Self, SchedulerAbilityRepositoryError> {
         let channel_status = Status::try_from(channel.status)
             .map_err(|_| SchedulerAbilityRepositoryError::Invariant)?;
-        if ability.group_id != expected_group_id.get()
-            || ability.model != expected_model
-            || ability.channel_id != channel.id
+        if ability.channel_id != channel.id
             || !ability.enabled
             || !channel_status.is_enabled()
             || channel.deleted_at.is_some()
@@ -186,9 +184,76 @@ impl SchedulerAbilityRepository {
             rows.into_iter()
                 .map(|(ability, channel)| {
                     let channel = channel.ok_or(SchedulerAbilityRepositoryError::Invariant)?;
-                    SchedulerAbilityRecord::try_from_models(ability, channel, group_id, model)
+                    let record = SchedulerAbilityRecord::try_from_models(ability, channel)?;
+                    if record.group_id() != group_id || record.model() != model {
+                        return Err(SchedulerAbilityRepositoryError::Invariant);
+                    }
+                    Ok(record)
                 })
                 .collect()
+        }
+        .with_subscriber(NoSubscriber::default());
+
+        match timeout(self.load_timeout, operation).await {
+            Ok(result) => result.map_err(record_internal_error),
+            Err(_) => Err(record_internal_error(
+                SchedulerAbilityRepositoryError::Timeout,
+            )),
+        }
+    }
+
+    /// 全量读取所有有效能力，供进程内渠道索引原子重建。
+    ///
+    /// 单个 `(group_id, model)` 仍受 64 个候选硬上限约束，但不同键之间不会共享
+    /// 全局行数上限；调用方必须先完整构建新快照，成功后再替换旧快照。
+    pub async fn load_all(
+        &self,
+    ) -> Result<Vec<SchedulerAbilityRecord>, SchedulerAbilityRepositoryError> {
+        let operation = async {
+            let limit = snapshot_query_limit()?;
+            let rows = abilities::Entity::find()
+                .find_also_related(channels::Entity)
+                .join(JoinType::InnerJoin, abilities::Relation::Group.def())
+                .filter(abilities::Column::Enabled.eq(true))
+                .filter(channels::Column::Status.eq(Status::Enabled.code()))
+                .filter(channels::Column::DeletedAt.is_null())
+                .filter(groups::Column::DeletedAt.is_null())
+                .order_by_asc(abilities::Column::GroupId)
+                .order_by_asc(abilities::Column::Model)
+                .order_by_desc(abilities::Column::Priority)
+                .order_by_asc(abilities::Column::ChannelId)
+                .limit(limit)
+                .all(self.pool.connection())
+                .await
+                .map_err(|_| SchedulerAbilityRepositoryError::Query)?;
+            if rows.len() > MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES {
+                return Err(SchedulerAbilityRepositoryError::Invariant);
+            }
+
+            let mut records = Vec::with_capacity(rows.len());
+            let mut current_group_id = None;
+            let mut current_model = None::<String>;
+            let mut current_count = 0_usize;
+            for (ability, channel) in rows {
+                let channel = channel.ok_or(SchedulerAbilityRepositoryError::Invariant)?;
+                let record = SchedulerAbilityRecord::try_from_models(ability, channel)?;
+                if current_group_id == Some(record.group_id())
+                    && current_model.as_deref() == Some(record.model())
+                {
+                    current_count = current_count
+                        .checked_add(1)
+                        .ok_or(SchedulerAbilityRepositoryError::Invariant)?;
+                } else {
+                    current_group_id = Some(record.group_id());
+                    current_model = Some(record.model().to_owned());
+                    current_count = 1;
+                }
+                if current_count > MAX_SCHEDULER_ABILITY_ENTRIES {
+                    return Err(SchedulerAbilityRepositoryError::Invariant);
+                }
+                records.push(record);
+            }
+            Ok(records)
         }
         .with_subscriber(NoSubscriber::default());
 
@@ -212,6 +277,13 @@ impl fmt::Debug for SchedulerAbilityRepository {
 
 fn query_limit() -> Result<u64, SchedulerAbilityRepositoryError> {
     u64::try_from(MAX_SCHEDULER_ABILITY_ENTRIES)
+        .ok()
+        .and_then(|limit| limit.checked_add(1))
+        .ok_or(SchedulerAbilityRepositoryError::Invariant)
+}
+
+fn snapshot_query_limit() -> Result<u64, SchedulerAbilityRepositoryError> {
+    u64::try_from(MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES)
         .ok()
         .and_then(|limit| limit.checked_add(1))
         .ok_or(SchedulerAbilityRepositoryError::Invariant)
