@@ -274,12 +274,12 @@ mod tests {
             assert!(!config.auth().allow_query_api_key());
             assert_eq!(config.auth().lookup_timeout_secs(), 2);
             assert_eq!(
-                config.openai_upstream().base_url(),
+                config.openai_upstream().unwrap().base_url(),
                 "https://upstream.example"
             );
-            assert_eq!(config.openai_upstream().model(), "test-model");
+            assert_eq!(config.openai_upstream().unwrap().model(), "test-model");
             assert_eq!(
-                config.openai_upstream().api_key().expose(),
+                config.openai_upstream().unwrap().api_key().expose(),
                 "test-upstream-key"
             );
             assert_eq!(config.http_client().max_cached_clients(), None);
@@ -395,17 +395,12 @@ mod tests {
     }
 
     #[test]
-    fn openai_upstream_is_required_and_each_field_is_typed() {
+    fn openai_upstream_is_optional_and_present_fields_remain_typed() {
         with_clean_env(|_| {
             let missing_section = raw_temp_file("[database]\nurl = 'sqlite::memory:'\n");
-            let error = load_from(&missing_section).unwrap_err();
+            let config = load_from(&missing_section).unwrap();
             let _ = fs::remove_file(missing_section);
-            assert_eq!(
-                error,
-                ConfigError::InvalidField {
-                    field: "openai_upstream"
-                }
-            );
+            assert!(config.openai_upstream().is_none());
 
             for (field, body) in [
                 (
@@ -565,12 +560,15 @@ mod tests {
             );
             assert_eq!(config.http_client().max_cached_clients(), Some(3));
             assert_eq!(
-                config.openai_upstream().base_url(),
+                config.openai_upstream().unwrap().base_url(),
                 "https://environment-upstream.example"
             );
-            assert_eq!(config.openai_upstream().model(), "environment-model");
             assert_eq!(
-                config.openai_upstream().api_key().expose(),
+                config.openai_upstream().unwrap().model(),
+                "environment-model"
+            );
+            assert_eq!(
+                config.openai_upstream().unwrap().api_key().expose(),
                 "environment-upstream-key"
             );
             assert_eq!(

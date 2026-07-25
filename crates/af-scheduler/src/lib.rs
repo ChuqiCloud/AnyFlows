@@ -29,7 +29,8 @@ pub use index::{
     ChannelIndexRefreshReport, ChannelIndexRefreshSupervisor, ChannelIndexSnapshot,
     ChannelIndexSnapshotError, ChannelIndexSource, ChannelIndexSourceError,
     ChannelIndexSourceFuture, ChannelIndexSourceRecord, DEFAULT_CHANNEL_INDEX_REFRESH_INTERVAL,
-    InMemoryChannelIndex, IndexedWeightedScheduler, IndexedWeightedSchedulerError,
+    InMemoryChannelIndex, IndexedRouteCandidate, IndexedRoutePlan, IndexedWeightedScheduler,
+    IndexedWeightedSchedulerError,
 };
 pub use probe::{
     ChannelProbe, ChannelProbeRunReport, ChannelProbeStatus, ChannelProbeStore,

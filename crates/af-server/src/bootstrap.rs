@@ -1,6 +1,6 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
-use af_account::CredentialDecryptor;
+use af_account::{CredentialDecryptionError, CredentialDecryptor};
 use af_admin::{DatabaseTokenAuthenticator, TokenAuthenticator};
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
@@ -24,10 +24,10 @@ use af_httpclient::{
     DEFAULT_REQUEST_TIMEOUT, HttpClientConfig, HttpClientError, HttpClientPool, HttpTimeouts,
     PooledClient, ProxyConfig, RemoteDnsPolicy,
 };
-use af_relay::{RelayBuildError, RelayService};
 use af_scheduler::{
     ChannelIndexCacheError, ChannelIndexRefreshConfig, ChannelIndexRefreshSupervisor, ChannelProbe,
     ChannelProbeSupervisor, ChannelProbeSupervisorConfig, InMemoryChannelIndex,
+    IndexedWeightedScheduler,
 };
 use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
 use thiserror::Error;
@@ -35,8 +35,9 @@ use thiserror::Error;
 use crate::readiness::DatabaseReadinessProbe;
 use crate::{
     BackgroundTaskSupervisor, BillingChatService, BillingFlushReport, BillingRuntime,
-    BillingRuntimeError, ShutdownController, SupervisorError, SupervisorShutdown,
-    channel_probe::DatabaseChannelProbe, system_shutdown_signal,
+    BillingRuntimeError, ChatRoutePlanner, ShutdownController, SupervisorError, SupervisorShutdown,
+    channel_probe::DatabaseChannelProbe, scheduled_chat::ScheduledChatService,
+    system_shutdown_signal,
 };
 
 const BILLING_QUEUE_RETRY_DELAY: Duration = Duration::from_millis(100);
@@ -66,10 +67,9 @@ pub struct AuthenticationReady {
     query_api_key_policy: QueryApiKeyPolicy,
 }
 
-/// 当前静态单上游 relay 已完成安全配置与受控 HTTP Client 装配。
+/// 生产转发共用的受控 HTTP Client 已完成安全配置与装配。
 pub struct RelayReady {
     infrastructure: AuthenticationReady,
-    relay: Arc<RelayService>,
     upstream_client: PooledClient,
 }
 
@@ -173,9 +173,9 @@ pub enum BootstrapError {
     /// 受控上游 HTTP Client 配置或构造失败。
     #[error("初始化上游 HTTP Client 失败")]
     HttpClient(#[source] HttpClientError),
-    /// 当前静态单上游 relay 配置或构造失败。
-    #[error("初始化静态单上游转发服务失败")]
-    Relay(#[source] RelayBuildError),
+    /// 生产渠道凭据解密器无法从启动配置安全装配。
+    #[error("初始化凭据解密器失败")]
+    CredentialDecryption(#[source] CredentialDecryptionError),
     /// 计费 WAL 或数据库 sink 初始化、恢复或落库失败。
     #[error("计费运行时生命周期操作失败")]
     Billing(#[source] BillingRuntimeError),
@@ -320,10 +320,9 @@ impl Bootstrap<DatabaseReady> {
 }
 
 impl Bootstrap<AuthenticationReady> {
-    /// 使用启动期静态单上游配置建立非流式 relay。
+    /// 使用启动配置建立生产转发共用的受控 HTTP Client。
     pub fn init_relay(self) -> Result<Bootstrap<RelayReady>, BootstrapError> {
         let upstream_client = build_http_client(&self.config)?;
-        let relay = Arc::new(build_relay(&self.config, upstream_client.clone())?);
         let Bootstrap {
             config,
             shutdown_timeout,
@@ -336,7 +335,6 @@ impl Bootstrap<AuthenticationReady> {
             shutdown,
             stage: RelayReady {
                 infrastructure: stage,
-                relay,
                 upstream_client,
             },
         })
@@ -346,6 +344,8 @@ impl Bootstrap<AuthenticationReady> {
 impl Bootstrap<RelayReady> {
     /// 打开计费 WAL、加载定价缓存并装配生产预扣、结算与内部补偿链路。
     pub async fn init_billing(self) -> Result<Bootstrap<BillingReady>, BootstrapError> {
+        let decryptor = CredentialDecryptor::new(self.config.credential_encryption())
+            .map_err(BootstrapError::CredentialDecryption)?;
         let billing = BillingRuntime::open(
             self.config.billing(),
             self.stage.infrastructure.infrastructure.database.clone(),
@@ -377,6 +377,11 @@ impl Bootstrap<RelayReady> {
         )
         .await
         .map_err(BootstrapError::ChannelIndex)?;
+        let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(ScheduledChatService::new(
+            IndexedWeightedScheduler::new(channel_index.clone()),
+            decryptor,
+            self.stage.upstream_client.clone(),
+        ));
         let pricing_source = Arc::new(CachedRequestPricingSnapshotSource::new(
             model_prices,
             group_pricing,
@@ -405,7 +410,7 @@ impl Bootstrap<RelayReady> {
         .map_err(BootstrapError::RefundSignalConsumer)?;
         let usage_record_worker_count = self.config.billing().usage_record_worker_count();
         let chat: Arc<dyn ChatService> = Arc::new(BillingChatService::new(
-            self.stage.relay.clone(),
+            route_planner,
             pricing_source,
             Some(precharge_port),
             Some(refund_port),
@@ -838,17 +843,6 @@ fn migration_options(config: &AppConfig) -> Result<MigrationOptions, BootstrapEr
     )
 }
 
-fn build_relay(config: &AppConfig, client: PooledClient) -> Result<RelayService, BootstrapError> {
-    let upstream = config.openai_upstream();
-    RelayService::new(
-        client,
-        upstream.base_url(),
-        upstream.model(),
-        upstream.api_key().expose(),
-    )
-    .map_err(BootstrapError::Relay)
-}
-
 fn build_http_client(config: &AppConfig) -> Result<PooledClient, BootstrapError> {
     let settings = config.http_client();
     let timeouts = HttpTimeouts::new(
@@ -968,9 +962,11 @@ mod tests {
         RefundSignalQueue, RefundSignalSink, RefundSignalSinkFuture, UsageRecordConsumer,
         UsageRecordQueue, UsageRecordSink, UsageRecordSinkFuture, UserBillingDelta,
     };
+    use af_config::CREDENTIAL_ENCRYPTION_KEY_BYTES;
     use af_domain::{BillingReservationId, GatewayPrincipal, GroupId, QuotaDelta, TokenId, UserId};
     use af_http::{ReadinessFuture, ReadinessProbe};
     use af_protocol::{TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
     use tokio::sync::{Notify, oneshot};
 
     use super::*;
@@ -1052,10 +1048,11 @@ mod tests {
         let wal_directory = billing_wal_directory(&path)
             .to_string_lossy()
             .replace('\\', "/");
+        let credential_key = URL_SAFE_NO_PAD.encode([0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES]);
         fs::write(
             &path,
             format!(
-                "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{database_url}'\n[billing]\nwal_directory = '{wal_directory}'\n[openai_upstream]\nbase_url = 'https://upstream.example'\nmodel = 'test-model'\napi_key = 'test-upstream-key'\n"
+                "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{database_url}'\n[billing]\nwal_directory = '{wal_directory}'\n[credential_encryption]\nkey_id = 'bootstrap-test'\nkey = '{credential_key}'\n"
             ),
         )
         .unwrap();

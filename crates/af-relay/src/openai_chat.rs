@@ -5,9 +5,8 @@ use std::{
 };
 
 use af_adapter::{
-    Adaptor, AdaptorSendExt, AdaptorSettings, Bytes, ChannelType, Credential, HeaderMap, Method,
-    OpenAiAdaptorSettings, Operation, PooledClient, RelayContext, ResponseMode, StatusCode,
-    UpstreamRequest, get_adaptor,
+    Adaptor, AdaptorSettings, Bytes, ChannelType, Credential, Method, OpenAiAdaptorSettings,
+    Operation, PooledClient, RelayContext, ResponseMode, StatusCode, get_adaptor,
 };
 use af_domain::{AfError, GatewayPrincipal, MAX_MODEL_NAME_BYTES, UpstreamError};
 use af_protocol::{
@@ -16,7 +15,8 @@ use af_protocol::{
 };
 
 use crate::{
-    OpenAiChatStream, OpenAiChatUsageHandle, RelayBuildError, UsageResolutionError,
+    OpenAiChatStream, OpenAiChatUsageHandle, RelayBuildError, RelayCandidate, RelayError,
+    RelayRequest, RelayStateMachine, UsageResolutionError,
     error::{classify_upstream_status, map_adaptor_error},
     openai_chat_usage::OpenAiChatUsageEstimator,
 };
@@ -67,90 +67,104 @@ impl RelayService {
     pub async fn chat_completions(
         &self,
         _principal: &GatewayPrincipal,
-        mut canonical: CanonicalRequest,
+        canonical: CanonicalRequest,
         request_id: &str,
     ) -> Result<OpenAiChatResponse, AfError> {
         if canonical.model != self.model {
             return Err(UpstreamError::ModelUnsupported.into());
         }
-        let include_usage = canonical.stream_options.include_usage();
-        if canonical.stream {
-            // 上游 usage 是内部结算优先数据；客户端是否可见由 include_usage 单独控制。
-            canonical.stream_options = StreamOptions::new(true);
-        }
-        let outbound_value = build_request(&canonical).map_err(|_| AfError::InvalidRequest)?;
-        let outbound_body = serde_json::to_vec(&outbound_value)
-            .map(Bytes::from)
-            .map_err(|_| AfError::Internal)?;
-        // 先由协议构造器完成全部容量与结构校验，再让 tokenizer 处理规范化请求。
-        let usage_estimator = OpenAiChatUsageEstimator::new(&canonical);
-
         let context = self
             .context
             .clone()
             .with_request_id(request_id.to_owned())
             .map_err(|_| AfError::Internal)?;
-        let mut headers = HeaderMap::new();
-        self.adaptor
-            .setup_headers(&mut headers, &self.credential, &context)
-            .map_err(|_| AfError::Internal)?;
-        let target = self
-            .adaptor
-            .build_url(&context, Operation::Chat)
-            .map_err(|_| AfError::Internal)?;
-        let response_mode = if canonical.stream {
-            ResponseMode::Stream
-        } else {
-            ResponseMode::Full
-        };
-        let request = UpstreamRequest::new(Method::POST, target, headers, Some(outbound_body))
-            .map_err(|_| AfError::Internal)?
-            .with_response_mode(response_mode);
-        let response = self
-            .adaptor
-            .send(request, &context)
-            .await
-            .map_err(|error| AfError::from(map_adaptor_error(error)))?;
-        let status = response.status();
-        if status != StatusCode::OK {
-            let body = response
-                .into_body()
-                .into_bytes()
-                .await
-                .map_err(|error| AfError::from(map_adaptor_error(error)))?;
-            return Err(classify_upstream_status(status, &body).into());
-        }
+        let machine = RelayStateMachine::new(vec![RelayCandidate::new(
+            self.adaptor.clone(),
+            context,
+            self.credential.clone(),
+        )])
+        .map_err(|_| AfError::Internal)?;
+        relay_openai_chat(&machine, canonical, request_id).await
+    }
+}
 
-        if canonical.stream {
-            let created = unix_timestamp()?;
-            let response_id = format!("chatcmpl-{request_id}");
-            let encoder = OpenAiChatStreamEncoder::new(response_id, &canonical.model, created)
-                .map_err(|_| AfError::Internal)?;
-            let (stream, usage) = OpenAiChatStream::new(
-                response.into_body(),
-                encoder,
-                usage_estimator,
-                include_usage,
-            );
-            let stream = stream
-                .prefetch_first(STREAM_FIRST_EVENT_TIMEOUT)
-                .await
-                .map_err(AfError::from)?;
-            return Ok(OpenAiChatResponse::Stream {
-                body: Box::new(stream),
-                usage,
-            });
-        }
-
+/// 使用已按请求固定顺序装配的候选状态机执行 OpenAI Chat 转发。
+///
+/// 调度、凭据解密和代理绑定必须在调用前完成；本函数只负责协议请求构造、候选故障转移、
+/// 响应校验及 usage 提取，不读取数据库或持有计费会话。
+pub async fn relay_openai_chat(
+    machine: &RelayStateMachine,
+    mut canonical: CanonicalRequest,
+    request_id: &str,
+) -> Result<OpenAiChatResponse, AfError> {
+    let include_usage = canonical.stream_options.include_usage();
+    if canonical.stream {
+        // 上游 usage 是内部结算优先数据；客户端是否可见由 include_usage 单独控制。
+        canonical.stream_options = StreamOptions::new(true);
+    }
+    let outbound_value = build_request(&canonical).map_err(|_| AfError::InvalidRequest)?;
+    let outbound_body = serde_json::to_vec(&outbound_value)
+        .map(Bytes::from)
+        .map_err(|_| AfError::Internal)?;
+    // 先由协议构造器完成全部容量与结构校验，再让 tokenizer 处理规范化请求。
+    let usage_estimator = OpenAiChatUsageEstimator::new(&canonical);
+    let response_mode = if canonical.stream {
+        ResponseMode::Stream
+    } else {
+        ResponseMode::Full
+    };
+    let request = RelayRequest::new(
+        canonical.model.clone(),
+        Operation::Chat,
+        Method::POST,
+        Some(outbound_body),
+    )
+    .map_err(map_relay_error)?
+    .with_response_mode(response_mode);
+    let response = machine
+        .execute(request)
+        .await
+        .map_err(map_relay_error)?
+        .into_response();
+    let status = response.status();
+    if status != StatusCode::OK {
         let body = response
             .into_body()
             .into_bytes()
             .await
             .map_err(|error| AfError::from(map_adaptor_error(error)))?;
-        let canonical_response = parse_response(&body).map_err(|_| UpstreamError::ProtocolError)?;
-        let usage = usage_estimator.resolve_response(&canonical_response);
-        Ok(OpenAiChatResponse::Full { body, usage })
+        return Err(classify_upstream_status(status, &body).into());
     }
+
+    if canonical.stream {
+        let created = unix_timestamp()?;
+        let response_id = format!("chatcmpl-{request_id}");
+        let encoder = OpenAiChatStreamEncoder::new(response_id, &canonical.model, created)
+            .map_err(|_| AfError::Internal)?;
+        let (stream, usage) = OpenAiChatStream::new(
+            response.into_body(),
+            encoder,
+            usage_estimator,
+            include_usage,
+        );
+        let stream = stream
+            .prefetch_first(STREAM_FIRST_EVENT_TIMEOUT)
+            .await
+            .map_err(AfError::from)?;
+        return Ok(OpenAiChatResponse::Stream {
+            body: Box::new(stream),
+            usage,
+        });
+    }
+
+    let body = response
+        .into_body()
+        .into_bytes()
+        .await
+        .map_err(|error| AfError::from(map_adaptor_error(error)))?;
+    let canonical_response = parse_response(&body).map_err(|_| UpstreamError::ProtocolError)?;
+    let usage = usage_estimator.resolve_response(&canonical_response);
+    Ok(OpenAiChatResponse::Full { body, usage })
 }
 
 impl fmt::Debug for RelayService {
@@ -213,6 +227,14 @@ fn unix_timestamp() -> Result<i64, AfError> {
         .map_err(|_| AfError::Internal)?
         .as_secs();
     i64::try_from(seconds).map_err(|_| AfError::Internal)
+}
+
+fn map_relay_error(error: RelayError) -> AfError {
+    match error {
+        RelayError::InvalidModel => AfError::InvalidRequest,
+        RelayError::Request(_) | RelayError::Adaptor(_) => AfError::Internal,
+        RelayError::Upstream(error) => error.into(),
+    }
 }
 
 #[cfg(test)]

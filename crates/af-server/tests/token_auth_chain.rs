@@ -18,8 +18,9 @@ use af_server::{Bootstrap, SupervisorShutdown};
 use sea_orm::{ConnectionTrait, Database, DbBackend, Statement, Value as DatabaseValue};
 use serde_json::{Value, json};
 use support::{
-    CLIENT_KEY, GROUP_ID, IO_TIMEOUT, RawResponse, TOKEN_ID, UPSTREAM_BASE_URL, UPSTREAM_KEY,
-    UPSTREAM_MODEL, USER_ID, send_request, spawn_proxy,
+    CLIENT_KEY, GROUP_ID, IO_TIMEOUT, RUNTIME_HEADER_NAME, RUNTIME_HEADER_VALUE, RawResponse,
+    TOKEN_ID, UPSTREAM_MODEL, USER_ID, credential_encryption_key, seed_runtime_channel,
+    send_request, spawn_proxy,
 };
 use tokio::{sync::oneshot, time::timeout};
 
@@ -102,10 +103,11 @@ async fn full_chain_forwards_normalized_request_and_returns_validated_response()
         "anyflows-minimal-relay-chain-{}.toml",
         std::process::id()
     ));
+    let credential_key = credential_encryption_key();
     fs::write(
         &config_path,
         format!(
-            "[server]\nbind = '127.0.0.1:0'\ncors_allowed_origins = ['https://console.example']\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[auth]\nlookup_timeout_secs = 1\n[openai_upstream]\nbase_url = '{UPSTREAM_BASE_URL}'\nmodel = '{UPSTREAM_MODEL}'\napi_key = '{UPSTREAM_KEY}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n",
+            "[server]\nbind = '127.0.0.1:0'\ncors_allowed_origins = ['https://console.example']\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'gateway-test-key'\nkey = '{credential_key}'\n[auth]\nlookup_timeout_secs = 1\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n",
             database.url,
             database
                 .billing_wal_directory()
@@ -511,6 +513,7 @@ async fn full_chain_forwards_normalized_request_and_returns_validated_response()
     );
     assert!(head_lower.contains("authorization: bearer configured-upstream-key"));
     assert!(head_lower.contains(&format!("x-request-id: {request_id}").to_ascii_lowercase()));
+    assert!(head_lower.contains(&format!("{RUNTIME_HEADER_NAME}: {RUNTIME_HEADER_VALUE}")));
     for forbidden in [
         CLIENT_KEY_DIGEST,
         "client-cookie-secret",
@@ -621,6 +624,7 @@ async fn seed_valid_token(database_url: &str) {
         ))
         .await
         .unwrap();
+    seed_runtime_channel(&connection, GROUP_ID).await;
     connection.close().await.unwrap();
 }
 

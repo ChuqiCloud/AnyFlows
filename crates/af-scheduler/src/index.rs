@@ -20,6 +20,10 @@ use crate::{
     WeightedSelectionError, WeightedStrategy,
 };
 
+mod route;
+
+pub use route::{IndexedRouteCandidate, IndexedRoutePlan};
+
 /// 默认渠道索引全量重建周期；后续 M3 会改为事件驱动增量并保留周期校正。
 pub const DEFAULT_CHANNEL_INDEX_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
@@ -430,6 +434,39 @@ impl IndexedWeightedScheduler {
         let snapshot = self.index.snapshot()?;
         WeightedRetryPlan::new(snapshot.candidates(group_id, model)?.to_vec()).map_err(Into::into)
     }
+
+    /// 从同一代快照生成可直接交给生产转发装配层的固定路由计划。
+    ///
+    /// 空候选返回 `None`；快照中任一候选缺失同代运行时目标都视为目录损坏并失败关闭。
+    pub fn route_plan(
+        &self,
+        group_id: GroupId,
+        model: &str,
+    ) -> Result<Option<IndexedRoutePlan>, IndexedWeightedSchedulerError> {
+        let snapshot = self.index.snapshot()?;
+        let retry_order = WeightedRetryPlan::new(snapshot.candidates(group_id, model)?.to_vec())?
+            .into_retry_order()?;
+        let Some(first) = retry_order.first() else {
+            return Ok(None);
+        };
+        let target_group_id = first.candidate().group_id();
+        let mut candidates = Vec::with_capacity(retry_order.len());
+        for selection in retry_order {
+            let runtime_target = snapshot
+                .runtime_targets
+                .get(&selection.candidate().channel_id())
+                .cloned()
+                .ok_or(IndexedWeightedSchedulerError::Cache(
+                    ChannelIndexCacheError::Snapshot(ChannelIndexSnapshotError::Invariant),
+                ))?;
+            candidates.push(IndexedRouteCandidate::new(selection, runtime_target));
+        }
+        Ok(Some(IndexedRoutePlan::new(
+            snapshot.generation(),
+            target_group_id,
+            candidates,
+        )))
+    }
 }
 
 /// 内存索引 weighted 调度失败；模型名和持久化诊断不会进入错误文本。
@@ -834,6 +871,43 @@ mod tests {
         assert_eq!(plan.select_next().unwrap().unwrap().priority_rank(), 0);
         assert_eq!(plan.select_next().unwrap().unwrap().priority_rank(), 1);
         assert_eq!(plan.select_next().unwrap(), None);
+    }
+
+    #[test]
+    fn route_plan_pins_targets_and_billing_group_to_one_snapshot() {
+        let snapshot = ChannelIndexSnapshot::from_records(
+            vec![
+                record(7, "gpt-route", 1, 9, 0),
+                record(7, "gpt-route", 2, 1, 0),
+            ],
+            11,
+        )
+        .unwrap();
+        let index = InMemoryChannelIndex {
+            inner: Arc::new(InMemoryChannelIndexInner {
+                source: Arc::new(SequenceSource::new(Vec::new())),
+                snapshot: RwLock::new(Arc::new(snapshot)),
+                refresh_gate: tokio::sync::Mutex::new(()),
+            }),
+        };
+
+        let route = IndexedWeightedScheduler::new(index)
+            .route_plan(GroupId::new(7).unwrap(), "gpt-route")
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(route.generation(), 11);
+        assert_eq!(route.target_group_id(), GroupId::new(7).unwrap());
+        assert_eq!(route.candidates().len(), 2);
+        assert_eq!(route.candidates()[0].selection().priority_rank(), 0);
+        assert_eq!(route.candidates()[1].selection().priority_rank(), 1);
+        for candidate in route.candidates() {
+            assert_eq!(
+                candidate.selection().candidate().channel_id(),
+                candidate.runtime_target().channel_id()
+            );
+        }
+        assert!(!format!("{route:?}").contains("gpt-route"));
     }
 
     fn record(
