@@ -11,11 +11,11 @@
     CI: "true"
   stages:
     - name: 安装前端依赖
-      script: corepack pnpm --dir web install --frozen-lockfile
+      script: corepack pnpm@10.33.0 --dir web install --frozen-lockfile
     - name: 检查前端代码
-      script: corepack pnpm --dir web lint
+      script: corepack pnpm@10.33.0 --dir web lint
     - name: 构建前端
-      script: corepack pnpm --dir web build
+      script: corepack pnpm@10.33.0 --dir web build
 
 "(master|develop)":
   push:

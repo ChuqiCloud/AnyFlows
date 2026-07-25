@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "check": "pnpm lint && pnpm build",
+    "check": "oxlint && tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"
   },

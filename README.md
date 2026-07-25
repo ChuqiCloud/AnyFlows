@@ -38,11 +38,11 @@ cargo test --workspace --all-features --doc --locked                    # 文档
 cargo deny --all-features --locked check advisories bans licenses sources
 
 # 前端开发
-corepack pnpm --dir web install --frozen-lockfile
-corepack pnpm --dir web dev
+corepack pnpm@10.33.0 --dir web install --frozen-lockfile
+corepack pnpm@10.33.0 --dir web dev
 
 # 前端质量门禁
-corepack pnpm --dir web check
+corepack pnpm@10.33.0 --dir web check
 ```
 
 ## 架构：crate 分层
