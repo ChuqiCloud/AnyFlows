@@ -7,10 +7,13 @@ mod channel_probe;
 #[cfg(test)]
 mod channel_probe_tests;
 mod readiness;
+mod scheduled_chat;
 mod shutdown;
 mod supervisor;
 
-pub use billing_chat::BillingChatService;
+pub use billing_chat::{
+    BillingChatService, ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture,
+};
 pub use billing_runtime::{BillingFlushReport, BillingRuntime, BillingRuntimeError};
 pub use bootstrap::{
     AuthenticationReady, BillingReady, Bootstrap, BootstrapError, Configured, DatabaseReady,

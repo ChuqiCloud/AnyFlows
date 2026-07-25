@@ -7,6 +7,16 @@ use std::{
     time::{Duration, Instant},
 };
 
+use af_account::credential_plaintext_aad;
+use af_config::CREDENTIAL_ENCRYPTION_KEY_BYTES;
+use af_domain::{ChannelId, CredentialKind};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use chacha20poly1305::{
+    XChaCha20Poly1305, XNonce,
+    aead::{Aead as _, KeyInit as _, Payload},
+};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use serde_json::json;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -21,6 +31,107 @@ pub const CLIENT_KEY: &str = "sk-af-AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
 pub const TOKEN_ID: i64 = 8_100_001;
 pub const USER_ID: i64 = 8_100_002;
 pub const GROUP_ID: i64 = 8_100_003;
+pub const CHANNEL_ID: i64 = 8_100_004;
+pub const CREDENTIAL_ID: i64 = 8_100_005;
+pub const RUNTIME_HEADER_NAME: &str = "x-runtime-header";
+pub const RUNTIME_HEADER_VALUE: &str = "runtime-header-value";
+const CREDENTIAL_KEY_ID: &str = "gateway-test-key";
+
+/// 返回真实 TCP 回归使用的 32 字节 Base64URL 凭据解密密钥。
+pub fn credential_encryption_key() -> String {
+    URL_SAFE_NO_PAD.encode([0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES])
+}
+
+/// 写入一条可由生产运行时目录选中的 OpenAI Chat 渠道和加密凭据。
+pub async fn seed_runtime_channel(connection: &DatabaseConnection, group_id: i64) {
+    for (sql, values) in [
+        (
+            "INSERT INTO channels (id, name, type, protocol, base_url, status, model_mapping, param_override, header_override, settings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            vec![
+                CHANNEL_ID.into(),
+                "runtime-openai".into(),
+                "openai".into(),
+                "openai_chat".into(),
+                UPSTREAM_BASE_URL.into(),
+                1_i16.into(),
+                "{}".into(),
+                "{}".into(),
+                json!({"x-runtime-header": RUNTIME_HEADER_VALUE})
+                    .to_string()
+                    .into(),
+                "{}".into(),
+            ],
+        ),
+        (
+            "INSERT INTO channel_models (channel_id, model) VALUES (?, ?)",
+            vec![CHANNEL_ID.into(), UPSTREAM_MODEL.into()],
+        ),
+        (
+            "INSERT INTO channel_groups (channel_id, group_id) VALUES (?, ?)",
+            vec![CHANNEL_ID.into(), group_id.into()],
+        ),
+        (
+            "INSERT INTO abilities (group_id, model, channel_id, enabled, priority, weight) VALUES (?, ?, ?, ?, ?, ?)",
+            vec![
+                group_id.into(),
+                UPSTREAM_MODEL.into(),
+                CHANNEL_ID.into(),
+                true.into(),
+                10_i32.into(),
+                0_i32.into(),
+            ],
+        ),
+        (
+            "INSERT INTO credentials (id, channel_id, kind, secret, status, priority, schedulable) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            vec![
+                CREDENTIAL_ID.into(),
+                CHANNEL_ID.into(),
+                "api_key".into(),
+                encrypted_api_key().into(),
+                1_i16.into(),
+                10_i32.into(),
+                true.into(),
+            ],
+        ),
+    ] {
+        connection
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                sql,
+                values,
+            ))
+            .await
+            .unwrap();
+    }
+}
+
+fn encrypted_api_key() -> String {
+    let key = [0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    let nonce = [0x24; 24];
+    let cipher = XChaCha20Poly1305::new_from_slice(&key).unwrap();
+    let plaintext = json!({"kind": "api_key", "api_key": UPSTREAM_KEY}).to_string();
+    let ciphertext = cipher
+        .encrypt(
+            XNonce::from_slice(&nonce),
+            Payload {
+                msg: plaintext.as_bytes(),
+                aad: &credential_plaintext_aad(
+                    ChannelId::new(CHANNEL_ID).unwrap(),
+                    CREDENTIAL_ID,
+                    CredentialKind::ApiKey,
+                ),
+            },
+        )
+        .unwrap();
+    json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": CREDENTIAL_KEY_ID,
+        "nonce": URL_SAFE_NO_PAD.encode(nonce),
+        "ciphertext": URL_SAFE_NO_PAD.encode(ciphertext),
+    })
+    .to_string()
+}
 
 #[derive(Debug)]
 pub struct CapturedRequest {

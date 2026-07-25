@@ -16,6 +16,7 @@ pub struct RelayCandidate {
     adaptor: Arc<dyn Adaptor>,
     context: RelayContext,
     credential: Credential,
+    header_overrides: HeaderMap,
 }
 
 impl RelayCandidate {
@@ -26,7 +27,15 @@ impl RelayCandidate {
             adaptor,
             context,
             credential,
+            header_overrides: HeaderMap::new(),
         }
+    }
+
+    /// 附加已由持久化边界验证的非认证 Header 覆盖。
+    #[must_use]
+    pub fn with_header_overrides(mut self, header_overrides: HeaderMap) -> Self {
+        self.header_overrides = header_overrides;
+        self
     }
 }
 
@@ -37,6 +46,7 @@ impl fmt::Debug for RelayCandidate {
             .field("adaptor", &self.adaptor.channel_type())
             .field("context", &self.context)
             .field("credential", &self.credential)
+            .field("header_override_count", &self.header_overrides.len())
             .finish()
     }
 }
@@ -196,6 +206,7 @@ impl RelayStateMachine {
                 last_error = Some(RelayError::Adaptor(error));
                 continue;
             }
+            headers.extend(candidate.header_overrides.clone());
 
             let target = match candidate
                 .adaptor

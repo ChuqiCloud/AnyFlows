@@ -1,4 +1,6 @@
 use std::{
+    future::Future,
+    pin::Pin,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -8,7 +10,7 @@ use af_billing::{
     BillingRequestPlan, BillingSettlementPort, RefundSignalPort, RequestPricingSnapshotError,
     RequestPricingSnapshotSource, UsageRecordPort,
 };
-use af_domain::{AfError, BillingReservationId, GatewayPrincipal};
+use af_domain::{AfError, BillingReservationId, GatewayPrincipal, GroupId};
 use af_http::{ChatService, ChatServiceFuture};
 use af_protocol::{CanonicalRequest, Usage};
 use af_relay::{
@@ -23,13 +25,37 @@ const MAX_COMPLETION_ATTEMPTS: usize = 3;
 const RETRY_DELAY: Duration = Duration::from_millis(20);
 const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
 
+/// 已固定路由计划的一次异步执行结果。
+pub type PlannedChatExecutionFuture =
+    Pin<Box<dyn Future<Output = Result<OpenAiChatResponse, AfError>> + Send + 'static>>;
+
+/// 在计费前完成候选、目标分组与运行时目标装配的请求级计划。
+pub trait PlannedChatExecution: Send {
+    /// 返回本计划全部候选共同的实际计费分组。
+    fn target_group_id(&self) -> GroupId;
+
+    /// 在预扣成功后消费计划并执行全部候选故障转移。
+    fn execute(self: Box<Self>) -> PlannedChatExecutionFuture;
+}
+
+/// 为已认证 Canonical Chat 请求生成不可变路由计划的对象安全端口。
+pub trait ChatRoutePlanner: Send + Sync {
+    /// 从当前运行时快照固定候选并完成所有安全装配；本方法不得发送上游请求。
+    fn plan(
+        &self,
+        principal: &GatewayPrincipal,
+        request: CanonicalRequest,
+        request_id: &str,
+    ) -> Result<Box<dyn PlannedChatExecution>, AfError>;
+}
+
 /// 已装配计费依赖的 Chat 服务装饰器。
 ///
 /// 装饰器在调用上游前固定请求上界并完成一次幂等预扣；非流式响应直接完成结算，流式响应
 /// 则把同一生命周期交给流结束回调。缺少真实定价或持久化端口时，构造方必须显式拒绝装配，
 /// 本类型不会把未知价格当作免费。
 pub struct BillingChatService {
-    inner: Arc<dyn ChatService>,
+    inner: Arc<dyn ChatRoutePlanner>,
     pricing_source: Arc<dyn RequestPricingSnapshotSource>,
     precharge: Option<Arc<dyn BillingPrechargePort>>,
     refund: Option<Arc<dyn RefundSignalPort>>,
@@ -41,7 +67,7 @@ impl BillingChatService {
     /// 使用请求级定价快照来源与计费端口创建装饰器。
     #[must_use]
     pub fn new(
-        inner: Arc<dyn ChatService>,
+        inner: Arc<dyn ChatRoutePlanner>,
         pricing_source: Arc<dyn RequestPricingSnapshotSource>,
         precharge: Option<Arc<dyn BillingPrechargePort>>,
         refund: Option<Arc<dyn RefundSignalPort>>,
@@ -66,14 +92,14 @@ impl BillingChatService {
     ) -> Result<OpenAiChatResponse, AfError> {
         let upper_bound =
             estimate_openai_chat_request_upper_bound(&request).map_err(map_upper_bound_error)?;
-        // M1 当前仍是单上游静态调度，真实 scheduler 落地后应把 target_group_id
-        // 替换为候选渠道实际计费分组，不能继续默认等同于来源分组。
+        let model = request.model.clone();
+        let planned = self.inner.plan(principal, request, request_id)?;
         let source_group_id = principal.group_id();
-        let target_group_id = principal.group_id();
+        let target_group_id = planned.target_group_id();
         let snapshot = self
             .pricing_source
             .capture(
-                &request.model,
+                &model,
                 source_group_id,
                 target_group_id,
                 current_utc_day_second()?,
@@ -107,10 +133,7 @@ impl BillingChatService {
             }
         };
 
-        let response = self
-            .inner
-            .chat_completions(principal, request, request_id)
-            .await?;
+        let response = planned.execute().await?;
         match response {
             OpenAiChatResponse::Full { body, usage } => {
                 let usage = usage.map_err(|_| AfError::Internal)?;
@@ -282,27 +305,46 @@ mod tests {
     use af_billing::{
         BillingMode, BillingPrechargeFuture, BillingPrechargePort, BillingSettlementFuture,
         BillingSettlementPort, BillingUsageRecord, CachedRequestPricingSnapshotSource,
-        GroupPricingCache, GroupPricingSource, GroupPricingSourceCatalog, GroupPricingSourceFuture,
-        GroupPricingSourceRecord, ModelPriceCache, ModelPriceSource, ModelPriceSourceFuture,
-        ModelPriceSourceRecord, PricingRatio, RefundSignalOutcome, TokenPrices, UsageRecordOutcome,
+        GroupModelRatioSourceRecord, GroupPricingCache, GroupPricingSource,
+        GroupPricingSourceCatalog, GroupPricingSourceFuture, GroupPricingSourceRecord,
+        ModelPriceCache, ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord,
+        PricingRatio, RefundSignalOutcome, RequestPricingSnapshot, TokenPrices, UsageRecordOutcome,
     };
     use af_domain::{GroupId, Operation, Quota, Role, TokenId, UserId};
-    use af_http::{ChatService, ChatServiceFuture};
+    use af_http::ChatService;
     use af_protocol::{CanonicalRequest, ContentBlock, Message, TokenCount, Usage};
     use rust_decimal::Decimal;
 
     use super::*;
 
-    struct FullStub;
+    struct FullStub {
+        target_group_id: GroupId,
+    }
 
-    impl ChatService for FullStub {
-        fn chat_completions<'a>(
-            &'a self,
-            _principal: &'a GatewayPrincipal,
+    impl ChatRoutePlanner for FullStub {
+        fn plan(
+            &self,
+            _principal: &GatewayPrincipal,
             _request: CanonicalRequest,
-            _request_id: &'a str,
-        ) -> ChatServiceFuture<'a> {
-            Box::pin(async {
+            _request_id: &str,
+        ) -> Result<Box<dyn PlannedChatExecution>, AfError> {
+            Ok(Box::new(FullExecution {
+                target_group_id: self.target_group_id,
+            }))
+        }
+    }
+
+    struct FullExecution {
+        target_group_id: GroupId,
+    }
+
+    impl PlannedChatExecution for FullExecution {
+        fn target_group_id(&self) -> GroupId {
+            self.target_group_id
+        }
+
+        fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
+            Box::pin(async move {
                 Ok(OpenAiChatResponse::Full {
                     body: Bytes::from_static(b"{}"),
                     usage: Ok(usage()),
@@ -373,7 +415,9 @@ mod tests {
         let precharge = Arc::new(PrechargeStub::default());
         let settlement = Arc::new(SettlementStub::default());
         let service = BillingChatService::new(
-            Arc::new(FullStub),
+            Arc::new(FullStub {
+                target_group_id: GroupId::new(3).unwrap(),
+            }),
             Arc::new(metered_snapshot_source().await),
             Some(precharge.clone()),
             Some(Arc::new(RefundStub)),
@@ -388,6 +432,60 @@ mod tests {
         assert_eq!(precharge.calls.lock().unwrap().len(), 1);
         assert_eq!(settlement.calls.lock().unwrap().len(), 1);
         assert_eq!(usage_port.records.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn pricing_capture_uses_the_group_pinned_by_the_route_plan() {
+        let pricing = Arc::new(TrackingPricingSource {
+            inner: metered_snapshot_source_with_target(GroupId::new(4).unwrap()).await,
+            calls: Mutex::new(Vec::new()),
+        });
+        let service = BillingChatService::new(
+            Arc::new(FullStub {
+                target_group_id: GroupId::new(4).unwrap(),
+            }),
+            pricing.clone(),
+            Some(Arc::new(PrechargeStub::default())),
+            Some(Arc::new(RefundStub)),
+            Some(Arc::new(SettlementStub::default())),
+            Arc::new(UsageStub::default()),
+        );
+
+        service
+            .chat_completions(&principal(), request(), "request-target-group")
+            .await
+            .unwrap();
+
+        assert_eq!(
+            pricing.calls.lock().unwrap().as_slice(),
+            &[(GroupId::new(3).unwrap(), GroupId::new(4).unwrap())]
+        );
+    }
+
+    #[tokio::test]
+    async fn one_precharge_covers_the_entire_failover_execution() {
+        let attempts = Arc::new(Mutex::new(0_usize));
+        let precharge = Arc::new(PrechargeStub::default());
+        let settlement = Arc::new(SettlementStub::default());
+        let service = BillingChatService::new(
+            Arc::new(SimulatedFailoverStub {
+                attempts: attempts.clone(),
+            }),
+            Arc::new(metered_snapshot_source().await),
+            Some(precharge.clone()),
+            Some(Arc::new(RefundStub)),
+            Some(settlement.clone()),
+            Arc::new(UsageStub::default()),
+        );
+
+        service
+            .chat_completions(&principal(), request(), "request-failover")
+            .await
+            .unwrap();
+
+        assert_eq!(*attempts.lock().unwrap(), 2);
+        assert_eq!(precharge.calls.lock().unwrap().len(), 1);
+        assert_eq!(settlement.calls.lock().unwrap().len(), 1);
     }
 
     #[test]
@@ -462,6 +560,12 @@ mod tests {
     }
 
     async fn metered_snapshot_source() -> CachedRequestPricingSnapshotSource {
+        metered_snapshot_source_with_target(GroupId::new(3).unwrap()).await
+    }
+
+    async fn metered_snapshot_source_with_target(
+        target_group_id: GroupId,
+    ) -> CachedRequestPricingSnapshotSource {
         let prices = TokenPrices::new(
             Decimal::new(1, 6),
             Decimal::new(1, 6),
@@ -483,18 +587,96 @@ mod tests {
         }))
         .await
         .unwrap();
+        let source_group_id = GroupId::new(3).unwrap();
+        let mut groups = vec![GroupPricingSourceRecord::new(
+            source_group_id,
+            PricingRatio::ONE,
+            None,
+        )];
+        if target_group_id != source_group_id {
+            groups.push(GroupPricingSourceRecord::new(
+                target_group_id,
+                PricingRatio::new(1_200_000).unwrap(),
+                None,
+            ));
+        }
+        let ratios = (target_group_id != source_group_id)
+            .then(|| {
+                GroupModelRatioSourceRecord::new(
+                    source_group_id,
+                    target_group_id,
+                    PricingRatio::new(750_000).unwrap(),
+                )
+            })
+            .into_iter()
+            .collect();
         let group_pricing = GroupPricingCache::load(Arc::new(StaticGroupPricingSource {
-            catalog: GroupPricingSourceCatalog::new(
-                vec![GroupPricingSourceRecord::new(
-                    GroupId::new(3).unwrap(),
-                    PricingRatio::ONE,
-                    None,
-                )],
-                Vec::new(),
-            ),
+            catalog: GroupPricingSourceCatalog::new(groups, ratios),
         }))
         .await
         .unwrap();
         CachedRequestPricingSnapshotSource::new(model_prices, group_pricing)
+    }
+
+    struct TrackingPricingSource {
+        inner: CachedRequestPricingSnapshotSource,
+        calls: Mutex<Vec<(GroupId, GroupId)>>,
+    }
+
+    struct SimulatedFailoverStub {
+        attempts: Arc<Mutex<usize>>,
+    }
+
+    impl ChatRoutePlanner for SimulatedFailoverStub {
+        fn plan(
+            &self,
+            principal: &GatewayPrincipal,
+            _request: CanonicalRequest,
+            _request_id: &str,
+        ) -> Result<Box<dyn PlannedChatExecution>, AfError> {
+            Ok(Box::new(SimulatedFailoverExecution {
+                target_group_id: principal.group_id(),
+                attempts: self.attempts.clone(),
+            }))
+        }
+    }
+
+    struct SimulatedFailoverExecution {
+        target_group_id: GroupId,
+        attempts: Arc<Mutex<usize>>,
+    }
+
+    impl PlannedChatExecution for SimulatedFailoverExecution {
+        fn target_group_id(&self) -> GroupId {
+            self.target_group_id
+        }
+
+        fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
+            Box::pin(async move {
+                // 两次内部尝试模拟 RelayStateMachine 完成一次故障转移。
+                *self.attempts.lock().unwrap() = 2;
+                Ok(OpenAiChatResponse::Full {
+                    body: Bytes::from_static(b"{}"),
+                    usage: Ok(usage()),
+                })
+            })
+        }
+    }
+
+    impl RequestPricingSnapshotSource for TrackingPricingSource {
+        fn capture(
+            &self,
+            model: &str,
+            source_group_id: GroupId,
+            target_group_id: GroupId,
+            current_second: u32,
+        ) -> Result<RequestPricingSnapshot, RequestPricingSnapshotError> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push((source_group_id, target_group_id));
+            self.inner
+                .capture(model, source_group_id, target_group_id, current_second)
+        }
     }
 }

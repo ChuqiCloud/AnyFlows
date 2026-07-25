@@ -520,10 +520,10 @@ impl Default for AuthSettings {
     }
 }
 
-/// 当前唯一 OpenAI-compatible 上游的启动期配置。
+/// M0 静态 OpenAI-compatible 上游的兼容配置。
 ///
-/// 渠道仓储、凭据解密和选路在 M1 落地前，本配置提供一条明确且可删除的静态入口。
-/// URL、模型和密钥均按敏感运行参数处理，调试输出只显示是否已配置。
+/// M1 生产 Chat 已改用数据库运行时渠道目录，本配置不参与生产选路，仅暂时保留旧配置文件
+/// 的解析兼容。URL、模型和密钥仍按敏感运行参数处理。
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OpenAiUpstreamConfig {
@@ -632,7 +632,8 @@ pub struct AppConfig {
     redis: RedisSettings,
     #[serde(default)]
     auth: AuthSettings,
-    openai_upstream: OpenAiUpstreamConfig,
+    #[serde(default)]
+    openai_upstream: Option<OpenAiUpstreamConfig>,
     #[serde(default)]
     http_client: HttpClientSettings,
 }
@@ -686,10 +687,10 @@ impl AppConfig {
         &self.auth
     }
 
-    /// 返回当前唯一 OpenAI-compatible 上游配置。
+    /// 返回可选的 M0 静态上游兼容配置；生产转发不得使用该值作为回退。
     #[must_use]
-    pub const fn openai_upstream(&self) -> &OpenAiUpstreamConfig {
-        &self.openai_upstream
+    pub const fn openai_upstream(&self) -> Option<&OpenAiUpstreamConfig> {
+        self.openai_upstream.as_ref()
     }
 
     /// 返回 HTTP 客户端配置。
@@ -859,7 +860,9 @@ impl AppConfig {
                 field: "auth.lookup_timeout_secs",
             });
         }
-        validate_openai_upstream(&self.openai_upstream)?;
+        if let Some(openai_upstream) = &self.openai_upstream {
+            validate_openai_upstream(openai_upstream)?;
+        }
         if self.http_client.max_cached_clients == Some(0) {
             return Err(ConfigError::NonPositive {
                 field: "http_client.max_cached_clients",
