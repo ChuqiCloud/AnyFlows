@@ -133,6 +133,56 @@ async fn repository_loads_only_enabled_live_channel_abilities() -> Result<(), Bo
 }
 
 #[tokio::test]
+async fn full_snapshot_applies_capacity_per_group_and_model() -> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let group = group("default").insert(pool.connection()).await?;
+
+    for index in 0..40 {
+        let channel = channel(&format!("channel-{index}"), Status::Enabled)
+            .insert(pool.connection())
+            .await?;
+        channel_group(channel.id, group.id)
+            .insert(pool.connection())
+            .await?;
+        for model in ["gpt-4", "gpt-5"] {
+            channel_model(channel.id, model)
+                .insert(pool.connection())
+                .await?;
+            ability(group.id, model, channel.id, true, index, 0)
+                .insert(pool.connection())
+                .await?;
+        }
+    }
+
+    let records = SchedulerAbilityRepository::new(pool.clone())
+        .load_all()
+        .await?;
+
+    assert_eq!(records.len(), 80);
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record.model() == "gpt-4")
+            .count(),
+        40
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record.model() == "gpt-5")
+            .count(),
+        40
+    );
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn repository_rejects_invalid_input_and_oversized_results() -> Result<(), Box<dyn Error>> {
     let pool = crate::connect_and_migrate(
         &DatabaseOptions::new("sqlite::memory:")?,
@@ -165,6 +215,10 @@ async fn repository_rejects_invalid_input_and_oversized_results() -> Result<(), 
 
     assert_eq!(
         repository.load(GroupId::new(group.id)?, "gpt-5").await,
+        Err(SchedulerAbilityRepositoryError::Invariant)
+    );
+    assert_eq!(
+        repository.load_all().await,
         Err(SchedulerAbilityRepositoryError::Invariant)
     );
 

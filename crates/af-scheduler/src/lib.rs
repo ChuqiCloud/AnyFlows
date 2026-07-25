@@ -5,6 +5,7 @@ mod auto_ban_keyword;
 mod candidate;
 mod database;
 mod failure;
+mod index;
 mod probe;
 mod retry;
 mod weighted;
@@ -22,6 +23,13 @@ pub use candidate::SchedulerCandidate;
 pub use database::{DatabaseWeightedScheduler, DatabaseWeightedSchedulerError};
 pub use failure::{
     DEFAULT_TRANSIENT_SERVER_RETRY_LIMIT, FailureAction, FailureContext, FailurePolicy,
+};
+pub use index::{
+    ChannelIndexCacheError, ChannelIndexRefreshConfig, ChannelIndexRefreshConfigError,
+    ChannelIndexRefreshReport, ChannelIndexRefreshSupervisor, ChannelIndexSnapshot,
+    ChannelIndexSnapshotError, ChannelIndexSource, ChannelIndexSourceError,
+    ChannelIndexSourceFuture, ChannelIndexSourceRecord, DEFAULT_CHANNEL_INDEX_REFRESH_INTERVAL,
+    InMemoryChannelIndex, IndexedWeightedScheduler, IndexedWeightedSchedulerError,
 };
 pub use probe::{
     ChannelProbe, ChannelProbeRunReport, ChannelProbeStatus, ChannelProbeStore,

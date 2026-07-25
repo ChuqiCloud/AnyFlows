@@ -69,8 +69,8 @@ pub use quota::{
     QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationStatus,
 };
 pub use scheduler_ability::{
-    MAX_SCHEDULER_ABILITY_ENTRIES, SchedulerAbilityRecord, SchedulerAbilityRepository,
-    SchedulerAbilityRepositoryError,
+    MAX_SCHEDULER_ABILITY_ENTRIES, MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES, SchedulerAbilityRecord,
+    SchedulerAbilityRepository, SchedulerAbilityRepositoryError,
 };
 pub use usage_log::{
     UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics,
