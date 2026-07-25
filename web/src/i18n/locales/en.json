@@ -1,0 +1,41 @@
+{
+  "brand": {
+    "name": "AnyFlows",
+    "scope": "Gateway"
+  },
+  "nav": {
+    "label": "Primary navigation",
+    "overview": "Overview",
+    "channels": "Channels",
+    "keys": "Keys",
+    "usage": "Usage",
+    "billing": "Billing",
+    "settings": "Settings"
+  },
+  "dashboard": {
+    "title": "Console"
+  },
+  "summary": {
+    "label": "Summary metrics",
+    "requests": { "label": "Requests", "value": "N/A", "hint": "Waiting for data" },
+    "quota": { "label": "Quota", "value": "N/A", "hint": "Waiting for data" },
+    "channels": { "label": "Available channels", "value": "N/A", "hint": "Waiting for data" },
+    "errors": { "label": "Error rate", "value": "N/A", "hint": "Waiting for data" }
+  },
+  "workspace": {
+    "title": "Workspace",
+    "subtitle": "Last 24 hours"
+  },
+  "empty": {
+    "title": "No data yet",
+    "body": "No metrics are available."
+  },
+  "queue": {
+    "title": "Service state",
+    "auth": { "label": "Auth", "state": "Not connected" },
+    "routing": { "label": "Routing", "state": "Not connected" },
+    "billing": { "label": "Billing", "state": "Not connected" }
+  },
+  "theme": { "toggle": "Toggle theme" },
+  "language": { "toggle": "Switch language" }
+}
