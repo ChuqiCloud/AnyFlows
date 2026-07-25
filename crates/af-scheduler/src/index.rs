@@ -8,8 +8,8 @@ use std::{
 };
 
 use af_db::{
-    DatabasePool, MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES, SchedulerAbilityRepository,
-    SchedulerAbilityRepositoryError,
+    DatabasePool, MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES, SchedulerAbilityRepositoryError,
+    SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
 };
 use af_domain::{ChannelId, GroupId, MAX_MODEL_NAME_BYTES};
 use thiserror::Error;
@@ -34,10 +34,10 @@ pub type ChannelIndexSourceFuture<'a> = Pin<
 
 /// 可替换的渠道索引完整数据源。
 ///
-/// 当前数据库实现每次返回完整有效能力目录；未来 Redis/pub-sub 增量快照落地时，
+/// 当前数据库实现每次返回完整有效能力与运行时目标目录；未来 Redis/pub-sub 增量快照落地时，
 /// 只需替换数据源与失效通知，不改变请求侧快照读取方式。
 pub trait ChannelIndexSource: Send + Sync + 'static {
-    /// 读取一个完整且内部一致的渠道能力目录。
+    /// 读取一个完整且内部一致的渠道能力与运行时目标目录。
     fn load<'a>(&'a self) -> ChannelIndexSourceFuture<'a>;
 }
 
@@ -56,7 +56,7 @@ pub enum ChannelIndexSourceError {
     Invariant,
 }
 
-/// 来源提供的单条有效能力记录。
+/// 来源提供的单条有效能力与运行时目标记录。
 #[derive(Clone, Eq, PartialEq)]
 pub struct ChannelIndexSourceRecord {
     group_id: GroupId,
@@ -64,11 +64,11 @@ pub struct ChannelIndexSourceRecord {
     channel_id: ChannelId,
     priority: i32,
     weight: u32,
+    runtime_target: Option<Arc<SchedulerRuntimeTargetRecord>>,
 }
 
 impl ChannelIndexSourceRecord {
-    /// 使用已校验标识与调度元数据构造索引来源记录。
-    pub fn new(
+    fn new(
         group_id: GroupId,
         model: impl Into<String>,
         channel_id: ChannelId,
@@ -85,7 +85,22 @@ impl ChannelIndexSourceRecord {
             channel_id,
             priority,
             weight,
+            runtime_target: None,
         })
+    }
+
+    /// 使用已校验运行时目标构造可直接进入生产快照的来源记录。
+    pub fn with_runtime_target(
+        group_id: GroupId,
+        model: impl Into<String>,
+        priority: i32,
+        weight: u32,
+        runtime_target: Arc<SchedulerRuntimeTargetRecord>,
+    ) -> Result<Self, ChannelIndexSnapshotError> {
+        let channel_id = runtime_target.channel_id();
+        let mut record = Self::new(group_id, model, channel_id, priority, weight)?;
+        record.runtime_target = Some(runtime_target);
+        Ok(record)
     }
 }
 
@@ -97,6 +112,7 @@ impl fmt::Debug for ChannelIndexSourceRecord {
             .field("channel_id", &self.channel_id)
             .field("priority", &self.priority)
             .field("weight", &self.weight)
+            .field("has_runtime_target", &self.runtime_target.is_some())
             .finish()
     }
 }
@@ -126,6 +142,7 @@ pub enum ChannelIndexSnapshotError {
 pub struct ChannelIndexSnapshot {
     generation: u64,
     entries: BTreeMap<GroupId, BTreeMap<String, Arc<[SchedulerCandidate]>>>,
+    runtime_targets: BTreeMap<ChannelId, Arc<SchedulerRuntimeTargetRecord>>,
     key_count: usize,
     candidate_count: usize,
 }
@@ -141,7 +158,22 @@ impl ChannelIndexSnapshot {
         }
         validate_total_capacity(records.len())?;
         let mut grouped = BTreeMap::<GroupId, BTreeMap<String, Vec<SchedulerCandidate>>>::new();
+        let mut runtime_targets: BTreeMap<ChannelId, Arc<SchedulerRuntimeTargetRecord>> =
+            BTreeMap::new();
         for record in records {
+            let Some(runtime_target) = record.runtime_target else {
+                continue;
+            };
+            if runtime_target.channel_id() != record.channel_id {
+                return Err(ChannelIndexSnapshotError::Invariant);
+            }
+            if let Some(existing) = runtime_targets.get(&record.channel_id) {
+                if existing.as_ref() != runtime_target.as_ref() {
+                    return Err(ChannelIndexSnapshotError::Invariant);
+                }
+            } else {
+                runtime_targets.insert(record.channel_id, runtime_target);
+            }
             let candidate = SchedulerCandidate::new(
                 record.group_id,
                 record.channel_id,
@@ -183,6 +215,7 @@ impl ChannelIndexSnapshot {
         Ok(Self {
             generation,
             entries,
+            runtime_targets,
             key_count,
             candidate_count,
         })
@@ -204,6 +237,18 @@ impl ChannelIndexSnapshot {
     #[must_use]
     pub const fn candidate_count(&self) -> usize {
         self.candidate_count
+    }
+
+    /// 返回当前快照中去重后的渠道运行时目标数量。
+    #[must_use]
+    pub fn runtime_target_count(&self) -> usize {
+        self.runtime_targets.len()
+    }
+
+    /// 按渠道标识返回与候选同代发布的运行时目标。
+    #[must_use]
+    pub fn runtime_target(&self, channel_id: ChannelId) -> Option<&SchedulerRuntimeTargetRecord> {
+        self.runtime_targets.get(&channel_id).map(Arc::as_ref)
     }
 
     /// 查询一个分组与模型下的候选；未知键返回空切片。
@@ -230,6 +275,7 @@ impl fmt::Debug for ChannelIndexSnapshot {
             .field("generation", &self.generation)
             .field("key_count", &self.key_count)
             .field("candidate_count", &self.candidate_count)
+            .field("runtime_target_count", &self.runtime_targets.len())
             .finish()
     }
 }
@@ -277,7 +323,7 @@ impl InMemoryChannelIndex {
         })
     }
 
-    /// 使用数据库能力仓储作为来源加载首个快照。
+    /// 使用数据库运行时渠道目录仓储作为来源加载首个快照。
     pub async fn load_from_database(
         database: DatabasePool,
     ) -> Result<Self, ChannelIndexCacheError> {
@@ -552,13 +598,13 @@ impl fmt::Debug for ChannelIndexRefreshSupervisor {
 
 #[derive(Clone)]
 struct DatabaseChannelIndexSource {
-    repository: SchedulerAbilityRepository,
+    repository: SchedulerRuntimeRepository,
 }
 
 impl DatabaseChannelIndexSource {
     fn new(database: DatabasePool) -> Self {
         Self {
-            repository: SchedulerAbilityRepository::new(database),
+            repository: SchedulerRuntimeRepository::new(database),
         }
     }
 }
@@ -572,12 +618,13 @@ impl ChannelIndexSource for DatabaseChannelIndexSource {
                 .map_err(map_repository_error)?
                 .into_iter()
                 .map(|record| {
-                    ChannelIndexSourceRecord::new(
-                        record.group_id(),
-                        record.model().to_owned(),
-                        record.channel_id(),
-                        record.priority(),
-                        record.weight(),
+                    let (ability, target) = record.into_parts();
+                    ChannelIndexSourceRecord::with_runtime_target(
+                        ability.group_id(),
+                        ability.model().to_owned(),
+                        ability.priority(),
+                        ability.weight(),
+                        target,
                     )
                     .map_err(|_| ChannelIndexSourceError::Invariant)
                 })
@@ -609,13 +656,19 @@ fn map_retry_plan_error(error: WeightedRetryPlanError) -> ChannelIndexSnapshotEr
     }
 }
 
-fn map_repository_error(error: SchedulerAbilityRepositoryError) -> ChannelIndexSourceError {
+fn map_repository_error(error: SchedulerRuntimeRepositoryError) -> ChannelIndexSourceError {
     match error {
-        SchedulerAbilityRepositoryError::Query => ChannelIndexSourceError::Unavailable,
-        SchedulerAbilityRepositoryError::Timeout => ChannelIndexSourceError::Timeout,
-        SchedulerAbilityRepositoryError::InvalidConfiguration
-        | SchedulerAbilityRepositoryError::InvalidModel
-        | SchedulerAbilityRepositoryError::Invariant => ChannelIndexSourceError::Invariant,
+        SchedulerRuntimeRepositoryError::Query
+        | SchedulerRuntimeRepositoryError::Ability(SchedulerAbilityRepositoryError::Query) => {
+            ChannelIndexSourceError::Unavailable
+        }
+        SchedulerRuntimeRepositoryError::Timeout
+        | SchedulerRuntimeRepositoryError::Ability(SchedulerAbilityRepositoryError::Timeout) => {
+            ChannelIndexSourceError::Timeout
+        }
+        SchedulerRuntimeRepositoryError::InvalidConfiguration
+        | SchedulerRuntimeRepositoryError::Invariant
+        | SchedulerRuntimeRepositoryError::Ability(_) => ChannelIndexSourceError::Invariant,
         _ => ChannelIndexSourceError::Invariant,
     }
 }
@@ -644,6 +697,11 @@ fn is_valid_model(model: &str) -> bool {
 mod tests {
     use std::{collections::VecDeque, sync::Mutex};
 
+    use af_db::{
+        EncryptedCredentialEnvelope, SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord,
+    };
+    use af_domain::{ChannelType, CredentialKind, Protocol};
+
     use super::*;
 
     #[test]
@@ -664,8 +722,14 @@ mod tests {
         assert_eq!(snapshot.generation(), 3);
         assert_eq!(snapshot.key_count(), 1);
         assert_eq!(snapshot.candidate_count(), 2);
+        assert_eq!(snapshot.runtime_target_count(), 2);
         assert_eq!(candidates[0].channel_id(), ChannelId::new(1).unwrap());
         assert_eq!(candidates[0].priority(), 9);
+        assert!(
+            snapshot
+                .runtime_target(ChannelId::new(1).unwrap())
+                .is_some()
+        );
         assert!(!format!("{snapshot:?}").contains("gpt-secret"));
     }
 
@@ -692,6 +756,33 @@ mod tests {
         assert_eq!(
             validate_total_capacity(MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES + 1),
             Err(ChannelIndexSnapshotError::TotalCapacityExceeded)
+        );
+    }
+
+    #[test]
+    fn snapshot_excludes_records_without_runtime_targets() {
+        let missing_target = ChannelIndexSourceRecord::new(
+            GroupId::new(1).unwrap(),
+            "gpt-5",
+            ChannelId::new(1).unwrap(),
+            9,
+            0,
+        )
+        .unwrap();
+        let snapshot = ChannelIndexSnapshot::from_records(
+            vec![missing_target, record(1, "gpt-5", 2, 1, 0)],
+            1,
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.candidate_count(), 1);
+        assert_eq!(snapshot.runtime_target_count(), 1);
+        assert_eq!(
+            snapshot
+                .candidates(GroupId::new(1).unwrap(), "gpt-5")
+                .unwrap()[0]
+                .channel_id(),
+            ChannelId::new(2).unwrap()
         );
     }
 
@@ -752,12 +843,31 @@ mod tests {
         priority: i32,
         weight: u32,
     ) -> ChannelIndexSourceRecord {
-        ChannelIndexSourceRecord::new(
+        ChannelIndexSourceRecord::with_runtime_target(
             GroupId::new(group_id).unwrap(),
             model,
-            ChannelId::new(channel_id).unwrap(),
             priority,
             weight,
+            Arc::new(runtime_target(channel_id)),
+        )
+        .unwrap()
+    }
+
+    fn runtime_target(channel_id: i64) -> SchedulerRuntimeTargetRecord {
+        let credential = SchedulerRuntimeCredentialRecord::new(
+            100 + channel_id,
+            CredentialKind::ApiKey,
+            EncryptedCredentialEnvelope::new("test-key", [0x42; 24], vec![0x24; 16]).unwrap(),
+            false,
+        )
+        .unwrap();
+        SchedulerRuntimeTargetRecord::new(
+            ChannelId::new(channel_id).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+            Some(format!("https://channel-{channel_id}.example.com")),
+            credential,
+            Vec::new(),
         )
         .unwrap()
     }
