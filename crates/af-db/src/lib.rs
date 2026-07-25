@@ -29,6 +29,9 @@ mod quota_tests;
 mod scheduler_ability;
 #[cfg(test)]
 mod scheduler_ability_tests;
+mod scheduler_runtime;
+#[cfg(test)]
+mod scheduler_runtime_tests;
 mod usage_log;
 #[cfg(test)]
 mod usage_log_tests;
@@ -71,6 +74,12 @@ pub use quota::{
 pub use scheduler_ability::{
     MAX_SCHEDULER_ABILITY_ENTRIES, MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES, SchedulerAbilityRecord,
     SchedulerAbilityRepository, SchedulerAbilityRepositoryError,
+};
+pub use scheduler_runtime::{
+    MAX_SCHEDULER_RUNTIME_CREDENTIAL_ENTRIES, SchedulerRuntimeCredentialRecord,
+    SchedulerRuntimeHeader, SchedulerRuntimeRecord, SchedulerRuntimeRepository,
+    SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
+    SchedulerRuntimeTargetRecordError,
 };
 pub use usage_log::{
     UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics,
