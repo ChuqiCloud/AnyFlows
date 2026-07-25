@@ -4,7 +4,7 @@
 
 一把 API Key、一个统一的 OpenAI / Claude / Gemini 兼容端点，即可调用背后接入的任意上游大模型；管理员在一个控制台里管理上游渠道、订阅账号、计费、用户、限流与运营。
 
-**当前状态**：早期开发（里程碑 M0 · 项目骨架）。以下架构已落地为 Cargo workspace 骨架，业务逻辑正在按里程碑推进。
+**当前状态**：里程碑 M1 开发中。后端已完成生产 Chat 动态选路，前端管理台进入骨架建设阶段。
 
 ## 技术栈
 
@@ -23,7 +23,7 @@
 
 ## 快速开始
 
-前置：Rust 工具链由 `rust-toolchain.toml` 固定（当前 1.97.1，自动安装）。
+前置：Rust 工具链由 `rust-toolchain.toml` 固定（当前 1.97.1，自动安装）；前端使用 Node.js 24 与 Corepack 管理的 pnpm。
 
 ```bash
 # 构建
@@ -36,6 +36,13 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo nextest run --workspace --all-features --locked                   # 测试
 cargo test --workspace --all-features --doc --locked                    # 文档测试
 cargo deny --all-features --locked check advisories bans licenses sources
+
+# 前端开发
+corepack pnpm --dir web install --frozen-lockfile
+corepack pnpm --dir web dev
+
+# 前端质量门禁
+corepack pnpm --dir web check
 ```
 
 ## 架构：crate 分层
