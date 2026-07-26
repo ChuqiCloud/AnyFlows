@@ -10,8 +10,8 @@
     "api:check": "node scripts/check-generated-api.mjs",
     "test:scripts": "node --test scripts/*.test.mjs",
     "build": "tsc -b && vite build",
-    "check": "pnpm test:scripts && node scripts/check-generated-api.mjs && oxlint && tsc -b && vite build",
-    "lint": "pnpm test:scripts && node scripts/check-generated-api.mjs && oxlint",
+    "check": "node --test scripts/*.test.mjs && node scripts/check-generated-api.mjs && oxlint && tsc -b && vite build",
+    "lint": "node --test scripts/*.test.mjs && node scripts/check-generated-api.mjs && oxlint",
     "preview": "vite preview"
   },
   "dependencies": {
