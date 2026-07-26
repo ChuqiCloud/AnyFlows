@@ -1,105 +1,100 @@
-import { Activity } from 'lucide-react'
+import type { ReactNode } from 'react'
+import { Search } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AppNavigation } from '@/components/layout/app-navigation'
+import { BrandMark } from '@/components/layout/brand-mark'
 import { LanguageToggle } from '@/components/language-toggle'
 import { ThemeToggle } from '@/components/theme-toggle'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from '@/components/ui/sidebar'
+import { Kbd } from '@/components/ui/kbd'
 
 type AppShellProps = {
   title: string
+  children: ReactNode
 }
 
-const summaryItems = ['requests', 'quota', 'channels', 'errors']
-const queueItems = ['auth', 'routing', 'billing']
+function getDefaultOpen() {
+  try {
+    // 读取 shadcn SidebarProvider 写入的 cookie
+    const match = document.cookie.match(/(?:^|;\s*)sidebar_state=([^;]*)/)
+    if (match) return match[1] !== 'false'
+  } catch {
+    // Cookie 不可读时保留侧边栏默认展开，不阻断控制台渲染。
+  }
+  return true
+}
 
-export function AppShell({ title }: AppShellProps) {
+export function AppShell({ title, children }: AppShellProps) {
   const { t } = useTranslation()
 
   return (
-    <div className="min-h-dvh bg-background text-foreground">
-      <div className="grid min-h-dvh lg:grid-cols-[15rem_minmax(0,1fr)]">
-        <aside className="hidden border-r bg-sidebar text-sidebar-foreground lg:flex lg:flex-col">
-          <div className="flex h-16 items-center gap-3 border-b px-5">
-            <BrandMark />
-            <div className="leading-tight">
-              <div className="font-semibold">{t('brand.name')}</div>
-              <div className="text-xs text-muted-foreground">{t('brand.scope')}</div>
-            </div>
+    <SidebarProvider defaultOpen={getDefaultOpen()}>
+      {/* ── 侧边栏 ────────────────────────────────────────── */}
+      <Sidebar
+        collapsible="icon"
+        mobileTitle={t('nav.label')}
+        mobileDescription={t('brand.scope')}
+      >
+        <SidebarHeader className="flex-row items-center gap-2 px-2.5 py-2.5">
+          <BrandMark className="shrink-0 size-7" />
+          <div className="min-w-0 leading-tight transition-opacity group-data-[state=collapsed]:hidden">
+            <div className="truncate text-[0.8125rem] font-semibold">{t('brand.name')}</div>
+            <div className="truncate text-[0.6875rem] text-muted-foreground">{t('brand.scope')}</div>
           </div>
-          <AppNavigation className="flex-1 flex-col px-3 py-4" />
-        </aside>
+        </SidebarHeader>
 
-        <div className="flex min-w-0 flex-col">
-          <header className="flex h-16 items-center justify-between border-b bg-background/95 px-4 backdrop-blur md:px-6">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="lg:hidden">
-                <BrandMark />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-muted-foreground">{t('brand.name')}</p>
-                <h1 className="truncate text-lg font-semibold">{title}</h1>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <LanguageToggle />
-              <ThemeToggle />
-            </div>
-          </header>
-          <AppNavigation compact className="border-b px-4 py-2 lg:hidden" />
+        <SidebarContent className="px-1.5 py-1.5">
+          <AppNavigation />
+        </SidebarContent>
 
-          <main className="flex-1 px-4 py-6 md:px-6 lg:px-8">
-            <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-6">
-              <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label={t('summary.label')}>
-                {summaryItems.map((item) => (
-                  <article key={item} className="rounded-lg border bg-card p-4 text-card-foreground shadow-sm">
-                    <div className="text-sm text-muted-foreground">{t(`summary.${item}.label`)}</div>
-                    <div className="mt-3 text-2xl font-semibold tabular-nums">{t(`summary.${item}.value`)}</div>
-                    <div className="mt-2 text-xs text-muted-foreground">{t(`summary.${item}.hint`)}</div>
-                  </article>
-                ))}
-              </section>
+        <SidebarFooter className="px-1.5 pb-2.5">
+          <p className="truncate px-2 text-[0.625rem] text-muted-foreground/60 transition-opacity group-data-[state=collapsed]:opacity-0 group-data-[state=collapsed]:select-none">
+            {t('shell.version')}
+          </p>
+        </SidebarFooter>
+      </Sidebar>
 
-              <section className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(18rem,0.75fr)]">
-                <article className="rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
-                  <div className="border-b pb-4">
-                    <h2 className="text-base font-semibold">{t('workspace.title')}</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">{t('workspace.subtitle')}</p>
-                  </div>
-                  <div className="grid min-h-72 place-items-center py-8">
-                    <div className="max-w-sm text-center">
-                      <div className="mx-auto grid size-12 place-items-center rounded-lg border bg-muted text-muted-foreground">
-                        <Activity className="size-5" aria-hidden="true" />
-                      </div>
-                      <h3 className="mt-4 text-sm font-semibold">{t('empty.title')}</h3>
-                      <p className="mt-2 text-sm text-muted-foreground">{t('empty.body')}</p>
-                    </div>
-                  </div>
-                </article>
+      {/* ── 主内容区 ──────────────────────────────────────── */}
+      <SidebarInset>
+        <header className="sticky top-0 z-20 flex h-11 items-center justify-between gap-4 border-b border-[var(--hairline)] bg-background/80 px-3 backdrop-blur-xl md:px-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <SidebarTrigger
+              className="-ml-1 size-7 text-muted-foreground hover:text-foreground"
+              collapseLabel={t('shell.collapse')}
+              expandLabel={t('shell.expand')}
+            />
+            <span className="h-3.5 w-px bg-[var(--hairline)]" aria-hidden="true" />
+            <h1 className="truncate text-sm font-semibold">{title}</h1>
+          </div>
 
-                <article className="rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
-                  <h2 className="text-base font-semibold">{t('queue.title')}</h2>
-                  <div className="mt-4 divide-y">
-                    {queueItems.map((item) => (
-                      <div key={item} className="grid grid-cols-[1fr_auto] gap-4 py-3 text-sm">
-                        <span>{t(`queue.${item}.label`)}</span>
-                        <span className="text-muted-foreground">{t(`queue.${item}.state`)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </article>
-              </section>
-            </div>
-          </main>
-        </div>
-      </div>
-    </div>
-  )
-}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              className="hidden items-center gap-1.5 rounded-md border border-[var(--hairline)] px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground sm:flex"
+              aria-label={t('shell.search')}
+            >
+              <Search className="size-3.5" aria-hidden="true" />
+              <span className="pr-4">{t('shell.search')}</span>
+              <Kbd keys={['⌘', 'K']} />
+            </button>
+            <LanguageToggle />
+            <ThemeToggle />
+          </div>
+        </header>
 
-function BrandMark() {
-  return (
-    <div className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary text-sm font-semibold text-primary-foreground shadow-sm">
-      AF
-    </div>
+        <main className="flex-1 px-4 py-4 md:px-5">
+          <div className="mx-auto w-full max-w-[960px]">{children}</div>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

@@ -15,7 +15,8 @@ function getInitialTheme(): ThemeMode {
     return stored
   }
 
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  // 深色是正统形态，仅在系统明确偏好浅色时才默认浅色。
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
 }
 
 export function ThemeToggle() {
@@ -26,8 +27,9 @@ export function ThemeToggle() {
   useEffect(() => {
     const root = document.documentElement
 
-    // 手动切换主题时同步根节点 class，保证 Tailwind dark 变体和 shadcn token 同源。
+    // 两个类都显式写入：token 定义在 .dark/.light 上，dark: 变体也依赖 .dark。
     root.classList.toggle('dark', isDark)
+    root.classList.toggle('light', !isDark)
     window.localStorage.setItem(storageKey, theme)
   }, [isDark, theme])
 

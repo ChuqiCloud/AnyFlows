@@ -12,6 +12,13 @@
     "billing": "计费",
     "settings": "设置"
   },
+  "shell": {
+    "search": "搜索",
+    "version": "开发预览版",
+    "collapse": "收起侧边栏",
+    "expand": "展开侧边栏",
+    "home": "返回首页"
+  },
   "dashboard": {
     "title": "控制台"
   },
@@ -36,6 +43,75 @@
     "routing": { "label": "选路", "state": "未连接" },
     "billing": { "label": "计费", "state": "未连接" }
   },
+  "landing": {
+    "nav": { "console": "进入控制台" },
+    "hero": {
+      "eyebrow": "大模型 API 聚合网关",
+      "subtitle": "统一接入、智能选路、精确计费。把分散的模型渠道收敛成一条可观测的流。",
+      "cta": "开始接入",
+      "secondary": "查看文档"
+    },
+    "providers": "已接入的模型厂商",
+    "feature": {
+      "eyebrow": "核心能力",
+      "heading": "把复杂度留在网关内部",
+      "subheading": "上游渠道的差异、故障与计价规则由 AnyFlows 吸收，你的应用只面对一个稳定接口。",
+      "routing": { "title": "智能路由", "body": "按权重、优先级与实时健康度选路，故障渠道自动降级并重试。" },
+      "billing": { "title": "精确计费", "body": "分组倍率、阶梯定价与表达式引擎，计价明细可逐条回溯。" },
+      "health": { "title": "渠道健康", "body": "持续测活与余额探测，异常渠道按规则自动禁用。" },
+      "streaming": { "title": "流式转发", "body": "SSE 全链路透传，首字延迟与吞吐逐请求可观测。" },
+      "pool": { "title": "账号池", "body": "凭据类型化管理，一号一代理绑定，支持影子账号灰度。" },
+      "observability": { "title": "可观测性", "body": "请求级候选尝试回放，完整记录降级原因与响应详情。" }
+    },
+    "modes": {
+      "eyebrow": "三种形态",
+      "heading": "同一套网关，三种接法",
+      "subheading": "上游是官方 Key、订阅账号，还是别的中转站，对下游都是同一个端点。",
+      "relay": {
+        "label": "API 中转",
+        "title": "官方与兼容 Key",
+        "body": "接入各家官方或兼容端点，做协议归一、分组计费与二次分发。"
+      },
+      "sub2api": {
+        "label": "订阅转 API",
+        "title": "订阅额度池化",
+        "body": "把 Claude Code、Codex、Gemini CLI 的 OAuth 订阅额度，调度成标准 API 对外提供。"
+      },
+      "metapi": {
+        "label": "多站聚合",
+        "title": "网关之上的网关",
+        "body": "把已有的多个中转站当作上游，收敛为一个入口做故障转移与择优路由。"
+      }
+    },
+    "protocol": {
+      "eyebrow": "协议矩阵",
+      "heading": "任一协议进，任一协议出",
+      "subheading": "所有请求先归一到协议无关的中间表示，再转成目标协议，流式同样如此。",
+      "clientLabel": "客户端协议",
+      "upstreamLabel": "上游协议",
+      "canonical": "Canonical IR",
+      "note": "N×M 双向转换，无需为每对协议单独实现。"
+    },
+    "closing": {
+      "heading": "准备好收敛你的模型流量了？",
+      "body": "单二进制部署，前端内嵌，一条命令起服务。",
+      "cta": "开始接入",
+      "secondary": "阅读文档"
+    },
+    "console": {
+      "eyebrow": "即插即用",
+      "heading": "一个端点，兼容所有协议",
+      "subheading": "换协议只换报文，Key 和地址不动。把现有代码指向 AnyFlows，其余照旧。",
+      "tablist": "协议选择",
+      "request": "请求",
+      "response": "响应",
+      "latency": "延迟",
+      "tokens": "token 入/出",
+      "route": "路由"
+    },
+    "footer": { "copyright": "AnyFlows · 开源大模型聚合网关" }
+  },
   "theme": { "toggle": "切换主题" },
+  "motion": { "enable": "开启动效", "disable": "关闭动效" },
   "language": { "toggle": "切换语言" }
 }
