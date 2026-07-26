@@ -376,7 +376,7 @@ async fn insert_token(
     connection
         .execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            &format!(
+            format!(
                 "INSERT INTO tokens (id, user_id, key_hash, key_prefix, name, status, group_id, remain_quota, unlimited_quota, used_quota, expired_at, model_limits, allow_ips, cross_group_retry, rate_limit_5h, rate_limit_1d, rate_limit_7d, usage_5h, usage_1d, usage_7d, window_5h_start, window_1d_start, window_7d_start, max_requests, used_requests, created_at, updated_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, json(?), json(?), ?, ?, ?, ?, ?, ?, ?, datetime('1970-01-01 00:00:00'), datetime('1970-01-01 00:00:00'), datetime('1970-01-01 00:00:00'), ?, ?, datetime('now'), datetime('now'), {deleted_at})"
             ),
             [
