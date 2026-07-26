@@ -50,6 +50,7 @@ dependencies = [
  "getrandom 0.4.3",
  "jsonwebtoken",
  "serde",
+ "serde_json",
  "sha2",
  "thiserror",
  "tokio",
