@@ -52,8 +52,30 @@ export type AdminUserListResponse = {
     users: Array<AdminUser>;
     next_cursor: number | null;
 };
+export type AdminGroup = {
+    id: number;
+    name: string;
+    display_name: string;
+    ratio_micros: number;
+    peak_ratio_micros: number | null;
+    peak_start: string | null;
+    peak_end: string | null;
+    is_exclusive: boolean;
+    daily_limit: number | null;
+    weekly_limit: number | null;
+    monthly_limit: number | null;
+    rpm_limit: number | null;
+    fallback_group_id: number | null;
+    flags: {
+        [key: string]: unknown;
+    };
+};
+export type AdminGroupListResponse = {
+    groups: Array<AdminGroup>;
+    next_cursor: number | null;
+};
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'user_conflict' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'group_not_found' | 'user_conflict' | 'internal_error';
     message: string;
 };
 export type LoginManagementSessionData = {
@@ -186,3 +208,43 @@ export type UpdateAdminUserResponses = {
     200: AdminUser;
 };
 export type UpdateAdminUserResponse = UpdateAdminUserResponses[keyof UpdateAdminUserResponses];
+export type ListAdminGroupsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/admin/groups';
+};
+export type ListAdminGroupsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminGroupsError = ListAdminGroupsErrors[keyof ListAdminGroupsErrors];
+export type ListAdminGroupsResponses = {
+    200: AdminGroupListResponse;
+};
+export type ListAdminGroupsResponse = ListAdminGroupsResponses[keyof ListAdminGroupsResponses];
+export type GetAdminGroupData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/groups/{id}';
+};
+export type GetAdminGroupErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminGroupError = GetAdminGroupErrors[keyof GetAdminGroupErrors];
+export type GetAdminGroupResponses = {
+    200: AdminGroup;
+};
+export type GetAdminGroupResponse = GetAdminGroupResponses[keyof GetAdminGroupResponses];

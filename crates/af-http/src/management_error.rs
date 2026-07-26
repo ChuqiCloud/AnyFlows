@@ -17,6 +17,8 @@ pub(crate) enum ManagementError {
     UserNotFound,
     /// 用户名或邮箱与当前有效用户冲突。
     UserConflict,
+    /// 分组不存在或已经被软删除。
+    GroupNotFound,
     /// 管理认证依赖发生内部故障。
     Internal,
 }
@@ -70,6 +72,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "user_conflict",
                     message: "User conflict",
+                },
+            ),
+            Self::GroupNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "group_not_found",
+                    message: "Group not found",
                 },
             ),
             Self::Internal => (

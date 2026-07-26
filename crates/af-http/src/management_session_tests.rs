@@ -1,14 +1,15 @@
 use std::sync::{Arc, Mutex};
 
 use af_admin::{
-    AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture,
-    AdminUserListFuture, AdminUserListQuery, AdminUserReadError, AdminUserReader,
-    AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter,
-    IssuedSession, LoginCredentials, SessionAuthentication, SessionAuthenticationError,
-    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
-    SessionRole, SessionToken,
+    AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError,
+    AdminGroupReader, AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture,
+    AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserReadError,
+    AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError,
+    AdminUserWriter, IssuedSession, LoginCredentials, SessionAuthentication,
+    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
+    SessionLoginFuture, SessionPrincipal, SessionRole, SessionToken,
 };
-use af_domain::{AfError, GatewayPrincipal, UserId};
+use af_domain::{AfError, GatewayPrincipal, GroupId, UserId};
 use af_protocol::CanonicalRequest;
 use axum::{
     Router,
@@ -33,6 +34,7 @@ use crate::{
 const SESSION_TOKEN: &str = "signed.jwt.value";
 
 struct UnusedChatService;
+struct UnusedAdminGroupReader;
 struct UnusedAdminUserReader;
 
 impl ChatService for UnusedChatService {
@@ -43,6 +45,24 @@ impl ChatService for UnusedChatService {
         _request_id: &'a str,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async { Err(AfError::Internal) })
+    }
+}
+
+impl AdminGroupReader for UnusedAdminGroupReader {
+    fn list<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _query: AdminGroupListQuery,
+    ) -> AdminGroupListFuture<'a> {
+        Box::pin(async { Err(AdminGroupReadError::Internal) })
+    }
+
+    fn get<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _group_id: GroupId,
+    ) -> AdminGroupGetFuture<'a> {
+        Box::pin(async { Err(AdminGroupReadError::Internal) })
     }
 }
 
@@ -154,6 +174,7 @@ fn router(authenticator: Arc<FakeSessionAuthenticator>) -> Router {
             HttpState::new(
                 Arc::new(UnusedChatService),
                 session_authenticator,
+                Arc::new(UnusedAdminGroupReader),
                 admin_users.clone(),
                 admin_users,
             )
