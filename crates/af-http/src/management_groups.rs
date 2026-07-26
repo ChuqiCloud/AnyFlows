@@ -11,7 +11,7 @@ use serde::Serialize;
 use crate::{chat_completions::HttpState, management_error::ManagementError};
 
 #[derive(Serialize)]
-struct AdminGroupResponse {
+pub(crate) struct AdminGroupResponse {
     id: i64,
     name: String,
     display_name: String,
@@ -78,7 +78,7 @@ impl AdminGroupListResponse {
 }
 
 impl AdminGroupResponse {
-    fn from_group(group: &AdminGroup) -> Self {
+    pub(crate) fn from_group(group: &AdminGroup) -> Self {
         let (peak_ratio_micros, peak_start, peak_end) = match group.peak() {
             Some(peak) => (
                 Some(peak.ratio_micros()),
@@ -147,7 +147,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminGroupListQuery, Mana
     .map_err(map_read_error)
 }
 
-fn parse_group_id(value: &str) -> Result<GroupId, ManagementError> {
+pub(crate) fn parse_group_id(value: &str) -> Result<GroupId, ManagementError> {
     if value.is_empty()
         || value.starts_with('+')
         || value.starts_with('-')

@@ -19,6 +19,10 @@ pub(crate) enum ManagementError {
     UserConflict,
     /// 分组不存在或已经被软删除。
     GroupNotFound,
+    /// 分组名与当前有效分组冲突。
+    GroupConflict,
+    /// 分组仍被有效用户或有效令牌引用。
+    GroupInUse,
     /// 管理认证依赖发生内部故障。
     Internal,
 }
@@ -79,6 +83,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "group_not_found",
                     message: "Group not found",
+                },
+            ),
+            Self::GroupConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "group_conflict",
+                    message: "Group conflict",
+                },
+            ),
+            Self::GroupInUse => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "group_in_use",
+                    message: "Group in use",
                 },
             ),
             Self::Internal => (

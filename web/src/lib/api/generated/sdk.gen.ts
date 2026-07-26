@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateAdminUserData, CreateAdminUserErrors, CreateAdminUserResponses, DeleteAdminUserData, DeleteAdminUserErrors, DeleteAdminUserResponses, GetAdminGroupData, GetAdminGroupErrors, GetAdminGroupResponses, GetAdminUserData, GetAdminUserErrors, GetAdminUserResponses, GetManagementSessionData, GetManagementSessionErrors, GetManagementSessionResponses, ListAdminGroupsData, ListAdminGroupsErrors, ListAdminGroupsResponses, ListAdminUsersData, ListAdminUsersErrors, ListAdminUsersResponses, LoginManagementSessionData, LoginManagementSessionErrors, LoginManagementSessionResponses, UpdateAdminUserData, UpdateAdminUserErrors, UpdateAdminUserResponses } from './types.gen';
+import type { CreateAdminGroupData, CreateAdminGroupErrors, CreateAdminGroupResponses, CreateAdminUserData, CreateAdminUserErrors, CreateAdminUserResponses, DeleteAdminGroupData, DeleteAdminGroupErrors, DeleteAdminGroupResponses, DeleteAdminUserData, DeleteAdminUserErrors, DeleteAdminUserResponses, GetAdminGroupData, GetAdminGroupErrors, GetAdminGroupResponses, GetAdminUserData, GetAdminUserErrors, GetAdminUserResponses, GetManagementSessionData, GetManagementSessionErrors, GetManagementSessionResponses, ListAdminGroupsData, ListAdminGroupsErrors, ListAdminGroupsResponses, ListAdminUsersData, ListAdminUsersErrors, ListAdminUsersResponses, LoginManagementSessionData, LoginManagementSessionErrors, LoginManagementSessionResponses, UpdateAdminGroupData, UpdateAdminGroupErrors, UpdateAdminGroupResponses, UpdateAdminUserData, UpdateAdminUserErrors, UpdateAdminUserResponses } from './types.gen';
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     client?: Client;
     meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
@@ -58,8 +58,31 @@ export const listAdminGroups = <ThrowOnError extends boolean = true>(options?: O
     url: '/api/admin/groups',
     ...options
 });
+export const createAdminGroup = <ThrowOnError extends boolean = true>(options: Options<CreateAdminGroupData, ThrowOnError>): RequestResult<CreateAdminGroupResponses, CreateAdminGroupErrors, ThrowOnError> => (options.client ?? client).post<CreateAdminGroupResponses, CreateAdminGroupErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/admin/groups',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+export const deleteAdminGroup = <ThrowOnError extends boolean = true>(options: Options<DeleteAdminGroupData, ThrowOnError>): RequestResult<DeleteAdminGroupResponses, DeleteAdminGroupErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAdminGroupResponses, DeleteAdminGroupErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/admin/groups/{id}',
+    ...options
+});
 export const getAdminGroup = <ThrowOnError extends boolean = true>(options: Options<GetAdminGroupData, ThrowOnError>): RequestResult<GetAdminGroupResponses, GetAdminGroupErrors, ThrowOnError> => (options.client ?? client).get<GetAdminGroupResponses, GetAdminGroupErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/api/admin/groups/{id}',
     ...options
+});
+export const updateAdminGroup = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminGroupData, ThrowOnError>): RequestResult<UpdateAdminGroupResponses, UpdateAdminGroupErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminGroupResponses, UpdateAdminGroupErrors, ThrowOnError>({
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/api/admin/groups/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
 });

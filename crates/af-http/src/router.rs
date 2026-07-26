@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AdminGroupReader, AdminUserReader, AdminUserWriter, SessionAuthenticator, TokenAuthenticator,
+    AdminGroupReader, AdminGroupWriter, AdminUserReader, AdminUserWriter, SessionAuthenticator,
+    TokenAuthenticator,
 };
 use af_config::ServerConfig;
 use af_protocol::openai_chat::MAX_BODY_BYTES;
@@ -20,6 +21,7 @@ use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLaye
 use crate::authentication::{AuthenticationState, authenticate_api_key};
 use crate::management_auth::{ManagementAuthenticationState, authenticate_management_session};
 use crate::management_authorization::authorize_management_admin;
+use crate::management_group_writes::{create_admin_group, delete_admin_group, update_admin_group};
 use crate::management_groups::{get_admin_group, list_admin_groups};
 use crate::management_session::{current_session, login};
 use crate::management_users::{
@@ -68,6 +70,7 @@ pub fn build_router(
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
+    admin_group_writer: Arc<dyn AdminGroupWriter>,
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
     query_api_key_policy: QueryApiKeyPolicy,
@@ -80,6 +83,7 @@ pub fn build_router(
         chat,
         Arc::clone(&session_authenticator),
         admin_group_reader,
+        admin_group_writer,
         admin_user_reader,
         admin_user_writer,
     );
@@ -134,12 +138,15 @@ pub fn build_router(
         .route(
             "/api/admin/groups",
             get(list_admin_groups)
+                .post(create_admin_group)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(group_collection_authentication),
         )
         .route(
             "/api/admin/groups/{id}",
             get(get_admin_group)
+                .put(update_admin_group)
+                .delete(delete_admin_group)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(group_item_authentication),
         )

@@ -210,7 +210,7 @@ impl AdminGroup {
         &self.flags
     }
 
-    fn from_record(record: AdminGroupRecord) -> Self {
+    pub(super) fn from_record(record: AdminGroupRecord) -> Self {
         let peak = record.peak().map(|peak| {
             AdminGroupPeak::from_parts(peak.ratio_micros(), peak.start_second(), peak.end_second())
         });

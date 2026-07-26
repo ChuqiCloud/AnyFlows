@@ -198,6 +198,128 @@ async fn admin_group_list_and_detail_use_real_database_reader() {
     assert_eq!(deleted.status, 404);
     assert_eq!(response_json(&deleted)["code"], "group_not_found");
 
+    let create_body = serde_json::to_vec(&json!({
+        "name": "write-created",
+        "display_name": "Write Created",
+        "ratio_micros": 1_100_000,
+        "peak_ratio_micros": 1_300_000,
+        "peak_start": "09:15:00",
+        "peak_end": "18:45:00",
+        "is_exclusive": false,
+        "daily_limit": 50_000,
+        "weekly_limit": Value::Null,
+        "monthly_limit": 500_000,
+        "rpm_limit": 90,
+        "fallback_group_id": DEFAULT_GROUP_ID,
+        "flags": {"claude_code_only": false}
+    }))
+    .unwrap();
+    let created = send_request(
+        address,
+        "POST",
+        "/api/admin/groups",
+        &create_body,
+        &[
+            ("Authorization", &admin_authorization),
+            ("Content-Type", "application/json"),
+        ],
+    )
+    .await;
+    assert_eq!(created.status, 201);
+    assert_eq!(created.headers["cache-control"], "no-store");
+    let created_body = response_json(&created);
+    let created_id = created_body["id"].as_i64().unwrap();
+    assert_eq!(created_body["name"], "write-created");
+    assert_eq!(created_body["ratio_micros"], 1_100_000);
+    assert_eq!(created_body["peak_start"], "09:15:00");
+
+    let conflict = send_request(
+        address,
+        "POST",
+        "/api/admin/groups",
+        &serde_json::to_vec(&json!({
+            "name": "default",
+            "display_name": "Duplicate",
+            "ratio_micros": 1_000_000,
+            "is_exclusive": false,
+            "flags": {}
+        }))
+        .unwrap(),
+        &[
+            ("Authorization", &admin_authorization),
+            ("Content-Type", "application/json"),
+        ],
+    )
+    .await;
+    assert_eq!(conflict.status, 409);
+    assert_eq!(response_json(&conflict)["code"], "group_conflict");
+
+    let update_body = serde_json::to_vec(&json!({
+        "name": "write-updated",
+        "display_name": "Write Updated",
+        "ratio_micros": 950_000,
+        "peak_ratio_micros": Value::Null,
+        "peak_start": Value::Null,
+        "peak_end": Value::Null,
+        "is_exclusive": true,
+        "daily_limit": Value::Null,
+        "weekly_limit": 250_000,
+        "monthly_limit": Value::Null,
+        "rpm_limit": Value::Null,
+        "fallback_group_id": Value::Null,
+        "flags": {"visible": true}
+    }))
+    .unwrap();
+    let updated = send_request(
+        address,
+        "PUT",
+        &format!("/api/admin/groups/{created_id}"),
+        &update_body,
+        &[
+            ("Authorization", &admin_authorization),
+            ("Content-Type", "application/json"),
+        ],
+    )
+    .await;
+    assert_eq!(updated.status, 200);
+    let updated_body = response_json(&updated);
+    assert_eq!(updated_body["name"], "write-updated");
+    assert_eq!(updated_body["ratio_micros"], 950_000);
+    assert_eq!(updated_body["peak_ratio_micros"], Value::Null);
+    assert_eq!(updated_body["weekly_limit"], 250_000);
+
+    let in_use = send_request(
+        address,
+        "DELETE",
+        &format!("/api/admin/groups/{DEFAULT_GROUP_ID}"),
+        b"",
+        &[("Authorization", &admin_authorization)],
+    )
+    .await;
+    assert_eq!(in_use.status, 409);
+    assert_eq!(response_json(&in_use)["code"], "group_in_use");
+
+    let removed = send_request(
+        address,
+        "DELETE",
+        &format!("/api/admin/groups/{created_id}"),
+        b"",
+        &[("Authorization", &admin_authorization)],
+    )
+    .await;
+    assert_eq!(removed.status, 204);
+    assert_eq!(removed.headers["cache-control"], "no-store");
+    let removed_detail = send_request(
+        address,
+        "GET",
+        &format!("/api/admin/groups/{created_id}"),
+        b"",
+        &[("Authorization", &admin_authorization)],
+    )
+    .await;
+    assert_eq!(removed_detail.status, 404);
+    assert_eq!(response_json(&removed_detail)["code"], "group_not_found");
+
     let member_authorization = login(address, MEMBER_USERNAME, MEMBER_PASSWORD).await;
     let forbidden = send_request(
         address,
