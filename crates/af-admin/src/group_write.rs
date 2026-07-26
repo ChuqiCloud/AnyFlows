@@ -187,10 +187,11 @@ impl AdminGroupWriteFields {
         validate_text(&name, 64)?;
         validate_text(&display_name, 128)?;
         validate_non_negative(ratio_micros)?;
-        for limit in [daily_limit, weekly_limit, monthly_limit] {
-            if let Some(limit) = limit {
-                validate_non_negative(limit)?;
-            }
+        for limit in [daily_limit, weekly_limit, monthly_limit]
+            .into_iter()
+            .flatten()
+        {
+            validate_non_negative(limit)?;
         }
         if rpm_limit.is_some_and(|value| value < 0) {
             return Err(AdminGroupWriteError::InvalidInput);
