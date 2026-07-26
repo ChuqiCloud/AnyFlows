@@ -57,6 +57,10 @@ impl HttpRouter {
 ///
 /// 后续业务与运维路由应分别加入 `public_routes` 和 `operations_routes`，确保
 /// 鉴权与 CORS 永远不会扩散到 `/metrics`、健康检查等运维端点。
+#[allow(
+    clippy::too_many_arguments,
+    reason = "组合根显式注入各独立服务，避免隐藏运行时依赖"
+)]
 pub fn build_router(
     config: &ServerConfig,
     chat: Arc<dyn ChatService>,
