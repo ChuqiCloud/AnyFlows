@@ -1,9 +1,14 @@
 use std::sync::Arc;
 
-use af_admin::TokenAuthenticator;
+use af_admin::{SessionAuthenticator, TokenAuthenticator};
 use af_config::ServerConfig;
 use af_protocol::openai_chat::MAX_BODY_BYTES;
-use axum::{Router, extract::DefaultBodyLimit, middleware, routing::post};
+use axum::{
+    Router,
+    extract::DefaultBodyLimit,
+    middleware,
+    routing::{get, post},
+};
 use http::{
     HeaderName, HeaderValue, Method,
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE},
@@ -11,6 +16,8 @@ use http::{
 use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLayer};
 
 use crate::authentication::{AuthenticationState, authenticate_api_key};
+use crate::management_auth::{ManagementAuthenticationState, authenticate_management_session};
+use crate::management_session::{current_session, login};
 use crate::middleware::{
     AllowedOrigins, LogHttpResponse, MakeHttpSpan, assign_request_id, enforce_allowed_origin,
     request_id_header,
@@ -48,21 +55,34 @@ pub fn build_router(
     chat: Arc<dyn ChatService>,
     readiness: ReadinessHandle,
     authenticator: Arc<dyn TokenAuthenticator>,
+    session_authenticator: Arc<dyn SessionAuthenticator>,
     query_api_key_policy: QueryApiKeyPolicy,
 ) -> HttpRouter {
     let authentication = middleware::from_fn_with_state(
         AuthenticationState::new(authenticator, query_api_key_policy, config),
         authenticate_api_key,
     );
+    let http_state = HttpState::new(chat, Arc::clone(&session_authenticator));
     let public_routes = Router::new()
         .route(
             "/v1/chat/completions",
             // 只包裹已注册的 POST endpoint，不把路径级 405 改写为 401。
             post(chat_completions).route_layer(authentication),
         )
-        .with_state(HttpState::new(chat));
+        .with_state(http_state.clone());
+    let management_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(session_authenticator),
+        authenticate_management_session,
+    );
+    let management_routes = Router::new()
+        .route("/api/auth/login", post(login))
+        .route(
+            "/api/auth/session",
+            get(current_session).route_layer(management_authentication),
+        )
+        .with_state(http_state);
     HttpRouter::new(build_router_with_routes(
-        public_routes,
+        public_routes.merge(management_routes),
         operations_router(readiness),
         config,
         DEFAULT_REQUEST_BODY_LIMIT_BYTES,

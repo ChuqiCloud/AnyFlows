@@ -33,6 +33,9 @@ mod scheduler_runtime;
 mod usage_log;
 #[cfg(test)]
 mod usage_log_tests;
+mod user_session;
+#[cfg(test)]
+mod user_session_tests;
 
 pub use auth::{
     TokenAuthLookup, TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,
@@ -82,6 +85,10 @@ pub use scheduler_runtime::{
 pub use usage_log::{
     UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics,
     UsageLogSource, UsageLogUsage, UsageLogWrite, UsageLogWriteError, UsageLogWriteOutcome,
+};
+pub use user_session::{
+    UserSessionLookupByIdOutcome, UserSessionLookupOutcome, UserSessionRepository,
+    UserSessionRepositoryConfigError, UserSessionRepositoryError,
 };
 
 /// 连接数据库并执行全部待处理迁移。
