@@ -2,8 +2,9 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{CredentialDecryptionError, CredentialDecryptor};
 use af_admin::{
-    DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, SessionAuthenticator,
-    SessionAuthenticatorConfigError, TokenAuthenticator,
+    AdminUserReader, DatabaseAdminUserReader, DatabaseSessionAuthenticator,
+    DatabaseTokenAuthenticator, SessionAuthenticator, SessionAuthenticatorConfigError,
+    TokenAuthenticator,
 };
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
@@ -14,10 +15,10 @@ use af_billing::{
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
-    ChannelStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
-    MigrationOptions, QuotaRepository, TokenAuthRepository, TokenAuthRepositoryConfigError,
-    UsageLogRepository, UserSessionRepository, UserSessionRepositoryConfigError,
-    connect_and_migrate,
+    AdminUserRepository, AdminUserRepositoryConfigError, ChannelStateRepository, DatabaseError,
+    DatabaseOptions, DatabaseOptionsError, DatabasePool, MigrationOptions, QuotaRepository,
+    TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository, UserSessionRepository,
+    UserSessionRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
     ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle, ServeError,
@@ -69,6 +70,7 @@ pub struct AuthenticationReady {
     infrastructure: DatabaseReady,
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
+    admin_user_reader: Arc<dyn AdminUserReader>,
     query_api_key_policy: QueryApiKeyPolicy,
 }
 
@@ -178,6 +180,9 @@ pub enum BootstrapError {
     /// 管理会话 JWT 的启动配置无效或缺失。
     #[error("管理会话启动配置无效")]
     SessionAuthentication(#[source] SessionAuthenticatorConfigError),
+    /// 管理员用户只读仓储的启动参数无效。
+    #[error("管理员用户只读仓储启动参数无效")]
+    AdminUserRepository(#[source] AdminUserRepositoryConfigError),
     /// HTTP 监听、服务或强制关闭失败。
     #[error("HTTP 服务生命周期操作失败")]
     Http(#[source] ServeError),
@@ -313,6 +318,11 @@ impl Bootstrap<DatabaseReady> {
             auth.session_ttl_secs(),
         )
         .map_err(BootstrapError::SessionAuthentication)?;
+        let admin_user_repository = AdminUserRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::AdminUserRepository)?;
         let query_api_key_policy = if auth.allow_query_api_key() {
             tracing::warn!(
                 security_setting = "query_api_key_enabled",
@@ -336,6 +346,7 @@ impl Bootstrap<DatabaseReady> {
                 infrastructure: stage,
                 authenticator: Arc::new(DatabaseTokenAuthenticator::new(repository)),
                 session_authenticator: Arc::new(session_authenticator),
+                admin_user_reader: Arc::new(DatabaseAdminUserReader::new(admin_user_repository)),
                 query_api_key_policy,
             },
         })
@@ -617,6 +628,7 @@ impl Bootstrap<Supervised> {
             readiness.clone(),
             Arc::clone(&self.stage.infrastructure.authenticator),
             Arc::clone(&self.stage.infrastructure.session_authenticator),
+            Arc::clone(&self.stage.infrastructure.admin_user_reader),
             self.stage.infrastructure.query_api_key_policy,
         );
         let Bootstrap {

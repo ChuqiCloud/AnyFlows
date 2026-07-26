@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use af_admin::{SessionAuthenticator, TokenAuthenticator};
+use af_admin::{AdminUserReader, SessionAuthenticator, TokenAuthenticator};
 use af_config::ServerConfig;
 use af_protocol::openai_chat::MAX_BODY_BYTES;
 use axum::{
@@ -17,7 +17,9 @@ use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLaye
 
 use crate::authentication::{AuthenticationState, authenticate_api_key};
 use crate::management_auth::{ManagementAuthenticationState, authenticate_management_session};
+use crate::management_authorization::authorize_management_admin;
 use crate::management_session::{current_session, login};
+use crate::management_users::{get_admin_user, list_admin_users};
 use crate::middleware::{
     AllowedOrigins, LogHttpResponse, MakeHttpSpan, assign_request_id, enforce_allowed_origin,
     request_id_header,
@@ -56,13 +58,14 @@ pub fn build_router(
     readiness: ReadinessHandle,
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
+    admin_user_reader: Arc<dyn AdminUserReader>,
     query_api_key_policy: QueryApiKeyPolicy,
 ) -> HttpRouter {
     let authentication = middleware::from_fn_with_state(
         AuthenticationState::new(authenticator, query_api_key_policy, config),
         authenticate_api_key,
     );
-    let http_state = HttpState::new(chat, Arc::clone(&session_authenticator));
+    let http_state = HttpState::new(chat, Arc::clone(&session_authenticator), admin_user_reader);
     let public_routes = Router::new()
         .route(
             "/v1/chat/completions",
@@ -70,15 +73,35 @@ pub fn build_router(
             post(chat_completions).route_layer(authentication),
         )
         .with_state(http_state.clone());
-    let management_authentication = middleware::from_fn_with_state(
+    let session_route_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(session_authenticator),
+        authenticate_management_session,
+    );
+    let user_list_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let user_detail_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
         authenticate_management_session,
     );
     let management_routes = Router::new()
         .route("/api/auth/login", post(login))
         .route(
             "/api/auth/session",
-            get(current_session).route_layer(management_authentication),
+            get(current_session).route_layer(session_route_authentication),
+        )
+        .route(
+            "/api/admin/users",
+            get(list_admin_users)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(user_list_authentication),
+        )
+        .route(
+            "/api/admin/users/{id}",
+            get(get_admin_user)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(user_detail_authentication),
         )
         .with_state(http_state);
     HttpRouter::new(build_router_with_routes(
