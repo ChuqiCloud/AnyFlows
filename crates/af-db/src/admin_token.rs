@@ -225,7 +225,7 @@ impl fmt::Debug for AdminTokenPageRecord {
 /// 令牌详情查询结果。
 pub enum AdminTokenLookupOutcome {
     /// 找到当前未软删除令牌。
-    Found(AdminTokenRecord),
+    Found(Box<AdminTokenRecord>),
     /// 令牌不存在或已经软删除。
     NotFound,
 }
@@ -326,11 +326,11 @@ impl AdminTokenRepository {
         match results.len() {
             0 => Ok(AdminTokenLookupOutcome::NotFound),
             1 => {
-                Ok(AdminTokenLookupOutcome::Found(
+                Ok(AdminTokenLookupOutcome::Found(Box::new(
                     AdminTokenRecord::try_from_query_result(&results.pop().ok_or_else(|| {
                         record_internal_error(AdminTokenRepositoryError::Invariant)
                     })?)?,
-                ))
+                )))
             }
             _ => Err(record_internal_error(AdminTokenRepositoryError::Invariant)),
         }

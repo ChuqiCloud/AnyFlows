@@ -459,7 +459,7 @@ impl AdminTokenReader for DatabaseAdminTokenReader {
                 .await
                 .map_err(map_repository_error)?
             {
-                AdminTokenLookupOutcome::Found(record) => AdminToken::from_record(record),
+                AdminTokenLookupOutcome::Found(record) => AdminToken::from_record(*record),
                 AdminTokenLookupOutcome::NotFound => Err(AdminTokenReadError::NotFound),
             }
         })
