@@ -162,6 +162,7 @@ async fn insert_group(
     groups::ActiveModel {
         name: Set(name.to_owned()),
         display_name: Set(display_name.to_owned()),
+        flags: Set(JsonValue::Object(Default::default())),
         ..Default::default()
     }
     .insert(pool.connection())
