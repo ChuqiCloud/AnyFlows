@@ -37,12 +37,23 @@ export type AdminUser = {
     rpm_limit: number | null;
     concurrency: number | null;
 };
+export type AdminUserWriteRequest = {
+    username: string;
+    email?: string | null;
+    password?: string | null;
+    role: 'user' | 'admin';
+    status: AdminUserStatus;
+    default_group_id: number;
+    quota: number;
+    rpm_limit?: number | null;
+    concurrency?: number | null;
+};
 export type AdminUserListResponse = {
     users: Array<AdminUser>;
     next_cursor: number | null;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'user_conflict' | 'internal_error';
     message: string;
 };
 export type LoginManagementSessionData = {
@@ -96,6 +107,44 @@ export type ListAdminUsersResponses = {
     200: AdminUserListResponse;
 };
 export type ListAdminUsersResponse = ListAdminUsersResponses[keyof ListAdminUsersResponses];
+export type CreateAdminUserData = {
+    body: AdminUserWriteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/users';
+};
+export type CreateAdminUserErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateAdminUserError = CreateAdminUserErrors[keyof CreateAdminUserErrors];
+export type CreateAdminUserResponses = {
+    201: AdminUser;
+};
+export type CreateAdminUserResponse = CreateAdminUserResponses[keyof CreateAdminUserResponses];
+export type DeleteAdminUserData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/users/{id}';
+};
+export type DeleteAdminUserErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type DeleteAdminUserError = DeleteAdminUserErrors[keyof DeleteAdminUserErrors];
+export type DeleteAdminUserResponses = {
+    204: void;
+};
+export type DeleteAdminUserResponse = DeleteAdminUserResponses[keyof DeleteAdminUserResponses];
 export type GetAdminUserData = {
     body?: never;
     path: {
@@ -116,3 +165,24 @@ export type GetAdminUserResponses = {
     200: AdminUser;
 };
 export type GetAdminUserResponse = GetAdminUserResponses[keyof GetAdminUserResponses];
+export type UpdateAdminUserData = {
+    body: AdminUserWriteRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/users/{id}';
+};
+export type UpdateAdminUserErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminUserError = UpdateAdminUserErrors[keyof UpdateAdminUserErrors];
+export type UpdateAdminUserResponses = {
+    200: AdminUser;
+};
+export type UpdateAdminUserResponse = UpdateAdminUserResponses[keyof UpdateAdminUserResponses];

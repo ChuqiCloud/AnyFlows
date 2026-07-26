@@ -4,8 +4,10 @@ use std::sync::{
 };
 
 use af_admin::{
-    AdminUser, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage,
-    AdminUserReadError, AdminUserReader, AdminUserStatus, LoginCredentials, SessionAuthentication,
+    AdminUser, AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture,
+    AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage, AdminUserReadError,
+    AdminUserReader, AdminUserStatus, AdminUserUpdateCommand, AdminUserUpdateFuture,
+    AdminUserWriteError, AdminUserWriter, LoginCredentials, SessionAuthentication,
     SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
     SessionLoginFuture, SessionPrincipal, SessionRole,
 };
@@ -19,7 +21,7 @@ use axum::{
 };
 use http::{
     Request, StatusCode,
-    header::{AUTHORIZATION, CACHE_CONTROL},
+    header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -29,7 +31,9 @@ use crate::{
     chat_completions::HttpState,
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_authorization::authorize_management_admin,
-    management_users::{get_admin_user, list_admin_users},
+    management_users::{
+        create_admin_user, delete_admin_user, get_admin_user, list_admin_users, update_admin_user,
+    },
 };
 
 const ADMIN_TOKEN: &str = "admin-token";
@@ -78,6 +82,9 @@ impl SessionAuthenticator for FakeSessionAuthenticator {
 struct FakeAdminUserReader {
     list_calls: AtomicUsize,
     get_calls: AtomicUsize,
+    create_calls: AtomicUsize,
+    update_calls: AtomicUsize,
+    delete_calls: AtomicUsize,
 }
 
 impl FakeAdminUserReader {
@@ -85,6 +92,9 @@ impl FakeAdminUserReader {
         Self {
             list_calls: AtomicUsize::new(0),
             get_calls: AtomicUsize::new(0),
+            create_calls: AtomicUsize::new(0),
+            update_calls: AtomicUsize::new(0),
+            delete_calls: AtomicUsize::new(0),
         }
     }
 }
@@ -143,14 +153,79 @@ impl AdminUserReader for FakeAdminUserReader {
     }
 }
 
+impl AdminUserWriter for FakeAdminUserReader {
+    fn create<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        _command: AdminUserCreateCommand,
+    ) -> AdminUserCreateFuture<'a> {
+        self.create_calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async move {
+            if principal.role() != SessionRole::Admin {
+                return Err(AdminUserWriteError::Forbidden);
+            }
+            Ok(sample_user(
+                21,
+                "created-user",
+                SessionRole::User,
+                AdminUserStatus::Enabled,
+            ))
+        })
+    }
+
+    fn update<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        user_id: UserId,
+        _command: AdminUserUpdateCommand,
+    ) -> AdminUserUpdateFuture<'a> {
+        self.update_calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async move {
+            if principal.role() != SessionRole::Admin {
+                return Err(AdminUserWriteError::Forbidden);
+            }
+            match user_id.get() {
+                404 => Err(AdminUserWriteError::NotFound),
+                409 => Err(AdminUserWriteError::Conflict),
+                500 => Err(AdminUserWriteError::Internal),
+                id => Ok(sample_user(
+                    id,
+                    "updated-user",
+                    SessionRole::Admin,
+                    AdminUserStatus::Disabled,
+                )),
+            }
+        })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        user_id: UserId,
+    ) -> AdminUserDeleteFuture<'a> {
+        self.delete_calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async move {
+            if principal.role() != SessionRole::Admin {
+                return Err(AdminUserWriteError::Forbidden);
+            }
+            match user_id.get() {
+                404 => Err(AdminUserWriteError::NotFound),
+                500 => Err(AdminUserWriteError::Internal),
+                _ => Ok(()),
+            }
+        })
+    }
+}
+
 fn router(reader: Arc<FakeAdminUserReader>) -> Router {
     let session_authenticator: Arc<dyn SessionAuthenticator> = Arc::new(FakeSessionAuthenticator);
-    let admin_user_reader: Arc<dyn AdminUserReader> = reader;
-    let list_authentication = middleware::from_fn_with_state(
+    let admin_user_reader: Arc<dyn AdminUserReader> = reader.clone();
+    let admin_user_writer: Arc<dyn AdminUserWriter> = reader;
+    let collection_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
         authenticate_management_session,
     );
-    let detail_authentication = middleware::from_fn_with_state(
+    let item_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
         authenticate_management_session,
     );
@@ -158,19 +233,23 @@ fn router(reader: Arc<FakeAdminUserReader>) -> Router {
         .route(
             "/api/admin/users",
             get(list_admin_users)
+                .post(create_admin_user)
                 .route_layer(middleware::from_fn(authorize_management_admin))
-                .route_layer(list_authentication),
+                .route_layer(collection_authentication),
         )
         .route(
             "/api/admin/users/{id}",
             get(get_admin_user)
+                .put(update_admin_user)
+                .delete(delete_admin_user)
                 .route_layer(middleware::from_fn(authorize_management_admin))
-                .route_layer(detail_authentication),
+                .route_layer(item_authentication),
         )
         .with_state(HttpState::new(
             Arc::new(UnusedChatService),
             session_authenticator,
             admin_user_reader,
+            admin_user_writer,
         ))
 }
 
@@ -229,7 +308,64 @@ async fn admin_can_read_user_list_and_detail_with_no_store_responses() {
 }
 
 #[tokio::test]
-async fn non_admin_and_invalid_requests_do_not_reach_reader() {
+async fn admin_can_create_update_and_delete_users_with_no_store_responses() {
+    let reader = Arc::new(FakeAdminUserReader::new());
+    let app = router(Arc::clone(&reader));
+    let body = valid_write_body();
+
+    let created = app
+        .clone()
+        .oneshot(authorized_json_request(
+            "POST",
+            "/api/admin/users",
+            ADMIN_TOKEN,
+            body.clone(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    assert_eq!(created.headers()[CACHE_CONTROL], "no-store");
+    let created_body = response_json(created).await;
+    assert_eq!(created_body["id"], 21);
+    assert_eq!(created_body["username"], "created-user");
+    assert!(!created_body.to_string().contains("secret-password"));
+
+    let updated = app
+        .clone()
+        .oneshot(authorized_json_request(
+            "PUT",
+            "/api/admin/users/21",
+            ADMIN_TOKEN,
+            body,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(updated.status(), StatusCode::OK);
+    assert_eq!(updated.headers()[CACHE_CONTROL], "no-store");
+    let updated_body = response_json(updated).await;
+    assert_eq!(updated_body["id"], 21);
+    assert_eq!(updated_body["username"], "updated-user");
+    assert_eq!(updated_body["role"], "admin");
+    assert_eq!(updated_body["status"], "disabled");
+
+    let deleted = app
+        .oneshot(authorized_request(
+            "DELETE",
+            "/api/admin/users/21",
+            ADMIN_TOKEN,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+    assert_eq!(deleted.headers()[CACHE_CONTROL], "no-store");
+
+    assert_eq!(reader.create_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(reader.update_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(reader.delete_calls.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn non_admin_and_invalid_requests_do_not_reach_user_service() {
     let reader = Arc::new(FakeAdminUserReader::new());
     let app = router(Arc::clone(&reader));
 
@@ -248,8 +384,28 @@ async fn non_admin_and_invalid_requests_do_not_reach_reader() {
             .unwrap();
         assert_management_error(response, StatusCode::BAD_REQUEST, "invalid_request").await;
     }
+    for request in [
+        authorized_json_request(
+            "POST",
+            "/api/admin/users",
+            ADMIN_TOKEN,
+            json!({"username":"bad","role":"user","status":"enabled","default_group_id":0,"quota":0}),
+        ),
+        authorized_json_request(
+            "PUT",
+            "/api/admin/users/10",
+            ADMIN_TOKEN,
+            json!({"username":" bad ","role":"user","status":"enabled","default_group_id":20,"quota":0}),
+        ),
+    ] {
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_management_error(response, StatusCode::BAD_REQUEST, "invalid_request").await;
+    }
     assert_eq!(reader.list_calls.load(Ordering::Relaxed), 0);
     assert_eq!(reader.get_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(reader.create_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(reader.update_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(reader.delete_calls.load(Ordering::Relaxed), 0);
 }
 
 #[tokio::test]
@@ -285,6 +441,80 @@ async fn reader_failures_map_to_stable_management_errors() {
 }
 
 #[tokio::test]
+async fn writer_failures_map_to_stable_management_errors() {
+    let reader = Arc::new(FakeAdminUserReader::new());
+    let app = router(reader);
+    let body = valid_write_body();
+
+    let missing = app
+        .clone()
+        .oneshot(authorized_json_request(
+            "PUT",
+            "/api/admin/users/404",
+            ADMIN_TOKEN,
+            body.clone(),
+        ))
+        .await
+        .unwrap();
+    assert_management_error(missing, StatusCode::NOT_FOUND, "user_not_found").await;
+
+    let conflict = app
+        .clone()
+        .oneshot(authorized_json_request(
+            "PUT",
+            "/api/admin/users/409",
+            ADMIN_TOKEN,
+            body.clone(),
+        ))
+        .await
+        .unwrap();
+    assert_management_error(conflict, StatusCode::CONFLICT, "user_conflict").await;
+
+    let internal = app
+        .clone()
+        .oneshot(authorized_json_request(
+            "PUT",
+            "/api/admin/users/500",
+            ADMIN_TOKEN,
+            body,
+        ))
+        .await
+        .unwrap();
+    assert_management_error(
+        internal,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "internal_error",
+    )
+    .await;
+
+    let delete_missing = app
+        .clone()
+        .oneshot(authorized_request(
+            "DELETE",
+            "/api/admin/users/404",
+            ADMIN_TOKEN,
+        ))
+        .await
+        .unwrap();
+    assert_management_error(delete_missing, StatusCode::NOT_FOUND, "user_not_found").await;
+
+    let delete_internal = app
+        .oneshot(authorized_request(
+            "DELETE",
+            "/api/admin/users/500",
+            ADMIN_TOKEN,
+        ))
+        .await
+        .unwrap();
+    assert_management_error(
+        delete_internal,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "internal_error",
+    )
+    .await;
+}
+
+#[tokio::test]
 async fn unknown_paths_and_methods_are_not_rewritten_by_authentication() {
     let reader = Arc::new(FakeAdminUserReader::new());
     let app = router(Arc::clone(&reader));
@@ -305,7 +535,7 @@ async fn unknown_paths_and_methods_are_not_rewritten_by_authentication() {
     let method_not_allowed = app
         .oneshot(
             Request::builder()
-                .method("POST")
+                .method("PATCH")
                 .uri("/api/admin/users")
                 .body(Body::empty())
                 .unwrap(),
@@ -315,6 +545,9 @@ async fn unknown_paths_and_methods_are_not_rewritten_by_authentication() {
     assert_eq!(method_not_allowed.status(), StatusCode::METHOD_NOT_ALLOWED);
     assert_eq!(reader.list_calls.load(Ordering::Relaxed), 0);
     assert_eq!(reader.get_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(reader.create_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(reader.update_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(reader.delete_calls.load(Ordering::Relaxed), 0);
 }
 
 fn sample_user(id: i64, username: &str, role: SessionRole, status: AdminUserStatus) -> AdminUser {
@@ -341,6 +574,30 @@ fn authorized_request(method: &str, uri: &str, token: &str) -> Request<Body> {
         .header(AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap()
+}
+
+fn authorized_json_request(method: &str, uri: &str, token: &str, body: Value) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(AUTHORIZATION, format!("Bearer {token}"))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(&body).unwrap()))
+        .unwrap()
+}
+
+fn valid_write_body() -> Value {
+    json!({
+        "username": "new-user",
+        "email": "new-user@example.com",
+        "password": "secret-password",
+        "role": "user",
+        "status": "enabled",
+        "default_group_id": 20,
+        "quota": 1000,
+        "rpm_limit": 60,
+        "concurrency": 3
+    })
 }
 
 async fn assert_management_error(
