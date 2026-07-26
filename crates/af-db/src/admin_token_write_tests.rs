@@ -1,6 +1,6 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::{GroupId, TokenId, UserId};
+use af_domain::{GroupId, UserId};
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 
 use super::{

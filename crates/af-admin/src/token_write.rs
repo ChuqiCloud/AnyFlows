@@ -504,17 +504,17 @@ mod tests {
 
     #[test]
     fn commands_validate_configuration_and_redact_allowlists() {
-        let command = command(
+        let valid_command = command(
             "primary",
             Some(vec!["gpt-5.5".to_owned(), "gpt-5.5".to_owned()]),
             Some(vec!["192.0.2.0/24".to_owned()]),
         )
         .unwrap();
         assert_eq!(
-            format!("{command:?}"),
+            format!("{valid_command:?}"),
             "AdminTokenCreateCommand(<redacted>)"
         );
-        assert!(!format!("{command:?}").contains("gpt-5.5"));
+        assert!(!format!("{valid_command:?}").contains("gpt-5.5"));
 
         assert_eq!(
             command(" bad ", None, None).unwrap_err(),
