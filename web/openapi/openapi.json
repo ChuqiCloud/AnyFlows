@@ -608,6 +608,120 @@
           }
         }
       }
+    },
+    "/api/admin/tokens": {
+      "get": {
+        "operationId": "listAdminTokens",
+        "summary": "?????????",
+        "description": "????? ID ???????????????????????????????????????????????",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "????????? ID??????? ID ???"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "description": "????????? 50??? 100?"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "????????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTokenListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/admin/tokens/{id}": {
+      "get": {
+        "operationId": "getAdminToken",
+        "summary": "?????????",
+        "description": "????????????????????????????????",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "?? ID?"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "????????",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TokenNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -711,6 +825,16 @@
       },
       "InternalError": {
         "description": "服务内部错误",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ManagementError"
+            }
+          }
+        }
+      },
+      "TokenNotFound": {
+        "description": "???????????",
         "content": {
           "application/json": {
             "schema": {
@@ -1264,6 +1388,7 @@
               "forbidden",
               "user_not_found",
               "group_not_found",
+              "token_not_found",
               "user_conflict",
               "group_conflict",
               "group_in_use",
@@ -1272,6 +1397,219 @@
           },
           "message": {
             "type": "string"
+          }
+        }
+      },
+      "AdminTokenStatus": {
+        "type": "string",
+        "enum": [
+          "enabled",
+          "disabled"
+        ]
+      },
+      "AdminToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "user_id",
+          "key_prefix",
+          "name",
+          "status",
+          "group_id",
+          "remain_quota",
+          "unlimited_quota",
+          "used_quota",
+          "expired_at",
+          "model_limits",
+          "allow_ips",
+          "cross_group_retry",
+          "rate_limit_5h",
+          "rate_limit_1d",
+          "rate_limit_7d",
+          "usage_5h",
+          "usage_1d",
+          "usage_7d",
+          "window_5h_start",
+          "window_1d_start",
+          "window_7d_start",
+          "max_requests",
+          "used_requests"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "key_prefix": {
+            "type": "string",
+            "minLength": 18,
+            "maxLength": 18,
+            "pattern": "^sk-af-[A-Za-z0-9_-]{12}$",
+            "description": "??????? 18 ???????"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdminTokenStatus"
+          },
+          "group_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "remain_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "unlimited_quota": {
+            "type": "boolean"
+          },
+          "used_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "expired_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0,
+            "description": "Unix ??????????"
+          },
+          "model_limits": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "?????????????????????????????"
+          },
+          "allow_ips": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "IP/CIDR ???????????????????????????"
+          },
+          "cross_group_retry": {
+            "type": "boolean"
+          },
+          "rate_limit_5h": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "rate_limit_1d": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "rate_limit_7d": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "usage_5h": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "usage_1d": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "usage_7d": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "window_5h_start": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "window_1d_start": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "window_7d_start": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "max_requests": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "used_requests": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "AdminTokenListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tokens",
+          "next_cursor"
+        ],
+        "properties": {
+          "tokens": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/AdminToken"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
           }
         }
       }

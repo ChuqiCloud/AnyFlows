@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AdminGroupReader, AdminGroupWriter, AdminUserReader, AdminUserWriter, SessionAuthenticator,
-    TokenAuthenticator,
+    AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminUserReader, AdminUserWriter,
+    SessionAuthenticator, TokenAuthenticator,
 };
 use af_config::ServerConfig;
 use af_protocol::openai_chat::MAX_BODY_BYTES;
@@ -24,6 +24,7 @@ use crate::management_authorization::authorize_management_admin;
 use crate::management_group_writes::{create_admin_group, delete_admin_group, update_admin_group};
 use crate::management_groups::{get_admin_group, list_admin_groups};
 use crate::management_session::{current_session, login};
+use crate::management_tokens::{get_admin_token, list_admin_tokens};
 use crate::management_users::{
     create_admin_user, delete_admin_user, get_admin_user, list_admin_users, update_admin_user,
 };
@@ -71,6 +72,7 @@ pub fn build_router(
     session_authenticator: Arc<dyn SessionAuthenticator>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
+    admin_token_reader: Arc<dyn AdminTokenReader>,
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
     query_api_key_policy: QueryApiKeyPolicy,
@@ -84,6 +86,7 @@ pub fn build_router(
         Arc::clone(&session_authenticator),
         admin_group_reader,
         admin_group_writer,
+        admin_token_reader,
         admin_user_reader,
         admin_user_writer,
     );
@@ -111,6 +114,14 @@ pub fn build_router(
         authenticate_management_session,
     );
     let group_item_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let token_collection_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let token_item_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
         authenticate_management_session,
     );
@@ -149,6 +160,18 @@ pub fn build_router(
                 .delete(delete_admin_group)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(group_item_authentication),
+        )
+        .route(
+            "/api/admin/tokens",
+            get(list_admin_tokens)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(token_collection_authentication),
+        )
+        .route(
+            "/api/admin/tokens/{id}",
+            get(get_admin_token)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(token_item_authentication),
         )
         .with_state(http_state);
     HttpRouter::new(build_router_with_routes(

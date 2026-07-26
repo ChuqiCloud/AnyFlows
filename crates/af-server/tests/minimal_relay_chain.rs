@@ -10,12 +10,13 @@ use af_admin::{
     AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture, AdminGroupGetFuture,
     AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError, AdminGroupReader,
     AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
-    AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture,
-    AdminUserListFuture, AdminUserListQuery, AdminUserReadError, AdminUserReader,
-    AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter,
-    ApiKeyDigest, LoginCredentials, SessionAuthenticationError, SessionAuthenticationFuture,
-    SessionAuthenticator, SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture,
-    TokenAuthenticator,
+    AdminTokenGetFuture, AdminTokenListFuture, AdminTokenListQuery, AdminTokenReadError,
+    AdminTokenReader, AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture,
+    AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserReadError,
+    AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError,
+    AdminUserWriter, ApiKeyDigest, LoginCredentials, SessionAuthenticationError,
+    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, TokenAuthentication,
+    TokenAuthenticationFuture, TokenAuthenticator,
 };
 use af_config::ServerConfig;
 use af_domain::{GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId};
@@ -49,6 +50,7 @@ struct AlwaysAuthenticates;
 
 struct RejectSessions;
 struct RejectAdminGroups;
+struct RejectAdminTokens;
 struct RejectAdminUsers;
 
 impl SessionAuthenticator for RejectSessions {
@@ -103,6 +105,24 @@ impl AdminGroupWriter for RejectAdminGroups {
         _group_id: af_domain::GroupId,
     ) -> AdminGroupDeleteFuture<'a> {
         Box::pin(async { Err(AdminGroupWriteError::Internal) })
+    }
+}
+
+impl AdminTokenReader for RejectAdminTokens {
+    fn list<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _query: AdminTokenListQuery,
+    ) -> AdminTokenListFuture<'a> {
+        Box::pin(async { Err(AdminTokenReadError::Internal) })
+    }
+
+    fn get<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _token_id: TokenId,
+    ) -> AdminTokenGetFuture<'a> {
+        Box::pin(async { Err(AdminTokenReadError::Internal) })
     }
 }
 
@@ -436,6 +456,7 @@ async fn start_server(
         Arc::new(RejectSessions),
         Arc::new(RejectAdminGroups),
         Arc::new(RejectAdminGroups),
+        Arc::new(RejectAdminTokens),
         Arc::new(RejectAdminUsers),
         Arc::new(RejectAdminUsers),
         QueryApiKeyPolicy::Deny,

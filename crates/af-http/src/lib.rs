@@ -12,6 +12,7 @@ mod management_error;
 mod management_group_writes;
 mod management_groups;
 mod management_session;
+mod management_tokens;
 mod management_users;
 mod middleware;
 mod operations;
@@ -43,6 +44,8 @@ mod management_group_writes_tests;
 mod management_groups_tests;
 #[cfg(test)]
 mod management_session_tests;
+#[cfg(test)]
+mod management_tokens_tests;
 #[cfg(test)]
 mod management_users_tests;
 #[cfg(test)]

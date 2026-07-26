@@ -401,6 +401,11 @@ impl TokenModelAllowlist {
     pub(crate) fn into_policy(self) -> TokenModelPolicy {
         self.policy
     }
+
+    /// 消费已校验包装并返回原始字符串数组，供管理端安全展示。
+    pub(crate) fn into_raw(self) -> Json {
+        self.raw
+    }
 }
 
 impl fmt::Debug for TokenModelAllowlist {
@@ -451,6 +456,11 @@ impl TokenIpAllowlist {
     /// 判断可信客户端 IP 是否命中任意一条完整校验后的规则。
     pub(crate) fn allows(&self, client_ip: TrustedClientIp) -> bool {
         self.rules.iter().any(|rule| rule.contains(client_ip))
+    }
+
+    /// 消费已校验包装并返回原始字符串数组，供管理端安全展示。
+    pub(crate) fn into_raw(self) -> Json {
+        self.raw
     }
 }
 

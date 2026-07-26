@@ -2,10 +2,11 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{CredentialDecryptionError, CredentialDecryptor};
 use af_admin::{
-    AdminGroupReader, AdminGroupWriter, AdminUserReader, AdminUserWriter, DatabaseAdminGroupReader,
-    DatabaseAdminGroupWriter, DatabaseAdminUserReader, DatabaseAdminUserWriter,
-    DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, SessionAuthenticator,
-    SessionAuthenticatorConfigError, TokenAuthenticator,
+    AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminUserReader, AdminUserWriter,
+    DatabaseAdminGroupReader, DatabaseAdminGroupWriter, DatabaseAdminTokenReader,
+    DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseSessionAuthenticator,
+    DatabaseTokenAuthenticator, SessionAuthenticator, SessionAuthenticatorConfigError,
+    TokenAuthenticator,
 };
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
@@ -16,11 +17,12 @@ use af_billing::{
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
-    AdminGroupRepository, AdminGroupRepositoryConfigError, AdminUserRepository,
-    AdminUserRepositoryConfigError, ChannelStateRepository, DatabaseError, DatabaseOptions,
-    DatabaseOptionsError, DatabasePool, MigrationOptions, QuotaRepository, TokenAuthRepository,
-    TokenAuthRepositoryConfigError, UsageLogRepository, UserSessionRepository,
-    UserSessionRepositoryConfigError, connect_and_migrate,
+    AdminGroupRepository, AdminGroupRepositoryConfigError, AdminTokenRepository,
+    AdminTokenRepositoryConfigError, AdminUserRepository, AdminUserRepositoryConfigError,
+    ChannelStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
+    MigrationOptions, QuotaRepository, TokenAuthRepository, TokenAuthRepositoryConfigError,
+    UsageLogRepository, UserSessionRepository, UserSessionRepositoryConfigError,
+    connect_and_migrate,
 };
 use af_http::{
     ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle, ServeError,
@@ -74,6 +76,7 @@ pub struct AuthenticationReady {
     session_authenticator: Arc<dyn SessionAuthenticator>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
+    admin_token_reader: Arc<dyn AdminTokenReader>,
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
     query_api_key_policy: QueryApiKeyPolicy,
@@ -191,6 +194,9 @@ pub enum BootstrapError {
     /// 管理员分组仓储的启动参数无效。
     #[error("管理员分组仓储启动参数无效")]
     AdminGroupRepository(#[source] AdminGroupRepositoryConfigError),
+    /// 管理员令牌仓储的启动参数无效。
+    #[error("管理员令牌仓储启动参数无效")]
+    AdminTokenRepository(#[source] AdminTokenRepositoryConfigError),
     /// HTTP 监听、服务或强制关闭失败。
     #[error("HTTP 服务生命周期操作失败")]
     Http(#[source] ServeError),
@@ -336,6 +342,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::AdminGroupRepository)?;
+        let admin_token_repository = AdminTokenRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::AdminTokenRepository)?;
         let query_api_key_policy = if auth.allow_query_api_key() {
             tracing::warn!(
                 security_setting = "query_api_key_enabled",
@@ -363,6 +374,7 @@ impl Bootstrap<DatabaseReady> {
                     admin_group_repository.clone(),
                 )),
                 admin_group_writer: Arc::new(DatabaseAdminGroupWriter::new(admin_group_repository)),
+                admin_token_reader: Arc::new(DatabaseAdminTokenReader::new(admin_token_repository)),
                 admin_user_reader: Arc::new(DatabaseAdminUserReader::new(
                     admin_user_repository.clone(),
                 )),
@@ -650,6 +662,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.session_authenticator),
             Arc::clone(&self.stage.infrastructure.admin_group_reader),
             Arc::clone(&self.stage.infrastructure.admin_group_writer),
+            Arc::clone(&self.stage.infrastructure.admin_token_reader),
             Arc::clone(&self.stage.infrastructure.admin_user_reader),
             Arc::clone(&self.stage.infrastructure.admin_user_writer),
             self.stage.infrastructure.query_api_key_policy,

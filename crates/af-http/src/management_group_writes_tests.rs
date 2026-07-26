@@ -7,14 +7,15 @@ use af_admin::{
     AdminGroup, AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture,
     AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery, AdminGroupPage, AdminGroupPeak,
     AdminGroupReadError, AdminGroupReader, AdminGroupUpdateCommand, AdminGroupUpdateFuture,
-    AdminGroupWriteError, AdminGroupWriter, AdminUserCreateCommand, AdminUserCreateFuture,
-    AdminUserDeleteFuture, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery,
-    AdminUserReadError, AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture,
-    AdminUserWriteError, AdminUserWriter, LoginCredentials, SessionAuthentication,
-    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
-    SessionLoginFuture, SessionPrincipal, SessionRole,
+    AdminGroupWriteError, AdminGroupWriter, AdminTokenGetFuture, AdminTokenListFuture,
+    AdminTokenListQuery, AdminTokenReadError, AdminTokenReader, AdminUserCreateCommand,
+    AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture, AdminUserListFuture,
+    AdminUserListQuery, AdminUserReadError, AdminUserReader, AdminUserUpdateCommand,
+    AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter, LoginCredentials,
+    SessionAuthentication, SessionAuthenticationError, SessionAuthenticationFuture,
+    SessionAuthenticator, SessionLoginFuture, SessionPrincipal, SessionRole,
 };
-use af_domain::{AfError, GatewayPrincipal, GroupId, UserId};
+use af_domain::{AfError, GatewayPrincipal, GroupId, TokenId, UserId};
 use af_protocol::CanonicalRequest;
 use axum::{
     Router,
@@ -41,6 +42,7 @@ const ADMIN_TOKEN: &str = "admin-token";
 const USER_TOKEN: &str = "user-token";
 
 struct UnusedChatService;
+struct UnusedAdminTokenAccess;
 struct UnusedAdminUserAccess;
 
 impl ChatService for UnusedChatService {
@@ -170,6 +172,24 @@ impl AdminGroupWriter for FakeAdminGroupAccess {
     }
 }
 
+impl AdminTokenReader for UnusedAdminTokenAccess {
+    fn list<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _query: AdminTokenListQuery,
+    ) -> AdminTokenListFuture<'a> {
+        Box::pin(async { Err(AdminTokenReadError::Internal) })
+    }
+
+    fn get<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _token_id: TokenId,
+    ) -> AdminTokenGetFuture<'a> {
+        Box::pin(async { Err(AdminTokenReadError::Internal) })
+    }
+}
+
 impl AdminUserReader for UnusedAdminUserAccess {
     fn list<'a>(
         &'a self,
@@ -215,6 +235,7 @@ fn router(access: Arc<FakeAdminGroupAccess>) -> Router {
     let session_authenticator: Arc<dyn SessionAuthenticator> = Arc::new(FakeSessionAuthenticator);
     let admin_group_reader: Arc<dyn AdminGroupReader> = access.clone();
     let admin_group_writer: Arc<dyn AdminGroupWriter> = access;
+    let admin_tokens = Arc::new(UnusedAdminTokenAccess);
     let admin_users = Arc::new(UnusedAdminUserAccess);
     let collection_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
@@ -243,6 +264,7 @@ fn router(access: Arc<FakeAdminGroupAccess>) -> Router {
             session_authenticator,
             admin_group_reader,
             admin_group_writer,
+            admin_tokens,
             admin_users.clone(),
             admin_users,
         ))

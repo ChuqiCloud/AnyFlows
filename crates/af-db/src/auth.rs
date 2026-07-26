@@ -258,7 +258,10 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
 }
 
 /// 按数据库方言计算 JSON 序列化后的字节长度，避免把超大白名单传回应用层。
-fn token_json_serialized_length(database_backend: DbBackend, column: tokens::Column) -> SimpleExpr {
+pub(crate) fn token_json_serialized_length(
+    database_backend: DbBackend,
+    column: tokens::Column,
+) -> SimpleExpr {
     let value = Expr::col((tokens::Entity, column));
     match database_backend {
         DbBackend::Postgres => Func::cust(Alias::new("OCTET_LENGTH"))

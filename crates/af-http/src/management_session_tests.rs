@@ -4,14 +4,15 @@ use af_admin::{
     AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture, AdminGroupGetFuture,
     AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError, AdminGroupReader,
     AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
-    AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture,
-    AdminUserListFuture, AdminUserListQuery, AdminUserReadError, AdminUserReader,
-    AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter,
-    IssuedSession, LoginCredentials, SessionAuthentication, SessionAuthenticationError,
-    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
-    SessionRole, SessionToken,
+    AdminTokenGetFuture, AdminTokenListFuture, AdminTokenListQuery, AdminTokenReadError,
+    AdminTokenReader, AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture,
+    AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserReadError,
+    AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError,
+    AdminUserWriter, IssuedSession, LoginCredentials, SessionAuthentication,
+    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
+    SessionLoginFuture, SessionPrincipal, SessionRole, SessionToken,
 };
-use af_domain::{AfError, GatewayPrincipal, GroupId, UserId};
+use af_domain::{AfError, GatewayPrincipal, GroupId, TokenId, UserId};
 use af_protocol::CanonicalRequest;
 use axum::{
     Router,
@@ -37,6 +38,7 @@ const SESSION_TOKEN: &str = "signed.jwt.value";
 
 struct UnusedChatService;
 struct UnusedAdminGroupReader;
+struct UnusedAdminTokenReader;
 struct UnusedAdminUserReader;
 
 impl ChatService for UnusedChatService {
@@ -92,6 +94,24 @@ impl AdminGroupWriter for UnusedAdminGroupReader {
         _group_id: GroupId,
     ) -> AdminGroupDeleteFuture<'a> {
         Box::pin(async { Err(AdminGroupWriteError::Internal) })
+    }
+}
+
+impl AdminTokenReader for UnusedAdminTokenReader {
+    fn list<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _query: AdminTokenListQuery,
+    ) -> AdminTokenListFuture<'a> {
+        Box::pin(async { Err(AdminTokenReadError::Internal) })
+    }
+
+    fn get<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _token_id: TokenId,
+    ) -> AdminTokenGetFuture<'a> {
+        Box::pin(async { Err(AdminTokenReadError::Internal) })
     }
 }
 
@@ -206,6 +226,7 @@ fn router(authenticator: Arc<FakeSessionAuthenticator>) -> Router {
                 session_authenticator,
                 admin_groups.clone(),
                 admin_groups,
+                Arc::new(UnusedAdminTokenReader),
                 admin_users.clone(),
                 admin_users,
             )
