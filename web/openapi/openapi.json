@@ -1,0 +1,9 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AnyFlows 管理 API",
+    "version": "0.1.0",
+    "description": "前端类型生成入口。后端 utoipa 导出落地后由真实契约替换，当前不声明尚未实现的管理端点。"
+  },
+  "paths": {}
+}
