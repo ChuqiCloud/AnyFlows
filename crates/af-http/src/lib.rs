@@ -6,6 +6,9 @@ mod chat_service;
 mod client_ip;
 mod credentials;
 mod error_response;
+mod management_auth;
+mod management_error;
+mod management_session;
 mod middleware;
 mod operations;
 mod router;
@@ -30,6 +33,8 @@ mod client_ip_tests;
 mod credentials_tests;
 #[cfg(test)]
 mod error_response_tests;
+#[cfg(test)]
+mod management_session_tests;
 #[cfg(test)]
 mod operations_tests;
 #[cfg(test)]

@@ -1,7 +1,10 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{CredentialDecryptionError, CredentialDecryptor};
-use af_admin::{DatabaseTokenAuthenticator, TokenAuthenticator};
+use af_admin::{
+    DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, SessionAuthenticator,
+    SessionAuthenticatorConfigError, TokenAuthenticator,
+};
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
     DatabaseUsageRecordSink, GroupPricingCache, GroupPricingCacheError, ModelPriceCache,
@@ -13,7 +16,8 @@ use af_config::{AppConfig, ConfigError};
 use af_db::{
     ChannelStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
     MigrationOptions, QuotaRepository, TokenAuthRepository, TokenAuthRepositoryConfigError,
-    UsageLogRepository, connect_and_migrate,
+    UsageLogRepository, UserSessionRepository, UserSessionRepositoryConfigError,
+    connect_and_migrate,
 };
 use af_http::{
     ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle, ServeError,
@@ -64,6 +68,7 @@ pub struct DatabaseReady {
 pub struct AuthenticationReady {
     infrastructure: DatabaseReady,
     authenticator: Arc<dyn TokenAuthenticator>,
+    session_authenticator: Arc<dyn SessionAuthenticator>,
     query_api_key_policy: QueryApiKeyPolicy,
 }
 
@@ -167,6 +172,12 @@ pub enum BootstrapError {
     /// 令牌仓储的启动参数无效。
     #[error("令牌认证启动参数无效")]
     Authentication(#[source] TokenAuthRepositoryConfigError),
+    /// 用户会话仓储的启动参数无效。
+    #[error("用户会话启动参数无效")]
+    SessionRepository(#[source] UserSessionRepositoryConfigError),
+    /// 管理会话 JWT 的启动配置无效或缺失。
+    #[error("管理会话启动配置无效")]
+    SessionAuthentication(#[source] SessionAuthenticatorConfigError),
     /// HTTP 监听、服务或强制关闭失败。
     #[error("HTTP 服务生命周期操作失败")]
     Http(#[source] ServeError),
@@ -291,6 +302,17 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::Authentication)?;
+        let session_repository = UserSessionRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::SessionRepository)?;
+        let session_authenticator = DatabaseSessionAuthenticator::new(
+            session_repository,
+            auth.session_signing_key().map(|key| key.expose()),
+            auth.session_ttl_secs(),
+        )
+        .map_err(BootstrapError::SessionAuthentication)?;
         let query_api_key_policy = if auth.allow_query_api_key() {
             tracing::warn!(
                 security_setting = "query_api_key_enabled",
@@ -313,6 +335,7 @@ impl Bootstrap<DatabaseReady> {
             stage: AuthenticationReady {
                 infrastructure: stage,
                 authenticator: Arc::new(DatabaseTokenAuthenticator::new(repository)),
+                session_authenticator: Arc::new(session_authenticator),
                 query_api_key_policy,
             },
         })
@@ -593,6 +616,7 @@ impl Bootstrap<Supervised> {
             self.stage.chat.clone(),
             readiness.clone(),
             Arc::clone(&self.stage.infrastructure.authenticator),
+            Arc::clone(&self.stage.infrastructure.session_authenticator),
             self.stage.infrastructure.query_api_key_policy,
         );
         let Bootstrap {
@@ -1052,7 +1076,7 @@ mod tests {
         fs::write(
             &path,
             format!(
-                "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{database_url}'\n[billing]\nwal_directory = '{wal_directory}'\n[credential_encryption]\nkey_id = 'bootstrap-test'\nkey = '{credential_key}'\n"
+                "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{database_url}'\n[billing]\nwal_directory = '{wal_directory}'\n[credential_encryption]\nkey_id = 'bootstrap-test'\nkey = '{credential_key}'\n[auth]\nsession_signing_key = '{credential_key}'\n"
             ),
         )
         .unwrap();
@@ -1140,6 +1164,39 @@ mod tests {
         assert_eq!(report.background, SupervisorShutdown::Drained);
         assert_eq!(report.billing, BillingFlushReport::default());
         let _ = fs::remove_dir_all(wal_directory);
+    }
+
+    #[tokio::test]
+    async fn missing_management_session_key_rejects_authentication_stage() {
+        let path = config_file("sqlite::memory:");
+        let contents = fs::read_to_string(&path).unwrap();
+        let without_session_key = contents
+            .lines()
+            .filter(|line| !line.starts_with("session_signing_key"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&path, without_session_key).unwrap();
+        let config = af_config::load_from(&path).unwrap();
+        let _ = fs::remove_file(&path);
+
+        let bootstrap = Bootstrap::new(config)
+            .unwrap()
+            .init_telemetry()
+            .unwrap()
+            .connect_database()
+            .await
+            .unwrap();
+        let error = match bootstrap.init_authentication() {
+            Ok(_) => panic!("缺失管理会话密钥时不应进入认证就绪阶段"),
+            Err(error) => error,
+        };
+        assert!(matches!(
+            error,
+            BootstrapError::SessionAuthentication(
+                SessionAuthenticatorConfigError::MissingSigningKey
+            )
+        ));
+        let _ = fs::remove_dir_all(billing_wal_directory(&path));
     }
 
     #[tokio::test]

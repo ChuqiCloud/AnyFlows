@@ -93,7 +93,7 @@ async fn trusted_loopback_proxy_enforces_sqlite_token_ip_allowlist() {
     fs::write(
         &config_path,
         format!(
-            "[server]\nbind = '127.0.0.1:0'\ncors_allowed_origins = ['https://console.example']\nshutdown_timeout_secs = 1\nclient_ip_source = 'x-forwarded-for'\ntrusted_proxy_cidrs = ['127.0.0.1/32']\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'gateway-test-key'\nkey = '{credential_key}'\n[auth]\nlookup_timeout_secs = 1\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n",
+            "[server]\nbind = '127.0.0.1:0'\ncors_allowed_origins = ['https://console.example']\nshutdown_timeout_secs = 1\nclient_ip_source = 'x-forwarded-for'\ntrusted_proxy_cidrs = ['127.0.0.1/32']\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'gateway-test-key'\nkey = '{credential_key}'\n[auth]\nlookup_timeout_secs = 1\nsession_signing_key = '{credential_key}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n",
             database.url,
             database
                 .billing_wal_directory()

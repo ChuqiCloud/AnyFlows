@@ -12,7 +12,8 @@ use figment::{
 use serde::Serialize;
 
 use crate::{
-    AppConfig, AuthSettings, BillingSettings, ChannelProbeSettings, ConfigError, ServerConfig,
+    AppConfig, BillingSettings, ChannelProbeSettings, ConfigError,
+    DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS, DEFAULT_AUTH_SESSION_TTL_SECS, ServerConfig,
     TelemetrySettings,
 };
 
@@ -32,8 +33,27 @@ struct ConfigDefaults {
     channel_probe: ChannelProbeSettings,
     credential_encryption: CredentialEncryptionDefaults,
     redis: RedisDefaults,
-    auth: AuthSettings,
+    auth: AuthDefaults,
     http_client: HttpClientDefaults,
+}
+
+#[derive(Serialize)]
+struct AuthDefaults {
+    allow_query_api_key: bool,
+    lookup_timeout_secs: u64,
+    session_signing_key: Option<String>,
+    session_ttl_secs: u64,
+}
+
+impl Default for AuthDefaults {
+    fn default() -> Self {
+        Self {
+            allow_query_api_key: false,
+            lookup_timeout_secs: DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS,
+            session_signing_key: None,
+            session_ttl_secs: DEFAULT_AUTH_SESSION_TTL_SECS,
+        }
+    }
 }
 
 #[derive(Default, Serialize)]
@@ -182,6 +202,8 @@ fn known_field(path: &str) -> Option<&'static str> {
         "auth" => "auth",
         "auth.allow_query_api_key" => "auth.allow_query_api_key",
         "auth.lookup_timeout_secs" => "auth.lookup_timeout_secs",
+        "auth.session_signing_key" => "auth.session_signing_key",
+        "auth.session_ttl_secs" => "auth.session_ttl_secs",
         "openai_upstream" => "openai_upstream",
         "openai_upstream.base_url" => "openai_upstream.base_url",
         "openai_upstream.model" => "openai_upstream.model",
@@ -273,6 +295,8 @@ mod tests {
             assert!(config.redis().url().is_none());
             assert!(!config.auth().allow_query_api_key());
             assert_eq!(config.auth().lookup_timeout_secs(), 2);
+            assert!(config.auth().session_signing_key().is_none());
+            assert_eq!(config.auth().session_ttl_secs(), 3_600);
             assert_eq!(
                 config.openai_upstream().unwrap().base_url(),
                 "https://upstream.example"
@@ -1017,6 +1041,66 @@ mod tests {
                     field: "auth.lookup_timeout_secs"
                 }
             );
+        });
+    }
+
+    #[test]
+    fn validates_management_session_key_and_ttl_without_leaking_key() {
+        use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
+        with_clean_env(|_| {
+            let key = URL_SAFE_NO_PAD.encode([0x42; 32]);
+            let path = temp_file(&format!(
+                "[database]\nurl = 'sqlite::memory:'\n[auth]\nsession_signing_key = '{key}'\nsession_ttl_secs = 7200\n"
+            ));
+            let config = load_from(&path).unwrap();
+            let _ = fs::remove_file(path);
+            assert_eq!(config.auth().session_signing_key().unwrap().expose(), key);
+            assert_eq!(config.auth().session_ttl_secs(), 7_200);
+            assert!(!format!("{:?}", config.auth()).contains(&key));
+
+            for invalid_key in [
+                "short".to_owned(),
+                format!("{key}="),
+                key.replace('Q', "+"),
+                URL_SAFE_NO_PAD.encode([0x42; 31]),
+                URL_SAFE_NO_PAD.encode([0x42; 33]),
+            ] {
+                let path = temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[auth]\nsession_signing_key = '{invalid_key}'\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(
+                    error,
+                    ConfigError::InvalidField {
+                        field: "auth.session_signing_key"
+                    }
+                );
+                assert!(!format!("{error:?}\n{error}").contains(&invalid_key));
+            }
+
+            for (value, expected) in [
+                (
+                    0,
+                    ConfigError::NonPositive {
+                        field: "auth.session_ttl_secs",
+                    },
+                ),
+                (
+                    86_401,
+                    ConfigError::OutOfRange {
+                        field: "auth.session_ttl_secs",
+                    },
+                ),
+            ] {
+                let path = temp_file(&format!(
+                    "[database]\nurl = 'sqlite::memory:'\n[auth]\nsession_ttl_secs = {value}\n"
+                ));
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(error, expected);
+            }
         });
     }
 

@@ -23,6 +23,12 @@ pub const MAX_DATABASE_HEALTH_CHECK_TIMEOUT_SECS: u64 = 30;
 pub const DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS: u64 = 2;
 /// 令牌认证仓储查询允许配置的硬上限。
 pub const MAX_AUTH_LOOKUP_TIMEOUT_SECS: u64 = 30;
+/// 管理会话 JWT 的默认有效期。
+pub const DEFAULT_AUTH_SESSION_TTL_SECS: u64 = 3_600;
+/// 管理会话 JWT 允许配置的硬上限。
+pub const MAX_AUTH_SESSION_TTL_SECS: u64 = 86_400;
+/// 管理会话签名密钥要求的随机字节数。
+pub const AUTH_SESSION_SIGNING_KEY_BYTES: usize = 32;
 /// 计费 WAL 批量落库的默认周期。
 pub const DEFAULT_BILLING_FLUSH_INTERVAL_SECS: u64 = 5;
 /// 计费 WAL 单次启动恢复或关闭收尾的默认截止时间。
@@ -490,11 +496,13 @@ impl RedisSettings {
 }
 
 /// 下游 API Key 认证的静态设置。
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct AuthSettings {
     allow_query_api_key: bool,
     lookup_timeout_secs: u64,
+    session_signing_key: Option<SecretString>,
+    session_ttl_secs: u64,
 }
 
 impl AuthSettings {
@@ -509,6 +517,18 @@ impl AuthSettings {
     pub const fn lookup_timeout_secs(&self) -> u64 {
         self.lookup_timeout_secs
     }
+
+    /// 返回管理会话签名密钥；缺省时由 Bootstrap 拒绝启动监听。
+    #[must_use]
+    pub fn session_signing_key(&self) -> Option<&SecretString> {
+        self.session_signing_key.as_ref()
+    }
+
+    /// 返回管理会话 JWT 的有效期秒数。
+    #[must_use]
+    pub const fn session_ttl_secs(&self) -> u64 {
+        self.session_ttl_secs
+    }
 }
 
 impl Default for AuthSettings {
@@ -516,6 +536,8 @@ impl Default for AuthSettings {
         Self {
             allow_query_api_key: false,
             lookup_timeout_secs: DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS,
+            session_signing_key: None,
+            session_ttl_secs: DEFAULT_AUTH_SESSION_TTL_SECS,
         }
     }
 }
@@ -859,6 +881,28 @@ impl AppConfig {
             return Err(ConfigError::OutOfRange {
                 field: "auth.lookup_timeout_secs",
             });
+        }
+        if self.auth.session_ttl_secs == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "auth.session_ttl_secs",
+            });
+        }
+        if self.auth.session_ttl_secs > MAX_AUTH_SESSION_TTL_SECS {
+            return Err(ConfigError::OutOfRange {
+                field: "auth.session_ttl_secs",
+            });
+        }
+        if let Some(key) = self.auth.session_signing_key.as_ref() {
+            let mut decoded = [0_u8; AUTH_SESSION_SIGNING_KEY_BYTES];
+            let valid = URL_SAFE_NO_PAD
+                .decode_slice(key.expose(), &mut decoded)
+                .is_ok_and(|length| length == AUTH_SESSION_SIGNING_KEY_BYTES);
+            decoded.zeroize();
+            if !valid {
+                return Err(ConfigError::InvalidField {
+                    field: "auth.session_signing_key",
+                });
+            }
         }
         if let Some(openai_upstream) = &self.openai_upstream {
             validate_openai_upstream(openai_upstream)?;

@@ -5,7 +5,8 @@ use af_domain::{
     TokenModelPolicy, TrustedClientIp,
 };
 use argon2::{
-    Algorithm, MIN_SALT_LEN, Params, Version, password_hash::PasswordHash as ParsedPasswordHash,
+    Algorithm, Argon2, MIN_SALT_LEN, Params, Version,
+    password_hash::{PasswordHash as ParsedPasswordHash, PasswordVerifier},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use http::header::{HeaderName, HeaderValue};
@@ -240,6 +241,14 @@ impl PasswordHash {
             return Err(SensitiveValueError::InvalidPasswordHash);
         }
         Ok(Self(value.to_owned()))
+    }
+
+    /// 在数据库边界完成 Argon2id 校验，避免密码哈希离开敏感实体模块。
+    pub(crate) fn verify(&self, password: &[u8]) -> bool {
+        let Ok(parsed) = ParsedPasswordHash::new(&self.0) else {
+            return false;
+        };
+        Argon2::default().verify_password(password, &parsed).is_ok()
     }
 }
 

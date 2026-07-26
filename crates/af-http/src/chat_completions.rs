@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use af_admin::TokenAuthentication;
+use af_admin::{SessionAuthenticator, TokenAuthentication};
 use af_domain::AfError;
 use af_protocol::openai_chat::parse_request;
 use af_relay::OpenAiChatResponse;
@@ -24,13 +24,18 @@ use crate::{
 #[derive(Clone)]
 pub(crate) struct HttpState {
     chat: Arc<dyn ChatService>,
+    pub(crate) session_authenticator: Arc<dyn SessionAuthenticator>,
     stream_delivery: StreamDeliveryPolicy,
 }
 
 impl HttpState {
-    pub(crate) fn new(chat: Arc<dyn ChatService>) -> Self {
+    pub(crate) fn new(
+        chat: Arc<dyn ChatService>,
+        session_authenticator: Arc<dyn SessionAuthenticator>,
+    ) -> Self {
         Self {
             chat,
+            session_authenticator,
             stream_delivery: StreamDeliveryPolicy::default(),
         }
     }

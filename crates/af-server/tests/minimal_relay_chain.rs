@@ -6,7 +6,11 @@ use std::{
     time::Duration,
 };
 
-use af_admin::{ApiKeyDigest, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator};
+use af_admin::{
+    ApiKeyDigest, LoginCredentials, SessionAuthenticationError, SessionAuthenticationFuture,
+    SessionAuthenticator, SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture,
+    TokenAuthenticator,
+};
 use af_config::ServerConfig;
 use af_domain::{GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId};
 use af_http::{
@@ -36,6 +40,18 @@ impl ReadinessProbe for AlwaysReadyProbe {
 }
 
 struct AlwaysAuthenticates;
+
+struct RejectSessions;
+
+impl SessionAuthenticator for RejectSessions {
+    fn login<'a>(&'a self, _credentials: &'a LoginCredentials) -> SessionLoginFuture<'a> {
+        Box::pin(async { Err(SessionAuthenticationError::InvalidCredentials) })
+    }
+
+    fn authenticate<'a>(&'a self, _token: &'a str) -> SessionAuthenticationFuture<'a> {
+        Box::pin(async { Err(SessionAuthenticationError::InvalidSession) })
+    }
+}
 
 impl TokenAuthenticator for AlwaysAuthenticates {
     fn authenticate<'a>(
@@ -319,6 +335,7 @@ async fn start_server(
         relay,
         readiness,
         Arc::new(AlwaysAuthenticates),
+        Arc::new(RejectSessions),
         QueryApiKeyPolicy::Deny,
     );
     let listener = HttpListener::bind("127.0.0.1:0".parse().unwrap()).unwrap();
