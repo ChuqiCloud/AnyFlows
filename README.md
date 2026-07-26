@@ -41,6 +41,10 @@ cargo deny --all-features --locked check advisories bans licenses sources
 corepack pnpm@10.33.0 --dir web install --frozen-lockfile
 corepack pnpm@10.33.0 --dir web dev
 
+# 更新并校验 OpenAPI 生成代码
+corepack pnpm@10.33.0 --dir web api:generate
+corepack pnpm@10.33.0 --dir web api:check
+
 # 前端质量门禁
 corepack pnpm@10.33.0 --dir web check
 ```
