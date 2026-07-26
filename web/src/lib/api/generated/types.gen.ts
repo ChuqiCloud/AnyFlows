@@ -92,8 +92,39 @@ export type AdminGroupListResponse = {
     next_cursor: number | null;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'group_not_found' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
     message: string;
+};
+export type AdminTokenStatus = 'enabled' | 'disabled';
+export type AdminToken = {
+    id: number;
+    user_id: number;
+    key_prefix: string;
+    name: string;
+    status: AdminTokenStatus;
+    group_id: number | null;
+    remain_quota: number;
+    unlimited_quota: boolean;
+    used_quota: number;
+    expired_at: number | null;
+    model_limits: Array<string> | null;
+    allow_ips: Array<string> | null;
+    cross_group_retry: boolean;
+    rate_limit_5h: number | null;
+    rate_limit_1d: number | null;
+    rate_limit_7d: number | null;
+    usage_5h: number;
+    usage_1d: number;
+    usage_7d: number;
+    window_5h_start: number;
+    window_1d_start: number;
+    window_7d_start: number;
+    max_requests: number | null;
+    used_requests: number;
+};
+export type AdminTokenListResponse = {
+    tokens: Array<AdminToken>;
+    next_cursor: number | null;
 };
 export type LoginManagementSessionData = {
     body: LoginRequest;
@@ -325,3 +356,43 @@ export type UpdateAdminGroupResponses = {
     200: AdminGroup;
 };
 export type UpdateAdminGroupResponse = UpdateAdminGroupResponses[keyof UpdateAdminGroupResponses];
+export type ListAdminTokensData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/admin/tokens';
+};
+export type ListAdminTokensErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminTokensError = ListAdminTokensErrors[keyof ListAdminTokensErrors];
+export type ListAdminTokensResponses = {
+    200: AdminTokenListResponse;
+};
+export type ListAdminTokensResponse = ListAdminTokensResponses[keyof ListAdminTokensResponses];
+export type GetAdminTokenData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/tokens/{id}';
+};
+export type GetAdminTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminTokenError = GetAdminTokenErrors[keyof GetAdminTokenErrors];
+export type GetAdminTokenResponses = {
+    200: AdminToken;
+};
+export type GetAdminTokenResponse = GetAdminTokenResponses[keyof GetAdminTokenResponses];

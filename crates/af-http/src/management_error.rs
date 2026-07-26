@@ -23,6 +23,8 @@ pub(crate) enum ManagementError {
     GroupConflict,
     /// 分组仍被有效用户或有效令牌引用。
     GroupInUse,
+    /// 令牌不存在或已经被软删除。
+    TokenNotFound,
     /// 管理认证依赖发生内部故障。
     Internal,
 }
@@ -97,6 +99,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "group_in_use",
                     message: "Group in use",
+                },
+            ),
+            Self::TokenNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "token_not_found",
+                    message: "Token not found",
                 },
             ),
             Self::Internal => (
