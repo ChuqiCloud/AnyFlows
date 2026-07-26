@@ -9,6 +9,7 @@ mod error_response;
 mod management_auth;
 mod management_authorization;
 mod management_error;
+mod management_groups;
 mod management_session;
 mod management_users;
 mod middleware;
@@ -35,6 +36,8 @@ mod client_ip_tests;
 mod credentials_tests;
 #[cfg(test)]
 mod error_response_tests;
+#[cfg(test)]
+mod management_groups_tests;
 #[cfg(test)]
 mod management_session_tests;
 #[cfg(test)]

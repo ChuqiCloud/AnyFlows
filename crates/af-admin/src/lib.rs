@@ -1,6 +1,7 @@
 //! 管理域应用服务。
 
 mod api_key;
+mod group_read;
 mod session;
 mod token_auth;
 mod user_read;
@@ -9,6 +10,11 @@ mod user_write;
 pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,
     PresentedApiKey,
+};
+pub use group_read::{
+    AdminGroup, AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery, AdminGroupPage,
+    AdminGroupPeak, AdminGroupReadError, AdminGroupReader, DEFAULT_ADMIN_GROUP_PAGE_SIZE,
+    DatabaseAdminGroupReader,
 };
 pub use session::{
     DatabaseSessionAuthenticator, IssuedSession, LoginCredentials, SessionAuthentication,

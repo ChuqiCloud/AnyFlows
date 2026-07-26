@@ -2,9 +2,10 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{CredentialDecryptionError, CredentialDecryptor};
 use af_admin::{
-    AdminUserReader, AdminUserWriter, DatabaseAdminUserReader, DatabaseAdminUserWriter,
-    DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, SessionAuthenticator,
-    SessionAuthenticatorConfigError, TokenAuthenticator,
+    AdminGroupReader, AdminUserReader, AdminUserWriter, DatabaseAdminGroupReader,
+    DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseSessionAuthenticator,
+    DatabaseTokenAuthenticator, SessionAuthenticator, SessionAuthenticatorConfigError,
+    TokenAuthenticator,
 };
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
@@ -15,9 +16,10 @@ use af_billing::{
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
-    AdminUserRepository, AdminUserRepositoryConfigError, ChannelStateRepository, DatabaseError,
-    DatabaseOptions, DatabaseOptionsError, DatabasePool, MigrationOptions, QuotaRepository,
-    TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository, UserSessionRepository,
+    AdminGroupRepository, AdminGroupRepositoryConfigError, AdminUserRepository,
+    AdminUserRepositoryConfigError, ChannelStateRepository, DatabaseError, DatabaseOptions,
+    DatabaseOptionsError, DatabasePool, MigrationOptions, QuotaRepository, TokenAuthRepository,
+    TokenAuthRepositoryConfigError, UsageLogRepository, UserSessionRepository,
     UserSessionRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
@@ -70,6 +72,7 @@ pub struct AuthenticationReady {
     infrastructure: DatabaseReady,
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
+    admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
     query_api_key_policy: QueryApiKeyPolicy,
@@ -184,6 +187,9 @@ pub enum BootstrapError {
     /// 管理员用户仓储的启动参数无效。
     #[error("管理员用户仓储启动参数无效")]
     AdminUserRepository(#[source] AdminUserRepositoryConfigError),
+    /// 管理员分组仓储的启动参数无效。
+    #[error("管理员分组仓储启动参数无效")]
+    AdminGroupRepository(#[source] AdminGroupRepositoryConfigError),
     /// HTTP 监听、服务或强制关闭失败。
     #[error("HTTP 服务生命周期操作失败")]
     Http(#[source] ServeError),
@@ -324,6 +330,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::AdminUserRepository)?;
+        let admin_group_repository = AdminGroupRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::AdminGroupRepository)?;
         let query_api_key_policy = if auth.allow_query_api_key() {
             tracing::warn!(
                 security_setting = "query_api_key_enabled",
@@ -347,6 +358,7 @@ impl Bootstrap<DatabaseReady> {
                 infrastructure: stage,
                 authenticator: Arc::new(DatabaseTokenAuthenticator::new(repository)),
                 session_authenticator: Arc::new(session_authenticator),
+                admin_group_reader: Arc::new(DatabaseAdminGroupReader::new(admin_group_repository)),
                 admin_user_reader: Arc::new(DatabaseAdminUserReader::new(
                     admin_user_repository.clone(),
                 )),
@@ -632,6 +644,7 @@ impl Bootstrap<Supervised> {
             readiness.clone(),
             Arc::clone(&self.stage.infrastructure.authenticator),
             Arc::clone(&self.stage.infrastructure.session_authenticator),
+            Arc::clone(&self.stage.infrastructure.admin_group_reader),
             Arc::clone(&self.stage.infrastructure.admin_user_reader),
             Arc::clone(&self.stage.infrastructure.admin_user_writer),
             self.stage.infrastructure.query_api_key_policy,

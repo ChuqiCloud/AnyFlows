@@ -7,12 +7,13 @@ use std::{
 };
 
 use af_admin::{
-    AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture,
-    AdminUserListFuture, AdminUserListQuery, AdminUserReadError, AdminUserReader,
-    AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter,
-    ApiKeyDigest, LoginCredentials, SessionAuthenticationError, SessionAuthenticationFuture,
-    SessionAuthenticator, SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture,
-    TokenAuthenticator,
+    AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError,
+    AdminGroupReader, AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture,
+    AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserReadError,
+    AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError,
+    AdminUserWriter, ApiKeyDigest, LoginCredentials, SessionAuthenticationError,
+    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, TokenAuthentication,
+    TokenAuthenticationFuture, TokenAuthenticator,
 };
 use af_config::ServerConfig;
 use af_domain::{GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId};
@@ -45,6 +46,7 @@ impl ReadinessProbe for AlwaysReadyProbe {
 struct AlwaysAuthenticates;
 
 struct RejectSessions;
+struct RejectAdminGroups;
 struct RejectAdminUsers;
 
 impl SessionAuthenticator for RejectSessions {
@@ -54,6 +56,24 @@ impl SessionAuthenticator for RejectSessions {
 
     fn authenticate<'a>(&'a self, _token: &'a str) -> SessionAuthenticationFuture<'a> {
         Box::pin(async { Err(SessionAuthenticationError::InvalidSession) })
+    }
+}
+
+impl AdminGroupReader for RejectAdminGroups {
+    fn list<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _query: AdminGroupListQuery,
+    ) -> AdminGroupListFuture<'a> {
+        Box::pin(async { Err(AdminGroupReadError::Internal) })
+    }
+
+    fn get<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _group_id: GroupId,
+    ) -> AdminGroupGetFuture<'a> {
+        Box::pin(async { Err(AdminGroupReadError::Internal) })
     }
 }
 
@@ -385,6 +405,7 @@ async fn start_server(
         readiness,
         Arc::new(AlwaysAuthenticates),
         Arc::new(RejectSessions),
+        Arc::new(RejectAdminGroups),
         Arc::new(RejectAdminUsers),
         Arc::new(RejectAdminUsers),
         QueryApiKeyPolicy::Deny,
