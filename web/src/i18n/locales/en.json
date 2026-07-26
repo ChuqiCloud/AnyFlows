@@ -12,6 +12,13 @@
     "billing": "Billing",
     "settings": "Settings"
   },
+  "shell": {
+    "search": "Search",
+    "version": "Development preview",
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar",
+    "home": "Back to home"
+  },
   "dashboard": {
     "title": "Console"
   },
@@ -36,6 +43,75 @@
     "routing": { "label": "Routing", "state": "Not connected" },
     "billing": { "label": "Billing", "state": "Not connected" }
   },
+  "landing": {
+    "nav": { "console": "Open console" },
+    "hero": {
+      "eyebrow": "LLM API aggregation gateway",
+      "subtitle": "Unified access, intelligent routing, precise billing. Collapse scattered model channels into a single observable flow.",
+      "cta": "Get started",
+      "secondary": "Read the docs"
+    },
+    "providers": "Providers already supported",
+    "feature": {
+      "eyebrow": "Core capabilities",
+      "heading": "Complexity stays inside the gateway",
+      "subheading": "AnyFlows absorbs upstream differences, failures and pricing rules, so your application only ever talks to one stable interface.",
+      "routing": { "title": "Routing", "body": "Selects channels by weight, priority and live health, with automatic failover and retry." },
+      "billing": { "title": "Billing", "body": "Group multipliers, tiered pricing and an expression engine, with auditable line items." },
+      "health": { "title": "Health", "body": "Continuous liveness and balance probing, auto-disabling channels by rule." },
+      "streaming": { "title": "Streaming", "body": "End-to-end SSE passthrough with per-request TTFT and throughput visibility." },
+      "pool": { "title": "Account pool", "body": "Typed credential management, one proxy per account, shadow accounts for rollout." },
+      "observability": { "title": "Observability", "body": "Per-request candidate replay recording every fallback reason and response detail." }
+    },
+    "modes": {
+      "eyebrow": "Three shapes",
+      "heading": "One gateway, three ways in",
+      "subheading": "Official keys, subscription accounts, or other relays — downstream sees the same endpoint.",
+      "relay": {
+        "label": "API relay",
+        "title": "Official & compatible keys",
+        "body": "Aggregate official or compatible endpoints, then normalize protocols, meter by group, and resell."
+      },
+      "sub2api": {
+        "label": "Subscription to API",
+        "title": "Pooled subscription quota",
+        "body": "Turn Claude Code, Codex, and Gemini CLI OAuth quota into a standard API through an account pool."
+      },
+      "metapi": {
+        "label": "Meta aggregation",
+        "title": "A gateway above gateways",
+        "body": "Treat existing relays as upstreams and collapse them into one entry with failover and best-route selection."
+      }
+    },
+    "protocol": {
+      "eyebrow": "Protocol matrix",
+      "heading": "Any protocol in, any protocol out",
+      "subheading": "Every request normalizes to a protocol-agnostic representation first, then converts to the target — streaming included.",
+      "clientLabel": "Client protocol",
+      "upstreamLabel": "Upstream protocol",
+      "canonical": "Canonical IR",
+      "note": "N×M conversion without hand-writing every pair."
+    },
+    "closing": {
+      "heading": "Ready to collapse your model traffic?",
+      "body": "A single binary with the frontend embedded. One command to serve.",
+      "cta": "Get started",
+      "secondary": "Read the docs"
+    },
+    "console": {
+      "eyebrow": "Drop-in compatible",
+      "heading": "One endpoint, every protocol",
+      "subheading": "Switch protocols by changing the header, not the URL or the key. Point your existing code at AnyFlows and keep going.",
+      "tablist": "Select protocol",
+      "request": "Request",
+      "response": "Response",
+      "latency": "Latency",
+      "tokens": "Tokens in/out",
+      "route": "Route"
+    },
+    "footer": { "copyright": "AnyFlows · Open-source LLM gateway" }
+  },
   "theme": { "toggle": "Toggle theme" },
+  "motion": { "enable": "Enable motion", "disable": "Reduce motion" },
   "language": { "toggle": "Switch language" }
 }

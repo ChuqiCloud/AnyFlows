@@ -1,14 +1,30 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
+
+/* 正文与 UI：Inter，全局启用 OpenType 特性 */
+@import "@fontsource-variable/inter";
+/* 代码：Geist Mono */
+@import "@fontsource-variable/geist-mono";
+/* 字标：Instrument Sans 斜体。只引 wght-italic 一支——字标是全站唯一用它的
+   地方且恒为斜体，引正体等于白下一份永远不会命中的 woff2。 */
+@import "@fontsource-variable/instrument-sans/wght-italic.css";
 
 @custom-variant dark (&:is(.dark *));
+@custom-variant light (&:is(.light *));
 
 @theme inline {
+  /* ── 字体：macOS 系统字体栈，SF Pro 会在 macOS 上自动命中 ── */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Helvetica Neue", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+    system-ui, sans-serif;
   --font-heading: var(--font-sans);
-  --font-sans: "Geist Variable", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  /* 字标仍保留 Instrument Sans 斜体，保持品牌识别度 */
+  --font-display: "Instrument Sans Variable", var(--font-sans);
+  --font-mono: "Geist Mono Variable", ui-monospace, "SFMono-Regular", Consolas,
+    monospace;
+
+  /* ── 语义色 ───────────────────────────────────────────── */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -27,6 +43,17 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-info: var(--info);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-hairline: var(--hairline);
+
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -40,82 +67,282 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --radius-sm: calc(var(--radius) * 0.5);
-  --radius-md: calc(var(--radius) * 0.75);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.25);
-  --radius-2xl: calc(var(--radius) * 1.5);
+
+  /* ── 圆角：macOS 标准，控件 10→12px，卡片 14px ─────────── */
+  --radius-xs: 4px;
+  --radius-sm: 7px;
+  --radius-md: 9px;
+  --radius-lg: 12px;  /* 按钮、输入框、下拉——macOS 标准交互控件圆角 */
+  --radius-xl: 14px;  /* 卡片 */
+  --radius-2xl: 20px; /* 大区块 */
+  --radius-pill: 999px;
+
+  /* ── 阴影：macOS 风格——柔和多层，不做内嵌高光 ─────────── */
+  --shadow-subtle: 0 1px 2px rgb(0 0 0 / 0.08), 0 1px 1px rgb(0 0 0 / 0.04);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.1), 0 1px 2px rgb(0 0 0 / 0.06);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.1), 0 2px 4px rgb(0 0 0 / 0.06);
+  --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.12), 0 4px 8px rgb(0 0 0 / 0.06);
+  --shadow-overlay: 0 20px 60px rgb(0 0 0 / 0.2), 0 8px 20px rgb(0 0 0 / 0.08),
+    0 0 0 1px var(--hairline);
+  --shadow-glow-brand: 0 0 0 4px rgba(0, 122, 255, 0.2);
+  --shadow-glow-info: 0 0 0 4px rgba(0, 122, 255, 0.2);
+  --hairline-strong: rgb(0 0 0 / 0.12);
+
+  /* ── 动效字体关键帧（仅公开页 / 品牌时刻） ─────────────── */
+  /* 兜底时长与 LogoMarquee 的默认 prop 保持一致，避免不传 duration 时突然变快 */
+  --animate-marquee: marquee 88s linear infinite;
+  --animate-kinetic-rise: kinetic-rise 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-aurora: aurora 22s ease-in-out infinite;
+  --animate-drift: drift 1s linear infinite;
+  /* 绸带：整条缓慢摆动；时长故意与 aurora 互质，避免两层周期性对齐成节拍 */
+  --animate-ribbon-sway: ribbon-sway 31s ease-in-out infinite;
+  --animate-ribbon-flow: ribbon-flow 1s linear infinite;
+
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  /* 极光：极慢的位移与缩放，只提供背景的呼吸感，不抢注意力 */
+  @keyframes aurora {
+    0%,
+    100% {
+      transform: translate3d(-4%, -2%, 0) scale(1);
+      opacity: 0.75;
+    }
+    50% {
+      transform: translate3d(4%, 2%, 0) scale(1.12);
+      opacity: 1;
+    }
+  }
+
+  /*
+   * 粒子漂浮：单条关键帧被所有粒子共用，靠 --drift-x/--drift-y/时长/延迟 做差异化，
+   * 这样 N 颗粒子只占一份合成器动画定义。位移量刻意小——是浮尘，不是雪。
+   */
+  @keyframes drift {
+    0% {
+      transform: translate3d(0, 0, 0);
+      opacity: 0;
+    }
+    12%,
+    82% {
+      opacity: var(--drift-peak, 0.55);
+    }
+    100% {
+      transform: translate3d(var(--drift-x, 12px), var(--drift-y, -46px), 0);
+      opacity: 0;
+    }
+  }
+
+  /*
+   * 绸带摆动：整条光束极缓慢地倾斜与拉伸，模拟绸带被气流托着的姿态变化。
+   * 只动 transform / opacity，且幅度压得很小——它是背景氛围，不是主角。
+   */
+  @keyframes ribbon-sway {
+    0%,
+    100% {
+      transform: translate3d(-1.5%, 0, 0) rotate(-0.6deg) scaleY(1);
+      /* 相对 --ribbon-strength 表达，主题切换时整条带子一起换强度 */
+      opacity: calc(var(--ribbon-strength) * 0.65);
+    }
+    50% {
+      transform: translate3d(1.5%, -1.2%, 0) rotate(0.7deg) scaleY(1.14);
+      opacity: var(--ribbon-strength);
+    }
+  }
+
+  /*
+   * 粒子沿绸带流动：offset-distance 从 0% 走到 100%，路径由 offset-path 给定。
+   * 首尾淡出，让粒子在路径两端「化开」而不是硬生生消失在端点。
+   */
+  @keyframes ribbon-flow {
+    0% {
+      offset-distance: 0%;
+      opacity: 0;
+    }
+    14%,
+    80% {
+      opacity: var(--flow-peak, 0.6);
+    }
+    100% {
+      offset-distance: 100%;
+      opacity: 0;
+    }
+  }
+
+  /* 逐字入场：位移 + 模糊 + 淡入 */
+  @keyframes kinetic-rise {
+    from {
+      opacity: 0;
+      transform: translateY(0.42em) scaleY(0.86);
+      filter: blur(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scaleY(1);
+      filter: blur(0);
+    }
+  }
+
+  /*
+   * 滚动入场：元素进入视口时从下方柔和浮起。
+   * 被 [data-inview] 属性和 IntersectionObserver 驱动：
+   * 未进入视口时 opacity:0 隐藏，进入后加 data-visible 触发动画。
+   * fill-mode: both 保证动画结束后停在终态，不会闪回初始状态。
+   */
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(22px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 }
 
+/* ══ 深色：正统形态 ═══════════════════════════════════════ */
+.dark,
 :root {
-  color-scheme: light;
-  --background: oklch(0.985 0.004 210);
-  --foreground: oklch(0.18 0.018 235);
-  --card: oklch(1 0 0);
+  color-scheme: dark;
+
+  /* ══ macOS 暗色：系统深色 #1C1C1E 暖黑调，主色换 Apple 系统蓝 ══ */
+  --background: #1c1c1e; /* macOS systemBackground dark */
+  --foreground: #f5f5f7; /* Apple primary label dark */
+
+  --surface-1: #2c2c2e; /* macOS secondarySystemBackground */
+  --surface-2: #3a3a3c; /* macOS tertiarySystemBackground */
+  --surface-sunken: #141416;
+  --surface-raised: #323234;
+  --hairline: rgb(255 255 255 / 0.1);
+
+  /* 背景标识星座 */
+  --logo-field-lit: 0.55;
+
+  --card: var(--surface-1);
   --card-foreground: var(--foreground);
-  --popover: oklch(1 0 0);
+  --popover: #2c2c2e;
   --popover-foreground: var(--foreground);
-  --primary: oklch(0.48 0.12 178);
-  --primary-foreground: oklch(0.99 0.01 180);
-  --secondary: oklch(0.945 0.012 230);
-  --secondary-foreground: oklch(0.23 0.02 235);
-  --muted: oklch(0.955 0.01 230);
-  --muted-foreground: oklch(0.47 0.018 235);
-  --accent: oklch(0.93 0.035 178);
-  --accent-foreground: oklch(0.22 0.06 178);
-  --destructive: oklch(0.58 0.19 27);
-  --border: oklch(0.9 0.012 230);
-  --input: oklch(0.9 0.012 230);
-  --ring: oklch(0.55 0.11 178);
-  --chart-1: oklch(0.56 0.12 178);
-  --chart-2: oklch(0.58 0.11 245);
-  --chart-3: oklch(0.67 0.13 75);
-  --chart-4: oklch(0.48 0.03 235);
-  --chart-5: oklch(0.58 0.16 350);
-  --radius: 0.5rem;
-  --sidebar: oklch(0.965 0.006 230);
+
+  /* 主操作：Apple 系统蓝（深色模式为 #0A84FF） */
+  --primary: #0a84ff;
+  --primary-foreground: #ffffff;
+  --primary-hover: #3395ff;
+
+  --secondary: var(--surface-2);
+  --secondary-foreground: #f5f5f7;
+  --muted: var(--surface-1);
+  --muted-foreground: #98989d; /* Apple secondary label dark */
+  --accent: var(--surface-2);
+  --accent-foreground: #f5f5f7;
+
+  /* 语义色：Apple 系统调色板 */
+  --brand: #0a84ff;         /* 系统蓝取代品牌红作为主操作色 */
+  --brand-foreground: #ffffff;
+  --info: #0a84ff;
+  --success: #32d74b;       /* Apple green */
+  --warning: #ff9f0a;       /* Apple orange */
+  --destructive: #ff453a;   /* Apple red */
+
+  --border: rgb(255 255 255 / 0.1);
+  --input: rgb(255 255 255 / 0.12);
+  --ring: #0a84ff;
+
+  --chart-1: #0a84ff;
+  --chart-2: #32d74b;
+  --chart-3: #ff9f0a;
+  --chart-4: #ff453a;
+  --chart-5: #bf5af2;
+
+  /* macOS 侧边栏：半透明毛玻璃，略深于窗口底色 */
+  --sidebar: rgb(28 28 30 / 0.85);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: var(--accent);
-  --sidebar-accent-foreground: var(--accent-foreground);
-  --sidebar-border: var(--border);
+  --sidebar-accent: rgba(255, 255, 255, 0.06);
+  --sidebar-accent-foreground: #f5f5f7;
+  --sidebar-border: var(--hairline);
   --sidebar-ring: var(--ring);
+
+  --ribbon-tint: #5b8ab5;
+  --ribbon-accent: #82b4d8;
+  --ribbon-strength: 0.78;
+  --ribbon-warm: color-mix(in oklab, var(--brand) 45%, var(--ribbon-accent));
 }
 
-.dark {
-  color-scheme: dark;
-  --background: oklch(0.17 0.012 235);
-  --foreground: oklch(0.94 0.008 220);
-  --card: oklch(0.21 0.014 235);
+/* ══ macOS 浅色：系统灰白 #F5F5F7，主色 #007AFF ═══════════ */
+.light {
+  color-scheme: light;
+
+  --background: #f5f5f7; /* macOS systemBackground light */
+  --foreground: #1d1d1f; /* Apple primary label */
+
+  --surface-1: #ffffff;  /* macOS secondarySystemBackground */
+  --surface-2: #ebebed;  /* macOS tertiarySystemBackground */
+  --surface-sunken: #e8e8ea;
+  --surface-raised: #ffffff;
+  --hairline: rgb(0 0 0 / 0.08);
+  --hairline-strong: rgb(0 0 0 / 0.12);
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.08), 0 2px 4px rgb(0 0 0 / 0.04);
+  --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.1), 0 4px 8px rgb(0 0 0 / 0.04);
+
+  --logo-field-lit: 0.28;
+
+  --card: var(--surface-1);
   --card-foreground: var(--foreground);
-  --popover: oklch(0.21 0.014 235);
+  --popover: #ffffff;
   --popover-foreground: var(--foreground);
-  --primary: oklch(0.7 0.12 178);
-  --primary-foreground: oklch(0.14 0.03 178);
-  --secondary: oklch(0.26 0.018 235);
-  --secondary-foreground: oklch(0.92 0.008 220);
-  --muted: oklch(0.25 0.016 235);
-  --muted-foreground: oklch(0.7 0.014 225);
-  --accent: oklch(0.28 0.04 178);
-  --accent-foreground: oklch(0.9 0.05 178);
-  --destructive: oklch(0.72 0.18 24);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.68 0.11 178);
-  --chart-1: oklch(0.72 0.12 178);
-  --chart-2: oklch(0.72 0.11 245);
-  --chart-3: oklch(0.78 0.12 75);
-  --chart-4: oklch(0.66 0.03 235);
-  --chart-5: oklch(0.72 0.15 350);
-  --sidebar: oklch(0.19 0.012 235);
+
+  /* Apple 系统蓝（浅色模式） */
+  --primary: #007aff;
+  --primary-foreground: #ffffff;
+  --primary-hover: #0063d1;
+
+  --secondary: var(--surface-2);
+  --secondary-foreground: #1d1d1f;
+  --muted: #f0f0f2;
+  --muted-foreground: #6e6e73; /* Apple secondary label */
+  --accent: rgba(0, 122, 255, 0.08);
+  --accent-foreground: #007aff;
+
+  --brand: #007aff;
+  --brand-foreground: #ffffff;
+  --info: #007aff;
+  --success: #28cd41;       /* Apple green light */
+  --warning: #ff9500;       /* Apple orange light */
+  --destructive: #ff3b30;   /* Apple red light */
+
+  --border: rgb(0 0 0 / 0.1);
+  --input: rgb(0 0 0 / 0.08);
+  --ring: #007aff;
+
+  --chart-1: #007aff;
+  --chart-2: #28cd41;
+  --chart-3: #ff9500;
+  --chart-4: #ff3b30;
+  --chart-5: #af52de;
+
+  /* 浅色侧边栏：半透明毛玻璃 */
+  --sidebar: rgba(246, 246, 248, 0.8);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: oklch(0.25 0.032 178);
-  --sidebar-accent-foreground: var(--accent-foreground);
-  --sidebar-border: var(--border);
+  --sidebar-accent: rgba(0, 122, 255, 0.08);
+  --sidebar-accent-foreground: #007aff;
+  --sidebar-border: var(--hairline);
   --sidebar-ring: var(--ring);
+
+  --ribbon-tint: color-mix(in oklab, #007aff 42%, #7c8ea8);
+  --ribbon-accent: color-mix(in oklab, #007aff 62%, #5b6b82);
+  --ribbon-strength: 1.1;
+  --ribbon-warm: color-mix(in oklab, #007aff 72%, var(--ribbon-accent));
 }
 
 @layer base {
@@ -125,11 +352,20 @@
 
   html {
     @apply font-sans;
+    /* -apple-system 不支持 OpenType 特性标志，但 kern/liga 在浏览器端无害 */
+    font-feature-settings: "kern" 1, "liga" 1;
   }
 
   body {
     @apply min-w-80 bg-background text-foreground antialiased;
     margin: 0;
+    font-weight: 400;
+    /* SF Pro 默认字距已经是苹果调校好的，这里归零不强加额外紧缩 */
+    letter-spacing: 0;
+  }
+
+  /* 标题：SF Pro Display 在大字号下自带光学字距，只轻收一点 */
+  h1, h2, h3, h4 {
     letter-spacing: 0;
   }
 
@@ -142,18 +378,237 @@
     cursor: pointer;
   }
 
+  code,
+  kbd,
+  pre,
+  samp {
+    @apply font-mono;
+  }
+
   ::selection {
-    background: color-mix(in oklch, var(--primary), transparent 72%);
+    background: color-mix(in oklch, var(--info), transparent 74%);
   }
 }
 
+@layer components {
+  /* 品牌字标：Instrument Sans 斜体。不用于中文。 */
+  .font-display {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-style: italic;
+    letter-spacing: 0;
+    line-height: 0.92;
+    padding-right: 0.06em;
+  }
+
+  /* 侧边栏毛玻璃：backdrop-filter 让侧边栏透出背景纹理，是 macOS 最标志性的效果 */
+  [data-slot="sidebar"] {
+    backdrop-filter: blur(20px) saturate(1.8);
+    -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  }
+
+  /*
+   * 元素进入视口后触发 fade-up 动画。
+   *
+   * --inview-delay 允许同一行的多个子元素错开入场——父级设 0.1s，
+   * 子级各自加不同 delay，整排卡片就能依次出现而不是同时跳出来。
+   */
+  [data-inview] {
+    opacity: 0;
+    /* will-change 让合成器提前为该层分配资源，避免首帧卡顿 */
+    will-change: opacity, transform;
+    transition: none;
+  }
+
+  [data-inview][data-visible] {
+    animation: fade-up 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: var(--inview-delay, 0ms);
+  }
+}
+
+/*
+ * 用户在站内主动关闭动效：不依赖系统偏好，直接静止。
+ * 与下方的 media query 共用同一批选择器语义，因此只需把装饰层收掉，
+ * 位移类动效在此处显式归零。
+ */
+:root[data-motion='reduced'] .animate-marquee,
+:root[data-motion='reduced'] .animate-aurora,
+:root[data-motion='reduced'] .animate-drift,
+:root[data-motion='reduced'] [data-kinetic-char] {
+  animation: none !important;
+  opacity: 1 !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+:root[data-motion='reduced'] [data-particles] {
+  display: none !important;
+}
+
+/*
+ * 关动效时滚动入场必须直接显示：初始态是 opacity:0，若只停掉动画而不复位，
+ * 整页内容会永久不可见——这是比"没有动效"严重得多的故障。
+ */
+:root[data-motion='reduced'] [data-inview] {
+  opacity: 1 !important;
+  animation: none !important;
+  transform: none !important;
+}
+
+/*
+ * 手动复刻 SVG 的 preserveAspectRatio="xMidYMid slice"：CSS 的 path() 不随元素
+ * 尺寸缩放，所以粒子层只能自己算。scale 取两轴较大者（slice 语义），再把溢出
+ * 部分居中偏移（xMidYMid）。两处任一算错，粒子就会整体偏离绸带。
+ */
+[data-ribbon-motes] {
+  --ribbon-scale: max(calc(100cqw / 1200), calc(100cqh / 600));
+
+  transform: translate(
+      calc((100cqw - 1200px * var(--ribbon-scale)) / 2),
+      calc((100cqh - 600px * var(--ribbon-scale)) / 2)
+    )
+    scale(var(--ribbon-scale));
+}
+
+/*
+ * 主题切换时让绸带的色相「渡」过去而不是跳变。
+ * 其余 token 全站都是瞬时切换（那是对的，界面要立刻响应），但绸带是氛围层，
+ * 突然的色相跳跃反而会把视线拽过去——正好和它该干的事相反。
+ * 只过渡颜色，不碰 opacity：opacity 由 sway 动画持续驱动，加 transition 会互相打架。
+ */
+/*
+ * 注意目标是 stop-color 而不是 stroke：两条 path 的 stroke 是 url(#ribbon-core)
+ * 渐变引用，对它加 transition 不会有任何效果。真正随主题变的是渐变站点的颜色。
+ */
+[data-ribbon] stop {
+  transition: stop-color 600ms ease;
+}
+
+[data-ribbon-mote] {
+  transition: background-color 600ms ease;
+}
+
+/*
+ * 不支持 offset-path 时 offset-distance 静默失效，粒子会全部堆在路径原点
+ * 结成一个亮斑。这种降级比没有粒子更难看，所以直接隐掉。
+ */
+@supports not (offset-path: path('M0 0L1 1')) {
+  [data-ribbon-mote] {
+    display: none;
+  }
+}
+
+/*
+ * 绸带降级：保留静态光带（它是构图的一部分），只停摆动、隐去流动粒子。
+ * 整条隐掉会让首屏右上方空出一块，不如留下静态形态。
+ */
+:root[data-motion='reduced'] .animate-ribbon-sway {
+  animation: none !important;
+  /* 停摆后取摆动区间的中值，仍跟随主题强度 */
+  opacity: calc(var(--ribbon-strength) * 0.82);
+}
+
+:root[data-motion='reduced'] [data-ribbon-mote] {
+  display: none !important;
+}
+
+/*
+ * SMIL 的 animateMotion 不受 CSS animation 控制，关不掉——只能把流动光点整个隐去。
+ * 连线本身保留，示意图的结构信息不丢。
+ */
+:root[data-motion='reduced'] [data-flow-dot] {
+  display: none !important;
+}
+
+/* hover 抬升在 kinetic-text 里不再用 motion-reduce 变体，降级在此统一处理 */
+:root[data-motion='reduced'] [data-kinetic-char]:hover {
+  transform: none !important;
+}
+
+:root[data-motion='reduced'] [data-marquee-track] {
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 2.5rem 3rem;
+}
+
+:root[data-motion='reduced'] [data-marquee-clone] {
+  display: none;
+}
+
+/*
+ * 降级规则整体挂在 :root:not([data-motion='full']) 下。
+ * 这样系统「减少动态效果」仍然默认被尊重，但用户在站内显式开启动画时
+ * （html[data-motion='full']）可以覆盖它——系统偏好是默认值，不是不可翻越的墙。
+ */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  ::before,
-  ::after {
+  :root:not([data-motion='full']) *,
+  :root:not([data-motion='full']) ::before,
+  :root:not([data-motion='full']) ::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  /*
+   * 通配压缩会把动画瞬间推到终点，位移类动效会停在「跑了一半」的位置，看着像渲染坏了。
+   * 这些必须显式改成不位移的静态终态，而不是靠压时长。
+   */
+  :root:not([data-motion='full']) .animate-marquee,
+  :root:not([data-motion='full']) .animate-aurora,
+  :root:not([data-motion='full']) .animate-drift {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  /* 跑马灯降级为居中静态排布，并收掉为无缝滚动准备的重复副本 */
+  :root:not([data-motion='full']) [data-marquee-track] {
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 2.5rem 3rem;
+  }
+
+  :root:not([data-motion='full']) [data-marquee-clone] {
+    display: none;
+  }
+
+  /* 粒子层纯装饰，静态下直接不渲染，避免留下一片静止的点 */
+  :root:not([data-motion='full']) [data-particles] {
+    display: none !important;
+  }
+
+  /* 同上：入场动画的初始态是隐藏，关动效时必须复位为可见 */
+  :root:not([data-motion='full']) [data-inview] {
+    opacity: 1 !important;
+    animation: none !important;
+    transform: none !important;
+  }
+
+  /* 与上方 [data-motion='reduced'] 分支保持一致：留静态绸带，去流动粒子 */
+  :root:not([data-motion='full']) .animate-ribbon-sway {
+    animation: none !important;
+    transform: none !important;
+    opacity: calc(var(--ribbon-strength) * 0.82);
+  }
+
+  :root:not([data-motion='full']) [data-ribbon-mote] {
+    display: none !important;
+  }
+
+  /* SMIL animateMotion 不受 CSS 控制，只能隐去光点；连线保留 */
+  :root:not([data-motion='full']) [data-flow-dot] {
+    display: none !important;
+  }
+
+  /* 逐字入场的终态：完全可见、无位移、无模糊 */
+  :root:not([data-motion='full']) [data-kinetic-char] {
+    animation: none !important;
+    opacity: 1 !important;
+    filter: none !important;
+    transform: none !important;
+  }
+
+  :root:not([data-motion='full']) [data-kinetic-char]:hover {
+    transform: none !important;
   }
 }
