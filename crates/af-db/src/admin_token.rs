@@ -255,8 +255,8 @@ pub enum AdminTokenRepositoryError {
 /// 管理端令牌列表与详情共用的只读仓储。
 #[derive(Clone)]
 pub struct AdminTokenRepository {
-    pool: DatabasePool,
-    lookup_timeout: Duration,
+    pub(super) pool: DatabasePool,
+    pub(super) lookup_timeout: Duration,
 }
 
 impl AdminTokenRepository {
@@ -364,7 +364,9 @@ impl fmt::Debug for AdminTokenRepository {
 }
 
 impl AdminTokenRecord {
-    fn try_from_query_result(result: &QueryResult) -> Result<Self, AdminTokenRepositoryError> {
+    pub(super) fn try_from_query_result(
+        result: &QueryResult,
+    ) -> Result<Self, AdminTokenRepositoryError> {
         let row = AdminTokenRow::try_from_query_result(result)
             .map_err(|_| record_internal_error(AdminTokenRepositoryError::Invariant))?;
         row.validate()
@@ -545,7 +547,7 @@ fn list_query(
     query.to_owned()
 }
 
-fn detail_query(database_backend: DbBackend, token_id: TokenId) -> SelectStatement {
+pub(super) fn detail_query(database_backend: DbBackend, token_id: TokenId) -> SelectStatement {
     base_query(database_backend)
         .and_where(Expr::col((tokens::Entity, tokens::Column::Id)).eq(token_id.get()))
         .and_where(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())

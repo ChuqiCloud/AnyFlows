@@ -2,8 +2,8 @@
 
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 import { client } from '../client.gen';
-import { createAdminGroup, createAdminUser, deleteAdminGroup, deleteAdminUser, getAdminGroup, getAdminToken, getAdminUser, getManagementSession, listAdminGroups, listAdminTokens, listAdminUsers, loginManagementSession, type Options, updateAdminGroup, updateAdminUser } from '../sdk.gen';
-import type { CreateAdminGroupData, CreateAdminGroupError, CreateAdminGroupResponse, CreateAdminUserData, CreateAdminUserError, CreateAdminUserResponse, DeleteAdminGroupData, DeleteAdminGroupError, DeleteAdminGroupResponse, DeleteAdminUserData, DeleteAdminUserError, DeleteAdminUserResponse, GetAdminGroupData, GetAdminGroupError, GetAdminGroupResponse, GetAdminTokenData, GetAdminTokenError, GetAdminTokenResponse, GetAdminUserData, GetAdminUserError, GetAdminUserResponse, GetManagementSessionData, GetManagementSessionError, GetManagementSessionResponse, ListAdminGroupsData, ListAdminGroupsError, ListAdminGroupsResponse, ListAdminTokensData, ListAdminTokensError, ListAdminTokensResponse, ListAdminUsersData, ListAdminUsersError, ListAdminUsersResponse, LoginManagementSessionData, LoginManagementSessionError, LoginManagementSessionResponse, UpdateAdminGroupData, UpdateAdminGroupError, UpdateAdminGroupResponse, UpdateAdminUserData, UpdateAdminUserError, UpdateAdminUserResponse } from '../types.gen';
+import { createAdminGroup, createAdminToken, createAdminUser, deleteAdminGroup, deleteAdminToken, deleteAdminUser, getAdminGroup, getAdminToken, getAdminUser, getManagementSession, listAdminGroups, listAdminTokens, listAdminUsers, loginManagementSession, type Options, updateAdminGroup, updateAdminToken, updateAdminUser } from '../sdk.gen';
+import type { CreateAdminGroupData, CreateAdminGroupError, CreateAdminGroupResponse, CreateAdminTokenData, CreateAdminTokenError, CreateAdminTokenResponse, CreateAdminUserData, CreateAdminUserError, CreateAdminUserResponse, DeleteAdminGroupData, DeleteAdminGroupError, DeleteAdminGroupResponse, DeleteAdminTokenData, DeleteAdminTokenError, DeleteAdminTokenResponse, DeleteAdminUserData, DeleteAdminUserError, DeleteAdminUserResponse, GetAdminGroupData, GetAdminGroupError, GetAdminGroupResponse, GetAdminTokenData, GetAdminTokenError, GetAdminTokenResponse, GetAdminUserData, GetAdminUserError, GetAdminUserResponse, GetManagementSessionData, GetManagementSessionError, GetManagementSessionResponse, ListAdminGroupsData, ListAdminGroupsError, ListAdminGroupsResponse, ListAdminTokensData, ListAdminTokensError, ListAdminTokensResponse, ListAdminUsersData, ListAdminUsersError, ListAdminUsersResponse, LoginManagementSessionData, LoginManagementSessionError, LoginManagementSessionResponse, UpdateAdminGroupData, UpdateAdminGroupError, UpdateAdminGroupResponse, UpdateAdminTokenData, UpdateAdminTokenError, UpdateAdminTokenResponse, UpdateAdminUserData, UpdateAdminUserError, UpdateAdminUserResponse } from '../types.gen';
 export const loginManagementSessionMutation = (options?: Partial<Options<LoginManagementSessionData>>): UseMutationOptions<LoginManagementSessionResponse, LoginManagementSessionError, Options<LoginManagementSessionData>> => {
     const mutationOptions: UseMutationOptions<LoginManagementSessionResponse, LoginManagementSessionError, Options<LoginManagementSessionData>> = {
         mutationFn: async (fnOptions) => {
@@ -104,11 +104,8 @@ const createInfiniteParams = <K extends Pick<QueryKey<Options>[0], 'body' | 'hea
 };
 export const listAdminUsersInfiniteQueryKey = (options?: Options<ListAdminUsersData>): QueryKey<Options<ListAdminUsersData>> => createQueryKey('listAdminUsers', options, true);
 export const listAdminUsersInfiniteOptions = (options?: Options<ListAdminUsersData>) => {
-    const opts = infiniteQueryOptions<ListAdminUsersResponse, ListAdminUsersError, InfiniteData<ListAdminUsersResponse>, QueryKey<Options<ListAdminUsersData>>, number | Pick<QueryKey<Options<ListAdminUsersData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
-    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
-    {
+    const opts = infiniteQueryOptions<ListAdminUsersResponse, ListAdminUsersError, InfiniteData<ListAdminUsersResponse>, QueryKey<Options<ListAdminUsersData>>, number | Pick<QueryKey<Options<ListAdminUsersData>>[0], 'body' | 'headers' | 'path' | 'query'>>({
         queryFn: async ({ pageParam, queryKey, signal }) => {
-            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
             const page: Pick<QueryKey<Options<ListAdminUsersData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
                 query: {
                     after: pageParam
@@ -194,11 +191,8 @@ export const listAdminGroupsOptions = (options?: Options<ListAdminGroupsData>) =
 });
 export const listAdminGroupsInfiniteQueryKey = (options?: Options<ListAdminGroupsData>): QueryKey<Options<ListAdminGroupsData>> => createQueryKey('listAdminGroups', options, true);
 export const listAdminGroupsInfiniteOptions = (options?: Options<ListAdminGroupsData>) => {
-    const opts = infiniteQueryOptions<ListAdminGroupsResponse, ListAdminGroupsError, InfiniteData<ListAdminGroupsResponse>, QueryKey<Options<ListAdminGroupsData>>, number | Pick<QueryKey<Options<ListAdminGroupsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
-    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
-    {
+    const opts = infiniteQueryOptions<ListAdminGroupsResponse, ListAdminGroupsError, InfiniteData<ListAdminGroupsResponse>, QueryKey<Options<ListAdminGroupsData>>, number | Pick<QueryKey<Options<ListAdminGroupsData>>[0], 'body' | 'headers' | 'path' | 'query'>>({
         queryFn: async ({ pageParam, queryKey, signal }) => {
-            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
             const page: Pick<QueryKey<Options<ListAdminGroupsData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
                 query: {
                     after: pageParam
@@ -284,11 +278,8 @@ export const listAdminTokensOptions = (options?: Options<ListAdminTokensData>) =
 });
 export const listAdminTokensInfiniteQueryKey = (options?: Options<ListAdminTokensData>): QueryKey<Options<ListAdminTokensData>> => createQueryKey('listAdminTokens', options, true);
 export const listAdminTokensInfiniteOptions = (options?: Options<ListAdminTokensData>) => {
-    const opts = infiniteQueryOptions<ListAdminTokensResponse, ListAdminTokensError, InfiniteData<ListAdminTokensResponse>, QueryKey<Options<ListAdminTokensData>>, number | Pick<QueryKey<Options<ListAdminTokensData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
-    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
-    {
+    const opts = infiniteQueryOptions<ListAdminTokensResponse, ListAdminTokensError, InfiniteData<ListAdminTokensResponse>, QueryKey<Options<ListAdminTokensData>>, number | Pick<QueryKey<Options<ListAdminTokensData>>[0], 'body' | 'headers' | 'path' | 'query'>>({
         queryFn: async ({ pageParam, queryKey, signal }) => {
-            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
             const page: Pick<QueryKey<Options<ListAdminTokensData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
                 query: {
                     after: pageParam
@@ -307,6 +298,32 @@ export const listAdminTokensInfiniteOptions = (options?: Options<ListAdminTokens
     });
     return opts as Omit<typeof opts, 'initialData'>;
 };
+export const createAdminTokenMutation = (options?: Partial<Options<CreateAdminTokenData>>): UseMutationOptions<CreateAdminTokenResponse, CreateAdminTokenError, Options<CreateAdminTokenData>> => {
+    const mutationOptions: UseMutationOptions<CreateAdminTokenResponse, CreateAdminTokenError, Options<CreateAdminTokenData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await createAdminToken({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+export const deleteAdminTokenMutation = (options?: Partial<Options<DeleteAdminTokenData>>): UseMutationOptions<DeleteAdminTokenResponse, DeleteAdminTokenError, Options<DeleteAdminTokenData>> => {
+    const mutationOptions: UseMutationOptions<DeleteAdminTokenResponse, DeleteAdminTokenError, Options<DeleteAdminTokenData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await deleteAdminToken({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 export const getAdminTokenQueryKey = (options: Options<GetAdminTokenData>) => createQueryKey('getAdminToken', options);
 export const getAdminTokenOptions = (options: Options<GetAdminTokenData>) => queryOptions<GetAdminTokenResponse, GetAdminTokenError, GetAdminTokenResponse, ReturnType<typeof getAdminTokenQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -320,3 +337,16 @@ export const getAdminTokenOptions = (options: Options<GetAdminTokenData>) => que
     },
     queryKey: getAdminTokenQueryKey(options)
 });
+export const updateAdminTokenMutation = (options?: Partial<Options<UpdateAdminTokenData>>): UseMutationOptions<UpdateAdminTokenResponse, UpdateAdminTokenError, Options<UpdateAdminTokenData>> => {
+    const mutationOptions: UseMutationOptions<UpdateAdminTokenResponse, UpdateAdminTokenError, Options<UpdateAdminTokenData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await updateAdminToken({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};

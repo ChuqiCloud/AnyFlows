@@ -4,13 +4,15 @@ use af_admin::{
     AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture, AdminGroupGetFuture,
     AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError, AdminGroupReader,
     AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
-    AdminTokenGetFuture, AdminTokenListFuture, AdminTokenListQuery, AdminTokenReadError,
-    AdminTokenReader, AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture,
-    AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserReadError,
-    AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError,
-    AdminUserWriter, IssuedSession, LoginCredentials, SessionAuthentication,
-    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
-    SessionLoginFuture, SessionPrincipal, SessionRole, SessionToken,
+    AdminTokenCreateCommand, AdminTokenCreateFuture, AdminTokenDeleteFuture, AdminTokenGetFuture,
+    AdminTokenListFuture, AdminTokenListQuery, AdminTokenReadError, AdminTokenReader,
+    AdminTokenUpdateCommand, AdminTokenUpdateFuture, AdminTokenWriteError, AdminTokenWriter,
+    AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture,
+    AdminUserListFuture, AdminUserListQuery, AdminUserReadError, AdminUserReader,
+    AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter,
+    IssuedSession, LoginCredentials, SessionAuthentication, SessionAuthenticationError,
+    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
+    SessionRole, SessionToken,
 };
 use af_domain::{AfError, GatewayPrincipal, GroupId, TokenId, UserId};
 use af_protocol::CanonicalRequest;
@@ -112,6 +114,33 @@ impl AdminTokenReader for UnusedAdminTokenReader {
         _token_id: TokenId,
     ) -> AdminTokenGetFuture<'a> {
         Box::pin(async { Err(AdminTokenReadError::Internal) })
+    }
+}
+
+impl AdminTokenWriter for UnusedAdminTokenReader {
+    fn create<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: AdminTokenCreateCommand,
+    ) -> AdminTokenCreateFuture<'a> {
+        Box::pin(async { Err(AdminTokenWriteError::Internal) })
+    }
+
+    fn update<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _token_id: TokenId,
+        _command: AdminTokenUpdateCommand,
+    ) -> AdminTokenUpdateFuture<'a> {
+        Box::pin(async { Err(AdminTokenWriteError::Internal) })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _token_id: TokenId,
+    ) -> AdminTokenDeleteFuture<'a> {
+        Box::pin(async { Err(AdminTokenWriteError::Internal) })
     }
 }
 
@@ -226,6 +255,7 @@ fn router(authenticator: Arc<FakeSessionAuthenticator>) -> Router {
                 session_authenticator,
                 admin_groups.clone(),
                 admin_groups,
+                Arc::new(UnusedAdminTokenReader),
                 Arc::new(UnusedAdminTokenReader),
                 admin_users.clone(),
                 admin_users,

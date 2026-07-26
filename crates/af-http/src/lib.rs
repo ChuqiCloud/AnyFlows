@@ -12,6 +12,7 @@ mod management_error;
 mod management_group_writes;
 mod management_groups;
 mod management_session;
+mod management_token_writes;
 mod management_tokens;
 mod management_users;
 mod middleware;

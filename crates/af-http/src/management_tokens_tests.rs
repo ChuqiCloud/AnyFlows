@@ -7,13 +7,16 @@ use af_admin::{
     AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture, AdminGroupGetFuture,
     AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError, AdminGroupReader,
     AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
-    AdminToken, AdminTokenGetFuture, AdminTokenListFuture, AdminTokenListQuery, AdminTokenPage,
-    AdminTokenReadError, AdminTokenReader, AdminTokenStatus, AdminUserCreateCommand,
+    AdminToken, AdminTokenCreateCommand, AdminTokenCreateFuture, AdminTokenDeleteFuture,
+    AdminTokenGetFuture, AdminTokenListFuture, AdminTokenListQuery, AdminTokenPage,
+    AdminTokenReadError, AdminTokenReader, AdminTokenStatus, AdminTokenUpdateCommand,
+    AdminTokenUpdateFuture, AdminTokenWriteError, AdminTokenWriter, AdminUserCreateCommand,
     AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture, AdminUserListFuture,
     AdminUserListQuery, AdminUserReadError, AdminUserReader, AdminUserUpdateCommand,
-    AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter, LoginCredentials,
-    SessionAuthentication, SessionAuthenticationError, SessionAuthenticationFuture,
-    SessionAuthenticator, SessionLoginFuture, SessionPrincipal, SessionRole,
+    AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter, IssuedAdminToken, IssuedApiKey,
+    LoginCredentials, SessionAuthentication, SessionAuthenticationError,
+    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
+    SessionRole,
 };
 use af_domain::{AfError, GatewayPrincipal, GroupId, TokenId, UserId};
 use af_protocol::CanonicalRequest;
@@ -25,7 +28,7 @@ use axum::{
 };
 use http::{
     Request, StatusCode,
-    header::{AUTHORIZATION, CACHE_CONTROL},
+    header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE},
 };
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -35,6 +38,7 @@ use crate::{
     chat_completions::HttpState,
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_authorization::authorize_management_admin,
+    management_token_writes::{create_admin_token, delete_admin_token, update_admin_token},
     management_tokens::{get_admin_token, list_admin_tokens},
 };
 
@@ -172,6 +176,9 @@ impl SessionAuthenticator for FakeSessionAuthenticator {
 struct FakeAdminTokenReader {
     list_calls: AtomicUsize,
     get_calls: AtomicUsize,
+    create_calls: AtomicUsize,
+    update_calls: AtomicUsize,
+    delete_calls: AtomicUsize,
 }
 
 impl FakeAdminTokenReader {
@@ -179,7 +186,67 @@ impl FakeAdminTokenReader {
         Self {
             list_calls: AtomicUsize::new(0),
             get_calls: AtomicUsize::new(0),
+            create_calls: AtomicUsize::new(0),
+            update_calls: AtomicUsize::new(0),
+            delete_calls: AtomicUsize::new(0),
         }
+    }
+}
+
+impl AdminTokenWriter for FakeAdminTokenReader {
+    fn create<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        _command: AdminTokenCreateCommand,
+    ) -> AdminTokenCreateFuture<'a> {
+        self.create_calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async move {
+            if principal.role() != SessionRole::Admin {
+                return Err(AdminTokenWriteError::Forbidden);
+            }
+            let api_key = IssuedApiKey::generate().map_err(|_| AdminTokenWriteError::Internal)?;
+            Ok(IssuedAdminToken::from_parts(
+                sample_token(20, "created"),
+                api_key,
+            ))
+        })
+    }
+
+    fn update<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        token_id: TokenId,
+        _command: AdminTokenUpdateCommand,
+    ) -> AdminTokenUpdateFuture<'a> {
+        self.update_calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async move {
+            if principal.role() != SessionRole::Admin {
+                return Err(AdminTokenWriteError::Forbidden);
+            }
+            match token_id.get() {
+                404 => Err(AdminTokenWriteError::NotFound),
+                500 => Err(AdminTokenWriteError::Internal),
+                id => Ok(sample_token(id, "updated")),
+            }
+        })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        token_id: TokenId,
+    ) -> AdminTokenDeleteFuture<'a> {
+        self.delete_calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async move {
+            if principal.role() != SessionRole::Admin {
+                return Err(AdminTokenWriteError::Forbidden);
+            }
+            match token_id.get() {
+                404 => Err(AdminTokenWriteError::NotFound),
+                500 => Err(AdminTokenWriteError::Internal),
+                _ => Ok(()),
+            }
+        })
     }
 }
 
@@ -226,7 +293,8 @@ impl AdminTokenReader for FakeAdminTokenReader {
 fn router(reader: Arc<FakeAdminTokenReader>) -> Router {
     let session_authenticator: Arc<dyn SessionAuthenticator> = Arc::new(FakeSessionAuthenticator);
     let admin_groups = Arc::new(UnusedAdminGroupAccess);
-    let admin_token_reader: Arc<dyn AdminTokenReader> = reader;
+    let admin_token_reader: Arc<dyn AdminTokenReader> = reader.clone();
+    let admin_token_writer: Arc<dyn AdminTokenWriter> = reader;
     let admin_users = Arc::new(UnusedAdminUserAccess);
     let collection_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
@@ -240,12 +308,15 @@ fn router(reader: Arc<FakeAdminTokenReader>) -> Router {
         .route(
             "/api/admin/tokens",
             get(list_admin_tokens)
+                .post(create_admin_token)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(collection_authentication),
         )
         .route(
             "/api/admin/tokens/{id}",
             get(get_admin_token)
+                .put(update_admin_token)
+                .delete(delete_admin_token)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(item_authentication),
         )
@@ -255,6 +326,7 @@ fn router(reader: Arc<FakeAdminTokenReader>) -> Router {
             admin_groups.clone(),
             admin_groups,
             admin_token_reader,
+            admin_token_writer,
             admin_users.clone(),
             admin_users,
         ))
@@ -306,6 +378,59 @@ async fn admin_can_read_token_list_and_detail_without_sensitive_fields() {
 }
 
 #[tokio::test]
+async fn admin_can_create_update_and_delete_token() {
+    let reader = Arc::new(FakeAdminTokenReader::new());
+    let app = router(Arc::clone(&reader));
+
+    let created = app
+        .clone()
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/tokens",
+            ADMIN_TOKEN,
+            valid_write_body(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    assert_eq!(created.headers()[CACHE_CONTROL], "no-store");
+    let created_body = response_json(created).await;
+    let api_key = created_body["api_key"].as_str().unwrap();
+    assert!(api_key.starts_with("sk-af-"));
+    assert_eq!(api_key.len(), 49);
+    assert_eq!(created_body["token"]["id"], 20);
+    assert!(!created_body.to_string().contains("key_hash"));
+
+    let updated = app
+        .clone()
+        .oneshot(write_request(
+            "PUT",
+            "/api/admin/tokens/12",
+            ADMIN_TOKEN,
+            valid_write_body(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(updated.status(), StatusCode::OK);
+    assert_eq!(response_json(updated).await["name"], "updated");
+
+    let deleted = app
+        .oneshot(write_request(
+            "DELETE",
+            "/api/admin/tokens/12",
+            ADMIN_TOKEN,
+            Value::Null,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+    assert_eq!(deleted.headers()[CACHE_CONTROL], "no-store");
+    assert_eq!(reader.create_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(reader.update_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(reader.delete_calls.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
 async fn non_admin_session_is_rejected_before_token_reader() {
     let reader = Arc::new(FakeAdminTokenReader::new());
     let app = router(Arc::clone(&reader));
@@ -318,12 +443,24 @@ async fn non_admin_session_is_rejected_before_token_reader() {
     assert_management_error(list_response, StatusCode::FORBIDDEN, "forbidden").await;
 
     let detail_response = app
+        .clone()
         .oneshot(authorized_request("/api/admin/tokens/10", USER_TOKEN))
         .await
         .unwrap();
     assert_management_error(detail_response, StatusCode::FORBIDDEN, "forbidden").await;
+    let create_response = app
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/tokens",
+            USER_TOKEN,
+            valid_write_body(),
+        ))
+        .await
+        .unwrap();
+    assert_management_error(create_response, StatusCode::FORBIDDEN, "forbidden").await;
     assert_eq!(reader.list_calls.load(Ordering::Relaxed), 0);
     assert_eq!(reader.get_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(reader.create_calls.load(Ordering::Relaxed), 0);
 }
 
 #[tokio::test]
@@ -390,6 +527,42 @@ async fn token_failures_map_to_stable_management_errors() {
     .await;
 }
 
+#[tokio::test]
+async fn invalid_token_write_bodies_are_rejected_before_writer() {
+    let reader = Arc::new(FakeAdminTokenReader::new());
+    let app = router(Arc::clone(&reader));
+    for body in [
+        json!({"name":"missing-fields"}),
+        json!({
+            "user_id":20,"name":"bad-models","status":"enabled","group_id":30,
+            "remain_quota":1000,"unlimited_quota":false,"expired_at":null,
+            "model_limits":[],"allow_ips":null,"cross_group_retry":false,
+            "rate_limit_5h":null,"rate_limit_1d":null,"rate_limit_7d":null,
+            "max_requests":null
+        }),
+        json!({
+            "user_id":20,"name":"bad-ip","status":"enabled","group_id":30,
+            "remain_quota":1000,"unlimited_quota":false,"expired_at":null,
+            "model_limits":null,"allow_ips":["invalid-ip"],"cross_group_retry":false,
+            "rate_limit_5h":null,"rate_limit_1d":null,"rate_limit_7d":null,
+            "max_requests":null
+        }),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(write_request(
+                "POST",
+                "/api/admin/tokens",
+                ADMIN_TOKEN,
+                body,
+            ))
+            .await
+            .unwrap();
+        assert_management_error(response, StatusCode::BAD_REQUEST, "invalid_request").await;
+    }
+    assert_eq!(reader.create_calls.load(Ordering::Relaxed), 0);
+}
+
 fn sample_token(id: i64, name: &str) -> AdminToken {
     AdminToken::from_parts(
         TokenId::new(id).unwrap(),
@@ -425,6 +598,40 @@ fn authorized_request(uri: &str, token: &str) -> Request<Body> {
         .header(AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
         .unwrap()
+}
+
+fn write_request(method: &str, uri: &str, token: &str, body: Value) -> Request<Body> {
+    let body = if body.is_null() {
+        Body::empty()
+    } else {
+        Body::from(serde_json::to_vec(&body).unwrap())
+    };
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(AUTHORIZATION, format!("Bearer {token}"))
+        .header(CONTENT_TYPE, "application/json")
+        .body(body)
+        .unwrap()
+}
+
+fn valid_write_body() -> Value {
+    json!({
+        "user_id":20,
+        "name":"primary",
+        "status":"enabled",
+        "group_id":30,
+        "remain_quota":1000,
+        "unlimited_quota":false,
+        "expired_at":1800000000,
+        "model_limits":["gpt-5.5","gpt-5.5"],
+        "allow_ips":["127.0.0.1","10.0.0.0/8"],
+        "cross_group_retry":true,
+        "rate_limit_5h":100,
+        "rate_limit_1d":200,
+        "rate_limit_7d":300,
+        "max_requests":1000
+    })
 }
 
 async fn assert_management_error(

@@ -301,7 +301,7 @@ impl AdminToken {
         self.used_requests
     }
 
-    fn from_record(record: AdminTokenRecord) -> Result<Self, AdminTokenReadError> {
+    pub(super) fn from_record(record: AdminTokenRecord) -> Result<Self, AdminTokenReadError> {
         Ok(Self {
             token_id: record.token_id(),
             user_id: record.user_id(),

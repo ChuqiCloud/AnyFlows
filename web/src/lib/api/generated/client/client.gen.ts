@@ -142,7 +142,6 @@ export const createClient = (config: Config = {}): Client => {
                 jsonError = JSON.parse(textError);
             }
             catch {
-                // noop
             }
             throw jsonError ?? textError;
         }

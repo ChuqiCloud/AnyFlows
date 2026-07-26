@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminUserReader, AdminUserWriter,
-    SessionAuthenticator, TokenAuthenticator,
+    AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminTokenWriter, AdminUserReader,
+    AdminUserWriter, SessionAuthenticator, TokenAuthenticator,
 };
 use af_config::ServerConfig;
 use af_protocol::openai_chat::MAX_BODY_BYTES;
@@ -24,6 +24,7 @@ use crate::management_authorization::authorize_management_admin;
 use crate::management_group_writes::{create_admin_group, delete_admin_group, update_admin_group};
 use crate::management_groups::{get_admin_group, list_admin_groups};
 use crate::management_session::{current_session, login};
+use crate::management_token_writes::{create_admin_token, delete_admin_token, update_admin_token};
 use crate::management_tokens::{get_admin_token, list_admin_tokens};
 use crate::management_users::{
     create_admin_user, delete_admin_user, get_admin_user, list_admin_users, update_admin_user,
@@ -73,6 +74,7 @@ pub fn build_router(
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
+    admin_token_writer: Arc<dyn AdminTokenWriter>,
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
     query_api_key_policy: QueryApiKeyPolicy,
@@ -87,6 +89,7 @@ pub fn build_router(
         admin_group_reader,
         admin_group_writer,
         admin_token_reader,
+        admin_token_writer,
         admin_user_reader,
         admin_user_writer,
     );
@@ -164,12 +167,15 @@ pub fn build_router(
         .route(
             "/api/admin/tokens",
             get(list_admin_tokens)
+                .post(create_admin_token)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(token_collection_authentication),
         )
         .route(
             "/api/admin/tokens/{id}",
             get(get_admin_token)
+                .put(update_admin_token)
+                .delete(delete_admin_token)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(token_item_authentication),
         )

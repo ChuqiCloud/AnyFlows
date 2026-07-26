@@ -64,7 +64,6 @@ export function createSseClient<TData = unknown>({ onRequest, onSseError, onSseE
                         reader.cancel();
                     }
                     catch {
-                        // noop
                     }
                 };
                 signal.addEventListener('abort', abortHandler);
