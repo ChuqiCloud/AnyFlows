@@ -2,10 +2,10 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{CredentialDecryptionError, CredentialDecryptor};
 use af_admin::{
-    AdminGroupReader, AdminUserReader, AdminUserWriter, DatabaseAdminGroupReader,
-    DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseSessionAuthenticator,
-    DatabaseTokenAuthenticator, SessionAuthenticator, SessionAuthenticatorConfigError,
-    TokenAuthenticator,
+    AdminGroupReader, AdminGroupWriter, AdminUserReader, AdminUserWriter, DatabaseAdminGroupReader,
+    DatabaseAdminGroupWriter, DatabaseAdminUserReader, DatabaseAdminUserWriter,
+    DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, SessionAuthenticator,
+    SessionAuthenticatorConfigError, TokenAuthenticator,
 };
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
@@ -73,6 +73,7 @@ pub struct AuthenticationReady {
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
+    admin_group_writer: Arc<dyn AdminGroupWriter>,
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
     query_api_key_policy: QueryApiKeyPolicy,
@@ -358,7 +359,10 @@ impl Bootstrap<DatabaseReady> {
                 infrastructure: stage,
                 authenticator: Arc::new(DatabaseTokenAuthenticator::new(repository)),
                 session_authenticator: Arc::new(session_authenticator),
-                admin_group_reader: Arc::new(DatabaseAdminGroupReader::new(admin_group_repository)),
+                admin_group_reader: Arc::new(DatabaseAdminGroupReader::new(
+                    admin_group_repository.clone(),
+                )),
+                admin_group_writer: Arc::new(DatabaseAdminGroupWriter::new(admin_group_repository)),
                 admin_user_reader: Arc::new(DatabaseAdminUserReader::new(
                     admin_user_repository.clone(),
                 )),
@@ -645,6 +649,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.authenticator),
             Arc::clone(&self.stage.infrastructure.session_authenticator),
             Arc::clone(&self.stage.infrastructure.admin_group_reader),
+            Arc::clone(&self.stage.infrastructure.admin_group_writer),
             Arc::clone(&self.stage.infrastructure.admin_user_reader),
             Arc::clone(&self.stage.infrastructure.admin_user_writer),
             self.stage.infrastructure.query_api_key_policy,

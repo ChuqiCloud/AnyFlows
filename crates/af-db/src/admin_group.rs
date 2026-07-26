@@ -10,7 +10,8 @@ use crate::{DatabasePool, entity::groups};
 
 /// 单页分组查询允许返回的最大记录数。
 pub const MAX_ADMIN_GROUP_PAGE_SIZE: usize = 100;
-const MAX_ADMIN_GROUP_FLAGS_BYTES: usize = 16 * 1024;
+/// 分组开关 JSON 编码后的最大字节数。
+pub const MAX_ADMIN_GROUP_FLAGS_BYTES: usize = 16 * 1024;
 
 /// 已校验的分组高峰倍率窗口。
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -135,7 +136,7 @@ impl AdminGroupRecord {
         &self.flags
     }
 
-    fn try_from_model(model: groups::Model) -> Result<Self, AdminGroupRepositoryError> {
+    pub(super) fn try_from_model(model: groups::Model) -> Result<Self, AdminGroupRepositoryError> {
         let group_id = GroupId::new(model.id).map_err(|_| internal_invariant())?;
         let valid_name = valid_text(&model.name, 64);
         let valid_display_name = valid_text(&model.display_name, 128);
@@ -247,6 +248,15 @@ pub enum AdminGroupRepositoryConfigError {
 /// 管理分组仓储内部错误；不携带分组字段或数据库诊断。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum AdminGroupRepositoryError {
+    /// 分组名与当前有效分组冲突。
+    #[error("管理分组名称冲突")]
+    Conflict,
+    /// 回退分组不存在、已软删除或引用自身。
+    #[error("管理分组引用无效")]
+    InvalidReference,
+    /// 分组仍被有效用户或有效令牌引用，不能安全删除。
+    #[error("管理分组仍在使用")]
+    InUse,
     /// 获取连接或执行查询失败。
     #[error("管理分组数据库查询失败")]
     Query,
@@ -261,8 +271,8 @@ pub enum AdminGroupRepositoryError {
 /// 管理端分组列表与详情共用的只读仓储。
 #[derive(Clone)]
 pub struct AdminGroupRepository {
-    pool: DatabasePool,
-    lookup_timeout: Duration,
+    pub(super) pool: DatabasePool,
+    pub(super) lookup_timeout: Duration,
 }
 
 impl AdminGroupRepository {
@@ -371,8 +381,11 @@ fn internal_invariant() -> AdminGroupRepositoryError {
     record_internal_error(AdminGroupRepositoryError::Invariant)
 }
 
-fn record_internal_error(error: AdminGroupRepositoryError) -> AdminGroupRepositoryError {
+pub(super) fn record_internal_error(error: AdminGroupRepositoryError) -> AdminGroupRepositoryError {
     let error_kind = match error {
+        AdminGroupRepositoryError::Conflict => "admin_group_conflict",
+        AdminGroupRepositoryError::InvalidReference => "admin_group_invalid_reference",
+        AdminGroupRepositoryError::InUse => "admin_group_in_use",
         AdminGroupRepositoryError::Query => "admin_group_query",
         AdminGroupRepositoryError::Timeout => "admin_group_timeout",
         AdminGroupRepositoryError::Invariant => "admin_group_invariant",

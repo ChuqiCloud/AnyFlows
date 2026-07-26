@@ -70,12 +70,29 @@ export type AdminGroup = {
         [key: string]: unknown;
     };
 };
+export type AdminGroupWriteRequest = {
+    name: string;
+    display_name: string;
+    ratio_micros: number;
+    peak_ratio_micros?: number | null;
+    peak_start?: string | null;
+    peak_end?: string | null;
+    is_exclusive: boolean;
+    daily_limit?: number | null;
+    weekly_limit?: number | null;
+    monthly_limit?: number | null;
+    rpm_limit?: number | null;
+    fallback_group_id?: number | null;
+    flags: {
+        [key: string]: unknown;
+    };
+};
 export type AdminGroupListResponse = {
     groups: Array<AdminGroup>;
     next_cursor: number | null;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'group_not_found' | 'user_conflict' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'group_not_found' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
     message: string;
 };
 export type LoginManagementSessionData = {
@@ -228,6 +245,45 @@ export type ListAdminGroupsResponses = {
     200: AdminGroupListResponse;
 };
 export type ListAdminGroupsResponse = ListAdminGroupsResponses[keyof ListAdminGroupsResponses];
+export type CreateAdminGroupData = {
+    body: AdminGroupWriteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/groups';
+};
+export type CreateAdminGroupErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateAdminGroupError = CreateAdminGroupErrors[keyof CreateAdminGroupErrors];
+export type CreateAdminGroupResponses = {
+    201: AdminGroup;
+};
+export type CreateAdminGroupResponse = CreateAdminGroupResponses[keyof CreateAdminGroupResponses];
+export type DeleteAdminGroupData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/groups/{id}';
+};
+export type DeleteAdminGroupErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type DeleteAdminGroupError = DeleteAdminGroupErrors[keyof DeleteAdminGroupErrors];
+export type DeleteAdminGroupResponses = {
+    204: void;
+};
+export type DeleteAdminGroupResponse = DeleteAdminGroupResponses[keyof DeleteAdminGroupResponses];
 export type GetAdminGroupData = {
     body?: never;
     path: {
@@ -248,3 +304,24 @@ export type GetAdminGroupResponses = {
     200: AdminGroup;
 };
 export type GetAdminGroupResponse = GetAdminGroupResponses[keyof GetAdminGroupResponses];
+export type UpdateAdminGroupData = {
+    body: AdminGroupWriteRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/groups/{id}';
+};
+export type UpdateAdminGroupErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminGroupError = UpdateAdminGroupErrors[keyof UpdateAdminGroupErrors];
+export type UpdateAdminGroupResponses = {
+    200: AdminGroup;
+};
+export type UpdateAdminGroupResponse = UpdateAdminGroupResponses[keyof UpdateAdminGroupResponses];

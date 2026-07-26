@@ -7,13 +7,15 @@ use std::{
 };
 
 use af_admin::{
-    AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError,
-    AdminGroupReader, AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture,
-    AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserReadError,
-    AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError,
-    AdminUserWriter, ApiKeyDigest, LoginCredentials, SessionAuthenticationError,
-    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, TokenAuthentication,
-    TokenAuthenticationFuture, TokenAuthenticator,
+    AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture, AdminGroupGetFuture,
+    AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError, AdminGroupReader,
+    AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
+    AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture,
+    AdminUserListFuture, AdminUserListQuery, AdminUserReadError, AdminUserReader,
+    AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter,
+    ApiKeyDigest, LoginCredentials, SessionAuthenticationError, SessionAuthenticationFuture,
+    SessionAuthenticator, SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture,
+    TokenAuthenticator,
 };
 use af_config::ServerConfig;
 use af_domain::{GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId};
@@ -74,6 +76,33 @@ impl AdminGroupReader for RejectAdminGroups {
         _group_id: GroupId,
     ) -> AdminGroupGetFuture<'a> {
         Box::pin(async { Err(AdminGroupReadError::Internal) })
+    }
+}
+
+impl AdminGroupWriter for RejectAdminGroups {
+    fn create<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _command: AdminGroupCreateCommand,
+    ) -> AdminGroupCreateFuture<'a> {
+        Box::pin(async { Err(AdminGroupWriteError::Internal) })
+    }
+
+    fn update<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _group_id: af_domain::GroupId,
+        _command: AdminGroupUpdateCommand,
+    ) -> AdminGroupUpdateFuture<'a> {
+        Box::pin(async { Err(AdminGroupWriteError::Internal) })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _group_id: af_domain::GroupId,
+    ) -> AdminGroupDeleteFuture<'a> {
+        Box::pin(async { Err(AdminGroupWriteError::Internal) })
     }
 }
 
@@ -405,6 +434,7 @@ async fn start_server(
         readiness,
         Arc::new(AlwaysAuthenticates),
         Arc::new(RejectSessions),
+        Arc::new(RejectAdminGroups),
         Arc::new(RejectAdminGroups),
         Arc::new(RejectAdminUsers),
         Arc::new(RejectAdminUsers),

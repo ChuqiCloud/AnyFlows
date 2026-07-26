@@ -2,6 +2,7 @@
 
 mod api_key;
 mod group_read;
+mod group_write;
 mod session;
 mod token_auth;
 mod user_read;
@@ -15,6 +16,11 @@ pub use group_read::{
     AdminGroup, AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery, AdminGroupPage,
     AdminGroupPeak, AdminGroupReadError, AdminGroupReader, DEFAULT_ADMIN_GROUP_PAGE_SIZE,
     DatabaseAdminGroupReader,
+};
+pub use group_write::{
+    AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture, AdminGroupPeakCommand,
+    AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
+    DatabaseAdminGroupWriter,
 };
 pub use session::{
     DatabaseSessionAuthenticator, IssuedSession, LoginCredentials, SessionAuthentication,

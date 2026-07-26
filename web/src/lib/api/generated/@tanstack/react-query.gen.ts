@@ -2,8 +2,8 @@
 
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 import { client } from '../client.gen';
-import { createAdminUser, deleteAdminUser, getAdminGroup, getAdminUser, getManagementSession, listAdminGroups, listAdminUsers, loginManagementSession, type Options, updateAdminUser } from '../sdk.gen';
-import type { CreateAdminUserData, CreateAdminUserError, CreateAdminUserResponse, DeleteAdminUserData, DeleteAdminUserError, DeleteAdminUserResponse, GetAdminGroupData, GetAdminGroupError, GetAdminGroupResponse, GetAdminUserData, GetAdminUserError, GetAdminUserResponse, GetManagementSessionData, GetManagementSessionError, GetManagementSessionResponse, ListAdminGroupsData, ListAdminGroupsError, ListAdminGroupsResponse, ListAdminUsersData, ListAdminUsersError, ListAdminUsersResponse, LoginManagementSessionData, LoginManagementSessionError, LoginManagementSessionResponse, UpdateAdminUserData, UpdateAdminUserError, UpdateAdminUserResponse } from '../types.gen';
+import { createAdminGroup, createAdminUser, deleteAdminGroup, deleteAdminUser, getAdminGroup, getAdminUser, getManagementSession, listAdminGroups, listAdminUsers, loginManagementSession, type Options, updateAdminGroup, updateAdminUser } from '../sdk.gen';
+import type { CreateAdminGroupData, CreateAdminGroupError, CreateAdminGroupResponse, CreateAdminUserData, CreateAdminUserError, CreateAdminUserResponse, DeleteAdminGroupData, DeleteAdminGroupError, DeleteAdminGroupResponse, DeleteAdminUserData, DeleteAdminUserError, DeleteAdminUserResponse, GetAdminGroupData, GetAdminGroupError, GetAdminGroupResponse, GetAdminUserData, GetAdminUserError, GetAdminUserResponse, GetManagementSessionData, GetManagementSessionError, GetManagementSessionResponse, ListAdminGroupsData, ListAdminGroupsError, ListAdminGroupsResponse, ListAdminUsersData, ListAdminUsersError, ListAdminUsersResponse, LoginManagementSessionData, LoginManagementSessionError, LoginManagementSessionResponse, UpdateAdminGroupData, UpdateAdminGroupError, UpdateAdminGroupResponse, UpdateAdminUserData, UpdateAdminUserError, UpdateAdminUserResponse } from '../types.gen';
 export const loginManagementSessionMutation = (options?: Partial<Options<LoginManagementSessionData>>): UseMutationOptions<LoginManagementSessionResponse, LoginManagementSessionError, Options<LoginManagementSessionData>> => {
     const mutationOptions: UseMutationOptions<LoginManagementSessionResponse, LoginManagementSessionError, Options<LoginManagementSessionData>> = {
         mutationFn: async (fnOptions) => {
@@ -217,6 +217,32 @@ export const listAdminGroupsInfiniteOptions = (options?: Options<ListAdminGroups
     });
     return opts as Omit<typeof opts, 'initialData'>;
 };
+export const createAdminGroupMutation = (options?: Partial<Options<CreateAdminGroupData>>): UseMutationOptions<CreateAdminGroupResponse, CreateAdminGroupError, Options<CreateAdminGroupData>> => {
+    const mutationOptions: UseMutationOptions<CreateAdminGroupResponse, CreateAdminGroupError, Options<CreateAdminGroupData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await createAdminGroup({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+export const deleteAdminGroupMutation = (options?: Partial<Options<DeleteAdminGroupData>>): UseMutationOptions<DeleteAdminGroupResponse, DeleteAdminGroupError, Options<DeleteAdminGroupData>> => {
+    const mutationOptions: UseMutationOptions<DeleteAdminGroupResponse, DeleteAdminGroupError, Options<DeleteAdminGroupData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await deleteAdminGroup({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 export const getAdminGroupQueryKey = (options: Options<GetAdminGroupData>) => createQueryKey('getAdminGroup', options);
 export const getAdminGroupOptions = (options: Options<GetAdminGroupData>) => queryOptions<GetAdminGroupResponse, GetAdminGroupError, GetAdminGroupResponse, ReturnType<typeof getAdminGroupQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -230,3 +256,16 @@ export const getAdminGroupOptions = (options: Options<GetAdminGroupData>) => que
     },
     queryKey: getAdminGroupQueryKey(options)
 });
+export const updateAdminGroupMutation = (options?: Partial<Options<UpdateAdminGroupData>>): UseMutationOptions<UpdateAdminGroupResponse, UpdateAdminGroupError, Options<UpdateAdminGroupData>> => {
+    const mutationOptions: UseMutationOptions<UpdateAdminGroupResponse, UpdateAdminGroupError, Options<UpdateAdminGroupData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await updateAdminGroup({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};

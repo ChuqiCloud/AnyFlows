@@ -3,6 +3,9 @@
 mod admin_group;
 #[cfg(test)]
 mod admin_group_tests;
+mod admin_group_write;
+#[cfg(test)]
+mod admin_group_write_tests;
 mod admin_user;
 #[cfg(test)]
 mod admin_user_tests;
@@ -47,7 +50,11 @@ mod user_session_tests;
 pub use admin_group::{
     AdminGroupLookupOutcome, AdminGroupPageRecord, AdminGroupPeakRecord, AdminGroupRecord,
     AdminGroupRepository, AdminGroupRepositoryConfigError, AdminGroupRepositoryError,
-    MAX_ADMIN_GROUP_PAGE_SIZE,
+    MAX_ADMIN_GROUP_FLAGS_BYTES, MAX_ADMIN_GROUP_PAGE_SIZE,
+};
+pub use admin_group_write::{
+    AdminGroupDeleteOutcome, AdminGroupMutationOutcome, AdminGroupPeakWriteRecord,
+    AdminGroupWriteRecord,
 };
 pub use admin_user::{
     AdminUserLookupOutcome, AdminUserPageRecord, AdminUserRecord, AdminUserRepository,

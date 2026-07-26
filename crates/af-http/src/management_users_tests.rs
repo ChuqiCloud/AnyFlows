@@ -4,13 +4,15 @@ use std::sync::{
 };
 
 use af_admin::{
-    AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError,
-    AdminGroupReader, AdminUser, AdminUserCreateCommand, AdminUserCreateFuture,
-    AdminUserDeleteFuture, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery,
-    AdminUserPage, AdminUserReadError, AdminUserReader, AdminUserStatus, AdminUserUpdateCommand,
-    AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter, LoginCredentials,
-    SessionAuthentication, SessionAuthenticationError, SessionAuthenticationFuture,
-    SessionAuthenticator, SessionLoginFuture, SessionPrincipal, SessionRole,
+    AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture, AdminGroupGetFuture,
+    AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError, AdminGroupReader,
+    AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
+    AdminUser, AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture,
+    AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage, AdminUserReadError,
+    AdminUserReader, AdminUserStatus, AdminUserUpdateCommand, AdminUserUpdateFuture,
+    AdminUserWriteError, AdminUserWriter, LoginCredentials, SessionAuthentication,
+    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
+    SessionLoginFuture, SessionPrincipal, SessionRole,
 };
 use af_domain::{AfError, GatewayPrincipal, GroupId, UserId};
 use af_protocol::CanonicalRequest;
@@ -69,6 +71,33 @@ impl AdminGroupReader for UnusedAdminGroupReader {
         _group_id: GroupId,
     ) -> AdminGroupGetFuture<'a> {
         Box::pin(async { Err(AdminGroupReadError::Internal) })
+    }
+}
+
+impl AdminGroupWriter for UnusedAdminGroupReader {
+    fn create<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: AdminGroupCreateCommand,
+    ) -> AdminGroupCreateFuture<'a> {
+        Box::pin(async { Err(AdminGroupWriteError::Internal) })
+    }
+
+    fn update<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _group_id: GroupId,
+        _command: AdminGroupUpdateCommand,
+    ) -> AdminGroupUpdateFuture<'a> {
+        Box::pin(async { Err(AdminGroupWriteError::Internal) })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _group_id: GroupId,
+    ) -> AdminGroupDeleteFuture<'a> {
+        Box::pin(async { Err(AdminGroupWriteError::Internal) })
     }
 }
 
@@ -241,6 +270,7 @@ fn router(reader: Arc<FakeAdminUserReader>) -> Router {
     let session_authenticator: Arc<dyn SessionAuthenticator> = Arc::new(FakeSessionAuthenticator);
     let admin_user_reader: Arc<dyn AdminUserReader> = reader.clone();
     let admin_user_writer: Arc<dyn AdminUserWriter> = reader;
+    let admin_groups = Arc::new(UnusedAdminGroupReader);
     let collection_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
         authenticate_management_session,
@@ -268,7 +298,8 @@ fn router(reader: Arc<FakeAdminUserReader>) -> Router {
         .with_state(HttpState::new(
             Arc::new(UnusedChatService),
             session_authenticator,
-            Arc::new(UnusedAdminGroupReader),
+            admin_groups.clone(),
+            admin_groups,
             admin_user_reader,
             admin_user_writer,
         ))
