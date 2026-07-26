@@ -1,5 +1,8 @@
 //! 数据库连接池、迁移、实体与仓储边界。
 
+mod admin_user;
+#[cfg(test)]
+mod admin_user_tests;
 mod auth;
 #[cfg(test)]
 mod auth_tests;
@@ -37,6 +40,10 @@ mod user_session;
 #[cfg(test)]
 mod user_session_tests;
 
+pub use admin_user::{
+    AdminUserLookupOutcome, AdminUserPageRecord, AdminUserRecord, AdminUserRepository,
+    AdminUserRepositoryConfigError, AdminUserRepositoryError, MAX_ADMIN_USER_PAGE_SIZE,
+};
 pub use auth::{
     TokenAuthLookup, TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,
     TokenAuthRepositoryConfigError, TokenAuthRepositoryError,

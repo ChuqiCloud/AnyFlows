@@ -1,9 +1,10 @@
 use std::sync::{Arc, Mutex};
 
 use af_admin::{
-    IssuedSession, LoginCredentials, SessionAuthentication, SessionAuthenticationError,
-    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
-    SessionRole, SessionToken,
+    AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserReadError,
+    AdminUserReader, IssuedSession, LoginCredentials, SessionAuthentication,
+    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
+    SessionLoginFuture, SessionPrincipal, SessionRole, SessionToken,
 };
 use af_domain::{AfError, GatewayPrincipal, UserId};
 use af_protocol::CanonicalRequest;
@@ -30,6 +31,7 @@ use crate::{
 const SESSION_TOKEN: &str = "signed.jwt.value";
 
 struct UnusedChatService;
+struct UnusedAdminUserReader;
 
 impl ChatService for UnusedChatService {
     fn chat_completions<'a>(
@@ -39,6 +41,20 @@ impl ChatService for UnusedChatService {
         _request_id: &'a str,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async { Err(AfError::Internal) })
+    }
+}
+
+impl AdminUserReader for UnusedAdminUserReader {
+    fn list<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _query: AdminUserListQuery,
+    ) -> AdminUserListFuture<'a> {
+        Box::pin(async { Err(AdminUserReadError::Internal) })
+    }
+
+    fn get<'a>(&'a self, _principal: SessionPrincipal, _user_id: UserId) -> AdminUserGetFuture<'a> {
+        Box::pin(async { Err(AdminUserReadError::Internal) })
     }
 }
 
@@ -107,6 +123,7 @@ fn router(authenticator: Arc<FakeSessionAuthenticator>) -> Router {
         .with_state(HttpState::new(
             Arc::new(UnusedChatService),
             session_authenticator,
+            Arc::new(UnusedAdminUserReader),
         ))
 }
 

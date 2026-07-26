@@ -7,9 +7,10 @@ use std::{
 };
 
 use af_admin::{
-    ApiKeyDigest, LoginCredentials, SessionAuthenticationError, SessionAuthenticationFuture,
-    SessionAuthenticator, SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture,
-    TokenAuthenticator,
+    AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserReadError,
+    AdminUserReader, ApiKeyDigest, LoginCredentials, SessionAuthenticationError,
+    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, TokenAuthentication,
+    TokenAuthenticationFuture, TokenAuthenticator,
 };
 use af_config::ServerConfig;
 use af_domain::{GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId};
@@ -42,6 +43,7 @@ impl ReadinessProbe for AlwaysReadyProbe {
 struct AlwaysAuthenticates;
 
 struct RejectSessions;
+struct RejectAdminUsers;
 
 impl SessionAuthenticator for RejectSessions {
     fn login<'a>(&'a self, _credentials: &'a LoginCredentials) -> SessionLoginFuture<'a> {
@@ -50,6 +52,24 @@ impl SessionAuthenticator for RejectSessions {
 
     fn authenticate<'a>(&'a self, _token: &'a str) -> SessionAuthenticationFuture<'a> {
         Box::pin(async { Err(SessionAuthenticationError::InvalidSession) })
+    }
+}
+
+impl AdminUserReader for RejectAdminUsers {
+    fn list<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _query: AdminUserListQuery,
+    ) -> AdminUserListFuture<'a> {
+        Box::pin(async { Err(AdminUserReadError::Internal) })
+    }
+
+    fn get<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _user_id: UserId,
+    ) -> AdminUserGetFuture<'a> {
+        Box::pin(async { Err(AdminUserReadError::Internal) })
     }
 }
 
@@ -336,6 +356,7 @@ async fn start_server(
         readiness,
         Arc::new(AlwaysAuthenticates),
         Arc::new(RejectSessions),
+        Arc::new(RejectAdminUsers),
         QueryApiKeyPolicy::Deny,
     );
     let listener = HttpListener::bind("127.0.0.1:0".parse().unwrap()).unwrap();

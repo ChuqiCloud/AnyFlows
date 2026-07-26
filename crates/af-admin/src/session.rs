@@ -67,7 +67,7 @@ pub enum SessionRole {
 }
 
 impl SessionRole {
-    fn from_database(value: i16) -> Result<Self, SessionAuthenticationError> {
+    pub(crate) fn from_database(value: i16) -> Result<Self, SessionAuthenticationError> {
         match value {
             0 => Ok(Self::User),
             1 => Ok(Self::Admin),

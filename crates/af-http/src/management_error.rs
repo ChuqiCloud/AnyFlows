@@ -11,6 +11,10 @@ pub(crate) enum ManagementError {
     InvalidCredentials,
     /// JWT 缺失、无效、过期或对应用户已失效。
     InvalidSession,
+    /// 当前会话没有访问该管理端点的角色权限。
+    Forbidden,
+    /// 用户不存在或已经被软删除。
+    UserNotFound,
     /// 管理认证依赖发生内部故障。
     Internal,
 }
@@ -43,6 +47,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "invalid_session",
                     message: "Invalid session",
+                },
+            ),
+            Self::Forbidden => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "forbidden",
+                    message: "Forbidden",
+                },
+            ),
+            Self::UserNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "user_not_found",
+                    message: "User not found",
                 },
             ),
             Self::Internal => (

@@ -3,6 +3,7 @@
 mod api_key;
 mod session;
 mod token_auth;
+mod user_read;
 
 pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,
@@ -17,6 +18,11 @@ pub use session::{
 pub use token_auth::{
     DatabaseTokenAuthenticator, TokenAuthentication, TokenAuthenticationError,
     TokenAuthenticationFuture, TokenAuthenticator,
+};
+pub use user_read::{
+    AdminUser, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage,
+    AdminUserReadError, AdminUserReader, AdminUserStatus, DEFAULT_ADMIN_USER_PAGE_SIZE,
+    DatabaseAdminUserReader,
 };
 
 #[cfg(test)]
