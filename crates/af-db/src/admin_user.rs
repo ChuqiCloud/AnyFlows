@@ -170,13 +170,22 @@ pub enum AdminUserRepositoryError {
     /// 查询输入或持久化结果违反不变量。
     #[error("管理用户持久化状态损坏")]
     Invariant,
+    /// 写入的用户名或邮箱与当前有效用户冲突。
+    #[error("管理用户唯一身份冲突")]
+    Conflict,
+    /// 写入的分组或关联目标不存在。
+    #[error("管理用户关联目标无效")]
+    InvalidReference,
+    /// 系统随机源不可用，无法安全生成密码盐或邀请码。
+    #[error("管理用户随机源不可用")]
+    Entropy,
 }
 
-/// 管理端用户列表与详情的只读仓储。
+/// 管理端用户列表、详情与写入操作共用的仓储。
 #[derive(Clone)]
 pub struct AdminUserRepository {
-    pool: DatabasePool,
-    lookup_timeout: Duration,
+    pub(crate) pool: DatabasePool,
+    pub(crate) lookup_timeout: Duration,
 }
 
 impl AdminUserRepository {
@@ -273,7 +282,9 @@ impl fmt::Debug for AdminUserRepository {
 }
 
 impl AdminUserRecord {
-    fn try_from_query_result(result: &QueryResult) -> Result<Self, AdminUserRepositoryError> {
+    pub(crate) fn try_from_query_result(
+        result: &QueryResult,
+    ) -> Result<Self, AdminUserRepositoryError> {
         let row = AdminUserRow::try_from_query_result(result)
             .map_err(|_| record_internal_error(AdminUserRepositoryError::Invariant))?;
         row.validate()
@@ -368,7 +379,7 @@ fn list_query(after: Option<UserId>, limit: usize) -> SelectStatement {
     query.to_owned()
 }
 
-fn detail_query(user_id: UserId) -> SelectStatement {
+pub(crate) fn detail_query(user_id: UserId) -> SelectStatement {
     base_query()
         .and_where(Expr::col((users::Entity, users::Column::Id)).eq(user_id.get()))
         .and_where(Expr::col((users::Entity, users::Column::DeletedAt)).is_null())
@@ -430,11 +441,14 @@ fn base_query() -> sea_orm::sea_query::SelectStatement {
         .to_owned()
 }
 
-fn record_internal_error(error: AdminUserRepositoryError) -> AdminUserRepositoryError {
+pub(crate) fn record_internal_error(error: AdminUserRepositoryError) -> AdminUserRepositoryError {
     let error_kind = match error {
         AdminUserRepositoryError::Query => "admin_user_query",
         AdminUserRepositoryError::Timeout => "admin_user_timeout",
         AdminUserRepositoryError::Invariant => "admin_user_invariant",
+        AdminUserRepositoryError::Conflict => "admin_user_conflict",
+        AdminUserRepositoryError::InvalidReference => "admin_user_invalid_reference",
+        AdminUserRepositoryError::Entropy => "admin_user_entropy",
     };
     tracing::error!(target: "af_db::admin_user", error_kind, "管理用户仓储发生内部错误");
     error

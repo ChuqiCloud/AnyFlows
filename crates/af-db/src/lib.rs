@@ -3,6 +3,7 @@
 mod admin_user;
 #[cfg(test)]
 mod admin_user_tests;
+mod admin_user_write;
 mod auth;
 #[cfg(test)]
 mod auth_tests;
@@ -43,6 +44,9 @@ mod user_session_tests;
 pub use admin_user::{
     AdminUserLookupOutcome, AdminUserPageRecord, AdminUserRecord, AdminUserRepository,
     AdminUserRepositoryConfigError, AdminUserRepositoryError, MAX_ADMIN_USER_PAGE_SIZE,
+};
+pub use admin_user_write::{
+    AdminUserCreateRecord, AdminUserDeleteOutcome, AdminUserMutationOutcome, AdminUserUpdateRecord,
 };
 pub use auth::{
     TokenAuthLookup, TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,

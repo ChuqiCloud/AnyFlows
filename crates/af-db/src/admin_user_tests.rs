@@ -1,13 +1,16 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::UserId;
-use sea_orm::{ActiveModelTrait, JsonValue, Set, entity::prelude::TimeDateTimeWithTimeZone};
+use af_domain::{GroupId, UserId};
+use sea_orm::{
+    ActiveModelTrait, EntityTrait, JsonValue, Set, entity::prelude::TimeDateTimeWithTimeZone,
+};
 
 use super::{
-    AdminUserLookupOutcome, AdminUserRepository, AdminUserRepositoryConfigError,
-    AdminUserRepositoryError, DatabaseOptions, MigrationOptions,
+    AdminUserCreateRecord, AdminUserDeleteOutcome, AdminUserLookupOutcome,
+    AdminUserMutationOutcome, AdminUserRepository, AdminUserRepositoryConfigError,
+    AdminUserRepositoryError, AdminUserUpdateRecord, DatabaseOptions, MigrationOptions,
 };
-use crate::entity::{groups, users};
+use crate::entity::{TokenHash, groups, tokens, users};
 
 #[tokio::test]
 async fn list_uses_stable_cursor_and_excludes_soft_deleted_users() -> Result<(), Box<dyn Error>> {
@@ -76,6 +79,115 @@ async fn invalid_limit_and_closed_pool_fail_closed() -> Result<(), Box<dyn Error
         fixture.repository.list(None, 1).await.unwrap_err(),
         AdminUserRepositoryError::Query
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn create_update_and_soft_delete_use_transactional_boundaries() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture().await?;
+    let group_id = GroupId::new(fixture.group_id)?;
+    let created = fixture
+        .repository
+        .create(AdminUserCreateRecord::new(
+            "created-user".to_owned(),
+            Some("created@example.com".to_owned()),
+            Some("correct-password".to_owned()),
+            0,
+            1,
+            group_id,
+            500,
+            Some(120),
+            Some(4),
+        ))
+        .await?;
+    assert_eq!(created.username(), "created-user");
+    assert_eq!(created.email(), Some("created@example.com"));
+    assert_eq!(created.default_group_id(), group_id);
+    assert_eq!(created.quota(), 500);
+    assert_eq!(created.rpm_limit(), Some(120));
+    assert_eq!(created.concurrency(), Some(4));
+
+    assert_eq!(
+        fixture
+            .repository
+            .create(AdminUserCreateRecord::new(
+                "created-user".to_owned(),
+                None,
+                None,
+                0,
+                1,
+                group_id,
+                0,
+                None,
+                None,
+            ))
+            .await
+            .unwrap_err(),
+        AdminUserRepositoryError::Conflict
+    );
+
+    let token = tokens::ActiveModel {
+        user_id: Set(created.user_id().get()),
+        key_hash: Set(TokenHash::parse(&"a".repeat(64))?),
+        key_prefix: Set("sk-af-created".to_owned()),
+        name: Set("created-token".to_owned()),
+        status: Set(1),
+        group_id: Set(Some(fixture.group_id)),
+        ..Default::default()
+    }
+    .insert(fixture.pool.connection())
+    .await?;
+
+    let updated = fixture
+        .repository
+        .update(
+            created.user_id(),
+            AdminUserUpdateRecord::new(
+                "updated-user".to_owned(),
+                None,
+                Some("next-password".to_owned()),
+                1,
+                2,
+                group_id,
+                700,
+                None,
+                Some(2),
+            ),
+        )
+        .await?;
+    let AdminUserMutationOutcome::Mutated(updated) = updated else {
+        panic!("活跃用户更新后必须返回最新快照");
+    };
+    assert_eq!(updated.username(), "updated-user");
+    assert_eq!(updated.email(), None);
+    assert_eq!(updated.role(), 1);
+    assert_eq!(updated.status(), 2);
+    assert_eq!(updated.quota(), 700);
+    assert_eq!(updated.rpm_limit(), None);
+    assert_eq!(updated.concurrency(), Some(2));
+
+    assert_eq!(
+        fixture.repository.delete(created.user_id()).await?,
+        AdminUserDeleteOutcome::Deleted
+    );
+    assert!(matches!(
+        fixture.repository.get(created.user_id()).await?,
+        AdminUserLookupOutcome::NotFound
+    ));
+    assert!(
+        tokens::Entity::find_by_id(token.id)
+            .one(fixture.pool.connection())
+            .await?
+            .and_then(|token| token.deleted_at)
+            .is_some()
+    );
+    assert_eq!(
+        fixture.repository.delete(created.user_id()).await?,
+        AdminUserDeleteOutcome::NotFound
+    );
+
+    fixture.pool.close().await?;
     Ok(())
 }
 

@@ -132,6 +132,53 @@
             "$ref": "#/components/responses/InternalError"
           }
         }
+      },
+      "post": {
+        "operationId": "createAdminUser",
+        "summary": "创建管理员用户",
+        "description": "创建用户并返回不含密码、密码哈希和内部设置的管理快照。密码缺省时不设置密码登录材料。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "用户创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUser"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/UserConflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
       }
     },
     "/api/admin/users/{id}": {
@@ -167,6 +214,112 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/UserNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateAdminUser",
+        "summary": "更新管理员用户",
+        "description": "完整更新未软删除用户的可写账户字段；密码缺省或为 null 时保持原密码。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "用户 ID。"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "用户更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUser"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/UserNotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/UserConflict"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAdminUser",
+        "summary": "软删除管理员用户",
+        "description": "软删除用户，并在同一事务内软删除该用户尚未删除的令牌。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "用户 ID。"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "用户软删除成功"
           },
           "400": {
             "$ref": "#/components/responses/InvalidRequest"
@@ -238,6 +391,16 @@
       },
       "UserNotFound": {
         "description": "用户不存在或已经被软删除",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ManagementError"
+            }
+          }
+        }
+      },
+      "UserConflict": {
+        "description": "用户名或邮箱与当前有效用户冲突",
         "content": {
           "application/json": {
             "schema": {
@@ -450,6 +613,77 @@
           }
         }
       },
+      "AdminUserWriteRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "username",
+          "role",
+          "status",
+          "default_group_id",
+          "quota"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 320
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdminUserStatus"
+          },
+          "default_group_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "rpm_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "concurrency": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
       "AdminUserListResponse": {
         "type": "object",
         "additionalProperties": false,
@@ -491,6 +725,7 @@
               "invalid_session",
               "forbidden",
               "user_not_found",
+              "user_conflict",
               "internal_error"
             ]
           },

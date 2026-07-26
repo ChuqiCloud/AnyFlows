@@ -5,7 +5,7 @@ use af_db::{
     MAX_ADMIN_USER_PAGE_SIZE,
 };
 use af_domain::{GroupId, UserId};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{SessionPrincipal, SessionRole};
@@ -52,7 +52,7 @@ impl Default for AdminUserListQuery {
 }
 
 /// 管理 API 公开的用户状态。
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AdminUserStatus {
     /// 用户允许登录和使用令牌。
@@ -67,6 +67,15 @@ impl AdminUserStatus {
             1 => Ok(Self::Enabled),
             2 => Ok(Self::Disabled),
             _ => Err(AdminUserReadError::Internal),
+        }
+    }
+
+    /// 返回数据库中固定使用的用户状态编码。
+    #[must_use]
+    pub const fn to_database(self) -> i16 {
+        match self {
+            Self::Enabled => 1,
+            Self::Disabled => 2,
         }
     }
 }
@@ -193,7 +202,7 @@ impl AdminUser {
         self.concurrency
     }
 
-    fn from_record(record: AdminUserRecord) -> Result<Self, AdminUserReadError> {
+    pub(crate) fn from_record(record: AdminUserRecord) -> Result<Self, AdminUserReadError> {
         Ok(Self::from_parts(
             record.user_id(),
             record.username().to_owned(),

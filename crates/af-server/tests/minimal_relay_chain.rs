@@ -7,10 +7,12 @@ use std::{
 };
 
 use af_admin::{
-    AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserReadError,
-    AdminUserReader, ApiKeyDigest, LoginCredentials, SessionAuthenticationError,
-    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, TokenAuthentication,
-    TokenAuthenticationFuture, TokenAuthenticator,
+    AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture,
+    AdminUserListFuture, AdminUserListQuery, AdminUserReadError, AdminUserReader,
+    AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter,
+    ApiKeyDigest, LoginCredentials, SessionAuthenticationError, SessionAuthenticationFuture,
+    SessionAuthenticator, SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture,
+    TokenAuthenticator,
 };
 use af_config::ServerConfig;
 use af_domain::{GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId};
@@ -70,6 +72,33 @@ impl AdminUserReader for RejectAdminUsers {
         _user_id: UserId,
     ) -> AdminUserGetFuture<'a> {
         Box::pin(async { Err(AdminUserReadError::Internal) })
+    }
+}
+
+impl AdminUserWriter for RejectAdminUsers {
+    fn create<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _command: AdminUserCreateCommand,
+    ) -> AdminUserCreateFuture<'a> {
+        Box::pin(async { Err(AdminUserWriteError::Internal) })
+    }
+
+    fn update<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _user_id: UserId,
+        _command: AdminUserUpdateCommand,
+    ) -> AdminUserUpdateFuture<'a> {
+        Box::pin(async { Err(AdminUserWriteError::Internal) })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _user_id: UserId,
+    ) -> AdminUserDeleteFuture<'a> {
+        Box::pin(async { Err(AdminUserWriteError::Internal) })
     }
 }
 
@@ -356,6 +385,7 @@ async fn start_server(
         readiness,
         Arc::new(AlwaysAuthenticates),
         Arc::new(RejectSessions),
+        Arc::new(RejectAdminUsers),
         Arc::new(RejectAdminUsers),
         QueryApiKeyPolicy::Deny,
     );

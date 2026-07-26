@@ -57,7 +57,7 @@ impl fmt::Debug for LoginCredentials {
 }
 
 /// 管理会话用户角色；数据库中的 0/1 只在仓储边界转换一次。
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionRole {
     /// 普通登录用户。
@@ -72,6 +72,15 @@ impl SessionRole {
             0 => Ok(Self::User),
             1 => Ok(Self::Admin),
             _ => Err(SessionAuthenticationError::Internal),
+        }
+    }
+
+    /// 返回数据库中固定使用的角色编码。
+    #[must_use]
+    pub const fn to_database(self) -> i16 {
+        match self {
+            Self::User => 0,
+            Self::Admin => 1,
         }
     }
 }

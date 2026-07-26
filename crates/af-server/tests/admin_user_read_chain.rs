@@ -210,6 +210,149 @@ async fn admin_user_list_and_detail_use_real_database_reader() {
     assert_eq!(deleted.status, 404);
     assert_eq!(response_json(&deleted)["code"], "user_not_found");
 
+    let create_body = serde_json::to_vec(&json!({
+        "username": "write-created",
+        "email": "created@example.com",
+        "password": "created-password",
+        "role": "user",
+        "status": "enabled",
+        "default_group_id": GROUP_ID,
+        "quota": 250,
+        "rpm_limit": 30,
+        "concurrency": 1
+    }))
+    .unwrap();
+    let created = send_request(
+        address,
+        "POST",
+        "/api/admin/users",
+        &create_body,
+        &[
+            ("Authorization", &authorization),
+            ("Content-Type", "application/json"),
+        ],
+    )
+    .await;
+    assert_eq!(created.status, 201);
+    let created_body = response_json(&created);
+    let created_id = created_body["id"].as_i64().unwrap();
+    assert_eq!(created_body["username"], "write-created");
+    assert_eq!(created_body["email"], "created@example.com");
+    assert_eq!(created_body["quota"], 250);
+    assert!(!String::from_utf8_lossy(&created.body).contains("created-password"));
+
+    let created_login_request =
+        serde_json::to_vec(&json!({"username":"write-created","password":"created-password"}))
+            .unwrap();
+    let created_login = send_request(
+        address,
+        "POST",
+        "/api/auth/login",
+        &created_login_request,
+        &[("Content-Type", "application/json")],
+    )
+    .await;
+    assert_eq!(created_login.status, 200);
+    assert_eq!(response_json(&created_login)["user"]["role"], "user");
+
+    let conflict = send_request(
+        address,
+        "POST",
+        "/api/admin/users",
+        &serde_json::to_vec(&json!({
+            "username": ADMIN_USERNAME,
+            "role": "user",
+            "status": "enabled",
+            "default_group_id": GROUP_ID,
+            "quota": 0
+        }))
+        .unwrap(),
+        &[
+            ("Authorization", &authorization),
+            ("Content-Type", "application/json"),
+        ],
+    )
+    .await;
+    assert_eq!(conflict.status, 409);
+    assert_eq!(response_json(&conflict)["code"], "user_conflict");
+
+    let update_body = serde_json::to_vec(&json!({
+        "username": "write-updated",
+        "email": Value::Null,
+        "password": "updated-password",
+        "role": "admin",
+        "status": "enabled",
+        "default_group_id": GROUP_ID,
+        "quota": 300,
+        "rpm_limit": Value::Null,
+        "concurrency": 2
+    }))
+    .unwrap();
+    let updated = send_request(
+        address,
+        "PUT",
+        &format!("/api/admin/users/{created_id}"),
+        &update_body,
+        &[
+            ("Authorization", &authorization),
+            ("Content-Type", "application/json"),
+        ],
+    )
+    .await;
+    assert_eq!(updated.status, 200);
+    assert_eq!(
+        response_json(&updated),
+        json!({
+            "id": created_id,
+            "username": "write-updated",
+            "email": Value::Null,
+            "role": "admin",
+            "status": "enabled",
+            "default_group_id": GROUP_ID,
+            "quota": 300,
+            "used_quota": 0,
+            "frozen_quota": 0,
+            "request_count": 0,
+            "rpm_limit": Value::Null,
+            "concurrency": 2
+        })
+    );
+
+    let updated_login_request =
+        serde_json::to_vec(&json!({"username":"write-updated","password":"updated-password"}))
+            .unwrap();
+    let updated_login = send_request(
+        address,
+        "POST",
+        "/api/auth/login",
+        &updated_login_request,
+        &[("Content-Type", "application/json")],
+    )
+    .await;
+    assert_eq!(updated_login.status, 200);
+    assert_eq!(response_json(&updated_login)["user"]["role"], "admin");
+
+    let removed = send_request(
+        address,
+        "DELETE",
+        &format!("/api/admin/users/{created_id}"),
+        b"",
+        &[("Authorization", &authorization)],
+    )
+    .await;
+    assert_eq!(removed.status, 204);
+
+    let removed_detail = send_request(
+        address,
+        "GET",
+        &format!("/api/admin/users/{created_id}"),
+        b"",
+        &[("Authorization", &authorization)],
+    )
+    .await;
+    assert_eq!(removed_detail.status, 404);
+    assert_eq!(response_json(&removed_detail)["code"], "user_not_found");
+
     shutdown.send(()).unwrap();
     let report = timeout(IO_TIMEOUT, server).await.unwrap().unwrap().unwrap();
     assert_eq!(report.http, ServeOutcome::Drained);

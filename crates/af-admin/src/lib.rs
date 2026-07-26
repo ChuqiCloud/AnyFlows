@@ -4,6 +4,7 @@ mod api_key;
 mod session;
 mod token_auth;
 mod user_read;
+mod user_write;
 
 pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,
@@ -23,6 +24,11 @@ pub use user_read::{
     AdminUser, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage,
     AdminUserReadError, AdminUserReader, AdminUserStatus, DEFAULT_ADMIN_USER_PAGE_SIZE,
     DatabaseAdminUserReader,
+};
+pub use user_write::{
+    AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserUpdateCommand,
+    AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter, DatabaseAdminUserWriter,
+    MAX_ADMIN_USER_PASSWORD_BYTES,
 };
 
 #[cfg(test)]

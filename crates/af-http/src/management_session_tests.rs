@@ -1,10 +1,12 @@
 use std::sync::{Arc, Mutex};
 
 use af_admin::{
-    AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserReadError,
-    AdminUserReader, IssuedSession, LoginCredentials, SessionAuthentication,
-    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
-    SessionLoginFuture, SessionPrincipal, SessionRole, SessionToken,
+    AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture,
+    AdminUserListFuture, AdminUserListQuery, AdminUserReadError, AdminUserReader,
+    AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter,
+    IssuedSession, LoginCredentials, SessionAuthentication, SessionAuthenticationError,
+    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
+    SessionRole, SessionToken,
 };
 use af_domain::{AfError, GatewayPrincipal, UserId};
 use af_protocol::CanonicalRequest;
@@ -55,6 +57,33 @@ impl AdminUserReader for UnusedAdminUserReader {
 
     fn get<'a>(&'a self, _principal: SessionPrincipal, _user_id: UserId) -> AdminUserGetFuture<'a> {
         Box::pin(async { Err(AdminUserReadError::Internal) })
+    }
+}
+
+impl AdminUserWriter for UnusedAdminUserReader {
+    fn create<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: AdminUserCreateCommand,
+    ) -> AdminUserCreateFuture<'a> {
+        Box::pin(async { Err(AdminUserWriteError::Internal) })
+    }
+
+    fn update<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _user_id: UserId,
+        _command: AdminUserUpdateCommand,
+    ) -> AdminUserUpdateFuture<'a> {
+        Box::pin(async { Err(AdminUserWriteError::Internal) })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _user_id: UserId,
+    ) -> AdminUserDeleteFuture<'a> {
+        Box::pin(async { Err(AdminUserWriteError::Internal) })
     }
 }
 
@@ -120,11 +149,15 @@ fn router(authenticator: Arc<FakeSessionAuthenticator>) -> Router {
             "/api/auth/session",
             get(current_session).route_layer(authentication),
         )
-        .with_state(HttpState::new(
-            Arc::new(UnusedChatService),
-            session_authenticator,
-            Arc::new(UnusedAdminUserReader),
-        ))
+        .with_state({
+            let admin_users = Arc::new(UnusedAdminUserReader);
+            HttpState::new(
+                Arc::new(UnusedChatService),
+                session_authenticator,
+                admin_users.clone(),
+                admin_users,
+            )
+        })
 }
 
 #[tokio::test]

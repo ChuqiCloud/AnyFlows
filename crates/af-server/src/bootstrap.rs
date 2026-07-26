@@ -2,9 +2,9 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{CredentialDecryptionError, CredentialDecryptor};
 use af_admin::{
-    AdminUserReader, DatabaseAdminUserReader, DatabaseSessionAuthenticator,
-    DatabaseTokenAuthenticator, SessionAuthenticator, SessionAuthenticatorConfigError,
-    TokenAuthenticator,
+    AdminUserReader, AdminUserWriter, DatabaseAdminUserReader, DatabaseAdminUserWriter,
+    DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, SessionAuthenticator,
+    SessionAuthenticatorConfigError, TokenAuthenticator,
 };
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
@@ -71,6 +71,7 @@ pub struct AuthenticationReady {
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
     admin_user_reader: Arc<dyn AdminUserReader>,
+    admin_user_writer: Arc<dyn AdminUserWriter>,
     query_api_key_policy: QueryApiKeyPolicy,
 }
 
@@ -180,8 +181,8 @@ pub enum BootstrapError {
     /// 管理会话 JWT 的启动配置无效或缺失。
     #[error("管理会话启动配置无效")]
     SessionAuthentication(#[source] SessionAuthenticatorConfigError),
-    /// 管理员用户只读仓储的启动参数无效。
-    #[error("管理员用户只读仓储启动参数无效")]
+    /// 管理员用户仓储的启动参数无效。
+    #[error("管理员用户仓储启动参数无效")]
     AdminUserRepository(#[source] AdminUserRepositoryConfigError),
     /// HTTP 监听、服务或强制关闭失败。
     #[error("HTTP 服务生命周期操作失败")]
@@ -346,7 +347,10 @@ impl Bootstrap<DatabaseReady> {
                 infrastructure: stage,
                 authenticator: Arc::new(DatabaseTokenAuthenticator::new(repository)),
                 session_authenticator: Arc::new(session_authenticator),
-                admin_user_reader: Arc::new(DatabaseAdminUserReader::new(admin_user_repository)),
+                admin_user_reader: Arc::new(DatabaseAdminUserReader::new(
+                    admin_user_repository.clone(),
+                )),
+                admin_user_writer: Arc::new(DatabaseAdminUserWriter::new(admin_user_repository)),
                 query_api_key_policy,
             },
         })
@@ -629,6 +633,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.authenticator),
             Arc::clone(&self.stage.infrastructure.session_authenticator),
             Arc::clone(&self.stage.infrastructure.admin_user_reader),
+            Arc::clone(&self.stage.infrastructure.admin_user_writer),
             self.stage.infrastructure.query_api_key_policy,
         );
         let Bootstrap {

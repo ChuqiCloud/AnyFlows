@@ -1,12 +1,15 @@
-use af_admin::{AdminUser, AdminUserListQuery, AdminUserPage, AdminUserReadError};
-use af_domain::UserId;
+use af_admin::{
+    AdminUser, AdminUserCreateCommand, AdminUserListQuery, AdminUserPage, AdminUserReadError,
+    AdminUserUpdateCommand, AdminUserWriteError,
+};
+use af_domain::{GroupId, UserId};
 use axum::{
     Json,
-    extract::{Extension, Path, RawQuery, State},
+    extract::{Extension, Path, RawQuery, State, rejection::JsonRejection},
     response::{IntoResponse, Response},
 };
-use http::{HeaderValue, header::CACHE_CONTROL};
-use serde::Serialize;
+use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
+use serde::{Deserialize, Serialize};
 
 use crate::{chat_completions::HttpState, management_error::ManagementError};
 
@@ -30,6 +33,21 @@ struct AdminUserResponse {
 struct AdminUserListResponse {
     users: Vec<AdminUserResponse>,
     next_cursor: Option<i64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+/// 管理端创建或完整更新用户时使用的写入正文。
+pub(crate) struct AdminUserWriteRequest {
+    username: String,
+    email: Option<String>,
+    password: Option<String>,
+    role: af_admin::SessionRole,
+    status: af_admin::AdminUserStatus,
+    default_group_id: i64,
+    quota: i64,
+    rpm_limit: Option<i32>,
+    concurrency: Option<i32>,
 }
 
 /// 返回管理员可见的用户只读列表，查询参数必须保持稳定且可预测。
@@ -62,6 +80,60 @@ pub(crate) async fn get_admin_user(
     Ok(no_store_json(AdminUserResponse::from_user(&user)))
 }
 
+/// 创建一个管理端用户，并只返回非敏感快照。
+pub(crate) async fn create_admin_user(
+    State(state): State<HttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    request: Result<Json<AdminUserWriteRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let user = state
+        .admin_user_writer
+        .create(authentication.principal(), request.into_create_command()?)
+        .await
+        .map_err(map_write_error)?;
+    Ok(status_json(
+        StatusCode::CREATED,
+        AdminUserResponse::from_user(&user),
+    ))
+}
+
+/// 完整更新一个未软删除用户的基础账户字段。
+pub(crate) async fn update_admin_user(
+    State(state): State<HttpState>,
+    Path(user_id): Path<String>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    request: Result<Json<AdminUserWriteRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let user_id = parse_user_id(&user_id)?;
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let user = state
+        .admin_user_writer
+        .update(
+            authentication.principal(),
+            user_id,
+            request.into_update_command()?,
+        )
+        .await
+        .map_err(map_write_error)?;
+    Ok(no_store_json(AdminUserResponse::from_user(&user)))
+}
+
+/// 软删除一个用户；已删除或不存在的用户统一返回 404。
+pub(crate) async fn delete_admin_user(
+    State(state): State<HttpState>,
+    Path(user_id): Path<String>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    let user_id = parse_user_id(&user_id)?;
+    state
+        .admin_user_writer
+        .delete(authentication.principal(), user_id)
+        .await
+        .map_err(map_write_error)?;
+    Ok(no_store_empty(StatusCode::NO_CONTENT))
+}
+
 impl AdminUserListResponse {
     fn from_page(page: AdminUserPage) -> Self {
         Self {
@@ -91,6 +163,38 @@ impl AdminUserResponse {
             rpm_limit: user.rpm_limit(),
             concurrency: user.concurrency(),
         }
+    }
+}
+
+impl AdminUserWriteRequest {
+    fn into_create_command(self) -> Result<AdminUserCreateCommand, ManagementError> {
+        AdminUserCreateCommand::new(
+            self.username,
+            self.email,
+            self.password,
+            self.role,
+            self.status,
+            parse_group_id(self.default_group_id)?,
+            self.quota,
+            self.rpm_limit,
+            self.concurrency,
+        )
+        .map_err(map_write_error)
+    }
+
+    fn into_update_command(self) -> Result<AdminUserUpdateCommand, ManagementError> {
+        AdminUserUpdateCommand::new(
+            self.username,
+            self.email,
+            self.password,
+            self.role,
+            self.status,
+            parse_group_id(self.default_group_id)?,
+            self.quota,
+            self.rpm_limit,
+            self.concurrency,
+        )
+        .map_err(map_write_error)
     }
 }
 
@@ -149,6 +253,10 @@ fn parse_user_id(value: &str) -> Result<UserId, ManagementError> {
     UserId::new(parsed).map_err(|_| ManagementError::InvalidRequest)
 }
 
+fn parse_group_id(value: i64) -> Result<GroupId, ManagementError> {
+    GroupId::new(value).map_err(|_| ManagementError::InvalidRequest)
+}
+
 fn parse_limit(value: &str) -> Result<usize, ManagementError> {
     if value.is_empty()
         || value.starts_with('+')
@@ -190,8 +298,32 @@ fn map_read_error(error: AdminUserReadError) -> ManagementError {
     }
 }
 
+fn map_write_error(error: AdminUserWriteError) -> ManagementError {
+    match error {
+        AdminUserWriteError::InvalidInput => ManagementError::InvalidRequest,
+        AdminUserWriteError::Forbidden => ManagementError::Forbidden,
+        AdminUserWriteError::Conflict => ManagementError::UserConflict,
+        AdminUserWriteError::NotFound => ManagementError::UserNotFound,
+        AdminUserWriteError::Internal => ManagementError::Internal,
+    }
+}
+
 fn no_store_json(value: impl Serialize) -> Response {
     let mut response = Json(value).into_response();
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+fn status_json(status: StatusCode, value: impl Serialize) -> Response {
+    let mut response = no_store_json(value);
+    *response.status_mut() = status;
+    response
+}
+
+fn no_store_empty(status: StatusCode) -> Response {
+    let mut response = status.into_response();
     response
         .headers_mut()
         .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
