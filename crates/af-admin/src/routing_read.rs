@@ -171,7 +171,9 @@ impl AdminChannelReader for DatabaseAdminChannelReader {
                 .await
                 .map_err(map_repository_error)?
             {
-                AdminCredentialLookupOutcome::Found(record) => AdminCredential::from_record(record),
+                AdminCredentialLookupOutcome::Found(record) => {
+                    AdminCredential::from_record(*record)
+                }
                 AdminCredentialLookupOutcome::ChannelNotFound => {
                     Err(AdminChannelReadError::ChannelNotFound)
                 }

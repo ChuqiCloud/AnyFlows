@@ -249,7 +249,7 @@ impl fmt::Debug for AdminCredentialPageOutcome {
 /// 单个渠道凭据查询结果。
 pub enum AdminCredentialLookupOutcome {
     /// 找到指定渠道下的未软删除凭据。
-    Found(AdminCredentialRecord),
+    Found(Box<AdminCredentialRecord>),
     /// 父渠道不存在或已经软删除。
     ChannelNotFound,
     /// 凭据不存在、已软删除或不属于指定渠道。
@@ -331,7 +331,9 @@ impl AdminChannelRepository {
                     &results.pop().ok_or_else(internal_invariant)?,
                 )
                 .map_err(|_| internal_invariant())?;
-                Ok(AdminCredentialLookupOutcome::Found(row.validate()?))
+                Ok(AdminCredentialLookupOutcome::Found(Box::new(
+                    row.validate()?,
+                )))
             }
             _ => Err(internal_invariant()),
         }
