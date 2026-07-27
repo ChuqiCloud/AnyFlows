@@ -27,6 +27,9 @@ use af_admin::{
     SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
     SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
 };
+use af_analytics::{
+    AdminDashboardAccess, AdminDashboardReadError, AdminDashboardReadFuture, AdminDashboardReader,
+};
 use af_config::ServerConfig;
 use af_domain::{
     ChannelId, CredentialId, GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp,
@@ -64,6 +67,7 @@ struct RejectSessions;
 struct RejectAdminChannels;
 struct RejectAdminGroups;
 struct RejectAdminTokens;
+struct RejectAdminDashboard;
 struct RejectAdminUsageLogs;
 struct RejectAdminUsers;
 
@@ -265,6 +269,12 @@ impl AdminUsageLogReader for RejectAdminUsageLogs {
         _query: AdminUsageLogListQuery,
     ) -> AdminUsageLogListFuture<'a> {
         Box::pin(async { Err(AdminUsageLogReadError::Internal) })
+    }
+}
+
+impl AdminDashboardReader for RejectAdminDashboard {
+    fn read(&self, _access: AdminDashboardAccess) -> AdminDashboardReadFuture<'_> {
+        Box::pin(async { Err(AdminDashboardReadError::Internal) })
     }
 }
 
@@ -603,6 +613,7 @@ async fn start_server(
         Arc::new(RejectAdminGroups),
         Arc::new(RejectAdminTokens),
         Arc::new(RejectAdminTokens),
+        Arc::new(RejectAdminDashboard),
         Arc::new(RejectAdminUsageLogs),
         Arc::new(RejectAdminUsers),
         Arc::new(RejectAdminUsers),

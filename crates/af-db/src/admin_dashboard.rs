@@ -308,7 +308,7 @@ fn usage_query(
         .expr_as(
             Func::coalesce([
                 Expr::col((usage_logs::Entity, usage_logs::Column::Quota)).sum(),
-                Expr::value(0_i64).into(),
+                Expr::value(0_i64),
             ]),
             Alias::new("quota_consumed"),
         )
