@@ -1,4 +1,4 @@
-import { Gauge, Network } from 'lucide-react'
+import { Gauge, KeyRound, Network } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
@@ -19,13 +19,13 @@ type AppNavigationProps = {
 const navItems = [
   { key: 'overview', icon: Gauge, href: '#/console' },
   { key: 'channels', icon: Network, href: '#/console/channels' },
+  { key: 'keys', icon: KeyRound, href: '#/console/tokens' },
 ] as const
 
 function useActiveKey() {
   if (typeof window === 'undefined') return 'overview'
   const hash = window.location.hash
-  const segment = hash.replace('#/console/', '').replace('#/console', '').split('/')[0]
-  return navItems.some((n) => n.key === segment) ? segment : 'overview'
+  return navItems.find((item) => item.key !== 'overview' && hash.startsWith(item.href))?.key ?? 'overview'
 }
 
 export function AppNavigation({ className, compact = false }: AppNavigationProps) {
