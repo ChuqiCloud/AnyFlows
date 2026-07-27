@@ -21,6 +21,7 @@ af-relay = { path = "../af-relay", version = "0.1.0" }
 af-scheduler = { path = "../af-scheduler", version = "0.1.0" }
 af-telemetry = { path = "../af-telemetry", version = "0.1.0" }
 futures-util.workspace = true
+include_dir.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

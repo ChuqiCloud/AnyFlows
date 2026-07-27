@@ -7,6 +7,7 @@ mod chat_service;
 mod client_ip;
 mod credentials;
 mod error_response;
+mod frontend_assets;
 mod management_auth;
 mod management_authorization;
 mod management_channel_probe;
@@ -34,6 +35,7 @@ pub use channel_probe::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannel
 pub use chat_service::{ChatService, ChatServiceFuture};
 pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presented_api_key};
 pub use error_response::OpenAiHttpError;
+pub use frontend_assets::{FrontendAsset, FrontendAssetSource};
 pub use middleware::REQUEST_ID_HEADER_NAME;
 pub use openapi::openapi_document;
 pub use operations::{
@@ -50,6 +52,8 @@ mod client_ip_tests;
 mod credentials_tests;
 #[cfg(test)]
 mod error_response_tests;
+#[cfg(test)]
+mod frontend_assets_tests;
 #[cfg(test)]
 mod management_channels_tests;
 #[cfg(test)]
