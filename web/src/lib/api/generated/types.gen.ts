@@ -96,6 +96,26 @@ export type ManagementError = {
     message: string;
 };
 export type AdminTokenStatus = 'enabled' | 'disabled';
+export type AdminTokenWriteRequest = {
+    user_id: number;
+    name: string;
+    status: AdminTokenStatus;
+    group_id: number | null;
+    remain_quota: number;
+    unlimited_quota: boolean;
+    expired_at: number | null;
+    model_limits: Array<string> | null;
+    allow_ips: Array<string> | null;
+    cross_group_retry: boolean;
+    rate_limit_5h: number | null;
+    rate_limit_1d: number | null;
+    rate_limit_7d: number | null;
+    max_requests: number | null;
+};
+export type IssuedAdminToken = {
+    api_key: string;
+    token: AdminToken;
+};
 export type AdminToken = {
     id: number;
     user_id: number;
@@ -376,6 +396,43 @@ export type ListAdminTokensResponses = {
     200: AdminTokenListResponse;
 };
 export type ListAdminTokensResponse = ListAdminTokensResponses[keyof ListAdminTokensResponses];
+export type CreateAdminTokenData = {
+    body: AdminTokenWriteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/tokens';
+};
+export type CreateAdminTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type CreateAdminTokenError = CreateAdminTokenErrors[keyof CreateAdminTokenErrors];
+export type CreateAdminTokenResponses = {
+    201: IssuedAdminToken;
+};
+export type CreateAdminTokenResponse = CreateAdminTokenResponses[keyof CreateAdminTokenResponses];
+export type DeleteAdminTokenData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/tokens/{id}';
+};
+export type DeleteAdminTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type DeleteAdminTokenError = DeleteAdminTokenErrors[keyof DeleteAdminTokenErrors];
+export type DeleteAdminTokenResponses = {
+    204: void;
+};
+export type DeleteAdminTokenResponse = DeleteAdminTokenResponses[keyof DeleteAdminTokenResponses];
 export type GetAdminTokenData = {
     body?: never;
     path: {
@@ -396,3 +453,23 @@ export type GetAdminTokenResponses = {
     200: AdminToken;
 };
 export type GetAdminTokenResponse = GetAdminTokenResponses[keyof GetAdminTokenResponses];
+export type UpdateAdminTokenData = {
+    body: AdminTokenWriteRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/tokens/{id}';
+};
+export type UpdateAdminTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminTokenError = UpdateAdminTokenErrors[keyof UpdateAdminTokenErrors];
+export type UpdateAdminTokenResponses = {
+    200: AdminToken;
+};
+export type UpdateAdminTokenResponse = UpdateAdminTokenResponses[keyof UpdateAdminTokenResponses];

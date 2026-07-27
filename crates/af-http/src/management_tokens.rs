@@ -11,7 +11,7 @@ use serde::Serialize;
 use crate::{chat_completions::HttpState, management_error::ManagementError};
 
 #[derive(Serialize)]
-struct AdminTokenResponse {
+pub(crate) struct AdminTokenResponse {
     id: i64,
     user_id: i64,
     key_prefix: String,
@@ -88,7 +88,7 @@ impl AdminTokenListResponse {
 }
 
 impl AdminTokenResponse {
-    fn from_token(token: &AdminToken) -> Self {
+    pub(crate) fn from_token(token: &AdminToken) -> Self {
         Self {
             id: token.token_id().get(),
             user_id: token.user_id().get(),
@@ -159,7 +159,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminTokenListQuery, Mana
     .map_err(map_read_error)
 }
 
-fn parse_token_id(value: &str) -> Result<TokenId, ManagementError> {
+pub(crate) fn parse_token_id(value: &str) -> Result<TokenId, ManagementError> {
     if value.is_empty()
         || value.starts_with('+')
         || value.starts_with('-')

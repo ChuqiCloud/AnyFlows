@@ -5,6 +5,7 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use af_admin::PresentedApiKey;
 use af_db::{DatabaseOptions, MigrationOptions, connect_and_migrate};
 use af_http::ServeOutcome;
 use af_server::{Bootstrap, SupervisorShutdown};
@@ -73,7 +74,7 @@ impl Drop for TestDatabase {
 }
 
 #[tokio::test]
-async fn admin_token_list_and_detail_use_real_database_reader() {
+async fn admin_token_crud_uses_real_database_services() {
     let database = TestDatabase::new();
     seed_tokens(&database.url).await;
     let signing_key = URL_SAFE_NO_PAD.encode([0x42; 32]);
@@ -200,6 +201,103 @@ async fn admin_token_list_and_detail_use_real_database_reader() {
     assert_eq!(deleted.status, 404);
     assert_eq!(response_json(&deleted)["code"], "token_not_found");
     assert_response_is_sanitized(&deleted);
+
+    let create_body = serde_json::to_vec(&token_write_body(
+        "issued",
+        "enabled",
+        Some(VIP_GROUP_ID),
+        true,
+    ))
+    .unwrap();
+    let created = send_request(
+        address,
+        "POST",
+        "/api/admin/tokens",
+        &create_body,
+        &[
+            ("Authorization", &admin_authorization),
+            ("Content-Type", "application/json"),
+        ],
+    )
+    .await;
+    assert_eq!(created.status, 201);
+    assert_eq!(created.headers["cache-control"], "no-store");
+    let created_body = response_json(&created);
+    let api_key = created_body["api_key"].as_str().unwrap().to_owned();
+    let presented = PresentedApiKey::parse(&api_key).unwrap();
+    let created_id = created_body["token"]["id"].as_i64().unwrap();
+    let key_prefix = created_body["token"]["key_prefix"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(key_prefix, presented.display_prefix().as_str());
+    assert_eq!(created_body["token"]["name"], "issued");
+    assert_eq!(created_body["token"]["used_quota"], 0);
+    assert_eq!(created_body["token"]["usage_5h"], 0);
+    assert_eq!(created_body["token"]["used_requests"], 0);
+    assert_eq!(
+        stored_key_hash(&database.url, created_id).await,
+        presented.digest().as_str()
+    );
+
+    let update_body =
+        serde_json::to_vec(&token_write_body("updated", "disabled", None, false)).unwrap();
+    let updated = send_request(
+        address,
+        "PUT",
+        &format!("/api/admin/tokens/{created_id}"),
+        &update_body,
+        &[
+            ("Authorization", &admin_authorization),
+            ("Content-Type", "application/json"),
+        ],
+    )
+    .await;
+    assert_eq!(updated.status, 200);
+    let updated_body = response_json(&updated);
+    assert_eq!(updated_body["name"], "updated");
+    assert_eq!(updated_body["status"], "disabled");
+    assert_eq!(updated_body["group_id"], Value::Null);
+    assert_eq!(updated_body["key_prefix"], key_prefix);
+    assert_eq!(updated_body["model_limits"], Value::Null);
+    assert_eq!(updated_body["allow_ips"], Value::Null);
+    assert!(!String::from_utf8_lossy(&updated.body).contains(&api_key));
+    assert_eq!(
+        stored_key_hash(&database.url, created_id).await,
+        presented.digest().as_str()
+    );
+
+    let removed = send_request(
+        address,
+        "DELETE",
+        &format!("/api/admin/tokens/{created_id}"),
+        b"",
+        &[("Authorization", &admin_authorization)],
+    )
+    .await;
+    assert_eq!(removed.status, 204);
+    assert_eq!(removed.headers["cache-control"], "no-store");
+    assert!(removed.body.is_empty());
+    let removed_detail = send_request(
+        address,
+        "GET",
+        &format!("/api/admin/tokens/{created_id}"),
+        b"",
+        &[("Authorization", &admin_authorization)],
+    )
+    .await;
+    assert_eq!(removed_detail.status, 404);
+    assert_eq!(response_json(&removed_detail)["code"], "token_not_found");
+    let removed_again = send_request(
+        address,
+        "DELETE",
+        &format!("/api/admin/tokens/{created_id}"),
+        b"",
+        &[("Authorization", &admin_authorization)],
+    )
+    .await;
+    assert_eq!(removed_again.status, 404);
+    assert!(!String::from_utf8_lossy(&removed_again.body).contains(&api_key));
 
     let member_authorization = login(address, MEMBER_USERNAME, MEMBER_PASSWORD).await;
     let forbidden = send_request(
@@ -417,6 +515,41 @@ fn password_hash(username: &str, password: &str) -> String {
 
 fn response_json(response: &support::RawResponse) -> Value {
     serde_json::from_slice(&response.body).unwrap()
+}
+
+fn token_write_body(name: &str, status: &str, group_id: Option<i64>, with_limits: bool) -> Value {
+    json!({
+        "user_id": MEMBER_ID,
+        "name": name,
+        "status": status,
+        "group_id": group_id,
+        "remain_quota": 5_000,
+        "unlimited_quota": false,
+        "expired_at": 1_900_000_000_i64,
+        "model_limits": with_limits.then(|| vec!["gpt-5.5", "gpt-5.5"]),
+        "allow_ips": with_limits.then(|| vec!["192.0.2.0/24", "192.0.2.0/24"]),
+        "cross_group_retry": with_limits,
+        "rate_limit_5h": with_limits.then_some(100),
+        "rate_limit_1d": with_limits.then_some(200),
+        "rate_limit_7d": with_limits.then_some(300),
+        "max_requests": with_limits.then_some(1_000)
+    })
+}
+
+async fn stored_key_hash(database_url: &str, token_id: i64) -> String {
+    let connection = Database::connect(database_url).await.unwrap();
+    let row = connection
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT key_hash FROM tokens WHERE id = ?",
+            [token_id.into()],
+        ))
+        .await
+        .unwrap()
+        .expect("签发令牌必须已经持久化");
+    let key_hash: String = row.try_get("", "key_hash").unwrap();
+    connection.close().await.unwrap();
+    key_hash
 }
 
 fn assert_response_is_sanitized(response: &support::RawResponse) {

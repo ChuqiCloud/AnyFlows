@@ -612,8 +612,8 @@
     "/api/admin/tokens": {
       "get": {
         "operationId": "listAdminTokens",
-        "summary": "?????????",
-        "description": "????? ID ???????????????????????????????????????????????",
+        "summary": "读取管理员令牌列表",
+        "description": "按稳定令牌 ID 游标读取未软删除令牌的非敏感管理快照。响应只包含不可用于鉴权的展示前缀。",
         "security": [
           {
             "bearerAuth": []
@@ -629,7 +629,7 @@
               "format": "int64",
               "minimum": 1
             },
-            "description": "????????? ID??????? ID ???"
+            "description": "上一页最后一个令牌 ID，缺省时从最小 ID 开始。"
           },
           {
             "name": "limit",
@@ -642,16 +642,60 @@
               "maximum": 100,
               "default": 50
             },
-            "description": "????????? 50??? 100?"
+            "description": "单页返回数量，默认 50，最大 100。"
           }
         ],
         "responses": {
           "200": {
-            "description": "????????",
+            "description": "令牌列表读取成功",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AdminTokenListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createAdminToken",
+        "summary": "签发管理员令牌",
+        "description": "签发新的下游 API Key。完整密钥只在本次响应中返回一次，数据库仅保存 SHA-256 摘要与展示前缀。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminTokenWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "令牌签发成功，完整密钥仅在此响应出现",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedAdminToken"
                 }
               }
             }
@@ -674,8 +718,8 @@
     "/api/admin/tokens/{id}": {
       "get": {
         "operationId": "getAdminToken",
-        "summary": "?????????",
-        "description": "????????????????????????????????",
+        "summary": "读取管理员令牌详情",
+        "description": "读取单个未软删除令牌的非敏感管理快照，不返回完整密钥或密钥摘要。",
         "security": [
           {
             "bearerAuth": []
@@ -696,7 +740,7 @@
         ],
         "responses": {
           "200": {
-            "description": "????????",
+            "description": "令牌详情读取成功",
             "content": {
               "application/json": {
                 "schema": {
@@ -704,6 +748,109 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TokenNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateAdminToken",
+        "summary": "完整更新管理员令牌",
+        "description": "完整更新未软删除令牌的配置。user_id 仅用于确认现有归属，不允许转移令牌；密钥、累计用量和窗口起点保持不变。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "令牌 ID。"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminTokenWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "令牌更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/TokenNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAdminToken",
+        "summary": "软删除管理员令牌",
+        "description": "软删除令牌并阻止后续鉴权，历史计费和用量审计关联保持不变。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "令牌 ID。"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "令牌删除成功"
           },
           "400": {
             "$ref": "#/components/responses/InvalidRequest"
@@ -834,7 +981,7 @@
         }
       },
       "TokenNotFound": {
-        "description": "???????????",
+        "description": "令牌不存在或已经被软删除",
         "content": {
           "application/json": {
             "schema": {
@@ -1407,6 +1554,151 @@
           "disabled"
         ]
       },
+      "AdminTokenWriteRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "user_id",
+          "name",
+          "status",
+          "group_id",
+          "remain_quota",
+          "unlimited_quota",
+          "expired_at",
+          "model_limits",
+          "allow_ips",
+          "cross_group_retry",
+          "rate_limit_5h",
+          "rate_limit_1d",
+          "rate_limit_7d",
+          "max_requests"
+        ],
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "令牌所属用户 ID；更新时必须与现有归属一致。"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdminTokenStatus"
+          },
+          "group_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1,
+            "description": "强制绑定分组；null 表示使用所属用户的默认分组。"
+          },
+          "remain_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "unlimited_quota": {
+            "type": "boolean"
+          },
+          "expired_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0,
+            "description": "Unix 秒时间戳；null 表示永不过期。"
+          },
+          "model_limits": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "minItems": 1,
+            "maxItems": 512,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": "Canonical 模型名白名单；null 表示不限制，顺序和重复项会保留。"
+          },
+          "allow_ips": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "description": "IP/CIDR 白名单；null 表示关闭过滤，顺序和重复项会保留。"
+          },
+          "cross_group_retry": {
+            "type": "boolean"
+          },
+          "rate_limit_5h": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "rate_limit_1d": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "rate_limit_7d": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "max_requests": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "IssuedAdminToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "api_key",
+          "token"
+        ],
+        "properties": {
+          "api_key": {
+            "type": "string",
+            "minLength": 49,
+            "maxLength": 49,
+            "pattern": "^sk-af-[A-Za-z0-9_-]{43}$",
+            "description": "只在本次签发响应中出现的完整 API Key。"
+          },
+          "token": {
+            "$ref": "#/components/schemas/AdminToken"
+          }
+        }
+      },
       "AdminToken": {
         "type": "object",
         "additionalProperties": false,
@@ -1452,7 +1744,7 @@
             "minLength": 18,
             "maxLength": 18,
             "pattern": "^sk-af-[A-Za-z0-9_-]{12}$",
-            "description": "??????? 18 ???????"
+            "description": "不可用于鉴权的 18 字符展示前缀。"
           },
           "name": {
             "type": "string",
@@ -1490,7 +1782,7 @@
             ],
             "format": "int64",
             "minimum": 0,
-            "description": "Unix ??????????"
+            "description": "Unix 秒时间戳；null 表示永不过期。"
           },
           "model_limits": {
             "type": [
@@ -1498,11 +1790,13 @@
               "null"
             ],
             "minItems": 1,
+            "maxItems": 512,
             "items": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 256
             },
-            "description": "?????????????????????????????"
+            "description": "Canonical 模型名白名单；null 表示不限制，保留持久化顺序和重复项。"
           },
           "allow_ips": {
             "type": [
@@ -1510,11 +1804,13 @@
               "null"
             ],
             "minItems": 1,
+            "maxItems": 64,
             "items": {
               "type": "string",
-              "minLength": 1
+              "minLength": 1,
+              "maxLength": 64
             },
-            "description": "IP/CIDR ???????????????????????????"
+            "description": "IP/CIDR 白名单；null 表示关闭过滤，保留持久化顺序和重复项。"
           },
           "cross_group_retry": {
             "type": "boolean"

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminUserReader, AdminUserWriter,
-    SessionAuthenticator, TokenAuthentication,
+    AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminTokenWriter, AdminUserReader,
+    AdminUserWriter, SessionAuthenticator, TokenAuthentication,
 };
 use af_domain::AfError;
 use af_protocol::openai_chat::parse_request;
@@ -31,6 +31,7 @@ pub(crate) struct HttpState {
     pub(crate) admin_group_reader: Arc<dyn AdminGroupReader>,
     pub(crate) admin_group_writer: Arc<dyn AdminGroupWriter>,
     pub(crate) admin_token_reader: Arc<dyn AdminTokenReader>,
+    pub(crate) admin_token_writer: Arc<dyn AdminTokenWriter>,
     pub(crate) admin_user_reader: Arc<dyn AdminUserReader>,
     pub(crate) admin_user_writer: Arc<dyn AdminUserWriter>,
     stream_delivery: StreamDeliveryPolicy,
@@ -43,6 +44,7 @@ impl HttpState {
         admin_group_reader: Arc<dyn AdminGroupReader>,
         admin_group_writer: Arc<dyn AdminGroupWriter>,
         admin_token_reader: Arc<dyn AdminTokenReader>,
+        admin_token_writer: Arc<dyn AdminTokenWriter>,
         admin_user_reader: Arc<dyn AdminUserReader>,
         admin_user_writer: Arc<dyn AdminUserWriter>,
     ) -> Self {
@@ -52,6 +54,7 @@ impl HttpState {
             admin_group_reader,
             admin_group_writer,
             admin_token_reader,
+            admin_token_writer,
             admin_user_reader,
             admin_user_writer,
             stream_delivery: StreamDeliveryPolicy::default(),

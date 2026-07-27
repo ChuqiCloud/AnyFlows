@@ -10,13 +10,15 @@ use af_admin::{
     AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture, AdminGroupGetFuture,
     AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError, AdminGroupReader,
     AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
-    AdminTokenGetFuture, AdminTokenListFuture, AdminTokenListQuery, AdminTokenReadError,
-    AdminTokenReader, AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture,
-    AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserReadError,
-    AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError,
-    AdminUserWriter, ApiKeyDigest, LoginCredentials, SessionAuthenticationError,
-    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, TokenAuthentication,
-    TokenAuthenticationFuture, TokenAuthenticator,
+    AdminTokenCreateCommand, AdminTokenCreateFuture, AdminTokenDeleteFuture, AdminTokenGetFuture,
+    AdminTokenListFuture, AdminTokenListQuery, AdminTokenReadError, AdminTokenReader,
+    AdminTokenUpdateCommand, AdminTokenUpdateFuture, AdminTokenWriteError, AdminTokenWriter,
+    AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture,
+    AdminUserListFuture, AdminUserListQuery, AdminUserReadError, AdminUserReader,
+    AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter,
+    ApiKeyDigest, LoginCredentials, SessionAuthenticationError, SessionAuthenticationFuture,
+    SessionAuthenticator, SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture,
+    TokenAuthenticator,
 };
 use af_config::ServerConfig;
 use af_domain::{GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId};
@@ -123,6 +125,33 @@ impl AdminTokenReader for RejectAdminTokens {
         _token_id: TokenId,
     ) -> AdminTokenGetFuture<'a> {
         Box::pin(async { Err(AdminTokenReadError::Internal) })
+    }
+}
+
+impl AdminTokenWriter for RejectAdminTokens {
+    fn create<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _command: AdminTokenCreateCommand,
+    ) -> AdminTokenCreateFuture<'a> {
+        Box::pin(async { Err(AdminTokenWriteError::Internal) })
+    }
+
+    fn update<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _token_id: TokenId,
+        _command: AdminTokenUpdateCommand,
+    ) -> AdminTokenUpdateFuture<'a> {
+        Box::pin(async { Err(AdminTokenWriteError::Internal) })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _token_id: TokenId,
+    ) -> AdminTokenDeleteFuture<'a> {
+        Box::pin(async { Err(AdminTokenWriteError::Internal) })
     }
 }
 
@@ -456,6 +485,7 @@ async fn start_server(
         Arc::new(RejectSessions),
         Arc::new(RejectAdminGroups),
         Arc::new(RejectAdminGroups),
+        Arc::new(RejectAdminTokens),
         Arc::new(RejectAdminTokens),
         Arc::new(RejectAdminUsers),
         Arc::new(RejectAdminUsers),

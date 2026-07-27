@@ -2,11 +2,11 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{CredentialDecryptionError, CredentialDecryptor};
 use af_admin::{
-    AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminUserReader, AdminUserWriter,
-    DatabaseAdminGroupReader, DatabaseAdminGroupWriter, DatabaseAdminTokenReader,
-    DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseSessionAuthenticator,
-    DatabaseTokenAuthenticator, SessionAuthenticator, SessionAuthenticatorConfigError,
-    TokenAuthenticator,
+    AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminTokenWriter, AdminUserReader,
+    AdminUserWriter, DatabaseAdminGroupReader, DatabaseAdminGroupWriter, DatabaseAdminTokenReader,
+    DatabaseAdminTokenWriter, DatabaseAdminUserReader, DatabaseAdminUserWriter,
+    DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, SessionAuthenticator,
+    SessionAuthenticatorConfigError, TokenAuthenticator,
 };
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
@@ -77,6 +77,7 @@ pub struct AuthenticationReady {
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
+    admin_token_writer: Arc<dyn AdminTokenWriter>,
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
     query_api_key_policy: QueryApiKeyPolicy,
@@ -374,7 +375,10 @@ impl Bootstrap<DatabaseReady> {
                     admin_group_repository.clone(),
                 )),
                 admin_group_writer: Arc::new(DatabaseAdminGroupWriter::new(admin_group_repository)),
-                admin_token_reader: Arc::new(DatabaseAdminTokenReader::new(admin_token_repository)),
+                admin_token_reader: Arc::new(DatabaseAdminTokenReader::new(
+                    admin_token_repository.clone(),
+                )),
+                admin_token_writer: Arc::new(DatabaseAdminTokenWriter::new(admin_token_repository)),
                 admin_user_reader: Arc::new(DatabaseAdminUserReader::new(
                     admin_user_repository.clone(),
                 )),
@@ -663,6 +667,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.admin_group_reader),
             Arc::clone(&self.stage.infrastructure.admin_group_writer),
             Arc::clone(&self.stage.infrastructure.admin_token_reader),
+            Arc::clone(&self.stage.infrastructure.admin_token_writer),
             Arc::clone(&self.stage.infrastructure.admin_user_reader),
             Arc::clone(&self.stage.infrastructure.admin_user_writer),
             self.stage.infrastructure.query_api_key_policy,
