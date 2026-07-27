@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use axum::{
     body::{Body, Bytes},
-    extract::{OriginalUri, State},
+    extract::State,
     response::{IntoResponse, Response},
     routing::{MethodRouter, get},
 };
 use http::{
-    HeaderMap, HeaderValue, StatusCode,
+    HeaderMap, HeaderValue, StatusCode, Uri,
     header::{
         CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, ETAG, IF_NONE_MATCH, X_CONTENT_TYPE_OPTIONS,
     },
@@ -65,7 +65,7 @@ pub(crate) fn frontend_fallback(source: Arc<dyn FrontendAssetSource>) -> MethodR
 
 async fn serve_frontend_asset(
     State(state): State<FrontendAssetState>,
-    OriginalUri(uri): OriginalUri,
+    uri: Uri,
     request_headers: HeaderMap,
 ) -> Response {
     let request_path = uri.path().trim_start_matches('/');

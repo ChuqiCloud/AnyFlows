@@ -49,7 +49,7 @@ fn router() -> Router {
     )
 }
 
-async fn get(path: &str) -> axum::response::Response {
+async fn get_response(path: &str) -> axum::response::Response {
     router()
         .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
         .await
@@ -66,7 +66,7 @@ async fn body(response: axum::response::Response) -> Vec<u8> {
 #[tokio::test]
 async fn root_and_frontend_deep_links_return_index() {
     for path in ["/", "/login", "/admin/channels", "/admin/channels/"] {
-        let response = get(path).await;
+        let response = get_response(path).await;
         assert_eq!(response.status(), StatusCode::OK, "请求路径: {path}");
         assert_eq!(response.headers()[CONTENT_TYPE], "text/html");
         assert_eq!(response.headers()[CACHE_CONTROL], "no-cache");
@@ -79,7 +79,7 @@ async fn root_and_frontend_deep_links_return_index() {
 
 #[tokio::test]
 async fn static_assets_use_mime_cache_and_conditional_requests() {
-    let response = get("/assets/app.abc123.js").await;
+    let response = get_response("/assets/app.abc123.js").await;
     assert_eq!(response.status(), StatusCode::OK);
     assert!(
         response.headers()[CONTENT_TYPE]
@@ -108,7 +108,7 @@ async fn static_assets_use_mime_cache_and_conditional_requests() {
     assert_eq!(not_modified.headers()[ETAG], etag);
     assert!(body(not_modified).await.is_empty());
 
-    let icon = get("/favicon.svg").await;
+    let icon = get_response("/favicon.svg").await;
     assert_eq!(icon.status(), StatusCode::OK);
     assert_eq!(icon.headers()[CONTENT_TYPE], "image/svg+xml");
     assert_eq!(icon.headers()[CACHE_CONTROL], "no-cache");
@@ -125,13 +125,19 @@ async fn api_operations_and_missing_files_never_fall_back_to_html() {
         "/assets/missing.js",
         "/.env",
     ] {
-        let response = get(path).await;
+        let response = get_response(path).await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND, "请求路径: {path}");
         assert_ne!(body(response).await, INDEX);
     }
 
-    assert_eq!(get("/api/known").await.status(), StatusCode::NO_CONTENT);
-    assert_eq!(get("/healthz").await.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        get_response("/api/known").await.status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        get_response("/healthz").await.status(),
+        StatusCode::NO_CONTENT
+    );
 }
 
 #[tokio::test]
