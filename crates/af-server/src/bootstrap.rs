@@ -53,6 +53,7 @@ use crate::{
     BackgroundTaskSupervisor, BillingChatService, BillingFlushReport, BillingRuntime,
     BillingRuntimeError, ChatRoutePlanner, ShutdownController, SupervisorError, SupervisorShutdown,
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
+    frontend::EmbeddedFrontendAssets,
     scheduled_chat::ScheduledChatService,
     system_shutdown_signal,
 };
@@ -736,6 +737,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.admin_user_reader),
             Arc::clone(&self.stage.infrastructure.admin_user_writer),
             self.stage.infrastructure.query_api_key_policy,
+            Some(Arc::new(EmbeddedFrontendAssets)),
         );
         let Bootstrap {
             config,

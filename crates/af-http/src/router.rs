@@ -21,6 +21,7 @@ use http::{
 use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLayer};
 
 use crate::authentication::{AuthenticationState, authenticate_api_key};
+use crate::frontend_assets::{FrontendAssetSource, frontend_fallback};
 use crate::management_auth::{ManagementAuthenticationState, authenticate_management_session};
 use crate::management_authorization::authorize_management_admin;
 use crate::management_channel_probe::probe_admin_channel;
@@ -96,6 +97,7 @@ pub fn build_router(
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
     query_api_key_policy: QueryApiKeyPolicy,
+    frontend_assets: Option<Arc<dyn FrontendAssetSource>>,
 ) -> HttpRouter {
     let authentication = middleware::from_fn_with_state(
         AuthenticationState::new(authenticator, query_api_key_policy, config),
@@ -275,19 +277,37 @@ pub fn build_router(
                 .route_layer(credential_item_authentication),
         )
         .with_state(http_state);
-    HttpRouter::new(build_router_with_routes(
+    HttpRouter::new(build_router_with_routes_and_frontend(
         public_routes.merge(management_routes),
         operations_router(readiness),
         config,
         DEFAULT_REQUEST_BODY_LIMIT_BYTES,
+        frontend_assets,
     ))
 }
 
+#[cfg(test)]
 pub(crate) fn build_router_with_routes(
     public_routes: Router,
     operations_routes: Router,
     config: &ServerConfig,
     body_limit: usize,
+) -> Router {
+    build_router_with_routes_and_frontend(
+        public_routes,
+        operations_routes,
+        config,
+        body_limit,
+        None,
+    )
+}
+
+pub(crate) fn build_router_with_routes_and_frontend(
+    public_routes: Router,
+    operations_routes: Router,
+    config: &ServerConfig,
+    body_limit: usize,
+    frontend_assets: Option<Arc<dyn FrontendAssetSource>>,
 ) -> Router {
     let public_routes = public_routes
         // 显式覆盖 Axum 隐含的 2 MiB，确保 extractor 与流量层共享同一预算。
@@ -315,9 +335,12 @@ pub(crate) fn build_router_with_routes(
         // 原始失败对象可能携带敏感上下文，错误分类由后续响应映射显式记录。
         .on_failure(());
 
-    Router::new()
-        .merge(public_routes)
-        .merge(operations_routes)
+    let router = Router::new().merge(public_routes).merge(operations_routes);
+    let router = match frontend_assets {
+        Some(source) => router.fallback(frontend_fallback(source)),
+        None => router,
+    };
+    router
         .layer(trace)
         // request-id 最外层覆盖 404、预检、Origin 拒绝和 413。
         .layer(middleware::from_fn(assign_request_id))

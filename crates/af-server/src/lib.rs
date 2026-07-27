@@ -6,6 +6,7 @@ mod bootstrap;
 mod channel_probe;
 #[cfg(test)]
 mod channel_probe_tests;
+mod frontend;
 mod readiness;
 mod scheduled_chat;
 mod shutdown;
