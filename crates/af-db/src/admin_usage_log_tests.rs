@@ -2,7 +2,7 @@ use std::{error::Error, time::Duration};
 
 use af_domain::{BillingReservationId, GatewayPrincipal, GroupId, Quota, TokenId, UserId};
 use sea_orm::{
-    ActiveModelTrait, EntityTrait, JsonValue, QueryOrder, Set,
+    ActiveModelTrait, ConnectionTrait, DbBackend, JsonValue, Set, Statement,
     entity::prelude::TimeDateTimeWithTimeZone,
 };
 
@@ -11,7 +11,7 @@ use super::{
     DatabaseOptions, MigrationOptions, UsageLogBillingMode, UsageLogRepository, UsageLogSemantics,
     UsageLogSource, UsageLogUsage, UsageLogWrite,
 };
-use crate::entity::{TokenHash, groups, tokens, usage_logs, users};
+use crate::entity::{TokenHash, groups, tokens, users};
 
 #[tokio::test]
 async fn list_uses_newest_first_cursor_and_preserves_usage_dimensions() -> Result<(), Box<dyn Error>>
@@ -64,14 +64,15 @@ async fn invalid_pagination_corrupt_state_and_closed_pool_fail_closed() -> Resul
         );
     }
 
-    let newest = usage_logs::Entity::find()
-        .order_by_desc(usage_logs::Column::Id)
-        .one(fixture.pool.connection())
-        .await?
-        .expect("测试用量日志必须存在");
-    let mut broken = usage_logs::ActiveModel::from(newest);
-    broken.usage_source = Set(9);
-    broken.update(fixture.pool.connection()).await?;
+    fixture
+        .pool
+        .connection()
+        .execute(Statement::from_string(
+            DbBackend::Sqlite,
+            "UPDATE usage_logs SET usage_source = 9 WHERE id = (SELECT MAX(id) FROM usage_logs)"
+                .to_owned(),
+        ))
+        .await?;
     assert_eq!(
         fixture.repository.list(None, 10).await.unwrap_err(),
         AdminUsageLogRepositoryError::Invariant
