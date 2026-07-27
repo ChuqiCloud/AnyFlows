@@ -336,7 +336,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
     message: string;
 };
 export type SessionResponse = {
@@ -346,6 +346,12 @@ export type SessionResponse = {
 export type SessionUser = {
     id: number;
     role: 'user' | 'admin';
+};
+export type SetupRequest = {
+    username: string;
+};
+export type SetupStatusResponse = {
+    setup_required: boolean;
 };
 export type AdminChannelCreateRequestWritable = {
     name: string;
@@ -433,6 +439,10 @@ export type AdminCredentialUpdateRequestWritable = {
     oauth_account_key: string | null;
     oauth_project_id: string | null;
 };
+export type SetupRequestWritable = {
+    username: string;
+    password: string;
+};
 export type LoginManagementSessionData = {
     body: LoginRequest;
     path?: never;
@@ -464,6 +474,36 @@ export type GetManagementSessionResponses = {
     200: SessionResponse;
 };
 export type GetManagementSessionResponse = GetManagementSessionResponses[keyof GetManagementSessionResponses];
+export type GetInitialSetupStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/setup/status';
+};
+export type GetInitialSetupStatusErrors = {
+    500: ManagementError;
+};
+export type GetInitialSetupStatusError = GetInitialSetupStatusErrors[keyof GetInitialSetupStatusErrors];
+export type GetInitialSetupStatusResponses = {
+    200: SetupStatusResponse;
+};
+export type GetInitialSetupStatusResponse = GetInitialSetupStatusResponses[keyof GetInitialSetupStatusResponses];
+export type InitializeAdminSetupData = {
+    body: SetupRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/setup';
+};
+export type InitializeAdminSetupErrors = {
+    400: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type InitializeAdminSetupError = InitializeAdminSetupErrors[keyof InitializeAdminSetupErrors];
+export type InitializeAdminSetupResponses = {
+    200: LoginResponse;
+};
+export type InitializeAdminSetupResponse = InitializeAdminSetupResponses[keyof InitializeAdminSetupResponses];
 export type GetAdminDashboardData = {
     body?: never;
     path?: never;

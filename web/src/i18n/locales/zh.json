@@ -351,6 +351,7 @@
       "invalidCredentials": "用户名或密码不正确。",
       "adminRequired": "该账户没有管理员权限。",
       "sessionExpired": "会话已过期，请重新登录。",
+      "setupComplete": "系统已完成初始化，请使用管理员账户登录。",
       "unavailable": "暂时无法连接服务，请稍后重试。"
     },
     "session": {
@@ -363,6 +364,39 @@
     "account": {
       "admin": "管理员",
       "logout": "退出登录"
+    }
+  },
+  "setup": {
+    "hero": {
+      "eyebrow": "AnyFlows 首次安装",
+      "title": "建立第一位系统管理员",
+      "body": "设置仅属于你的管理凭据，完成后即可进入控制台。"
+    },
+    "form": {
+      "title": "创建管理员",
+      "subtitle": "首次安装仅可完成一次",
+      "username": "管理员用户名",
+      "usernamePlaceholder": "输入管理员用户名",
+      "password": "管理员密码",
+      "passwordPlaceholder": "输入管理员密码",
+      "passwordHelp": "使用 12 至 128 个 UTF-8 字节，不支持控制字符。",
+      "passwordConfirmation": "确认密码",
+      "passwordConfirmationPlaceholder": "再次输入管理员密码",
+      "showPassword": "显示密码",
+      "hidePassword": "隐藏密码",
+      "submit": "完成初始化",
+      "submitting": "正在初始化"
+    },
+    "errors": {
+      "invalidInput": "用户名或密码不符合输入要求。",
+      "passwordMismatch": "两次输入的密码不一致。",
+      "unavailable": "暂时无法完成初始化，请稍后重试。"
+    },
+    "gate": {
+      "loading": "正在检查首次安装状态",
+      "unavailableTitle": "无法确认安装状态",
+      "unavailableBody": "服务暂时没有返回可靠状态，为保护管理入口，请重试。",
+      "retry": "重新检查"
     }
   },
   "landing": {

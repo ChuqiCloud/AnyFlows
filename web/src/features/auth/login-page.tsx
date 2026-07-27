@@ -12,7 +12,7 @@ import { apiClient, ApiError } from '@/lib/api'
 import { loginManagementSession } from '@/lib/api/generated/sdk.gen'
 import type { LoginRequest } from '@/lib/api/generated/types.gen'
 
-export type LoginNotice = 'adminRequired' | 'sessionExpired'
+export type LoginNotice = 'adminRequired' | 'sessionExpired' | 'setupComplete'
 
 type LoginPageProps = {
   notice?: LoginNotice
