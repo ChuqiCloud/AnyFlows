@@ -10,43 +10,78 @@ use axum::{
 };
 use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::{chat_completions::HttpState, management_error::ManagementError};
 
-#[derive(Serialize)]
-struct AdminUserResponse {
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminUser)]
+pub(crate) struct AdminUserResponse {
+    #[schema(minimum = 1)]
     id: i64,
+    #[schema(min_length = 1, max_length = 64)]
     username: String,
+    #[schema(max_length = 320, format = Email, required = true)]
     email: Option<String>,
+    #[schema(
+        value_type = crate::openapi::schema::AdminSessionRoleSchema,
+        inline
+    )]
     role: af_admin::SessionRole,
+    #[schema(value_type = crate::openapi::schema::AdminUserStatusSchema)]
     status: af_admin::AdminUserStatus,
+    #[schema(minimum = 1)]
     default_group_id: i64,
+    #[schema(minimum = 0)]
     quota: i64,
+    #[schema(minimum = 0)]
     used_quota: i64,
+    #[schema(minimum = 0)]
     frozen_quota: i64,
+    #[schema(minimum = 0)]
     request_count: i64,
+    #[schema(minimum = 0, required = true)]
     rpm_limit: Option<i32>,
+    #[schema(minimum = 0, required = true)]
     concurrency: Option<i32>,
 }
 
-#[derive(Serialize)]
-struct AdminUserListResponse {
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminUserListResponse)]
+pub(crate) struct AdminUserListResponse {
+    #[schema(max_items = 100)]
     users: Vec<AdminUserResponse>,
+    #[schema(minimum = 1, required = true)]
     next_cursor: Option<i64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
+#[schema(as = AdminUserWriteRequest)]
 /// 管理端创建或完整更新用户时使用的写入正文。
 pub(crate) struct AdminUserWriteRequest {
+    #[schema(min_length = 1, max_length = 64)]
     username: String,
+    #[schema(min_length = 1, max_length = 320)]
     email: Option<String>,
+    #[schema(min_length = 1, max_length = 4096, format = Password)]
     password: Option<String>,
+    #[schema(
+        value_type = crate::openapi::schema::AdminSessionRoleSchema,
+        inline
+    )]
     role: af_admin::SessionRole,
+    #[schema(value_type = crate::openapi::schema::AdminUserStatusSchema)]
     status: af_admin::AdminUserStatus,
+    #[schema(minimum = 1)]
     default_group_id: i64,
+    #[schema(minimum = 0)]
     quota: i64,
+    #[schema(minimum = 0)]
     rpm_limit: Option<i32>,
+    #[schema(minimum = 0)]
     concurrency: Option<i32>,
 }
 

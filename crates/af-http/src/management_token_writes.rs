@@ -9,6 +9,7 @@ use axum::{
 };
 use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::{
     chat_completions::HttpState,
@@ -16,28 +17,58 @@ use crate::{
     management_tokens::{AdminTokenResponse, parse_token_id},
 };
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
+#[schema(as = AdminTokenWriteRequest)]
 /// 管理端签发或完整更新令牌时使用的配置正文。
 pub(crate) struct AdminTokenWriteRequest {
+    /// 令牌所属用户 ID；更新时必须与现有归属一致。
+    #[schema(minimum = 1)]
     user_id: i64,
+    #[schema(min_length = 1, max_length = 128)]
     name: String,
+    #[schema(value_type = crate::openapi::schema::AdminTokenStatusSchema)]
     status: af_admin::AdminTokenStatus,
+    /// 强制绑定分组；null 表示使用所属用户的默认分组。
+    #[schema(minimum = 1, required = true)]
     group_id: Option<i64>,
+    #[schema(minimum = 0)]
     remain_quota: i64,
     unlimited_quota: bool,
+    /// Unix 秒时间戳；null 表示永不过期。
+    #[schema(minimum = 0, required = true)]
     expired_at: Option<i64>,
+    #[schema(
+        schema_with = crate::openapi::schema::token_model_limits_write_schema,
+        required = true
+    )]
     model_limits: Option<Vec<String>>,
+    #[schema(
+        schema_with = crate::openapi::schema::token_allow_ips_write_schema,
+        required = true
+    )]
     allow_ips: Option<Vec<String>>,
     cross_group_retry: bool,
+    #[schema(minimum = 0, required = true)]
     rate_limit_5h: Option<i64>,
+    #[schema(minimum = 0, required = true)]
     rate_limit_1d: Option<i64>,
+    #[schema(minimum = 0, required = true)]
     rate_limit_7d: Option<i64>,
+    #[schema(minimum = 0, required = true)]
     max_requests: Option<i64>,
 }
 
-#[derive(Serialize)]
-struct IssuedAdminTokenResponse<'a> {
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = IssuedAdminToken)]
+pub(crate) struct IssuedAdminTokenResponse<'a> {
+    /// 只在本次签发响应中出现的完整 API Key。
+    #[schema(
+        min_length = 49,
+        max_length = 49,
+        pattern = "^sk-af-[A-Za-z0-9_-]{43}$"
+    )]
     api_key: &'a str,
     token: AdminTokenResponse,
 }

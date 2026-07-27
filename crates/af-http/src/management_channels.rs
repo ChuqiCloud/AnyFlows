@@ -7,35 +7,62 @@ use axum::{
 };
 use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::{chat_completions::HttpState, management_error::ManagementError};
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminChannel)]
 pub(crate) struct AdminChannelResponse {
+    #[schema(minimum = 1)]
     id: i64,
     #[serde(rename = "type")]
+    #[schema(value_type = crate::openapi::schema::AdminChannelTypeSchema)]
     channel_type: af_domain::ChannelType,
+    #[schema(min_length = 1, max_length = 128)]
     name: String,
+    #[schema(value_type = crate::openapi::schema::AdminChannelProtocolSchema)]
     protocol: af_domain::Protocol,
+    /// 不含 userinfo、查询串或片段的 HTTP(S) 基础地址。
+    #[schema(max_length = 2048, format = "uri", required = true)]
     base_url: Option<String>,
+    #[schema(value_type = crate::openapi::schema::AdminRoutingStatusSchema)]
     status: af_admin::AdminRoutingStatus,
+    #[schema(minimum = 0)]
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    #[schema(schema_with = crate::openapi::schema::channel_models_schema)]
     models: Vec<String>,
+    #[schema(schema_with = crate::openapi::schema::channel_group_ids_schema)]
     group_ids: Vec<i64>,
+    #[schema(schema_with = crate::openapi::schema::model_mapping_schema)]
     model_mapping: serde_json::Value,
+    /// 不包含认证信息的请求参数覆盖对象。
+    #[schema(schema_with = crate::openapi::schema::free_form_object_schema)]
     param_override: serde_json::Value,
+    #[schema(required = true)]
     balance: Option<i64>,
+    #[schema(minimum = 0)]
     used_quota: i64,
+    #[schema(min_length = 1, max_length = 64, required = true)]
     tag: Option<String>,
+    /// Unix 秒时间戳。
+    #[schema(minimum = 0)]
     created_at: i64,
+    /// Unix 秒时间戳。
+    #[schema(minimum = 0)]
     updated_at: i64,
 }
 
-#[derive(Serialize)]
-struct AdminChannelListResponse {
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminChannelListResponse)]
+pub(crate) struct AdminChannelListResponse {
+    #[schema(max_items = 100)]
     channels: Vec<AdminChannelResponse>,
+    #[schema(minimum = 1, required = true)]
     next_cursor: Option<i64>,
 }
 

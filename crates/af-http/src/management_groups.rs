@@ -7,30 +7,58 @@ use axum::{
 };
 use http::{HeaderValue, header::CACHE_CONTROL};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::{chat_completions::HttpState, management_error::ManagementError};
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminGroup)]
 pub(crate) struct AdminGroupResponse {
+    #[schema(minimum = 1)]
     id: i64,
+    #[schema(min_length = 1, max_length = 64)]
     name: String,
+    #[schema(min_length = 1, max_length = 128)]
     display_name: String,
+    /// 百万分比定点倍率，1000000 表示 1.0。
+    #[schema(minimum = 0)]
     ratio_micros: i64,
+    #[schema(minimum = 0, required = true)]
     peak_ratio_micros: Option<i64>,
+    #[schema(
+        pattern = "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$",
+        required = true
+    )]
     peak_start: Option<String>,
+    #[schema(
+        pattern = "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$",
+        required = true
+    )]
     peak_end: Option<String>,
     is_exclusive: bool,
+    #[schema(minimum = 0, required = true)]
     daily_limit: Option<i64>,
+    #[schema(minimum = 0, required = true)]
     weekly_limit: Option<i64>,
+    #[schema(minimum = 0, required = true)]
     monthly_limit: Option<i64>,
+    #[schema(minimum = 0, required = true)]
     rpm_limit: Option<i32>,
+    #[schema(minimum = 1, required = true)]
     fallback_group_id: Option<i64>,
+    /// 受限 JSON 对象，服务端编码后最大 16 KiB。
+    #[schema(schema_with = crate::openapi::schema::free_form_object_schema)]
     flags: serde_json::Value,
 }
 
-#[derive(Serialize)]
-struct AdminGroupListResponse {
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminGroupListResponse)]
+pub(crate) struct AdminGroupListResponse {
+    #[schema(max_items = 100)]
     groups: Vec<AdminGroupResponse>,
+    #[schema(minimum = 1, required = true)]
     next_cursor: Option<i64>,
 }
 

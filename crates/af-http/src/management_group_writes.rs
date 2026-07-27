@@ -9,6 +9,7 @@ use axum::{
 };
 use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
 use serde::Deserialize;
+use utoipa::ToSchema;
 
 use crate::{
     chat_completions::HttpState,
@@ -16,22 +17,38 @@ use crate::{
     management_groups::{AdminGroupResponse, parse_group_id},
 };
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
+#[schema(as = AdminGroupWriteRequest)]
 /// 管理端创建或完整更新分组时使用的写入正文。
 pub(crate) struct AdminGroupWriteRequest {
+    #[schema(min_length = 1, max_length = 64)]
     name: String,
+    #[schema(min_length = 1, max_length = 128)]
     display_name: String,
+    /// 百万分比定点倍率，1000000 表示 1.0。
+    #[schema(minimum = 0)]
     ratio_micros: i64,
+    /// 与 peak_start、peak_end 同时为空或同时有值。
+    #[schema(minimum = 0)]
     peak_ratio_micros: Option<i64>,
+    #[schema(pattern = "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$")]
     peak_start: Option<String>,
+    #[schema(pattern = "^([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$")]
     peak_end: Option<String>,
     is_exclusive: bool,
+    #[schema(minimum = 0)]
     daily_limit: Option<i64>,
+    #[schema(minimum = 0)]
     weekly_limit: Option<i64>,
+    #[schema(minimum = 0)]
     monthly_limit: Option<i64>,
+    #[schema(minimum = 0)]
     rpm_limit: Option<i32>,
+    #[schema(minimum = 1)]
     fallback_group_id: Option<i64>,
+    /// 受限 JSON 对象，服务端编码后最大 16 KiB。
+    #[schema(schema_with = crate::openapi::schema::free_form_object_schema)]
     flags: serde_json::Value,
 }
 

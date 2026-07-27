@@ -7,40 +7,81 @@ use axum::{
 };
 use http::{HeaderValue, header::CACHE_CONTROL};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::{chat_completions::HttpState, management_error::ManagementError};
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminToken)]
 pub(crate) struct AdminTokenResponse {
+    #[schema(minimum = 1)]
     id: i64,
+    #[schema(minimum = 1)]
     user_id: i64,
+    /// 不可用于鉴权的 18 字符展示前缀。
+    #[schema(
+        min_length = 18,
+        max_length = 18,
+        pattern = "^sk-af-[A-Za-z0-9_-]{12}$"
+    )]
     key_prefix: String,
+    #[schema(min_length = 1, max_length = 128)]
     name: String,
+    #[schema(value_type = crate::openapi::schema::AdminTokenStatusSchema)]
     status: af_admin::AdminTokenStatus,
+    #[schema(minimum = 1, required = true)]
     group_id: Option<i64>,
+    #[schema(minimum = 0)]
     remain_quota: i64,
     unlimited_quota: bool,
+    #[schema(minimum = 0)]
     used_quota: i64,
+    /// Unix 秒时间戳；null 表示永不过期。
+    #[schema(minimum = 0, required = true)]
     expired_at: Option<i64>,
+    #[schema(
+        schema_with = crate::openapi::schema::token_model_limits_schema,
+        required = true
+    )]
     model_limits: Option<Vec<String>>,
+    #[schema(
+        schema_with = crate::openapi::schema::token_allow_ips_schema,
+        required = true
+    )]
     allow_ips: Option<Vec<String>>,
     cross_group_retry: bool,
+    #[schema(minimum = 0, required = true)]
     rate_limit_5h: Option<i64>,
+    #[schema(minimum = 0, required = true)]
     rate_limit_1d: Option<i64>,
+    #[schema(minimum = 0, required = true)]
     rate_limit_7d: Option<i64>,
+    #[schema(minimum = 0)]
     usage_5h: i64,
+    #[schema(minimum = 0)]
     usage_1d: i64,
+    #[schema(minimum = 0)]
     usage_7d: i64,
+    #[schema(minimum = 0)]
     window_5h_start: i64,
+    #[schema(minimum = 0)]
     window_1d_start: i64,
+    #[schema(minimum = 0)]
     window_7d_start: i64,
+    #[schema(minimum = 0, required = true)]
     max_requests: Option<i64>,
+    #[schema(minimum = 0)]
     used_requests: i64,
 }
 
-#[derive(Serialize)]
-struct AdminTokenListResponse {
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminTokenListResponse)]
+pub(crate) struct AdminTokenListResponse {
+    #[schema(max_items = 100)]
     tokens: Vec<AdminTokenResponse>,
+    #[schema(minimum = 1, required = true)]
     next_cursor: Option<i64>,
 }
 

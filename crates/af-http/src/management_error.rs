@@ -1,6 +1,7 @@
 use axum::response::{IntoResponse, Response};
 use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
 use serde::Serialize;
+use utoipa::ToSchema;
 
 /// 管理 API 对外稳定的错误码和英文文案。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -33,8 +34,14 @@ pub(crate) enum ManagementError {
     Internal,
 }
 
-#[derive(Serialize)]
-struct ManagementErrorBody {
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = ManagementError)]
+pub(crate) struct ManagementErrorBody {
+    #[schema(
+        value_type = crate::openapi::schema::ManagementErrorCodeSchema,
+        inline
+    )]
     code: &'static str,
     message: &'static str,
 }

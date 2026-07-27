@@ -32,6 +32,7 @@ cargo build --workspace
 # 质量门禁（与 CI 一致）
 cargo fmt --all -- --check                                              # 格式
 cargo run --locked --package xtask -- check-deps                        # crate 依赖边界
+cargo run --locked --package xtask -- openapi check                     # OpenAPI 契约漂移
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo nextest run --workspace --all-features --locked                   # 测试
 cargo test --workspace --all-features --doc --locked                    # 文档测试
@@ -41,8 +42,14 @@ cargo deny --all-features --locked check advisories bans licenses sources
 corepack pnpm@10.33.0 --dir web install --frozen-lockfile
 corepack pnpm@10.33.0 --dir web dev
 
-# 更新并校验 OpenAPI 生成代码
+# 仅从 Rust 契约导出 OpenAPI
+cargo run --locked --package xtask -- openapi export
+
+# 同步导出 OpenAPI，并更新生成客户端
 corepack pnpm@10.33.0 --dir web api:generate
+
+# 校验 OpenAPI 与生成客户端均未漂移
+cargo run --locked --package xtask -- openapi check
 corepack pnpm@10.33.0 --dir web api:check
 
 # 前端质量门禁
@@ -61,7 +68,7 @@ corepack pnpm@10.33.0 --dir web check
 | 协议 · 适配 | `af-protocol` `af-adapter` | Canonical 协议中间层 / 上游供应商适配器（**协议纯净，禁止反向依赖应用层**） |
 | 基础设施 | `af-db` `af-cache` `af-httpclient` `af-config` `af-telemetry` | 存储 / 缓存 / HTTP 客户端 / 配置 / 可观测性 |
 | 领域 | `af-domain` | 纯领域类型、值对象、错误（**无 IO**） |
-| 工具 | `tools/xtask` | 依赖边界校验等仓库质量任务 |
+| 工具 | `tools/xtask` | 依赖边界校验、OpenAPI 导出与漂移检查等仓库质量任务 |
 
 ### 依赖策略要点（`tools/xtask`）
 

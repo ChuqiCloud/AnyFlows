@@ -113,6 +113,7 @@ tower-http = { version = "0.7.0", default-features = false, features = [
 ] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
+utoipa = { version = "5.5.0", features = ["preserve_order", "preserve_path_order"] }
 url = "2.5.8"
 uuid = { version = "1.24.0", default-features = false, features = ["std", "v4"] }
 zeroize = "1.9.0"

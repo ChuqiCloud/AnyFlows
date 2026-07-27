@@ -3,7 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::error::Error;
+use std::fs;
 use std::io;
+use std::path::{Path, PathBuf};
 use std::process;
 
 use cargo_metadata::{DependencyKind, Metadata, MetadataCommand};
@@ -28,6 +30,14 @@ const PRODUCT_CRATES: [&str; 16] = [
 ];
 
 const TOOLING_CRATES: [&str; 1] = ["xtask"];
+const OPENAPI_OUTPUT_PATH: &str = "web/openapi/openapi.json";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Command {
+    CheckDependencies,
+    ExportOpenApi,
+    CheckOpenApi,
+}
 
 #[derive(Debug, Clone)]
 struct DeclaredDependency {
@@ -84,14 +94,32 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
-    let mut args = env::args().skip(1);
-    let command = args.next();
-    if command.as_deref() != Some("check-deps") || args.next().is_some() {
-        return Err(
-            io::Error::new(io::ErrorKind::InvalidInput, "usage: cargo xtask check-deps").into(),
-        );
+    let args = env::args().skip(1).collect::<Vec<_>>();
+    match parse_command(&args)? {
+        Command::CheckDependencies => check_dependencies(),
+        Command::ExportOpenApi => export_openapi(),
+        Command::CheckOpenApi => check_openapi(),
     }
+}
 
+fn parse_command(args: &[String]) -> Result<Command, io::Error> {
+    match args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        ["check-deps"] => Ok(Command::CheckDependencies),
+        ["openapi", "export"] => Ok(Command::ExportOpenApi),
+        ["openapi", "check"] => Ok(Command::CheckOpenApi),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "usage: cargo xtask <check-deps|openapi export|openapi check>",
+        )),
+    }
+}
+
+fn check_dependencies() -> Result<(), Box<dyn Error>> {
     let mut metadata_command = MetadataCommand::new();
     metadata_command
         .no_deps()
@@ -107,6 +135,54 @@ fn run() -> Result<(), Box<dyn Error>> {
         eprintln!("{}", violation.render());
     }
     process::exit(1);
+}
+
+fn export_openapi() -> Result<(), Box<dyn Error>> {
+    let output = render_openapi()?;
+    let path = openapi_output_path();
+    fs::write(&path, output)?;
+    println!("OpenAPI 已导出到 {}", display_workspace_path(&path));
+    Ok(())
+}
+
+fn check_openapi() -> Result<(), Box<dyn Error>> {
+    let expected = render_openapi()?;
+    let path = openapi_output_path();
+    let committed = fs::read_to_string(&path)?;
+    if committed == expected {
+        println!("OpenAPI 契约与 Rust 定义一致");
+        return Ok(());
+    }
+
+    Err(io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!(
+            "{} 已过期，请运行 `cargo xtask openapi export`",
+            display_workspace_path(&path)
+        ),
+    )
+    .into())
+}
+
+fn render_openapi() -> Result<String, serde_json::Error> {
+    af_http::openapi_document()
+        .to_pretty_json()
+        .map(|document| format!("{document}\n"))
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn openapi_output_path() -> PathBuf {
+    workspace_root().join(OPENAPI_OUTPUT_PATH)
+}
+
+fn display_workspace_path(path: &Path) -> String {
+    path.strip_prefix(workspace_root())
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 fn validate_metadata(metadata: &Metadata) -> Vec<Violation> {
@@ -395,6 +471,23 @@ fn normalize_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_repository_commands() {
+        assert_eq!(
+            parse_command(&["check-deps".to_owned()]).unwrap(),
+            Command::CheckDependencies
+        );
+        assert_eq!(
+            parse_command(&["openapi".to_owned(), "export".to_owned()]).unwrap(),
+            Command::ExportOpenApi
+        );
+        assert_eq!(
+            parse_command(&["openapi".to_owned(), "check".to_owned()]).unwrap(),
+            Command::CheckOpenApi
+        );
+        assert!(parse_command(&["openapi".to_owned()]).is_err());
+    }
 
     fn baseline_workspace() -> BTreeSet<String> {
         PRODUCT_CRATES
