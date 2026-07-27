@@ -392,10 +392,12 @@ fn get_count(
     backend: DbBackend,
 ) -> Result<i64, AdminDashboardRepositoryError> {
     match backend {
-        DbBackend::MySql => result
-            .try_get::<u64>("", column)
-            .ok()
-            .and_then(|value| i64::try_from(value).ok()),
+        DbBackend::MySql => result.try_get::<i64>("", column).ok().or_else(|| {
+            result
+                .try_get::<u64>("", column)
+                .ok()
+                .and_then(|value| i64::try_from(value).ok())
+        }),
         DbBackend::Postgres | DbBackend::Sqlite => result.try_get::<i64>("", column).ok(),
     }
     .ok_or_else(|| record_internal_error(AdminDashboardRepositoryError::Invariant))
