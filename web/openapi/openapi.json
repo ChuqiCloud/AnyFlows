@@ -928,6 +928,50 @@
             "$ref": "#/components/responses/InternalError"
           }
         }
+      },
+      "post": {
+        "operationId": "createAdminChannel",
+        "summary": "创建管理员渠道",
+        "description": "创建当前运行时支持的 OpenAI Chat 渠道。Header 覆盖和适配器设置只作为敏感输入处理，不随响应返回。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminChannelWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "渠道创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminChannel"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
       }
     },
     "/api/admin/channels/{id}": {
@@ -963,6 +1007,109 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/ChannelNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateAdminChannel",
+        "summary": "更新管理员渠道",
+        "description": "完整更新渠道配置，保留探测余额、累计用量和创建时间等运行字段。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "渠道 ID。"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminChannelWriteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "渠道更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminChannel"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/ChannelNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAdminChannel",
+        "summary": "软删除管理员渠道",
+        "description": "在同一事务内软删除渠道和所属凭据，并清理能力、模型与分组关系。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "渠道 ID。"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "渠道软删除成功"
           },
           "400": {
             "$ref": "#/components/responses/InvalidRequest"
@@ -1054,6 +1201,66 @@
             "$ref": "#/components/responses/InternalError"
           }
         }
+      },
+      "post": {
+        "operationId": "createAdminCredential",
+        "summary": "创建管理员渠道凭据",
+        "description": "创建 API Key 或 OAuth access token 凭据。明文只用于生成绑定真实渠道、凭据 ID 和类型的密文，不随响应返回。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "父渠道 ID。"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCredentialCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "凭据创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCredential"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/ChannelNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
       }
     },
     "/api/admin/channels/{channel_id}/credentials/{credential_id}": {
@@ -1100,6 +1307,131 @@
                 }
               }
             }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/CredentialNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateAdminCredential",
+        "summary": "更新管理员渠道凭据",
+        "description": "完整更新凭据配置。所属渠道和类型不可改变；secret 为 null 时保留已有密文，提供新值时重新加密。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "父渠道 ID。"
+          },
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "凭据 ID。"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCredentialUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "凭据更新成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCredential"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/CredentialNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAdminCredential",
+        "summary": "软删除管理员渠道凭据",
+        "description": "软删除凭据；删除母凭据时在同一事务内级联软删除全部有效影子后代。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "父渠道 ID。"
+          },
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "凭据 ID。"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "凭据软删除成功"
           },
           "400": {
             "$ref": "#/components/responses/InvalidRequest"
@@ -1826,6 +2158,14 @@
           "auto_disabled"
         ]
       },
+      "AdminRoutingWriteStatus": {
+        "type": "string",
+        "enum": [
+          "enabled",
+          "disabled"
+        ],
+        "description": "管理写接口只允许手动启用或禁用；自动禁用由运行时维护。"
+      },
       "AdminChannelType": {
         "type": "string",
         "enum": [
@@ -1845,6 +2185,102 @@
           "anthropic",
           "gemini"
         ]
+      },
+      "AdminChannelWriteRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "type",
+          "protocol",
+          "base_url",
+          "status",
+          "weight",
+          "priority",
+          "auto_ban",
+          "model_mapping",
+          "param_override",
+          "header_override",
+          "settings",
+          "tag"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "type": {
+            "type": "string",
+            "const": "openai",
+            "description": "当前生产写链路仅支持 OpenAI 兼容适配器。"
+          },
+          "protocol": {
+            "type": "string",
+            "const": "openai_chat",
+            "description": "当前生产写链路仅支持 OpenAI Chat 协议。"
+          },
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 2048,
+            "description": "不含 userinfo、查询串或片段的 HTTP(S) 基础地址。"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdminRoutingWriteStatus"
+          },
+          "weight": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "auto_ban": {
+            "type": "boolean"
+          },
+          "model_mapping": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": "Canonical 请求模型到上游模型的映射，序列化后最多 64 KiB。"
+          },
+          "param_override": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "请求参数覆盖对象，序列化后最多 64 KiB。"
+          },
+          "header_override": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "writeOnly": true,
+            "description": "敏感 Header 覆盖输入；拒绝认证、Host 和 hop-by-hop 头，永不随响应返回。"
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": true,
+            "writeOnly": true,
+            "description": "敏感适配器设置输入，序列化后最多 64 KiB，永不随响应返回。"
+          },
+          "tag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
       },
       "AdminChannel": {
         "type": "object",
@@ -2004,6 +2440,180 @@
         "enum": [
           "global",
           "spark"
+        ]
+      },
+      "AdminCredentialWriteFields": {
+        "type": "object",
+        "required": [
+          "kind",
+          "status",
+          "multi_key_mode",
+          "priority",
+          "weight",
+          "concurrency",
+          "load_factor_micros",
+          "rate_multiplier_micros",
+          "schedulable",
+          "parent_id",
+          "quota_dimension",
+          "proxy_id",
+          "oauth_provider",
+          "oauth_account_key",
+          "oauth_project_id"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "api_key",
+              "oauth"
+            ],
+            "description": "当前写链路仅支持 API Key 与 OAuth access token。"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdminRoutingWriteStatus"
+          },
+          "multi_key_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminCredentialMultiKeyMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "weight": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "concurrency": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "load_factor_micros": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "rate_multiplier_micros": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0,
+            "description": "账号侧成本倍率，不参与用户扣费。"
+          },
+          "schedulable": {
+            "type": "boolean"
+          },
+          "parent_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1,
+            "description": "同渠道且同类型的母凭据 ID；母凭据本身不得再有父级。"
+          },
+          "quota_dimension": {
+            "$ref": "#/components/schemas/AdminCredentialQuotaDimension"
+          },
+          "proxy_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "oauth_provider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "oauth_account_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "OAuth 账号的非令牌业务标识。"
+          },
+          "oauth_project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 255
+          }
+        }
+      },
+      "AdminCredentialCreateRequest": {
+        "unevaluatedProperties": false,
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminCredentialWriteFields"
+          },
+          {
+            "type": "object",
+            "required": [
+              "secret"
+            ],
+            "properties": {
+              "secret": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16384,
+                "writeOnly": true,
+                "description": "API Key 或 OAuth access token 明文；只用于本次加密，永不随响应返回。"
+              }
+            }
+          }
+        ]
+      },
+      "AdminCredentialUpdateRequest": {
+        "unevaluatedProperties": false,
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AdminCredentialWriteFields"
+          },
+          {
+            "type": "object",
+            "required": [
+              "secret"
+            ],
+            "properties": {
+              "secret": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1,
+                "maxLength": 16384,
+                "writeOnly": true,
+                "description": "新明文用于轮换；null 表示保留已有密文。"
+              }
+            }
+          }
         ]
       },
       "AdminCredential": {

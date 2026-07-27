@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AdminChannelReader, AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminTokenWriter,
-    AdminUserReader, AdminUserWriter, SessionAuthenticator, TokenAuthentication,
+    AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminTokenReader,
+    AdminTokenWriter, AdminUserReader, AdminUserWriter, SessionAuthenticator, TokenAuthentication,
 };
 use af_domain::AfError;
 use af_protocol::openai_chat::parse_request;
@@ -29,6 +29,7 @@ pub(crate) struct HttpState {
     chat: Arc<dyn ChatService>,
     pub(crate) session_authenticator: Arc<dyn SessionAuthenticator>,
     pub(crate) admin_channel_reader: Option<Arc<dyn AdminChannelReader>>,
+    pub(crate) admin_channel_writer: Option<Arc<dyn AdminChannelWriter>>,
     pub(crate) admin_group_reader: Arc<dyn AdminGroupReader>,
     pub(crate) admin_group_writer: Arc<dyn AdminGroupWriter>,
     pub(crate) admin_token_reader: Arc<dyn AdminTokenReader>,
@@ -53,6 +54,7 @@ impl HttpState {
             chat,
             session_authenticator,
             admin_channel_reader: None,
+            admin_channel_writer: None,
             admin_group_reader,
             admin_group_writer,
             admin_token_reader,
@@ -66,6 +68,12 @@ impl HttpState {
     /// 为包含渠道管理路由的组合根注入真实只读服务。
     pub(crate) fn with_admin_channel_reader(mut self, reader: Arc<dyn AdminChannelReader>) -> Self {
         self.admin_channel_reader = Some(reader);
+        self
+    }
+
+    /// 为包含渠道管理写路由的组合根注入真实写入服务。
+    pub(crate) fn with_admin_channel_writer(mut self, writer: Arc<dyn AdminChannelWriter>) -> Self {
+        self.admin_channel_writer = Some(writer);
         self
     }
 }

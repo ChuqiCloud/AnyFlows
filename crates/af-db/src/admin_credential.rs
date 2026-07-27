@@ -44,6 +44,40 @@ pub struct AdminCredentialRecord {
 }
 
 impl AdminCredentialRecord {
+    pub(crate) fn try_from_model(
+        model: credentials::Model,
+    ) -> Result<Self, AdminChannelRepositoryError> {
+        AdminCredentialRow {
+            credential_id: model.id,
+            channel_id: model.channel_id,
+            kind: model.kind,
+            status: model.status,
+            multi_key_mode: model.multi_key_mode,
+            priority: model.priority,
+            weight: model.weight,
+            concurrency: model.concurrency,
+            load_factor_micros: model.load_factor_micros,
+            rate_multiplier_micros: model.rate_multiplier_micros,
+            schedulable: model.schedulable,
+            rate_limited_at: model.rate_limited_at,
+            rate_limit_reset_at: model.rate_limit_reset_at,
+            overload_until: model.overload_until,
+            temp_unschedulable_until: model.temp_unschedulable_until,
+            session_window_start: model.session_window_start,
+            session_window_end: model.session_window_end,
+            parent_id: model.parent_id,
+            quota_dimension: model.quota_dimension,
+            proxy_id: model.proxy_id,
+            oauth_provider: model.oauth_provider,
+            oauth_account_key: model.oauth_account_key,
+            oauth_project_id: model.oauth_project_id,
+            last_used_at: model.last_used_at,
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+        }
+        .validate()
+    }
+
     /// 返回凭据主键。
     #[must_use]
     pub const fn credential_id(&self) -> CredentialId {

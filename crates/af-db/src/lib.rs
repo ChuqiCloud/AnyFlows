@@ -3,6 +3,9 @@
 mod admin_channel;
 #[cfg(test)]
 mod admin_channel_tests;
+mod admin_channel_write;
+#[cfg(test)]
+mod admin_channel_write_tests;
 mod admin_credential;
 mod admin_group;
 #[cfg(test)]
@@ -61,6 +64,11 @@ pub use admin_channel::{
     AdminChannelLookupOutcome, AdminChannelPageRecord, AdminChannelRecord, AdminChannelRepository,
     AdminChannelRepositoryConfigError, AdminChannelRepositoryError, MAX_ADMIN_CHANNEL_JSON_BYTES,
     MAX_ADMIN_CHANNEL_PAGE_SIZE,
+};
+pub use admin_channel_write::{
+    AdminChannelDeleteOutcome, AdminChannelMutationOutcome, AdminChannelWriteRecord,
+    AdminChannelWriteRepositoryError, AdminCredentialCreateOutcome, AdminCredentialDeleteOutcome,
+    AdminCredentialMutationOutcome, AdminCredentialWriteRecord,
 };
 pub use admin_credential::{
     AdminCredentialLookupOutcome, AdminCredentialPageOutcome, AdminCredentialPageRecord,

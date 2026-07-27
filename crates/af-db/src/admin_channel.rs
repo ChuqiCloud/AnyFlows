@@ -41,6 +41,40 @@ pub struct AdminChannelRecord {
 }
 
 impl AdminChannelRecord {
+    pub(crate) fn try_from_model(
+        model: channels::Model,
+    ) -> Result<Self, AdminChannelRepositoryError> {
+        let model_mapping_oversized = match serde_json::to_vec(&model.model_mapping) {
+            Ok(encoded) => encoded.len() > MAX_ADMIN_CHANNEL_JSON_BYTES as usize,
+            Err(_) => true,
+        };
+        let param_override_oversized = match serde_json::to_vec(&model.param_override) {
+            Ok(encoded) => encoded.len() > MAX_ADMIN_CHANNEL_JSON_BYTES as usize,
+            Err(_) => true,
+        };
+        AdminChannelRow {
+            channel_id: model.id,
+            name: model.name,
+            channel_type: model.r#type,
+            protocol: model.protocol,
+            base_url: model.base_url.map(|value| value.as_str().to_owned()),
+            status: model.status,
+            weight: model.weight,
+            priority: model.priority,
+            auto_ban: model.auto_ban,
+            model_mapping: Some(model.model_mapping),
+            model_mapping_oversized,
+            param_override: Some(model.param_override),
+            param_override_oversized,
+            balance: model.balance,
+            used_quota: model.used_quota,
+            tag: model.tag,
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+        }
+        .validate()
+    }
+
     /// 返回渠道主键。
     #[must_use]
     pub const fn channel_id(&self) -> ChannelId {

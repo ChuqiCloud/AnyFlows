@@ -2,6 +2,7 @@
 
 mod api_key;
 mod channel_read;
+mod channel_write;
 mod credential_read;
 mod group_read;
 mod group_write;
@@ -20,6 +21,13 @@ pub use api_key::{
 pub use channel_read::{
     AdminChannel, AdminChannelListQuery, AdminChannelPage, AdminRoutingStatus,
     DEFAULT_ADMIN_CHANNEL_PAGE_SIZE,
+};
+pub use channel_write::{
+    AdminChannelCreateCommand, AdminChannelCreateFuture, AdminChannelDeleteFuture,
+    AdminChannelUpdateCommand, AdminChannelUpdateFuture, AdminChannelWriteError,
+    AdminChannelWriter, AdminCredentialCreateCommand, AdminCredentialCreateFuture,
+    AdminCredentialDeleteFuture, AdminCredentialUpdateCommand, AdminCredentialUpdateFuture,
+    AdminRoutingWriteStatus, DatabaseAdminChannelWriter,
 };
 pub use credential_read::{
     AdminCredential, AdminCredentialListQuery, AdminCredentialMultiKeyMode, AdminCredentialPage,

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AdminChannelReader, AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminTokenWriter,
-    AdminUserReader, AdminUserWriter, SessionAuthenticator, TokenAuthenticator,
+    AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminTokenReader,
+    AdminTokenWriter, AdminUserReader, AdminUserWriter, SessionAuthenticator, TokenAuthenticator,
 };
 use af_config::ServerConfig;
 use af_protocol::openai_chat::MAX_BODY_BYTES;
@@ -21,7 +21,13 @@ use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLaye
 use crate::authentication::{AuthenticationState, authenticate_api_key};
 use crate::management_auth::{ManagementAuthenticationState, authenticate_management_session};
 use crate::management_authorization::authorize_management_admin;
+use crate::management_channel_writes::{
+    create_admin_channel, delete_admin_channel, update_admin_channel,
+};
 use crate::management_channels::{get_admin_channel, list_admin_channels};
+use crate::management_credential_writes::{
+    create_admin_credential, delete_admin_credential, update_admin_credential,
+};
 use crate::management_credentials::{get_admin_credential, list_admin_credentials};
 use crate::management_group_writes::{create_admin_group, delete_admin_group, update_admin_group};
 use crate::management_groups::{get_admin_group, list_admin_groups};
@@ -74,6 +80,7 @@ pub fn build_router(
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
+    admin_channel_writer: Arc<dyn AdminChannelWriter>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
@@ -96,7 +103,8 @@ pub fn build_router(
         admin_user_reader,
         admin_user_writer,
     )
-    .with_admin_channel_reader(admin_channel_reader);
+    .with_admin_channel_reader(admin_channel_reader)
+    .with_admin_channel_writer(admin_channel_writer);
     let public_routes = Router::new()
         .route(
             "/v1/chat/completions",
@@ -202,24 +210,30 @@ pub fn build_router(
         .route(
             "/api/admin/channels",
             get(list_admin_channels)
+                .post(create_admin_channel)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(channel_collection_authentication),
         )
         .route(
             "/api/admin/channels/{id}",
             get(get_admin_channel)
+                .put(update_admin_channel)
+                .delete(delete_admin_channel)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(channel_item_authentication),
         )
         .route(
             "/api/admin/channels/{channel_id}/credentials",
             get(list_admin_credentials)
+                .post(create_admin_credential)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(credential_collection_authentication),
         )
         .route(
             "/api/admin/channels/{channel_id}/credentials/{credential_id}",
             get(get_admin_credential)
+                .put(update_admin_credential)
+                .delete(delete_admin_credential)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(credential_item_authentication),
         )
