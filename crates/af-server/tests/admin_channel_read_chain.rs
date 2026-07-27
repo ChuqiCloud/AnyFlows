@@ -560,21 +560,6 @@ async fn insert_channel_routing(
         ))
         .await
         .unwrap();
-    connection
-        .execute(Statement::from_sql_and_values(
-            DbBackend::Sqlite,
-            "INSERT INTO abilities (group_id, model, channel_id, enabled, priority, weight) VALUES (?, ?, ?, ?, ?, ?)",
-            [
-                GROUP_ID.into(),
-                model.into(),
-                channel_id.into(),
-                true.into(),
-                20_i32.into(),
-                10_i32.into(),
-            ],
-        ))
-        .await
-        .unwrap();
 }
 
 async fn insert_channel(
