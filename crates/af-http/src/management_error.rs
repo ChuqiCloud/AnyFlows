@@ -1,0 +1,168 @@
+use axum::response::{IntoResponse, Response};
+use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
+use serde::Serialize;
+use utoipa::ToSchema;
+
+/// 管理 API 对外稳定的错误码和英文文案。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ManagementError {
+    /// JSON 正文或字段结构无效。
+    InvalidRequest,
+    /// 用户名或密码不正确。
+    InvalidCredentials,
+    /// JWT 缺失、无效、过期或对应用户已失效。
+    InvalidSession,
+    /// 当前会话没有访问该管理端点的角色权限。
+    Forbidden,
+    /// 系统已经完成首次安装，或并发请求先完成了安装。
+    SetupConflict,
+    /// 用户不存在或已经被软删除。
+    UserNotFound,
+    /// 用户名或邮箱与当前有效用户冲突。
+    UserConflict,
+    /// 分组不存在或已经被软删除。
+    GroupNotFound,
+    /// 分组名与当前有效分组冲突。
+    GroupConflict,
+    /// 分组仍被有效用户或有效令牌引用。
+    GroupInUse,
+    /// 令牌不存在或已经被软删除。
+    TokenNotFound,
+    /// 渠道不存在或已经被软删除。
+    ChannelNotFound,
+    /// 凭据不存在、已经软删除或不属于指定渠道。
+    CredentialNotFound,
+    /// 渠道测活服务未在当前实例注入。
+    ProbeUnavailable,
+    /// 管理认证依赖发生内部故障。
+    Internal,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = ManagementError)]
+pub(crate) struct ManagementErrorBody {
+    #[schema(
+        value_type = crate::openapi::schema::ManagementErrorCodeSchema,
+        inline
+    )]
+    code: &'static str,
+    message: &'static str,
+}
+
+impl IntoResponse for ManagementError {
+    fn into_response(self) -> Response {
+        let (status, body) = match self {
+            Self::InvalidRequest => (
+                StatusCode::BAD_REQUEST,
+                ManagementErrorBody {
+                    code: "invalid_request",
+                    message: "Invalid request",
+                },
+            ),
+            Self::InvalidCredentials => (
+                StatusCode::UNAUTHORIZED,
+                ManagementErrorBody {
+                    code: "invalid_credentials",
+                    message: "Invalid credentials",
+                },
+            ),
+            Self::InvalidSession => (
+                StatusCode::UNAUTHORIZED,
+                ManagementErrorBody {
+                    code: "invalid_session",
+                    message: "Invalid session",
+                },
+            ),
+            Self::Forbidden => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "forbidden",
+                    message: "Forbidden",
+                },
+            ),
+            Self::SetupConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "setup_conflict",
+                    message: "Setup already completed",
+                },
+            ),
+            Self::UserNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "user_not_found",
+                    message: "User not found",
+                },
+            ),
+            Self::UserConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "user_conflict",
+                    message: "User conflict",
+                },
+            ),
+            Self::GroupNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "group_not_found",
+                    message: "Group not found",
+                },
+            ),
+            Self::GroupConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "group_conflict",
+                    message: "Group conflict",
+                },
+            ),
+            Self::GroupInUse => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "group_in_use",
+                    message: "Group in use",
+                },
+            ),
+            Self::TokenNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "token_not_found",
+                    message: "Token not found",
+                },
+            ),
+            Self::ChannelNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "channel_not_found",
+                    message: "Channel not found",
+                },
+            ),
+            Self::CredentialNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "credential_not_found",
+                    message: "Credential not found",
+                },
+            ),
+            Self::ProbeUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "probe_unavailable",
+                    message: "Channel probe unavailable",
+                },
+            ),
+            Self::Internal => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ManagementErrorBody {
+                    code: "internal_error",
+                    message: "Internal server error",
+                },
+            ),
+        };
+        let mut response = (status, axum::Json(body)).into_response();
+        response
+            .headers_mut()
+            .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        response
+    }
+}

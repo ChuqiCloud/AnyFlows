@@ -1,0 +1,473 @@
+{
+  "brand": {
+    "name": "AnyFlows",
+    "scope": "Gateway"
+  },
+  "nav": {
+    "label": "Primary navigation",
+    "overview": "Overview",
+    "channels": "Channels",
+    "keys": "Keys",
+    "usage": "Usage",
+    "billing": "Billing",
+    "settings": "Settings"
+  },
+  "shell": {
+    "search": "Search",
+    "version": "Development preview",
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar",
+    "home": "Back to home"
+  },
+  "dashboard": {
+    "title": "Operations overview",
+    "subtitle": "Confirmed usage from the last 24 hours and current channel status",
+    "period": "{{start}} to {{end}}",
+    "loading": "Loading dashboard metrics",
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again"
+    },
+    "summary": {
+      "label": "Summary metrics",
+      "requests": { "label": "Requests", "hint": "Confirmed in the last 24 hours" },
+      "quota": { "label": "Quota consumed", "hint": "Final persisted quota units" },
+      "channels": { "label": "Enabled channels", "hint": "{{total}} non-deleted channels total" },
+      "confirmed": {
+        "label": "Upstream confirmation",
+        "hint": "{{count}} requests reported by upstreams",
+        "empty": "No request sample yet"
+      }
+    },
+    "composition": {
+      "title": "Request composition",
+      "subtitle": "Every count comes from the same set of confirmed usage facts",
+      "source": {
+        "title": "Usage source",
+        "upstream": "Upstream reported",
+        "estimated": "Locally estimated"
+      },
+      "billing": {
+        "title": "Billing mode",
+        "perToken": "Per-token billing",
+        "free": "Free requests"
+      }
+    },
+    "channels": {
+      "title": "Channel status",
+      "total": "{{count}} total",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "autoDisabled": "Auto-disabled"
+    },
+    "empty": {
+      "title": "No operating data yet",
+      "body": "Create a channel and complete the first metered model request to populate this overview."
+    },
+    "error": {
+      "title": "Dashboard metrics could not be loaded",
+      "body": "The service did not return confirmed usage and channel status. Try again shortly."
+    }
+  },
+  "channels": {
+    "title": "Channels",
+    "subtitle": "Maintain routing and sensitive settings for OpenAI-compatible upstreams, then run a real probe when needed.",
+    "scope": "OpenAI Chat only for now",
+    "count_one": "{{count}} channel",
+    "count_other": "{{count}} channels",
+    "loading": "Loading channels",
+    "loadingMore": "Loading",
+    "columns": {
+      "channel": "Channel",
+      "routing": "Routing scope",
+      "schedule": "Scheduling",
+      "health": "Latest probe",
+      "actions": "Actions"
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "auto_disabled": "Auto-disabled"
+    },
+    "values": {
+      "defaultUrl": "Default upstream URL",
+      "models_one": "{{count}} model",
+      "models_other": "{{count}} models",
+      "groups_one": "{{count}} group",
+      "groups_other": "{{count}} groups",
+      "priority": "Priority {{value}}",
+      "weight": "Weight {{value}}"
+    },
+    "probe": {
+      "notTested": "Not tested",
+      "healthy": "Healthy",
+      "unhealthy": "Unhealthy",
+      "timeout": "Timed out",
+      "failed": "Probe request failed"
+    },
+    "actions": {
+      "create": "New channel",
+      "edit": "Edit channel",
+      "probe": "Run probe",
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "loadMore": "Load more",
+      "cancel": "Cancel",
+      "save": "Save changes"
+    },
+    "empty": {
+      "title": "No channels yet",
+      "body": "Create the first OpenAI Chat channel and it will appear here."
+    },
+    "error": {
+      "title": "Channels could not be loaded",
+      "body": "The service did not return the channel list. Try again shortly."
+    },
+    "editor": {
+      "createTitle": "New channel",
+      "createDescription": "Configure an OpenAI Chat upstream that can participate in routing.",
+      "editTitle": "Edit channel",
+      "editDescription": "Read fields can be changed directly. Sensitive objects follow the blank-value rule."
+    },
+    "form": {
+      "basic": "Basic settings",
+      "routing": "Routing scope",
+      "advanced": "Overrides and sensitive settings",
+      "autoBanHint": "Allow the runtime to disable this channel after a deterministic failure.",
+      "modelsHint": "Enter one Canonical model per line or separate them with commas.",
+      "groupsHint": "Comma-separated group IDs. Models and groups must both be empty or both be set.",
+      "sensitiveHint": "Leave blank to preserve the current value. Enter {} to clear it.",
+      "submitError": "The channel could not be saved. Check the fields and try again."
+    },
+    "fields": {
+      "name": "Name",
+      "baseUrl": "Upstream base URL",
+      "type": "Channel type",
+      "protocol": "Protocol",
+      "status": "Status",
+      "weight": "Weight",
+      "priority": "Priority",
+      "autoBan": "Allow automatic disabling",
+      "tag": "Tag",
+      "models": "Models",
+      "groupIds": "Group IDs",
+      "modelMapping": "Model mapping JSON",
+      "paramOverride": "Parameter overrides JSON",
+      "headerOverride": "Header overrides JSON",
+      "settings": "Adapter settings JSON"
+    },
+    "validation": {
+      "field": "This field value is invalid.",
+      "json": "Enter a valid JSON object.",
+      "stringMap": "Enter a JSON object whose values are all strings.",
+      "url": "Enter an HTTP(S) URL without credentials, a query string, or a fragment.",
+      "routing": "Models and groups must both be set or both be empty, and group IDs must be positive integers.",
+      "sensitiveRequired": "A JSON object is required when creating a channel. You can enter {}."
+    }
+  },
+  "tokens": {
+    "title": "API keys",
+    "subtitle": "Issue and maintain downstream API keys with quotas, expiry, model and IP allowlists, and request-window limits.",
+    "count_one": "{{count}} key loaded",
+    "count_other": "{{count}} keys loaded",
+    "activeCount_one": "{{count}} currently available",
+    "activeCount_other": "{{count}} currently available",
+    "loading": "Loading API keys",
+    "loadingMore": "Loading",
+    "columns": {
+      "token": "Key",
+      "owner": "Owner",
+      "quota": "Quota",
+      "policy": "Access policy",
+      "validity": "Validity",
+      "actions": "Actions"
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "expired": "Expired"
+    },
+    "values": {
+      "unlimited": "Unlimited quota",
+      "remaining": "{{value}} remaining",
+      "usedQuota": "{{value}} used",
+      "models_one": "Limited to {{count}} model",
+      "models_other": "Limited to {{count}} models",
+      "allModels": "All models",
+      "ips_one": "Limited to {{count}} IP/CIDR",
+      "ips_other": "Limited to {{count}} IP/CIDRs",
+      "allIps": "Any source IP",
+      "neverExpires": "Never expires",
+      "requestsUsed": "{{value}} requests used",
+      "requestsRatio": "{{used}} / {{total}} requests",
+      "user": "User #{{id}}",
+      "group": "Group #{{id}}",
+      "defaultGroup": "User default group"
+    },
+    "actions": {
+      "create": "Issue key",
+      "edit": "Edit key",
+      "delete": "Delete key",
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "loadMore": "Load more",
+      "cancel": "Cancel",
+      "save": "Save changes"
+    },
+    "empty": {
+      "title": "No API keys yet",
+      "body": "Issue the first downstream API key and it will appear here."
+    },
+    "error": {
+      "title": "API keys could not be loaded",
+      "body": "The service did not return the key list. Try again shortly."
+    },
+    "editor": {
+      "createTitle": "Issue API key",
+      "createDescription": "Create a downstream API key for a user. The full value is shown once.",
+      "editTitle": "Edit API key",
+      "editDescription": "Update access policy and limits without rotating the key or resetting usage."
+    },
+    "form": {
+      "basic": "Basic settings",
+      "quota": "Quota and request control",
+      "policy": "Access policy",
+      "rateLimits": "Window limits",
+      "ownerHint": "A key cannot be moved to another user after issuance.",
+      "groupHint": "Leave blank to use the owner's default group.",
+      "expiryHint": "Leave blank for no expiry. Times use this device's time zone.",
+      "unlimitedHint": "Skip the remaining-quota check for this key.",
+      "optionalLimit": "Leave blank for no limit. Zero sets the limit to zero.",
+      "crossGroupHint": "Allow another group when the current group has no available channel.",
+      "modelsHint": "One Canonical model per line or comma separated. Leave blank for unrestricted access.",
+      "ipsHint": "One IP or CIDR per line or comma separated. Leave blank for any source.",
+      "submitError": "The key could not be saved. Check the user, group, and field values."
+    },
+    "fields": {
+      "name": "Name",
+      "userId": "Owner user ID",
+      "status": "Status",
+      "groupId": "Bound group ID",
+      "expiredAt": "Expiry",
+      "remainQuota": "Remaining quota",
+      "unlimitedQuota": "Unlimited quota",
+      "maxRequests": "Maximum requests",
+      "crossGroupRetry": "Allow cross-group retry",
+      "modelLimits": "Model allowlist",
+      "allowIps": "IP/CIDR allowlist",
+      "rateLimit5h": "5-hour limit",
+      "rateLimit1d": "1-day limit",
+      "rateLimit7d": "7-day limit"
+    },
+    "validation": {
+      "field": "Enter an in-range integer or valid field value.",
+      "models": "The model allowlist format or size is invalid.",
+      "ips": "Enter valid IP/CIDR values, up to 64 entries.",
+      "date": "Enter a valid date and time."
+    },
+    "issued": {
+      "title": "API key issued",
+      "description": "The full API key for {{name}} is ready.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyFailed": "Clipboard access failed. Select and copy the key manually.",
+      "warning": "The full key is shown only once. Save it securely before closing this window.",
+      "done": "I have saved it"
+    },
+    "delete": {
+      "title": "Delete API key",
+      "description": "Deleting {{name}} immediately revokes requests using this key. This action cannot be undone.",
+      "failed": "Deletion failed. The key is still valid. Try again shortly."
+    }
+  },
+  "usageLogs": {
+    "title": "Usage logs",
+    "subtitle": "Inspect confirmed token usage, billed quota, and measurement sources.",
+    "count": "{{count}} records on this page",
+    "page": "Page {{page}}",
+    "loading": "Loading usage logs",
+    "pagination": "Usage log pagination",
+    "columns": {
+      "event": "Time and event",
+      "principal": "Billing principal",
+      "usage": "Input and output",
+      "details": "Cache and extras",
+      "billing": "Billing result"
+    },
+    "values": {
+      "userToken": "User #{{user}} / Token #{{token}}",
+      "group": "Group #{{id}}",
+      "input": "Input {{value}}",
+      "output": "Output {{value}}",
+      "cacheRead": "Cache read {{value}}",
+      "cacheCreate": "Cache create 5m {{five}} / 1h {{hour}}",
+      "reasoningAudio": "Reasoning {{reasoning}} / Audio {{audio}}",
+      "quotaSemantics": "Quota {{quota}} / {{semantics}}",
+      "billingMode": {
+        "per_token": "Per token",
+        "free": "Free"
+      },
+      "source": {
+        "upstream": "Upstream",
+        "estimated": "Estimated"
+      },
+      "semantics": {
+        "inclusive": "Cache included",
+        "cache_separated": "Cache separate"
+      }
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "empty": {
+      "title": "No usage logs yet",
+      "body": "Confirmed usage will appear after the first request completes its billing lifecycle."
+    },
+    "error": {
+      "title": "Unable to load usage logs",
+      "body": "The service did not return confirmed usage. Try again shortly."
+    }
+  },
+  "auth": {
+    "login": {
+      "eyebrow": "AnyFlows management console",
+      "heroTitle": "Every model flow, under control",
+      "heroBody": "Sign in securely and continue managing your gateway.",
+      "title": "Welcome back",
+      "subtitle": "Continue with an administrator account",
+      "username": "Username",
+      "usernamePlaceholder": "Enter your username",
+      "password": "Password",
+      "passwordPlaceholder": "Enter your password",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "submit": "Sign in",
+      "submitting": "Verifying"
+    },
+    "errors": {
+      "invalidCredentials": "The username or password is incorrect.",
+      "adminRequired": "This account does not have administrator access.",
+      "sessionExpired": "Your session has expired. Sign in again.",
+      "setupComplete": "Setup is complete. Sign in with an administrator account.",
+      "unavailable": "The service is unavailable. Try again shortly."
+    },
+    "session": {
+      "loading": "Restoring your management session",
+      "unavailableTitle": "Session verification is unavailable",
+      "unavailableBody": "The service is currently unavailable. Your sign-in is still retained.",
+      "retry": "Try again",
+      "otherAccount": "Use another account"
+    },
+    "account": {
+      "admin": "Administrator",
+      "logout": "Sign out"
+    }
+  },
+  "setup": {
+    "hero": {
+      "eyebrow": "AnyFlows first-time setup",
+      "title": "Create the first system administrator",
+      "body": "Set private management credentials, then continue directly to the console."
+    },
+    "form": {
+      "title": "Create administrator",
+      "subtitle": "First-time setup can only be completed once",
+      "username": "Administrator username",
+      "usernamePlaceholder": "Enter an administrator username",
+      "password": "Administrator password",
+      "passwordPlaceholder": "Enter an administrator password",
+      "passwordHelp": "Use 12 to 128 UTF-8 bytes. Control characters are not supported.",
+      "passwordConfirmation": "Confirm password",
+      "passwordConfirmationPlaceholder": "Enter the administrator password again",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "submit": "Complete setup",
+      "submitting": "Setting up"
+    },
+    "errors": {
+      "invalidInput": "The username or password does not meet the input requirements.",
+      "passwordMismatch": "The passwords do not match.",
+      "unavailable": "Setup is currently unavailable. Try again shortly."
+    },
+    "gate": {
+      "loading": "Checking first-time setup status",
+      "unavailableTitle": "Setup status is unavailable",
+      "unavailableBody": "The service did not return a reliable status. Retry to protect the management entry point.",
+      "retry": "Check again"
+    }
+  },
+  "landing": {
+    "nav": { "console": "Open console" },
+    "hero": {
+      "eyebrow": "LLM API aggregation gateway",
+      "subtitle": "Unified access, intelligent routing, precise billing. Collapse scattered model channels into a single observable flow.",
+      "cta": "Get started",
+      "secondary": "Read the docs"
+    },
+    "providers": "Providers already supported",
+    "feature": {
+      "eyebrow": "Core capabilities",
+      "heading": "Complexity stays inside the gateway",
+      "subheading": "AnyFlows absorbs upstream differences, failures and pricing rules, so your application only ever talks to one stable interface.",
+      "routing": { "title": "Routing", "body": "Selects channels by weight, priority and live health, with automatic failover and retry." },
+      "billing": { "title": "Billing", "body": "Group multipliers, tiered pricing and an expression engine, with auditable line items." },
+      "health": { "title": "Health", "body": "Continuous liveness and balance probing, auto-disabling channels by rule." },
+      "streaming": { "title": "Streaming", "body": "End-to-end SSE passthrough with per-request TTFT and throughput visibility." },
+      "pool": { "title": "Account pool", "body": "Typed credential management, one proxy per account, shadow accounts for rollout." },
+      "observability": { "title": "Observability", "body": "Per-request candidate replay recording every fallback reason and response detail." }
+    },
+    "modes": {
+      "eyebrow": "Three shapes",
+      "heading": "One gateway, three ways in",
+      "subheading": "Official keys, subscription accounts, or other relays — downstream sees the same endpoint.",
+      "relay": {
+        "label": "API relay",
+        "title": "Official & compatible keys",
+        "body": "Aggregate official or compatible endpoints, then normalize protocols, meter by group, and resell."
+      },
+      "sub2api": {
+        "label": "Subscription to API",
+        "title": "Pooled subscription quota",
+        "body": "Turn Claude Code, Codex, and Gemini CLI OAuth quota into a standard API through an account pool."
+      },
+      "metapi": {
+        "label": "Meta aggregation",
+        "title": "A gateway above gateways",
+        "body": "Treat existing relays as upstreams and collapse them into one entry with failover and best-route selection."
+      }
+    },
+    "protocol": {
+      "eyebrow": "Protocol matrix",
+      "heading": "Any protocol in, any protocol out",
+      "subheading": "Every request normalizes to a protocol-agnostic representation first, then converts to the target — streaming included.",
+      "clientLabel": "Client protocol",
+      "upstreamLabel": "Upstream protocol",
+      "canonical": "Canonical IR",
+      "note": "N×M conversion without hand-writing every pair."
+    },
+    "closing": {
+      "heading": "Ready to collapse your model traffic?",
+      "body": "A single binary with the frontend embedded. One command to serve.",
+      "cta": "Get started",
+      "secondary": "Read the docs"
+    },
+    "console": {
+      "eyebrow": "Drop-in compatible",
+      "heading": "One endpoint, every protocol",
+      "subheading": "Switch protocols by changing the header, not the URL or the key. Point your existing code at AnyFlows and keep going.",
+      "tablist": "Select protocol",
+      "request": "Request",
+      "response": "Response",
+      "latency": "Latency",
+      "tokens": "Tokens in/out",
+      "route": "Route"
+    },
+    "footer": { "copyright": "AnyFlows · Open-source LLM gateway" }
+  },
+  "theme": { "toggle": "Toggle theme" },
+  "motion": { "enable": "Enable motion", "disable": "Reduce motion" },
+  "language": { "toggle": "Switch language" }
+}

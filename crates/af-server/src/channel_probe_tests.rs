@@ -1,0 +1,343 @@
+use std::{
+    fs,
+    io::{Read, Write},
+    net::{SocketAddr, TcpListener, TcpStream},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+    },
+    thread,
+    time::Duration,
+};
+
+use af_account::{CredentialDecryptor, credential_plaintext_aad};
+use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
+use af_db::{DatabaseOptions, DatabasePool, MigrationOptions, connect_and_migrate};
+use af_domain::{ChannelId, CredentialKind, Status};
+use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
+use af_scheduler::{ChannelProbe as _, ChannelProbeStatus};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use chacha20poly1305::{
+    XChaCha20Poly1305, XNonce,
+    aead::{Aead as _, KeyInit as _, Payload},
+};
+use sea_orm::{ConnectionTrait as _, Database, DatabaseConnection};
+use serde_json::json;
+
+use crate::channel_probe::DatabaseChannelProbe;
+
+const TEST_CHANNEL_ID: i64 = 41;
+const TEST_CREDENTIAL_ID: i64 = 73;
+const IO_TIMEOUT: Duration = Duration::from_secs(5);
+const MODEL_CANARY: &str = "probe-model-canary";
+const SECRET_CANARY: &str = "probe-secret-canary";
+static NEXT_DATABASE: AtomicU64 = AtomicU64::new(0);
+
+#[tokio::test]
+async fn valid_openai_response_is_healthy_and_sends_required_headers() {
+    let key = [0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    let database = test_database().await;
+    seed_probe_target(&database.seed, &key, false, false).await;
+    let response = br#"{"id":"chatcmpl-probe","object":"chat.completion","created":1700000000,"model":"probe-model-canary","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}"#;
+    let (proxy_address, captured, server) = spawn_proxy("200 OK", response);
+    let probe = probe(&database.pool, &key, proxy_address);
+
+    assert_eq!(probe.check(channel_id()).await, ChannelProbeStatus::Healthy);
+
+    let request = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    server.join().unwrap();
+    let head = request.head.to_ascii_lowercase();
+    assert!(head.starts_with("post http://probe-upstream.example/v1/chat/completions http/1.1"));
+    assert!(head.contains("authorization: bearer probe-secret-canary"));
+    assert!(head.contains("x-probe-header: probe-header-value-canary"));
+    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["model"], MODEL_CANARY);
+    assert_eq!(body["stream"], false);
+    assert_eq!(body["max_completion_tokens"], 1);
+    assert_eq!(body["messages"][0]["content"], "ping");
+
+    let rendered = format!("{probe:?}");
+    assert!(!rendered.contains(SECRET_CANARY));
+    assert!(!rendered.contains(MODEL_CANARY));
+    assert!(!rendered.contains("probe-upstream.example"));
+
+    database.close().await;
+}
+
+#[tokio::test]
+async fn non_success_and_invalid_success_response_are_unhealthy() {
+    let key = [0x24; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    for (status_line, body) in [
+        (
+            "503 Service Unavailable",
+            br#"{"error":"upstream-secret"}"#.as_slice(),
+        ),
+        ("200 OK", br#"{"invalid":"response-secret"}"#.as_slice()),
+    ] {
+        let database = test_database().await;
+        seed_probe_target(&database.seed, &key, false, false).await;
+        let (proxy_address, captured, server) = spawn_proxy(status_line, body);
+        let probe = probe(&database.pool, &key, proxy_address);
+
+        assert_eq!(
+            probe.check(channel_id()).await,
+            ChannelProbeStatus::Unhealthy
+        );
+        captured.recv_timeout(IO_TIMEOUT).unwrap();
+        server.join().unwrap();
+        database.close().await;
+    }
+}
+
+#[tokio::test]
+async fn decryption_failure_and_required_proxy_never_recover_channel() {
+    let key = [0x66; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+
+    let broken_database = test_database().await;
+    seed_probe_target(&broken_database.seed, &key, false, true).await;
+    let broken_probe = probe_without_reachable_upstream(&broken_database.pool, &key);
+    assert_eq!(
+        broken_probe.check(channel_id()).await,
+        ChannelProbeStatus::Unhealthy
+    );
+    broken_database.close().await;
+
+    let proxy_bound_database = test_database().await;
+    seed_probe_target(&proxy_bound_database.seed, &key, true, false).await;
+    let proxy_bound_probe = probe_without_reachable_upstream(&proxy_bound_database.pool, &key);
+    assert_eq!(
+        proxy_bound_probe.check(channel_id()).await,
+        ChannelProbeStatus::Unhealthy
+    );
+    proxy_bound_database.close().await;
+}
+
+async fn test_database() -> TestDatabase {
+    let files = TestDatabaseFiles::new();
+    let pool = connect_and_migrate(
+        &DatabaseOptions::new(&files.url).unwrap(),
+        MigrationOptions::default(),
+    )
+    .await
+    .unwrap();
+    let seed = Database::connect(&files.url).await.unwrap();
+    TestDatabase { pool, seed, files }
+}
+
+async fn seed_probe_target(
+    database: &DatabaseConnection,
+    key: &[u8; CREDENTIAL_ENCRYPTION_KEY_BYTES],
+    proxy_required: bool,
+    corrupt_aad: bool,
+) {
+    let header_override = json!({"x-probe-header": "probe-header-value-canary"}).to_string();
+    let channel_sql = format!(
+        "INSERT INTO channels (id, name, type, protocol, base_url, status, auto_ban, model_mapping, param_override, header_override, settings) VALUES ({TEST_CHANNEL_ID}, 'probe-channel', 'openai', 'openai_chat', 'http://probe-upstream.example', {}, 1, '{{}}', '{{}}', {}, '{{}}')",
+        Status::AutoDisabled.code(),
+        sql_text(&header_override),
+    );
+    database.execute_unprepared(&channel_sql).await.unwrap();
+    database
+        .execute_unprepared(&format!(
+            "INSERT INTO channel_models (channel_id, model) VALUES ({TEST_CHANNEL_ID}, {})",
+            sql_text(MODEL_CANARY)
+        ))
+        .await
+        .unwrap();
+
+    let aad_credential_id = if corrupt_aad {
+        TEST_CREDENTIAL_ID + 1
+    } else {
+        TEST_CREDENTIAL_ID
+    };
+    let envelope = encrypted_envelope(key, aad_credential_id);
+    let proxy_id = if proxy_required { "91" } else { "NULL" };
+    let credential_sql = format!(
+        "INSERT INTO credentials (id, channel_id, kind, secret, status, priority, schedulable, proxy_id) VALUES ({TEST_CREDENTIAL_ID}, {TEST_CHANNEL_ID}, 'api_key', {}, {}, 10, 1, {proxy_id})",
+        sql_text(&envelope.to_string()),
+        Status::Enabled.code(),
+    );
+    database.execute_unprepared(&credential_sql).await.unwrap();
+}
+
+fn encrypted_envelope(
+    key: &[u8; CREDENTIAL_ENCRYPTION_KEY_BYTES],
+    aad_credential_id: i64,
+) -> serde_json::Value {
+    let nonce = [0x5a; 24];
+    let cipher = XChaCha20Poly1305::new_from_slice(key).unwrap();
+    let plaintext = json!({"kind": "api_key", "api_key": SECRET_CANARY}).to_string();
+    let ciphertext = cipher
+        .encrypt(
+            XNonce::from_slice(&nonce),
+            Payload {
+                msg: plaintext.as_bytes(),
+                aad: &credential_plaintext_aad(
+                    channel_id(),
+                    aad_credential_id,
+                    CredentialKind::ApiKey,
+                ),
+            },
+        )
+        .unwrap();
+    json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": "primary-key",
+        "nonce": URL_SAFE_NO_PAD.encode(nonce),
+        "ciphertext": URL_SAFE_NO_PAD.encode(ciphertext),
+    })
+}
+
+fn probe(
+    database: &DatabasePool,
+    key: &[u8; CREDENTIAL_ENCRYPTION_KEY_BYTES],
+    proxy_address: SocketAddr,
+) -> DatabaseChannelProbe {
+    let config = HttpClientConfig::new(
+        ProxyConfig::parse(format!("http://{proxy_address}")).unwrap(),
+        HttpTimeouts::new(IO_TIMEOUT, IO_TIMEOUT, IO_TIMEOUT).unwrap(),
+    )
+    .with_remote_dns_policy(RemoteDnsPolicy::TrustProxy);
+    let client = HttpClientPool::default().get(&config).unwrap();
+    DatabaseChannelProbe::new(database.clone(), decryptor(key), client)
+}
+
+fn probe_without_reachable_upstream(
+    database: &DatabasePool,
+    key: &[u8; CREDENTIAL_ENCRYPTION_KEY_BYTES],
+) -> DatabaseChannelProbe {
+    let client = HttpClientPool::default()
+        .get(&HttpClientConfig::default())
+        .unwrap();
+    DatabaseChannelProbe::new(database.clone(), decryptor(key), client)
+}
+
+fn decryptor(key: &[u8; CREDENTIAL_ENCRYPTION_KEY_BYTES]) -> CredentialDecryptor {
+    let settings = serde_json::from_value::<CredentialEncryptionSettings>(json!({
+        "key_id": "primary-key",
+        "key": URL_SAFE_NO_PAD.encode(key),
+    }))
+    .unwrap();
+    CredentialDecryptor::new(&settings).unwrap()
+}
+
+fn channel_id() -> ChannelId {
+    ChannelId::new(TEST_CHANNEL_ID).unwrap()
+}
+
+fn sql_text(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+struct TestDatabase {
+    pool: DatabasePool,
+    seed: DatabaseConnection,
+    files: TestDatabaseFiles,
+}
+
+impl TestDatabase {
+    async fn close(self) {
+        self.seed.close().await.unwrap();
+        self.pool.close().await.unwrap();
+        drop(self.files);
+    }
+}
+
+struct TestDatabaseFiles {
+    path: std::path::PathBuf,
+    url: String,
+}
+
+impl TestDatabaseFiles {
+    fn new() -> Self {
+        let serial = NEXT_DATABASE.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "anyflows-channel-probe-{}-{serial}.db",
+            std::process::id()
+        ));
+        let mut sqlite_path = path.to_string_lossy().replace('\\', "/");
+        if !sqlite_path.starts_with('/') {
+            sqlite_path.insert(0, '/');
+        }
+        Self {
+            path,
+            url: format!("sqlite://{sqlite_path}?mode=rwc"),
+        }
+    }
+}
+
+impl Drop for TestDatabaseFiles {
+    fn drop(&mut self) {
+        for suffix in ["", "-shm", "-wal"] {
+            let candidate = std::path::PathBuf::from(format!("{}{}", self.path.display(), suffix));
+            let _ = fs::remove_file(candidate);
+        }
+    }
+}
+
+struct CapturedRequest {
+    head: String,
+    body: Vec<u8>,
+}
+
+fn spawn_proxy(
+    status_line: &str,
+    body: &[u8],
+) -> (
+    SocketAddr,
+    mpsc::Receiver<CapturedRequest>,
+    thread::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let status_line = status_line.to_owned();
+    let body = body.to_vec();
+    let (captured_tx, captured_rx) = mpsc::channel();
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
+        stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
+        captured_tx.send(read_request(&mut stream)).unwrap();
+        let head = format!(
+            "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        stream.write_all(head.as_bytes()).unwrap();
+        stream.write_all(&body).unwrap();
+        stream.flush().unwrap();
+    });
+    (address, captured_rx, handle)
+}
+
+fn read_request(stream: &mut TcpStream) -> CapturedRequest {
+    let mut request = Vec::with_capacity(1_024);
+    let mut buffer = [0_u8; 512];
+    let header_end = loop {
+        let read = stream.read(&mut buffer).unwrap();
+        assert!(read > 0, "探活测试请求头尚未结束时连接已关闭");
+        request.extend_from_slice(&buffer[..read]);
+        assert!(request.len() <= 64 * 1024, "探活测试请求超过 64 KiB");
+        if let Some(index) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+            break index + 4;
+        }
+    };
+    let head = String::from_utf8(request[..header_end].to_vec()).unwrap();
+    let content_length = head
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().unwrap())
+        })
+        .unwrap();
+    while request.len() - header_end < content_length {
+        let read = stream.read(&mut buffer).unwrap();
+        assert!(read > 0, "探活测试请求体尚未结束时连接已关闭");
+        request.extend_from_slice(&buffer[..read]);
+    }
+    CapturedRequest {
+        head,
+        body: request[header_end..header_end + content_length].to_vec(),
+    }
+}

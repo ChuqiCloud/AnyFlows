@@ -1,0 +1,45 @@
+//! 候选选路、健康状态、并发控制与调度快照。
+
+mod auto_ban;
+mod auto_ban_keyword;
+mod candidate;
+mod database;
+mod failure;
+mod index;
+mod probe;
+mod retry;
+mod weighted;
+
+pub use auto_ban::{
+    AutoBanPolicy, AutoBanPolicyError, AutoBanRule, ChannelAutoDisableStore,
+    ChannelFailureCoordinator, ChannelFailureOutcome, ChannelStateEffectOutcome,
+    MAX_AUTO_BAN_RULES,
+};
+pub use auto_ban_keyword::{
+    AutoBanEvidence, AutoBanEvidenceError, MAX_AUTO_BAN_EVIDENCE_BYTES, MAX_AUTO_BAN_KEYWORD_BYTES,
+    MAX_AUTO_BAN_KEYWORD_TOTAL_BYTES,
+};
+pub use candidate::SchedulerCandidate;
+pub use database::{DatabaseWeightedScheduler, DatabaseWeightedSchedulerError};
+pub use failure::{
+    DEFAULT_TRANSIENT_SERVER_RETRY_LIMIT, FailureAction, FailureContext, FailurePolicy,
+};
+pub use index::{
+    ChannelIndexCacheError, ChannelIndexRefreshConfig, ChannelIndexRefreshConfigError,
+    ChannelIndexRefreshReport, ChannelIndexRefreshSupervisor, ChannelIndexSnapshot,
+    ChannelIndexSnapshotError, ChannelIndexSource, ChannelIndexSourceError,
+    ChannelIndexSourceFuture, ChannelIndexSourceRecord, DEFAULT_CHANNEL_INDEX_REFRESH_INTERVAL,
+    InMemoryChannelIndex, IndexedRouteCandidate, IndexedRoutePlan, IndexedWeightedScheduler,
+    IndexedWeightedSchedulerError,
+};
+pub use probe::{
+    ChannelProbe, ChannelProbeRunReport, ChannelProbeStatus, ChannelProbeStore,
+    ChannelProbeSupervisor, ChannelProbeSupervisorConfig, ChannelProbeSupervisorConfigError,
+    ChannelProbeSupervisorError, DEFAULT_CHANNEL_PROBE_BATCH_SIZE, DEFAULT_CHANNEL_PROBE_INTERVAL,
+    DEFAULT_CHANNEL_PROBE_TIMEOUT,
+};
+pub use retry::{RetrySelection, WeightedRetryPlan, WeightedRetryPlanError};
+pub use weighted::{
+    MAX_SCHEDULER_CANDIDATES, WEIGHT_BASE, WeightedSelection, WeightedSelectionError,
+    WeightedStrategy,
+};

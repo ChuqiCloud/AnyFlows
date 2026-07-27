@@ -1,0 +1,82 @@
+use std::sync::Arc;
+
+use af_admin::{TokenAuthenticationError, TokenAuthenticator};
+use af_domain::AfError;
+use axum::{
+    extract::{Request, State},
+    middleware::Next,
+    response::{IntoResponse, Response},
+};
+
+use crate::client_ip::{ClientIpResolutionError, ClientIpResolver};
+use crate::{OpenAiHttpError, QueryApiKeyPolicy, extract_presented_api_key};
+
+/// HTTP API Key 鉴权中间件所需的不可变状态。
+#[derive(Clone)]
+pub(crate) struct AuthenticationState {
+    authenticator: Arc<dyn TokenAuthenticator>,
+    query_api_key_policy: QueryApiKeyPolicy,
+    client_ip_resolver: ClientIpResolver,
+}
+
+impl AuthenticationState {
+    /// 绑定真实认证器与查询参数凭据策略。
+    pub(crate) fn new(
+        authenticator: Arc<dyn TokenAuthenticator>,
+        query_api_key_policy: QueryApiKeyPolicy,
+        server_config: &af_config::ServerConfig,
+    ) -> Self {
+        Self {
+            authenticator,
+            query_api_key_policy,
+            client_ip_resolver: ClientIpResolver::from_config(server_config),
+        }
+    }
+}
+
+/// 从 TCP/代理边界和唯一凭据载体完成认证，并把已验证身份注入请求扩展。
+pub(crate) async fn authenticate_api_key(
+    State(state): State<AuthenticationState>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    let client_ip = match state.client_ip_resolver.resolve(&mut request) {
+        Ok(client_ip) => client_ip,
+        Err(ClientIpResolutionError::MissingPeer) => {
+            tracing::error!(
+                target: "af_http::authentication",
+                error_kind = "client_ip_missing_peer",
+                "HTTP 服务入口缺少 TCP 对端信息"
+            );
+            return OpenAiHttpError::from(AfError::Internal).into_response();
+        }
+        Err(ClientIpResolutionError::InvalidProxyChain) => {
+            return OpenAiHttpError::from(AfError::InvalidApiKey).into_response();
+        }
+    };
+    let presented = match extract_presented_api_key(&mut request, state.query_api_key_policy) {
+        Ok(presented) => presented,
+        Err(error) => return OpenAiHttpError::from(error).into_response(),
+    };
+
+    // 明文只活到摘要计算完成；数据库查询期间不得继续持有它。
+    let digest = presented.digest();
+    drop(presented);
+
+    let authentication = state.authenticator.authenticate(&digest, client_ip).await;
+    // 鉴权结束即释放摘要，不让它跟随 handler 和转发生命周期。
+    drop(digest);
+
+    match authentication {
+        Ok(authentication) => {
+            request.extensions_mut().insert(authentication);
+            next.run(request).await
+        }
+        Err(TokenAuthenticationError::InvalidApiKey) => {
+            OpenAiHttpError::from(AfError::InvalidApiKey).into_response()
+        }
+        Err(TokenAuthenticationError::Internal) => {
+            OpenAiHttpError::from(AfError::Internal).into_response()
+        }
+    }
+}

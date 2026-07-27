@@ -1,0 +1,22 @@
+[package]
+name = "af-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+af-domain = { path = "../af-domain", version = "0.1.0" }
+async-trait.workspace = true
+base64.workspace = true
+figment.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+url.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+figment = { workspace = true, features = ["test"] }
+
+[lints]
+workspace = true

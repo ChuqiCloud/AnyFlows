@@ -1,0 +1,25 @@
+[package]
+name = "af-admin"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+af-account = { path = "../af-account", version = "0.1.0" }
+af-db = { path = "../af-db", version = "0.1.0" }
+af-domain = { path = "../af-domain", version = "0.1.0" }
+base64.workspace = true
+getrandom.workspace = true
+jsonwebtoken.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true
