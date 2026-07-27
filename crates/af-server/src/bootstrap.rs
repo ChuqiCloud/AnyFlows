@@ -28,8 +28,8 @@ use af_db::{
     UserSessionRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
-    ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle, ServeError,
-    ServeOutcome, build_router, serve_with_graceful_shutdown,
+    AdminChannelProbe, ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle,
+    ServeError, ServeOutcome, build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
@@ -48,7 +48,8 @@ use crate::readiness::DatabaseReadinessProbe;
 use crate::{
     BackgroundTaskSupervisor, BillingChatService, BillingFlushReport, BillingRuntime,
     BillingRuntimeError, ChatRoutePlanner, ShutdownController, SupervisorError, SupervisorShutdown,
-    channel_probe::DatabaseChannelProbe, scheduled_chat::ScheduledChatService,
+    channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
+    scheduled_chat::ScheduledChatService,
     system_shutdown_signal,
 };
 
@@ -116,6 +117,7 @@ pub struct Supervised {
     usage_record_queue: UsageRecordQueue,
     refund_signal_queue: RefundSignalQueue,
     _channel_index: InMemoryChannelIndex,
+    admin_channel_probe: Arc<dyn AdminChannelProbe>,
     supervisor: BackgroundTaskSupervisor,
 }
 
@@ -599,18 +601,22 @@ impl Bootstrap<BillingReady> {
                 }
             }
         });
+        let decryptor = CredentialDecryptor::new(config.credential_encryption())
+            .expect("已校验的渠道凭据配置必须包含有效解密密钥");
+        let probe = DatabaseChannelProbe::new(
+            infrastructure.infrastructure.database.clone(),
+            decryptor,
+            upstream_client.clone(),
+        );
+        let probe_config = channel_probe_config(&config);
+        let admin_channel_probe: Arc<dyn AdminChannelProbe> = Arc::new(
+            BoundedAdminChannelProbe::new(probe.clone(), probe_config.probe_timeout()),
+        );
         if config.channel_probe().enabled() {
-            let decryptor = CredentialDecryptor::new(config.credential_encryption())
-                .expect("已校验的探活配置必须包含有效凭据解密密钥");
-            let probe = DatabaseChannelProbe::new(
-                infrastructure.infrastructure.database.clone(),
-                decryptor,
-                upstream_client,
-            );
             spawn_channel_probe_task(
                 &mut supervisor,
                 infrastructure.infrastructure.database.clone(),
-                channel_probe_config(&config),
+                probe_config,
                 probe,
             );
         }
@@ -625,6 +631,7 @@ impl Bootstrap<BillingReady> {
                 usage_record_queue,
                 refund_signal_queue,
                 _channel_index: channel_index,
+                admin_channel_probe,
                 supervisor,
             },
         }
@@ -691,6 +698,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.session_authenticator),
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_channel_writer),
+            Some(Arc::clone(&self.stage.admin_channel_probe)),
             Arc::clone(&self.stage.infrastructure.admin_group_reader),
             Arc::clone(&self.stage.infrastructure.admin_group_writer),
             Arc::clone(&self.stage.infrastructure.admin_token_reader),
@@ -786,6 +794,7 @@ impl Bootstrap<ListenerReady> {
             refund_signal_queue,
             chat: _,
             _channel_index: _,
+            admin_channel_probe: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
         let http =

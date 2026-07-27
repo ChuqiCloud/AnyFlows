@@ -78,9 +78,10 @@ impl AdminChannelCreateCommand {
                 group_ids,
                 model_mapping,
                 param_override,
-                header_override,
-                settings,
+                Some(header_override),
+                Some(settings),
                 tag,
+                true,
             )?,
         })
     }
@@ -120,8 +121,8 @@ impl AdminChannelUpdateCommand {
         group_ids: Vec<GroupId>,
         model_mapping: serde_json::Value,
         param_override: serde_json::Value,
-        header_override: serde_json::Value,
-        settings: serde_json::Value,
+        header_override: Option<serde_json::Value>,
+        settings: Option<serde_json::Value>,
         tag: Option<String>,
     ) -> Result<Self, AdminChannelWriteError> {
         Ok(Self {
@@ -141,6 +142,7 @@ impl AdminChannelUpdateCommand {
                 header_override,
                 settings,
                 tag,
+                false,
             )?,
         })
     }
@@ -169,8 +171,8 @@ struct AdminChannelWriteFields {
     group_ids: Vec<GroupId>,
     model_mapping: serde_json::Value,
     param_override: serde_json::Value,
-    header_override: serde_json::Value,
-    settings: serde_json::Value,
+    header_override: Option<serde_json::Value>,
+    settings: Option<serde_json::Value>,
     tag: Option<String>,
 }
 
@@ -192,9 +194,10 @@ impl AdminChannelWriteFields {
         group_ids: Vec<GroupId>,
         model_mapping: serde_json::Value,
         param_override: serde_json::Value,
-        header_override: serde_json::Value,
-        settings: serde_json::Value,
+        header_override: Option<serde_json::Value>,
+        settings: Option<serde_json::Value>,
         tag: Option<String>,
+        require_sensitive_fields: bool,
     ) -> Result<Self, AdminChannelWriteError> {
         if !valid_text(&name, 128)
             || weight < 0
@@ -205,13 +208,18 @@ impl AdminChannelWriteFields {
                 .is_some_and(|value| value.is_empty() || value.len() > 2_048)
             || tag.as_deref().is_some_and(|value| !valid_text(value, 64))
             || !valid_channel_routing(&models, &group_ids)
+            || (require_sensitive_fields && (header_override.is_none() || settings.is_none()))
         {
             return Err(AdminChannelWriteError::InvalidInput);
         }
         validate_json_object(&model_mapping, true)?;
         validate_json_object(&param_override, false)?;
-        validate_json_object(&header_override, false)?;
-        validate_json_object(&settings, false)?;
+        if let Some(header_override) = &header_override {
+            validate_json_object(header_override, false)?;
+        }
+        if let Some(settings) = &settings {
+            validate_json_object(settings, false)?;
+        }
         Ok(Self {
             name,
             channel_type,
@@ -232,7 +240,7 @@ impl AdminChannelWriteFields {
     }
 
     fn into_record(self) -> AdminChannelWriteRecord {
-        AdminChannelWriteRecord::new(
+        AdminChannelWriteRecord::new_update(
             self.name,
             self.channel_type,
             self.protocol,

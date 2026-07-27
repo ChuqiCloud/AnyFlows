@@ -21,9 +21,9 @@ use crate::{
 
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-#[schema(as = AdminChannelWriteRequest)]
-/// 管理端创建或完整更新渠道时使用的配置正文。
-pub(crate) struct AdminChannelWriteRequest {
+#[schema(as = AdminChannelCreateRequest)]
+/// 管理端创建渠道时使用的完整配置正文。
+pub(crate) struct AdminChannelCreateRequest {
     #[schema(min_length = 1, max_length = 128)]
     name: String,
     #[serde(rename = "type")]
@@ -67,11 +67,55 @@ pub(crate) struct AdminChannelWriteRequest {
     tag: Option<String>,
 }
 
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminChannelUpdateRequest)]
+/// 管理端更新渠道时使用的配置正文；敏感对象省略或为 null 时保留原值。
+pub(crate) struct AdminChannelUpdateRequest {
+    #[schema(min_length = 1, max_length = 128)]
+    name: String,
+    #[serde(rename = "type")]
+    #[schema(
+        value_type = crate::openapi::schema::AdminChannelWriteTypeSchema,
+        inline
+    )]
+    channel_type: af_domain::ChannelType,
+    #[schema(
+        value_type = crate::openapi::schema::AdminChannelWriteProtocolSchema,
+        inline
+    )]
+    protocol: af_domain::Protocol,
+    #[schema(max_length = 2048, format = "uri", required = true)]
+    base_url: Option<String>,
+    #[schema(value_type = crate::openapi::schema::AdminRoutingWriteStatusSchema)]
+    status: AdminRoutingWriteStatus,
+    #[schema(minimum = 0)]
+    weight: i32,
+    priority: i32,
+    auto_ban: bool,
+    #[schema(schema_with = crate::openapi::schema::channel_write_models_schema)]
+    models: Vec<String>,
+    #[schema(schema_with = crate::openapi::schema::channel_write_group_ids_schema)]
+    group_ids: Vec<i64>,
+    #[schema(schema_with = crate::openapi::schema::model_mapping_write_schema)]
+    model_mapping: serde_json::Value,
+    #[schema(schema_with = crate::openapi::schema::free_form_object_schema)]
+    param_override: serde_json::Value,
+    /// 省略或 null 表示保留，显式对象（包括空对象）表示替换。
+    #[schema(schema_with = crate::openapi::schema::optional_sensitive_string_map_schema)]
+    header_override: Option<serde_json::Value>,
+    /// 省略或 null 表示保留，显式对象（包括空对象）表示替换。
+    #[schema(schema_with = crate::openapi::schema::optional_sensitive_free_form_object_schema)]
+    settings: Option<serde_json::Value>,
+    #[schema(min_length = 1, max_length = 64, required = true)]
+    tag: Option<String>,
+}
+
 /// 创建渠道并返回不含敏感配置的管理快照。
 pub(crate) async fn create_admin_channel(
     State(state): State<HttpState>,
     Extension(authentication): Extension<af_admin::SessionAuthentication>,
-    request: Result<Json<AdminChannelWriteRequest>, JsonRejection>,
+    request: Result<Json<AdminChannelCreateRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
     let writer = state
@@ -93,7 +137,7 @@ pub(crate) async fn update_admin_channel(
     State(state): State<HttpState>,
     Path(channel_id): Path<String>,
     Extension(authentication): Extension<af_admin::SessionAuthentication>,
-    request: Result<Json<AdminChannelWriteRequest>, JsonRejection>,
+    request: Result<Json<AdminChannelUpdateRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let channel_id = parse_channel_id(&channel_id)?;
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
@@ -130,7 +174,7 @@ pub(crate) async fn delete_admin_channel(
     Ok(no_store_empty(StatusCode::NO_CONTENT))
 }
 
-impl AdminChannelWriteRequest {
+impl AdminChannelCreateRequest {
     fn into_create_command(self) -> Result<AdminChannelCreateCommand, ManagementError> {
         let group_ids = parse_group_ids(self.group_ids)?;
         AdminChannelCreateCommand::new(
@@ -152,7 +196,9 @@ impl AdminChannelWriteRequest {
         )
         .map_err(map_write_error)
     }
+}
 
+impl AdminChannelUpdateRequest {
     fn into_update_command(self) -> Result<AdminChannelUpdateCommand, ManagementError> {
         let group_ids = parse_group_ids(self.group_ids)?;
         AdminChannelUpdateCommand::new(

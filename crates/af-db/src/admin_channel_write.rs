@@ -48,8 +48,8 @@ pub struct AdminChannelWriteRecord {
     group_ids: Vec<GroupId>,
     model_mapping: serde_json::Value,
     param_override: serde_json::Value,
-    header_override: serde_json::Value,
-    settings: serde_json::Value,
+    header_override: Option<serde_json::Value>,
+    settings: Option<serde_json::Value>,
     tag: Option<String>,
 }
 
@@ -75,6 +75,48 @@ impl AdminChannelWriteRecord {
         param_override: serde_json::Value,
         header_override: serde_json::Value,
         settings: serde_json::Value,
+        tag: Option<String>,
+    ) -> Self {
+        Self {
+            name,
+            channel_type,
+            protocol,
+            base_url,
+            status,
+            weight,
+            priority,
+            auto_ban,
+            models,
+            group_ids,
+            model_mapping,
+            param_override,
+            header_override: Some(header_override),
+            settings: Some(settings),
+            tag,
+        }
+    }
+
+    /// 组装更新记录；省略敏感对象时由仓储保留数据库原值。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与管理端渠道更新契约一一对应"
+    )]
+    #[must_use]
+    pub fn new_update(
+        name: String,
+        channel_type: ChannelType,
+        protocol: Protocol,
+        base_url: Option<String>,
+        status: Status,
+        weight: i32,
+        priority: i32,
+        auto_ban: bool,
+        models: Vec<String>,
+        group_ids: Vec<GroupId>,
+        model_mapping: serde_json::Value,
+        param_override: serde_json::Value,
+        header_override: Option<serde_json::Value>,
+        settings: Option<serde_json::Value>,
         tag: Option<String>,
     ) -> Self {
         Self {
@@ -388,7 +430,7 @@ impl AdminChannelRepository {
         &self,
         record: AdminChannelWriteRecord,
     ) -> Result<AdminChannelRecord, AdminChannelWriteRepositoryError> {
-        let fields = validate_channel_fields(record)?;
+        let fields = validate_channel_fields(record, true)?;
         let transaction = begin_transaction(self).await?;
         let now = TimeDateTimeWithTimeZone::now_utc();
         let ability_tag = fields.tag.clone();
@@ -398,6 +440,12 @@ impl AdminChannelRepository {
             weight: fields.weight,
             tag: ability_tag.as_deref(),
         };
+        let header_override = fields
+            .header_override
+            .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        let settings = fields
+            .settings
+            .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
         let inserted = channels::ActiveModel {
             name: Set(fields.name),
             r#type: Set(fields.channel_type.as_str().to_owned()),
@@ -409,8 +457,8 @@ impl AdminChannelRepository {
             auto_ban: Set(fields.auto_ban),
             model_mapping: Set(fields.model_mapping),
             param_override: Set(fields.param_override),
-            header_override: Set(fields.header_override),
-            settings: Set(fields.settings),
+            header_override: Set(header_override),
+            settings: Set(settings),
             tag: Set(fields.tag),
             created_at: Set(now),
             updated_at: Set(now),
@@ -443,7 +491,7 @@ impl AdminChannelRepository {
         channel_id: ChannelId,
         record: AdminChannelWriteRecord,
     ) -> Result<AdminChannelMutationOutcome, AdminChannelWriteRepositoryError> {
-        let fields = validate_channel_fields(record)?;
+        let fields = validate_channel_fields(record, false)?;
         let transaction = begin_transaction(self).await?;
         if !active_channel_exists(&transaction, channel_id).await? {
             return Ok(AdminChannelMutationOutcome::NotFound);
@@ -456,7 +504,7 @@ impl AdminChannelRepository {
             weight: fields.weight,
             tag: ability_tag.as_deref(),
         };
-        let result = channels::Entity::update_many()
+        let mut update = channels::Entity::update_many()
             .filter(channels::Column::Id.eq(channel_id.get()))
             .filter(channels::Column::DeletedAt.is_null())
             .col_expr(channels::Column::Name, Expr::value(fields.name))
@@ -481,12 +529,17 @@ impl AdminChannelRepository {
                 channels::Column::ParamOverride,
                 Expr::value(fields.param_override),
             )
-            .col_expr(
+            .col_expr(channels::Column::Tag, Expr::value(fields.tag));
+        if let Some(header_override) = fields.header_override {
+            update = update.col_expr(
                 channels::Column::HeaderOverride,
-                Expr::value(fields.header_override),
-            )
-            .col_expr(channels::Column::Settings, Expr::value(fields.settings))
-            .col_expr(channels::Column::Tag, Expr::value(fields.tag))
+                Expr::value(header_override),
+            );
+        }
+        if let Some(settings) = fields.settings {
+            update = update.col_expr(channels::Column::Settings, Expr::value(settings));
+        }
+        let result = update
             .col_expr(channels::Column::UpdatedAt, Expr::value(now))
             .exec(&transaction)
             .with_subscriber(NoSubscriber::default())
@@ -765,13 +818,14 @@ struct ValidatedChannelFields {
     routing: ValidatedChannelRouting,
     model_mapping: serde_json::Value,
     param_override: serde_json::Value,
-    header_override: HeaderOverrides,
-    settings: SensitiveJson,
+    header_override: Option<HeaderOverrides>,
+    settings: Option<SensitiveJson>,
     tag: Option<String>,
 }
 
 fn validate_channel_fields(
     record: AdminChannelWriteRecord,
+    require_sensitive_fields: bool,
 ) -> Result<ValidatedChannelFields, AdminChannelWriteRepositoryError> {
     if !valid_trimmed_text(&record.name, 128)
         || record.weight < 0
@@ -782,20 +836,29 @@ fn validate_channel_fields(
             .tag
             .as_deref()
             .is_some_and(|value| !valid_trimmed_text(value, 64))
+        || (require_sensitive_fields
+            && (record.header_override.is_none() || record.settings.is_none()))
     {
         return Err(AdminChannelWriteRepositoryError::InvalidInput);
     }
     validate_json_object(&record.model_mapping, true)?;
     validate_json_object(&record.param_override, false)?;
-    validate_json_object(&record.header_override, false)?;
-    validate_json_object(&record.settings, false)?;
+    if let Some(header_override) = &record.header_override {
+        validate_json_object(header_override, false)?;
+    }
+    if let Some(settings) = &record.settings {
+        validate_json_object(settings, false)?;
+    }
     let base_url = record
         .base_url
         .as_deref()
         .map(ChannelBaseUrl::parse)
         .transpose()
         .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
-    let header_override = HeaderOverrides::validate(record.header_override)
+    let header_override = record
+        .header_override
+        .map(HeaderOverrides::validate)
+        .transpose()
         .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
     let routing = ValidatedChannelRouting::new(record.models, record.group_ids)
         .map_err(map_ability_write_error)?;
@@ -812,7 +875,7 @@ fn validate_channel_fields(
         model_mapping: record.model_mapping,
         param_override: record.param_override,
         header_override,
-        settings: SensitiveJson::from(record.settings),
+        settings: record.settings.map(SensitiveJson::from),
         tag: record.tag,
     })
 }

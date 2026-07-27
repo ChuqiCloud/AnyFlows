@@ -22,6 +22,102 @@
   "dashboard": {
     "title": "Console"
   },
+  "channels": {
+    "title": "Channels",
+    "subtitle": "Maintain routing and sensitive settings for OpenAI-compatible upstreams, then run a real probe when needed.",
+    "scope": "OpenAI Chat only for now",
+    "count_one": "{{count}} channel",
+    "count_other": "{{count}} channels",
+    "loading": "Loading channels",
+    "loadingMore": "Loading",
+    "columns": {
+      "channel": "Channel",
+      "routing": "Routing scope",
+      "schedule": "Scheduling",
+      "health": "Latest probe",
+      "actions": "Actions"
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "auto_disabled": "Auto-disabled"
+    },
+    "values": {
+      "defaultUrl": "Default upstream URL",
+      "models_one": "{{count}} model",
+      "models_other": "{{count}} models",
+      "groups_one": "{{count}} group",
+      "groups_other": "{{count}} groups",
+      "priority": "Priority {{value}}",
+      "weight": "Weight {{value}}"
+    },
+    "probe": {
+      "notTested": "Not tested",
+      "healthy": "Healthy",
+      "unhealthy": "Unhealthy",
+      "timeout": "Timed out",
+      "failed": "Probe request failed"
+    },
+    "actions": {
+      "create": "New channel",
+      "edit": "Edit channel",
+      "probe": "Run probe",
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "loadMore": "Load more",
+      "cancel": "Cancel",
+      "save": "Save changes"
+    },
+    "empty": {
+      "title": "No channels yet",
+      "body": "Create the first OpenAI Chat channel and it will appear here."
+    },
+    "error": {
+      "title": "Channels could not be loaded",
+      "body": "The service did not return the channel list. Try again shortly."
+    },
+    "editor": {
+      "createTitle": "New channel",
+      "createDescription": "Configure an OpenAI Chat upstream that can participate in routing.",
+      "editTitle": "Edit channel",
+      "editDescription": "Read fields can be changed directly. Sensitive objects follow the blank-value rule."
+    },
+    "form": {
+      "basic": "Basic settings",
+      "routing": "Routing scope",
+      "advanced": "Overrides and sensitive settings",
+      "autoBanHint": "Allow the runtime to disable this channel after a deterministic failure.",
+      "modelsHint": "Enter one Canonical model per line or separate them with commas.",
+      "groupsHint": "Comma-separated group IDs. Models and groups must both be empty or both be set.",
+      "sensitiveHint": "Leave blank to preserve the current value. Enter {} to clear it.",
+      "submitError": "The channel could not be saved. Check the fields and try again."
+    },
+    "fields": {
+      "name": "Name",
+      "baseUrl": "Upstream base URL",
+      "type": "Channel type",
+      "protocol": "Protocol",
+      "status": "Status",
+      "weight": "Weight",
+      "priority": "Priority",
+      "autoBan": "Allow automatic disabling",
+      "tag": "Tag",
+      "models": "Models",
+      "groupIds": "Group IDs",
+      "modelMapping": "Model mapping JSON",
+      "paramOverride": "Parameter overrides JSON",
+      "headerOverride": "Header overrides JSON",
+      "settings": "Adapter settings JSON"
+    },
+    "validation": {
+      "field": "This field value is invalid.",
+      "json": "Enter a valid JSON object.",
+      "stringMap": "Enter a JSON object whose values are all strings.",
+      "url": "Enter an HTTP(S) URL without credentials, a query string, or a fragment.",
+      "routing": "Models and groups must both be set or both be empty, and group IDs must be positive integers.",
+      "sensitiveRequired": "A JSON object is required when creating a channel. You can enter {}."
+    }
+  },
   "auth": {
     "login": {
       "eyebrow": "AnyFlows management console",

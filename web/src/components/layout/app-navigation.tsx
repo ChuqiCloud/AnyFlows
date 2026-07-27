@@ -1,4 +1,4 @@
-import { Gauge, KeyRound, Network, ReceiptText, Settings, WalletCards } from 'lucide-react'
+import { Gauge, Network } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
@@ -17,13 +17,9 @@ type AppNavigationProps = {
 }
 
 const navItems = [
-  { key: 'overview', icon: Gauge },
-  { key: 'channels', icon: Network },
-  { key: 'keys', icon: KeyRound },
-  { key: 'usage', icon: ReceiptText },
-  { key: 'billing', icon: WalletCards },
-  { key: 'settings', icon: Settings },
-]
+  { key: 'overview', icon: Gauge, href: '#/console' },
+  { key: 'channels', icon: Network, href: '#/console/channels' },
+] as const
 
 function useActiveKey() {
   if (typeof window === 'undefined') return 'overview'
@@ -50,9 +46,9 @@ export function AppNavigation({ className, compact = false }: AppNavigationProps
           const IconComponent = item.icon
           const active = item.key === activeKey
           return (
-            <button
+            <a
               key={item.key}
-              type="button"
+              href={item.href}
               aria-current={active ? 'page' : undefined}
               className={cn(
                 'flex h-8 shrink-0 items-center gap-2 rounded-lg px-3',
@@ -68,7 +64,7 @@ export function AppNavigation({ className, compact = false }: AppNavigationProps
                 aria-hidden="true"
               />
               {t(`nav.${item.key}`)}
-            </button>
+            </a>
           )
         })}
       </nav>
@@ -84,16 +80,18 @@ export function AppNavigation({ className, compact = false }: AppNavigationProps
         return (
           <SidebarMenuItem key={item.key}>
             <SidebarMenuButton
-              asChild={false}
+              asChild
               isActive={active}
               tooltip={t(`nav.${item.key}`)}
               className={active ? 'text-brand' : undefined}
             >
-              <IconComponent
-                className={cn('shrink-0', active ? 'text-brand' : 'text-sidebar-foreground/70')}
-                aria-hidden="true"
-              />
-              <span>{t(`nav.${item.key}`)}</span>
+              <a href={item.href} aria-current={active ? 'page' : undefined}>
+                <IconComponent
+                  className={cn('shrink-0', active ? 'text-brand' : 'text-sidebar-foreground/70')}
+                  aria-hidden="true"
+                />
+                <span>{t(`nav.${item.key}`)}</span>
+              </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
         )

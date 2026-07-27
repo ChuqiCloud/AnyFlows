@@ -1,6 +1,7 @@
 //! HTTP 路由、中间件、提取器与响应映射。
 
 mod authentication;
+mod channel_probe;
 mod chat_completions;
 mod chat_service;
 mod client_ip;
@@ -8,6 +9,7 @@ mod credentials;
 mod error_response;
 mod management_auth;
 mod management_authorization;
+mod management_channel_probe;
 mod management_channel_writes;
 mod management_channels;
 mod management_credential_writes;
@@ -26,6 +28,7 @@ mod router;
 mod serve;
 mod streaming;
 
+pub use channel_probe::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 pub use chat_service::{ChatService, ChatServiceFuture};
 pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presented_api_key};
 pub use error_response::OpenAiHttpError;

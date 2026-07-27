@@ -27,13 +27,37 @@ export type AdminChannel = {
     created_at: number;
     updated_at: number;
 };
+export type AdminChannelProbeResponse = {
+    status: AdminChannelProbeStatus;
+    latency_ms: number;
+};
+export type AdminChannelProbeStatus = 'healthy' | 'unhealthy' | 'timeout';
 export type AdminChannelListResponse = {
     channels: Array<AdminChannel>;
     next_cursor: number | null;
 };
 export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini';
 export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'bedrock' | 'vertex' | 'custom';
-export type AdminChannelWriteRequest = {
+export type AdminChannelCreateRequest = {
+    name: string;
+    type: 'openai';
+    protocol: 'openai_chat';
+    base_url: string | null;
+    status: AdminRoutingWriteStatus;
+    weight: number;
+    priority: number;
+    auto_ban: boolean;
+    models: Array<string>;
+    group_ids: Array<number>;
+    model_mapping: {
+        [key: string]: string;
+    };
+    param_override: {
+        [key: string]: unknown;
+    };
+    tag: string | null;
+};
+export type AdminChannelUpdateRequest = {
     name: string;
     type: 'openai';
     protocol: 'openai_chat';
@@ -272,7 +296,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'channel_not_found' | 'credential_not_found' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
     message: string;
 };
 export type SessionResponse = {
@@ -283,7 +307,7 @@ export type SessionUser = {
     id: number;
     role: 'user' | 'admin';
 };
-export type AdminChannelWriteRequestWritable = {
+export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai';
     protocol: 'openai_chat';
@@ -306,6 +330,31 @@ export type AdminChannelWriteRequestWritable = {
     settings: {
         [key: string]: unknown;
     };
+    tag: string | null;
+};
+export type AdminChannelUpdateRequestWritable = {
+    name: string;
+    type: 'openai';
+    protocol: 'openai_chat';
+    base_url: string | null;
+    status: AdminRoutingWriteStatus;
+    weight: number;
+    priority: number;
+    auto_ban: boolean;
+    models: Array<string>;
+    group_ids: Array<number>;
+    model_mapping: {
+        [key: string]: string;
+    };
+    param_override: {
+        [key: string]: unknown;
+    };
+    header_override?: {
+        [key: string]: string;
+    } | null;
+    settings?: {
+        [key: string]: unknown;
+    } | null;
     tag: string | null;
 };
 export type AdminCredentialCreateRequestWritable = {
@@ -692,7 +741,7 @@ export type ListAdminChannelsResponses = {
 };
 export type ListAdminChannelsResponse = ListAdminChannelsResponses[keyof ListAdminChannelsResponses];
 export type CreateAdminChannelData = {
-    body: AdminChannelWriteRequestWritable;
+    body: AdminChannelCreateRequestWritable;
     path?: never;
     query?: never;
     url: '/api/admin/channels';
@@ -749,7 +798,7 @@ export type GetAdminChannelResponses = {
 };
 export type GetAdminChannelResponse = GetAdminChannelResponses[keyof GetAdminChannelResponses];
 export type UpdateAdminChannelData = {
-    body: AdminChannelWriteRequestWritable;
+    body: AdminChannelUpdateRequestWritable;
     path: {
         id: number;
     };
@@ -768,6 +817,25 @@ export type UpdateAdminChannelResponses = {
     200: AdminChannel;
 };
 export type UpdateAdminChannelResponse = UpdateAdminChannelResponses[keyof UpdateAdminChannelResponses];
+export type ProbeAdminChannelData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{id}/probe';
+};
+export type ProbeAdminChannelErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    503: ManagementError;
+};
+export type ProbeAdminChannelError = ProbeAdminChannelErrors[keyof ProbeAdminChannelErrors];
+export type ProbeAdminChannelResponses = {
+    200: AdminChannelProbeResponse;
+};
+export type ProbeAdminChannelResponse = ProbeAdminChannelResponses[keyof ProbeAdminChannelResponses];
 export type ListAdminCredentialsData = {
     body?: never;
     path: {

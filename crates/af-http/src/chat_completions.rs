@@ -30,6 +30,7 @@ pub(crate) struct HttpState {
     pub(crate) session_authenticator: Arc<dyn SessionAuthenticator>,
     pub(crate) admin_channel_reader: Option<Arc<dyn AdminChannelReader>>,
     pub(crate) admin_channel_writer: Option<Arc<dyn AdminChannelWriter>>,
+    pub(crate) admin_channel_probe: Option<Arc<dyn crate::AdminChannelProbe>>,
     pub(crate) admin_group_reader: Arc<dyn AdminGroupReader>,
     pub(crate) admin_group_writer: Arc<dyn AdminGroupWriter>,
     pub(crate) admin_token_reader: Arc<dyn AdminTokenReader>,
@@ -55,6 +56,7 @@ impl HttpState {
             session_authenticator,
             admin_channel_reader: None,
             admin_channel_writer: None,
+            admin_channel_probe: None,
             admin_group_reader,
             admin_group_writer,
             admin_token_reader,
@@ -74,6 +76,15 @@ impl HttpState {
     /// 为包含渠道管理写路由的组合根注入真实写入服务。
     pub(crate) fn with_admin_channel_writer(mut self, writer: Arc<dyn AdminChannelWriter>) -> Self {
         self.admin_channel_writer = Some(writer);
+        self
+    }
+
+    /// 为渠道管理路由注入可选的真实测活服务。
+    pub(crate) fn with_admin_channel_probe(
+        mut self,
+        probe: Option<Arc<dyn crate::AdminChannelProbe>>,
+    ) -> Self {
+        self.admin_channel_probe = probe;
         self
     }
 }
