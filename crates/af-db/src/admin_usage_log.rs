@@ -156,7 +156,9 @@ impl AdminUsageLogRecord {
         self.created_at
     }
 
-    fn try_from_model(model: usage_logs::Model) -> Result<Self, AdminUsageLogRepositoryError> {
+    pub(super) fn try_from_model(
+        model: usage_logs::Model,
+    ) -> Result<Self, AdminUsageLogRepositoryError> {
         let token_values = [
             model.input_tokens,
             model.output_tokens,
