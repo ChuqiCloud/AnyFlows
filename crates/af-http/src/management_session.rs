@@ -6,34 +6,57 @@ use axum::{
 };
 use http::{HeaderValue, header::CACHE_CONTROL};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::{chat_completions::HttpState, management_error::ManagementError};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
+#[schema(as = LoginRequest)]
 pub(crate) struct LoginRequest {
+    #[schema(min_length = 1, max_length = 64)]
     username: String,
+    #[schema(max_length = 4096, format = Password)]
     password: String,
 }
 
-#[derive(Serialize)]
-struct SessionUser {
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = SessionUser)]
+pub(crate) struct SessionUser {
+    #[schema(minimum = 1)]
     id: i64,
+    #[schema(
+        value_type = crate::openapi::schema::AdminSessionRoleSchema,
+        inline
+    )]
     role: af_admin::SessionRole,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = LoginResponse)]
 pub(crate) struct LoginResponse {
+    #[schema(value_type = String)]
     access_token: af_admin::SessionToken,
+    #[schema(
+        value_type = crate::openapi::schema::BearerTokenTypeSchema,
+        inline
+    )]
     token_type: &'static str,
+    #[schema(maximum = 86400)]
     expires_in: u64,
+    #[schema(minimum = 1)]
     expires_at: u64,
     user: SessionUser,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = SessionResponse)]
 pub(crate) struct SessionResponse {
     user: SessionUser,
+    #[schema(minimum = 1)]
     expires_at: u64,
 }
 

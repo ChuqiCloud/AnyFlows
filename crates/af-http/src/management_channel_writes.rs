@@ -9,6 +9,7 @@ use axum::{
 };
 use http::StatusCode;
 use serde::Deserialize;
+use utoipa::ToSchema;
 
 use crate::{
     chat_completions::HttpState,
@@ -18,25 +19,51 @@ use crate::{
     management_error::ManagementError,
 };
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
+#[schema(as = AdminChannelWriteRequest)]
 /// 管理端创建或完整更新渠道时使用的配置正文。
 pub(crate) struct AdminChannelWriteRequest {
+    #[schema(min_length = 1, max_length = 128)]
     name: String,
     #[serde(rename = "type")]
+    /// 当前生产写链路仅支持 OpenAI 兼容适配器。
+    #[schema(
+        value_type = crate::openapi::schema::AdminChannelWriteTypeSchema,
+        inline
+    )]
     channel_type: af_domain::ChannelType,
+    /// 当前生产写链路仅支持 OpenAI Chat 协议。
+    #[schema(
+        value_type = crate::openapi::schema::AdminChannelWriteProtocolSchema,
+        inline
+    )]
     protocol: af_domain::Protocol,
+    /// 不含 userinfo、查询串或片段的 HTTP(S) 基础地址。
+    #[schema(max_length = 2048, format = "uri", required = true)]
     base_url: Option<String>,
+    #[schema(value_type = crate::openapi::schema::AdminRoutingWriteStatusSchema)]
     status: AdminRoutingWriteStatus,
+    #[schema(minimum = 0)]
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    #[schema(schema_with = crate::openapi::schema::channel_write_models_schema)]
     models: Vec<String>,
+    #[schema(schema_with = crate::openapi::schema::channel_write_group_ids_schema)]
     group_ids: Vec<i64>,
+    #[schema(schema_with = crate::openapi::schema::model_mapping_write_schema)]
     model_mapping: serde_json::Value,
+    /// 请求参数覆盖对象，序列化后最多 64 KiB。
+    #[schema(schema_with = crate::openapi::schema::free_form_object_schema)]
     param_override: serde_json::Value,
+    /// 敏感 Header 覆盖输入；拒绝认证、Host 和 hop-by-hop 头，永不随响应返回。
+    #[schema(schema_with = crate::openapi::schema::sensitive_string_map_schema)]
     header_override: serde_json::Value,
+    /// 敏感适配器设置输入，序列化后最多 64 KiB，永不随响应返回。
+    #[schema(schema_with = crate::openapi::schema::sensitive_free_form_object_schema)]
     settings: serde_json::Value,
+    #[schema(min_length = 1, max_length = 64, required = true)]
     tag: Option<String>,
 }
 

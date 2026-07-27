@@ -6,7 +6,7 @@
   "packageManager": "pnpm@10.33.0",
   "scripts": {
     "dev": "vite",
-    "api:generate": "openapi-ts --no-log-file && node scripts/normalize-generated-api.mjs",
+    "api:generate": "cargo xtask openapi export && openapi-ts --no-log-file && node scripts/normalize-generated-api.mjs",
     "api:check": "node scripts/check-generated-api.mjs",
     "test:scripts": "node --test scripts/*.test.mjs",
     "build": "tsc -b && vite build",

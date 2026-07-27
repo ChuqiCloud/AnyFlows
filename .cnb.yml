@@ -43,6 +43,8 @@
           script: cargo fmt --all -- --check
         - name: 检查 crate 依赖边界
           script: cargo run --locked --package xtask -- check-deps
+        - name: 检查 OpenAPI 契约
+          script: cargo run --locked --package xtask -- openapi check
         - name: 运行 Clippy
           script: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
         - name: 运行测试
@@ -184,6 +186,8 @@
           script: cargo fmt --all -- --check
         - name: 检查 crate 依赖边界
           script: cargo run --locked --package xtask -- check-deps
+        - name: 检查 OpenAPI 契约
+          script: cargo run --locked --package xtask -- openapi check
         - name: 运行 Clippy
           script: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
         - name: 运行测试
@@ -331,6 +335,8 @@
           script: cargo fmt --all -- --check
         - name: 检查 crate 依赖边界
           script: cargo run --locked --package xtask -- check-deps
+        - name: 检查 OpenAPI 契约
+          script: cargo run --locked --package xtask -- openapi check
         - name: 运行 Clippy
           script: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
         - name: 运行测试

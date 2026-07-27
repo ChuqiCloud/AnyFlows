@@ -3,125 +3,10 @@
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
-export type LoginRequest = {
-    username: string;
-    password: string;
-};
-export type SessionUser = {
-    id: number;
-    role: 'user' | 'admin';
-};
-export type LoginResponse = {
-    access_token: string;
-    token_type: 'Bearer';
-    expires_in: number;
-    expires_at: number;
-    user: SessionUser;
-};
-export type SessionResponse = {
-    user: SessionUser;
-    expires_at: number;
-};
-export type AdminUserStatus = 'enabled' | 'disabled';
-export type AdminUser = {
-    id: number;
-    username: string;
-    email: string | null;
-    role: 'user' | 'admin';
-    status: AdminUserStatus;
-    default_group_id: number;
-    quota: number;
-    used_quota: number;
-    frozen_quota: number;
-    request_count: number;
-    rpm_limit: number | null;
-    concurrency: number | null;
-};
-export type AdminUserWriteRequest = {
-    username: string;
-    email?: string | null;
-    password?: string | null;
-    role: 'user' | 'admin';
-    status: AdminUserStatus;
-    default_group_id: number;
-    quota: number;
-    rpm_limit?: number | null;
-    concurrency?: number | null;
-};
-export type AdminUserListResponse = {
-    users: Array<AdminUser>;
-    next_cursor: number | null;
-};
-export type AdminGroup = {
-    id: number;
-    name: string;
-    display_name: string;
-    ratio_micros: number;
-    peak_ratio_micros: number | null;
-    peak_start: string | null;
-    peak_end: string | null;
-    is_exclusive: boolean;
-    daily_limit: number | null;
-    weekly_limit: number | null;
-    monthly_limit: number | null;
-    rpm_limit: number | null;
-    fallback_group_id: number | null;
-    flags: {
-        [key: string]: unknown;
-    };
-};
-export type AdminGroupWriteRequest = {
-    name: string;
-    display_name: string;
-    ratio_micros: number;
-    peak_ratio_micros?: number | null;
-    peak_start?: string | null;
-    peak_end?: string | null;
-    is_exclusive: boolean;
-    daily_limit?: number | null;
-    weekly_limit?: number | null;
-    monthly_limit?: number | null;
-    rpm_limit?: number | null;
-    fallback_group_id?: number | null;
-    flags: {
-        [key: string]: unknown;
-    };
-};
-export type AdminGroupListResponse = {
-    groups: Array<AdminGroup>;
-    next_cursor: number | null;
-};
-export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'channel_not_found' | 'credential_not_found' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
-    message: string;
-};
-export type AdminRoutingStatus = 'enabled' | 'disabled' | 'auto_disabled';
-export type AdminRoutingWriteStatus = 'enabled' | 'disabled';
-export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'bedrock' | 'vertex' | 'custom';
-export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini';
-export type AdminChannelWriteRequest = {
-    name: string;
-    type: 'openai';
-    protocol: 'openai_chat';
-    base_url: string | null;
-    status: AdminRoutingWriteStatus;
-    weight: number;
-    priority: number;
-    auto_ban: boolean;
-    models: Array<string>;
-    group_ids: Array<number>;
-    model_mapping: {
-        [key: string]: string;
-    };
-    param_override: {
-        [key: string]: unknown;
-    };
-    tag: string | null;
-};
 export type AdminChannel = {
     id: number;
-    name: string;
     type: AdminChannelType;
+    name: string;
     protocol: AdminChannelProtocol;
     base_url: string | null;
     status: AdminRoutingStatus;
@@ -146,34 +31,33 @@ export type AdminChannelListResponse = {
     channels: Array<AdminChannel>;
     next_cursor: number | null;
 };
-export type AdminCredentialKind = 'api_key' | 'oauth' | 'setup_token' | 'bedrock' | 'service_account' | 'upstream';
-export type AdminCredentialMultiKeyMode = 'random' | 'round_robin';
-export type AdminCredentialQuotaDimension = 'global' | 'spark';
-export type AdminCredentialWriteFields = {
-    kind: 'api_key' | 'oauth';
+export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini';
+export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'bedrock' | 'vertex' | 'custom';
+export type AdminChannelWriteRequest = {
+    name: string;
+    type: 'openai';
+    protocol: 'openai_chat';
+    base_url: string | null;
     status: AdminRoutingWriteStatus;
-    multi_key_mode: AdminCredentialMultiKeyMode | null;
-    priority: number;
     weight: number;
-    concurrency: number | null;
-    load_factor_micros: number | null;
-    rate_multiplier_micros: number | null;
-    schedulable: boolean;
-    parent_id: number | null;
-    quota_dimension: AdminCredentialQuotaDimension;
-    proxy_id: number | null;
-    oauth_provider: string | null;
-    oauth_account_key: string | null;
-    oauth_project_id: string | null;
+    priority: number;
+    auto_ban: boolean;
+    models: Array<string>;
+    group_ids: Array<number>;
+    model_mapping: {
+        [key: string]: string;
+    };
+    param_override: {
+        [key: string]: unknown;
+    };
+    tag: string | null;
 };
-export type AdminCredentialCreateRequest = AdminCredentialWriteFields;
-export type AdminCredentialUpdateRequest = AdminCredentialWriteFields;
 export type AdminCredential = {
     id: number;
     channel_id: number;
     kind: AdminCredentialKind;
     status: AdminRoutingStatus;
-    multi_key_mode: AdminCredentialMultiKeyMode | null;
+    multi_key_mode: null | AdminCredentialMultiKeyMode;
     priority: number;
     weight: number;
     concurrency: number | null;
@@ -196,31 +80,105 @@ export type AdminCredential = {
     created_at: number;
     updated_at: number;
 };
+export type AdminCredentialCreateRequest = {
+    kind: 'api_key' | 'oauth';
+    status: AdminRoutingWriteStatus;
+    multi_key_mode: null | AdminCredentialMultiKeyMode;
+    priority: number;
+    weight: number;
+    concurrency: number | null;
+    load_factor_micros: number | null;
+    rate_multiplier_micros: number | null;
+    schedulable: boolean;
+    parent_id: number | null;
+    quota_dimension: AdminCredentialQuotaDimension;
+    proxy_id: number | null;
+    oauth_provider: string | null;
+    oauth_account_key: string | null;
+    oauth_project_id: string | null;
+};
+export type AdminCredentialKind = 'api_key' | 'oauth' | 'setup_token' | 'bedrock' | 'service_account' | 'upstream';
 export type AdminCredentialListResponse = {
     credentials: Array<AdminCredential>;
     next_cursor: number | null;
 };
-export type AdminTokenStatus = 'enabled' | 'disabled';
-export type AdminTokenWriteRequest = {
-    user_id: number;
+export type AdminCredentialMultiKeyMode = 'random' | 'round_robin';
+export type AdminCredentialQuotaDimension = 'global' | 'spark';
+export type AdminCredentialUpdateRequest = {
+    kind: 'api_key' | 'oauth';
+    status: AdminRoutingWriteStatus;
+    multi_key_mode: null | AdminCredentialMultiKeyMode;
+    priority: number;
+    weight: number;
+    concurrency: number | null;
+    load_factor_micros: number | null;
+    rate_multiplier_micros: number | null;
+    schedulable: boolean;
+    parent_id: number | null;
+    quota_dimension: AdminCredentialQuotaDimension;
+    proxy_id: number | null;
+    oauth_provider: string | null;
+    oauth_account_key: string | null;
+    oauth_project_id: string | null;
+};
+export type AdminCredentialWriteFields = {
+    kind: 'api_key' | 'oauth';
+    status: AdminRoutingWriteStatus;
+    multi_key_mode: null | AdminCredentialMultiKeyMode;
+    priority: number;
+    weight: number;
+    concurrency: number | null;
+    load_factor_micros: number | null;
+    rate_multiplier_micros: number | null;
+    schedulable: boolean;
+    parent_id: number | null;
+    quota_dimension: AdminCredentialQuotaDimension;
+    proxy_id: number | null;
+    oauth_provider: string | null;
+    oauth_account_key: string | null;
+    oauth_project_id: string | null;
+};
+export type AdminGroup = {
+    id: number;
     name: string;
-    status: AdminTokenStatus;
-    group_id: number | null;
-    remain_quota: number;
-    unlimited_quota: boolean;
-    expired_at: number | null;
-    model_limits: Array<string> | null;
-    allow_ips: Array<string> | null;
-    cross_group_retry: boolean;
-    rate_limit_5h: number | null;
-    rate_limit_1d: number | null;
-    rate_limit_7d: number | null;
-    max_requests: number | null;
+    display_name: string;
+    ratio_micros: number;
+    peak_ratio_micros: number | null;
+    peak_start: string | null;
+    peak_end: string | null;
+    is_exclusive: boolean;
+    daily_limit: number | null;
+    weekly_limit: number | null;
+    monthly_limit: number | null;
+    rpm_limit: number | null;
+    fallback_group_id: number | null;
+    flags: {
+        [key: string]: unknown;
+    };
 };
-export type IssuedAdminToken = {
-    api_key: string;
-    token: AdminToken;
+export type AdminGroupListResponse = {
+    groups: Array<AdminGroup>;
+    next_cursor: number | null;
 };
+export type AdminGroupWriteRequest = {
+    name: string;
+    display_name: string;
+    ratio_micros: number;
+    peak_ratio_micros?: number | null;
+    peak_start?: string | null;
+    peak_end?: string | null;
+    is_exclusive: boolean;
+    daily_limit?: number | null;
+    weekly_limit?: number | null;
+    monthly_limit?: number | null;
+    rpm_limit?: number | null;
+    fallback_group_id?: number | null;
+    flags: {
+        [key: string]: unknown;
+    };
+};
+export type AdminRoutingStatus = 'enabled' | 'disabled' | 'auto_disabled';
+export type AdminRoutingWriteStatus = 'enabled' | 'disabled';
 export type AdminToken = {
     id: number;
     user_id: number;
@@ -251,6 +209,80 @@ export type AdminTokenListResponse = {
     tokens: Array<AdminToken>;
     next_cursor: number | null;
 };
+export type AdminTokenStatus = 'enabled' | 'disabled';
+export type AdminTokenWriteRequest = {
+    user_id: number;
+    name: string;
+    status: AdminTokenStatus;
+    group_id: number | null;
+    remain_quota: number;
+    unlimited_quota: boolean;
+    expired_at: number | null;
+    model_limits: Array<string> | null;
+    allow_ips: Array<string> | null;
+    cross_group_retry: boolean;
+    rate_limit_5h: number | null;
+    rate_limit_1d: number | null;
+    rate_limit_7d: number | null;
+    max_requests: number | null;
+};
+export type AdminUser = {
+    id: number;
+    username: string;
+    email: string | null;
+    role: 'user' | 'admin';
+    status: AdminUserStatus;
+    default_group_id: number;
+    quota: number;
+    used_quota: number;
+    frozen_quota: number;
+    request_count: number;
+    rpm_limit: number | null;
+    concurrency: number | null;
+};
+export type AdminUserListResponse = {
+    users: Array<AdminUser>;
+    next_cursor: number | null;
+};
+export type AdminUserStatus = 'enabled' | 'disabled';
+export type AdminUserWriteRequest = {
+    username: string;
+    email?: string | null;
+    password?: string | null;
+    role: 'user' | 'admin';
+    status: AdminUserStatus;
+    default_group_id: number;
+    quota: number;
+    rpm_limit?: number | null;
+    concurrency?: number | null;
+};
+export type IssuedAdminToken = {
+    api_key: string;
+    token: AdminToken;
+};
+export type LoginRequest = {
+    username: string;
+    password: string;
+};
+export type LoginResponse = {
+    access_token: string;
+    token_type: 'Bearer';
+    expires_in: number;
+    expires_at: number;
+    user: SessionUser;
+};
+export type ManagementError = {
+    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'channel_not_found' | 'credential_not_found' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
+    message: string;
+};
+export type SessionResponse = {
+    user: SessionUser;
+    expires_at: number;
+};
+export type SessionUser = {
+    id: number;
+    role: 'user' | 'admin';
+};
 export type AdminChannelWriteRequestWritable = {
     name: string;
     type: 'openai';
@@ -276,11 +308,41 @@ export type AdminChannelWriteRequestWritable = {
     };
     tag: string | null;
 };
-export type AdminCredentialCreateRequestWritable = AdminCredentialWriteFields & {
+export type AdminCredentialCreateRequestWritable = {
+    kind: 'api_key' | 'oauth';
     secret: string;
+    status: AdminRoutingWriteStatus;
+    multi_key_mode: null | AdminCredentialMultiKeyMode;
+    priority: number;
+    weight: number;
+    concurrency: number | null;
+    load_factor_micros: number | null;
+    rate_multiplier_micros: number | null;
+    schedulable: boolean;
+    parent_id: number | null;
+    quota_dimension: AdminCredentialQuotaDimension;
+    proxy_id: number | null;
+    oauth_provider: string | null;
+    oauth_account_key: string | null;
+    oauth_project_id: string | null;
 };
-export type AdminCredentialUpdateRequestWritable = AdminCredentialWriteFields & {
+export type AdminCredentialUpdateRequestWritable = {
+    kind: 'api_key' | 'oauth';
     secret: string | null;
+    status: AdminRoutingWriteStatus;
+    multi_key_mode: null | AdminCredentialMultiKeyMode;
+    priority: number;
+    weight: number;
+    concurrency: number | null;
+    load_factor_micros: number | null;
+    rate_multiplier_micros: number | null;
+    schedulable: boolean;
+    parent_id: number | null;
+    quota_dimension: AdminCredentialQuotaDimension;
+    proxy_id: number | null;
+    oauth_provider: string | null;
+    oauth_account_key: string | null;
+    oauth_project_id: string | null;
 };
 export type LoginManagementSessionData = {
     body: LoginRequest;

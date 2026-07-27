@@ -52,6 +52,9 @@ jobs:
       - name: Check crate dependency policy
         run: cargo run --locked --package xtask -- check-deps
 
+      - name: Check OpenAPI contract
+        run: cargo run --locked --package xtask -- openapi check
+
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 

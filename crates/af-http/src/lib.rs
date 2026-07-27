@@ -20,6 +20,7 @@ mod management_token_writes;
 mod management_tokens;
 mod management_users;
 mod middleware;
+mod openapi;
 mod operations;
 mod router;
 mod serve;
@@ -29,6 +30,7 @@ pub use chat_service::{ChatService, ChatServiceFuture};
 pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presented_api_key};
 pub use error_response::OpenAiHttpError;
 pub use middleware::REQUEST_ID_HEADER_NAME;
+pub use openapi::openapi_document;
 pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
 };

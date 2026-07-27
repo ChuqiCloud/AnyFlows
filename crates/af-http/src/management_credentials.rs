@@ -5,6 +5,7 @@ use axum::{
     response::Response,
 };
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use crate::{
     chat_completions::HttpState,
@@ -15,39 +16,74 @@ use crate::{
     management_error::ManagementError,
 };
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminCredential)]
 pub(crate) struct AdminCredentialResponse {
+    #[schema(minimum = 1)]
     id: i64,
+    #[schema(minimum = 1)]
     channel_id: i64,
+    #[schema(value_type = crate::openapi::schema::AdminCredentialKindSchema)]
     kind: af_domain::CredentialKind,
+    #[schema(value_type = crate::openapi::schema::AdminRoutingStatusSchema)]
     status: af_admin::AdminRoutingStatus,
+    #[schema(
+        value_type = Option<crate::openapi::schema::AdminCredentialMultiKeyModeSchema>,
+        required = true
+    )]
     multi_key_mode: Option<af_admin::AdminCredentialMultiKeyMode>,
     priority: i32,
+    #[schema(minimum = 0)]
     weight: i32,
+    #[schema(minimum = 0, required = true)]
     concurrency: Option<i32>,
+    #[schema(minimum = 0, required = true)]
     load_factor_micros: Option<i64>,
+    /// 账号侧成本倍率，不参与用户扣费。
+    #[schema(minimum = 0, required = true)]
     rate_multiplier_micros: Option<i64>,
     schedulable: bool,
+    #[schema(minimum = 0, required = true)]
     rate_limited_at: Option<i64>,
+    #[schema(minimum = 0, required = true)]
     rate_limit_reset_at: Option<i64>,
+    #[schema(minimum = 0, required = true)]
     overload_until: Option<i64>,
+    #[schema(minimum = 0, required = true)]
     temp_unschedulable_until: Option<i64>,
+    #[schema(minimum = 0, required = true)]
     session_window_start: Option<i64>,
+    #[schema(minimum = 0, required = true)]
     session_window_end: Option<i64>,
+    #[schema(minimum = 1, required = true)]
     parent_id: Option<i64>,
+    #[schema(value_type = crate::openapi::schema::AdminCredentialQuotaDimensionSchema)]
     quota_dimension: af_admin::AdminCredentialQuotaDimension,
+    #[schema(minimum = 1, required = true)]
     proxy_id: Option<i64>,
+    #[schema(min_length = 1, max_length = 64, required = true)]
     oauth_provider: Option<String>,
+    /// OAuth 账号的非令牌业务标识。
+    #[schema(min_length = 1, max_length = 255, required = true)]
     oauth_account_key: Option<String>,
+    #[schema(min_length = 1, max_length = 255, required = true)]
     oauth_project_id: Option<String>,
+    #[schema(minimum = 0, required = true)]
     last_used_at: Option<i64>,
+    #[schema(minimum = 0)]
     created_at: i64,
+    #[schema(minimum = 0)]
     updated_at: i64,
 }
 
-#[derive(Serialize)]
-struct AdminCredentialListResponse {
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminCredentialListResponse)]
+pub(crate) struct AdminCredentialListResponse {
+    #[schema(max_items = 100)]
     credentials: Vec<AdminCredentialResponse>,
+    #[schema(minimum = 1, required = true)]
     next_cursor: Option<i64>,
 }
 
