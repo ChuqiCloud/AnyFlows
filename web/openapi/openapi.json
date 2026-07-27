@@ -2851,7 +2851,6 @@
               "null"
             ],
             "format": "uri",
-            "description": "不含 userinfo、查询串或片段的 HTTP(S) 基础地址。",
             "maxLength": 2048
           },
           "status": {
