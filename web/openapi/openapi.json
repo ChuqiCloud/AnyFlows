@@ -1554,7 +1554,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AdminChannelWriteRequest"
+                "$ref": "#/components/schemas/AdminChannelCreateRequest"
               }
             }
           },
@@ -1730,7 +1730,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AdminChannelWriteRequest"
+                "$ref": "#/components/schemas/AdminChannelUpdateRequest"
               }
             }
           },
@@ -1869,6 +1869,85 @@
           },
           "500": {
             "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/channels/{id}/probe": {
+      "post": {
+        "tags": [
+          "渠道管理"
+        ],
+        "summary": "对管理员渠道执行一次真实测活",
+        "operationId": "probeAdminChannel",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "渠道 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "脱敏测活结论",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminChannelProbeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "渠道 ID 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "当前实例未注入渠道测活服务",
             "content": {
               "application/json": {
                 "schema": {
@@ -2528,54 +2607,9 @@
         },
         "additionalProperties": false
       },
-      "AdminChannelListResponse": {
+      "AdminChannelCreateRequest": {
         "type": "object",
-        "required": [
-          "channels",
-          "next_cursor"
-        ],
-        "properties": {
-          "channels": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AdminChannel"
-            },
-            "maxItems": 100
-          },
-          "next_cursor": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "minimum": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "AdminChannelProtocol": {
-        "type": "string",
-        "enum": [
-          "openai_chat",
-          "openai_responses",
-          "anthropic",
-          "gemini"
-        ]
-      },
-      "AdminChannelType": {
-        "type": "string",
-        "enum": [
-          "openai",
-          "anthropic",
-          "gemini",
-          "bedrock",
-          "vertex",
-          "custom"
-        ]
-      },
-      "AdminChannelWriteRequest": {
-        "type": "object",
-        "description": "管理端创建或完整更新渠道时使用的配置正文。",
+        "description": "管理端创建渠道时使用的完整配置正文。",
         "required": [
           "name",
           "type",
@@ -2690,6 +2724,201 @@
           },
           "settings": {
             "type": "object",
+            "additionalProperties": true,
+            "writeOnly": true
+          },
+          "tag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminChannelListResponse": {
+        "type": "object",
+        "required": [
+          "channels",
+          "next_cursor"
+        ],
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminChannel"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminChannelProbeResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "latency_ms"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/AdminChannelProbeStatus"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminChannelProbeStatus": {
+        "type": "string",
+        "enum": [
+          "healthy",
+          "unhealthy",
+          "timeout"
+        ]
+      },
+      "AdminChannelProtocol": {
+        "type": "string",
+        "enum": [
+          "openai_chat",
+          "openai_responses",
+          "anthropic",
+          "gemini"
+        ]
+      },
+      "AdminChannelType": {
+        "type": "string",
+        "enum": [
+          "openai",
+          "anthropic",
+          "gemini",
+          "bedrock",
+          "vertex",
+          "custom"
+        ]
+      },
+      "AdminChannelUpdateRequest": {
+        "type": "object",
+        "description": "管理端更新渠道时使用的配置正文；敏感对象省略或为 null 时保留原值。",
+        "required": [
+          "name",
+          "type",
+          "protocol",
+          "base_url",
+          "status",
+          "weight",
+          "priority",
+          "auto_ban",
+          "models",
+          "group_ids",
+          "model_mapping",
+          "param_override",
+          "tag"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "openai"
+            ]
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "openai_chat"
+            ]
+          },
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdminRoutingWriteStatus"
+          },
+          "weight": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "auto_ban": {
+            "type": "boolean"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 255,
+              "minLength": 1
+            },
+            "description": "渠道支持的 Canonical 模型集合；单项最多 255 个 UTF-8 字节，笛卡尔积最多 4096 项。",
+            "maxItems": 512,
+            "uniqueItems": true
+          },
+          "group_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "渠道关联的有效分组 ID 集合，与 models 的笛卡尔积最多 4096 项。",
+            "maxItems": 64,
+            "uniqueItems": true
+          },
+          "model_mapping": {
+            "type": "object",
+            "description": "Canonical 请求模型到上游模型的映射，序列化后最多 64 KiB。",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 256,
+              "minLength": 1
+            }
+          },
+          "param_override": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "header_override": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "敏感 Header 覆盖输入；省略或 null 时保留已有值，显式对象时替换。",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "writeOnly": true
+          },
+          "settings": {
+            "type": [
+              "object",
+              "null"
+            ],
             "additionalProperties": true,
             "writeOnly": true
           },
@@ -4253,6 +4482,7 @@
               "token_not_found",
               "channel_not_found",
               "credential_not_found",
+              "probe_unavailable",
               "user_conflict",
               "group_conflict",
               "group_in_use",

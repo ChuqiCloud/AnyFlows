@@ -21,6 +21,7 @@ use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLaye
 use crate::authentication::{AuthenticationState, authenticate_api_key};
 use crate::management_auth::{ManagementAuthenticationState, authenticate_management_session};
 use crate::management_authorization::authorize_management_admin;
+use crate::management_channel_probe::probe_admin_channel;
 use crate::management_channel_writes::{
     create_admin_channel, delete_admin_channel, update_admin_channel,
 };
@@ -81,6 +82,7 @@ pub fn build_router(
     session_authenticator: Arc<dyn SessionAuthenticator>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
+    admin_channel_probe: Option<Arc<dyn crate::AdminChannelProbe>>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
@@ -104,7 +106,8 @@ pub fn build_router(
         admin_user_writer,
     )
     .with_admin_channel_reader(admin_channel_reader)
-    .with_admin_channel_writer(admin_channel_writer);
+    .with_admin_channel_writer(admin_channel_writer)
+    .with_admin_channel_probe(admin_channel_probe);
     let public_routes = Router::new()
         .route(
             "/v1/chat/completions",
@@ -219,6 +222,12 @@ pub fn build_router(
             get(get_admin_channel)
                 .put(update_admin_channel)
                 .delete(delete_admin_channel)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(channel_item_authentication.clone()),
+        )
+        .route(
+            "/api/admin/channels/{id}/probe",
+            post(probe_admin_channel)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(channel_item_authentication),
         )

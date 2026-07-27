@@ -5,7 +5,8 @@
 use utoipa::OpenApi;
 
 use crate::{
-    management_channel_writes::AdminChannelWriteRequest,
+    management_channel_probe::{AdminChannelProbeResponse, AdminChannelProbeStatus},
+    management_channel_writes::{AdminChannelCreateRequest, AdminChannelUpdateRequest},
     management_channels::{AdminChannelListResponse, AdminChannelResponse},
     management_error::ManagementErrorBody,
     openapi::schema::{
@@ -41,7 +42,7 @@ fn list_admin_channels() {}
     operation_id = "createAdminChannel",
     tag = "渠道管理",
     summary = "创建管理员渠道",
-    request_body = AdminChannelWriteRequest,
+    request_body = AdminChannelCreateRequest,
     responses(
         (status = 201, description = "渠道已创建", body = AdminChannelResponse),
         (status = 400, description = "请求正文无效", body = ManagementErrorBody),
@@ -79,7 +80,7 @@ fn get_admin_channel() {}
     tag = "渠道管理",
     summary = "更新管理员渠道",
     params(("id" = i64, Path, minimum = 1, description = "渠道 ID")),
-    request_body = AdminChannelWriteRequest,
+    request_body = AdminChannelUpdateRequest,
     responses(
         (status = 200, description = "渠道已更新", body = AdminChannelResponse),
         (status = 400, description = "渠道 ID 或请求正文无效", body = ManagementErrorBody),
@@ -111,6 +112,24 @@ fn update_admin_channel() {}
 )]
 fn delete_admin_channel() {}
 
+#[utoipa::path(
+    post,
+    path = "/api/admin/channels/{id}/probe",
+    operation_id = "probeAdminChannel",
+    tag = "渠道管理",
+    summary = "对管理员渠道执行一次真实测活",
+    params(("id" = i64, Path, minimum = 1, description = "渠道 ID")),
+    responses(
+        (status = 200, description = "脱敏测活结论", body = AdminChannelProbeResponse),
+        (status = 400, description = "渠道 ID 无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 503, description = "当前实例未注入渠道测活服务", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn probe_admin_channel() {}
+
 #[derive(OpenApi)]
 #[openapi(
     paths(
@@ -118,7 +137,8 @@ fn delete_admin_channel() {}
         create_admin_channel,
         get_admin_channel,
         update_admin_channel,
-        delete_admin_channel
+        delete_admin_channel,
+        probe_admin_channel
     ),
     components(schemas(
         AdminChannelTypeSchema,
@@ -127,7 +147,10 @@ fn delete_admin_channel() {}
         AdminRoutingWriteStatusSchema,
         AdminChannelResponse,
         AdminChannelListResponse,
-        AdminChannelWriteRequest,
+        AdminChannelCreateRequest,
+        AdminChannelUpdateRequest,
+        AdminChannelProbeStatus,
+        AdminChannelProbeResponse,
         ManagementErrorBody
     ))
 )]

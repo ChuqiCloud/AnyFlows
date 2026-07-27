@@ -30,6 +30,8 @@ pub(crate) enum ManagementError {
     ChannelNotFound,
     /// 凭据不存在、已经软删除或不属于指定渠道。
     CredentialNotFound,
+    /// 渠道测活服务未在当前实例注入。
+    ProbeUnavailable,
     /// 管理认证依赖发生内部故障。
     Internal,
 }
@@ -131,6 +133,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "credential_not_found",
                     message: "Credential not found",
+                },
+            ),
+            Self::ProbeUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "probe_unavailable",
+                    message: "Channel probe unavailable",
                 },
             ),
             Self::Internal => (

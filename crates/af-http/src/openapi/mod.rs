@@ -57,7 +57,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 12);
+        assert_eq!(document.paths.paths.len(), 13);
         let operation_count = document
             .paths
             .paths
@@ -78,7 +78,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 27);
+        assert_eq!(operation_count, 28);
         assert!(
             document
                 .components
@@ -121,6 +121,7 @@ mod tests {
             "listAdminTokens",
             "listAdminUsers",
             "loginManagementSession",
+            "probeAdminChannel",
             "updateAdminChannel",
             "updateAdminCredential",
             "updateAdminGroup",
@@ -133,7 +134,8 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 32);
+        assert_eq!(schemas.len(), 35);
+        assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
     }
@@ -169,8 +171,25 @@ mod tests {
             true
         );
         assert_eq!(
-            schemas["AdminChannelWriteRequest"]["properties"]["settings"]["writeOnly"],
+            schemas["AdminChannelCreateRequest"]["properties"]["settings"]["writeOnly"],
             true
+        );
+        let update = &schemas["AdminChannelUpdateRequest"];
+        assert_eq!(update["properties"]["settings"]["writeOnly"], true);
+        assert_eq!(
+            update["properties"]["settings"]["type"],
+            serde_json::json!(["object", "null"])
+        );
+        assert_eq!(
+            update["properties"]["header_override"]["type"],
+            serde_json::json!(["object", "null"])
+        );
+        assert!(
+            !update["required"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|field| field == "settings" || field == "header_override")
         );
     }
 }

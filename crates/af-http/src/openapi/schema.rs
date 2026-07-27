@@ -30,12 +30,37 @@ pub(crate) fn sensitive_free_form_object_schema() -> RefOr<Schema> {
         .into()
 }
 
+/// 生成可省略或为 null 的只写自由对象 schema，用于保留已有敏感配置。
+pub(crate) fn optional_sensitive_free_form_object_schema() -> RefOr<Schema> {
+    ObjectBuilder::new()
+        .schema_type(SchemaType::from_iter([Type::Object, Type::Null]))
+        .additional_properties(Some(AdditionalProperties::FreeForm(true)))
+        .write_only(Some(true))
+        .build()
+        .into()
+}
+
 /// 生成只允许写入的字符串映射 schema。
 pub(crate) fn sensitive_string_map_schema() -> RefOr<Schema> {
     string_map_schema(
         "敏感 Header 覆盖输入；拒绝认证、Host 和 hop-by-hop 头，永不随响应返回。",
         true,
     )
+}
+
+/// 生成可省略或为 null 的只写字符串映射 schema，用于保留已有敏感 Header。
+pub(crate) fn optional_sensitive_string_map_schema() -> RefOr<Schema> {
+    ObjectBuilder::new()
+        .schema_type(SchemaType::from_iter([Type::Object, Type::Null]))
+        .additional_properties(Some(Schema::Object(
+            ObjectBuilder::new().schema_type(Type::String).build(),
+        )))
+        .description(Some(
+            "敏感 Header 覆盖输入；省略或 null 时保留已有值，显式对象时替换。",
+        ))
+        .write_only(Some(true))
+        .build()
+        .into()
 }
 
 /// 生成渠道响应中的 Canonical 模型集合 schema。
@@ -351,6 +376,7 @@ pub(crate) enum ManagementErrorCodeSchema {
     TokenNotFound,
     ChannelNotFound,
     CredentialNotFound,
+    ProbeUnavailable,
     UserConflict,
     GroupConflict,
     GroupInUse,

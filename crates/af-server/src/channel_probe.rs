@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, time::Duration};
 
 use af_account::{CredentialDecryptor, DecryptedCredential};
 use af_adapter::{
@@ -8,10 +8,12 @@ use af_adapter::{
 };
 use af_db::{ChannelProbeTargetRecord, ChannelProbeTargetRepository, DatabasePool};
 use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Role};
+use af_http::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 use af_protocol::{
     CanonicalRequest, ContentBlock, Message, Sampling, TokenCount, ToolChoice, openai_chat,
 };
 use af_scheduler::{ChannelProbe, ChannelProbeStatus};
+use tokio::time::timeout;
 
 /// 从数据库装配目标并执行最小 OpenAI Chat 请求的真实渠道探活器。
 #[derive(Clone)]
@@ -125,6 +127,44 @@ impl ChannelProbe for DatabaseChannelProbe {
                 ChannelProbeStatus::Unhealthy
             }
         }
+    }
+}
+
+/// 为管理端单次测活施加配置一致的硬超时。
+#[derive(Clone)]
+pub(crate) struct BoundedAdminChannelProbe {
+    probe: DatabaseChannelProbe,
+    timeout: Duration,
+}
+
+impl BoundedAdminChannelProbe {
+    #[must_use]
+    pub(crate) const fn new(probe: DatabaseChannelProbe, timeout: Duration) -> Self {
+        Self { probe, timeout }
+    }
+}
+
+impl AdminChannelProbe for BoundedAdminChannelProbe {
+    fn probe<'a>(&'a self, channel_id: ChannelId) -> AdminChannelProbeFuture<'a> {
+        Box::pin(async move {
+            match timeout(self.timeout, self.probe.check(channel_id)).await {
+                Ok(ChannelProbeStatus::Healthy) => AdminChannelProbeOutcome::Healthy,
+                Ok(ChannelProbeStatus::Unhealthy) => AdminChannelProbeOutcome::Unhealthy,
+                // 调度层未来新增的状态默认按不健康处理，避免未知结论被误报为成功。
+                Ok(_) => AdminChannelProbeOutcome::Unhealthy,
+                Err(_) => AdminChannelProbeOutcome::TimedOut,
+            }
+        })
+    }
+}
+
+impl fmt::Debug for BoundedAdminChannelProbe {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BoundedAdminChannelProbe")
+            .field("probe", &"<受控>")
+            .field("timeout", &self.timeout)
+            .finish()
     }
 }
 

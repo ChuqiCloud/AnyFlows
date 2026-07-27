@@ -31,7 +31,7 @@ async fn channel_create_and_update_preserve_runtime_totals() -> Result<(), Box<d
         .repository
         .update_channel(
             channel_id,
-            channel_record("renamed", "https://gateway.example.com/openai"),
+            channel_update_record("renamed", "https://gateway.example.com/openai"),
         )
         .await?
     else {
@@ -44,6 +44,9 @@ async fn channel_create_and_update_preserve_runtime_totals() -> Result<(), Box<d
     );
     assert_eq!(updated.balance(), Some(5_000));
     assert_eq!(updated.used_quota(), 125);
+    let (header_override, settings) = channel_sensitive_fields(&fixture, channel_id).await?;
+    assert_eq!(header_override, r#"{"x-runtime":"private-header-value"}"#);
+    assert_eq!(settings, r#"{"private_setting":"private-setting-value"}"#);
 
     assert_eq!(
         fixture
@@ -311,6 +314,26 @@ fn channel_record(name: &str, base_url: &str) -> AdminChannelWriteRecord {
     )
 }
 
+fn channel_update_record(name: &str, base_url: &str) -> AdminChannelWriteRecord {
+    AdminChannelWriteRecord::new_update(
+        name.to_owned(),
+        ChannelType::OpenAi,
+        Protocol::OpenAiChat,
+        Some(base_url.to_owned()),
+        Status::Enabled,
+        10,
+        20,
+        true,
+        Vec::new(),
+        Vec::new(),
+        serde_json::json!({"public-model": "upstream-model"}),
+        serde_json::json!({"temperature": 0}),
+        None,
+        None,
+        Some("test".to_owned()),
+    )
+}
+
 fn credential_record(
     kind: CredentialKind,
     parent_id: Option<CredentialId>,
@@ -367,6 +390,22 @@ async fn credential_secret(
     )
     .await?;
     row.try_get("", "secret")
+}
+
+async fn channel_sensitive_fields(
+    fixture: &Fixture,
+    channel_id: ChannelId,
+) -> Result<(String, String), sea_orm::DbErr> {
+    let row = query_one(
+        fixture,
+        "SELECT header_override, settings FROM channels WHERE id = ?",
+        [channel_id.get().into()],
+    )
+    .await?;
+    Ok((
+        row.try_get("", "header_override")?,
+        row.try_get("", "settings")?,
+    ))
 }
 
 async fn credential_count(fixture: &Fixture) -> Result<i64, sea_orm::DbErr> {

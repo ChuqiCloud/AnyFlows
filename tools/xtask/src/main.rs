@@ -154,14 +154,31 @@ fn check_openapi() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
+    let difference = describe_first_openapi_difference(&committed, &expected);
+
     Err(io::Error::new(
         io::ErrorKind::InvalidData,
         format!(
-            "{} 已过期，请运行 `cargo xtask openapi export`",
-            display_workspace_path(&path)
+            "{} 已过期，请运行 `cargo xtask openapi export`\n{difference}",
+            display_workspace_path(&path),
         ),
     )
     .into())
+}
+
+fn describe_first_openapi_difference(committed: &str, expected: &str) -> String {
+    let committed_lines = committed.split_inclusive('\n').collect::<Vec<_>>();
+    let expected_lines = expected.split_inclusive('\n').collect::<Vec<_>>();
+    let line_index = (0..committed_lines.len().max(expected_lines.len()))
+        .find(|&index| committed_lines.get(index) != expected_lines.get(index))
+        .expect("不同的 OpenAPI 文档必须存在首个差异行");
+
+    format!(
+        "OpenAPI 首个差异位于第 {} 行：已提交={:?}，Rust 导出={:?}",
+        line_index + 1,
+        committed_lines.get(line_index),
+        expected_lines.get(line_index)
+    )
 }
 
 fn render_openapi() -> Result<String, serde_json::Error> {
@@ -487,6 +504,16 @@ mod tests {
             Command::CheckOpenApi
         );
         assert!(parse_command(&["openapi".to_owned()]).is_err());
+    }
+
+    #[test]
+    fn describes_the_first_openapi_difference() {
+        let difference = describe_first_openapi_difference("one\ntwo\n", "one\nthree\n");
+
+        assert_eq!(
+            difference,
+            "OpenAPI 首个差异位于第 2 行：已提交=Some(\"two\\n\")，Rust 导出=Some(\"three\\n\")"
+        );
     }
 
     fn baseline_workspace() -> BTreeSet<String> {

@@ -33,7 +33,7 @@ use axum::{
     Router,
     body::{Body, to_bytes},
     middleware,
-    routing::get,
+    routing::{get, post},
 };
 use http::{
     Request, StatusCode,
@@ -43,10 +43,12 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use crate::{
-    ChatService, ChatServiceFuture,
+    AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome, ChatService,
+    ChatServiceFuture,
     chat_completions::HttpState,
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_authorization::authorize_management_admin,
+    management_channel_probe::probe_admin_channel,
     management_channel_writes::{create_admin_channel, delete_admin_channel, update_admin_channel},
     management_channels::{get_admin_channel, list_admin_channels},
     management_credential_writes::{
@@ -60,6 +62,27 @@ const USER_TOKEN: &str = "user-token";
 
 struct UnusedChatService;
 struct UnusedAdminAccess;
+
+struct FakeAdminChannelProbe {
+    calls: AtomicUsize,
+    outcome: AdminChannelProbeOutcome,
+}
+
+impl FakeAdminChannelProbe {
+    fn new(outcome: AdminChannelProbeOutcome) -> Self {
+        Self {
+            calls: AtomicUsize::new(0),
+            outcome,
+        }
+    }
+}
+
+impl AdminChannelProbe for FakeAdminChannelProbe {
+    fn probe<'a>(&'a self, _channel_id: ChannelId) -> AdminChannelProbeFuture<'a> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async move { self.outcome })
+    }
+}
 
 impl ChatService for UnusedChatService {
     fn chat_completions<'a>(
@@ -416,6 +439,18 @@ impl AdminChannelWriter for FakeAdminChannelReader {
 }
 
 fn router(reader: Arc<FakeAdminChannelReader>) -> Router {
+    router_with_probe(
+        reader,
+        Some(Arc::new(FakeAdminChannelProbe::new(
+            AdminChannelProbeOutcome::Healthy,
+        ))),
+    )
+}
+
+fn router_with_probe(
+    reader: Arc<FakeAdminChannelReader>,
+    probe: Option<Arc<dyn AdminChannelProbe>>,
+) -> Router {
     let session_authenticator: Arc<dyn SessionAuthenticator> = Arc::new(FakeSessionAuthenticator);
     let unused = Arc::new(UnusedAdminAccess);
     let collection_authentication = middleware::from_fn_with_state(
@@ -450,6 +485,12 @@ fn router(reader: Arc<FakeAdminChannelReader>) -> Router {
                 .put(update_admin_channel)
                 .delete(delete_admin_channel)
                 .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(item_authentication.clone()),
+        )
+        .route(
+            "/api/admin/channels/{id}/probe",
+            post(probe_admin_channel)
+                .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(item_authentication),
         )
         .route(
@@ -479,8 +520,77 @@ fn router(reader: Arc<FakeAdminChannelReader>) -> Router {
                 unused,
             )
             .with_admin_channel_reader(channel_reader)
-            .with_admin_channel_writer(channel_writer),
+            .with_admin_channel_writer(channel_writer)
+            .with_admin_channel_probe(probe),
         )
+}
+
+#[tokio::test]
+async fn admin_probe_returns_only_status_and_latency() {
+    for (outcome, expected_status) in [
+        (AdminChannelProbeOutcome::Healthy, "healthy"),
+        (AdminChannelProbeOutcome::Unhealthy, "unhealthy"),
+        (AdminChannelProbeOutcome::TimedOut, "timeout"),
+    ] {
+        let reader = Arc::new(FakeAdminChannelReader::new());
+        let probe = Arc::new(FakeAdminChannelProbe::new(outcome));
+        let probe_port: Arc<dyn AdminChannelProbe> = probe.clone();
+        let app = router_with_probe(reader, Some(probe_port));
+
+        let response = app
+            .oneshot(write_request(
+                "POST",
+                "/api/admin/channels/10/probe",
+                ADMIN_TOKEN,
+                &json!({}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = response_json(response).await;
+        assert_eq!(response["status"], expected_status);
+        assert!(response["latency_ms"].is_u64());
+        assert_eq!(response.as_object().unwrap().len(), 2);
+        assert_eq!(probe.calls.load(Ordering::Relaxed), 1);
+    }
+}
+
+#[tokio::test]
+async fn probe_requires_admin_and_enabled_service() {
+    let reader = Arc::new(FakeAdminChannelReader::new());
+    let probe = Arc::new(FakeAdminChannelProbe::new(
+        AdminChannelProbeOutcome::Healthy,
+    ));
+    let probe_port: Arc<dyn AdminChannelProbe> = probe.clone();
+    let app = router_with_probe(Arc::clone(&reader), Some(probe_port));
+
+    let forbidden = app
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/channels/10/probe",
+            USER_TOKEN,
+            &json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_error(forbidden, StatusCode::FORBIDDEN, "forbidden").await;
+    assert_eq!(probe.calls.load(Ordering::Relaxed), 0);
+
+    let unavailable = router_with_probe(reader, None)
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/channels/10/probe",
+            ADMIN_TOKEN,
+            &json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_error(
+        unavailable,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "probe_unavailable",
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -521,13 +631,19 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
         assert!(!created.to_string().contains(secret));
     }
 
+    let mut channel_update_body = channel_body.clone();
+    let update_object = channel_update_body
+        .as_object_mut()
+        .expect("测试渠道正文必须是对象");
+    update_object.remove("header_override");
+    update_object.remove("settings");
     let updated = app
         .clone()
         .oneshot(write_request(
             "PUT",
             "/api/admin/channels/90",
             ADMIN_TOKEN,
-            &channel_body,
+            &channel_update_body,
         ))
         .await
         .unwrap();
