@@ -233,6 +233,57 @@
       "failed": "删除失败，令牌仍然有效，请稍后重试。"
     }
   },
+  "usageLogs": {
+    "title": "用量日志",
+    "subtitle": "查看已经确认并落库的 token 用量、计费额度和统计来源。",
+    "count": "本页 {{count}} 条记录",
+    "page": "第 {{page}} 页",
+    "loading": "正在加载用量日志",
+    "pagination": "用量日志分页",
+    "columns": {
+      "event": "时间与事件",
+      "principal": "计费主体",
+      "usage": "输入与输出",
+      "details": "缓存与扩展",
+      "billing": "计费结果"
+    },
+    "values": {
+      "userToken": "用户 #{{user}} / 令牌 #{{token}}",
+      "group": "分组 #{{id}}",
+      "input": "输入 {{value}}",
+      "output": "输出 {{value}}",
+      "cacheRead": "缓存读取 {{value}}",
+      "cacheCreate": "缓存创建 5m {{five}} / 1h {{hour}}",
+      "reasoningAudio": "推理 {{reasoning}} / 音频 {{audio}}",
+      "quotaSemantics": "额度 {{quota}} / {{semantics}}",
+      "billingMode": {
+        "per_token": "按 token",
+        "free": "免费"
+      },
+      "source": {
+        "upstream": "上游返回",
+        "estimated": "本地估算"
+      },
+      "semantics": {
+        "inclusive": "含缓存",
+        "cache_separated": "缓存独立"
+      }
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "previous": "上一页",
+      "next": "下一页"
+    },
+    "empty": {
+      "title": "还没有用量日志",
+      "body": "完成首个经过计费闭环的模型请求后，确认用量会出现在这里。"
+    },
+    "error": {
+      "title": "无法读取用量日志",
+      "body": "服务暂时没有返回已确认用量，请稍后重试。"
+    }
+  },
   "auth": {
     "login": {
       "eyebrow": "AnyFlows 管理控制台",

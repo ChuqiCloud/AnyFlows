@@ -22,6 +22,9 @@ mod admin_token_tests;
 mod admin_token_write;
 #[cfg(test)]
 mod admin_token_write_tests;
+mod admin_usage_log;
+#[cfg(test)]
+mod admin_usage_log_tests;
 mod admin_user;
 #[cfg(test)]
 mod admin_user_tests;
@@ -97,6 +100,11 @@ pub use admin_token::{
 pub use admin_token_write::{
     AdminTokenCreateRecord, AdminTokenDeleteOutcome, AdminTokenMutationOutcome,
     AdminTokenWriteRecord, AdminTokenWriteRepositoryError,
+};
+pub use admin_usage_log::{
+    AdminUsageLogPageRecord, AdminUsageLogRecord, AdminUsageLogRepository,
+    AdminUsageLogRepositoryConfigError, AdminUsageLogRepositoryError, AdminUsageLogUsageRecord,
+    MAX_ADMIN_USAGE_LOG_PAGE_SIZE,
 };
 pub use admin_user::{
     AdminUserLookupOutcome, AdminUserPageRecord, AdminUserRecord, AdminUserRepository,

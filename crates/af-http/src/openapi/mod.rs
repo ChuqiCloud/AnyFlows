@@ -6,6 +6,7 @@ mod groups;
 pub(crate) mod schema;
 mod session;
 mod tokens;
+mod usage_logs;
 mod users;
 
 use utoipa::openapi::{
@@ -21,6 +22,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(users::document());
     document.merge(groups::document());
     document.merge(tokens::document());
+    document.merge(usage_logs::document());
     document.merge(channels::document());
     document.merge(credentials::document());
 
@@ -29,6 +31,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("用户管理"),
         Tag::new("分组管理"),
         Tag::new("令牌管理"),
+        Tag::new("用量日志"),
         Tag::new("渠道管理"),
         Tag::new("凭据管理"),
     ]);
@@ -57,7 +60,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 13);
+        assert_eq!(document.paths.paths.len(), 14);
         let operation_count = document
             .paths
             .paths
@@ -78,7 +81,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 28);
+        assert_eq!(operation_count, 29);
         assert!(
             document
                 .components
@@ -119,6 +122,7 @@ mod tests {
             "listAdminCredentials",
             "listAdminGroups",
             "listAdminTokens",
+            "listAdminUsageLogs",
             "listAdminUsers",
             "loginManagementSession",
             "probeAdminChannel",
@@ -134,7 +138,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 35);
+        assert_eq!(schemas.len(), 40);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));

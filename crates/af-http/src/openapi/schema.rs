@@ -358,6 +358,30 @@ pub(crate) enum AdminCredentialQuotaDimensionSchema {
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
 #[derive(ToSchema)]
+#[schema(as = AdminUsageLogBillingMode, rename_all = "snake_case")]
+pub(crate) enum AdminUsageLogBillingModeSchema {
+    PerToken,
+    Free,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
+#[schema(as = AdminUsageLogSource, rename_all = "snake_case")]
+pub(crate) enum AdminUsageLogSourceSchema {
+    Upstream,
+    Estimated,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
+#[schema(as = AdminUsageLogSemantics, rename_all = "snake_case")]
+pub(crate) enum AdminUsageLogSemanticsSchema {
+    Inclusive,
+    CacheSeparated,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
 #[schema(as = BearerTokenType)]
 pub(crate) enum BearerTokenTypeSchema {
     Bearer,

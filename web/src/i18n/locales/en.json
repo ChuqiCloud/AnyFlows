@@ -233,6 +233,57 @@
       "failed": "Deletion failed. The key is still valid. Try again shortly."
     }
   },
+  "usageLogs": {
+    "title": "Usage logs",
+    "subtitle": "Inspect confirmed token usage, billed quota, and measurement sources.",
+    "count": "{{count}} records on this page",
+    "page": "Page {{page}}",
+    "loading": "Loading usage logs",
+    "pagination": "Usage log pagination",
+    "columns": {
+      "event": "Time and event",
+      "principal": "Billing principal",
+      "usage": "Input and output",
+      "details": "Cache and extras",
+      "billing": "Billing result"
+    },
+    "values": {
+      "userToken": "User #{{user}} / Token #{{token}}",
+      "group": "Group #{{id}}",
+      "input": "Input {{value}}",
+      "output": "Output {{value}}",
+      "cacheRead": "Cache read {{value}}",
+      "cacheCreate": "Cache create 5m {{five}} / 1h {{hour}}",
+      "reasoningAudio": "Reasoning {{reasoning}} / Audio {{audio}}",
+      "quotaSemantics": "Quota {{quota}} / {{semantics}}",
+      "billingMode": {
+        "per_token": "Per token",
+        "free": "Free"
+      },
+      "source": {
+        "upstream": "Upstream",
+        "estimated": "Estimated"
+      },
+      "semantics": {
+        "inclusive": "Cache included",
+        "cache_separated": "Cache separate"
+      }
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "empty": {
+      "title": "No usage logs yet",
+      "body": "Confirmed usage will appear after the first request completes its billing lifecycle."
+    },
+    "error": {
+      "title": "Unable to load usage logs",
+      "body": "The service did not return confirmed usage. Try again shortly."
+    }
+  },
   "auth": {
     "login": {
       "eyebrow": "AnyFlows management console",

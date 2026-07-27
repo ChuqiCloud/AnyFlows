@@ -250,6 +250,33 @@ export type AdminTokenWriteRequest = {
     rate_limit_7d: number | null;
     max_requests: number | null;
 };
+export type AdminUsageLog = {
+    id: number;
+    event_id: string;
+    user_id: number;
+    token_id: number;
+    group_id: number;
+    billing_mode: AdminUsageLogBillingMode;
+    input_tokens: number;
+    output_tokens: number;
+    cache_read: number;
+    cache_creation_5m: number;
+    cache_creation_1h: number;
+    reasoning_tokens: number;
+    audio_input_tokens: number;
+    audio_output_tokens: number;
+    usage_source: AdminUsageLogSource;
+    usage_semantics: AdminUsageLogSemantics;
+    quota: number;
+    created_at: number;
+};
+export type AdminUsageLogBillingMode = 'per_token' | 'free';
+export type AdminUsageLogListResponse = {
+    logs: Array<AdminUsageLog>;
+    next_cursor: number | null;
+};
+export type AdminUsageLogSemantics = 'inclusive' | 'cache_separated';
+export type AdminUsageLogSource = 'upstream' | 'estimated';
 export type AdminUser = {
     id: number;
     username: string;
@@ -720,6 +747,26 @@ export type UpdateAdminTokenResponses = {
     200: AdminToken;
 };
 export type UpdateAdminTokenResponse = UpdateAdminTokenResponses[keyof UpdateAdminTokenResponses];
+export type ListAdminUsageLogsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/admin/usage-logs';
+};
+export type ListAdminUsageLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminUsageLogsError = ListAdminUsageLogsErrors[keyof ListAdminUsageLogsErrors];
+export type ListAdminUsageLogsResponses = {
+    200: AdminUsageLogListResponse;
+};
+export type ListAdminUsageLogsResponse = ListAdminUsageLogsResponses[keyof ListAdminUsageLogsResponses];
 export type ListAdminChannelsData = {
     body?: never;
     path?: never;

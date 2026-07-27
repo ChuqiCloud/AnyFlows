@@ -299,6 +299,11 @@ impl BillingReservationKey {
         }
         Err(SensitiveValueError::InvalidBillingReservationKey)
     }
+
+    /// 仅供经过鉴权的管理审计响应读取持久化事件标识。
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl fmt::Debug for BillingReservationKey {
