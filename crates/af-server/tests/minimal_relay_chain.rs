@@ -23,7 +23,8 @@ use af_admin::{
     AdminUsageLogReadError, AdminUsageLogReader, AdminUserCreateCommand, AdminUserCreateFuture,
     AdminUserDeleteFuture, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery,
     AdminUserReadError, AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture,
-    AdminUserWriteError, AdminUserWriter, ApiKeyDigest, LoginCredentials,
+    AdminUserWriteError, AdminUserWriter, ApiKeyDigest, InitialSetup, InitialSetupCommand,
+    InitialSetupError, InitialSetupFuture, InitialSetupStatusFuture, LoginCredentials,
     SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
     SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
 };
@@ -64,6 +65,7 @@ impl ReadinessProbe for AlwaysReadyProbe {
 struct AlwaysAuthenticates;
 
 struct RejectSessions;
+struct RejectInitialSetup;
 struct RejectAdminChannels;
 struct RejectAdminGroups;
 struct RejectAdminTokens;
@@ -78,6 +80,16 @@ impl SessionAuthenticator for RejectSessions {
 
     fn authenticate<'a>(&'a self, _token: &'a str) -> SessionAuthenticationFuture<'a> {
         Box::pin(async { Err(SessionAuthenticationError::InvalidSession) })
+    }
+}
+
+impl InitialSetup for RejectInitialSetup {
+    fn status(&self) -> InitialSetupStatusFuture<'_> {
+        Box::pin(async { Err(InitialSetupError::Internal) })
+    }
+
+    fn initialize(&self, _command: InitialSetupCommand) -> InitialSetupFuture<'_> {
+        Box::pin(async { Err(InitialSetupError::Internal) })
     }
 }
 
@@ -606,6 +618,7 @@ async fn start_server(
         readiness,
         Arc::new(AlwaysAuthenticates),
         Arc::new(RejectSessions),
+        Arc::new(RejectInitialSetup),
         Arc::new(RejectAdminChannels),
         Arc::new(RejectAdminChannels),
         None,

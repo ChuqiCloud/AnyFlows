@@ -25,11 +25,15 @@
           document.documentElement.classList.add(mode)
 
           // 动效开关同样要在首帧前落定，否则动画会先跑起来再被降级规则掐掉，出现一次闪动。
-          // 默认尊重系统的「减少动态效果」；用户显式选择 full 时覆盖它。
-          var motion = localStorage.getItem('anyflows.motion')
-          if (motion === 'full' || motion === 'reduced') {
-            document.documentElement.setAttribute('data-motion', motion)
-          }
+          // 普通系统默认启用完整动效；系统要求减少动态效果时降级，用户显式选择始终优先。
+          var storedMotion = localStorage.getItem('anyflows.motion')
+          var motion =
+            storedMotion === 'full' || storedMotion === 'reduced'
+              ? storedMotion
+              : window.matchMedia('(prefers-reduced-motion: reduce)').matches
+                ? 'reduced'
+                : 'full'
+          document.documentElement.setAttribute('data-motion', motion)
         } catch (error) {
           document.documentElement.classList.add('dark')
         }

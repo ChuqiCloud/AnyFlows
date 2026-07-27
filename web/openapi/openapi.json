@@ -112,6 +112,98 @@
         ]
       }
     },
+    "/api/setup/status": {
+      "get": {
+        "tags": [
+          "首次安装"
+        ],
+        "summary": "读取首次安装状态",
+        "operationId": "getInitialSetupStatus",
+        "responses": {
+          "200": {
+            "description": "首次安装状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatusResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/setup": {
+      "post": {
+        "tags": [
+          "首次安装"
+        ],
+        "summary": "创建首个管理员并签发管理会话",
+        "operationId": "initializeAdminSetup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "安装及登录成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文或字段无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "系统已经完成首次安装",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/dashboard": {
       "get": {
         "tags": [
@@ -4860,6 +4952,7 @@
               "invalid_credentials",
               "invalid_session",
               "forbidden",
+              "setup_conflict",
               "user_not_found",
               "group_not_found",
               "token_not_found",
@@ -4917,6 +5010,40 @@
           }
         },
         "additionalProperties": false
+      },
+      "SetupRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 128,
+            "minLength": 12
+          }
+        },
+        "additionalProperties": false
+      },
+      "SetupStatusResponse": {
+        "type": "object",
+        "required": [
+          "setup_required"
+        ],
+        "properties": {
+          "setup_required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
       }
     },
     "securitySchemes": {
@@ -4931,6 +5058,9 @@
   "tags": [
     {
       "name": "管理会话"
+    },
+    {
+      "name": "首次安装"
     },
     {
       "name": "管理看板"

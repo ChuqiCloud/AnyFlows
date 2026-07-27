@@ -9,8 +9,8 @@ use af_admin::{
     DatabaseAdminChannelReader, DatabaseAdminChannelWriter, DatabaseAdminGroupReader,
     DatabaseAdminGroupWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
     DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
-    DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, SessionAuthenticator,
-    SessionAuthenticatorConfigError, TokenAuthenticator,
+    DatabaseInitialSetup, DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, InitialSetup,
+    SessionAuthenticator, SessionAuthenticatorConfigError, TokenAuthenticator,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -27,9 +27,9 @@ use af_db::{
     AdminTokenRepository, AdminTokenRepositoryConfigError, AdminUsageLogRepository,
     AdminUsageLogRepositoryConfigError, AdminUserRepository, AdminUserRepositoryConfigError,
     ChannelStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
-    MigrationOptions, QuotaRepository, TokenAuthRepository, TokenAuthRepositoryConfigError,
-    UsageLogRepository, UserSessionRepository, UserSessionRepositoryConfigError,
-    connect_and_migrate,
+    InitialSetupRepository, InitialSetupRepositoryConfigError, MigrationOptions, QuotaRepository,
+    TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository, UserSessionRepository,
+    UserSessionRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle,
@@ -83,6 +83,7 @@ pub struct AuthenticationReady {
     infrastructure: DatabaseReady,
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
+    initial_setup: Arc<dyn InitialSetup>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
     admin_dashboard_reader: Arc<dyn AdminDashboardReader>,
@@ -203,6 +204,9 @@ pub enum BootstrapError {
     /// 管理会话 JWT 的启动配置无效或缺失。
     #[error("管理会话启动配置无效")]
     SessionAuthentication(#[source] SessionAuthenticatorConfigError),
+    /// 首次安装仓储的启动参数无效。
+    #[error("首次安装仓储启动参数无效")]
+    InitialSetupRepository(#[source] InitialSetupRepositoryConfigError),
     /// 管理员用户仓储的启动参数无效。
     #[error("管理员用户仓储启动参数无效")]
     AdminUserRepository(#[source] AdminUserRepositoryConfigError),
@@ -359,6 +363,11 @@ impl Bootstrap<DatabaseReady> {
             auth.session_ttl_secs(),
         )
         .map_err(BootstrapError::SessionAuthentication)?;
+        let initial_setup_repository = InitialSetupRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::InitialSetupRepository)?;
         let admin_user_repository = AdminUserRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -414,6 +423,7 @@ impl Bootstrap<DatabaseReady> {
                 infrastructure: stage,
                 authenticator: Arc::new(DatabaseTokenAuthenticator::new(repository)),
                 session_authenticator: Arc::new(session_authenticator),
+                initial_setup: Arc::new(DatabaseInitialSetup::new(initial_setup_repository)),
                 admin_channel_reader: Arc::new(DatabaseAdminChannelReader::new(
                     admin_channel_repository.clone(),
                 )),
@@ -725,6 +735,7 @@ impl Bootstrap<Supervised> {
             readiness.clone(),
             Arc::clone(&self.stage.infrastructure.authenticator),
             Arc::clone(&self.stage.infrastructure.session_authenticator),
+            Arc::clone(&self.stage.infrastructure.initial_setup),
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_channel_writer),
             Some(Arc::clone(&self.stage.admin_channel_probe)),

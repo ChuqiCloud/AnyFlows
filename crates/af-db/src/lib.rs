@@ -50,6 +50,10 @@ mod error;
 mod group_pricing;
 #[cfg(test)]
 mod group_pricing_tests;
+mod identity_secret;
+mod initial_setup;
+#[cfg(test)]
+mod initial_setup_tests;
 mod migration;
 mod model_price;
 #[cfg(test)]
@@ -145,6 +149,10 @@ pub use group_pricing::{
     GroupModelRatioRecord, GroupPeakPricingRecord, GroupPricingCatalog, GroupPricingRecord,
     GroupPricingRepository, GroupPricingRepositoryError, MAX_GROUP_MODEL_RATIO_ENTRIES,
     MAX_GROUP_PRICING_ENTRIES,
+};
+pub use initial_setup::{
+    InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
+    InitialSetupRepositoryConfigError, InitialSetupRepositoryError, InitialSetupStatus,
 };
 pub use migration::{MigrationOptions, run_pending_migrations};
 pub use model_price::{

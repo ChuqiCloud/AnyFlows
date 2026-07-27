@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminTokenReader,
-    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, SessionAuthenticator,
-    TokenAuthentication,
+    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, InitialSetup,
+    SessionAuthenticator, TokenAuthentication,
 };
 use af_analytics::AdminDashboardReader;
 use af_domain::AfError;
@@ -30,6 +30,7 @@ use crate::{
 pub(crate) struct HttpState {
     chat: Arc<dyn ChatService>,
     pub(crate) session_authenticator: Arc<dyn SessionAuthenticator>,
+    pub(crate) initial_setup: Option<Arc<dyn InitialSetup>>,
     pub(crate) admin_channel_reader: Option<Arc<dyn AdminChannelReader>>,
     pub(crate) admin_channel_writer: Option<Arc<dyn AdminChannelWriter>>,
     pub(crate) admin_channel_probe: Option<Arc<dyn crate::AdminChannelProbe>>,
@@ -58,6 +59,7 @@ impl HttpState {
         Self {
             chat,
             session_authenticator,
+            initial_setup: None,
             admin_channel_reader: None,
             admin_channel_writer: None,
             admin_channel_probe: None,
@@ -71,6 +73,12 @@ impl HttpState {
             admin_user_writer,
             stream_delivery: StreamDeliveryPolicy::default(),
         }
+    }
+
+    /// 为同源首次安装路由注入一次性 setup 服务。
+    pub(crate) fn with_initial_setup(mut self, setup: Arc<dyn InitialSetup>) -> Self {
+        self.initial_setup = Some(setup);
+        self
     }
 
     /// 为用量日志管理路由注入真实只读服务。

@@ -351,6 +351,7 @@
       "invalidCredentials": "The username or password is incorrect.",
       "adminRequired": "This account does not have administrator access.",
       "sessionExpired": "Your session has expired. Sign in again.",
+      "setupComplete": "Setup is complete. Sign in with an administrator account.",
       "unavailable": "The service is unavailable. Try again shortly."
     },
     "session": {
@@ -363,6 +364,39 @@
     "account": {
       "admin": "Administrator",
       "logout": "Sign out"
+    }
+  },
+  "setup": {
+    "hero": {
+      "eyebrow": "AnyFlows first-time setup",
+      "title": "Create the first system administrator",
+      "body": "Set private management credentials, then continue directly to the console."
+    },
+    "form": {
+      "title": "Create administrator",
+      "subtitle": "First-time setup can only be completed once",
+      "username": "Administrator username",
+      "usernamePlaceholder": "Enter an administrator username",
+      "password": "Administrator password",
+      "passwordPlaceholder": "Enter an administrator password",
+      "passwordHelp": "Use 12 to 128 UTF-8 bytes. Control characters are not supported.",
+      "passwordConfirmation": "Confirm password",
+      "passwordConfirmationPlaceholder": "Enter the administrator password again",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "submit": "Complete setup",
+      "submitting": "Setting up"
+    },
+    "errors": {
+      "invalidInput": "The username or password does not meet the input requirements.",
+      "passwordMismatch": "The passwords do not match.",
+      "unavailable": "Setup is currently unavailable. Try again shortly."
+    },
+    "gate": {
+      "loading": "Checking first-time setup status",
+      "unavailableTitle": "Setup status is unavailable",
+      "unavailableBody": "The service did not return a reliable status. Retry to protect the management entry point.",
+      "retry": "Check again"
     }
   },
   "landing": {

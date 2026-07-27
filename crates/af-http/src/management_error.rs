@@ -14,6 +14,8 @@ pub(crate) enum ManagementError {
     InvalidSession,
     /// 当前会话没有访问该管理端点的角色权限。
     Forbidden,
+    /// 系统已经完成首次安装，或并发请求先完成了安装。
+    SetupConflict,
     /// 用户不存在或已经被软删除。
     UserNotFound,
     /// 用户名或邮箱与当前有效用户冲突。
@@ -77,6 +79,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "forbidden",
                     message: "Forbidden",
+                },
+            ),
+            Self::SetupConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "setup_conflict",
+                    message: "Setup already completed",
                 },
             ),
             Self::UserNotFound => (

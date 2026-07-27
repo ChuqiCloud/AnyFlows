@@ -66,7 +66,16 @@ pub(crate) async fn login(
     request: Result<Json<LoginRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let credentials = LoginCredentials::new(request.username, request.password);
+    login_with_credentials(&state, request.username, request.password).await
+}
+
+/// 使用受控凭据完成认证并返回统一的无缓存登录响应。
+pub(crate) async fn login_with_credentials(
+    state: &HttpState,
+    username: String,
+    password: String,
+) -> Result<Response, ManagementError> {
+    let credentials = LoginCredentials::new(username, password);
     let result = state.session_authenticator.login(&credentials).await;
     drop(credentials);
     let session = result.map_err(map_session_error)?;
@@ -117,7 +126,7 @@ fn current_timestamp() -> u64 {
         .map_or(0, |duration| duration.as_secs())
 }
 
-fn no_store_json(value: impl Serialize) -> Response {
+pub(crate) fn no_store_json(value: impl Serialize) -> Response {
     let mut response = Json(value).into_response();
     response
         .headers_mut()
