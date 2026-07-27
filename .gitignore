@@ -3,6 +3,7 @@ reference/
 design/
 
 /target/
+/release/
 .env
 .env.*
 !.env.example
