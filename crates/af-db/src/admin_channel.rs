@@ -223,7 +223,7 @@ impl fmt::Debug for AdminChannelPageRecord {
 /// 渠道详情查询结果。
 pub enum AdminChannelLookupOutcome {
     /// 找到当前未软删除渠道。
-    Found(AdminChannelRecord),
+    Found(Box<AdminChannelRecord>),
     /// 渠道不存在或已经软删除。
     NotFound,
 }
@@ -336,7 +336,7 @@ impl AdminChannelRepository {
                 let mut channel = row.validate()?;
                 self.attach_routing(std::slice::from_mut(&mut channel))
                     .await?;
-                Ok(AdminChannelLookupOutcome::Found(channel))
+                Ok(AdminChannelLookupOutcome::Found(Box::new(channel)))
             }
             _ => Err(record_internal_error(
                 AdminChannelRepositoryError::Invariant,

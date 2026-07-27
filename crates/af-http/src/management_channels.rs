@@ -104,6 +104,7 @@ impl AdminChannelResponse {
             group_ids: channel
                 .group_ids()
                 .iter()
+                .copied()
                 .map(af_domain::GroupId::get)
                 .collect(),
             model_mapping: channel.model_mapping().clone(),
