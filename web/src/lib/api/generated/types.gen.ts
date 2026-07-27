@@ -108,6 +108,8 @@ export type AdminChannelWriteRequest = {
     weight: number;
     priority: number;
     auto_ban: boolean;
+    models: Array<string>;
+    group_ids: Array<number>;
     model_mapping: {
         [key: string]: string;
     };
@@ -126,6 +128,8 @@ export type AdminChannel = {
     weight: number;
     priority: number;
     auto_ban: boolean;
+    models: Array<string>;
+    group_ids: Array<number>;
     model_mapping: {
         [key: string]: string;
     };
@@ -256,6 +260,8 @@ export type AdminChannelWriteRequestWritable = {
     weight: number;
     priority: number;
     auto_ban: boolean;
+    models: Array<string>;
+    group_ids: Array<number>;
     model_mapping: {
         [key: string]: string;
     };

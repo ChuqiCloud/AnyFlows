@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr as _, time::Duration};
 
-use af_domain::{ChannelId, ChannelType, Protocol, Status};
+use af_domain::{ChannelId, ChannelType, GroupId, Protocol, Status};
 use sea_orm::{
     ConnectionTrait, DbBackend, DbErr, JsonValue, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -12,6 +12,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool,
+    ability_write::{AbilityWriteError, ChannelRoutingSnapshot, load_channel_routing_snapshots},
     entity::{ChannelBaseUrl, channels},
 };
 
@@ -31,6 +32,8 @@ pub struct AdminChannelRecord {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    models: Vec<String>,
+    group_ids: Vec<GroupId>,
     model_mapping: JsonValue,
     param_override: JsonValue,
     balance: Option<i64>,
@@ -62,6 +65,8 @@ impl AdminChannelRecord {
             weight: model.weight,
             priority: model.priority,
             auto_ban: model.auto_ban,
+            models: Vec::new(),
+            group_ids: Vec::new(),
             model_mapping: Some(model.model_mapping),
             model_mapping_oversized,
             param_override: Some(model.param_override),
@@ -129,6 +134,18 @@ impl AdminChannelRecord {
         self.auto_ban
     }
 
+    /// 返回按 Canonical 原文排序的渠道模型集合。
+    #[must_use]
+    pub fn models(&self) -> &[String] {
+        &self.models
+    }
+
+    /// 返回按正整数 ID 排序的渠道分组集合。
+    #[must_use]
+    pub fn group_ids(&self) -> &[GroupId] {
+        &self.group_ids
+    }
+
     /// 返回请求模型到上游模型的映射。
     #[must_use]
     pub const fn model_mapping(&self) -> &JsonValue {
@@ -170,6 +187,11 @@ impl AdminChannelRecord {
     pub const fn updated_at(&self) -> i64 {
         self.updated_at
     }
+
+    pub(crate) fn with_routing(mut self, routing: ChannelRoutingSnapshot) -> Self {
+        (self.models, self.group_ids) = routing.into_parts();
+        self
+    }
 }
 
 impl fmt::Debug for AdminChannelRecord {
@@ -201,7 +223,7 @@ impl fmt::Debug for AdminChannelPageRecord {
 /// 渠道详情查询结果。
 pub enum AdminChannelLookupOutcome {
     /// 找到当前未软删除渠道。
-    Found(AdminChannelRecord),
+    Found(Box<AdminChannelRecord>),
     /// 渠道不存在或已经软删除。
     NotFound,
 }
@@ -277,7 +299,7 @@ impl AdminChannelRepository {
         if has_more {
             results.truncate(limit);
         }
-        let channels = results
+        let mut channels = results
             .iter()
             .map(AdminChannelRow::try_from_query_result)
             .map(|row| row.map_err(|_| record_internal_error(AdminChannelRepositoryError::Query)))
@@ -285,6 +307,7 @@ impl AdminChannelRepository {
             .into_iter()
             .map(AdminChannelRow::validate)
             .collect::<Result<Vec<_>, _>>()?;
+        self.attach_routing(&mut channels).await?;
         let next_cursor = has_more
             .then(|| channels.last().map(AdminChannelRecord::channel_id))
             .flatten();
@@ -310,7 +333,10 @@ impl AdminChannelRepository {
                         record_internal_error(AdminChannelRepositoryError::Invariant)
                     })?)
                     .map_err(|_| record_internal_error(AdminChannelRepositoryError::Query))?;
-                Ok(AdminChannelLookupOutcome::Found(row.validate()?))
+                let mut channel = row.validate()?;
+                self.attach_routing(std::slice::from_mut(&mut channel))
+                    .await?;
+                Ok(AdminChannelLookupOutcome::Found(Box::new(channel)))
             }
             _ => Err(record_internal_error(
                 AdminChannelRepositoryError::Invariant,
@@ -337,6 +363,36 @@ impl AdminChannelRepository {
             Err(_) => Err(record_internal_error(AdminChannelRepositoryError::Timeout)),
         }
     }
+
+    async fn attach_routing(
+        &self,
+        channels: &mut [AdminChannelRecord],
+    ) -> Result<(), AdminChannelRepositoryError> {
+        let channel_ids = channels
+            .iter()
+            .map(AdminChannelRecord::channel_id)
+            .collect::<Vec<_>>();
+        let operation = load_channel_routing_snapshots(self.pool.connection(), &channel_ids)
+            .with_subscriber(NoSubscriber::default());
+        let mut routing = match timeout(self.lookup_timeout, operation).await {
+            Ok(Ok(routing)) => routing,
+            Ok(Err(error)) => return Err(map_ability_read_error(error)),
+            Err(_) => return Err(record_internal_error(AdminChannelRepositoryError::Timeout)),
+        };
+        for channel in channels {
+            let snapshot = routing
+                .remove(&channel.channel_id())
+                .ok_or_else(internal_invariant)?;
+            let (models, group_ids) = snapshot.into_parts();
+            channel.models = models;
+            channel.group_ids = group_ids;
+        }
+        if routing.is_empty() {
+            Ok(())
+        } else {
+            Err(internal_invariant())
+        }
+    }
 }
 
 impl fmt::Debug for AdminChannelRepository {
@@ -358,6 +414,8 @@ struct AdminChannelRow {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    models: Vec<String>,
+    group_ids: Vec<GroupId>,
     model_mapping: Option<JsonValue>,
     model_mapping_oversized: bool,
     param_override: Option<JsonValue>,
@@ -381,6 +439,8 @@ impl AdminChannelRow {
             weight: result.try_get("", "weight")?,
             priority: result.try_get("", "priority")?,
             auto_ban: result.try_get("", "auto_ban")?,
+            models: Vec::new(),
+            group_ids: Vec::new(),
             model_mapping: result.try_get("", "model_mapping")?,
             model_mapping_oversized: result.try_get("", "model_mapping_oversized")?,
             param_override: result.try_get("", "param_override")?,
@@ -435,6 +495,8 @@ impl AdminChannelRow {
             weight: self.weight,
             priority: self.priority,
             auto_ban: self.auto_ban,
+            models: self.models,
+            group_ids: self.group_ids,
             model_mapping,
             param_override,
             balance: self.balance,
@@ -612,6 +674,16 @@ pub(super) fn valid_text(value: &str, maximum_bytes: usize) -> bool {
 
 pub(super) fn internal_invariant() -> AdminChannelRepositoryError {
     record_internal_error(AdminChannelRepositoryError::Invariant)
+}
+
+fn map_ability_read_error(error: AbilityWriteError) -> AdminChannelRepositoryError {
+    match error {
+        AbilityWriteError::Query => record_internal_error(AdminChannelRepositoryError::Query),
+        AbilityWriteError::InvalidInput
+        | AbilityWriteError::InvalidReference
+        | AbilityWriteError::CapacityExceeded
+        | AbilityWriteError::Invariant => internal_invariant(),
+    }
 }
 
 pub(super) fn record_internal_error(

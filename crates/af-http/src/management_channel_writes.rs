@@ -31,6 +31,8 @@ pub(crate) struct AdminChannelWriteRequest {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    models: Vec<String>,
+    group_ids: Vec<i64>,
     model_mapping: serde_json::Value,
     param_override: serde_json::Value,
     header_override: serde_json::Value,
@@ -103,6 +105,7 @@ pub(crate) async fn delete_admin_channel(
 
 impl AdminChannelWriteRequest {
     fn into_create_command(self) -> Result<AdminChannelCreateCommand, ManagementError> {
+        let group_ids = parse_group_ids(self.group_ids)?;
         AdminChannelCreateCommand::new(
             self.name,
             self.channel_type,
@@ -112,6 +115,8 @@ impl AdminChannelWriteRequest {
             self.weight,
             self.priority,
             self.auto_ban,
+            self.models,
+            group_ids,
             self.model_mapping,
             self.param_override,
             self.header_override,
@@ -122,6 +127,7 @@ impl AdminChannelWriteRequest {
     }
 
     fn into_update_command(self) -> Result<AdminChannelUpdateCommand, ManagementError> {
+        let group_ids = parse_group_ids(self.group_ids)?;
         AdminChannelUpdateCommand::new(
             self.name,
             self.channel_type,
@@ -131,6 +137,8 @@ impl AdminChannelWriteRequest {
             self.weight,
             self.priority,
             self.auto_ban,
+            self.models,
+            group_ids,
             self.model_mapping,
             self.param_override,
             self.header_override,
@@ -139,6 +147,13 @@ impl AdminChannelWriteRequest {
         )
         .map_err(map_write_error)
     }
+}
+
+fn parse_group_ids(values: Vec<i64>) -> Result<Vec<af_domain::GroupId>, ManagementError> {
+    values
+        .into_iter()
+        .map(|value| af_domain::GroupId::new(value).map_err(|_| ManagementError::InvalidRequest))
+        .collect()
 }
 
 pub(crate) fn map_write_error(error: AdminChannelWriteError) -> ManagementError {

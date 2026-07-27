@@ -122,7 +122,7 @@ impl AdminChannelReader for DatabaseAdminChannelReader {
                 .await
                 .map_err(map_repository_error)?
             {
-                AdminChannelLookupOutcome::Found(record) => Ok(AdminChannel::from_record(record)),
+                AdminChannelLookupOutcome::Found(record) => Ok(AdminChannel::from_record(*record)),
                 AdminChannelLookupOutcome::NotFound => Err(AdminChannelReadError::ChannelNotFound),
             }
         })

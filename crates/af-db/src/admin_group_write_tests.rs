@@ -10,7 +10,7 @@ use super::{
     AdminGroupRepository, AdminGroupRepositoryError, AdminGroupWriteRecord, DatabaseOptions,
     MigrationOptions,
 };
-use crate::entity::{channel_groups, group_model_ratios, groups};
+use crate::entity::{abilities, channel_groups, group_model_ratios, groups};
 
 #[tokio::test]
 async fn create_and_update_enforce_name_fallback_and_complete_fields() -> Result<(), Box<dyn Error>>
@@ -197,6 +197,13 @@ async fn delete_clears_safe_runtime_relationships_atomically() -> Result<(), Box
         0
     );
     assert_eq!(
+        abilities::Entity::find()
+            .filter(abilities::Column::GroupId.eq(target.group_id().get()))
+            .count(fixture.pool.connection())
+            .await?,
+        0
+    );
+    assert_eq!(
         group_model_ratios::Entity::find()
             .filter(
                 group_model_ratios::Column::SourceGroupId
@@ -349,8 +356,29 @@ async fn insert_runtime_relations(
     connection
         .execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
+            "INSERT INTO channel_models (channel_id, model) VALUES (?, ?)",
+            [601_i64.into(), "group-delete-model".into()],
+        ))
+        .await?;
+    connection
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
             "INSERT INTO channel_groups (channel_id, group_id) VALUES (?, ?)",
             [601_i64.into(), target_group_id.into()],
+        ))
+        .await?;
+    connection
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO abilities (group_id, model, channel_id, enabled, priority, weight) VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                target_group_id.into(),
+                "group-delete-model".into(),
+                601_i64.into(),
+                true.into(),
+                0_i32.into(),
+                0_i32.into(),
+            ],
         ))
         .await?;
     connection

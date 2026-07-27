@@ -10,7 +10,10 @@ use sea_orm::{
 use crate::{
     ChannelAutoDisableOutcome, ChannelProbeRecoveryOutcome, ChannelStateRepository,
     ChannelStateRepositoryError, DatabaseOptions, MAX_CHANNEL_PROBE_BATCH, MigrationOptions,
-    entity::{ChannelBaseUrl, HeaderOverrides, SensitiveJson, channels},
+    entity::{
+        ChannelBaseUrl, HeaderOverrides, SensitiveJson, abilities, channel_groups, channel_models,
+        channels, groups,
+    },
 };
 
 #[tokio::test]
@@ -28,6 +31,7 @@ async fn auto_disable_obeys_flag_status_and_soft_delete_boundaries() -> Result<(
     let deleted = channel("deleted", Status::Enabled, true)
         .insert(pool.connection())
         .await?;
+    insert_ability(&pool, eligible.id, true, "disable-model").await?;
     soft_delete(&pool, &deleted).await?;
     let repository = ChannelStateRepository::new(pool.clone());
 
@@ -56,6 +60,7 @@ async fn auto_disable_obeys_flag_status_and_soft_delete_boundaries() -> Result<(
     assert_status(&pool, flag_off.id, Status::Enabled).await?;
     assert_status(&pool, manual.id, Status::Disabled).await?;
     assert_status(&pool, deleted.id, Status::Enabled).await?;
+    assert_ability_enabled(&pool, eligible.id, false).await?;
 
     pool.close().await?;
     Ok(())
@@ -76,6 +81,7 @@ async fn probe_recovery_only_reenables_auto_disabled_live_channels() -> Result<(
     let deleted = channel("deleted", Status::AutoDisabled, true)
         .insert(pool.connection())
         .await?;
+    insert_ability(&pool, automatic.id, false, "recovery-model").await?;
     soft_delete(&pool, &deleted).await?;
     let repository = ChannelStateRepository::new(pool.clone());
     let leases = repository
@@ -102,6 +108,7 @@ async fn probe_recovery_only_reenables_auto_disabled_live_channels() -> Result<(
     assert_status(&pool, enabled.id, Status::Enabled).await?;
     assert_status(&pool, manual.id, Status::Disabled).await?;
     assert_status(&pool, deleted.id, Status::AutoDisabled).await?;
+    assert_ability_enabled(&pool, automatic.id, true).await?;
 
     pool.close().await?;
     Ok(())
@@ -274,6 +281,63 @@ async fn assert_status(
         .await?
         .expect("测试渠道必须存在");
     assert_eq!(Status::try_from(channel.status)?, expected);
+    Ok(())
+}
+
+async fn insert_ability(
+    pool: &crate::DatabasePool,
+    channel_id: i64,
+    enabled: bool,
+    model: &str,
+) -> Result<(), sea_orm::DbErr> {
+    let group = groups::ActiveModel {
+        name: Set(format!("state-group-{channel_id}")),
+        display_name: Set(format!("State Group {channel_id}")),
+        flags: Set(empty_json_object()),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    channel_models::ActiveModel {
+        channel_id: Set(channel_id),
+        model: Set(model.to_owned()),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    channel_groups::ActiveModel {
+        channel_id: Set(channel_id),
+        group_id: Set(group.id),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    abilities::ActiveModel {
+        group_id: Set(group.id),
+        model: Set(model.to_owned()),
+        channel_id: Set(channel_id),
+        enabled: Set(enabled),
+        priority: Set(0),
+        weight: Set(0),
+        tag: Set(None),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    Ok(())
+}
+
+async fn assert_ability_enabled(
+    pool: &crate::DatabasePool,
+    channel_id: i64,
+    expected: bool,
+) -> Result<(), Box<dyn Error>> {
+    let rows = abilities::Entity::find()
+        .filter(abilities::Column::ChannelId.eq(channel_id))
+        .all(pool.connection())
+        .await?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].enabled, expected);
     Ok(())
 }
 

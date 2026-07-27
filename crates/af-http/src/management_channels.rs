@@ -22,6 +22,8 @@ pub(crate) struct AdminChannelResponse {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    models: Vec<String>,
+    group_ids: Vec<i64>,
     model_mapping: serde_json::Value,
     param_override: serde_json::Value,
     balance: Option<i64>,
@@ -98,6 +100,13 @@ impl AdminChannelResponse {
             weight: channel.weight(),
             priority: channel.priority(),
             auto_ban: channel.auto_ban(),
+            models: channel.models().to_vec(),
+            group_ids: channel
+                .group_ids()
+                .iter()
+                .copied()
+                .map(af_domain::GroupId::get)
+                .collect(),
             model_mapping: channel.model_mapping().clone(),
             param_override: channel.param_override().clone(),
             balance: channel.balance(),

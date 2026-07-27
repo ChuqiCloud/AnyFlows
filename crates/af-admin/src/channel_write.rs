@@ -5,9 +5,10 @@ use af_db::{
     AdminChannelDeleteOutcome, AdminChannelMutationOutcome, AdminChannelRepository,
     AdminChannelWriteRecord, AdminChannelWriteRepositoryError, AdminCredentialCreateOutcome,
     AdminCredentialDeleteOutcome, AdminCredentialMutationOutcome, AdminCredentialWriteRecord,
-    MAX_ADMIN_CHANNEL_JSON_BYTES,
+    MAX_ADMIN_CHANNEL_ABILITIES, MAX_ADMIN_CHANNEL_GROUPS, MAX_ADMIN_CHANNEL_JSON_BYTES,
+    MAX_ADMIN_CHANNEL_MODEL_BYTES, MAX_ADMIN_CHANNEL_MODELS,
 };
-use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, Protocol, Status};
+use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, GroupId, Protocol, Status};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -55,6 +56,8 @@ impl AdminChannelCreateCommand {
         weight: i32,
         priority: i32,
         auto_ban: bool,
+        models: Vec<String>,
+        group_ids: Vec<GroupId>,
         model_mapping: serde_json::Value,
         param_override: serde_json::Value,
         header_override: serde_json::Value,
@@ -71,6 +74,8 @@ impl AdminChannelCreateCommand {
                 weight,
                 priority,
                 auto_ban,
+                models,
+                group_ids,
                 model_mapping,
                 param_override,
                 header_override,
@@ -111,6 +116,8 @@ impl AdminChannelUpdateCommand {
         weight: i32,
         priority: i32,
         auto_ban: bool,
+        models: Vec<String>,
+        group_ids: Vec<GroupId>,
         model_mapping: serde_json::Value,
         param_override: serde_json::Value,
         header_override: serde_json::Value,
@@ -127,6 +134,8 @@ impl AdminChannelUpdateCommand {
                 weight,
                 priority,
                 auto_ban,
+                models,
+                group_ids,
                 model_mapping,
                 param_override,
                 header_override,
@@ -156,6 +165,8 @@ struct AdminChannelWriteFields {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    models: Vec<String>,
+    group_ids: Vec<GroupId>,
     model_mapping: serde_json::Value,
     param_override: serde_json::Value,
     header_override: serde_json::Value,
@@ -177,6 +188,8 @@ impl AdminChannelWriteFields {
         weight: i32,
         priority: i32,
         auto_ban: bool,
+        models: Vec<String>,
+        group_ids: Vec<GroupId>,
         model_mapping: serde_json::Value,
         param_override: serde_json::Value,
         header_override: serde_json::Value,
@@ -191,6 +204,7 @@ impl AdminChannelWriteFields {
                 .as_deref()
                 .is_some_and(|value| value.is_empty() || value.len() > 2_048)
             || tag.as_deref().is_some_and(|value| !valid_text(value, 64))
+            || !valid_channel_routing(&models, &group_ids)
         {
             return Err(AdminChannelWriteError::InvalidInput);
         }
@@ -207,6 +221,8 @@ impl AdminChannelWriteFields {
             weight,
             priority,
             auto_ban,
+            models,
+            group_ids,
             model_mapping,
             param_override,
             header_override,
@@ -225,6 +241,8 @@ impl AdminChannelWriteFields {
             self.weight,
             self.priority,
             self.auto_ban,
+            self.models,
+            self.group_ids,
             self.model_mapping,
             self.param_override,
             self.header_override,
@@ -774,9 +792,44 @@ fn valid_text(value: &str, maximum_bytes: usize) -> bool {
         && !value.chars().any(char::is_control)
 }
 
+fn valid_channel_routing(models: &[String], group_ids: &[GroupId]) -> bool {
+    if models.len() > MAX_ADMIN_CHANNEL_MODELS
+        || group_ids.len() > MAX_ADMIN_CHANNEL_GROUPS
+        || models
+            .len()
+            .checked_mul(group_ids.len())
+            .is_none_or(|count| count > MAX_ADMIN_CHANNEL_ABILITIES)
+    {
+        return false;
+    }
+    let mut seen_models = std::collections::HashSet::with_capacity(models.len());
+    if models.iter().any(|model| {
+        !valid_text(model, MAX_ADMIN_CHANNEL_MODEL_BYTES) || !seen_models.insert(model.as_str())
+    }) {
+        return false;
+    }
+    let mut seen_groups = std::collections::HashSet::with_capacity(group_ids.len());
+    !group_ids
+        .iter()
+        .any(|group_id| !seen_groups.insert(*group_id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn channel_routing_uses_the_database_model_byte_limit() {
+        let group_ids = [GroupId::new(1).unwrap()];
+        assert!(valid_channel_routing(
+            &["x".repeat(MAX_ADMIN_CHANNEL_MODEL_BYTES)],
+            &group_ids,
+        ));
+        assert!(!valid_channel_routing(
+            &["x".repeat(MAX_ADMIN_CHANNEL_MODEL_BYTES + 1)],
+            &group_ids,
+        ));
+    }
 
     #[test]
     fn commands_reject_unsupported_types_and_redact_sensitive_fields() {
@@ -789,6 +842,8 @@ mod tests {
             10,
             20,
             true,
+            vec!["gpt-test".to_owned()],
+            vec![GroupId::new(1).unwrap()],
             serde_json::json!({"model": "upstream"}),
             serde_json::json!({}),
             serde_json::json!({"x-private": "header-secret"}),
@@ -835,6 +890,8 @@ mod tests {
                 0,
                 0,
                 true,
+                Vec::new(),
+                Vec::new(),
                 serde_json::json!({}),
                 serde_json::json!({}),
                 serde_json::json!({}),
