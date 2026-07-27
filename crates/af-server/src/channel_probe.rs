@@ -150,6 +150,8 @@ impl AdminChannelProbe for BoundedAdminChannelProbe {
             match timeout(self.timeout, self.probe.check(channel_id)).await {
                 Ok(ChannelProbeStatus::Healthy) => AdminChannelProbeOutcome::Healthy,
                 Ok(ChannelProbeStatus::Unhealthy) => AdminChannelProbeOutcome::Unhealthy,
+                // 调度层未来新增的状态默认按不健康处理，避免未知结论被误报为成功。
+                Ok(_) => AdminChannelProbeOutcome::Unhealthy,
                 Err(_) => AdminChannelProbeOutcome::TimedOut,
             }
         })

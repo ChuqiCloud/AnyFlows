@@ -2607,77 +2607,6 @@
         },
         "additionalProperties": false
       },
-      "AdminChannelProbeResponse": {
-        "type": "object",
-        "required": [
-          "status",
-          "latency_ms"
-        ],
-        "properties": {
-          "status": {
-            "$ref": "#/components/schemas/AdminChannelProbeStatus"
-          },
-          "latency_ms": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          }
-        },
-        "additionalProperties": false
-      },
-      "AdminChannelProbeStatus": {
-        "type": "string",
-        "enum": [
-          "healthy",
-          "unhealthy",
-          "timeout"
-        ]
-      },
-      "AdminChannelListResponse": {
-        "type": "object",
-        "required": [
-          "channels",
-          "next_cursor"
-        ],
-        "properties": {
-          "channels": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AdminChannel"
-            },
-            "maxItems": 100
-          },
-          "next_cursor": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "minimum": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "AdminChannelProtocol": {
-        "type": "string",
-        "enum": [
-          "openai_chat",
-          "openai_responses",
-          "anthropic",
-          "gemini"
-        ]
-      },
-      "AdminChannelType": {
-        "type": "string",
-        "enum": [
-          "openai",
-          "anthropic",
-          "gemini",
-          "bedrock",
-          "vertex",
-          "custom"
-        ]
-      },
       "AdminChannelCreateRequest": {
         "type": "object",
         "description": "管理端创建渠道时使用的完整配置正文。",
@@ -2808,6 +2737,77 @@
           }
         },
         "additionalProperties": false
+      },
+      "AdminChannelListResponse": {
+        "type": "object",
+        "required": [
+          "channels",
+          "next_cursor"
+        ],
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminChannel"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminChannelProbeResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "latency_ms"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/AdminChannelProbeStatus"
+          },
+          "latency_ms": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminChannelProbeStatus": {
+        "type": "string",
+        "enum": [
+          "healthy",
+          "unhealthy",
+          "timeout"
+        ]
+      },
+      "AdminChannelProtocol": {
+        "type": "string",
+        "enum": [
+          "openai_chat",
+          "openai_responses",
+          "anthropic",
+          "gemini"
+        ]
+      },
+      "AdminChannelType": {
+        "type": "string",
+        "enum": [
+          "openai",
+          "anthropic",
+          "gemini",
+          "bedrock",
+          "vertex",
+          "custom"
+        ]
       },
       "AdminChannelUpdateRequest": {
         "type": "object",

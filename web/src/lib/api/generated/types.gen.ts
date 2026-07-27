@@ -27,17 +27,6 @@ export type AdminChannel = {
     created_at: number;
     updated_at: number;
 };
-export type AdminChannelProbeResponse = {
-    status: AdminChannelProbeStatus;
-    latency_ms: number;
-};
-export type AdminChannelProbeStatus = 'healthy' | 'unhealthy' | 'timeout';
-export type AdminChannelListResponse = {
-    channels: Array<AdminChannel>;
-    next_cursor: number | null;
-};
-export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini';
-export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'bedrock' | 'vertex' | 'custom';
 export type AdminChannelCreateRequest = {
     name: string;
     type: 'openai';
@@ -57,6 +46,17 @@ export type AdminChannelCreateRequest = {
     };
     tag: string | null;
 };
+export type AdminChannelListResponse = {
+    channels: Array<AdminChannel>;
+    next_cursor: number | null;
+};
+export type AdminChannelProbeResponse = {
+    status: AdminChannelProbeStatus;
+    latency_ms: number;
+};
+export type AdminChannelProbeStatus = 'healthy' | 'unhealthy' | 'timeout';
+export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini';
+export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'bedrock' | 'vertex' | 'custom';
 export type AdminChannelUpdateRequest = {
     name: string;
     type: 'openai';
