@@ -13,7 +13,7 @@ use super::{
 use crate::entity::{channel_groups, channel_models};
 
 /// 批量读取一页渠道的模型和分组集合；空关联也会返回显式空快照。
-pub(super) async fn load_channel_routing_snapshots<C>(
+pub(crate) async fn load_channel_routing_snapshots<C>(
     connection: &C,
     channel_ids: &[ChannelId],
 ) -> Result<HashMap<ChannelId, ChannelRoutingSnapshot>, AbilityWriteError>

@@ -14,7 +14,7 @@ pub const MAX_ADMIN_CHANNEL_GROUPS: usize = 64;
 pub const MAX_ADMIN_CHANNEL_ABILITIES: usize = 4_096;
 
 /// 已校验、去除输入顺序影响的渠道模型与分组集合。
-pub(super) struct ValidatedChannelRouting {
+pub(crate) struct ValidatedChannelRouting {
     models: Vec<String>,
     group_ids: Vec<GroupId>,
 }

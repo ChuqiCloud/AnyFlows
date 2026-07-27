@@ -14,7 +14,7 @@ use crate::entity::{abilities, channel_groups, channel_models};
 const INSERT_BATCH_SIZE: usize = 100;
 
 /// 仅修改指定渠道能力的启用状态，供自动禁用与探活恢复事务复用。
-pub(super) async fn set_channel_abilities_enabled<C>(
+pub(crate) async fn set_channel_abilities_enabled<C>(
     connection: &C,
     channel_id: ChannelId,
     enabled: bool,
@@ -36,7 +36,7 @@ where
 }
 
 /// 显式删除分组对应的派生能力，避免依赖不同方言的级联时序。
-pub(super) async fn delete_group_abilities<C>(
+pub(crate) async fn delete_group_abilities<C>(
     connection: &C,
     group_id: GroupId,
 ) -> Result<(), AbilityWriteError>

@@ -22,7 +22,7 @@ use super::{
 use crate::entity::{abilities, channel_groups, channel_models};
 
 /// 在现有渠道事务内差量维护关联表和能力笛卡尔积。
-pub(super) async fn synchronize_channel_routing(
+pub(crate) async fn synchronize_channel_routing(
     transaction: &DatabaseTransaction,
     channel_id: ChannelId,
     routing: &ValidatedChannelRouting,

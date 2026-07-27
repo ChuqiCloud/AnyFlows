@@ -1,6 +1,7 @@
 use af_domain::{ChannelId, GroupId};
 use sea_orm::{
     ColumnTrait, DatabaseTransaction, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
+    sea_query::ExprTrait,
 };
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
