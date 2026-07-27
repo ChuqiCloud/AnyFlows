@@ -118,6 +118,121 @@
       "sensitiveRequired": "A JSON object is required when creating a channel. You can enter {}."
     }
   },
+  "tokens": {
+    "title": "API keys",
+    "subtitle": "Issue and maintain downstream API keys with quotas, expiry, model and IP allowlists, and request-window limits.",
+    "count_one": "{{count}} key loaded",
+    "count_other": "{{count}} keys loaded",
+    "activeCount_one": "{{count}} currently available",
+    "activeCount_other": "{{count}} currently available",
+    "loading": "Loading API keys",
+    "loadingMore": "Loading",
+    "columns": {
+      "token": "Key",
+      "owner": "Owner",
+      "quota": "Quota",
+      "policy": "Access policy",
+      "validity": "Validity",
+      "actions": "Actions"
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "expired": "Expired"
+    },
+    "values": {
+      "unlimited": "Unlimited quota",
+      "remaining": "{{value}} remaining",
+      "usedQuota": "{{value}} used",
+      "models_one": "Limited to {{count}} model",
+      "models_other": "Limited to {{count}} models",
+      "allModels": "All models",
+      "ips_one": "Limited to {{count}} IP/CIDR",
+      "ips_other": "Limited to {{count}} IP/CIDRs",
+      "allIps": "Any source IP",
+      "neverExpires": "Never expires",
+      "requestsUsed": "{{value}} requests used",
+      "requestsRatio": "{{used}} / {{total}} requests",
+      "user": "User #{{id}}",
+      "group": "Group #{{id}}",
+      "defaultGroup": "User default group"
+    },
+    "actions": {
+      "create": "Issue key",
+      "edit": "Edit key",
+      "delete": "Delete key",
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "loadMore": "Load more",
+      "cancel": "Cancel",
+      "save": "Save changes"
+    },
+    "empty": {
+      "title": "No API keys yet",
+      "body": "Issue the first downstream API key and it will appear here."
+    },
+    "error": {
+      "title": "API keys could not be loaded",
+      "body": "The service did not return the key list. Try again shortly."
+    },
+    "editor": {
+      "createTitle": "Issue API key",
+      "createDescription": "Create a downstream API key for a user. The full value is shown once.",
+      "editTitle": "Edit API key",
+      "editDescription": "Update access policy and limits without rotating the key or resetting usage."
+    },
+    "form": {
+      "basic": "Basic settings",
+      "quota": "Quota and request control",
+      "policy": "Access policy",
+      "rateLimits": "Window limits",
+      "ownerHint": "A key cannot be moved to another user after issuance.",
+      "groupHint": "Leave blank to use the owner's default group.",
+      "expiryHint": "Leave blank for no expiry. Times use this device's time zone.",
+      "unlimitedHint": "Skip the remaining-quota check for this key.",
+      "optionalLimit": "Leave blank for no limit. Zero sets the limit to zero.",
+      "crossGroupHint": "Allow another group when the current group has no available channel.",
+      "modelsHint": "One Canonical model per line or comma separated. Leave blank for unrestricted access.",
+      "ipsHint": "One IP or CIDR per line or comma separated. Leave blank for any source.",
+      "submitError": "The key could not be saved. Check the user, group, and field values."
+    },
+    "fields": {
+      "name": "Name",
+      "userId": "Owner user ID",
+      "status": "Status",
+      "groupId": "Bound group ID",
+      "expiredAt": "Expiry",
+      "remainQuota": "Remaining quota",
+      "unlimitedQuota": "Unlimited quota",
+      "maxRequests": "Maximum requests",
+      "crossGroupRetry": "Allow cross-group retry",
+      "modelLimits": "Model allowlist",
+      "allowIps": "IP/CIDR allowlist",
+      "rateLimit5h": "5-hour limit",
+      "rateLimit1d": "1-day limit",
+      "rateLimit7d": "7-day limit"
+    },
+    "validation": {
+      "field": "Enter an in-range integer or valid field value.",
+      "models": "The model allowlist format or size is invalid.",
+      "ips": "Enter valid IP/CIDR values, up to 64 entries.",
+      "date": "Enter a valid date and time."
+    },
+    "issued": {
+      "title": "API key issued",
+      "description": "The full API key for {{name}} is ready.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyFailed": "Clipboard access failed. Select and copy the key manually.",
+      "warning": "The full key is shown only once. Save it securely before closing this window.",
+      "done": "I have saved it"
+    },
+    "delete": {
+      "title": "Delete API key",
+      "description": "Deleting {{name}} immediately revokes requests using this key. This action cannot be undone.",
+      "failed": "Deletion failed. The key is still valid. Try again shortly."
+    }
+  },
   "auth": {
     "login": {
       "eyebrow": "AnyFlows management console",
