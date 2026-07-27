@@ -122,6 +122,7 @@
           script: bash tools/ci/verify-release-tag.sh "$CNB_BRANCH" "$CNB_COMMIT"
         - name: 清理本次提交的旧临时附件
           if: *release-version-tag-condition
+          allowFailure: true
           image: cnbcool/attachments:latest
           settings:
             type: DELETE
