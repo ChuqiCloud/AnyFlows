@@ -45,10 +45,6 @@ pub fn openapi_document() -> OpenApi {
                     .build(),
             ),
         );
-    if let Some(components) = document.components.as_mut() {
-        // utoipa 会保留组件插入顺序，统一排序可避免不同平台导出的契约漂移。
-        components.schemas.sort_keys();
-    }
     document
 }
 
