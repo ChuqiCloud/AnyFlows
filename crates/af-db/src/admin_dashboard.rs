@@ -306,10 +306,7 @@ fn usage_query(
             Alias::new("request_count"),
         )
         .expr_as(
-            Func::coalesce([
-                Expr::col((usage_logs::Entity, usage_logs::Column::Quota)).sum(),
-                Expr::value(0_i64),
-            ]),
+            Expr::col((usage_logs::Entity, usage_logs::Column::Quota)).sum(),
             Alias::new("quota_consumed"),
         )
         .expr_as(
@@ -409,15 +406,21 @@ fn get_sum(
     column: &str,
     backend: DbBackend,
 ) -> Result<i64, AdminDashboardRepositoryError> {
-    let value = match backend {
-        DbBackend::Sqlite => result.try_get::<i64>("", column).ok(),
+    match backend {
+        DbBackend::Sqlite => result
+            .try_get::<Option<i64>>("", column)
+            .map(|value| value.unwrap_or(0)),
         DbBackend::Postgres | DbBackend::MySql => result
-            .try_get::<rust_decimal::Decimal>("", column)
-            .ok()
-            .filter(|value| value.fract().is_zero())
-            .and_then(|value| value.to_i64()),
-    };
-    value.ok_or_else(|| record_internal_error(AdminDashboardRepositoryError::Invariant))
+            .try_get::<Option<rust_decimal::Decimal>>("", column)
+            .and_then(|value| match value {
+                None => Ok(0),
+                Some(value) if value.fract().is_zero() => value
+                    .to_i64()
+                    .ok_or_else(|| sea_orm::DbErr::Type("额度聚合超出 i64 范围".to_owned())),
+                Some(_) => Err(sea_orm::DbErr::Type("额度聚合不是整数".to_owned())),
+            }),
+    }
+    .map_err(|_| record_internal_error(AdminDashboardRepositoryError::Invariant))
 }
 
 /// 只记录闭合内部分类，避免任何聚合值或数据库细节进入日志。
