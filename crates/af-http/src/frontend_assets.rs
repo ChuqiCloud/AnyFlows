@@ -4,10 +4,10 @@ use axum::{
     body::{Body, Bytes},
     extract::State,
     response::{IntoResponse, Response},
-    routing::{MethodRouter, get},
+    routing::{MethodRouter, any},
 };
 use http::{
-    HeaderMap, HeaderValue, StatusCode, Uri,
+    HeaderMap, HeaderValue, Method, StatusCode, Uri,
     header::{
         CACHE_CONTROL, CONTENT_LENGTH, CONTENT_TYPE, ETAG, IF_NONE_MATCH, X_CONTENT_TYPE_OPTIONS,
     },
@@ -60,20 +60,30 @@ struct FrontendAssetState {
 
 /// 构建仅接受 GET/HEAD 的前端兜底路由。
 pub(crate) fn frontend_fallback(source: Arc<dyn FrontendAssetSource>) -> MethodRouter {
-    get(serve_frontend_asset).with_state(FrontendAssetState { source })
+    any(serve_frontend_asset).with_state(FrontendAssetState { source })
 }
 
 async fn serve_frontend_asset(
     State(state): State<FrontendAssetState>,
     uri: Uri,
+    method: Method,
     request_headers: HeaderMap,
 ) -> Response {
+    if !matches!(method, Method::GET | Method::HEAD) {
+        return StatusCode::NOT_FOUND.into_response();
+    }
     let request_path = uri.path().trim_start_matches('/');
     let Some((asset_path, asset)) = resolve_asset(state.source.as_ref(), request_path) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let immutable = asset_path.starts_with("assets/");
-    asset_response(&asset_path, asset, immutable, &request_headers)
+    asset_response(
+        &asset_path,
+        asset,
+        immutable,
+        method == Method::HEAD,
+        &request_headers,
+    )
 }
 
 fn resolve_asset(
@@ -116,6 +126,7 @@ fn asset_response(
     asset_path: &str,
     asset: FrontendAsset,
     immutable: bool,
+    head_only: bool,
     request_headers: &HeaderMap,
 ) -> Response {
     let cache_control = if immutable {
@@ -134,15 +145,21 @@ fn asset_response(
     }
 
     let content = asset.content();
+    let content_length = content.len();
     let content_type = mime_guess::from_path(asset_path).first_or_octet_stream();
+    let body = if head_only {
+        Body::empty()
+    } else {
+        Body::from(content)
+    };
     Response::builder()
         .status(StatusCode::OK)
         .header(CACHE_CONTROL, cache_control)
-        .header(CONTENT_LENGTH, content.len())
+        .header(CONTENT_LENGTH, content_length)
         .header(CONTENT_TYPE, content_type.essence_str())
         .header(ETAG, asset.etag())
         .header(X_CONTENT_TYPE_OPTIONS, "nosniff")
-        .body(Body::from(content))
+        .body(body)
         .expect("固定的前端资源响应头必须有效")
 }
 

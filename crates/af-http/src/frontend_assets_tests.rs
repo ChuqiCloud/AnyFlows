@@ -169,6 +169,6 @@ async fn head_has_metadata_without_body_and_other_methods_are_rejected() {
         )
         .await
         .unwrap();
-    assert_eq!(post.status(), StatusCode::METHOD_NOT_ALLOWED);
+    assert_eq!(post.status(), StatusCode::NOT_FOUND);
     assert_ne!(body(post).await, INDEX);
 }
