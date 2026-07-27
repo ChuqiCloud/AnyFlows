@@ -9,7 +9,11 @@ use thiserror::Error;
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
-use crate::{DatabasePool, entity::channels};
+use crate::{
+    DatabasePool,
+    ability_write::{AbilityWriteError, set_channel_abilities_enabled},
+    entity::channels,
+};
 
 const DEFAULT_MUTATION_TIMEOUT: Duration = Duration::from_secs(5);
 /// 单轮探活最多读取的自动禁用渠道数量，防止后台任务无界占用内存与连接。
@@ -139,27 +143,49 @@ impl ChannelStateRepository {
         channel_id: ChannelId,
     ) -> Result<ChannelAutoDisableOutcome, ChannelStateRepositoryError> {
         let operation = async {
+            let transaction = self
+                .pool
+                .connection()
+                .begin()
+                .await
+                .map_err(|_| ChannelStateRepositoryError::Query)?;
+            let now = TimeDateTimeWithTimeZone::now_utc();
             let result = channels::Entity::update_many()
                 .col_expr(
                     channels::Column::Status,
                     Expr::value(Status::AutoDisabled.code()),
                 )
-                .col_expr(
-                    channels::Column::UpdatedAt,
-                    Expr::value(TimeDateTimeWithTimeZone::now_utc()),
-                )
+                .col_expr(channels::Column::UpdatedAt, Expr::value(now))
                 .filter(channels::Column::Id.eq(channel_id.get()))
                 .filter(channels::Column::Status.eq(Status::Enabled.code()))
                 .filter(channels::Column::AutoBan.eq(true))
                 .filter(channels::Column::DeletedAt.is_null())
-                .exec(self.pool.connection())
+                .exec(&transaction)
                 .await
                 .map_err(|_| ChannelStateRepositoryError::Query)?;
-            match result.rows_affected {
-                1 => Ok(ChannelAutoDisableOutcome::Disabled),
-                0 => self.classify_auto_disable_noop(channel_id).await,
-                _ => Err(ChannelStateRepositoryError::Invariant),
+            let outcome = match result.rows_affected {
+                1 => ChannelAutoDisableOutcome::Disabled,
+                0 => match load_live_state(&transaction, channel_id).await? {
+                    Some((Status::AutoDisabled, _)) => ChannelAutoDisableOutcome::AlreadyDisabled,
+                    Some((Status::Enabled | Status::Disabled, _)) | None => {
+                        ChannelAutoDisableOutcome::NotEligible
+                    }
+                },
+                _ => return Err(ChannelStateRepositoryError::Invariant),
+            };
+            if matches!(
+                outcome,
+                ChannelAutoDisableOutcome::Disabled | ChannelAutoDisableOutcome::AlreadyDisabled
+            ) {
+                set_channel_abilities_enabled(&transaction, channel_id, false, now)
+                    .await
+                    .map_err(map_ability_write_error)?;
             }
+            transaction
+                .commit()
+                .await
+                .map_err(|_| ChannelStateRepositoryError::Query)?;
+            Ok(outcome)
         }
         .with_subscriber(NoSubscriber::default());
 
@@ -231,7 +257,17 @@ impl ChannelStateRepository {
                 .map_err(|_| ChannelStateRepositoryError::Query)?;
             lock_probe_channel(&transaction, lease.channel_id).await?;
             let outcome = match load_live_state(&transaction, lease.channel_id).await? {
-                Some((Status::Enabled, _)) => ChannelProbeRecoveryOutcome::AlreadyEnabled,
+                Some((Status::Enabled, _)) => {
+                    set_channel_abilities_enabled(
+                        &transaction,
+                        lease.channel_id,
+                        true,
+                        TimeDateTimeWithTimeZone::now_utc(),
+                    )
+                    .await
+                    .map_err(map_ability_write_error)?;
+                    ChannelProbeRecoveryOutcome::AlreadyEnabled
+                }
                 Some((Status::Disabled, _)) | None => ChannelProbeRecoveryOutcome::NotEligible,
                 Some((Status::AutoDisabled, updated_at))
                     if updated_at != lease.auto_disabled_at =>
@@ -239,15 +275,13 @@ impl ChannelStateRepository {
                     ChannelProbeRecoveryOutcome::StaleProbe
                 }
                 Some((Status::AutoDisabled, _)) => {
+                    let now = TimeDateTimeWithTimeZone::now_utc();
                     let result = channels::Entity::update_many()
                         .col_expr(
                             channels::Column::Status,
                             Expr::value(Status::Enabled.code()),
                         )
-                        .col_expr(
-                            channels::Column::UpdatedAt,
-                            Expr::value(TimeDateTimeWithTimeZone::now_utc()),
-                        )
+                        .col_expr(channels::Column::UpdatedAt, Expr::value(now))
                         .filter(channels::Column::Id.eq(lease.channel_id.get()))
                         .filter(channels::Column::Status.eq(Status::AutoDisabled.code()))
                         .filter(channels::Column::DeletedAt.is_null())
@@ -257,6 +291,9 @@ impl ChannelStateRepository {
                     if result.rows_affected != 1 {
                         return Err(ChannelStateRepositoryError::Invariant);
                     }
+                    set_channel_abilities_enabled(&transaction, lease.channel_id, true, now)
+                        .await
+                        .map_err(map_ability_write_error)?;
                     ChannelProbeRecoveryOutcome::Recovered
                 }
             };
@@ -272,27 +309,6 @@ impl ChannelStateRepository {
             Ok(result) => result.map_err(record_internal_error),
             Err(_) => Err(record_internal_error(ChannelStateRepositoryError::Timeout)),
         }
-    }
-
-    async fn classify_auto_disable_noop(
-        &self,
-        channel_id: ChannelId,
-    ) -> Result<ChannelAutoDisableOutcome, ChannelStateRepositoryError> {
-        match self.load_live_status(channel_id).await? {
-            Some(Status::AutoDisabled) => Ok(ChannelAutoDisableOutcome::AlreadyDisabled),
-            Some(Status::Enabled | Status::Disabled) | None => {
-                Ok(ChannelAutoDisableOutcome::NotEligible)
-            }
-        }
-    }
-
-    async fn load_live_status(
-        &self,
-        channel_id: ChannelId,
-    ) -> Result<Option<Status>, ChannelStateRepositoryError> {
-        load_live_state(self.pool.connection(), channel_id)
-            .await
-            .map(|state| state.map(|(status, _)| status))
     }
 }
 
@@ -319,6 +335,16 @@ fn record_internal_error(error: ChannelStateRepositoryError) -> ChannelStateRepo
         "渠道状态仓储发生内部错误"
     );
     error
+}
+
+fn map_ability_write_error(error: AbilityWriteError) -> ChannelStateRepositoryError {
+    match error {
+        AbilityWriteError::Query => ChannelStateRepositoryError::Query,
+        AbilityWriteError::InvalidInput
+        | AbilityWriteError::InvalidReference
+        | AbilityWriteError::CapacityExceeded
+        | AbilityWriteError::Invariant => ChannelStateRepositoryError::Invariant,
+    }
 }
 
 /// 先执行不改变审计时间的写语句取得行/数据库写锁，避免探活结果与新故障交错。

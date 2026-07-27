@@ -1,5 +1,8 @@
 //! 数据库连接池、迁移、实体与仓储边界。
 
+mod ability_write;
+#[cfg(test)]
+mod ability_write_tests;
 mod admin_channel;
 #[cfg(test)]
 mod admin_channel_tests;
@@ -60,6 +63,10 @@ mod user_session;
 #[cfg(test)]
 mod user_session_tests;
 
+pub use ability_write::{
+    MAX_ADMIN_CHANNEL_ABILITIES, MAX_ADMIN_CHANNEL_GROUPS, MAX_ADMIN_CHANNEL_MODEL_BYTES,
+    MAX_ADMIN_CHANNEL_MODELS,
+};
 pub use admin_channel::{
     AdminChannelLookupOutcome, AdminChannelPageRecord, AdminChannelRecord, AdminChannelRepository,
     AdminChannelRepositoryConfigError, AdminChannelRepositoryError, MAX_ADMIN_CHANNEL_JSON_BYTES,

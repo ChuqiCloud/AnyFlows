@@ -151,6 +151,8 @@ async fn admin_channel_and_credential_reads_use_real_database_services() {
     assert_eq!(detail_body["type"], "openai");
     assert_eq!(detail_body["protocol"], "openai_chat");
     assert_eq!(detail_body["status"], "enabled");
+    assert_eq!(detail_body["models"], json!(["public-model"]));
+    assert_eq!(detail_body["group_ids"], json!([GROUP_ID]));
     assert_eq!(
         detail_body["model_mapping"]["public-model"],
         "upstream-model"
@@ -237,6 +239,8 @@ async fn admin_channel_and_credential_reads_use_real_database_services() {
             "weight": 15,
             "priority": 25,
             "auto_ban": true,
+            "models": ["public-model"],
+            "group_ids": [GROUP_ID],
             "model_mapping": {"public-model": "write-upstream-model"},
             "param_override": {},
             "header_override": {"x-write-private": WRITE_HEADER_CANARY},
@@ -246,6 +250,14 @@ async fn admin_channel_and_credential_reads_use_real_database_services() {
     )
     .await;
     assert_eq!(create_channel.status, 201);
+    assert_eq!(
+        response_json(&create_channel)["models"],
+        json!(["public-model"])
+    );
+    assert_eq!(
+        response_json(&create_channel)["group_ids"],
+        json!([GROUP_ID])
+    );
     assert_write_sanitized(&create_channel);
     let write_channel_id = response_json(&create_channel)["id"].as_i64().unwrap();
 
@@ -263,6 +275,8 @@ async fn admin_channel_and_credential_reads_use_real_database_services() {
             "weight": 16,
             "priority": 26,
             "auto_ban": false,
+            "models": ["public-model", "second-model"],
+            "group_ids": [GROUP_ID],
             "model_mapping": {"public-model": "write-upstream-model"},
             "param_override": {},
             "header_override": {"x-write-private": WRITE_HEADER_CANARY},
@@ -272,6 +286,10 @@ async fn admin_channel_and_credential_reads_use_real_database_services() {
     )
     .await;
     assert_eq!(update_channel.status, 200);
+    assert_eq!(
+        response_json(&update_channel)["models"],
+        json!(["public-model", "second-model"])
+    );
     assert_eq!(
         response_json(&update_channel)["name"],
         "write-channel-updated"

@@ -1,6 +1,6 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::{ChannelId, CredentialId, Status};
+use af_domain::{ChannelId, CredentialId, GroupId, Status};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::sea_query::{MysqlQueryBuilder, PostgresQueryBuilder, SqliteQueryBuilder};
 use sea_orm::{ActiveModelTrait, JsonValue, Set};
@@ -14,7 +14,8 @@ use crate::{
     admin_channel::channel_base_query,
     admin_credential::credential_base_query,
     entity::{
-        ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channels, credentials,
+        ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channel_groups,
+        channel_models, channels, credentials, groups,
     },
 };
 
@@ -75,6 +76,8 @@ async fn detail_exposes_only_validated_non_sensitive_metadata() -> Result<(), Bo
     assert_eq!(channel.protocol().as_str(), "openai_chat");
     assert_eq!(channel.base_url(), Some("https://api.example.com/v1"));
     assert_eq!(channel.status(), Status::Enabled);
+    assert_eq!(channel.models(), &["public-model"]);
+    assert_eq!(channel.group_ids(), &[fixture.primary_group_id]);
     assert_eq!(channel.model_mapping()["public-model"], "upstream-model");
     assert_eq!(channel.param_override()["temperature"], 0);
     assert_eq!(format!("{channel:?}"), "AdminChannelRecord(<redacted>)");
@@ -189,6 +192,7 @@ struct Fixture {
     pool: super::DatabasePool,
     repository: AdminChannelRepository,
     primary_channel_id: ChannelId,
+    primary_group_id: GroupId,
     secondary_channel_id: ChannelId,
     deleted_channel_id: ChannelId,
     primary_credential_id: CredentialId,
@@ -208,6 +212,28 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
         sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc(),
     ));
     deleted_model.update(pool.connection()).await?;
+    let group = groups::ActiveModel {
+        name: Set("primary-group".to_owned()),
+        display_name: Set("Primary Group".to_owned()),
+        flags: Set(serde_json::json!({})),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    channel_models::ActiveModel {
+        channel_id: Set(primary.id),
+        model: Set("public-model".to_owned()),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    channel_groups::ActiveModel {
+        channel_id: Set(primary.id),
+        group_id: Set(group.id),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
 
     let first = insert_credential(&pool, primary.id, "api_key", Some(1)).await?;
     insert_credential(&pool, primary.id, "oauth", Some(2)).await?;
@@ -223,6 +249,7 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
         repository: AdminChannelRepository::new(pool.clone(), Duration::from_secs(2))?,
         pool,
         primary_channel_id: ChannelId::new(primary.id)?,
+        primary_group_id: GroupId::new(group.id)?,
         secondary_channel_id: ChannelId::new(secondary.id)?,
         deleted_channel_id: ChannelId::new(deleted.id)?,
         primary_credential_id: CredentialId::new(first.id)?,

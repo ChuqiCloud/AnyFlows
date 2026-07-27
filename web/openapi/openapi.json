@@ -2198,6 +2198,8 @@
           "weight",
           "priority",
           "auto_ban",
+          "models",
+          "group_ids",
           "model_mapping",
           "param_override",
           "header_override",
@@ -2243,6 +2245,28 @@
           },
           "auto_ban": {
             "type": "boolean"
+          },
+          "models": {
+            "type": "array",
+            "maxItems": 512,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "description": "渠道支持的 Canonical 模型集合；每项 UTF-8 编码最多 255 字节，去除首尾空白后必须保持原值，不得包含控制字符，与 group_ids 的笛卡尔积最多 4096 项。"
+          },
+          "group_ids": {
+            "type": "array",
+            "maxItems": 64,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "渠道关联的有效分组 ID 集合，与 models 的笛卡尔积最多 4096 项。"
           },
           "model_mapping": {
             "type": "object",
@@ -2295,6 +2319,8 @@
           "weight",
           "priority",
           "auto_ban",
+          "models",
+          "group_ids",
           "model_mapping",
           "param_override",
           "balance",
@@ -2343,6 +2369,28 @@
           },
           "auto_ban": {
             "type": "boolean"
+          },
+          "models": {
+            "type": "array",
+            "maxItems": 512,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "description": "按 Canonical 原文排序的渠道模型集合。"
+          },
+          "group_ids": {
+            "type": "array",
+            "maxItems": 64,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "按 ID 升序返回的渠道分组集合。"
           },
           "model_mapping": {
             "type": "object",

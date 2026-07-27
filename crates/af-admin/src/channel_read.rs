@@ -1,7 +1,7 @@
 use std::fmt;
 
 use af_db::AdminChannelRecord;
-use af_domain::{ChannelId, ChannelType, Protocol, Status};
+use af_domain::{ChannelId, ChannelType, GroupId, Protocol, Status};
 use serde::{Deserialize, Serialize};
 
 use crate::AdminChannelReadError;
@@ -79,6 +79,8 @@ pub struct AdminChannel {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    models: Vec<String>,
+    group_ids: Vec<GroupId>,
     model_mapping: serde_json::Value,
     param_override: serde_json::Value,
     balance: Option<i64>,
@@ -102,6 +104,8 @@ impl AdminChannel {
         weight: i32,
         priority: i32,
         auto_ban: bool,
+        models: Vec<String>,
+        group_ids: Vec<GroupId>,
         model_mapping: serde_json::Value,
         param_override: serde_json::Value,
         balance: Option<i64>,
@@ -120,6 +124,8 @@ impl AdminChannel {
             weight,
             priority,
             auto_ban,
+            models,
+            group_ids,
             model_mapping,
             param_override,
             balance,
@@ -175,6 +181,16 @@ impl AdminChannel {
     pub const fn auto_ban(&self) -> bool {
         self.auto_ban
     }
+    /// 返回渠道声明的 Canonical 模型集合。
+    #[must_use]
+    pub fn models(&self) -> &[String] {
+        &self.models
+    }
+    /// 返回渠道关联的有效分组集合。
+    #[must_use]
+    pub fn group_ids(&self) -> &[GroupId] {
+        &self.group_ids
+    }
     /// 返回模型映射对象。
     #[must_use]
     pub const fn model_mapping(&self) -> &serde_json::Value {
@@ -222,6 +238,8 @@ impl AdminChannel {
             record.weight(),
             record.priority(),
             record.auto_ban(),
+            record.models().to_vec(),
+            record.group_ids().to_vec(),
             record.model_mapping().clone(),
             record.param_override().clone(),
             record.balance(),
@@ -288,6 +306,8 @@ mod tests {
             10,
             20,
             true,
+            vec!["private-model".to_owned()],
+            vec![GroupId::new(1).unwrap()],
             serde_json::json!({"private-model": "upstream-model"}),
             serde_json::json!({"temperature": 0}),
             None,

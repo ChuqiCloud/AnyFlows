@@ -12,6 +12,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     AdminGroupRecord, AdminGroupRepository, AdminGroupRepositoryError,
+    ability_write::{AbilityWriteError, delete_group_abilities},
     admin_group::record_internal_error,
     entity::{channel_groups, group_model_ratios, groups, tokens, users},
 };
@@ -428,6 +429,9 @@ async fn clear_safe_references(
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(map_write_db_error)?;
+    delete_group_abilities(transaction, group_id)
+        .await
+        .map_err(map_ability_write_error)?;
     channel_groups::Entity::delete_many()
         .filter(channel_groups::Column::GroupId.eq(group_id.get()))
         .exec(transaction)
@@ -445,6 +449,18 @@ async fn clear_safe_references(
         .await
         .map_err(map_write_db_error)?;
     Ok(())
+}
+
+fn map_ability_write_error(error: AbilityWriteError) -> AdminGroupRepositoryError {
+    match error {
+        AbilityWriteError::Query => record_internal_error(AdminGroupRepositoryError::Query),
+        AbilityWriteError::InvalidInput
+        | AbilityWriteError::InvalidReference
+        | AbilityWriteError::CapacityExceeded
+        | AbilityWriteError::Invariant => {
+            record_internal_error(AdminGroupRepositoryError::Invariant)
+        }
+    }
 }
 
 async fn query_exists(

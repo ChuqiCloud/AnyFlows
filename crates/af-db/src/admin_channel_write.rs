@@ -4,7 +4,7 @@ use std::{
     str::FromStr as _,
 };
 
-use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, Protocol, Status};
+use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, GroupId, Protocol, Status};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
@@ -19,6 +19,10 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     AdminChannelRecord, AdminChannelRepository, AdminChannelRepositoryError, AdminCredentialRecord,
     EncryptedCredentialEnvelope, MAX_ADMIN_CHANNEL_JSON_BYTES,
+    ability_write::{
+        AbilityWriteError, ChannelAbilityMetadata, ValidatedChannelRouting,
+        synchronize_channel_routing,
+    },
     admin_channel::valid_text,
     entity::{
         ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, abilities, channel_groups,
@@ -40,6 +44,8 @@ pub struct AdminChannelWriteRecord {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    models: Vec<String>,
+    group_ids: Vec<GroupId>,
     model_mapping: serde_json::Value,
     param_override: serde_json::Value,
     header_override: serde_json::Value,
@@ -63,6 +69,8 @@ impl AdminChannelWriteRecord {
         weight: i32,
         priority: i32,
         auto_ban: bool,
+        models: Vec<String>,
+        group_ids: Vec<GroupId>,
         model_mapping: serde_json::Value,
         param_override: serde_json::Value,
         header_override: serde_json::Value,
@@ -78,6 +86,8 @@ impl AdminChannelWriteRecord {
             weight,
             priority,
             auto_ban,
+            models,
+            group_ids,
             model_mapping,
             param_override,
             header_override,
@@ -380,6 +390,14 @@ impl AdminChannelRepository {
     ) -> Result<AdminChannelRecord, AdminChannelWriteRepositoryError> {
         let fields = validate_channel_fields(record)?;
         let transaction = begin_transaction(self).await?;
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        let ability_tag = fields.tag.clone();
+        let ability_metadata = ChannelAbilityMetadata {
+            enabled: fields.status.is_enabled(),
+            priority: fields.priority,
+            weight: fields.weight,
+            tag: ability_tag.as_deref(),
+        };
         let inserted = channels::ActiveModel {
             name: Set(fields.name),
             r#type: Set(fields.channel_type.as_str().to_owned()),
@@ -394,13 +412,28 @@ impl AdminChannelRepository {
             header_override: Set(fields.header_override),
             settings: Set(fields.settings),
             tag: Set(fields.tag),
+            created_at: Set(now),
+            updated_at: Set(now),
             ..Default::default()
         }
         .insert(&transaction)
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(map_db_error)?;
-        let snapshot = AdminChannelRecord::try_from_model(inserted).map_err(map_read_error)?;
+        let channel_id = ChannelId::new(inserted.id)
+            .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        synchronize_channel_routing(
+            &transaction,
+            channel_id,
+            &fields.routing,
+            ability_metadata,
+            now,
+        )
+        .await
+        .map_err(map_ability_write_error)?;
+        let snapshot = AdminChannelRecord::try_from_model(inserted)
+            .map_err(map_read_error)?
+            .with_routing(fields.routing.snapshot());
         commit_transaction(transaction).await?;
         Ok(snapshot)
     }
@@ -416,6 +449,13 @@ impl AdminChannelRepository {
             return Ok(AdminChannelMutationOutcome::NotFound);
         }
         let now = TimeDateTimeWithTimeZone::now_utc();
+        let ability_tag = fields.tag.clone();
+        let ability_metadata = ChannelAbilityMetadata {
+            enabled: fields.status.is_enabled(),
+            priority: fields.priority,
+            weight: fields.weight,
+            tag: ability_tag.as_deref(),
+        };
         let result = channels::Entity::update_many()
             .filter(channels::Column::Id.eq(channel_id.get()))
             .filter(channels::Column::DeletedAt.is_null())
@@ -453,8 +493,19 @@ impl AdminChannelRepository {
             .await
             .map_err(map_db_error)?;
         require_rows(result.rows_affected, 1)?;
+        synchronize_channel_routing(
+            &transaction,
+            channel_id,
+            &fields.routing,
+            ability_metadata,
+            now,
+        )
+        .await
+        .map_err(map_ability_write_error)?;
         let model = fetch_channel_model(&transaction, channel_id).await?;
-        let snapshot = AdminChannelRecord::try_from_model(model).map_err(map_read_error)?;
+        let snapshot = AdminChannelRecord::try_from_model(model)
+            .map_err(map_read_error)?
+            .with_routing(fields.routing.snapshot());
         commit_transaction(transaction).await?;
         Ok(AdminChannelMutationOutcome::Mutated(Box::new(snapshot)))
     }
@@ -711,6 +762,7 @@ struct ValidatedChannelFields {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    routing: ValidatedChannelRouting,
     model_mapping: serde_json::Value,
     param_override: serde_json::Value,
     header_override: HeaderOverrides,
@@ -745,6 +797,8 @@ fn validate_channel_fields(
         .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
     let header_override = HeaderOverrides::validate(record.header_override)
         .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+    let routing = ValidatedChannelRouting::new(record.models, record.group_ids)
+        .map_err(map_ability_write_error)?;
     Ok(ValidatedChannelFields {
         name: record.name,
         channel_type: record.channel_type,
@@ -754,6 +808,7 @@ fn validate_channel_fields(
         weight: record.weight,
         priority: record.priority,
         auto_ban: record.auto_ban,
+        routing,
         model_mapping: record.model_mapping,
         param_override: record.param_override,
         header_override,
@@ -1104,6 +1159,17 @@ fn map_read_error(error: AdminChannelRepositoryError) -> AdminChannelWriteReposi
 
 fn map_db_error(_error: sea_orm::DbErr) -> AdminChannelWriteRepositoryError {
     internal_error(AdminChannelWriteRepositoryError::Query)
+}
+
+fn map_ability_write_error(error: AbilityWriteError) -> AdminChannelWriteRepositoryError {
+    match error {
+        AbilityWriteError::InvalidInput | AbilityWriteError::CapacityExceeded => {
+            AdminChannelWriteRepositoryError::InvalidInput
+        }
+        AbilityWriteError::InvalidReference => AdminChannelWriteRepositoryError::InvalidReference,
+        AbilityWriteError::Query => internal_error(AdminChannelWriteRepositoryError::Query),
+        AbilityWriteError::Invariant => internal_error(AdminChannelWriteRepositoryError::Invariant),
+    }
 }
 
 fn internal_error(error: AdminChannelWriteRepositoryError) -> AdminChannelWriteRepositoryError {

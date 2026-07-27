@@ -1,0 +1,105 @@
+use af_domain::{ChannelId, GroupId};
+use sea_orm::{
+    ColumnTrait, DatabaseTransaction, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
+};
+use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
+
+use super::{AbilityWriteError, validation::ValidatedChannelRouting};
+use crate::{
+    MAX_SCHEDULER_ABILITY_ENTRIES, MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES,
+    entity::{abilities, groups},
+};
+
+/// 确认全部关联分组仍然有效，避免物化悬空能力。
+pub(super) async fn ensure_groups_exist(
+    transaction: &DatabaseTransaction,
+    group_ids: &[GroupId],
+) -> Result<(), AbilityWriteError> {
+    if group_ids.is_empty() {
+        return Ok(());
+    }
+    let raw_ids = group_ids
+        .iter()
+        .map(|group_id| group_id.get())
+        .collect::<Vec<_>>();
+    let rows = groups::Entity::find()
+        .select_only()
+        .column(groups::Column::Id)
+        .filter(groups::Column::Id.is_in(raw_ids))
+        .filter(groups::Column::DeletedAt.is_null())
+        .into_tuple::<i64>()
+        .all(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| AbilityWriteError::Query)?;
+    if rows.len() == group_ids.len() {
+        Ok(())
+    } else {
+        Err(AbilityWriteError::InvalidReference)
+    }
+}
+
+/// 校验更新后的全目录容量和每个调度键的候选渠道上限。
+pub(super) async fn ensure_projected_capacity(
+    transaction: &DatabaseTransaction,
+    channel_id: ChannelId,
+    routing: &ValidatedChannelRouting,
+    current_channel_count: usize,
+    desired_channel_count: usize,
+) -> Result<(), AbilityWriteError> {
+    let total = abilities::Entity::find()
+        .count(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| AbilityWriteError::Query)?;
+    let current_channel_count =
+        u64::try_from(current_channel_count).map_err(|_| AbilityWriteError::Invariant)?;
+    let desired_channel_count =
+        u64::try_from(desired_channel_count).map_err(|_| AbilityWriteError::Invariant)?;
+    let maximum = u64::try_from(MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES)
+        .map_err(|_| AbilityWriteError::Invariant)?;
+    if total > maximum {
+        return Err(AbilityWriteError::Invariant);
+    }
+    if total
+        .checked_sub(current_channel_count)
+        .and_then(|count| count.checked_add(desired_channel_count))
+        .is_none_or(|count| count > maximum)
+    {
+        return Err(AbilityWriteError::CapacityExceeded);
+    }
+    if routing.models().is_empty() || routing.group_ids().is_empty() {
+        return Ok(());
+    }
+
+    let group_ids = routing
+        .group_ids()
+        .iter()
+        .map(|group_id| group_id.get())
+        .collect::<Vec<_>>();
+    let model_names = routing.models().to_vec();
+    let maximum_candidates =
+        i64::try_from(MAX_SCHEDULER_ABILITY_ENTRIES).map_err(|_| AbilityWriteError::Invariant)?;
+    let overflow = abilities::Entity::find()
+        .select_only()
+        .column(abilities::Column::GroupId)
+        .column(abilities::Column::Model)
+        .column_as(abilities::Column::ChannelId.count(), "candidate_count")
+        .filter(abilities::Column::ChannelId.ne(channel_id.get()))
+        .filter(abilities::Column::GroupId.is_in(group_ids))
+        .filter(abilities::Column::Model.is_in(model_names))
+        .group_by(abilities::Column::GroupId)
+        .group_by(abilities::Column::Model)
+        .having(abilities::Column::ChannelId.count().gte(maximum_candidates))
+        .limit(1)
+        .into_tuple::<(i64, String, i64)>()
+        .all(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| AbilityWriteError::Query)?;
+    if overflow.is_empty() {
+        Ok(())
+    } else {
+        Err(AbilityWriteError::CapacityExceeded)
+    }
+}
