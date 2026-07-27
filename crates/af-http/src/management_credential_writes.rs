@@ -26,6 +26,7 @@ use crate::{
 /// 管理端创建或完整更新凭据时使用的配置正文。
 pub(crate) struct AdminCredentialWriteRequest {
     kind: CredentialKind,
+    #[serde(default)]
     secret: AdminCredentialSecretInput,
     status: AdminRoutingWriteStatus,
     multi_key_mode: Option<AdminCredentialMultiKeyMode>,
@@ -43,15 +44,20 @@ pub(crate) struct AdminCredentialWriteRequest {
     oauth_project_id: Option<String>,
 }
 
-/// 区分显式 null 与字段缺失；字段本身始终必填。
-struct AdminCredentialSecretInput(Option<String>);
+/// 区分字段缺失、显式 null 与有效明文，避免 Serde 将缺失字段折叠为 None。
+#[derive(Default)]
+enum AdminCredentialSecretInput {
+    #[default]
+    Missing,
+    Present(Option<String>),
+}
 
 impl<'de> Deserialize<'de> for AdminCredentialSecretInput {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        Option::<String>::deserialize(deserializer).map(Self)
+        Option::<String>::deserialize(deserializer).map(Self::Present)
     }
 }
 
@@ -131,7 +137,12 @@ pub(crate) async fn delete_admin_credential(
 
 impl AdminCredentialWriteRequest {
     fn into_create_command(self) -> Result<AdminCredentialCreateCommand, ManagementError> {
-        let secret = self.secret.0.ok_or(ManagementError::InvalidRequest)?;
+        let secret = match self.secret {
+            AdminCredentialSecretInput::Present(Some(secret)) => secret,
+            AdminCredentialSecretInput::Missing | AdminCredentialSecretInput::Present(None) => {
+                return Err(ManagementError::InvalidRequest);
+            }
+        };
         AdminCredentialCreateCommand::new(
             self.kind,
             secret,
@@ -154,9 +165,13 @@ impl AdminCredentialWriteRequest {
     }
 
     fn into_update_command(self) -> Result<AdminCredentialUpdateCommand, ManagementError> {
+        let secret = match self.secret {
+            AdminCredentialSecretInput::Missing => return Err(ManagementError::InvalidRequest),
+            AdminCredentialSecretInput::Present(secret) => secret,
+        };
         AdminCredentialUpdateCommand::new(
             self.kind,
-            self.secret.0,
+            secret,
             self.status,
             self.multi_key_mode,
             self.priority,

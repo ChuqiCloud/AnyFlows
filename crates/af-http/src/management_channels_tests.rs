@@ -569,6 +569,7 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
         .as_object_mut()
         .expect("测试凭据正文必须是对象")
         .remove("secret");
+    let calls_before_rejection = reader.calls.load(Ordering::Relaxed);
     let rejected = app
         .clone()
         .oneshot(write_request(
@@ -580,6 +581,11 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
         .await
         .unwrap();
     assert_error(rejected, StatusCode::BAD_REQUEST, "invalid_request").await;
+    assert_eq!(
+        reader.calls.load(Ordering::Relaxed),
+        calls_before_rejection,
+        "缺少 secret 的请求不得进入写端口"
+    );
 
     let mut update_body = credential_body.clone();
     update_body
