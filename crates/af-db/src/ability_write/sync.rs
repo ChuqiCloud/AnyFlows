@@ -9,7 +9,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use super::{
     AbilityWriteError, ChannelAbilityMetadata,
-    capacity::{ensure_groups_exist, ensure_projected_capacity},
+    capacity::{ensure_groups_exist, ensure_projected_capacity, lock_ability_catalog},
     mutation::{
         delete_extra_abilities, delete_extra_groups, delete_extra_models, insert_missing_abilities,
         insert_missing_groups, insert_missing_models, update_channel_ability_metadata,
@@ -29,6 +29,7 @@ pub(crate) async fn synchronize_channel_routing(
     metadata: ChannelAbilityMetadata<'_>,
     now: TimeDateTimeWithTimeZone,
 ) -> Result<(), AbilityWriteError> {
+    lock_ability_catalog(transaction, now).await?;
     ensure_groups_exist(transaction, routing.group_ids()).await?;
 
     let current_models = load_channel_models(transaction, channel_id).await?;

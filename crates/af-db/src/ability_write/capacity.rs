@@ -1,15 +1,50 @@
 use af_domain::{ChannelId, GroupId};
 use sea_orm::{
-    ColumnTrait, DatabaseTransaction, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
-    sea_query::ExprTrait,
+    ColumnTrait, DatabaseTransaction, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect, Set,
+    entity::prelude::TimeDateTimeWithTimeZone,
+    sea_query::{Expr, ExprTrait, OnConflict},
 };
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use super::{AbilityWriteError, validation::ValidatedChannelRouting};
 use crate::{
     MAX_SCHEDULER_ABILITY_ENTRIES, MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES,
-    entity::{abilities, groups},
+    entity::{SensitiveString, abilities, groups, options},
 };
+
+const ABILITY_CATALOG_LOCK_KEY: &str = "__anyflows_internal_ability_catalog_lock_v1";
+
+/// 在事务内串行化全部能力容量变更，防止并发请求同时通过硬上限检查。
+pub(super) async fn lock_ability_catalog(
+    transaction: &DatabaseTransaction,
+    now: TimeDateTimeWithTimeZone,
+) -> Result<(), AbilityWriteError> {
+    options::Entity::insert(options::ActiveModel {
+        key: Set(ABILITY_CATALOG_LOCK_KEY.to_owned()),
+        value: Set(SensitiveString::from("1")),
+        created_at: Set(now),
+        updated_at: Set(now),
+    })
+    .on_conflict(
+        OnConflict::column(options::Column::Key)
+            .do_nothing()
+            .to_owned(),
+    )
+    .exec_without_returning(transaction)
+    .with_subscriber(NoSubscriber::default())
+    .await
+    .map_err(|_| AbilityWriteError::Query)?;
+
+    // 各方言都会对同一主键行取得写锁；更新时间同时留下最近一次容量校验审计点。
+    options::Entity::update_many()
+        .filter(options::Column::Key.eq(ABILITY_CATALOG_LOCK_KEY))
+        .col_expr(options::Column::UpdatedAt, Expr::value(now))
+        .exec(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map(|_| ())
+        .map_err(|_| AbilityWriteError::Query)
+}
 
 /// 确认全部关联分组仍然有效，避免物化悬空能力。
 pub(super) async fn ensure_groups_exist(
