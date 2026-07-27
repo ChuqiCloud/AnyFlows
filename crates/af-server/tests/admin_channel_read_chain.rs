@@ -499,6 +499,7 @@ async fn seed_routing(database_url: &str) {
     insert_channel(&connection, PRIMARY_CHANNEL_ID, "primary", false).await;
     insert_channel(&connection, SECONDARY_CHANNEL_ID, "secondary", false).await;
     insert_channel(&connection, DELETED_CHANNEL_ID, "deleted", true).await;
+    insert_channel_routing(&connection, PRIMARY_CHANNEL_ID, "public-model").await;
     insert_credential(
         &connection,
         PRIMARY_CREDENTIAL_ID,
@@ -536,6 +537,44 @@ async fn seed_routing(database_url: &str) {
     )
     .await;
     connection.close().await.unwrap();
+}
+
+async fn insert_channel_routing(
+    connection: &sea_orm::DatabaseConnection,
+    channel_id: i64,
+    model: &str,
+) {
+    connection
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO channel_models (channel_id, model) VALUES (?, ?)",
+            [channel_id.into(), model.into()],
+        ))
+        .await
+        .unwrap();
+    connection
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO channel_groups (channel_id, group_id) VALUES (?, ?)",
+            [channel_id.into(), GROUP_ID.into()],
+        ))
+        .await
+        .unwrap();
+    connection
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO abilities (group_id, model, channel_id, enabled, priority, weight) VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                GROUP_ID.into(),
+                model.into(),
+                channel_id.into(),
+                true.into(),
+                20_i32.into(),
+                10_i32.into(),
+            ],
+        ))
+        .await
+        .unwrap();
 }
 
 async fn insert_channel(
