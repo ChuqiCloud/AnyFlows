@@ -18,7 +18,17 @@ type AppView = 'channels' | 'tokens' | 'usage-logs' | 'overview' | 'login' | 'se
 
 // 临时的 hash 视图切换：TanStack Router 接入前，先让公开页与控制台都可访达。
 // 路由落地后此处整体由文件路由替换。
-function useHashView(): AppView {
+function viewFromHash(hash: string): AppView {
+  if (hash.startsWith('#/console/channels')) return 'channels'
+  if (hash.startsWith('#/console/tokens')) return 'tokens'
+  if (hash.startsWith('#/console/usage-logs')) return 'usage-logs'
+  if (hash.startsWith('#/console')) return 'overview'
+  if (hash.startsWith('#/login')) return 'login'
+  if (hash.startsWith('#/setup')) return 'setup'
+  return 'landing'
+}
+
+function useHashView(): [AppView, (hash: string) => void] {
   const [hash, setHash] = useState(() => window.location.hash)
 
   useEffect(() => {
@@ -28,13 +38,13 @@ function useHashView(): AppView {
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
 
-  if (hash.startsWith('#/console/channels')) return 'channels'
-  if (hash.startsWith('#/console/tokens')) return 'tokens'
-  if (hash.startsWith('#/console/usage-logs')) return 'usage-logs'
-  if (hash.startsWith('#/console')) return 'overview'
-  if (hash.startsWith('#/login')) return 'login'
-  if (hash.startsWith('#/setup')) return 'setup'
-  return 'landing'
+  const navigate = useCallback((nextHash: string) => {
+    // 同步更新 React 路由状态，避免 setup 缓存切换与原生 hashchange 之间出现竞态。
+    setHash(nextHash)
+    window.location.hash = nextHash
+  }, [])
+
+  return [viewFromHash(hash), navigate]
 }
 
 type ManagementEntryProps = {
@@ -112,24 +122,24 @@ function ManagementEntry({
 }
 
 export default function App() {
-  const view = useHashView()
+  const [view, navigate] = useHashView()
   const [loginNotice, setLoginNotice] = useState<LoginNotice>()
 
   const openLogin = useCallback((reason: 'adminRequired' | 'required' | 'sessionExpired' | 'setupComplete') => {
     setLoginNotice(reason === 'required' ? undefined : reason)
-    window.location.hash = '#/login'
-  }, [])
+    navigate('#/login')
+  }, [navigate])
 
   const openConsole = useCallback(() => {
     setLoginNotice(undefined)
-    window.location.hash = '#/console'
-  }, [])
+    navigate('#/console')
+  }, [navigate])
 
   const logout = useCallback(() => {
     endManagementSession()
     setLoginNotice(undefined)
-    window.location.hash = '#/login'
-  }, [])
+    navigate('#/login')
+  }, [navigate])
 
   if (view === 'landing') {
     return <LandingPage />
