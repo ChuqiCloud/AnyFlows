@@ -21,7 +21,7 @@ pub(crate) struct ValidatedChannelRouting {
 
 impl ValidatedChannelRouting {
     /// 校验模型、分组、重复项和笛卡尔积容量，并固定存储顺序。
-    pub(super) fn new(
+    pub(crate) fn new(
         mut models: Vec<String>,
         mut group_ids: Vec<GroupId>,
     ) -> Result<Self, AbilityWriteError> {
@@ -50,7 +50,7 @@ impl ValidatedChannelRouting {
         &self.group_ids
     }
 
-    pub(super) fn snapshot(&self) -> ChannelRoutingSnapshot {
+    pub(crate) fn snapshot(&self) -> ChannelRoutingSnapshot {
         ChannelRoutingSnapshot {
             models: self.models.clone(),
             group_ids: self.group_ids.clone(),
