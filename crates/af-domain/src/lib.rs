@@ -13,7 +13,9 @@ pub use enums::{
 };
 pub use error::{AfError, UpstreamError, UpstreamServerStatus};
 pub use network::{IpCidr, IpCidrParseError, TrustedClientIp};
-pub use principal::{ChannelId, GatewayPrincipal, GroupId, PrincipalIdError, TokenId, UserId};
+pub use principal::{
+    ChannelId, CredentialId, GatewayPrincipal, GroupId, PrincipalIdError, TokenId, UserId,
+};
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use token_policy::{
     MAX_MODEL_NAME_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_COUNT, MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES,

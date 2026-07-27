@@ -869,6 +869,255 @@
           }
         }
       }
+    },
+    "/api/admin/channels": {
+      "get": {
+        "operationId": "listAdminChannels",
+        "summary": "读取管理员渠道列表",
+        "description": "按稳定渠道 ID 游标读取未软删除渠道的非敏感管理快照。响应不包含 Header 覆盖或适配器敏感设置。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "上一页最后一个渠道 ID。"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "渠道列表读取成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminChannelListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/admin/channels/{id}": {
+      "get": {
+        "operationId": "getAdminChannel",
+        "summary": "读取管理员渠道详情",
+        "description": "读取单个未软删除渠道的非敏感管理快照，不返回 Header 覆盖或适配器敏感设置。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "渠道 ID。"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "渠道详情读取成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminChannel"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/ChannelNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/admin/channels/{channel_id}/credentials": {
+      "get": {
+        "operationId": "listAdminCredentials",
+        "summary": "读取管理员渠道凭据列表",
+        "description": "按稳定凭据 ID 游标读取指定渠道下未软删除凭据的非敏感元数据。响应不读取或返回密文、API Key、OAuth token。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "父渠道 ID。"
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "上一页最后一个凭据 ID。"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "凭据列表读取成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCredentialListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/ChannelNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/admin/channels/{channel_id}/credentials/{credential_id}": {
+      "get": {
+        "operationId": "getAdminCredential",
+        "summary": "读取管理员渠道凭据详情",
+        "description": "读取指定渠道下单个凭据的非敏感元数据，不读取或返回密文、API Key、OAuth token。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "父渠道 ID。"
+          },
+          {
+            "name": "credential_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "凭据 ID。"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "凭据详情读取成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCredential"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/InvalidSession"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/CredentialNotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -982,6 +1231,26 @@
       },
       "TokenNotFound": {
         "description": "令牌不存在或已经被软删除",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ManagementError"
+            }
+          }
+        }
+      },
+      "ChannelNotFound": {
+        "description": "渠道不存在或已经被软删除",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ManagementError"
+            }
+          }
+        }
+      },
+      "CredentialNotFound": {
+        "description": "凭据不存在、已经被软删除或不属于指定渠道",
         "content": {
           "application/json": {
             "schema": {
@@ -1536,6 +1805,8 @@
               "user_not_found",
               "group_not_found",
               "token_not_found",
+              "channel_not_found",
+              "credential_not_found",
               "user_conflict",
               "group_conflict",
               "group_in_use",
@@ -1544,6 +1815,426 @@
           },
           "message": {
             "type": "string"
+          }
+        }
+      },
+      "AdminRoutingStatus": {
+        "type": "string",
+        "enum": [
+          "enabled",
+          "disabled",
+          "auto_disabled"
+        ]
+      },
+      "AdminChannelType": {
+        "type": "string",
+        "enum": [
+          "openai",
+          "anthropic",
+          "gemini",
+          "bedrock",
+          "vertex",
+          "custom"
+        ]
+      },
+      "AdminChannelProtocol": {
+        "type": "string",
+        "enum": [
+          "openai_chat",
+          "openai_responses",
+          "anthropic",
+          "gemini"
+        ]
+      },
+      "AdminChannel": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "type",
+          "protocol",
+          "base_url",
+          "status",
+          "weight",
+          "priority",
+          "auto_ban",
+          "model_mapping",
+          "param_override",
+          "balance",
+          "used_quota",
+          "tag",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "type": {
+            "$ref": "#/components/schemas/AdminChannelType"
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/AdminChannelProtocol"
+          },
+          "base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 2048,
+            "description": "不含 userinfo、查询串或片段的 HTTP(S) 基础地址。"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdminRoutingStatus"
+          },
+          "weight": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "auto_ban": {
+            "type": "boolean"
+          },
+          "model_mapping": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": "Canonical 请求模型到上游模型的映射。"
+          },
+          "param_override": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "不包含认证信息的请求参数覆盖对象。"
+          },
+          "balance": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "used_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "tag": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Unix 秒时间戳。"
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Unix 秒时间戳。"
+          }
+        }
+      },
+      "AdminChannelListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "channels",
+          "next_cursor"
+        ],
+        "properties": {
+          "channels": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/AdminChannel"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        }
+      },
+      "AdminCredentialKind": {
+        "type": "string",
+        "enum": [
+          "api_key",
+          "oauth",
+          "setup_token",
+          "bedrock",
+          "service_account",
+          "upstream"
+        ]
+      },
+      "AdminCredentialMultiKeyMode": {
+        "type": "string",
+        "enum": [
+          "random",
+          "round_robin"
+        ]
+      },
+      "AdminCredentialQuotaDimension": {
+        "type": "string",
+        "enum": [
+          "global",
+          "spark"
+        ]
+      },
+      "AdminCredential": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "channel_id",
+          "kind",
+          "status",
+          "multi_key_mode",
+          "priority",
+          "weight",
+          "concurrency",
+          "load_factor_micros",
+          "rate_multiplier_micros",
+          "schedulable",
+          "rate_limited_at",
+          "rate_limit_reset_at",
+          "overload_until",
+          "temp_unschedulable_until",
+          "session_window_start",
+          "session_window_end",
+          "parent_id",
+          "quota_dimension",
+          "proxy_id",
+          "oauth_provider",
+          "oauth_account_key",
+          "oauth_project_id",
+          "last_used_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "channel_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AdminCredentialKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdminRoutingStatus"
+          },
+          "multi_key_mode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminCredentialMultiKeyMode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priority": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "weight": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "concurrency": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "load_factor_micros": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "rate_multiplier_micros": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0,
+            "description": "账号侧成本倍率，不参与用户扣费。"
+          },
+          "schedulable": {
+            "type": "boolean"
+          },
+          "rate_limited_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "rate_limit_reset_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "overload_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "temp_unschedulable_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "session_window_start": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "session_window_end": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "parent_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "quota_dimension": {
+            "$ref": "#/components/schemas/AdminCredentialQuotaDimension"
+          },
+          "proxy_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "oauth_provider": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "oauth_account_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "OAuth 账号的非令牌业务标识。"
+          },
+          "oauth_project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "last_used_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "AdminCredentialListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "credentials",
+          "next_cursor"
+        ],
+        "properties": {
+          "credentials": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/AdminCredential"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
           }
         }
       },

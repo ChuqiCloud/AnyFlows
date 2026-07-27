@@ -69,6 +69,11 @@ principal_id! {
     ChannelId
 }
 
+principal_id! {
+    /// 上游渠道绑定的凭据标识。
+    CredentialId
+}
+
 /// 已完成令牌、用户与有效分组校验的网关请求主体。
 ///
 /// 该值只携带稳定标识，不包含 API Key、摘要、展示前缀或可变授权策略，且不实现

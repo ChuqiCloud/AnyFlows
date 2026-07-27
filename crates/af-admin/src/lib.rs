@@ -1,8 +1,11 @@
 //! 管理域应用服务。
 
 mod api_key;
+mod channel_read;
+mod credential_read;
 mod group_read;
 mod group_write;
+mod routing_read;
 mod session;
 mod token_auth;
 mod token_read;
@@ -14,6 +17,14 @@ pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,
     PresentedApiKey,
 };
+pub use channel_read::{
+    AdminChannel, AdminChannelListQuery, AdminChannelPage, AdminRoutingStatus,
+    DEFAULT_ADMIN_CHANNEL_PAGE_SIZE,
+};
+pub use credential_read::{
+    AdminCredential, AdminCredentialListQuery, AdminCredentialMultiKeyMode, AdminCredentialPage,
+    AdminCredentialQuotaDimension,
+};
 pub use group_read::{
     AdminGroup, AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery, AdminGroupPage,
     AdminGroupPeak, AdminGroupReadError, AdminGroupReader, DEFAULT_ADMIN_GROUP_PAGE_SIZE,
@@ -23,6 +34,10 @@ pub use group_write::{
     AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture, AdminGroupPeakCommand,
     AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
     DatabaseAdminGroupWriter,
+};
+pub use routing_read::{
+    AdminChannelGetFuture, AdminChannelListFuture, AdminChannelReadError, AdminChannelReader,
+    AdminCredentialGetFuture, AdminCredentialListFuture, DatabaseAdminChannelReader,
 };
 pub use session::{
     DatabaseSessionAuthenticator, IssuedSession, LoginCredentials, SessionAuthentication,

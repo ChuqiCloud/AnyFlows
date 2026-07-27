@@ -1,5 +1,9 @@
 //! 数据库连接池、迁移、实体与仓储边界。
 
+mod admin_channel;
+#[cfg(test)]
+mod admin_channel_tests;
+mod admin_credential;
 mod admin_group;
 #[cfg(test)]
 mod admin_group_tests;
@@ -53,6 +57,15 @@ mod user_session;
 #[cfg(test)]
 mod user_session_tests;
 
+pub use admin_channel::{
+    AdminChannelLookupOutcome, AdminChannelPageRecord, AdminChannelRecord, AdminChannelRepository,
+    AdminChannelRepositoryConfigError, AdminChannelRepositoryError, MAX_ADMIN_CHANNEL_JSON_BYTES,
+    MAX_ADMIN_CHANNEL_PAGE_SIZE,
+};
+pub use admin_credential::{
+    AdminCredentialLookupOutcome, AdminCredentialPageOutcome, AdminCredentialPageRecord,
+    AdminCredentialRecord,
+};
 pub use admin_group::{
     AdminGroupLookupOutcome, AdminGroupPageRecord, AdminGroupPeakRecord, AdminGroupRecord,
     AdminGroupRepository, AdminGroupRepositoryConfigError, AdminGroupRepositoryError,

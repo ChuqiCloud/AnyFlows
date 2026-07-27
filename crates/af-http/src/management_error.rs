@@ -25,6 +25,10 @@ pub(crate) enum ManagementError {
     GroupInUse,
     /// 令牌不存在或已经被软删除。
     TokenNotFound,
+    /// 渠道不存在或已经被软删除。
+    ChannelNotFound,
+    /// 凭据不存在、已经软删除或不属于指定渠道。
+    CredentialNotFound,
     /// 管理认证依赖发生内部故障。
     Internal,
 }
@@ -106,6 +110,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "token_not_found",
                     message: "Token not found",
+                },
+            ),
+            Self::ChannelNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "channel_not_found",
+                    message: "Channel not found",
+                },
+            ),
+            Self::CredentialNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "credential_not_found",
+                    message: "Credential not found",
                 },
             ),
             Self::Internal => (

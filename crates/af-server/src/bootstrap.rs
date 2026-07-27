@@ -2,11 +2,12 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{CredentialDecryptionError, CredentialDecryptor};
 use af_admin::{
-    AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminTokenWriter, AdminUserReader,
-    AdminUserWriter, DatabaseAdminGroupReader, DatabaseAdminGroupWriter, DatabaseAdminTokenReader,
-    DatabaseAdminTokenWriter, DatabaseAdminUserReader, DatabaseAdminUserWriter,
-    DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, SessionAuthenticator,
-    SessionAuthenticatorConfigError, TokenAuthenticator,
+    AdminChannelReader, AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminTokenWriter,
+    AdminUserReader, AdminUserWriter, DatabaseAdminChannelReader, DatabaseAdminGroupReader,
+    DatabaseAdminGroupWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
+    DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseSessionAuthenticator,
+    DatabaseTokenAuthenticator, SessionAuthenticator, SessionAuthenticatorConfigError,
+    TokenAuthenticator,
 };
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
@@ -17,12 +18,12 @@ use af_billing::{
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
-    AdminGroupRepository, AdminGroupRepositoryConfigError, AdminTokenRepository,
-    AdminTokenRepositoryConfigError, AdminUserRepository, AdminUserRepositoryConfigError,
-    ChannelStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
-    MigrationOptions, QuotaRepository, TokenAuthRepository, TokenAuthRepositoryConfigError,
-    UsageLogRepository, UserSessionRepository, UserSessionRepositoryConfigError,
-    connect_and_migrate,
+    AdminChannelRepository, AdminChannelRepositoryConfigError, AdminGroupRepository,
+    AdminGroupRepositoryConfigError, AdminTokenRepository, AdminTokenRepositoryConfigError,
+    AdminUserRepository, AdminUserRepositoryConfigError, ChannelStateRepository, DatabaseError,
+    DatabaseOptions, DatabaseOptionsError, DatabasePool, MigrationOptions, QuotaRepository,
+    TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository, UserSessionRepository,
+    UserSessionRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
     ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle, ServeError,
@@ -74,6 +75,7 @@ pub struct AuthenticationReady {
     infrastructure: DatabaseReady,
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
+    admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
@@ -198,6 +200,9 @@ pub enum BootstrapError {
     /// 管理员令牌仓储的启动参数无效。
     #[error("管理员令牌仓储启动参数无效")]
     AdminTokenRepository(#[source] AdminTokenRepositoryConfigError),
+    /// 管理员渠道仓储的启动参数无效。
+    #[error("管理员渠道仓储启动参数无效")]
+    AdminChannelRepository(#[source] AdminChannelRepositoryConfigError),
     /// HTTP 监听、服务或强制关闭失败。
     #[error("HTTP 服务生命周期操作失败")]
     Http(#[source] ServeError),
@@ -348,6 +353,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::AdminTokenRepository)?;
+        let admin_channel_repository = AdminChannelRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::AdminChannelRepository)?;
         let query_api_key_policy = if auth.allow_query_api_key() {
             tracing::warn!(
                 security_setting = "query_api_key_enabled",
@@ -371,6 +381,9 @@ impl Bootstrap<DatabaseReady> {
                 infrastructure: stage,
                 authenticator: Arc::new(DatabaseTokenAuthenticator::new(repository)),
                 session_authenticator: Arc::new(session_authenticator),
+                admin_channel_reader: Arc::new(DatabaseAdminChannelReader::new(
+                    admin_channel_repository,
+                )),
                 admin_group_reader: Arc::new(DatabaseAdminGroupReader::new(
                     admin_group_repository.clone(),
                 )),
@@ -664,6 +677,7 @@ impl Bootstrap<Supervised> {
             readiness.clone(),
             Arc::clone(&self.stage.infrastructure.authenticator),
             Arc::clone(&self.stage.infrastructure.session_authenticator),
+            Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_group_reader),
             Arc::clone(&self.stage.infrastructure.admin_group_writer),
             Arc::clone(&self.stage.infrastructure.admin_token_reader),
