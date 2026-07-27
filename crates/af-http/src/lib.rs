@@ -14,6 +14,7 @@ mod management_channel_writes;
 mod management_channels;
 mod management_credential_writes;
 mod management_credentials;
+mod management_dashboard;
 mod management_error;
 mod management_group_writes;
 mod management_groups;

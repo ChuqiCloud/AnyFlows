@@ -5,6 +5,7 @@ use af_admin::{
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, SessionAuthenticator,
     TokenAuthentication,
 };
+use af_analytics::AdminDashboardReader;
 use af_domain::AfError;
 use af_protocol::openai_chat::parse_request;
 use af_relay::OpenAiChatResponse;
@@ -32,6 +33,7 @@ pub(crate) struct HttpState {
     pub(crate) admin_channel_reader: Option<Arc<dyn AdminChannelReader>>,
     pub(crate) admin_channel_writer: Option<Arc<dyn AdminChannelWriter>>,
     pub(crate) admin_channel_probe: Option<Arc<dyn crate::AdminChannelProbe>>,
+    pub(crate) admin_dashboard_reader: Option<Arc<dyn AdminDashboardReader>>,
     pub(crate) admin_group_reader: Arc<dyn AdminGroupReader>,
     pub(crate) admin_group_writer: Arc<dyn AdminGroupWriter>,
     pub(crate) admin_token_reader: Arc<dyn AdminTokenReader>,
@@ -59,6 +61,7 @@ impl HttpState {
             admin_channel_reader: None,
             admin_channel_writer: None,
             admin_channel_probe: None,
+            admin_dashboard_reader: None,
             admin_group_reader,
             admin_group_writer,
             admin_token_reader,
@@ -76,6 +79,15 @@ impl HttpState {
         reader: Arc<dyn AdminUsageLogReader>,
     ) -> Self {
         self.admin_usage_log_reader = Some(reader);
+        self
+    }
+
+    /// 为管理看板路由注入真实聚合读取服务。
+    pub(crate) fn with_admin_dashboard_reader(
+        mut self,
+        reader: Arc<dyn AdminDashboardReader>,
+    ) -> Self {
+        self.admin_dashboard_reader = Some(reader);
         self
     }
 

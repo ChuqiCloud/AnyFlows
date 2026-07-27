@@ -2,6 +2,7 @@
 
 mod channels;
 mod credentials;
+mod dashboard;
 mod groups;
 pub(crate) mod schema;
 mod session;
@@ -19,6 +20,7 @@ use utoipa::openapi::{
 pub fn openapi_document() -> OpenApi {
     let mut document = OpenApi::new(Info::new("AnyFlows 管理 API", "0.1.0"), Paths::new());
     document.merge(session::document());
+    document.merge(dashboard::document());
     document.merge(users::document());
     document.merge(groups::document());
     document.merge(tokens::document());
@@ -28,6 +30,7 @@ pub fn openapi_document() -> OpenApi {
 
     document.tags = Some(vec![
         Tag::new("管理会话"),
+        Tag::new("管理看板"),
         Tag::new("用户管理"),
         Tag::new("分组管理"),
         Tag::new("令牌管理"),
@@ -60,7 +63,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 14);
+        assert_eq!(document.paths.paths.len(), 15);
         let operation_count = document
             .paths
             .paths
@@ -81,7 +84,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 29);
+        assert_eq!(operation_count, 30);
         assert!(
             document
                 .components
@@ -114,6 +117,7 @@ mod tests {
             "deleteAdminUser",
             "getAdminChannel",
             "getAdminCredential",
+            "getAdminDashboard",
             "getAdminGroup",
             "getAdminToken",
             "getAdminUser",
@@ -138,7 +142,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 40);
+        assert_eq!(schemas.len(), 41);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
