@@ -2834,26 +2834,16 @@
             "minLength": 1
           },
           "type": {
-            "oneOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "openai"
-                ]
-              }
-            ],
-            "description": "当前生产写链路仅支持 OpenAI 兼容适配器。"
+            "type": "string",
+            "enum": [
+              "openai"
+            ]
           },
           "protocol": {
-            "oneOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "openai_chat"
-                ]
-              }
-            ],
-            "description": "当前生产写链路仅支持 OpenAI Chat 协议。"
+            "type": "string",
+            "enum": [
+              "openai_chat"
+            ]
           },
           "base_url": {
             "type": [
