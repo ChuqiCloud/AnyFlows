@@ -1,11 +1,6 @@
 use std::fmt;
 
 use af_domain::{GroupId, UserId};
-use argon2::{
-    Argon2,
-    password_hash::{PasswordHasher as _, SaltString},
-};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DatabaseTransaction, DbErr, EntityTrait, QueryFilter, Set,
     TransactionTrait,
@@ -19,10 +14,9 @@ use zeroize::Zeroizing;
 use crate::{
     AdminUserRecord, AdminUserRepository, AdminUserRepositoryError,
     admin_user::{detail_query, record_internal_error},
-    entity::{PasswordHash, groups, tokens, users},
+    entity::{groups, tokens, users},
+    identity_secret::{IdentitySecretError, generate_aff_code, hash_password},
 };
-
-const AFF_CODE_ENTROPY_BYTES: usize = 16;
 
 /// 管理员创建用户时允许写入的基础账户字段。
 pub struct AdminUserCreateRecord {
@@ -196,8 +190,13 @@ impl AdminUserRepository {
             None,
         )
         .await?;
-        let password_hash = hash_password(record.password.as_ref())?;
-        let aff_code = generate_aff_code()?;
+        let password_hash = record
+            .password
+            .as_ref()
+            .map(hash_password)
+            .transpose()
+            .map_err(map_identity_secret_error)?;
+        let aff_code = generate_aff_code().map_err(map_identity_secret_error)?;
         let inserted = users::ActiveModel {
             username: Set(record.username),
             email: Set(record.email),
@@ -260,7 +259,9 @@ impl AdminUserRepository {
         if let Some(password) = record.password.as_ref() {
             update = update.col_expr(
                 users::Column::PasswordHash,
-                Expr::value(hash_password(Some(password))?),
+                Expr::value(Some(
+                    hash_password(password).map_err(map_identity_secret_error)?,
+                )),
             );
         }
         let result = update
@@ -458,29 +459,13 @@ fn identity_conflict_query(
     query.to_owned()
 }
 
-fn hash_password(
-    password: Option<&Zeroizing<String>>,
-) -> Result<Option<PasswordHash>, AdminUserRepositoryError> {
-    let Some(password) = password else {
-        return Ok(None);
-    };
-    let mut salt_bytes = [0_u8; 16];
-    getrandom::fill(&mut salt_bytes).map_err(|_| AdminUserRepositoryError::Entropy)?;
-    let salt = SaltString::encode_b64(&salt_bytes)
-        .map_err(|_| record_internal_error(AdminUserRepositoryError::Invariant))?;
-    let hash = Argon2::default()
-        .hash_password(password.as_bytes(), &salt)
-        .map_err(|_| record_internal_error(AdminUserRepositoryError::Invariant))?
-        .to_string();
-    PasswordHash::parse(&hash)
-        .map(Some)
-        .map_err(|_| record_internal_error(AdminUserRepositoryError::Invariant))
-}
-
-fn generate_aff_code() -> Result<String, AdminUserRepositoryError> {
-    let mut entropy = [0_u8; AFF_CODE_ENTROPY_BYTES];
-    getrandom::fill(&mut entropy).map_err(|_| AdminUserRepositoryError::Entropy)?;
-    Ok(format!("af-{}", URL_SAFE_NO_PAD.encode(entropy)))
+fn map_identity_secret_error(error: IdentitySecretError) -> AdminUserRepositoryError {
+    match error {
+        IdentitySecretError::Entropy => AdminUserRepositoryError::Entropy,
+        IdentitySecretError::InvalidHash => {
+            record_internal_error(AdminUserRepositoryError::Invariant)
+        }
+    }
 }
 
 fn map_write_db_error(error: DbErr) -> AdminUserRepositoryError {

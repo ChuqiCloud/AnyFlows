@@ -395,6 +395,7 @@ pub(crate) enum ManagementErrorCodeSchema {
     InvalidCredentials,
     InvalidSession,
     Forbidden,
+    SetupConflict,
     UserNotFound,
     GroupNotFound,
     TokenNotFound,

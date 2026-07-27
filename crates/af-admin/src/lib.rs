@@ -6,6 +6,7 @@ mod channel_write;
 mod credential_read;
 mod group_read;
 mod group_write;
+mod initial_setup;
 mod routing_read;
 mod session;
 mod token_auth;
@@ -43,6 +44,11 @@ pub use group_write::{
     AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture, AdminGroupPeakCommand,
     AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
     DatabaseAdminGroupWriter,
+};
+pub use initial_setup::{
+    DatabaseInitialSetup, InitialSetup, InitialSetupCommand, InitialSetupError, InitialSetupFuture,
+    InitialSetupStatus, InitialSetupStatusFuture, MAX_INITIAL_ADMIN_PASSWORD_BYTES,
+    MIN_INITIAL_ADMIN_PASSWORD_BYTES,
 };
 pub use routing_read::{
     AdminChannelGetFuture, AdminChannelListFuture, AdminChannelReadError, AdminChannelReader,

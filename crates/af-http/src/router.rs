@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminTokenReader,
-    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, SessionAuthenticator,
-    TokenAuthenticator,
+    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, InitialSetup,
+    SessionAuthenticator, TokenAuthenticator,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -37,6 +37,7 @@ use crate::management_dashboard::get_admin_dashboard;
 use crate::management_group_writes::{create_admin_group, delete_admin_group, update_admin_group};
 use crate::management_groups::{get_admin_group, list_admin_groups};
 use crate::management_session::{current_session, login};
+use crate::management_setup::{initialize_setup, setup_status};
 use crate::management_token_writes::{create_admin_token, delete_admin_token, update_admin_token};
 use crate::management_tokens::{get_admin_token, list_admin_tokens};
 use crate::management_usage_logs::list_admin_usage_logs;
@@ -85,6 +86,7 @@ pub fn build_router(
     readiness: ReadinessHandle,
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
+    initial_setup: Arc<dyn InitialSetup>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
     admin_channel_probe: Option<Arc<dyn crate::AdminChannelProbe>>,
@@ -113,6 +115,7 @@ pub fn build_router(
         admin_user_reader,
         admin_user_writer,
     )
+    .with_initial_setup(initial_setup)
     .with_admin_channel_reader(admin_channel_reader)
     .with_admin_channel_writer(admin_channel_writer)
     .with_admin_channel_probe(admin_channel_probe)
@@ -178,6 +181,8 @@ pub fn build_router(
         authenticate_management_session,
     );
     let management_routes = Router::new()
+        .route("/api/setup/status", get(setup_status))
+        .route("/api/setup", post(initialize_setup))
         .route("/api/auth/login", post(login))
         .route(
             "/api/auth/session",
