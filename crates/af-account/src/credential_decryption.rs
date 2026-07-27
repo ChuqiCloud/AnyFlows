@@ -52,7 +52,7 @@ pub enum CredentialDecryptionError {
 #[derive(Clone)]
 pub struct CredentialDecryptor {
     key_id: String,
-    key: DecryptionKey,
+    key: CredentialKey,
 }
 
 impl CredentialDecryptor {
@@ -67,7 +67,7 @@ impl CredentialDecryptor {
         if !is_valid_key_id(key_id) {
             return Err(CredentialDecryptionError::InvalidKey);
         }
-        let key = DecryptionKey::from_encoded(encoded_key.expose())?;
+        let key = CredentialKey::from_encoded(encoded_key.expose())?;
         Ok(Self {
             key_id: key_id.to_owned(),
             key,
@@ -163,7 +163,7 @@ pub fn credential_plaintext_aad(
     .into_bytes()
 }
 
-fn is_valid_key_id(key_id: &str) -> bool {
+pub(crate) fn is_valid_key_id(key_id: &str) -> bool {
     !key_id.is_empty()
         && key_id.len() <= MAX_CREDENTIAL_ENCRYPTION_KEY_ID_BYTES
         && key_id.trim() == key_id
@@ -173,10 +173,10 @@ fn is_valid_key_id(key_id: &str) -> bool {
 }
 
 #[derive(Clone)]
-struct DecryptionKey([u8; CREDENTIAL_ENCRYPTION_KEY_BYTES]);
+pub(crate) struct CredentialKey([u8; CREDENTIAL_ENCRYPTION_KEY_BYTES]);
 
-impl DecryptionKey {
-    fn from_encoded(value: &str) -> Result<Self, CredentialDecryptionError> {
+impl CredentialKey {
+    pub(crate) fn from_encoded(value: &str) -> Result<Self, CredentialDecryptionError> {
         let mut decoded = [0_u8; CREDENTIAL_ENCRYPTION_KEY_BYTES];
         let valid = URL_SAFE_NO_PAD
             .decode_slice(value, &mut decoded)
@@ -188,12 +188,12 @@ impl DecryptionKey {
         Ok(Self(decoded))
     }
 
-    fn as_slice(&self) -> &[u8] {
+    pub(crate) fn as_slice(&self) -> &[u8] {
         &self.0
     }
 }
 
-impl Drop for DecryptionKey {
+impl Drop for CredentialKey {
     fn drop(&mut self) {
         self.0.zeroize();
     }

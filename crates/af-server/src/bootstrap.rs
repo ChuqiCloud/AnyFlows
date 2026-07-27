@@ -1,13 +1,15 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
-use af_account::{CredentialDecryptionError, CredentialDecryptor};
+use af_account::{
+    CredentialDecryptionError, CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
+};
 use af_admin::{
-    AdminChannelReader, AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminTokenWriter,
-    AdminUserReader, AdminUserWriter, DatabaseAdminChannelReader, DatabaseAdminGroupReader,
-    DatabaseAdminGroupWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
-    DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseSessionAuthenticator,
-    DatabaseTokenAuthenticator, SessionAuthenticator, SessionAuthenticatorConfigError,
-    TokenAuthenticator,
+    AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminTokenReader,
+    AdminTokenWriter, AdminUserReader, AdminUserWriter, DatabaseAdminChannelReader,
+    DatabaseAdminChannelWriter, DatabaseAdminGroupReader, DatabaseAdminGroupWriter,
+    DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUserReader,
+    DatabaseAdminUserWriter, DatabaseSessionAuthenticator, DatabaseTokenAuthenticator,
+    SessionAuthenticator, SessionAuthenticatorConfigError, TokenAuthenticator,
 };
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
@@ -76,6 +78,7 @@ pub struct AuthenticationReady {
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
+    admin_channel_writer: Arc<dyn AdminChannelWriter>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
@@ -212,6 +215,9 @@ pub enum BootstrapError {
     /// 生产渠道凭据解密器无法从启动配置安全装配。
     #[error("初始化凭据解密器失败")]
     CredentialDecryption(#[source] CredentialDecryptionError),
+    /// 管理凭据加密器无法从启动配置安全装配。
+    #[error("初始化凭据加密器失败")]
+    CredentialEncryption(#[source] CredentialEncryptionError),
     /// 计费 WAL 或数据库 sink 初始化、恢复或落库失败。
     #[error("计费运行时生命周期操作失败")]
     Billing(#[source] BillingRuntimeError),
@@ -358,6 +364,8 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::AdminChannelRepository)?;
+        let credential_encryptor = CredentialEncryptor::new(self.config.credential_encryption())
+            .map_err(BootstrapError::CredentialEncryption)?;
         let query_api_key_policy = if auth.allow_query_api_key() {
             tracing::warn!(
                 security_setting = "query_api_key_enabled",
@@ -382,7 +390,11 @@ impl Bootstrap<DatabaseReady> {
                 authenticator: Arc::new(DatabaseTokenAuthenticator::new(repository)),
                 session_authenticator: Arc::new(session_authenticator),
                 admin_channel_reader: Arc::new(DatabaseAdminChannelReader::new(
+                    admin_channel_repository.clone(),
+                )),
+                admin_channel_writer: Arc::new(DatabaseAdminChannelWriter::new(
                     admin_channel_repository,
+                    credential_encryptor,
                 )),
                 admin_group_reader: Arc::new(DatabaseAdminGroupReader::new(
                     admin_group_repository.clone(),
@@ -678,6 +690,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.authenticator),
             Arc::clone(&self.stage.infrastructure.session_authenticator),
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
+            Arc::clone(&self.stage.infrastructure.admin_channel_writer),
             Arc::clone(&self.stage.infrastructure.admin_group_reader),
             Arc::clone(&self.stage.infrastructure.admin_group_writer),
             Arc::clone(&self.stage.infrastructure.admin_token_reader),

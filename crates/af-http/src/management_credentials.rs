@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[derive(Serialize)]
-struct AdminCredentialResponse {
+pub(crate) struct AdminCredentialResponse {
     id: i64,
     channel_id: i64,
     kind: af_domain::CredentialKind,
@@ -111,7 +111,7 @@ impl AdminCredentialListResponse {
 }
 
 impl AdminCredentialResponse {
-    fn from_credential(credential: &AdminCredential) -> Self {
+    pub(crate) fn from_credential(credential: &AdminCredential) -> Self {
         Self {
             id: credential.credential_id().get(),
             channel_id: credential.channel_id().get(),

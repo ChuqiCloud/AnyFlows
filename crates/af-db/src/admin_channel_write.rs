@@ -1,0 +1,1128 @@
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+    str::FromStr as _,
+};
+
+use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, Protocol, Status};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
+    QuerySelect, Set, TransactionTrait,
+    entity::prelude::TimeDateTimeWithTimeZone,
+    sea_query::{Alias, Expr, Query},
+};
+use thiserror::Error;
+use tokio::time::timeout;
+use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
+
+use crate::{
+    AdminChannelRecord, AdminChannelRepository, AdminChannelRepositoryError, AdminCredentialRecord,
+    EncryptedCredentialEnvelope, MAX_ADMIN_CHANNEL_JSON_BYTES,
+    admin_channel::valid_text,
+    entity::{
+        ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, abilities, channel_groups,
+        channel_models, channels, credentials,
+    },
+};
+
+/// 单次凭据父子图校验允许读取的最大有效记录数。
+pub const MAX_ADMIN_CREDENTIAL_GRAPH_SIZE: usize = 100_000;
+const SOFT_DELETE_BATCH_SIZE: usize = 500;
+
+/// 管理端创建或完整更新渠道时写入的业务字段。
+pub struct AdminChannelWriteRecord {
+    name: String,
+    channel_type: ChannelType,
+    protocol: Protocol,
+    base_url: Option<String>,
+    status: Status,
+    weight: i32,
+    priority: i32,
+    auto_ban: bool,
+    model_mapping: serde_json::Value,
+    param_override: serde_json::Value,
+    header_override: serde_json::Value,
+    settings: serde_json::Value,
+    tag: Option<String>,
+}
+
+impl AdminChannelWriteRecord {
+    /// 组装已经由应用层校验公开边界的渠道写入记录。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与管理端渠道写入契约一一对应"
+    )]
+    #[must_use]
+    pub fn new(
+        name: String,
+        channel_type: ChannelType,
+        protocol: Protocol,
+        base_url: Option<String>,
+        status: Status,
+        weight: i32,
+        priority: i32,
+        auto_ban: bool,
+        model_mapping: serde_json::Value,
+        param_override: serde_json::Value,
+        header_override: serde_json::Value,
+        settings: serde_json::Value,
+        tag: Option<String>,
+    ) -> Self {
+        Self {
+            name,
+            channel_type,
+            protocol,
+            base_url,
+            status,
+            weight,
+            priority,
+            auto_ban,
+            model_mapping,
+            param_override,
+            header_override,
+            settings,
+            tag,
+        }
+    }
+}
+
+impl fmt::Debug for AdminChannelWriteRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AdminChannelWriteRecord(<已脱敏>)")
+    }
+}
+
+/// 管理端创建或完整更新凭据时写入的非明文字段。
+pub struct AdminCredentialWriteRecord {
+    kind: CredentialKind,
+    status: Status,
+    multi_key_mode: Option<i16>,
+    priority: i32,
+    weight: i32,
+    concurrency: Option<i32>,
+    load_factor_micros: Option<i64>,
+    rate_multiplier_micros: Option<i64>,
+    schedulable: bool,
+    parent_id: Option<CredentialId>,
+    quota_dimension: String,
+    proxy_id: Option<i64>,
+    oauth_provider: Option<String>,
+    oauth_account_key: Option<String>,
+    oauth_project_id: Option<String>,
+}
+
+impl AdminCredentialWriteRecord {
+    /// 组装已经由应用层校验公开边界的凭据元数据。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与管理端凭据写入契约一一对应"
+    )]
+    #[must_use]
+    pub fn new(
+        kind: CredentialKind,
+        status: Status,
+        multi_key_mode: Option<i16>,
+        priority: i32,
+        weight: i32,
+        concurrency: Option<i32>,
+        load_factor_micros: Option<i64>,
+        rate_multiplier_micros: Option<i64>,
+        schedulable: bool,
+        parent_id: Option<CredentialId>,
+        quota_dimension: impl Into<String>,
+        proxy_id: Option<i64>,
+        oauth_provider: Option<String>,
+        oauth_account_key: Option<String>,
+        oauth_project_id: Option<String>,
+    ) -> Self {
+        Self {
+            kind,
+            status,
+            multi_key_mode,
+            priority,
+            weight,
+            concurrency,
+            load_factor_micros,
+            rate_multiplier_micros,
+            schedulable,
+            parent_id,
+            quota_dimension: quota_dimension.into(),
+            proxy_id,
+            oauth_provider,
+            oauth_account_key,
+            oauth_project_id,
+        }
+    }
+
+    /// 返回请求声明的稳定凭据类型。
+    #[must_use]
+    pub const fn kind(&self) -> CredentialKind {
+        self.kind
+    }
+}
+
+impl fmt::Debug for AdminCredentialWriteRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AdminCredentialWriteRecord(<已脱敏>)")
+    }
+}
+
+/// 渠道完整更新结果。
+pub enum AdminChannelMutationOutcome {
+    /// 已更新并返回非敏感快照。
+    Mutated(Box<AdminChannelRecord>),
+    /// 渠道不存在或已经软删除。
+    NotFound,
+}
+
+impl fmt::Debug for AdminChannelMutationOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Mutated(_) => {
+                formatter.write_str("AdminChannelMutationOutcome::Mutated(<已脱敏>)")
+            }
+            Self::NotFound => formatter.write_str("AdminChannelMutationOutcome::NotFound"),
+        }
+    }
+}
+
+/// 渠道安全软删除结果。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AdminChannelDeleteOutcome {
+    /// 渠道、凭据和直接运行时关系已在同一事务内删除。
+    Deleted,
+    /// 渠道不存在或已经软删除。
+    NotFound,
+}
+
+/// 凭据创建结果；父渠道缺失不会伪装成通用数据库错误。
+pub enum AdminCredentialCreateOutcome {
+    /// 已创建并返回非敏感凭据快照。
+    Created(Box<AdminCredentialRecord>),
+    /// 父渠道不存在或已经软删除。
+    ChannelNotFound,
+}
+
+impl fmt::Debug for AdminCredentialCreateOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Created(_) => {
+                formatter.write_str("AdminCredentialCreateOutcome::Created(<已脱敏>)")
+            }
+            Self::ChannelNotFound => {
+                formatter.write_str("AdminCredentialCreateOutcome::ChannelNotFound")
+            }
+        }
+    }
+}
+
+/// 凭据完整更新结果。
+pub enum AdminCredentialMutationOutcome {
+    /// 已更新并返回非敏感凭据快照。
+    Mutated(Box<AdminCredentialRecord>),
+    /// 父渠道不存在或已经软删除。
+    ChannelNotFound,
+    /// 凭据不存在、已删除或不属于父渠道。
+    CredentialNotFound,
+}
+
+impl fmt::Debug for AdminCredentialMutationOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Mutated(_) => {
+                formatter.write_str("AdminCredentialMutationOutcome::Mutated(<已脱敏>)")
+            }
+            Self::ChannelNotFound => {
+                formatter.write_str("AdminCredentialMutationOutcome::ChannelNotFound")
+            }
+            Self::CredentialNotFound => {
+                formatter.write_str("AdminCredentialMutationOutcome::CredentialNotFound")
+            }
+        }
+    }
+}
+
+/// 凭据安全软删除结果。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AdminCredentialDeleteOutcome {
+    /// 凭据及其全部有效影子后代已软删除。
+    Deleted,
+    /// 父渠道不存在或已经软删除。
+    ChannelNotFound,
+    /// 凭据不存在、已删除或不属于父渠道。
+    CredentialNotFound,
+}
+
+/// 管理渠道与凭据写仓储错误；不携带配置、密文或数据库诊断。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum AdminChannelWriteRepositoryError {
+    /// 写入字段违反持久化边界。
+    #[error("管理渠道写入参数无效")]
+    InvalidInput,
+    /// 父凭据引用无效或会破坏父子图。
+    #[error("管理凭据引用无效")]
+    InvalidReference,
+    /// 应用层未能为真实凭据 ID 生成密文封套。
+    #[error("管理凭据密文准备失败")]
+    SecretPreparation,
+    /// 获取连接、执行查询或提交事务失败。
+    #[error("管理渠道数据库写入失败")]
+    Query,
+    /// 完整写事务超过硬截止时间。
+    #[error("管理渠道数据库写入超时")]
+    Timeout,
+    /// 持久化状态、父子图或影响行数违反不变量。
+    #[error("管理渠道持久化状态损坏")]
+    Invariant,
+}
+
+impl AdminChannelRepository {
+    /// 创建渠道；累计用量和探测余额始终由持久化默认值初始化。
+    pub async fn create_channel(
+        &self,
+        record: AdminChannelWriteRecord,
+    ) -> Result<AdminChannelRecord, AdminChannelWriteRepositoryError> {
+        match timeout(self.lookup_timeout, self.create_channel_inner(record)).await {
+            Ok(result) => result,
+            Err(_) => Err(internal_error(AdminChannelWriteRepositoryError::Timeout)),
+        }
+    }
+
+    /// 完整更新渠道配置，同时保留余额和累计用量等运行字段。
+    pub async fn update_channel(
+        &self,
+        channel_id: ChannelId,
+        record: AdminChannelWriteRecord,
+    ) -> Result<AdminChannelMutationOutcome, AdminChannelWriteRepositoryError> {
+        match timeout(
+            self.lookup_timeout,
+            self.update_channel_inner(channel_id, record),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(internal_error(AdminChannelWriteRepositoryError::Timeout)),
+        }
+    }
+
+    /// 软删除渠道及其凭据，并物理清理可重建的运行时关系。
+    pub async fn delete_channel(
+        &self,
+        channel_id: ChannelId,
+    ) -> Result<AdminChannelDeleteOutcome, AdminChannelWriteRepositoryError> {
+        match timeout(self.lookup_timeout, self.delete_channel_inner(channel_id)).await {
+            Ok(result) => result,
+            Err(_) => Err(internal_error(AdminChannelWriteRepositoryError::Timeout)),
+        }
+    }
+
+    /// 创建凭据；回调只接收事务内生成的真实 ID，并且必须返回密文封套。
+    pub async fn create_credential<F>(
+        &self,
+        channel_id: ChannelId,
+        record: AdminCredentialWriteRecord,
+        prepare_secret: F,
+    ) -> Result<AdminCredentialCreateOutcome, AdminChannelWriteRepositoryError>
+    where
+        F: FnOnce(CredentialId) -> Result<EncryptedCredentialEnvelope, ()> + Send,
+    {
+        match timeout(
+            self.lookup_timeout,
+            self.create_credential_inner(channel_id, record, prepare_secret),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(internal_error(AdminChannelWriteRepositoryError::Timeout)),
+        }
+    }
+
+    /// 完整更新凭据元数据；仅在给出新封套时轮换 secret。
+    pub async fn update_credential(
+        &self,
+        channel_id: ChannelId,
+        credential_id: CredentialId,
+        record: AdminCredentialWriteRecord,
+        replacement_secret: Option<EncryptedCredentialEnvelope>,
+    ) -> Result<AdminCredentialMutationOutcome, AdminChannelWriteRepositoryError> {
+        match timeout(
+            self.lookup_timeout,
+            self.update_credential_inner(channel_id, credential_id, record, replacement_secret),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(internal_error(AdminChannelWriteRepositoryError::Timeout)),
+        }
+    }
+
+    /// 软删除凭据及其影子后代；损坏或成环父子图失败关闭。
+    pub async fn delete_credential(
+        &self,
+        channel_id: ChannelId,
+        credential_id: CredentialId,
+    ) -> Result<AdminCredentialDeleteOutcome, AdminChannelWriteRepositoryError> {
+        match timeout(
+            self.lookup_timeout,
+            self.delete_credential_inner(channel_id, credential_id),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(internal_error(AdminChannelWriteRepositoryError::Timeout)),
+        }
+    }
+
+    async fn create_channel_inner(
+        &self,
+        record: AdminChannelWriteRecord,
+    ) -> Result<AdminChannelRecord, AdminChannelWriteRepositoryError> {
+        let fields = validate_channel_fields(record)?;
+        let transaction = begin_transaction(self).await?;
+        let inserted = channels::ActiveModel {
+            name: Set(fields.name),
+            r#type: Set(fields.channel_type.as_str().to_owned()),
+            protocol: Set(fields.protocol.as_str().to_owned()),
+            base_url: Set(fields.base_url),
+            status: Set(fields.status.code()),
+            weight: Set(fields.weight),
+            priority: Set(fields.priority),
+            auto_ban: Set(fields.auto_ban),
+            model_mapping: Set(fields.model_mapping),
+            param_override: Set(fields.param_override),
+            header_override: Set(fields.header_override),
+            settings: Set(fields.settings),
+            tag: Set(fields.tag),
+            ..Default::default()
+        }
+        .insert(&transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_db_error)?;
+        let snapshot = AdminChannelRecord::try_from_model(inserted).map_err(map_read_error)?;
+        commit_transaction(transaction).await?;
+        Ok(snapshot)
+    }
+
+    async fn update_channel_inner(
+        &self,
+        channel_id: ChannelId,
+        record: AdminChannelWriteRecord,
+    ) -> Result<AdminChannelMutationOutcome, AdminChannelWriteRepositoryError> {
+        let fields = validate_channel_fields(record)?;
+        let transaction = begin_transaction(self).await?;
+        if !active_channel_exists(&transaction, channel_id).await? {
+            return Ok(AdminChannelMutationOutcome::NotFound);
+        }
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        let result = channels::Entity::update_many()
+            .filter(channels::Column::Id.eq(channel_id.get()))
+            .filter(channels::Column::DeletedAt.is_null())
+            .col_expr(channels::Column::Name, Expr::value(fields.name))
+            .col_expr(
+                channels::Column::Type,
+                Expr::value(fields.channel_type.as_str()),
+            )
+            .col_expr(
+                channels::Column::Protocol,
+                Expr::value(fields.protocol.as_str()),
+            )
+            .col_expr(channels::Column::BaseUrl, Expr::value(fields.base_url))
+            .col_expr(channels::Column::Status, Expr::value(fields.status.code()))
+            .col_expr(channels::Column::Weight, Expr::value(fields.weight))
+            .col_expr(channels::Column::Priority, Expr::value(fields.priority))
+            .col_expr(channels::Column::AutoBan, Expr::value(fields.auto_ban))
+            .col_expr(
+                channels::Column::ModelMapping,
+                Expr::value(fields.model_mapping),
+            )
+            .col_expr(
+                channels::Column::ParamOverride,
+                Expr::value(fields.param_override),
+            )
+            .col_expr(
+                channels::Column::HeaderOverride,
+                Expr::value(fields.header_override),
+            )
+            .col_expr(channels::Column::Settings, Expr::value(fields.settings))
+            .col_expr(channels::Column::Tag, Expr::value(fields.tag))
+            .col_expr(channels::Column::UpdatedAt, Expr::value(now))
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_db_error)?;
+        require_rows(result.rows_affected, 1)?;
+        let model = fetch_channel_model(&transaction, channel_id).await?;
+        let snapshot = AdminChannelRecord::try_from_model(model).map_err(map_read_error)?;
+        commit_transaction(transaction).await?;
+        Ok(AdminChannelMutationOutcome::Mutated(Box::new(snapshot)))
+    }
+
+    async fn delete_channel_inner(
+        &self,
+        channel_id: ChannelId,
+    ) -> Result<AdminChannelDeleteOutcome, AdminChannelWriteRepositoryError> {
+        let transaction = begin_transaction(self).await?;
+        if !active_channel_exists(&transaction, channel_id).await? {
+            return Ok(AdminChannelDeleteOutcome::NotFound);
+        }
+        let now = TimeDateTimeWithTimeZone::now_utc();
+
+        // 能力项同时引用模型和分组关系，必须先于两张关系表删除。
+        abilities::Entity::delete_many()
+            .filter(abilities::Column::ChannelId.eq(channel_id.get()))
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_db_error)?;
+        channel_models::Entity::delete_many()
+            .filter(channel_models::Column::ChannelId.eq(channel_id.get()))
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_db_error)?;
+        channel_groups::Entity::delete_many()
+            .filter(channel_groups::Column::ChannelId.eq(channel_id.get()))
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_db_error)?;
+        credentials::Entity::update_many()
+            .filter(credentials::Column::ChannelId.eq(channel_id.get()))
+            .filter(credentials::Column::DeletedAt.is_null())
+            .col_expr(credentials::Column::DeletedAt, Expr::value(now))
+            .col_expr(credentials::Column::UpdatedAt, Expr::value(now))
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_db_error)?;
+        let result = channels::Entity::update_many()
+            .filter(channels::Column::Id.eq(channel_id.get()))
+            .filter(channels::Column::DeletedAt.is_null())
+            .col_expr(channels::Column::DeletedAt, Expr::value(now))
+            .col_expr(channels::Column::UpdatedAt, Expr::value(now))
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_db_error)?;
+        require_rows(result.rows_affected, 1)?;
+        commit_transaction(transaction).await?;
+        Ok(AdminChannelDeleteOutcome::Deleted)
+    }
+
+    async fn create_credential_inner<F>(
+        &self,
+        channel_id: ChannelId,
+        record: AdminCredentialWriteRecord,
+        prepare_secret: F,
+    ) -> Result<AdminCredentialCreateOutcome, AdminChannelWriteRepositoryError>
+    where
+        F: FnOnce(CredentialId) -> Result<EncryptedCredentialEnvelope, ()>,
+    {
+        let fields = validate_credential_fields(record)?;
+        let transaction = begin_transaction(self).await?;
+        if !active_channel_exists(&transaction, channel_id).await? {
+            return Ok(AdminCredentialCreateOutcome::ChannelNotFound);
+        }
+        validate_parent(&transaction, channel_id, None, &fields).await?;
+        let placeholder = pending_encrypted_json()?;
+        let inserted = credentials::ActiveModel {
+            channel_id: Set(channel_id.get()),
+            kind: Set(fields.kind.as_str().to_owned()),
+            secret: Set(placeholder),
+            status: Set(fields.status.code()),
+            multi_key_mode: Set(fields.multi_key_mode),
+            priority: Set(fields.priority),
+            weight: Set(fields.weight),
+            concurrency: Set(fields.concurrency),
+            load_factor_micros: Set(fields.load_factor_micros),
+            rate_multiplier_micros: Set(fields.rate_multiplier_micros),
+            schedulable: Set(fields.schedulable),
+            parent_id: Set(fields.parent_id.map(CredentialId::get)),
+            quota_dimension: Set(fields.quota_dimension),
+            proxy_id: Set(fields.proxy_id),
+            oauth_provider: Set(fields.oauth_provider),
+            oauth_account_key: Set(fields.oauth_account_key),
+            oauth_project_id: Set(fields.oauth_project_id),
+            ..Default::default()
+        }
+        .insert(&transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_db_error)?;
+        let credential_id = CredentialId::new(inserted.id)
+            .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        let envelope = prepare_secret(credential_id)
+            .map_err(|()| internal_error(AdminChannelWriteRepositoryError::SecretPreparation))?;
+        let encrypted = encrypted_json(envelope)?;
+        let result = credentials::Entity::update_many()
+            .filter(credentials::Column::Id.eq(credential_id.get()))
+            .filter(credentials::Column::ChannelId.eq(channel_id.get()))
+            .filter(credentials::Column::DeletedAt.is_null())
+            .col_expr(credentials::Column::Secret, Expr::value(encrypted))
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_db_error)?;
+        require_rows(result.rows_affected, 1)?;
+        let model = fetch_credential_model(&transaction, channel_id, credential_id).await?;
+        let snapshot = AdminCredentialRecord::try_from_model(model).map_err(map_read_error)?;
+        commit_transaction(transaction).await?;
+        Ok(AdminCredentialCreateOutcome::Created(Box::new(snapshot)))
+    }
+
+    async fn update_credential_inner(
+        &self,
+        channel_id: ChannelId,
+        credential_id: CredentialId,
+        record: AdminCredentialWriteRecord,
+        replacement_secret: Option<EncryptedCredentialEnvelope>,
+    ) -> Result<AdminCredentialMutationOutcome, AdminChannelWriteRepositoryError> {
+        let fields = validate_credential_fields(record)?;
+        let replacement_secret = replacement_secret.map(encrypted_json).transpose()?;
+        let transaction = begin_transaction(self).await?;
+        if !active_channel_exists(&transaction, channel_id).await? {
+            return Ok(AdminCredentialMutationOutcome::ChannelNotFound);
+        }
+        let Some(current) = find_active_credential(&transaction, channel_id, credential_id).await?
+        else {
+            return Ok(AdminCredentialMutationOutcome::CredentialNotFound);
+        };
+        let current_kind = CredentialKind::from_str(&current.kind)
+            .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        if current_kind != fields.kind {
+            return Err(AdminChannelWriteRepositoryError::InvalidInput);
+        }
+        validate_parent(&transaction, channel_id, Some(credential_id), &fields).await?;
+
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        let mut update = credentials::Entity::update_many()
+            .filter(credentials::Column::Id.eq(credential_id.get()))
+            .filter(credentials::Column::ChannelId.eq(channel_id.get()))
+            .filter(credentials::Column::DeletedAt.is_null())
+            .col_expr(
+                credentials::Column::Status,
+                Expr::value(fields.status.code()),
+            )
+            .col_expr(
+                credentials::Column::MultiKeyMode,
+                Expr::value(fields.multi_key_mode),
+            )
+            .col_expr(credentials::Column::Priority, Expr::value(fields.priority))
+            .col_expr(credentials::Column::Weight, Expr::value(fields.weight))
+            .col_expr(
+                credentials::Column::Concurrency,
+                Expr::value(fields.concurrency),
+            )
+            .col_expr(
+                credentials::Column::LoadFactorMicros,
+                Expr::value(fields.load_factor_micros),
+            )
+            .col_expr(
+                credentials::Column::RateMultiplierMicros,
+                Expr::value(fields.rate_multiplier_micros),
+            )
+            .col_expr(
+                credentials::Column::Schedulable,
+                Expr::value(fields.schedulable),
+            )
+            .col_expr(
+                credentials::Column::ParentId,
+                Expr::value(fields.parent_id.map(CredentialId::get)),
+            )
+            .col_expr(
+                credentials::Column::QuotaDimension,
+                Expr::value(fields.quota_dimension),
+            )
+            .col_expr(credentials::Column::ProxyId, Expr::value(fields.proxy_id))
+            .col_expr(
+                credentials::Column::OauthProvider,
+                Expr::value(fields.oauth_provider),
+            )
+            .col_expr(
+                credentials::Column::OauthAccountKey,
+                Expr::value(fields.oauth_account_key),
+            )
+            .col_expr(
+                credentials::Column::OauthProjectId,
+                Expr::value(fields.oauth_project_id),
+            )
+            .col_expr(credentials::Column::UpdatedAt, Expr::value(now));
+        if let Some(secret) = replacement_secret {
+            update = update.col_expr(credentials::Column::Secret, Expr::value(secret));
+        }
+        let result = update
+            .exec(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_db_error)?;
+        require_rows(result.rows_affected, 1)?;
+        let model = fetch_credential_model(&transaction, channel_id, credential_id).await?;
+        let snapshot = AdminCredentialRecord::try_from_model(model).map_err(map_read_error)?;
+        commit_transaction(transaction).await?;
+        Ok(AdminCredentialMutationOutcome::Mutated(Box::new(snapshot)))
+    }
+
+    async fn delete_credential_inner(
+        &self,
+        channel_id: ChannelId,
+        credential_id: CredentialId,
+    ) -> Result<AdminCredentialDeleteOutcome, AdminChannelWriteRepositoryError> {
+        let transaction = begin_transaction(self).await?;
+        if !active_channel_exists(&transaction, channel_id).await? {
+            return Ok(AdminCredentialDeleteOutcome::ChannelNotFound);
+        }
+        let graph = load_active_credential_graph(&transaction, channel_id).await?;
+        if !graph.contains_key(&credential_id.get()) {
+            return Ok(AdminCredentialDeleteOutcome::CredentialNotFound);
+        }
+        validate_credential_graph(&graph)?;
+        let affected_ids = collect_descendants(&graph, credential_id.get())?;
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        let mut affected_rows = 0_u64;
+        for batch in affected_ids.chunks(SOFT_DELETE_BATCH_SIZE) {
+            let result = credentials::Entity::update_many()
+                .filter(credentials::Column::ChannelId.eq(channel_id.get()))
+                .filter(credentials::Column::Id.is_in(batch.iter().copied()))
+                .filter(credentials::Column::DeletedAt.is_null())
+                .col_expr(credentials::Column::DeletedAt, Expr::value(now))
+                .col_expr(credentials::Column::UpdatedAt, Expr::value(now))
+                .exec(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(map_db_error)?;
+            affected_rows = affected_rows
+                .checked_add(result.rows_affected)
+                .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        }
+        require_rows(affected_rows, affected_ids.len() as u64)?;
+        commit_transaction(transaction).await?;
+        Ok(AdminCredentialDeleteOutcome::Deleted)
+    }
+}
+
+struct ValidatedChannelFields {
+    name: String,
+    channel_type: ChannelType,
+    protocol: Protocol,
+    base_url: Option<ChannelBaseUrl>,
+    status: Status,
+    weight: i32,
+    priority: i32,
+    auto_ban: bool,
+    model_mapping: serde_json::Value,
+    param_override: serde_json::Value,
+    header_override: HeaderOverrides,
+    settings: SensitiveJson,
+    tag: Option<String>,
+}
+
+fn validate_channel_fields(
+    record: AdminChannelWriteRecord,
+) -> Result<ValidatedChannelFields, AdminChannelWriteRepositoryError> {
+    if !valid_trimmed_text(&record.name, 128)
+        || record.weight < 0
+        || !matches!(record.status, Status::Enabled | Status::Disabled)
+        || record.channel_type != ChannelType::OpenAi
+        || record.protocol != Protocol::OpenAiChat
+        || record
+            .tag
+            .as_deref()
+            .is_some_and(|value| !valid_trimmed_text(value, 64))
+    {
+        return Err(AdminChannelWriteRepositoryError::InvalidInput);
+    }
+    validate_json_object(&record.model_mapping, true)?;
+    validate_json_object(&record.param_override, false)?;
+    validate_json_object(&record.header_override, false)?;
+    validate_json_object(&record.settings, false)?;
+    let base_url = record
+        .base_url
+        .as_deref()
+        .map(ChannelBaseUrl::parse)
+        .transpose()
+        .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+    let header_override = HeaderOverrides::validate(record.header_override)
+        .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+    Ok(ValidatedChannelFields {
+        name: record.name,
+        channel_type: record.channel_type,
+        protocol: record.protocol,
+        base_url,
+        status: record.status,
+        weight: record.weight,
+        priority: record.priority,
+        auto_ban: record.auto_ban,
+        model_mapping: record.model_mapping,
+        param_override: record.param_override,
+        header_override,
+        settings: SensitiveJson::from(record.settings),
+        tag: record.tag,
+    })
+}
+
+struct ValidatedCredentialFields {
+    kind: CredentialKind,
+    status: Status,
+    multi_key_mode: Option<i16>,
+    priority: i32,
+    weight: i32,
+    concurrency: Option<i32>,
+    load_factor_micros: Option<i64>,
+    rate_multiplier_micros: Option<i64>,
+    schedulable: bool,
+    parent_id: Option<CredentialId>,
+    quota_dimension: String,
+    proxy_id: Option<i64>,
+    oauth_provider: Option<String>,
+    oauth_account_key: Option<String>,
+    oauth_project_id: Option<String>,
+}
+
+fn validate_credential_fields(
+    record: AdminCredentialWriteRecord,
+) -> Result<ValidatedCredentialFields, AdminChannelWriteRepositoryError> {
+    let oauth_fields_present = record.oauth_provider.is_some()
+        || record.oauth_account_key.is_some()
+        || record.oauth_project_id.is_some();
+    if !matches!(record.kind, CredentialKind::ApiKey | CredentialKind::Oauth)
+        || !matches!(record.status, Status::Enabled | Status::Disabled)
+        || record
+            .multi_key_mode
+            .is_some_and(|value| !matches!(value, 1 | 2))
+        || record.weight < 0
+        || record.concurrency.is_some_and(|value| value < 0)
+        || record.load_factor_micros.is_some_and(|value| value < 0)
+        || record.rate_multiplier_micros.is_some_and(|value| value < 0)
+        || !matches!(record.quota_dimension.as_str(), "global" | "spark")
+        || record.proxy_id.is_some_and(|value| value <= 0)
+        || !valid_optional_text(record.oauth_provider.as_deref(), 64)
+        || !valid_optional_text(record.oauth_account_key.as_deref(), 255)
+        || !valid_optional_text(record.oauth_project_id.as_deref(), 255)
+        || (record.kind == CredentialKind::ApiKey && oauth_fields_present)
+    {
+        return Err(AdminChannelWriteRepositoryError::InvalidInput);
+    }
+    Ok(ValidatedCredentialFields {
+        kind: record.kind,
+        status: record.status,
+        multi_key_mode: record.multi_key_mode,
+        priority: record.priority,
+        weight: record.weight,
+        concurrency: record.concurrency,
+        load_factor_micros: record.load_factor_micros,
+        rate_multiplier_micros: record.rate_multiplier_micros,
+        schedulable: record.schedulable,
+        parent_id: record.parent_id,
+        quota_dimension: record.quota_dimension,
+        proxy_id: record.proxy_id,
+        oauth_provider: record.oauth_provider,
+        oauth_account_key: record.oauth_account_key,
+        oauth_project_id: record.oauth_project_id,
+    })
+}
+
+async fn validate_parent(
+    transaction: &DatabaseTransaction,
+    channel_id: ChannelId,
+    credential_id: Option<CredentialId>,
+    fields: &ValidatedCredentialFields,
+) -> Result<(), AdminChannelWriteRepositoryError> {
+    let Some(parent_id) = fields.parent_id else {
+        return Ok(());
+    };
+    if credential_id == Some(parent_id) {
+        return Err(AdminChannelWriteRepositoryError::InvalidReference);
+    }
+    let Some(parent) = find_active_credential(transaction, channel_id, parent_id).await? else {
+        return Err(AdminChannelWriteRepositoryError::InvalidReference);
+    };
+    if parent.parent_id.is_some() || parent.kind != fields.kind.as_str() {
+        return Err(AdminChannelWriteRepositoryError::InvalidReference);
+    }
+    if let Some(credential_id) = credential_id
+        && active_child_exists(transaction, channel_id, credential_id).await?
+    {
+        return Err(AdminChannelWriteRepositoryError::InvalidReference);
+    }
+    Ok(())
+}
+
+async fn active_child_exists(
+    transaction: &DatabaseTransaction,
+    channel_id: ChannelId,
+    credential_id: CredentialId,
+) -> Result<bool, AdminChannelWriteRepositoryError> {
+    let result = credentials::Entity::find()
+        .select_only()
+        .column(credentials::Column::Id)
+        .filter(credentials::Column::ChannelId.eq(channel_id.get()))
+        .filter(credentials::Column::ParentId.eq(credential_id.get()))
+        .filter(credentials::Column::DeletedAt.is_null())
+        .limit(1)
+        .into_tuple::<i64>()
+        .one(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_db_error)?;
+    Ok(result.is_some())
+}
+
+async fn active_channel_exists(
+    transaction: &DatabaseTransaction,
+    channel_id: ChannelId,
+) -> Result<bool, AdminChannelWriteRepositoryError> {
+    let result = channels::Entity::find()
+        .select_only()
+        .column(channels::Column::Id)
+        .filter(channels::Column::Id.eq(channel_id.get()))
+        .filter(channels::Column::DeletedAt.is_null())
+        .into_tuple::<i64>()
+        .one(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_db_error)?;
+    Ok(result.is_some())
+}
+
+async fn find_active_credential(
+    transaction: &DatabaseTransaction,
+    channel_id: ChannelId,
+    credential_id: CredentialId,
+) -> Result<Option<credentials::Model>, AdminChannelWriteRepositoryError> {
+    credentials::Entity::find_by_id(credential_id.get())
+        .filter(credentials::Column::ChannelId.eq(channel_id.get()))
+        .filter(credentials::Column::DeletedAt.is_null())
+        .one(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_db_error)
+}
+
+async fn fetch_channel_model(
+    transaction: &DatabaseTransaction,
+    channel_id: ChannelId,
+) -> Result<channels::Model, AdminChannelWriteRepositoryError> {
+    channels::Entity::find_by_id(channel_id.get())
+        .filter(channels::Column::DeletedAt.is_null())
+        .one(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_db_error)?
+        .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))
+}
+
+async fn fetch_credential_model(
+    transaction: &DatabaseTransaction,
+    channel_id: ChannelId,
+    credential_id: CredentialId,
+) -> Result<credentials::Model, AdminChannelWriteRepositoryError> {
+    find_active_credential(transaction, channel_id, credential_id)
+        .await?
+        .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))
+}
+
+async fn load_active_credential_graph(
+    transaction: &DatabaseTransaction,
+    channel_id: ChannelId,
+) -> Result<HashMap<i64, Option<i64>>, AdminChannelWriteRepositoryError> {
+    let query = Query::select()
+        .expr_as(
+            Expr::col((credentials::Entity, credentials::Column::Id)),
+            Alias::new("credential_id"),
+        )
+        .expr_as(
+            Expr::col((credentials::Entity, credentials::Column::ParentId)),
+            Alias::new("parent_id"),
+        )
+        .from(credentials::Entity)
+        .and_where(
+            Expr::col((credentials::Entity, credentials::Column::ChannelId)).eq(channel_id.get()),
+        )
+        .and_where(Expr::col((credentials::Entity, credentials::Column::DeletedAt)).is_null())
+        .limit((MAX_ADMIN_CREDENTIAL_GRAPH_SIZE + 1) as u64)
+        .to_owned();
+    let statement = transaction.get_database_backend().build(&query);
+    let rows = transaction
+        .query_all(statement)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_db_error)?;
+    if rows.len() > MAX_ADMIN_CREDENTIAL_GRAPH_SIZE {
+        return Err(internal_error(AdminChannelWriteRepositoryError::Invariant));
+    }
+    let mut graph = HashMap::with_capacity(rows.len());
+    for row in rows {
+        let id = row
+            .try_get::<i64>("", "credential_id")
+            .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        let parent_id = row
+            .try_get::<Option<i64>>("", "parent_id")
+            .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        if id <= 0 || graph.insert(id, parent_id).is_some() {
+            return Err(internal_error(AdminChannelWriteRepositoryError::Invariant));
+        }
+    }
+    Ok(graph)
+}
+
+fn validate_credential_graph(
+    graph: &HashMap<i64, Option<i64>>,
+) -> Result<(), AdminChannelWriteRepositoryError> {
+    for start in graph.keys().copied() {
+        let mut path = HashSet::new();
+        let mut current = start;
+        while let Some(parent_id) = graph.get(&current).copied().flatten() {
+            if !path.insert(current) || !graph.contains_key(&parent_id) {
+                return Err(internal_error(AdminChannelWriteRepositoryError::Invariant));
+            }
+            current = parent_id;
+        }
+    }
+    Ok(())
+}
+
+fn collect_descendants(
+    graph: &HashMap<i64, Option<i64>>,
+    root: i64,
+) -> Result<Vec<i64>, AdminChannelWriteRepositoryError> {
+    let mut children: HashMap<i64, Vec<i64>> = HashMap::new();
+    for (&id, &parent_id) in graph {
+        if let Some(parent_id) = parent_id {
+            children.entry(parent_id).or_default().push(id);
+        }
+    }
+    let mut selected = HashSet::new();
+    let mut stack = vec![root];
+    while let Some(id) = stack.pop() {
+        if !selected.insert(id) {
+            return Err(internal_error(AdminChannelWriteRepositoryError::Invariant));
+        }
+        if let Some(child_ids) = children.get(&id) {
+            stack.extend(child_ids.iter().copied());
+        }
+    }
+    let mut selected = selected.into_iter().collect::<Vec<_>>();
+    selected.sort_unstable();
+    Ok(selected)
+}
+
+fn pending_encrypted_json() -> Result<EncryptedJson, AdminChannelWriteRepositoryError> {
+    EncryptedJson::from_envelope(serde_json::json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": "transaction-pending",
+        "nonce": URL_SAFE_NO_PAD.encode([0_u8; 24]),
+        "ciphertext": URL_SAFE_NO_PAD.encode([0_u8; 16]),
+    }))
+    .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))
+}
+
+fn encrypted_json(
+    envelope: EncryptedCredentialEnvelope,
+) -> Result<EncryptedJson, AdminChannelWriteRepositoryError> {
+    EncryptedJson::from_envelope(serde_json::json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": envelope.key_id(),
+        "nonce": URL_SAFE_NO_PAD.encode(envelope.nonce()),
+        "ciphertext": URL_SAFE_NO_PAD.encode(envelope.ciphertext()),
+    }))
+    .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))
+}
+
+fn validate_json_object(
+    value: &serde_json::Value,
+    string_values_only: bool,
+) -> Result<(), AdminChannelWriteRepositoryError> {
+    let serde_json::Value::Object(object) = value else {
+        return Err(AdminChannelWriteRepositoryError::InvalidInput);
+    };
+    if serde_json::to_vec(value)
+        .ok()
+        .is_none_or(|encoded| encoded.len() > MAX_ADMIN_CHANNEL_JSON_BYTES as usize)
+        || (string_values_only
+            && object.iter().any(|(key, value)| {
+                !valid_trimmed_text(key, 256)
+                    || value
+                        .as_str()
+                        .is_none_or(|value| !valid_trimmed_text(value, 256))
+            }))
+    {
+        return Err(AdminChannelWriteRepositoryError::InvalidInput);
+    }
+    Ok(())
+}
+
+fn valid_optional_text(value: Option<&str>, maximum_bytes: usize) -> bool {
+    value.is_none_or(|value| valid_trimmed_text(value, maximum_bytes))
+}
+
+fn valid_trimmed_text(value: &str, maximum_bytes: usize) -> bool {
+    valid_text(value, maximum_bytes) && value.trim() == value
+}
+
+async fn begin_transaction(
+    repository: &AdminChannelRepository,
+) -> Result<DatabaseTransaction, AdminChannelWriteRepositoryError> {
+    repository
+        .pool
+        .connection()
+        .begin()
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_db_error)
+}
+
+async fn commit_transaction(
+    transaction: DatabaseTransaction,
+) -> Result<(), AdminChannelWriteRepositoryError> {
+    transaction
+        .commit()
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_db_error)
+}
+
+fn require_rows(actual: u64, expected: u64) -> Result<(), AdminChannelWriteRepositoryError> {
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(internal_error(AdminChannelWriteRepositoryError::Invariant))
+    }
+}
+
+fn map_read_error(error: AdminChannelRepositoryError) -> AdminChannelWriteRepositoryError {
+    match error {
+        AdminChannelRepositoryError::Timeout => AdminChannelWriteRepositoryError::Timeout,
+        AdminChannelRepositoryError::Query | AdminChannelRepositoryError::Invariant => {
+            internal_error(AdminChannelWriteRepositoryError::Invariant)
+        }
+    }
+}
+
+fn map_db_error(_error: sea_orm::DbErr) -> AdminChannelWriteRepositoryError {
+    internal_error(AdminChannelWriteRepositoryError::Query)
+}
+
+fn internal_error(error: AdminChannelWriteRepositoryError) -> AdminChannelWriteRepositoryError {
+    let error_kind = match error {
+        AdminChannelWriteRepositoryError::InvalidInput => "admin_channel_write_invalid_input",
+        AdminChannelWriteRepositoryError::InvalidReference => {
+            "admin_channel_write_invalid_reference"
+        }
+        AdminChannelWriteRepositoryError::SecretPreparation => {
+            "admin_channel_write_secret_preparation"
+        }
+        AdminChannelWriteRepositoryError::Query => "admin_channel_write_query",
+        AdminChannelWriteRepositoryError::Timeout => "admin_channel_write_timeout",
+        AdminChannelWriteRepositoryError::Invariant => "admin_channel_write_invariant",
+    };
+    tracing::error!(
+        target: "af_db::admin_channel_write",
+        error_kind,
+        "管理渠道写仓储发生内部错误"
+    );
+    error
+}

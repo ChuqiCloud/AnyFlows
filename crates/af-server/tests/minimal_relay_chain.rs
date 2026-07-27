@@ -7,9 +7,13 @@ use std::{
 };
 
 use af_admin::{
+    AdminChannelCreateCommand, AdminChannelCreateFuture, AdminChannelDeleteFuture,
     AdminChannelGetFuture, AdminChannelListFuture, AdminChannelListQuery, AdminChannelReadError,
-    AdminChannelReader, AdminCredentialGetFuture, AdminCredentialListFuture,
-    AdminCredentialListQuery, AdminGroupCreateCommand, AdminGroupCreateFuture,
+    AdminChannelReader, AdminChannelUpdateCommand, AdminChannelUpdateFuture,
+    AdminChannelWriteError, AdminChannelWriter, AdminCredentialCreateCommand,
+    AdminCredentialCreateFuture, AdminCredentialDeleteFuture, AdminCredentialGetFuture,
+    AdminCredentialListFuture, AdminCredentialListQuery, AdminCredentialUpdateCommand,
+    AdminCredentialUpdateFuture, AdminGroupCreateCommand, AdminGroupCreateFuture,
     AdminGroupDeleteFuture, AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery,
     AdminGroupReadError, AdminGroupReader, AdminGroupUpdateCommand, AdminGroupUpdateFuture,
     AdminGroupWriteError, AdminGroupWriter, AdminTokenCreateCommand, AdminTokenCreateFuture,
@@ -104,6 +108,61 @@ impl AdminChannelReader for RejectAdminChannels {
         _credential_id: CredentialId,
     ) -> AdminCredentialGetFuture<'a> {
         Box::pin(async { Err(AdminChannelReadError::Internal) })
+    }
+}
+
+impl AdminChannelWriter for RejectAdminChannels {
+    fn create_channel<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _command: AdminChannelCreateCommand,
+    ) -> AdminChannelCreateFuture<'a> {
+        Box::pin(async { Err(AdminChannelWriteError::Internal) })
+    }
+
+    fn update_channel<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _channel_id: ChannelId,
+        _command: AdminChannelUpdateCommand,
+    ) -> AdminChannelUpdateFuture<'a> {
+        Box::pin(async { Err(AdminChannelWriteError::Internal) })
+    }
+
+    fn delete_channel<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _channel_id: ChannelId,
+    ) -> AdminChannelDeleteFuture<'a> {
+        Box::pin(async { Err(AdminChannelWriteError::Internal) })
+    }
+
+    fn create_credential<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _channel_id: ChannelId,
+        _command: AdminCredentialCreateCommand,
+    ) -> AdminCredentialCreateFuture<'a> {
+        Box::pin(async { Err(AdminChannelWriteError::Internal) })
+    }
+
+    fn update_credential<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _channel_id: ChannelId,
+        _credential_id: CredentialId,
+        _command: AdminCredentialUpdateCommand,
+    ) -> AdminCredentialUpdateFuture<'a> {
+        Box::pin(async { Err(AdminChannelWriteError::Internal) })
+    }
+
+    fn delete_credential<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _channel_id: ChannelId,
+        _credential_id: CredentialId,
+    ) -> AdminCredentialDeleteFuture<'a> {
+        Box::pin(async { Err(AdminChannelWriteError::Internal) })
     }
 }
 
@@ -525,6 +584,7 @@ async fn start_server(
         readiness,
         Arc::new(AlwaysAuthenticates),
         Arc::new(RejectSessions),
+        Arc::new(RejectAdminChannels),
         Arc::new(RejectAdminChannels),
         Arc::new(RejectAdminGroups),
         Arc::new(RejectAdminGroups),

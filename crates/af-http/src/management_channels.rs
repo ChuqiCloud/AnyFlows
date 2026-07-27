@@ -5,7 +5,7 @@ use axum::{
     extract::{Extension, Path, RawQuery, State},
     response::{IntoResponse, Response},
 };
-use http::{HeaderValue, header::CACHE_CONTROL};
+use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
 use serde::Serialize;
 
 use crate::{chat_completions::HttpState, management_error::ManagementError};
@@ -219,6 +219,20 @@ pub(crate) fn map_channel_read_error(error: AdminChannelReadError) -> Management
 
 pub(crate) fn no_store_json(value: impl Serialize) -> Response {
     let mut response = Json(value).into_response();
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+pub(crate) fn status_json(status: StatusCode, value: impl Serialize) -> Response {
+    let mut response = no_store_json(value);
+    *response.status_mut() = status;
+    response
+}
+
+pub(crate) fn no_store_empty(status: StatusCode) -> Response {
+    let mut response = status.into_response();
     response
         .headers_mut()
         .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));

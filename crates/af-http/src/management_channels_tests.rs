@@ -4,22 +4,25 @@ use std::sync::{
 };
 
 use af_admin::{
-    AdminChannel, AdminChannelGetFuture, AdminChannelListFuture, AdminChannelListQuery,
-    AdminChannelPage, AdminChannelReadError, AdminChannelReader, AdminCredential,
-    AdminCredentialGetFuture, AdminCredentialListFuture, AdminCredentialListQuery,
-    AdminCredentialMultiKeyMode, AdminCredentialPage, AdminCredentialQuotaDimension,
-    AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture, AdminGroupGetFuture,
-    AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError, AdminGroupReader,
-    AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
-    AdminRoutingStatus, AdminTokenCreateCommand, AdminTokenCreateFuture, AdminTokenDeleteFuture,
-    AdminTokenGetFuture, AdminTokenListFuture, AdminTokenListQuery, AdminTokenReadError,
-    AdminTokenReader, AdminTokenUpdateCommand, AdminTokenUpdateFuture, AdminTokenWriteError,
-    AdminTokenWriter, AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture,
-    AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserReadError,
-    AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError,
-    AdminUserWriter, LoginCredentials, SessionAuthentication, SessionAuthenticationError,
-    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
-    SessionRole,
+    AdminChannel, AdminChannelCreateCommand, AdminChannelCreateFuture, AdminChannelDeleteFuture,
+    AdminChannelGetFuture, AdminChannelListFuture, AdminChannelListQuery, AdminChannelPage,
+    AdminChannelReadError, AdminChannelReader, AdminChannelUpdateCommand, AdminChannelUpdateFuture,
+    AdminChannelWriteError, AdminChannelWriter, AdminCredential, AdminCredentialCreateCommand,
+    AdminCredentialCreateFuture, AdminCredentialDeleteFuture, AdminCredentialGetFuture,
+    AdminCredentialListFuture, AdminCredentialListQuery, AdminCredentialMultiKeyMode,
+    AdminCredentialPage, AdminCredentialQuotaDimension, AdminCredentialUpdateCommand,
+    AdminCredentialUpdateFuture, AdminGroupCreateCommand, AdminGroupCreateFuture,
+    AdminGroupDeleteFuture, AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery,
+    AdminGroupReadError, AdminGroupReader, AdminGroupUpdateCommand, AdminGroupUpdateFuture,
+    AdminGroupWriteError, AdminGroupWriter, AdminRoutingStatus, AdminTokenCreateCommand,
+    AdminTokenCreateFuture, AdminTokenDeleteFuture, AdminTokenGetFuture, AdminTokenListFuture,
+    AdminTokenListQuery, AdminTokenReadError, AdminTokenReader, AdminTokenUpdateCommand,
+    AdminTokenUpdateFuture, AdminTokenWriteError, AdminTokenWriter, AdminUserCreateCommand,
+    AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture, AdminUserListFuture,
+    AdminUserListQuery, AdminUserReadError, AdminUserReader, AdminUserUpdateCommand,
+    AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter, LoginCredentials,
+    SessionAuthentication, SessionAuthenticationError, SessionAuthenticationFuture,
+    SessionAuthenticator, SessionLoginFuture, SessionPrincipal, SessionRole,
 };
 use af_domain::{
     AfError, ChannelId, ChannelType, CredentialId, CredentialKind, GatewayPrincipal, GroupId,
@@ -32,7 +35,10 @@ use axum::{
     middleware,
     routing::get,
 };
-use http::{Request, StatusCode, header::AUTHORIZATION};
+use http::{
+    Request, StatusCode,
+    header::{AUTHORIZATION, CONTENT_TYPE},
+};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -41,7 +47,11 @@ use crate::{
     chat_completions::HttpState,
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_authorization::authorize_management_admin,
+    management_channel_writes::{create_admin_channel, delete_admin_channel, update_admin_channel},
     management_channels::{get_admin_channel, list_admin_channels},
+    management_credential_writes::{
+        create_admin_credential, delete_admin_credential, update_admin_credential,
+    },
     management_credentials::{get_admin_credential, list_admin_credentials},
 };
 
@@ -306,6 +316,105 @@ impl AdminChannelReader for FakeAdminChannelReader {
     }
 }
 
+impl AdminChannelWriter for FakeAdminChannelReader {
+    fn create_channel<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        _command: AdminChannelCreateCommand,
+    ) -> AdminChannelCreateFuture<'a> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async move {
+            assert_eq!(principal.role(), SessionRole::Admin);
+            Ok(sample_channel(90, "created"))
+        })
+    }
+
+    fn update_channel<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        channel_id: ChannelId,
+        _command: AdminChannelUpdateCommand,
+    ) -> AdminChannelUpdateFuture<'a> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async move {
+            assert_eq!(principal.role(), SessionRole::Admin);
+            if channel_id.get() == 404 {
+                Err(AdminChannelWriteError::ChannelNotFound)
+            } else {
+                Ok(sample_channel(channel_id.get(), "updated"))
+            }
+        })
+    }
+
+    fn delete_channel<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        channel_id: ChannelId,
+    ) -> AdminChannelDeleteFuture<'a> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async move {
+            assert_eq!(principal.role(), SessionRole::Admin);
+            if channel_id.get() == 404 {
+                Err(AdminChannelWriteError::ChannelNotFound)
+            } else {
+                Ok(())
+            }
+        })
+    }
+
+    fn create_credential<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        channel_id: ChannelId,
+        _command: AdminCredentialCreateCommand,
+    ) -> AdminCredentialCreateFuture<'a> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async move {
+            assert_eq!(principal.role(), SessionRole::Admin);
+            if channel_id.get() == 404 {
+                Err(AdminChannelWriteError::ChannelNotFound)
+            } else {
+                Ok(sample_credential(channel_id, 91))
+            }
+        })
+    }
+
+    fn update_credential<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        channel_id: ChannelId,
+        credential_id: CredentialId,
+        _command: AdminCredentialUpdateCommand,
+    ) -> AdminCredentialUpdateFuture<'a> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async move {
+            assert_eq!(principal.role(), SessionRole::Admin);
+            if credential_id.get() == 404 {
+                Err(AdminChannelWriteError::CredentialNotFound)
+            } else {
+                Ok(sample_credential(channel_id, credential_id.get()))
+            }
+        })
+    }
+
+    fn delete_credential<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        _channel_id: ChannelId,
+        credential_id: CredentialId,
+    ) -> AdminCredentialDeleteFuture<'a> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async move {
+            assert_eq!(principal.role(), SessionRole::Admin);
+            if credential_id.get() == 404 {
+                Err(AdminChannelWriteError::CredentialNotFound)
+            } else {
+                Ok(())
+            }
+        })
+    }
+}
+
 fn router(reader: Arc<FakeAdminChannelReader>) -> Router {
     let session_authenticator: Arc<dyn SessionAuthenticator> = Arc::new(FakeSessionAuthenticator);
     let unused = Arc::new(UnusedAdminAccess);
@@ -325,29 +434,36 @@ fn router(reader: Arc<FakeAdminChannelReader>) -> Router {
         ManagementAuthenticationState::new(Arc::clone(&session_authenticator)),
         authenticate_management_session,
     );
-    let channel_reader: Arc<dyn AdminChannelReader> = reader;
+    let channel_reader: Arc<dyn AdminChannelReader> = reader.clone();
+    let channel_writer: Arc<dyn AdminChannelWriter> = reader;
     Router::new()
         .route(
             "/api/admin/channels",
             get(list_admin_channels)
+                .post(create_admin_channel)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(collection_authentication),
         )
         .route(
             "/api/admin/channels/{id}",
             get(get_admin_channel)
+                .put(update_admin_channel)
+                .delete(delete_admin_channel)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(item_authentication),
         )
         .route(
             "/api/admin/channels/{channel_id}/credentials",
             get(list_admin_credentials)
+                .post(create_admin_credential)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(credential_collection_authentication),
         )
         .route(
             "/api/admin/channels/{channel_id}/credentials/{credential_id}",
             get(get_admin_credential)
+                .put(update_admin_credential)
+                .delete(delete_admin_credential)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(credential_item_authentication),
         )
@@ -362,8 +478,138 @@ fn router(reader: Arc<FakeAdminChannelReader>) -> Router {
                 unused.clone(),
                 unused,
             )
-            .with_admin_channel_reader(channel_reader),
+            .with_admin_channel_reader(channel_reader)
+            .with_admin_channel_writer(channel_writer),
         )
+}
+
+#[tokio::test]
+async fn admin_can_create_update_and_delete_channels_and_credentials() {
+    let reader = Arc::new(FakeAdminChannelReader::new());
+    let app = router(Arc::clone(&reader));
+    let channel_body = json!({
+        "name": "private-channel",
+        "type": "openai",
+        "protocol": "openai_chat",
+        "base_url": "https://private.example.com/v1",
+        "status": "disabled",
+        "weight": 10,
+        "priority": 20,
+        "auto_ban": true,
+        "model_mapping": {"public": "upstream"},
+        "param_override": {},
+        "header_override": {"x-private": "header-secret-canary"},
+        "settings": {"private": "settings-secret-canary"},
+        "tag": null
+    });
+    let created = app
+        .clone()
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/channels",
+            ADMIN_TOKEN,
+            &channel_body,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let created = response_json(created).await;
+    assert_eq!(created["id"], 90);
+    for secret in ["header-secret-canary", "settings-secret-canary"] {
+        assert!(!created.to_string().contains(secret));
+    }
+
+    let updated = app
+        .clone()
+        .oneshot(write_request(
+            "PUT",
+            "/api/admin/channels/90",
+            ADMIN_TOKEN,
+            &channel_body,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response_json(updated).await["name"], "updated");
+
+    let credential_body = json!({
+        "kind": "api_key",
+        "secret": "credential-secret-canary",
+        "status": "disabled",
+        "multi_key_mode": "random",
+        "priority": 10,
+        "weight": 20,
+        "concurrency": null,
+        "load_factor_micros": null,
+        "rate_multiplier_micros": null,
+        "schedulable": false,
+        "parent_id": null,
+        "quota_dimension": "global",
+        "proxy_id": null,
+        "oauth_provider": null,
+        "oauth_account_key": null,
+        "oauth_project_id": null
+    });
+    let credential = app
+        .clone()
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/channels/90/credentials",
+            ADMIN_TOKEN,
+            &credential_body,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(credential.status(), StatusCode::CREATED);
+    let credential = response_json(credential).await;
+    assert_eq!(credential["id"], 91);
+    assert!(!credential.to_string().contains("credential-secret-canary"));
+
+    let mut missing_secret = credential_body.clone();
+    missing_secret
+        .as_object_mut()
+        .expect("测试凭据正文必须是对象")
+        .remove("secret");
+    let rejected = app
+        .clone()
+        .oneshot(write_request(
+            "PUT",
+            "/api/admin/channels/90/credentials/91",
+            ADMIN_TOKEN,
+            &missing_secret,
+        ))
+        .await
+        .unwrap();
+    assert_error(rejected, StatusCode::BAD_REQUEST, "invalid_request").await;
+
+    let mut update_body = credential_body.clone();
+    update_body
+        .as_object_mut()
+        .expect("测试凭据正文必须是对象")
+        .insert("secret".to_owned(), Value::Null);
+    let updated = app
+        .clone()
+        .oneshot(write_request(
+            "PUT",
+            "/api/admin/channels/90/credentials/91",
+            ADMIN_TOKEN,
+            &update_body,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response_json(updated).await["id"], 91);
+
+    for uri in [
+        "/api/admin/channels/90/credentials/91",
+        "/api/admin/channels/90",
+    ] {
+        let deleted = app
+            .clone()
+            .oneshot(write_request("DELETE", uri, ADMIN_TOKEN, &json!({})))
+            .await
+            .unwrap();
+        assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
+    }
+    assert_eq!(reader.calls.load(Ordering::Relaxed), 6);
 }
 
 #[tokio::test]
@@ -524,6 +770,16 @@ fn authorized_request(uri: &str, token: &str) -> Request<Body> {
         .uri(uri)
         .header(AUTHORIZATION, format!("Bearer {token}"))
         .body(Body::empty())
+        .unwrap()
+}
+
+fn write_request(method: &str, uri: &str, token: &str, body: &Value) -> Request<Body> {
+    Request::builder()
+        .method(method)
+        .uri(uri)
+        .header(AUTHORIZATION, format!("Bearer {token}"))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_vec(body).unwrap()))
         .unwrap()
 }
 

@@ -2,8 +2,8 @@
 
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 import { client } from '../client.gen';
-import { createAdminGroup, createAdminToken, createAdminUser, deleteAdminGroup, deleteAdminToken, deleteAdminUser, getAdminChannel, getAdminCredential, getAdminGroup, getAdminToken, getAdminUser, getManagementSession, listAdminChannels, listAdminCredentials, listAdminGroups, listAdminTokens, listAdminUsers, loginManagementSession, type Options, updateAdminGroup, updateAdminToken, updateAdminUser } from '../sdk.gen';
-import type { CreateAdminGroupData, CreateAdminGroupError, CreateAdminGroupResponse, CreateAdminTokenData, CreateAdminTokenError, CreateAdminTokenResponse, CreateAdminUserData, CreateAdminUserError, CreateAdminUserResponse, DeleteAdminGroupData, DeleteAdminGroupError, DeleteAdminGroupResponse, DeleteAdminTokenData, DeleteAdminTokenError, DeleteAdminTokenResponse, DeleteAdminUserData, DeleteAdminUserError, DeleteAdminUserResponse, GetAdminChannelData, GetAdminChannelError, GetAdminChannelResponse, GetAdminCredentialData, GetAdminCredentialError, GetAdminCredentialResponse, GetAdminGroupData, GetAdminGroupError, GetAdminGroupResponse, GetAdminTokenData, GetAdminTokenError, GetAdminTokenResponse, GetAdminUserData, GetAdminUserError, GetAdminUserResponse, GetManagementSessionData, GetManagementSessionError, GetManagementSessionResponse, ListAdminChannelsData, ListAdminChannelsError, ListAdminChannelsResponse, ListAdminCredentialsData, ListAdminCredentialsError, ListAdminCredentialsResponse, ListAdminGroupsData, ListAdminGroupsError, ListAdminGroupsResponse, ListAdminTokensData, ListAdminTokensError, ListAdminTokensResponse, ListAdminUsersData, ListAdminUsersError, ListAdminUsersResponse, LoginManagementSessionData, LoginManagementSessionError, LoginManagementSessionResponse, UpdateAdminGroupData, UpdateAdminGroupError, UpdateAdminGroupResponse, UpdateAdminTokenData, UpdateAdminTokenError, UpdateAdminTokenResponse, UpdateAdminUserData, UpdateAdminUserError, UpdateAdminUserResponse } from '../types.gen';
+import { createAdminChannel, createAdminCredential, createAdminGroup, createAdminToken, createAdminUser, deleteAdminChannel, deleteAdminCredential, deleteAdminGroup, deleteAdminToken, deleteAdminUser, getAdminChannel, getAdminCredential, getAdminGroup, getAdminToken, getAdminUser, getManagementSession, listAdminChannels, listAdminCredentials, listAdminGroups, listAdminTokens, listAdminUsers, loginManagementSession, type Options, updateAdminChannel, updateAdminCredential, updateAdminGroup, updateAdminToken, updateAdminUser } from '../sdk.gen';
+import type { CreateAdminChannelData, CreateAdminChannelError, CreateAdminChannelResponse, CreateAdminCredentialData, CreateAdminCredentialError, CreateAdminCredentialResponse, CreateAdminGroupData, CreateAdminGroupError, CreateAdminGroupResponse, CreateAdminTokenData, CreateAdminTokenError, CreateAdminTokenResponse, CreateAdminUserData, CreateAdminUserError, CreateAdminUserResponse, DeleteAdminChannelData, DeleteAdminChannelError, DeleteAdminChannelResponse, DeleteAdminCredentialData, DeleteAdminCredentialError, DeleteAdminCredentialResponse, DeleteAdminGroupData, DeleteAdminGroupError, DeleteAdminGroupResponse, DeleteAdminTokenData, DeleteAdminTokenError, DeleteAdminTokenResponse, DeleteAdminUserData, DeleteAdminUserError, DeleteAdminUserResponse, GetAdminChannelData, GetAdminChannelError, GetAdminChannelResponse, GetAdminCredentialData, GetAdminCredentialError, GetAdminCredentialResponse, GetAdminGroupData, GetAdminGroupError, GetAdminGroupResponse, GetAdminTokenData, GetAdminTokenError, GetAdminTokenResponse, GetAdminUserData, GetAdminUserError, GetAdminUserResponse, GetManagementSessionData, GetManagementSessionError, GetManagementSessionResponse, ListAdminChannelsData, ListAdminChannelsError, ListAdminChannelsResponse, ListAdminCredentialsData, ListAdminCredentialsError, ListAdminCredentialsResponse, ListAdminGroupsData, ListAdminGroupsError, ListAdminGroupsResponse, ListAdminTokensData, ListAdminTokensError, ListAdminTokensResponse, ListAdminUsersData, ListAdminUsersError, ListAdminUsersResponse, LoginManagementSessionData, LoginManagementSessionError, LoginManagementSessionResponse, UpdateAdminChannelData, UpdateAdminChannelError, UpdateAdminChannelResponse, UpdateAdminCredentialData, UpdateAdminCredentialError, UpdateAdminCredentialResponse, UpdateAdminGroupData, UpdateAdminGroupError, UpdateAdminGroupResponse, UpdateAdminTokenData, UpdateAdminTokenError, UpdateAdminTokenResponse, UpdateAdminUserData, UpdateAdminUserError, UpdateAdminUserResponse } from '../types.gen';
 export const loginManagementSessionMutation = (options?: Partial<Options<LoginManagementSessionData>>): UseMutationOptions<LoginManagementSessionResponse, LoginManagementSessionError, Options<LoginManagementSessionData>> => {
     const mutationOptions: UseMutationOptions<LoginManagementSessionResponse, LoginManagementSessionError, Options<LoginManagementSessionData>> = {
         mutationFn: async (fnOptions) => {
@@ -397,6 +397,32 @@ export const listAdminChannelsInfiniteOptions = (options?: Options<ListAdminChan
     });
     return opts as Omit<typeof opts, 'initialData'>;
 };
+export const createAdminChannelMutation = (options?: Partial<Options<CreateAdminChannelData>>): UseMutationOptions<CreateAdminChannelResponse, CreateAdminChannelError, Options<CreateAdminChannelData>> => {
+    const mutationOptions: UseMutationOptions<CreateAdminChannelResponse, CreateAdminChannelError, Options<CreateAdminChannelData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await createAdminChannel({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+export const deleteAdminChannelMutation = (options?: Partial<Options<DeleteAdminChannelData>>): UseMutationOptions<DeleteAdminChannelResponse, DeleteAdminChannelError, Options<DeleteAdminChannelData>> => {
+    const mutationOptions: UseMutationOptions<DeleteAdminChannelResponse, DeleteAdminChannelError, Options<DeleteAdminChannelData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await deleteAdminChannel({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 export const getAdminChannelQueryKey = (options: Options<GetAdminChannelData>) => createQueryKey('getAdminChannel', options);
 export const getAdminChannelOptions = (options: Options<GetAdminChannelData>) => queryOptions<GetAdminChannelResponse, GetAdminChannelError, GetAdminChannelResponse, ReturnType<typeof getAdminChannelQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -410,6 +436,19 @@ export const getAdminChannelOptions = (options: Options<GetAdminChannelData>) =>
     },
     queryKey: getAdminChannelQueryKey(options)
 });
+export const updateAdminChannelMutation = (options?: Partial<Options<UpdateAdminChannelData>>): UseMutationOptions<UpdateAdminChannelResponse, UpdateAdminChannelError, Options<UpdateAdminChannelData>> => {
+    const mutationOptions: UseMutationOptions<UpdateAdminChannelResponse, UpdateAdminChannelError, Options<UpdateAdminChannelData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await updateAdminChannel({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 export const listAdminCredentialsQueryKey = (options: Options<ListAdminCredentialsData>) => createQueryKey('listAdminCredentials', options);
 export const listAdminCredentialsOptions = (options: Options<ListAdminCredentialsData>) => queryOptions<ListAdminCredentialsResponse, ListAdminCredentialsError, ListAdminCredentialsResponse, ReturnType<typeof listAdminCredentialsQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -448,6 +487,32 @@ export const listAdminCredentialsInfiniteOptions = (options: Options<ListAdminCr
     });
     return opts as Omit<typeof opts, 'initialData'>;
 };
+export const createAdminCredentialMutation = (options?: Partial<Options<CreateAdminCredentialData>>): UseMutationOptions<CreateAdminCredentialResponse, CreateAdminCredentialError, Options<CreateAdminCredentialData>> => {
+    const mutationOptions: UseMutationOptions<CreateAdminCredentialResponse, CreateAdminCredentialError, Options<CreateAdminCredentialData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await createAdminCredential({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+export const deleteAdminCredentialMutation = (options?: Partial<Options<DeleteAdminCredentialData>>): UseMutationOptions<DeleteAdminCredentialResponse, DeleteAdminCredentialError, Options<DeleteAdminCredentialData>> => {
+    const mutationOptions: UseMutationOptions<DeleteAdminCredentialResponse, DeleteAdminCredentialError, Options<DeleteAdminCredentialData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await deleteAdminCredential({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 export const getAdminCredentialQueryKey = (options: Options<GetAdminCredentialData>) => createQueryKey('getAdminCredential', options);
 export const getAdminCredentialOptions = (options: Options<GetAdminCredentialData>) => queryOptions<GetAdminCredentialResponse, GetAdminCredentialError, GetAdminCredentialResponse, ReturnType<typeof getAdminCredentialQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -461,3 +526,16 @@ export const getAdminCredentialOptions = (options: Options<GetAdminCredentialDat
     },
     queryKey: getAdminCredentialQueryKey(options)
 });
+export const updateAdminCredentialMutation = (options?: Partial<Options<UpdateAdminCredentialData>>): UseMutationOptions<UpdateAdminCredentialResponse, UpdateAdminCredentialError, Options<UpdateAdminCredentialData>> => {
+    const mutationOptions: UseMutationOptions<UpdateAdminCredentialResponse, UpdateAdminCredentialError, Options<UpdateAdminCredentialData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await updateAdminCredential({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};

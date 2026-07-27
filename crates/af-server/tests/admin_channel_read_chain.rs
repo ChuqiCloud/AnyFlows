@@ -33,6 +33,9 @@ const HEADER_CANARY: &str = "header-secret-canary";
 const SETTINGS_CANARY: &str = "settings-secret-canary";
 const CREDENTIAL_CANARY: &str = "credential-secret-canary";
 const REASON_CANARY: &str = "temporary-reason-canary";
+const WRITE_HEADER_CANARY: &str = "write-header-secret-canary";
+const WRITE_SETTINGS_CANARY: &str = "write-settings-secret-canary";
+const WRITE_CREDENTIAL_CANARY: &str = "write-credential-secret-canary";
 
 static NEXT_DATABASE: AtomicU64 = AtomicU64::new(0);
 
@@ -220,10 +223,178 @@ async fn admin_channel_and_credential_reads_use_real_database_services() {
     assert_eq!(deleted_credential.status, 404);
     assert_sanitized(&deleted_credential);
 
+    let create_channel = send_admin_json(
+        address,
+        "POST",
+        "/api/admin/channels",
+        &authorization,
+        json!({
+            "name": "write-channel",
+            "type": "openai",
+            "protocol": "openai_chat",
+            "base_url": "https://write.example.com/v1",
+            "status": "disabled",
+            "weight": 15,
+            "priority": 25,
+            "auto_ban": true,
+            "model_mapping": {"public-model": "write-upstream-model"},
+            "param_override": {},
+            "header_override": {"x-write-private": WRITE_HEADER_CANARY},
+            "settings": {"private": WRITE_SETTINGS_CANARY},
+            "tag": "write-test"
+        }),
+    )
+    .await;
+    assert_eq!(create_channel.status, 201);
+    assert_write_sanitized(&create_channel);
+    let write_channel_id = response_json(&create_channel)["id"].as_i64().unwrap();
+
+    let update_channel = send_admin_json(
+        address,
+        "PUT",
+        &format!("/api/admin/channels/{write_channel_id}"),
+        &authorization,
+        json!({
+            "name": "write-channel-updated",
+            "type": "openai",
+            "protocol": "openai_chat",
+            "base_url": "https://write.example.com/v1",
+            "status": "enabled",
+            "weight": 16,
+            "priority": 26,
+            "auto_ban": false,
+            "model_mapping": {"public-model": "write-upstream-model"},
+            "param_override": {},
+            "header_override": {"x-write-private": WRITE_HEADER_CANARY},
+            "settings": {"private": WRITE_SETTINGS_CANARY},
+            "tag": null
+        }),
+    )
+    .await;
+    assert_eq!(update_channel.status, 200);
+    assert_eq!(
+        response_json(&update_channel)["name"],
+        "write-channel-updated"
+    );
+    assert_write_sanitized(&update_channel);
+
+    let create_credential = send_admin_json(
+        address,
+        "POST",
+        &format!("/api/admin/channels/{write_channel_id}/credentials"),
+        &authorization,
+        json!({
+            "kind": "api_key",
+            "secret": WRITE_CREDENTIAL_CANARY,
+            "status": "disabled",
+            "multi_key_mode": "random",
+            "priority": 5,
+            "weight": 6,
+            "concurrency": null,
+            "load_factor_micros": null,
+            "rate_multiplier_micros": null,
+            "schedulable": false,
+            "parent_id": null,
+            "quota_dimension": "global",
+            "proxy_id": null,
+            "oauth_provider": null,
+            "oauth_account_key": null,
+            "oauth_project_id": null
+        }),
+    )
+    .await;
+    assert_eq!(create_credential.status, 201);
+    assert_write_sanitized(&create_credential);
+    let write_credential_id = response_json(&create_credential)["id"].as_i64().unwrap();
+
+    let update_credential = send_admin_json(
+        address,
+        "PUT",
+        &format!("/api/admin/channels/{write_channel_id}/credentials/{write_credential_id}"),
+        &authorization,
+        json!({
+            "kind": "api_key",
+            "secret": null,
+            "status": "enabled",
+            "multi_key_mode": "round_robin",
+            "priority": 7,
+            "weight": 8,
+            "concurrency": 2,
+            "load_factor_micros": 1000000,
+            "rate_multiplier_micros": 900000,
+            "schedulable": true,
+            "parent_id": null,
+            "quota_dimension": "global",
+            "proxy_id": null,
+            "oauth_provider": null,
+            "oauth_account_key": null,
+            "oauth_project_id": null
+        }),
+    )
+    .await;
+    assert_eq!(update_credential.status, 200);
+    assert_eq!(response_json(&update_credential)["weight"], 8);
+    assert_write_sanitized(&update_credential);
+
+    let delete_credential = send_request(
+        address,
+        "DELETE",
+        &format!("/api/admin/channels/{write_channel_id}/credentials/{write_credential_id}"),
+        b"",
+        &[("Authorization", &authorization)],
+    )
+    .await;
+    assert_eq!(delete_credential.status, 204);
+    let deleted_write_credential = get(
+        address,
+        &format!("/api/admin/channels/{write_channel_id}/credentials/{write_credential_id}"),
+        &authorization,
+    )
+    .await;
+    assert_eq!(deleted_write_credential.status, 404);
+
+    let delete_channel = send_request(
+        address,
+        "DELETE",
+        &format!("/api/admin/channels/{write_channel_id}"),
+        b"",
+        &[("Authorization", &authorization)],
+    )
+    .await;
+    assert_eq!(delete_channel.status, 204);
+    let deleted_write_channel = get(
+        address,
+        &format!("/api/admin/channels/{write_channel_id}"),
+        &authorization,
+    )
+    .await;
+    assert_eq!(deleted_write_channel.status, 404);
+
     shutdown.send(()).unwrap();
     let report = timeout(IO_TIMEOUT, server).await.unwrap().unwrap().unwrap();
     assert_eq!(report.http, ServeOutcome::Drained);
     assert_eq!(report.background, SupervisorShutdown::Drained);
+}
+
+async fn send_admin_json(
+    address: std::net::SocketAddr,
+    method: &str,
+    path: &str,
+    authorization: &str,
+    body: Value,
+) -> support::RawResponse {
+    let body = serde_json::to_vec(&body).unwrap();
+    send_request(
+        address,
+        method,
+        path,
+        &body,
+        &[
+            ("Authorization", authorization),
+            ("Content-Type", "application/json"),
+        ],
+    )
+    .await
 }
 
 async fn login(address: std::net::SocketAddr) -> String {
@@ -451,6 +622,24 @@ fn assert_sanitized(response: &support::RawResponse) {
         "settings",
         "secret",
         "temp_unschedulable_reason",
+    ] {
+        assert!(!rendered.contains(forbidden));
+    }
+}
+
+fn assert_write_sanitized(response: &support::RawResponse) {
+    let rendered = format!(
+        "{:?}\n{}",
+        response.headers,
+        String::from_utf8_lossy(&response.body)
+    );
+    for forbidden in [
+        WRITE_HEADER_CANARY,
+        WRITE_SETTINGS_CANARY,
+        WRITE_CREDENTIAL_CANARY,
+        "header_override",
+        "settings",
+        "secret",
     ] {
         assert!(!rendered.contains(forbidden));
     }
