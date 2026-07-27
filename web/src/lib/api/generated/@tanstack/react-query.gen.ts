@@ -2,8 +2,8 @@
 
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 import { client } from '../client.gen';
-import { createAdminGroup, createAdminToken, createAdminUser, deleteAdminGroup, deleteAdminToken, deleteAdminUser, getAdminGroup, getAdminToken, getAdminUser, getManagementSession, listAdminGroups, listAdminTokens, listAdminUsers, loginManagementSession, type Options, updateAdminGroup, updateAdminToken, updateAdminUser } from '../sdk.gen';
-import type { CreateAdminGroupData, CreateAdminGroupError, CreateAdminGroupResponse, CreateAdminTokenData, CreateAdminTokenError, CreateAdminTokenResponse, CreateAdminUserData, CreateAdminUserError, CreateAdminUserResponse, DeleteAdminGroupData, DeleteAdminGroupError, DeleteAdminGroupResponse, DeleteAdminTokenData, DeleteAdminTokenError, DeleteAdminTokenResponse, DeleteAdminUserData, DeleteAdminUserError, DeleteAdminUserResponse, GetAdminGroupData, GetAdminGroupError, GetAdminGroupResponse, GetAdminTokenData, GetAdminTokenError, GetAdminTokenResponse, GetAdminUserData, GetAdminUserError, GetAdminUserResponse, GetManagementSessionData, GetManagementSessionError, GetManagementSessionResponse, ListAdminGroupsData, ListAdminGroupsError, ListAdminGroupsResponse, ListAdminTokensData, ListAdminTokensError, ListAdminTokensResponse, ListAdminUsersData, ListAdminUsersError, ListAdminUsersResponse, LoginManagementSessionData, LoginManagementSessionError, LoginManagementSessionResponse, UpdateAdminGroupData, UpdateAdminGroupError, UpdateAdminGroupResponse, UpdateAdminTokenData, UpdateAdminTokenError, UpdateAdminTokenResponse, UpdateAdminUserData, UpdateAdminUserError, UpdateAdminUserResponse } from '../types.gen';
+import { createAdminGroup, createAdminToken, createAdminUser, deleteAdminGroup, deleteAdminToken, deleteAdminUser, getAdminChannel, getAdminCredential, getAdminGroup, getAdminToken, getAdminUser, getManagementSession, listAdminChannels, listAdminCredentials, listAdminGroups, listAdminTokens, listAdminUsers, loginManagementSession, type Options, updateAdminGroup, updateAdminToken, updateAdminUser } from '../sdk.gen';
+import type { CreateAdminGroupData, CreateAdminGroupError, CreateAdminGroupResponse, CreateAdminTokenData, CreateAdminTokenError, CreateAdminTokenResponse, CreateAdminUserData, CreateAdminUserError, CreateAdminUserResponse, DeleteAdminGroupData, DeleteAdminGroupError, DeleteAdminGroupResponse, DeleteAdminTokenData, DeleteAdminTokenError, DeleteAdminTokenResponse, DeleteAdminUserData, DeleteAdminUserError, DeleteAdminUserResponse, GetAdminChannelData, GetAdminChannelError, GetAdminChannelResponse, GetAdminCredentialData, GetAdminCredentialError, GetAdminCredentialResponse, GetAdminGroupData, GetAdminGroupError, GetAdminGroupResponse, GetAdminTokenData, GetAdminTokenError, GetAdminTokenResponse, GetAdminUserData, GetAdminUserError, GetAdminUserResponse, GetManagementSessionData, GetManagementSessionError, GetManagementSessionResponse, ListAdminChannelsData, ListAdminChannelsError, ListAdminChannelsResponse, ListAdminCredentialsData, ListAdminCredentialsError, ListAdminCredentialsResponse, ListAdminGroupsData, ListAdminGroupsError, ListAdminGroupsResponse, ListAdminTokensData, ListAdminTokensError, ListAdminTokensResponse, ListAdminUsersData, ListAdminUsersError, ListAdminUsersResponse, LoginManagementSessionData, LoginManagementSessionError, LoginManagementSessionResponse, UpdateAdminGroupData, UpdateAdminGroupError, UpdateAdminGroupResponse, UpdateAdminTokenData, UpdateAdminTokenError, UpdateAdminTokenResponse, UpdateAdminUserData, UpdateAdminUserError, UpdateAdminUserResponse } from '../types.gen';
 export const loginManagementSessionMutation = (options?: Partial<Options<LoginManagementSessionData>>): UseMutationOptions<LoginManagementSessionResponse, LoginManagementSessionError, Options<LoginManagementSessionData>> => {
     const mutationOptions: UseMutationOptions<LoginManagementSessionResponse, LoginManagementSessionError, Options<LoginManagementSessionData>> = {
         mutationFn: async (fnOptions) => {
@@ -359,3 +359,105 @@ export const updateAdminTokenMutation = (options?: Partial<Options<UpdateAdminTo
     };
     return mutationOptions;
 };
+export const listAdminChannelsQueryKey = (options?: Options<ListAdminChannelsData>) => createQueryKey('listAdminChannels', options);
+export const listAdminChannelsOptions = (options?: Options<ListAdminChannelsData>) => queryOptions<ListAdminChannelsResponse, ListAdminChannelsError, ListAdminChannelsResponse, ReturnType<typeof listAdminChannelsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listAdminChannels({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listAdminChannelsQueryKey(options)
+});
+export const listAdminChannelsInfiniteQueryKey = (options?: Options<ListAdminChannelsData>): QueryKey<Options<ListAdminChannelsData>> => createQueryKey('listAdminChannels', options, true);
+export const listAdminChannelsInfiniteOptions = (options?: Options<ListAdminChannelsData>) => {
+    const opts = infiniteQueryOptions<ListAdminChannelsResponse, ListAdminChannelsError, InfiniteData<ListAdminChannelsResponse>, QueryKey<Options<ListAdminChannelsData>>, number | Pick<QueryKey<Options<ListAdminChannelsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+    {
+        queryFn: async ({ pageParam, queryKey, signal }) => {
+            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+            const page: Pick<QueryKey<Options<ListAdminChannelsData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
+                query: {
+                    after: pageParam
+                }
+            };
+            const params = createInfiniteParams(queryKey, page);
+            const { data } = await listAdminChannels({
+                ...options,
+                ...params,
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: listAdminChannelsInfiniteQueryKey(options)
+    });
+    return opts as Omit<typeof opts, 'initialData'>;
+};
+export const getAdminChannelQueryKey = (options: Options<GetAdminChannelData>) => createQueryKey('getAdminChannel', options);
+export const getAdminChannelOptions = (options: Options<GetAdminChannelData>) => queryOptions<GetAdminChannelResponse, GetAdminChannelError, GetAdminChannelResponse, ReturnType<typeof getAdminChannelQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getAdminChannel({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getAdminChannelQueryKey(options)
+});
+export const listAdminCredentialsQueryKey = (options: Options<ListAdminCredentialsData>) => createQueryKey('listAdminCredentials', options);
+export const listAdminCredentialsOptions = (options: Options<ListAdminCredentialsData>) => queryOptions<ListAdminCredentialsResponse, ListAdminCredentialsError, ListAdminCredentialsResponse, ReturnType<typeof listAdminCredentialsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listAdminCredentials({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listAdminCredentialsQueryKey(options)
+});
+export const listAdminCredentialsInfiniteQueryKey = (options: Options<ListAdminCredentialsData>): QueryKey<Options<ListAdminCredentialsData>> => createQueryKey('listAdminCredentials', options, true);
+export const listAdminCredentialsInfiniteOptions = (options: Options<ListAdminCredentialsData>) => {
+    const opts = infiniteQueryOptions<ListAdminCredentialsResponse, ListAdminCredentialsError, InfiniteData<ListAdminCredentialsResponse>, QueryKey<Options<ListAdminCredentialsData>>, number | Pick<QueryKey<Options<ListAdminCredentialsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+    {
+        queryFn: async ({ pageParam, queryKey, signal }) => {
+            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+            const page: Pick<QueryKey<Options<ListAdminCredentialsData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
+                query: {
+                    after: pageParam
+                }
+            };
+            const params = createInfiniteParams(queryKey, page);
+            const { data } = await listAdminCredentials({
+                ...options,
+                ...params,
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: listAdminCredentialsInfiniteQueryKey(options)
+    });
+    return opts as Omit<typeof opts, 'initialData'>;
+};
+export const getAdminCredentialQueryKey = (options: Options<GetAdminCredentialData>) => createQueryKey('getAdminCredential', options);
+export const getAdminCredentialOptions = (options: Options<GetAdminCredentialData>) => queryOptions<GetAdminCredentialResponse, GetAdminCredentialError, GetAdminCredentialResponse, ReturnType<typeof getAdminCredentialQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getAdminCredential({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getAdminCredentialQueryKey(options)
+});

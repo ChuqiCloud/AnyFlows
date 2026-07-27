@@ -7,21 +7,26 @@ use std::{
 };
 
 use af_admin::{
-    AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture, AdminGroupGetFuture,
-    AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError, AdminGroupReader,
-    AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
-    AdminTokenCreateCommand, AdminTokenCreateFuture, AdminTokenDeleteFuture, AdminTokenGetFuture,
-    AdminTokenListFuture, AdminTokenListQuery, AdminTokenReadError, AdminTokenReader,
-    AdminTokenUpdateCommand, AdminTokenUpdateFuture, AdminTokenWriteError, AdminTokenWriter,
-    AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture,
-    AdminUserListFuture, AdminUserListQuery, AdminUserReadError, AdminUserReader,
-    AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter,
-    ApiKeyDigest, LoginCredentials, SessionAuthenticationError, SessionAuthenticationFuture,
-    SessionAuthenticator, SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture,
-    TokenAuthenticator,
+    AdminChannelGetFuture, AdminChannelListFuture, AdminChannelListQuery, AdminChannelReadError,
+    AdminChannelReader, AdminCredentialGetFuture, AdminCredentialListFuture,
+    AdminCredentialListQuery, AdminGroupCreateCommand, AdminGroupCreateFuture,
+    AdminGroupDeleteFuture, AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery,
+    AdminGroupReadError, AdminGroupReader, AdminGroupUpdateCommand, AdminGroupUpdateFuture,
+    AdminGroupWriteError, AdminGroupWriter, AdminTokenCreateCommand, AdminTokenCreateFuture,
+    AdminTokenDeleteFuture, AdminTokenGetFuture, AdminTokenListFuture, AdminTokenListQuery,
+    AdminTokenReadError, AdminTokenReader, AdminTokenUpdateCommand, AdminTokenUpdateFuture,
+    AdminTokenWriteError, AdminTokenWriter, AdminUserCreateCommand, AdminUserCreateFuture,
+    AdminUserDeleteFuture, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery,
+    AdminUserReadError, AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture,
+    AdminUserWriteError, AdminUserWriter, ApiKeyDigest, LoginCredentials,
+    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
+    SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
 };
 use af_config::ServerConfig;
-use af_domain::{GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId};
+use af_domain::{
+    ChannelId, CredentialId, GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp,
+    UserId,
+};
 use af_http::{
     HttpListener, QueryApiKeyPolicy, ReadinessFuture, ReadinessHandle, ReadinessProbe,
     ServeOutcome, build_router, serve_with_graceful_shutdown,
@@ -51,6 +56,7 @@ impl ReadinessProbe for AlwaysReadyProbe {
 struct AlwaysAuthenticates;
 
 struct RejectSessions;
+struct RejectAdminChannels;
 struct RejectAdminGroups;
 struct RejectAdminTokens;
 struct RejectAdminUsers;
@@ -62,6 +68,42 @@ impl SessionAuthenticator for RejectSessions {
 
     fn authenticate<'a>(&'a self, _token: &'a str) -> SessionAuthenticationFuture<'a> {
         Box::pin(async { Err(SessionAuthenticationError::InvalidSession) })
+    }
+}
+
+impl AdminChannelReader for RejectAdminChannels {
+    fn list_channels<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _query: AdminChannelListQuery,
+    ) -> AdminChannelListFuture<'a> {
+        Box::pin(async { Err(AdminChannelReadError::Internal) })
+    }
+
+    fn get_channel<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _channel_id: ChannelId,
+    ) -> AdminChannelGetFuture<'a> {
+        Box::pin(async { Err(AdminChannelReadError::Internal) })
+    }
+
+    fn list_credentials<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _channel_id: ChannelId,
+        _query: AdminCredentialListQuery,
+    ) -> AdminCredentialListFuture<'a> {
+        Box::pin(async { Err(AdminChannelReadError::Internal) })
+    }
+
+    fn get_credential<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _channel_id: ChannelId,
+        _credential_id: CredentialId,
+    ) -> AdminCredentialGetFuture<'a> {
+        Box::pin(async { Err(AdminChannelReadError::Internal) })
     }
 }
 
@@ -483,6 +525,7 @@ async fn start_server(
         readiness,
         Arc::new(AlwaysAuthenticates),
         Arc::new(RejectSessions),
+        Arc::new(RejectAdminChannels),
         Arc::new(RejectAdminGroups),
         Arc::new(RejectAdminGroups),
         Arc::new(RejectAdminTokens),

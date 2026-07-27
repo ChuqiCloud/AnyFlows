@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminTokenWriter, AdminUserReader,
-    AdminUserWriter, SessionAuthenticator, TokenAuthenticator,
+    AdminChannelReader, AdminGroupReader, AdminGroupWriter, AdminTokenReader, AdminTokenWriter,
+    AdminUserReader, AdminUserWriter, SessionAuthenticator, TokenAuthenticator,
 };
 use af_config::ServerConfig;
 use af_protocol::openai_chat::MAX_BODY_BYTES;
@@ -21,6 +21,8 @@ use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLaye
 use crate::authentication::{AuthenticationState, authenticate_api_key};
 use crate::management_auth::{ManagementAuthenticationState, authenticate_management_session};
 use crate::management_authorization::authorize_management_admin;
+use crate::management_channels::{get_admin_channel, list_admin_channels};
+use crate::management_credentials::{get_admin_credential, list_admin_credentials};
 use crate::management_group_writes::{create_admin_group, delete_admin_group, update_admin_group};
 use crate::management_groups::{get_admin_group, list_admin_groups};
 use crate::management_session::{current_session, login};
@@ -71,6 +73,7 @@ pub fn build_router(
     readiness: ReadinessHandle,
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
+    admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
@@ -92,7 +95,8 @@ pub fn build_router(
         admin_token_writer,
         admin_user_reader,
         admin_user_writer,
-    );
+    )
+    .with_admin_channel_reader(admin_channel_reader);
     let public_routes = Router::new()
         .route(
             "/v1/chat/completions",
@@ -125,6 +129,22 @@ pub fn build_router(
         authenticate_management_session,
     );
     let token_item_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let channel_collection_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let channel_item_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let credential_collection_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let credential_item_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
         authenticate_management_session,
     );
@@ -178,6 +198,30 @@ pub fn build_router(
                 .delete(delete_admin_token)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(token_item_authentication),
+        )
+        .route(
+            "/api/admin/channels",
+            get(list_admin_channels)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(channel_collection_authentication),
+        )
+        .route(
+            "/api/admin/channels/{id}",
+            get(get_admin_channel)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(channel_item_authentication),
+        )
+        .route(
+            "/api/admin/channels/{channel_id}/credentials",
+            get(list_admin_credentials)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(credential_collection_authentication),
+        )
+        .route(
+            "/api/admin/channels/{channel_id}/credentials/{credential_id}",
+            get(get_admin_credential)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(credential_item_authentication),
         )
         .with_state(http_state);
     HttpRouter::new(build_router_with_routes(

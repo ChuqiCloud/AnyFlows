@@ -8,6 +8,8 @@ mod credentials;
 mod error_response;
 mod management_auth;
 mod management_authorization;
+mod management_channels;
+mod management_credentials;
 mod management_error;
 mod management_group_writes;
 mod management_groups;
@@ -39,6 +41,8 @@ mod client_ip_tests;
 mod credentials_tests;
 #[cfg(test)]
 mod error_response_tests;
+#[cfg(test)]
+mod management_channels_tests;
 #[cfg(test)]
 mod management_group_writes_tests;
 #[cfg(test)]

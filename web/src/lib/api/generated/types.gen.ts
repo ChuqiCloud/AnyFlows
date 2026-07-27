@@ -92,8 +92,72 @@ export type AdminGroupListResponse = {
     next_cursor: number | null;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'channel_not_found' | 'credential_not_found' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
     message: string;
+};
+export type AdminRoutingStatus = 'enabled' | 'disabled' | 'auto_disabled';
+export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'bedrock' | 'vertex' | 'custom';
+export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini';
+export type AdminChannel = {
+    id: number;
+    name: string;
+    type: AdminChannelType;
+    protocol: AdminChannelProtocol;
+    base_url: string | null;
+    status: AdminRoutingStatus;
+    weight: number;
+    priority: number;
+    auto_ban: boolean;
+    model_mapping: {
+        [key: string]: string;
+    };
+    param_override: {
+        [key: string]: unknown;
+    };
+    balance: number | null;
+    used_quota: number;
+    tag: string | null;
+    created_at: number;
+    updated_at: number;
+};
+export type AdminChannelListResponse = {
+    channels: Array<AdminChannel>;
+    next_cursor: number | null;
+};
+export type AdminCredentialKind = 'api_key' | 'oauth' | 'setup_token' | 'bedrock' | 'service_account' | 'upstream';
+export type AdminCredentialMultiKeyMode = 'random' | 'round_robin';
+export type AdminCredentialQuotaDimension = 'global' | 'spark';
+export type AdminCredential = {
+    id: number;
+    channel_id: number;
+    kind: AdminCredentialKind;
+    status: AdminRoutingStatus;
+    multi_key_mode: AdminCredentialMultiKeyMode | null;
+    priority: number;
+    weight: number;
+    concurrency: number | null;
+    load_factor_micros: number | null;
+    rate_multiplier_micros: number | null;
+    schedulable: boolean;
+    rate_limited_at: number | null;
+    rate_limit_reset_at: number | null;
+    overload_until: number | null;
+    temp_unschedulable_until: number | null;
+    session_window_start: number | null;
+    session_window_end: number | null;
+    parent_id: number | null;
+    quota_dimension: AdminCredentialQuotaDimension;
+    proxy_id: number | null;
+    oauth_provider: string | null;
+    oauth_account_key: string | null;
+    oauth_project_id: string | null;
+    last_used_at: number | null;
+    created_at: number;
+    updated_at: number;
+};
+export type AdminCredentialListResponse = {
+    credentials: Array<AdminCredential>;
+    next_cursor: number | null;
 };
 export type AdminTokenStatus = 'enabled' | 'disabled';
 export type AdminTokenWriteRequest = {
@@ -473,3 +537,87 @@ export type UpdateAdminTokenResponses = {
     200: AdminToken;
 };
 export type UpdateAdminTokenResponse = UpdateAdminTokenResponses[keyof UpdateAdminTokenResponses];
+export type ListAdminChannelsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/admin/channels';
+};
+export type ListAdminChannelsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminChannelsError = ListAdminChannelsErrors[keyof ListAdminChannelsErrors];
+export type ListAdminChannelsResponses = {
+    200: AdminChannelListResponse;
+};
+export type ListAdminChannelsResponse = ListAdminChannelsResponses[keyof ListAdminChannelsResponses];
+export type GetAdminChannelData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{id}';
+};
+export type GetAdminChannelErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminChannelError = GetAdminChannelErrors[keyof GetAdminChannelErrors];
+export type GetAdminChannelResponses = {
+    200: AdminChannel;
+};
+export type GetAdminChannelResponse = GetAdminChannelResponses[keyof GetAdminChannelResponses];
+export type ListAdminCredentialsData = {
+    body?: never;
+    path: {
+        channel_id: number;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/admin/channels/{channel_id}/credentials';
+};
+export type ListAdminCredentialsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminCredentialsError = ListAdminCredentialsErrors[keyof ListAdminCredentialsErrors];
+export type ListAdminCredentialsResponses = {
+    200: AdminCredentialListResponse;
+};
+export type ListAdminCredentialsResponse = ListAdminCredentialsResponses[keyof ListAdminCredentialsResponses];
+export type GetAdminCredentialData = {
+    body?: never;
+    path: {
+        channel_id: number;
+        credential_id: number;
+    };
+    query?: never;
+    url: '/api/admin/channels/{channel_id}/credentials/{credential_id}';
+};
+export type GetAdminCredentialErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminCredentialError = GetAdminCredentialErrors[keyof GetAdminCredentialErrors];
+export type GetAdminCredentialResponses = {
+    200: AdminCredential;
+};
+export type GetAdminCredentialResponse = GetAdminCredentialResponses[keyof GetAdminCredentialResponses];
