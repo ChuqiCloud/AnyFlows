@@ -22,6 +22,40 @@
   "dashboard": {
     "title": "Console"
   },
+  "auth": {
+    "login": {
+      "eyebrow": "AnyFlows management console",
+      "heroTitle": "Every model flow, under control",
+      "heroBody": "Sign in securely and continue managing your gateway.",
+      "title": "Welcome back",
+      "subtitle": "Continue with an administrator account",
+      "username": "Username",
+      "usernamePlaceholder": "Enter your username",
+      "password": "Password",
+      "passwordPlaceholder": "Enter your password",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "submit": "Sign in",
+      "submitting": "Verifying"
+    },
+    "errors": {
+      "invalidCredentials": "The username or password is incorrect.",
+      "adminRequired": "This account does not have administrator access.",
+      "sessionExpired": "Your session has expired. Sign in again.",
+      "unavailable": "The service is unavailable. Try again shortly."
+    },
+    "session": {
+      "loading": "Restoring your management session",
+      "unavailableTitle": "Session verification is unavailable",
+      "unavailableBody": "The service is currently unavailable. Your sign-in is still retained.",
+      "retry": "Try again",
+      "otherAccount": "Use another account"
+    },
+    "account": {
+      "admin": "Administrator",
+      "logout": "Sign out"
+    }
+  },
   "summary": {
     "label": "Summary metrics",
     "requests": { "label": "Requests", "value": "N/A", "hint": "Waiting for data" },

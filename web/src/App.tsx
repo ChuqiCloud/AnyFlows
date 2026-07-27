@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { AppShell } from '@/components/layout/app-shell'
+import { LoginPage, type LoginNotice } from '@/features/auth/login-page'
+import { SessionBoundary } from '@/features/auth/session-boundary'
+import { endManagementSession } from '@/features/auth/session-query'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
 import { LandingPage } from '@/features/landing/landing-page'
 
@@ -17,20 +20,47 @@ function useHashView() {
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [])
 
-  return hash.startsWith('#/console') ? 'console' : 'landing'
+  if (hash.startsWith('#/console')) return 'console'
+  if (hash.startsWith('#/login')) return 'login'
+  return 'landing'
 }
 
 export default function App() {
   const { t } = useTranslation()
   const view = useHashView()
+  const [loginNotice, setLoginNotice] = useState<LoginNotice>()
+
+  const openLogin = useCallback((reason: 'adminRequired' | 'required' | 'sessionExpired') => {
+    setLoginNotice(reason === 'required' ? undefined : reason)
+    window.location.hash = '#/login'
+  }, [])
+
+  const openConsole = useCallback(() => {
+    setLoginNotice(undefined)
+    window.location.hash = '#/console'
+  }, [])
+
+  const logout = useCallback(() => {
+    endManagementSession()
+    setLoginNotice(undefined)
+    window.location.hash = '#/login'
+  }, [])
 
   if (view === 'landing') {
     return <LandingPage />
   }
 
+  if (view === 'login') {
+    return <LoginPage notice={loginNotice} onAuthenticated={openConsole} />
+  }
+
   return (
-    <AppShell title={t('dashboard.title')}>
-      <DashboardPage />
-    </AppShell>
+    <SessionBoundary onSessionEnded={openLogin}>
+      {(session) => (
+        <AppShell title={t('dashboard.title')} currentUser={session.user} onLogout={logout}>
+          <DashboardPage />
+        </AppShell>
+      )}
+    </SessionBoundary>
   )
 }

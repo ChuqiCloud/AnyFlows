@@ -22,6 +22,40 @@
   "dashboard": {
     "title": "控制台"
   },
+  "auth": {
+    "login": {
+      "eyebrow": "AnyFlows 管理控制台",
+      "heroTitle": "掌控每一条模型流",
+      "heroBody": "安全进入统一控制台，继续管理你的网关。",
+      "title": "欢迎回来",
+      "subtitle": "使用管理员账户继续",
+      "username": "用户名",
+      "usernamePlaceholder": "请输入用户名",
+      "password": "密码",
+      "passwordPlaceholder": "请输入密码",
+      "showPassword": "显示密码",
+      "hidePassword": "隐藏密码",
+      "submit": "登录控制台",
+      "submitting": "正在验证"
+    },
+    "errors": {
+      "invalidCredentials": "用户名或密码不正确。",
+      "adminRequired": "该账户没有管理员权限。",
+      "sessionExpired": "会话已过期，请重新登录。",
+      "unavailable": "暂时无法连接服务，请稍后重试。"
+    },
+    "session": {
+      "loading": "正在恢复管理会话",
+      "unavailableTitle": "暂时无法验证会话",
+      "unavailableBody": "服务当前不可用，你的登录状态仍然保留。",
+      "retry": "重新验证",
+      "otherAccount": "使用其他账户"
+    },
+    "account": {
+      "admin": "管理员",
+      "logout": "退出登录"
+    }
+  },
   "summary": {
     "label": "概览指标",
     "requests": { "label": "请求", "value": "暂无", "hint": "等待数据" },

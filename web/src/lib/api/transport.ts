@@ -1,4 +1,5 @@
 import { ApiError } from './errors'
+import { invalidateManagementSession } from './session-token'
 
 const nativeFetch = globalThis.fetch.bind(globalThis)
 
@@ -17,6 +18,10 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit) {
 
   if (response.ok) {
     return response
+  }
+
+  if (response.status === 401) {
+    invalidateManagementSession()
   }
 
   throw ApiError.from(await readErrorDetails(response), response)

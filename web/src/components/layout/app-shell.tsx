@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Search } from 'lucide-react'
+import { LogOut, Search, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AppNavigation } from '@/components/layout/app-navigation'
@@ -16,10 +16,15 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar'
 import { Kbd } from '@/components/ui/kbd'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import type { SessionUser } from '@/lib/api/generated/types.gen'
 
 type AppShellProps = {
   title: string
   children: ReactNode
+  currentUser: SessionUser
+  onLogout: () => void
 }
 
 function getDefaultOpen() {
@@ -33,7 +38,7 @@ function getDefaultOpen() {
   return true
 }
 
-export function AppShell({ title, children }: AppShellProps) {
+export function AppShell({ title, children, currentUser, onLogout }: AppShellProps) {
   const { t } = useTranslation()
 
   return (
@@ -88,6 +93,26 @@ export function AppShell({ title, children }: AppShellProps) {
             </button>
             <LanguageToggle />
             <ThemeToggle />
+            <div className="ml-1 hidden h-7 items-center gap-1.5 border-l border-[var(--hairline)] pl-2 text-xs text-muted-foreground sm:flex">
+              <ShieldCheck className="size-3.5 text-info" aria-hidden="true" />
+              <span>{t('auth.account.admin')}</span>
+              <span className="text-foreground">#{currentUser.id}</span>
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="ml-0.5 text-muted-foreground hover:text-foreground"
+                  aria-label={t('auth.account.logout')}
+                  onClick={onLogout}
+                >
+                  <LogOut className="size-3.5" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{t('auth.account.logout')}</TooltipContent>
+            </Tooltip>
           </div>
         </header>
 
