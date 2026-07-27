@@ -286,6 +286,7 @@ pub fn build_router(
     ))
 }
 
+#[cfg(test)]
 pub(crate) fn build_router_with_routes(
     public_routes: Router,
     operations_routes: Router,

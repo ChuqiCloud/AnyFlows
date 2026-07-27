@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::LazyLock};
 use af_http::{FrontendAsset, FrontendAssetSource};
 use include_dir::{Dir, include_dir};
 
-static FRONTEND_DIST: Dir<'_> = include_dir!("$OUT_DIR/web-dist");
+static FRONTEND_DIST: Dir<'static> = include_dir!("$OUT_DIR/web-dist");
 static FRONTEND_ASSETS: LazyLock<HashMap<String, FrontendAsset>> = LazyLock::new(|| {
     let mut assets = HashMap::new();
     collect_assets(&FRONTEND_DIST, &mut assets);
@@ -20,7 +20,7 @@ impl FrontendAssetSource for EmbeddedFrontendAssets {
     }
 }
 
-fn collect_assets(directory: &Dir<'_>, assets: &mut HashMap<String, FrontendAsset>) {
+fn collect_assets(directory: &'static Dir<'static>, assets: &mut HashMap<String, FrontendAsset>) {
     for file in directory.files() {
         let path = file.path().to_string_lossy().replace('\\', "/");
         assets.insert(path, FrontendAsset::from_static(file.contents()));
