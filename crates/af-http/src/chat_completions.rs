@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminTokenReader,
-    AdminTokenWriter, AdminUserReader, AdminUserWriter, SessionAuthenticator, TokenAuthentication,
+    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, SessionAuthenticator,
+    TokenAuthentication,
 };
 use af_domain::AfError;
 use af_protocol::openai_chat::parse_request;
@@ -35,6 +36,7 @@ pub(crate) struct HttpState {
     pub(crate) admin_group_writer: Arc<dyn AdminGroupWriter>,
     pub(crate) admin_token_reader: Arc<dyn AdminTokenReader>,
     pub(crate) admin_token_writer: Arc<dyn AdminTokenWriter>,
+    pub(crate) admin_usage_log_reader: Option<Arc<dyn AdminUsageLogReader>>,
     pub(crate) admin_user_reader: Arc<dyn AdminUserReader>,
     pub(crate) admin_user_writer: Arc<dyn AdminUserWriter>,
     stream_delivery: StreamDeliveryPolicy,
@@ -61,10 +63,20 @@ impl HttpState {
             admin_group_writer,
             admin_token_reader,
             admin_token_writer,
+            admin_usage_log_reader: None,
             admin_user_reader,
             admin_user_writer,
             stream_delivery: StreamDeliveryPolicy::default(),
         }
+    }
+
+    /// 为用量日志管理路由注入真实只读服务。
+    pub(crate) fn with_admin_usage_log_reader(
+        mut self,
+        reader: Arc<dyn AdminUsageLogReader>,
+    ) -> Self {
+        self.admin_usage_log_reader = Some(reader);
+        self
     }
 
     /// 为包含渠道管理路由的组合根注入真实只读服务。

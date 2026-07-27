@@ -11,6 +11,7 @@ mod session;
 mod token_auth;
 mod token_read;
 mod token_write;
+mod usage_log_read;
 mod user_read;
 mod user_write;
 
@@ -67,6 +68,12 @@ pub use token_write::{
     AdminTokenUpdateCommand, AdminTokenUpdateFuture, AdminTokenWriteError, AdminTokenWriter,
     DatabaseAdminTokenWriter, IssuedAdminToken, MAX_ADMIN_TOKEN_IP_ALLOWLIST_COUNT,
     MAX_ADMIN_TOKEN_IP_ALLOWLIST_ITEM_BYTES, MAX_ADMIN_TOKEN_IP_ALLOWLIST_TEXT_BYTES,
+};
+pub use usage_log_read::{
+    AdminUsageLog, AdminUsageLogBillingMode, AdminUsageLogListFuture, AdminUsageLogListQuery,
+    AdminUsageLogPage, AdminUsageLogReadError, AdminUsageLogReader, AdminUsageLogSemantics,
+    AdminUsageLogSource, AdminUsageLogUsage, DEFAULT_ADMIN_USAGE_LOG_PAGE_SIZE,
+    DatabaseAdminUsageLogReader,
 };
 pub use user_read::{
     AdminUser, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage,

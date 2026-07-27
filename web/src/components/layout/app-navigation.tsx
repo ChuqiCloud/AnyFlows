@@ -1,4 +1,4 @@
-import { Gauge, KeyRound, Network } from 'lucide-react'
+import { Gauge, KeyRound, Network, ScrollText } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
@@ -20,6 +20,7 @@ const navItems = [
   { key: 'overview', icon: Gauge, href: '#/console' },
   { key: 'channels', icon: Network, href: '#/console/channels' },
   { key: 'keys', icon: KeyRound, href: '#/console/tokens' },
+  { key: 'usage', icon: ScrollText, href: '#/console/usage-logs' },
 ] as const
 
 function useActiveKey() {

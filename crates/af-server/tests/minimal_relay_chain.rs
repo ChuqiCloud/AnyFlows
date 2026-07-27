@@ -19,7 +19,8 @@ use af_admin::{
     AdminGroupWriteError, AdminGroupWriter, AdminTokenCreateCommand, AdminTokenCreateFuture,
     AdminTokenDeleteFuture, AdminTokenGetFuture, AdminTokenListFuture, AdminTokenListQuery,
     AdminTokenReadError, AdminTokenReader, AdminTokenUpdateCommand, AdminTokenUpdateFuture,
-    AdminTokenWriteError, AdminTokenWriter, AdminUserCreateCommand, AdminUserCreateFuture,
+    AdminTokenWriteError, AdminTokenWriter, AdminUsageLogListFuture, AdminUsageLogListQuery,
+    AdminUsageLogReadError, AdminUsageLogReader, AdminUserCreateCommand, AdminUserCreateFuture,
     AdminUserDeleteFuture, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery,
     AdminUserReadError, AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture,
     AdminUserWriteError, AdminUserWriter, ApiKeyDigest, LoginCredentials,
@@ -63,6 +64,7 @@ struct RejectSessions;
 struct RejectAdminChannels;
 struct RejectAdminGroups;
 struct RejectAdminTokens;
+struct RejectAdminUsageLogs;
 struct RejectAdminUsers;
 
 impl SessionAuthenticator for RejectSessions {
@@ -253,6 +255,16 @@ impl AdminTokenWriter for RejectAdminTokens {
         _token_id: TokenId,
     ) -> AdminTokenDeleteFuture<'a> {
         Box::pin(async { Err(AdminTokenWriteError::Internal) })
+    }
+}
+
+impl AdminUsageLogReader for RejectAdminUsageLogs {
+    fn list<'a>(
+        &'a self,
+        _principal: af_admin::SessionPrincipal,
+        _query: AdminUsageLogListQuery,
+    ) -> AdminUsageLogListFuture<'a> {
+        Box::pin(async { Err(AdminUsageLogReadError::Internal) })
     }
 }
 
@@ -591,6 +603,7 @@ async fn start_server(
         Arc::new(RejectAdminGroups),
         Arc::new(RejectAdminTokens),
         Arc::new(RejectAdminTokens),
+        Arc::new(RejectAdminUsageLogs),
         Arc::new(RejectAdminUsers),
         Arc::new(RejectAdminUsers),
         QueryApiKeyPolicy::Deny,

@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminTokenReader,
-    AdminTokenWriter, AdminUserReader, AdminUserWriter, SessionAuthenticator, TokenAuthenticator,
+    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, SessionAuthenticator,
+    TokenAuthenticator,
 };
 use af_config::ServerConfig;
 use af_protocol::openai_chat::MAX_BODY_BYTES;
@@ -35,6 +36,7 @@ use crate::management_groups::{get_admin_group, list_admin_groups};
 use crate::management_session::{current_session, login};
 use crate::management_token_writes::{create_admin_token, delete_admin_token, update_admin_token};
 use crate::management_tokens::{get_admin_token, list_admin_tokens};
+use crate::management_usage_logs::list_admin_usage_logs;
 use crate::management_users::{
     create_admin_user, delete_admin_user, get_admin_user, list_admin_users, update_admin_user,
 };
@@ -87,6 +89,7 @@ pub fn build_router(
     admin_group_writer: Arc<dyn AdminGroupWriter>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
     admin_token_writer: Arc<dyn AdminTokenWriter>,
+    admin_usage_log_reader: Arc<dyn AdminUsageLogReader>,
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
     query_api_key_policy: QueryApiKeyPolicy,
@@ -107,7 +110,8 @@ pub fn build_router(
     )
     .with_admin_channel_reader(admin_channel_reader)
     .with_admin_channel_writer(admin_channel_writer)
-    .with_admin_channel_probe(admin_channel_probe);
+    .with_admin_channel_probe(admin_channel_probe)
+    .with_admin_usage_log_reader(admin_usage_log_reader);
     let public_routes = Router::new()
         .route(
             "/v1/chat/completions",
@@ -140,6 +144,10 @@ pub fn build_router(
         authenticate_management_session,
     );
     let token_item_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let usage_log_collection_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
         authenticate_management_session,
     );
@@ -209,6 +217,12 @@ pub fn build_router(
                 .delete(delete_admin_token)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(token_item_authentication),
+        )
+        .route(
+            "/api/admin/usage-logs",
+            get(list_admin_usage_logs)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(usage_log_collection_authentication),
         )
         .route(
             "/api/admin/channels",

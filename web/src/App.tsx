@@ -9,6 +9,7 @@ import { ChannelPage } from '@/features/channels/channel-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
 import { LandingPage } from '@/features/landing/landing-page'
 import { TokenPage } from '@/features/tokens/token-page'
+import { UsageLogPage } from '@/features/usage-logs/usage-log-page'
 
 // 临时的 hash 视图切换：TanStack Router 接入前，先让公开页与控制台都可访达。
 // 路由落地后此处整体由文件路由替换。
@@ -24,6 +25,7 @@ function useHashView() {
 
   if (hash.startsWith('#/console/channels')) return 'channels'
   if (hash.startsWith('#/console/tokens')) return 'tokens'
+  if (hash.startsWith('#/console/usage-logs')) return 'usage-logs'
   if (hash.startsWith('#/console')) return 'overview'
   if (hash.startsWith('#/login')) return 'login'
   return 'landing'
@@ -58,8 +60,20 @@ export default function App() {
     return <LoginPage notice={loginNotice} onAuthenticated={openConsole} />
   }
 
-  const titleKey = view === 'channels' ? 'channels.title' : view === 'tokens' ? 'tokens.title' : 'dashboard.title'
-  const content = view === 'channels' ? <ChannelPage /> : view === 'tokens' ? <TokenPage /> : <DashboardPage />
+  const titleKey = view === 'channels'
+    ? 'channels.title'
+    : view === 'tokens'
+      ? 'tokens.title'
+      : view === 'usage-logs'
+        ? 'usageLogs.title'
+        : 'dashboard.title'
+  const content = view === 'channels'
+    ? <ChannelPage />
+    : view === 'tokens'
+      ? <TokenPage />
+      : view === 'usage-logs'
+        ? <UsageLogPage />
+        : <DashboardPage />
   return (
     <SessionBoundary onSessionEnded={openLogin}>
       {(session) => (
