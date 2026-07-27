@@ -12,6 +12,7 @@ use af_admin::{
     DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, SessionAuthenticator,
     SessionAuthenticatorConfigError, TokenAuthenticator,
 };
+use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
     DatabaseUsageRecordSink, GroupPricingCache, GroupPricingCacheError, ModelPriceCache,
@@ -21,13 +22,14 @@ use af_billing::{
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
-    AdminChannelRepository, AdminChannelRepositoryConfigError, AdminGroupRepository,
-    AdminGroupRepositoryConfigError, AdminTokenRepository, AdminTokenRepositoryConfigError,
-    AdminUsageLogRepository, AdminUsageLogRepositoryConfigError, AdminUserRepository,
-    AdminUserRepositoryConfigError, ChannelStateRepository, DatabaseError, DatabaseOptions,
-    DatabaseOptionsError, DatabasePool, MigrationOptions, QuotaRepository, TokenAuthRepository,
-    TokenAuthRepositoryConfigError, UsageLogRepository, UserSessionRepository,
-    UserSessionRepositoryConfigError, connect_and_migrate,
+    AdminChannelRepository, AdminChannelRepositoryConfigError, AdminDashboardRepository,
+    AdminDashboardRepositoryConfigError, AdminGroupRepository, AdminGroupRepositoryConfigError,
+    AdminTokenRepository, AdminTokenRepositoryConfigError, AdminUsageLogRepository,
+    AdminUsageLogRepositoryConfigError, AdminUserRepository, AdminUserRepositoryConfigError,
+    ChannelStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
+    MigrationOptions, QuotaRepository, TokenAuthRepository, TokenAuthRepositoryConfigError,
+    UsageLogRepository, UserSessionRepository, UserSessionRepositoryConfigError,
+    connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle,
@@ -82,6 +84,7 @@ pub struct AuthenticationReady {
     session_authenticator: Arc<dyn SessionAuthenticator>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
+    admin_dashboard_reader: Arc<dyn AdminDashboardReader>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
@@ -211,6 +214,9 @@ pub enum BootstrapError {
     /// 管理员用量日志仓储的启动参数无效。
     #[error("管理员用量日志仓储启动参数无效")]
     AdminUsageLogRepository(#[source] AdminUsageLogRepositoryConfigError),
+    /// 管理看板聚合仓储的启动参数无效。
+    #[error("管理看板仓储启动参数无效")]
+    AdminDashboardRepository(#[source] AdminDashboardRepositoryConfigError),
     /// 管理员渠道仓储的启动参数无效。
     #[error("管理员渠道仓储启动参数无效")]
     AdminChannelRepository(#[source] AdminChannelRepositoryConfigError),
@@ -377,6 +383,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::AdminUsageLogRepository)?;
+        let admin_dashboard_repository = AdminDashboardRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::AdminDashboardRepository)?;
         let credential_encryptor = CredentialEncryptor::new(self.config.credential_encryption())
             .map_err(BootstrapError::CredentialEncryption)?;
         let query_api_key_policy = if auth.allow_query_api_key() {
@@ -408,6 +419,9 @@ impl Bootstrap<DatabaseReady> {
                 admin_channel_writer: Arc::new(DatabaseAdminChannelWriter::new(
                     admin_channel_repository,
                     credential_encryptor,
+                )),
+                admin_dashboard_reader: Arc::new(DatabaseAdminDashboardReader::new(
+                    admin_dashboard_repository,
                 )),
                 admin_group_reader: Arc::new(DatabaseAdminGroupReader::new(
                     admin_group_repository.clone(),
@@ -717,6 +731,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.admin_group_writer),
             Arc::clone(&self.stage.infrastructure.admin_token_reader),
             Arc::clone(&self.stage.infrastructure.admin_token_writer),
+            Arc::clone(&self.stage.infrastructure.admin_dashboard_reader),
             Arc::clone(&self.stage.infrastructure.admin_usage_log_reader),
             Arc::clone(&self.stage.infrastructure.admin_user_reader),
             Arc::clone(&self.stage.infrastructure.admin_user_writer),

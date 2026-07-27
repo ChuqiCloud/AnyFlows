@@ -20,7 +20,54 @@
     "home": "返回首页"
   },
   "dashboard": {
-    "title": "控制台"
+    "title": "运行概览",
+    "subtitle": "最近 24 小时的已确认用量与当前渠道状态",
+    "period": "{{start}} 至 {{end}}",
+    "loading": "正在加载看板指标",
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试"
+    },
+    "summary": {
+      "label": "概览指标",
+      "requests": { "label": "请求", "hint": "最近 24 小时已确认" },
+      "quota": { "label": "消耗额度", "hint": "最终落库额度单位" },
+      "channels": { "label": "启用渠道", "hint": "全部 {{total}} 个未删除渠道" },
+      "confirmed": {
+        "label": "上游确认率",
+        "hint": "{{count}} 次由上游返回用量",
+        "empty": "暂无请求样本"
+      }
+    },
+    "composition": {
+      "title": "请求构成",
+      "subtitle": "所有计数均来自同一批已确认用量事实",
+      "source": {
+        "title": "用量来源",
+        "upstream": "上游返回",
+        "estimated": "本地估算"
+      },
+      "billing": {
+        "title": "计费模式",
+        "perToken": "按 token 计费",
+        "free": "免费请求"
+      }
+    },
+    "channels": {
+      "title": "渠道状态",
+      "total": "共 {{count}} 个",
+      "enabled": "已启用",
+      "disabled": "已停用",
+      "autoDisabled": "自动停用"
+    },
+    "empty": {
+      "title": "还没有运行数据",
+      "body": "创建渠道并完成首个经过计费闭环的模型请求后，概览指标会出现在这里。"
+    },
+    "error": {
+      "title": "无法读取看板指标",
+      "body": "服务暂时没有返回已确认用量与渠道状态，请稍后重试。"
+    }
   },
   "channels": {
     "title": "渠道管理",
@@ -317,27 +364,6 @@
       "admin": "管理员",
       "logout": "退出登录"
     }
-  },
-  "summary": {
-    "label": "概览指标",
-    "requests": { "label": "请求", "value": "暂无", "hint": "等待数据" },
-    "quota": { "label": "额度", "value": "暂无", "hint": "等待数据" },
-    "channels": { "label": "可用渠道", "value": "暂无", "hint": "等待数据" },
-    "errors": { "label": "错误率", "value": "暂无", "hint": "等待数据" }
-  },
-  "workspace": {
-    "title": "工作区",
-    "subtitle": "最近 24 小时"
-  },
-  "empty": {
-    "title": "暂无数据",
-    "body": "暂无可用指标。"
-  },
-  "queue": {
-    "title": "服务状态",
-    "auth": { "label": "鉴权", "state": "未连接" },
-    "routing": { "label": "选路", "state": "未连接" },
-    "billing": { "label": "计费", "state": "未连接" }
   },
   "landing": {
     "nav": { "console": "进入控制台" },

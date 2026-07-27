@@ -26,12 +26,13 @@ use crate::entity::{
     model_prices, options, tokens, usage_logs, users,
 };
 use crate::{
-    BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome, ChannelBillingWrite,
-    DatabaseOptions, GroupPricingRepository, ModelPriceBillingMode, ModelPriceRepository,
-    PoolOptions, QuotaMutationOutcome, QuotaRepository, QuotaReservationStatus, TokenAuthLookup,
-    TokenAuthLookupOutcome, TokenAuthRepository, TokenBillingWrite, UsageLogBillingMode,
-    UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage,
-    UsageLogWrite, UsageLogWriteOutcome, UserBillingWrite, connect,
+    AdminDashboardRepository, BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome,
+    ChannelBillingWrite, DatabaseOptions, GroupPricingRepository, ModelPriceBillingMode,
+    ModelPriceRepository, PoolOptions, QuotaMutationOutcome, QuotaRepository,
+    QuotaReservationStatus, TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository,
+    TokenBillingWrite, UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError,
+    UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogWrite, UsageLogWriteOutcome,
+    UserBillingWrite, connect,
 };
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
@@ -213,6 +214,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     exercise_billing_batch_repository(&pool).await?;
     exercise_model_price_repository(&pool).await?;
     exercise_usage_log_repository(&pool).await?;
+    exercise_admin_dashboard_repository(&pool).await?;
     exercise_core_schema(pool.connection()).await?;
 
     Migrator::down(pool.connection(), None).await?;
@@ -453,6 +455,24 @@ async fn exercise_usage_log_repository(pool: &DatabasePool) -> Result<(), Box<dy
     groups::Entity::delete_by_id(group.id)
         .exec(pool.connection())
         .await?;
+    Ok(())
+}
+
+/// 在三方言实库中执行空看板聚合，覆盖 COUNT 与 SUM 的真实返回类型。
+async fn exercise_admin_dashboard_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let period_end = TimeDateTimeWithTimeZone::now_utc()
+        .unix_timestamp()
+        .checked_add(1)
+        .ok_or_else(|| std::io::Error::other("管理看板冒烟时间溢出"))?;
+    let dashboard = AdminDashboardRepository::new(pool.clone(), Duration::from_secs(2))?
+        .snapshot(0, period_end)
+        .await?;
+    assert_eq!(dashboard.request_count(), 0);
+    assert_eq!(dashboard.quota_consumed(), 0);
+    assert_eq!(dashboard.upstream_usage_count(), 0);
+    assert_eq!(dashboard.estimated_usage_count(), 0);
+    assert_eq!(dashboard.per_token_request_count(), 0);
+    assert_eq!(dashboard.free_request_count(), 0);
     Ok(())
 }
 

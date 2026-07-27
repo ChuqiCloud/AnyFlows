@@ -112,6 +112,62 @@
         ]
       }
     },
+    "/api/admin/dashboard": {
+      "get": {
+        "tags": [
+          "管理看板"
+        ],
+        "summary": "读取管理员看板概览",
+        "operationId": "getAdminDashboard",
+        "responses": {
+          "200": {
+            "description": "最近 24 小时用量和当前渠道状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDashboardResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/users": {
       "get": {
         "tags": [
@@ -3689,6 +3745,83 @@
           }
         }
       },
+      "AdminDashboardResponse": {
+        "type": "object",
+        "description": "管理看板最近 24 小时的真实指标响应。",
+        "required": [
+          "period_start",
+          "period_end",
+          "request_count",
+          "quota_consumed",
+          "upstream_usage_count",
+          "estimated_usage_count",
+          "per_token_request_count",
+          "free_request_count",
+          "enabled_channel_count",
+          "disabled_channel_count",
+          "auto_disabled_channel_count"
+        ],
+        "properties": {
+          "period_start": {
+            "type": "integer",
+            "format": "int64",
+            "description": "统计窗口起点的 Unix 秒数。",
+            "minimum": 0
+          },
+          "period_end": {
+            "type": "integer",
+            "format": "int64",
+            "description": "统计窗口终点的 Unix 秒数。",
+            "minimum": 1
+          },
+          "request_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "quota_consumed": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "upstream_usage_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "estimated_usage_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "per_token_request_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "free_request_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "enabled_channel_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "disabled_channel_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "auto_disabled_channel_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminGroup": {
         "type": "object",
         "required": [
@@ -4798,6 +4931,9 @@
   "tags": [
     {
       "name": "管理会话"
+    },
+    {
+      "name": "管理看板"
     },
     {
       "name": "用户管理"

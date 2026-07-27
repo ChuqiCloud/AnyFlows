@@ -20,7 +20,54 @@
     "home": "Back to home"
   },
   "dashboard": {
-    "title": "Console"
+    "title": "Operations overview",
+    "subtitle": "Confirmed usage from the last 24 hours and current channel status",
+    "period": "{{start}} to {{end}}",
+    "loading": "Loading dashboard metrics",
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again"
+    },
+    "summary": {
+      "label": "Summary metrics",
+      "requests": { "label": "Requests", "hint": "Confirmed in the last 24 hours" },
+      "quota": { "label": "Quota consumed", "hint": "Final persisted quota units" },
+      "channels": { "label": "Enabled channels", "hint": "{{total}} non-deleted channels total" },
+      "confirmed": {
+        "label": "Upstream confirmation",
+        "hint": "{{count}} requests reported by upstreams",
+        "empty": "No request sample yet"
+      }
+    },
+    "composition": {
+      "title": "Request composition",
+      "subtitle": "Every count comes from the same set of confirmed usage facts",
+      "source": {
+        "title": "Usage source",
+        "upstream": "Upstream reported",
+        "estimated": "Locally estimated"
+      },
+      "billing": {
+        "title": "Billing mode",
+        "perToken": "Per-token billing",
+        "free": "Free requests"
+      }
+    },
+    "channels": {
+      "title": "Channel status",
+      "total": "{{count}} total",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "autoDisabled": "Auto-disabled"
+    },
+    "empty": {
+      "title": "No operating data yet",
+      "body": "Create a channel and complete the first metered model request to populate this overview."
+    },
+    "error": {
+      "title": "Dashboard metrics could not be loaded",
+      "body": "The service did not return confirmed usage and channel status. Try again shortly."
+    }
   },
   "channels": {
     "title": "Channels",
@@ -317,27 +364,6 @@
       "admin": "Administrator",
       "logout": "Sign out"
     }
-  },
-  "summary": {
-    "label": "Summary metrics",
-    "requests": { "label": "Requests", "value": "N/A", "hint": "Waiting for data" },
-    "quota": { "label": "Quota", "value": "N/A", "hint": "Waiting for data" },
-    "channels": { "label": "Available channels", "value": "N/A", "hint": "Waiting for data" },
-    "errors": { "label": "Error rate", "value": "N/A", "hint": "Waiting for data" }
-  },
-  "workspace": {
-    "title": "Workspace",
-    "subtitle": "Last 24 hours"
-  },
-  "empty": {
-    "title": "No data yet",
-    "body": "No metrics are available."
-  },
-  "queue": {
-    "title": "Service state",
-    "auth": { "label": "Auth", "state": "Not connected" },
-    "routing": { "label": "Routing", "state": "Not connected" },
-    "billing": { "label": "Billing", "state": "Not connected" }
   },
   "landing": {
     "nav": { "console": "Open console" },

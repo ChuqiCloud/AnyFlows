@@ -5,6 +5,7 @@ use af_admin::{
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, SessionAuthenticator,
     TokenAuthenticator,
 };
+use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
 use af_protocol::openai_chat::MAX_BODY_BYTES;
 use axum::{
@@ -31,6 +32,7 @@ use crate::management_credential_writes::{
     create_admin_credential, delete_admin_credential, update_admin_credential,
 };
 use crate::management_credentials::{get_admin_credential, list_admin_credentials};
+use crate::management_dashboard::get_admin_dashboard;
 use crate::management_group_writes::{create_admin_group, delete_admin_group, update_admin_group};
 use crate::management_groups::{get_admin_group, list_admin_groups};
 use crate::management_session::{current_session, login};
@@ -89,6 +91,7 @@ pub fn build_router(
     admin_group_writer: Arc<dyn AdminGroupWriter>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
     admin_token_writer: Arc<dyn AdminTokenWriter>,
+    admin_dashboard_reader: Arc<dyn AdminDashboardReader>,
     admin_usage_log_reader: Arc<dyn AdminUsageLogReader>,
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
@@ -111,6 +114,7 @@ pub fn build_router(
     .with_admin_channel_reader(admin_channel_reader)
     .with_admin_channel_writer(admin_channel_writer)
     .with_admin_channel_probe(admin_channel_probe)
+    .with_admin_dashboard_reader(admin_dashboard_reader)
     .with_admin_usage_log_reader(admin_usage_log_reader);
     let public_routes = Router::new()
         .route(
@@ -148,6 +152,10 @@ pub fn build_router(
         authenticate_management_session,
     );
     let usage_log_collection_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let dashboard_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
         authenticate_management_session,
     );
@@ -217,6 +225,12 @@ pub fn build_router(
                 .delete(delete_admin_token)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(token_item_authentication),
+        )
+        .route(
+            "/api/admin/dashboard",
+            get(get_admin_dashboard)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(dashboard_authentication),
         )
         .route(
             "/api/admin/usage-logs",

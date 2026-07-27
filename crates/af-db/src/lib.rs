@@ -10,6 +10,9 @@ mod admin_channel_write;
 #[cfg(test)]
 mod admin_channel_write_tests;
 mod admin_credential;
+mod admin_dashboard;
+#[cfg(test)]
+mod admin_dashboard_tests;
 mod admin_group;
 #[cfg(test)]
 mod admin_group_tests;
@@ -83,6 +86,10 @@ pub use admin_channel_write::{
 pub use admin_credential::{
     AdminCredentialLookupOutcome, AdminCredentialPageOutcome, AdminCredentialPageRecord,
     AdminCredentialRecord,
+};
+pub use admin_dashboard::{
+    AdminDashboardRecord, AdminDashboardRepository, AdminDashboardRepositoryConfigError,
+    AdminDashboardRepositoryError,
 };
 pub use admin_group::{
     AdminGroupLookupOutcome, AdminGroupPageRecord, AdminGroupPeakRecord, AdminGroupRecord,

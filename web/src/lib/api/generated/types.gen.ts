@@ -162,6 +162,19 @@ export type AdminCredentialWriteFields = {
     oauth_account_key: string | null;
     oauth_project_id: string | null;
 };
+export type AdminDashboardResponse = {
+    period_start: number;
+    period_end: number;
+    request_count: number;
+    quota_consumed: number;
+    upstream_usage_count: number;
+    estimated_usage_count: number;
+    per_token_request_count: number;
+    free_request_count: number;
+    enabled_channel_count: number;
+    disabled_channel_count: number;
+    auto_disabled_channel_count: number;
+};
 export type AdminGroup = {
     id: number;
     name: string;
@@ -451,6 +464,22 @@ export type GetManagementSessionResponses = {
     200: SessionResponse;
 };
 export type GetManagementSessionResponse = GetManagementSessionResponses[keyof GetManagementSessionResponses];
+export type GetAdminDashboardData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/dashboard';
+};
+export type GetAdminDashboardErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminDashboardError = GetAdminDashboardErrors[keyof GetAdminDashboardErrors];
+export type GetAdminDashboardResponses = {
+    200: AdminDashboardResponse;
+};
+export type GetAdminDashboardResponse = GetAdminDashboardResponses[keyof GetAdminDashboardResponses];
 export type ListAdminUsersData = {
     body?: never;
     path?: never;
