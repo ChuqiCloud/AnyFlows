@@ -24,7 +24,7 @@ use crate::{
     bounded_json::{self, BoundedJsonError, JsonLimits},
 };
 
-const MAX_INPUT_ITEMS: usize = 512;
+pub(super) const MAX_INPUT_ITEMS: usize = 512;
 const ARGUMENT_JSON_LIMITS: JsonLimits = JsonLimits {
     max_depth: 16,
     max_nodes: 4_096,
