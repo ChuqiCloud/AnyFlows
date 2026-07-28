@@ -1,4 +1,8 @@
-use std::{cell::Cell, fmt};
+use std::{
+    cell::Cell,
+    fmt,
+    io::{self, Write},
+};
 
 use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde_json::{Map, Number, Value};
@@ -36,6 +40,146 @@ pub(crate) fn parse_value(input: &[u8], limits: JsonLimits) -> Result<Value, Bou
         .end()
         .map_err(|_| BoundedJsonError::InvalidJson)?;
     Ok(value)
+}
+
+/// 校验已构造 JSON 对象的结构与序列化字节预算，不复制完整正文。
+pub(crate) fn validate_object(
+    object: &Map<String, Value>,
+    limits: JsonLimits,
+    max_serialized_bytes: usize,
+) -> Result<(), BoundedJsonError> {
+    let mut state = ValueBudgetState::new(limits);
+    state.visit_object(object, 0)?;
+
+    let mut writer = BoundedWriter::new(max_serialized_bytes);
+    serde_json::to_writer(&mut writer, object).map_err(|_| BoundedJsonError::LimitExceeded)
+}
+
+struct ValueBudgetState {
+    limits: JsonLimits,
+    nodes: usize,
+    string_bytes: usize,
+}
+
+impl ValueBudgetState {
+    const fn new(limits: JsonLimits) -> Self {
+        Self {
+            limits,
+            nodes: 0,
+            string_bytes: 0,
+        }
+    }
+
+    fn visit_value(&mut self, value: &Value, depth: usize) -> Result<(), BoundedJsonError> {
+        self.add_node(depth)?;
+        match value {
+            Value::Object(object) => self.visit_object_entries(object, depth),
+            Value::Array(array) => self.visit_array_items(array, depth),
+            Value::String(value) => self.add_string(value.len()),
+            Value::Null | Value::Bool(_) | Value::Number(_) => Ok(()),
+        }
+    }
+
+    fn visit_object(
+        &mut self,
+        object: &Map<String, Value>,
+        depth: usize,
+    ) -> Result<(), BoundedJsonError> {
+        self.add_node(depth)?;
+        self.visit_object_entries(object, depth)
+    }
+
+    fn visit_object_entries(
+        &mut self,
+        object: &Map<String, Value>,
+        depth: usize,
+    ) -> Result<(), BoundedJsonError> {
+        if object.len() > self.limits.max_object_entries {
+            return Err(BoundedJsonError::LimitExceeded);
+        }
+        let child_depth = depth
+            .checked_add(1)
+            .ok_or(BoundedJsonError::LimitExceeded)?;
+        for (key, value) in object {
+            if key.len() > self.limits.max_key_bytes {
+                return Err(BoundedJsonError::LimitExceeded);
+            }
+            self.add_string(key.len())?;
+            self.visit_value(value, child_depth)?;
+        }
+        Ok(())
+    }
+
+    fn visit_array_items(&mut self, array: &[Value], depth: usize) -> Result<(), BoundedJsonError> {
+        if array.len() > self.limits.max_array_items {
+            return Err(BoundedJsonError::LimitExceeded);
+        }
+        let child_depth = depth
+            .checked_add(1)
+            .ok_or(BoundedJsonError::LimitExceeded)?;
+        for value in array {
+            self.visit_value(value, child_depth)?;
+        }
+        Ok(())
+    }
+
+    fn add_node(&mut self, depth: usize) -> Result<(), BoundedJsonError> {
+        if depth > self.limits.max_depth {
+            return Err(BoundedJsonError::LimitExceeded);
+        }
+        self.nodes = self
+            .nodes
+            .checked_add(1)
+            .ok_or(BoundedJsonError::LimitExceeded)?;
+        if self.nodes > self.limits.max_nodes {
+            return Err(BoundedJsonError::LimitExceeded);
+        }
+        Ok(())
+    }
+
+    fn add_string(&mut self, bytes: usize) -> Result<(), BoundedJsonError> {
+        self.string_bytes = self
+            .string_bytes
+            .checked_add(bytes)
+            .ok_or(BoundedJsonError::LimitExceeded)?;
+        if self.string_bytes > self.limits.max_string_bytes {
+            return Err(BoundedJsonError::LimitExceeded);
+        }
+        Ok(())
+    }
+}
+
+struct BoundedWriter {
+    bytes: usize,
+    limit: usize,
+}
+
+impl BoundedWriter {
+    const fn new(limit: usize) -> Self {
+        Self { bytes: 0, limit }
+    }
+}
+
+impl Write for BoundedWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let bytes = self
+            .bytes
+            .checked_add(buffer.len())
+            .ok_or_else(limit_writer_error)?;
+        if bytes > self.limit {
+            return Err(limit_writer_error());
+        }
+        self.bytes = bytes;
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn limit_writer_error() -> io::Error {
+    io::Error::other("JSON 输出超过序列化大小限制")
 }
 
 struct ParseState {

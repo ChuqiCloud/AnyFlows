@@ -23,27 +23,27 @@ use crate::{
     ReasoningEffort, RequestMetadata, Sampling, TokenCount, ToolChoice, ToolDef,
 };
 
-const MAX_MESSAGES: usize = 256;
-const MAX_NORMALIZED_MESSAGES: usize = MAX_MESSAGES + MAX_TOOL_CALLS + 1;
-const MAX_PARTS_PER_MESSAGE: usize = 128;
-const MAX_CONTENT_BLOCKS: usize = 1_024;
-const MAX_TEXT_BYTES: usize = 1024 * 1024;
-const MAX_TOTAL_TEXT_BYTES: usize = 8 * 1024 * 1024;
-const MAX_TOOLS: usize = 128;
-const MAX_TOOL_CALLS: usize = 128;
-const MAX_TOOL_DESCRIPTION_BYTES: usize = 8 * 1024;
-const MAX_TOOL_CALL_ID_BYTES: usize = 256;
-const MAX_ARGUMENT_BYTES: usize = 256 * 1024;
-const MAX_TOTAL_ARGUMENT_BYTES: usize = 2 * 1024 * 1024;
-const MAX_TOTAL_ARGUMENT_NODES: usize = 32_768;
+pub(super) const MAX_MESSAGES: usize = 256;
+pub(super) const MAX_NORMALIZED_MESSAGES: usize = MAX_MESSAGES + MAX_TOOL_CALLS + 1;
+pub(super) const MAX_PARTS_PER_MESSAGE: usize = 128;
+pub(super) const MAX_CONTENT_BLOCKS: usize = 1_024;
+pub(super) const MAX_TEXT_BYTES: usize = 1024 * 1024;
+pub(super) const MAX_TOTAL_TEXT_BYTES: usize = 8 * 1024 * 1024;
+pub(super) const MAX_TOOLS: usize = 128;
+pub(super) const MAX_TOOL_CALLS: usize = 128;
+pub(super) const MAX_TOOL_DESCRIPTION_BYTES: usize = 8 * 1024;
+pub(super) const MAX_TOOL_CALL_ID_BYTES: usize = 256;
+pub(super) const MAX_ARGUMENT_BYTES: usize = 256 * 1024;
+pub(super) const MAX_TOTAL_ARGUMENT_BYTES: usize = 2 * 1024 * 1024;
+pub(super) const MAX_TOTAL_ARGUMENT_NODES: usize = 32_768;
 const MAX_SCHEMA_BYTES: usize = 64 * 1024;
 const MAX_TOTAL_SCHEMA_BYTES: usize = 512 * 1024;
-const MAX_STOP_SEQUENCES: usize = 4;
-const MAX_STOP_BYTES: usize = 1024;
-const MAX_USER_ID_BYTES: usize = 512;
-const MAX_MEDIA_URL_BYTES: usize = 8 * 1024;
-const MAX_MEDIA_BYTES: usize = 20 * 1024 * 1024;
-const MAX_CACHE_BREAKPOINTS: usize = 4;
+pub(super) const MAX_STOP_SEQUENCES: usize = 4;
+pub(super) const MAX_STOP_BYTES: usize = 1024;
+pub(super) const MAX_USER_ID_BYTES: usize = 512;
+pub(super) const MAX_MEDIA_URL_BYTES: usize = 8 * 1024;
+pub(super) const MAX_MEDIA_BYTES: usize = 20 * 1024 * 1024;
+pub(super) const MAX_CACHE_BREAKPOINTS: usize = 4;
 
 pub(super) fn convert_request(
     wire: MessagesRequestWire,
@@ -81,7 +81,7 @@ pub(super) fn convert_request(
     Ok(request)
 }
 
-fn validate_model(model: &str) -> Result<(), ParseRequestError> {
+pub(super) fn validate_model(model: &str) -> Result<(), ParseRequestError> {
     if model.is_empty()
         || model.len() > MAX_MODEL_NAME_BYTES
         || model.trim() != model
@@ -540,6 +540,11 @@ fn validate_base64(
     encoded: &str,
     state: &mut MessageConvertState,
 ) -> Result<(), ParseRequestError> {
+    let decoded_bytes = decoded_base64_len(encoded)?;
+    state.add_media_bytes(decoded_bytes)
+}
+
+pub(super) fn decoded_base64_len(encoded: &str) -> Result<usize, ParseRequestError> {
     if encoded.is_empty() || !encoded.len().is_multiple_of(4) {
         return Err(ParseRequestError::InvalidValue);
     }
@@ -565,10 +570,10 @@ fn validate_base64(
     if decoded.len() != estimated_bytes {
         return Err(ParseRequestError::InvalidValue);
     }
-    state.add_media_bytes(decoded.len())
+    Ok(decoded.len())
 }
 
-fn normalize_remote_media_url(value: &str) -> Result<String, ParseRequestError> {
+pub(super) fn normalize_remote_media_url(value: &str) -> Result<String, ParseRequestError> {
     if value.trim() != value || value.contains('\\') {
         return Err(ParseRequestError::InvalidValue);
     }
@@ -592,7 +597,7 @@ fn validate_parts_len(parts: usize) -> Result<(), ParseRequestError> {
     }
 }
 
-fn validate_tool_name(name: &str) -> Result<(), ParseRequestError> {
+pub(super) fn validate_tool_name(name: &str) -> Result<(), ParseRequestError> {
     if name.is_empty()
         || name.len() > 64
         || !name
@@ -604,14 +609,14 @@ fn validate_tool_name(name: &str) -> Result<(), ParseRequestError> {
     Ok(())
 }
 
-fn validate_call_id(id: &str) -> Result<(), ParseRequestError> {
+pub(super) fn validate_call_id(id: &str) -> Result<(), ParseRequestError> {
     if id.is_empty() || id.len() > MAX_TOOL_CALL_ID_BYTES || id.chars().any(char::is_control) {
         return Err(ParseRequestError::InvalidValue);
     }
     Ok(())
 }
 
-fn validate_schema(
+pub(super) fn validate_schema(
     schema: &Value,
     total_schema_bytes: &mut usize,
 ) -> Result<(), ParseRequestError> {
@@ -656,7 +661,7 @@ fn validate_local_schema_references(value: &Value) -> Result<(), ParseRequestErr
     Ok(())
 }
 
-fn validate_value_shape(
+pub(super) fn validate_value_shape(
     value: &Value,
     max_depth: usize,
     max_nodes: usize,

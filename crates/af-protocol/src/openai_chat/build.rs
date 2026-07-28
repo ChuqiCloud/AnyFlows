@@ -1,9 +1,4 @@
-use std::{
-    collections::HashSet,
-    error::Error,
-    fmt,
-    io::{self, Write},
-};
+use std::{collections::HashSet, error::Error, fmt};
 
 use af_domain::{Operation, Protocol, Role};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -19,6 +14,7 @@ use super::{
         validate_raw_fields, validate_schema, validate_tool_name, validate_value_shape,
     },
 };
+use crate::bounded_json::validate_object;
 use crate::{
     CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningEffort, ToolChoice, ToolDef,
 };
@@ -74,134 +70,8 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
 }
 
 fn validate_final_request(root: &Map<String, Value>) -> Result<(), BuildRequestError> {
-    let mut state = OutboundJsonState::default();
-    state.visit_object(root, 0)?;
-
-    let mut writer = BoundedWriter::new(super::MAX_BODY_BYTES);
-    serde_json::to_writer(&mut writer, root).map_err(|_| BuildRequestError::StructureLimitExceeded)
-}
-
-#[derive(Default)]
-struct OutboundJsonState {
-    nodes: usize,
-    string_bytes: usize,
-}
-
-impl OutboundJsonState {
-    fn visit_value(&mut self, value: &Value, depth: usize) -> Result<(), BuildRequestError> {
-        self.add_node(depth)?;
-        match value {
-            Value::Object(object) => self.visit_object_entries(object, depth),
-            Value::Array(array) => self.visit_array_items(array, depth),
-            Value::String(value) => self.add_string(value.len()),
-            Value::Null | Value::Bool(_) | Value::Number(_) => Ok(()),
-        }
-    }
-
-    fn visit_object(
-        &mut self,
-        object: &Map<String, Value>,
-        depth: usize,
-    ) -> Result<(), BuildRequestError> {
-        self.add_node(depth)?;
-        self.visit_object_entries(object, depth)
-    }
-
-    fn visit_object_entries(
-        &mut self,
-        object: &Map<String, Value>,
-        depth: usize,
-    ) -> Result<(), BuildRequestError> {
-        if object.len() > super::REQUEST_JSON_LIMITS.max_object_entries {
-            return Err(BuildRequestError::StructureLimitExceeded);
-        }
-        for (key, value) in object {
-            if key.len() > super::REQUEST_JSON_LIMITS.max_key_bytes {
-                return Err(BuildRequestError::StructureLimitExceeded);
-            }
-            self.add_string(key.len())?;
-            let child_depth = depth
-                .checked_add(1)
-                .ok_or(BuildRequestError::StructureLimitExceeded)?;
-            self.visit_value(value, child_depth)?;
-        }
-        Ok(())
-    }
-
-    fn visit_array_items(
-        &mut self,
-        array: &[Value],
-        depth: usize,
-    ) -> Result<(), BuildRequestError> {
-        if array.len() > super::REQUEST_JSON_LIMITS.max_array_items {
-            return Err(BuildRequestError::StructureLimitExceeded);
-        }
-        let child_depth = depth
-            .checked_add(1)
-            .ok_or(BuildRequestError::StructureLimitExceeded)?;
-        for value in array {
-            self.visit_value(value, child_depth)?;
-        }
-        Ok(())
-    }
-
-    fn add_node(&mut self, depth: usize) -> Result<(), BuildRequestError> {
-        if depth > super::REQUEST_JSON_LIMITS.max_depth {
-            return Err(BuildRequestError::StructureLimitExceeded);
-        }
-        self.nodes = self
-            .nodes
-            .checked_add(1)
-            .ok_or(BuildRequestError::StructureLimitExceeded)?;
-        if self.nodes > super::REQUEST_JSON_LIMITS.max_nodes {
-            return Err(BuildRequestError::StructureLimitExceeded);
-        }
-        Ok(())
-    }
-
-    fn add_string(&mut self, bytes: usize) -> Result<(), BuildRequestError> {
-        self.string_bytes = self
-            .string_bytes
-            .checked_add(bytes)
-            .ok_or(BuildRequestError::StructureLimitExceeded)?;
-        if self.string_bytes > super::REQUEST_JSON_LIMITS.max_string_bytes {
-            return Err(BuildRequestError::StructureLimitExceeded);
-        }
-        Ok(())
-    }
-}
-
-struct BoundedWriter {
-    bytes: usize,
-    limit: usize,
-}
-
-impl BoundedWriter {
-    const fn new(limit: usize) -> Self {
-        Self { bytes: 0, limit }
-    }
-}
-
-impl Write for BoundedWriter {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        let bytes = self
-            .bytes
-            .checked_add(buffer.len())
-            .ok_or_else(limit_writer_error)?;
-        if bytes > self.limit {
-            return Err(limit_writer_error());
-        }
-        self.bytes = bytes;
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-fn limit_writer_error() -> io::Error {
-    io::Error::other("OpenAI Chat 请求超过序列化大小限制")
+    validate_object(root, super::REQUEST_JSON_LIMITS, super::MAX_BODY_BYTES)
+        .map_err(|_| BuildRequestError::StructureLimitExceeded)
 }
 
 fn build_tools(tools: &[ToolDef]) -> Result<Vec<Value>, BuildRequestError> {
