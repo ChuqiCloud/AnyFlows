@@ -117,6 +117,11 @@ fn sensitive_stream_payloads_are_redacted_from_debug() {
             id: tool_id_canary.to_owned(),
             name: tool_name_canary.to_owned(),
         },
+        CanonicalStreamEvent::ToolCallSignature {
+            choice_index: 7,
+            tool_index: 8,
+            signature: signature_canary.to_owned(),
+        },
         CanonicalStreamEvent::ToolCallArgsDelta {
             choice_index: 7,
             tool_index: 8,
@@ -204,6 +209,11 @@ fn event_kind(event: &CanonicalStreamEvent) -> &'static str {
             id: _,
             name: _,
         } => "tool_call_start",
+        CanonicalStreamEvent::ToolCallSignature {
+            choice_index: _,
+            tool_index: _,
+            signature: _,
+        } => "tool_call_signature",
         CanonicalStreamEvent::ToolCallArgsDelta {
             choice_index: _,
             tool_index: _,
@@ -218,6 +228,7 @@ fn event_kind(event: &CanonicalStreamEvent) -> &'static str {
             reason: _,
             stop_sequence: _,
         } => "finish",
+        CanonicalStreamEvent::PromptBlocked => "prompt_blocked",
         CanonicalStreamEvent::Usage(_) => "usage",
         CanonicalStreamEvent::Ping => "ping",
         CanonicalStreamEvent::StreamEnd => "stream_end",
@@ -236,6 +247,7 @@ fn representative_events_use_the_exhaustive_event_match() {
             "message_start",
         ),
         (CanonicalStreamEvent::Ping, "ping"),
+        (CanonicalStreamEvent::PromptBlocked, "prompt_blocked"),
         (CanonicalStreamEvent::StreamEnd, "stream_end"),
         (
             CanonicalStreamEvent::Finish {

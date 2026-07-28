@@ -193,6 +193,9 @@ impl OpenAiChatStreamEncoder {
                 self.totals.tool_calls += 1;
                 Ok(bytes)
             }
+            CanonicalStreamEvent::ToolCallSignature { .. } => {
+                Err(EncodeStreamError::UnsupportedEvent)
+            }
             CanonicalStreamEvent::ToolCallArgsDelta {
                 choice_index,
                 tool_index,
@@ -295,6 +298,7 @@ impl OpenAiChatStreamEncoder {
                 self.usage_seen = true;
                 Ok(bytes)
             }
+            CanonicalStreamEvent::PromptBlocked => Err(EncodeStreamError::UnsupportedEvent),
             CanonicalStreamEvent::Ping => Ok(b": ping\n\n".to_vec()),
             CanonicalStreamEvent::StreamEnd => {
                 if self.choices.is_empty() || !self.all_choices_finished() {

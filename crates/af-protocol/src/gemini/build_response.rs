@@ -336,7 +336,7 @@ fn validate_signature(
     state.add_signature(decoded.len())
 }
 
-fn build_usage(
+pub(super) fn build_usage(
     usage: &Usage,
     raw: &Map<String, Value>,
 ) -> Result<Map<String, Value>, BuildResponseError> {
