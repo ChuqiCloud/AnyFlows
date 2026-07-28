@@ -9,9 +9,14 @@ use crate::{
     bounded_json::{self, BoundedJsonError, JsonLimits},
 };
 
+mod build;
 mod convert;
 mod wire;
 
+pub use build::{BuildRequestError, build_request};
+
+#[cfg(test)]
+mod build_tests;
 #[cfg(test)]
 mod tests;
 

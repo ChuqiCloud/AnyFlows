@@ -15,34 +15,34 @@ use crate::{
 };
 
 const MAX_MODEL_NAME_BYTES: usize = 256;
-const MAX_CONTENTS: usize = 4_096;
-const MAX_NORMALIZED_MESSAGES: usize = 8_192;
-const MAX_PARTS_PER_CONTENT: usize = 1_024;
-const MAX_CONTENT_BLOCKS: usize = 16_384;
-const MAX_TEXT_BYTES: usize = 1024 * 1024;
-const MAX_TOTAL_TEXT_BYTES: usize = 8 * 1024 * 1024;
-const MAX_MEDIA_BYTES: usize = 20 * 1024 * 1024;
+pub(super) const MAX_CONTENTS: usize = 4_096;
+pub(super) const MAX_NORMALIZED_MESSAGES: usize = 8_192;
+pub(super) const MAX_PARTS_PER_CONTENT: usize = 1_024;
+pub(super) const MAX_CONTENT_BLOCKS: usize = 16_384;
+pub(super) const MAX_TEXT_BYTES: usize = 1024 * 1024;
+pub(super) const MAX_TOTAL_TEXT_BYTES: usize = 8 * 1024 * 1024;
+pub(super) const MAX_MEDIA_BYTES: usize = 20 * 1024 * 1024;
 const MAX_MIME_TYPE_BYTES: usize = 127;
-const MAX_TOOLS: usize = 128;
+pub(super) const MAX_TOOLS: usize = 128;
 const MAX_TOOL_NAME_BYTES: usize = 64;
-const MAX_TOOL_DESCRIPTION_BYTES: usize = 16 * 1024;
-const MAX_SCHEMA_BYTES: usize = 256 * 1024;
-const MAX_TOTAL_SCHEMA_BYTES: usize = 1024 * 1024;
-const MAX_TOOL_CALLS: usize = 128;
+pub(super) const MAX_TOOL_DESCRIPTION_BYTES: usize = 16 * 1024;
+pub(super) const MAX_SCHEMA_BYTES: usize = 256 * 1024;
+pub(super) const MAX_TOTAL_SCHEMA_BYTES: usize = 1024 * 1024;
+pub(super) const MAX_TOOL_CALLS: usize = 128;
 const MAX_TOOL_CALL_ID_BYTES: usize = 256;
-const MAX_ARGUMENT_BYTES: usize = 1024 * 1024;
-const MAX_TOTAL_ARGUMENT_BYTES: usize = 4 * 1024 * 1024;
-const MAX_RESULT_BYTES: usize = 1024 * 1024;
-const MAX_TOTAL_RESULT_BYTES: usize = 4 * 1024 * 1024;
-const MAX_TOTAL_JSON_NODES: usize = 16_384;
-const MAX_SIGNATURE_BYTES: usize = 64 * 1024;
-const MAX_TOTAL_SIGNATURE_BYTES: usize = 1024 * 1024;
-const MAX_OUTPUT_TOKENS: i64 = 1_000_000;
+pub(super) const MAX_ARGUMENT_BYTES: usize = 1024 * 1024;
+pub(super) const MAX_TOTAL_ARGUMENT_BYTES: usize = 4 * 1024 * 1024;
+pub(super) const MAX_RESULT_BYTES: usize = 1024 * 1024;
+pub(super) const MAX_TOTAL_RESULT_BYTES: usize = 4 * 1024 * 1024;
+pub(super) const MAX_TOTAL_JSON_NODES: usize = 16_384;
+pub(super) const MAX_SIGNATURE_BYTES: usize = 64 * 1024;
+pub(super) const MAX_TOTAL_SIGNATURE_BYTES: usize = 1024 * 1024;
+pub(super) const MAX_OUTPUT_TOKENS: i64 = 1_000_000;
 const MAX_STOP_SEQUENCES: usize = 5;
 const MAX_STOP_BYTES: usize = 4_096;
 const MAX_TOTAL_STOP_BYTES: usize = 16 * 1024;
 
-const SCHEMA_LIMITS: JsonLimits = JsonLimits {
+pub(super) const SCHEMA_LIMITS: JsonLimits = JsonLimits {
     max_depth: 32,
     max_nodes: 16_384,
     max_object_entries: 1_024,
@@ -50,7 +50,7 @@ const SCHEMA_LIMITS: JsonLimits = JsonLimits {
     max_string_bytes: MAX_SCHEMA_BYTES,
     max_key_bytes: 1_024,
 };
-const TOOL_PAYLOAD_LIMITS: JsonLimits = JsonLimits {
+pub(super) const TOOL_PAYLOAD_LIMITS: JsonLimits = JsonLimits {
     max_depth: 16,
     max_nodes: 4_096,
     max_object_entries: 1_024,
@@ -81,6 +81,11 @@ fn normalize_model_resource(value: &str) -> Result<String, ParseRequestError> {
     let Some(model) = value.strip_prefix("models/") else {
         return Err(ParseRequestError::InvalidValue);
     };
+    validate_model(model)?;
+    Ok(model.to_owned())
+}
+
+pub(super) fn validate_model(model: &str) -> Result<(), ParseRequestError> {
     if model.is_empty()
         || model.len() > MAX_MODEL_NAME_BYTES
         || model.trim() != model
@@ -89,7 +94,7 @@ fn normalize_model_resource(value: &str) -> Result<String, ParseRequestError> {
     {
         return Err(ParseRequestError::InvalidValue);
     }
-    Ok(model.to_owned())
+    Ok(())
 }
 
 fn convert_tools(
@@ -254,7 +259,7 @@ fn convert_generation_config(
     Ok((sampling, reasoning))
 }
 
-fn validate_stop_sequences(values: &[String]) -> Result<(), ParseRequestError> {
+pub(super) fn validate_stop_sequences(values: &[String]) -> Result<(), ParseRequestError> {
     if values.len() > MAX_STOP_SEQUENCES {
         return Err(ParseRequestError::StructureLimitExceeded);
     }
@@ -586,7 +591,7 @@ fn convert_inline_media(
     }
 }
 
-fn normalize_mime_type(value: &str) -> Result<String, ParseRequestError> {
+pub(super) fn normalize_mime_type(value: &str) -> Result<String, ParseRequestError> {
     if value.is_empty()
         || value.len() > MAX_MIME_TYPE_BYTES
         || value.trim() != value
@@ -620,7 +625,7 @@ fn validate_optional_signature(
     Ok(Some(signature))
 }
 
-fn decode_base64(value: &str) -> Option<Vec<u8>> {
+pub(super) fn decode_base64(value: &str) -> Option<Vec<u8>> {
     if value.is_empty() {
         return None;
     }
@@ -630,7 +635,7 @@ fn decode_base64(value: &str) -> Option<Vec<u8>> {
         .ok()
 }
 
-fn validate_tool_name(value: &str) -> Result<(), ParseRequestError> {
+pub(super) fn validate_tool_name(value: &str) -> Result<(), ParseRequestError> {
     let mut chars = value.chars();
     let Some(first) = chars.next() else {
         return Err(ParseRequestError::InvalidValue);
@@ -646,7 +651,7 @@ fn validate_tool_name(value: &str) -> Result<(), ParseRequestError> {
     Ok(())
 }
 
-fn validate_call_id(value: &str) -> Result<(), ParseRequestError> {
+pub(super) fn validate_call_id(value: &str) -> Result<(), ParseRequestError> {
     if value.is_empty()
         || value.len() > MAX_TOOL_CALL_ID_BYTES
         || value.trim() != value
@@ -657,7 +662,7 @@ fn validate_call_id(value: &str) -> Result<(), ParseRequestError> {
     Ok(())
 }
 
-fn validate_json_object(
+pub(super) fn validate_json_object(
     value: &Value,
     limits: JsonLimits,
     max_bytes: usize,
