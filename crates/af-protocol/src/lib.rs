@@ -21,7 +21,7 @@ pub use request::{
     Attachment, ReasoningConfig, ReasoningConfigError, ReasoningEffort, RequestContinuation,
     RequestMetadata, Sampling, SamplingError, StreamOptions, ToolChoice, ToolDef,
 };
-pub use request_envelope::{CanonicalRequestEnvelope, SameProtocolRequest};
+pub use request_envelope::{CanonicalRequestEnvelope, SameProtocolDecision, SameProtocolRequest};
 pub use response::{CanonicalResponse, ResponseChoice};
 pub use stream::{CanonicalStreamEvent, ContentDelta, FinishReason};
 pub use usage::{TokenCount, Usage, UsageDetails, UsageError, UsageSemantics, UsageSource};

@@ -62,16 +62,13 @@ impl CanonicalRequestEnvelope {
     ///
     /// 模型映射、参数覆盖或内部字段注入发生前，调用方必须改走 [`Self::into_canonical`]
     /// 并由目标协议构造器重新编码，不能继续消费这里返回的正文。
-    pub fn try_into_same_protocol(
-        self,
-        target_protocol: Protocol,
-    ) -> Result<SameProtocolRequest, Self> {
+    pub fn into_same_protocol(self, target_protocol: Protocol) -> SameProtocolDecision {
         if self
             .source
             .as_ref()
             .is_none_or(|source| source.protocol != target_protocol)
         {
-            return Err(self);
+            return SameProtocolDecision::Rebuild(self);
         }
 
         let Self {
@@ -81,7 +78,7 @@ impl CanonicalRequestEnvelope {
         else {
             unreachable!("已检查的源协议正文必须存在");
         };
-        Ok(SameProtocolRequest {
+        SameProtocolDecision::Passthrough(SameProtocolRequest {
             protocol: source.protocol,
             canonical,
             body: source.body,
@@ -113,6 +110,17 @@ impl fmt::Debug for CanonicalRequestEnvelope {
 struct ValidatedSourceRequest {
     protocol: Protocol,
     body: Bytes,
+}
+
+/// 同协议正文资格检查的闭合决策。
+///
+/// 调用方必须显式处理重构分支，不能在协议不匹配或缺少已验证正文时静默直通。
+#[derive(Debug)]
+pub enum SameProtocolDecision {
+    /// 可以向同协议目标发送已验证的原始正文。
+    Passthrough(SameProtocolRequest),
+    /// 必须消费 Canonical 语义并由目标协议构造器重新编码。
+    Rebuild(CanonicalRequestEnvelope),
 }
 
 /// 已证明源协议与目标协议一致、且请求语义未被改写的正文。

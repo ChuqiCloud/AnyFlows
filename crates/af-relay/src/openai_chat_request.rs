@@ -1,7 +1,8 @@
 use af_adapter::Bytes;
 use af_domain::{AfError, Protocol};
 use af_protocol::{
-    CanonicalRequest, CanonicalRequestEnvelope, StreamOptions, openai_chat::build_request,
+    CanonicalRequest, CanonicalRequestEnvelope, SameProtocolDecision, StreamOptions,
+    openai_chat::build_request,
 };
 
 /// 已决定正文来源的 OpenAI Chat 上游请求。
@@ -19,8 +20,8 @@ pub(crate) fn prepare_openai_chat_request(
     let requires_usage_injection = request.canonical().stream && !include_usage;
 
     if !requires_usage_injection {
-        match request.try_into_same_protocol(Protocol::OpenAiChat) {
-            Ok(passthrough) => {
+        match request.into_same_protocol(Protocol::OpenAiChat) {
+            SameProtocolDecision::Passthrough(passthrough) => {
                 let (canonical, body) = passthrough.into_parts();
                 return Ok(PreparedOpenAiChatRequest {
                     canonical,
@@ -28,7 +29,9 @@ pub(crate) fn prepare_openai_chat_request(
                     include_usage,
                 });
             }
-            Err(request) => return rebuild_request(request, include_usage),
+            SameProtocolDecision::Rebuild(request) => {
+                return rebuild_request(request, include_usage);
+            }
         }
     }
 
