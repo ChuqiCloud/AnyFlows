@@ -309,14 +309,9 @@ fn convert_system(
         SystemWire::Parts(parts) => {
             validate_parts_len(parts.len())?;
             let mut content = Vec::with_capacity(parts.len() * 2);
-            for SystemTextBlockWire {
-                kind: _,
-                text,
-                cache_control,
-            } in parts
-            {
-                content.push(state.add_text(text)?);
-                append_cache_control(&mut content, cache_control, state)?;
+            for part in parts {
+                let SystemTextBlockWire::Text(block) = part;
+                push_text_block(&mut content, block, state)?;
             }
             Ok(content)
         }

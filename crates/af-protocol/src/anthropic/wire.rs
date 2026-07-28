@@ -72,16 +72,11 @@ pub(super) enum SystemWire {
 
 /// 顶层系统文本块。
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct SystemTextBlockWire {
-    /// 固定为 `text`。
-    #[serde(rename = "type")]
-    pub(super) kind: TextTypeWire,
-    /// 系统指令文本。
-    pub(super) text: String,
-    /// 可选提示缓存断点。
-    #[serde(default, deserialize_with = "deserialize_field")]
-    pub(super) cache_control: Field<CacheControlWire>,
+#[serde(tag = "type")]
+pub(super) enum SystemTextBlockWire {
+    /// 文本系统指令。
+    #[serde(rename = "text")]
+    Text(TextBlockWire),
 }
 
 /// 按角色闭合分派的 Anthropic 消息。
@@ -421,12 +416,4 @@ pub(super) enum CacheTtlWire {
     /// 一小时。
     #[serde(rename = "1h")]
     OneHour,
-}
-
-/// 固定为 `text` 的内容类型。
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum TextTypeWire {
-    /// 文本内容。
-    Text,
 }
