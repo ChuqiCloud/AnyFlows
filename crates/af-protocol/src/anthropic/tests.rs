@@ -160,6 +160,7 @@ fn parses_full_non_streaming_request_into_canonical() {
         ContentBlock::ToolResult {
             tool_use_id,
             content,
+            structured_content,
             is_error,
         },
     ] = request.messages[3].content.as_slice()
@@ -167,6 +168,7 @@ fn parses_full_non_streaming_request_into_canonical() {
         panic!("工具结果必须归一为独立工具消息");
     };
     assert_eq!(tool_use_id, "toolu_1");
+    assert!(structured_content.is_none());
     assert!(!*is_error);
     assert!(matches!(
         content.as_slice(),

@@ -291,7 +291,12 @@ fn convert_content_block(
             let nodes = validate_value_shape(&input, 16, 4_096, 1_024)
                 .map_err(map_request_validation_error)?;
             state.add_arguments(bytes, nodes)?;
-            Ok(ContentBlock::ToolUse { id, name, input })
+            Ok(ContentBlock::ToolUse {
+                id,
+                name,
+                input,
+                signature: None,
+            })
         }
     }
 }

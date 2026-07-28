@@ -217,10 +217,16 @@ fn maps_tool_call_arguments_and_associated_tool_result() {
     .unwrap();
 
     match &request.messages[0].content[0] {
-        ContentBlock::ToolUse { id, name, input } => {
+        ContentBlock::ToolUse {
+            id,
+            name,
+            input,
+            signature,
+        } => {
             assert_eq!(id, "call-1");
             assert_eq!(name, "lookup");
             assert_eq!(input, &json!({ "id": 7, "tags": ["a", "b"] }));
+            assert!(signature.is_none());
         }
         _ => panic!("助手消息应映射为工具调用"),
     }
@@ -228,9 +234,11 @@ fn maps_tool_call_arguments_and_associated_tool_result() {
         ContentBlock::ToolResult {
             tool_use_id,
             content,
+            structured_content,
             is_error,
         } => {
             assert_eq!(tool_use_id, "call-1");
+            assert!(structured_content.is_none());
             assert!(!is_error);
             assert!(matches!(
                 content.as_slice(),

@@ -271,7 +271,15 @@ fn add_input_block(
         ContentBlock::Image { .. } | ContentBlock::Audio { .. } => {
             Err(UsageResolutionError::UnsupportedContent)
         }
-        ContentBlock::ToolUse { id, name, input } => {
+        ContentBlock::ToolUse {
+            id,
+            name,
+            input,
+            signature,
+        } => {
+            if signature.is_some() {
+                return Err(UsageResolutionError::UnsupportedContent);
+            }
             checked_add(total, TOOL_OVERHEAD_TOKENS)?;
             checked_add(total, counter.count(id)?)?;
             checked_add(total, counter.count(name)?)?;
@@ -282,8 +290,12 @@ fn add_input_block(
         ContentBlock::ToolResult {
             tool_use_id,
             content,
+            structured_content,
             is_error: _,
         } => {
+            if structured_content.is_some() {
+                return Err(UsageResolutionError::UnsupportedContent);
+            }
             checked_add(total, NAMED_FIELD_OVERHEAD_TOKENS)?;
             checked_add(total, counter.count(tool_use_id)?)?;
             for nested in content {
@@ -417,7 +429,16 @@ impl OutputAccumulator {
                 ContentBlock::Thinking { text, .. } => {
                     self.push_reasoning(choice_index, text);
                 }
-                ContentBlock::ToolUse { id, name, input } => {
+                ContentBlock::ToolUse {
+                    id,
+                    name,
+                    input,
+                    signature,
+                } => {
+                    if signature.is_some() {
+                        self.fail(UsageResolutionError::UnsupportedContent);
+                        continue;
+                    }
                     let tool_index = self
                         .choices
                         .get(&choice_index)

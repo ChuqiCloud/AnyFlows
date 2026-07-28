@@ -182,7 +182,15 @@ fn build_content(choice: &ResponseChoice) -> Result<Vec<Value>, BuildResponseErr
                     ("signature", Value::String(signature.clone())),
                 ])
             }
-            ContentBlock::ToolUse { id, name, input } => {
+            ContentBlock::ToolUse {
+                id,
+                name,
+                input,
+                signature,
+            } => {
+                if signature.is_some() {
+                    return Err(BuildResponseError::UnsupportedFeature);
+                }
                 if !seen_call_ids.insert(id.as_str()) {
                     return Err(BuildResponseError::InvalidValue);
                 }

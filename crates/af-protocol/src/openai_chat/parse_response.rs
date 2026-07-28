@@ -339,6 +339,7 @@ fn convert_message(
             id: payload.id,
             name: payload.function.name,
             input,
+            signature: None,
         });
     }
     Ok(Message::new(af_domain::Role::Assistant, content))
