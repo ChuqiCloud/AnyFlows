@@ -122,6 +122,9 @@ impl AnthropicMessagesStreamEncoder {
                 id,
                 name,
             } => self.encode_tool_start(choice_index, tool_index, id, name),
+            CanonicalStreamEvent::ToolCallSignature { .. } => {
+                Err(EncodeStreamError::UnsupportedEvent)
+            }
             CanonicalStreamEvent::ToolCallArgsDelta {
                 choice_index,
                 tool_index,
@@ -137,6 +140,7 @@ impl AnthropicMessagesStreamEncoder {
                 stop_sequence,
             } => self.encode_finish(choice_index, reason, stop_sequence),
             CanonicalStreamEvent::Usage(usage) => self.encode_usage(usage),
+            CanonicalStreamEvent::PromptBlocked => Err(EncodeStreamError::UnsupportedEvent),
             CanonicalStreamEvent::Ping => encode_sse("ping", &EncodedSimpleEvent { kind: "ping" }),
             CanonicalStreamEvent::StreamEnd => self.encode_stream_end(),
             CanonicalStreamEvent::Error(_) => Err(EncodeStreamError::UnsupportedEvent),

@@ -51,7 +51,7 @@ pub fn parse_response(body: &[u8]) -> Result<CanonicalResponse, ParseResponseErr
     convert_response(wire, raw)
 }
 
-fn uses_known_unsupported_feature(value: &Value) -> bool {
+pub(super) fn uses_known_unsupported_feature(value: &Value) -> bool {
     value
         .get("candidates")
         .and_then(Value::as_array)

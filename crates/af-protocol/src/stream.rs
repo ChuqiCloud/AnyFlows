@@ -115,6 +115,15 @@ pub enum CanonicalStreamEvent {
         /// 工具名称。
         name: String,
     },
+    /// 工具调用携带的上游思考签名。
+    ToolCallSignature {
+        /// 候选结果索引。
+        choice_index: u32,
+        /// 候选结果内的工具调用索引。
+        tool_index: u32,
+        /// 上游返回的不透明签名。
+        signature: String,
+    },
     /// 工具调用参数的 JSON 增量。
     ToolCallArgsDelta {
         /// 候选结果索引。
@@ -140,6 +149,8 @@ pub enum CanonicalStreamEvent {
         /// 上游实际命中的停止序列；仅停止原因支持时存在。
         stop_sequence: Option<String>,
     },
+    /// 提示在生成任何候选结果前被内容策略整体拦截。
+    PromptBlocked,
     /// 上游返回的用量数据。
     Usage(Usage),
     /// 上游保活事件。
@@ -192,6 +203,16 @@ impl fmt::Debug for CanonicalStreamEvent {
                 .field("id", &Redacted)
                 .field("name", &Redacted)
                 .finish(),
+            Self::ToolCallSignature {
+                choice_index,
+                tool_index,
+                signature: _,
+            } => formatter
+                .debug_struct("ToolCallSignature")
+                .field("choice_index", choice_index)
+                .field("tool_index", tool_index)
+                .field("signature", &Redacted)
+                .finish(),
             Self::ToolCallArgsDelta {
                 choice_index,
                 tool_index,
@@ -220,6 +241,7 @@ impl fmt::Debug for CanonicalStreamEvent {
                 .field("reason", reason)
                 .field("stop_sequence", &stop_sequence.as_ref().map(|_| "<已脱敏>"))
                 .finish(),
+            Self::PromptBlocked => formatter.write_str("PromptBlocked"),
             Self::Usage(usage) => formatter.debug_tuple("Usage").field(usage).finish(),
             Self::Ping => formatter.write_str("Ping"),
             Self::StreamEnd => formatter.write_str("StreamEnd"),

@@ -153,7 +153,9 @@ impl OpenAiChatUsageEstimator {
                 }
             }
             CanonicalStreamEvent::ToolCallEnd { .. }
+            | CanonicalStreamEvent::ToolCallSignature { .. }
             | CanonicalStreamEvent::Finish { .. }
+            | CanonicalStreamEvent::PromptBlocked
             | CanonicalStreamEvent::Ping
             | CanonicalStreamEvent::StreamEnd => {}
             CanonicalStreamEvent::Error(_) => {
