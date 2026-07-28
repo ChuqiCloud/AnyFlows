@@ -234,13 +234,11 @@ impl RelayOpenAiChatOutcome {
     }
 
     /// 消费包装并返回原有业务结果。
-    #[must_use]
     pub fn into_result(self) -> Result<OpenAiChatResponse, AfError> {
         self.result
     }
 
     /// 消费包装并拆分业务结果与尝试报告。
-    #[must_use]
     pub fn into_parts(self) -> (Result<OpenAiChatResponse, AfError>, RelayAttemptReport) {
         (self.result, self.report)
     }
