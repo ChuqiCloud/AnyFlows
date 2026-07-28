@@ -321,7 +321,7 @@ fn build_output(
     Ok(output)
 }
 
-fn derive_item_id(prefix: &str, response_id: &str, index: usize) -> String {
+pub(super) fn derive_item_id(prefix: &str, response_id: &str, index: usize) -> String {
     let suffix = response_id.strip_prefix("resp_").unwrap_or(response_id);
     format!("{prefix}_{suffix}_{index}")
 }
