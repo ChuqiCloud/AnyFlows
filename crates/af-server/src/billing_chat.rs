@@ -12,7 +12,7 @@ use af_billing::{
 };
 use af_domain::{AfError, BillingReservationId, GatewayPrincipal, GroupId};
 use af_http::{ChatService, ChatServiceFuture};
-use af_protocol::{CanonicalRequest, Usage};
+use af_protocol::{CanonicalRequestEnvelope, Usage};
 use af_relay::{
     OpenAiChatCompletionFuture, OpenAiChatCompletionHook, OpenAiChatResponse, UsageResolutionError,
     estimate_openai_chat_request_upper_bound,
@@ -38,13 +38,13 @@ pub trait PlannedChatExecution: Send {
     fn execute(self: Box<Self>) -> PlannedChatExecutionFuture;
 }
 
-/// 为已认证 Canonical Chat 请求生成不可变路由计划的对象安全端口。
+/// 为已认证 Chat 请求信封生成不可变路由计划的对象安全端口。
 pub trait ChatRoutePlanner: Send + Sync {
     /// 从当前运行时快照固定候选并完成所有安全装配；本方法不得发送上游请求。
     fn plan(
         &self,
         principal: &GatewayPrincipal,
-        request: CanonicalRequest,
+        request: CanonicalRequestEnvelope,
         request_id: &str,
     ) -> Result<Box<dyn PlannedChatExecution>, AfError>;
 }
@@ -87,12 +87,12 @@ impl BillingChatService {
     async fn call(
         &self,
         principal: &GatewayPrincipal,
-        request: CanonicalRequest,
+        request: CanonicalRequestEnvelope,
         request_id: &str,
     ) -> Result<OpenAiChatResponse, AfError> {
-        let upper_bound =
-            estimate_openai_chat_request_upper_bound(&request).map_err(map_upper_bound_error)?;
-        let model = request.model.clone();
+        let upper_bound = estimate_openai_chat_request_upper_bound(request.canonical())
+            .map_err(map_upper_bound_error)?;
+        let model = request.canonical().model.clone();
         let planned = self.inner.plan(principal, request, request_id)?;
         let source_group_id = principal.group_id();
         let target_group_id = planned.target_group_id();
@@ -160,7 +160,7 @@ impl ChatService for BillingChatService {
     fn chat_completions<'a>(
         &'a self,
         principal: &'a GatewayPrincipal,
-        request: CanonicalRequest,
+        request: CanonicalRequestEnvelope,
         request_id: &'a str,
     ) -> ChatServiceFuture<'a> {
         Box::pin(self.call(principal, request, request_id))
@@ -312,7 +312,9 @@ mod tests {
     };
     use af_domain::{GroupId, Operation, Quota, Role, TokenId, UserId};
     use af_http::ChatService;
-    use af_protocol::{CanonicalRequest, ContentBlock, Message, TokenCount, Usage};
+    use af_protocol::{
+        CanonicalRequest, CanonicalRequestEnvelope, ContentBlock, Message, TokenCount, Usage,
+    };
     use rust_decimal::Decimal;
 
     use super::*;
@@ -325,7 +327,7 @@ mod tests {
         fn plan(
             &self,
             _principal: &GatewayPrincipal,
-            _request: CanonicalRequest,
+            _request: CanonicalRequestEnvelope,
             _request_id: &str,
         ) -> Result<Box<dyn PlannedChatExecution>, AfError> {
             Ok(Box::new(FullExecution {
@@ -505,7 +507,7 @@ mod tests {
         )
     }
 
-    fn request() -> CanonicalRequest {
+    fn request() -> CanonicalRequestEnvelope {
         CanonicalRequest::new(
             Operation::Chat,
             "gpt-test".to_owned(),
@@ -515,6 +517,7 @@ mod tests {
             )],
             false,
         )
+        .into()
     }
 
     fn usage() -> Usage {
@@ -631,7 +634,7 @@ mod tests {
         fn plan(
             &self,
             principal: &GatewayPrincipal,
-            _request: CanonicalRequest,
+            _request: CanonicalRequestEnvelope,
             _request_id: &str,
         ) -> Result<Box<dyn PlannedChatExecution>, AfError> {
             Ok(Box::new(SimulatedFailoverExecution {

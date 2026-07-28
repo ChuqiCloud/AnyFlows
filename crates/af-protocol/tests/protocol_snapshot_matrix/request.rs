@@ -1,4 +1,9 @@
-use af_protocol::{CanonicalRequest, anthropic, gemini, openai_chat, openai_responses};
+use af_domain::Protocol;
+use af_protocol::{
+    CanonicalRequest, CanonicalRequestEnvelope, SameProtocolDecision, anthropic, gemini,
+    openai_chat, openai_responses,
+};
+use bytes::Bytes;
 use serde_json::Value;
 
 use super::fixtures::{MODEL, ProtocolKind, request};
@@ -42,6 +47,51 @@ fn snapshots_request_conversion_matrix() {
     ");
 }
 
+#[test]
+fn only_same_protocol_can_consume_the_validated_source_body() {
+    for source in ProtocolKind::ALL {
+        let original =
+            Bytes::from(serde_json::to_vec_pretty(&request(source)).expect("请求样本必须可序列化"));
+        let envelope = parse_source_envelope(source, original.clone());
+        assert_eq!(envelope.source_protocol(), Some(domain_protocol(source)));
+
+        for target in ProtocolKind::ALL {
+            let decision = envelope.clone().into_same_protocol(domain_protocol(target));
+            if source == target {
+                let SameProtocolDecision::Passthrough(passthrough) = decision else {
+                    panic!("同协议请求必须具备直通资格");
+                };
+                assert_eq!(passthrough.protocol(), domain_protocol(source));
+                assert_eq!(passthrough.body(), &original);
+                assert_eq!(passthrough.canonical(), envelope.canonical());
+            } else {
+                let SameProtocolDecision::Rebuild(rejected) = decision else {
+                    panic!("跨协议请求不得取得原始正文");
+                };
+                assert_eq!(rejected.source_protocol(), Some(domain_protocol(source)));
+            }
+        }
+    }
+}
+
+#[test]
+fn canonical_only_request_and_debug_output_do_not_expose_source_body() {
+    let original = Bytes::from_static(
+        br#"{"model":"matrix-model","messages":[{"role":"user","content":"body-secret"}]}"#,
+    );
+    let parsed = openai_chat::parse_request_envelope(original).unwrap();
+    let debug = format!("{parsed:?}");
+    assert!(debug.contains("source_body_bytes"));
+    assert!(!debug.contains("body-secret"));
+
+    let canonical_only = CanonicalRequestEnvelope::from_canonical(parsed.into_canonical());
+    assert_eq!(canonical_only.source_protocol(), None);
+    assert!(matches!(
+        canonical_only.into_same_protocol(Protocol::OpenAiChat),
+        SameProtocolDecision::Rebuild(_)
+    ));
+}
+
 fn parse_source(protocol: ProtocolKind) -> CanonicalRequest {
     let body = serde_json::to_vec(&request(protocol)).expect("请求样本必须可序列化");
     match protocol {
@@ -58,6 +108,32 @@ fn parse_source(protocol: ProtocolKind) -> CanonicalRequest {
         }
     }
     .unwrap_or_else(|error| panic!("{} 请求样本解析失败：{error}", protocol.name()))
+}
+
+fn parse_source_envelope(protocol: ProtocolKind, body: Bytes) -> CanonicalRequestEnvelope {
+    match protocol {
+        ProtocolKind::OpenAiChat => {
+            openai_chat::parse_request_envelope(body).map_err(|error| error.to_string())
+        }
+        ProtocolKind::Anthropic => {
+            anthropic::parse_request_envelope(body).map_err(|error| error.to_string())
+        }
+        ProtocolKind::Gemini => gemini::parse_request_envelope(&format!("models/{MODEL}"), body)
+            .map_err(|error| error.to_string()),
+        ProtocolKind::OpenAiResponses => {
+            openai_responses::parse_request_envelope(body).map_err(|error| error.to_string())
+        }
+    }
+    .unwrap_or_else(|error| panic!("{} 请求信封解析失败：{error}", protocol.name()))
+}
+
+const fn domain_protocol(protocol: ProtocolKind) -> Protocol {
+    match protocol {
+        ProtocolKind::OpenAiChat => Protocol::OpenAiChat,
+        ProtocolKind::Anthropic => Protocol::Anthropic,
+        ProtocolKind::Gemini => Protocol::Gemini,
+        ProtocolKind::OpenAiResponses => Protocol::OpenAiResponses,
+    }
 }
 
 fn build_target(protocol: ProtocolKind, request: &CanonicalRequest) -> Result<Value, String> {

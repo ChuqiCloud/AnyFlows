@@ -192,6 +192,7 @@ version = "0.1.0"
 dependencies = [
  "af-domain",
  "base64",
+ "bytes",
  "insta",
  "serde",
  "serde_json",
