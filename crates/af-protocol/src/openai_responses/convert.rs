@@ -389,8 +389,8 @@ pub(super) fn validate_raw_fields(extra: &Map<String, Value>) -> Result<(), Pars
             return Err(ParseRequestError::InvalidValue);
         }
     }
-    validate_raw_semantics(&extra)?;
-    let encoded = serde_json::to_vec(&extra).map_err(|_| ParseRequestError::InvalidValue)?;
+    validate_raw_semantics(extra)?;
+    let encoded = serde_json::to_vec(extra).map_err(|_| ParseRequestError::InvalidValue)?;
     if encoded.len() > MAX_RAW_BYTES {
         return Err(ParseRequestError::StructureLimitExceeded);
     }
