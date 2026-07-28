@@ -393,6 +393,7 @@ fn allowed_restricted_external_dependency(dependency: &DeclaredDependency) -> bo
             | ("af-adapter", "url", "normal")
             | ("af-adapter", "tokio", "dev")
             | ("af-protocol", "base64", "normal")
+            | ("af-protocol", "insta", "dev")
             | ("af-protocol", "serde", "normal")
             | ("af-protocol", "serde_json", "normal")
             | ("af-protocol", "url", "normal")
@@ -598,8 +599,12 @@ mod tests {
 
     #[test]
     fn accepts_reviewed_protocol_dependencies() {
-        let dependencies = ["base64", "serde", "serde_json", "url"]
-            .map(|name| dependency("af-protocol", name, false));
+        let mut dependencies = ["base64", "serde", "serde_json", "url"]
+            .map(|name| dependency("af-protocol", name, false))
+            .to_vec();
+        let mut insta = dependency("af-protocol", "insta", false);
+        insta.kind = "dev".to_owned();
+        dependencies.push(insta);
 
         let violations = validate_workspace(&baseline_workspace(), &dependencies);
 
@@ -760,6 +765,33 @@ mod tests {
                     .any(|violation| violation.detail.contains(detail))
             );
         }
+    }
+
+    #[test]
+    fn rejects_snapshot_dependency_outside_exact_dev_shape() {
+        let normal = dependency("af-protocol", "insta", false);
+        let mut optional = dependency("af-protocol", "insta", false);
+        optional.kind = "dev".to_owned();
+        optional.optional = true;
+        let mut targeted = dependency("af-protocol", "insta", false);
+        targeted.kind = "dev".to_owned();
+        targeted.target = Some("cfg(unix)".to_owned());
+        let mut aliased = dependency("af-protocol", "insta", false);
+        aliased.kind = "dev".to_owned();
+        aliased.alias = Some("insta_alias".to_owned());
+
+        let violations = validate_workspace(
+            &baseline_workspace(),
+            &[normal, optional, targeted, aliased],
+        );
+
+        assert_eq!(violations.len(), 4);
+        assert!(
+            violations
+                .iter()
+                .all(|violation| violation.rule
+                    == "restricted-crate-external-dependency-not-allowed")
+        );
     }
 
     #[test]
