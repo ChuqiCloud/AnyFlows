@@ -9,14 +9,16 @@ import {
 } from '@/components/ui/sheet'
 import type { AdminChannel } from '@/lib/api/generated/types.gen'
 import { ChannelForm } from './channel-form'
+import type { ChannelEditorMode } from './channel-form-model'
 
 type ChannelEditorSheetProps = {
   channel?: AdminChannel
   open: boolean
   onOpenChange: (open: boolean) => void
+  onSaved?: (channel: AdminChannel, mode: ChannelEditorMode) => void
 }
 
-export function ChannelEditorSheet({ channel, open, onOpenChange }: ChannelEditorSheetProps) {
+export function ChannelEditorSheet({ channel, open, onOpenChange, onSaved }: ChannelEditorSheetProps) {
   const { t } = useTranslation()
   const mode = channel ? 'update' : 'create'
 
@@ -36,7 +38,10 @@ export function ChannelEditorSheet({ channel, open, onOpenChange }: ChannelEdito
           mode={mode}
           channel={channel}
           onCancel={() => onOpenChange(false)}
-          onSaved={() => onOpenChange(false)}
+          onSaved={(savedChannel) => {
+            onOpenChange(false)
+            onSaved?.(savedChannel, mode)
+          }}
         />
       </SheetContent>
     </Sheet>
