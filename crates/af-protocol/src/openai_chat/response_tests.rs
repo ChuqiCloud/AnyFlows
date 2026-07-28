@@ -35,7 +35,7 @@ fn parses_minimal_non_streaming_response() {
     assert_eq!(response.operation, Operation::Chat);
     assert_eq!(response.id, "chatcmpl-test");
     assert_eq!(response.model, "gpt-test");
-    assert_eq!(response.created_at, 1_700_000_000);
+    assert_eq!(response.created_at, Some(1_700_000_000));
     assert_eq!(response.choices.len(), 1);
     assert_eq!(response.choices[0].index, 0);
     assert_eq!(response.choices[0].message.role, Role::Assistant);

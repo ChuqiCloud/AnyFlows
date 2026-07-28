@@ -696,7 +696,7 @@ mod tests {
             Operation::Chat,
             "response-id".to_owned(),
             "gpt-4o".to_owned(),
-            1,
+            Some(1),
             vec![ResponseChoice::new(
                 0,
                 Message::new(
@@ -716,7 +716,7 @@ mod tests {
             Operation::Chat,
             "response-id".to_owned(),
             "gpt-4o".to_owned(),
-            1,
+            Some(1),
             response_without_usage.choices.clone(),
             Some(upstream_usage()),
         );

@@ -168,7 +168,7 @@ fn convert_response(wire: ChatResponseWire) -> Result<CanonicalResponse, ParseRe
         Operation::Chat,
         id,
         model,
-        created,
+        Some(created),
         converted_choices,
         usage,
     )
