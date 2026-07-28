@@ -744,7 +744,7 @@ mod tests {
 
         let violations = validate_workspace(&baseline_workspace(), &dependencies);
 
-        assert_eq!(violations.len(), 16);
+        assert_eq!(violations.len(), 20);
         assert!(
             violations
                 .iter()
@@ -756,6 +756,7 @@ mod tests {
             "optional=true",
             "target=cfg(unix)",
             "alias=base64_alias",
+            "alias=bytes_alias",
             "alias=serde_alias",
             "alias=serde_json_alias",
             "alias=url_alias",

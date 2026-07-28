@@ -72,7 +72,7 @@ impl Drop for TestDatabase {
 }
 
 #[tokio::test]
-async fn full_chain_forwards_normalized_request_and_returns_validated_response() {
+async fn full_chain_preserves_verified_request_and_response_bytes() {
     let upstream_body = serde_json::to_vec(&json!({
         "id": "chatcmpl-test",
         "object": "chat.completion",
@@ -532,9 +532,10 @@ async fn full_chain_forwards_normalized_request_and_returns_validated_response()
     for forbidden in &identity_canaries {
         assert!(!head_lower.contains(forbidden));
     }
+    assert_eq!(upstream.body, inbound);
     let outbound: Value = serde_json::from_slice(&upstream.body).unwrap();
     assert_eq!(outbound["model"], UPSTREAM_MODEL);
-    assert_eq!(outbound["stream"], false);
+    assert!(outbound.get("stream").is_none());
     assert_eq!(outbound["messages"][0]["content"], "hello");
     let outbound_text = String::from_utf8_lossy(&upstream.body);
     let response_text = String::from_utf8_lossy(&response.body);
