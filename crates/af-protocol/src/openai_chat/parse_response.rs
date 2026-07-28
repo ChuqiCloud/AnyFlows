@@ -24,7 +24,7 @@ use crate::{
 
 pub(super) const MAX_RESPONSE_CHOICES: usize = 128;
 const MAX_RESPONSE_ID_BYTES: usize = 256;
-const MAX_RESPONSE_FINGERPRINT_BYTES: usize = 256;
+pub(super) const MAX_RESPONSE_FINGERPRINT_BYTES: usize = 256;
 const RESPONSE_JSON_LIMITS: JsonLimits = JsonLimits {
     max_depth: 32,
     max_nodes: 100_000,
