@@ -125,10 +125,12 @@ fn content_blocks_cover_multimodal_tools_thinking_and_cache_hints() {
             id: "call-1".to_owned(),
             name: "lookup".to_owned(),
             input: json!({"query": "value"}),
+            signature: None,
         },
         ContentBlock::ToolResult {
             tool_use_id: "call-1".to_owned(),
             content: vec![ContentBlock::Text("result".to_owned())],
+            structured_content: None,
             is_error: false,
         },
         ContentBlock::Thinking {
@@ -177,10 +179,12 @@ fn sensitive_canonical_values_are_redacted_from_debug() {
             id: canaries[5].to_owned(),
             name: canaries[6].to_owned(),
             input: json!({"value": canaries[7]}),
+            signature: Some(canaries[10].to_owned()),
         },
         ContentBlock::ToolResult {
             tool_use_id: canaries[5].to_owned(),
             content: vec![ContentBlock::Text(canaries[8].to_owned())],
+            structured_content: Some(json!({"value": canaries[8]})),
             is_error: true,
         },
         ContentBlock::Thinking {

@@ -194,6 +194,8 @@ pub enum ContentBlock {
         name: String,
         /// 已解析的工具参数。
         input: Value,
+        /// 供应商用于延续推理上下文的不透明签名。
+        signature: Option<String>,
     },
     /// 工具执行结果。
     ToolResult {
@@ -201,6 +203,8 @@ pub enum ContentBlock {
         tool_use_id: String,
         /// 工具返回的内容块。
         content: Vec<ContentBlock>,
+        /// 无法等价表示为普通内容块的结构化 JSON 结果。
+        structured_content: Option<Value>,
         /// 工具是否以错误结束。
         is_error: bool,
     },
@@ -223,11 +227,15 @@ impl fmt::Debug for ContentBlock {
             Self::Audio { .. } => formatter.write_str("Audio(<已脱敏>)"),
             Self::ToolUse { .. } => formatter.write_str("ToolUse(<已脱敏>)"),
             Self::ToolResult {
-                content, is_error, ..
+                content,
+                structured_content,
+                is_error,
+                ..
             } => formatter
                 .debug_struct("ToolResult")
                 .field("tool_use_id", &"<已脱敏>")
                 .field("content_count", &content.len())
+                .field("has_structured_content", &structured_content.is_some())
                 .field("is_error", is_error)
                 .finish(),
             Self::Thinking { .. } => formatter.write_str("Thinking(<已脱敏>)"),

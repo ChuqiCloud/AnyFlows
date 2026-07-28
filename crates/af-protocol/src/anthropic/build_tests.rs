@@ -35,6 +35,7 @@ fn tool_use(id: &str) -> ContentBlock {
         id: id.to_owned(),
         name: "lookup".to_owned(),
         input: json!({"query": id}),
+        signature: None,
     }
 }
 
@@ -42,6 +43,7 @@ fn tool_result(id: &str) -> ContentBlock {
     ContentBlock::ToolResult {
         tool_use_id: id.to_owned(),
         content: vec![ContentBlock::Text(format!("result-{id}"))],
+        structured_content: None,
         is_error: false,
     }
 }
@@ -494,11 +496,45 @@ fn revalidates_tool_call_and_result_state() {
             id: "toolu_1".to_owned(),
             name: "lookup".to_owned(),
             input: json!([]),
+            signature: None,
         }],
     )];
     assert_eq!(
         build_request(&non_object),
         Err(BuildRequestError::InvalidValue)
+    );
+
+    let mut signed_call = minimal_request();
+    signed_call.messages = vec![Message::new(
+        Role::Assistant,
+        vec![ContentBlock::ToolUse {
+            id: "toolu_1".to_owned(),
+            name: "lookup".to_owned(),
+            input: json!({}),
+            signature: Some("c2ln".to_owned()),
+        }],
+    )];
+    assert_eq!(
+        build_request(&signed_call),
+        Err(BuildRequestError::UnsupportedFeature)
+    );
+
+    let mut structured_result = minimal_request();
+    structured_result.messages = vec![
+        Message::new(Role::Assistant, vec![tool_use("toolu_1")]),
+        Message::new(
+            Role::Tool,
+            vec![ContentBlock::ToolResult {
+                tool_use_id: "toolu_1".to_owned(),
+                content: Vec::new(),
+                structured_content: Some(json!({"ok": true})),
+                is_error: false,
+            }],
+        ),
+    ];
+    assert_eq!(
+        build_request(&structured_result),
+        Err(BuildRequestError::UnsupportedFeature)
     );
 }
 

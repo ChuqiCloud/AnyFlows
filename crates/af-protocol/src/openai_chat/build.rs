@@ -463,7 +463,15 @@ fn build_assistant_message(
                 state.add_text(text)?;
                 texts.push(text.clone());
             }
-            ContentBlock::ToolUse { id, name, input } => {
+            ContentBlock::ToolUse {
+                id,
+                name,
+                input,
+                signature,
+            } => {
+                if signature.is_some() {
+                    return Err(BuildRequestError::UnsupportedFeature);
+                }
                 saw_tool_call = true;
                 tool_calls.push(build_tool_call(id, name, input, state)?);
             }
@@ -530,13 +538,14 @@ fn build_tool_message(
         ContentBlock::ToolResult {
             tool_use_id,
             content,
+            structured_content,
             is_error,
         },
     ] = blocks
     else {
         return Err(BuildRequestError::InvalidValue);
     };
-    if *is_error {
+    if *is_error || structured_content.is_some() {
         return Err(BuildRequestError::UnsupportedFeature);
     }
     validate_call_id(tool_use_id).map_err(map_request_validation_error)?;

@@ -442,7 +442,15 @@ fn convert_tool_use(
     state.add_tool_arguments(argument_bytes, argument_nodes)?;
     state.pending_tool_call_ids.insert(id.clone());
     state.add_block()?;
-    Ok((ContentBlock::ToolUse { id, name, input }, cache_control))
+    Ok((
+        ContentBlock::ToolUse {
+            id,
+            name,
+            input,
+            signature: None,
+        },
+        cache_control,
+    ))
 }
 
 fn convert_tool_result(
@@ -487,6 +495,7 @@ fn convert_tool_result(
         ContentBlock::ToolResult {
             tool_use_id,
             content,
+            structured_content: None,
             is_error,
         },
         cache_control,

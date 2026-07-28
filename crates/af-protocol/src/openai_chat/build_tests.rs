@@ -274,6 +274,7 @@ fn revalidates_tool_order_arguments_and_result_semantics() {
                     id: "call-1".to_owned(),
                     name: "lookup".to_owned(),
                     input: json!({}),
+                    signature: None,
                 },
                 ContentBlock::Text("late".to_owned()),
             ],
@@ -294,6 +295,7 @@ fn revalidates_tool_order_arguments_and_result_semantics() {
                 id: "call-1".to_owned(),
                 name: "lookup".to_owned(),
                 input: json!([1, 2]),
+                signature: None,
             }],
         )],
         false,
@@ -311,6 +313,7 @@ fn revalidates_tool_order_arguments_and_result_semantics() {
             vec![ContentBlock::ToolResult {
                 tool_use_id: "call-1".to_owned(),
                 content: vec![ContentBlock::Text("failed".to_owned())],
+                structured_content: None,
                 is_error: true,
             }],
         )],
@@ -318,6 +321,44 @@ fn revalidates_tool_order_arguments_and_result_semantics() {
     );
     assert_eq!(
         build_request(&error_result),
+        Err(BuildRequestError::UnsupportedFeature)
+    );
+
+    let signed_call = CanonicalRequest::new(
+        Operation::Chat,
+        "gpt-test".to_owned(),
+        vec![Message::new(
+            Role::Assistant,
+            vec![ContentBlock::ToolUse {
+                id: "call-1".to_owned(),
+                name: "lookup".to_owned(),
+                input: json!({}),
+                signature: Some("c2ln".to_owned()),
+            }],
+        )],
+        false,
+    );
+    assert_eq!(
+        build_request(&signed_call),
+        Err(BuildRequestError::UnsupportedFeature)
+    );
+
+    let structured_result = CanonicalRequest::new(
+        Operation::Chat,
+        "gpt-test".to_owned(),
+        vec![Message::new(
+            Role::Tool,
+            vec![ContentBlock::ToolResult {
+                tool_use_id: "call-1".to_owned(),
+                content: Vec::new(),
+                structured_content: Some(json!({"ok": true})),
+                is_error: false,
+            }],
+        )],
+        false,
+    );
+    assert_eq!(
+        build_request(&structured_result),
         Err(BuildRequestError::UnsupportedFeature)
     );
 }

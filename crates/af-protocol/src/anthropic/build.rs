@@ -455,7 +455,15 @@ fn build_assistant_content(
     for block in blocks {
         match block {
             ContentBlock::Text(text) => parts.push(build_text_part(text, state)?),
-            ContentBlock::ToolUse { id, name, input } => {
+            ContentBlock::ToolUse {
+                id,
+                name,
+                input,
+                signature,
+            } => {
+                if signature.is_some() {
+                    return Err(BuildRequestError::UnsupportedFeature);
+                }
                 parts.push(build_tool_use_part(id, name, input, state)?);
             }
             ContentBlock::CacheControl(hint) => {
@@ -482,20 +490,28 @@ fn build_tool_result_part(
             ContentBlock::ToolResult {
                 tool_use_id,
                 content,
+                structured_content,
                 is_error,
             },
-        ] => ((tool_use_id, content, is_error), None),
+        ] => ((tool_use_id, content, structured_content, is_error), None),
         [
             ContentBlock::ToolResult {
                 tool_use_id,
                 content,
+                structured_content,
                 is_error,
             },
             ContentBlock::CacheControl(hint),
-        ] => ((tool_use_id, content, is_error), Some(*hint)),
+        ] => (
+            (tool_use_id, content, structured_content, is_error),
+            Some(*hint),
+        ),
         _ => return Err(BuildRequestError::InvalidValue),
     };
-    let (tool_use_id, content, is_error) = result;
+    let (tool_use_id, content, structured_content, is_error) = result;
+    if structured_content.is_some() {
+        return Err(BuildRequestError::UnsupportedFeature);
+    }
     validate_call_id(tool_use_id).map_err(map_request_validation_error)?;
     if !state.pending_tool_call_ids.remove(tool_use_id) {
         return Err(BuildRequestError::InvalidValue);

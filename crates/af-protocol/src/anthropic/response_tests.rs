@@ -156,7 +156,12 @@ fn round_trips_thinking_tools_cache_usage_and_same_protocol_metadata() {
     ));
     assert!(matches!(
         &parsed.choices[0].message.content[1],
-        ContentBlock::ToolUse { id, name, input }
+        ContentBlock::ToolUse {
+            id,
+            name,
+            input,
+            ..
+        }
             if id == "toolu_1" && name == "lookup" && input == &json!({ "id": 7 })
     ));
     let usage = parsed.usage.unwrap();
@@ -507,6 +512,7 @@ fn build_response_revalidates_choices_content_usage_and_raw_origin() {
                     id: "toolu_1".to_owned(),
                     name: "lookup".to_owned(),
                     input: json!({}),
+                    signature: None,
                 }],
             ),
             FinishReason::Stop,

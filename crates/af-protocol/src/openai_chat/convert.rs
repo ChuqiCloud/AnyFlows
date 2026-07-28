@@ -627,6 +627,7 @@ fn convert_tool_call(
         id: payload.id,
         name: payload.function.name,
         input,
+        signature: None,
     })
 }
 
@@ -660,6 +661,7 @@ fn convert_tool_message(
         vec![ContentBlock::ToolResult {
             tool_use_id: message.tool_call_id,
             content: result_content,
+            structured_content: None,
             is_error: false,
         }],
     ))

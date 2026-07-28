@@ -3,6 +3,7 @@
 pub mod anthropic;
 mod bounded_json;
 mod canonical;
+pub mod gemini;
 pub mod openai_chat;
 mod request;
 mod response;
