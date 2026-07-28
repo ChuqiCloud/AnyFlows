@@ -261,6 +261,7 @@ pub(super) struct ReasoningTextWire {
     #[serde(rename = "type")]
     pub(super) _kind: ReasoningTextTypeWire,
     /// 原始推理文本。
+    #[serde(rename = "text")]
     pub(super) _text: String,
 }
 
