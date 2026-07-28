@@ -7,7 +7,6 @@ use url::Url;
 
 use super::{
     MAX_OUTPUT_TOKENS, ParseRequestError,
-    bounded_json::{BoundedJsonError, JsonLimits, parse_value},
     wire::{
         AssistantContentWire, AssistantMessageWire, ChatRequestWire, DeveloperMessageWire, Field,
         FunctionDefinitionWire, FunctionTypeWire, ImageDetailWire, InputAudioFormatWire,
@@ -17,6 +16,7 @@ use super::{
         UserContentWire, UserMessageWire,
     },
 };
+use crate::bounded_json::{BoundedJsonError, JsonLimits, parse_value};
 use crate::{
     CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningConfig, ReasoningEffort,
     RequestMetadata, Sampling, StreamOptions, TokenCount, ToolChoice, ToolDef,
