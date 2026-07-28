@@ -113,7 +113,11 @@
       "retry": "重试",
       "loadMore": "加载更多",
       "cancel": "取消",
-      "save": "保存修改"
+      "save": "保存修改",
+      "showApiKey": "显示上游 API Key",
+      "hideApiKey": "隐藏上游 API Key",
+      "credentials": "管理凭据",
+      "refreshCredentials": "刷新凭据"
     },
     "empty": {
       "title": "还没有渠道",
@@ -158,11 +162,46 @@
     },
     "validation": {
       "field": "字段值无效。",
+      "apiKey": "请输入不含首尾空格或控制字符的上游 API Key。",
       "json": "请输入合法的 JSON 对象。",
       "stringMap": "请输入所有值均为字符串的 JSON 对象。",
       "url": "请输入不含账号、查询串和片段的 HTTP(S) 地址。",
       "routing": "模型和分组必须同时填写或同时留空，且分组 ID 必须为正整数。",
       "sensitiveRequired": "创建渠道时必须提供 JSON 对象，可填写 {}。"
+    },
+    "credentials": {
+      "title": "渠道凭据",
+      "description": "管理“{{name}}”的上游访问凭据。",
+      "addTitle": "添加 API Key",
+      "addHint": "每次添加一条，保存后不再显示明文。",
+      "apiKey": "上游 API Key",
+      "add": "添加",
+      "addFailed": "API Key 保存失败，请稍后重试。",
+      "listTitle": "凭据列表",
+      "count_one": "共 {{count}} 条凭据",
+      "count_other": "共 {{count}} 条凭据",
+      "loading": "正在加载凭据",
+      "loadFailed": "无法读取当前渠道的凭据。",
+      "emptyTitle": "还没有凭据",
+      "emptyBody": "添加第一条 API Key 后，该渠道才能参与实际转发。",
+      "itemName": "API Key #{{id}}",
+      "neverUsed": "尚未参与请求",
+      "lastUsed": "上次使用 {{value}}",
+      "state": {
+        "available": "可调度",
+        "autoDisabled": "自动停用",
+        "cooling": "冷却中",
+        "disabled": "已停用",
+        "paused": "暂停调度",
+        "pending": "待使用"
+      },
+      "enable": "启用凭据",
+      "disable": "停用凭据",
+      "delete": "删除凭据",
+      "updateFailed": "凭据状态更新失败，请稍后重试。",
+      "deleteTitle": "删除渠道凭据",
+      "deleteDescription": "将永久移除凭据 #{{id}}，此操作无法撤销。",
+      "deleteFailed": "凭据删除失败，请稍后重试。"
     }
   },
   "tokens": {

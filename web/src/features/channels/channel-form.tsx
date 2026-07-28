@@ -26,7 +26,7 @@ type ChannelFormProps = {
   mode: ChannelEditorMode
   channel?: AdminChannel
   onCancel: () => void
-  onSaved: () => void
+  onSaved: (channel: AdminChannel) => void
 }
 
 type FieldProps = {
@@ -73,12 +73,13 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
   const submitError = createMutation.isError || updateMutation.isError
   const onSubmit = form.handleSubmit(async (values) => {
     try {
+      let savedChannel: AdminChannel | undefined
       if (mode === 'create') {
-        await createMutation.mutateAsync(toCreateRequest(values))
+        savedChannel = await createMutation.mutateAsync(toCreateRequest(values))
       } else if (channel) {
-        await updateMutation.mutateAsync({ id: channel.id, body: toUpdateRequest(values) })
+        savedChannel = await updateMutation.mutateAsync({ id: channel.id, body: toUpdateRequest(values) })
       }
-      onSaved()
+      if (savedChannel) onSaved(savedChannel)
     } catch {
       // Mutation 状态负责呈现服务端错误，表单内容保持不变便于修正后重试。
     }
@@ -145,7 +146,11 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
             <Textarea id="channel-settings" className="min-h-24 font-mono text-xs" aria-invalid={!!form.formState.errors.settings} {...form.register('settings')} />
           </Field>
         </section>
-        {submitError ? <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{t('channels.form.submitError')}</p> : null}
+        {submitError ? (
+          <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {t('channels.form.submitError')}
+          </p>
+        ) : null}
       </div>
 
       <div className="flex justify-end gap-2 border-t border-[var(--hairline)] p-4">

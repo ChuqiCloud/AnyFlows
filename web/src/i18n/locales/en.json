@@ -113,7 +113,11 @@
       "retry": "Retry",
       "loadMore": "Load more",
       "cancel": "Cancel",
-      "save": "Save changes"
+      "save": "Save changes",
+      "showApiKey": "Show upstream API key",
+      "hideApiKey": "Hide upstream API key",
+      "credentials": "Manage credentials",
+      "refreshCredentials": "Refresh credentials"
     },
     "empty": {
       "title": "No channels yet",
@@ -158,11 +162,46 @@
     },
     "validation": {
       "field": "This field value is invalid.",
+      "apiKey": "Enter an upstream API key without surrounding whitespace or control characters.",
       "json": "Enter a valid JSON object.",
       "stringMap": "Enter a JSON object whose values are all strings.",
       "url": "Enter an HTTP(S) URL without credentials, a query string, or a fragment.",
       "routing": "Models and groups must both be set or both be empty, and group IDs must be positive integers.",
       "sensitiveRequired": "A JSON object is required when creating a channel. You can enter {}."
+    },
+    "credentials": {
+      "title": "Channel credentials",
+      "description": "Manage upstream credentials for “{{name}}”.",
+      "addTitle": "Add API key",
+      "addHint": "Add one key at a time. Its plaintext is not shown again after saving.",
+      "apiKey": "Upstream API key",
+      "add": "Add",
+      "addFailed": "The API key could not be saved. Try again shortly.",
+      "listTitle": "Credentials",
+      "count_one": "{{count}} credential",
+      "count_other": "{{count}} credentials",
+      "loading": "Loading credentials",
+      "loadFailed": "Credentials for this channel could not be loaded.",
+      "emptyTitle": "No credentials yet",
+      "emptyBody": "Add the first API key before this channel can relay traffic.",
+      "itemName": "API key #{{id}}",
+      "neverUsed": "Not used yet",
+      "lastUsed": "Last used {{value}}",
+      "state": {
+        "available": "Schedulable",
+        "autoDisabled": "Auto-disabled",
+        "cooling": "Cooling down",
+        "disabled": "Disabled",
+        "paused": "Scheduling paused",
+        "pending": "Pending use"
+      },
+      "enable": "Enable credential",
+      "disable": "Disable credential",
+      "delete": "Delete credential",
+      "updateFailed": "The credential status could not be updated. Try again shortly.",
+      "deleteTitle": "Delete channel credential",
+      "deleteDescription": "Credential #{{id}} will be permanently removed. This cannot be undone.",
+      "deleteFailed": "The credential could not be deleted. Try again shortly."
     }
   },
   "tokens": {
