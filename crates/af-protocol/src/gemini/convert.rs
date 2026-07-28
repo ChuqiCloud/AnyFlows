@@ -202,13 +202,13 @@ fn convert_tool_choice(
             if tool_names.is_empty() {
                 return Err(ParseRequestError::InvalidValue);
             }
-            if allowed_names.is_empty() || &allowed_names == tool_names {
-                Ok(ToolChoice::Required)
-            } else if allowed_names.len() == 1 {
+            if allowed_names.len() == 1 {
                 let Some(name) = allowed_names.into_iter().next() else {
                     unreachable!("单元素集合必须包含工具名称");
                 };
                 Ok(ToolChoice::Named { name })
+            } else if allowed_names.is_empty() || &allowed_names == tool_names {
+                Ok(ToolChoice::Required)
             } else {
                 Err(ParseRequestError::UnsupportedFeature)
             }
