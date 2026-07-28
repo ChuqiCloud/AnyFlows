@@ -117,7 +117,9 @@
       "showApiKey": "Show upstream API key",
       "hideApiKey": "Hide upstream API key",
       "credentials": "Manage credentials",
-      "refreshCredentials": "Refresh credentials"
+      "refreshCredentials": "Refresh credentials",
+      "removeModel": "Remove model {{model}}",
+      "removeGroup": "Remove group {{group}}"
     },
     "empty": {
       "title": "No channels yet",
@@ -136,11 +138,20 @@
     "form": {
       "basic": "Basic settings",
       "routing": "Routing scope",
-      "advanced": "Overrides and sensitive settings",
+      "overrides": "Request transformation",
+      "advanced": "Advanced adapter settings",
       "autoBanHint": "Allow the runtime to disable this channel after a deterministic failure.",
-      "modelsHint": "Enter one Canonical model per line or separate them with commas.",
-      "groupsHint": "Comma-separated group IDs. Models and groups must both be empty or both be set.",
-      "sensitiveHint": "Leave blank to preserve the current value. Enter {} to clear it.",
+      "tagHint": "Optional label for filtering and recognition.",
+      "modelPlaceholder": "Enter a model name and press Enter",
+      "modelsHint": "Press Enter to add. Pasted comma-separated and line-separated lists are supported.",
+      "groupPlaceholder": "Select a group",
+      "groupsLoading": "Loading groups",
+      "groupsLoadFailed": "Groups could not be loaded",
+      "groupsHint": "Select existing groups. Models and groups must both be empty or both be set.",
+      "mappingHint": "Map the client model name on the left to the upstream model name on the right.",
+      "parametersHint": "Choose a string, number, boolean, null, or JSON value for each parameter.",
+      "headersHint": "Authentication, Cookie, Host, and connection-level headers cannot be overridden.",
+      "settingsHint": "Reserved for adapter-specific capabilities. Most channels should keep an empty object.",
       "submitError": "The channel could not be saved. Check the fields and try again."
     },
     "fields": {
@@ -154,20 +165,61 @@
       "autoBan": "Allow automatic disabling",
       "tag": "Tag",
       "models": "Models",
-      "groupIds": "Group IDs",
-      "modelMapping": "Model mapping JSON",
-      "paramOverride": "Parameter overrides JSON",
-      "headerOverride": "Header overrides JSON",
-      "settings": "Adapter settings JSON"
+      "groupIds": "Available groups",
+      "modelMapping": "Model mapping",
+      "paramOverride": "Parameter overrides",
+      "headerOverride": "Header overrides",
+      "settings": "Adapter settings"
     },
     "validation": {
       "field": "This field value is invalid.",
       "apiKey": "Enter an upstream API key without surrounding whitespace or control characters.",
       "json": "Enter a valid JSON object.",
-      "stringMap": "Enter a JSON object whose values are all strings.",
+      "duplicateKey": "Names must be unique.",
+      "entries": "An entry is empty, too long, or exceeds the item limit.",
+      "header": "A header name or value is invalid, or the name cannot be overridden.",
+      "parameter": "A parameter name, type, or value is invalid.",
+      "schedule": "Priority must be an integer and weight must be a non-negative integer.",
       "url": "Enter an HTTP(S) URL without credentials, a query string, or a fragment.",
-      "routing": "Models and groups must both be set or both be empty, and group IDs must be positive integers.",
-      "sensitiveRequired": "A JSON object is required when creating a channel. You can enter {}."
+      "routing": "Models and groups must both be set or both be empty, with no duplicates or capacity overflow."
+    },
+    "mapping": {
+      "source": "Client model",
+      "target": "Upstream model",
+      "add": "Add mapping",
+      "remove": "Remove mapping",
+      "empty": "No model mapping. Requests will use the original model name."
+    },
+    "headers": {
+      "name": "Header name",
+      "value": "Header value",
+      "add": "Add header",
+      "remove": "Remove header",
+      "empty": "No additional headers."
+    },
+    "parameters": {
+      "name": "Parameter name",
+      "type": "Value type",
+      "value": "Parameter value",
+      "add": "Add parameter",
+      "remove": "Remove parameter {{name}}",
+      "empty": "No parameter overrides.",
+      "types": {
+        "string": "String",
+        "number": "Number",
+        "boolean": "Boolean",
+        "null": "Null",
+        "json": "JSON"
+      }
+    },
+    "sensitiveMode": {
+      "label": "Sensitive setting update mode",
+      "preserve": "Preserve",
+      "replace": "Replace",
+      "clear": "Clear",
+      "preserveHint": "Keep the current sensitive settings without reading or exposing their values.",
+      "replaceHint": "Replace the current settings with the values entered here.",
+      "clearHint": "Clear these settings on save. Subsequent requests are affected immediately."
     },
     "credentials": {
       "title": "Channel credentials",
@@ -187,8 +239,16 @@
       "itemName": "API key #{{id}}",
       "neverUsed": "Not used yet",
       "lastUsed": "Last used {{value}}",
+      "kind": {
+        "api_key": "API key",
+        "oauth": "OAuth",
+        "setup_token": "Setup token",
+        "bedrock": "Bedrock",
+        "service_account": "Service account",
+        "upstream": "Upstream credential"
+      },
       "state": {
-        "available": "Schedulable",
+        "available": "Healthy",
         "autoDisabled": "Auto-disabled",
         "cooling": "Cooling down",
         "disabled": "Disabled",
@@ -197,6 +257,7 @@
       },
       "enable": "Enable credential",
       "disable": "Disable credential",
+      "editSchedule": "Edit scheduling parameters",
       "delete": "Delete credential",
       "updateFailed": "The credential status could not be updated. Try again shortly.",
       "deleteTitle": "Delete channel credential",

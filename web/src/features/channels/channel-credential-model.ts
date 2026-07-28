@@ -13,6 +13,11 @@ export type CredentialRuntimeState =
   | 'paused'
   | 'pending'
 
+export type CredentialSchedule = {
+  priority: number
+  weight: number
+}
+
 /** 校验服务端允许的 API Key 明文边界，不在错误中保留原始输入。 */
 export function isValidApiKey(value: string) {
   return value.length > 0
@@ -21,15 +26,25 @@ export function isValidApiKey(value: string) {
     && /^[\x20-\x7E]+$/.test(value)
 }
 
-/** 使用当前单 Key 调度默认值创建一条独立、可调度的加密凭据。 */
-export function createApiKeyRequest(secret: string): AdminCredentialCreateRequestWritable {
+/** 校验凭据优先级与非负权重，保持和服务端整数约束一致。 */
+export function isValidCredentialSchedule(schedule: CredentialSchedule) {
+  return Number.isSafeInteger(schedule.priority)
+    && Number.isSafeInteger(schedule.weight)
+    && schedule.weight >= 0
+}
+
+/** 使用显式调度参数创建一条独立、可调度的加密凭据。 */
+export function createApiKeyRequest(
+  secret: string,
+  schedule: CredentialSchedule = { priority: 0, weight: 10 },
+): AdminCredentialCreateRequestWritable {
   return {
     kind: 'api_key',
     secret,
     status: 'enabled',
     multi_key_mode: null,
-    priority: 0,
-    weight: 10,
+    priority: schedule.priority,
+    weight: schedule.weight,
     concurrency: null,
     load_factor_micros: null,
     rate_multiplier_micros: null,
@@ -48,14 +63,32 @@ export function updateCredentialStatusRequest(
   credential: AdminCredential,
   status: AdminRoutingWriteStatus,
 ): AdminCredentialUpdateRequestWritable | undefined {
+  return credentialUpdateRequest(credential, { status })
+}
+
+/** 完整保留敏感字段与扩展元数据，仅更新凭据调度优先级和权重。 */
+export function updateCredentialScheduleRequest(
+  credential: AdminCredential,
+  schedule: CredentialSchedule,
+): AdminCredentialUpdateRequestWritable | undefined {
+  if (!isValidCredentialSchedule(schedule)) return undefined
+  return credentialUpdateRequest(credential, schedule)
+}
+
+function credentialUpdateRequest(
+  credential: AdminCredential,
+  overrides: Partial<Pick<AdminCredentialUpdateRequestWritable, 'status' | 'priority' | 'weight'>>,
+): AdminCredentialUpdateRequestWritable | undefined {
   if (credential.kind !== 'api_key' && credential.kind !== 'oauth') return undefined
+  const status = overrides.status ?? credential.status
+  if (status === 'auto_disabled') return undefined
   return {
     kind: credential.kind,
     secret: null,
     status,
     multi_key_mode: credential.multi_key_mode,
-    priority: credential.priority,
-    weight: credential.weight,
+    priority: overrides.priority ?? credential.priority,
+    weight: overrides.weight ?? credential.weight,
     concurrency: credential.concurrency,
     load_factor_micros: credential.load_factor_micros,
     rate_multiplier_micros: credential.rate_multiplier_micros,
