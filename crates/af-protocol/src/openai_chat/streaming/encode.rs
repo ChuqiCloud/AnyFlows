@@ -265,7 +265,11 @@ impl OpenAiChatStreamEncoder {
             CanonicalStreamEvent::Finish {
                 choice_index,
                 reason,
+                stop_sequence,
             } => {
+                if stop_sequence.is_some() {
+                    return Err(EncodeStreamError::UnsupportedEvent);
+                }
                 let state = active_choice(&mut self.choices, choice_index)?;
                 if state.tools.values().any(|tool| !tool.ended)
                     || (reason == FinishReason::ToolCalls) != !state.tools.is_empty()

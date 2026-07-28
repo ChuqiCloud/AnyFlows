@@ -137,6 +137,8 @@ pub enum CanonicalStreamEvent {
         choice_index: u32,
         /// 结束原因。
         reason: FinishReason,
+        /// 上游实际命中的停止序列；仅停止原因支持时存在。
+        stop_sequence: Option<String>,
     },
     /// 上游返回的用量数据。
     Usage(Usage),
@@ -211,10 +213,12 @@ impl fmt::Debug for CanonicalStreamEvent {
             Self::Finish {
                 choice_index,
                 reason,
+                stop_sequence,
             } => formatter
                 .debug_struct("Finish")
                 .field("choice_index", choice_index)
                 .field("reason", reason)
+                .field("stop_sequence", &stop_sequence.as_ref().map(|_| "<已脱敏>"))
                 .finish(),
             Self::Usage(usage) => formatter.debug_tuple("Usage").field(usage).finish(),
             Self::Ping => formatter.write_str("Ping"),

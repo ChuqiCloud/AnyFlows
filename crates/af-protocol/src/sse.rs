@@ -1,11 +1,42 @@
-use std::{fmt, mem, str};
-
-use super::SseParseError;
+use std::{error::Error, fmt, mem, str};
 
 /// 默认单个 SSE 事件最大 8 MiB，可覆盖大文本和 JSON 转义膨胀。
 pub const DEFAULT_MAX_SSE_EVENT_BYTES: usize = 8 * 1024 * 1024;
-/// 单个 SSE 事件的协议硬上限，与 OpenAI Chat 正文上限一致。
-pub const MAX_SSE_EVENT_BYTES: usize = super::super::MAX_BODY_BYTES;
+/// 单个 SSE 事件的协议硬上限，与当前协议正文上限保持一致。
+pub const MAX_SSE_EVENT_BYTES: usize = 32 * 1024 * 1024;
+
+/// 增量 SSE framing 错误；不保留原始行、事件名或数据。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SseParseError {
+    /// 调用方提供的单事件上限为零或超过协议硬上限。
+    InvalidLimit,
+    /// 当前 SSE 事件超过配置的字节上限。
+    EventTooLarge,
+    /// SSE 文本不是合法 UTF-8。
+    InvalidUtf8,
+    /// 传输结束时仍有未用空行封闭的事件。
+    TruncatedEvent,
+    /// parser 已因前一次错误进入终止状态。
+    ParserFailed,
+    /// parser 已完成，不能继续接收字节。
+    ParserClosed,
+}
+
+impl fmt::Display for SseParseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            Self::InvalidLimit => "SSE 事件上限无效",
+            Self::EventTooLarge => "SSE 事件超过大小限制",
+            Self::InvalidUtf8 => "SSE 事件不是有效 UTF-8",
+            Self::TruncatedEvent => "SSE 流在事件结束前截断",
+            Self::ParserFailed => "SSE parser 已失败",
+            Self::ParserClosed => "SSE parser 已结束",
+        };
+        formatter.write_str(message)
+    }
+}
+
+impl Error for SseParseError {}
 
 /// 已完成 framing 的 SSE 事件；Debug 只暴露结构，不输出事件名或 data。
 pub struct SseEvent {
@@ -195,7 +226,7 @@ impl SseParser {
                 self.saw_data = true;
             }
             "event" => self.event_name = Some(value.to_owned()),
-            // id/retry 与未知字段不参与 OpenAI Chat 数据解码，但仍计入事件预算。
+            // id/retry 与未知字段不参与协议数据解码，但仍计入事件预算。
             _ => {}
         }
         Ok(())

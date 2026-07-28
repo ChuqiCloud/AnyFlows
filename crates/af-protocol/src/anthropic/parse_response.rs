@@ -381,7 +381,9 @@ fn convert_stop_details(
     Ok(Some(Value::Object(value)))
 }
 
-fn convert_usage(usage: UsageWire) -> Result<(Usage, Map<String, Value>), ParseResponseError> {
+pub(super) fn convert_usage(
+    usage: UsageWire,
+) -> Result<(Usage, Map<String, Value>), ParseResponseError> {
     let input_tokens = token_count(usage.input_tokens)?;
     let output_tokens = token_count(usage.output_tokens)?;
     let cache_read = optional_token(usage.cache_read_input_tokens)?;
