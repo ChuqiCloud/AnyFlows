@@ -477,7 +477,7 @@ fn encoder_preserves_prompt_block_without_fabricating_choice() {
     );
     let text = String::from_utf8(bytes.clone()).unwrap();
     assert!(text.contains("promptFeedback"));
-    assert!(!text.contains("candidates"));
+    assert!(!text.contains("\"candidates\":"));
 
     let mut decoder = GeminiGenerateContentStreamDecoder::new();
     let mut events = decoder.push(&bytes).unwrap();
