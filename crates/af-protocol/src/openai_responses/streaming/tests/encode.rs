@@ -1,13 +1,21 @@
-use af_domain::{Role, UpstreamError};
+use af_domain::{Protocol, Role, UpstreamError};
 
 use super::{CREATED_AT, MODEL, RESPONSE_ID, parse_encoded_events, usage};
 use crate::openai_responses::{
     EncodeStreamError, OpenAiResponsesStreamDecoder, OpenAiResponsesStreamEncoder,
 };
 use crate::{
-    CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage, UsageDetails,
-    UsageSemantics, UsageSource,
+    CacheHint, CanonicalStreamEvent, ContentDelta, FinishReason, ProtocolCapability,
+    StreamCapability, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
 };
+
+fn assert_unsupported_capability(error: EncodeStreamError, expected: StreamCapability) {
+    let EncodeStreamError::UnsupportedCapability(error) = error else {
+        panic!("必须返回结构化能力错误，实际为 {error:?}");
+    };
+    assert_eq!(error.target_protocol(), Protocol::OpenAiResponses);
+    assert_eq!(error.capability(), ProtocolCapability::Stream(expected));
+}
 
 #[test]
 fn encodes_text_lifecycle_and_terminal_usage() {
@@ -290,9 +298,12 @@ fn fails_closed_on_invalid_order_arguments_and_usage() {
             stop_sequence: None,
         })
         .unwrap();
-    assert_eq!(
-        usage_encoder.encode(CanonicalStreamEvent::Usage(cache_write_usage)),
-        Err(EncodeStreamError::InvalidUsage)
+    let error = usage_encoder
+        .encode(CanonicalStreamEvent::Usage(cache_write_usage))
+        .expect_err("缓存写入 usage 必须被明确拒绝");
+    assert_unsupported_capability(
+        error,
+        StreamCapability::UsageCacheCreation(CacheHint::Ephemeral5Minutes),
     );
 }
 
@@ -305,21 +316,21 @@ fn rejects_unrepresentable_events_and_multiple_choices() {
             role: Role::Assistant,
         })
         .unwrap();
-    assert_eq!(
-        signature.encode(CanonicalStreamEvent::ToolCallSignature {
+    let error = signature
+        .encode(CanonicalStreamEvent::ToolCallSignature {
             choice_index: 0,
             tool_index: 0,
             signature: "opaque".to_owned(),
-        }),
-        Err(EncodeStreamError::UnsupportedEvent)
-    );
+        })
+        .expect_err("工具调用签名必须被明确拒绝");
+    assert_unsupported_capability(error, StreamCapability::ToolCallSignatures);
 
     let mut choice = OpenAiResponsesStreamEncoder::new(RESPONSE_ID, MODEL, CREATED_AT).unwrap();
-    assert_eq!(
-        choice.encode(CanonicalStreamEvent::MessageStart {
+    let error = choice
+        .encode(CanonicalStreamEvent::MessageStart {
             choice_index: 1,
             role: Role::Assistant,
-        }),
-        Err(EncodeStreamError::InvalidSequence)
-    );
+        })
+        .expect_err("非零候选索引必须被明确拒绝");
+    assert_unsupported_capability(error, StreamCapability::ArbitraryChoiceIndex);
 }
