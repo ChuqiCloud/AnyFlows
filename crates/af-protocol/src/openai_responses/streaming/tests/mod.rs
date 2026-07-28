@@ -1,7 +1,7 @@
 mod decode;
 mod encode;
 
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
 use crate::sse::SseParser;
 use crate::{TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};
@@ -115,12 +115,4 @@ pub(super) fn parse_encoded_events(bytes: &[u8]) -> Vec<(String, Value)> {
             (name.to_owned(), value)
         })
         .collect()
-}
-
-pub(super) fn object(fields: impl IntoIterator<Item = (&'static str, Value)>) -> Value {
-    Value::Object(Map::from_iter(
-        fields
-            .into_iter()
-            .map(|(key, value)| (key.to_owned(), value)),
-    ))
 }

@@ -86,7 +86,6 @@ impl OutputDecodeState {
         output_index: u32,
         content_index: u32,
         part: OutputContentWire,
-        output: &mut Vec<CanonicalStreamEvent>,
     ) -> Result<(), ParseStreamError> {
         let OutputContentWire::Text(part) = part else {
             return Err(ParseStreamError::UnsupportedFeature);

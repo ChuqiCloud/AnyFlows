@@ -403,9 +403,7 @@ fn fails_closed_on_sequence_schema_and_terminal_mismatch() {
         Err(ParseStreamError::UnsupportedFeature)
     );
 
-    let duplicate = format!(
-        "event: response.created\ndata: {{\"type\":\"response.created\",\"type\":\"response.created\",\"sequence_number\":0,\"response\":{{}}}}\n\n"
-    );
+    let duplicate = "event: response.created\ndata: {\"type\":\"response.created\",\"type\":\"response.created\",\"sequence_number\":0,\"response\":{}}\n\n";
     let mut duplicate_decoder = OpenAiResponsesStreamDecoder::new();
     assert_eq!(
         duplicate_decoder.push(duplicate.as_bytes()),

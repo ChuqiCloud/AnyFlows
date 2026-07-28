@@ -19,7 +19,7 @@ use crate::openai_responses::{
     response_wire::{ResponseObjectWire, ResponseStatusWire, ResponsesResponseWire},
 };
 use crate::sse::{SseEvent, SseParseError, SseParser};
-use crate::{CanonicalResponse, CanonicalStreamEvent, FinishReason, Usage};
+use crate::{CanonicalResponse, CanonicalStreamEvent, FinishReason};
 
 /// 将 OpenAI Responses SSE 解码为严格有序的 Canonical 流事件。
 ///
@@ -177,7 +177,7 @@ impl OpenAiResponsesStreamDecoder {
             } => {
                 self.require_in_progress()?;
                 self.outputs
-                    .content_part_added(&item_id, output_index, content_index, part, output)
+                    .content_part_added(&item_id, output_index, content_index, part)
             }
             StreamEventWire::ContentPartDone {
                 item_id,
