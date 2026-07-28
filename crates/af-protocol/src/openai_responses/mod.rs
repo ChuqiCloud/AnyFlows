@@ -8,14 +8,22 @@ use crate::{CanonicalRequest, bounded_json};
 
 mod build;
 mod build_input;
+mod build_response;
 mod convert;
 mod input;
+mod parse_response;
+mod response_raw;
+mod response_wire;
 mod wire;
 
 pub use build::{BuildRequestError, build_request};
+pub use build_response::{BuildResponseError, build_response};
+pub use parse_response::{ParseResponseError, parse_response};
 
 #[cfg(test)]
 mod build_tests;
+#[cfg(test)]
+mod response_tests;
 #[cfg(test)]
 mod tests;
 
