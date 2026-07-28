@@ -6,6 +6,7 @@ mod canonical;
 pub mod openai_chat;
 mod request;
 mod response;
+mod sse;
 mod stream;
 mod usage;
 

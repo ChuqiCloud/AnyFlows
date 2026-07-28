@@ -640,6 +640,7 @@ mod tests {
             CanonicalStreamEvent::Finish {
                 choice_index: 0,
                 reason: FinishReason::ToolCalls,
+                stop_sequence: None,
             },
         ] {
             estimator.observe(&event);

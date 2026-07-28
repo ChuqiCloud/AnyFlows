@@ -216,6 +216,7 @@ fn event_kind(event: &CanonicalStreamEvent) -> &'static str {
         CanonicalStreamEvent::Finish {
             choice_index: _,
             reason: _,
+            stop_sequence: _,
         } => "finish",
         CanonicalStreamEvent::Usage(_) => "usage",
         CanonicalStreamEvent::Ping => "ping",
@@ -240,6 +241,7 @@ fn representative_events_use_the_exhaustive_event_match() {
             CanonicalStreamEvent::Finish {
                 choice_index: 0,
                 reason: FinishReason::Stop,
+                stop_sequence: None,
             },
             "finish",
         ),

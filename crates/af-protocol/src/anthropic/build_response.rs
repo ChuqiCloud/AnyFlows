@@ -248,7 +248,7 @@ fn build_stop(
     }
 }
 
-fn build_usage(usage: &Usage) -> Result<Map<String, Value>, BuildResponseError> {
+pub(super) fn build_usage(usage: &Usage) -> Result<Map<String, Value>, BuildResponseError> {
     usage
         .checked_total_tokens()
         .map_err(|_| BuildResponseError::InvalidValue)?;

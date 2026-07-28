@@ -215,10 +215,12 @@ fn decoder_handles_multi_choice_tools_usage_and_done_across_every_byte() {
             CanonicalStreamEvent::Finish {
                 choice_index: 0,
                 reason: FinishReason::ToolCalls,
+                stop_sequence: None,
             },
             CanonicalStreamEvent::Finish {
                 choice_index: 1,
                 reason: FinishReason::Stop,
+                stop_sequence: None,
             },
             CanonicalStreamEvent::Usage(canonical_usage()),
             CanonicalStreamEvent::StreamEnd,
@@ -403,6 +405,7 @@ fn encoder_round_trips_supported_canonical_events() {
         CanonicalStreamEvent::Finish {
             choice_index: 0,
             reason: FinishReason::ToolCalls,
+            stop_sequence: None,
         },
         CanonicalStreamEvent::Usage(canonical_usage()),
         CanonicalStreamEvent::StreamEnd,
@@ -448,6 +451,7 @@ fn encoder_emits_openai_shape_and_exact_done_marker() {
         .encode(CanonicalStreamEvent::Finish {
             choice_index: 7,
             reason: FinishReason::Stop,
+            stop_sequence: None,
         })
         .unwrap();
     assert_eq!(
@@ -586,6 +590,7 @@ fn encoder_rejects_incomplete_tool_json_and_unrepresentable_usage() {
         .encode(CanonicalStreamEvent::Finish {
             choice_index: 0,
             reason: FinishReason::Stop,
+            stop_sequence: None,
         })
         .unwrap();
     assert_eq!(

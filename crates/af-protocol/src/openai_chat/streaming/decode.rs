@@ -547,6 +547,7 @@ fn finish_choice(
     output.push(CanonicalStreamEvent::Finish {
         choice_index,
         reason,
+        stop_sequence: None,
     });
     Ok(())
 }

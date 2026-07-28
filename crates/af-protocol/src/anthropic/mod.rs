@@ -14,11 +14,16 @@ mod build_response;
 mod convert;
 mod parse_response;
 mod response_wire;
+mod streaming;
 mod wire;
 
 pub use build::{BuildRequestError, build_request};
 pub use build_response::{BuildResponseError, build_response};
 pub use parse_response::{ParseResponseError, parse_response};
+pub use streaming::{
+    AnthropicMessagesStreamDecoder, AnthropicMessagesStreamEncoder, DEFAULT_MAX_SSE_EVENT_BYTES,
+    EncodeStreamError, MAX_SSE_EVENT_BYTES, ParseStreamError, SseParseError,
+};
 
 #[cfg(test)]
 mod build_tests;
