@@ -188,7 +188,7 @@ impl GeminiGenerateContentStreamEncoder {
         )?;
         let ContentState::Reasoning {
             signature: ref mut complete_signature,
-            signature_flushed: ref signature_flushed,
+            ref signature_flushed,
         } = *content
         else {
             unreachable!("内容类型已由 bind_content 校验")

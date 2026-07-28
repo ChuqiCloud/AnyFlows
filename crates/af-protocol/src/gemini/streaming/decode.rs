@@ -195,12 +195,11 @@ impl GeminiGenerateContentStreamDecoder {
 
         let prompt_feedback_present = matches!(&prompt_feedback, Field::Value(_));
         let model_status_present = matches!(&model_status, Field::Value(_));
-        if prompt_feedback_present {
-            if self.data_seen
-                || !validate_prompt_feedback(prompt_feedback).map_err(map_response_error)?
-            {
-                return Err(ParseStreamError::InvalidSequence);
-            }
+        if prompt_feedback_present
+            && (self.data_seen
+                || !validate_prompt_feedback(prompt_feedback).map_err(map_response_error)?)
+        {
+            return Err(ParseStreamError::InvalidSequence);
         }
         validate_model_status(model_status).map_err(map_response_error)?;
 
