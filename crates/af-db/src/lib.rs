@@ -45,6 +45,9 @@ mod connection;
 mod credential_probe;
 #[cfg(test)]
 mod credential_probe_tests;
+mod credential_state;
+#[cfg(test)]
+mod credential_state_tests;
 mod entity;
 mod error;
 mod group_pricing;
@@ -144,6 +147,10 @@ pub use credential_probe::{
     EncryptedCredentialEnvelope, EncryptedCredentialEnvelopeError,
     MAX_CREDENTIAL_ENVELOPE_CIPHERTEXT_BYTES, MAX_CREDENTIAL_ENVELOPE_KEY_ID_BYTES,
 };
+pub use credential_state::{
+    CredentialStateChange, CredentialStateEvent, CredentialStateRepository,
+    CredentialStateRepositoryError, CredentialStateWriteReport, MAX_CREDENTIAL_STATE_BATCH,
+};
 pub use error::{DatabaseError, DatabaseOptionsError};
 pub use group_pricing::{
     GroupModelRatioRecord, GroupPeakPricingRecord, GroupPricingCatalog, GroupPricingRecord,
@@ -168,9 +175,9 @@ pub use scheduler_ability::{
     SchedulerAbilityRepository, SchedulerAbilityRepositoryError,
 };
 pub use scheduler_runtime::{
-    MAX_SCHEDULER_RUNTIME_CREDENTIAL_ENTRIES, SchedulerRuntimeCredentialRecord,
-    SchedulerRuntimeHeader, SchedulerRuntimeRecord, SchedulerRuntimeRepository,
-    SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
+    MAX_SCHEDULER_RUNTIME_CREDENTIAL_ENTRIES, MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL,
+    SchedulerRuntimeCredentialRecord, SchedulerRuntimeHeader, SchedulerRuntimeRecord,
+    SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
     SchedulerRuntimeTargetRecordError,
 };
 pub use usage_log::{

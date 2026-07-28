@@ -15,8 +15,8 @@ use af_protocol::{
 };
 
 use crate::{
-    OpenAiChatStream, OpenAiChatUsageHandle, RelayBuildError, RelayCandidate, RelayError,
-    RelayRequest, RelayStateMachine, UsageResolutionError,
+    OpenAiChatStream, OpenAiChatUsageHandle, RelayAttemptReport, RelayBuildError, RelayCandidate,
+    RelayError, RelayRequest, RelayStateMachine, UsageResolutionError,
     error::{classify_upstream_status, map_adaptor_error},
     openai_chat_usage::OpenAiChatUsageEstimator,
 };
@@ -94,18 +94,33 @@ impl RelayService {
 /// 响应校验及 usage 提取，不读取数据库或持有计费会话。
 pub async fn relay_openai_chat(
     machine: &RelayStateMachine,
-    mut canonical: CanonicalRequest,
+    canonical: CanonicalRequest,
     request_id: &str,
 ) -> Result<OpenAiChatResponse, AfError> {
+    relay_openai_chat_with_report(machine, canonical, request_id)
+        .await
+        .into_result()
+}
+
+/// 执行 OpenAI Chat 转发并保留通过协议验证后的脱敏候选报告。
+pub async fn relay_openai_chat_with_report(
+    machine: &RelayStateMachine,
+    mut canonical: CanonicalRequest,
+    request_id: &str,
+) -> RelayOpenAiChatOutcome {
     let include_usage = canonical.stream_options.include_usage();
     if canonical.stream {
         // 上游 usage 是内部结算优先数据；客户端是否可见由 include_usage 单独控制。
         canonical.stream_options = StreamOptions::new(true);
     }
-    let outbound_value = build_request(&canonical).map_err(|_| AfError::InvalidRequest)?;
-    let outbound_body = serde_json::to_vec(&outbound_value)
-        .map(Bytes::from)
-        .map_err(|_| AfError::Internal)?;
+    let outbound_value = match build_request(&canonical) {
+        Ok(value) => value,
+        Err(_) => return RelayOpenAiChatOutcome::failed(AfError::InvalidRequest),
+    };
+    let outbound_body = match serde_json::to_vec(&outbound_value).map(Bytes::from) {
+        Ok(body) => body,
+        Err(_) => return RelayOpenAiChatOutcome::failed(AfError::Internal),
+    };
     // 先由协议构造器完成全部容量与结构校验，再让 tokenizer 处理规范化请求。
     let usage_estimator = OpenAiChatUsageEstimator::new(&canonical);
     let response_mode = if canonical.stream {
@@ -113,58 +128,132 @@ pub async fn relay_openai_chat(
     } else {
         ResponseMode::Full
     };
-    let request = RelayRequest::new(
+    let request = match RelayRequest::new(
         canonical.model.clone(),
         Operation::Chat,
         Method::POST,
         Some(outbound_body),
     )
-    .map_err(map_relay_error)?
-    .with_response_mode(response_mode);
-    let response = machine
-        .execute(request)
-        .await
-        .map_err(map_relay_error)?
-        .into_response();
+    .map(|request| request.with_response_mode(response_mode))
+    {
+        Ok(request) => request,
+        Err(error) => return RelayOpenAiChatOutcome::failed(map_relay_error(error)),
+    };
+    let (response, mut report) = match machine.execute_with_report(request).await {
+        Ok(response) => response.into_parts(),
+        Err(error) => {
+            let (error, report) = error.into_parts();
+            return RelayOpenAiChatOutcome::new(Err(map_relay_error(error)), report);
+        }
+    };
     let status = response.status();
     if status != StatusCode::OK {
-        let body = response
-            .into_body()
-            .into_bytes()
-            .await
-            .map_err(|error| AfError::from(map_adaptor_error(error)))?;
-        return Err(classify_upstream_status(status, &body).into());
+        let body = match response.into_body().into_bytes().await {
+            Ok(body) => body,
+            Err(error) => {
+                let error = map_adaptor_error(error);
+                report.reject_success(error);
+                return RelayOpenAiChatOutcome::new(Err(error.into()), report);
+            }
+        };
+        let error = classify_upstream_status(status, &body);
+        report.reject_success(error);
+        return RelayOpenAiChatOutcome::new(Err(error.into()), report);
     }
 
     if canonical.stream {
-        let created = unix_timestamp()?;
+        let created = match unix_timestamp() {
+            Ok(created) => created,
+            Err(error) => return RelayOpenAiChatOutcome::new(Err(error), report),
+        };
         let response_id = format!("chatcmpl-{request_id}");
-        let encoder = OpenAiChatStreamEncoder::new(response_id, &canonical.model, created)
-            .map_err(|_| AfError::Internal)?;
+        let encoder = match OpenAiChatStreamEncoder::new(response_id, &canonical.model, created) {
+            Ok(encoder) => encoder,
+            Err(_) => return RelayOpenAiChatOutcome::new(Err(AfError::Internal), report),
+        };
         let (stream, usage) = OpenAiChatStream::new(
             response.into_body(),
             encoder,
             usage_estimator,
             include_usage,
         );
-        let stream = stream
-            .prefetch_first(STREAM_FIRST_EVENT_TIMEOUT)
-            .await
-            .map_err(AfError::from)?;
-        return Ok(OpenAiChatResponse::Stream {
-            body: Box::new(stream),
-            usage,
-        });
+        return match stream.prefetch_first(STREAM_FIRST_EVENT_TIMEOUT).await {
+            Ok(stream) => RelayOpenAiChatOutcome::new(
+                Ok(OpenAiChatResponse::Stream {
+                    body: Box::new(stream),
+                    usage,
+                }),
+                report,
+            ),
+            Err(error) => {
+                report.reject_success(error);
+                RelayOpenAiChatOutcome::new(Err(error.into()), report)
+            }
+        };
     }
 
-    let body = response
-        .into_body()
-        .into_bytes()
-        .await
-        .map_err(|error| AfError::from(map_adaptor_error(error)))?;
-    let canonical_response = parse_response(&body).map_err(|_| UpstreamError::ProtocolError)?;
+    let body = match response.into_body().into_bytes().await {
+        Ok(body) => body,
+        Err(error) => {
+            let error = map_adaptor_error(error);
+            report.reject_success(error);
+            return RelayOpenAiChatOutcome::new(Err(error.into()), report);
+        }
+    };
+    let canonical_response = match parse_response(&body) {
+        Ok(response) => response,
+        Err(_) => {
+            let error = UpstreamError::ProtocolError;
+            report.reject_success(error);
+            return RelayOpenAiChatOutcome::new(Err(error.into()), report);
+        }
+    };
     let usage = usage_estimator.resolve_response(&canonical_response);
-    Ok(OpenAiChatResponse::Full { body, usage })
+    RelayOpenAiChatOutcome::new(Ok(OpenAiChatResponse::Full { body, usage }), report)
+}
+
+/// OpenAI Chat 业务结果及其脱敏候选尝试报告。
+pub struct RelayOpenAiChatOutcome {
+    result: Result<OpenAiChatResponse, AfError>,
+    report: RelayAttemptReport,
+}
+
+impl RelayOpenAiChatOutcome {
+    fn new(result: Result<OpenAiChatResponse, AfError>, report: RelayAttemptReport) -> Self {
+        Self { result, report }
+    }
+
+    fn failed(error: AfError) -> Self {
+        Self::new(Err(error), RelayAttemptReport::default())
+    }
+
+    /// 返回只含候选索引与闭合错误分类的尝试报告。
+    #[must_use]
+    pub const fn report(&self) -> &RelayAttemptReport {
+        &self.report
+    }
+
+    /// 消费包装并返回原有业务结果。
+    #[must_use]
+    pub fn into_result(self) -> Result<OpenAiChatResponse, AfError> {
+        self.result
+    }
+
+    /// 消费包装并拆分业务结果与尝试报告。
+    #[must_use]
+    pub fn into_parts(self) -> (Result<OpenAiChatResponse, AfError>, RelayAttemptReport) {
+        (self.result, self.report)
+    }
+}
+
+impl fmt::Debug for RelayOpenAiChatOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RelayOpenAiChatOutcome")
+            .field("result", &self.result)
+            .field("report", &self.report)
+            .finish()
+    }
 }
 
 impl fmt::Debug for RelayService {

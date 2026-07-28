@@ -1,10 +1,11 @@
-use std::{fmt, num::NonZeroUsize, sync::Arc};
+use std::{collections::BTreeSet, fmt, num::NonZeroUsize, sync::Arc};
 
 use af_adapter::{
     Adaptor, AdaptorSendExt, Bytes, Credential, HeaderMap, Method, Operation, RelayContext,
     ResponseMode, UpstreamRequest, UpstreamResponse,
 };
-use af_domain::{MAX_MODEL_NAME_BYTES, UpstreamError};
+use af_domain::{ChannelId, MAX_MODEL_NAME_BYTES, UpstreamError};
+use thiserror::Error;
 
 use crate::{
     RelayBuildError, RelayError,
@@ -17,6 +18,7 @@ pub struct RelayCandidate {
     context: RelayContext,
     credential: Credential,
     header_overrides: HeaderMap,
+    channel_group: Option<ChannelId>,
 }
 
 impl RelayCandidate {
@@ -28,6 +30,7 @@ impl RelayCandidate {
             context,
             credential,
             header_overrides: HeaderMap::new(),
+            channel_group: None,
         }
     }
 
@@ -35,6 +38,13 @@ impl RelayCandidate {
     #[must_use]
     pub fn with_header_overrides(mut self, header_overrides: HeaderMap) -> Self {
         self.header_overrides = header_overrides;
+        self
+    }
+
+    /// 标记候选所属渠道；同一渠道的多条凭据必须连续排列。
+    #[must_use]
+    pub const fn with_channel_group(mut self, channel_id: ChannelId) -> Self {
+        self.channel_group = Some(channel_id);
         self
     }
 }
@@ -47,7 +57,79 @@ impl fmt::Debug for RelayCandidate {
             .field("context", &self.context)
             .field("credential", &self.credential)
             .field("header_override_count", &self.header_overrides.len())
+            .field("has_channel_group", &self.channel_group.is_some())
             .finish()
+    }
+}
+
+/// 单个候选失败后的脱敏尝试记录。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RelayAttemptFailure {
+    candidate_index: usize,
+    error: UpstreamError,
+}
+
+impl RelayAttemptFailure {
+    fn new(candidate_index: usize, error: UpstreamError) -> Self {
+        Self {
+            candidate_index,
+            error,
+        }
+    }
+
+    /// 返回失败候选在固定计划中的零基索引。
+    #[must_use]
+    pub const fn candidate_index(self) -> usize {
+        self.candidate_index
+    }
+
+    /// 返回不含上游正文的闭合错误分类。
+    #[must_use]
+    pub const fn error(self) -> UpstreamError {
+        self.error
+    }
+}
+
+/// 一次转发执行产生的脱敏候选报告。
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RelayAttemptReport {
+    successful_candidate_index: Option<usize>,
+    failures: Vec<RelayAttemptFailure>,
+}
+
+impl RelayAttemptReport {
+    fn succeeded(successful_candidate_index: usize, failures: Vec<RelayAttemptFailure>) -> Self {
+        Self {
+            successful_candidate_index: Some(successful_candidate_index),
+            failures,
+        }
+    }
+
+    fn failed(failures: Vec<RelayAttemptFailure>) -> Self {
+        Self {
+            successful_candidate_index: None,
+            failures,
+        }
+    }
+
+    /// 返回最终成功候选索引；执行失败时为空。
+    #[must_use]
+    pub const fn successful_candidate_index(&self) -> Option<usize> {
+        self.successful_candidate_index
+    }
+
+    /// 返回按尝试顺序排列的失败分类。
+    #[must_use]
+    pub fn failures(&self) -> &[RelayAttemptFailure] {
+        &self.failures
+    }
+
+    /// 把已经取得 HTTP 成功、但未通过协议验证的候选改记为失败。
+    pub(crate) fn reject_success(&mut self, error: UpstreamError) {
+        if let Some(candidate_index) = self.successful_candidate_index.take() {
+            self.failures
+                .push(RelayAttemptFailure::new(candidate_index, error));
+        }
     }
 }
 
@@ -129,6 +211,7 @@ pub struct RelayResponse {
     response: UpstreamResponse,
     attempts: NonZeroUsize,
     state: RelayState,
+    report: RelayAttemptReport,
 }
 
 impl RelayResponse {
@@ -149,6 +232,18 @@ impl RelayResponse {
     pub const fn state(&self) -> RelayState {
         self.state
     }
+
+    /// 返回本次执行的脱敏候选报告。
+    #[must_use]
+    pub const fn report(&self) -> &RelayAttemptReport {
+        &self.report
+    }
+
+    /// 消费响应并同时返回上游响应和脱敏候选报告。
+    #[must_use]
+    pub fn into_parts(self) -> (UpstreamResponse, RelayAttemptReport) {
+        (self.response, self.report)
+    }
 }
 
 impl fmt::Debug for RelayResponse {
@@ -157,8 +252,50 @@ impl fmt::Debug for RelayResponse {
             .debug_struct("RelayResponse")
             .field("attempts", &self.attempts)
             .field("state", &self.state)
+            .field("report", &self.report)
             .field("response", &self.response)
             .finish()
+    }
+}
+
+/// 带候选失败报告的转发执行错误。
+#[derive(Debug, Error)]
+#[error("转发执行失败")]
+pub struct RelayExecutionError {
+    error: RelayError,
+    report: RelayAttemptReport,
+}
+
+impl RelayExecutionError {
+    fn new(error: RelayError, failures: Vec<RelayAttemptFailure>) -> Self {
+        Self {
+            error,
+            report: RelayAttemptReport::failed(failures),
+        }
+    }
+
+    /// 返回兼容入口使用的原始转发错误。
+    #[must_use]
+    pub const fn error(&self) -> RelayError {
+        self.error
+    }
+
+    /// 返回失败前已经产生的脱敏候选报告。
+    #[must_use]
+    pub const fn report(&self) -> &RelayAttemptReport {
+        &self.report
+    }
+
+    /// 消费包装并返回原始错误。
+    #[must_use]
+    pub fn into_error(self) -> RelayError {
+        self.error
+    }
+
+    /// 消费包装并返回原始错误和脱敏候选报告。
+    #[must_use]
+    pub fn into_parts(self) -> (RelayError, RelayAttemptReport) {
+        (self.error, self.report)
     }
 }
 
@@ -179,6 +316,9 @@ impl RelayStateMachine {
         if candidates.len() > Self::MAX_CANDIDATES {
             return Err(RelayBuildError::TooManyCandidates);
         }
+        if !channel_groups_are_contiguous(&candidates) {
+            return Err(RelayBuildError::NonContiguousChannelGroup);
+        }
         Ok(Self { candidates })
     }
 
@@ -187,13 +327,28 @@ impl RelayStateMachine {
     /// 每个候选最多发送一次；可重试的上游故障才会切换候选，客户端参数错误不会继续
     /// 扩散。状态机不持有计费会话，调用方应在外层让同一 BillingSession 覆盖整个执行。
     pub async fn execute(&self, request: RelayRequest) -> Result<RelayResponse, RelayError> {
+        self.execute_with_report(request)
+            .await
+            .map_err(RelayExecutionError::into_error)
+    }
+
+    /// 执行一次请求并保留每个已尝试候选的脱敏结果。
+    pub async fn execute_with_report(
+        &self,
+        request: RelayRequest,
+    ) -> Result<RelayResponse, RelayExecutionError> {
         let mut last_error = None;
-        for (index, candidate) in self.candidates.iter().enumerate() {
+        let mut failures = Vec::new();
+        let mut index = 0;
+        while let Some(candidate) = self.candidates.get(index) {
             let supported_models = candidate.adaptor.supported_models();
             if !supported_models.is_empty()
                 && !supported_models.iter().any(|model| model == &request.model)
             {
-                last_error = Some(RelayError::Upstream(UpstreamError::ModelUnsupported));
+                let error = UpstreamError::ModelUnsupported;
+                failures.push(RelayAttemptFailure::new(index, error));
+                last_error = Some(RelayError::Upstream(error));
+                index = self.next_candidate_index(index, error);
                 continue;
             }
 
@@ -204,6 +359,7 @@ impl RelayStateMachine {
                 &candidate.context,
             ) {
                 last_error = Some(RelayError::Adaptor(error));
+                index = self.next_channel_index(index);
                 continue;
             }
             headers.extend(candidate.header_overrides.clone());
@@ -215,17 +371,26 @@ impl RelayStateMachine {
                 Ok(target) => target,
                 Err(error) => {
                     last_error = Some(RelayError::Adaptor(error));
+                    index = self.next_channel_index(index);
                     continue;
                 }
             };
-            let upstream_request = UpstreamRequest::new(
+            let upstream_request = match UpstreamRequest::new(
                 request.method.clone(),
                 target,
                 headers,
                 request.body.clone(),
             )
-            .map_err(RelayError::Request)?
-            .with_response_mode(request.response_mode);
+            .map(|upstream_request| upstream_request.with_response_mode(request.response_mode))
+            {
+                Ok(request) => request,
+                Err(error) => {
+                    return Err(RelayExecutionError::new(
+                        RelayError::Request(error),
+                        failures,
+                    ));
+                }
+            };
             let response = match candidate
                 .adaptor
                 .send(upstream_request, &candidate.context)
@@ -234,11 +399,16 @@ impl RelayStateMachine {
                 Ok(response) => response,
                 Err(error) => {
                     let mapped = map_adaptor_error(error);
+                    failures.push(RelayAttemptFailure::new(index, mapped));
                     last_error = Some(RelayError::Upstream(mapped));
                     if is_retryable(mapped) {
+                        index = self.next_candidate_index(index, mapped);
                         continue;
                     }
-                    return Err(RelayError::Upstream(mapped));
+                    return Err(RelayExecutionError::new(
+                        RelayError::Upstream(mapped),
+                        failures,
+                    ));
                 }
             };
 
@@ -253,6 +423,7 @@ impl RelayStateMachine {
                     attempts: NonZeroUsize::new(index + 1)
                         .expect("候选索引从零开始时尝试次数必须为正"),
                     state,
+                    report: RelayAttemptReport::succeeded(index, failures),
                 });
             }
 
@@ -261,22 +432,58 @@ impl RelayStateMachine {
                 Ok(body) => body,
                 Err(error) => {
                     let mapped = map_adaptor_error(error);
+                    failures.push(RelayAttemptFailure::new(index, mapped));
                     last_error = Some(RelayError::Upstream(mapped));
                     if is_retryable(mapped) {
+                        index = self.next_candidate_index(index, mapped);
                         continue;
                     }
-                    return Err(RelayError::Upstream(mapped));
+                    return Err(RelayExecutionError::new(
+                        RelayError::Upstream(mapped),
+                        failures,
+                    ));
                 }
             };
             let classified = classify_upstream_status(status, &body);
+            failures.push(RelayAttemptFailure::new(index, classified));
             last_error = Some(RelayError::Upstream(classified));
             if is_retryable(classified) {
+                index = self.next_candidate_index(index, classified);
                 continue;
             }
-            return Err(RelayError::Upstream(classified));
+            return Err(RelayExecutionError::new(
+                RelayError::Upstream(classified),
+                failures,
+            ));
         }
 
-        Err(last_error.unwrap_or(RelayError::Upstream(UpstreamError::ModelUnsupported)))
+        Err(RelayExecutionError::new(
+            last_error.unwrap_or(RelayError::Upstream(UpstreamError::ModelUnsupported)),
+            failures,
+        ))
+    }
+
+    fn next_candidate_index(&self, index: usize, error: UpstreamError) -> usize {
+        if is_credential_scoped(error) {
+            index + 1
+        } else {
+            self.next_channel_index(index)
+        }
+    }
+
+    fn next_channel_index(&self, index: usize) -> usize {
+        let Some(channel_group) = self.candidates[index].channel_group else {
+            return index + 1;
+        };
+        let mut next = index + 1;
+        while self
+            .candidates
+            .get(next)
+            .is_some_and(|candidate| candidate.channel_group == Some(channel_group))
+        {
+            next += 1;
+        }
+        next
     }
 }
 
@@ -294,4 +501,35 @@ fn is_valid_model(model: &str) -> bool {
         && model.len() <= MAX_MODEL_NAME_BYTES
         && model.trim() == model
         && !model.chars().any(char::is_control)
+}
+
+fn channel_groups_are_contiguous(candidates: &[RelayCandidate]) -> bool {
+    let mut closed = BTreeSet::new();
+    let mut current = None;
+    for candidate in candidates {
+        if candidate.channel_group == current {
+            continue;
+        }
+        if let Some(previous) = current {
+            closed.insert(previous);
+        }
+        if candidate
+            .channel_group
+            .is_some_and(|channel_group| closed.contains(&channel_group))
+        {
+            return false;
+        }
+        current = candidate.channel_group;
+    }
+    true
+}
+
+const fn is_credential_scoped(error: UpstreamError) -> bool {
+    matches!(
+        error,
+        UpstreamError::AuthExpired
+            | UpstreamError::AuthRevoked
+            | UpstreamError::RateLimited
+            | UpstreamError::QuotaExhausted
+    )
 }

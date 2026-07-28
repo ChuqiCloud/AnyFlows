@@ -15,6 +15,6 @@ pub use repository::{
     SchedulerRuntimeRepositoryError,
 };
 pub use target::{
-    SchedulerRuntimeCredentialRecord, SchedulerRuntimeHeader, SchedulerRuntimeTargetRecord,
-    SchedulerRuntimeTargetRecordError,
+    MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL, SchedulerRuntimeCredentialRecord,
+    SchedulerRuntimeHeader, SchedulerRuntimeTargetRecord, SchedulerRuntimeTargetRecordError,
 };

@@ -5,12 +5,17 @@ use af_adapter::{
     AdaptorSettings, Credential, HeaderMap, HeaderName, HeaderValue, OpenAiAdaptorSettings,
     PooledClient, RelayContext, get_adaptor,
 };
+use af_db::CredentialStateRepository;
 use af_domain::{AfError, ChannelType, CredentialKind, GatewayPrincipal, GroupId, Protocol};
 use af_protocol::CanonicalRequest;
-use af_relay::{RelayCandidate, RelayStateMachine, relay_openai_chat};
+use af_relay::{RelayCandidate, RelayStateMachine, relay_openai_chat_with_report};
 use af_scheduler::{IndexedRoutePlan, IndexedWeightedScheduler, IndexedWeightedSchedulerError};
 
-use crate::{ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture};
+use crate::{
+    ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture,
+    credential_feedback::{CredentialAttemptTarget, persist_credential_feedback},
+    credential_order::order_credentials,
+};
 
 /// 基于内存运行时快照装配生产 OpenAI Chat 候选的服务。
 #[derive(Clone)]
@@ -18,6 +23,7 @@ pub(crate) struct ScheduledChatService {
     scheduler: IndexedWeightedScheduler,
     decryptor: CredentialDecryptor,
     client: PooledClient,
+    credential_states: CredentialStateRepository,
 }
 
 impl ScheduledChatService {
@@ -27,11 +33,13 @@ impl ScheduledChatService {
         scheduler: IndexedWeightedScheduler,
         decryptor: CredentialDecryptor,
         client: PooledClient,
+        credential_states: CredentialStateRepository,
     ) -> Self {
         Self {
             scheduler,
             decryptor,
             client,
+            credential_states,
         }
     }
 
@@ -43,10 +51,20 @@ impl ScheduledChatService {
     ) -> Result<ScheduledChatExecution, AfError> {
         let model = request.model.clone();
         let target_group_id = route.target_group_id();
-        let mut relay_candidates = Vec::with_capacity(route.candidates().len());
-        for candidate in route.candidates() {
+        let mut relay_candidates = Vec::with_capacity(
+            route
+                .candidates()
+                .len()
+                .min(RelayStateMachine::MAX_CANDIDATES),
+        );
+        let mut attempt_targets = Vec::with_capacity(relay_candidates.capacity());
+        'channels: for candidate in route.candidates() {
             let target = candidate.runtime_target();
-            if target.proxy_required() {
+            if target
+                .credentials()
+                .iter()
+                .any(af_db::SchedulerRuntimeCredentialRecord::proxy_required)
+            {
                 // 专属代理仓储尚未落地，绑定代理的凭据绝不能回退共享 Client 或直连。
                 return Err(AfError::Internal);
             }
@@ -55,16 +73,6 @@ impl ScheduledChatService {
             {
                 return Err(AfError::Internal);
             }
-            let decrypted = self
-                .decryptor
-                .decrypt_envelope(
-                    target.channel_id(),
-                    target.credential_id(),
-                    target.credential_kind(),
-                    target.envelope(),
-                )
-                .map_err(|_| AfError::Internal)?;
-            let credential = adaptor_credential(&decrypted)?;
             let adaptor = get_adaptor(
                 target.channel_type(),
                 AdaptorSettings::OpenAi(OpenAiAdaptorSettings::new(vec![model.clone()])),
@@ -83,15 +91,42 @@ impl ScheduledChatService {
             context = context
                 .with_request_id(request_id.to_owned())
                 .map_err(|_| AfError::Internal)?;
-            relay_candidates.push(
-                RelayCandidate::new(adaptor, context, credential)
-                    .with_header_overrides(header_overrides(target)?),
-            );
+            let headers = header_overrides(target)?;
+            for runtime_credential in
+                order_credentials(request_id, target.channel_id(), target.credentials())
+            {
+                if relay_candidates.len() == RelayStateMachine::MAX_CANDIDATES {
+                    break 'channels;
+                }
+                let decrypted = self
+                    .decryptor
+                    .decrypt_envelope(
+                        target.channel_id(),
+                        runtime_credential.credential_id(),
+                        runtime_credential.credential_kind(),
+                        runtime_credential.envelope(),
+                    )
+                    .map_err(|_| AfError::Internal)?;
+                let credential = adaptor_credential(&decrypted)?;
+                relay_candidates.push(
+                    RelayCandidate::new(adaptor.clone(), context.clone(), credential)
+                        .with_header_overrides(headers.clone())
+                        .with_channel_group(target.channel_id()),
+                );
+                attempt_targets.push(CredentialAttemptTarget::new(
+                    target.channel_id(),
+                    runtime_credential.credential_id(),
+                    runtime_credential.credential_kind(),
+                )?);
+            }
         }
         let machine = RelayStateMachine::new(relay_candidates).map_err(|_| AfError::Internal)?;
         Ok(ScheduledChatExecution {
             target_group_id,
             machine,
+            attempt_targets,
+            credential_states: self.credential_states.clone(),
+            scheduler: self.scheduler.clone(),
             request,
             request_id: request_id.to_owned(),
         })
@@ -122,6 +157,7 @@ impl fmt::Debug for ScheduledChatService {
             .field("scheduler", &self.scheduler)
             .field("decryptor", &"<受控>")
             .field("client", &"<受控>")
+            .field("credential_states", &self.credential_states)
             .finish()
     }
 }
@@ -129,6 +165,9 @@ impl fmt::Debug for ScheduledChatService {
 struct ScheduledChatExecution {
     target_group_id: GroupId,
     machine: RelayStateMachine,
+    attempt_targets: Vec<CredentialAttemptTarget>,
+    credential_states: CredentialStateRepository,
+    scheduler: IndexedWeightedScheduler,
     request: CanonicalRequest,
     request_id: String,
 }
@@ -142,10 +181,19 @@ impl PlannedChatExecution for ScheduledChatExecution {
         let Self {
             target_group_id: _,
             machine,
+            attempt_targets,
+            credential_states,
+            scheduler,
             request,
             request_id,
         } = *self;
-        Box::pin(async move { relay_openai_chat(&machine, request, &request_id).await })
+        Box::pin(async move {
+            let outcome = relay_openai_chat_with_report(&machine, request, &request_id).await;
+            let (result, report) = outcome.into_parts();
+            persist_credential_feedback(&credential_states, &scheduler, &attempt_targets, &report)
+                .await;
+            result
+        })
     }
 }
 
@@ -190,7 +238,8 @@ mod tests {
     use af_account::credential_plaintext_aad;
     use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
     use af_db::{
-        EncryptedCredentialEnvelope, SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord,
+        CredentialStateRepository, DatabaseOptions, EncryptedCredentialEnvelope, MigrationOptions,
+        SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord, connect_and_migrate,
     };
     use af_domain::{ChannelId, Operation, UpstreamError};
     use af_httpclient::{HttpClientConfig, HttpClientPool};
@@ -219,6 +268,42 @@ mod tests {
         let plan = service.plan(&principal, request(), "request-plan").unwrap();
 
         assert_eq!(plan.target_group_id(), GroupId::new(7).unwrap());
+    }
+
+    #[tokio::test]
+    async fn plan_expands_multiple_credentials_inside_one_channel_candidate() {
+        let credentials = vec![
+            SchedulerRuntimeCredentialRecord::with_scheduling(
+                CREDENTIAL_ID,
+                CredentialKind::ApiKey,
+                valid_envelope_for(CREDENTIAL_ID, 0x24),
+                false,
+                10,
+                10,
+            )
+            .unwrap(),
+            SchedulerRuntimeCredentialRecord::with_scheduling(
+                CREDENTIAL_ID + 1,
+                CredentialKind::ApiKey,
+                valid_envelope_for(CREDENTIAL_ID + 1, 0x25),
+                false,
+                0,
+                10,
+            )
+            .unwrap(),
+        ];
+        let service = service(vec![record_pool(credentials)]).await;
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+
+        let execution = service
+            .build_plan(route, request(), "request-key-pool")
+            .unwrap();
+
+        assert_eq!(execution.attempt_targets.len(), 2);
     }
 
     #[tokio::test]
@@ -258,6 +343,14 @@ mod tests {
             HttpClientPool::default()
                 .get(&HttpClientConfig::default())
                 .unwrap(),
+            CredentialStateRepository::new(
+                connect_and_migrate(
+                    &DatabaseOptions::new("sqlite::memory:").unwrap(),
+                    MigrationOptions::default(),
+                )
+                .await
+                .unwrap(),
+            ),
         )
     }
 
@@ -272,12 +365,16 @@ mod tests {
             proxy_required,
         )
         .unwrap();
-        let target = SchedulerRuntimeTargetRecord::new(
+        record_pool(vec![credential])
+    }
+
+    fn record_pool(credentials: Vec<SchedulerRuntimeCredentialRecord>) -> ChannelIndexSourceRecord {
+        let target = SchedulerRuntimeTargetRecord::new_pool(
             ChannelId::new(CHANNEL_ID).unwrap(),
             ChannelType::OpenAi,
             Protocol::OpenAiChat,
             Some("https://scheduled-chat.example".to_owned()),
-            credential,
+            credentials,
             vec![("x-scheduled-test".to_owned(), "test-value".to_owned())],
         )
         .unwrap();
@@ -318,8 +415,12 @@ mod tests {
     }
 
     fn valid_envelope() -> EncryptedCredentialEnvelope {
+        valid_envelope_for(CREDENTIAL_ID, 0x24)
+    }
+
+    fn valid_envelope_for(credential_id: i64, marker: u8) -> EncryptedCredentialEnvelope {
         let key = [0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES];
-        let nonce = [0x24; 24];
+        let nonce = [marker; 24];
         let cipher = XChaCha20Poly1305::new_from_slice(&key).unwrap();
         let ciphertext = cipher
             .encrypt(
@@ -328,7 +429,7 @@ mod tests {
                     msg: br#"{"kind":"api_key","api_key":"scheduled-secret"}"#,
                     aad: &credential_plaintext_aad(
                         ChannelId::new(CHANNEL_ID).unwrap(),
-                        CREDENTIAL_ID,
+                        credential_id,
                         CredentialKind::ApiKey,
                     ),
                 },

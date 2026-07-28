@@ -18,16 +18,19 @@ pub(super) fn select_supported_targets(
     credentials: Vec<SchedulerRuntimeCredentialSource>,
 ) -> Result<BTreeMap<ChannelId, Arc<SchedulerRuntimeTargetRecord>>, SchedulerRuntimeSelectionError>
 {
-    let mut targets = BTreeMap::new();
+    let mut grouped = BTreeMap::<ChannelId, Vec<SchedulerRuntimeCredentialSource>>::new();
     for credential in credentials {
-        let channel_id = credential.channel_id();
-        if targets.contains_key(&channel_id) {
-            continue;
-        }
+        grouped
+            .entry(credential.channel_id())
+            .or_default()
+            .push(credential);
+    }
+    let mut targets = BTreeMap::new();
+    for (channel_id, credentials) in grouped {
         let Some(channel) = channels.get(&channel_id) else {
             continue;
         };
-        if let Some(target) = try_runtime_target(channel, credential)? {
+        if let Some(target) = try_runtime_target(channel, credentials)? {
             targets.insert(channel_id, Arc::new(target));
         }
     }
@@ -36,10 +39,13 @@ pub(super) fn select_supported_targets(
 
 fn try_runtime_target(
     channel: &SchedulerRuntimeChannelSource,
-    credential: SchedulerRuntimeCredentialSource,
+    credentials: Vec<SchedulerRuntimeCredentialSource>,
 ) -> Result<Option<SchedulerRuntimeTargetRecord>, SchedulerRuntimeSelectionError> {
     let channel_id = channel.channel_id();
-    if credential.channel_id() != channel_id {
+    if credentials
+        .iter()
+        .any(|credential| credential.channel_id() != channel_id)
+    {
         return Err(SchedulerRuntimeSelectionError::Invariant);
     }
     let channel_type = channel.channel_type();
@@ -47,27 +53,37 @@ fn try_runtime_target(
     if channel_type != ChannelType::OpenAi || protocol != Protocol::OpenAiChat {
         return Ok(None);
     }
-    let (credential_id, credential_kind, envelope, proxy_required) =
-        credential.into_runtime_parts();
-    if !matches!(
-        credential_kind,
-        CredentialKind::ApiKey | CredentialKind::Oauth
-    ) {
+    let mut records = Vec::with_capacity(credentials.len());
+    for credential in credentials {
+        let (credential_id, credential_kind, envelope, proxy_required, priority, weight) =
+            credential.into_runtime_parts();
+        if !matches!(
+            credential_kind,
+            CredentialKind::ApiKey | CredentialKind::Oauth
+        ) {
+            continue;
+        }
+        records.push(
+            SchedulerRuntimeCredentialRecord::with_scheduling(
+                credential_id,
+                credential_kind,
+                envelope,
+                proxy_required,
+                priority,
+                weight,
+            )
+            .map_err(|_| SchedulerRuntimeSelectionError::Invariant)?,
+        );
+    }
+    if records.is_empty() {
         return Ok(None);
     }
-    let credential = SchedulerRuntimeCredentialRecord::new(
-        credential_id,
-        credential_kind,
-        envelope,
-        proxy_required,
-    )
-    .map_err(|_| SchedulerRuntimeSelectionError::Invariant)?;
-    SchedulerRuntimeTargetRecord::new(
+    SchedulerRuntimeTargetRecord::new_pool(
         channel_id,
         channel_type,
         protocol,
         channel.base_url().map(str::to_owned),
-        credential,
+        records,
         channel.headers().to_vec(),
     )
     .map(Some)

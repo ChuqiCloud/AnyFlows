@@ -26,10 +26,11 @@ use af_db::{
     AdminDashboardRepositoryConfigError, AdminGroupRepository, AdminGroupRepositoryConfigError,
     AdminTokenRepository, AdminTokenRepositoryConfigError, AdminUsageLogRepository,
     AdminUsageLogRepositoryConfigError, AdminUserRepository, AdminUserRepositoryConfigError,
-    ChannelStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
-    InitialSetupRepository, InitialSetupRepositoryConfigError, MigrationOptions, QuotaRepository,
-    TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository, UserSessionRepository,
-    UserSessionRepositoryConfigError, connect_and_migrate,
+    ChannelStateRepository, CredentialStateRepository, DatabaseError, DatabaseOptions,
+    DatabaseOptionsError, DatabasePool, InitialSetupRepository, InitialSetupRepositoryConfigError,
+    MigrationOptions, QuotaRepository, TokenAuthRepository, TokenAuthRepositoryConfigError,
+    UsageLogRepository, UserSessionRepository, UserSessionRepositoryConfigError,
+    connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle,
@@ -517,6 +518,9 @@ impl Bootstrap<RelayReady> {
             IndexedWeightedScheduler::new(channel_index.clone()),
             decryptor,
             self.stage.upstream_client.clone(),
+            CredentialStateRepository::new(
+                self.stage.infrastructure.infrastructure.database.clone(),
+            ),
         ));
         let pricing_source = Arc::new(CachedRequestPricingSnapshotSource::new(
             model_prices,

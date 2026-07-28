@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{collections::BTreeSet, fmt};
 
 use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol};
 use sea_orm::entity::prelude::Json;
@@ -8,6 +8,9 @@ use crate::{
     credential_probe::EncryptedCredentialEnvelope,
     entity::{ChannelBaseUrl, HeaderOverrides},
 };
+
+/// 单个渠道进入运行时快照的凭据数量上限。
+pub const MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL: usize = 64;
 
 /// 渠道转发时需要附加的非认证请求头。
 #[derive(Clone, Eq, PartialEq)]
@@ -52,6 +55,8 @@ pub struct SchedulerRuntimeCredentialRecord {
     credential_kind: CredentialKind,
     envelope: EncryptedCredentialEnvelope,
     proxy_required: bool,
+    priority: i32,
+    weight: u32,
 }
 
 impl SchedulerRuntimeCredentialRecord {
@@ -61,6 +66,25 @@ impl SchedulerRuntimeCredentialRecord {
         credential_kind: CredentialKind,
         envelope: EncryptedCredentialEnvelope,
         proxy_required: bool,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        Self::with_scheduling(
+            credential_id,
+            credential_kind,
+            envelope,
+            proxy_required,
+            0,
+            0,
+        )
+    }
+
+    /// 连同凭据池调度优先级和权重构造运行时记录。
+    pub fn with_scheduling(
+        credential_id: i64,
+        credential_kind: CredentialKind,
+        envelope: EncryptedCredentialEnvelope,
+        proxy_required: bool,
+        priority: i32,
+        weight: u32,
     ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
         if credential_id <= 0
             || !matches!(
@@ -75,31 +99,45 @@ impl SchedulerRuntimeCredentialRecord {
             credential_kind,
             envelope,
             proxy_required,
+            priority,
+            weight,
         })
     }
 
     /// 返回凭据数据库标识，用于绑定密文 AAD。
     #[must_use]
-    pub const fn credential_id(&self) -> i64 {
+    pub fn credential_id(&self) -> i64 {
         self.credential_id
     }
 
     /// 返回数据库声明的凭据类型。
     #[must_use]
-    pub const fn credential_kind(&self) -> CredentialKind {
+    pub fn credential_kind(&self) -> CredentialKind {
         self.credential_kind
     }
 
     /// 返回版本化密文封套。
     #[must_use]
-    pub const fn envelope(&self) -> &EncryptedCredentialEnvelope {
+    pub fn envelope(&self) -> &EncryptedCredentialEnvelope {
         &self.envelope
     }
 
     /// 返回该凭据是否绑定专属代理。
     #[must_use]
-    pub const fn proxy_required(&self) -> bool {
+    pub fn proxy_required(&self) -> bool {
         self.proxy_required
+    }
+
+    /// 返回凭据池内部调度优先级。
+    #[must_use]
+    pub const fn priority(&self) -> i32 {
+        self.priority
+    }
+
+    /// 返回凭据池同优先级成员的非负权重。
+    #[must_use]
+    pub const fn weight(&self) -> u32 {
+        self.weight
     }
 }
 
@@ -111,6 +149,8 @@ impl fmt::Debug for SchedulerRuntimeCredentialRecord {
             .field("credential_kind", &self.credential_kind)
             .field("envelope", &self.envelope)
             .field("proxy_required", &self.proxy_required)
+            .field("priority", &self.priority)
+            .field("weight", &self.weight)
             .finish()
     }
 }
@@ -122,7 +162,7 @@ pub struct SchedulerRuntimeTargetRecord {
     channel_type: ChannelType,
     protocol: Protocol,
     base_url: Option<String>,
-    credential: SchedulerRuntimeCredentialRecord,
+    credentials: Vec<SchedulerRuntimeCredentialRecord>,
     headers: Vec<SchedulerRuntimeHeader>,
 }
 
@@ -136,7 +176,37 @@ impl SchedulerRuntimeTargetRecord {
         credential: SchedulerRuntimeCredentialRecord,
         headers: Vec<(String, String)>,
     ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
-        if channel_type != ChannelType::OpenAi || protocol != Protocol::OpenAiChat {
+        Self::new_pool(
+            channel_id,
+            channel_type,
+            protocol,
+            base_url,
+            vec![credential],
+            headers,
+        )
+    }
+
+    /// 校验渠道配置和有界凭据池后构造共享运行时目标。
+    pub fn new_pool(
+        channel_id: ChannelId,
+        channel_type: ChannelType,
+        protocol: Protocol,
+        base_url: Option<String>,
+        credentials: Vec<SchedulerRuntimeCredentialRecord>,
+        headers: Vec<(String, String)>,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if channel_type != ChannelType::OpenAi
+            || protocol != Protocol::OpenAiChat
+            || credentials.is_empty()
+            || credentials.len() > MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL
+        {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        let unique_ids = credentials
+            .iter()
+            .map(SchedulerRuntimeCredentialRecord::credential_id)
+            .collect::<BTreeSet<_>>();
+        if unique_ids.len() != credentials.len() {
             return Err(SchedulerRuntimeTargetRecordError);
         }
         let base_url = base_url
@@ -168,7 +238,7 @@ impl SchedulerRuntimeTargetRecord {
             channel_type,
             protocol,
             base_url,
-            credential,
+            credentials,
             headers,
         })
     }
@@ -181,8 +251,8 @@ impl SchedulerRuntimeTargetRecord {
 
     /// 返回凭据数据库标识，用于绑定密文 AAD。
     #[must_use]
-    pub const fn credential_id(&self) -> i64 {
-        self.credential.credential_id()
+    pub fn credential_id(&self) -> i64 {
+        self.credentials[0].credential_id()
     }
 
     /// 返回渠道适配器类型。
@@ -205,14 +275,20 @@ impl SchedulerRuntimeTargetRecord {
 
     /// 返回数据库声明的凭据类型。
     #[must_use]
-    pub const fn credential_kind(&self) -> CredentialKind {
-        self.credential.credential_kind()
+    pub fn credential_kind(&self) -> CredentialKind {
+        self.credentials[0].credential_kind()
     }
 
     /// 返回版本化密文封套。
     #[must_use]
-    pub const fn envelope(&self) -> &EncryptedCredentialEnvelope {
-        self.credential.envelope()
+    pub fn envelope(&self) -> &EncryptedCredentialEnvelope {
+        self.credentials[0].envelope()
+    }
+
+    /// 返回该渠道当前快照内的全部可调度凭据。
+    #[must_use]
+    pub fn credentials(&self) -> &[SchedulerRuntimeCredentialRecord] {
+        &self.credentials
     }
 
     /// 返回已验证的非认证请求头覆盖。
@@ -223,8 +299,8 @@ impl SchedulerRuntimeTargetRecord {
 
     /// 返回该凭据是否绑定专属代理；为 true 时生产转发不得回退直连。
     #[must_use]
-    pub const fn proxy_required(&self) -> bool {
-        self.credential.proxy_required()
+    pub fn proxy_required(&self) -> bool {
+        self.credentials[0].proxy_required()
     }
 }
 
@@ -236,7 +312,7 @@ impl fmt::Debug for SchedulerRuntimeTargetRecord {
             .field("channel_type", &self.channel_type)
             .field("protocol", &self.protocol)
             .field("base_url", &self.base_url.as_ref().map(|_| "<已脱敏>"))
-            .field("credential", &self.credential)
+            .field("credential_count", &self.credentials.len())
             .field("header_count", &self.headers.len())
             .finish()
     }
