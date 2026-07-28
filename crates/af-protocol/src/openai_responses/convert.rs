@@ -103,7 +103,7 @@ pub(super) fn convert_request(
         .with_validated_raw_passthrough(raw.map(|fields| (Protocol::OpenAiResponses, fields))))
 }
 
-fn validate_model(model: &str) -> Result<(), ParseRequestError> {
+pub(super) fn validate_model(model: &str) -> Result<(), ParseRequestError> {
     if model.is_empty()
         || model.len() > MAX_MODEL_NAME_BYTES
         || model.chars().any(char::is_control)
@@ -227,7 +227,7 @@ pub(super) fn validate_tool_name(name: &str) -> Result<(), ParseRequestError> {
     Ok(())
 }
 
-fn validate_schema(
+pub(super) fn validate_schema(
     schema: &Value,
     total_schema_bytes: &mut usize,
 ) -> Result<(), ParseRequestError> {
@@ -373,6 +373,11 @@ fn validate_raw(
     if extra.is_empty() {
         return Ok(None);
     }
+    validate_raw_fields(&extra)?;
+    Ok(Some(extra))
+}
+
+pub(super) fn validate_raw_fields(extra: &Map<String, Value>) -> Result<(), ParseRequestError> {
     if extra.len() > MAX_RAW_FIELDS {
         return Err(ParseRequestError::StructureLimitExceeded);
     }
@@ -384,13 +389,13 @@ fn validate_raw(
             return Err(ParseRequestError::InvalidValue);
         }
     }
-    validate_raw_semantics(&extra)?;
-    let encoded = serde_json::to_vec(&extra).map_err(|_| ParseRequestError::InvalidValue)?;
+    validate_raw_semantics(extra)?;
+    let encoded = serde_json::to_vec(extra).map_err(|_| ParseRequestError::InvalidValue)?;
     if encoded.len() > MAX_RAW_BYTES {
         return Err(ParseRequestError::StructureLimitExceeded);
     }
-    validate_raw_values(&extra)?;
-    Ok(Some(extra))
+    validate_raw_values(extra)?;
+    Ok(())
 }
 
 fn validate_raw_semantics(extra: &Map<String, Value>) -> Result<(), ParseRequestError> {

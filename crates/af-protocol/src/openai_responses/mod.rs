@@ -6,10 +6,16 @@ use serde_json::Value;
 
 use crate::{CanonicalRequest, bounded_json};
 
+mod build;
+mod build_input;
 mod convert;
 mod input;
 mod wire;
 
+pub use build::{BuildRequestError, build_request};
+
+#[cfg(test)]
+mod build_tests;
 #[cfg(test)]
 mod tests;
 
