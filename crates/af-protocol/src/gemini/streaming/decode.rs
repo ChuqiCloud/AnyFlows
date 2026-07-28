@@ -173,9 +173,7 @@ impl GeminiGenerateContentStreamDecoder {
         chunk: GenerateContentResponseWire,
         output: &mut Vec<CanonicalStreamEvent>,
     ) -> Result<(), ParseStreamError> {
-        if self.prompt_blocked {
-            return Err(ParseStreamError::DataAfterDone);
-        }
+        let prompt_was_blocked = self.prompt_blocked;
         let GenerateContentResponseWire {
             candidates,
             prompt_feedback,
@@ -210,13 +208,18 @@ impl GeminiGenerateContentStreamDecoder {
         if candidates.len() > MAX_RESPONSE_CHOICES {
             return Err(ParseStreamError::StructureLimitExceeded);
         }
+        if prompt_was_blocked
+            && (prompt_feedback_present || model_status_present || !candidates.is_empty())
+        {
+            return Err(ParseStreamError::DataAfterDone);
+        }
         if prompt_feedback_present {
             if !candidates.is_empty() {
                 return Err(ParseStreamError::InvalidSequence);
             }
             self.prompt_blocked = true;
             output.push(CanonicalStreamEvent::PromptBlocked);
-        } else {
+        } else if !prompt_was_blocked {
             let mut seen = HashSet::with_capacity(candidates.len());
             for candidate in candidates {
                 let index = candidate_index(&candidate)?;
