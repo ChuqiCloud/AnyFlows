@@ -1,4 +1,4 @@
-use af_domain::{Role, UpstreamError};
+use af_domain::{Protocol, Role, UpstreamError};
 use serde_json::{Value, json};
 
 use super::{
@@ -6,8 +6,9 @@ use super::{
     ParseStreamError,
 };
 use crate::{
-    CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage, UsageDetails,
-    UsageSemantics, UsageSource, openai_chat::OpenAiChatStreamEncoder,
+    CanonicalStreamEvent, ContentDelta, FinishReason, ProtocolCapability, StreamCapability,
+    TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
+    openai_chat::OpenAiChatStreamEncoder,
 };
 
 fn usage(input: i64, output: i64, reasoning: i64) -> Usage {
@@ -530,13 +531,20 @@ fn openai_encoder_rejects_anthropic_stop_sequence_without_dropping_it() {
             role: Role::Assistant,
         })
         .unwrap();
-    assert_eq!(
-        encoder.encode(CanonicalStreamEvent::Finish {
+    let error = encoder
+        .encode(CanonicalStreamEvent::Finish {
             choice_index: 0,
             reason: FinishReason::Stop,
             stop_sequence: Some("END".to_owned()),
-        }),
-        Err(crate::openai_chat::EncodeStreamError::UnsupportedEvent)
+        })
+        .expect_err("OpenAI Chat 不得丢弃停止序列");
+    let crate::openai_chat::EncodeStreamError::UnsupportedCapability(error) = error else {
+        panic!("必须返回结构化能力错误，实际为 {error:?}");
+    };
+    assert_eq!(error.target_protocol(), Protocol::OpenAiChat);
+    assert_eq!(
+        error.capability(),
+        ProtocolCapability::Stream(StreamCapability::StopSequence)
     );
 }
 
