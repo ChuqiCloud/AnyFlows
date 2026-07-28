@@ -6,8 +6,8 @@ use serde_json::{Map, Value, json};
 
 use super::{BuildRequestError, build_request, parse_request};
 use crate::{
-    Attachment, CacheHint, CanonicalRequest, ContentBlock, MediaSource, Message, RequestMetadata,
-    StreamOptions,
+    Attachment, CacheHint, CanonicalRequest, ContentBlock, MediaSource, Message,
+    RequestContinuation, RequestMetadata, StreamOptions,
 };
 
 fn parsed_request(value: Value) -> CanonicalRequest {
@@ -202,6 +202,36 @@ fn rejects_wrong_operation_and_unmapped_request_fields() {
     assert_eq!(
         build_request(&session),
         Err(BuildRequestError::UnsupportedFeature)
+    );
+
+    let mut continuation = minimal_request();
+    continuation.continuation = RequestContinuation::new(Some("resp-1".to_owned()), None, None);
+    assert_eq!(
+        build_request(&continuation),
+        Err(BuildRequestError::UnsupportedFeature)
+    );
+}
+
+#[test]
+fn preserves_explicit_function_tool_strictness() {
+    let request = parsed_request(json!({
+        "model": "gpt-test",
+        "messages": [{"role": "user", "content": "hello"}],
+        "tools": [{
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "parameters": {"type": "object"},
+                "strict": true
+            }
+        }]
+    }));
+
+    let value = build_request(&request).unwrap();
+    assert_eq!(value["tools"][0]["function"]["strict"], true);
+    assert_eq!(
+        parse_request(&serde_json::to_vec(&value).unwrap()).unwrap(),
+        request
     );
 }
 
@@ -471,6 +501,7 @@ fn rejects_combined_schema_node_budget() {
             name: format!("tool-{index}"),
             description: None,
             input_schema: schema(index),
+            strict: None,
         })
         .collect();
     let mut request = minimal_request();

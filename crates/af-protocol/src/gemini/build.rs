@@ -48,6 +48,8 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
         || !request.attachments.is_empty()
         || request.metadata.user_id().is_some()
         || request.metadata.session_id().is_some()
+        || request.tools.iter().any(|tool| tool.strict == Some(true))
+        || !request.continuation.is_empty()
     {
         return Err(BuildRequestError::UnsupportedFeature);
     }

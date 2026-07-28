@@ -7,7 +7,8 @@ use serde_json::{Map, Value, json};
 use super::{BuildRequestError, build_request, parse_request};
 use crate::{
     Attachment, CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningConfig,
-    ReasoningEffort, RequestMetadata, Sampling, StreamOptions, TokenCount, ToolChoice, ToolDef,
+    ReasoningEffort, RequestContinuation, RequestMetadata, Sampling, StreamOptions, TokenCount,
+    ToolChoice, ToolDef,
 };
 
 fn parsed_request(value: Value) -> CanonicalRequest {
@@ -226,6 +227,7 @@ fn maps_tool_choices_sampling_and_reasoning() {
         name: "lookup".to_owned(),
         description: Some("lookup status".to_owned()),
         input_schema: json!({"type": "object"}),
+        strict: None,
     }];
     request.tool_choice = ToolChoice::Required;
     request.sampling = Sampling::new(
@@ -312,6 +314,25 @@ fn rejects_unmapped_top_level_capabilities_and_invalid_parameters() {
     metadata.metadata = RequestMetadata::new(Some("opaque-user".to_owned()), None);
     assert_eq!(
         build_request(&metadata),
+        Err(BuildRequestError::UnsupportedFeature)
+    );
+
+    let mut continuation = minimal_request();
+    continuation.continuation = RequestContinuation::new(Some("resp-1".to_owned()), None, None);
+    assert_eq!(
+        build_request(&continuation),
+        Err(BuildRequestError::UnsupportedFeature)
+    );
+
+    let mut strict_tool = minimal_request();
+    strict_tool.tools.push(ToolDef {
+        name: "lookup".to_owned(),
+        description: None,
+        input_schema: json!({"type": "object"}),
+        strict: Some(true),
+    });
+    assert_eq!(
+        build_request(&strict_tool),
         Err(BuildRequestError::UnsupportedFeature)
     );
 

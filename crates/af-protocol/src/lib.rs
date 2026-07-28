@@ -5,6 +5,7 @@ mod bounded_json;
 mod canonical;
 pub mod gemini;
 pub mod openai_chat;
+pub mod openai_responses;
 mod request;
 mod response;
 mod sse;
@@ -16,8 +17,8 @@ pub use canonical::{
     RawPassthroughError,
 };
 pub use request::{
-    Attachment, ReasoningConfig, ReasoningConfigError, ReasoningEffort, RequestMetadata, Sampling,
-    SamplingError, StreamOptions, ToolChoice, ToolDef,
+    Attachment, ReasoningConfig, ReasoningConfigError, ReasoningEffort, RequestContinuation,
+    RequestMetadata, Sampling, SamplingError, StreamOptions, ToolChoice, ToolDef,
 };
 pub use response::{CanonicalResponse, ResponseChoice};
 pub use stream::{CanonicalStreamEvent, ContentDelta, FinishReason};

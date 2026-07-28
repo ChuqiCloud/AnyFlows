@@ -626,6 +626,7 @@ mod tests {
             name: "lookup".to_owned(),
             description: Some("look up a record".to_owned()),
             input_schema: json!({"type":"object","properties":{"id":{"type":"integer"}}}),
+            strict: None,
         });
         request.stream_options = StreamOptions::new(true);
         let mut estimator = OpenAiChatUsageEstimator::new(&request);
