@@ -14,8 +14,8 @@ use super::{
     response_raw::{ResponseRawError, validate_raw_fields},
     response_wire::{
         AssistantRoleWire, FunctionCallWire, IncompleteReasonWire, ItemStatusWire,
-        OutputContentWire, OutputMessageWire, ReasoningItemWire, ResponseOutputItemWire,
-        ResponseStatusWire, ResponseUsageWire, ResponsesResponseWire,
+        OutputContentWire, OutputMessageWire, ReasoningItemWire, ResponseObjectWire,
+        ResponseOutputItemWire, ResponseStatusWire, ResponseUsageWire, ResponsesResponseWire,
     },
 };
 use crate::bounded_json::{BoundedJsonError, JsonLimits, parse_value};
@@ -74,7 +74,7 @@ fn uses_known_unsupported_output_item(value: &Value) -> bool {
 fn convert_response(wire: ResponsesResponseWire) -> Result<CanonicalResponse, ParseResponseError> {
     let ResponsesResponseWire {
         id,
-        object: _,
+        object,
         created_at,
         status,
         error,
@@ -86,6 +86,9 @@ fn convert_response(wire: ResponsesResponseWire) -> Result<CanonicalResponse, Pa
         usage,
         extra,
     } = wire;
+    if !matches!(object, ResponseObjectWire::Response) {
+        return Err(ParseResponseError::InvalidValue);
+    }
     if !matches!(
         status,
         ResponseStatusWire::Completed | ResponseStatusWire::Incomplete
