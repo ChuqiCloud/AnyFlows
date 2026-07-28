@@ -7,6 +7,7 @@ pub mod gemini;
 pub mod openai_chat;
 pub mod openai_responses;
 mod request;
+mod request_envelope;
 mod response;
 mod sse;
 mod stream;
@@ -20,6 +21,7 @@ pub use request::{
     Attachment, ReasoningConfig, ReasoningConfigError, ReasoningEffort, RequestContinuation,
     RequestMetadata, Sampling, SamplingError, StreamOptions, ToolChoice, ToolDef,
 };
+pub use request_envelope::{CanonicalRequestEnvelope, SameProtocolRequest};
 pub use response::{CanonicalResponse, ResponseChoice};
 pub use stream::{CanonicalStreamEvent, ContentDelta, FinishReason};
 pub use usage::{TokenCount, Usage, UsageDetails, UsageError, UsageSemantics, UsageSource};

@@ -2,6 +2,7 @@
 
 mod error;
 mod openai_chat;
+mod openai_chat_request;
 mod openai_chat_stream;
 mod openai_chat_usage;
 mod state_machine;

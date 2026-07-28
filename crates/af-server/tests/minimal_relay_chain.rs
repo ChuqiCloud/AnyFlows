@@ -411,6 +411,48 @@ async fn invalid_requests_and_wrong_model_never_reach_upstream() {
 }
 
 #[tokio::test]
+async fn verified_same_protocol_full_request_and_response_preserve_exact_bytes() {
+    let upstream_body = br#"{
+  "id": "chatcmpl-byte-exact",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "test-model",
+  "choices": [{"index":0,"message":{"role":"assistant","content":"exact"},"finish_reason":"stop"}],
+  "usage": {"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}
+}"#;
+    let request_body = br#"{
+  "model": "test-model",
+  "messages": [{"role":"user","content":"hello"}]
+}"#;
+    let (proxy_address, captured, proxy) = spawn_proxy(
+        "200 OK",
+        upstream_body,
+        &[("Content-Type", "application/json")],
+    );
+    let (address, shutdown, server) = start_server(proxy_address, ServerConfig::default()).await;
+    let authorization = format!("Bearer {CLIENT_KEY}");
+
+    let response = send_request(
+        address,
+        "POST",
+        "/v1/chat/completions",
+        request_body,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &authorization),
+        ],
+    )
+    .await;
+    stop_server(shutdown, server).await;
+    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    proxy.join().unwrap();
+
+    assert_eq!(upstream.body, request_body);
+    assert_eq!(response.status, 200);
+    assert_eq!(response.body, upstream_body);
+}
+
+#[tokio::test]
 async fn streaming_response_is_incremental_canonical_and_unbuffered() {
     let first = br#"data: {"id":"upstream-private-id","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":"first-part"},"finish_reason":null}]}
 
@@ -441,6 +483,7 @@ data: [DONE]
     assert!(!first_text.contains("upstream-private-id"));
 
     let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    assert_eq!(upstream.body, request_body);
     let upstream_json: Value = serde_json::from_slice(&upstream.body).unwrap();
     assert_eq!(upstream_json["stream"], true);
     assert_eq!(upstream_json["stream_options"]["include_usage"], true);
@@ -479,6 +522,7 @@ async fn client_disconnect_aborts_pending_upstream_stream() {
     assert!(!response.contains("abort-private-id"));
     assert!(!response.contains("\"usage\""));
     let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    assert_ne!(upstream.body, request_body);
     let upstream_json: Value = serde_json::from_slice(&upstream.body).unwrap();
     assert_eq!(upstream_json["stream_options"]["include_usage"], true);
     drop(client);

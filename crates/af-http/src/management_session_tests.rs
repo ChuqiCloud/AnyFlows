@@ -15,7 +15,7 @@ use af_admin::{
     SessionRole, SessionToken,
 };
 use af_domain::{AfError, GatewayPrincipal, GroupId, TokenId, UserId};
-use af_protocol::CanonicalRequest;
+use af_protocol::CanonicalRequestEnvelope;
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -47,7 +47,7 @@ impl ChatService for UnusedChatService {
     fn chat_completions<'a>(
         &'a self,
         _principal: &'a GatewayPrincipal,
-        _request: CanonicalRequest,
+        _request: CanonicalRequestEnvelope,
         _request_id: &'a str,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async { Err(AfError::Internal) })

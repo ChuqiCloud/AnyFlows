@@ -393,6 +393,7 @@ fn allowed_restricted_external_dependency(dependency: &DeclaredDependency) -> bo
             | ("af-adapter", "url", "normal")
             | ("af-adapter", "tokio", "dev")
             | ("af-protocol", "base64", "normal")
+            | ("af-protocol", "bytes", "normal")
             | ("af-protocol", "insta", "dev")
             | ("af-protocol", "serde", "normal")
             | ("af-protocol", "serde_json", "normal")
@@ -599,7 +600,7 @@ mod tests {
 
     #[test]
     fn accepts_reviewed_protocol_dependencies() {
-        let mut dependencies = ["base64", "serde", "serde_json", "url"]
+        let mut dependencies = ["base64", "bytes", "serde", "serde_json", "url"]
             .map(|name| dependency("af-protocol", name, false))
             .to_vec();
         let mut insta = dependency("af-protocol", "insta", false);
@@ -726,7 +727,7 @@ mod tests {
 
     #[test]
     fn rejects_unreviewed_protocol_dependency_shapes() {
-        let dependencies = ["base64", "serde", "serde_json", "url"]
+        let dependencies = ["base64", "bytes", "serde", "serde_json", "url"]
             .into_iter()
             .flat_map(|name| {
                 let mut wrong_kind = dependency("af-protocol", name, false);

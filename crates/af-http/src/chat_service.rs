@@ -1,7 +1,7 @@
 use std::{future::Future, pin::Pin};
 
 use af_domain::{AfError, GatewayPrincipal};
-use af_protocol::CanonicalRequest;
+use af_protocol::CanonicalRequestEnvelope;
 use af_relay::{OpenAiChatResponse, RelayService};
 
 /// Chat 业务服务的一次异步调用结果，保持完整响应与流式 usage 句柄不变。
@@ -10,13 +10,13 @@ pub type ChatServiceFuture<'a> =
 
 /// HTTP 层依赖的对象安全 Chat 服务端口。
 ///
-/// 端口只接收已经完成协议归一和鉴权的请求，不负责鉴权、计费或调度。
+/// 端口只接收已经完成协议归一和鉴权的不可变请求，不负责鉴权、计费或调度。
 pub trait ChatService: Send + Sync {
     /// 转发一次 Chat 请求，并保留非流式 usage 或流式 usage 句柄供上层消费。
     fn chat_completions<'a>(
         &'a self,
         principal: &'a GatewayPrincipal,
-        request: CanonicalRequest,
+        request: CanonicalRequestEnvelope,
         request_id: &'a str,
     ) -> ChatServiceFuture<'a>;
 }
@@ -25,7 +25,7 @@ impl ChatService for RelayService {
     fn chat_completions<'a>(
         &'a self,
         principal: &'a GatewayPrincipal,
-        request: CanonicalRequest,
+        request: CanonicalRequestEnvelope,
         request_id: &'a str,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async move {
@@ -49,7 +49,7 @@ mod tests {
         fn chat_completions<'a>(
             &'a self,
             _principal: &'a GatewayPrincipal,
-            _request: CanonicalRequest,
+            _request: CanonicalRequestEnvelope,
             _request_id: &'a str,
         ) -> ChatServiceFuture<'a> {
             Box::pin(async {
@@ -69,8 +69,13 @@ mod tests {
             UserId::new(2).unwrap(),
             GroupId::new(3).unwrap(),
         );
-        let request =
-            CanonicalRequest::new(Operation::Chat, "test-model".to_owned(), vec![], false);
+        let request = af_protocol::CanonicalRequest::new(
+            Operation::Chat,
+            "test-model".to_owned(),
+            vec![],
+            false,
+        )
+        .into();
 
         let response = service
             .chat_completions(&principal, request, "request-id")

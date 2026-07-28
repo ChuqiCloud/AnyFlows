@@ -7,7 +7,7 @@ use af_adapter::{
 };
 use af_db::CredentialStateRepository;
 use af_domain::{AfError, ChannelType, CredentialKind, GatewayPrincipal, GroupId, Protocol};
-use af_protocol::CanonicalRequest;
+use af_protocol::CanonicalRequestEnvelope;
 use af_relay::{RelayCandidate, RelayStateMachine, relay_openai_chat_with_report};
 use af_scheduler::{IndexedRoutePlan, IndexedWeightedScheduler, IndexedWeightedSchedulerError};
 
@@ -46,10 +46,10 @@ impl ScheduledChatService {
     fn build_plan(
         &self,
         route: IndexedRoutePlan,
-        request: CanonicalRequest,
+        request: CanonicalRequestEnvelope,
         request_id: &str,
     ) -> Result<ScheduledChatExecution, AfError> {
-        let model = request.model.clone();
+        let model = request.canonical().model.clone();
         let target_group_id = route.target_group_id();
         let mut relay_candidates = Vec::with_capacity(
             route
@@ -137,12 +137,12 @@ impl ChatRoutePlanner for ScheduledChatService {
     fn plan(
         &self,
         principal: &GatewayPrincipal,
-        request: CanonicalRequest,
+        request: CanonicalRequestEnvelope,
         request_id: &str,
     ) -> Result<Box<dyn PlannedChatExecution>, AfError> {
         let route = self
             .scheduler
-            .route_plan(principal.group_id(), &request.model)
+            .route_plan(principal.group_id(), &request.canonical().model)
             .map_err(map_scheduler_error)?
             .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?;
         self.build_plan(route, request, request_id)
@@ -168,7 +168,7 @@ struct ScheduledChatExecution {
     attempt_targets: Vec<CredentialAttemptTarget>,
     credential_states: CredentialStateRepository,
     scheduler: IndexedWeightedScheduler,
-    request: CanonicalRequest,
+    request: CanonicalRequestEnvelope,
     request_id: String,
 }
 
@@ -243,6 +243,7 @@ mod tests {
     };
     use af_domain::{ChannelId, Operation, UpstreamError};
     use af_httpclient::{HttpClientConfig, HttpClientPool};
+    use af_protocol::CanonicalRequest;
     use af_scheduler::{
         ChannelIndexSource, ChannelIndexSourceFuture, ChannelIndexSourceRecord,
         InMemoryChannelIndex,
@@ -388,13 +389,14 @@ mod tests {
         .unwrap()
     }
 
-    fn request() -> CanonicalRequest {
+    fn request() -> CanonicalRequestEnvelope {
         CanonicalRequest::new(
             Operation::Chat,
             "gpt-scheduled".to_owned(),
             Vec::new(),
             false,
         )
+        .into()
     }
 
     fn principal(group_id: i64) -> GatewayPrincipal {

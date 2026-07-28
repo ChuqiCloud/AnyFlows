@@ -2,10 +2,12 @@
 
 use std::{error::Error, fmt};
 
+use af_domain::Protocol;
+use bytes::Bytes;
 use serde_json::Value;
 
 use crate::{
-    CanonicalRequest,
+    CanonicalRequest, CanonicalRequestEnvelope,
     bounded_json::{self, BoundedJsonError, JsonLimits},
 };
 
@@ -60,6 +62,16 @@ pub fn parse_request(body: &[u8]) -> Result<CanonicalRequest, ParseRequestError>
     }
     let wire = serde_json::from_value(value).map_err(|_| ParseRequestError::InvalidValue)?;
     convert::convert_request(wire)
+}
+
+/// 解析请求并保留只可用于 Anthropic 同协议直通的原始正文。
+pub fn parse_request_envelope(body: Bytes) -> Result<CanonicalRequestEnvelope, ParseRequestError> {
+    let canonical = parse_request(&body)?;
+    Ok(CanonicalRequestEnvelope::from_validated_source(
+        canonical,
+        Protocol::Anthropic,
+        body,
+    ))
 }
 
 fn uses_known_unsupported_feature(value: &Value) -> bool {

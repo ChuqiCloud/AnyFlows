@@ -10,14 +10,15 @@ use af_adapter::{
 };
 use af_domain::{AfError, GatewayPrincipal, MAX_MODEL_NAME_BYTES, UpstreamError};
 use af_protocol::{
-    CanonicalRequest, StreamOptions,
-    openai_chat::{OpenAiChatStreamEncoder, build_request, parse_response},
+    CanonicalRequestEnvelope,
+    openai_chat::{OpenAiChatStreamEncoder, parse_response},
 };
 
 use crate::{
     OpenAiChatStream, OpenAiChatUsageHandle, RelayAttemptReport, RelayBuildError, RelayCandidate,
     RelayError, RelayRequest, RelayStateMachine, UsageResolutionError,
     error::{classify_upstream_status, map_adaptor_error},
+    openai_chat_request::{PreparedOpenAiChatRequest, prepare_openai_chat_request},
     openai_chat_usage::OpenAiChatUsageEstimator,
 };
 
@@ -67,10 +68,11 @@ impl RelayService {
     pub async fn chat_completions(
         &self,
         _principal: &GatewayPrincipal,
-        canonical: CanonicalRequest,
+        request: impl Into<CanonicalRequestEnvelope>,
         request_id: &str,
     ) -> Result<OpenAiChatResponse, AfError> {
-        if canonical.model != self.model {
+        let request = request.into();
+        if request.canonical().model != self.model {
             return Err(UpstreamError::ModelUnsupported.into());
         }
         let context = self
@@ -84,7 +86,7 @@ impl RelayService {
             self.credential.clone(),
         )])
         .map_err(|_| AfError::Internal)?;
-        relay_openai_chat(&machine, canonical, request_id).await
+        relay_openai_chat(&machine, request, request_id).await
     }
 }
 
@@ -94,10 +96,10 @@ impl RelayService {
 /// 响应校验及 usage 提取，不读取数据库或持有计费会话。
 pub async fn relay_openai_chat(
     machine: &RelayStateMachine,
-    canonical: CanonicalRequest,
+    request: impl Into<CanonicalRequestEnvelope>,
     request_id: &str,
 ) -> Result<OpenAiChatResponse, AfError> {
-    relay_openai_chat_with_report(machine, canonical, request_id)
+    relay_openai_chat_with_report(machine, request, request_id)
         .await
         .into_result()
 }
@@ -105,21 +107,16 @@ pub async fn relay_openai_chat(
 /// 执行 OpenAI Chat 转发并保留通过协议验证后的脱敏候选报告。
 pub async fn relay_openai_chat_with_report(
     machine: &RelayStateMachine,
-    mut canonical: CanonicalRequest,
+    request: impl Into<CanonicalRequestEnvelope>,
     request_id: &str,
 ) -> RelayOpenAiChatOutcome {
-    let include_usage = canonical.stream_options.include_usage();
-    if canonical.stream {
-        // 上游 usage 是内部结算优先数据；客户端是否可见由 include_usage 单独控制。
-        canonical.stream_options = StreamOptions::new(true);
-    }
-    let outbound_value = match build_request(&canonical) {
-        Ok(value) => value,
-        Err(_) => return RelayOpenAiChatOutcome::failed(AfError::InvalidRequest),
-    };
-    let outbound_body = match serde_json::to_vec(&outbound_value).map(Bytes::from) {
-        Ok(body) => body,
-        Err(_) => return RelayOpenAiChatOutcome::failed(AfError::Internal),
+    let PreparedOpenAiChatRequest {
+        canonical,
+        body: outbound_body,
+        include_usage,
+    } = match prepare_openai_chat_request(request.into()) {
+        Ok(prepared) => prepared,
+        Err(error) => return RelayOpenAiChatOutcome::failed(error),
     };
     // 先由协议构造器完成全部容量与结构校验，再让 tokenizer 处理规范化请求。
     let usage_estimator = OpenAiChatUsageEstimator::new(&canonical);

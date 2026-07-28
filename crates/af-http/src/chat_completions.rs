@@ -7,7 +7,7 @@ use af_admin::{
 };
 use af_analytics::AdminDashboardReader;
 use af_domain::AfError;
-use af_protocol::openai_chat::parse_request;
+use af_protocol::openai_chat::parse_request_envelope;
 use af_relay::OpenAiChatResponse;
 use af_telemetry::RequestId;
 use axum::{
@@ -121,22 +121,25 @@ impl HttpState {
     }
 }
 
-/// 解析受限正文、执行请求级令牌策略，再把 Canonical 请求交给 Relay。
+/// 解析受限正文、执行请求级令牌策略，再把不可变请求信封交给 Relay。
 pub(crate) async fn chat_completions(
     State(state): State<HttpState>,
     Extension(request_id): Extension<RequestId>,
     Extension(authentication): Extension<TokenAuthentication>,
     body: Bytes,
 ) -> Result<Response, OpenAiHttpError> {
-    let canonical =
-        parse_request(&body).map_err(|_| OpenAiHttpError::from(AfError::InvalidRequest))?;
-    if !authentication.model_policy().allows(&canonical.model) {
+    let request =
+        parse_request_envelope(body).map_err(|_| OpenAiHttpError::from(AfError::InvalidRequest))?;
+    if !authentication
+        .model_policy()
+        .allows(&request.canonical().model)
+    {
         return Err(OpenAiHttpError::from(AfError::ModelNotAllowed));
     }
     let principal = authentication.principal();
     let response = state
         .chat
-        .chat_completions(&principal, canonical, request_id.as_str())
+        .chat_completions(&principal, request, request_id.as_str())
         .await
         .map_err(OpenAiHttpError::from)?;
     match response {
