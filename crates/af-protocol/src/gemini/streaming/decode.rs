@@ -9,7 +9,7 @@ use serde_json::{Map, Value};
 
 use super::ParseStreamError;
 use crate::{
-    CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage,
+    CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount,
     bounded_json::{BoundedJsonError, parse_value},
     gemini::{
         ParseRequestError, ParseResponseError,

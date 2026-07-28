@@ -179,6 +179,7 @@ impl GeminiGenerateContentStreamEncoder {
     ) -> Result<Vec<u8>, EncodeStreamError> {
         self.totals.add_text(&text)?;
         let choice = active_choice(&mut self.choices, choice_index)?;
+        choice.has_content = true;
         let content = bind_content(
             choice,
             content_index,
@@ -186,9 +187,9 @@ impl GeminiGenerateContentStreamEncoder {
             &mut self.totals,
         )?;
         let ContentState::Reasoning {
-            signature: complete_signature,
-            signature_flushed,
-        } = content
+            signature: ref mut complete_signature,
+            signature_flushed: ref signature_flushed,
+        } = *content
         else {
             unreachable!("内容类型已由 bind_content 校验")
         };
@@ -200,7 +201,6 @@ impl GeminiGenerateContentStreamEncoder {
                 .add_encoded_signature(signature.len(), complete_signature.len())?;
             complete_signature.push_str(&signature);
         }
-        choice.has_content = true;
         if text.is_empty() && !complete_signature.is_empty() {
             return Ok(Vec::new());
         }
@@ -521,12 +521,12 @@ fn active_tool(
     Ok(tool)
 }
 
-fn bind_content(
-    choice: &mut ChoiceState,
+fn bind_content<'a>(
+    choice: &'a mut ChoiceState,
     content_index: u32,
     kind: ContentKind,
     totals: &mut EncodeTotals,
-) -> Result<&mut ContentState, EncodeStreamError> {
+) -> Result<&'a mut ContentState, EncodeStreamError> {
     match choice.contents.entry(content_index) {
         Entry::Vacant(entry) => {
             totals.add_block()?;
