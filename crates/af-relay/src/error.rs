@@ -18,6 +18,9 @@ pub enum RelayBuildError {
     /// 候选数量超过单次转发的安全上限。
     #[error("转发候选超过容量上限")]
     TooManyCandidates,
+    /// 同一渠道的候选没有连续排列，无法安全跳过渠道内剩余凭据。
+    #[error("转发候选渠道分组不连续")]
+    NonContiguousChannelGroup,
 }
 
 impl From<AdaptorError> for RelayBuildError {

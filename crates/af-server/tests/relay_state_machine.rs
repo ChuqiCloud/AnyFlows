@@ -10,7 +10,7 @@ use af_adapter::{
     Adaptor, AdaptorError, AdaptorResult, Bytes, ChannelType, Credential, HeaderMap, Method,
     OpenAiAdaptor, Operation, PooledClient, Protocol, RelayContext, ResponseMode,
 };
-use af_domain::UpstreamError;
+use af_domain::{ChannelId, UpstreamError, UpstreamServerStatus};
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
 use af_relay::{
     RelayBuildError, RelayCandidate, RelayError, RelayRequest, RelayState, RelayStateMachine,
@@ -101,6 +101,11 @@ fn candidate(client: &PooledClient, base_url: &str, models: &[&str]) -> RelayCan
     )
 }
 
+fn grouped_candidate(client: &PooledClient, base_url: &str, channel_id: i64) -> RelayCandidate {
+    candidate(client, base_url, &[TEST_MODEL])
+        .with_channel_group(ChannelId::new(channel_id).unwrap())
+}
+
 fn request() -> RelayRequest {
     RelayRequest::new(
         TEST_MODEL,
@@ -177,6 +182,16 @@ fn rejects_empty_and_oversized_candidate_lists() {
         RelayStateMachine::new(candidates).unwrap_err(),
         RelayBuildError::TooManyCandidates
     );
+
+    let candidates = vec![
+        grouped_candidate(&client, "https://first.invalid", 1),
+        grouped_candidate(&client, "https://second.invalid", 2),
+        grouped_candidate(&client, "https://third.invalid", 1),
+    ];
+    assert_eq!(
+        RelayStateMachine::new(candidates).unwrap_err(),
+        RelayBuildError::NonContiguousChannelGroup
+    );
 }
 
 #[test]
@@ -228,14 +243,21 @@ async fn retries_rate_limit_on_the_next_candidate() {
     ]);
     let client = proxy_client(address);
     let machine = RelayStateMachine::new(vec![
-        candidate(&client, "http://first.invalid", &[TEST_MODEL]),
-        candidate(&client, "http://second.invalid", &[TEST_MODEL]),
+        grouped_candidate(&client, "http://first.invalid", 1),
+        grouped_candidate(&client, "http://second.invalid", 1),
     ])
     .unwrap();
 
-    let response = machine.execute(request()).await.unwrap();
+    let response = machine.execute_with_report(request()).await.unwrap();
     assert_eq!(response.attempts().get(), 2);
     assert_eq!(response.state(), RelayState::Completed);
+    assert_eq!(response.report().successful_candidate_index(), Some(1));
+    assert_eq!(response.report().failures().len(), 1);
+    assert_eq!(response.report().failures()[0].candidate_index(), 0);
+    assert_eq!(
+        response.report().failures()[0].error(),
+        UpstreamError::RateLimited
+    );
     assert_eq!(
         response
             .into_response()
@@ -244,6 +266,49 @@ async fn retries_rate_limit_on_the_next_candidate() {
             .await
             .unwrap(),
         Bytes::from_static(br#"{"ok":"fallback"}"#)
+    );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn channel_failure_skips_remaining_credentials_in_the_same_channel() {
+    let (address, server) = spawn_proxy(vec![
+        ProxyResponse {
+            status_line: "503 Service Unavailable",
+            body: b"{}",
+        },
+        ProxyResponse {
+            status_line: "200 OK",
+            body: br#"{"ok":"next-channel"}"#,
+        },
+    ]);
+    let client = proxy_client(address);
+    let machine = RelayStateMachine::new(vec![
+        grouped_candidate(&client, "http://first-key.invalid", 1),
+        grouped_candidate(&client, "http://second-key.invalid", 1),
+        grouped_candidate(&client, "http://next-channel.invalid", 2),
+    ])
+    .unwrap();
+
+    let response = machine.execute_with_report(request()).await.unwrap();
+    assert_eq!(response.attempts().get(), 3);
+    assert_eq!(response.report().successful_candidate_index(), Some(2));
+    assert_eq!(response.report().failures().len(), 1);
+    assert_eq!(response.report().failures()[0].candidate_index(), 0);
+    assert_eq!(
+        response.report().failures()[0].error(),
+        UpstreamError::ServerError {
+            status: UpstreamServerStatus::new(503).unwrap(),
+        }
+    );
+    assert_eq!(
+        response
+            .into_response()
+            .into_body()
+            .into_bytes()
+            .await
+            .unwrap(),
+        Bytes::from_static(br#"{"ok":"next-channel"}"#)
     );
     server.join().unwrap();
 }

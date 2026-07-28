@@ -2,10 +2,15 @@ mod support;
 
 use std::{error::Error, time::Duration};
 
-use af_domain::{ChannelType, CredentialKind, Protocol, Status};
+use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Status};
 use sea_orm::ActiveModelTrait;
 
-use super::{SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError};
+use crate::EncryptedCredentialEnvelope;
+
+use super::{
+    MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL, SchedulerRuntimeCredentialRecord,
+    SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
+};
 
 use self::support::{ability, attach, group, runtime_channel, runtime_credential};
 
@@ -160,6 +165,7 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     assert_eq!(record.ability().priority(), 9);
     assert_eq!(record.ability().weight(), 7);
     assert_eq!(record.target().channel_id().get(), supported.id);
+    assert_eq!(record.target().credentials().len(), 2);
     assert_eq!(record.target().credential_id(), selected.id);
     assert_eq!(record.target().channel_type(), ChannelType::OpenAi);
     assert_eq!(record.target().protocol(), Protocol::OpenAiChat);
@@ -179,6 +185,8 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         "selected-key-id-canary"
     );
     assert!(record.target().proxy_required());
+    assert_eq!(record.target().credentials()[0].priority(), 30);
+    assert_eq!(record.target().credentials()[1].priority(), 20);
 
     let rendered = format!("{record:?}");
     for secret in [
@@ -192,4 +200,41 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
 
     pool.close().await?;
     Ok(())
+}
+
+#[test]
+fn runtime_target_rejects_empty_oversized_and_duplicate_credential_pools() {
+    let channel_id = ChannelId::new(1).unwrap();
+    let build = |credentials| {
+        SchedulerRuntimeTargetRecord::new_pool(
+            channel_id,
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+            None,
+            credentials,
+            Vec::new(),
+        )
+    };
+
+    assert!(build(Vec::new()).is_err());
+
+    let oversized = (1..=MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL + 1)
+        .map(|id| runtime_credential_record(i64::try_from(id).unwrap()))
+        .collect();
+    assert!(build(oversized).is_err());
+
+    let duplicate = runtime_credential_record(7);
+    assert!(build(vec![duplicate.clone(), duplicate]).is_err());
+}
+
+fn runtime_credential_record(credential_id: i64) -> SchedulerRuntimeCredentialRecord {
+    SchedulerRuntimeCredentialRecord::with_scheduling(
+        credential_id,
+        CredentialKind::ApiKey,
+        EncryptedCredentialEnvelope::new("runtime-test-key", [0x42; 24], vec![0x24; 16]).unwrap(),
+        false,
+        0,
+        10,
+    )
+    .unwrap()
 }

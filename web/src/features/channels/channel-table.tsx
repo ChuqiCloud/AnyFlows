@@ -42,6 +42,26 @@ function ProbeState({ value }: { value?: ProbeDisplay }) {
   )
 }
 
+function RoutingBadges({ channel }: { channel: AdminChannel }) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex flex-wrap gap-1">
+      <Badge className="border-transparent bg-info/10 text-info">{t('channels.values.models', { count: channel.models.length })}</Badge>
+      <Badge className="border-transparent bg-success/10 text-success">{t('channels.values.groups', { count: channel.group_ids.length })}</Badge>
+    </div>
+  )
+}
+
+function ScheduleBadges({ channel }: { channel: AdminChannel }) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex flex-wrap gap-1 tabular-nums">
+      <Badge>{t('channels.values.priority', { value: channel.priority })}</Badge>
+      <Badge>{t('channels.values.weight', { value: channel.weight })}</Badge>
+    </div>
+  )
+}
+
 function RowActions({ channel, probing, onCredentials, onEdit, onProbe }: {
   channel: AdminChannel
   probing: boolean
@@ -104,9 +124,9 @@ export function ChannelTable({ channels, probeResults, probingId, onCredentials,
           <tbody className="divide-y divide-[var(--hairline)]">
             {channels.map((channel) => (
               <tr key={channel.id} className="hover:bg-surface-2/35">
-                <td className="px-3 py-2.5"><div className="flex items-center gap-2"><span className="truncate font-medium">{channel.name}</span><StatusBadge status={channel.status} /></div><div className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</div></td>
-                <td className="px-3 py-2.5"><div className="truncate">{t('channels.values.models', { count: channel.models.length })}</div><div className="mt-1 text-[0.6875rem] text-muted-foreground">{t('channels.values.groups', { count: channel.group_ids.length })}</div></td>
-                <td className="px-3 py-2.5 tabular-nums"><div>{t('channels.values.priority', { value: channel.priority })}</div><div className="mt-1 text-[0.6875rem] text-muted-foreground">{t('channels.values.weight', { value: channel.weight })}</div></td>
+                <td className="px-3 py-2.5"><div className="flex items-center gap-2"><span className="truncate font-medium">{channel.name}</span><StatusBadge status={channel.status} />{channel.tag ? <Badge className="max-w-28 truncate">{channel.tag}</Badge> : null}</div><div className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</div></td>
+                <td className="px-3 py-2.5"><RoutingBadges channel={channel} /></td>
+                <td className="px-3 py-2.5"><ScheduleBadges channel={channel} /></td>
                 <td className="px-3 py-2.5 text-[0.6875rem]"><ProbeState value={probeResults[channel.id]} /></td>
                 <td className="px-2 py-2.5"><RowActions channel={channel} probing={probingId === channel.id} onCredentials={onCredentials} onEdit={onEdit} onProbe={onProbe} /></td>
               </tr>
@@ -118,8 +138,8 @@ export function ChannelTable({ channels, probeResults, probingId, onCredentials,
       <div className="grid gap-2 md:hidden">
         {channels.map((channel) => (
           <article key={channel.id} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
-            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold">{channel.name}</h2><StatusBadge status={channel.status} /></div><p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</p></div><RowActions channel={channel} probing={probingId === channel.id} onCredentials={onCredentials} onEdit={onEdit} onProbe={onProbe} /></div>
-            <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-[var(--hairline)] pt-3 text-xs"><div><dt className="text-muted-foreground">{t('channels.columns.routing')}</dt><dd className="mt-1">{t('channels.values.models', { count: channel.models.length })} · {t('channels.values.groups', { count: channel.group_ids.length })}</dd></div><div><dt className="text-muted-foreground">{t('channels.columns.schedule')}</dt><dd className="mt-1 tabular-nums">P {channel.priority} · W {channel.weight}</dd></div></dl>
+            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-sm font-semibold">{channel.name}</h2><StatusBadge status={channel.status} />{channel.tag ? <Badge className="max-w-32 truncate">{channel.tag}</Badge> : null}</div><p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</p></div><RowActions channel={channel} probing={probingId === channel.id} onCredentials={onCredentials} onEdit={onEdit} onProbe={onProbe} /></div>
+            <div className="mt-3 grid gap-2 border-t border-[var(--hairline)] pt-3"><RoutingBadges channel={channel} /><ScheduleBadges channel={channel} /></div>
             <div className="mt-3 text-xs"><ProbeState value={probeResults[channel.id]} /></div>
           </article>
         ))}

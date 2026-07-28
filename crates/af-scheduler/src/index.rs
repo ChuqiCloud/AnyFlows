@@ -403,6 +403,11 @@ impl IndexedWeightedScheduler {
         }
     }
 
+    /// 串行刷新底层不可变快照；失败时继续保留上一代可用快照。
+    pub async fn refresh(&self) -> Result<(), IndexedWeightedSchedulerError> {
+        self.index.refresh().await.map(|_| ()).map_err(Into::into)
+    }
+
     /// 查询一个分组与 Canonical 模型的可用渠道，并从最高优先级层加权选择。
     pub fn select(
         &self,

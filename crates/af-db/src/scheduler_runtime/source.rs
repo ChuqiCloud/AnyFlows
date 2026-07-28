@@ -88,6 +88,8 @@ pub(super) struct SchedulerRuntimeCredentialSource {
     credential_kind: CredentialKind,
     envelope: EncryptedCredentialEnvelope,
     proxy_required: bool,
+    priority: i32,
+    weight: u32,
     rate_limit_reset_at: Option<TimeDateTimeWithTimeZone>,
     overload_until: Option<TimeDateTimeWithTimeZone>,
     temp_unschedulable_until: Option<TimeDateTimeWithTimeZone>,
@@ -119,12 +121,16 @@ impl SchedulerRuntimeCredentialSource {
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let envelope = EncryptedCredentialEnvelope::new(key_id, nonce, ciphertext)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let weight =
+            u32::try_from(credential.weight).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         Ok(Some(Self {
             credential_id: credential.id,
             channel_id,
             credential_kind,
             envelope,
             proxy_required: credential.proxy_id.is_some(),
+            priority: credential.priority,
+            weight,
             rate_limit_reset_at: credential.rate_limit_reset_at,
             overload_until: credential.overload_until,
             temp_unschedulable_until: credential.temp_unschedulable_until,
@@ -151,12 +157,21 @@ impl SchedulerRuntimeCredentialSource {
     /// 消费来源对象，返回构造运行时凭据记录所需的安全字段。
     pub(super) fn into_runtime_parts(
         self,
-    ) -> (i64, CredentialKind, EncryptedCredentialEnvelope, bool) {
+    ) -> (
+        i64,
+        CredentialKind,
+        EncryptedCredentialEnvelope,
+        bool,
+        i32,
+        u32,
+    ) {
         (
             self.credential_id,
             self.credential_kind,
             self.envelope,
             self.proxy_required,
+            self.priority,
+            self.weight,
         )
     }
 }

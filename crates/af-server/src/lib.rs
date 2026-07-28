@@ -6,6 +6,8 @@ mod bootstrap;
 mod channel_probe;
 #[cfg(test)]
 mod channel_probe_tests;
+mod credential_feedback;
+mod credential_order;
 mod frontend;
 mod readiness;
 mod scheduled_chat;
