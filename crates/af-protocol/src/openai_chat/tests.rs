@@ -3,11 +3,8 @@ use std::error::Error as _;
 use af_domain::{Operation, Protocol, Role};
 use serde_json::{Value, json};
 
-use super::{
-    MAX_BODY_BYTES, ParseRequestError,
-    bounded_json::{BoundedJsonError, JsonLimits, parse_value},
-    parse_request,
-};
+use super::{MAX_BODY_BYTES, ParseRequestError, parse_request};
+use crate::bounded_json::{BoundedJsonError, JsonLimits, parse_value};
 use crate::{
     CanonicalRequest, ContentBlock, MediaSource, RawPassthroughError, ReasoningEffort, ToolChoice,
 };

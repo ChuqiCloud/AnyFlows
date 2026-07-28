@@ -5,24 +5,24 @@ use serde_json::{Map, Number, Value};
 
 /// JSON 解析预算。根值深度为 0，对象键不计入节点数。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct JsonLimits {
-    pub(super) max_depth: usize,
-    pub(super) max_nodes: usize,
-    pub(super) max_object_entries: usize,
-    pub(super) max_array_items: usize,
-    pub(super) max_string_bytes: usize,
-    pub(super) max_key_bytes: usize,
+pub(crate) struct JsonLimits {
+    pub(crate) max_depth: usize,
+    pub(crate) max_nodes: usize,
+    pub(crate) max_object_entries: usize,
+    pub(crate) max_array_items: usize,
+    pub(crate) max_string_bytes: usize,
+    pub(crate) max_key_bytes: usize,
 }
 
 /// 受限 JSON 解析仅暴露固定错误类别，避免携带请求内容。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum BoundedJsonError {
+pub(crate) enum BoundedJsonError {
     InvalidJson,
     DuplicateKey,
     LimitExceeded,
 }
 
-pub(super) fn parse_value(input: &[u8], limits: JsonLimits) -> Result<Value, BoundedJsonError> {
+pub(crate) fn parse_value(input: &[u8], limits: JsonLimits) -> Result<Value, BoundedJsonError> {
     let state = ParseState::new(limits);
     let mut deserializer = serde_json::Deserializer::from_slice(input);
     let value = ValueSeed {

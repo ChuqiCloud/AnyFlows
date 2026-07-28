@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::bounded_json::{JsonLimits, parse_value};
+use crate::bounded_json::{JsonLimits, parse_value};
 
 /// 上游错误 JSON 的最大解析大小；传输缓冲仍由适配层 32 MiB 硬上限保护。
 const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;

@@ -13,8 +13,8 @@ use super::{
         StreamFunctionWire, StreamRoleWire, StreamToolCallWire, StreamToolTypeWire,
     },
 };
+use crate::bounded_json::{BoundedJsonError, JsonLimits, parse_value};
 use crate::openai_chat::{
-    bounded_json::{BoundedJsonError, JsonLimits, parse_value},
     convert::{
         ARGUMENT_JSON_LIMITS, MAX_ARGUMENT_BYTES, MAX_CONTENT_BLOCKS, MAX_TEXT_BYTES,
         MAX_TOOL_CALLS, MAX_TOTAL_ARGUMENT_BYTES, MAX_TOTAL_ARGUMENT_NODES, MAX_TOTAL_TEXT_BYTES,

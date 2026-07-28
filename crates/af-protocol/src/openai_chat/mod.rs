@@ -2,12 +2,11 @@
 
 use std::{error::Error, fmt};
 
-use bounded_json::{BoundedJsonError, JsonLimits};
+use crate::bounded_json::{self, BoundedJsonError, JsonLimits};
 use serde_json::Value;
 
 use crate::CanonicalRequest;
 
-mod bounded_json;
 mod build;
 mod convert;
 mod error;
