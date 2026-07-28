@@ -15,7 +15,10 @@ use super::{
         validate_response_id,
     },
 };
-use crate::{CanonicalResponse, ContentBlock, FinishReason, ResponseChoice, Usage};
+use crate::{
+    CanonicalResponse, ContentBlock, FinishReason, ResponseChoice, UnsupportedCapability, Usage,
+    validate_response_capabilities,
+};
 
 /// 将 Canonical 响应构造为 OpenAI Chat Completions 非流式 JSON。
 ///
@@ -25,6 +28,8 @@ pub fn build_response(response: &CanonicalResponse) -> Result<Value, BuildRespon
     if response.operation != Operation::Chat {
         return Err(BuildResponseError::UnsupportedOperation);
     }
+    validate_response_capabilities(Protocol::OpenAiChat, response)
+        .map_err(BuildResponseError::UnsupportedCapability)?;
     validate_response_id(&response.id).map_err(map_response_validation_error)?;
     validate_model(&response.model).map_err(map_request_validation_error)?;
     let created = response
@@ -380,6 +385,8 @@ pub enum BuildResponseError {
     UnsupportedOperation,
     /// Canonical 字段或关联关系无效。
     InvalidValue,
+    /// 目标协议缺少一项已声明的响应能力。
+    UnsupportedCapability(UnsupportedCapability),
     /// Canonical 使用了 Chat Completions 无法表达的能力。
     UnsupportedFeature,
     /// 响应结构或序列化正文超过预算。
@@ -393,6 +400,7 @@ impl fmt::Display for BuildResponseError {
         match self {
             Self::UnsupportedOperation => formatter.write_str("响应操作类型不受支持"),
             Self::InvalidValue => formatter.write_str("响应字段值无效"),
+            Self::UnsupportedCapability(error) => fmt::Display::fmt(error, formatter),
             Self::UnsupportedFeature => {
                 formatter.write_str("响应包含 Chat Completions 无法表达的特性")
             }

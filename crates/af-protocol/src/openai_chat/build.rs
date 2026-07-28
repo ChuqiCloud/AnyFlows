@@ -17,6 +17,7 @@ use super::{
 use crate::bounded_json::validate_object;
 use crate::{
     CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningEffort, ToolChoice, ToolDef,
+    UnsupportedCapability, validate_request_capabilities,
 };
 
 /// 将 Canonical 请求构造为 OpenAI Chat Completions JSON。
@@ -27,6 +28,8 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
     if request.operation != Operation::Chat {
         return Err(BuildRequestError::UnsupportedOperation);
     }
+    validate_request_capabilities(Protocol::OpenAiChat, request)
+        .map_err(BuildRequestError::UnsupportedCapability)?;
     validate_model(&request.model).map_err(map_request_validation_error)?;
     if !request.attachments.is_empty() {
         return Err(BuildRequestError::UnsupportedFeature);
@@ -721,6 +724,8 @@ pub enum BuildRequestError {
     InvalidValue,
     /// Canonical 请求超过协议结构预算。
     StructureLimitExceeded,
+    /// 目标协议缺少一项已声明的请求能力。
+    UnsupportedCapability(UnsupportedCapability),
     /// Canonical 请求使用了 OpenAI Chat 无法无损表达的特性。
     UnsupportedFeature,
     /// raw 字段来源协议与 OpenAI Chat 不一致。
@@ -735,6 +740,7 @@ impl fmt::Display for BuildRequestError {
             Self::UnsupportedOperation => formatter.write_str("请求操作不是 Chat"),
             Self::InvalidValue => formatter.write_str("Canonical 请求字段值无效"),
             Self::StructureLimitExceeded => formatter.write_str("Canonical 请求结构超过限制"),
+            Self::UnsupportedCapability(error) => fmt::Display::fmt(error, formatter),
             Self::UnsupportedFeature => formatter.write_str("Canonical 请求包含当前不支持的特性"),
             Self::RawProtocolMismatch => formatter.write_str("未归一化字段不得跨协议透传"),
             Self::FieldConflict => formatter.write_str("未归一化字段与 Canonical 字段冲突"),

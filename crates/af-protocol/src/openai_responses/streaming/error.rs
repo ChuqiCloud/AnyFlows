@@ -1,5 +1,6 @@
 use std::{error::Error, fmt};
 
+use crate::UnsupportedCapability;
 use crate::sse::SseParseError;
 
 /// OpenAI Responses SSE 解码错误；分类不保留上游正文或字段值。
@@ -69,6 +70,8 @@ pub enum EncodeStreamError {
     InvalidSequence,
     /// 单事件或累计编码状态超过预算。
     StructureLimitExceeded,
+    /// 目标协议缺少一项已声明的流式能力。
+    UnsupportedCapability(UnsupportedCapability),
     /// Responses 无法无损表达该 Canonical 事件。
     UnsupportedEvent,
     /// usage 无法按 Responses 的 Inclusive 口径安全表达。
@@ -85,12 +88,16 @@ impl fmt::Display for EncodeStreamError {
             Self::InvalidMetadata => "OpenAI Responses 流式响应元数据无效",
             Self::InvalidSequence => "Canonical 流事件顺序无效",
             Self::StructureLimitExceeded => "Canonical 流事件超过编码限制",
+            Self::UnsupportedCapability(_) => "OpenAI Responses 缺少所需流式能力",
             Self::UnsupportedEvent => "OpenAI Responses 无法表达该流事件",
             Self::InvalidUsage => "OpenAI Responses 无法表达该 usage",
             Self::Serialization => "OpenAI Responses 流式事件序列化失败",
             Self::EncoderFailed => "OpenAI Responses 流式 encoder 已失败",
         };
-        formatter.write_str(message)
+        match self {
+            Self::UnsupportedCapability(error) => fmt::Display::fmt(error, formatter),
+            _ => formatter.write_str(message),
+        }
     }
 }
 

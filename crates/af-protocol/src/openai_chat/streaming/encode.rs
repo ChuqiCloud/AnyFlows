@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt};
 
-use af_domain::Role;
+use af_domain::{Protocol, Role};
 
 use super::{
     EncodeStreamError, MAX_SSE_EVENT_BYTES,
@@ -18,7 +18,9 @@ use crate::openai_chat::{
     },
     parse_response::{MAX_RESPONSE_CHOICES, validate_response_id},
 };
-use crate::{CanonicalStreamEvent, ContentDelta, FinishReason, Usage};
+use crate::{
+    CanonicalStreamEvent, ContentDelta, FinishReason, Usage, validate_stream_event_capabilities,
+};
 
 /// 将 Canonical 流事件编码为 OpenAI Chat Completions SSE。
 ///
@@ -72,7 +74,9 @@ impl OpenAiChatStreamEncoder {
             self.failed = true;
             return Err(EncodeStreamError::InvalidSequence);
         }
-        let result = self.encode_inner(event);
+        let result = validate_stream_event_capabilities(Protocol::OpenAiChat, &event)
+            .map_err(EncodeStreamError::UnsupportedCapability)
+            .and_then(|()| self.encode_inner(event));
         if result.is_err() {
             self.failed = true;
         }

@@ -274,6 +274,12 @@ impl RawPassthrough {
         self.source_protocol
     }
 
+    /// 判断私有字段集合是否为空。
+    #[must_use]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
     /// 仅向同源协议返回保持原始 JSON 结构的私有字段。
     ///
     /// 跨协议转换必须先把字段建模为 Canonical 语义，禁止直接读取后盲目合并。

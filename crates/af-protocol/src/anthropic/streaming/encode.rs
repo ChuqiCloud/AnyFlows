@@ -1,6 +1,6 @@
 use std::{collections::HashSet, fmt};
 
-use af_domain::Role;
+use af_domain::{Protocol, Role};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -24,6 +24,7 @@ use crate::{
         parse_response::validate_response_id,
     },
     bounded_json::{BoundedJsonError, JsonLimits, parse_value},
+    validate_stream_event_capabilities,
 };
 
 const ARGUMENT_JSON_LIMITS: JsonLimits = JsonLimits {
@@ -93,7 +94,9 @@ impl AnthropicMessagesStreamEncoder {
             self.failed = true;
             return Err(EncodeStreamError::InvalidSequence);
         }
-        let result = self.encode_inner(event);
+        let result = validate_stream_event_capabilities(Protocol::Anthropic, &event)
+            .map_err(EncodeStreamError::UnsupportedCapability)
+            .and_then(|()| self.encode_inner(event));
         if result.is_err() {
             self.failed = true;
         }

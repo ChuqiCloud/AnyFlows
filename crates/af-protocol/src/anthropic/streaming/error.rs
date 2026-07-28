@@ -1,5 +1,6 @@
 use std::{error::Error, fmt};
 
+use crate::UnsupportedCapability;
 use crate::sse::SseParseError;
 
 /// Anthropic Messages 流式解码错误；分类不保留上游正文或元数据。
@@ -69,6 +70,8 @@ pub enum EncodeStreamError {
     InvalidSequence,
     /// 单事件或累计编码状态超过预算。
     StructureLimitExceeded,
+    /// 目标协议缺少一项已声明的流式能力。
+    UnsupportedCapability(UnsupportedCapability),
     /// Anthropic Messages 无法无损表达该 Canonical 事件。
     UnsupportedEvent,
     /// 用量快照无法按 Anthropic 累计口径安全表达。
@@ -85,12 +88,16 @@ impl fmt::Display for EncodeStreamError {
             Self::InvalidMetadata => "Anthropic 流式响应元数据无效",
             Self::InvalidSequence => "Canonical 流事件顺序无效",
             Self::StructureLimitExceeded => "Canonical 流事件超过编码限制",
+            Self::UnsupportedCapability(_) => "Anthropic 缺少所需流式能力",
             Self::UnsupportedEvent => "Anthropic Messages 无法表达该流事件",
             Self::InvalidUsage => "Anthropic Messages 无法表达该 usage 快照",
             Self::Serialization => "Anthropic 流式事件序列化失败",
             Self::EncoderFailed => "Anthropic 流式 encoder 已失败",
         };
-        formatter.write_str(message)
+        match self {
+            Self::UnsupportedCapability(error) => fmt::Display::fmt(error, formatter),
+            _ => formatter.write_str(message),
+        }
     }
 }
 

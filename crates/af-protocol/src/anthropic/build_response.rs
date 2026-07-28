@@ -17,7 +17,10 @@ use super::{
     response_wire::RefusalStopDetailsWire,
 };
 use crate::bounded_json::validate_object;
-use crate::{CanonicalResponse, ContentBlock, FinishReason, ResponseChoice, Usage, UsageSemantics};
+use crate::{
+    CanonicalResponse, ContentBlock, FinishReason, ResponseChoice, UnsupportedCapability, Usage,
+    UsageSemantics, validate_response_capabilities,
+};
 
 /// 将 Canonical 响应构造为 Anthropic Messages 非流式 JSON。
 ///
@@ -27,6 +30,8 @@ pub fn build_response(response: &CanonicalResponse) -> Result<Value, BuildRespon
     if response.operation != Operation::Chat {
         return Err(BuildResponseError::UnsupportedOperation);
     }
+    validate_response_capabilities(Protocol::Anthropic, response)
+        .map_err(BuildResponseError::UnsupportedCapability)?;
     validate_response_id(&response.id).map_err(map_response_validation_error)?;
     validate_model(&response.model).map_err(map_request_validation_error)?;
     if response.created_at.is_some_and(|created_at| created_at < 0) {
@@ -442,6 +447,8 @@ pub enum BuildResponseError {
     UnsupportedOperation,
     /// Canonical 字段或关联关系无效。
     InvalidValue,
+    /// 目标协议缺少一项已声明的响应能力。
+    UnsupportedCapability(UnsupportedCapability),
     /// Canonical 使用了 Anthropic 响应无法表达的能力。
     UnsupportedFeature,
     /// 响应结构或序列化正文超过预算。
@@ -455,6 +462,7 @@ impl fmt::Display for BuildResponseError {
         match self {
             Self::UnsupportedOperation => formatter.write_str("响应操作类型不受支持"),
             Self::InvalidValue => formatter.write_str("响应字段值无效"),
+            Self::UnsupportedCapability(error) => fmt::Display::fmt(error, formatter),
             Self::UnsupportedFeature => formatter.write_str("响应包含 Anthropic 无法表达的特性"),
             Self::StructureLimitExceeded => formatter.write_str("响应结构超过限制"),
             Self::RawProtocolMismatch => formatter.write_str("未归一化字段不得跨协议透传"),
