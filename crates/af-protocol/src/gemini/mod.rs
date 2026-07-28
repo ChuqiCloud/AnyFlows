@@ -10,17 +10,24 @@ use crate::{
 };
 
 mod build;
+mod build_response;
 mod convert;
+mod parse_response;
+mod response_wire;
 mod wire;
 
 pub use build::{BuildRequestError, build_request};
+pub use build_response::{BuildResponseError, build_response};
+pub use parse_response::{ParseResponseError, parse_response};
 
 #[cfg(test)]
 mod build_tests;
 #[cfg(test)]
+mod response_tests;
+#[cfg(test)]
 mod tests;
 
-/// Gemini `generateContent` 非流式请求的最大正文大小。
+/// Gemini `generateContent` 非流式请求与响应的最大正文大小。
 pub const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 const REQUEST_JSON_LIMITS: JsonLimits = JsonLimits {
     max_depth: 32,

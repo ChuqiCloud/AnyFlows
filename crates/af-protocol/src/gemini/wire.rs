@@ -11,7 +11,7 @@ pub(super) enum Field<T> {
     Value(T),
 }
 
-fn deserialize_field<'de, D, T>(deserializer: D) -> Result<Field<T>, D::Error>
+pub(super) fn deserialize_field<'de, D, T>(deserializer: D) -> Result<Field<T>, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,
