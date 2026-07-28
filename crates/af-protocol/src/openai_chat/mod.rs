@@ -8,6 +8,7 @@ use serde_json::Value;
 use crate::CanonicalRequest;
 
 mod build;
+mod build_response;
 mod convert;
 mod error;
 mod error_response;
@@ -17,6 +18,7 @@ mod streaming;
 mod wire;
 
 pub use build::{BuildRequestError, build_request};
+pub use build_response::{BuildResponseError, build_response};
 pub use error::encode_error;
 pub use error_response::{OpenAiUpstreamErrorKind, classify_error_response};
 pub use parse_response::{ParseResponseError, parse_response};
@@ -25,6 +27,8 @@ pub use streaming::{
     OpenAiChatStreamEncoder, ParseStreamError, SseEvent, SseParseError, SseParser,
 };
 
+#[cfg(test)]
+mod build_response_tests;
 #[cfg(test)]
 mod build_tests;
 #[cfg(test)]
