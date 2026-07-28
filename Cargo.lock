@@ -251,6 +251,7 @@ dependencies = [
  "rust_decimal",
  "sea-orm",
  "serde_json",
+ "sha2",
  "thiserror",
  "tokio",
  "tracing",
