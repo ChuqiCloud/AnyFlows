@@ -1,10 +1,10 @@
-use af_domain::{Role, UpstreamError};
+use af_domain::{Protocol, Role, UpstreamError};
 use serde_json::{Value, json};
 
 use super::*;
 use crate::{
-    CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage, UsageDetails,
-    UsageSemantics, UsageSource,
+    CacheHint, CanonicalStreamEvent, ContentDelta, FinishReason, ProtocolCapability,
+    StreamCapability, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
 };
 
 fn chunk(choices: Value, usage: Option<Value>) -> Value {
@@ -593,11 +593,18 @@ fn encoder_rejects_incomplete_tool_json_and_unrepresentable_usage() {
             stop_sequence: None,
         })
         .unwrap();
+    let error = encoder
+        .encode(CanonicalStreamEvent::Usage(usage))
+        .expect_err("OpenAI Chat 不支持缓存写入 usage");
+    let EncodeStreamError::UnsupportedCapability(error) = error else {
+        panic!("必须返回结构化能力错误，实际为 {error:?}");
+    };
+    assert_eq!(error.target_protocol(), Protocol::OpenAiChat);
     assert_eq!(
-        encoder
-            .encode(CanonicalStreamEvent::Usage(usage))
-            .unwrap_err(),
-        EncodeStreamError::InvalidUsage
+        error.capability(),
+        ProtocolCapability::Stream(StreamCapability::UsageCacheCreation(
+            CacheHint::Ephemeral5Minutes
+        ))
     );
 }
 

@@ -5,9 +5,19 @@ use serde_json::{Map, Value, json};
 
 use super::{BuildResponseError, build_response, parse_response};
 use crate::{
-    CanonicalResponse, ContentBlock, FinishReason, Message, ResponseChoice, TokenCount, Usage,
-    UsageDetails, UsageSemantics, UsageSource,
+    CacheHint, CanonicalResponse, ContentBlock, FinishReason, Message, ProtocolCapability,
+    ResponseCapability, ResponseChoice, TokenCount, Usage, UsageDetails, UsageSemantics,
+    UsageSource,
 };
+
+fn assert_unsupported_capability(response: &CanonicalResponse, expected: ResponseCapability) {
+    let error = build_response(response).expect_err("响应能力必须被明确拒绝");
+    let BuildResponseError::UnsupportedCapability(error) = error else {
+        panic!("必须返回结构化能力错误，实际为 {error:?}");
+    };
+    assert_eq!(error.target_protocol(), Protocol::OpenAiChat);
+    assert_eq!(error.capability(), ProtocolCapability::Response(expected));
+}
 
 fn count(value: i64) -> TokenCount {
     TokenCount::new(value).unwrap()
@@ -187,10 +197,7 @@ fn rejects_invalid_or_lossy_canonical_responses() {
 
     let mut stop_sequence = canonical_response(text_choice(), Some(valid_usage));
     stop_sequence.choices[0].stop_sequence = Some("END".to_owned());
-    assert_eq!(
-        build_response(&stop_sequence),
-        Err(BuildResponseError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&stop_sequence, ResponseCapability::StopSequence);
 
     let mut missing_tool = canonical_response(text_choice(), Some(valid_usage));
     missing_tool.choices[0].finish_reason = FinishReason::ToolCalls;
@@ -211,9 +218,9 @@ fn rejects_invalid_or_lossy_canonical_responses() {
         text_choice(),
         Some(usage(cache_creation, UsageSemantics::CacheSeparated)),
     );
-    assert_eq!(
-        build_response(&unsupported_usage),
-        Err(BuildResponseError::UnsupportedFeature)
+    assert_unsupported_capability(
+        &unsupported_usage,
+        ResponseCapability::UsageCacheCreation(CacheHint::Ephemeral5Minutes),
     );
 }
 
