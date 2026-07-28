@@ -45,7 +45,12 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
         return Err(BuildRequestError::UnsupportedOperation);
     }
     validate_model(&request.model).map_err(map_request_validation_error)?;
-    if request.stream || request.stream_options.include_usage() || !request.attachments.is_empty() {
+    if request.stream
+        || request.stream_options.include_usage()
+        || !request.attachments.is_empty()
+        || request.tools.iter().any(|tool| tool.strict == Some(true))
+        || !request.continuation.is_empty()
+    {
         return Err(BuildRequestError::UnsupportedFeature);
     }
 

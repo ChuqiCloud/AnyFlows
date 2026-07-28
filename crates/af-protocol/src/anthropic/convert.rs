@@ -210,6 +210,7 @@ fn convert_tools(
             name: tool.name,
             description,
             input_schema: tool.input_schema,
+            strict: None,
         });
     }
     Ok((converted, names))

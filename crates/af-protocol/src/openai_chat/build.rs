@@ -31,6 +31,9 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
     if !request.attachments.is_empty() {
         return Err(BuildRequestError::UnsupportedFeature);
     }
+    if !request.continuation.is_empty() {
+        return Err(BuildRequestError::UnsupportedFeature);
+    }
 
     let tools = build_tools(&request.tools)?;
     let tool_names = request
@@ -102,6 +105,9 @@ fn build_tools(tools: &[ToolDef]) -> Result<Vec<Value>, BuildRequestError> {
             function.insert("description".to_owned(), Value::String(description.clone()));
         }
         function.insert("parameters".to_owned(), tool.input_schema.clone());
+        if let Some(strict) = tool.strict {
+            function.insert("strict".to_owned(), Value::Bool(strict));
+        }
 
         let mut wrapper = Map::new();
         wrapper.insert("type".to_owned(), Value::String("function".to_owned()));

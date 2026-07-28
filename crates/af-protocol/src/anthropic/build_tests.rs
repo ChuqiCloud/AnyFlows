@@ -7,7 +7,8 @@ use serde_json::{Map, Value, json};
 use super::{BuildRequestError, build_request, parse_request};
 use crate::{
     Attachment, CacheHint, CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningConfig,
-    ReasoningEffort, RequestMetadata, Sampling, StreamOptions, TokenCount, ToolChoice, ToolDef,
+    ReasoningEffort, RequestContinuation, RequestMetadata, Sampling, StreamOptions, TokenCount,
+    ToolChoice, ToolDef,
 };
 
 fn parsed_request(value: Value) -> CanonicalRequest {
@@ -204,6 +205,7 @@ fn preserves_tool_choice_defaults_and_reasoning_modes() {
         name: "lookup".to_owned(),
         description: None,
         input_schema: json!({"type": "object"}),
+        strict: None,
     });
     with_tools.tool_choice = ToolChoice::Auto;
     let value = build_request(&with_tools).unwrap();
@@ -274,6 +276,25 @@ fn rejects_unmapped_top_level_capabilities() {
     session.metadata = RequestMetadata::new(None, Some("session-1".to_owned()));
     assert_eq!(
         build_request(&session),
+        Err(BuildRequestError::UnsupportedFeature)
+    );
+
+    let mut continuation = minimal_request();
+    continuation.continuation = RequestContinuation::new(Some("resp-1".to_owned()), None, None);
+    assert_eq!(
+        build_request(&continuation),
+        Err(BuildRequestError::UnsupportedFeature)
+    );
+
+    let mut strict_tool = minimal_request();
+    strict_tool.tools.push(ToolDef {
+        name: "lookup".to_owned(),
+        description: None,
+        input_schema: json!({"type": "object"}),
+        strict: Some(true),
+    });
+    assert_eq!(
+        build_request(&strict_tool),
         Err(BuildRequestError::UnsupportedFeature)
     );
 
@@ -408,6 +429,7 @@ fn validates_sampling_reasoning_tools_and_metadata() {
         name: "lookup".to_owned(),
         description: None,
         input_schema: json!({"type": "object"}),
+        strict: None,
     });
     named_unknown.tool_choice = ToolChoice::Named {
         name: "missing".to_owned(),
@@ -422,6 +444,7 @@ fn validates_sampling_reasoning_tools_and_metadata() {
         name: "lookup".to_owned(),
         description: None,
         input_schema: json!([]),
+        strict: None,
     });
     assert_eq!(
         build_request(&invalid_schema),
@@ -433,6 +456,7 @@ fn validates_sampling_reasoning_tools_and_metadata() {
         name: "lookup".to_owned(),
         description: None,
         input_schema: json!({"$ref": "https://example.com/schema.json"}),
+        strict: None,
     });
     assert_eq!(
         build_request(&remote_schema),
@@ -673,6 +697,7 @@ fn rejects_combined_body_and_node_budgets() {
             name: format!("tool-{index}"),
             description: None,
             input_schema: schema(index),
+            strict: None,
         })
         .collect();
     nodes.tool_choice = ToolChoice::Auto;

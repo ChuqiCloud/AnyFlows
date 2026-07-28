@@ -150,6 +150,7 @@ fn convert_tools(
                 name: declaration.name,
                 description,
                 input_schema,
+                strict: None,
             });
         }
     }

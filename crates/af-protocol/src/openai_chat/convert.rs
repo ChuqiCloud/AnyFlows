@@ -298,10 +298,7 @@ fn convert_tools(
         {
             return Err(ParseRequestError::StructureLimitExceeded);
         }
-        match strict {
-            Field::Missing | Field::Value(false) => {}
-            Field::Value(true) => return Err(ParseRequestError::UnsupportedFeature),
-        }
+        let strict = field_value(strict);
 
         let input_schema = field_value(parameters).unwrap_or_else(|| Value::Object(Map::new()));
         validate_schema(&input_schema, &mut total_schema_bytes)?;
@@ -309,6 +306,7 @@ fn convert_tools(
             name,
             description,
             input_schema,
+            strict,
         });
     }
     Ok((converted, names))

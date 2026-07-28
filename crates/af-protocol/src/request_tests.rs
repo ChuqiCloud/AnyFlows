@@ -5,7 +5,8 @@ use serde_json::json;
 
 use crate::{
     Attachment, CanonicalRequest, MediaSource, ReasoningConfig, ReasoningConfigError,
-    ReasoningEffort, RequestMetadata, Sampling, SamplingError, TokenCount, ToolChoice, ToolDef,
+    ReasoningEffort, RequestContinuation, RequestMetadata, Sampling, SamplingError, TokenCount,
+    ToolChoice, ToolDef,
 };
 
 #[test]
@@ -55,6 +56,26 @@ fn reasoning_and_metadata_preserve_explicit_protocol_semantics() {
 }
 
 #[test]
+fn continuation_preserves_protocol_state_without_exposing_values_in_debug() {
+    let continuation = RequestContinuation::new(
+        Some("response-secret-canary".to_owned()),
+        None,
+        Some("cache-secret-canary".to_owned()),
+    );
+
+    assert_eq!(
+        continuation.previous_response_id(),
+        Some("response-secret-canary")
+    );
+    assert_eq!(continuation.conversation_id(), None);
+    assert_eq!(continuation.prompt_cache_key(), Some("cache-secret-canary"));
+    assert!(!continuation.is_empty());
+    let rendered = format!("{continuation:?}");
+    assert!(!rendered.contains("response-secret-canary"));
+    assert!(!rendered.contains("cache-secret-canary"));
+}
+
+#[test]
 fn reasoning_rejects_disabled_configs_with_active_options() {
     let budget = Some(TokenCount::new(1).unwrap());
     assert_eq!(
@@ -91,6 +112,7 @@ fn request_parameter_debug_redacts_external_content() {
         name: canaries[0].to_owned(),
         description: Some(canaries[1].to_owned()),
         input_schema: json!({"description": canaries[2]}),
+        strict: None,
     };
     let choice = ToolChoice::Named {
         name: canaries[3].to_owned(),

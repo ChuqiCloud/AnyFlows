@@ -864,11 +864,10 @@ fn rejects_invalid_tool_names_choices_and_remote_schema_references() {
         parse_json(remote_reference),
         Err(ParseRequestError::UnsupportedFeature)
     );
-    assert!(parse_json(explicit_non_strict_tool).is_ok());
-    assert_eq!(
-        parse_json(strict_tool),
-        Err(ParseRequestError::UnsupportedFeature)
-    );
+    let explicit_non_strict_tool = parse_json(explicit_non_strict_tool).unwrap();
+    assert_eq!(explicit_non_strict_tool.tools[0].strict, Some(false));
+    let strict_tool = parse_json(strict_tool).unwrap();
+    assert_eq!(strict_tool.tools[0].strict, Some(true));
 }
 
 #[test]
