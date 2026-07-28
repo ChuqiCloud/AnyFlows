@@ -158,8 +158,7 @@ mod tests {
             .map(|credential| credential.credential_id())
             .collect::<Vec<_>>();
 
-        assert_eq!(ids[0], 2);
-        assert_eq!(ids[2], 3);
+        assert_eq!(ids, vec![1, 3, 2]);
     }
 
     #[test]

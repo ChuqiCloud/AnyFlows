@@ -223,9 +223,9 @@ function parameterRows(value: Record<string, unknown>): ParameterRow[] {
 
 function parameterType(value: unknown): ParameterValueType {
   if (value === null) return 'null'
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return typeof value
-  }
+  if (typeof value === 'string') return 'string'
+  if (typeof value === 'number') return 'number'
+  if (typeof value === 'boolean') return 'boolean'
   return 'json'
 }
 
