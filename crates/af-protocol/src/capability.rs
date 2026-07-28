@@ -134,7 +134,7 @@ pub struct UnsupportedCapability {
 }
 
 impl UnsupportedCapability {
-    pub(super) const fn request(target_protocol: Protocol, capability: RequestCapability) -> Self {
+    pub(crate) const fn request(target_protocol: Protocol, capability: RequestCapability) -> Self {
         Self {
             target_protocol,
             capability: ProtocolCapability::Request(capability),

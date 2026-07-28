@@ -3,9 +3,7 @@ use std::fmt;
 use af_domain::{Operation, Protocol, Role};
 
 use super::{UnsupportedCapability, supports_request_capability};
-use crate::{
-    CacheHint, CanonicalRequest, ContentBlock, MediaSource, RawPassthrough, ReasoningEffort,
-};
+use crate::{CacheHint, CanonicalRequest, ContentBlock, MediaSource, ReasoningEffort};
 
 /// Canonical 请求中的单项可表达能力。
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -381,7 +379,7 @@ pub fn validate_request_capabilities(
         require(protocol, RequestCapability::MessageRole(message.role))?;
         validate_content(protocol, &message.content)?;
     }
-    validate_same_protocol_raw(protocol, request.raw_passthrough())
+    Ok(())
 }
 
 fn validate_content(
@@ -430,16 +428,6 @@ fn validate_content(
                 require(protocol, RequestCapability::CacheControl(*hint))?;
             }
         }
-    }
-    Ok(())
-}
-
-fn validate_same_protocol_raw(
-    protocol: Protocol,
-    raw: Option<&RawPassthrough>,
-) -> Result<(), UnsupportedCapability> {
-    if raw.is_some_and(|raw| raw.source_protocol() == protocol && !raw.is_empty()) {
-        require(protocol, RequestCapability::SameProtocolRaw)?;
     }
     Ok(())
 }

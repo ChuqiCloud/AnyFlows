@@ -7,9 +7,18 @@ use super::{
     BuildResponseError, MAX_BODY_BYTES, ParseResponseError, build_response, parse_response,
 };
 use crate::{
-    CanonicalResponse, ContentBlock, FinishReason, Message, ResponseChoice, TokenCount, Usage,
-    UsageDetails, UsageSemantics, UsageSource,
+    CanonicalResponse, ContentBlock, FinishReason, Message, ProtocolCapability, ResponseCapability,
+    ResponseChoice, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
 };
+
+fn assert_unsupported_capability(response: &CanonicalResponse, expected: ResponseCapability) {
+    let error = build_response(response).expect_err("响应能力必须被明确拒绝");
+    let BuildResponseError::UnsupportedCapability(error) = error else {
+        panic!("必须返回结构化能力错误，实际为 {error:?}");
+    };
+    assert_eq!(error.target_protocol(), Protocol::Anthropic);
+    assert_eq!(error.capability(), ProtocolCapability::Response(expected));
+}
 
 fn parse_json(value: Value) -> Result<CanonicalResponse, ParseResponseError> {
     parse_response(&serde_json::to_vec(&value).unwrap())
@@ -472,17 +481,11 @@ fn build_response_revalidates_choices_content_usage_and_raw_origin() {
 
     let mut wrong_index = canonical_response(valid_choice.clone(), Some(valid_usage));
     wrong_index.choices[0].index = 1;
-    assert_eq!(
-        build_response(&wrong_index),
-        Err(BuildResponseError::InvalidValue)
-    );
+    assert_unsupported_capability(&wrong_index, ResponseCapability::ArbitraryChoiceIndex);
 
     let mut multiple = canonical_response(valid_choice.clone(), Some(valid_usage));
     multiple.choices.push(valid_choice.clone());
-    assert_eq!(
-        build_response(&multiple),
-        Err(BuildResponseError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&multiple, ResponseCapability::MultipleChoices);
 
     let missing_signature = canonical_response(
         ResponseChoice::new(
@@ -553,10 +556,7 @@ fn rejects_usage_dimensions_anthropic_cannot_express() {
         ResponseChoice::new(0, Message::new(Role::Assistant, vec![]), FinishReason::Stop),
         Some(audio_usage),
     );
-    assert_eq!(
-        build_response(&response),
-        Err(BuildResponseError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&response, ResponseCapability::UsageAudioInput);
 }
 
 #[test]

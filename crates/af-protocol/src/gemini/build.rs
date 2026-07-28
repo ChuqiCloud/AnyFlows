@@ -21,8 +21,9 @@ use super::{
     },
 };
 use crate::{
-    CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningEffort, ToolChoice, ToolDef,
-    UnsupportedCapability, bounded_json::validate_object, validate_request_capabilities,
+    CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningEffort, RequestCapability,
+    ToolChoice, ToolDef, UnsupportedCapability, bounded_json::validate_object,
+    validate_request_capabilities,
 };
 
 const MODELED_FIELDS: &[&str] = &[
@@ -285,7 +286,9 @@ fn reject_raw(
     {
         return Err(BuildRequestError::FieldConflict);
     }
-    Err(BuildRequestError::UnsupportedFeature)
+    Err(BuildRequestError::UnsupportedCapability(
+        UnsupportedCapability::request(Protocol::Gemini, RequestCapability::SameProtocolRaw),
+    ))
 }
 
 fn build_contents(messages: &[Message]) -> Result<(Option<Value>, Vec<Value>), BuildRequestError> {

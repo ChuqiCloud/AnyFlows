@@ -17,8 +17,8 @@ use super::{
 };
 use crate::bounded_json::validate_object;
 use crate::{
-    CacheHint, CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningEffort, ToolChoice,
-    ToolDef, UnsupportedCapability, validate_request_capabilities,
+    CacheHint, CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningEffort,
+    RequestCapability, ToolChoice, ToolDef, UnsupportedCapability, validate_request_capabilities,
 };
 
 const MODELED_FIELDS: &[&str] = &[
@@ -304,7 +304,9 @@ fn reject_raw(
     {
         return Err(BuildRequestError::FieldConflict);
     }
-    Err(BuildRequestError::UnsupportedFeature)
+    Err(BuildRequestError::UnsupportedCapability(
+        UnsupportedCapability::request(Protocol::Anthropic, RequestCapability::SameProtocolRaw),
+    ))
 }
 
 fn build_messages(messages: &[Message]) -> Result<(Option<Value>, Vec<Value>), BuildRequestError> {
