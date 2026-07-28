@@ -423,7 +423,7 @@ fn normalize_remote_media_url(value: &str) -> Result<String, ParseRequestError> 
     Ok(url.to_string())
 }
 
-fn validate_call_id(id: &str) -> Result<(), ParseRequestError> {
+pub(super) fn validate_call_id(id: &str) -> Result<(), ParseRequestError> {
     if id.is_empty() || id.len() > MAX_TOOL_CALL_ID_BYTES || id.chars().any(char::is_control) {
         return Err(ParseRequestError::InvalidValue);
     }

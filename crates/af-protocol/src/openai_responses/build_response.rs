@@ -7,9 +7,10 @@ use super::{
     ParseRequestError,
     convert::{
         MAX_ARGUMENT_BYTES, MAX_CONTENT_BLOCKS, MAX_TEXT_BYTES, MAX_TOOL_CALLS,
-        MAX_TOTAL_ARGUMENT_BYTES, MAX_TOTAL_ARGUMENT_NODES, MAX_TOTAL_TEXT_BYTES, validate_call_id,
-        validate_model, validate_tool_name, validate_value_shape,
+        MAX_TOTAL_ARGUMENT_BYTES, MAX_TOTAL_ARGUMENT_NODES, MAX_TOTAL_TEXT_BYTES, validate_model,
+        validate_tool_name, validate_value_shape,
     },
+    input::validate_call_id,
     parse_response::{ParseResponseError, validate_response_id},
     response_raw::{ResponseRawError, validate_raw_fields},
     response_wire::ResponseStatusWire,
