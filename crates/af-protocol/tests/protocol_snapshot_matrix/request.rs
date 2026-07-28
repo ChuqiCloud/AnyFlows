@@ -22,7 +22,7 @@ fn snapshots_request_conversion_matrix() {
     }
 
     let report = rows.join("\n");
-    insta::assert_snapshot!("request_4x4", report.as_str(), @r"
+    insta::assert_snapshot!(report.as_str(), @r"
     openai_chat -> openai_chat: ok [max_completion_tokens,messages,model,stream,tool_choice]
     openai_chat -> anthropic: ok [max_tokens,messages,model]
     openai_chat -> gemini: ok [contents,generationConfig,toolConfig]

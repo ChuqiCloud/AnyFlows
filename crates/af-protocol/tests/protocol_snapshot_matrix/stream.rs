@@ -24,7 +24,7 @@ fn snapshots_stream_conversion_matrix() {
     }
 
     let report = rows.join("\n");
-    insta::assert_snapshot!("stream_4x4", report.as_str(), @r"
+    insta::assert_snapshot!(report.as_str(), @r"
     openai_chat -> openai_chat: ok [chat.completion.chunk > chat.completion.chunk > chat.completion.chunk > chat.completion.chunk > [DONE]]
     openai_chat -> anthropic: ok [message_start > content_block_start > content_block_delta > content_block_stop > message_delta > message_stop]
     openai_chat -> gemini: ok [gemini.chunk > gemini.chunk > gemini.chunk]
