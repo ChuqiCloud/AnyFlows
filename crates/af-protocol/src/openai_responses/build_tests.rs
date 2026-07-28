@@ -6,10 +6,19 @@ use serde_json::{Map, Value, json};
 
 use super::{BuildRequestError, build_request, parse_request};
 use crate::{
-    Attachment, CacheHint, CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningConfig,
-    ReasoningEffort, RequestContinuation, RequestMetadata, Sampling, StreamOptions, TokenCount,
-    ToolChoice, ToolDef,
+    Attachment, CacheHint, CanonicalRequest, ContentBlock, MediaSource, Message,
+    ProtocolCapability, ReasoningConfig, ReasoningEffort, RequestCapability, RequestContinuation,
+    RequestMetadata, Sampling, StreamOptions, TokenCount, ToolChoice, ToolDef,
 };
+
+fn assert_unsupported_capability(request: &CanonicalRequest, expected: RequestCapability) {
+    let error = build_request(request).expect_err("请求能力必须被明确拒绝");
+    let BuildRequestError::UnsupportedCapability(error) = error else {
+        panic!("必须返回结构化能力错误，实际为 {error:?}");
+    };
+    assert_eq!(error.target_protocol(), Protocol::OpenAiResponses);
+    assert_eq!(error.capability(), ProtocolCapability::Request(expected));
+}
 
 fn parsed_request(value: Value) -> CanonicalRequest {
     parse_request(&serde_json::to_vec(&value).unwrap()).unwrap()
@@ -276,10 +285,7 @@ fn serializes_unambiguous_structured_tool_output() {
         unreachable!();
     };
     *is_error = true;
-    assert_eq!(
-        build_request(&failed),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&failed, RequestCapability::ToolResultErrors);
 }
 
 #[test]
@@ -293,17 +299,11 @@ fn rejects_wrong_operation_and_unmodeled_request_features() {
 
     let mut streaming = minimal_request();
     streaming.stream = true;
-    assert_eq!(
-        build_request(&streaming),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&streaming, RequestCapability::Streaming);
 
     let mut stream_options = minimal_request();
     stream_options.stream_options = StreamOptions::new(true);
-    assert_eq!(
-        build_request(&stream_options),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&stream_options, RequestCapability::StreamUsage);
 
     let mut attachment = minimal_request();
     attachment.attachments.push(Attachment {
@@ -311,24 +311,15 @@ fn rejects_wrong_operation_and_unmodeled_request_features() {
         mime_type: None,
         filename: None,
     });
-    assert_eq!(
-        build_request(&attachment),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&attachment, RequestCapability::Attachments);
 
     let mut session = minimal_request();
     session.metadata = RequestMetadata::new(None, Some("session-1".to_owned()));
-    assert_eq!(
-        build_request(&session),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&session, RequestCapability::SessionMetadata);
 
     let mut stop = minimal_request();
     stop.sampling = Sampling::new(None, None, None, vec!["END".to_owned()]).unwrap();
-    assert_eq!(
-        build_request(&stop),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&stop, RequestCapability::StopSequences);
 
     let mut reasoning = minimal_request();
     reasoning.reasoning = Some(
@@ -339,36 +330,39 @@ fn rejects_wrong_operation_and_unmodeled_request_features() {
         )
         .unwrap(),
     );
-    assert_eq!(
-        build_request(&reasoning),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&reasoning, RequestCapability::ReasoningBudget);
 }
 
 #[test]
 fn rejects_unrepresentable_content_and_media() {
     let unsupported = [
-        ContentBlock::Audio {
-            source: MediaSource::Base64("aGk=".to_owned()),
-            mime_type: "audio/mpeg".to_owned(),
-        },
-        ContentBlock::Thinking {
-            text: "secret".to_owned(),
-            signature: None,
-        },
-        ContentBlock::CacheControl(CacheHint::Ephemeral5Minutes),
+        (
+            ContentBlock::Audio {
+                source: MediaSource::Base64("aGk=".to_owned()),
+                mime_type: "audio/mpeg".to_owned(),
+            },
+            RequestCapability::AudioBase64,
+        ),
+        (
+            ContentBlock::Thinking {
+                text: "secret".to_owned(),
+                signature: None,
+            },
+            RequestCapability::Thinking,
+        ),
+        (
+            ContentBlock::CacheControl(CacheHint::Ephemeral5Minutes),
+            RequestCapability::CacheControl(CacheHint::Ephemeral5Minutes),
+        ),
     ];
-    for block in unsupported {
+    for (block, capability) in unsupported {
         let request = CanonicalRequest::new(
             Operation::Responses,
             "gpt-test".to_owned(),
             vec![Message::new(Role::User, vec![block])],
             false,
         );
-        assert_eq!(
-            build_request(&request),
-            Err(BuildRequestError::UnsupportedFeature)
-        );
+        assert_unsupported_capability(&request, capability);
     }
 
     let missing_mime = CanonicalRequest::new(
@@ -502,10 +496,7 @@ fn revalidates_tool_call_and_output_associations() {
         )],
         false,
     );
-    assert_eq!(
-        build_request(&signed),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&signed, RequestCapability::ToolCallSignatures);
 }
 
 #[test]

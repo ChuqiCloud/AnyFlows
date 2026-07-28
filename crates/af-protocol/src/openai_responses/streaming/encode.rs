@@ -1,6 +1,6 @@
 use std::fmt;
 
-use af_domain::{Operation, Role, UpstreamError};
+use af_domain::{Operation, Protocol, Role, UpstreamError};
 use serde_json::{Map, Value};
 
 use super::{EncodeStreamError, encode_state::OutputEncodeState, wire::PendingEvent};
@@ -9,7 +9,10 @@ use crate::openai_responses::{
     parse_response::validate_response_id,
 };
 use crate::sse::MAX_SSE_EVENT_BYTES;
-use crate::{CanonicalResponse, CanonicalStreamEvent, Message, ResponseChoice, Usage};
+use crate::{
+    CanonicalResponse, CanonicalStreamEvent, Message, ResponseChoice, Usage,
+    validate_stream_event_capabilities,
+};
 
 /// 将单候选 Canonical 流编码为 OpenAI Responses 官方语义 SSE。
 ///
@@ -56,7 +59,9 @@ impl OpenAiResponsesStreamEncoder {
             self.failed = true;
             return Err(EncodeStreamError::InvalidSequence);
         }
-        let result = self.encode_inner(event);
+        let result = validate_stream_event_capabilities(Protocol::OpenAiResponses, &event)
+            .map_err(EncodeStreamError::UnsupportedCapability)
+            .and_then(|()| self.encode_inner(event));
         if result.is_err() {
             self.failed = true;
         }
@@ -387,6 +392,9 @@ const fn encoded_error(error: UpstreamError) -> (&'static str, &'static str) {
 fn map_build_error(error: BuildResponseError) -> EncodeStreamError {
     match error {
         BuildResponseError::StructureLimitExceeded => EncodeStreamError::StructureLimitExceeded,
+        BuildResponseError::UnsupportedCapability(error) => {
+            EncodeStreamError::UnsupportedCapability(error)
+        }
         BuildResponseError::UnsupportedFeature => EncodeStreamError::UnsupportedEvent,
         BuildResponseError::UnsupportedOperation
         | BuildResponseError::InvalidValue

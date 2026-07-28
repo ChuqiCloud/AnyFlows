@@ -16,7 +16,10 @@ use super::{
     response_wire::ResponseStatusWire,
 };
 use crate::bounded_json::validate_object;
-use crate::{CanonicalResponse, ContentBlock, FinishReason, ResponseChoice, Usage};
+use crate::{
+    CanonicalResponse, ContentBlock, FinishReason, ResponseChoice, UnsupportedCapability, Usage,
+    validate_response_capabilities,
+};
 
 const MAX_REASONING_SIGNATURE_BYTES: usize = 1024 * 1024;
 
@@ -28,6 +31,8 @@ pub fn build_response(response: &CanonicalResponse) -> Result<Value, BuildRespon
     if response.operation != Operation::Responses {
         return Err(BuildResponseError::UnsupportedOperation);
     }
+    validate_response_capabilities(Protocol::OpenAiResponses, response)
+        .map_err(BuildResponseError::UnsupportedCapability)?;
     validate_response_id(&response.id).map_err(map_response_validation_error)?;
     validate_model(&response.model).map_err(map_request_validation_error)?;
     let created_at = response
@@ -443,6 +448,8 @@ pub enum BuildResponseError {
     UnsupportedOperation,
     /// Canonical 字段的取值或关联关系无效。
     InvalidValue,
+    /// 目标协议缺少一项已声明的响应能力。
+    UnsupportedCapability(UnsupportedCapability),
     /// Canonical 使用了 Responses 无法无损表达的能力。
     UnsupportedFeature,
     /// Canonical 响应超过结构或序列化预算。
@@ -458,6 +465,7 @@ impl fmt::Display for BuildResponseError {
         match self {
             Self::UnsupportedOperation => formatter.write_str("响应操作不是 Responses"),
             Self::InvalidValue => formatter.write_str("Canonical 响应字段值无效"),
+            Self::UnsupportedCapability(error) => fmt::Display::fmt(error, formatter),
             Self::UnsupportedFeature => formatter.write_str("响应包含 Responses 不支持的特性"),
             Self::StructureLimitExceeded => formatter.write_str("Canonical 响应结构超过限制"),
             Self::RawProtocolMismatch => formatter.write_str("未归一化字段不得跨协议透传"),

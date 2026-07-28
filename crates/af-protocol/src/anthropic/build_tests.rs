@@ -6,9 +6,9 @@ use serde_json::{Map, Value, json};
 
 use super::{BuildRequestError, build_request, parse_request};
 use crate::{
-    Attachment, CacheHint, CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningConfig,
-    ReasoningEffort, RequestContinuation, RequestMetadata, Sampling, StreamOptions, TokenCount,
-    ToolChoice, ToolDef,
+    Attachment, CacheHint, CanonicalRequest, ContentBlock, MediaSource, Message,
+    ProtocolCapability, ReasoningConfig, ReasoningEffort, RequestCapability, RequestContinuation,
+    RequestMetadata, Sampling, StreamOptions, TokenCount, ToolChoice, ToolDef,
 };
 
 fn parsed_request(value: Value) -> CanonicalRequest {
@@ -29,6 +29,15 @@ fn minimal_request() -> CanonicalRequest {
     request.sampling =
         Sampling::new(None, None, Some(TokenCount::new(256).unwrap()), Vec::new()).unwrap();
     request
+}
+
+fn assert_unsupported_capability(request: &CanonicalRequest, expected: RequestCapability) {
+    let error = build_request(request).expect_err("请求能力必须被明确拒绝");
+    let BuildRequestError::UnsupportedCapability(error) = error else {
+        panic!("必须返回结构化能力错误，实际为 {error:?}");
+    };
+    assert_eq!(error.target_protocol(), Protocol::Anthropic);
+    assert_eq!(error.capability(), ProtocolCapability::Request(expected));
 }
 
 fn tool_use(id: &str) -> ContentBlock {
@@ -249,17 +258,11 @@ fn rejects_unmapped_top_level_capabilities() {
 
     let mut streaming = minimal_request();
     streaming.stream = true;
-    assert_eq!(
-        build_request(&streaming),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&streaming, RequestCapability::Streaming);
 
     let mut stream_options = minimal_request();
     stream_options.stream_options = StreamOptions::new(true);
-    assert_eq!(
-        build_request(&stream_options),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&stream_options, RequestCapability::StreamUsage);
 
     let mut attachments = minimal_request();
     attachments.attachments.push(Attachment {
@@ -267,23 +270,17 @@ fn rejects_unmapped_top_level_capabilities() {
         mime_type: None,
         filename: None,
     });
-    assert_eq!(
-        build_request(&attachments),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&attachments, RequestCapability::Attachments);
 
     let mut session = minimal_request();
     session.metadata = RequestMetadata::new(None, Some("session-1".to_owned()));
-    assert_eq!(
-        build_request(&session),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&session, RequestCapability::SessionMetadata);
 
     let mut continuation = minimal_request();
     continuation.continuation = RequestContinuation::new(Some("resp-1".to_owned()), None, None);
-    assert_eq!(
-        build_request(&continuation),
-        Err(BuildRequestError::UnsupportedFeature)
+    assert_unsupported_capability(
+        &continuation,
+        RequestCapability::PreviousResponseContinuation,
     );
 
     let mut strict_tool = minimal_request();
@@ -293,10 +290,7 @@ fn rejects_unmapped_top_level_capabilities() {
         input_schema: json!({"type": "object"}),
         strict: Some(true),
     });
-    assert_eq!(
-        build_request(&strict_tool),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&strict_tool, RequestCapability::StrictToolDefinitions);
 
     let mut missing_max_tokens = minimal_request();
     missing_max_tokens.sampling = Sampling::EMPTY;
@@ -316,10 +310,7 @@ fn rejects_roles_and_content_outside_the_closed_subset() {
             vec![ContentBlock::Text("developer".to_owned())],
         ),
     );
-    assert_eq!(
-        build_request(&developer),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&developer, RequestCapability::MessageRole(Role::Developer));
 
     let mut multiple_system = minimal_request();
     multiple_system.messages.insert(
@@ -341,22 +332,25 @@ fn rejects_roles_and_content_outside_the_closed_subset() {
         Err(BuildRequestError::UnsupportedFeature)
     );
 
-    for block in [
-        ContentBlock::Audio {
-            source: MediaSource::Base64("aGk=".to_owned()),
-            mime_type: "audio/mpeg".to_owned(),
-        },
-        ContentBlock::Thinking {
-            text: "secret".to_owned(),
-            signature: Some("signature".to_owned()),
-        },
+    for (block, capability) in [
+        (
+            ContentBlock::Audio {
+                source: MediaSource::Base64("aGk=".to_owned()),
+                mime_type: "audio/mpeg".to_owned(),
+            },
+            RequestCapability::AudioBase64,
+        ),
+        (
+            ContentBlock::Thinking {
+                text: "secret".to_owned(),
+                signature: Some("signature".to_owned()),
+            },
+            RequestCapability::Thinking,
+        ),
     ] {
         let mut request = minimal_request();
         request.messages[0].content = vec![block];
-        assert_eq!(
-            build_request(&request),
-            Err(BuildRequestError::UnsupportedFeature)
-        );
+        assert_unsupported_capability(&request, capability);
     }
 
     let mut tool_result_in_user = minimal_request();
@@ -411,9 +405,9 @@ fn validates_sampling_reasoning_tools_and_metadata() {
     let mut unsupported_effort = minimal_request();
     unsupported_effort.reasoning =
         Some(ReasoningConfig::new(Some(ReasoningEffort::High), None, true).unwrap());
-    assert_eq!(
-        build_request(&unsupported_effort),
-        Err(BuildRequestError::UnsupportedFeature)
+    assert_unsupported_capability(
+        &unsupported_effort,
+        RequestCapability::ReasoningEffort(ReasoningEffort::High),
     );
 
     let mut invalid_budget = minimal_request();
@@ -538,10 +532,7 @@ fn revalidates_tool_call_and_result_state() {
             signature: Some("c2ln".to_owned()),
         }],
     )];
-    assert_eq!(
-        build_request(&signed_call),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&signed_call, RequestCapability::ToolCallSignatures);
 
     let mut structured_result = minimal_request();
     structured_result.messages = vec![
@@ -556,10 +547,7 @@ fn revalidates_tool_call_and_result_state() {
             }],
         ),
     ];
-    assert_eq!(
-        build_request(&structured_result),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&structured_result, RequestCapability::StructuredToolResults);
 }
 
 #[test]
@@ -659,10 +647,7 @@ fn rejects_cross_protocol_raw_collisions_and_extensions() {
     extension.insert("top_k".to_owned(), json!(10));
     let extension =
         minimal_request().with_validated_raw_passthrough(Some((Protocol::Anthropic, extension)));
-    assert_eq!(
-        build_request(&extension),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&extension, RequestCapability::SameProtocolRaw);
 }
 
 #[test]

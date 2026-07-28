@@ -3,7 +3,7 @@ use std::{
     fmt,
 };
 
-use af_domain::Role;
+use af_domain::{Protocol, Role};
 use serde_json::{Map, Value};
 
 use super::{EncodeStreamError, MAX_SSE_EVENT_BYTES};
@@ -22,6 +22,7 @@ use crate::{
         },
         parse_response::validate_response_id,
     },
+    validate_stream_event_capabilities,
 };
 
 const MAX_SIGNATURE_ENCODED_BYTES: usize = (MAX_SIGNATURE_BYTES / 3 + 1) * 4;
@@ -67,7 +68,9 @@ impl GeminiGenerateContentStreamEncoder {
             self.failed = true;
             return Err(EncodeStreamError::InvalidSequence);
         }
-        let result = self.encode_inner(event);
+        let result = validate_stream_event_capabilities(Protocol::Gemini, &event)
+            .map_err(EncodeStreamError::UnsupportedCapability)
+            .and_then(|()| self.encode_inner(event));
         if result.is_err() {
             self.failed = true;
         }
@@ -800,6 +803,9 @@ fn map_response_error(error: ParseResponseError) -> EncodeStreamError {
 fn map_build_response_error(error: BuildResponseError) -> EncodeStreamError {
     match error {
         BuildResponseError::StructureLimitExceeded => EncodeStreamError::StructureLimitExceeded,
+        BuildResponseError::UnsupportedCapability(error) => {
+            EncodeStreamError::UnsupportedCapability(error)
+        }
         BuildResponseError::UnsupportedFeature | BuildResponseError::RawProtocolMismatch => {
             EncodeStreamError::UnsupportedEvent
         }

@@ -21,8 +21,9 @@ use super::{
     },
 };
 use crate::{
-    CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningEffort, ToolChoice, ToolDef,
-    bounded_json::validate_object,
+    CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningEffort, RequestCapability,
+    ToolChoice, ToolDef, UnsupportedCapability, bounded_json::validate_object,
+    validate_request_capabilities,
 };
 
 const MODELED_FIELDS: &[&str] = &[
@@ -42,6 +43,8 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
     if request.operation != Operation::Chat {
         return Err(BuildRequestError::UnsupportedOperation);
     }
+    validate_request_capabilities(Protocol::Gemini, request)
+        .map_err(BuildRequestError::UnsupportedCapability)?;
     validate_model(&request.model).map_err(map_request_validation_error)?;
     if request.stream
         || request.stream_options.include_usage()
@@ -283,7 +286,9 @@ fn reject_raw(
     {
         return Err(BuildRequestError::FieldConflict);
     }
-    Err(BuildRequestError::UnsupportedFeature)
+    Err(BuildRequestError::UnsupportedCapability(
+        UnsupportedCapability::request(Protocol::Gemini, RequestCapability::SameProtocolRaw),
+    ))
 }
 
 fn build_contents(messages: &[Message]) -> Result<(Option<Value>, Vec<Value>), BuildRequestError> {
@@ -806,6 +811,8 @@ pub enum BuildRequestError {
     InvalidValue,
     /// Canonical 请求超过 Gemini 协议结构预算。
     StructureLimitExceeded,
+    /// 目标协议缺少一项已声明的请求能力。
+    UnsupportedCapability(UnsupportedCapability),
     /// Canonical 请求使用了 Gemini `generateContent` 无法无损表达的特性。
     UnsupportedFeature,
     /// raw 字段来源协议与 Gemini 不一致。
@@ -820,6 +827,7 @@ impl fmt::Display for BuildRequestError {
             Self::UnsupportedOperation => formatter.write_str("请求操作不是 Chat"),
             Self::InvalidValue => formatter.write_str("Canonical 请求字段值无效"),
             Self::StructureLimitExceeded => formatter.write_str("Canonical 请求结构超过限制"),
+            Self::UnsupportedCapability(error) => fmt::Display::fmt(error, formatter),
             Self::UnsupportedFeature => formatter.write_str("Canonical 请求包含当前不支持的特性"),
             Self::RawProtocolMismatch => formatter.write_str("未归一化字段不得跨协议透传"),
             Self::FieldConflict => formatter.write_str("未归一化字段与 Canonical 字段冲突"),

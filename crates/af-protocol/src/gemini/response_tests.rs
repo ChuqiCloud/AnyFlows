@@ -8,9 +8,19 @@ use super::{
     BuildResponseError, MAX_BODY_BYTES, ParseResponseError, build_response, parse_response,
 };
 use crate::{
-    CanonicalResponse, ContentBlock, FinishReason, MediaSource, Message, ResponseChoice,
-    TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
+    CanonicalResponse, ContentBlock, FinishReason, MediaSource, Message, ProtocolCapability,
+    ResponseCapability, ResponseChoice, TokenCount, Usage, UsageDetails, UsageSemantics,
+    UsageSource,
 };
+
+fn assert_unsupported_capability(response: &CanonicalResponse, expected: ResponseCapability) {
+    let error = build_response(response).expect_err("响应能力必须被明确拒绝");
+    let BuildResponseError::UnsupportedCapability(error) = error else {
+        panic!("必须返回结构化能力错误，实际为 {error:?}");
+    };
+    assert_eq!(error.target_protocol(), Protocol::Gemini);
+    assert_eq!(error.capability(), ProtocolCapability::Response(expected));
+}
 
 fn parse_json(value: Value) -> Result<CanonicalResponse, ParseResponseError> {
     parse_response(&serde_json::to_vec(&value).unwrap())
@@ -563,10 +573,7 @@ fn build_response_revalidates_choices_media_usage_and_raw() {
         )],
         None,
     );
-    assert_eq!(
-        build_response(&remote_media),
-        Err(BuildResponseError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&remote_media, ResponseCapability::ImageUrl);
 
     let cache_creation = Usage::new(
         count(10),
@@ -591,9 +598,9 @@ fn build_response_revalidates_choices_media_usage_and_raw() {
         )],
         Some(cache_creation),
     );
-    assert_eq!(
-        build_response(&unsupported_usage),
-        Err(BuildResponseError::UnsupportedFeature)
+    assert_unsupported_capability(
+        &unsupported_usage,
+        ResponseCapability::UsageCacheCreation(crate::CacheHint::Ephemeral5Minutes),
     );
 
     let mut fields = Map::new();

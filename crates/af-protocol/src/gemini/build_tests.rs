@@ -6,9 +6,9 @@ use serde_json::{Map, Value, json};
 
 use super::{BuildRequestError, build_request, parse_request};
 use crate::{
-    Attachment, CanonicalRequest, ContentBlock, MediaSource, Message, ReasoningConfig,
-    ReasoningEffort, RequestContinuation, RequestMetadata, Sampling, StreamOptions, TokenCount,
-    ToolChoice, ToolDef,
+    Attachment, CanonicalRequest, ContentBlock, MediaSource, Message, ProtocolCapability,
+    ReasoningConfig, ReasoningEffort, RequestCapability, RequestContinuation, RequestMetadata,
+    Sampling, StreamOptions, TokenCount, ToolChoice, ToolDef,
 };
 
 fn parsed_request(value: Value) -> CanonicalRequest {
@@ -22,6 +22,15 @@ fn minimal_request() -> CanonicalRequest {
             "parts": [{"text": "hello"}]
         }]
     }))
+}
+
+fn assert_unsupported_capability(request: &CanonicalRequest, expected: RequestCapability) {
+    let error = build_request(request).expect_err("请求能力必须被明确拒绝");
+    let BuildRequestError::UnsupportedCapability(error) = error else {
+        panic!("必须返回结构化能力错误，实际为 {error:?}");
+    };
+    assert_eq!(error.target_protocol(), Protocol::Gemini);
+    assert_eq!(error.capability(), ProtocolCapability::Request(expected));
 }
 
 fn tool_use(id: &str, signature: Option<String>) -> ContentBlock {
@@ -287,17 +296,11 @@ fn rejects_unmapped_top_level_capabilities_and_invalid_parameters() {
 
     let mut streaming = minimal_request();
     streaming.stream = true;
-    assert_eq!(
-        build_request(&streaming),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&streaming, RequestCapability::Streaming);
 
     let mut stream_options = minimal_request();
     stream_options.stream_options = StreamOptions::new(true);
-    assert_eq!(
-        build_request(&stream_options),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&stream_options, RequestCapability::StreamUsage);
 
     let mut attachment = minimal_request();
     attachment.attachments.push(Attachment {
@@ -305,23 +308,17 @@ fn rejects_unmapped_top_level_capabilities_and_invalid_parameters() {
         mime_type: Some("image/png".to_owned()),
         filename: None,
     });
-    assert_eq!(
-        build_request(&attachment),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&attachment, RequestCapability::Attachments);
 
     let mut metadata = minimal_request();
     metadata.metadata = RequestMetadata::new(Some("opaque-user".to_owned()), None);
-    assert_eq!(
-        build_request(&metadata),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&metadata, RequestCapability::UserMetadata);
 
     let mut continuation = minimal_request();
     continuation.continuation = RequestContinuation::new(Some("resp-1".to_owned()), None, None);
-    assert_eq!(
-        build_request(&continuation),
-        Err(BuildRequestError::UnsupportedFeature)
+    assert_unsupported_capability(
+        &continuation,
+        RequestCapability::PreviousResponseContinuation,
     );
 
     let mut strict_tool = minimal_request();
@@ -331,10 +328,7 @@ fn rejects_unmapped_top_level_capabilities_and_invalid_parameters() {
         input_schema: json!({"type": "object"}),
         strict: Some(true),
     });
-    assert_eq!(
-        build_request(&strict_tool),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&strict_tool, RequestCapability::StrictToolDefinitions);
 
     let mut invalid_model = minimal_request();
     invalid_model.model = "models/gemini-test".to_owned();
@@ -360,9 +354,9 @@ fn rejects_unmapped_top_level_capabilities_and_invalid_parameters() {
     let mut unsupported_effort = minimal_request();
     unsupported_effort.reasoning =
         Some(ReasoningConfig::new(Some(ReasoningEffort::ExtraHigh), None, false).unwrap());
-    assert_eq!(
-        build_request(&unsupported_effort),
-        Err(BuildRequestError::UnsupportedFeature)
+    assert_unsupported_capability(
+        &unsupported_effort,
+        RequestCapability::ReasoningEffort(ReasoningEffort::ExtraHigh),
     );
 
     let mut conflicting_reasoning = minimal_request();
@@ -522,10 +516,7 @@ fn validates_media_signatures_and_closed_roles() {
         source: MediaSource::Url("https://example.com/image.png".to_owned()),
         mime_type: None,
     }];
-    assert_eq!(
-        build_request(&remote_media),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&remote_media, RequestCapability::ImageUrl);
 
     let mut mismatched_media = minimal_request();
     mismatched_media.messages[0].content = vec![ContentBlock::Image {
@@ -545,10 +536,7 @@ fn validates_media_signatures_and_closed_roles() {
             vec![ContentBlock::Text("policy".to_owned())],
         ),
     );
-    assert_eq!(
-        build_request(&developer),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&developer, RequestCapability::MessageRole(Role::Developer));
 }
 
 #[test]
@@ -575,10 +563,7 @@ fn rejects_cross_protocol_raw_collisions_and_extensions() {
     extension.insert("seed".to_owned(), json!(7));
     let extension =
         minimal_request().with_validated_raw_passthrough(Some((Protocol::Gemini, extension)));
-    assert_eq!(
-        build_request(&extension),
-        Err(BuildRequestError::UnsupportedFeature)
-    );
+    assert_unsupported_capability(&extension, RequestCapability::SameProtocolRaw);
 }
 
 #[test]
