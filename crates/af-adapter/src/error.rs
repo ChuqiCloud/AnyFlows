@@ -85,6 +85,12 @@ pub enum AdaptorError {
     /// Google Cloud 区域不符合 Vertex 端点与资源路径边界。
     #[error("Google Cloud 区域无效")]
     InvalidGoogleLocation,
+    /// Custom 端点模板不符合相对路径与容量边界。
+    #[error("Custom 端点模板无效")]
+    InvalidCustomEndpoint,
+    /// Custom 认证方案或凭据模板不符合安全边界。
+    #[error("Custom 认证配置无效")]
+    InvalidCustomAuthentication,
     /// 凭据为空或超出内存边界。
     #[error("凭据内容无效")]
     InvalidCredential,
@@ -94,6 +100,9 @@ pub enum AdaptorError {
     /// 当前适配器不能处理该操作。
     #[error("适配器不支持操作 {operation}")]
     UnsupportedOperation { operation: Operation },
+    /// 当前适配器没有为所需响应模式配置安全端点。
+    #[error("适配器不支持当前响应模式")]
+    UnsupportedResponseMode,
     /// 上游请求目标不符合 HTTP 客户端边界。
     #[error("上游请求目标无效")]
     InvalidRequestTarget,

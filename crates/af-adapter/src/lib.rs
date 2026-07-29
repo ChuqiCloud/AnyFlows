@@ -7,6 +7,7 @@ mod anthropic;
 mod bedrock;
 mod context;
 mod credential;
+mod custom;
 mod error;
 mod factory;
 mod gemini;
@@ -23,10 +24,16 @@ pub use credential::{
     MAX_AWS_SESSION_TOKEN_BYTES, MAX_CREDENTIAL_SECRET_BYTES, MAX_GOOGLE_PRIVATE_KEY_BYTES,
     MAX_GOOGLE_PRIVATE_KEY_ID_BYTES, MAX_GOOGLE_SERVICE_ACCOUNT_EMAIL_BYTES,
 };
+pub use custom::{
+    CUSTOM_CREDENTIAL_PLACEHOLDER, CUSTOM_MODEL_PLACEHOLDER, CustomAdaptor, CustomAuthentication,
+    CustomEndpointTemplate, CustomHeaderAuthentication, CustomStreamEndpoint,
+    MAX_CUSTOM_AUTH_TEMPLATE_BYTES, MAX_CUSTOM_ENDPOINT_PATH_SEGMENTS,
+    MAX_CUSTOM_ENDPOINT_QUERY_PAIRS, MAX_CUSTOM_ENDPOINT_TEMPLATE_BYTES,
+};
 pub use error::{AdaptorError, AdaptorResult, AdaptorTransportError};
 pub use factory::{
-    AdaptorSettings, AnthropicAdaptorSettings, BedrockAdaptorSettings, GeminiAdaptorSettings,
-    OpenAiAdaptorSettings, VertexAdaptorSettings, get_adaptor,
+    AdaptorSettings, AnthropicAdaptorSettings, BedrockAdaptorSettings, CustomAdaptorSettings,
+    GeminiAdaptorSettings, OpenAiAdaptorSettings, VertexAdaptorSettings, get_adaptor,
 };
 pub use gemini::GeminiAdaptor;
 pub use openai::OpenAiAdaptor;
