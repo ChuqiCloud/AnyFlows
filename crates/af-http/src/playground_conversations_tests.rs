@@ -18,8 +18,6 @@ use tower::ServiceExt;
 
 use crate::playground_conversations::build_playground_conversation_router;
 
-const CONVERSATION_ID: &str = "11111111111111111111111111111111";
-
 struct AcceptSession;
 
 impl SessionAuthenticator for AcceptSession {
