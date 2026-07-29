@@ -19,7 +19,10 @@ export type AdminChannel = {
         [key: string]: string;
     };
     param_override: {
-        [key: string]: unknown;
+        temperature?: number;
+        top_p?: number;
+        max_output_tokens?: number;
+        stop_sequences?: Array<string>;
     };
     balance: number | null;
     used_quota: number;
@@ -42,7 +45,10 @@ export type AdminChannelCreateRequest = {
         [key: string]: string;
     };
     param_override: {
-        [key: string]: unknown;
+        temperature?: number;
+        top_p?: number;
+        max_output_tokens?: number;
+        stop_sequences?: Array<string>;
     };
     tag: string | null;
 };
@@ -72,7 +78,10 @@ export type AdminChannelUpdateRequest = {
         [key: string]: string;
     };
     param_override: {
-        [key: string]: unknown;
+        temperature?: number;
+        top_p?: number;
+        max_output_tokens?: number;
+        stop_sequences?: Array<string>;
     };
     tag: string | null;
 };
@@ -368,7 +377,10 @@ export type AdminChannelCreateRequestWritable = {
         [key: string]: string;
     };
     param_override: {
-        [key: string]: unknown;
+        temperature?: number;
+        top_p?: number;
+        max_output_tokens?: number;
+        stop_sequences?: Array<string>;
     };
     header_override: {
         [key: string]: string;
@@ -393,7 +405,10 @@ export type AdminChannelUpdateRequestWritable = {
         [key: string]: string;
     };
     param_override: {
-        [key: string]: unknown;
+        temperature?: number;
+        top_p?: number;
+        max_output_tokens?: number;
+        stop_sequences?: Array<string>;
     };
     header_override?: {
         [key: string]: string;

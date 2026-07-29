@@ -199,6 +199,14 @@ mod tests {
             update["properties"]["header_override"]["type"],
             serde_json::json!(["object", "null"])
         );
+        let parameters = &update["properties"]["param_override"];
+        assert_eq!(parameters["additionalProperties"], false);
+        assert_eq!(parameters["properties"]["temperature"]["maximum"], 2.0);
+        assert_eq!(
+            parameters["properties"]["max_output_tokens"]["maximum"],
+            1_000_000
+        );
+        assert_eq!(parameters["properties"]["stop_sequences"]["maxItems"], 4);
         assert!(
             !update["required"]
                 .as_array()

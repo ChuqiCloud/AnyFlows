@@ -18,7 +18,8 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     AdminChannelRecord, AdminChannelRepository, AdminChannelRepositoryError, AdminCredentialRecord,
-    EncryptedCredentialEnvelope, MAX_ADMIN_CHANNEL_JSON_BYTES,
+    ChannelModelMappings, ChannelParameterOverrides, EncryptedCredentialEnvelope,
+    MAX_ADMIN_CHANNEL_JSON_BYTES,
     ability_write::{
         AbilityWriteError, ChannelAbilityMetadata, ValidatedChannelRouting,
         synchronize_channel_routing,
@@ -28,6 +29,7 @@ use crate::{
         ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, abilities, channel_groups,
         channel_models, channels, credentials,
     },
+    validate_channel_header_overrides,
 };
 
 /// 单次凭据父子图校验允许读取的最大有效记录数。
@@ -842,9 +844,15 @@ fn validate_channel_fields(
         return Err(AdminChannelWriteRepositoryError::InvalidInput);
     }
     validate_json_object(&record.model_mapping, true)?;
+    ChannelModelMappings::parse(&record.model_mapping)
+        .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
     validate_json_object(&record.param_override, false)?;
+    ChannelParameterOverrides::parse(&record.param_override)
+        .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
     if let Some(header_override) = &record.header_override {
         validate_json_object(header_override, false)?;
+        validate_channel_header_overrides(header_override)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
     }
     if let Some(settings) = &record.settings {
         validate_json_object(settings, false)?;

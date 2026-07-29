@@ -149,8 +149,8 @@
       "groupsLoadFailed": "Groups could not be loaded",
       "groupsHint": "Select existing groups. Models and groups must both be empty or both be set.",
       "mappingHint": "Map the client model name on the left to the upstream model name on the right.",
-      "parametersHint": "Choose a string, number, boolean, null, or JSON value for each parameter.",
-      "headersHint": "Authentication, Cookie, Host, and connection-level headers cannot be overridden.",
+      "parametersHint": "Supports temperature, Top P, a maximum output token cap, and up to four stop sequences.",
+      "headersHint": "Authentication, Cookie, Host, Content-Type, Accept, request ID, and connection-level headers cannot be overridden.",
       "settingsHint": "Reserved for adapter-specific capabilities. Most channels should keep an empty object.",
       "submitError": "The channel could not be saved. Check the fields and try again."
     },
@@ -178,7 +178,7 @@
       "duplicateKey": "Names must be unique.",
       "entries": "An entry is empty, too long, or exceeds the item limit.",
       "header": "A header name or value is invalid, or the name cannot be overridden.",
-      "parameter": "A parameter name, type, or value is invalid.",
+      "parameter": "A parameter value is outside its allowed range, or a parameter is duplicated.",
       "schedule": "Priority must be an integer and weight must be a non-negative integer.",
       "url": "Enter an HTTP(S) URL without credentials, a query string, or a fragment.",
       "routing": "Models and groups must both be set or both be empty, with no duplicates or capacity overflow."
@@ -199,17 +199,29 @@
     },
     "parameters": {
       "name": "Parameter name",
-      "type": "Value type",
       "value": "Parameter value",
+      "valueFor": "Value for {{name}}",
       "add": "Add parameter",
       "remove": "Remove parameter {{name}}",
       "empty": "No parameter overrides.",
-      "types": {
-        "string": "String",
-        "number": "Number",
-        "boolean": "Boolean",
-        "null": "Null",
-        "json": "JSON"
+      "addStopSequence": "Add stop sequence",
+      "removeStopSequence": "Remove stop sequence {{index}}",
+      "stopSequence": "Stop sequence {{index}}",
+      "names": {
+        "temperature": "Temperature (temperature)",
+        "top_p": "Top P (top_p)",
+        "max_output_tokens": "Maximum output tokens (max_output_tokens)",
+        "stop_sequences": "Stop sequences (stop_sequences)"
+      },
+      "placeholders": {
+        "temperature": "For example, 0.7",
+        "top_p": "For example, 0.9",
+        "max_output_tokens": "For example, 4096"
+      },
+      "ranges": {
+        "temperature": "0 - 2",
+        "top_p": "0 - 1",
+        "max_output_tokens": "1 - 1,000,000"
       }
     },
     "sensitiveMode": {

@@ -39,8 +39,8 @@ pub(crate) struct AdminChannelResponse {
     group_ids: Vec<i64>,
     #[schema(schema_with = crate::openapi::schema::model_mapping_schema)]
     model_mapping: serde_json::Value,
-    /// 不包含认证信息的请求参数覆盖对象。
-    #[schema(schema_with = crate::openapi::schema::free_form_object_schema)]
+    /// 不包含认证信息的闭合 Canonical 采样参数覆盖。
+    #[schema(schema_with = crate::openapi::schema::channel_parameter_overrides_schema)]
     param_override: serde_json::Value,
     #[schema(required = true)]
     balance: Option<i64>,

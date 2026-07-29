@@ -43,7 +43,7 @@ pub(crate) fn optional_sensitive_free_form_object_schema() -> RefOr<Schema> {
 /// 生成只允许写入的字符串映射 schema。
 pub(crate) fn sensitive_string_map_schema() -> RefOr<Schema> {
     string_map_schema(
-        "敏感 Header 覆盖输入；拒绝认证、Host 和 hop-by-hop 头，永不随响应返回。",
+        "敏感 Header 覆盖输入；拒绝认证、Content-Type、Accept、受控请求 ID、Host 和 hop-by-hop 头，永不随响应返回。",
         true,
     )
 }
@@ -56,7 +56,7 @@ pub(crate) fn optional_sensitive_string_map_schema() -> RefOr<Schema> {
             ObjectBuilder::new().schema_type(Type::String).build(),
         )))
         .description(Some(
-            "敏感 Header 覆盖输入；省略或 null 时保留已有值，显式对象时替换。",
+            "敏感 Header 覆盖输入；拒绝认证和协议托管头，省略或 null 时保留已有值，显式对象时替换。",
         ))
         .write_only(Some(true))
         .build()
@@ -107,6 +107,52 @@ pub(crate) fn model_mapping_schema() -> RefOr<Schema> {
 /// 生成渠道写入正文中的模型映射 schema。
 pub(crate) fn model_mapping_write_schema() -> RefOr<Schema> {
     bounded_string_map_schema("Canonical 请求模型到上游模型的映射，序列化后最多 64 KiB。")
+}
+
+/// 生成渠道读写共用的闭合 Canonical 参数覆盖 schema。
+pub(crate) fn channel_parameter_overrides_schema() -> RefOr<Schema> {
+    ObjectBuilder::new()
+        .schema_type(Type::Object)
+        .property(
+            "temperature",
+            ObjectBuilder::new()
+                .schema_type(Type::Number)
+                .minimum(Some(0.0))
+                .maximum(Some(2.0)),
+        )
+        .property(
+            "top_p",
+            ObjectBuilder::new()
+                .schema_type(Type::Number)
+                .minimum(Some(0.0))
+                .maximum(Some(1.0)),
+        )
+        .property(
+            "max_output_tokens",
+            ObjectBuilder::new()
+                .schema_type(Type::Integer)
+                .format(Some(SchemaFormat::KnownFormat(KnownFormat::Int64)))
+                .minimum(Some(1))
+                .maximum(Some(1_000_000)),
+        )
+        .property(
+            "stop_sequences",
+            ArrayBuilder::new()
+                .items(
+                    ObjectBuilder::new()
+                        .schema_type(Type::String)
+                        .min_length(Some(1))
+                        .max_length(Some(1_024)),
+                )
+                .min_items(Some(1))
+                .max_items(Some(4)),
+        )
+        .additional_properties(Some(AdditionalProperties::FreeForm(false)))
+        .description(Some(
+            "闭合的 Canonical 采样覆盖；max_output_tokens 仅作为上限，不会提高客户端值。",
+        ))
+        .build()
+        .into()
 }
 
 /// 生成令牌响应中的模型白名单 schema。

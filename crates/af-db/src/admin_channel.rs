@@ -11,7 +11,7 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    DatabasePool,
+    ChannelModelMappings, ChannelParameterOverrides, DatabasePool,
     ability_write::{AbilityWriteError, ChannelRoutingSnapshot, load_channel_routing_snapshots},
     entity::{ChannelBaseUrl, channels},
 };
@@ -469,8 +469,10 @@ impl AdminChannelRow {
             .transpose()?;
         let model_mapping =
             validated_json_object(self.model_mapping, self.model_mapping_oversized, true)?;
+        ChannelModelMappings::parse(&model_mapping).map_err(|_| internal_invariant())?;
         let param_override =
             validated_json_object(self.param_override, self.param_override_oversized, false)?;
+        ChannelParameterOverrides::parse(&param_override).map_err(|_| internal_invariant())?;
         let created_at = self.created_at.unix_timestamp();
         let updated_at = self.updated_at.unix_timestamp();
         if !valid_text(&self.name, 128)

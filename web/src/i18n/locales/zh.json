@@ -149,8 +149,8 @@
       "groupsLoadFailed": "分组加载失败",
       "groupsHint": "从已有分组中选择；模型与分组必须同时为空或同时设置。",
       "mappingHint": "左侧是客户端模型名，右侧是上游实际模型名。",
-      "parametersHint": "逐项选择字符串、数字、布尔值、空值或 JSON 类型。",
-      "headersHint": "认证、Cookie、Host 和连接级 Header 不允许覆盖。",
+      "parametersHint": "仅支持温度、Top P、最大输出 Token 上限和最多 4 条停止序列。",
+      "headersHint": "认证、Cookie、Host、Content-Type、Accept、请求 ID 和连接级 Header 不允许覆盖。",
       "settingsHint": "仅用于适配器专有能力，普通渠道通常保持空对象。",
       "submitError": "保存失败，请检查字段或稍后重试。"
     },
@@ -178,7 +178,7 @@
       "duplicateKey": "名称不能重复。",
       "entries": "条目为空、过长或超过数量限制。",
       "header": "Header 名称或值无效，或包含禁止覆盖的名称。",
-      "parameter": "参数名称、类型或值无效。",
+      "parameter": "参数值超出允许范围，或存在重复参数。",
       "schedule": "优先级必须为整数，权重必须为非负整数。",
       "url": "请输入不含账号、查询串和片段的 HTTP(S) 地址。",
       "routing": "模型和分组必须同时设置或同时留空，且不能重复或超过容量限制。"
@@ -199,17 +199,29 @@
     },
     "parameters": {
       "name": "参数名称",
-      "type": "值类型",
       "value": "参数值",
+      "valueFor": "{{name}} 的值",
       "add": "添加参数",
       "remove": "删除参数 {{name}}",
       "empty": "未配置参数覆盖。",
-      "types": {
-        "string": "文本",
-        "number": "数字",
-        "boolean": "布尔值",
-        "null": "空值",
-        "json": "JSON"
+      "addStopSequence": "添加停止序列",
+      "removeStopSequence": "删除第 {{index}} 条停止序列",
+      "stopSequence": "停止序列 {{index}}",
+      "names": {
+        "temperature": "温度 (temperature)",
+        "top_p": "Top P (top_p)",
+        "max_output_tokens": "最大输出 Token (max_output_tokens)",
+        "stop_sequences": "停止序列 (stop_sequences)"
+      },
+      "placeholders": {
+        "temperature": "例如 0.7",
+        "top_p": "例如 0.9",
+        "max_output_tokens": "例如 4096"
+      },
+      "ranges": {
+        "temperature": "0 - 2",
+        "top_p": "0 - 1",
+        "max_output_tokens": "1 - 1,000,000"
       }
     },
     "sensitiveMode": {

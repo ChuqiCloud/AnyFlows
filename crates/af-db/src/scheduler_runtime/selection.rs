@@ -78,12 +78,14 @@ fn try_runtime_target(
     if records.is_empty() {
         return Ok(None);
     }
-    SchedulerRuntimeTargetRecord::new_pool(
+    SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
         channel_id,
         channel_type,
         protocol,
         channel.base_url().map(str::to_owned),
         records,
+        channel.model_mappings().clone(),
+        channel.parameter_overrides().clone(),
         channel.headers().to_vec(),
     )
     .map(Some)

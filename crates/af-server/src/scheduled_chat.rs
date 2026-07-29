@@ -8,7 +8,10 @@ use af_adapter::{
 use af_db::CredentialStateRepository;
 use af_domain::{AfError, ChannelType, CredentialKind, GatewayPrincipal, GroupId, Protocol};
 use af_protocol::CanonicalRequestEnvelope;
-use af_relay::{RelayCandidate, RelayStateMachine, relay_openai_chat_with_report};
+use af_relay::{
+    OpenAiChatRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayStateMachine,
+    relay_openai_chat_with_report,
+};
 use af_scheduler::{IndexedRoutePlan, IndexedWeightedScheduler, IndexedWeightedSchedulerError};
 
 use crate::{
@@ -73,9 +76,11 @@ impl ScheduledChatService {
             {
                 return Err(AfError::Internal);
             }
+            let upstream_model = target.mapped_model(&model).unwrap_or(&model).to_owned();
+            let candidate_request = candidate_request(target, &request, &model, &upstream_model)?;
             let adaptor = get_adaptor(
                 target.channel_type(),
-                AdaptorSettings::OpenAi(OpenAiAdaptorSettings::new(vec![model.clone()])),
+                AdaptorSettings::OpenAi(OpenAiAdaptorSettings::new(vec![upstream_model])),
             )
             .map_err(|_| AfError::Internal)?;
             if adaptor.default_protocol() != target.protocol() {
@@ -108,11 +113,14 @@ impl ScheduledChatService {
                     )
                     .map_err(|_| AfError::Internal)?;
                 let credential = adaptor_credential(&decrypted)?;
-                relay_candidates.push(
+                let mut relay_candidate =
                     RelayCandidate::new(adaptor.clone(), context.clone(), credential)
                         .with_header_overrides(headers.clone())
-                        .with_channel_group(target.channel_id()),
-                );
+                        .with_channel_group(target.channel_id());
+                if let Some(candidate_request) = &candidate_request {
+                    relay_candidate = relay_candidate.with_request(candidate_request.clone());
+                }
+                relay_candidates.push(relay_candidate);
                 attempt_targets.push(CredentialAttemptTarget::new(
                     target.channel_id(),
                     runtime_credential.credential_id(),
@@ -221,6 +229,30 @@ fn header_overrides(target: &af_db::SchedulerRuntimeTargetRecord) -> Result<Head
     Ok(headers)
 }
 
+fn candidate_request(
+    target: &af_db::SchedulerRuntimeTargetRecord,
+    request: &CanonicalRequestEnvelope,
+    requested_model: &str,
+    upstream_model: &str,
+) -> Result<Option<RelayCandidateRequest>, AfError> {
+    let parameters = target.parameter_overrides();
+    if upstream_model == requested_model && parameters.is_empty() {
+        return Ok(None);
+    }
+    let overrides = OpenAiChatRequestOverrides::new(
+        upstream_model,
+        parameters.temperature(),
+        parameters.top_p(),
+        parameters.max_output_tokens(),
+        parameters.stop_sequences().map(<[String]>::to_vec),
+    )
+    .map_err(|_| AfError::Internal)?;
+    overrides
+        .prepare(request.clone())
+        .map(Some)
+        .map_err(|_| AfError::Internal)
+}
+
 fn map_scheduler_error(error: IndexedWeightedSchedulerError) -> AfError {
     match error {
         IndexedWeightedSchedulerError::InvalidModel => AfError::InvalidRequest,
@@ -236,14 +268,16 @@ mod tests {
     use std::sync::Arc;
 
     use af_account::credential_plaintext_aad;
+    use af_adapter::Bytes;
     use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
     use af_db::{
-        CredentialStateRepository, DatabaseOptions, EncryptedCredentialEnvelope, MigrationOptions,
+        ChannelModelMappings, ChannelParameterOverrides, CredentialStateRepository,
+        DatabaseOptions, EncryptedCredentialEnvelope, MigrationOptions,
         SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord, connect_and_migrate,
     };
     use af_domain::{ChannelId, Operation, UpstreamError};
     use af_httpclient::{HttpClientConfig, HttpClientPool};
-    use af_protocol::CanonicalRequest;
+    use af_protocol::{CanonicalRequest, openai_chat};
     use af_scheduler::{
         ChannelIndexSource, ChannelIndexSourceFuture, ChannelIndexSourceRecord,
         InMemoryChannelIndex,
@@ -331,6 +365,66 @@ mod tests {
                 .plan(&principal, request(), "request-decrypt")
                 .err(),
             Some(AfError::Internal)
+        );
+    }
+
+    #[test]
+    fn runtime_policy_builds_candidate_request_and_empty_policy_preserves_passthrough() {
+        let request = openai_chat::parse_request_envelope(Bytes::from_static(
+            br#"{"model":"gpt-scheduled","messages":[{"role":"user","content":"hello"}]}"#,
+        ))
+        .unwrap();
+        let credential = SchedulerRuntimeCredentialRecord::new(
+            CREDENTIAL_ID,
+            CredentialKind::ApiKey,
+            valid_envelope(),
+            false,
+        )
+        .unwrap();
+        let configured = SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
+            ChannelId::new(CHANNEL_ID).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+            Some("https://scheduled-chat.example".to_owned()),
+            vec![credential.clone()],
+            ChannelModelMappings::parse(&json!({
+                "gpt-scheduled": "private-upstream-model"
+            }))
+            .unwrap(),
+            ChannelParameterOverrides::parse(&json!({
+                "temperature": 0.25,
+                "stop_sequences": ["private-stop-canary"]
+            }))
+            .unwrap(),
+            Vec::new(),
+        )
+        .unwrap();
+
+        let candidate = candidate_request(
+            &configured,
+            &request,
+            "gpt-scheduled",
+            "private-upstream-model",
+        )
+        .unwrap()
+        .unwrap();
+        let rendered = format!("{configured:?}\n{candidate:?}");
+        assert!(!rendered.contains("private-upstream-model"));
+        assert!(!rendered.contains("private-stop-canary"));
+
+        let passthrough = SchedulerRuntimeTargetRecord::new(
+            ChannelId::new(CHANNEL_ID).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+            Some("https://scheduled-chat.example".to_owned()),
+            credential,
+            vec![("x-provider-feature".to_owned(), "enabled".to_owned())],
+        )
+        .unwrap();
+        assert!(
+            candidate_request(&passthrough, &request, "gpt-scheduled", "gpt-scheduled")
+                .unwrap()
+                .is_none()
         );
     }
 

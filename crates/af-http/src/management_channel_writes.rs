@@ -54,10 +54,10 @@ pub(crate) struct AdminChannelCreateRequest {
     group_ids: Vec<i64>,
     #[schema(schema_with = crate::openapi::schema::model_mapping_write_schema)]
     model_mapping: serde_json::Value,
-    /// 请求参数覆盖对象，序列化后最多 64 KiB。
-    #[schema(schema_with = crate::openapi::schema::free_form_object_schema)]
+    /// 闭合的 Canonical 采样参数覆盖。
+    #[schema(schema_with = crate::openapi::schema::channel_parameter_overrides_schema)]
     param_override: serde_json::Value,
-    /// 敏感 Header 覆盖输入；拒绝认证、Host 和 hop-by-hop 头，永不随响应返回。
+    /// 敏感 Header 覆盖输入；拒绝认证、协议托管和 hop-by-hop 头，永不随响应返回。
     #[schema(schema_with = crate::openapi::schema::sensitive_string_map_schema)]
     header_override: serde_json::Value,
     /// 敏感适配器设置输入，序列化后最多 64 KiB，永不随响应返回。
@@ -99,7 +99,7 @@ pub(crate) struct AdminChannelUpdateRequest {
     group_ids: Vec<i64>,
     #[schema(schema_with = crate::openapi::schema::model_mapping_write_schema)]
     model_mapping: serde_json::Value,
-    #[schema(schema_with = crate::openapi::schema::free_form_object_schema)]
+    #[schema(schema_with = crate::openapi::schema::channel_parameter_overrides_schema)]
     param_override: serde_json::Value,
     /// 省略或 null 表示保留，显式对象（包括空对象）表示替换。
     #[schema(schema_with = crate::openapi::schema::optional_sensitive_string_map_schema)]

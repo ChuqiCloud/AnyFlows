@@ -21,6 +21,7 @@ mod wire;
 
 pub use build::{BuildRequestError, build_request};
 pub use build_response::{BuildResponseError, build_response};
+pub use convert::{MAX_STOP_BYTES, MAX_STOP_SEQUENCES};
 pub use error::encode_error;
 pub use error_response::{OpenAiUpstreamErrorKind, classify_error_response};
 pub use parse_response::{ParseResponseError, parse_response};

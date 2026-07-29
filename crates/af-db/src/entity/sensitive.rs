@@ -43,7 +43,9 @@ pub(crate) const MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES: i64 =
     (MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES * 2 + MAX_TOKEN_MODEL_ALLOWLIST_COUNT * 4 + 2 * 1024)
         as i64;
 const FORBIDDEN_OVERRIDE_HEADERS: &[&str] = &[
+    "accept",
     "authorization",
+    "content-type",
     "proxy-authorization",
     "x-api-key",
     "api-key",
@@ -62,6 +64,7 @@ const FORBIDDEN_OVERRIDE_HEADERS: &[&str] = &[
     "upgrade",
     "te",
     "trailer",
+    "x-request-id",
 ];
 
 /// 敏感持久化值的结构校验错误。
@@ -106,7 +109,7 @@ pub(crate) enum SensitiveValueError {
     /// 同一请求头使用了不同大小写的重复名称。
     #[error("请求头覆盖包含重复字段")]
     DuplicateHeader,
-    /// 请求头覆盖试图保存认证信息。
+    /// 请求头覆盖试图保存认证、协议托管或连接级字段。
     #[error("请求头覆盖包含禁止设置的字段")]
     ForbiddenHeader,
 }
@@ -1046,6 +1049,22 @@ mod tests {
                 [("Host".to_owned(), Json::String("example.com".to_owned()))]
                     .into_iter()
                     .collect(),
+            ),
+            Json::Object(
+                [(
+                    "Content-Type".to_owned(),
+                    Json::String("text/plain".to_owned()),
+                )]
+                .into_iter()
+                .collect(),
+            ),
+            Json::Object(
+                [(
+                    "X-Request-Id".to_owned(),
+                    Json::String("untrusted-request-id".to_owned()),
+                )]
+                .into_iter()
+                .collect(),
             ),
         ] {
             assert!(HeaderOverrides::validate(headers).is_err());

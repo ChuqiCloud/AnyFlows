@@ -609,7 +609,12 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
         "models": ["public"],
         "group_ids": [1],
         "model_mapping": {"public": "upstream"},
-        "param_override": {},
+        "param_override": {
+            "temperature": 0.25,
+            "top_p": 0.8,
+            "max_output_tokens": 4096,
+            "stop_sequences": ["stop"]
+        },
         "header_override": {"x-private": "header-secret-canary"},
         "settings": {"private": "settings-secret-canary"},
         "tag": null
@@ -629,6 +634,36 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
     assert_eq!(created["id"], 90);
     for secret in ["header-secret-canary", "settings-secret-canary"] {
         assert!(!created.to_string().contains(secret));
+    }
+
+    for (field, invalid) in [
+        ("param_override", json!({"messages": []})),
+        ("param_override", json!({"max_output_tokens": 0})),
+        ("header_override", json!({"content-type": "text/plain"})),
+        ("header_override", json!({"x-request-id": "untrusted"})),
+    ] {
+        let mut invalid_body = channel_body.clone();
+        invalid_body
+            .as_object_mut()
+            .expect("测试渠道正文必须是对象")
+            .insert(field.to_owned(), invalid);
+        let calls_before_rejection = reader.calls.load(Ordering::Relaxed);
+        let rejected = app
+            .clone()
+            .oneshot(write_request(
+                "POST",
+                "/api/admin/channels",
+                ADMIN_TOKEN,
+                &invalid_body,
+            ))
+            .await
+            .unwrap();
+        assert_error(rejected, StatusCode::BAD_REQUEST, "invalid_request").await;
+        assert_eq!(
+            reader.calls.load(Ordering::Relaxed),
+            calls_before_rejection,
+            "无效请求覆盖不得进入写端口"
+        );
     }
 
     let mut channel_update_body = channel_body.clone();

@@ -8,7 +8,15 @@ import type {
 
 export type ChannelEditorMode = 'create' | 'update'
 export type SensitiveEditMode = 'preserve' | 'replace' | 'clear'
-export type ParameterValueType = 'string' | 'number' | 'boolean' | 'null' | 'json'
+
+export const channelParameterNames = [
+  'temperature',
+  'top_p',
+  'max_output_tokens',
+  'stop_sequences',
+] as const
+
+export type ChannelParameterName = (typeof channelParameterNames)[number]
 
 export type KeyValueRow = {
   id: string
@@ -16,8 +24,11 @@ export type KeyValueRow = {
   value: string
 }
 
-export type ParameterRow = KeyValueRow & {
-  type: ParameterValueType
+export type ParameterRow = {
+  id: string
+  key: ChannelParameterName | ''
+  value: string
+  values: string[]
 }
 
 export type ChannelFormValues = {
@@ -55,8 +66,11 @@ const keyValueRowSchema = z.object({
   value: z.string(),
 })
 
-const parameterRowSchema = keyValueRowSchema.extend({
-  type: z.enum(['string', 'number', 'boolean', 'null', 'json']),
+const parameterRowSchema = z.object({
+  id: z.string(),
+  key: z.union([z.literal(''), z.enum(channelParameterNames)]),
+  value: z.string(),
+  values: z.array(z.string()),
 })
 
 /** 集中校验结构化编辑器与后端容量边界。 */
@@ -153,8 +167,13 @@ export function createKeyValueRow(prefix: string): KeyValueRow {
   return { id: createRowId(prefix), key: '', value: '' }
 }
 
-export function createParameterRow(): ParameterRow {
-  return { ...createKeyValueRow('parameter'), type: 'string' }
+export function createParameterRow(key: ChannelParameterName | '' = ''): ParameterRow {
+  return {
+    id: createRowId('parameter'),
+    key,
+    value: '',
+    values: key === 'stop_sequences' ? [''] : [],
+  }
 }
 
 function commonRequest(values: ChannelFormValues) {
@@ -187,18 +206,29 @@ function stringRowsObject(rows: KeyValueRow[]): Record<string, string> {
   return Object.fromEntries(rows.map((row) => [row.key.trim(), row.value]))
 }
 
-function parameterRowsObject(rows: ParameterRow[]): Record<string, unknown> {
-  return Object.fromEntries(rows.map((row) => [row.key.trim(), parameterValue(row)]))
-}
-
-function parameterValue(row: ParameterRow): unknown {
-  switch (row.type) {
-    case 'string': return row.value
-    case 'number': return Number(row.value)
-    case 'boolean': return row.value === 'true'
-    case 'null': return null
-    case 'json': return JSON.parse(row.value) as unknown
+function parameterRowsObject(
+  rows: ParameterRow[],
+): AdminChannelCreateRequestWritable['param_override'] {
+  const overrides: AdminChannelCreateRequestWritable['param_override'] = {}
+  for (const row of rows) {
+    switch (row.key) {
+      case 'temperature':
+        overrides.temperature = Number(row.value)
+        break
+      case 'top_p':
+        overrides.top_p = Number(row.value)
+        break
+      case 'max_output_tokens':
+        overrides.max_output_tokens = Number(row.value)
+        break
+      case 'stop_sequences':
+        overrides.stop_sequences = [...row.values]
+        break
+      case '':
+        break
+    }
   }
+  return overrides
 }
 
 function stringMapRows(value: Record<string, string>, prefix: string): KeyValueRow[] {
@@ -210,29 +240,17 @@ function stringMapRows(value: Record<string, string>, prefix: string): KeyValueR
 }
 
 function parameterRows(value: Record<string, unknown>): ParameterRow[] {
-  return Object.entries(value).map(([key, rowValue], index) => {
-    const type = parameterType(rowValue)
-    return {
+  return Object.entries(value).flatMap(([key, rowValue], index) => {
+    if (!isChannelParameterName(key)) return []
+    return [{
       id: `parameter-${index}`,
       key,
-      type,
-      value: formatParameterValue(rowValue, type),
-    }
+      value: key === 'stop_sequences' ? '' : String(rowValue),
+      values: key === 'stop_sequences' && Array.isArray(rowValue)
+        ? rowValue.filter((item): item is string => typeof item === 'string')
+        : [],
+    }]
   })
-}
-
-function parameterType(value: unknown): ParameterValueType {
-  if (value === null) return 'null'
-  if (typeof value === 'string') return 'string'
-  if (typeof value === 'number') return 'number'
-  if (typeof value === 'boolean') return 'boolean'
-  return 'json'
-}
-
-function formatParameterValue(value: unknown, type: ParameterValueType): string {
-  if (type === 'null') return ''
-  if (type === 'json') return JSON.stringify(value)
-  return String(value)
 }
 
 function validateStringRows(
@@ -270,12 +288,18 @@ function validateParameterRows(
   messages: ValidationMessages,
   context: z.RefinementCtx,
 ) {
-  const valid = rows.length <= 512 && rows.every((row) => {
-    if (!isBoundedText(row.key, 255)) return false
-    if (row.type === 'number') return row.value.trim() !== '' && Number.isFinite(Number(row.value))
-    if (row.type === 'boolean') return row.value === 'true' || row.value === 'false'
-    if (row.type === 'json') return isComplexJson(row.value)
-    return row.type === 'null' || new TextEncoder().encode(row.value).length <= 8192
+  const valid = rows.length <= channelParameterNames.length && rows.every((row) => {
+    if (!isChannelParameterName(row.key)) return false
+    if (row.key === 'stop_sequences') {
+      return row.values.length >= 1
+        && row.values.length <= 4
+        && row.values.every((value) => value.length > 0 && new TextEncoder().encode(value).length <= 1024)
+    }
+    if (row.value.trim() === '' || !Number.isFinite(Number(row.value))) return false
+    const value = Number(row.value)
+    if (row.key === 'temperature') return value >= 0 && value <= 2
+    if (row.key === 'top_p') return value >= 0 && value <= 1
+    return Number.isSafeInteger(value) && value >= 1 && value <= 1_000_000
   })
   if (!valid) addIssue(context, 'paramOverride', messages.invalidParameter)
   else if (!uniqueKeys(rows)) addIssue(context, 'paramOverride', messages.duplicateKey)
@@ -301,15 +325,6 @@ function isJsonObject(value: string) {
   try {
     const parsed: unknown = JSON.parse(value)
     return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-  } catch {
-    return false
-  }
-}
-
-function isComplexJson(value: string) {
-  try {
-    const parsed: unknown = JSON.parse(value)
-    return typeof parsed === 'object' && parsed !== null
   } catch {
     return false
   }
@@ -343,7 +358,9 @@ function addIssue(
 
 const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 const FORBIDDEN_HEADERS = new Set([
+  'accept',
   'authorization',
+  'content-type',
   'proxy-authorization',
   'x-api-key',
   'api-key',
@@ -362,4 +379,9 @@ const FORBIDDEN_HEADERS = new Set([
   'upgrade',
   'te',
   'trailer',
+  'x-request-id',
 ])
+
+function isChannelParameterName(value: string): value is ChannelParameterName {
+  return channelParameterNames.includes(value as ChannelParameterName)
+}

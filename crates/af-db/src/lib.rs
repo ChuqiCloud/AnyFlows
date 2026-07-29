@@ -175,10 +175,13 @@ pub use scheduler_ability::{
     SchedulerAbilityRepository, SchedulerAbilityRepositoryError,
 };
 pub use scheduler_runtime::{
+    ChannelModelMappings, ChannelParameterOverrides, ChannelRequestPolicyError,
+    MAX_CHANNEL_MODEL_MAPPINGS, MAX_CHANNEL_OUTPUT_TOKENS, MAX_CHANNEL_PARAMETER_OVERRIDES,
+    MAX_CHANNEL_REQUEST_POLICY_BYTES, MAX_CHANNEL_STOP_SEQUENCE_BYTES, MAX_CHANNEL_STOP_SEQUENCES,
     MAX_SCHEDULER_RUNTIME_CREDENTIAL_ENTRIES, MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL,
     SchedulerRuntimeCredentialRecord, SchedulerRuntimeHeader, SchedulerRuntimeRecord,
     SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
-    SchedulerRuntimeTargetRecordError,
+    SchedulerRuntimeTargetRecordError, validate_channel_header_overrides,
 };
 pub use usage_log::{
     UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics,

@@ -9,6 +9,8 @@ use crate::{
     entity::{ChannelBaseUrl, HeaderOverrides},
 };
 
+use super::{ChannelModelMappings, ChannelParameterOverrides};
+
 /// 单个渠道进入运行时快照的凭据数量上限。
 pub const MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL: usize = 64;
 
@@ -163,6 +165,8 @@ pub struct SchedulerRuntimeTargetRecord {
     protocol: Protocol,
     base_url: Option<String>,
     credentials: Vec<SchedulerRuntimeCredentialRecord>,
+    model_mappings: ChannelModelMappings,
+    parameter_overrides: ChannelParameterOverrides,
     headers: Vec<SchedulerRuntimeHeader>,
 }
 
@@ -193,6 +197,33 @@ impl SchedulerRuntimeTargetRecord {
         protocol: Protocol,
         base_url: Option<String>,
         credentials: Vec<SchedulerRuntimeCredentialRecord>,
+        headers: Vec<(String, String)>,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        Self::new_pool_with_request_policy(
+            channel_id,
+            channel_type,
+            protocol,
+            base_url,
+            credentials,
+            ChannelModelMappings::default(),
+            ChannelParameterOverrides::default(),
+            headers,
+        )
+    }
+
+    /// 连同已验证的模型映射和 Canonical 参数覆盖构造共享运行时目标。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与不可变运行时目标契约一一对应"
+    )]
+    pub fn new_pool_with_request_policy(
+        channel_id: ChannelId,
+        channel_type: ChannelType,
+        protocol: Protocol,
+        base_url: Option<String>,
+        credentials: Vec<SchedulerRuntimeCredentialRecord>,
+        model_mappings: ChannelModelMappings,
+        parameter_overrides: ChannelParameterOverrides,
         headers: Vec<(String, String)>,
     ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
         if channel_type != ChannelType::OpenAi
@@ -239,6 +270,8 @@ impl SchedulerRuntimeTargetRecord {
             protocol,
             base_url,
             credentials,
+            model_mappings,
+            parameter_overrides,
             headers,
         })
     }
@@ -291,6 +324,18 @@ impl SchedulerRuntimeTargetRecord {
         &self.credentials
     }
 
+    /// 返回请求模型命中的上游模型；未命中时为空。
+    #[must_use]
+    pub fn mapped_model(&self, requested_model: &str) -> Option<&str> {
+        self.model_mappings.resolve(requested_model)
+    }
+
+    /// 返回已验证的 Canonical 参数覆盖。
+    #[must_use]
+    pub const fn parameter_overrides(&self) -> &ChannelParameterOverrides {
+        &self.parameter_overrides
+    }
+
     /// 返回已验证的非认证请求头覆盖。
     #[must_use]
     pub fn headers(&self) -> &[SchedulerRuntimeHeader] {
@@ -313,6 +358,8 @@ impl fmt::Debug for SchedulerRuntimeTargetRecord {
             .field("protocol", &self.protocol)
             .field("base_url", &self.base_url.as_ref().map(|_| "<已脱敏>"))
             .field("credential_count", &self.credentials.len())
+            .field("model_mapping_count", &self.model_mappings.len())
+            .field("parameter_overrides", &self.parameter_overrides)
             .field("header_count", &self.headers.len())
             .finish()
     }
