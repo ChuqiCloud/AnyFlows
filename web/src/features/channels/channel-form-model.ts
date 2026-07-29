@@ -206,21 +206,29 @@ function stringRowsObject(rows: KeyValueRow[]): Record<string, string> {
   return Object.fromEntries(rows.map((row) => [row.key.trim(), row.value]))
 }
 
-function parameterRowsObject(rows: ParameterRow[]): Partial<Record<ChannelParameterName, number | string[]>> {
-  return Object.fromEntries(rows.map((row) => [row.key, parameterValue(row)]))
-}
-
-function parameterValue(row: ParameterRow): number | string[] {
-  switch (row.key) {
-    case 'temperature':
-    case 'top_p':
-    case 'max_output_tokens':
-      return Number(row.value)
-    case 'stop_sequences':
-      return row.values
-    case '':
-      return Number.NaN
+function parameterRowsObject(
+  rows: ParameterRow[],
+): AdminChannelCreateRequestWritable['param_override'] {
+  const overrides: AdminChannelCreateRequestWritable['param_override'] = {}
+  for (const row of rows) {
+    switch (row.key) {
+      case 'temperature':
+        overrides.temperature = Number(row.value)
+        break
+      case 'top_p':
+        overrides.top_p = Number(row.value)
+        break
+      case 'max_output_tokens':
+        overrides.max_output_tokens = Number(row.value)
+        break
+      case 'stop_sequences':
+        overrides.stop_sequences = [...row.values]
+        break
+      case '':
+        break
+    }
   }
+  return overrides
 }
 
 function stringMapRows(value: Record<string, string>, prefix: string): KeyValueRow[] {

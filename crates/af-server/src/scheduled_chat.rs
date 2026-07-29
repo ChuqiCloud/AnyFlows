@@ -268,6 +268,7 @@ mod tests {
     use std::sync::Arc;
 
     use af_account::credential_plaintext_aad;
+    use af_adapter::Bytes;
     use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
     use af_db::{
         ChannelModelMappings, ChannelParameterOverrides, CredentialStateRepository,
