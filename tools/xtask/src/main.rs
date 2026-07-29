@@ -391,9 +391,13 @@ fn allowed_restricted_external_dependency(dependency: &DeclaredDependency) -> bo
             | ("af-adapter", "aws-credential-types", "normal")
             | ("af-adapter", "aws-sigv4", "normal")
             | ("af-adapter", "futures-core", "normal")
+            | ("af-adapter", "jsonwebtoken", "normal")
             | ("af-adapter", "percent-encoding", "normal")
+            | ("af-adapter", "serde", "normal")
+            | ("af-adapter", "serde_json", "normal")
             | ("af-adapter", "thiserror", "normal")
             | ("af-adapter", "url", "normal")
+            | ("af-adapter", "zeroize", "normal")
             | ("af-adapter", "tokio", "dev")
             | ("af-protocol", "base64", "normal")
             | ("af-protocol", "bytes", "normal")
@@ -593,9 +597,13 @@ mod tests {
             dependency("af-adapter", "aws-credential-types", false),
             dependency("af-adapter", "aws-sigv4", false),
             dependency("af-adapter", "futures-core", false),
+            dependency("af-adapter", "jsonwebtoken", false),
             dependency("af-adapter", "percent-encoding", false),
+            dependency("af-adapter", "serde", false),
+            dependency("af-adapter", "serde_json", false),
             dependency("af-adapter", "thiserror", false),
             dependency("af-adapter", "url", false),
+            dependency("af-adapter", "zeroize", false),
             tokio,
         ];
 

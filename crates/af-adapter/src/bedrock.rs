@@ -2,6 +2,7 @@ use std::{fmt, time::SystemTime};
 
 use af_domain::{ChannelType, CredentialKind, Operation, Protocol};
 use af_httpclient::{HeaderMap, HeaderName, HeaderValue, Method};
+use async_trait::async_trait;
 use aws_credential_types::Credentials as AwsCredentials;
 use aws_sigv4::{
     http_request::{SignableBody, SignableRequest, SigningParams, SigningSettings, sign},
@@ -217,6 +218,7 @@ impl BedrockAdaptor {
     }
 }
 
+#[async_trait]
 impl Adaptor for BedrockAdaptor {
     fn channel_type(&self) -> ChannelType {
         ChannelType::Bedrock
@@ -275,10 +277,11 @@ impl Adaptor for BedrockAdaptor {
         Ok(())
     }
 
-    fn finalize_request(
+    async fn finalize_request(
         &self,
         request: UpstreamRequest,
         credential: &Credential,
+        _context: &RelayContext,
     ) -> AdaptorResult<UpstreamRequest> {
         self.sign_request_at(request, credential, SystemTime::now())
     }

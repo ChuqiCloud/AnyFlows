@@ -79,6 +79,12 @@ pub enum AdaptorError {
     /// AWS 区域无法安全映射到受支持的 Bedrock Runtime 端点。
     #[error("AWS 区域无效或暂不支持")]
     InvalidAwsRegion,
+    /// Google Cloud 项目标识不符合 Vertex 资源路径边界。
+    #[error("Google Cloud 项目标识无效")]
+    InvalidGoogleProject,
+    /// Google Cloud 区域不符合 Vertex 端点与资源路径边界。
+    #[error("Google Cloud 区域无效")]
+    InvalidGoogleLocation,
     /// 凭据为空或超出内存边界。
     #[error("凭据内容无效")]
     InvalidCredential,
@@ -100,6 +106,12 @@ pub enum AdaptorError {
     /// 完整请求无法生成安全的供应商签名。
     #[error("上游请求签名失败")]
     RequestSigning,
+    /// Service Account 无法生成受支持的 JWT assertion。
+    #[error("Service Account 凭据签名失败")]
+    CredentialSigning,
+    /// Service Account assertion 无法交换为有效 access token。
+    #[error("Service Account 令牌交换失败")]
+    CredentialExchange,
     /// 响应头超过适配层容量边界。
     #[error("上游响应头无效")]
     InvalidResponseHeader,

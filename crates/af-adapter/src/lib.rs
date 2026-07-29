@@ -12,6 +12,7 @@ mod factory;
 mod gemini;
 mod openai;
 mod request;
+mod vertex;
 
 pub use adaptor::{Adaptor, AdaptorSendExt, AdaptorTarget};
 pub use anthropic::AnthropicAdaptor;
@@ -19,12 +20,13 @@ pub use bedrock::{BedrockAdaptor, MAX_AWS_REGION_BYTES, MAX_BEDROCK_MODEL_ID_BYT
 pub use context::{MAX_REQUEST_ID_BYTES, MAX_UPSTREAM_BASE_URL_BYTES, RelayContext};
 pub use credential::{
     Credential, MAX_AWS_ACCESS_KEY_ID_BYTES, MAX_AWS_SECRET_ACCESS_KEY_BYTES,
-    MAX_AWS_SESSION_TOKEN_BYTES, MAX_CREDENTIAL_SECRET_BYTES,
+    MAX_AWS_SESSION_TOKEN_BYTES, MAX_CREDENTIAL_SECRET_BYTES, MAX_GOOGLE_PRIVATE_KEY_BYTES,
+    MAX_GOOGLE_PRIVATE_KEY_ID_BYTES, MAX_GOOGLE_SERVICE_ACCOUNT_EMAIL_BYTES,
 };
 pub use error::{AdaptorError, AdaptorResult, AdaptorTransportError};
 pub use factory::{
     AdaptorSettings, AnthropicAdaptorSettings, BedrockAdaptorSettings, GeminiAdaptorSettings,
-    OpenAiAdaptorSettings, get_adaptor,
+    OpenAiAdaptorSettings, VertexAdaptorSettings, get_adaptor,
 };
 pub use gemini::GeminiAdaptor;
 pub use openai::OpenAiAdaptor;
@@ -35,6 +37,10 @@ pub use request::{
     MAX_UPSTREAM_RESPONSE_CHUNK_BYTES, MAX_UPSTREAM_RESPONSE_HEADER_COUNT,
     MAX_UPSTREAM_RESPONSE_HEADER_VALUE_BYTES, MAX_UPSTREAM_RESPONSE_HEADERS_BYTES, ResponseMode,
     UpstreamBody, UpstreamBodyStream, UpstreamRequest, UpstreamResponse,
+};
+pub use vertex::{
+    MAX_VERTEX_LOCATION_BYTES, MAX_VERTEX_PROJECT_ID_BYTES, MAX_VERTEX_TOKEN_RESPONSE_BYTES,
+    VertexAdaptor,
 };
 
 pub use af_domain::{ChannelType, CredentialKind, Operation, Protocol};

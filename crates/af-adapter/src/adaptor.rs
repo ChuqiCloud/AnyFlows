@@ -65,6 +65,7 @@ impl fmt::Debug for AdaptorTarget<'_> {
 /// 协议 JSON 与 Canonical IR 的互转属于 `af-protocol`；本 trait 只负责上游地址和
 /// 鉴权头。发送能力由 [`AdaptorSendExt`] 统一提供且不可覆盖，防止实现绕过受控
 /// Client、响应模式、容量限制和错误脱敏边界。
+#[async_trait]
 pub trait Adaptor: Send + Sync {
     /// 返回适配器对应的稳定渠道种类。
     fn channel_type(&self) -> ChannelType;
@@ -92,12 +93,13 @@ pub trait Adaptor: Send + Sync {
 
     /// 在 URL、正文和覆盖 Header 全部确定后最终化请求。
     ///
-    /// 普通 Bearer/API Key 适配器保持原请求不变；SigV4 等依赖完整请求的认证方案
-    /// 在此阶段签名，避免后续 Header 覆盖使签名失效。
-    fn finalize_request(
+    /// 普通 Bearer/API Key 适配器保持原请求不变；SigV4 签名或 Service Account
+    /// token 交换在此阶段使用受控上下文完成，避免后续 Header 覆盖认证结果。
+    async fn finalize_request(
         &self,
         request: UpstreamRequest,
         _credential: &Credential,
+        _context: &RelayContext,
     ) -> AdaptorResult<UpstreamRequest> {
         Ok(request)
     }

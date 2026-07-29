@@ -37,6 +37,7 @@ struct RejectingAdaptor {
     stage: RejectionStage,
 }
 
+#[async_trait::async_trait]
 impl Adaptor for RejectingAdaptor {
     fn channel_type(&self) -> ChannelType {
         ChannelType::OpenAi
@@ -81,10 +82,11 @@ impl Adaptor for RejectingAdaptor {
         }
     }
 
-    fn finalize_request(
+    async fn finalize_request(
         &self,
         request: UpstreamRequest,
         _credential: &Credential,
+        _context: &RelayContext,
     ) -> AdaptorResult<UpstreamRequest> {
         match self.stage {
             RejectionStage::Finalize => Err(AdaptorError::RequestSigning),

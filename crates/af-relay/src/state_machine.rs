@@ -393,7 +393,8 @@ impl RelayStateMachine {
             };
             let upstream_request = match candidate
                 .adaptor
-                .finalize_request(upstream_request, &candidate.credential)
+                .finalize_request(upstream_request, &candidate.credential, &candidate.context)
+                .await
             {
                 Ok(request) => request,
                 Err(error) => {

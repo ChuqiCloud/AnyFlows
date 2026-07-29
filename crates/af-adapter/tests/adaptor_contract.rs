@@ -412,7 +412,10 @@ async fn bedrock_adaptor_signs_and_sends_invoke_model_request() {
         Some(Bytes::from_static(br#"{"messages":[]}"#)),
     )
     .unwrap();
-    let request = adaptor.finalize_request(request, &credential).unwrap();
+    let request = adaptor
+        .finalize_request(request, &credential, &context)
+        .await
+        .unwrap();
     let response = adaptor.send(request, &context).await.unwrap();
     let body = response.into_body();
     assert!(!body.is_streaming());
