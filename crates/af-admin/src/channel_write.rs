@@ -5,8 +5,9 @@ use af_db::{
     AdminChannelDeleteOutcome, AdminChannelMutationOutcome, AdminChannelRepository,
     AdminChannelWriteRecord, AdminChannelWriteRepositoryError, AdminCredentialCreateOutcome,
     AdminCredentialDeleteOutcome, AdminCredentialMutationOutcome, AdminCredentialWriteRecord,
-    MAX_ADMIN_CHANNEL_ABILITIES, MAX_ADMIN_CHANNEL_GROUPS, MAX_ADMIN_CHANNEL_JSON_BYTES,
-    MAX_ADMIN_CHANNEL_MODEL_BYTES, MAX_ADMIN_CHANNEL_MODELS,
+    ChannelModelMappings, ChannelParameterOverrides, MAX_ADMIN_CHANNEL_ABILITIES,
+    MAX_ADMIN_CHANNEL_GROUPS, MAX_ADMIN_CHANNEL_JSON_BYTES, MAX_ADMIN_CHANNEL_MODEL_BYTES,
+    MAX_ADMIN_CHANNEL_MODELS,
 };
 use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, GroupId, Protocol, Status};
 use serde::{Deserialize, Serialize};
@@ -213,7 +214,11 @@ impl AdminChannelWriteFields {
             return Err(AdminChannelWriteError::InvalidInput);
         }
         validate_json_object(&model_mapping, true)?;
+        ChannelModelMappings::parse(&model_mapping)
+            .map_err(|_| AdminChannelWriteError::InvalidInput)?;
         validate_json_object(&param_override, false)?;
+        ChannelParameterOverrides::parse(&param_override)
+            .map_err(|_| AdminChannelWriteError::InvalidInput)?;
         if let Some(header_override) = &header_override {
             validate_json_object(header_override, false)?;
         }

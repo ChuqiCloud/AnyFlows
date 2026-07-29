@@ -2809,7 +2809,36 @@
           },
           "param_override": {
             "type": "object",
-            "additionalProperties": true
+            "description": "闭合的 Canonical 采样覆盖；max_output_tokens 仅作为上限，不会提高客户端值。",
+            "properties": {
+              "temperature": {
+                "type": "number",
+                "maximum": 2,
+                "minimum": 0
+              },
+              "top_p": {
+                "type": "number",
+                "maximum": 1,
+                "minimum": 0
+              },
+              "max_output_tokens": {
+                "type": "integer",
+                "format": "int64",
+                "maximum": 1000000,
+                "minimum": 1
+              },
+              "stop_sequences": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 1024,
+                  "minLength": 1
+                },
+                "maxItems": 4,
+                "minItems": 1
+              }
+            },
+            "additionalProperties": false
           },
           "balance": {
             "type": [
@@ -2951,11 +2980,40 @@
           },
           "param_override": {
             "type": "object",
-            "additionalProperties": true
+            "description": "闭合的 Canonical 采样覆盖；max_output_tokens 仅作为上限，不会提高客户端值。",
+            "properties": {
+              "temperature": {
+                "type": "number",
+                "maximum": 2,
+                "minimum": 0
+              },
+              "top_p": {
+                "type": "number",
+                "maximum": 1,
+                "minimum": 0
+              },
+              "max_output_tokens": {
+                "type": "integer",
+                "format": "int64",
+                "maximum": 1000000,
+                "minimum": 1
+              },
+              "stop_sequences": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 1024,
+                  "minLength": 1
+                },
+                "maxItems": 4,
+                "minItems": 1
+              }
+            },
+            "additionalProperties": false
           },
           "header_override": {
             "type": "object",
-            "description": "敏感 Header 覆盖输入；拒绝认证、Host 和 hop-by-hop 头，永不随响应返回。",
+            "description": "敏感 Header 覆盖输入；拒绝认证、Content-Type、Accept、受控请求 ID、Host 和 hop-by-hop 头，永不随响应返回。",
             "additionalProperties": {
               "type": "string"
             },
@@ -3140,14 +3198,43 @@
           },
           "param_override": {
             "type": "object",
-            "additionalProperties": true
+            "description": "闭合的 Canonical 采样覆盖；max_output_tokens 仅作为上限，不会提高客户端值。",
+            "properties": {
+              "temperature": {
+                "type": "number",
+                "maximum": 2,
+                "minimum": 0
+              },
+              "top_p": {
+                "type": "number",
+                "maximum": 1,
+                "minimum": 0
+              },
+              "max_output_tokens": {
+                "type": "integer",
+                "format": "int64",
+                "maximum": 1000000,
+                "minimum": 1
+              },
+              "stop_sequences": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "maxLength": 1024,
+                  "minLength": 1
+                },
+                "maxItems": 4,
+                "minItems": 1
+              }
+            },
+            "additionalProperties": false
           },
           "header_override": {
             "type": [
               "object",
               "null"
             ],
-            "description": "敏感 Header 覆盖输入；省略或 null 时保留已有值，显式对象时替换。",
+            "description": "敏感 Header 覆盖输入；拒绝认证和协议托管头，省略或 null 时保留已有值，显式对象时替换。",
             "additionalProperties": {
               "type": "string"
             },

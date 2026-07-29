@@ -14,7 +14,8 @@ use af_adapter::{
 use af_domain::{ChannelId, UpstreamError, UpstreamServerStatus};
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
 use af_relay::{
-    RelayBuildError, RelayCandidate, RelayError, RelayRequest, RelayState, RelayStateMachine,
+    RelayBuildError, RelayCandidate, RelayCandidateRequest, RelayError, RelayRequest, RelayState,
+    RelayStateMachine,
 };
 
 const TEST_MODEL: &str = "test-model";
@@ -159,6 +160,32 @@ fn spawn_proxy(responses: Vec<ProxyResponse>) -> (SocketAddr, thread::JoinHandle
     (address, server)
 }
 
+fn spawn_capturing_proxy(
+    response: ProxyResponse,
+) -> (
+    SocketAddr,
+    std::sync::mpsc::Receiver<Vec<u8>>,
+    thread::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(TEST_TIMEOUT)).unwrap();
+        sender.send(read_request(&mut stream)).unwrap();
+        let header = format!(
+            "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            response.status_line,
+            response.body.len()
+        );
+        stream.write_all(header.as_bytes()).unwrap();
+        stream.write_all(response.body).unwrap();
+        stream.flush().unwrap();
+    });
+    (address, receiver, server)
+}
+
 fn read_request(stream: &mut TcpStream) -> Vec<u8> {
     let mut request = Vec::with_capacity(1_024);
     let mut buffer = [0_u8; 512];
@@ -247,6 +274,28 @@ async fn unsupported_candidate_is_skipped_before_sending() {
             .unwrap(),
         Bytes::from_static(br#"{"ok":"second"}"#)
     );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn candidate_request_controls_model_filter_url_and_body_together() {
+    let (address, captured, server) = spawn_capturing_proxy(ProxyResponse {
+        status_line: "200 OK",
+        body: br#"{"ok":true}"#,
+    });
+    let client = proxy_client(address);
+    let mapped_body = Bytes::from_static(br#"{"model":"mapped-model","temperature":0.25}"#);
+    let mapped_request =
+        RelayCandidateRequest::new("mapped-model", Some(mapped_body.clone())).unwrap();
+    let mapped_candidate =
+        candidate(&client, "http://mapped.invalid", &["mapped-model"]).with_request(mapped_request);
+    let machine = RelayStateMachine::new(vec![mapped_candidate]).unwrap();
+
+    machine.execute(request()).await.unwrap();
+
+    let request = captured.recv_timeout(TEST_TIMEOUT).unwrap();
+    assert!(request.ends_with(mapped_body.as_ref()));
+    assert!(!request.ends_with(TEST_REQUEST_BODY));
     server.join().unwrap();
 }
 
@@ -436,6 +485,13 @@ fn debug_output_redacts_model_credential_url_and_body() {
         &client,
         "https://candidate-secret.invalid",
         &["model-secret"],
+    )
+    .with_request(
+        RelayCandidateRequest::new(
+            "mapped-model-secret",
+            Some(Bytes::from_static(b"mapped-body-secret")),
+        )
+        .unwrap(),
     );
     let candidate_debug = format!("{candidate:?}");
     let request = RelayRequest::new(
@@ -452,6 +508,8 @@ fn debug_output_redacts_model_credential_url_and_body() {
         "credential-secret",
         "candidate-secret",
         "body-secret",
+        "mapped-model-secret",
+        "mapped-body-secret",
     ] {
         assert!(!rendered.contains(secret), "Debug 泄露了 {secret}");
     }

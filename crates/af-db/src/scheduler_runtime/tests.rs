@@ -3,7 +3,7 @@ mod support;
 use std::{error::Error, time::Duration};
 
 use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Status};
-use sea_orm::ActiveModelTrait;
+use sea_orm::{ActiveModelTrait, Set};
 
 use crate::EncryptedCredentialEnvelope;
 
@@ -28,16 +28,24 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     );
 
     let group = group("default").insert(pool.connection()).await?;
-    let supported = runtime_channel(
+    let mut supported = runtime_channel(
         "supported",
         Status::Enabled,
         ChannelType::OpenAi.as_str(),
         Protocol::OpenAiChat.as_str(),
         "https://runtime-url-canary.example.com/prefix",
         [("x-runtime-header", "runtime-header-value-canary")],
-    )
-    .insert(pool.connection())
-    .await?;
+    );
+    supported.model_mapping = Set(serde_json::json!({
+        "gpt-runtime-canary": "gpt-upstream-canary"
+    }));
+    supported.param_override = Set(serde_json::json!({
+        "temperature": 0.25,
+        "top_p": 0.8,
+        "max_output_tokens": 4096,
+        "stop_sequences": ["runtime-stop-canary"]
+    }));
+    let supported = supported.insert(pool.connection()).await?;
     attach(supported.id, group.id, "gpt-runtime-canary")
         .insert(pool.connection())
         .await?;
@@ -187,12 +195,24 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     assert!(record.target().proxy_required());
     assert_eq!(record.target().credentials()[0].priority(), 30);
     assert_eq!(record.target().credentials()[1].priority(), 20);
+    assert_eq!(
+        record.target().mapped_model("gpt-runtime-canary"),
+        Some("gpt-upstream-canary")
+    );
+    assert_eq!(record.target().mapped_model("gpt-unmapped"), None);
+    let overrides = record.target().parameter_overrides();
+    assert_eq!(overrides.temperature(), Some(0.25));
+    assert_eq!(overrides.top_p(), Some(0.8));
+    assert_eq!(overrides.max_output_tokens(), Some(4096));
+    assert_eq!(overrides.stop_sequences().unwrap(), ["runtime-stop-canary"]);
 
     let rendered = format!("{record:?}");
     for secret in [
         "gpt-runtime-canary",
         "runtime-url-canary",
         "runtime-header-value-canary",
+        "gpt-upstream-canary",
+        "runtime-stop-canary",
         "selected-key-id-canary",
     ] {
         assert!(!rendered.contains(secret));

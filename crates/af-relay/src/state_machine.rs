@@ -17,6 +17,7 @@ pub struct RelayCandidate {
     adaptor: Arc<dyn Adaptor>,
     context: RelayContext,
     credential: Credential,
+    request: Option<RelayCandidateRequest>,
     header_overrides: HeaderMap,
     channel_group: Option<ChannelId>,
 }
@@ -29,9 +30,17 @@ impl RelayCandidate {
             adaptor,
             context,
             credential,
+            request: None,
             header_overrides: HeaderMap::new(),
             channel_group: None,
         }
+    }
+
+    /// 附加已由协议构造器验证的候选级模型和正文。
+    #[must_use]
+    pub fn with_request(mut self, request: RelayCandidateRequest) -> Self {
+        self.request = Some(request);
+        self
     }
 
     /// 附加已由持久化边界验证的非认证 Header 覆盖。
@@ -56,8 +65,53 @@ impl fmt::Debug for RelayCandidate {
             .field("adaptor", &self.adaptor.channel_type())
             .field("context", &self.context)
             .field("credential", &self.credential)
+            .field("has_candidate_request", &self.request.is_some())
             .field("header_override_count", &self.header_overrides.len())
             .field("has_channel_group", &self.channel_group.is_some())
+            .finish()
+    }
+}
+
+/// 已由目标协议构造器验证的候选级模型和正文。
+///
+/// 模型映射或参数覆盖会让不同渠道产生不同请求；本类型只保存最终结果，不保存映射
+/// 表、参数配置或原始正文，Debug 也不会输出模型和正文。
+#[derive(Clone)]
+pub struct RelayCandidateRequest {
+    model: String,
+    body: Option<Bytes>,
+}
+
+impl RelayCandidateRequest {
+    /// 创建候选级请求；正文容量仍由统一的 [`UpstreamRequest`] 边界复验。
+    pub fn new(model: impl Into<String>, body: Option<Bytes>) -> Result<Self, RelayError> {
+        let model = model.into();
+        if !is_valid_model(&model) {
+            return Err(RelayError::InvalidModel);
+        }
+        Ok(Self { model, body })
+    }
+
+    fn model(&self) -> &str {
+        &self.model
+    }
+
+    fn body(&self) -> Option<Bytes> {
+        self.body.clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn into_parts(self) -> (String, Option<Bytes>) {
+        (self.model, self.body)
+    }
+}
+
+impl fmt::Debug for RelayCandidateRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RelayCandidateRequest")
+            .field("model", &"<已脱敏>")
+            .field("body_bytes", &self.body.as_ref().map(Bytes::len))
             .finish()
     }
 }
@@ -341,9 +395,15 @@ impl RelayStateMachine {
         let mut failures = Vec::new();
         let mut index = 0;
         while let Some(candidate) = self.candidates.get(index) {
+            let candidate_model = candidate
+                .request
+                .as_ref()
+                .map_or(request.model.as_str(), RelayCandidateRequest::model);
             let supported_models = candidate.adaptor.supported_models();
             if !supported_models.is_empty()
-                && !supported_models.iter().any(|model| model == &request.model)
+                && !supported_models
+                    .iter()
+                    .any(|model| model == candidate_model)
             {
                 let error = UpstreamError::ModelUnsupported;
                 failures.push(RelayAttemptFailure::new(index, error));
@@ -366,7 +426,7 @@ impl RelayStateMachine {
 
             let target = match candidate.adaptor.build_url(
                 &candidate.context,
-                AdaptorTarget::new(&request.model, request.operation, request.response_mode),
+                AdaptorTarget::new(candidate_model, request.operation, request.response_mode),
             ) {
                 Ok(target) => target,
                 Err(error) => {
@@ -379,7 +439,10 @@ impl RelayStateMachine {
                 request.method.clone(),
                 target,
                 headers,
-                request.body.clone(),
+                candidate
+                    .request
+                    .as_ref()
+                    .map_or_else(|| request.body.clone(), RelayCandidateRequest::body),
             )
             .map(|upstream_request| upstream_request.with_response_mode(request.response_mode))
             {

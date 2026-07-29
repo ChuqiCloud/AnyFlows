@@ -6,6 +6,8 @@ use crate::{
     entity::{channels, credentials},
 };
 
+use super::{ChannelModelMappings, ChannelParameterOverrides};
+
 /// 将持久化实体转换为运行时选择策略可理解的内部来源对象时发生的不变量错误。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum SchedulerRuntimeSourceError {
@@ -18,6 +20,8 @@ pub(super) struct SchedulerRuntimeChannelSource {
     channel_type: ChannelType,
     protocol: Protocol,
     base_url: Option<String>,
+    model_mappings: ChannelModelMappings,
+    parameter_overrides: ChannelParameterOverrides,
     headers: Vec<(String, String)>,
 }
 
@@ -42,6 +46,10 @@ impl SchedulerRuntimeChannelSource {
             .protocol
             .parse()
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let model_mappings = ChannelModelMappings::parse(&channel.model_mapping)
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let parameter_overrides = ChannelParameterOverrides::parse(&channel.param_override)
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let headers = channel
             .header_override
             .pairs()
@@ -51,6 +59,8 @@ impl SchedulerRuntimeChannelSource {
             channel_type,
             protocol,
             base_url: channel.base_url.map(|value| value.as_str().to_owned()),
+            model_mappings,
+            parameter_overrides,
             headers,
         }))
     }
@@ -73,6 +83,16 @@ impl SchedulerRuntimeChannelSource {
     /// 返回可选基础地址；调用方不得写入日志。
     pub(super) fn base_url(&self) -> Option<&str> {
         self.base_url.as_deref()
+    }
+
+    /// 返回已验证的精确模型映射。
+    pub(super) const fn model_mappings(&self) -> &ChannelModelMappings {
+        &self.model_mappings
+    }
+
+    /// 返回已验证的 Canonical 参数覆盖。
+    pub(super) const fn parameter_overrides(&self) -> &ChannelParameterOverrides {
+        &self.parameter_overrides
     }
 
     /// 返回已校验的非认证 Header 覆盖。
