@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { AlertCircle, Eye, EyeOff, LoaderCircle, LockKeyhole } from 'lucide-react'
+import { AlertCircle, Boxes, Eye, EyeOff, LoaderCircle, LockKeyhole } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -12,7 +12,7 @@ import { apiClient, ApiError } from '@/lib/api'
 import { loginManagementSession } from '@/lib/api/generated/sdk.gen'
 import type { LoginRequest } from '@/lib/api/generated/types.gen'
 
-export type LoginNotice = 'adminRequired' | 'sessionExpired' | 'setupComplete'
+export type LoginNotice = 'sessionExpired' | 'setupComplete'
 
 type LoginPageProps = {
   notice?: LoginNotice
@@ -51,13 +51,6 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
     try {
       const response = await loginMutation.mutateAsync({ username, password })
 
-      // 登录接口也可签发普通用户会话，管理控制台必须在令牌落盘前收紧角色边界。
-      if (response.user.role !== 'admin') {
-        setPassword('')
-        setLoginError('adminRequired')
-        return
-      }
-
       establishManagementSession(response)
       onAuthenticated()
     } catch (error) {
@@ -66,7 +59,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   }
 
   const visibleError = loginError ?? (noticeDismissed ? undefined : notice)
-  const hasFieldError = visibleError === 'invalidCredentials' || visibleError === 'adminRequired'
+  const hasFieldError = visibleError === 'invalidCredentials'
   const passwordToggleLabel = showPassword
     ? t('auth.login.hidePassword')
     : t('auth.login.showPassword')
@@ -179,6 +172,12 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                   <LoaderCircle className="size-4 animate-spin" aria-hidden="true" />
                 ) : null}
                 {loginMutation.isPending ? t('auth.login.submitting') : t('auth.login.submit')}
+              </Button>
+              <Button variant="ghost" className="w-full" asChild>
+                <a href="#/models">
+                  <Boxes className="size-4" aria-hidden="true" />
+                  {t('auth.login.browseModels')}
+                </a>
               </Button>
             </form>
           </CardContent>

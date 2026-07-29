@@ -255,6 +255,16 @@ impl ChannelIndexSnapshot {
         self.runtime_targets.get(&channel_id).map(Arc::as_ref)
     }
 
+    /// 按字典序遍历指定分组当前确有运行时目标的 Canonical 模型名。
+    ///
+    /// 返回值只暴露模型键，不暴露渠道、凭据或候选权重。
+    pub fn model_names(&self, group_id: GroupId) -> impl Iterator<Item = &str> {
+        self.entries
+            .get(&group_id)
+            .into_iter()
+            .flat_map(|models| models.keys().map(String::as_str))
+    }
+
     /// 查询一个分组与模型下的候选；未知键返回空切片。
     pub fn candidates(
         &self,
@@ -765,6 +775,12 @@ mod tests {
         assert_eq!(snapshot.key_count(), 1);
         assert_eq!(snapshot.candidate_count(), 2);
         assert_eq!(snapshot.runtime_target_count(), 2);
+        assert_eq!(
+            snapshot
+                .model_names(GroupId::new(1).unwrap())
+                .collect::<Vec<_>>(),
+            vec!["gpt-secret"]
+        );
         assert_eq!(candidates[0].channel_id(), ChannelId::new(1).unwrap());
         assert_eq!(candidates[0].priority(), 9);
         assert!(

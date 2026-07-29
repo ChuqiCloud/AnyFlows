@@ -6,6 +6,7 @@
   "nav": {
     "label": "Primary navigation",
     "overview": "Overview",
+    "models": "Models",
     "channels": "Channels",
     "keys": "Keys",
     "usage": "Usage",
@@ -443,13 +444,88 @@
       "body": "The service did not return confirmed usage. Try again shortly."
     }
   },
+  "models": {
+    "title": "Model catalog",
+    "subtitle": "Browse public model pricing, or sign in for models available to your group and their effective prices.",
+    "public": {
+      "scope": "Model catalog",
+      "login": "Sign in",
+      "console": "Open console"
+    },
+    "scope": {
+      "pending": "Confirming pricing scope",
+      "public_base": {
+        "label": "Public base prices",
+        "subtitle": "Public prices do not guarantee current availability. Sign in to see effective prices for your group."
+      },
+      "group": {
+        "label": "Current group prices",
+        "subtitle": "Only models currently available to your default group are shown, with all active pricing ratios applied."
+      }
+    },
+    "loading": "Loading model catalog",
+    "loadingMore": "Loading more models",
+    "loadedCount_one": "{{count}} model loaded",
+    "loadedCount_other": "{{count}} models loaded",
+    "filters": {
+      "search": "Search models",
+      "searchPlaceholder": "Enter a Canonical model name",
+      "billingMode": "Billing mode",
+      "all": "All modes"
+    },
+    "billing": {
+      "per_token": "Per token",
+      "free": "Free"
+    },
+    "columns": {
+      "model": "Model",
+      "input": "Input price",
+      "output": "Output price",
+      "cacheRead": "Cache read",
+      "cacheCreation5m": "5-minute cache write",
+      "cacheCreation1h": "1-hour cache write",
+      "billing": "Billing and actions"
+    },
+    "values": {
+      "compatible": "Compatible model",
+      "notApplicable": "Not applicable",
+      "priceTitle": "{{label}}: ${{value}} per million tokens",
+      "perMillion": "per million tokens",
+      "appliedRatios": "Applied ratios",
+      "baseRatios": "Public base ratios"
+    },
+    "ratios": {
+      "group": "Group",
+      "groupModel": "Group adjustment",
+      "peak": "Peak"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "loadMore": "Load more",
+      "details": "Price details",
+      "copy": "Copy model name",
+      "copied": "Copied"
+    },
+    "empty": {
+      "title": "No models to display",
+      "body": "There are no model records in the current pricing scope.",
+      "filteredTitle": "No matching models",
+      "filteredBody": "Adjust the model name or billing-mode filter."
+    },
+    "error": {
+      "title": "Model catalog unavailable",
+      "body": "The service did not return a reliable model and pricing snapshot. Try again shortly.",
+      "moreBody": "More models could not be loaded. The catalog already shown remains available."
+    }
+  },
   "auth": {
     "login": {
-      "eyebrow": "AnyFlows management console",
-      "heroTitle": "Every model flow, under control",
-      "heroBody": "Sign in securely and continue managing your gateway.",
+      "eyebrow": "AnyFlows account sign-in",
+      "heroTitle": "Your models and prices, in one place",
+      "heroBody": "Sign in for models and effective prices in your group. Administrators can continue managing the gateway.",
       "title": "Welcome back",
-      "subtitle": "Continue with an administrator account",
+      "subtitle": "Continue with your account",
       "username": "Username",
       "usernamePlaceholder": "Enter your username",
       "password": "Password",
@@ -457,7 +533,8 @@
       "showPassword": "Show password",
       "hidePassword": "Hide password",
       "submit": "Sign in",
-      "submitting": "Verifying"
+      "submitting": "Verifying",
+      "browseModels": "Browse models as a guest"
     },
     "errors": {
       "invalidCredentials": "The username or password is incorrect.",
@@ -467,7 +544,7 @@
       "unavailable": "The service is unavailable. Try again shortly."
     },
     "session": {
-      "loading": "Restoring your management session",
+      "loading": "Restoring your session",
       "unavailableTitle": "Session verification is unavailable",
       "unavailableBody": "The service is currently unavailable. Your sign-in is still retained.",
       "retry": "Try again",
@@ -475,6 +552,7 @@
     },
     "account": {
       "admin": "Administrator",
+      "user": "User",
       "logout": "Sign out"
     }
   },
@@ -512,7 +590,10 @@
     }
   },
   "landing": {
-    "nav": { "console": "Open console" },
+    "nav": {
+      "models": "Models",
+      "console": "Open console"
+    },
     "hero": {
       "eyebrow": "LLM API aggregation gateway",
       "subtitle": "Unified access, intelligent routing, precise billing. Collapse scattered model channels into a single observable flow.",

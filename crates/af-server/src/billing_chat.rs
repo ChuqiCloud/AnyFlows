@@ -1,9 +1,4 @@
-use std::{
-    future::Future,
-    pin::Pin,
-    sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use af_billing::{
     BillingLifecycleError, BillingPrechargeError, BillingPrechargePort, BillingRequestLifecycle,
@@ -23,7 +18,6 @@ use uuid::Uuid;
 const MAX_PRECHARGE_ATTEMPTS: usize = 3;
 const MAX_COMPLETION_ATTEMPTS: usize = 3;
 const RETRY_DELAY: Duration = Duration::from_millis(20);
-const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
 
 /// 已固定路由计划的一次异步执行结果。
 pub type PlannedChatExecutionFuture =
@@ -102,7 +96,7 @@ impl BillingChatService {
                 &model,
                 source_group_id,
                 target_group_id,
-                current_utc_day_second()?,
+                crate::utc_time::current_utc_day_second().ok_or(AfError::Internal)?,
             )
             .map_err(map_snapshot_error)?;
         let plan = BillingRequestPlan::prepare(Arc::new(snapshot.resolver()), &upper_bound)
@@ -243,14 +237,6 @@ fn retryable_completion_error(error: BillingLifecycleError) -> bool {
 
 fn new_reservation_id() -> Result<BillingReservationId, AfError> {
     BillingReservationId::new(Uuid::new_v4().into_bytes()).map_err(|_| AfError::Internal)
-}
-
-fn current_utc_day_second() -> Result<u32, AfError> {
-    let elapsed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| AfError::Internal)?;
-    let second = elapsed.as_secs() % SECONDS_PER_DAY;
-    u32::try_from(second).map_err(|_| AfError::Internal)
 }
 
 fn map_upper_bound_error(error: UsageResolutionError) -> AfError {

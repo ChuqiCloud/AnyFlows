@@ -412,6 +412,22 @@ pub(crate) enum AdminUsageLogBillingModeSchema {
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
 #[derive(ToSchema)]
+#[schema(as = ModelCatalogBillingMode, rename_all = "snake_case")]
+pub(crate) enum ModelCatalogBillingModeSchema {
+    PerToken,
+    Free,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
+#[schema(as = ModelCatalogPricingScope, rename_all = "snake_case")]
+pub(crate) enum ModelCatalogPricingScopeSchema {
+    PublicBase,
+    Group,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
 #[schema(as = AdminUsageLogSource, rename_all = "snake_case")]
 pub(crate) enum AdminUsageLogSourceSchema {
     Upstream,

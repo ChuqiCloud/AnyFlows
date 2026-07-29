@@ -129,6 +129,60 @@ impl fmt::Debug for TokenPrices {
     }
 }
 
+/// 应用请求三层倍率后的五类精确美元/百万 token 单价。
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct EffectiveTokenPrices {
+    values: [Decimal; 5],
+}
+
+impl EffectiveTokenPrices {
+    const fn from_values(values: [Decimal; 5]) -> Self {
+        Self { values }
+    }
+
+    /// 返回普通输入单价。
+    #[must_use]
+    pub const fn input(self) -> Decimal {
+        self.values[0]
+    }
+
+    /// 返回输出单价。
+    #[must_use]
+    pub const fn output(self) -> Decimal {
+        self.values[1]
+    }
+
+    /// 返回缓存读取单价。
+    #[must_use]
+    pub const fn cache_read(self) -> Decimal {
+        self.values[2]
+    }
+
+    /// 返回五分钟缓存创建单价。
+    #[must_use]
+    pub const fn cache_creation_5m(self) -> Decimal {
+        self.values[3]
+    }
+
+    /// 返回一小时缓存创建单价。
+    #[must_use]
+    pub const fn cache_creation_1h(self) -> Decimal {
+        self.values[4]
+    }
+
+    /// 按固定顺序返回五类单价，供目录边界做精确字符串序列化。
+    #[must_use]
+    pub const fn into_values(self) -> [Decimal; 5] {
+        self.values
+    }
+}
+
+impl fmt::Debug for EffectiveTokenPrices {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("EffectiveTokenPrices(<已脱敏>)")
+    }
+}
+
 /// 百万分比定点倍率，`1_000_000` 表示 `1.0`。
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PricingRatio(i64);
@@ -392,6 +446,24 @@ impl RatioPricingResolver {
         Self {
             mode: RatioMode::Metered { prices, ratios },
         }
+    }
+
+    /// 返回目录展示使用的倍率后单价；显式免费与按 token 零价保持不同语义。
+    pub fn effective_token_prices(&self) -> Result<Option<EffectiveTokenPrices>, PricingError> {
+        let RatioMode::Metered { prices, ratios } = self.mode else {
+            return Ok(None);
+        };
+        let values = quota_math::token_prices_after_ratios(
+            [
+                prices.input(),
+                prices.output(),
+                prices.cache_read(),
+                prices.cache_creation_5m(),
+                prices.cache_creation_1h(),
+            ],
+            ratios.micros(),
+        )?;
+        Ok(Some(EffectiveTokenPrices::from_values(values)))
     }
 }
 

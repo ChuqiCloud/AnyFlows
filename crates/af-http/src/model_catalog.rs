@@ -1,0 +1,266 @@
+use af_admin::{
+    ModelCatalogBillingMode, ModelCatalogItem, ModelCatalogPage, ModelCatalogPricingScope,
+    ModelCatalogQuery, ModelCatalogReadError,
+};
+use axum::{
+    extract::{Extension, RawQuery, State},
+    response::Response,
+};
+use serde::Serialize;
+use utoipa::ToSchema;
+
+use crate::{
+    chat_completions::HttpState, management_error::ManagementError,
+    management_session::no_store_json,
+};
+
+const MAX_MODEL_CATALOG_QUERY_BYTES: usize = 1_024;
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = ModelCatalogTokenPrices)]
+pub(crate) struct ModelCatalogTokenPricesResponse {
+    #[schema(pattern = "^[0-9]+(?:\\.[0-9]+)?$", max_length = 64)]
+    input: String,
+    #[schema(pattern = "^[0-9]+(?:\\.[0-9]+)?$", max_length = 64)]
+    output: String,
+    #[schema(pattern = "^[0-9]+(?:\\.[0-9]+)?$", max_length = 64)]
+    cache_read: String,
+    #[schema(pattern = "^[0-9]+(?:\\.[0-9]+)?$", max_length = 64)]
+    cache_creation_5m: String,
+    #[schema(pattern = "^[0-9]+(?:\\.[0-9]+)?$", max_length = 64)]
+    cache_creation_1h: String,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = ModelCatalogRatios)]
+pub(crate) struct ModelCatalogRatiosResponse {
+    #[schema(pattern = "^[0-9]+$", max_length = 19)]
+    group_micros: String,
+    #[schema(pattern = "^[0-9]+$", max_length = 19)]
+    group_model_micros: String,
+    #[schema(pattern = "^[0-9]+$", max_length = 19)]
+    peak_micros: String,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = ModelCatalogItem)]
+pub(crate) struct ModelCatalogItemResponse {
+    #[schema(min_length = 1, max_length = 256)]
+    model: String,
+    #[schema(value_type = crate::openapi::schema::ModelCatalogBillingModeSchema)]
+    billing_mode: ModelCatalogBillingMode,
+    #[schema(required = true)]
+    prices: Option<ModelCatalogTokenPricesResponse>,
+    ratios: ModelCatalogRatiosResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = ModelCatalogListResponse)]
+pub(crate) struct ModelCatalogListResponse {
+    #[schema(value_type = crate::openapi::schema::ModelCatalogPricingScopeSchema)]
+    pricing_scope: ModelCatalogPricingScope,
+    #[schema(max_items = 100)]
+    models: Vec<ModelCatalogItemResponse>,
+    #[schema(min_length = 1, max_length = 256, required = true)]
+    next_cursor: Option<String>,
+}
+
+/// 返回游客公开基础目录或当前登录用户默认分组的可用目录。
+pub(crate) async fn list_models(
+    State(state): State<HttpState>,
+    RawQuery(raw_query): RawQuery,
+    authentication: Option<Extension<af_admin::SessionAuthentication>>,
+) -> Result<Response, ManagementError> {
+    let query = parse_list_query(raw_query.as_deref())?;
+    let reader = state
+        .model_catalog_reader
+        .as_deref()
+        .ok_or(ManagementError::Internal)?;
+    let page = reader
+        .list(
+            authentication.map(|Extension(authentication)| authentication),
+            &query,
+        )
+        .map_err(map_read_error)?;
+    Ok(no_store_json(ModelCatalogListResponse::from_page(page)))
+}
+
+impl ModelCatalogListResponse {
+    fn from_page(page: ModelCatalogPage) -> Self {
+        Self {
+            pricing_scope: page.pricing_scope(),
+            models: page
+                .items()
+                .iter()
+                .map(ModelCatalogItemResponse::from_item)
+                .collect(),
+            next_cursor: page.next_cursor().map(str::to_owned),
+        }
+    }
+}
+
+impl ModelCatalogItemResponse {
+    fn from_item(item: &ModelCatalogItem) -> Self {
+        let prices = item.prices().map(|prices| ModelCatalogTokenPricesResponse {
+            input: prices.input().to_owned(),
+            output: prices.output().to_owned(),
+            cache_read: prices.cache_read().to_owned(),
+            cache_creation_5m: prices.cache_creation_5m().to_owned(),
+            cache_creation_1h: prices.cache_creation_1h().to_owned(),
+        });
+        let ratios = item.ratios();
+        Self {
+            model: item.model().to_owned(),
+            billing_mode: item.billing_mode(),
+            prices,
+            ratios: ModelCatalogRatiosResponse {
+                group_micros: ratios.group_micros().to_string(),
+                group_model_micros: ratios.group_model_micros().to_string(),
+                peak_micros: ratios.peak_micros().to_string(),
+            },
+        }
+    }
+}
+
+fn parse_list_query(raw_query: Option<&str>) -> Result<ModelCatalogQuery, ManagementError> {
+    let Some(raw_query) = raw_query else {
+        return Ok(ModelCatalogQuery::default());
+    };
+    if raw_query.is_empty() {
+        return Ok(ModelCatalogQuery::default());
+    }
+    if raw_query.len() > MAX_MODEL_CATALOG_QUERY_BYTES {
+        return Err(ManagementError::InvalidRequest);
+    }
+    validate_percent_encoding(raw_query)?;
+    let mut search = None;
+    let mut billing_mode = None;
+    let mut after = None;
+    let mut limit = None;
+    for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
+        if key.contains('\u{fffd}') || value.contains('\u{fffd}') {
+            return Err(ManagementError::InvalidRequest);
+        }
+        match key.as_ref() {
+            "q" if search.is_none() => search = Some(value.into_owned()),
+            "billing_mode" if billing_mode.is_none() => {
+                billing_mode = Some(parse_billing_mode(&value)?)
+            }
+            "after" if after.is_none() => after = Some(value.into_owned()),
+            "limit" if limit.is_none() => limit = Some(parse_limit(&value)?),
+            _ => return Err(ManagementError::InvalidRequest),
+        }
+    }
+    ModelCatalogQuery::new(
+        search,
+        billing_mode,
+        after,
+        limit.unwrap_or(af_admin::DEFAULT_MODEL_CATALOG_PAGE_SIZE),
+    )
+    .map_err(map_read_error)
+}
+
+fn parse_billing_mode(value: &str) -> Result<ModelCatalogBillingMode, ManagementError> {
+    match value {
+        "per_token" => Ok(ModelCatalogBillingMode::PerToken),
+        "free" => Ok(ModelCatalogBillingMode::Free),
+        _ => Err(ManagementError::InvalidRequest),
+    }
+}
+
+fn parse_limit(value: &str) -> Result<usize, ManagementError> {
+    if value.is_empty()
+        || value.starts_with('+')
+        || value.starts_with('-')
+        || value.chars().any(|character| !character.is_ascii_digit())
+    {
+        return Err(ManagementError::InvalidRequest);
+    }
+    value
+        .parse::<usize>()
+        .map_err(|_| ManagementError::InvalidRequest)
+}
+
+fn validate_percent_encoding(raw_query: &str) -> Result<(), ManagementError> {
+    let bytes = raw_query.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len()
+                || !bytes[index + 1].is_ascii_hexdigit()
+                || !bytes[index + 2].is_ascii_hexdigit()
+            {
+                return Err(ManagementError::InvalidRequest);
+            }
+            index += 3;
+        } else {
+            index += 1;
+        }
+    }
+    Ok(())
+}
+
+fn map_read_error(error: ModelCatalogReadError) -> ManagementError {
+    match error {
+        ModelCatalogReadError::InvalidQuery => ManagementError::InvalidRequest,
+        ModelCatalogReadError::Internal => ManagementError::Internal,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn query_parser_rejects_duplicates_unknowns_and_unstable_values() {
+        let query =
+            parse_list_query(Some("q=gpt&billing_mode=per_token&after=gpt-4&limit=48")).unwrap();
+        assert_eq!(query.search(), Some("gpt"));
+        assert_eq!(
+            query.billing_mode(),
+            Some(ModelCatalogBillingMode::PerToken)
+        );
+        assert_eq!(query.after(), Some("gpt-4"));
+        assert_eq!(query.limit(), 48);
+
+        for raw_query in [
+            "q=",
+            "q=gpt&q=claude",
+            "billing_mode=paid",
+            "after=bad%0Amodel",
+            "limit=0",
+            "limit=101",
+            "unknown=value",
+            "q=%",
+            "q=%ff",
+        ] {
+            assert_eq!(
+                parse_list_query(Some(raw_query)),
+                Err(ManagementError::InvalidRequest),
+                "{raw_query}"
+            );
+        }
+        let oversized = format!("q={}", "a".repeat(MAX_MODEL_CATALOG_QUERY_BYTES));
+        assert_eq!(
+            parse_list_query(Some(&oversized)),
+            Err(ManagementError::InvalidRequest)
+        );
+    }
+
+    #[test]
+    fn response_serializes_the_authoritative_pricing_scope() {
+        let response = ModelCatalogListResponse::from_page(ModelCatalogPage::from_parts(
+            ModelCatalogPricingScope::PublicBase,
+            Vec::new(),
+            None,
+        ));
+        let value = serde_json::to_value(response).unwrap();
+        assert_eq!(value["pricing_scope"], "public_base");
+        assert_eq!(value["models"], serde_json::json!([]));
+        assert!(value["next_cursor"].is_null());
+    }
+}

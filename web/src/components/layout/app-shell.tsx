@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { LogOut, Search, ShieldCheck } from 'lucide-react'
+import { CircleUserRound, LogOut, Search, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AppNavigation } from '@/components/layout/app-navigation'
@@ -58,7 +58,7 @@ export function AppShell({ title, children, currentUser, onLogout }: AppShellPro
         </SidebarHeader>
 
         <SidebarContent className="px-1.5 py-1.5">
-          <AppNavigation />
+          <AppNavigation role={currentUser.role} />
         </SidebarContent>
 
         <SidebarFooter className="px-1.5 pb-2.5">
@@ -94,8 +94,10 @@ export function AppShell({ title, children, currentUser, onLogout }: AppShellPro
             <LanguageToggle />
             <ThemeToggle />
             <div className="ml-1 hidden h-7 items-center gap-1.5 border-l border-[var(--hairline)] pl-2 text-xs text-muted-foreground sm:flex">
-              <ShieldCheck className="size-3.5 text-info" aria-hidden="true" />
-              <span>{t('auth.account.admin')}</span>
+              {currentUser.role === 'admin'
+                ? <ShieldCheck className="size-3.5 text-info" aria-hidden="true" />
+                : <CircleUserRound className="size-3.5 text-info" aria-hidden="true" />}
+              <span>{t(`auth.account.${currentUser.role}`)}</span>
               <span className="text-foreground">#{currentUser.id}</span>
             </div>
             <Tooltip>

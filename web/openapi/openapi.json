@@ -1172,6 +1172,109 @@
         ]
       }
     },
+    "/api/models": {
+      "get": {
+        "tags": [
+          "模型目录"
+        ],
+        "summary": "读取公开或当前分组模型目录",
+        "description": "无 Authorization 时返回公开基础目录；携带 Bearer JWT 时严格认证并返回当前默认分组的可用模型与实际价格。",
+        "operationId": "listModels",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "模型名包含搜索",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1
+            }
+          },
+          {
+            "name": "billing_mode",
+            "in": "query",
+            "description": "计费模式筛选",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ModelCatalogBillingMode"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "上一页最后一个模型名",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256,
+              "minLength": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 24",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "公开基础目录或当前默认分组可用目录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalogListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "搜索、筛选或分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "运行时目录或定价快照不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/tokens": {
       "get": {
         "tags": [
@@ -5058,6 +5161,146 @@
         },
         "additionalProperties": false
       },
+      "ModelCatalogBillingMode": {
+        "type": "string",
+        "enum": [
+          "per_token",
+          "free"
+        ]
+      },
+      "ModelCatalogItem": {
+        "type": "object",
+        "required": [
+          "model",
+          "billing_mode",
+          "prices",
+          "ratios"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "billing_mode": {
+            "$ref": "#/components/schemas/ModelCatalogBillingMode"
+          },
+          "prices": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModelCatalogTokenPrices"
+              }
+            ]
+          },
+          "ratios": {
+            "$ref": "#/components/schemas/ModelCatalogRatios"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ModelCatalogListResponse": {
+        "type": "object",
+        "required": [
+          "pricing_scope",
+          "models",
+          "next_cursor"
+        ],
+        "properties": {
+          "pricing_scope": {
+            "$ref": "#/components/schemas/ModelCatalogPricingScope"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelCatalogItem"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "ModelCatalogPricingScope": {
+        "type": "string",
+        "enum": [
+          "public_base",
+          "group"
+        ]
+      },
+      "ModelCatalogRatios": {
+        "type": "object",
+        "required": [
+          "group_micros",
+          "group_model_micros",
+          "peak_micros"
+        ],
+        "properties": {
+          "group_micros": {
+            "type": "string",
+            "maxLength": 19,
+            "pattern": "^[0-9]+$"
+          },
+          "group_model_micros": {
+            "type": "string",
+            "maxLength": 19,
+            "pattern": "^[0-9]+$"
+          },
+          "peak_micros": {
+            "type": "string",
+            "maxLength": 19,
+            "pattern": "^[0-9]+$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ModelCatalogTokenPrices": {
+        "type": "object",
+        "required": [
+          "input",
+          "output",
+          "cache_read",
+          "cache_creation_5m",
+          "cache_creation_1h"
+        ],
+        "properties": {
+          "input": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+          },
+          "output": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+          },
+          "cache_read": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+          },
+          "cache_creation_5m": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+          },
+          "cache_creation_1h": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+          }
+        },
+        "additionalProperties": false
+      },
       "SessionResponse": {
         "type": "object",
         "required": [
@@ -5138,7 +5381,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT",
-        "description": "管理会话 Bearer JWT"
+        "description": "登录会话 Bearer JWT"
       }
     }
   },
@@ -5157,6 +5400,9 @@
     },
     {
       "name": "分组管理"
+    },
+    {
+      "name": "模型目录"
     },
     {
       "name": "令牌管理"

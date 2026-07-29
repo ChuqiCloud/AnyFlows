@@ -1,6 +1,6 @@
 use std::{fmt, time::Duration};
 
-use af_domain::UserId;
+use af_domain::{GroupId, UserId};
 use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordVerifier},
@@ -32,8 +32,12 @@ pub enum UserSessionLookupOutcome {
 /// 会话回查完成后的用户状态。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UserSessionLookupByIdOutcome {
-    /// 用户仍存在、启用且角色值有效。
-    Authenticated { user_id: UserId, role: i16 },
+    /// 用户仍存在、启用，且角色与默认分组值有效。
+    Authenticated {
+        user_id: UserId,
+        role: i16,
+        group_id: GroupId,
+    },
     /// 用户不存在、禁用或已软删除。
     Rejected,
 }
@@ -164,12 +168,18 @@ impl UserSessionRepository {
             .map_err(|_| record_internal_error(UserSessionRepositoryError::Invariant))?;
         let id = UserId::new(row.user_id)
             .map_err(|_| record_internal_error(UserSessionRepositoryError::Invariant))?;
+        let group_id = GroupId::new(row.default_group_id)
+            .map_err(|_| record_internal_error(UserSessionRepositoryError::Invariant))?;
         let role = valid_role(row.role)?;
         let status = valid_status(row.status)?;
         if !status || row.deleted_at.is_some() {
             return Ok(UserSessionLookupByIdOutcome::Rejected);
         }
-        Ok(UserSessionLookupByIdOutcome::Authenticated { user_id: id, role })
+        Ok(UserSessionLookupByIdOutcome::Authenticated {
+            user_id: id,
+            role,
+            group_id,
+        })
     }
 }
 
@@ -223,6 +233,10 @@ fn session_query(user_id: UserId) -> SelectStatement {
             Alias::new("user_role"),
         )
         .expr_as(
+            Expr::col((users::Entity, users::Column::DefaultGroupId)),
+            Alias::new("user_default_group_id"),
+        )
+        .expr_as(
             Expr::col((users::Entity, users::Column::Status)),
             Alias::new("user_status"),
         )
@@ -259,6 +273,7 @@ impl LoginUserRow {
 struct SessionUserRow {
     user_id: i64,
     role: i16,
+    default_group_id: i64,
     status: i16,
     deleted_at: Option<TimeDateTimeWithTimeZone>,
 }
@@ -268,6 +283,7 @@ impl SessionUserRow {
         Ok(Self {
             user_id: result.try_get("", "user_id")?,
             role: result.try_get("", "user_role")?,
+            default_group_id: result.try_get("", "user_default_group_id")?,
             status: result.try_get("", "user_status")?,
             deleted_at: result.try_get("", "user_deleted_at")?,
         })

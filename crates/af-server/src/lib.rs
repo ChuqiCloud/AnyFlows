@@ -9,10 +9,12 @@ mod channel_probe_tests;
 mod credential_feedback;
 mod credential_order;
 mod frontend;
+mod model_catalog;
 mod readiness;
 mod scheduled_chat;
 mod shutdown;
 mod supervisor;
+mod utc_time;
 
 pub use billing_chat::{
     BillingChatService, ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture,

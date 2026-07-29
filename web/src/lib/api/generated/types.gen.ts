@@ -348,6 +348,31 @@ export type ManagementError = {
     code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
     message: string;
 };
+export type ModelCatalogBillingMode = 'per_token' | 'free';
+export type ModelCatalogItem = {
+    model: string;
+    billing_mode: ModelCatalogBillingMode;
+    prices: null | ModelCatalogTokenPrices;
+    ratios: ModelCatalogRatios;
+};
+export type ModelCatalogListResponse = {
+    pricing_scope: ModelCatalogPricingScope;
+    models: Array<ModelCatalogItem>;
+    next_cursor: string | null;
+};
+export type ModelCatalogPricingScope = 'public_base' | 'group';
+export type ModelCatalogRatios = {
+    group_micros: string;
+    group_model_micros: string;
+    peak_micros: string;
+};
+export type ModelCatalogTokenPrices = {
+    input: string;
+    output: string;
+    cache_read: string;
+    cache_creation_5m: string;
+    cache_creation_1h: string;
+};
 export type SessionResponse = {
     user: SessionUser;
     expires_at: number;
@@ -734,6 +759,27 @@ export type UpdateAdminGroupResponses = {
     200: AdminGroup;
 };
 export type UpdateAdminGroupResponse = UpdateAdminGroupResponses[keyof UpdateAdminGroupResponses];
+export type ListModelsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        q?: string;
+        billing_mode?: ModelCatalogBillingMode;
+        after?: string;
+        limit?: number;
+    };
+    url: '/api/models';
+};
+export type ListModelsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListModelsError = ListModelsErrors[keyof ListModelsErrors];
+export type ListModelsResponses = {
+    200: ModelCatalogListResponse;
+};
+export type ListModelsResponse = ListModelsResponses[keyof ListModelsResponses];
 export type ListAdminTokensData = {
     body?: never;
     path?: never;

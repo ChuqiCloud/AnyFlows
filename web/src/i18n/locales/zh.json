@@ -6,6 +6,7 @@
   "nav": {
     "label": "主导航",
     "overview": "总览",
+    "models": "模型广场",
     "channels": "渠道",
     "keys": "令牌",
     "usage": "用量",
@@ -443,21 +444,97 @@
       "body": "服务暂时没有返回已确认用量，请稍后重试。"
     }
   },
+  "models": {
+    "title": "模型广场",
+    "subtitle": "浏览公开模型定价；登录后自动切换为当前分组的可用模型与实际价格。",
+    "public": {
+      "scope": "模型广场",
+      "login": "登录",
+      "console": "进入控制台"
+    },
+    "scope": {
+      "pending": "正在确认价格范围",
+      "public_base": {
+        "label": "公开基础价",
+        "subtitle": "公开定价目录与基础价格，不代表模型当前可调用；登录后可查看当前分组实际价。"
+      },
+      "group": {
+        "label": "当前分组价",
+        "subtitle": "仅展示当前默认分组真实可用的模型，价格已应用分组、附加与当前高峰倍率。"
+      }
+    },
+    "loading": "正在加载模型目录",
+    "loadingMore": "正在加载更多模型",
+    "loadedCount_one": "已加载 {{count}} 个模型",
+    "loadedCount_other": "已加载 {{count}} 个模型",
+    "filters": {
+      "search": "搜索模型",
+      "searchPlaceholder": "输入 Canonical 模型名",
+      "billingMode": "计费模式",
+      "all": "全部模式"
+    },
+    "billing": {
+      "per_token": "按 token 计费",
+      "free": "免费"
+    },
+    "columns": {
+      "model": "模型",
+      "input": "输入价格",
+      "output": "输出价格",
+      "cacheRead": "缓存读取",
+      "cacheCreation5m": "缓存创建 5 分钟",
+      "cacheCreation1h": "缓存创建 1 小时",
+      "billing": "计费与操作"
+    },
+    "values": {
+      "compatible": "兼容模型",
+      "notApplicable": "不适用",
+      "priceTitle": "{{label}}：每百万 token ${{value}}",
+      "perMillion": "每百万 token",
+      "appliedRatios": "已应用倍率",
+      "baseRatios": "公开基础倍率"
+    },
+    "ratios": {
+      "group": "分组",
+      "groupModel": "分组附加",
+      "peak": "高峰"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "loadMore": "加载更多",
+      "details": "价格详情",
+      "copy": "复制模型名",
+      "copied": "已复制"
+    },
+    "empty": {
+      "title": "暂无可展示模型",
+      "body": "当前价格范围内还没有模型记录。",
+      "filteredTitle": "没有匹配模型",
+      "filteredBody": "请调整模型名或计费模式筛选。"
+    },
+    "error": {
+      "title": "无法读取模型目录",
+      "body": "服务暂时没有返回可靠的模型与价格快照，请稍后重试。",
+      "moreBody": "后续模型加载失败，已加载的目录仍可使用。"
+    }
+  },
   "auth": {
     "login": {
-      "eyebrow": "AnyFlows 管理控制台",
-      "heroTitle": "掌控每一条模型流",
-      "heroBody": "安全进入统一控制台，继续管理你的网关。",
+      "eyebrow": "AnyFlows 账户登录",
+      "heroTitle": "你的模型与价格，一处查看",
+      "heroBody": "登录后查看当前分组可用模型与实际价格；管理员可继续管理网关。",
       "title": "欢迎回来",
-      "subtitle": "使用管理员账户继续",
+      "subtitle": "使用你的账户继续",
       "username": "用户名",
       "usernamePlaceholder": "请输入用户名",
       "password": "密码",
       "passwordPlaceholder": "请输入密码",
       "showPassword": "显示密码",
       "hidePassword": "隐藏密码",
-      "submit": "登录控制台",
-      "submitting": "正在验证"
+      "submit": "登录",
+      "submitting": "正在验证",
+      "browseModels": "游客浏览模型广场"
     },
     "errors": {
       "invalidCredentials": "用户名或密码不正确。",
@@ -467,7 +544,7 @@
       "unavailable": "暂时无法连接服务，请稍后重试。"
     },
     "session": {
-      "loading": "正在恢复管理会话",
+      "loading": "正在恢复登录会话",
       "unavailableTitle": "暂时无法验证会话",
       "unavailableBody": "服务当前不可用，你的登录状态仍然保留。",
       "retry": "重新验证",
@@ -475,6 +552,7 @@
     },
     "account": {
       "admin": "管理员",
+      "user": "用户",
       "logout": "退出登录"
     }
   },
@@ -512,7 +590,10 @@
     }
   },
   "landing": {
-    "nav": { "console": "进入控制台" },
+    "nav": {
+      "models": "模型广场",
+      "console": "进入控制台"
+    },
     "hero": {
       "eyebrow": "大模型 API 聚合网关",
       "subtitle": "统一接入、智能选路、精确计费。把分散的模型渠道收敛成一条可观测的流。",

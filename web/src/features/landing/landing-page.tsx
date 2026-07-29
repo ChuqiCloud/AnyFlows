@@ -1,5 +1,6 @@
 import {
   ArrowRight,
+  Boxes,
   Gauge,
   KeyRound,
   Layers,
@@ -62,6 +63,13 @@ export function LandingPage() {
             </span>
           </div>
           <div className="flex items-center gap-1.5">
+            <Button variant="ghost" size="sm" asChild>
+              <a href="#/models" title={t('landing.nav.models')}>
+                <Boxes className="size-4" aria-hidden="true" />
+                <span className="hidden md:inline">{t('landing.nav.models')}</span>
+                <span className="sr-only md:hidden">{t('landing.nav.models')}</span>
+              </a>
+            </Button>
             <LanguageToggle />
             <MotionToggle />
             <ThemeToggle />

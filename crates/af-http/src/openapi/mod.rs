@@ -4,6 +4,7 @@ mod channels;
 mod credentials;
 mod dashboard;
 mod groups;
+mod models;
 pub(crate) mod schema;
 mod session;
 mod setup;
@@ -25,6 +26,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(dashboard::document());
     document.merge(users::document());
     document.merge(groups::document());
+    document.merge(models::document());
     document.merge(tokens::document());
     document.merge(usage_logs::document());
     document.merge(channels::document());
@@ -36,6 +38,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("管理看板"),
         Tag::new("用户管理"),
         Tag::new("分组管理"),
+        Tag::new("模型目录"),
         Tag::new("令牌管理"),
         Tag::new("用量日志"),
         Tag::new("渠道管理"),
@@ -50,7 +53,7 @@ pub fn openapi_document() -> OpenApi {
                 HttpBuilder::new()
                     .scheme(HttpAuthScheme::Bearer)
                     .bearer_format("JWT")
-                    .description(Some("管理会话 Bearer JWT"))
+                    .description(Some("登录会话 Bearer JWT"))
                     .build(),
             ),
         );
@@ -66,7 +69,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 17);
+        assert_eq!(document.paths.paths.len(), 18);
         let operation_count = document
             .paths
             .paths
@@ -87,7 +90,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 32);
+        assert_eq!(operation_count, 33);
         assert!(
             document
                 .components
@@ -133,6 +136,7 @@ mod tests {
             "listAdminTokens",
             "listAdminUsageLogs",
             "listAdminUsers",
+            "listModels",
             "loginManagementSession",
             "probeAdminChannel",
             "updateAdminChannel",
@@ -147,12 +151,18 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 43);
+        assert_eq!(schemas.len(), 49);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
         assert!(schemas.contains_key("SetupRequest"));
         assert!(schemas.contains_key("SetupStatusResponse"));
+        assert!(schemas.contains_key("ModelCatalogListResponse"));
+        assert!(schemas.contains_key("ModelCatalogPricingScope"));
+        assert_eq!(
+            document["paths"]["/api/models"]["get"]["security"],
+            serde_json::json!([{}, { "bearerAuth": [] }])
+        );
     }
 
     #[test]

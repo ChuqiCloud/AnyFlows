@@ -42,8 +42,8 @@ pub use model_price_cache::{
     ModelPriceSourceError, ModelPriceSourceFuture, ModelPriceSourceRecord,
 };
 pub use pricing::{
-    BillingMode, CostBreakdown, PriceData, PricingContext, PricingError, PricingRatio,
-    PricingRatios, PricingResolver, RatioPricingResolver, TokenPrices,
+    BillingMode, CostBreakdown, EffectiveTokenPrices, PriceData, PricingContext, PricingError,
+    PricingRatio, PricingRatios, PricingResolver, RatioPricingResolver, TokenPrices,
 };
 pub use pricing_snapshot::{
     CachedRequestPricingSnapshotSource, RequestPricingSnapshot, RequestPricingSnapshotError,

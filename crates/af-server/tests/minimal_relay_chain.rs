@@ -25,6 +25,7 @@ use af_admin::{
     AdminUserReadError, AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture,
     AdminUserWriteError, AdminUserWriter, ApiKeyDigest, InitialSetup, InitialSetupCommand,
     InitialSetupError, InitialSetupFuture, InitialSetupStatusFuture, LoginCredentials,
+    ModelCatalogPage, ModelCatalogQuery, ModelCatalogReadError, ModelCatalogReader,
     SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
     SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
 };
@@ -65,6 +66,7 @@ impl ReadinessProbe for AlwaysReadyProbe {
 struct AlwaysAuthenticates;
 
 struct RejectSessions;
+struct RejectModelCatalog;
 struct RejectInitialSetup;
 struct RejectAdminChannels;
 struct RejectAdminGroups;
@@ -80,6 +82,16 @@ impl SessionAuthenticator for RejectSessions {
 
     fn authenticate<'a>(&'a self, _token: &'a str) -> SessionAuthenticationFuture<'a> {
         Box::pin(async { Err(SessionAuthenticationError::InvalidSession) })
+    }
+}
+
+impl ModelCatalogReader for RejectModelCatalog {
+    fn list(
+        &self,
+        _authentication: Option<af_admin::SessionAuthentication>,
+        _query: &ModelCatalogQuery,
+    ) -> Result<ModelCatalogPage, ModelCatalogReadError> {
+        Err(ModelCatalogReadError::Internal)
     }
 }
 
@@ -662,6 +674,7 @@ async fn start_server(
         readiness,
         Arc::new(AlwaysAuthenticates),
         Arc::new(RejectSessions),
+        Arc::new(RejectModelCatalog),
         Arc::new(RejectInitialSetup),
         Arc::new(RejectAdminChannels),
         Arc::new(RejectAdminChannels),

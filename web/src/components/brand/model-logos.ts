@@ -24,7 +24,7 @@ import XAI from '@lobehub/icons/es/XAI/components/Mono'
 import Zhipu from '@lobehub/icons/es/Zhipu/components/Mono'
 import type { ComponentType, SVGProps } from 'react'
 
-type LogoComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>
+export type LogoComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>
 
 /**
  * 网关已覆盖 / 规划覆盖的模型厂商标识。
@@ -57,3 +57,51 @@ export const modelLogos: readonly { name: string; Icon: LogoComponent }[] = [
   { name: 'OpenRouter', Icon: OpenRouter as LogoComponent },
   { name: 'Ollama', Icon: Ollama as LogoComponent },
 ]
+
+const logoByName = new Map(modelLogos.map((logo) => [logo.name, logo]))
+
+/**
+ * 仅根据模型名提供界面识别标识，不把结果当作后端供应商或能力声明。
+ * 未命中稳定命名约定时返回 undefined，由调用方展示通用模型图标。
+ */
+export function findModelLogo(model: string) {
+  const value = model.toLowerCase()
+  const brand = value.includes('claude')
+    ? 'Anthropic'
+    : value.includes('gemini')
+      ? 'Gemini'
+      : value.includes('deepseek')
+        ? 'DeepSeek'
+        : value.includes('qwen')
+          ? 'Qwen'
+          : value.includes('kimi')
+            ? 'Kimi'
+            : value.includes('moonshot')
+              ? 'Moonshot'
+              : value.includes('grok')
+                ? 'xAI'
+                : value.includes('llama')
+                  ? 'Meta'
+                  : value.includes('mistral') || value.includes('codestral')
+                    ? 'Mistral'
+                    : value.includes('command-r') || value.includes('cohere')
+                      ? 'Cohere'
+                      : value.includes('doubao')
+                        ? 'Doubao'
+                        : value.includes('hunyuan')
+                          ? 'Hunyuan'
+                          : value.includes('minimax')
+                            ? 'MiniMax'
+                            : value.includes('wenxin') || value.includes('ernie')
+                              ? 'Wenxin'
+                              : value.includes('baichuan')
+                                ? 'Baichuan'
+                                : value.includes('stepfun')
+                                  ? 'Stepfun'
+                                  : value.startsWith('gpt-')
+                                      || /^o[1-9](?:-|$)/.test(value)
+                                      || value.includes('openai')
+                                    ? 'OpenAI'
+                                    : undefined
+  return brand ? logoByName.get(brand) : undefined
+}
