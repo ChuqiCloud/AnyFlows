@@ -81,7 +81,13 @@ pub(crate) async fn create_playground_share(
     Extension(authentication): Extension<SessionAuthentication>,
     request: Result<Json<PlaygroundShareCreateRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
-    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(rejection) if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
+            return Ok(rejection.into_response());
+        }
+        Err(_) => return Err(ManagementError::InvalidRequest),
+    };
     let command = request
         .into_command()
         .map_err(|_| ManagementError::InvalidRequest)?;
