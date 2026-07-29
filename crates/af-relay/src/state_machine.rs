@@ -1,8 +1,8 @@
 use std::{collections::BTreeSet, fmt, num::NonZeroUsize, sync::Arc};
 
 use af_adapter::{
-    Adaptor, AdaptorSendExt, Bytes, Credential, HeaderMap, Method, Operation, RelayContext,
-    ResponseMode, UpstreamRequest, UpstreamResponse,
+    Adaptor, AdaptorSendExt, AdaptorTarget, Bytes, Credential, HeaderMap, Method, Operation,
+    RelayContext, ResponseMode, UpstreamRequest, UpstreamResponse,
 };
 use af_domain::{ChannelId, MAX_MODEL_NAME_BYTES, UpstreamError};
 use thiserror::Error;
@@ -364,10 +364,10 @@ impl RelayStateMachine {
             }
             headers.extend(candidate.header_overrides.clone());
 
-            let target = match candidate
-                .adaptor
-                .build_url(&candidate.context, request.operation)
-            {
+            let target = match candidate.adaptor.build_url(
+                &candidate.context,
+                AdaptorTarget::new(&request.model, request.operation, request.response_mode),
+            ) {
                 Ok(target) => target,
                 Err(error) => {
                     last_error = Some(RelayError::Adaptor(error));

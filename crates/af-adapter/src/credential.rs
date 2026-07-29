@@ -1,7 +1,7 @@
 use std::fmt;
 
 use af_domain::CredentialKind;
-use af_httpclient::{HeaderMap, HeaderName};
+use af_httpclient::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::{AdaptorError, AdaptorResult};
 
@@ -25,6 +25,26 @@ pub(crate) fn clear_authentication_headers(headers: &mut HeaderMap) {
     ] {
         headers.remove(name);
     }
+}
+
+/// 按供应商指定的 API Key 头名构造互斥的 API Key 或 OAuth Bearer 认证头。
+///
+/// 返回值始终标记为敏感；调用方仍须先清理旧认证载体，再写入该唯一认证头。
+pub(crate) fn api_key_or_bearer_header(
+    credential: &Credential,
+    api_key_header: HeaderName,
+) -> AdaptorResult<(HeaderName, HeaderValue)> {
+    let (name, value) = match credential.kind() {
+        CredentialKind::ApiKey => (api_key_header, credential.expose_secret().to_owned()),
+        CredentialKind::Oauth => (
+            HeaderName::from_static("authorization"),
+            format!("Bearer {}", credential.expose_secret()),
+        ),
+        kind => return Err(AdaptorError::UnsupportedCredential { kind }),
+    };
+    let mut value = HeaderValue::from_str(&value).map_err(|_| AdaptorError::InvalidHeader)?;
+    value.set_sensitive(true);
+    Ok((name, value))
 }
 
 /// 已解密但默认脱敏的凭据视图。

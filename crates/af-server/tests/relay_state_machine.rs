@@ -7,8 +7,8 @@ use std::{
 };
 
 use af_adapter::{
-    Adaptor, AdaptorError, AdaptorResult, Bytes, ChannelType, Credential, HeaderMap, Method,
-    OpenAiAdaptor, Operation, PooledClient, Protocol, RelayContext, ResponseMode,
+    Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Bytes, ChannelType, Credential, HeaderMap,
+    Method, OpenAiAdaptor, Operation, PooledClient, Protocol, RelayContext, ResponseMode,
 };
 use af_domain::{ChannelId, UpstreamError, UpstreamServerStatus};
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
@@ -52,12 +52,18 @@ impl Adaptor for RejectingAdaptor {
         vec![TEST_MODEL.to_owned()]
     }
 
-    fn build_url(&self, context: &RelayContext, operation: Operation) -> AdaptorResult<String> {
+    fn build_url(
+        &self,
+        context: &RelayContext,
+        target: AdaptorTarget<'_>,
+    ) -> AdaptorResult<String> {
         match self.stage {
             RejectionStage::Credential => {
                 context.append_path(self.default_base_url(), "v1/chat/completions")
             }
-            RejectionStage::Url => Err(AdaptorError::UnsupportedOperation { operation }),
+            RejectionStage::Url => Err(AdaptorError::UnsupportedOperation {
+                operation: target.operation(),
+            }),
         }
     }
 

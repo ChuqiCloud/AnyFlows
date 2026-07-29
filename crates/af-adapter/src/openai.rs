@@ -4,7 +4,7 @@ use af_domain::{ChannelType, CredentialKind, Operation, Protocol};
 use af_httpclient::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::credential::clear_authentication_headers;
-use crate::{Adaptor, AdaptorError, AdaptorResult, Credential, RelayContext};
+use crate::{Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Credential, RelayContext};
 
 /// OpenAI Chat Completions 及兼容渠道适配器。
 ///
@@ -72,9 +72,15 @@ impl Adaptor for OpenAiAdaptor {
         self.supported_models.clone()
     }
 
-    fn build_url(&self, context: &RelayContext, operation: Operation) -> AdaptorResult<String> {
-        if operation != Operation::Chat {
-            return Err(AdaptorError::UnsupportedOperation { operation });
+    fn build_url(
+        &self,
+        context: &RelayContext,
+        target: AdaptorTarget<'_>,
+    ) -> AdaptorResult<String> {
+        if target.operation() != Operation::Chat {
+            return Err(AdaptorError::UnsupportedOperation {
+                operation: target.operation(),
+            });
         }
         context.append_path(Self::DEFAULT_BASE_URL, self.endpoint_path(context)?)
     }
@@ -141,6 +147,10 @@ mod tests {
         )
     }
 
+    fn target(operation: Operation) -> AdaptorTarget<'static> {
+        AdaptorTarget::new("gpt-test", operation, crate::ResponseMode::Full)
+    }
+
     #[test]
     fn openai_metadata_and_models_are_stable() {
         let adaptor = OpenAiAdaptor::with_supported_models(["gpt-test", "deepseek-test"]);
@@ -154,7 +164,9 @@ mod tests {
     fn build_url_supports_root_and_v1_base_paths() {
         let adaptor = OpenAiAdaptor::new();
         assert_eq!(
-            adaptor.build_url(&context(), Operation::Chat).unwrap(),
+            adaptor
+                .build_url(&context(), target(Operation::Chat))
+                .unwrap(),
             "https://api.openai.com/v1/chat/completions"
         );
         for base_url in [
@@ -163,7 +175,10 @@ mod tests {
             "https://gateway.example/proxy/openai/v1/",
         ] {
             let target = adaptor
-                .build_url(&context().with_base_url(base_url).unwrap(), Operation::Chat)
+                .build_url(
+                    &context().with_base_url(base_url).unwrap(),
+                    target(Operation::Chat),
+                )
                 .unwrap();
             assert!(target.ends_with("/proxy/openai/v1/chat/completions"));
         }
@@ -172,13 +187,13 @@ mod tests {
                 &context()
                     .with_base_url("https://gateway.example/proxy/openai/V1/")
                     .unwrap(),
-                Operation::Chat,
+                target(Operation::Chat),
             )
             .unwrap();
         assert!(uppercase_v1.ends_with("/proxy/openai/V1/v1/chat/completions"));
         assert_eq!(
             adaptor
-                .build_url(&context(), Operation::Responses)
+                .build_url(&context(), target(Operation::Responses))
                 .unwrap_err(),
             AdaptorError::UnsupportedOperation {
                 operation: Operation::Responses

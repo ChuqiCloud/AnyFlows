@@ -1,3 +1,5 @@
+use std::fmt;
+
 use af_domain::{ChannelType, Operation, Protocol};
 use af_httpclient::{Body, HeaderMap};
 use async_trait::async_trait;
@@ -5,6 +7,58 @@ use async_trait::async_trait;
 use crate::{
     AdaptorResult, Credential, RelayContext, ResponseMode, UpstreamRequest, UpstreamResponse,
 };
+
+/// 适配器构造上游 URL 所需的最小请求目标投影。
+///
+/// Gemini 等协议会把模型和流式模式编码进 URL；该类型让适配器获得必要信息，同时
+/// 保持请求正文、身份和业务状态仍由上层持有。Debug 固定隐藏模型名。
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct AdaptorTarget<'a> {
+    model: &'a str,
+    operation: Operation,
+    response_mode: ResponseMode,
+}
+
+impl<'a> AdaptorTarget<'a> {
+    /// 创建一次已由协议层和转发层校验的上游目标投影。
+    #[must_use]
+    pub const fn new(model: &'a str, operation: Operation, response_mode: ResponseMode) -> Self {
+        Self {
+            model,
+            operation,
+            response_mode,
+        }
+    }
+
+    /// 返回已完成模型映射的上游模型名。
+    #[must_use]
+    pub const fn model(self) -> &'a str {
+        self.model
+    }
+
+    /// 返回本次请求的规范化操作。
+    #[must_use]
+    pub const fn operation(self) -> Operation {
+        self.operation
+    }
+
+    /// 返回上层选择的响应交付模式。
+    #[must_use]
+    pub const fn response_mode(self) -> ResponseMode {
+        self.response_mode
+    }
+}
+
+impl fmt::Debug for AdaptorTarget<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AdaptorTarget")
+            .field("model", &"<已脱敏>")
+            .field("operation", &self.operation)
+            .field("response_mode", &self.response_mode)
+            .finish()
+    }
+}
 
 /// 上游供应商的对象安全请求适配契约。
 ///
@@ -24,8 +78,9 @@ pub trait Adaptor: Send + Sync {
     /// 返回适配器内建支持的模型名；配置驱动模型可返回空列表。
     fn supported_models(&self) -> Vec<String>;
 
-    /// 根据转发上下文与操作构造完整上游 URL。
-    fn build_url(&self, context: &RelayContext, operation: Operation) -> AdaptorResult<String>;
+    /// 根据转发上下文与请求目标构造完整上游 URL。
+    fn build_url(&self, context: &RelayContext, target: AdaptorTarget<'_>)
+    -> AdaptorResult<String>;
 
     /// 根据已准备的凭据设置认证头。
     fn setup_headers(
@@ -69,5 +124,26 @@ where
             ResponseMode::Full => UpstreamResponse::from_http_full(response).await,
             ResponseMode::Stream => UpstreamResponse::from_http_stream(response),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn adaptor_target_preserves_routing_fields_and_redacts_model_debug() {
+        let target = AdaptorTarget::new(
+            "private-model-canary",
+            Operation::Chat,
+            ResponseMode::Stream,
+        );
+        assert_eq!(target.model(), "private-model-canary");
+        assert_eq!(target.operation(), Operation::Chat);
+        assert_eq!(target.response_mode(), ResponseMode::Stream);
+        let debug = format!("{target:?}");
+        assert!(debug.contains("operation: Chat"));
+        assert!(debug.contains("response_mode: Stream"));
+        assert!(!debug.contains("private-model-canary"));
     }
 }
