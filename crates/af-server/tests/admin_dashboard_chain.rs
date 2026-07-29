@@ -13,7 +13,9 @@ use argon2::{
     password_hash::{PasswordHasher, SaltString},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
+use sea_orm::{
+    ConnectionTrait, Database, DbBackend, Statement, entity::prelude::TimeDateTimeWithTimeZone,
+};
 use serde_json::Value;
 use support::{IO_TIMEOUT, send_request};
 use tokio::{sync::oneshot, time::timeout};
@@ -209,19 +211,27 @@ async fn seed_dashboard(database_url: &str) {
             0_i64.into(), 0_i64.into(), 0_i64.into(), 0_i64.into(),
         ],
     )).await.unwrap();
-    for (id, modifier, source, billing_mode, quota) in [
-        (7_505_i64, "-1 hour", 1_i16, 1_i16, 120_i64),
-        (7_506, "-2 hours", 2, 2, 0),
-        (7_507, "-25 hours", 1, 1, 999),
+    // 与生产写入保持同一时间编码，避免 SQLite 文本日期格式混用导致午夜边界误判。
+    let usage_time = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
+    for (id, age_seconds, source, billing_mode, quota) in [
+        (7_505_i64, 60 * 60_i64, 1_i16, 1_i16, 120_i64),
+        (7_506, 2 * 60 * 60, 2, 2, 0),
+        (7_507, 25 * 60 * 60, 1, 1, 999),
     ] {
+        let created_at = TimeDateTimeWithTimeZone::from_unix_timestamp(
+            usage_time
+                .checked_sub(age_seconds)
+                .expect("测试时间必须位于有效范围"),
+        )
+        .expect("测试时间必须可转换为 UTC 时间");
         connection.execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "INSERT INTO usage_logs (id, event_id, event_type, user_id, token_id, group_id, billing_mode, input_tokens, output_tokens, cache_read, cache_creation_5m, cache_creation_1h, reasoning_tokens, audio_input_tokens, audio_output_tokens, usage_source, usage_semantics, quota, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?))",
+            "INSERT INTO usage_logs (id, event_id, event_type, user_id, token_id, group_id, billing_mode, input_tokens, output_tokens, cache_read, cache_creation_5m, cache_creation_1h, reasoning_tokens, audio_input_tokens, audio_output_tokens, usage_source, usage_semantics, quota, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 id.into(), format!("{id:032x}").into(), 1_i16.into(), MEMBER_ID.into(),
                 TOKEN_ID.into(), GROUP_ID.into(), billing_mode.into(), 10_i64.into(), 2_i64.into(),
                 0_i64.into(), 0_i64.into(), 0_i64.into(), 0_i64.into(), 0_i64.into(),
-                0_i64.into(), source.into(), 1_i16.into(), quota.into(), modifier.into(),
+                0_i64.into(), source.into(), 1_i16.into(), quota.into(), created_at.into(),
             ],
         )).await.unwrap();
     }
