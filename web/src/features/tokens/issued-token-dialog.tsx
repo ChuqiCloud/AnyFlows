@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Check, Copy, KeyRound, TriangleAlert } from 'lucide-react'
+import { Check, Copy, KeyRound, MessageSquareText, TriangleAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { setPlaygroundApiKey } from '@/features/playground/playground-api-key'
 import type { IssuedAdminToken } from '@/lib/api/generated/types.gen'
 
 type IssuedTokenDialogProps = {
@@ -36,6 +37,13 @@ export function IssuedTokenDialog({ issued, onClose }: IssuedTokenDialogProps) {
     }
   }
 
+  const useInPlayground = () => {
+    if (!issued) return
+    setPlaygroundApiKey(issued.api_key)
+    onClose()
+    window.location.hash = '#/console/playground'
+  }
+
   return (
     <AlertDialog open={issued !== undefined} onOpenChange={(open) => !open && onClose()}>
       <AlertDialogContent>
@@ -57,7 +65,12 @@ export function IssuedTokenDialog({ issued, onClose }: IssuedTokenDialogProps) {
             <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />{t('tokens.issued.warning')}
           </p>
         </div>
-        <AlertDialogFooter><AlertDialogAction onClick={onClose}>{t('tokens.issued.done')}</AlertDialogAction></AlertDialogFooter>
+        <AlertDialogFooter>
+          <Button type="button" variant="secondary" onClick={useInPlayground}>
+            <MessageSquareText aria-hidden="true" />{t('tokens.issued.playground')}
+          </Button>
+          <AlertDialogAction onClick={onClose}>{t('tokens.issued.done')}</AlertDialogAction>
+        </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   )

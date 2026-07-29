@@ -7,6 +7,7 @@
     "label": "Primary navigation",
     "overview": "Overview",
     "models": "Models",
+    "playground": "Playground",
     "channels": "Channels",
     "keys": "Keys",
     "usage": "Usage",
@@ -385,6 +386,7 @@
       "copied": "Copied",
       "copyFailed": "Clipboard access failed. Select and copy the key manually.",
       "warning": "The full key is shown only once. Save it securely before closing this window.",
+      "playground": "Use in Playground",
       "done": "I have saved it"
     },
     "delete": {
@@ -517,6 +519,92 @@
       "title": "Model catalog unavailable",
       "body": "The service did not return a reliable model and pricing snapshot. Try again shortly.",
       "moreBody": "More models could not be loaded. The catalog already shown remains available."
+    }
+  },
+  "playground": {
+    "title": "Playground",
+    "status": {
+      "ready": "Ready",
+      "streaming": "Generating",
+      "error": "Request failed",
+      "cancelled": "Stopped",
+      "loadingModels": "Loading models",
+      "modelUnavailable": "No model available",
+      "keyRequired": "API key required"
+    },
+    "settings": {
+      "title": "Session settings",
+      "description": "Configure access credentials, model, and generation parameters.",
+      "access": "Access credential",
+      "model": "Model",
+      "systemPrompt": "System prompt",
+      "systemPlaceholder": "Optional, for this page session only",
+      "parameters": "Generation parameters",
+      "temperature": "Temperature",
+      "maxOutputTokens": "Maximum output tokens"
+    },
+    "apiKey": {
+      "label": "AnyFlows API key",
+      "ready": "Saved in this tab",
+      "missing": "Not configured",
+      "show": "Show API key",
+      "hide": "Hide API key",
+      "save": "Save",
+      "clear": "Clear",
+      "invalid": "Enter a valid sk-af- API key."
+    },
+    "model": {
+      "pending": "No model selected",
+      "title": "Select model",
+      "description": "Select a model available to the current group.",
+      "search": "Search models",
+      "searchPlaceholder": "Enter a Canonical model name",
+      "loading": "Loading models",
+      "loadingMore": "Loading more models",
+      "error": "Current group models are unavailable",
+      "empty": "No matching available models"
+    },
+    "message": {
+      "you": "You",
+      "assistant": "Assistant",
+      "generating": "Waiting for the first response chunk",
+      "cancelled": "Stopped",
+      "error": "Incomplete",
+      "emptyResponse": "The upstream returned no text content."
+    },
+    "composer": {
+      "label": "Session message",
+      "placeholder": "Enter a message",
+      "apiKeyRequired": "Configure an API key first"
+    },
+    "actions": {
+      "send": "Send",
+      "stop": "Stop",
+      "retry": "Retry",
+      "loadMore": "Load more",
+      "clearConversation": "Clear conversation",
+      "copyMessage": "Copy message",
+      "copyCode": "Copy code",
+      "copied": "Copied"
+    },
+    "usage": {
+      "summary": "Input {{input}} / output {{output}}"
+    },
+    "code": {
+      "plainText": "Plain text"
+    },
+    "empty": {
+      "title": "Waiting for the first message",
+      "body": "This session is empty."
+    },
+    "errors": {
+      "invalid_key": "The API key is invalid, disabled, or unavailable from this source.",
+      "insufficient_quota": "The API key does not have enough quota for this request.",
+      "rate_limited": "The API key has reached a request limit. Try again later.",
+      "model_unavailable": "This key cannot use the selected model, or the model is unavailable.",
+      "invalid_request": "The selected model does not support the request parameters or conversation content.",
+      "upstream_unavailable": "The upstream service is unavailable. Send the request again later.",
+      "unknown": "The request did not complete and no recognized error was returned."
     }
   },
   "auth": {

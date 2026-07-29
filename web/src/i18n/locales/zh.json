@@ -7,6 +7,7 @@
     "label": "主导航",
     "overview": "总览",
     "models": "模型广场",
+    "playground": "对话试炼场",
     "channels": "渠道",
     "keys": "令牌",
     "usage": "用量",
@@ -385,6 +386,7 @@
       "copied": "已复制",
       "copyFailed": "无法写入剪贴板，请手动选择并复制。",
       "warning": "完整 Key 只显示这一次。关闭后无法再次查看，请先保存到安全位置。",
+      "playground": "在试炼场中使用",
       "done": "我已保存"
     },
     "delete": {
@@ -517,6 +519,92 @@
       "title": "无法读取模型目录",
       "body": "服务暂时没有返回可靠的模型与价格快照，请稍后重试。",
       "moreBody": "后续模型加载失败，已加载的目录仍可使用。"
+    }
+  },
+  "playground": {
+    "title": "对话试炼场",
+    "status": {
+      "ready": "就绪",
+      "streaming": "生成中",
+      "error": "请求失败",
+      "cancelled": "已停止",
+      "loadingModels": "加载模型",
+      "modelUnavailable": "无可用模型",
+      "keyRequired": "需要 API Key"
+    },
+    "settings": {
+      "title": "会话设置",
+      "description": "配置访问凭据、模型和生成参数。",
+      "access": "访问凭据",
+      "model": "模型",
+      "systemPrompt": "系统提示词",
+      "systemPlaceholder": "可选，仅用于当前页面会话",
+      "parameters": "生成参数",
+      "temperature": "温度",
+      "maxOutputTokens": "最大输出 Token"
+    },
+    "apiKey": {
+      "label": "AnyFlows API Key",
+      "ready": "当前标签页已保存",
+      "missing": "未配置",
+      "show": "显示 API Key",
+      "hide": "隐藏 API Key",
+      "save": "保存",
+      "clear": "清除",
+      "invalid": "请输入有效的 sk-af- API Key。"
+    },
+    "model": {
+      "pending": "尚未选择模型",
+      "title": "选择模型",
+      "description": "从当前分组可用模型中选择。",
+      "search": "搜索模型",
+      "searchPlaceholder": "输入 Canonical 模型名",
+      "loading": "正在加载模型",
+      "loadingMore": "正在加载更多模型",
+      "error": "无法读取当前分组模型",
+      "empty": "没有匹配的可用模型"
+    },
+    "message": {
+      "you": "你",
+      "assistant": "助手",
+      "generating": "正在等待首段响应",
+      "cancelled": "已停止",
+      "error": "未完成",
+      "emptyResponse": "上游没有返回文本内容。"
+    },
+    "composer": {
+      "label": "会话消息",
+      "placeholder": "输入消息",
+      "apiKeyRequired": "请先配置 API Key"
+    },
+    "actions": {
+      "send": "发送",
+      "stop": "停止",
+      "retry": "重试",
+      "loadMore": "加载更多",
+      "clearConversation": "清空会话",
+      "copyMessage": "复制消息",
+      "copyCode": "复制代码",
+      "copied": "已复制"
+    },
+    "usage": {
+      "summary": "输入 {{input}} / 输出 {{output}}"
+    },
+    "code": {
+      "plainText": "纯文本"
+    },
+    "empty": {
+      "title": "等待第一条消息",
+      "body": "当前会话为空。"
+    },
+    "errors": {
+      "invalid_key": "API Key 无效、已禁用或不允许当前来源。",
+      "insufficient_quota": "API Key 可用额度不足，无法完成本次请求。",
+      "rate_limited": "请求已达到令牌限流上限，请稍后再试。",
+      "model_unavailable": "当前 Key 无权使用该模型，或模型暂不可用。",
+      "invalid_request": "请求参数或会话内容不受当前模型支持。",
+      "upstream_unavailable": "上游服务暂不可用，请稍后重新发送。",
+      "unknown": "请求未完成，服务未返回可识别的错误。"
     }
   },
   "auth": {

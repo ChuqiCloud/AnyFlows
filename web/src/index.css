@@ -424,6 +424,18 @@
     animation: fade-up 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
     animation-delay: var(--inview-delay, 0ms);
   }
+
+  /* Shiki 双主题只输出 CSS 变量，最终颜色由当前站点主题选择。 */
+  .playground-shiki .shiki,
+  .playground-shiki .shiki span {
+    color: var(--shiki-light);
+    background-color: transparent !important;
+  }
+
+  .dark .playground-shiki .shiki,
+  .dark .playground-shiki .shiki span {
+    color: var(--shiki-dark);
+  }
 }
 
 /*
