@@ -368,9 +368,9 @@ async fn assert_error(response: axum::response::Response, status: StatusCode, co
     assert_eq!(response_json(response).await["code"], code);
 }
 
-fn current_timestamp() -> i64 {
+fn current_timestamp() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
-        .as_secs() as i64
+        .as_secs()
 }
