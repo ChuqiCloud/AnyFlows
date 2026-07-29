@@ -16,6 +16,7 @@ import { PlaygroundPage } from '@/features/playground/playground-page'
 import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
 import { TokenPage } from '@/features/tokens/token-page'
 import { UsageLogPage } from '@/features/usage-logs/usage-log-page'
+import { UserPage } from '@/features/users/user-page'
 import { SetupGateLoading, SetupGateUnavailable } from '@/features/setup/setup-gate-state'
 import { SetupPage } from '@/features/setup/setup-page'
 import { useInitialSetupStatus } from '@/features/setup/setup-query'
@@ -93,6 +94,8 @@ function ManagementEntry({
 
   const titleKey = view === 'channels'
     ? 'channels.title'
+    : view === 'users'
+      ? 'users.title'
     : view === 'api-keys'
       ? 'apiKeys.title'
     : view === 'models'
@@ -106,6 +109,8 @@ function ManagementEntry({
             : 'dashboard.title'
   const content = view === 'channels'
     ? <ChannelPage />
+    : view === 'users'
+      ? <UserPage />
     : view === 'api-keys'
       ? <ApiKeyPage />
     : view === 'models'

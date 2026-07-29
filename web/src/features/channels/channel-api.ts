@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient } from '@/lib/api'
 import {
@@ -7,7 +7,6 @@ import {
   deleteAdminCredential,
   listAdminChannels,
   listAdminCredentials,
-  listAdminGroups,
   probeAdminChannel,
   updateAdminChannel,
   updateAdminCredential,
@@ -17,11 +16,9 @@ import type {
   AdminChannelUpdateRequestWritable,
   AdminCredentialCreateRequestWritable,
   AdminCredentialUpdateRequestWritable,
-  AdminGroup,
 } from '@/lib/api/generated/types.gen'
 
 export const adminChannelsQueryKey = ['admin-channels'] as const
-export const adminGroupCatalogQueryKey = ['admin-group-catalog'] as const
 export const adminChannelCredentialsQueryKey = (channelId: number) => [
   'admin-channel-credentials',
   channelId,
@@ -41,32 +38,6 @@ export function useAdminChannels() {
       return data
     },
     getNextPageParam: (page) => page.next_cursor ?? undefined,
-  })
-}
-
-/** 自动遍历稳定游标，给渠道表单提供完整分组选择目录。 */
-export function useAdminGroupCatalog() {
-  return useQuery({
-    queryKey: adminGroupCatalogQueryKey,
-    staleTime: 60_000,
-    queryFn: async ({ signal }) => {
-      const groups: AdminGroup[] = []
-      const seenCursors = new Set<number>()
-      let after: number | undefined
-      while (true) {
-        const { data } = await listAdminGroups({
-          client: apiClient,
-          query: { after, limit: 100 },
-          signal,
-        })
-        groups.push(...data.groups)
-        const nextCursor = data.next_cursor ?? undefined
-        if (nextCursor === undefined) return groups
-        if (seenCursors.has(nextCursor)) throw new Error('分组列表返回了重复游标')
-        seenCursors.add(nextCursor)
-        after = nextCursor
-      }
-    },
   })
 }
 
