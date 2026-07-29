@@ -116,6 +116,7 @@ async fn lock_active_owner(
         query = query.lock(LockType::Update);
     }
     query
+        .into_tuple::<i64>()
         .one(transaction)
         .await
         .map(|model| model.is_some())

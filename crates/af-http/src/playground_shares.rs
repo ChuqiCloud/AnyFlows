@@ -12,6 +12,7 @@ use axum::{
     routing::{delete, get, post},
 };
 use http::{HeaderName, HeaderValue, StatusCode, header::CACHE_CONTROL};
+use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::{
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
@@ -59,6 +60,7 @@ pub(crate) fn build_playground_share_router(
         .route("/api/playground/shares", post(create_playground_share))
         // JSON 结构开销高于 512 KiB 快照上限，但不允许退回全局 32 MiB 预算。
         .layer(DefaultBodyLimit::max(640 * 1024))
+        .layer(RequestBodyLimitLayer::new(640 * 1024))
         .layer(create_authentication);
     let revoke_routes = Router::new()
         .route(
