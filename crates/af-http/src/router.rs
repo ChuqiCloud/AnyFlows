@@ -3,7 +3,7 @@ use std::sync::Arc;
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminTokenReader,
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, InitialSetup,
-    SessionAuthenticator, TokenAuthenticator,
+    ModelCatalogReader, SessionAuthenticator, TokenAuthenticator,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -22,7 +22,10 @@ use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLaye
 
 use crate::authentication::{AuthenticationState, authenticate_api_key};
 use crate::frontend_assets::{FrontendAssetSource, frontend_fallback};
-use crate::management_auth::{ManagementAuthenticationState, authenticate_management_session};
+use crate::management_auth::{
+    ManagementAuthenticationState, authenticate_management_session,
+    authenticate_optional_management_session,
+};
 use crate::management_authorization::authorize_management_admin;
 use crate::management_channel_probe::probe_admin_channel;
 use crate::management_channel_writes::{
@@ -48,6 +51,7 @@ use crate::middleware::{
     AllowedOrigins, LogHttpResponse, MakeHttpSpan, assign_request_id, enforce_allowed_origin,
     request_id_header,
 };
+use crate::model_catalog::list_models;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::{
     ChatService, QueryApiKeyPolicy, chat_completions::HttpState, chat_completions::chat_completions,
@@ -86,6 +90,7 @@ pub fn build_router(
     readiness: ReadinessHandle,
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
+    model_catalog_reader: Arc<dyn ModelCatalogReader>,
     initial_setup: Arc<dyn InitialSetup>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
@@ -116,6 +121,7 @@ pub fn build_router(
         admin_user_writer,
     )
     .with_initial_setup(initial_setup)
+    .with_model_catalog_reader(model_catalog_reader)
     .with_admin_channel_reader(admin_channel_reader)
     .with_admin_channel_writer(admin_channel_writer)
     .with_admin_channel_probe(admin_channel_probe)
@@ -131,6 +137,10 @@ pub fn build_router(
     let session_route_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(session_authenticator),
         authenticate_management_session,
+    );
+    let model_catalog_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_optional_management_session,
     );
     let user_collection_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
@@ -187,6 +197,10 @@ pub fn build_router(
         .route(
             "/api/auth/session",
             get(current_session).route_layer(session_route_authentication),
+        )
+        .route(
+            "/api/models",
+            get(list_models).route_layer(model_catalog_authentication),
         )
         .route(
             "/api/admin/users",

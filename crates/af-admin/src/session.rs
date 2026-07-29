@@ -9,7 +9,7 @@ use af_db::{
     UserSessionLookupByIdOutcome, UserSessionLookupOutcome, UserSessionRepository,
     UserSessionRepositoryError,
 };
-use af_domain::UserId;
+use af_domain::{GroupId, UserId};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize, Serializer};
@@ -196,15 +196,17 @@ impl IssuedSession {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SessionAuthentication {
     principal: SessionPrincipal,
+    group_id: GroupId,
     expires_at: u64,
 }
 
 impl SessionAuthentication {
     /// 组合已回查的主体和令牌过期时间。
     #[must_use]
-    pub const fn new(principal: SessionPrincipal, expires_at: u64) -> Self {
+    pub const fn new(principal: SessionPrincipal, group_id: GroupId, expires_at: u64) -> Self {
         Self {
             principal,
+            group_id,
             expires_at,
         }
     }
@@ -213,6 +215,12 @@ impl SessionAuthentication {
     #[must_use]
     pub const fn principal(self) -> SessionPrincipal {
         self.principal
+    }
+
+    /// 返回本次数据库回查得到的用户默认分组。
+    #[must_use]
+    pub const fn group_id(self) -> GroupId {
+        self.group_id
     }
 
     /// 返回 JWT 的 Unix 秒级过期时间。
@@ -330,15 +338,15 @@ impl SessionAuthenticator for DatabaseSessionAuthenticator {
                 .await
                 .map_err(map_repository_error)?
             {
-                UserSessionLookupByIdOutcome::Authenticated { user_id, role } => {
-                    Ok(SessionAuthentication {
-                        principal: SessionPrincipal::new(
-                            user_id,
-                            SessionRole::from_database(role)?,
-                        ),
-                        expires_at: claims.exp,
-                    })
-                }
+                UserSessionLookupByIdOutcome::Authenticated {
+                    user_id,
+                    role,
+                    group_id,
+                } => Ok(SessionAuthentication::new(
+                    SessionPrincipal::new(user_id, SessionRole::from_database(role)?),
+                    group_id,
+                    claims.exp,
+                )),
                 UserSessionLookupByIdOutcome::Rejected => {
                     Err(SessionAuthenticationError::InvalidSession)
                 }

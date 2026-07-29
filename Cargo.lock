@@ -58,6 +58,7 @@ dependencies = [
  "base64",
  "getrandom 0.4.3",
  "jsonwebtoken",
+ "rust_decimal",
  "serde",
  "serde_json",
  "sha2 0.10.9",

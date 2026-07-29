@@ -26,6 +26,7 @@ mod management_tokens;
 mod management_usage_logs;
 mod management_users;
 mod middleware;
+mod model_catalog;
 mod openapi;
 mod operations;
 mod router;

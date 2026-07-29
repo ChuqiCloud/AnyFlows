@@ -8,21 +8,25 @@ import { endManagementSession } from '@/features/auth/session-query'
 import { ChannelPage } from '@/features/channels/channel-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
 import { LandingPage } from '@/features/landing/landing-page'
+import { ModelPage } from '@/features/models/model-page'
+import { PublicModelPage } from '@/features/models/public-model-page'
 import { TokenPage } from '@/features/tokens/token-page'
 import { UsageLogPage } from '@/features/usage-logs/usage-log-page'
 import { SetupGateLoading, SetupGateUnavailable } from '@/features/setup/setup-gate-state'
 import { SetupPage } from '@/features/setup/setup-page'
 import { useInitialSetupStatus } from '@/features/setup/setup-query'
 
-type AppView = 'channels' | 'tokens' | 'usage-logs' | 'overview' | 'login' | 'setup' | 'landing'
+type AppView = 'channels' | 'models' | 'public-models' | 'tokens' | 'usage-logs' | 'overview' | 'login' | 'setup' | 'landing'
 
 // 临时的 hash 视图切换：TanStack Router 接入前，先让公开页与控制台都可访达。
 // 路由落地后此处整体由文件路由替换。
 function viewFromHash(hash: string): AppView {
   if (hash.startsWith('#/console/channels')) return 'channels'
+  if (hash.startsWith('#/console/models')) return 'models'
   if (hash.startsWith('#/console/tokens')) return 'tokens'
   if (hash.startsWith('#/console/usage-logs')) return 'usage-logs'
   if (hash.startsWith('#/console')) return 'overview'
+  if (hash.startsWith('#/models')) return 'public-models'
   if (hash.startsWith('#/login')) return 'login'
   if (hash.startsWith('#/setup')) return 'setup'
   return 'landing'
@@ -48,10 +52,11 @@ function useHashView(): [AppView, (hash: string) => void] {
 }
 
 type ManagementEntryProps = {
-  view: Exclude<AppView, 'landing'>
+  view: Exclude<AppView, 'landing' | 'public-models'>
   loginNotice?: LoginNotice
   onAuthenticated: () => void
-  onLoginRequired: (reason: 'adminRequired' | 'required' | 'sessionExpired' | 'setupComplete') => void
+  onLoginRequired: (reason: 'required' | 'sessionExpired' | 'setupComplete') => void
+  onUserHomeRequired: () => void
   onLogout: () => void
 }
 
@@ -61,6 +66,7 @@ function ManagementEntry({
   loginNotice,
   onAuthenticated,
   onLoginRequired,
+  onUserHomeRequired,
   onLogout,
 }: ManagementEntryProps) {
   const { t } = useTranslation()
@@ -97,6 +103,8 @@ function ManagementEntry({
 
   const titleKey = view === 'channels'
     ? 'channels.title'
+    : view === 'models'
+      ? 'models.title'
     : view === 'tokens'
       ? 'tokens.title'
       : view === 'usage-logs'
@@ -104,6 +112,8 @@ function ManagementEntry({
         : 'dashboard.title'
   const content = view === 'channels'
     ? <ChannelPage />
+    : view === 'models'
+      ? <ModelPage authenticated />
     : view === 'tokens'
       ? <TokenPage />
       : view === 'usage-logs'
@@ -111,7 +121,11 @@ function ManagementEntry({
         : <DashboardPage />
 
   return (
-    <SessionBoundary onSessionEnded={onLoginRequired}>
+    <SessionBoundary
+      requireAdmin={view !== 'models'}
+      onSessionEnded={onLoginRequired}
+      onUserHomeRequired={onUserHomeRequired}
+    >
       {(session) => (
         <AppShell title={t(titleKey)} currentUser={session.user} onLogout={onLogout}>
           {content}
@@ -125,7 +139,7 @@ export default function App() {
   const [view, navigate] = useHashView()
   const [loginNotice, setLoginNotice] = useState<LoginNotice>()
 
-  const openLogin = useCallback((reason: 'adminRequired' | 'required' | 'sessionExpired' | 'setupComplete') => {
+  const openLogin = useCallback((reason: 'required' | 'sessionExpired' | 'setupComplete') => {
     setLoginNotice(reason === 'required' ? undefined : reason)
     navigate('#/login')
   }, [navigate])
@@ -133,6 +147,11 @@ export default function App() {
   const openConsole = useCallback(() => {
     setLoginNotice(undefined)
     navigate('#/console')
+  }, [navigate])
+
+  const openUserHome = useCallback(() => {
+    setLoginNotice(undefined)
+    navigate('#/console/models')
   }, [navigate])
 
   const logout = useCallback(() => {
@@ -144,6 +163,9 @@ export default function App() {
   if (view === 'landing') {
     return <LandingPage />
   }
+  if (view === 'public-models') {
+    return <PublicModelPage />
+  }
 
   return (
     <ManagementEntry
@@ -151,6 +173,7 @@ export default function App() {
       loginNotice={loginNotice}
       onAuthenticated={openConsole}
       onLoginRequired={openLogin}
+      onUserHomeRequired={openUserHome}
       onLogout={logout}
     />
   )

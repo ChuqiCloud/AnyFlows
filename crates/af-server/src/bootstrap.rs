@@ -10,7 +10,7 @@ use af_admin::{
     DatabaseAdminGroupWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
     DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
     DatabaseInitialSetup, DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, InitialSetup,
-    SessionAuthenticator, SessionAuthenticatorConfigError, TokenAuthenticator,
+    ModelCatalogReader, SessionAuthenticator, SessionAuthenticatorConfigError, TokenAuthenticator,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -55,6 +55,7 @@ use crate::{
     BillingRuntimeError, ChatRoutePlanner, ShutdownController, SupervisorError, SupervisorShutdown,
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     frontend::EmbeddedFrontendAssets,
+    model_catalog::RuntimeModelCatalogReader,
     scheduled_chat::ScheduledChatService,
     system_shutdown_signal,
 };
@@ -116,6 +117,7 @@ pub struct BillingReady {
     refund_signal_consumer: RefundSignalConsumer,
     upstream_client: PooledClient,
     channel_index: InMemoryChannelIndex,
+    model_catalog_reader: Arc<dyn ModelCatalogReader>,
 }
 
 /// 后台任务监督域已经建立，周期 flush、渠道索引、渠道探活与可靠队列 worker 已注册。
@@ -126,6 +128,7 @@ pub struct Supervised {
     usage_record_queue: UsageRecordQueue,
     refund_signal_queue: RefundSignalQueue,
     _channel_index: InMemoryChannelIndex,
+    model_catalog_reader: Arc<dyn ModelCatalogReader>,
     admin_channel_probe: Arc<dyn AdminChannelProbe>,
     supervisor: BackgroundTaskSupervisor,
 }
@@ -523,9 +526,15 @@ impl Bootstrap<RelayReady> {
             ),
         ));
         let pricing_source = Arc::new(CachedRequestPricingSnapshotSource::new(
-            model_prices,
+            model_prices.clone(),
             group_pricing,
         ));
+        let model_catalog_reader: Arc<dyn ModelCatalogReader> =
+            Arc::new(RuntimeModelCatalogReader::new(
+                channel_index.clone(),
+                model_prices,
+                pricing_source.clone(),
+            ));
         let quota_repository = Arc::new(QuotaRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),
         ));
@@ -578,6 +587,7 @@ impl Bootstrap<RelayReady> {
                 refund_signal_consumer,
                 upstream_client: stage.upstream_client,
                 channel_index,
+                model_catalog_reader,
             },
         })
     }
@@ -605,6 +615,7 @@ impl Bootstrap<BillingReady> {
             refund_signal_consumer,
             upstream_client,
             channel_index,
+            model_catalog_reader,
         } = stage;
         spawn_channel_index_refresh_task(
             &mut supervisor,
@@ -674,6 +685,7 @@ impl Bootstrap<BillingReady> {
                 usage_record_queue,
                 refund_signal_queue,
                 _channel_index: channel_index,
+                model_catalog_reader,
                 admin_channel_probe,
                 supervisor,
             },
@@ -739,6 +751,7 @@ impl Bootstrap<Supervised> {
             readiness.clone(),
             Arc::clone(&self.stage.infrastructure.authenticator),
             Arc::clone(&self.stage.infrastructure.session_authenticator),
+            Arc::clone(&self.stage.model_catalog_reader),
             Arc::clone(&self.stage.infrastructure.initial_setup),
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_channel_writer),

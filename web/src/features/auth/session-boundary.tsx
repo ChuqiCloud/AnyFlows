@@ -14,11 +14,13 @@ import {
   subscribeManagementSessionInvalidated,
 } from '@/lib/api/session-token'
 
-type SessionEndReason = 'adminRequired' | 'required' | 'sessionExpired'
+type SessionEndReason = 'required' | 'sessionExpired'
 
 type SessionBoundaryProps = {
   children: (session: SessionResponse) => ReactNode
+  requireAdmin: boolean
   onSessionEnded: (reason: SessionEndReason) => void
+  onUserHomeRequired: () => void
 }
 
 function SessionLoading() {
@@ -72,7 +74,12 @@ function SessionUnavailable({ onRetry, onUseOtherAccount }: {
 }
 
 /** 在挂载控制台前恢复服务端会话，并集中处理角色与失效边界。 */
-export function SessionBoundary({ children, onSessionEnded }: SessionBoundaryProps) {
+export function SessionBoundary({
+  children,
+  requireAdmin,
+  onSessionEnded,
+  onUserHomeRequired,
+}: SessionBoundaryProps) {
   const initialHasToken = useRef(Boolean(getManagementSessionToken()))
   const [hasToken, setHasToken] = useState(initialHasToken.current)
   const sessionQuery = useManagementSession(hasToken)
@@ -93,17 +100,19 @@ export function SessionBoundary({ children, onSessionEnded }: SessionBoundaryPro
   )
 
   useEffect(() => {
-    if (sessionQuery.data?.user.role !== 'user') {
+    if (!requireAdmin || sessionQuery.data?.user.role !== 'user') {
       return
     }
 
-    // 普通用户会话不得进入管理员视图，也不能残留在当前标签页。
-    endManagementSession()
-    setHasToken(false)
-    onSessionEnded('adminRequired')
-  }, [onSessionEnded, sessionQuery.data])
+    // 普通用户保留有效会话并回到用户入口，避免误清理刚签发的令牌。
+    onUserHomeRequired()
+  }, [onUserHomeRequired, requireAdmin, sessionQuery.data])
 
-  if (!hasToken || sessionQuery.isPending || sessionQuery.data?.user.role === 'user') {
+  if (
+    !hasToken
+    || sessionQuery.isPending
+    || (requireAdmin && sessionQuery.data?.user.role === 'user')
+  ) {
     return <SessionLoading />
   }
 

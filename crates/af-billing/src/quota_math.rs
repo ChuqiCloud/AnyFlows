@@ -222,6 +222,33 @@ pub(crate) fn quota_from_token_components(
     })
 }
 
+/// 将五类美元/百万 token 基础单价应用与请求结算相同的三层倍率。
+///
+/// 本入口只返回精确 Decimal 展示价，不执行 quota 整数舍入；实际请求仍在五类成本
+/// 汇总后只舍入一次。倍率为零时保留按 token 模式并返回五项零价。
+pub(crate) fn token_prices_after_ratios(
+    prices: [Decimal; 5],
+    ratio_micros: [i64; 3],
+) -> Result<[Decimal; 5], QuotaMathError> {
+    if ratio_micros.into_iter().any(|ratio| ratio < 0)
+        || prices.into_iter().any(|price| price < Decimal::ZERO)
+    {
+        return Err(QuotaError::Negative.into());
+    }
+    if ratio_micros.into_iter().any(|ratio| ratio == 0) {
+        return Ok([Decimal::ZERO; 5]);
+    }
+
+    let mut effective = [Decimal::ZERO; 5];
+    for (index, price) in prices.into_iter().enumerate() {
+        let weighted = Decimal::from(TOKENS_PER_MILLION)
+            .checked_mul(price)
+            .ok_or_else(pricing_overflow)?;
+        effective[index] = apply_pricing_ratios(weighted, ratio_micros)?;
+    }
+    Ok(effective)
+}
+
 fn apply_pricing_ratios(
     weighted_cost: Decimal,
     ratio_micros: [i64; 3],

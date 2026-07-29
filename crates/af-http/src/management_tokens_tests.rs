@@ -167,7 +167,13 @@ impl SessionAuthenticator for FakeSessionAuthenticator {
         };
         Box::pin(async move {
             principal
-                .map(|principal| SessionAuthentication::new(principal, current_timestamp() + 60))
+                .map(|principal| {
+                    SessionAuthentication::new(
+                        principal,
+                        GroupId::new(1).unwrap(),
+                        current_timestamp() + 60,
+                    )
+                })
                 .ok_or(SessionAuthenticationError::InvalidSession)
         })
     }

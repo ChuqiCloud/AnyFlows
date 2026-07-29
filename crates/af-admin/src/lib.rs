@@ -1,4 +1,4 @@
-//! 管理域应用服务。
+//! 登录用户与管理域应用服务。
 
 mod api_key;
 mod channel_read;
@@ -7,6 +7,7 @@ mod credential_read;
 mod group_read;
 mod group_write;
 mod initial_setup;
+mod model_catalog;
 mod routing_read;
 mod session;
 mod token_auth;
@@ -49,6 +50,11 @@ pub use initial_setup::{
     DatabaseInitialSetup, InitialSetup, InitialSetupCommand, InitialSetupError, InitialSetupFuture,
     InitialSetupStatus, InitialSetupStatusFuture, MAX_INITIAL_ADMIN_PASSWORD_BYTES,
     MIN_INITIAL_ADMIN_PASSWORD_BYTES,
+};
+pub use model_catalog::{
+    DEFAULT_MODEL_CATALOG_PAGE_SIZE, MAX_MODEL_CATALOG_PAGE_SIZE, ModelCatalogBillingMode,
+    ModelCatalogItem, ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogQuery,
+    ModelCatalogRatios, ModelCatalogReadError, ModelCatalogReader, ModelCatalogTokenPrices,
 };
 pub use routing_read::{
     AdminChannelGetFuture, AdminChannelListFuture, AdminChannelReadError, AdminChannelReader,

@@ -155,6 +155,13 @@ impl ModelPriceSnapshot {
     pub fn get(&self, model: &str) -> Option<ModelPrice> {
         self.entries.get(model).copied()
     }
+
+    /// 按 Canonical 模型名字典序枚举复制安全的价格记录。
+    pub fn entries(&self) -> impl ExactSizeIterator<Item = (&str, ModelPrice)> {
+        self.entries
+            .iter()
+            .map(|(model, price)| (model.as_str(), *price))
+    }
 }
 
 impl fmt::Debug for ModelPriceSnapshot {

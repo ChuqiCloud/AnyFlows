@@ -1,0 +1,440 @@
+use std::fmt;
+
+use af_domain::MAX_MODEL_NAME_BYTES;
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+use crate::SessionAuthentication;
+
+/// 模型目录默认每页条数。
+pub const DEFAULT_MODEL_CATALOG_PAGE_SIZE: usize = 24;
+/// 模型目录单页硬上限，避免一次响应占用过多内存。
+pub const MAX_MODEL_CATALOG_PAGE_SIZE: usize = 100;
+const MAX_MODEL_CATALOG_SEARCH_BYTES: usize = 128;
+
+/// 模型目录公开的闭合计费模式。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelCatalogBillingMode {
+    /// 按五类互斥 token 分项计费。
+    PerToken,
+    /// 显式免费，仍记录用量。
+    Free,
+}
+
+/// 模型目录价格所处的公开范围。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelCatalogPricingScope {
+    /// 游客可见的公开基础价，不承诺模型当前可调用。
+    PublicBase,
+    /// 当前登录用户默认分组的实时可用模型与实际价格。
+    Group,
+}
+
+/// 已校验的模型目录搜索与稳定游标参数。
+#[derive(Clone, Eq, PartialEq)]
+pub struct ModelCatalogQuery {
+    search: Option<String>,
+    billing_mode: Option<ModelCatalogBillingMode>,
+    after: Option<String>,
+    limit: usize,
+}
+
+impl ModelCatalogQuery {
+    /// 校验搜索文本、模型名游标和单页容量。
+    pub fn new(
+        search: Option<String>,
+        billing_mode: Option<ModelCatalogBillingMode>,
+        after: Option<String>,
+        limit: usize,
+    ) -> Result<Self, ModelCatalogReadError> {
+        if !(1..=MAX_MODEL_CATALOG_PAGE_SIZE).contains(&limit)
+            || search.as_deref().is_some_and(|value| {
+                value.is_empty()
+                    || value.len() > MAX_MODEL_CATALOG_SEARCH_BYTES
+                    || value.trim() != value
+                    || value.chars().any(char::is_control)
+            })
+            || after
+                .as_deref()
+                .is_some_and(|value| !is_valid_model_name(value))
+        {
+            return Err(ModelCatalogReadError::InvalidQuery);
+        }
+        Ok(Self {
+            search,
+            billing_mode,
+            after,
+            limit,
+        })
+    }
+
+    /// 返回可选的模型名包含搜索文本。
+    #[must_use]
+    pub fn search(&self) -> Option<&str> {
+        self.search.as_deref()
+    }
+
+    /// 返回可选的计费模式筛选。
+    #[must_use]
+    pub const fn billing_mode(&self) -> Option<ModelCatalogBillingMode> {
+        self.billing_mode
+    }
+
+    /// 返回上一页最后一个模型名。
+    #[must_use]
+    pub fn after(&self) -> Option<&str> {
+        self.after.as_deref()
+    }
+
+    /// 返回本页最大条数。
+    #[must_use]
+    pub const fn limit(&self) -> usize {
+        self.limit
+    }
+}
+
+impl Default for ModelCatalogQuery {
+    fn default() -> Self {
+        Self {
+            search: None,
+            billing_mode: None,
+            after: None,
+            limit: DEFAULT_MODEL_CATALOG_PAGE_SIZE,
+        }
+    }
+}
+
+impl fmt::Debug for ModelCatalogQuery {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ModelCatalogQuery")
+            .field("has_search", &self.search.is_some())
+            .field("billing_mode", &self.billing_mode)
+            .field("has_after", &self.after.is_some())
+            .field("limit", &self.limit)
+            .finish()
+    }
+}
+
+/// 应用当前价格范围倍率后的五类美元/百万 token 单价。
+#[derive(Clone, Eq, PartialEq)]
+pub struct ModelCatalogTokenPrices {
+    values: [String; 5],
+}
+
+impl ModelCatalogTokenPrices {
+    /// 将 checked Decimal 结果转换为不会经过浮点数的规范十进制文本。
+    pub fn from_decimals(values: [Decimal; 5]) -> Result<Self, ModelCatalogReadError> {
+        if values.into_iter().any(|value| value < Decimal::ZERO) {
+            return Err(ModelCatalogReadError::Internal);
+        }
+        Ok(Self {
+            values: values.map(|value| value.normalize().to_string()),
+        })
+    }
+
+    /// 返回普通输入单价。
+    #[must_use]
+    pub fn input(&self) -> &str {
+        &self.values[0]
+    }
+
+    /// 返回输出单价。
+    #[must_use]
+    pub fn output(&self) -> &str {
+        &self.values[1]
+    }
+
+    /// 返回缓存读取单价。
+    #[must_use]
+    pub fn cache_read(&self) -> &str {
+        &self.values[2]
+    }
+
+    /// 返回五分钟缓存创建单价。
+    #[must_use]
+    pub fn cache_creation_5m(&self) -> &str {
+        &self.values[3]
+    }
+
+    /// 返回一小时缓存创建单价。
+    #[must_use]
+    pub fn cache_creation_1h(&self) -> &str {
+        &self.values[4]
+    }
+}
+
+impl fmt::Debug for ModelCatalogTokenPrices {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ModelCatalogTokenPrices(<已脱敏>)")
+    }
+}
+
+/// 一条目录价格实际应用的三层百万分比定点倍率。
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct ModelCatalogRatios {
+    group_micros: i64,
+    group_model_micros: i64,
+    peak_micros: i64,
+}
+
+impl ModelCatalogRatios {
+    /// 构造非负的分组、分组间与当前高峰倍率。
+    pub const fn new(
+        group_micros: i64,
+        group_model_micros: i64,
+        peak_micros: i64,
+    ) -> Result<Self, ModelCatalogReadError> {
+        if group_micros < 0 || group_model_micros < 0 || peak_micros < 0 {
+            return Err(ModelCatalogReadError::Internal);
+        }
+        Ok(Self {
+            group_micros,
+            group_model_micros,
+            peak_micros,
+        })
+    }
+
+    /// 返回目标分组基础倍率。
+    #[must_use]
+    pub const fn group_micros(self) -> i64 {
+        self.group_micros
+    }
+
+    /// 返回来源分组到目标分组的附加倍率。
+    #[must_use]
+    pub const fn group_model_micros(self) -> i64 {
+        self.group_model_micros
+    }
+
+    /// 返回当前时刻已应用的高峰倍率。
+    #[must_use]
+    pub const fn peak_micros(self) -> i64 {
+        self.peak_micros
+    }
+}
+
+impl fmt::Debug for ModelCatalogRatios {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("ModelCatalogRatios(<已脱敏>)")
+    }
+}
+
+/// 一条已经完成可见性和价格边界校验的模型目录记录。
+pub struct ModelCatalogItem {
+    model: String,
+    billing_mode: ModelCatalogBillingMode,
+    prices: Option<ModelCatalogTokenPrices>,
+    ratios: ModelCatalogRatios,
+    price_version: u64,
+}
+
+impl ModelCatalogItem {
+    /// 组合已经通过可见范围与定价快照校验的目录记录。
+    pub fn new(
+        model: String,
+        billing_mode: ModelCatalogBillingMode,
+        prices: Option<ModelCatalogTokenPrices>,
+        ratios: ModelCatalogRatios,
+        price_version: u64,
+    ) -> Result<Self, ModelCatalogReadError> {
+        let prices_match_mode = matches!(
+            (billing_mode, prices.is_some()),
+            (ModelCatalogBillingMode::PerToken, true) | (ModelCatalogBillingMode::Free, false)
+        );
+        if !is_valid_model_name(&model) || !prices_match_mode || price_version == 0 {
+            return Err(ModelCatalogReadError::Internal);
+        }
+        Ok(Self {
+            model,
+            billing_mode,
+            prices,
+            ratios,
+            price_version,
+        })
+    }
+
+    /// 返回客户端请求使用的 Canonical 模型名。
+    #[must_use]
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    /// 返回显式计费模式。
+    #[must_use]
+    pub const fn billing_mode(&self) -> ModelCatalogBillingMode {
+        self.billing_mode
+    }
+
+    /// 返回按 token 模式的精确展示单价；免费模式固定为空。
+    #[must_use]
+    pub const fn prices(&self) -> Option<&ModelCatalogTokenPrices> {
+        self.prices.as_ref()
+    }
+
+    /// 返回本条目实际应用的倍率快照。
+    #[must_use]
+    pub const fn ratios(&self) -> ModelCatalogRatios {
+        self.ratios
+    }
+
+    /// 返回模型价格的持久化正版本。
+    #[must_use]
+    pub const fn price_version(&self) -> u64 {
+        self.price_version
+    }
+}
+
+impl fmt::Debug for ModelCatalogItem {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ModelCatalogItem")
+            .field("billing_mode", &self.billing_mode)
+            .field("has_prices", &self.prices.is_some())
+            .field("price_version", &self.price_version)
+            .finish_non_exhaustive()
+    }
+}
+
+/// 一页按模型名稳定排序的目录结果。
+pub struct ModelCatalogPage {
+    pricing_scope: ModelCatalogPricingScope,
+    items: Vec<ModelCatalogItem>,
+    next_cursor: Option<String>,
+}
+
+impl ModelCatalogPage {
+    /// 组合价格范围、本页条目与可选的下一页模型名游标。
+    #[must_use]
+    pub fn from_parts(
+        pricing_scope: ModelCatalogPricingScope,
+        items: Vec<ModelCatalogItem>,
+        next_cursor: Option<String>,
+    ) -> Self {
+        Self {
+            pricing_scope,
+            items,
+            next_cursor,
+        }
+    }
+
+    /// 返回本页价格是公开基础价还是当前分组实际价。
+    #[must_use]
+    pub const fn pricing_scope(&self) -> ModelCatalogPricingScope {
+        self.pricing_scope
+    }
+
+    /// 返回本页目录条目。
+    #[must_use]
+    pub fn items(&self) -> &[ModelCatalogItem] {
+        &self.items
+    }
+
+    /// 返回下一页从哪个模型名之后继续。
+    #[must_use]
+    pub fn next_cursor(&self) -> Option<&str> {
+        self.next_cursor.as_deref()
+    }
+}
+
+impl fmt::Debug for ModelCatalogPage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ModelCatalogPage")
+            .field("pricing_scope", &self.pricing_scope)
+            .field("item_count", &self.items.len())
+            .field("has_next_cursor", &self.next_cursor.is_some())
+            .finish()
+    }
+}
+
+/// 模型目录读取失败分类，不携带模型、分组、价格或内部快照诊断。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum ModelCatalogReadError {
+    /// 查询字段、游标或页大小不满足闭合边界。
+    #[error("模型目录查询无效")]
+    InvalidQuery,
+    /// 运行时目录、定价快照或时钟不可用。
+    #[error("模型目录读取失败")]
+    Internal,
+}
+
+/// 游客与登录用户共用的模型目录同步只读端口。
+pub trait ModelCatalogReader: Send + Sync {
+    /// 无会话时读取公开基础目录，有会话时按数据库回查分组读取可用模型。
+    fn list(
+        &self,
+        authentication: Option<SessionAuthentication>,
+        query: &ModelCatalogQuery,
+    ) -> Result<ModelCatalogPage, ModelCatalogReadError>;
+}
+
+fn is_valid_model_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_MODEL_NAME_BYTES
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn query_and_item_boundaries_fail_closed() {
+        assert_eq!(ModelCatalogQuery::default().limit(), 24);
+        for search in [Some(String::new()), Some(" padded ".to_owned())] {
+            assert_eq!(
+                ModelCatalogQuery::new(search, None, None, 24),
+                Err(ModelCatalogReadError::InvalidQuery)
+            );
+        }
+        assert_eq!(
+            ModelCatalogQuery::new(None, None, Some("bad\nmodel".to_owned()), 24),
+            Err(ModelCatalogReadError::InvalidQuery)
+        );
+        assert_eq!(
+            ModelCatalogQuery::new(None, None, None, 0),
+            Err(ModelCatalogReadError::InvalidQuery)
+        );
+
+        let ratios = ModelCatalogRatios::new(1_000_000, 1_000_000, 1_000_000).unwrap();
+        assert!(
+            ModelCatalogItem::new(
+                "gpt-5".to_owned(),
+                ModelCatalogBillingMode::Free,
+                Some(ModelCatalogTokenPrices::from_decimals([Decimal::ZERO; 5]).unwrap()),
+                ratios,
+                1,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn decimal_prices_keep_exact_text_without_float_conversion() {
+        let prices = ModelCatalogTokenPrices::from_decimals([
+            Decimal::new(125, 2),
+            Decimal::new(10, 0),
+            Decimal::new(125, 3),
+            Decimal::ZERO,
+            Decimal::new(2_500_000_001, 9),
+        ])
+        .unwrap();
+        assert_eq!(prices.input(), "1.25");
+        assert_eq!(prices.output(), "10");
+        assert_eq!(prices.cache_read(), "0.125");
+        assert_eq!(prices.cache_creation_5m(), "0");
+        assert_eq!(prices.cache_creation_1h(), "2.500000001");
+    }
+
+    #[test]
+    fn page_keeps_the_authoritative_pricing_scope() {
+        let page =
+            ModelCatalogPage::from_parts(ModelCatalogPricingScope::PublicBase, Vec::new(), None);
+        assert_eq!(page.pricing_scope(), ModelCatalogPricingScope::PublicBase);
+    }
+}

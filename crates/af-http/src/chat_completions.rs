@@ -33,6 +33,7 @@ pub(crate) struct HttpState {
     chat: Arc<dyn ChatService>,
     pub(crate) session_authenticator: Arc<dyn SessionAuthenticator>,
     pub(crate) initial_setup: Option<Arc<dyn InitialSetup>>,
+    pub(crate) model_catalog_reader: Option<Arc<dyn af_admin::ModelCatalogReader>>,
     pub(crate) admin_channel_reader: Option<Arc<dyn AdminChannelReader>>,
     pub(crate) admin_channel_writer: Option<Arc<dyn AdminChannelWriter>>,
     pub(crate) admin_channel_probe: Option<Arc<dyn crate::AdminChannelProbe>>,
@@ -62,6 +63,7 @@ impl HttpState {
             chat,
             session_authenticator,
             initial_setup: None,
+            model_catalog_reader: None,
             admin_channel_reader: None,
             admin_channel_writer: None,
             admin_channel_probe: None,
@@ -80,6 +82,15 @@ impl HttpState {
     /// 为同源首次安装路由注入一次性 setup 服务。
     pub(crate) fn with_initial_setup(mut self, setup: Arc<dyn InitialSetup>) -> Self {
         self.initial_setup = Some(setup);
+        self
+    }
+
+    /// 为游客与登录用户模型目录路由注入运行时只读服务。
+    pub(crate) fn with_model_catalog_reader(
+        mut self,
+        reader: Arc<dyn af_admin::ModelCatalogReader>,
+    ) -> Self {
+        self.model_catalog_reader = Some(reader);
         self
     }
 

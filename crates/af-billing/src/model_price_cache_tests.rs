@@ -130,6 +130,13 @@ async fn initial_snapshot_preserves_modes_prices_and_redaction() {
     assert_eq!(snapshot.generation(), 1);
     assert_eq!(snapshot.len(), 3);
     assert!(snapshot.get("GPT-5.5-private").is_none());
+    assert_eq!(
+        snapshot
+            .entries()
+            .map(|(model, _)| model)
+            .collect::<Vec<_>>(),
+        vec!["free-private", "gpt-5.5-private", "zero-metered-private"]
+    );
 
     let paid_price = snapshot.get("gpt-5.5-private").unwrap();
     assert_eq!(paid_price.billing_mode(), BillingMode::PerToken);

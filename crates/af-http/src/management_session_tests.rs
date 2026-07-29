@@ -222,6 +222,7 @@ impl SessionAuthenticator for FakeSessionAuthenticator {
         let outcome = if token == SESSION_TOKEN {
             Ok(SessionAuthentication::new(
                 test_principal(),
+                GroupId::new(3).unwrap(),
                 current_timestamp() + 3_600,
             ))
         } else {

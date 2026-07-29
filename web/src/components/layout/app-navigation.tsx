@@ -1,4 +1,4 @@
-import { Gauge, KeyRound, Network, ScrollText } from 'lucide-react'
+import { Boxes, Gauge, KeyRound, Network, ScrollText } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
@@ -14,13 +14,15 @@ type AppNavigationProps = {
   compact?: boolean
   /** 已废弃，shadcn Sidebar 会通过 collapsible="icon" 自动处理折叠 */
   collapsed?: boolean
+  role: 'admin' | 'user'
 }
 
 const navItems = [
-  { key: 'overview', icon: Gauge, href: '#/console' },
-  { key: 'channels', icon: Network, href: '#/console/channels' },
-  { key: 'keys', icon: KeyRound, href: '#/console/tokens' },
-  { key: 'usage', icon: ScrollText, href: '#/console/usage-logs' },
+  { key: 'overview', icon: Gauge, href: '#/console', adminOnly: true },
+  { key: 'models', icon: Boxes, href: '#/console/models', adminOnly: false },
+  { key: 'channels', icon: Network, href: '#/console/channels', adminOnly: true },
+  { key: 'keys', icon: KeyRound, href: '#/console/tokens', adminOnly: true },
+  { key: 'usage', icon: ScrollText, href: '#/console/usage-logs', adminOnly: true },
 ] as const
 
 function useActiveKey() {
@@ -29,9 +31,10 @@ function useActiveKey() {
   return navItems.find((item) => item.key !== 'overview' && hash.startsWith(item.href))?.key ?? 'overview'
 }
 
-export function AppNavigation({ className, compact = false }: AppNavigationProps) {
+export function AppNavigation({ className, compact = false, role }: AppNavigationProps) {
   const { t } = useTranslation()
   const activeKey = useActiveKey()
+  const visibleItems = navItems.filter((item) => role === 'admin' || !item.adminOnly)
 
   /* ── 移动端横向导航条（compact 模式）────────────────────── */
   if (compact) {
@@ -43,7 +46,7 @@ export function AppNavigation({ className, compact = false }: AppNavigationProps
         )}
         aria-label={t('nav.label')}
       >
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const IconComponent = item.icon
           const active = item.key === activeKey
           return (
@@ -75,7 +78,7 @@ export function AppNavigation({ className, compact = false }: AppNavigationProps
   /* ── 桌面侧边栏导航（shadcn SidebarMenu）────────────────── */
   return (
     <SidebarMenu className={className}>
-      {navItems.map((item) => {
+      {visibleItems.map((item) => {
         const IconComponent = item.icon
         const active = item.key === activeKey
         return (
