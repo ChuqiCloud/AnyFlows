@@ -119,6 +119,7 @@ pub(crate) struct PreparedOpenAiChatRequest {
     pub(crate) canonical: CanonicalRequest,
     pub(crate) body: Bytes,
     pub(crate) include_usage: bool,
+    pub(crate) client_model: String,
 }
 
 /// 在不削弱协议校验的前提下选择原字节直通或 Canonical 重构。
@@ -127,6 +128,7 @@ pub(crate) fn prepare_openai_chat_request(
 ) -> Result<PreparedOpenAiChatRequest, AfError> {
     let include_usage = request.canonical().stream_options.include_usage();
     let requires_usage_injection = request.canonical().stream && !include_usage;
+    let client_model = request.requested_model().to_owned();
 
     if !requires_usage_injection {
         match request.into_same_protocol(Protocol::OpenAiChat) {
@@ -136,20 +138,22 @@ pub(crate) fn prepare_openai_chat_request(
                     canonical,
                     body,
                     include_usage,
+                    client_model,
                 });
             }
             SameProtocolDecision::Rebuild(request) => {
-                return rebuild_request(request, include_usage);
+                return rebuild_request(request, include_usage, client_model);
             }
         }
     }
 
-    rebuild_request(request, include_usage)
+    rebuild_request(request, include_usage, client_model)
 }
 
 fn rebuild_request(
     request: CanonicalRequestEnvelope,
     include_usage: bool,
+    client_model: String,
 ) -> Result<PreparedOpenAiChatRequest, AfError> {
     let mut canonical = request.into_canonical();
     if canonical.stream {
@@ -164,6 +168,7 @@ fn rebuild_request(
         canonical,
         body,
         include_usage,
+        client_model,
     })
 }
 
@@ -180,7 +185,7 @@ fn map_candidate_request_error(_error: RelayError) -> OpenAiChatRequestOverrideE
 
 #[cfg(test)]
 mod tests {
-    use af_protocol::{anthropic, openai_chat};
+    use af_protocol::{anthropic, apply_reasoning_model_suffix, openai_chat};
     use serde_json::json;
 
     use super::*;
@@ -310,5 +315,21 @@ mod tests {
         let (_, body) = overrides.prepare(request).unwrap().into_parts();
         let value: serde_json::Value = serde_json::from_slice(&body.unwrap()).unwrap();
         assert_eq!(value["stream_options"]["include_usage"], true);
+    }
+
+    #[test]
+    fn reasoning_suffix_uses_base_upstream_model_and_keeps_client_alias() {
+        let request = openai_chat::parse_request_envelope(Bytes::from_static(
+            br#"{"model":"gpt-5-high","messages":[{"role":"user","content":"hello"}]}"#,
+        ))
+        .unwrap();
+        let request = apply_reasoning_model_suffix(request).unwrap();
+
+        let prepared = prepare_openai_chat_request(request).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
+        assert_eq!(prepared.canonical.model, "gpt-5");
+        assert_eq!(prepared.client_model, "gpt-5-high");
+        assert_eq!(value["model"], "gpt-5");
+        assert_eq!(value["reasoning_effort"], "high");
     }
 }
