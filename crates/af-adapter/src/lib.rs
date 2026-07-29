@@ -3,6 +3,7 @@
 //! 协议转换属于 `af-protocol`，适配器只负责上游 URL、鉴权和请求传输。
 
 mod adaptor;
+mod anthropic;
 mod context;
 mod credential;
 mod error;
@@ -11,10 +12,11 @@ mod openai;
 mod request;
 
 pub use adaptor::{Adaptor, AdaptorSendExt};
+pub use anthropic::AnthropicAdaptor;
 pub use context::{MAX_REQUEST_ID_BYTES, MAX_UPSTREAM_BASE_URL_BYTES, RelayContext};
 pub use credential::{Credential, MAX_CREDENTIAL_SECRET_BYTES};
 pub use error::{AdaptorError, AdaptorResult, AdaptorTransportError};
-pub use factory::{AdaptorSettings, OpenAiAdaptorSettings, get_adaptor};
+pub use factory::{AdaptorSettings, AnthropicAdaptorSettings, OpenAiAdaptorSettings, get_adaptor};
 pub use openai::OpenAiAdaptor;
 pub use request::{
     MAX_UPSTREAM_REQUEST_BODY_BYTES, MAX_UPSTREAM_REQUEST_HEADER_COUNT,

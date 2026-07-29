@@ -1,11 +1,31 @@
 use std::fmt;
 
 use af_domain::CredentialKind;
+use af_httpclient::{HeaderMap, HeaderName};
 
 use crate::{AdaptorError, AdaptorResult};
 
 /// 解密后交给适配器的凭据最大长度；持久化密文边界不由本类型承担。
 pub const MAX_CREDENTIAL_SECRET_BYTES: usize = 16 * 1_024;
+
+/// 清除可能由上一层或前一次认证方案留下的凭据头。
+///
+/// 适配器必须先清理全部已知认证载体，再写入当前渠道唯一允许的认证头，避免
+/// API Key、OAuth 或其他供应商凭据在故障切换时交叉泄露。
+pub(crate) fn clear_authentication_headers(headers: &mut HeaderMap) {
+    for name in [
+        HeaderName::from_static("authorization"),
+        HeaderName::from_static("api-key"),
+        HeaderName::from_static("x-api-key"),
+        HeaderName::from_static("x-goog-api-key"),
+        HeaderName::from_static("x-auth-token"),
+        HeaderName::from_static("x-access-token"),
+        HeaderName::from_static("x-client-secret"),
+        HeaderName::from_static("x-amz-security-token"),
+    ] {
+        headers.remove(name);
+    }
+}
 
 /// 已解密但默认脱敏的凭据视图。
 ///
