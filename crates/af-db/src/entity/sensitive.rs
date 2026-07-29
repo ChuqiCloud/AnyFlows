@@ -109,7 +109,7 @@ pub(crate) enum SensitiveValueError {
     /// 同一请求头使用了不同大小写的重复名称。
     #[error("请求头覆盖包含重复字段")]
     DuplicateHeader,
-    /// 请求头覆盖试图保存认证信息。
+    /// 请求头覆盖试图保存认证、协议托管或连接级字段。
     #[error("请求头覆盖包含禁止设置的字段")]
     ForbiddenHeader,
 }

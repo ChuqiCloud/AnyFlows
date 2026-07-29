@@ -5,6 +5,8 @@ use sea_orm::entity::prelude::Json;
 use serde_json::Number;
 use thiserror::Error;
 
+use crate::entity::HeaderOverrides;
+
 /// 单渠道允许的精确模型映射数量上限。
 pub const MAX_CHANNEL_MODEL_MAPPINGS: usize = 512;
 /// 渠道请求策略序列化后的最大字节数。
@@ -22,6 +24,13 @@ pub const MAX_CHANNEL_OUTPUT_TOKENS: i64 = 1_000_000;
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 #[error("渠道请求策略无效")]
 pub struct ChannelRequestPolicyError;
+
+/// 校验渠道 Header 覆盖的结构、容量和禁止字段边界。
+pub fn validate_channel_header_overrides(value: &Json) -> Result<(), ChannelRequestPolicyError> {
+    HeaderOverrides::validate(value.clone())
+        .map(|_| ())
+        .map_err(|_| ChannelRequestPolicyError)
+}
 
 /// 区分大小写的 Canonical 模型到上游模型精确映射。
 #[derive(Clone, Default, Eq, PartialEq)]
@@ -290,6 +299,23 @@ mod tests {
             json!({"model": "forbidden"}),
         ] {
             assert!(ChannelParameterOverrides::parse(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn public_header_validation_reuses_sensitive_entity_boundary() {
+        assert!(
+            validate_channel_header_overrides(&json!({
+                "x-provider-feature": "enabled"
+            }))
+            .is_ok()
+        );
+        for invalid in [
+            json!({"content-type": "text/plain"}),
+            json!({"x-request-id": "untrusted"}),
+            json!({"authorization": "secret"}),
+        ] {
+            assert!(validate_channel_header_overrides(&invalid).is_err());
         }
     }
 }

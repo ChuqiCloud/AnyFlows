@@ -29,6 +29,7 @@ use crate::{
         ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, abilities, channel_groups,
         channel_models, channels, credentials,
     },
+    validate_channel_header_overrides,
 };
 
 /// 单次凭据父子图校验允许读取的最大有效记录数。
@@ -850,6 +851,8 @@ fn validate_channel_fields(
         .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
     if let Some(header_override) = &record.header_override {
         validate_json_object(header_override, false)?;
+        validate_channel_header_overrides(header_override)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
     }
     if let Some(settings) = &record.settings {
         validate_json_object(settings, false)?;

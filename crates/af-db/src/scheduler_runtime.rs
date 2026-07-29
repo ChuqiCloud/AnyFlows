@@ -14,6 +14,7 @@ pub use policy::{
     ChannelModelMappings, ChannelParameterOverrides, ChannelRequestPolicyError,
     MAX_CHANNEL_MODEL_MAPPINGS, MAX_CHANNEL_OUTPUT_TOKENS, MAX_CHANNEL_PARAMETER_OVERRIDES,
     MAX_CHANNEL_REQUEST_POLICY_BYTES, MAX_CHANNEL_STOP_SEQUENCE_BYTES, MAX_CHANNEL_STOP_SEQUENCES,
+    validate_channel_header_overrides,
 };
 pub use record::SchedulerRuntimeRecord;
 pub use repository::{
