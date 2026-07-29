@@ -6,6 +6,7 @@ import type {
   PlaygroundMessage,
   PlaygroundUsage,
 } from './playground-types'
+import { playgroundRequestContext } from './playground-comparison-state'
 
 type PlaygroundStreamRequest = PlaygroundGenerationSettings & {
   messages: PlaygroundMessage[]
@@ -34,8 +35,7 @@ export async function streamPlaygroundChat(
     includeUsage: true,
     fetch: (input, init) => fetch(input, { ...init, credentials: 'same-origin' }),
   })
-  const messages: ModelMessage[] = request.messages
-    .filter((message) => message.content.length > 0)
+  const messages: ModelMessage[] = playgroundRequestContext(request.messages)
     .map((message) => ({ role: message.role, content: message.content }))
   let streamError: unknown
 

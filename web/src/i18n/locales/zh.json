@@ -526,6 +526,8 @@
     "status": {
       "ready": "就绪",
       "streaming": "生成中",
+      "complete": "已完成",
+      "partial": "部分完成",
       "error": "请求失败",
       "cancelled": "已停止",
       "loadingModels": "加载模型",
@@ -562,7 +564,12 @@
       "loading": "正在加载模型",
       "loadingMore": "正在加载更多模型",
       "error": "无法读取当前分组模型",
-      "empty": "没有匹配的可用模型"
+      "empty": "没有匹配的可用模型",
+      "selectedCount": "已选 {{count}} 个模型",
+      "selectionCount": "已选择 {{count}} / {{max}} 个模型",
+      "selectedLabel": "已选择的比较模型",
+      "locked": "会话开始后模型集合已锁定",
+      "done": "完成选择"
     },
     "message": {
       "you": "你",
@@ -580,6 +587,9 @@
     "actions": {
       "send": "发送",
       "stop": "停止",
+      "stopAll": "全部停止",
+      "stopModel": "停止 {{model}}",
+      "sendMultiple": "发送至 {{count}} 个模型",
       "retry": "重试",
       "loadMore": "加载更多",
       "clearConversation": "清空会话",
@@ -588,14 +598,21 @@
       "copied": "已复制"
     },
     "usage": {
-      "summary": "输入 {{input}} / 输出 {{output}}"
+      "summary": "输入 {{input}} / 输出 {{output}}",
+      "pending": "尚无用量"
+    },
+    "comparison": {
+      "summary_one": "{{count}} 个模型 · {{count}} 个独立请求",
+      "summary_other": "{{count}} 个模型 · {{count}} 个独立请求",
+      "modelTabs": "比较模型",
+      "transcript": "{{model}} 的对话结果"
     },
     "code": {
       "plainText": "纯文本"
     },
     "empty": {
       "title": "等待第一条消息",
-      "body": "当前会话为空。"
+      "body": "当前模型尚无消息。"
     },
     "errors": {
       "invalid_key": "API Key 无效、已禁用或不允许当前来源。",

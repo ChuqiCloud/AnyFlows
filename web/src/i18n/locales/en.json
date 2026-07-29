@@ -526,6 +526,8 @@
     "status": {
       "ready": "Ready",
       "streaming": "Generating",
+      "complete": "Complete",
+      "partial": "Partially complete",
       "error": "Request failed",
       "cancelled": "Stopped",
       "loadingModels": "Loading models",
@@ -562,7 +564,12 @@
       "loading": "Loading models",
       "loadingMore": "Loading more models",
       "error": "Current group models are unavailable",
-      "empty": "No matching available models"
+      "empty": "No matching available models",
+      "selectedCount": "{{count}} models selected",
+      "selectionCount": "{{count}} of {{max}} models selected",
+      "selectedLabel": "Selected comparison models",
+      "locked": "The model set is locked after the conversation starts",
+      "done": "Done"
     },
     "message": {
       "you": "You",
@@ -580,6 +587,9 @@
     "actions": {
       "send": "Send",
       "stop": "Stop",
+      "stopAll": "Stop all",
+      "stopModel": "Stop {{model}}",
+      "sendMultiple": "Send to {{count}} models",
       "retry": "Retry",
       "loadMore": "Load more",
       "clearConversation": "Clear conversation",
@@ -588,14 +598,21 @@
       "copied": "Copied"
     },
     "usage": {
-      "summary": "Input {{input}} / output {{output}}"
+      "summary": "Input {{input}} / output {{output}}",
+      "pending": "No usage yet"
+    },
+    "comparison": {
+      "summary_one": "{{count}} model · {{count}} independent request",
+      "summary_other": "{{count}} models · {{count}} independent requests",
+      "modelTabs": "Comparison models",
+      "transcript": "Conversation results for {{model}}"
     },
     "code": {
       "plainText": "Plain text"
     },
     "empty": {
       "title": "Waiting for the first message",
-      "body": "This session is empty."
+      "body": "This model has no messages yet."
     },
     "errors": {
       "invalid_key": "The API key is invalid, disabled, or unavailable from this source.",

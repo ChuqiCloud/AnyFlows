@@ -22,7 +22,9 @@ export type PlaygroundErrorKind =
   | 'upstream_unavailable'
   | 'unknown'
 
-export type PlaygroundRequestState = 'idle' | 'streaming' | 'cancelled' | 'error'
+export type PlaygroundRequestState = 'idle' | 'streaming' | 'complete' | 'cancelled' | 'error'
+
+export type PlaygroundOverallState = PlaygroundRequestState | 'partial'
 
 export type PlaygroundGenerationSettings = {
   apiKey: string
@@ -31,3 +33,15 @@ export type PlaygroundGenerationSettings = {
   temperature?: number
   maxOutputTokens?: number
 }
+
+export type PlaygroundSharedSettings = Omit<PlaygroundGenerationSettings, 'model'>
+
+export type PlaygroundSession = {
+  model: string
+  messages: PlaygroundMessage[]
+  requestState: PlaygroundRequestState
+  errorKind?: PlaygroundErrorKind
+  usage?: PlaygroundUsage
+}
+
+export const MAX_PLAYGROUND_MODELS = 4

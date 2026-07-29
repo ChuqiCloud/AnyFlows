@@ -1,4 +1,4 @@
-import { Boxes, Check, ChevronRight, RefreshCw, Search, SearchX } from 'lucide-react'
+import { Boxes, Check, ChevronRight, LockKeyhole, RefreshCw, Search, SearchX } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -16,16 +16,19 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ModelCatalogItem } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
+import { togglePlaygroundModel } from './playground-model-selection'
+import { MAX_PLAYGROUND_MODELS } from './playground-types'
 
 type PlaygroundModelPickerProps = {
-  value?: string
+  values: string[]
   search: string
   models: ModelCatalogItem[]
   loading: boolean
   error: boolean
   loadingMore: boolean
   hasMore: boolean
-  onChange: (model: string) => void
+  locked: boolean
+  onChange: (models: string[]) => void
   onLoadMore: () => void
   onRefresh: () => void
   onSearch: (value: string) => void
@@ -34,29 +37,54 @@ type PlaygroundModelPickerProps = {
 export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-
-  const select = (model: string) => {
-    props.onChange(model)
-    setOpen(false)
-  }
+  const summary = props.values.length === 1
+    ? props.values[0]
+    : t('playground.model.selectedCount', { count: props.values.length })
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button type="button" variant="outline" className="h-auto min-h-9 w-full justify-between px-2.5 py-2 text-left">
+        <Button
+          type="button"
+          variant="outline"
+          className="h-auto min-h-9 w-full justify-between px-2.5 py-2 text-left"
+          disabled={props.locked}
+        >
           <span className="flex min-w-0 items-center gap-2">
             <Boxes className="size-3.5 shrink-0 text-info" aria-hidden="true" />
-            <span className={cn('truncate font-mono text-xs', !props.value && 'text-muted-foreground')}>
-              {props.value || t('playground.model.pending')}
+            <span className={cn('truncate font-mono text-xs', props.values.length === 0 && 'text-muted-foreground')}>
+              {summary || t('playground.model.pending')}
             </span>
           </span>
-          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          {props.locked
+            ? <LockKeyhole className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            : <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
         </Button>
       </SheetTrigger>
+      {props.values.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5" aria-label={t('playground.model.selectedLabel')}>
+          {props.values.map((model) => (
+            <Badge key={model} className="max-w-full bg-surface-2 font-mono text-muted-foreground">
+              <span className="truncate">{model}</span>
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+      {props.locked ? (
+        <p className="flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
+          <LockKeyhole className="size-3" aria-hidden="true" />
+          {t('playground.model.locked')}
+        </p>
+      ) : null}
       <SheetContent className="gap-0 sm:max-w-md">
         <SheetHeader className="border-b border-[var(--hairline)]">
           <SheetTitle>{t('playground.model.title')}</SheetTitle>
-          <SheetDescription className="sr-only">{t('playground.model.description')}</SheetDescription>
+          <SheetDescription>
+            {t('playground.model.selectionCount', {
+              count: props.values.length,
+              max: MAX_PLAYGROUND_MODELS,
+            })}
+          </SheetDescription>
         </SheetHeader>
         <div className="border-b border-[var(--hairline)] p-3">
           <label className="relative block">
@@ -97,19 +125,22 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
           ) : (
             <div className="grid gap-0.5">
               {props.models.map((item) => {
-                const selected = item.model === props.value
+                const selected = props.values.includes(item.model)
+                const disabled = (selected && props.values.length === 1)
+                  || (!selected && props.values.length >= MAX_PLAYGROUND_MODELS)
                 return (
                   <button
                     key={item.model}
                     type="button"
                     role="option"
                     aria-selected={selected}
+                    disabled={disabled}
                     className={cn(
                       'flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left outline-none transition-colors',
-                      'hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring/60',
+                      'hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50',
                       selected && 'bg-surface-2',
                     )}
-                    onClick={() => select(item.model)}
+                    onClick={() => props.onChange(togglePlaygroundModel(props.values, item.model))}
                   >
                     <Check className={cn('size-3.5 shrink-0 text-info', !selected && 'opacity-0')} aria-hidden="true" />
                     <span className="min-w-0 flex-1 truncate font-mono text-xs">{item.model}</span>
@@ -133,6 +164,11 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
               ) : null}
             </div>
           )}
+        </div>
+        <div className="border-t border-[var(--hairline)] p-3">
+          <Button type="button" className="w-full" onClick={() => setOpen(false)}>
+            <Check aria-hidden="true" />{t('playground.model.done')}
+          </Button>
         </div>
       </SheetContent>
     </Sheet>
