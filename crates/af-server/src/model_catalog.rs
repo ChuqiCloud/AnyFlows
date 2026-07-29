@@ -43,7 +43,7 @@ impl RuntimeModelCatalogReader {
         ratios: PricingRatios,
         model_version: u64,
     ) -> Result<ModelCatalogItem, ModelCatalogReadError> {
-        let billing_mode = Self::catalog_billing_mode(billing_mode);
+        let billing_mode = Self::catalog_billing_mode(billing_mode)?;
         let prices = resolver
             .effective_token_prices()
             .map_err(|_| ModelCatalogReadError::Internal)?
@@ -63,10 +63,13 @@ impl RuntimeModelCatalogReader {
         )
     }
 
-    const fn catalog_billing_mode(billing_mode: BillingMode) -> ModelCatalogBillingMode {
+    fn catalog_billing_mode(
+        billing_mode: BillingMode,
+    ) -> Result<ModelCatalogBillingMode, ModelCatalogReadError> {
         match billing_mode {
-            BillingMode::PerToken => ModelCatalogBillingMode::PerToken,
-            BillingMode::Free => ModelCatalogBillingMode::Free,
+            BillingMode::PerToken => Ok(ModelCatalogBillingMode::PerToken),
+            BillingMode::Free => Ok(ModelCatalogBillingMode::Free),
+            _ => Err(ModelCatalogReadError::Internal),
         }
     }
 
@@ -168,10 +171,13 @@ impl ModelCatalogReader for RuntimeModelCatalogReader {
                 return Err(ModelCatalogReadError::Internal);
             }
             for (model, price) in snapshot.entries() {
-                if !Self::model_matches_query(model, search, query)
-                    || query.billing_mode().is_some_and(|mode| {
-                        mode != Self::catalog_billing_mode(price.billing_mode())
-                    })
+                if !Self::model_matches_query(model, search, query) {
+                    continue;
+                }
+                let billing_mode = Self::catalog_billing_mode(price.billing_mode())?;
+                if query
+                    .billing_mode()
+                    .is_some_and(|mode| mode != billing_mode)
                 {
                     continue;
                 }

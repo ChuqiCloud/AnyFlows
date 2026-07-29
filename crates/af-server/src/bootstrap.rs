@@ -854,6 +854,7 @@ impl Bootstrap<ListenerReady> {
             refund_signal_queue,
             chat: _,
             _channel_index: _,
+            model_catalog_reader: _,
             admin_channel_probe: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
