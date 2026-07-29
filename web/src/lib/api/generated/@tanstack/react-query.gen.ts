@@ -2,8 +2,8 @@
 
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 import { client } from '../client.gen';
-import { createAdminChannel, createAdminCredential, createAdminGroup, createAdminToken, createAdminUser, createPlaygroundShare, deleteAdminChannel, deleteAdminCredential, deleteAdminGroup, deleteAdminToken, deleteAdminUser, getAdminChannel, getAdminCredential, getAdminDashboard, getAdminGroup, getAdminToken, getAdminUser, getInitialSetupStatus, getManagementSession, getPlaygroundShare, initializeAdminSetup, listAdminChannels, listAdminCredentials, listAdminGroups, listAdminTokens, listAdminUsageLogs, listAdminUsers, listModels, loginManagementSession, type Options, probeAdminChannel, revokePlaygroundShare, updateAdminChannel, updateAdminCredential, updateAdminGroup, updateAdminToken, updateAdminUser } from '../sdk.gen';
-import type { CreateAdminChannelData, CreateAdminChannelError, CreateAdminChannelResponse, CreateAdminCredentialData, CreateAdminCredentialError, CreateAdminCredentialResponse, CreateAdminGroupData, CreateAdminGroupError, CreateAdminGroupResponse, CreateAdminTokenData, CreateAdminTokenError, CreateAdminTokenResponse, CreateAdminUserData, CreateAdminUserError, CreateAdminUserResponse, CreatePlaygroundShareData, CreatePlaygroundShareError, CreatePlaygroundShareResponse, DeleteAdminChannelData, DeleteAdminChannelError, DeleteAdminChannelResponse, DeleteAdminCredentialData, DeleteAdminCredentialError, DeleteAdminCredentialResponse, DeleteAdminGroupData, DeleteAdminGroupError, DeleteAdminGroupResponse, DeleteAdminTokenData, DeleteAdminTokenError, DeleteAdminTokenResponse, DeleteAdminUserData, DeleteAdminUserError, DeleteAdminUserResponse, GetAdminChannelData, GetAdminChannelError, GetAdminChannelResponse, GetAdminCredentialData, GetAdminCredentialError, GetAdminCredentialResponse, GetAdminDashboardData, GetAdminDashboardError, GetAdminDashboardResponse, GetAdminGroupData, GetAdminGroupError, GetAdminGroupResponse, GetAdminTokenData, GetAdminTokenError, GetAdminTokenResponse, GetAdminUserData, GetAdminUserError, GetAdminUserResponse, GetInitialSetupStatusData, GetInitialSetupStatusError, GetInitialSetupStatusResponse, GetManagementSessionData, GetManagementSessionError, GetManagementSessionResponse, GetPlaygroundShareData, GetPlaygroundShareError, GetPlaygroundShareResponse, InitializeAdminSetupData, InitializeAdminSetupError, InitializeAdminSetupResponse, ListAdminChannelsData, ListAdminChannelsError, ListAdminChannelsResponse, ListAdminCredentialsData, ListAdminCredentialsError, ListAdminCredentialsResponse, ListAdminGroupsData, ListAdminGroupsError, ListAdminGroupsResponse, ListAdminTokensData, ListAdminTokensError, ListAdminTokensResponse, ListAdminUsageLogsData, ListAdminUsageLogsError, ListAdminUsageLogsResponse, ListAdminUsersData, ListAdminUsersError, ListAdminUsersResponse, ListModelsData, ListModelsError, ListModelsResponse, LoginManagementSessionData, LoginManagementSessionError, LoginManagementSessionResponse, ProbeAdminChannelData, ProbeAdminChannelError, ProbeAdminChannelResponse, RevokePlaygroundShareData, RevokePlaygroundShareError, RevokePlaygroundShareResponse, UpdateAdminChannelData, UpdateAdminChannelError, UpdateAdminChannelResponse, UpdateAdminCredentialData, UpdateAdminCredentialError, UpdateAdminCredentialResponse, UpdateAdminGroupData, UpdateAdminGroupError, UpdateAdminGroupResponse, UpdateAdminTokenData, UpdateAdminTokenError, UpdateAdminTokenResponse, UpdateAdminUserData, UpdateAdminUserError, UpdateAdminUserResponse } from '../types.gen';
+import { createAdminChannel, createAdminCredential, createAdminGroup, createAdminToken, createAdminUser, createPlaygroundShare, deleteAdminChannel, deleteAdminCredential, deleteAdminGroup, deleteAdminToken, deleteAdminUser, deletePlaygroundConversation, getAdminChannel, getAdminCredential, getAdminDashboard, getAdminGroup, getAdminToken, getAdminUser, getInitialSetupStatus, getManagementSession, getPlaygroundConversation, getPlaygroundShare, initializeAdminSetup, listAdminChannels, listAdminCredentials, listAdminGroups, listAdminTokens, listAdminUsageLogs, listAdminUsers, listModels, listPlaygroundConversations, loginManagementSession, type Options, probeAdminChannel, revokePlaygroundShare, savePlaygroundConversation, updateAdminChannel, updateAdminCredential, updateAdminGroup, updateAdminToken, updateAdminUser } from '../sdk.gen';
+import type { CreateAdminChannelData, CreateAdminChannelError, CreateAdminChannelResponse, CreateAdminCredentialData, CreateAdminCredentialError, CreateAdminCredentialResponse, CreateAdminGroupData, CreateAdminGroupError, CreateAdminGroupResponse, CreateAdminTokenData, CreateAdminTokenError, CreateAdminTokenResponse, CreateAdminUserData, CreateAdminUserError, CreateAdminUserResponse, CreatePlaygroundShareData, CreatePlaygroundShareError, CreatePlaygroundShareResponse, DeleteAdminChannelData, DeleteAdminChannelError, DeleteAdminChannelResponse, DeleteAdminCredentialData, DeleteAdminCredentialError, DeleteAdminCredentialResponse, DeleteAdminGroupData, DeleteAdminGroupError, DeleteAdminGroupResponse, DeleteAdminTokenData, DeleteAdminTokenError, DeleteAdminTokenResponse, DeleteAdminUserData, DeleteAdminUserError, DeleteAdminUserResponse, DeletePlaygroundConversationData, DeletePlaygroundConversationError, DeletePlaygroundConversationResponse, GetAdminChannelData, GetAdminChannelError, GetAdminChannelResponse, GetAdminCredentialData, GetAdminCredentialError, GetAdminCredentialResponse, GetAdminDashboardData, GetAdminDashboardError, GetAdminDashboardResponse, GetAdminGroupData, GetAdminGroupError, GetAdminGroupResponse, GetAdminTokenData, GetAdminTokenError, GetAdminTokenResponse, GetAdminUserData, GetAdminUserError, GetAdminUserResponse, GetInitialSetupStatusData, GetInitialSetupStatusError, GetInitialSetupStatusResponse, GetManagementSessionData, GetManagementSessionError, GetManagementSessionResponse, GetPlaygroundConversationData, GetPlaygroundConversationError, GetPlaygroundConversationResponse, GetPlaygroundShareData, GetPlaygroundShareError, GetPlaygroundShareResponse, InitializeAdminSetupData, InitializeAdminSetupError, InitializeAdminSetupResponse, ListAdminChannelsData, ListAdminChannelsError, ListAdminChannelsResponse, ListAdminCredentialsData, ListAdminCredentialsError, ListAdminCredentialsResponse, ListAdminGroupsData, ListAdminGroupsError, ListAdminGroupsResponse, ListAdminTokensData, ListAdminTokensError, ListAdminTokensResponse, ListAdminUsageLogsData, ListAdminUsageLogsError, ListAdminUsageLogsResponse, ListAdminUsersData, ListAdminUsersError, ListAdminUsersResponse, ListModelsData, ListModelsError, ListModelsResponse, ListPlaygroundConversationsData, ListPlaygroundConversationsError, ListPlaygroundConversationsResponse, LoginManagementSessionData, LoginManagementSessionError, LoginManagementSessionResponse, ProbeAdminChannelData, ProbeAdminChannelError, ProbeAdminChannelResponse, RevokePlaygroundShareData, RevokePlaygroundShareError, RevokePlaygroundShareResponse, SavePlaygroundConversationData, SavePlaygroundConversationError, SavePlaygroundConversationResponse, UpdateAdminChannelData, UpdateAdminChannelError, UpdateAdminChannelResponse, UpdateAdminCredentialData, UpdateAdminCredentialError, UpdateAdminCredentialResponse, UpdateAdminGroupData, UpdateAdminGroupError, UpdateAdminGroupResponse, UpdateAdminTokenData, UpdateAdminTokenError, UpdateAdminTokenResponse, UpdateAdminUserData, UpdateAdminUserError, UpdateAdminUserResponse } from '../types.gen';
 export const loginManagementSessionMutation = (options?: Partial<Options<LoginManagementSessionData>>): UseMutationOptions<LoginManagementSessionResponse, LoginManagementSessionError, Options<LoginManagementSessionData>> => {
     const mutationOptions: UseMutationOptions<LoginManagementSessionResponse, LoginManagementSessionError, Options<LoginManagementSessionData>> = {
         mutationFn: async (fnOptions) => {
@@ -385,6 +385,58 @@ export const getPlaygroundShareOptions = (options: Options<GetPlaygroundShareDat
     },
     queryKey: getPlaygroundShareQueryKey(options)
 });
+export const listPlaygroundConversationsQueryKey = (options?: Options<ListPlaygroundConversationsData>) => createQueryKey('listPlaygroundConversations', options);
+export const listPlaygroundConversationsOptions = (options?: Options<ListPlaygroundConversationsData>) => queryOptions<ListPlaygroundConversationsResponse, ListPlaygroundConversationsError, ListPlaygroundConversationsResponse, ReturnType<typeof listPlaygroundConversationsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listPlaygroundConversations({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listPlaygroundConversationsQueryKey(options)
+});
+export const deletePlaygroundConversationMutation = (options?: Partial<Options<DeletePlaygroundConversationData>>): UseMutationOptions<DeletePlaygroundConversationResponse, DeletePlaygroundConversationError, Options<DeletePlaygroundConversationData>> => {
+    const mutationOptions: UseMutationOptions<DeletePlaygroundConversationResponse, DeletePlaygroundConversationError, Options<DeletePlaygroundConversationData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await deletePlaygroundConversation({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+export const getPlaygroundConversationQueryKey = (options: Options<GetPlaygroundConversationData>) => createQueryKey('getPlaygroundConversation', options);
+export const getPlaygroundConversationOptions = (options: Options<GetPlaygroundConversationData>) => queryOptions<GetPlaygroundConversationResponse, GetPlaygroundConversationError, GetPlaygroundConversationResponse, ReturnType<typeof getPlaygroundConversationQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getPlaygroundConversation({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getPlaygroundConversationQueryKey(options)
+});
+export const savePlaygroundConversationMutation = (options?: Partial<Options<SavePlaygroundConversationData>>): UseMutationOptions<SavePlaygroundConversationResponse, SavePlaygroundConversationError, Options<SavePlaygroundConversationData>> => {
+    const mutationOptions: UseMutationOptions<SavePlaygroundConversationResponse, SavePlaygroundConversationError, Options<SavePlaygroundConversationData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await savePlaygroundConversation({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
 export const listAdminTokensQueryKey = (options?: Options<ListAdminTokensData>) => createQueryKey('listAdminTokens', options);
 export const listAdminTokensOptions = (options?: Options<ListAdminTokensData>) => queryOptions<ListAdminTokensResponse, ListAdminTokensError, ListAdminTokensResponse, ReturnType<typeof listAdminTokensQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {

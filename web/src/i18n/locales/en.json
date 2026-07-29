@@ -682,6 +682,46 @@
         "unavailableBody": "The service is unavailable. You can request it again shortly.",
         "retry": "Try again"
       }
+    },
+    "history": {
+      "action": "History",
+      "title": "Conversation history",
+      "description": "Complete turns are saved automatically. Only models and messages are restored.",
+      "loading": "Loading conversation history",
+      "active": "Current",
+      "delete": "Delete conversation",
+      "retrySave": "Retry save",
+      "retryLoad": "Reload",
+      "emptyTitle": "No conversation history yet",
+      "emptyBody": "A restorable conversation appears here after the first complete turn.",
+      "loadErrorTitle": "Conversation history unavailable",
+      "loadErrorBody": "The service did not return a reliable history summary. Try again shortly.",
+      "readError": "This conversation could not be restored. The current workspace is unchanged.",
+      "deleteError": "This conversation could not be deleted. Try again later.",
+      "restoreTitle": "Restore this conversation?",
+      "restoreDescription": "The current workspace will be replaced. Your API key remains, while the system prompt and optional settings are cleared.",
+      "restoreAction": "Restore conversation",
+      "keepCurrent": "Keep current conversation",
+      "deleteTitle": "Delete this conversation?",
+      "deleteDescription": "The saved transcript will be permanently deleted. Deleting the current conversation also clears the workspace. Existing share links are unaffected.",
+      "deleteAction": "Confirm delete",
+      "keepHistory": "Keep conversation",
+      "saveState": {
+        "idle": "Not saved yet",
+        "saving": "Saving",
+        "saved": "Saved",
+        "error": "Save failed",
+        "conflict": "Version conflict",
+        "limit": "History full"
+      },
+      "saveDetail": {
+        "idle": "The first complete turn will be saved automatically.",
+        "saving": "The next send waits until this save completes.",
+        "saved": "Models and complete successful turns are synchronized.",
+        "error": "The page content remains available. You can retry.",
+        "conflict": "Another page updated this conversation. Reload it from history.",
+        "limit": "Up to 50 conversations are retained. Delete an older one and retry."
+      }
     }
   },
   "auth": {

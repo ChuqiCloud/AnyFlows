@@ -3,7 +3,8 @@ use std::sync::Arc;
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminTokenReader,
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, InitialSetup,
-    ModelCatalogReader, PlaygroundShareService, SessionAuthenticator, TokenAuthenticator,
+    ModelCatalogReader, PlaygroundConversationService, PlaygroundShareService,
+    SessionAuthenticator, TokenAuthenticator,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -53,6 +54,7 @@ use crate::middleware::{
 };
 use crate::model_catalog::list_models;
 use crate::operations::{ReadinessHandle, operations_router};
+use crate::playground_conversations::build_playground_conversation_router;
 use crate::playground_shares::build_playground_share_router;
 use crate::{
     ChatService, QueryApiKeyPolicy, chat_completions::HttpState, chat_completions::chat_completions,
@@ -93,6 +95,7 @@ pub fn build_router(
     session_authenticator: Arc<dyn SessionAuthenticator>,
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     playground_share_service: Arc<dyn PlaygroundShareService>,
+    playground_conversation_service: Arc<dyn PlaygroundConversationService>,
     initial_setup: Arc<dyn InitialSetup>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
@@ -194,6 +197,10 @@ pub fn build_router(
     );
     let playground_share_routes = build_playground_share_router(
         playground_share_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
+    let playground_conversation_routes = build_playground_conversation_router(
+        playground_conversation_service,
         Arc::clone(&http_state.session_authenticator),
     );
     let management_routes = Router::new()
@@ -302,7 +309,8 @@ pub fn build_router(
                 .route_layer(credential_item_authentication),
         )
         .with_state(http_state)
-        .merge(playground_share_routes);
+        .merge(playground_share_routes)
+        .merge(playground_conversation_routes);
     HttpRouter::new(build_router_with_routes_and_frontend(
         public_routes.merge(management_routes),
         operations_router(readiness),

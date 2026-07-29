@@ -82,6 +82,9 @@ pub(crate) enum SensitiveValueError {
     /// 计费预留键不是非零的 128 位规范化十六进制编码。
     #[error("计费预留键必须是非零的 32 位小写十六进制字符串")]
     InvalidBillingReservationKey,
+    /// Playground 会话标识不是非零的 128 位规范化十六进制编码。
+    #[error("Playground 会话标识必须是非零的 32 位小写十六进制字符串")]
+    InvalidPlaygroundConversationKey,
     /// 批量落盘 writer 键不是非零的 128 位规范化十六进制编码。
     #[error("计费批量 writer 键必须是非零的 32 位小写十六进制字符串")]
     InvalidBillingBatchWriterKey,
@@ -319,6 +322,43 @@ impl TryFromU64 for BillingReservationKey {
     fn try_from_u64(_: u64) -> Result<Self, DbErr> {
         // 幂等键不是自增主键，拒绝 SeaORM 将插入结果误转成业务标识。
         Err(DbErr::ConvertFromU64("BillingReservationKey"))
+    }
+}
+
+/// 经过格式校验且禁止日志输出的 Playground 私有会话标识。
+#[derive(Clone, PartialEq, Eq)]
+pub struct PlaygroundConversationKey(String);
+
+impl PlaygroundConversationKey {
+    /// 解析非全零的 32 位小写十六进制会话标识。
+    pub(crate) fn parse(value: &str) -> Result<Self, SensitiveValueError> {
+        if value.len() == 32
+            && value
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+            && value.bytes().any(|byte| byte != b'0')
+        {
+            return Ok(Self(value.to_owned()));
+        }
+        Err(SensitiveValueError::InvalidPlaygroundConversationKey)
+    }
+
+    /// 仅供所有者范围内的仓储响应读取会话标识。
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for PlaygroundConversationKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("<redacted>")
+    }
+}
+
+impl TryFromU64 for PlaygroundConversationKey {
+    fn try_from_u64(_: u64) -> Result<Self, DbErr> {
+        // 随机会话标识不是自增主键，拒绝 SeaORM 误转插入结果。
+        Err(DbErr::ConvertFromU64("PlaygroundConversationKey"))
     }
 }
 
@@ -815,6 +855,7 @@ fn invalid_db_value(
 
 impl_validated_string_value!(TokenHash, parse, ColumnType::Char(Some(64)));
 impl_validated_string_value!(BillingReservationKey, parse, ColumnType::Char(Some(32)));
+impl_validated_string_value!(PlaygroundConversationKey, parse, ColumnType::Char(Some(32)));
 impl_validated_string_value!(BillingBatchWriterKey, parse, ColumnType::Char(Some(32)));
 impl_validated_string_value!(BillingBatchFingerprint, parse, ColumnType::Char(Some(64)));
 impl_validated_string_value!(PasswordHash, parse, ColumnType::String(StringLen::N(255)));

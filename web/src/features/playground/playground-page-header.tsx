@@ -16,6 +16,7 @@ import { playgroundStatusClassName, type PlaygroundDisplayStatus } from './playg
 
 type PlaygroundPageHeaderProps = {
   clearDisabled: boolean
+  historyControl: ReactNode
   mobileSettings: ReactNode
   modelCount: number
   shareControl: ReactNode
@@ -37,6 +38,7 @@ export function PlaygroundPageHeader(props: PlaygroundPageHeaderProps) {
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
+        {props.historyControl}
         {props.shareControl}
         <Badge className={playgroundStatusClassName(props.status)}>
           {t(`playground.status.${props.status}`)}

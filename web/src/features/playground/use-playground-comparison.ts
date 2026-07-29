@@ -10,7 +10,7 @@ import {
 } from './playground-comparison-state'
 import { classifyPlaygroundError } from './playground-error'
 import { normalizePlaygroundModels } from './playground-model-selection'
-import type { PlaygroundMessage, PlaygroundSharedSettings } from './playground-types'
+import type { PlaygroundMessage, PlaygroundSession, PlaygroundSharedSettings } from './playground-types'
 
 function messageId() {
   return globalThis.crypto.randomUUID()
@@ -49,6 +49,14 @@ export function usePlaygroundComparison(settings: PlaygroundSharedSettings, sele
     setDraft('')
     dispatch({ type: 'clear', models })
   }, [models, stopAll])
+
+  const restore = useCallback((restoredSessions: PlaygroundSession[]) => {
+    requestSequenceRef.current += 1
+    stopAll()
+    controllersRef.current.clear()
+    setDraft('')
+    dispatch({ type: 'restore', sessions: restoredSessions })
+  }, [stopAll])
 
   const send = useCallback(async () => {
     const content = draft.trim()
@@ -151,6 +159,7 @@ export function usePlaygroundComparison(settings: PlaygroundSharedSettings, sele
     draft,
     hasConversation: hasPlaygroundConversation(sessions),
     overallState: playgroundOverallState(sessions),
+    restore,
     send,
     sessions,
     setDraft,

@@ -171,16 +171,7 @@ impl PlaygroundShareCreateCommand {
         sessions: Vec<PlaygroundShareSession>,
     ) -> Result<Self, PlaygroundShareInputError> {
         let ttl = PlaygroundShareTtl::from_days(ttl_days)?;
-        validate_sessions(&sessions)?;
-        let snapshot = StoredPlaygroundShareSnapshot {
-            version: PLAYGROUND_SHARE_SNAPSHOT_VERSION,
-            sessions,
-        };
-        let bytes = serde_json::to_vec(&snapshot)
-            .map_err(|_| PlaygroundShareInputError::InvalidSnapshot)?;
-        if bytes.len() > MAX_PLAYGROUND_SHARE_SNAPSHOT_BYTES {
-            return Err(PlaygroundShareInputError::SnapshotTooLarge);
-        }
+        let snapshot = validated_stored_snapshot(sessions)?;
         Ok(Self { ttl, snapshot })
     }
 
@@ -191,6 +182,29 @@ impl PlaygroundShareCreateCommand {
     pub(crate) fn into_snapshot(self) -> Result<serde_json::Value, PlaygroundShareInputError> {
         serde_json::to_value(self.snapshot).map_err(|_| PlaygroundShareInputError::InvalidSnapshot)
     }
+}
+
+pub(crate) fn snapshot_from_sessions(
+    sessions: Vec<PlaygroundShareSession>,
+) -> Result<serde_json::Value, PlaygroundShareInputError> {
+    serde_json::to_value(validated_stored_snapshot(sessions)?)
+        .map_err(|_| PlaygroundShareInputError::InvalidSnapshot)
+}
+
+fn validated_stored_snapshot(
+    sessions: Vec<PlaygroundShareSession>,
+) -> Result<StoredPlaygroundShareSnapshot, PlaygroundShareInputError> {
+    validate_sessions(&sessions)?;
+    let snapshot = StoredPlaygroundShareSnapshot {
+        version: PLAYGROUND_SHARE_SNAPSHOT_VERSION,
+        sessions,
+    };
+    let bytes =
+        serde_json::to_vec(&snapshot).map_err(|_| PlaygroundShareInputError::InvalidSnapshot)?;
+    if bytes.len() > MAX_PLAYGROUND_SHARE_SNAPSHOT_BYTES {
+        return Err(PlaygroundShareInputError::SnapshotTooLarge);
+    }
+    Ok(snapshot)
 }
 
 impl fmt::Debug for PlaygroundShareCreateCommand {

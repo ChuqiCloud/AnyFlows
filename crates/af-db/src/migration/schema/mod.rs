@@ -6,6 +6,7 @@ mod billing_batch;
 mod identity;
 mod indexes;
 mod playground;
+mod playground_conversation;
 mod pricing;
 mod routing;
 mod usage;
@@ -80,5 +81,8 @@ where
 pub(super) use billing::create_billing_reservations;
 pub(super) use billing_batch::create_billing_batch_checkpoints;
 pub(super) use playground::{create_playground_shares, create_playground_shares_indexes};
+pub(super) use playground_conversation::{
+    create_playground_conversation_indexes, create_playground_conversations,
+};
 pub(super) use pricing::{create_group_model_ratios, create_model_prices};
 pub(super) use usage::{create_usage_logs, create_usage_logs_indexes};

@@ -480,3 +480,29 @@ pub(in crate::migration) mod playground_shares {
         RevokedAt,
     }
 }
+
+pub(in crate::migration) mod playground_conversations {
+    use super::DeriveIden;
+
+    /// `playground_conversations` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "playground_conversations")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// Playground 私有会话历史的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        ConversationId,
+        OwnerUserId,
+        Title,
+        Models,
+        Snapshot,
+        Revision,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
