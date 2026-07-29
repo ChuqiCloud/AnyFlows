@@ -1,9 +1,10 @@
 use std::{fmt, sync::Arc};
 
-use af_domain::ChannelType;
+use af_domain::{ChannelType, Protocol};
 
 use crate::{
-    Adaptor, AdaptorError, AdaptorResult, AnthropicAdaptor, BedrockAdaptor, GeminiAdaptor,
+    Adaptor, AdaptorError, AdaptorResult, AnthropicAdaptor, BedrockAdaptor, CustomAdaptor,
+    CustomAuthentication, CustomEndpointTemplate, CustomStreamEndpoint, GeminiAdaptor,
     OpenAiAdaptor, VertexAdaptor,
 };
 
@@ -180,6 +181,70 @@ impl fmt::Debug for VertexAdaptorSettings {
     }
 }
 
+/// 配置驱动 Custom 适配器的强类型构造配置。
+///
+/// 原生协议决定 Canonical 编码器；端点只能是已验证相对模板，基础地址继续由
+/// [`crate::RelayContext`] 提供。认证不接受任意 Map 或脚本。
+#[derive(Clone, Eq, PartialEq)]
+pub struct CustomAdaptorSettings {
+    protocol: Protocol,
+    endpoint: CustomEndpointTemplate,
+    stream_endpoint: CustomStreamEndpoint,
+    authentication: CustomAuthentication,
+    supported_models: Vec<String>,
+}
+
+impl CustomAdaptorSettings {
+    /// 使用显式协议、端点、流式策略、认证与模型清单创建 Custom 配置。
+    #[must_use]
+    pub fn new(
+        protocol: Protocol,
+        endpoint: CustomEndpointTemplate,
+        stream_endpoint: CustomStreamEndpoint,
+        authentication: CustomAuthentication,
+        supported_models: Vec<String>,
+    ) -> Self {
+        Self {
+            protocol,
+            endpoint,
+            stream_endpoint,
+            authentication,
+            supported_models,
+        }
+    }
+
+    fn into_parts(
+        self,
+    ) -> (
+        Protocol,
+        CustomEndpointTemplate,
+        CustomStreamEndpoint,
+        CustomAuthentication,
+        Vec<String>,
+    ) {
+        (
+            self.protocol,
+            self.endpoint,
+            self.stream_endpoint,
+            self.authentication,
+            self.supported_models,
+        )
+    }
+}
+
+impl fmt::Debug for CustomAdaptorSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CustomAdaptorSettings")
+            .field("protocol", &self.protocol)
+            .field("endpoint", &self.endpoint)
+            .field("stream_endpoint", &self.stream_endpoint)
+            .field("authentication", &self.authentication)
+            .field("supported_model_count", &self.supported_models.len())
+            .finish()
+    }
+}
+
 /// 按供应商闭合的适配器构造配置。
 ///
 /// 新渠道只有在对应适配器和专用配置都落地后才能增加变体，禁止用不透明 Map 或
@@ -197,6 +262,8 @@ pub enum AdaptorSettings {
     Bedrock(BedrockAdaptorSettings),
     /// Google Vertex AI Google Publisher/Gemini 渠道配置。
     Vertex(VertexAdaptorSettings),
+    /// 配置驱动的 Custom JSON API 渠道配置。
+    Custom(CustomAdaptorSettings),
 }
 
 impl fmt::Debug for AdaptorSettings {
@@ -220,6 +287,10 @@ impl fmt::Debug for AdaptorSettings {
                 .finish(),
             Self::Vertex(settings) => formatter
                 .debug_tuple("AdaptorSettings::Vertex")
+                .field(settings)
+                .finish(),
+            Self::Custom(settings) => formatter
+                .debug_tuple("AdaptorSettings::Custom")
                 .field(settings)
                 .finish(),
         }
@@ -256,17 +327,26 @@ pub fn get_adaptor(
                 project_id, location, models,
             )?))
         }
+        (ChannelType::Custom, AdaptorSettings::Custom(settings)) => {
+            let (protocol, endpoint, stream_endpoint, authentication, models) =
+                settings.into_parts();
+            Ok(Arc::new(CustomAdaptor::with_supported_models(
+                protocol,
+                endpoint,
+                stream_endpoint,
+                authentication,
+                models,
+            )))
+        }
         (
             channel_type @ (ChannelType::OpenAi
             | ChannelType::Anthropic
             | ChannelType::Gemini
             | ChannelType::Bedrock
-            | ChannelType::Vertex),
+            | ChannelType::Vertex
+            | ChannelType::Custom),
             _,
         ) => Err(AdaptorError::InvalidChannelSettings { channel_type }),
-        (channel_type @ ChannelType::Custom, _) => {
-            Err(AdaptorError::UnsupportedChannel { channel_type })
-        }
     }
 }
 
@@ -315,6 +395,19 @@ mod tests {
             )
             .unwrap(),
         )
+    }
+
+    fn custom_settings(protocol: Protocol, models: &[&str]) -> AdaptorSettings {
+        AdaptorSettings::Custom(CustomAdaptorSettings::new(
+            protocol,
+            CustomEndpointTemplate::parse("/private/{model}:invoke").unwrap(),
+            CustomStreamEndpoint::Same,
+            CustomAuthentication::Header(
+                crate::CustomHeaderAuthentication::new("x-private-key", "Token {credential}")
+                    .unwrap(),
+            ),
+            models.iter().map(|model| (*model).to_owned()).collect(),
+        ))
     }
 
     #[test]
@@ -469,6 +562,35 @@ mod tests {
     }
 
     #[test]
+    fn factory_builds_configured_isolated_custom_instances() {
+        let settings = custom_settings(
+            Protocol::OpenAiChat,
+            &["private-custom-a", "private-custom-b"],
+        );
+        let settings_debug = format!("{settings:?}");
+        assert!(settings_debug.contains("protocol: OpenAiChat"));
+        assert!(settings_debug.contains("supported_model_count: 2"));
+        for private in [
+            "private/{model}",
+            "x-private-key",
+            "Token",
+            "private-custom-a",
+            "private-custom-b",
+        ] {
+            assert!(!settings_debug.contains(private));
+        }
+
+        let configured = get_adaptor(ChannelType::Custom, settings).unwrap();
+        assert_eq!(configured.channel_type(), ChannelType::Custom);
+        assert_eq!(configured.default_protocol(), Protocol::OpenAiChat);
+        assert_eq!(configured.default_base_url(), "");
+        assert_eq!(
+            configured.supported_models(),
+            ["private-custom-a", "private-custom-b"]
+        );
+    }
+
+    #[test]
     fn factory_rejects_mismatched_known_channel_settings_without_leaks() {
         let cases = [
             (
@@ -491,6 +613,14 @@ mod tests {
                 ChannelType::Vertex,
                 bedrock_settings("us-east-1", &["private-bedrock-model-for-vertex"]),
             ),
+            (
+                ChannelType::Custom,
+                openai_settings(&["private-openai-model-for-custom"]),
+            ),
+            (
+                ChannelType::OpenAi,
+                custom_settings(Protocol::OpenAiChat, &["private-custom-model-for-openai"]),
+            ),
         ];
         for (channel_type, settings) in cases {
             let error = get_adaptor(channel_type, settings)
@@ -502,28 +632,15 @@ mod tests {
             assert!(!rendered.contains("private-gemini-model"));
             assert!(!rendered.contains("private-openai-model"));
             assert!(!rendered.contains("private-bedrock-model-for-vertex"));
+            assert!(!rendered.contains("private-openai-model-for-custom"));
+            assert!(!rendered.contains("private-custom-model-for-openai"));
         }
     }
 
     #[test]
-    fn factory_rejects_every_unimplemented_channel_without_configuration_leaks() {
-        for channel_type in ChannelType::ALL.iter().copied().filter(|channel_type| {
-            !matches!(
-                channel_type,
-                ChannelType::OpenAi
-                    | ChannelType::Anthropic
-                    | ChannelType::Gemini
-                    | ChannelType::Bedrock
-                    | ChannelType::Vertex
-            )
-        }) {
-            let error = get_adaptor(channel_type, openai_settings(&["private-model-canary"]))
-                .err()
-                .expect("未实现渠道必须拒绝");
-            assert_eq!(error, AdaptorError::UnsupportedChannel { channel_type });
-            let rendered = format!("{error:?}\n{error}");
-            assert!(!rendered.contains("private-model-canary"));
-        }
+    fn factory_channel_enum_has_no_unimplemented_placeholders() {
+        assert_eq!(ChannelType::ALL.len(), 6);
+        assert!(ChannelType::ALL.contains(&ChannelType::Custom));
     }
 
     #[test]

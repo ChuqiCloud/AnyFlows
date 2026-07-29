@@ -5,7 +5,9 @@ use std::{
     task::{Context, Poll},
 };
 
-use af_httpclient::{Bytes, HeaderMap, HttpBodyStream, HttpResponse, Method, StatusCode};
+use af_httpclient::{
+    Bytes, HeaderMap, HeaderName, HttpBodyStream, HttpResponse, Method, StatusCode,
+};
 use futures_core::Stream;
 use url::Url;
 
@@ -410,20 +412,8 @@ fn validate_headers(headers: &HeaderMap) -> AdaptorResult<()> {
     }
     let mut total_bytes = 0_usize;
     for (name, value) in headers {
-        if matches!(
-            name.as_str(),
-            "host"
-                | "content-length"
-                | "connection"
-                | "proxy-connection"
-                | "keep-alive"
-                | "transfer-encoding"
-                | "upgrade"
-                | "te"
-                | "trailer"
-                | "proxy-authorization"
-                | "cookie"
-        ) || value.len() > MAX_UPSTREAM_REQUEST_HEADER_VALUE_BYTES
+        if is_forbidden_request_header(name)
+            || value.len() > MAX_UPSTREAM_REQUEST_HEADER_VALUE_BYTES
         {
             return Err(AdaptorError::InvalidHeader);
         }
@@ -436,6 +426,24 @@ fn validate_headers(headers: &HeaderMap) -> AdaptorResult<()> {
         }
     }
     Ok(())
+}
+
+/// 判断 Header 是否会改变目标、消息分帧、代理认证或 Cookie 边界。
+pub(crate) fn is_forbidden_request_header(name: &HeaderName) -> bool {
+    matches!(
+        name.as_str(),
+        "host"
+            | "content-length"
+            | "connection"
+            | "proxy-connection"
+            | "keep-alive"
+            | "transfer-encoding"
+            | "upgrade"
+            | "te"
+            | "trailer"
+            | "proxy-authorization"
+            | "cookie"
+    )
 }
 
 fn validate_response_headers(headers: &HeaderMap) -> AdaptorResult<()> {

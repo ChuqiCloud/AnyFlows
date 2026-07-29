@@ -8,8 +8,10 @@ use std::{
 use af_adapter::{
     Adaptor, AdaptorError, AdaptorResult, AdaptorSendExt, AdaptorTarget, AdaptorTransportError,
     AnthropicAdaptor, BedrockAdaptor, Bytes, ChannelType, Credential, CredentialKind,
-    GeminiAdaptor, HeaderMap, HeaderName, HeaderValue, MAX_UPSTREAM_RESPONSE_BODY_BYTES, Method,
-    OpenAiAdaptor, Operation, Protocol, RelayContext, ResponseMode, StatusCode, UpstreamRequest,
+    CustomAdaptor, CustomAuthentication, CustomEndpointTemplate, CustomHeaderAuthentication,
+    CustomStreamEndpoint, GeminiAdaptor, HeaderMap, HeaderName, HeaderValue,
+    MAX_UPSTREAM_RESPONSE_BODY_BYTES, Method, OpenAiAdaptor, Operation, Protocol, RelayContext,
+    ResponseMode, StatusCode, UpstreamRequest,
 };
 use af_httpclient::{HttpClientConfig, HttpClientPool, ProxyConfig, RemoteDnsPolicy};
 
@@ -340,6 +342,85 @@ async fn gemini_adaptor_builds_and_sends_stream_generate_content_request() {
     assert_eq!(
         body.into_bytes().await.unwrap(),
         Bytes::from_static(br#"{"candidates":[]}"#)
+    );
+
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn custom_adaptor_rebuilds_header_auth_and_uses_managed_transport() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(SERVER_TIMEOUT)).unwrap();
+        let request = read_request(&mut stream);
+        let lowercase = request.to_ascii_lowercase();
+        assert!(request.starts_with(
+            "POST http://upstream.example/proxy/custom/v2/models/custom-model%2Fversion:invoke?mode=chat HTTP/1.1"
+        ));
+        assert!(lowercase.contains("x-provider-token: token custom-loopback-secret"));
+        assert!(!lowercase.contains("malicious-override"));
+        assert!(!lowercase.contains("\r\nauthorization:"));
+        assert!(lowercase.contains("content-type: application/json"));
+        assert!(lowercase.contains("accept: application/json"));
+        assert!(lowercase.contains("x-request-id: request-custom-loopback"));
+        assert!(request.ends_with(r#"{"model":"custom-model/version"}"#));
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 14\r\nConnection: close\r\n\r\n{\"choices\":[]}",
+            )
+            .unwrap();
+        stream.flush().unwrap();
+    });
+
+    let client = HttpClientPool::default()
+        .get(&loopback_proxy_config(address))
+        .unwrap();
+    let context = RelayContext::new(client)
+        .with_base_url("http://upstream.example/proxy/custom")
+        .unwrap()
+        .with_request_id("request-custom-loopback")
+        .unwrap();
+    let adaptor = CustomAdaptor::with_supported_models(
+        Protocol::OpenAiChat,
+        CustomEndpointTemplate::parse("/v2/models/{model}:invoke?mode=chat").unwrap(),
+        CustomStreamEndpoint::Same,
+        CustomAuthentication::Header(
+            CustomHeaderAuthentication::new("x-provider-token", "Token {credential}").unwrap(),
+        ),
+        ["custom-model/version"],
+    );
+    let credential = Credential::api_key("custom-loopback-secret").unwrap();
+    let mut headers = HeaderMap::new();
+    adaptor
+        .setup_headers(&mut headers, &credential, &context)
+        .unwrap();
+    headers.insert(
+        HeaderName::from_static("x-provider-token"),
+        HeaderValue::from_static("malicious-override"),
+    );
+    let request = UpstreamRequest::new(
+        Method::POST,
+        adaptor
+            .build_url(
+                &context,
+                AdaptorTarget::new("custom-model/version", Operation::Chat, ResponseMode::Full),
+            )
+            .unwrap(),
+        headers,
+        Some(Bytes::from_static(br#"{"model":"custom-model/version"}"#)),
+    )
+    .unwrap();
+    let request = adaptor
+        .finalize_request(request, &credential, &context)
+        .await
+        .unwrap();
+    let response = adaptor.send(request, &context).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.into_body().into_bytes().await.unwrap(),
+        Bytes::from_static(br#"{"choices":[]}"#)
     );
 
     server.join().unwrap();
