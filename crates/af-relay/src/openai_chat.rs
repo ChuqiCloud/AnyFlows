@@ -114,6 +114,7 @@ pub async fn relay_openai_chat_with_report(
         canonical,
         body: outbound_body,
         include_usage,
+        client_model,
     } = match prepare_openai_chat_request(request.into()) {
         Ok(prepared) => prepared,
         Err(error) => return RelayOpenAiChatOutcome::failed(error),
@@ -164,7 +165,7 @@ pub async fn relay_openai_chat_with_report(
             Err(error) => return RelayOpenAiChatOutcome::new(Err(error), report),
         };
         let response_id = format!("chatcmpl-{request_id}");
-        let encoder = match OpenAiChatStreamEncoder::new(response_id, &canonical.model, created) {
+        let encoder = match OpenAiChatStreamEncoder::new(response_id, &client_model, created) {
             Ok(encoder) => encoder,
             Err(_) => return RelayOpenAiChatOutcome::new(Err(AfError::Internal), report),
         };

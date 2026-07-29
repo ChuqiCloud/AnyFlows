@@ -13,6 +13,7 @@ use crate::CanonicalRequest;
 pub struct CanonicalRequestEnvelope {
     canonical: CanonicalRequest,
     source: Option<ValidatedSourceRequest>,
+    requested_model: Option<String>,
 }
 
 impl CanonicalRequestEnvelope {
@@ -22,6 +23,19 @@ impl CanonicalRequestEnvelope {
         Self {
             canonical,
             source: None,
+            requested_model: None,
+        }
+    }
+
+    /// 保存模型别名归一前的客户端模型，并永久丢弃原始正文直通资格。
+    pub(crate) fn from_normalized_model(
+        canonical: CanonicalRequest,
+        requested_model: String,
+    ) -> Self {
+        Self {
+            canonical,
+            source: None,
+            requested_model: Some(requested_model),
         }
     }
 
@@ -34,6 +48,7 @@ impl CanonicalRequestEnvelope {
         Self {
             canonical,
             source: Some(ValidatedSourceRequest { protocol, body }),
+            requested_model: None,
         }
     }
 
@@ -50,6 +65,16 @@ impl CanonicalRequestEnvelope {
             Some(source) => Some(source.protocol),
             None => None,
         }
+    }
+
+    /// 返回客户端提交的原始模型别名；未发生归一时返回 Canonical 模型。
+    ///
+    /// 返回值属于敏感请求上下文，不得直接写入日志。
+    #[must_use]
+    pub fn requested_model(&self) -> &str {
+        self.requested_model
+            .as_deref()
+            .unwrap_or(&self.canonical.model)
     }
 
     /// 消费信封并仅保留 Canonical 请求，同时永久丢弃原始正文。
@@ -74,6 +99,7 @@ impl CanonicalRequestEnvelope {
         let Self {
             canonical,
             source: Some(source),
+            requested_model,
         } = self
         else {
             unreachable!("已检查的源协议正文必须存在");
@@ -82,6 +108,7 @@ impl CanonicalRequestEnvelope {
             protocol: source.protocol,
             canonical,
             body: source.body,
+            requested_model,
         })
     }
 }
@@ -98,6 +125,7 @@ impl fmt::Debug for CanonicalRequestEnvelope {
             .debug_struct("CanonicalRequestEnvelope")
             .field("canonical", &self.canonical)
             .field("source_protocol", &self.source_protocol())
+            .field("has_requested_model_alias", &self.requested_model.is_some())
             .field(
                 "source_body_bytes",
                 &self.source.as_ref().map(|source| source.body.len()),
@@ -128,6 +156,7 @@ pub struct SameProtocolRequest {
     protocol: Protocol,
     canonical: CanonicalRequest,
     body: Bytes,
+    requested_model: Option<String>,
 }
 
 impl SameProtocolRequest {
@@ -149,6 +178,14 @@ impl SameProtocolRequest {
         &self.body
     }
 
+    /// 返回客户端提交的原始模型别名；未发生归一时返回 Canonical 模型。
+    #[must_use]
+    pub fn requested_model(&self) -> &str {
+        self.requested_model
+            .as_deref()
+            .unwrap_or(&self.canonical.model)
+    }
+
     /// 消费证明并拆分 Canonical 语义与原始正文。
     #[must_use]
     pub fn into_parts(self) -> (CanonicalRequest, Bytes) {
@@ -163,6 +200,7 @@ impl fmt::Debug for SameProtocolRequest {
             .field("protocol", &self.protocol)
             .field("canonical", &self.canonical)
             .field("body_bytes", &self.body.len())
+            .field("has_requested_model_alias", &self.requested_model.is_some())
             .finish()
     }
 }

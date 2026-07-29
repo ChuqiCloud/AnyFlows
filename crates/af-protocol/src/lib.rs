@@ -7,6 +7,7 @@ mod capability;
 pub mod gemini;
 pub mod openai_chat;
 pub mod openai_responses;
+mod reasoning_suffix;
 mod request;
 mod request_envelope;
 mod response;
@@ -24,6 +25,7 @@ pub use capability::{
     supports_response_capability, supports_stream_capability, validate_request_capabilities,
     validate_response_capabilities, validate_stream_event_capabilities,
 };
+pub use reasoning_suffix::{ReasoningModelSuffixError, apply_reasoning_model_suffix};
 pub use request::{
     Attachment, ReasoningConfig, ReasoningConfigError, ReasoningEffort, RequestContinuation,
     RequestMetadata, Sampling, SamplingError, StreamOptions, ToolChoice, ToolDef,

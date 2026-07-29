@@ -6,8 +6,10 @@ use af_admin::{
     SessionAuthenticator, TokenAuthentication,
 };
 use af_analytics::AdminDashboardReader;
-use af_domain::AfError;
-use af_protocol::openai_chat::parse_request_envelope;
+use af_domain::{AfError, TokenModelPolicy};
+use af_protocol::{
+    CanonicalRequestEnvelope, apply_reasoning_model_suffix, openai_chat::parse_request_envelope,
+};
 use af_relay::OpenAiChatResponse;
 use af_telemetry::RequestId;
 use axum::{
@@ -128,14 +130,7 @@ pub(crate) async fn chat_completions(
     Extension(authentication): Extension<TokenAuthentication>,
     body: Bytes,
 ) -> Result<Response, OpenAiHttpError> {
-    let request =
-        parse_request_envelope(body).map_err(|_| OpenAiHttpError::from(AfError::InvalidRequest))?;
-    if !authentication
-        .model_policy()
-        .allows(&request.canonical().model)
-    {
-        return Err(OpenAiHttpError::from(AfError::ModelNotAllowed));
-    }
+    let request = prepare_chat_request(body, authentication.model_policy())?;
     let principal = authentication.principal();
     let response = state
         .chat
@@ -164,5 +159,65 @@ pub(crate) async fn chat_completions(
             *response.status_mut() = StatusCode::OK;
             Ok(response)
         }
+    }
+}
+
+/// 在令牌策略、计费和调度前完成协议解析与模型后缀归一。
+fn prepare_chat_request(
+    body: Bytes,
+    model_policy: &TokenModelPolicy,
+) -> Result<CanonicalRequestEnvelope, OpenAiHttpError> {
+    let request =
+        parse_request_envelope(body).map_err(|_| OpenAiHttpError::from(AfError::InvalidRequest))?;
+    let request = apply_reasoning_model_suffix(request)
+        .map_err(|_| OpenAiHttpError::from(AfError::InvalidRequest))?;
+    if !model_policy.allows(&request.canonical().model) {
+        return Err(OpenAiHttpError::from(AfError::ModelNotAllowed));
+    }
+    Ok(request)
+}
+
+#[cfg(test)]
+mod tests {
+    use af_protocol::ReasoningEffort;
+
+    use super::*;
+
+    fn restricted(models: &[&str]) -> TokenModelPolicy {
+        TokenModelPolicy::try_from_allowlist(
+            models.iter().map(|model| (*model).to_owned()).collect(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn suffix_uses_base_model_for_token_policy_and_downstream_request() {
+        let body = Bytes::from_static(
+            br#"{"model":"gpt-5-high","messages":[{"role":"user","content":"hello"}]}"#,
+        );
+        let request = prepare_chat_request(body, &restricted(&["gpt-5"])).unwrap();
+
+        assert_eq!(request.canonical().model, "gpt-5");
+        assert_eq!(request.requested_model(), "gpt-5-high");
+        assert_eq!(
+            request.canonical().reasoning.unwrap().effort(),
+            Some(ReasoningEffort::High)
+        );
+    }
+
+    #[test]
+    fn suffix_alias_does_not_bypass_base_model_allowlist() {
+        let body = Bytes::from_static(
+            br#"{"model":"gpt-5-high","messages":[{"role":"user","content":"hello"}]}"#,
+        );
+        assert!(prepare_chat_request(body, &restricted(&["gpt-5-high"])).is_err());
+    }
+
+    #[test]
+    fn explicit_reasoning_conflict_is_rejected_before_dispatch() {
+        let body = Bytes::from_static(
+            br#"{"model":"gpt-5-high","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"low"}"#,
+        );
+        assert!(prepare_chat_request(body, &TokenModelPolicy::unrestricted()).is_err());
     }
 }
