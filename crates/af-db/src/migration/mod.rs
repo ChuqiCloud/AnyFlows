@@ -21,6 +21,7 @@ mod m20260722_000012_create_model_prices;
 mod m20260723_000013_create_group_model_ratios;
 mod m20260723_000014_create_usage_logs;
 mod m20260729_000015_create_playground_shares;
+mod m20260729_000016_create_playground_conversations;
 mod schema;
 
 #[cfg(test)]
@@ -79,6 +80,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260723_000013_create_group_model_ratios::Migration),
             Box::new(m20260723_000014_create_usage_logs::Migration),
             Box::new(m20260729_000015_create_playground_shares::Migration),
+            Box::new(m20260729_000016_create_playground_conversations::Migration),
         ]
     }
 }

@@ -26,10 +26,14 @@ use af_admin::{
     AdminUserWriteError, AdminUserWriter, ApiKeyDigest, InitialSetup, InitialSetupCommand,
     InitialSetupError, InitialSetupFuture, InitialSetupStatusFuture, LoginCredentials,
     ModelCatalogPage, ModelCatalogQuery, ModelCatalogReadError, ModelCatalogReader,
-    PlaygroundShareCreateCommand, PlaygroundShareCreateFuture, PlaygroundShareError,
-    PlaygroundShareReadFuture, PlaygroundShareRevokeFuture, PlaygroundShareService,
-    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
-    SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
+    PlaygroundConversationDeleteFuture, PlaygroundConversationError,
+    PlaygroundConversationListFuture, PlaygroundConversationReadFuture,
+    PlaygroundConversationSaveCommand, PlaygroundConversationSaveFuture,
+    PlaygroundConversationService, PlaygroundShareCreateCommand, PlaygroundShareCreateFuture,
+    PlaygroundShareError, PlaygroundShareReadFuture, PlaygroundShareRevokeFuture,
+    PlaygroundShareService, SessionAuthenticationError, SessionAuthenticationFuture,
+    SessionAuthenticator, SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture,
+    TokenAuthenticator,
 };
 use af_analytics::{
     AdminDashboardAccess, AdminDashboardReadError, AdminDashboardReadFuture, AdminDashboardReader,
@@ -70,6 +74,7 @@ struct AlwaysAuthenticates;
 struct RejectSessions;
 struct RejectModelCatalog;
 struct RejectPlaygroundShares;
+struct RejectPlaygroundConversations;
 struct RejectInitialSetup;
 struct RejectAdminChannels;
 struct RejectAdminGroups;
@@ -117,6 +122,36 @@ impl PlaygroundShareService for RejectPlaygroundShares {
         _token: String,
     ) -> PlaygroundShareRevokeFuture<'_> {
         Box::pin(async { Err(PlaygroundShareError::Internal) })
+    }
+}
+
+impl PlaygroundConversationService for RejectPlaygroundConversations {
+    fn save(
+        &self,
+        _principal: af_admin::SessionPrincipal,
+        _command: PlaygroundConversationSaveCommand,
+    ) -> PlaygroundConversationSaveFuture<'_> {
+        Box::pin(async { Err(PlaygroundConversationError::Internal) })
+    }
+
+    fn list(&self, _principal: af_admin::SessionPrincipal) -> PlaygroundConversationListFuture<'_> {
+        Box::pin(async { Err(PlaygroundConversationError::Internal) })
+    }
+
+    fn read(
+        &self,
+        _principal: af_admin::SessionPrincipal,
+        _conversation_id: String,
+    ) -> PlaygroundConversationReadFuture<'_> {
+        Box::pin(async { Err(PlaygroundConversationError::Internal) })
+    }
+
+    fn delete(
+        &self,
+        _principal: af_admin::SessionPrincipal,
+        _conversation_id: String,
+    ) -> PlaygroundConversationDeleteFuture<'_> {
+        Box::pin(async { Err(PlaygroundConversationError::Internal) })
     }
 }
 
@@ -701,6 +736,7 @@ async fn start_server(
         Arc::new(RejectSessions),
         Arc::new(RejectModelCatalog),
         Arc::new(RejectPlaygroundShares),
+        Arc::new(RejectPlaygroundConversations),
         Arc::new(RejectInitialSetup),
         Arc::new(RejectAdminChannels),
         Arc::new(RejectAdminChannels),

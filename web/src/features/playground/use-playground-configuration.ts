@@ -10,6 +10,9 @@ import {
 } from './playground-api-key'
 import { normalizePlaygroundModels } from './playground-model-selection'
 
+const DEFAULT_TEMPERATURE = 0.7
+const DEFAULT_MAX_OUTPUT_TOKENS = 4096
+
 /** 收拢当前标签页凭据、模型目录与共享生成参数。 */
 export function usePlaygroundConfiguration() {
   const { t } = useTranslation()
@@ -21,9 +24,9 @@ export function usePlaygroundConfiguration() {
   const [modelSearch, setModelSearch] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
   const [temperatureEnabled, setTemperatureEnabled] = useState(false)
-  const [temperature, setTemperature] = useState(0.7)
+  const [temperature, setTemperature] = useState(DEFAULT_TEMPERATURE)
   const [maxOutputTokensEnabled, setMaxOutputTokensEnabled] = useState(false)
-  const [maxOutputTokens, setMaxOutputTokens] = useState(4096)
+  const [maxOutputTokens, setMaxOutputTokens] = useState(DEFAULT_MAX_OUTPUT_TOKENS)
 
   const catalogQuery = useModelCatalog(modelSearch, 'all', true)
   const models = useMemo(
@@ -73,6 +76,16 @@ export function usePlaygroundConfiguration() {
     setSelectedModels(normalizePlaygroundModels(modelsToSelect))
   }, [])
 
+  /** 恢复历史时只恢复模型，显式清空未持久化的生成设置。 */
+  const restoreConversationConfiguration = useCallback((modelsToSelect: string[]) => {
+    setSelectedModels(normalizePlaygroundModels(modelsToSelect))
+    setSystemPrompt('')
+    setTemperatureEnabled(false)
+    setTemperature(DEFAULT_TEMPERATURE)
+    setMaxOutputTokensEnabled(false)
+    setMaxOutputTokens(DEFAULT_MAX_OUTPUT_TOKENS)
+  }, [])
+
   const sharedSettings = useMemo(() => ({
     apiKey,
     systemPrompt,
@@ -91,6 +104,7 @@ export function usePlaygroundConfiguration() {
     maxOutputTokensEnabled,
     modelSearchDraft,
     models,
+    restoreConversationConfiguration,
     saveApiKey,
     selectedModels,
     setMaxOutputTokens: (value: number) => setMaxOutputTokens(

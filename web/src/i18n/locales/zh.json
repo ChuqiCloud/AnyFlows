@@ -681,6 +681,46 @@
         "unavailableBody": "服务当前不可用，稍后可重新请求。",
         "retry": "重新请求"
       }
+    },
+    "history": {
+      "action": "历史",
+      "title": "会话历史",
+      "description": "自动保存完整往返，仅恢复模型与消息。",
+      "loading": "正在加载会话历史",
+      "active": "当前",
+      "delete": "删除会话",
+      "retrySave": "重试保存",
+      "retryLoad": "重新加载",
+      "emptyTitle": "还没有会话历史",
+      "emptyBody": "完成第一轮对话后，这里会自动出现可恢复的记录。",
+      "loadErrorTitle": "无法读取会话历史",
+      "loadErrorBody": "服务暂时没有返回可靠的历史摘要，请稍后重试。",
+      "readError": "暂时无法恢复该会话，当前工作区未发生变化。",
+      "deleteError": "暂时无法删除该会话，请稍后重试。",
+      "restoreTitle": "恢复历史会话？",
+      "restoreDescription": "当前工作区内容将被替换。API Key 保持不变，系统提示词和可选参数会被清空。",
+      "restoreAction": "恢复会话",
+      "keepCurrent": "保留当前会话",
+      "deleteTitle": "删除这条会话历史？",
+      "deleteDescription": "历史正文将被永久删除。若删除当前会话，工作区也会同时清空；已创建的分享链接不受影响。",
+      "deleteAction": "确认删除",
+      "keepHistory": "保留历史",
+      "saveState": {
+        "idle": "尚未保存",
+        "saving": "正在保存",
+        "saved": "已保存",
+        "error": "保存失败",
+        "conflict": "版本冲突",
+        "limit": "历史已满"
+      },
+      "saveDetail": {
+        "idle": "首个完整往返结束后自动保存。",
+        "saving": "保存完成前暂缓下一轮发送。",
+        "saved": "模型与完整成功往返已同步。",
+        "error": "页面内容仍保留，可手动重试。",
+        "conflict": "另一页面已更新此会话，请从历史重新载入。",
+        "limit": "最多保留 50 条，删除旧记录后可重试。"
+      }
     }
   },
   "auth": {

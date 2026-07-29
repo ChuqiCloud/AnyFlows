@@ -20,19 +20,21 @@ use url::Url;
 use super::*;
 use crate::entity::{
     BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
-    EncryptedJson, HeaderOverrides, PasswordHash, SensitiveDecimal, SensitiveJson, SensitiveString,
-    TokenHash, TokenIpAllowlist, abilities, billing_batch_checkpoints, billing_reservations,
-    channel_groups, channel_models, channels, credentials, group_model_ratios, groups,
-    model_prices, options, playground_shares, tokens, usage_logs, users,
+    EncryptedJson, HeaderOverrides, PasswordHash, PlaygroundConversationKey, SensitiveDecimal,
+    SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, abilities,
+    billing_batch_checkpoints, billing_reservations, channel_groups, channel_models, channels,
+    credentials, group_model_ratios, groups, model_prices, options, playground_conversations,
+    playground_shares, tokens, usage_logs, users,
 };
 use crate::{
     AdminDashboardRepository, BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome,
     ChannelBillingWrite, DatabaseOptions, GroupPricingRepository, ModelPriceBillingMode,
-    ModelPriceRepository, PlaygroundShareRepository, PlaygroundShareWrite, PoolOptions,
-    QuotaMutationOutcome, QuotaRepository, QuotaReservationStatus, TokenAuthLookup,
-    TokenAuthLookupOutcome, TokenAuthRepository, TokenBillingWrite, UsageLogBillingMode,
-    UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage,
-    UsageLogWrite, UsageLogWriteOutcome, UserBillingWrite, connect,
+    ModelPriceRepository, PlaygroundConversationRepository, PlaygroundConversationWrite,
+    PlaygroundShareRepository, PlaygroundShareWrite, PoolOptions, QuotaMutationOutcome,
+    QuotaRepository, QuotaReservationStatus, TokenAuthLookup, TokenAuthLookupOutcome,
+    TokenAuthRepository, TokenBillingWrite, UsageLogBillingMode, UsageLogRepository,
+    UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogWrite,
+    UsageLogWriteOutcome, UserBillingWrite, connect,
 };
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
@@ -50,7 +52,8 @@ const RESERVATION_KEY_A: &str = "11111111111111111111111111111111";
 const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
-const CORE_TABLES: [&str; 15] = [
+const PLAYGROUND_CONVERSATION_KEY: &str = "55555555555555555555555555555555";
+const CORE_TABLES: [&str; 16] = [
     "groups",
     "users",
     "channels",
@@ -66,6 +69,7 @@ const CORE_TABLES: [&str; 15] = [
     "group_model_ratios",
     "usage_logs",
     "playground_shares",
+    "playground_conversations",
 ];
 
 struct SlowMigrator;
@@ -154,6 +158,22 @@ async fn generated_active_models_redact_sensitive_payloads() {
         revoked_at: Set(None),
         ..Default::default()
     };
+    let playground_conversation = playground_conversations::ActiveModel {
+        conversation_id: Set(
+            PlaygroundConversationKey::parse(PLAYGROUND_CONVERSATION_KEY).unwrap(),
+        ),
+        owner_user_id: Set(1),
+        title: Set(SensitiveString::from("conversation-title-secret")),
+        models: Set(SensitiveJson::from(serde_json::json!([
+            "conversation-model-secret"
+        ]))),
+        snapshot: Set(SensitiveJson::from(serde_json::json!({
+            "content": "conversation-snapshot-secret"
+        }))),
+        revision: Set(1),
+        created_at: Set(historical_audit_time()),
+        updated_at: Set(historical_audit_time()),
+    };
     let mut channel = channel_active_model("debug-channel");
     channel.base_url = Set(Some(
         ChannelBaseUrl::parse("https://api.example.com/channel-secret").unwrap(),
@@ -181,6 +201,22 @@ async fn generated_active_models_redact_sensitive_payloads() {
         (format!("{model_price:?}"), "123456789"),
         (format!("{playground_share:?}"), TOKEN_HASH_E),
         (format!("{playground_share:?}"), "share-snapshot-secret"),
+        (
+            format!("{playground_conversation:?}"),
+            PLAYGROUND_CONVERSATION_KEY,
+        ),
+        (
+            format!("{playground_conversation:?}"),
+            "conversation-title-secret",
+        ),
+        (
+            format!("{playground_conversation:?}"),
+            "conversation-model-secret",
+        ),
+        (
+            format!("{playground_conversation:?}"),
+            "conversation-snapshot-secret",
+        ),
     ] {
         assert!(rendered.contains("<redacted>"));
         assert!(!rendered.contains(secret));
@@ -229,6 +265,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     exercise_model_price_repository(&pool).await?;
     exercise_usage_log_repository(&pool).await?;
     exercise_playground_share_repository(&pool).await?;
+    exercise_playground_conversation_repository(&pool).await?;
     exercise_admin_dashboard_repository(&pool).await?;
     exercise_core_schema(pool.connection()).await?;
 
@@ -516,6 +553,84 @@ async fn exercise_playground_share_repository(pool: &DatabasePool) -> Result<(),
         .await?;
     assert_eq!(
         playground_shares::Entity::find()
+            .count(pool.connection())
+            .await?,
+        0
+    );
+    groups::Entity::delete_by_id(group.id)
+        .exec(pool.connection())
+        .await?;
+    Ok(())
+}
+
+/// 在三方言实库中验证私有历史写入、列表、版本更新和用户删除级联。
+async fn exercise_playground_conversation_repository(
+    pool: &DatabasePool,
+) -> Result<(), Box<dyn Error>> {
+    let group = group_active_model("history-smoke-group", "历史冒烟分组")
+        .insert(pool.connection())
+        .await?;
+    let mut owner = user_active_model(
+        group.id,
+        "history-smoke-owner",
+        "history-smoke@example.com",
+        "invite-history-smoke",
+    );
+    owner.status = Set(1);
+    let owner = owner.insert(pool.connection()).await?;
+    let owner_user_id = UserId::new(owner.id)?;
+    let repository = PlaygroundConversationRepository::new(pool.clone(), Duration::from_secs(2))?;
+    let snapshot = serde_json::json!({
+        "version": 1,
+        "sessions": [{
+            "model": "smoke-model",
+            "messages": [
+                {"role": "user", "content": "ping"},
+                {"role": "assistant", "content": "pong"}
+            ]
+        }]
+    });
+    repository
+        .save(
+            owner_user_id,
+            PlaygroundConversationWrite::new(
+                PLAYGROUND_CONVERSATION_KEY.to_owned(),
+                "ping".to_owned(),
+                vec!["smoke-model".to_owned()],
+                snapshot.clone(),
+                None,
+            ),
+        )
+        .await?;
+    assert_eq!(repository.list(owner_user_id).await?.len(), 1);
+    assert!(
+        repository
+            .find(owner_user_id, PLAYGROUND_CONVERSATION_KEY)
+            .await?
+            .is_some()
+    );
+    assert_eq!(
+        repository
+            .save(
+                owner_user_id,
+                PlaygroundConversationWrite::new(
+                    PLAYGROUND_CONVERSATION_KEY.to_owned(),
+                    "ping".to_owned(),
+                    vec!["smoke-model".to_owned()],
+                    snapshot,
+                    Some(1),
+                ),
+            )
+            .await?
+            .revision(),
+        1
+    );
+
+    users::Entity::delete_by_id(owner.id)
+        .exec(pool.connection())
+        .await?;
+    assert_eq!(
+        playground_conversations::Entity::find()
             .count(pool.connection())
             .await?,
         0
@@ -1028,6 +1143,8 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     .await?;
     assert_entity_columns::<group_model_ratios::Column>(&manager, "group_model_ratios").await?;
     assert_entity_columns::<playground_shares::Column>(&manager, "playground_shares").await?;
+    assert_entity_columns::<playground_conversations::Column>(&manager, "playground_conversations")
+        .await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -1057,6 +1174,10 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("playground_shares", "uq_playground_shares_token_hash"),
         ("playground_shares", "idx_playground_shares_owner_created"),
         ("playground_shares", "idx_playground_shares_expires_at"),
+        (
+            "playground_conversations",
+            "idx_playground_conversations_owner_updated",
+        ),
     ] {
         assert!(
             manager.has_index(table, index).await?,

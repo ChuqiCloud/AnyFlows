@@ -74,7 +74,9 @@ impl PlaygroundShareCreateRequest {
 }
 
 impl PlaygroundShareSessionDto {
-    fn into_application(self) -> Result<PlaygroundShareSession, PlaygroundShareInputError> {
+    pub(crate) fn into_application(
+        self,
+    ) -> Result<PlaygroundShareSession, PlaygroundShareInputError> {
         let messages = self
             .messages
             .into_iter()
@@ -83,7 +85,7 @@ impl PlaygroundShareSessionDto {
         PlaygroundShareSession::new(self.model, messages)
     }
 
-    fn from_application(session: PlaygroundShareSession) -> Self {
+    pub(crate) fn from_application(session: PlaygroundShareSession) -> Self {
         let (model, messages) = session.into_parts();
         Self {
             model,

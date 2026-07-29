@@ -20,6 +20,7 @@ pub(crate) mod group_model_ratios;
 pub(crate) mod groups;
 pub(crate) mod model_prices;
 pub(crate) mod options;
+pub(crate) mod playground_conversations;
 pub(crate) mod playground_shares;
 pub(crate) mod tokens;
 pub(crate) mod usage_logs;
@@ -30,8 +31,9 @@ mod sensitive;
 pub(crate) use sensitive::{
     BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
     EncryptedJson, HeaderOverrides, MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES,
-    MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES, PasswordHash, SensitiveDecimal, SensitiveJson,
-    SensitiveString, TokenHash, TokenIpAllowlist, TokenModelAllowlist,
+    MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES, PasswordHash, PlaygroundConversationKey,
+    SensitiveDecimal, SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist,
+    TokenModelAllowlist,
 };
 
 macro_rules! impl_updated_at_behavior {
@@ -391,3 +393,6 @@ impl ActiveModelBehavior for usage_logs::ActiveModel {
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for playground_shares::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for playground_conversations::ActiveModel {}

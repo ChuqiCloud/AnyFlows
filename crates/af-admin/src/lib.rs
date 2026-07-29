@@ -8,6 +8,7 @@ mod group_read;
 mod group_write;
 mod initial_setup;
 mod model_catalog;
+mod playground_conversation;
 mod playground_share;
 mod playground_share_snapshot;
 mod playground_share_token;
@@ -58,6 +59,13 @@ pub use model_catalog::{
     DEFAULT_MODEL_CATALOG_PAGE_SIZE, MAX_MODEL_CATALOG_PAGE_SIZE, ModelCatalogBillingMode,
     ModelCatalogItem, ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogQuery,
     ModelCatalogRatios, ModelCatalogReadError, ModelCatalogReader, ModelCatalogTokenPrices,
+};
+pub use playground_conversation::{
+    DatabasePlaygroundConversationService, PlaygroundConversation,
+    PlaygroundConversationDeleteFuture, PlaygroundConversationError, PlaygroundConversationId,
+    PlaygroundConversationInputError, PlaygroundConversationListFuture,
+    PlaygroundConversationReadFuture, PlaygroundConversationSaveCommand,
+    PlaygroundConversationSaveFuture, PlaygroundConversationService, PlaygroundConversationSummary,
 };
 pub use playground_share::{
     DatabasePlaygroundShareService, IssuedPlaygroundShare, PlaygroundShareCreateFuture,
@@ -117,6 +125,8 @@ pub use user_write::{
 
 #[cfg(test)]
 mod api_key_tests;
+#[cfg(test)]
+mod playground_conversation_tests;
 #[cfg(test)]
 mod playground_share_tests;
 #[cfg(test)]

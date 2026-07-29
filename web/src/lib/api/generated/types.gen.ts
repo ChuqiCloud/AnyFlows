@@ -345,7 +345,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -372,6 +372,29 @@ export type ModelCatalogTokenPrices = {
     cache_read: string;
     cache_creation_5m: string;
     cache_creation_1h: string;
+};
+export type PlaygroundConversationListResponse = {
+    conversations: Array<PlaygroundConversationSummary>;
+};
+export type PlaygroundConversationResponse = {
+    conversation_id: string;
+    title: string;
+    sessions: Array<PlaygroundShareSession>;
+    revision: number;
+    created_at: number;
+    updated_at: number;
+};
+export type PlaygroundConversationSaveRequest = {
+    revision?: number | null;
+    sessions: Array<PlaygroundShareSession>;
+};
+export type PlaygroundConversationSummary = {
+    conversation_id: string;
+    title: string;
+    models: Array<string>;
+    revision: number;
+    created_at: number;
+    updated_at: number;
 };
 export type PlaygroundShareCreateRequest = {
     ttl_days: 1 | 7 | 30;
@@ -855,6 +878,77 @@ export type GetPlaygroundShareResponses = {
     200: PlaygroundShareReadResponse;
 };
 export type GetPlaygroundShareResponse = GetPlaygroundShareResponses[keyof GetPlaygroundShareResponses];
+export type ListPlaygroundConversationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/playground/conversations';
+};
+export type ListPlaygroundConversationsErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListPlaygroundConversationsError = ListPlaygroundConversationsErrors[keyof ListPlaygroundConversationsErrors];
+export type ListPlaygroundConversationsResponses = {
+    200: PlaygroundConversationListResponse;
+};
+export type ListPlaygroundConversationsResponse = ListPlaygroundConversationsResponses[keyof ListPlaygroundConversationsResponses];
+export type DeletePlaygroundConversationData = {
+    body?: never;
+    path: {
+        conversation_id: string;
+    };
+    query?: never;
+    url: '/api/playground/conversations/{conversation_id}';
+};
+export type DeletePlaygroundConversationErrors = {
+    401: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type DeletePlaygroundConversationError = DeletePlaygroundConversationErrors[keyof DeletePlaygroundConversationErrors];
+export type DeletePlaygroundConversationResponses = {
+    204: void;
+};
+export type DeletePlaygroundConversationResponse = DeletePlaygroundConversationResponses[keyof DeletePlaygroundConversationResponses];
+export type GetPlaygroundConversationData = {
+    body?: never;
+    path: {
+        conversation_id: string;
+    };
+    query?: never;
+    url: '/api/playground/conversations/{conversation_id}';
+};
+export type GetPlaygroundConversationErrors = {
+    401: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetPlaygroundConversationError = GetPlaygroundConversationErrors[keyof GetPlaygroundConversationErrors];
+export type GetPlaygroundConversationResponses = {
+    200: PlaygroundConversationResponse;
+};
+export type GetPlaygroundConversationResponse = GetPlaygroundConversationResponses[keyof GetPlaygroundConversationResponses];
+export type SavePlaygroundConversationData = {
+    body: PlaygroundConversationSaveRequest;
+    path: {
+        conversation_id: string;
+    };
+    query?: never;
+    url: '/api/playground/conversations/{conversation_id}';
+};
+export type SavePlaygroundConversationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type SavePlaygroundConversationError = SavePlaygroundConversationErrors[keyof SavePlaygroundConversationErrors];
+export type SavePlaygroundConversationResponses = {
+    200: PlaygroundConversationResponse;
+};
+export type SavePlaygroundConversationResponse = SavePlaygroundConversationResponses[keyof SavePlaygroundConversationResponses];
 export type ListAdminTokensData = {
     body?: never;
     path?: never;

@@ -26,6 +26,7 @@ export type PlaygroundSessionAction =
     errorKind?: PlaygroundErrorKind
   }
   | { type: 'clear'; models: string[] }
+  | { type: 'restore'; sessions: PlaygroundSession[] }
 
 export function createPlaygroundSession(model: string): PlaygroundSession {
   return { model, messages: [], requestState: 'idle' }
@@ -51,6 +52,12 @@ export function playgroundSessionReducer(
   }
   if (action.type === 'clear') {
     return normalizePlaygroundModels(action.models).map(createPlaygroundSession)
+  }
+  if (action.type === 'restore') {
+    return action.sessions.map((session) => ({
+      ...session,
+      messages: session.messages.map((message) => ({ ...message })),
+    }))
   }
   if (action.type === 'begin') {
     return action.turns.map((turn) => {

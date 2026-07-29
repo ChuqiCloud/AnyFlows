@@ -9,9 +9,10 @@ use af_admin::{
     DatabaseAdminChannelReader, DatabaseAdminChannelWriter, DatabaseAdminGroupReader,
     DatabaseAdminGroupWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
     DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
-    DatabaseInitialSetup, DatabasePlaygroundShareService, DatabaseSessionAuthenticator,
-    DatabaseTokenAuthenticator, InitialSetup, ModelCatalogReader, PlaygroundShareService,
-    SessionAuthenticator, SessionAuthenticatorConfigError, TokenAuthenticator,
+    DatabaseInitialSetup, DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, InitialSetup, ModelCatalogReader,
+    PlaygroundConversationService, PlaygroundShareService, SessionAuthenticator,
+    SessionAuthenticatorConfigError, TokenAuthenticator,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -29,9 +30,11 @@ use af_db::{
     AdminUsageLogRepositoryConfigError, AdminUserRepository, AdminUserRepositoryConfigError,
     ChannelStateRepository, CredentialStateRepository, DatabaseError, DatabaseOptions,
     DatabaseOptionsError, DatabasePool, InitialSetupRepository, InitialSetupRepositoryConfigError,
-    MigrationOptions, PlaygroundShareRepository, PlaygroundShareRepositoryConfigError,
-    QuotaRepository, TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository,
-    UserSessionRepository, UserSessionRepositoryConfigError, connect_and_migrate,
+    MigrationOptions, PlaygroundConversationRepository,
+    PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
+    PlaygroundShareRepositoryConfigError, QuotaRepository, TokenAuthRepository,
+    TokenAuthRepositoryConfigError, UsageLogRepository, UserSessionRepository,
+    UserSessionRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle,
@@ -88,6 +91,7 @@ pub struct AuthenticationReady {
     session_authenticator: Arc<dyn SessionAuthenticator>,
     initial_setup: Arc<dyn InitialSetup>,
     playground_share_service: Arc<dyn PlaygroundShareService>,
+    playground_conversation_service: Arc<dyn PlaygroundConversationService>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
     admin_dashboard_reader: Arc<dyn AdminDashboardReader>,
@@ -216,6 +220,9 @@ pub enum BootstrapError {
     /// Playground 分享仓储的启动参数无效。
     #[error("Playground 分享仓储启动参数无效")]
     PlaygroundShareRepository(#[source] PlaygroundShareRepositoryConfigError),
+    /// Playground 私有会话仓储的启动参数无效。
+    #[error("Playground 会话历史仓储启动参数无效")]
+    PlaygroundConversationRepository(#[source] PlaygroundConversationRepositoryConfigError),
     /// 管理员用户仓储的启动参数无效。
     #[error("管理员用户仓储启动参数无效")]
     AdminUserRepository(#[source] AdminUserRepositoryConfigError),
@@ -382,6 +389,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::PlaygroundShareRepository)?;
+        let playground_conversation_repository = PlaygroundConversationRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::PlaygroundConversationRepository)?;
         let admin_user_repository = AdminUserRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -441,6 +453,9 @@ impl Bootstrap<DatabaseReady> {
                 playground_share_service: Arc::new(DatabasePlaygroundShareService::new(
                     playground_share_repository,
                 )),
+                playground_conversation_service: Arc::new(
+                    DatabasePlaygroundConversationService::new(playground_conversation_repository),
+                ),
                 admin_channel_reader: Arc::new(DatabaseAdminChannelReader::new(
                     admin_channel_repository.clone(),
                 )),
@@ -766,6 +781,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.session_authenticator),
             Arc::clone(&self.stage.model_catalog_reader),
             Arc::clone(&self.stage.infrastructure.playground_share_service),
+            Arc::clone(&self.stage.infrastructure.playground_conversation_service),
             Arc::clone(&self.stage.infrastructure.initial_setup),
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_channel_writer),

@@ -38,6 +38,12 @@ pub(crate) enum ManagementError {
     PlaygroundShareNotFound,
     /// 当前用户的有效分享数量已经达到上限。
     PlaygroundShareLimitReached,
+    /// 私有会话标识未知或不属于当前用户。
+    PlaygroundConversationNotFound,
+    /// 当前用户的私有会话数量已经达到上限。
+    PlaygroundConversationLimitReached,
+    /// 私有会话 revision 已被其他请求推进。
+    PlaygroundConversationConflict,
     /// 管理认证依赖发生内部故障。
     Internal,
 }
@@ -167,6 +173,27 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "playground_share_limit_reached",
                     message: "Playground share limit reached",
+                },
+            ),
+            Self::PlaygroundConversationNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "playground_conversation_not_found",
+                    message: "Playground conversation not found",
+                },
+            ),
+            Self::PlaygroundConversationLimitReached => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "playground_conversation_limit_reached",
+                    message: "Playground conversation limit reached",
+                },
+            ),
+            Self::PlaygroundConversationConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "playground_conversation_conflict",
+                    message: "Playground conversation conflict",
                 },
             ),
             Self::Internal => (

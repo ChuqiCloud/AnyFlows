@@ -29,6 +29,7 @@ mod middleware;
 mod model_catalog;
 mod openapi;
 mod operations;
+mod playground_conversations;
 mod playground_shares;
 mod router;
 mod serve;
@@ -71,6 +72,8 @@ mod management_tokens_tests;
 mod management_users_tests;
 #[cfg(test)]
 mod operations_tests;
+#[cfg(test)]
+mod playground_conversations_tests;
 #[cfg(test)]
 mod playground_shares_tests;
 #[cfg(test)]
