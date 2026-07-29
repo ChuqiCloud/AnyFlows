@@ -388,7 +388,10 @@ fn allowed_restricted_external_dependency(dependency: &DeclaredDependency) -> bo
             | ("af-domain", "serde_json", "dev")
             | ("af-domain", "thiserror", "normal")
             | ("af-adapter", "async-trait", "normal")
+            | ("af-adapter", "aws-credential-types", "normal")
+            | ("af-adapter", "aws-sigv4", "normal")
             | ("af-adapter", "futures-core", "normal")
+            | ("af-adapter", "percent-encoding", "normal")
             | ("af-adapter", "thiserror", "normal")
             | ("af-adapter", "url", "normal")
             | ("af-adapter", "tokio", "dev")
@@ -587,7 +590,10 @@ mod tests {
         tokio.kind = "dev".to_owned();
         let dependencies = [
             dependency("af-adapter", "async-trait", false),
+            dependency("af-adapter", "aws-credential-types", false),
+            dependency("af-adapter", "aws-sigv4", false),
             dependency("af-adapter", "futures-core", false),
+            dependency("af-adapter", "percent-encoding", false),
             dependency("af-adapter", "thiserror", false),
             dependency("af-adapter", "url", false),
             tokio,

@@ -9,7 +9,10 @@ publish.workspace = true
 af-domain = { path = "../af-domain", version = "0.1.0" }
 af-httpclient = { path = "../af-httpclient", version = "0.1.0" }
 async-trait.workspace = true
+aws-credential-types.workspace = true
+aws-sigv4.workspace = true
 futures-core.workspace = true
+percent-encoding.workspace = true
 thiserror.workspace = true
 url.workspace = true
 

@@ -89,6 +89,18 @@ pub trait Adaptor: Send + Sync {
         credential: &Credential,
         context: &RelayContext,
     ) -> AdaptorResult<()>;
+
+    /// 在 URL、正文和覆盖 Header 全部确定后最终化请求。
+    ///
+    /// 普通 Bearer/API Key 适配器保持原请求不变；SigV4 等依赖完整请求的认证方案
+    /// 在此阶段签名，避免后续 Header 覆盖使签名失效。
+    fn finalize_request(
+        &self,
+        request: UpstreamRequest,
+        _credential: &Credential,
+    ) -> AdaptorResult<UpstreamRequest> {
+        Ok(request)
+    }
 }
 
 /// 为所有适配器统一提供不可覆盖的受控 HTTP 发送能力。

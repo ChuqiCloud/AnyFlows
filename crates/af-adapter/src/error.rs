@@ -76,6 +76,9 @@ pub enum AdaptorError {
     /// 请求标识不符合边界约束。
     #[error("请求标识无效")]
     InvalidRequestId,
+    /// AWS 区域无法安全映射到受支持的 Bedrock Runtime 端点。
+    #[error("AWS 区域无效或暂不支持")]
+    InvalidAwsRegion,
     /// 凭据为空或超出内存边界。
     #[error("凭据内容无效")]
     InvalidCredential,
@@ -94,6 +97,9 @@ pub enum AdaptorError {
     /// 请求头值无法安全写入。
     #[error("上游请求头无效")]
     InvalidHeader,
+    /// 完整请求无法生成安全的供应商签名。
+    #[error("上游请求签名失败")]
+    RequestSigning,
     /// 响应头超过适配层容量边界。
     #[error("上游响应头无效")]
     InvalidResponseHeader,

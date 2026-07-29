@@ -391,6 +391,17 @@ impl RelayStateMachine {
                     ));
                 }
             };
+            let upstream_request = match candidate
+                .adaptor
+                .finalize_request(upstream_request, &candidate.credential)
+            {
+                Ok(request) => request,
+                Err(error) => {
+                    last_error = Some(RelayError::Adaptor(error));
+                    index = self.next_channel_index(index);
+                    continue;
+                }
+            };
             let response = match candidate
                 .adaptor
                 .send(upstream_request, &candidate.context)

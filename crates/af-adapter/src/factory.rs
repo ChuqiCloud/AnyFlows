@@ -2,7 +2,10 @@ use std::{fmt, sync::Arc};
 
 use af_domain::ChannelType;
 
-use crate::{Adaptor, AdaptorError, AdaptorResult, AnthropicAdaptor, GeminiAdaptor, OpenAiAdaptor};
+use crate::{
+    Adaptor, AdaptorError, AdaptorResult, AnthropicAdaptor, BedrockAdaptor, GeminiAdaptor,
+    OpenAiAdaptor,
+};
 
 /// OpenAI 适配器的强类型构造配置。
 ///
@@ -95,6 +98,44 @@ impl fmt::Debug for GeminiAdaptorSettings {
     }
 }
 
+/// Amazon Bedrock Runtime 适配器的强类型构造配置。
+///
+/// 区域在构造阶段完成主机注入与公共分区校验；模型清单只保存上层已映射值，
+/// SigV4 凭据仍由每次请求的 [`crate::Credential`] 提供。
+#[derive(Clone, Eq, PartialEq)]
+pub struct BedrockAdaptorSettings {
+    region: String,
+    supported_models: Vec<String>,
+}
+
+impl BedrockAdaptorSettings {
+    /// 使用显式区域和模型清单创建 Bedrock 配置。
+    pub fn new(region: impl Into<String>, supported_models: Vec<String>) -> AdaptorResult<Self> {
+        let region = region.into();
+        if !crate::bedrock::is_valid_aws_region(&region) {
+            return Err(AdaptorError::InvalidAwsRegion);
+        }
+        Ok(Self {
+            region,
+            supported_models,
+        })
+    }
+
+    fn into_parts(self) -> (String, Vec<String>) {
+        (self.region, self.supported_models)
+    }
+}
+
+impl fmt::Debug for BedrockAdaptorSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BedrockAdaptorSettings")
+            .field("region", &"<已脱敏>")
+            .field("supported_model_count", &self.supported_models.len())
+            .finish()
+    }
+}
+
 /// 按供应商闭合的适配器构造配置。
 ///
 /// 新渠道只有在对应适配器和专用配置都落地后才能增加变体，禁止用不透明 Map 或
@@ -108,6 +149,8 @@ pub enum AdaptorSettings {
     Anthropic(AnthropicAdaptorSettings),
     /// Gemini Developer API 官方及原生协议兼容渠道配置。
     Gemini(GeminiAdaptorSettings),
+    /// Amazon Bedrock Runtime SigV4 渠道配置。
+    Bedrock(BedrockAdaptorSettings),
 }
 
 impl fmt::Debug for AdaptorSettings {
@@ -123,6 +166,10 @@ impl fmt::Debug for AdaptorSettings {
                 .finish(),
             Self::Gemini(settings) => formatter
                 .debug_tuple("AdaptorSettings::Gemini")
+                .field(settings)
+                .finish(),
+            Self::Bedrock(settings) => formatter
+                .debug_tuple("AdaptorSettings::Bedrock")
                 .field(settings)
                 .finish(),
         }
@@ -147,11 +194,20 @@ pub fn get_adaptor(
         (ChannelType::Gemini, AdaptorSettings::Gemini(settings)) => Ok(Arc::new(
             GeminiAdaptor::with_supported_models(settings.into_supported_models()),
         )),
+        (ChannelType::Bedrock, AdaptorSettings::Bedrock(settings)) => {
+            let (region, models) = settings.into_parts();
+            Ok(Arc::new(BedrockAdaptor::with_supported_models(
+                region, models,
+            )?))
+        }
         (
-            channel_type @ (ChannelType::OpenAi | ChannelType::Anthropic | ChannelType::Gemini),
-            AdaptorSettings::OpenAi(_) | AdaptorSettings::Anthropic(_) | AdaptorSettings::Gemini(_),
+            channel_type @ (ChannelType::OpenAi
+            | ChannelType::Anthropic
+            | ChannelType::Gemini
+            | ChannelType::Bedrock),
+            _,
         ) => Err(AdaptorError::InvalidChannelSettings { channel_type }),
-        (channel_type @ (ChannelType::Bedrock | ChannelType::Vertex | ChannelType::Custom), _) => {
+        (channel_type @ (ChannelType::Vertex | ChannelType::Custom), _) => {
             Err(AdaptorError::UnsupportedChannel { channel_type })
         }
     }
@@ -181,6 +237,16 @@ mod tests {
         AdaptorSettings::Gemini(GeminiAdaptorSettings::new(
             models.iter().map(|model| (*model).to_owned()).collect(),
         ))
+    }
+
+    fn bedrock_settings(region: &str, models: &[&str]) -> AdaptorSettings {
+        AdaptorSettings::Bedrock(
+            BedrockAdaptorSettings::new(
+                region,
+                models.iter().map(|model| (*model).to_owned()).collect(),
+            )
+            .unwrap(),
+        )
     }
 
     #[test]
@@ -267,6 +333,35 @@ mod tests {
     }
 
     #[test]
+    fn factory_builds_configured_isolated_bedrock_instances() {
+        let unrestricted =
+            get_adaptor(ChannelType::Bedrock, bedrock_settings("us-east-1", &[])).unwrap();
+        assert!(unrestricted.supported_models().is_empty());
+
+        let settings = bedrock_settings(
+            "eu-west-1",
+            &["eu.anthropic.private-a-v1:0", "eu.anthropic.private-b-v1:0"],
+        );
+        let settings_debug = format!("{settings:?}");
+        assert!(settings_debug.contains("supported_model_count: 2"));
+        assert!(!settings_debug.contains("eu-west-1"));
+        assert!(!settings_debug.contains("private-a"));
+
+        let configured = get_adaptor(ChannelType::Bedrock, settings).unwrap();
+        assert!(!Arc::ptr_eq(&unrestricted, &configured));
+        assert_eq!(configured.channel_type(), ChannelType::Bedrock);
+        assert_eq!(configured.default_protocol(), Protocol::Anthropic);
+        assert_eq!(
+            configured.default_base_url(),
+            "https://bedrock-runtime.eu-west-1.amazonaws.com"
+        );
+        assert_eq!(
+            configured.supported_models(),
+            ["eu.anthropic.private-a-v1:0", "eu.anthropic.private-b-v1:0"]
+        );
+    }
+
+    #[test]
     fn factory_rejects_mismatched_known_channel_settings_without_leaks() {
         let cases = [
             (
@@ -280,6 +375,10 @@ mod tests {
             (
                 ChannelType::Gemini,
                 openai_settings(&["private-openai-model"]),
+            ),
+            (
+                ChannelType::Bedrock,
+                gemini_settings(&["private-gemini-model-for-bedrock"]),
             ),
         ];
         for (channel_type, settings) in cases {
@@ -299,7 +398,10 @@ mod tests {
         for channel_type in ChannelType::ALL.iter().copied().filter(|channel_type| {
             !matches!(
                 channel_type,
-                ChannelType::OpenAi | ChannelType::Anthropic | ChannelType::Gemini
+                ChannelType::OpenAi
+                    | ChannelType::Anthropic
+                    | ChannelType::Gemini
+                    | ChannelType::Bedrock
             )
         }) {
             let error = get_adaptor(channel_type, openai_settings(&["private-model-canary"]))
