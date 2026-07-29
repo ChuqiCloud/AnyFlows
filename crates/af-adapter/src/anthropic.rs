@@ -1,10 +1,10 @@
 use std::fmt;
 
-use af_domain::{ChannelType, CredentialKind, Operation, Protocol};
+use af_domain::{ChannelType, Operation, Protocol};
 use af_httpclient::{HeaderMap, HeaderName, HeaderValue};
 
-use crate::credential::clear_authentication_headers;
-use crate::{Adaptor, AdaptorError, AdaptorResult, Credential, RelayContext};
+use crate::credential::{api_key_or_bearer_header, clear_authentication_headers};
+use crate::{Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Credential, RelayContext};
 
 /// Anthropic Messages 官方及标准兼容渠道适配器。
 ///
@@ -54,23 +54,6 @@ impl AnthropicAdaptor {
             "v1/messages"
         })
     }
-
-    fn authentication_header(credential: &Credential) -> AdaptorResult<(HeaderName, HeaderValue)> {
-        let (name, value) = match credential.kind() {
-            CredentialKind::ApiKey => (
-                HeaderName::from_static("x-api-key"),
-                credential.expose_secret().to_owned(),
-            ),
-            CredentialKind::Oauth => (
-                HeaderName::from_static("authorization"),
-                format!("Bearer {}", credential.expose_secret()),
-            ),
-            kind => return Err(AdaptorError::UnsupportedCredential { kind }),
-        };
-        let mut value = HeaderValue::from_str(&value).map_err(|_| AdaptorError::InvalidHeader)?;
-        value.set_sensitive(true);
-        Ok((name, value))
-    }
 }
 
 impl Adaptor for AnthropicAdaptor {
@@ -90,9 +73,15 @@ impl Adaptor for AnthropicAdaptor {
         self.supported_models.clone()
     }
 
-    fn build_url(&self, context: &RelayContext, operation: Operation) -> AdaptorResult<String> {
-        if operation != Operation::Chat {
-            return Err(AdaptorError::UnsupportedOperation { operation });
+    fn build_url(
+        &self,
+        context: &RelayContext,
+        target: AdaptorTarget<'_>,
+    ) -> AdaptorResult<String> {
+        if target.operation() != Operation::Chat {
+            return Err(AdaptorError::UnsupportedOperation {
+                operation: target.operation(),
+            });
         }
         context.append_path(Self::DEFAULT_BASE_URL, self.endpoint_path(context)?)
     }
@@ -103,7 +92,8 @@ impl Adaptor for AnthropicAdaptor {
         credential: &Credential,
         context: &RelayContext,
     ) -> AdaptorResult<()> {
-        let (authentication_name, authentication_value) = Self::authentication_header(credential)?;
+        let (authentication_name, authentication_value) =
+            api_key_or_bearer_header(credential, HeaderName::from_static("x-api-key"))?;
         clear_authentication_headers(headers);
         headers.insert(authentication_name, authentication_value);
         headers.insert(
@@ -150,6 +140,10 @@ mod tests {
         )
     }
 
+    fn target(operation: Operation) -> AdaptorTarget<'static> {
+        AdaptorTarget::new("claude-test", operation, crate::ResponseMode::Full)
+    }
+
     #[test]
     fn anthropic_metadata_models_and_debug_are_stable() {
         let adaptor =
@@ -171,7 +165,9 @@ mod tests {
     fn build_url_supports_root_and_v1_base_paths() {
         let adaptor = AnthropicAdaptor::new();
         assert_eq!(
-            adaptor.build_url(&context(), Operation::Chat).unwrap(),
+            adaptor
+                .build_url(&context(), target(Operation::Chat))
+                .unwrap(),
             "https://api.anthropic.com/v1/messages"
         );
         for base_url in [
@@ -180,7 +176,10 @@ mod tests {
             "https://gateway.example/proxy/anthropic/v1/",
         ] {
             let target = adaptor
-                .build_url(&context().with_base_url(base_url).unwrap(), Operation::Chat)
+                .build_url(
+                    &context().with_base_url(base_url).unwrap(),
+                    target(Operation::Chat),
+                )
                 .unwrap();
             assert!(target.ends_with("/proxy/anthropic/v1/messages"));
         }
@@ -189,13 +188,13 @@ mod tests {
                 &context()
                     .with_base_url("https://gateway.example/proxy/anthropic/V1/")
                     .unwrap(),
-                Operation::Chat,
+                target(Operation::Chat),
             )
             .unwrap();
         assert!(uppercase_v1.ends_with("/proxy/anthropic/V1/v1/messages"));
         assert_eq!(
             adaptor
-                .build_url(&context(), Operation::Responses)
+                .build_url(&context(), target(Operation::Responses))
                 .unwrap_err(),
             AdaptorError::UnsupportedOperation {
                 operation: Operation::Responses

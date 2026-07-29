@@ -2,7 +2,7 @@ use std::{fmt, sync::Arc};
 
 use af_domain::ChannelType;
 
-use crate::{Adaptor, AdaptorError, AdaptorResult, AnthropicAdaptor, OpenAiAdaptor};
+use crate::{Adaptor, AdaptorError, AdaptorResult, AnthropicAdaptor, GeminiAdaptor, OpenAiAdaptor};
 
 /// OpenAI 适配器的强类型构造配置。
 ///
@@ -65,6 +65,36 @@ impl fmt::Debug for AnthropicAdaptorSettings {
     }
 }
 
+/// Gemini Developer API 适配器的强类型构造配置。
+///
+/// 模型名与列表容量由上层配置边界校验；API 版本、模型路径和认证方案由适配器依据
+/// 官方契约闭合处理，基础地址仍由 [`crate::RelayContext`] 管理。
+#[derive(Clone, Eq, PartialEq)]
+pub struct GeminiAdaptorSettings {
+    supported_models: Vec<String>,
+}
+
+impl GeminiAdaptorSettings {
+    /// 使用已校验的模型清单创建 Gemini 适配器配置；空清单表示无内建限制。
+    #[must_use]
+    pub fn new(supported_models: Vec<String>) -> Self {
+        Self { supported_models }
+    }
+
+    fn into_supported_models(self) -> Vec<String> {
+        self.supported_models
+    }
+}
+
+impl fmt::Debug for GeminiAdaptorSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("GeminiAdaptorSettings")
+            .field("supported_model_count", &self.supported_models.len())
+            .finish()
+    }
+}
+
 /// 按供应商闭合的适配器构造配置。
 ///
 /// 新渠道只有在对应适配器和专用配置都落地后才能增加变体，禁止用不透明 Map 或
@@ -76,6 +106,8 @@ pub enum AdaptorSettings {
     OpenAi(OpenAiAdaptorSettings),
     /// Anthropic Messages 官方及标准兼容渠道配置。
     Anthropic(AnthropicAdaptorSettings),
+    /// Gemini Developer API 官方及原生协议兼容渠道配置。
+    Gemini(GeminiAdaptorSettings),
 }
 
 impl fmt::Debug for AdaptorSettings {
@@ -87,6 +119,10 @@ impl fmt::Debug for AdaptorSettings {
                 .finish(),
             Self::Anthropic(settings) => formatter
                 .debug_tuple("AdaptorSettings::Anthropic")
+                .field(settings)
+                .finish(),
+            Self::Gemini(settings) => formatter
+                .debug_tuple("AdaptorSettings::Gemini")
                 .field(settings)
                 .finish(),
         }
@@ -108,17 +144,16 @@ pub fn get_adaptor(
         (ChannelType::Anthropic, AdaptorSettings::Anthropic(settings)) => Ok(Arc::new(
             AnthropicAdaptor::with_supported_models(settings.into_supported_models()),
         )),
+        (ChannelType::Gemini, AdaptorSettings::Gemini(settings)) => Ok(Arc::new(
+            GeminiAdaptor::with_supported_models(settings.into_supported_models()),
+        )),
         (
-            channel_type @ (ChannelType::OpenAi | ChannelType::Anthropic),
-            AdaptorSettings::OpenAi(_) | AdaptorSettings::Anthropic(_),
+            channel_type @ (ChannelType::OpenAi | ChannelType::Anthropic | ChannelType::Gemini),
+            AdaptorSettings::OpenAi(_) | AdaptorSettings::Anthropic(_) | AdaptorSettings::Gemini(_),
         ) => Err(AdaptorError::InvalidChannelSettings { channel_type }),
-        (
-            channel_type @ (ChannelType::Gemini
-            | ChannelType::Bedrock
-            | ChannelType::Vertex
-            | ChannelType::Custom),
-            _,
-        ) => Err(AdaptorError::UnsupportedChannel { channel_type }),
+        (channel_type @ (ChannelType::Bedrock | ChannelType::Vertex | ChannelType::Custom), _) => {
+            Err(AdaptorError::UnsupportedChannel { channel_type })
+        }
     }
 }
 
@@ -128,7 +163,7 @@ mod tests {
     use af_httpclient::{HeaderMap, HttpClientConfig, HttpClientPool};
 
     use super::*;
-    use crate::{Credential, RelayContext};
+    use crate::{AdaptorTarget, Credential, RelayContext, ResponseMode};
 
     fn openai_settings(models: &[&str]) -> AdaptorSettings {
         AdaptorSettings::OpenAi(OpenAiAdaptorSettings::new(
@@ -138,6 +173,12 @@ mod tests {
 
     fn anthropic_settings(models: &[&str]) -> AdaptorSettings {
         AdaptorSettings::Anthropic(AnthropicAdaptorSettings::new(
+            models.iter().map(|model| (*model).to_owned()).collect(),
+        ))
+    }
+
+    fn gemini_settings(models: &[&str]) -> AdaptorSettings {
+        AdaptorSettings::Gemini(GeminiAdaptorSettings::new(
             models.iter().map(|model| (*model).to_owned()).collect(),
         ))
     }
@@ -201,6 +242,31 @@ mod tests {
     }
 
     #[test]
+    fn factory_builds_configured_isolated_gemini_instances() {
+        let unrestricted = get_adaptor(ChannelType::Gemini, gemini_settings(&[])).unwrap();
+        assert!(unrestricted.supported_models().is_empty());
+
+        let configured_settings = gemini_settings(&["private-gemini-a", "private-gemini-b"]);
+        let settings_debug = format!("{configured_settings:?}");
+        assert!(settings_debug.contains("supported_model_count: 2"));
+        assert!(!settings_debug.contains("private-gemini-a"));
+        assert!(!settings_debug.contains("private-gemini-b"));
+
+        let configured = get_adaptor(ChannelType::Gemini, configured_settings).unwrap();
+        assert!(!Arc::ptr_eq(&unrestricted, &configured));
+        assert_eq!(configured.channel_type(), ChannelType::Gemini);
+        assert_eq!(configured.default_protocol(), Protocol::Gemini);
+        assert_eq!(
+            configured.default_base_url(),
+            GeminiAdaptor::DEFAULT_BASE_URL
+        );
+        assert_eq!(
+            configured.supported_models(),
+            ["private-gemini-a", "private-gemini-b"]
+        );
+    }
+
+    #[test]
     fn factory_rejects_mismatched_known_channel_settings_without_leaks() {
         let cases = [
             (
@@ -209,6 +275,10 @@ mod tests {
             ),
             (
                 ChannelType::Anthropic,
+                gemini_settings(&["private-gemini-model"]),
+            ),
+            (
+                ChannelType::Gemini,
                 openai_settings(&["private-openai-model"]),
             ),
         ];
@@ -219,6 +289,7 @@ mod tests {
             assert_eq!(error, AdaptorError::InvalidChannelSettings { channel_type });
             let rendered = format!("{error:?}\n{error}");
             assert!(!rendered.contains("private-anthropic-model"));
+            assert!(!rendered.contains("private-gemini-model"));
             assert!(!rendered.contains("private-openai-model"));
         }
     }
@@ -226,7 +297,10 @@ mod tests {
     #[test]
     fn factory_rejects_every_unimplemented_channel_without_configuration_leaks() {
         for channel_type in ChannelType::ALL.iter().copied().filter(|channel_type| {
-            !matches!(channel_type, ChannelType::OpenAi | ChannelType::Anthropic)
+            !matches!(
+                channel_type,
+                ChannelType::OpenAi | ChannelType::Anthropic | ChannelType::Gemini
+            )
         }) {
             let error = get_adaptor(channel_type, openai_settings(&["private-model-canary"]))
                 .err()
@@ -260,13 +334,29 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            adaptor.build_url(&context, Operation::Chat).unwrap(),
+            adaptor
+                .build_url(
+                    &context,
+                    AdaptorTarget::new(
+                        "private-model-contract",
+                        Operation::Chat,
+                        ResponseMode::Full,
+                    ),
+                )
+                .unwrap(),
             "https://private-upstream.example/proxy/v1/chat/completions"
         );
         assert_eq!(headers["authorization"], "Bearer private-credential");
         assert_eq!(headers["x-request-id"], "private-request-id");
         let error = adaptor
-            .build_url(&context, Operation::Responses)
+            .build_url(
+                &context,
+                AdaptorTarget::new(
+                    "private-model-contract",
+                    Operation::Responses,
+                    ResponseMode::Full,
+                ),
+            )
             .unwrap_err();
         let rendered = format!("{context:?}\n{credential:?}\n{error:?}\n{error}");
         for private in [

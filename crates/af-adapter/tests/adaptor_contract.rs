@@ -6,10 +6,10 @@ use std::{
 };
 
 use af_adapter::{
-    Adaptor, AdaptorError, AdaptorResult, AdaptorSendExt, AdaptorTransportError, AnthropicAdaptor,
-    Bytes, ChannelType, Credential, CredentialKind, HeaderMap, HeaderName, HeaderValue,
-    MAX_UPSTREAM_RESPONSE_BODY_BYTES, Method, OpenAiAdaptor, Operation, Protocol, RelayContext,
-    ResponseMode, StatusCode, UpstreamRequest,
+    Adaptor, AdaptorError, AdaptorResult, AdaptorSendExt, AdaptorTarget, AdaptorTransportError,
+    AnthropicAdaptor, Bytes, ChannelType, Credential, CredentialKind, GeminiAdaptor, HeaderMap,
+    HeaderName, HeaderValue, MAX_UPSTREAM_RESPONSE_BODY_BYTES, Method, OpenAiAdaptor, Operation,
+    Protocol, RelayContext, ResponseMode, StatusCode, UpstreamRequest,
 };
 use af_httpclient::{HttpClientConfig, HttpClientPool, ProxyConfig, RemoteDnsPolicy};
 
@@ -34,9 +34,15 @@ impl Adaptor for TestAdaptor {
         vec!["test-model".to_owned()]
     }
 
-    fn build_url(&self, context: &RelayContext, operation: Operation) -> AdaptorResult<String> {
-        if operation != Operation::Chat {
-            return Err(AdaptorError::UnsupportedOperation { operation });
+    fn build_url(
+        &self,
+        context: &RelayContext,
+        target: AdaptorTarget<'_>,
+    ) -> AdaptorResult<String> {
+        if target.operation() != Operation::Chat {
+            return Err(AdaptorError::UnsupportedOperation {
+                operation: target.operation(),
+            });
         }
         context.append_path(self.default_base_url(), "v1/chat/completions")
     }
@@ -106,7 +112,12 @@ async fn object_safe_adaptor_uses_managed_default_transport() {
             &context,
         )
         .unwrap();
-    let target = adaptor.build_url(&context, Operation::Chat).unwrap();
+    let target = adaptor
+        .build_url(
+            &context,
+            AdaptorTarget::new("test-model", Operation::Chat, ResponseMode::Stream),
+        )
+        .unwrap();
     let request = UpstreamRequest::new(
         Method::POST,
         target,
@@ -174,7 +185,12 @@ async fn openai_adaptor_builds_and_sends_chat_request() {
         .unwrap();
     let request = UpstreamRequest::new(
         Method::POST,
-        adaptor.build_url(&context, Operation::Chat).unwrap(),
+        adaptor
+            .build_url(
+                &context,
+                AdaptorTarget::new("gpt-test", Operation::Chat, ResponseMode::Full),
+            )
+            .unwrap(),
         headers,
         Some(Bytes::from_static(br#"{"model":"gpt-test","messages":[]}"#)),
     )
@@ -238,7 +254,12 @@ async fn anthropic_adaptor_builds_and_sends_messages_request() {
         .unwrap();
     let request = UpstreamRequest::new(
         Method::POST,
-        adaptor.build_url(&context, Operation::Chat).unwrap(),
+        adaptor
+            .build_url(
+                &context,
+                AdaptorTarget::new("claude-test", Operation::Chat, ResponseMode::Full),
+            )
+            .unwrap(),
         headers,
         Some(Bytes::from_static(
             br#"{"model":"claude-test","max_tokens":16,"messages":[]}"#,
@@ -251,6 +272,74 @@ async fn anthropic_adaptor_builds_and_sends_messages_request() {
     assert_eq!(
         body.into_bytes().await.unwrap(),
         Bytes::from_static(br#"{"type":"message"}"#)
+    );
+
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn gemini_adaptor_builds_and_sends_stream_generate_content_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(SERVER_TIMEOUT)).unwrap();
+        let request = read_request(&mut stream);
+        let lowercase = request.to_ascii_lowercase();
+        assert!(request.starts_with(
+            "POST http://upstream.example/proxy/gemini/v1beta/models/gemini-test:streamGenerateContent?alt=sse HTTP/1.1"
+        ));
+        assert!(lowercase.contains("x-goog-api-key: gemini-loopback-secret"));
+        assert!(!lowercase.contains("\r\nauthorization:"));
+        assert!(lowercase.contains("content-type: application/json"));
+        assert!(lowercase.contains("accept: application/json"));
+        assert!(lowercase.contains("x-request-id: request-gemini-loopback"));
+        assert!(request.ends_with(r#"{"contents":[]}"#));
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 17\r\nConnection: close\r\n\r\n{\"candidates\":[]}",
+            )
+            .unwrap();
+        stream.flush().unwrap();
+    });
+
+    let client = HttpClientPool::default()
+        .get(&loopback_proxy_config(address))
+        .unwrap();
+    let context = RelayContext::new(client)
+        .with_base_url("http://upstream.example/proxy/gemini")
+        .unwrap()
+        .with_request_id("request-gemini-loopback")
+        .unwrap();
+    let adaptor = GeminiAdaptor::with_supported_models(["gemini-test"]);
+    assert_eq!(adaptor.supported_models(), ["gemini-test"]);
+    let mut headers = HeaderMap::new();
+    adaptor
+        .setup_headers(
+            &mut headers,
+            &Credential::api_key("gemini-loopback-secret").unwrap(),
+            &context,
+        )
+        .unwrap();
+    let request = UpstreamRequest::new(
+        Method::POST,
+        adaptor
+            .build_url(
+                &context,
+                AdaptorTarget::new("gemini-test", Operation::Chat, ResponseMode::Stream),
+            )
+            .unwrap(),
+        headers,
+        Some(Bytes::from_static(br#"{"contents":[]}"#)),
+    )
+    .unwrap()
+    .with_response_mode(ResponseMode::Stream);
+    let response = adaptor.send(request, &context).await.unwrap();
+    let body = response.into_body();
+    assert!(body.is_streaming());
+    assert_eq!(
+        body.into_bytes().await.unwrap(),
+        Bytes::from_static(br#"{"candidates":[]}"#)
     );
 
     server.join().unwrap();

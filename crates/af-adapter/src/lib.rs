@@ -8,15 +8,20 @@ mod context;
 mod credential;
 mod error;
 mod factory;
+mod gemini;
 mod openai;
 mod request;
 
-pub use adaptor::{Adaptor, AdaptorSendExt};
+pub use adaptor::{Adaptor, AdaptorSendExt, AdaptorTarget};
 pub use anthropic::AnthropicAdaptor;
 pub use context::{MAX_REQUEST_ID_BYTES, MAX_UPSTREAM_BASE_URL_BYTES, RelayContext};
 pub use credential::{Credential, MAX_CREDENTIAL_SECRET_BYTES};
 pub use error::{AdaptorError, AdaptorResult, AdaptorTransportError};
-pub use factory::{AdaptorSettings, AnthropicAdaptorSettings, OpenAiAdaptorSettings, get_adaptor};
+pub use factory::{
+    AdaptorSettings, AnthropicAdaptorSettings, GeminiAdaptorSettings, OpenAiAdaptorSettings,
+    get_adaptor,
+};
+pub use gemini::GeminiAdaptor;
 pub use openai::OpenAiAdaptor;
 pub use request::{
     MAX_UPSTREAM_REQUEST_BODY_BYTES, MAX_UPSTREAM_REQUEST_HEADER_COUNT,

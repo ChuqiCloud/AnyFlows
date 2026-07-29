@@ -2,9 +2,9 @@ use std::{fmt, time::Duration};
 
 use af_account::{CredentialDecryptor, DecryptedCredential};
 use af_adapter::{
-    AdaptorSendExt as _, AdaptorSettings, Bytes, Credential, HeaderMap, HeaderName, HeaderValue,
-    Method, OpenAiAdaptorSettings, Operation, PooledClient, RelayContext, UpstreamRequest,
-    get_adaptor,
+    AdaptorSendExt as _, AdaptorSettings, AdaptorTarget, Bytes, Credential, HeaderMap, HeaderName,
+    HeaderValue, Method, OpenAiAdaptorSettings, Operation, PooledClient, RelayContext,
+    ResponseMode, UpstreamRequest, get_adaptor,
 };
 use af_db::{ChannelProbeTargetRecord, ChannelProbeTargetRepository, DatabasePool};
 use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Role};
@@ -83,7 +83,10 @@ impl DatabaseChannelProbe {
         let request = UpstreamRequest::new(
             Method::POST,
             adaptor
-                .build_url(&context, Operation::Chat)
+                .build_url(
+                    &context,
+                    AdaptorTarget::new(target.model(), Operation::Chat, ResponseMode::Full),
+                )
                 .map_err(|_| ProbeFailure::RequestBuild)?,
             headers,
             Some(probe_body(target.model())?),
