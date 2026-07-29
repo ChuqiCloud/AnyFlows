@@ -6,8 +6,8 @@ use std::{
 };
 
 use af_adapter::{
-    Adaptor, AdaptorError, AdaptorResult, AdaptorSendExt, AdaptorTransportError, Bytes,
-    ChannelType, Credential, CredentialKind, HeaderMap, HeaderName, HeaderValue,
+    Adaptor, AdaptorError, AdaptorResult, AdaptorSendExt, AdaptorTransportError, AnthropicAdaptor,
+    Bytes, ChannelType, Credential, CredentialKind, HeaderMap, HeaderName, HeaderValue,
     MAX_UPSTREAM_RESPONSE_BODY_BYTES, Method, OpenAiAdaptor, Operation, Protocol, RelayContext,
     ResponseMode, StatusCode, UpstreamRequest,
 };
@@ -185,6 +185,72 @@ async fn openai_adaptor_builds_and_sends_chat_request() {
     assert_eq!(
         body.into_bytes().await.unwrap(),
         Bytes::from_static(br#"{"choices":[]}"#)
+    );
+
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn anthropic_adaptor_builds_and_sends_messages_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream.set_read_timeout(Some(SERVER_TIMEOUT)).unwrap();
+        let request = read_request(&mut stream);
+        let lowercase = request.to_ascii_lowercase();
+        assert!(
+            request
+                .starts_with("POST http://upstream.example/proxy/anthropic/v1/messages HTTP/1.1")
+        );
+        assert!(lowercase.contains("x-api-key: anthropic-loopback-secret"));
+        assert!(!lowercase.contains("\r\nauthorization:"));
+        assert!(lowercase.contains("anthropic-version: 2023-06-01"));
+        assert!(lowercase.contains("content-type: application/json"));
+        assert!(lowercase.contains("accept: application/json"));
+        assert!(lowercase.contains("x-request-id: request-anthropic-loopback"));
+        assert!(request.ends_with(r#"{"model":"claude-test","max_tokens":16,"messages":[]}"#));
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 18\r\nConnection: close\r\n\r\n{\"type\":\"message\"}",
+            )
+            .unwrap();
+        stream.flush().unwrap();
+    });
+
+    let client = HttpClientPool::default()
+        .get(&loopback_proxy_config(address))
+        .unwrap();
+    let context = RelayContext::new(client)
+        .with_base_url("http://upstream.example/proxy/anthropic")
+        .unwrap()
+        .with_request_id("request-anthropic-loopback")
+        .unwrap();
+    let adaptor = AnthropicAdaptor::with_supported_models(["claude-test"]);
+    assert_eq!(adaptor.supported_models(), ["claude-test"]);
+    let mut headers = HeaderMap::new();
+    adaptor
+        .setup_headers(
+            &mut headers,
+            &Credential::api_key("anthropic-loopback-secret").unwrap(),
+            &context,
+        )
+        .unwrap();
+    let request = UpstreamRequest::new(
+        Method::POST,
+        adaptor.build_url(&context, Operation::Chat).unwrap(),
+        headers,
+        Some(Bytes::from_static(
+            br#"{"model":"claude-test","max_tokens":16,"messages":[]}"#,
+        )),
+    )
+    .unwrap();
+    let response = adaptor.send(request, &context).await.unwrap();
+    let body = response.into_body();
+    assert!(!body.is_streaming());
+    assert_eq!(
+        body.into_bytes().await.unwrap(),
+        Bytes::from_static(br#"{"type":"message"}"#)
     );
 
     server.join().unwrap();

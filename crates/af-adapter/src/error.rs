@@ -67,6 +67,9 @@ pub enum AdaptorError {
     /// 当前版本尚未实现该渠道适配器。
     #[error("适配器不支持渠道 {channel_type}")]
     UnsupportedChannel { channel_type: ChannelType },
+    /// 强类型适配器配置与目标渠道不匹配。
+    #[error("适配器配置与渠道 {channel_type} 不匹配")]
+    InvalidChannelSettings { channel_type: ChannelType },
     /// 上游基础地址不是受支持的 HTTP(S) 地址。
     #[error("上游基础地址无效")]
     InvalidBaseUrl,

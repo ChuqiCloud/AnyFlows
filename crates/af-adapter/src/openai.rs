@@ -3,6 +3,7 @@ use std::fmt;
 use af_domain::{ChannelType, CredentialKind, Operation, Protocol};
 use af_httpclient::{HeaderMap, HeaderName, HeaderValue};
 
+use crate::credential::clear_authentication_headers;
 use crate::{Adaptor, AdaptorError, AdaptorResult, Credential, RelayContext};
 
 /// OpenAI Chat Completions 及兼容渠道适配器。
@@ -93,17 +94,7 @@ impl Adaptor for OpenAiAdaptor {
             });
         }
 
-        for name in [
-            HeaderName::from_static("api-key"),
-            HeaderName::from_static("x-api-key"),
-            HeaderName::from_static("x-goog-api-key"),
-            HeaderName::from_static("x-auth-token"),
-            HeaderName::from_static("x-access-token"),
-            HeaderName::from_static("x-client-secret"),
-            HeaderName::from_static("x-amz-security-token"),
-        ] {
-            headers.remove(name);
-        }
+        clear_authentication_headers(headers);
 
         let mut authorization =
             HeaderValue::from_str(&format!("Bearer {}", credential.expose_secret()))
