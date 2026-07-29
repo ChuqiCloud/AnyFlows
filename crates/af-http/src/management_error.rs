@@ -34,6 +34,10 @@ pub(crate) enum ManagementError {
     CredentialNotFound,
     /// 渠道测活服务未在当前实例注入。
     ProbeUnavailable,
+    /// 分享令牌未知、已失效、已撤销或不属于当前用户。
+    PlaygroundShareNotFound,
+    /// 当前用户的有效分享数量已经达到上限。
+    PlaygroundShareLimitReached,
     /// 管理认证依赖发生内部故障。
     Internal,
 }
@@ -149,6 +153,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "probe_unavailable",
                     message: "Channel probe unavailable",
+                },
+            ),
+            Self::PlaygroundShareNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "playground_share_not_found",
+                    message: "Playground share not found",
+                },
+            ),
+            Self::PlaygroundShareLimitReached => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "playground_share_limit_reached",
+                    message: "Playground share limit reached",
                 },
             ),
             Self::Internal => (

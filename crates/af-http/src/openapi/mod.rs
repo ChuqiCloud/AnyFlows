@@ -5,6 +5,7 @@ mod credentials;
 mod dashboard;
 mod groups;
 mod models;
+mod playground_shares;
 pub(crate) mod schema;
 mod session;
 mod setup;
@@ -27,6 +28,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(users::document());
     document.merge(groups::document());
     document.merge(models::document());
+    document.merge(playground_shares::document());
     document.merge(tokens::document());
     document.merge(usage_logs::document());
     document.merge(channels::document());
@@ -39,6 +41,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("用户管理"),
         Tag::new("分组管理"),
         Tag::new("模型目录"),
+        Tag::new("Playground 分享"),
         Tag::new("令牌管理"),
         Tag::new("用量日志"),
         Tag::new("渠道管理"),
@@ -69,7 +72,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 18);
+        assert_eq!(document.paths.paths.len(), 20);
         let operation_count = document
             .paths
             .paths
@@ -90,7 +93,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 33);
+        assert_eq!(operation_count, 36);
         assert!(
             document
                 .components
@@ -116,6 +119,7 @@ mod tests {
             "createAdminGroup",
             "createAdminToken",
             "createAdminUser",
+            "createPlaygroundShare",
             "deleteAdminChannel",
             "deleteAdminCredential",
             "deleteAdminGroup",
@@ -128,6 +132,7 @@ mod tests {
             "getAdminToken",
             "getAdminUser",
             "getManagementSession",
+            "getPlaygroundShare",
             "getInitialSetupStatus",
             "initializeAdminSetup",
             "listAdminChannels",
@@ -139,6 +144,7 @@ mod tests {
             "listModels",
             "loginManagementSession",
             "probeAdminChannel",
+            "revokePlaygroundShare",
             "updateAdminChannel",
             "updateAdminCredential",
             "updateAdminGroup",
@@ -151,7 +157,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 49);
+        assert_eq!(schemas.len(), 55);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
@@ -159,6 +165,12 @@ mod tests {
         assert!(schemas.contains_key("SetupStatusResponse"));
         assert!(schemas.contains_key("ModelCatalogListResponse"));
         assert!(schemas.contains_key("ModelCatalogPricingScope"));
+        assert!(schemas.contains_key("PlaygroundShareCreateRequest"));
+        assert!(schemas.contains_key("PlaygroundShareReadResponse"));
+        assert_eq!(
+            schemas["PlaygroundShareCreateRequest"]["properties"]["ttl_days"]["enum"],
+            serde_json::json!([1, 7, 30])
+        );
         assert_eq!(
             document["paths"]["/api/models"]["get"]["security"],
             serde_json::json!([{}, { "bearerAuth": [] }])

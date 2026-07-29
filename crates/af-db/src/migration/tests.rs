@@ -23,16 +23,16 @@ use crate::entity::{
     EncryptedJson, HeaderOverrides, PasswordHash, SensitiveDecimal, SensitiveJson, SensitiveString,
     TokenHash, TokenIpAllowlist, abilities, billing_batch_checkpoints, billing_reservations,
     channel_groups, channel_models, channels, credentials, group_model_ratios, groups,
-    model_prices, options, tokens, usage_logs, users,
+    model_prices, options, playground_shares, tokens, usage_logs, users,
 };
 use crate::{
     AdminDashboardRepository, BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome,
     ChannelBillingWrite, DatabaseOptions, GroupPricingRepository, ModelPriceBillingMode,
-    ModelPriceRepository, PoolOptions, QuotaMutationOutcome, QuotaRepository,
-    QuotaReservationStatus, TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository,
-    TokenBillingWrite, UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError,
-    UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogWrite, UsageLogWriteOutcome,
-    UserBillingWrite, connect,
+    ModelPriceRepository, PlaygroundShareRepository, PlaygroundShareWrite, PoolOptions,
+    QuotaMutationOutcome, QuotaRepository, QuotaReservationStatus, TokenAuthLookup,
+    TokenAuthLookupOutcome, TokenAuthRepository, TokenBillingWrite, UsageLogBillingMode,
+    UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage,
+    UsageLogWrite, UsageLogWriteOutcome, UserBillingWrite, connect,
 };
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
@@ -50,7 +50,7 @@ const RESERVATION_KEY_A: &str = "11111111111111111111111111111111";
 const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
-const CORE_TABLES: [&str; 14] = [
+const CORE_TABLES: [&str; 15] = [
     "groups",
     "users",
     "channels",
@@ -65,6 +65,7 @@ const CORE_TABLES: [&str; 14] = [
     "model_prices",
     "group_model_ratios",
     "usage_logs",
+    "playground_shares",
 ];
 
 struct SlowMigrator;
@@ -142,6 +143,17 @@ async fn generated_active_models_redact_sensitive_payloads() {
         version: Set(1),
         ..Default::default()
     };
+    let playground_share = playground_shares::ActiveModel {
+        owner_user_id: Set(1),
+        token_hash: Set(TokenHash::parse(TOKEN_HASH_E).unwrap()),
+        snapshot: Set(SensitiveJson::from(serde_json::json!({
+            "content": "share-snapshot-secret"
+        }))),
+        created_at: Set(historical_audit_time()),
+        expires_at: Set(future_expiration()),
+        revoked_at: Set(None),
+        ..Default::default()
+    };
     let mut channel = channel_active_model("debug-channel");
     channel.base_url = Set(Some(
         ChannelBaseUrl::parse("https://api.example.com/channel-secret").unwrap(),
@@ -167,6 +179,8 @@ async fn generated_active_models_redact_sensitive_payloads() {
         (format!("{checkpoint:?}"), &"d".repeat(64)),
         (format!("{model_price:?}"), "debug-model-secret"),
         (format!("{model_price:?}"), "123456789"),
+        (format!("{playground_share:?}"), TOKEN_HASH_E),
+        (format!("{playground_share:?}"), "share-snapshot-secret"),
     ] {
         assert!(rendered.contains("<redacted>"));
         assert!(!rendered.contains(secret));
@@ -214,6 +228,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     exercise_billing_batch_repository(&pool).await?;
     exercise_model_price_repository(&pool).await?;
     exercise_usage_log_repository(&pool).await?;
+    exercise_playground_share_repository(&pool).await?;
     exercise_admin_dashboard_repository(&pool).await?;
     exercise_core_schema(pool.connection()).await?;
 
@@ -452,6 +467,59 @@ async fn exercise_usage_log_repository(pool: &DatabasePool) -> Result<(), Box<dy
     users::Entity::delete_by_id(user.id)
         .exec(pool.connection())
         .await?;
+    groups::Entity::delete_by_id(group.id)
+        .exec(pool.connection())
+        .await?;
+    Ok(())
+}
+
+/// 在三方言实库中验证分享快照写入、读取和用户删除级联。
+async fn exercise_playground_share_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let group = group_active_model("share-smoke-group", "分享冒烟分组")
+        .insert(pool.connection())
+        .await?;
+    let mut owner = user_active_model(
+        group.id,
+        "share-smoke-owner",
+        "share-smoke@example.com",
+        "invite-share-smoke",
+    );
+    owner.status = Set(1);
+    let owner = owner.insert(pool.connection()).await?;
+    let owner_user_id = UserId::new(owner.id)?;
+    let repository = PlaygroundShareRepository::new(pool.clone(), Duration::from_secs(2))?;
+    let expires_at = TimeDateTimeWithTimeZone::now_utc()
+        .unix_timestamp()
+        .checked_add(24 * 60 * 60)
+        .ok_or_else(|| std::io::Error::other("分享冒烟过期时间溢出"))?;
+    repository
+        .create(PlaygroundShareWrite::new(
+            owner_user_id,
+            TOKEN_HASH_E.to_owned(),
+            serde_json::json!({
+                "version": 1,
+                "sessions": [{
+                    "model": "smoke-model",
+                    "messages": [
+                        {"role": "user", "content": "ping"},
+                        {"role": "assistant", "content": "pong"}
+                    ]
+                }]
+            }),
+            expires_at,
+        ))
+        .await?;
+    assert!(repository.find_active(TOKEN_HASH_E).await?.is_some());
+
+    users::Entity::delete_by_id(owner.id)
+        .exec(pool.connection())
+        .await?;
+    assert_eq!(
+        playground_shares::Entity::find()
+            .count(pool.connection())
+            .await?,
+        0
+    );
     groups::Entity::delete_by_id(group.id)
         .exec(pool.connection())
         .await?;
@@ -959,6 +1027,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     )
     .await?;
     assert_entity_columns::<group_model_ratios::Column>(&manager, "group_model_ratios").await?;
+    assert_entity_columns::<playground_shares::Column>(&manager, "playground_shares").await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -985,6 +1054,9 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "idx_billing_reservations_token_created",
         ),
         ("group_model_ratios", "idx_group_model_ratios_target"),
+        ("playground_shares", "uq_playground_shares_token_hash"),
+        ("playground_shares", "idx_playground_shares_owner_created"),
+        ("playground_shares", "idx_playground_shares_expires_at"),
     ] {
         assert!(
             manager.has_index(table, index).await?,

@@ -455,3 +455,28 @@ pub(in crate::migration) mod usage_logs {
         CreatedAt,
     }
 }
+
+pub(in crate::migration) mod playground_shares {
+    use super::DeriveIden;
+
+    /// `playground_shares` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "playground_shares")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// Playground 只读分享快照的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OwnerUserId,
+        TokenHash,
+        Snapshot,
+        CreatedAt,
+        ExpiresAt,
+        RevokedAt,
+    }
+}

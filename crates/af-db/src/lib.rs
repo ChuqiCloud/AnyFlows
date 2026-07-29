@@ -62,6 +62,9 @@ mod model_price;
 #[cfg(test)]
 mod model_price_tests;
 mod options;
+mod playground_share;
+#[cfg(test)]
+mod playground_share_tests;
 mod quota;
 #[cfg(test)]
 mod quota_tests;
@@ -167,6 +170,12 @@ pub use model_price::{
     ModelPriceRepositoryError,
 };
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
+pub use playground_share::{
+    MAX_ACTIVE_PLAYGROUND_SHARES_PER_USER, MAX_PLAYGROUND_SHARE_SNAPSHOT_BYTES,
+    PlaygroundShareCreatedRecord, PlaygroundShareRecord, PlaygroundShareRepository,
+    PlaygroundShareRepositoryConfigError, PlaygroundShareRepositoryError,
+    PlaygroundShareRevokeOutcome, PlaygroundShareWrite,
+};
 pub use quota::{
     QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationStatus,
 };

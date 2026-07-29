@@ -345,7 +345,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -372,6 +372,29 @@ export type ModelCatalogTokenPrices = {
     cache_read: string;
     cache_creation_5m: string;
     cache_creation_1h: string;
+};
+export type PlaygroundShareCreateRequest = {
+    ttl_days: 1 | 7 | 30;
+    sessions: Array<PlaygroundShareSession>;
+};
+export type PlaygroundShareCreateResponse = {
+    token: string;
+    created_at: number;
+    expires_at: number;
+};
+export type PlaygroundShareMessage = {
+    role: PlaygroundShareMessageRole;
+    content: string;
+};
+export type PlaygroundShareMessageRole = 'user' | 'assistant';
+export type PlaygroundShareReadResponse = {
+    sessions: Array<PlaygroundShareSession>;
+    created_at: number;
+    expires_at: number;
+};
+export type PlaygroundShareSession = {
+    model: string;
+    messages: Array<PlaygroundShareMessage>;
 };
 export type SessionResponse = {
     user: SessionUser;
@@ -780,6 +803,58 @@ export type ListModelsResponses = {
     200: ModelCatalogListResponse;
 };
 export type ListModelsResponse = ListModelsResponses[keyof ListModelsResponses];
+export type CreatePlaygroundShareData = {
+    body: PlaygroundShareCreateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/playground/shares';
+};
+export type CreatePlaygroundShareErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreatePlaygroundShareError = CreatePlaygroundShareErrors[keyof CreatePlaygroundShareErrors];
+export type CreatePlaygroundShareResponses = {
+    200: PlaygroundShareCreateResponse;
+};
+export type CreatePlaygroundShareResponse = CreatePlaygroundShareResponses[keyof CreatePlaygroundShareResponses];
+export type RevokePlaygroundShareData = {
+    body?: never;
+    path: {
+        token: string;
+    };
+    query?: never;
+    url: '/api/playground/shares/{token}';
+};
+export type RevokePlaygroundShareErrors = {
+    401: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type RevokePlaygroundShareError = RevokePlaygroundShareErrors[keyof RevokePlaygroundShareErrors];
+export type RevokePlaygroundShareResponses = {
+    204: void;
+};
+export type RevokePlaygroundShareResponse = RevokePlaygroundShareResponses[keyof RevokePlaygroundShareResponses];
+export type GetPlaygroundShareData = {
+    body?: never;
+    path: {
+        token: string;
+    };
+    query?: never;
+    url: '/api/playground/shares/{token}';
+};
+export type GetPlaygroundShareErrors = {
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetPlaygroundShareError = GetPlaygroundShareErrors[keyof GetPlaygroundShareErrors];
+export type GetPlaygroundShareResponses = {
+    200: PlaygroundShareReadResponse;
+};
+export type GetPlaygroundShareResponse = GetPlaygroundShareResponses[keyof GetPlaygroundShareResponses];
 export type ListAdminTokensData = {
     body?: never;
     path?: never;
