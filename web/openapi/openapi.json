@@ -1747,6 +1747,397 @@
         ]
       }
     },
+    "/api/tokens": {
+      "get": {
+        "tags": [
+          "我的 API Key"
+        ],
+        "summary": "读取我的 API Key 列表",
+        "operationId": "listUserTokens",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "description": "上一页末尾的 Key ID",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 50",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前用户的 Key 列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTokenListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "我的 API Key"
+        ],
+        "summary": "签发我的 API Key",
+        "operationId": "createUserToken",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserTokenWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Key 已签发，完整明文仅返回一次",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedUserToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "当前用户的 Key 已达到 32 个",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/tokens/{id}": {
+      "get": {
+        "tags": [
+          "我的 API Key"
+        ],
+        "summary": "读取我的 API Key 详情",
+        "operationId": "getUserToken",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Key ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前用户拥有的 Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Key ID 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Key 不存在或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "我的 API Key"
+        ],
+        "summary": "更新我的 API Key",
+        "operationId": "updateUserToken",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Key ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserTokenWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Key 已更新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Key ID 或请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Key 不存在或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "我的 API Key"
+        ],
+        "summary": "删除我的 API Key",
+        "operationId": "deleteUserToken",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Key ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Key 已删除"
+          },
+          "400": {
+            "description": "Key ID 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Key 不存在或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/tokens": {
       "get": {
         "tags": [
@@ -1886,6 +2277,16 @@
           },
           "403": {
             "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "所属用户的 Key 已达到 32 个",
             "content": {
               "application/json": {
                 "schema": {
@@ -5544,6 +5945,27 @@
         },
         "additionalProperties": false
       },
+      "IssuedUserToken": {
+        "type": "object",
+        "description": "一次性用户 API Key 签发响应。",
+        "required": [
+          "api_key",
+          "token"
+        ],
+        "properties": {
+          "api_key": {
+            "type": "string",
+            "description": "只在本次签发响应中出现的完整 API Key。",
+            "maxLength": 49,
+            "minLength": 49,
+            "pattern": "^sk-af-[A-Za-z0-9_-]{43}$"
+          },
+          "token": {
+            "$ref": "#/components/schemas/UserToken"
+          }
+        },
+        "additionalProperties": false
+      },
       "LoginRequest": {
         "type": "object",
         "required": [
@@ -5618,6 +6040,7 @@
               "user_not_found",
               "group_not_found",
               "token_not_found",
+              "token_limit_reached",
               "channel_not_found",
               "credential_not_found",
               "probe_unavailable",
@@ -6123,6 +6546,214 @@
           }
         },
         "additionalProperties": false
+      },
+      "UserToken": {
+        "type": "object",
+        "description": "普通用户可读取的非敏感 API Key。",
+        "required": [
+          "id",
+          "key_prefix",
+          "name",
+          "status",
+          "remain_quota",
+          "unlimited_quota",
+          "used_quota",
+          "expired_at",
+          "model_limits",
+          "allow_ips",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "key_prefix": {
+            "type": "string",
+            "description": "不可用于鉴权的 18 字符展示前缀。",
+            "maxLength": 18,
+            "minLength": 18,
+            "pattern": "^sk-af-[A-Za-z0-9_-]{12}$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserTokenStatus"
+          },
+          "remain_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "unlimited_quota": {
+            "type": "boolean"
+          },
+          "used_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "expired_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "model_limits": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "maxLength": 256,
+              "minLength": 1
+            },
+            "description": "Canonical 模型名白名单；null 表示不限制，保留持久化顺序和重复项。",
+            "maxItems": 512,
+            "minItems": 1
+          },
+          "allow_ips": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "maxLength": 64,
+              "minLength": 1
+            },
+            "description": "IP/CIDR 白名单；null 表示关闭过滤，保留持久化顺序和重复项。",
+            "maxItems": 64,
+            "minItems": 1
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserTokenListResponse": {
+        "type": "object",
+        "description": "当前用户的一页 API Key。",
+        "required": [
+          "tokens",
+          "next_cursor",
+          "capacity"
+        ],
+        "properties": {
+          "tokens": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserToken"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "capacity": {
+            "type": "integer",
+            "maximum": 32,
+            "minimum": 32
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserTokenStatus": {
+        "type": "string",
+        "enum": [
+          "enabled",
+          "disabled"
+        ]
+      },
+      "UserTokenWriteRequest": {
+        "type": "object",
+        "description": "普通用户创建或更新 API Key 的正文。",
+        "required": [
+          "name",
+          "status",
+          "remain_quota",
+          "unlimited_quota",
+          "expired_at",
+          "model_limits",
+          "allow_ips"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserTokenStatus"
+          },
+          "remain_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "unlimited_quota": {
+            "type": "boolean"
+          },
+          "expired_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix 秒时间戳；null 表示永不过期。",
+            "minimum": 0
+          },
+          "model_limits": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "maxLength": 256,
+              "minLength": 1
+            },
+            "description": "Canonical 模型名白名单；null 表示不限制，顺序和重复项会保留。",
+            "maxItems": 512,
+            "minItems": 1
+          },
+          "allow_ips": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "maxLength": 64,
+              "minLength": 1
+            },
+            "description": "IP/CIDR 白名单；null 表示关闭过滤，顺序和重复项会保留。",
+            "maxItems": 64,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
       }
     },
     "securitySchemes": {
@@ -6158,6 +6789,9 @@
     },
     {
       "name": "Playground 历史"
+    },
+    {
+      "name": "我的 API Key"
     },
     {
       "name": "令牌管理"

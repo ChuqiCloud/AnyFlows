@@ -1,8 +1,21 @@
-import { Boxes, Gauge, KeyRound, MessageSquareText, Network, ScrollText } from 'lucide-react'
+import {
+  Boxes,
+  Gauge,
+  KeyRound,
+  MessageSquareText,
+  Network,
+  ScrollText,
+  ShieldCheck,
+  UsersRound,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
 import {
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -12,19 +25,51 @@ type AppNavigationProps = {
   className?: string
   /** compact 模式用于移动端横向导航条 */
   compact?: boolean
-  /** 已废弃，shadcn Sidebar 会通过 collapsible="icon" 自动处理折叠 */
-  collapsed?: boolean
   role: 'admin' | 'user'
 }
 
-const navItems = [
-  { key: 'overview', icon: Gauge, href: '#/console', adminOnly: true },
-  { key: 'models', icon: Boxes, href: '#/console/models', adminOnly: false },
-  { key: 'playground', icon: MessageSquareText, href: '#/console/playground', adminOnly: false },
-  { key: 'channels', icon: Network, href: '#/console/channels', adminOnly: true },
-  { key: 'keys', icon: KeyRound, href: '#/console/tokens', adminOnly: true },
-  { key: 'usage', icon: ScrollText, href: '#/console/usage-logs', adminOnly: true },
-] as const
+type NavItem = {
+  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'users' | 'channels' | 'keys' | 'usage'
+  icon: LucideIcon
+  href: `#/console${string}`
+}
+
+type NavGroup = {
+  key: 'use' | 'account' | 'system'
+  adminOnly: boolean
+  items: readonly NavItem[]
+}
+
+const navGroups: readonly NavGroup[] = [
+  {
+    key: 'use',
+    adminOnly: false,
+    items: [
+      { key: 'models', icon: Boxes, href: '#/console/models' },
+      { key: 'playground', icon: MessageSquareText, href: '#/console/playground' },
+    ],
+  },
+  {
+    key: 'account',
+    adminOnly: false,
+    items: [
+      { key: 'apiKeys', icon: KeyRound, href: '#/console/api-keys' },
+    ],
+  },
+  {
+    key: 'system',
+    adminOnly: true,
+    items: [
+      { key: 'overview', icon: Gauge, href: '#/console' },
+      { key: 'users', icon: UsersRound, href: '#/console/users' },
+      { key: 'channels', icon: Network, href: '#/console/channels' },
+      { key: 'keys', icon: ShieldCheck, href: '#/console/tokens' },
+      { key: 'usage', icon: ScrollText, href: '#/console/usage-logs' },
+    ],
+  },
+]
+
+const navItems = navGroups.flatMap((group) => group.items)
 
 function useActiveKey() {
   if (typeof window === 'undefined') return 'overview'
@@ -35,7 +80,8 @@ function useActiveKey() {
 export function AppNavigation({ className, compact = false, role }: AppNavigationProps) {
   const { t } = useTranslation()
   const activeKey = useActiveKey()
-  const visibleItems = navItems.filter((item) => role === 'admin' || !item.adminOnly)
+  const visibleGroups = navGroups.filter((group) => role === 'admin' || !group.adminOnly)
+  const visibleItems = visibleGroups.flatMap((group) => group.items)
 
   /* ── 移动端横向导航条（compact 模式）────────────────────── */
   if (compact) {
@@ -76,31 +122,42 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
     )
   }
 
-  /* ── 桌面侧边栏导航（shadcn SidebarMenu）────────────────── */
+  /* 桌面侧边栏保留角色分组，折叠时由 shadcn 隐藏分组标题。 */
   return (
-    <SidebarMenu className={className}>
-      {visibleItems.map((item) => {
-        const IconComponent = item.icon
-        const active = item.key === activeKey
-        return (
-          <SidebarMenuItem key={item.key}>
-            <SidebarMenuButton
-              asChild
-              isActive={active}
-              tooltip={t(`nav.${item.key}`)}
-              className={active ? 'text-brand' : undefined}
-            >
-              <a href={item.href} aria-current={active ? 'page' : undefined}>
-                <IconComponent
-                  className={cn('shrink-0', active ? 'text-brand' : 'text-sidebar-foreground/70')}
-                  aria-hidden="true"
-                />
-                <span>{t(`nav.${item.key}`)}</span>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        )
-      })}
-    </SidebarMenu>
+    <div className={cn('flex flex-col gap-1', className)}>
+      {visibleGroups.map((group) => (
+        <SidebarGroup key={group.key} className="p-0">
+          <SidebarGroupLabel className="h-7 px-2 text-[0.6875rem]">
+            {t(`nav.groups.${group.key}`)}
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {group.items.map((item) => {
+                const IconComponent = item.icon
+                const active = item.key === activeKey
+                return (
+                  <SidebarMenuItem key={item.key}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={active}
+                      tooltip={t(`nav.${item.key}`)}
+                      className={active ? 'text-brand' : undefined}
+                    >
+                      <a href={item.href} aria-current={active ? 'page' : undefined}>
+                        <IconComponent
+                          className={cn('shrink-0', active ? 'text-brand' : 'text-sidebar-foreground/70')}
+                          aria-hidden="true"
+                        />
+                        <span>{t(`nav.${item.key}`)}</span>
+                      </a>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      ))}
+    </div>
   )
 }

@@ -6,6 +6,7 @@ import { AppShell } from '@/components/layout/app-shell'
 import { LoginPage, type LoginNotice } from '@/features/auth/login-page'
 import { SessionBoundary } from '@/features/auth/session-boundary'
 import { endManagementSession } from '@/features/auth/session-query'
+import { ApiKeyPage } from '@/features/api-keys/api-key-page'
 import { ChannelPage } from '@/features/channels/channel-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
 import { LandingPage } from '@/features/landing/landing-page'
@@ -15,6 +16,7 @@ import { PlaygroundPage } from '@/features/playground/playground-page'
 import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
 import { TokenPage } from '@/features/tokens/token-page'
 import { UsageLogPage } from '@/features/usage-logs/usage-log-page'
+import { UserPage } from '@/features/users/user-page'
 import { SetupGateLoading, SetupGateUnavailable } from '@/features/setup/setup-gate-state'
 import { SetupPage } from '@/features/setup/setup-page'
 import { useInitialSetupStatus } from '@/features/setup/setup-query'
@@ -92,6 +94,10 @@ function ManagementEntry({
 
   const titleKey = view === 'channels'
     ? 'channels.title'
+    : view === 'users'
+      ? 'users.title'
+    : view === 'api-keys'
+      ? 'apiKeys.title'
     : view === 'models'
       ? 'models.title'
       : view === 'playground'
@@ -103,6 +109,10 @@ function ManagementEntry({
             : 'dashboard.title'
   const content = view === 'channels'
     ? <ChannelPage />
+    : view === 'users'
+      ? <UserPage />
+    : view === 'api-keys'
+      ? <ApiKeyPage />
     : view === 'models'
       ? <ModelPage authenticated />
       : view === 'playground'
@@ -113,9 +123,11 @@ function ManagementEntry({
             ? <UsageLogPage />
             : <DashboardPage />
 
+  const requireAdmin = view !== 'api-keys' && view !== 'models' && view !== 'playground'
+
   return (
     <SessionBoundary
-      requireAdmin={view !== 'models' && view !== 'playground'}
+      requireAdmin={requireAdmin}
       onSessionEnded={onLoginRequired}
       onUserHomeRequired={onUserHomeRequired}
     >

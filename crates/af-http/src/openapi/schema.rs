@@ -311,6 +311,14 @@ pub(crate) enum AdminTokenStatusSchema {
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
 #[derive(ToSchema)]
+#[schema(as = UserTokenStatus, rename_all = "snake_case")]
+pub(crate) enum UserTokenStatusSchema {
+    Enabled,
+    Disabled,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
 #[schema(as = AdminRoutingStatus, rename_all = "snake_case")]
 pub(crate) enum AdminRoutingStatusSchema {
     Enabled,
@@ -461,6 +469,7 @@ pub(crate) enum ManagementErrorCodeSchema {
     UserNotFound,
     GroupNotFound,
     TokenNotFound,
+    TokenLimitReached,
     ChannelNotFound,
     CredentialNotFound,
     ProbeUnavailable,

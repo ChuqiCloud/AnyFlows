@@ -28,6 +28,8 @@ pub(crate) enum ManagementError {
     GroupInUse,
     /// 令牌不存在或已经被软删除。
     TokenNotFound,
+    /// 当前用户的未软删除 API Key 已达到容量上限。
+    TokenLimitReached,
     /// 渠道不存在或已经被软删除。
     ChannelNotFound,
     /// 凭据不存在、已经软删除或不属于指定渠道。
@@ -138,6 +140,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "token_not_found",
                     message: "Token not found",
+                },
+            ),
+            Self::TokenLimitReached => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "token_limit_reached",
+                    message: "Token limit reached",
                 },
             ),
             Self::ChannelNotFound => (

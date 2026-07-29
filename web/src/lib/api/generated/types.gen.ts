@@ -333,6 +333,10 @@ export type IssuedAdminToken = {
     api_key: string;
     token: AdminToken;
 };
+export type IssuedUserToken = {
+    api_key: string;
+    token: UserToken;
+};
 export type LoginRequest = {
     username: string;
     password: string;
@@ -345,7 +349,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -432,6 +436,35 @@ export type SetupRequest = {
 };
 export type SetupStatusResponse = {
     setup_required: boolean;
+};
+export type UserToken = {
+    id: number;
+    key_prefix: string;
+    name: string;
+    status: UserTokenStatus;
+    remain_quota: number;
+    unlimited_quota: boolean;
+    used_quota: number;
+    expired_at: number | null;
+    model_limits: Array<string> | null;
+    allow_ips: Array<string> | null;
+    created_at: number;
+    updated_at: number;
+};
+export type UserTokenListResponse = {
+    tokens: Array<UserToken>;
+    next_cursor: number | null;
+    capacity: number;
+};
+export type UserTokenStatus = 'enabled' | 'disabled';
+export type UserTokenWriteRequest = {
+    name: string;
+    status: UserTokenStatus;
+    remain_quota: number;
+    unlimited_quota: boolean;
+    expired_at: number | null;
+    model_limits: Array<string> | null;
+    allow_ips: Array<string> | null;
 };
 export type AdminChannelCreateRequestWritable = {
     name: string;
@@ -949,6 +982,99 @@ export type SavePlaygroundConversationResponses = {
     200: PlaygroundConversationResponse;
 };
 export type SavePlaygroundConversationResponse = SavePlaygroundConversationResponses[keyof SavePlaygroundConversationResponses];
+export type ListUserTokensData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/tokens';
+};
+export type ListUserTokensErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListUserTokensError = ListUserTokensErrors[keyof ListUserTokensErrors];
+export type ListUserTokensResponses = {
+    200: UserTokenListResponse;
+};
+export type ListUserTokensResponse = ListUserTokensResponses[keyof ListUserTokensResponses];
+export type CreateUserTokenData = {
+    body: UserTokenWriteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/tokens';
+};
+export type CreateUserTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateUserTokenError = CreateUserTokenErrors[keyof CreateUserTokenErrors];
+export type CreateUserTokenResponses = {
+    201: IssuedUserToken;
+};
+export type CreateUserTokenResponse = CreateUserTokenResponses[keyof CreateUserTokenResponses];
+export type DeleteUserTokenData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/tokens/{id}';
+};
+export type DeleteUserTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type DeleteUserTokenError = DeleteUserTokenErrors[keyof DeleteUserTokenErrors];
+export type DeleteUserTokenResponses = {
+    204: void;
+};
+export type DeleteUserTokenResponse = DeleteUserTokenResponses[keyof DeleteUserTokenResponses];
+export type GetUserTokenData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/tokens/{id}';
+};
+export type GetUserTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetUserTokenError = GetUserTokenErrors[keyof GetUserTokenErrors];
+export type GetUserTokenResponses = {
+    200: UserToken;
+};
+export type GetUserTokenResponse = GetUserTokenResponses[keyof GetUserTokenResponses];
+export type UpdateUserTokenData = {
+    body: UserTokenWriteRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/tokens/{id}';
+};
+export type UpdateUserTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type UpdateUserTokenError = UpdateUserTokenErrors[keyof UpdateUserTokenErrors];
+export type UpdateUserTokenResponses = {
+    200: UserToken;
+};
+export type UpdateUserTokenResponse = UpdateUserTokenResponses[keyof UpdateUserTokenResponses];
 export type ListAdminTokensData = {
     body?: never;
     path?: never;
@@ -979,6 +1105,7 @@ export type CreateAdminTokenErrors = {
     400: ManagementError;
     401: ManagementError;
     403: ManagementError;
+    409: ManagementError;
     500: ManagementError;
 };
 export type CreateAdminTokenError = CreateAdminTokenErrors[keyof CreateAdminTokenErrors];

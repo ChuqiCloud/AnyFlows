@@ -5,12 +5,19 @@
   },
   "nav": {
     "label": "Primary navigation",
-    "overview": "Overview",
+    "groups": {
+      "use": "Use",
+      "account": "Account",
+      "system": "System management"
+    },
+    "overview": "Operations overview",
     "models": "Models",
     "playground": "Playground",
+    "apiKeys": "My API keys",
+    "users": "Users",
     "channels": "Channels",
-    "keys": "Keys",
-    "usage": "Usage",
+    "keys": "Global keys",
+    "usage": "Global usage",
     "billing": "Billing",
     "settings": "Settings"
   },
@@ -277,6 +284,241 @@
       "deleteTitle": "Delete channel credential",
       "deleteDescription": "Credential #{{id}} will be permanently removed. This cannot be undone.",
       "deleteFailed": "The credential could not be deleted. Try again shortly."
+    }
+  },
+  "apiKeys": {
+    "title": "API Keys",
+    "subtitle": "Manage your downstream credentials, quota, and access scope. A full key is shown only once after issuance.",
+    "count_one": "{{count}} key, {{active}} currently available",
+    "count_other": "{{count}} keys, {{active}} currently available",
+    "loading": "Loading API keys",
+    "capacity": {
+      "pending": "Loading capacity",
+      "value": "{{count}} / {{capacity}}",
+      "reached": "The key limit has been reached. Existing keys can still be edited or deleted, and deleting one frees a slot."
+    },
+    "columns": {
+      "key": "API key",
+      "quota": "Quota",
+      "policy": "Access scope",
+      "validity": "Validity",
+      "actions": "Actions"
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "expired": "Expired"
+    },
+    "values": {
+      "unlimited": "Unlimited quota",
+      "remaining": "{{value}} remaining",
+      "usedQuota": "{{value}} used",
+      "models_one": "{{count}} model",
+      "models_other": "{{count}} models",
+      "allModels": "All models",
+      "ips_one": "{{count}} IP/CIDR",
+      "ips_other": "{{count}} IP/CIDRs",
+      "allIps": "Any source IP",
+      "neverExpires": "Never expires",
+      "updatedAt": "Updated {{value}}"
+    },
+    "actions": {
+      "create": "Issue key",
+      "edit": "Edit key",
+      "delete": "Delete key",
+      "enable": "Enable key",
+      "disable": "Disable key",
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "loadMore": "Load more",
+      "cancel": "Cancel",
+      "save": "Save changes",
+      "done": "Done"
+    },
+    "empty": {
+      "title": "No API keys yet",
+      "body": "Your first issued key will appear here."
+    },
+    "error": {
+      "title": "API keys could not be loaded",
+      "body": "The service did not return the key list. Try again shortly.",
+      "toggle": "The status update failed. The key remains unchanged."
+    },
+    "editor": {
+      "createTitle": "Issue API key",
+      "createDescription": "Set quota and access scope. The full key is shown once.",
+      "editTitle": "Edit API key",
+      "editDescription": "Change quota and access scope without rotating the key or resetting usage."
+    },
+    "form": {
+      "basic": "Basic settings",
+      "quota": "Independent quota",
+      "policy": "Access scope",
+      "statusHint": "Disabling the key immediately rejects requests that use it.",
+      "expiryHint": "Leave blank for no expiry. Times use this device's time zone.",
+      "unlimitedHint": "Do not apply an additional quota limit to this key.",
+      "quotaHint": "Used only when unlimited quota is off.",
+      "modelsHint": "Leave empty to allow every model available to your group.",
+      "ipsHint": "Add IP or CIDR entries individually. Leave empty for any source.",
+      "submitError": "The key could not be saved. Check the fields and try again.",
+      "limitError": "This account has reached its API key limit."
+    },
+    "fields": {
+      "name": "Name",
+      "status": "Enable key",
+      "expiredAt": "Expiry",
+      "remainQuota": "Remaining quota",
+      "unlimitedQuota": "Unlimited quota",
+      "modelLimits": "Model allowlist",
+      "allowIps": "IP/CIDR allowlist"
+    },
+    "validation": {
+      "field": "Enter a valid name or an in-range integer.",
+      "models": "The model allowlist format or size is invalid.",
+      "ips": "Enter valid IP/CIDR values, up to 64 entries.",
+      "date": "Enter a valid date and time."
+    },
+    "modelSelector": {
+      "title": "Select available models",
+      "description": "Leave the selection empty to allow every available model.",
+      "search": "Search models",
+      "placeholder": "Search by model name",
+      "selectedCount_one": "{{count}} model selected",
+      "selectedCount_other": "{{count}} models selected",
+      "selectedLabel": "Selected models",
+      "unrestricted": "All available models",
+      "loading": "Loading available models",
+      "loadingMore": "Loading",
+      "error": "Models for the current group are unavailable",
+      "empty": "No matching available models",
+      "remove": "Remove model {{model}}"
+    },
+    "ipEditor": {
+      "placeholder": "For example, 203.0.113.8 or 203.0.113.0/24",
+      "add": "Add IP/CIDR",
+      "selected": "Added IP/CIDR entries",
+      "remove": "Remove {{value}}",
+      "invalid": "Enter a valid IP address or CIDR.",
+      "limit": "The IP/CIDR allowlist supports up to 64 entries within the total size limit."
+    },
+    "issued": {
+      "title": "API key issued",
+      "description": "The full key for {{name}} is ready.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyFailed": "Clipboard access failed. Select and copy the key manually.",
+      "warning": "The full key is shown only once. Save it securely before closing this window.",
+      "playground": "Use in Playground",
+      "done": "I have saved it"
+    },
+    "delete": {
+      "title": "Delete API key",
+      "description": "Deleting {{name}} immediately revokes requests that use this key. This action cannot be undone.",
+      "failed": "Deletion failed. The key is still valid. Try again shortly."
+    }
+  },
+  "users": {
+    "title": "User management",
+    "subtitle": "Manage platform accounts, roles, default groups, and resource limits. Administrators retain their own user features.",
+    "count_one": "{{count}} user loaded",
+    "count_other": "{{count}} users loaded",
+    "pages_one": "{{count}} page loaded",
+    "pages_other": "{{count}} pages loaded",
+    "loading": "Loading users",
+    "loadingMore": "Loading",
+    "columns": {
+      "user": "User",
+      "group": "Default group",
+      "quota": "Quota",
+      "traffic": "Request limits",
+      "actions": "Actions"
+    },
+    "role": {
+      "user": "User",
+      "admin": "Administrator"
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "values": {
+      "unknownGroup": "Unknown group",
+      "noEmail": "No email",
+      "totalQuota": "{{value}} total",
+      "quotaUsage": "{{used}} used, {{frozen}} frozen",
+      "requests": "{{value}} requests",
+      "rpm": "RPM {{value}}",
+      "concurrency": "Concurrency {{value}}",
+      "unlimited": "No limit"
+    },
+    "actions": {
+      "create": "Create user",
+      "edit": "Edit user",
+      "delete": "Delete user",
+      "enable": "Enable user",
+      "disable": "Disable user",
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "loadMore": "Load more",
+      "cancel": "Cancel",
+      "save": "Save changes"
+    },
+    "empty": {
+      "title": "No users to manage",
+      "body": "A newly created account will appear here."
+    },
+    "error": {
+      "title": "Users could not be loaded",
+      "body": "The service did not return the user list. Try again shortly.",
+      "toggle": "The status update failed. The user remains unchanged.",
+      "groups": "The group catalog is unavailable. Raw group IDs remain visible.",
+      "more": "The next page could not be loaded. Existing users remain manageable."
+    },
+    "editor": {
+      "createTitle": "Create user",
+      "createDescription": "Configure the sign-in identity, default group, and initial resource limits.",
+      "editTitle": "Edit user",
+      "editDescription": "Update the account and resource limits. Leave the password blank to keep it unchanged."
+    },
+    "form": {
+      "account": "Account information",
+      "access": "Role and ownership",
+      "limits": "Resource limits",
+      "emailHint": "Email is optional. Public registration verification will be delivered as a separate slice.",
+      "createPasswordHint": "An initial password is required and is never shown again after saving.",
+      "updatePasswordHint": "Leave blank to keep the current password, or enter a value to reset it.",
+      "groupHint": "The user's own API keys bind to this group by default.",
+      "groupsLoading": "Loading groups",
+      "groupsEmpty": "No groups available",
+      "groupPlaceholder": "Select a default group",
+      "groupsFailed": "The group catalog could not be loaded.",
+      "quotaHint": "A non-negative integer in the server quota unit.",
+      "optionalLimitHint": "Leave blank for no account-level limit.",
+      "conflict": "The username or email is already used by another account.",
+      "submitError": "The user could not be saved. Check the fields and try again."
+    },
+    "fields": {
+      "username": "Username",
+      "email": "Email",
+      "password": "Password",
+      "role": "Role",
+      "status": "Status",
+      "defaultGroup": "Default group",
+      "quota": "Total quota",
+      "rpmLimit": "Requests per minute",
+      "concurrency": "Concurrency"
+    },
+    "validation": {
+      "username": "Use 1 to 64 bytes without leading, trailing, or control characters.",
+      "email": "Leave email empty or use at most 320 bytes without surrounding or control characters.",
+      "password": "A password is required when creating a user and may contain up to 4096 bytes.",
+      "group": "Select a valid default group.",
+      "number": "Enter an in-range non-negative integer."
+    },
+    "delete": {
+      "title": "Delete user",
+      "description": "Deleting {{username}} soft-deletes the account and its directly issued API keys. The user can no longer sign in or call the gateway. This action cannot be undone.",
+      "failed": "Deletion failed. The user remains active. Try again shortly."
     }
   },
   "tokens": {

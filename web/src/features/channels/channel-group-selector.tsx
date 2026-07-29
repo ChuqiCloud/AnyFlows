@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Select } from '@/components/ui/select'
-import { useAdminGroupCatalog } from './channel-api'
+import { useAdminGroupCatalog } from '@/features/groups/group-api'
 
 type ChannelGroupSelectorProps = {
   id: string

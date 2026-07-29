@@ -19,6 +19,7 @@ mod token_read;
 mod token_write;
 mod usage_log_read;
 mod user_read;
+mod user_token;
 mod user_write;
 
 pub use api_key::{
@@ -116,6 +117,12 @@ pub use user_read::{
     AdminUser, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage,
     AdminUserReadError, AdminUserReader, AdminUserStatus, DEFAULT_ADMIN_USER_PAGE_SIZE,
     DatabaseAdminUserReader,
+};
+pub use user_token::{
+    DEFAULT_USER_TOKEN_PAGE_SIZE, DatabaseUserTokenService, IssuedUserToken,
+    MAX_USER_TOKENS_PER_USER, UserToken, UserTokenCreateFuture, UserTokenDeleteFuture,
+    UserTokenError, UserTokenGetFuture, UserTokenListFuture, UserTokenListQuery, UserTokenPage,
+    UserTokenService, UserTokenStatus, UserTokenUpdateFuture, UserTokenWriteCommand,
 };
 pub use user_write::{
     AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserUpdateCommand,

@@ -34,6 +34,7 @@ mod playground_shares;
 mod router;
 mod serve;
 mod streaming;
+mod user_tokens;
 
 pub use channel_probe::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 pub use chat_service::{ChatService, ChatServiceFuture};
@@ -78,3 +79,5 @@ mod playground_conversations_tests;
 mod playground_shares_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod user_tokens_tests;
