@@ -464,6 +464,8 @@ pub(crate) enum ManagementErrorCodeSchema {
     ChannelNotFound,
     CredentialNotFound,
     ProbeUnavailable,
+    PlaygroundShareNotFound,
+    PlaygroundShareLimitReached,
     UserConflict,
     GroupConflict,
     GroupInUse,

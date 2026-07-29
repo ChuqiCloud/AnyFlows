@@ -622,6 +622,65 @@
       "invalid_request": "请求参数或会话内容不受当前模型支持。",
       "upstream_unavailable": "上游服务暂不可用，请稍后重新发送。",
       "unknown": "请求未完成，服务未返回可识别的错误。"
+    },
+    "share": {
+      "action": "分享",
+      "waitForCompletion": "等待全部模型结束后分享",
+      "title": "分享当前结果",
+      "description": "生成只读快照。API Key、系统提示词、生成参数、用量和错误不会包含在链接中。",
+      "ttlLabel": "有效期",
+      "ttlDays": "{{count}} 天",
+      "scope": "链接仅保存已完成的用户与助手往返，创建后内容不会随当前会话变化。",
+      "cancel": "取消",
+      "create": "创建链接",
+      "creating": "正在创建",
+      "done": "完成",
+      "issuedLabel": "只读链接已创建",
+      "expiresAt": "有效至 {{value}}",
+      "linkLabel": "分享链接",
+      "copy": "复制",
+      "copied": "已复制",
+      "copyFailed": "浏览器未能自动复制，请选中链接后手动复制。",
+      "createAgain": "创建新链接",
+      "revoke": "撤销链接",
+      "revokeConfirm": "撤销后访客将立即无法打开此链接，此操作不能恢复。",
+      "revokeConfirmAction": "确认撤销",
+      "revoking": "正在撤销",
+      "keep": "保留链接",
+      "revokeFailed": "暂时无法撤销此链接，请稍后重试。",
+      "status": {
+        "active": "有效",
+        "revoked": "已撤销",
+        "expired": "已过期"
+      },
+      "snapshotErrors": {
+        "no_complete_rounds": "至少需要一组完整的用户与助手往返。",
+        "invalid_content": "当前结果包含无法分享的空内容、超长正文或异常消息顺序。",
+        "too_large": "当前结果超过分享快照的消息数或 512 KiB 容量上限。"
+      },
+      "createErrors": {
+        "invalid": "当前快照不满足服务端分享边界，请检查消息内容后重试。",
+        "limit": "你的有效分享已达到 32 个，请等待链接过期或撤销已有链接。",
+        "unavailable": "暂时无法创建分享链接，请稍后重试。"
+      },
+      "public": {
+        "pageTitle": "共享的 Playground 对话 | AnyFlows",
+        "headerScope": "Playground 只读分享",
+        "openPlayground": "打开 Playground",
+        "loading": "正在读取分享快照",
+        "title": "共享的 Playground 对话",
+        "description": "这是创建时保存的只读快照，不包含访问凭据、参数、用量或调度信息。",
+        "readOnly": "只读",
+        "created": "创建时间",
+        "expires": "失效时间",
+        "modelTabs": "分享模型",
+        "transcript": "{{model}} 的只读对话",
+        "notFoundTitle": "分享不存在或已失效",
+        "notFoundBody": "链接可能已过期、被撤销或输入不完整。",
+        "unavailableTitle": "暂时无法读取分享",
+        "unavailableBody": "服务当前不可用，稍后可重新请求。",
+        "retry": "重新请求"
+      }
     }
   },
   "auth": {

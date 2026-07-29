@@ -69,38 +69,10 @@
     RUST_BACKTRACE: "1"
     RELEASE_ARCH: amd64
 
-.release-arm64-base: &release-arm64-base
-  runner:
-    tags: cnb:arch:arm64:v8
-    cpus: 16
-  docker:
-    build:
-      dockerfile: ./.cnb/release.Dockerfile
-      by:
-        - ./.cnb/release.Dockerfile
-    volumes:
-      - release-pnpm-v10:/root/.local/share/pnpm/store:copy-on-write
-      - rust-cargo:/usr/local/cargo/registry:copy-on-write
-      - rust-cargo:/usr/local/cargo/git:copy-on-write
-      - rust-release-arm64-1.97.1:./target:copy-on-write
-  env:
-    CARGO_TERM_COLOR: always
-    RUST_BACKTRACE: "1"
-    RELEASE_ARCH: arm64
-
 "(master|develop)":
   pull_request:
     - name: 验证 Linux amd64 发布包
       <<: *release-amd64-base
-      ifModify: *release-files
-      stages:
-        - *release-install-stage
-        - *release-frontend-stage
-        - *release-binary-stage
-        - *release-package-stage
-
-    - name: 验证 Linux arm64 发布包
-      <<: *release-arm64-base
       ifModify: *release-files
       stages:
         - *release-install-stage
@@ -130,9 +102,7 @@
             attachments:
               - anyflows-${CNB_BRANCH}-linux-amd64.tar.gz
               - anyflows-${CNB_BRANCH}-linux-amd64.tar.gz.sha256
-              - anyflows-${CNB_BRANCH}-linux-arm64.tar.gz
-              - anyflows-${CNB_BRANCH}-linux-arm64.tar.gz.sha256
-        - name: 放行双架构构建
+        - name: 放行 amd64 构建
           if: *release-version-tag-condition
           type: cnb:resolve
           options:
@@ -168,36 +138,6 @@
           options:
             key: release-amd64-$CNB_COMMIT
 
-    - name: 构建 Linux arm64 发布包
-      <<: *release-arm64-base
-      stages:
-        - name: 等待版本校验
-          if: *release-version-tag-condition
-          type: cnb:await
-          options:
-            key: release-preflight-$CNB_COMMIT
-        - <<: *release-install-stage
-          if: *release-version-tag-condition
-        - <<: *release-frontend-stage
-          if: *release-version-tag-condition
-        - <<: *release-binary-stage
-          if: *release-version-tag-condition
-        - <<: *release-package-stage
-          if: *release-version-tag-condition
-        - name: 上传 arm64 临时附件
-          if: *release-version-tag-condition
-          image: cnbcool/attachments:latest
-          settings:
-            commit: $CNB_COMMIT
-            attachments:
-              - ./release/anyflows-${CNB_BRANCH}-linux-arm64.tar.gz
-              - ./release/anyflows-${CNB_BRANCH}-linux-arm64.tar.gz.sha256
-        - name: 标记 arm64 构建完成
-          if: *release-version-tag-condition
-          type: cnb:resolve
-          options:
-            key: release-arm64-$CNB_COMMIT
-
     - name: 校验并发布 CNB Release
       runner:
         tags: cnb:arch:amd64
@@ -215,12 +155,7 @@
           type: cnb:await
           options:
             key: release-amd64-$CNB_COMMIT
-        - name: 等待 arm64 发布包
-          if: *release-version-tag-condition
-          type: cnb:await
-          options:
-            key: release-arm64-$CNB_COMMIT
-        - name: 下载双架构临时附件
+        - name: 下载 amd64 临时附件
           if: *release-version-tag-condition
           image: cnbcool/attachments:latest
           settings:
@@ -229,8 +164,6 @@
             attachments:
               - anyflows-${CNB_BRANCH}-linux-amd64.tar.gz
               - anyflows-${CNB_BRANCH}-linux-amd64.tar.gz.sha256
-              - anyflows-${CNB_BRANCH}-linux-arm64.tar.gz
-              - anyflows-${CNB_BRANCH}-linux-arm64.tar.gz.sha256
         - name: 准备发布说明目录
           if: *release-version-tag-condition
           script: |
@@ -268,7 +201,6 @@
           settings:
             attachments:
               - ./release/anyflows-${CNB_BRANCH}-linux-amd64.tar.gz
-              - ./release/anyflows-${CNB_BRANCH}-linux-arm64.tar.gz
               - ./release/SHA256SUMS
         - name: 清理提交临时附件
           if: *release-version-tag-condition
@@ -279,5 +211,3 @@
             attachments:
               - anyflows-${CNB_BRANCH}-linux-amd64.tar.gz
               - anyflows-${CNB_BRANCH}-linux-amd64.tar.gz.sha256
-              - anyflows-${CNB_BRANCH}-linux-arm64.tar.gz
-              - anyflows-${CNB_BRANCH}-linux-arm64.tar.gz.sha256

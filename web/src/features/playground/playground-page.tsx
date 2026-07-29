@@ -2,6 +2,7 @@ import { PlaygroundComparisonPanel } from './playground-comparison-panel'
 import { PlaygroundModelPicker } from './playground-model-picker'
 import { PlaygroundPageHeader } from './playground-page-header'
 import { PlaygroundSettings } from './playground-settings'
+import { PlaygroundShareControl } from './playground-share-control'
 import type { PlaygroundDisplayStatus } from './playground-status'
 import { usePlaygroundComparison } from './use-playground-comparison'
 import { usePlaygroundConfiguration } from './use-playground-configuration'
@@ -77,6 +78,12 @@ export function PlaygroundPage() {
         clearDisabled={!comparison.hasConversation && !comparison.draft}
         mobileSettings={renderSettings('playground-mobile')}
         modelCount={configuration.selectedModels.length}
+        shareControl={(
+          <PlaygroundShareControl
+            sessions={comparison.sessions}
+            streaming={comparison.streaming}
+          />
+        )}
         status={status}
         onClear={comparison.clear}
       />

@@ -599,6 +599,13 @@ impl From<Json> for SensitiveJson {
     }
 }
 
+impl SensitiveJson {
+    /// 消费脱敏包装并把 JSON 交给已经审查的仓储边界。
+    pub(crate) fn into_inner(self) -> Json {
+        self.0
+    }
+}
+
 impl fmt::Debug for SensitiveJson {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("<redacted>")

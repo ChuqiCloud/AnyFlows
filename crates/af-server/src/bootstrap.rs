@@ -9,8 +9,9 @@ use af_admin::{
     DatabaseAdminChannelReader, DatabaseAdminChannelWriter, DatabaseAdminGroupReader,
     DatabaseAdminGroupWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
     DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
-    DatabaseInitialSetup, DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, InitialSetup,
-    ModelCatalogReader, SessionAuthenticator, SessionAuthenticatorConfigError, TokenAuthenticator,
+    DatabaseInitialSetup, DatabasePlaygroundShareService, DatabaseSessionAuthenticator,
+    DatabaseTokenAuthenticator, InitialSetup, ModelCatalogReader, PlaygroundShareService,
+    SessionAuthenticator, SessionAuthenticatorConfigError, TokenAuthenticator,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -28,9 +29,9 @@ use af_db::{
     AdminUsageLogRepositoryConfigError, AdminUserRepository, AdminUserRepositoryConfigError,
     ChannelStateRepository, CredentialStateRepository, DatabaseError, DatabaseOptions,
     DatabaseOptionsError, DatabasePool, InitialSetupRepository, InitialSetupRepositoryConfigError,
-    MigrationOptions, QuotaRepository, TokenAuthRepository, TokenAuthRepositoryConfigError,
-    UsageLogRepository, UserSessionRepository, UserSessionRepositoryConfigError,
-    connect_and_migrate,
+    MigrationOptions, PlaygroundShareRepository, PlaygroundShareRepositoryConfigError,
+    QuotaRepository, TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository,
+    UserSessionRepository, UserSessionRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle,
@@ -86,6 +87,7 @@ pub struct AuthenticationReady {
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
     initial_setup: Arc<dyn InitialSetup>,
+    playground_share_service: Arc<dyn PlaygroundShareService>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
     admin_dashboard_reader: Arc<dyn AdminDashboardReader>,
@@ -211,6 +213,9 @@ pub enum BootstrapError {
     /// 首次安装仓储的启动参数无效。
     #[error("首次安装仓储启动参数无效")]
     InitialSetupRepository(#[source] InitialSetupRepositoryConfigError),
+    /// Playground 分享仓储的启动参数无效。
+    #[error("Playground 分享仓储启动参数无效")]
+    PlaygroundShareRepository(#[source] PlaygroundShareRepositoryConfigError),
     /// 管理员用户仓储的启动参数无效。
     #[error("管理员用户仓储启动参数无效")]
     AdminUserRepository(#[source] AdminUserRepositoryConfigError),
@@ -372,6 +377,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::InitialSetupRepository)?;
+        let playground_share_repository = PlaygroundShareRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::PlaygroundShareRepository)?;
         let admin_user_repository = AdminUserRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -428,6 +438,9 @@ impl Bootstrap<DatabaseReady> {
                 authenticator: Arc::new(DatabaseTokenAuthenticator::new(repository)),
                 session_authenticator: Arc::new(session_authenticator),
                 initial_setup: Arc::new(DatabaseInitialSetup::new(initial_setup_repository)),
+                playground_share_service: Arc::new(DatabasePlaygroundShareService::new(
+                    playground_share_repository,
+                )),
                 admin_channel_reader: Arc::new(DatabaseAdminChannelReader::new(
                     admin_channel_repository.clone(),
                 )),
@@ -752,6 +765,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.authenticator),
             Arc::clone(&self.stage.infrastructure.session_authenticator),
             Arc::clone(&self.stage.model_catalog_reader),
+            Arc::clone(&self.stage.infrastructure.playground_share_service),
             Arc::clone(&self.stage.infrastructure.initial_setup),
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_channel_writer),

@@ -622,6 +622,66 @@
       "invalid_request": "The selected model does not support the request parameters or conversation content.",
       "upstream_unavailable": "The upstream service is unavailable. Send the request again later.",
       "unknown": "The request did not complete and no recognized error was returned."
+    },
+    "share": {
+      "action": "Share",
+      "waitForCompletion": "Wait for every model to finish before sharing",
+      "title": "Share current results",
+      "description": "Create a read-only snapshot. API keys, system prompts, generation settings, usage, and errors are excluded.",
+      "ttlLabel": "Expires after",
+      "ttlDays_one": "{{count}} day",
+      "ttlDays_other": "{{count}} days",
+      "scope": "Only completed user and assistant turns are saved. The link does not change with this conversation.",
+      "cancel": "Cancel",
+      "create": "Create link",
+      "creating": "Creating",
+      "done": "Done",
+      "issuedLabel": "Read-only link created",
+      "expiresAt": "Available until {{value}}",
+      "linkLabel": "Share link",
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyFailed": "The browser could not copy automatically. Select and copy the link manually.",
+      "createAgain": "Create a new link",
+      "revoke": "Revoke link",
+      "revokeConfirm": "Visitors will immediately lose access to this link. This action cannot be undone.",
+      "revokeConfirmAction": "Confirm revoke",
+      "revoking": "Revoking",
+      "keep": "Keep link",
+      "revokeFailed": "This link could not be revoked. Try again later.",
+      "status": {
+        "active": "Active",
+        "revoked": "Revoked",
+        "expired": "Expired"
+      },
+      "snapshotErrors": {
+        "no_complete_rounds": "At least one complete user and assistant turn is required.",
+        "invalid_content": "The results contain empty content, oversized text, or an invalid message order.",
+        "too_large": "The results exceed the message count or 512 KiB snapshot limit."
+      },
+      "createErrors": {
+        "invalid": "The snapshot does not meet the server sharing limits. Check the messages and try again.",
+        "limit": "You already have 32 active shares. Wait for one to expire or revoke an existing link.",
+        "unavailable": "A share link could not be created. Try again later."
+      },
+      "public": {
+        "pageTitle": "Shared Playground conversation | AnyFlows",
+        "headerScope": "Read-only Playground share",
+        "openPlayground": "Open Playground",
+        "loading": "Loading the shared snapshot",
+        "title": "Shared Playground conversation",
+        "description": "This read-only snapshot was saved when the link was created. It excludes credentials, settings, usage, and routing data.",
+        "readOnly": "Read only",
+        "created": "Created",
+        "expires": "Expires",
+        "modelTabs": "Shared models",
+        "transcript": "Read-only conversation for {{model}}",
+        "notFoundTitle": "This share does not exist or is no longer active",
+        "notFoundBody": "The link may have expired, been revoked, or be incomplete.",
+        "unavailableTitle": "This share is temporarily unavailable",
+        "unavailableBody": "The service is unavailable. You can request it again shortly.",
+        "retry": "Try again"
+      }
     }
   },
   "auth": {

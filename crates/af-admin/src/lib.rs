@@ -8,6 +8,9 @@ mod group_read;
 mod group_write;
 mod initial_setup;
 mod model_catalog;
+mod playground_share;
+mod playground_share_snapshot;
+mod playground_share_token;
 mod routing_read;
 mod session;
 mod token_auth;
@@ -56,6 +59,20 @@ pub use model_catalog::{
     ModelCatalogItem, ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogQuery,
     ModelCatalogRatios, ModelCatalogReadError, ModelCatalogReader, ModelCatalogTokenPrices,
 };
+pub use playground_share::{
+    DatabasePlaygroundShareService, IssuedPlaygroundShare, PlaygroundShareCreateFuture,
+    PlaygroundShareError, PlaygroundShareReadFuture, PlaygroundShareRevokeFuture,
+    PlaygroundShareService, PlaygroundShareView,
+};
+pub use playground_share_snapshot::{
+    MAX_PLAYGROUND_SHARE_MESSAGE_BYTES, MAX_PLAYGROUND_SHARE_MESSAGES,
+    MAX_PLAYGROUND_SHARE_SESSIONS, PlaygroundShareCreateCommand, PlaygroundShareInputError,
+    PlaygroundShareMessage, PlaygroundShareMessageRole, PlaygroundShareSession, PlaygroundShareTtl,
+};
+pub use playground_share_token::{
+    IssuedPlaygroundShareToken, PlaygroundShareTokenDigest, PlaygroundShareTokenError,
+    PresentedPlaygroundShareToken,
+};
 pub use routing_read::{
     AdminChannelGetFuture, AdminChannelListFuture, AdminChannelReadError, AdminChannelReader,
     AdminCredentialGetFuture, AdminCredentialListFuture, DatabaseAdminChannelReader,
@@ -100,5 +117,7 @@ pub use user_write::{
 
 #[cfg(test)]
 mod api_key_tests;
+#[cfg(test)]
+mod playground_share_tests;
 #[cfg(test)]
 mod token_auth_tests;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { routeFromHash, type AppRoute, type AppView } from '@/app-route'
 import { AppShell } from '@/components/layout/app-shell'
 import { LoginPage, type LoginNotice } from '@/features/auth/login-page'
 import { SessionBoundary } from '@/features/auth/session-boundary'
@@ -11,30 +12,16 @@ import { LandingPage } from '@/features/landing/landing-page'
 import { ModelPage } from '@/features/models/model-page'
 import { PublicModelPage } from '@/features/models/public-model-page'
 import { PlaygroundPage } from '@/features/playground/playground-page'
+import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
 import { TokenPage } from '@/features/tokens/token-page'
 import { UsageLogPage } from '@/features/usage-logs/usage-log-page'
 import { SetupGateLoading, SetupGateUnavailable } from '@/features/setup/setup-gate-state'
 import { SetupPage } from '@/features/setup/setup-page'
 import { useInitialSetupStatus } from '@/features/setup/setup-query'
 
-type AppView = 'channels' | 'models' | 'playground' | 'public-models' | 'tokens' | 'usage-logs' | 'overview' | 'login' | 'setup' | 'landing'
-
 // 临时的 hash 视图切换：TanStack Router 接入前，先让公开页与控制台都可访达。
 // 路由落地后此处整体由文件路由替换。
-function viewFromHash(hash: string): AppView {
-  if (hash.startsWith('#/console/channels')) return 'channels'
-  if (hash.startsWith('#/console/models')) return 'models'
-  if (hash.startsWith('#/console/playground')) return 'playground'
-  if (hash.startsWith('#/console/tokens')) return 'tokens'
-  if (hash.startsWith('#/console/usage-logs')) return 'usage-logs'
-  if (hash.startsWith('#/console')) return 'overview'
-  if (hash.startsWith('#/models')) return 'public-models'
-  if (hash.startsWith('#/login')) return 'login'
-  if (hash.startsWith('#/setup')) return 'setup'
-  return 'landing'
-}
-
-function useHashView(): [AppView, (hash: string) => void] {
+function useHashRoute(): [AppRoute, (hash: string) => void] {
   const [hash, setHash] = useState(() => window.location.hash)
 
   useEffect(() => {
@@ -50,11 +37,11 @@ function useHashView(): [AppView, (hash: string) => void] {
     window.location.hash = nextHash
   }, [])
 
-  return [viewFromHash(hash), navigate]
+  return [routeFromHash(hash), navigate]
 }
 
 type ManagementEntryProps = {
-  view: Exclude<AppView, 'landing' | 'public-models'>
+  view: Exclude<AppView, 'landing' | 'public-models' | 'share'>
   loginNotice?: LoginNotice
   onAuthenticated: () => void
   onLoginRequired: (reason: 'required' | 'sessionExpired' | 'setupComplete') => void
@@ -142,8 +129,9 @@ function ManagementEntry({
 }
 
 export default function App() {
-  const [view, navigate] = useHashView()
+  const [route, navigate] = useHashRoute()
   const [loginNotice, setLoginNotice] = useState<LoginNotice>()
+  const { view } = route
 
   const openLogin = useCallback((reason: 'required' | 'sessionExpired' | 'setupComplete') => {
     setLoginNotice(reason === 'required' ? undefined : reason)
@@ -171,6 +159,9 @@ export default function App() {
   }
   if (view === 'public-models') {
     return <PublicModelPage />
+  }
+  if (view === 'share') {
+    return <PublicPlaygroundSharePage key={route.shareToken ?? 'invalid'} token={route.shareToken} />
   }
 
   return (

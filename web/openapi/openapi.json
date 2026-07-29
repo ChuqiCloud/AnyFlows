@@ -1275,6 +1275,202 @@
         ]
       }
     },
+    "/api/playground/shares": {
+      "post": {
+        "tags": [
+          "Playground 分享"
+        ],
+        "summary": "创建只读 Playground 分享",
+        "description": "登录用户为一至四个已结束模型会话创建不可变快照。API Key、系统提示词、生成参数、用量和错误不会进入快照，分享令牌只返回一次。",
+        "operationId": "createPlaygroundShare",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaygroundShareCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "分享创建成功，令牌只在本响应返回",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaygroundShareCreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "TTL、模型、消息往返或容量无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "当前用户的有效分享达到上限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "随机源或持久化服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/playground/shares/{token}": {
+      "get": {
+        "tags": [
+          "Playground 分享"
+        ],
+        "summary": "公开读取只读 Playground 分享",
+        "description": "凭高熵分享令牌读取仍有效且未撤销的可见模型与用户/助手消息。未知、过期、撤销和格式错误统一返回 404。",
+        "operationId": "getPlaygroundShare",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "一次性返回的 sh-af- 分享令牌",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 49,
+              "minLength": 49
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "有效只读快照",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaygroundShareReadResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "分享不存在或已失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "持久化服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      },
+      "delete": {
+        "tags": [
+          "Playground 分享"
+        ],
+        "summary": "撤销自己的 Playground 分享",
+        "description": "仅创建者可以撤销仍有效的分享；未知、失效、已撤销和非所有者令牌统一返回 404。",
+        "operationId": "revokePlaygroundShare",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "description": "待撤销的 sh-af- 分享令牌",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 49,
+              "minLength": 49
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "撤销成功"
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "分享不存在、已失效或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "持久化服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/tokens": {
       "get": {
         "tags": [
@@ -5149,6 +5345,8 @@
               "channel_not_found",
               "credential_not_found",
               "probe_unavailable",
+              "playground_share_not_found",
+              "playground_share_limit_reached",
               "user_conflict",
               "group_conflict",
               "group_in_use",
@@ -5301,6 +5499,137 @@
         },
         "additionalProperties": false
       },
+      "PlaygroundShareCreateRequest": {
+        "type": "object",
+        "required": [
+          "ttl_days",
+          "sessions"
+        ],
+        "properties": {
+          "ttl_days": {
+            "type": "integer",
+            "format": "int32",
+            "enum": [
+              1,
+              7,
+              30
+            ]
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlaygroundShareSession"
+            },
+            "maxItems": 4,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlaygroundShareCreateResponse": {
+        "type": "object",
+        "required": [
+          "token",
+          "created_at",
+          "expires_at"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "maxLength": 49,
+            "minLength": 49
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlaygroundShareMessage": {
+        "type": "object",
+        "required": [
+          "role",
+          "content"
+        ],
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/PlaygroundShareMessageRole"
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 65536,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlaygroundShareMessageRole": {
+        "type": "string",
+        "description": "分享快照公开的闭合消息角色。",
+        "enum": [
+          "user",
+          "assistant"
+        ]
+      },
+      "PlaygroundShareReadResponse": {
+        "type": "object",
+        "required": [
+          "sessions",
+          "created_at",
+          "expires_at"
+        ],
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlaygroundShareSession"
+            },
+            "maxItems": 4,
+            "minItems": 1
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlaygroundShareSession": {
+        "type": "object",
+        "required": [
+          "model",
+          "messages"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlaygroundShareMessage"
+            },
+            "maxItems": 256,
+            "minItems": 2
+          }
+        },
+        "additionalProperties": false
+      },
       "SessionResponse": {
         "type": "object",
         "required": [
@@ -5403,6 +5732,9 @@
     },
     {
       "name": "模型目录"
+    },
+    {
+      "name": "Playground 分享"
     },
     {
       "name": "令牌管理"

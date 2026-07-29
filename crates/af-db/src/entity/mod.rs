@@ -20,6 +20,7 @@ pub(crate) mod group_model_ratios;
 pub(crate) mod groups;
 pub(crate) mod model_prices;
 pub(crate) mod options;
+pub(crate) mod playground_shares;
 pub(crate) mod tokens;
 pub(crate) mod usage_logs;
 pub(crate) mod users;
@@ -387,3 +388,6 @@ impl ActiveModelBehavior for usage_logs::ActiveModel {
         Ok(self)
     }
 }
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for playground_shares::ActiveModel {}

@@ -26,6 +26,8 @@ use af_admin::{
     AdminUserWriteError, AdminUserWriter, ApiKeyDigest, InitialSetup, InitialSetupCommand,
     InitialSetupError, InitialSetupFuture, InitialSetupStatusFuture, LoginCredentials,
     ModelCatalogPage, ModelCatalogQuery, ModelCatalogReadError, ModelCatalogReader,
+    PlaygroundShareCreateCommand, PlaygroundShareCreateFuture, PlaygroundShareError,
+    PlaygroundShareReadFuture, PlaygroundShareRevokeFuture, PlaygroundShareService,
     SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
     SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
 };
@@ -67,6 +69,7 @@ struct AlwaysAuthenticates;
 
 struct RejectSessions;
 struct RejectModelCatalog;
+struct RejectPlaygroundShares;
 struct RejectInitialSetup;
 struct RejectAdminChannels;
 struct RejectAdminGroups;
@@ -92,6 +95,28 @@ impl ModelCatalogReader for RejectModelCatalog {
         _query: &ModelCatalogQuery,
     ) -> Result<ModelCatalogPage, ModelCatalogReadError> {
         Err(ModelCatalogReadError::Internal)
+    }
+}
+
+impl PlaygroundShareService for RejectPlaygroundShares {
+    fn create(
+        &self,
+        _principal: af_admin::SessionPrincipal,
+        _command: PlaygroundShareCreateCommand,
+    ) -> PlaygroundShareCreateFuture<'_> {
+        Box::pin(async { Err(PlaygroundShareError::Internal) })
+    }
+
+    fn read(&self, _token: String) -> PlaygroundShareReadFuture<'_> {
+        Box::pin(async { Err(PlaygroundShareError::Internal) })
+    }
+
+    fn revoke(
+        &self,
+        _principal: af_admin::SessionPrincipal,
+        _token: String,
+    ) -> PlaygroundShareRevokeFuture<'_> {
+        Box::pin(async { Err(PlaygroundShareError::Internal) })
     }
 }
 
@@ -675,6 +700,7 @@ async fn start_server(
         Arc::new(AlwaysAuthenticates),
         Arc::new(RejectSessions),
         Arc::new(RejectModelCatalog),
+        Arc::new(RejectPlaygroundShares),
         Arc::new(RejectInitialSetup),
         Arc::new(RejectAdminChannels),
         Arc::new(RejectAdminChannels),
