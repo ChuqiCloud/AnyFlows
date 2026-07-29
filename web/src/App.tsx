@@ -10,19 +10,21 @@ import { DashboardPage } from '@/features/dashboard/dashboard-page'
 import { LandingPage } from '@/features/landing/landing-page'
 import { ModelPage } from '@/features/models/model-page'
 import { PublicModelPage } from '@/features/models/public-model-page'
+import { PlaygroundPage } from '@/features/playground/playground-page'
 import { TokenPage } from '@/features/tokens/token-page'
 import { UsageLogPage } from '@/features/usage-logs/usage-log-page'
 import { SetupGateLoading, SetupGateUnavailable } from '@/features/setup/setup-gate-state'
 import { SetupPage } from '@/features/setup/setup-page'
 import { useInitialSetupStatus } from '@/features/setup/setup-query'
 
-type AppView = 'channels' | 'models' | 'public-models' | 'tokens' | 'usage-logs' | 'overview' | 'login' | 'setup' | 'landing'
+type AppView = 'channels' | 'models' | 'playground' | 'public-models' | 'tokens' | 'usage-logs' | 'overview' | 'login' | 'setup' | 'landing'
 
 // 临时的 hash 视图切换：TanStack Router 接入前，先让公开页与控制台都可访达。
 // 路由落地后此处整体由文件路由替换。
 function viewFromHash(hash: string): AppView {
   if (hash.startsWith('#/console/channels')) return 'channels'
   if (hash.startsWith('#/console/models')) return 'models'
+  if (hash.startsWith('#/console/playground')) return 'playground'
   if (hash.startsWith('#/console/tokens')) return 'tokens'
   if (hash.startsWith('#/console/usage-logs')) return 'usage-logs'
   if (hash.startsWith('#/console')) return 'overview'
@@ -105,24 +107,28 @@ function ManagementEntry({
     ? 'channels.title'
     : view === 'models'
       ? 'models.title'
-    : view === 'tokens'
-      ? 'tokens.title'
-      : view === 'usage-logs'
-        ? 'usageLogs.title'
-        : 'dashboard.title'
+      : view === 'playground'
+        ? 'playground.title'
+        : view === 'tokens'
+          ? 'tokens.title'
+          : view === 'usage-logs'
+            ? 'usageLogs.title'
+            : 'dashboard.title'
   const content = view === 'channels'
     ? <ChannelPage />
     : view === 'models'
       ? <ModelPage authenticated />
-    : view === 'tokens'
-      ? <TokenPage />
-      : view === 'usage-logs'
-        ? <UsageLogPage />
-        : <DashboardPage />
+      : view === 'playground'
+        ? <PlaygroundPage />
+        : view === 'tokens'
+          ? <TokenPage />
+          : view === 'usage-logs'
+            ? <UsageLogPage />
+            : <DashboardPage />
 
   return (
     <SessionBoundary
-      requireAdmin={view !== 'models'}
+      requireAdmin={view !== 'models' && view !== 'playground'}
       onSessionEnded={onLoginRequired}
       onUserHomeRequired={onUserHomeRequired}
     >
