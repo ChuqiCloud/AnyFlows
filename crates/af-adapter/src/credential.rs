@@ -2,6 +2,8 @@ use std::fmt;
 
 use af_domain::CredentialKind;
 use af_httpclient::{HeaderMap, HeaderName, HeaderValue};
+use jsonwebtoken::EncodingKey;
+use zeroize::Zeroize;
 
 use crate::{AdaptorError, AdaptorResult};
 
@@ -13,6 +15,12 @@ pub const MAX_AWS_ACCESS_KEY_ID_BYTES: usize = 128;
 pub const MAX_AWS_SECRET_ACCESS_KEY_BYTES: usize = 4 * 1_024;
 /// AWS 临时会话令牌的内存边界。
 pub const MAX_AWS_SESSION_TOKEN_BYTES: usize = 16 * 1_024;
+/// Google Service Account 客户端邮箱的内存边界。
+pub const MAX_GOOGLE_SERVICE_ACCOUNT_EMAIL_BYTES: usize = 320;
+/// Google Service Account 私钥 ID 的内存边界。
+pub const MAX_GOOGLE_PRIVATE_KEY_ID_BYTES: usize = 128;
+/// Google Service Account RSA 私钥 PEM 的内存边界。
+pub const MAX_GOOGLE_PRIVATE_KEY_BYTES: usize = 16 * 1_024;
 
 /// 清除可能由上一层或前一次认证方案留下的凭据头。
 ///
@@ -57,8 +65,8 @@ pub(crate) fn api_key_or_bearer_header(
 
 /// 已解密但默认脱敏的凭据视图。
 ///
-/// 当前放行 API Key、OAuth access token 与结构化 Bedrock SigV4 凭据。Service
-/// Account 等复杂凭据必须在对应适配器切片中增加专用字段，禁止用不透明字符串占位。
+/// 当前放行 API Key、OAuth access token、结构化 Bedrock SigV4 凭据与 Google
+/// Service Account。复杂凭据必须保留独立字段，禁止用不透明字符串占位。
 /// 本类型不负责读取数据库；凭据解密与租户边界由上层账号模块完成。
 #[derive(Clone, Eq, PartialEq)]
 pub struct Credential {
@@ -70,6 +78,7 @@ enum CredentialValue {
     ApiKey(SecretString),
     Oauth(SecretString),
     Bedrock(BedrockCredential),
+    ServiceAccount(ServiceAccountCredential),
 }
 
 /// AWS Bedrock SigV4 所需的结构化短期或长期凭据。
@@ -78,6 +87,14 @@ struct BedrockCredential {
     access_key_id: SecretString,
     secret_access_key: SecretString,
     session_token: Option<SecretString>,
+}
+
+/// Google OAuth 2.0 JWT bearer 流程所需的结构化 Service Account 凭据。
+#[derive(Clone, Eq, PartialEq)]
+struct ServiceAccountCredential {
+    client_email: SecretString,
+    private_key_id: Option<SecretString>,
+    private_key: SecretString,
 }
 
 /// 不允许通过格式化输出秘密内容的字符串封装。
@@ -97,7 +114,7 @@ impl SecretString {
         Ok(Self(value))
     }
 
-    fn new_aws_component(value: String, max_bytes: usize) -> AdaptorResult<Self> {
+    fn new_ascii_component(value: String, max_bytes: usize) -> AdaptorResult<Self> {
         if value.is_empty()
             || value.len() > max_bytes
             || !value.is_ascii()
@@ -110,8 +127,28 @@ impl SecretString {
         Ok(Self(value))
     }
 
+    fn new_service_account_private_key(value: String) -> AdaptorResult<Self> {
+        if value.is_empty()
+            || value.len() > MAX_GOOGLE_PRIVATE_KEY_BYTES
+            || !value.is_ascii()
+            || value
+                .bytes()
+                .any(|byte| byte.is_ascii_control() && !matches!(byte, b'\r' | b'\n'))
+            || EncodingKey::from_rsa_pem(value.as_bytes()).is_err()
+        {
+            return Err(AdaptorError::InvalidCredential);
+        }
+        Ok(Self(value))
+    }
+
     fn expose(&self) -> &str {
         &self.0
+    }
+}
+
+impl Drop for SecretString {
+    fn drop(&mut self) {
+        self.0.zeroize();
     }
 }
 
@@ -140,19 +177,45 @@ impl Credential {
     ) -> AdaptorResult<Self> {
         Ok(Self {
             value: CredentialValue::Bedrock(BedrockCredential {
-                access_key_id: SecretString::new_aws_component(
+                access_key_id: SecretString::new_ascii_component(
                     access_key_id.into(),
                     MAX_AWS_ACCESS_KEY_ID_BYTES,
                 )?,
-                secret_access_key: SecretString::new_aws_component(
+                secret_access_key: SecretString::new_ascii_component(
                     secret_access_key.into(),
                     MAX_AWS_SECRET_ACCESS_KEY_BYTES,
                 )?,
                 session_token: session_token
                     .map(|value| {
-                        SecretString::new_aws_component(value, MAX_AWS_SESSION_TOKEN_BYTES)
+                        SecretString::new_ascii_component(value, MAX_AWS_SESSION_TOKEN_BYTES)
                     })
                     .transpose()?,
+            }),
+        })
+    }
+
+    /// 构造 Google Service Account 凭据；token endpoint 固定由 Vertex 适配器提供。
+    pub fn service_account(
+        client_email: impl Into<String>,
+        private_key_id: Option<String>,
+        private_key: impl Into<String>,
+    ) -> AdaptorResult<Self> {
+        let client_email = client_email.into();
+        if !is_valid_service_account_email(&client_email) {
+            return Err(AdaptorError::InvalidCredential);
+        }
+        Ok(Self {
+            value: CredentialValue::ServiceAccount(ServiceAccountCredential {
+                client_email: SecretString::new_ascii_component(
+                    client_email,
+                    MAX_GOOGLE_SERVICE_ACCOUNT_EMAIL_BYTES,
+                )?,
+                private_key_id: private_key_id
+                    .map(|value| {
+                        SecretString::new_ascii_component(value, MAX_GOOGLE_PRIVATE_KEY_ID_BYTES)
+                    })
+                    .transpose()?,
+                private_key: SecretString::new_service_account_private_key(private_key.into())?,
             }),
         })
     }
@@ -173,18 +236,20 @@ impl Credential {
             CredentialValue::ApiKey(_) => CredentialKind::ApiKey,
             CredentialValue::Oauth(_) => CredentialKind::Oauth,
             CredentialValue::Bedrock(_) => CredentialKind::Bedrock,
+            CredentialValue::ServiceAccount(_) => CredentialKind::ServiceAccount,
         }
     }
 
-    /// 返回 API/OAuth 载荷或 Bedrock secret access key。
+    /// 返回简单令牌或复杂凭据的主秘密字段。
     ///
-    /// 调用方只应在构造认证头或签名时短暂使用；Bedrock 完整字段必须通过内部
-    /// 结构化访问器读取，不能重新拼成不透明字符串。
+    /// 调用方只应在构造认证头或签名时短暂使用；Bedrock 与 Service Account
+    /// 完整字段必须通过内部结构化访问器读取，不能重新拼成不透明字符串。
     #[must_use]
     pub fn expose_secret(&self) -> &str {
         match &self.value {
             CredentialValue::ApiKey(secret) | CredentialValue::Oauth(secret) => secret.expose(),
             CredentialValue::Bedrock(credential) => credential.secret_access_key.expose(),
+            CredentialValue::ServiceAccount(credential) => credential.private_key.expose(),
         }
     }
 
@@ -196,9 +261,55 @@ impl Credential {
                 credential.secret_access_key.expose(),
                 credential.session_token.as_ref().map(SecretString::expose),
             )),
-            CredentialValue::ApiKey(_) | CredentialValue::Oauth(_) => None,
+            CredentialValue::ApiKey(_)
+            | CredentialValue::Oauth(_)
+            | CredentialValue::ServiceAccount(_) => None,
         }
     }
+
+    /// 返回 Service Account JWT 签名字段；仅适配器内部可短暂读取。
+    pub(crate) fn service_account_parts(&self) -> Option<(&str, Option<&str>, &str)> {
+        match &self.value {
+            CredentialValue::ServiceAccount(credential) => Some((
+                credential.client_email.expose(),
+                credential.private_key_id.as_ref().map(SecretString::expose),
+                credential.private_key.expose(),
+            )),
+            CredentialValue::ApiKey(_)
+            | CredentialValue::Oauth(_)
+            | CredentialValue::Bedrock(_) => None,
+        }
+    }
+}
+
+fn is_valid_service_account_email(value: &str) -> bool {
+    if value.is_empty()
+        || value.len() > MAX_GOOGLE_SERVICE_ACCOUNT_EMAIL_BYTES
+        || value.trim() != value
+        || !value.is_ascii()
+        || value
+            .bytes()
+            .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
+    {
+        return false;
+    }
+    let mut parts = value.split('@');
+    let (Some(local), Some(domain), None) = (parts.next(), parts.next(), parts.next()) else {
+        return false;
+    };
+    !local.is_empty()
+        && local.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'.')
+        })
+        && domain.ends_with(".gserviceaccount.com")
+        && domain.split('.').all(|label| {
+            !label.is_empty()
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        })
 }
 
 impl fmt::Debug for Credential {

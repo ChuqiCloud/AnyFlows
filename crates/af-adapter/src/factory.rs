@@ -4,7 +4,7 @@ use af_domain::ChannelType;
 
 use crate::{
     Adaptor, AdaptorError, AdaptorResult, AnthropicAdaptor, BedrockAdaptor, GeminiAdaptor,
-    OpenAiAdaptor,
+    OpenAiAdaptor, VertexAdaptor,
 };
 
 /// OpenAI 适配器的强类型构造配置。
@@ -136,6 +136,50 @@ impl fmt::Debug for BedrockAdaptorSettings {
     }
 }
 
+/// Google Vertex AI Google Publisher/Gemini 适配器的强类型构造配置。
+///
+/// 项目和 location 在构造阶段完成资源路径及区域端点校验；Service Account 凭据
+/// 仍由每次请求的 [`crate::Credential`] 提供。
+#[derive(Clone, Eq, PartialEq)]
+pub struct VertexAdaptorSettings {
+    project_id: String,
+    location: String,
+    supported_models: Vec<String>,
+}
+
+impl VertexAdaptorSettings {
+    /// 使用显式项目、location 和模型清单创建 Vertex 配置。
+    pub fn new(
+        project_id: impl Into<String>,
+        location: impl Into<String>,
+        supported_models: Vec<String>,
+    ) -> AdaptorResult<Self> {
+        let project_id = project_id.into();
+        let location = location.into();
+        VertexAdaptor::new(project_id.clone(), location.clone())?;
+        Ok(Self {
+            project_id,
+            location,
+            supported_models,
+        })
+    }
+
+    fn into_parts(self) -> (String, String, Vec<String>) {
+        (self.project_id, self.location, self.supported_models)
+    }
+}
+
+impl fmt::Debug for VertexAdaptorSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("VertexAdaptorSettings")
+            .field("project_id", &"<已脱敏>")
+            .field("location", &"<已脱敏>")
+            .field("supported_model_count", &self.supported_models.len())
+            .finish()
+    }
+}
+
 /// 按供应商闭合的适配器构造配置。
 ///
 /// 新渠道只有在对应适配器和专用配置都落地后才能增加变体，禁止用不透明 Map 或
@@ -151,6 +195,8 @@ pub enum AdaptorSettings {
     Gemini(GeminiAdaptorSettings),
     /// Amazon Bedrock Runtime SigV4 渠道配置。
     Bedrock(BedrockAdaptorSettings),
+    /// Google Vertex AI Google Publisher/Gemini 渠道配置。
+    Vertex(VertexAdaptorSettings),
 }
 
 impl fmt::Debug for AdaptorSettings {
@@ -170,6 +216,10 @@ impl fmt::Debug for AdaptorSettings {
                 .finish(),
             Self::Bedrock(settings) => formatter
                 .debug_tuple("AdaptorSettings::Bedrock")
+                .field(settings)
+                .finish(),
+            Self::Vertex(settings) => formatter
+                .debug_tuple("AdaptorSettings::Vertex")
                 .field(settings)
                 .finish(),
         }
@@ -200,14 +250,21 @@ pub fn get_adaptor(
                 region, models,
             )?))
         }
+        (ChannelType::Vertex, AdaptorSettings::Vertex(settings)) => {
+            let (project_id, location, models) = settings.into_parts();
+            Ok(Arc::new(VertexAdaptor::with_supported_models(
+                project_id, location, models,
+            )?))
+        }
         (
             channel_type @ (ChannelType::OpenAi
             | ChannelType::Anthropic
             | ChannelType::Gemini
-            | ChannelType::Bedrock),
+            | ChannelType::Bedrock
+            | ChannelType::Vertex),
             _,
         ) => Err(AdaptorError::InvalidChannelSettings { channel_type }),
-        (channel_type @ (ChannelType::Vertex | ChannelType::Custom), _) => {
+        (channel_type @ ChannelType::Custom, _) => {
             Err(AdaptorError::UnsupportedChannel { channel_type })
         }
     }
@@ -243,6 +300,17 @@ mod tests {
         AdaptorSettings::Bedrock(
             BedrockAdaptorSettings::new(
                 region,
+                models.iter().map(|model| (*model).to_owned()).collect(),
+            )
+            .unwrap(),
+        )
+    }
+
+    fn vertex_settings(project_id: &str, location: &str, models: &[&str]) -> AdaptorSettings {
+        AdaptorSettings::Vertex(
+            VertexAdaptorSettings::new(
+                project_id,
+                location,
                 models.iter().map(|model| (*model).to_owned()).collect(),
             )
             .unwrap(),
@@ -362,6 +430,45 @@ mod tests {
     }
 
     #[test]
+    fn factory_builds_configured_isolated_vertex_instances() {
+        let unrestricted = get_adaptor(
+            ChannelType::Vertex,
+            vertex_settings("vertex-project", "global", &[]),
+        )
+        .unwrap();
+        assert!(unrestricted.supported_models().is_empty());
+
+        let settings = vertex_settings(
+            "vertex-project",
+            "us-central1",
+            &["private-gemini-a", "private-gemini-b"],
+        );
+        let settings_debug = format!("{settings:?}");
+        assert!(settings_debug.contains("supported_model_count: 2"));
+        for private in [
+            "vertex-project",
+            "us-central1",
+            "private-gemini-a",
+            "private-gemini-b",
+        ] {
+            assert!(!settings_debug.contains(private));
+        }
+
+        let configured = get_adaptor(ChannelType::Vertex, settings).unwrap();
+        assert!(!Arc::ptr_eq(&unrestricted, &configured));
+        assert_eq!(configured.channel_type(), ChannelType::Vertex);
+        assert_eq!(configured.default_protocol(), Protocol::Gemini);
+        assert_eq!(
+            configured.default_base_url(),
+            "https://us-central1-aiplatform.googleapis.com"
+        );
+        assert_eq!(
+            configured.supported_models(),
+            ["private-gemini-a", "private-gemini-b"]
+        );
+    }
+
+    #[test]
     fn factory_rejects_mismatched_known_channel_settings_without_leaks() {
         let cases = [
             (
@@ -380,6 +487,10 @@ mod tests {
                 ChannelType::Bedrock,
                 gemini_settings(&["private-gemini-model-for-bedrock"]),
             ),
+            (
+                ChannelType::Vertex,
+                bedrock_settings("us-east-1", &["private-bedrock-model-for-vertex"]),
+            ),
         ];
         for (channel_type, settings) in cases {
             let error = get_adaptor(channel_type, settings)
@@ -390,6 +501,7 @@ mod tests {
             assert!(!rendered.contains("private-anthropic-model"));
             assert!(!rendered.contains("private-gemini-model"));
             assert!(!rendered.contains("private-openai-model"));
+            assert!(!rendered.contains("private-bedrock-model-for-vertex"));
         }
     }
 
@@ -402,6 +514,7 @@ mod tests {
                     | ChannelType::Anthropic
                     | ChannelType::Gemini
                     | ChannelType::Bedrock
+                    | ChannelType::Vertex
             )
         }) {
             let error = get_adaptor(channel_type, openai_settings(&["private-model-canary"]))
