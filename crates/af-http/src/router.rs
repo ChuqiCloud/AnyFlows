@@ -56,6 +56,7 @@ use crate::model_catalog::list_models;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::playground_conversations::build_playground_conversation_router;
 use crate::playground_shares::build_playground_share_router;
+use crate::user_tokens::build_user_token_router;
 use crate::{
     ChatService, QueryApiKeyPolicy, chat_completions::HttpState, chat_completions::chat_completions,
 };
@@ -96,6 +97,7 @@ pub fn build_router(
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     playground_share_service: Arc<dyn PlaygroundShareService>,
     playground_conversation_service: Arc<dyn PlaygroundConversationService>,
+    user_token_service: Arc<dyn af_admin::UserTokenService>,
     initial_setup: Arc<dyn InitialSetup>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
@@ -201,6 +203,10 @@ pub fn build_router(
     );
     let playground_conversation_routes = build_playground_conversation_router(
         playground_conversation_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
+    let user_token_routes = build_user_token_router(
+        user_token_service,
         Arc::clone(&http_state.session_authenticator),
     );
     let management_routes = Router::new()
@@ -310,7 +316,8 @@ pub fn build_router(
         )
         .with_state(http_state)
         .merge(playground_share_routes)
-        .merge(playground_conversation_routes);
+        .merge(playground_conversation_routes)
+        .merge(user_token_routes);
     HttpRouter::new(build_router_with_routes_and_frontend(
         public_routes.merge(management_routes),
         operations_router(readiness),

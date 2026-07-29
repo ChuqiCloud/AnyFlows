@@ -75,12 +75,16 @@ mod scheduler_ability;
 #[cfg(test)]
 mod scheduler_ability_tests;
 mod scheduler_runtime;
+mod token_owner_guard;
 mod usage_log;
 #[cfg(test)]
 mod usage_log_tests;
 mod user_session;
 #[cfg(test)]
 mod user_session_tests;
+mod user_token;
+#[cfg(test)]
+mod user_token_tests;
 
 pub use ability_write::{
     MAX_ADMIN_CHANNEL_ABILITIES, MAX_ADMIN_CHANNEL_GROUPS, MAX_ADMIN_CHANNEL_MODEL_BYTES,
@@ -208,6 +212,12 @@ pub use usage_log::{
 pub use user_session::{
     UserSessionLookupByIdOutcome, UserSessionLookupOutcome, UserSessionRepository,
     UserSessionRepositoryConfigError, UserSessionRepositoryError,
+};
+pub use user_token::{
+    MAX_USER_TOKEN_PAGE_SIZE, MAX_USER_TOKENS_PER_USER, UserTokenCreateRecord,
+    UserTokenDeleteOutcome, UserTokenLookupOutcome, UserTokenMutationOutcome, UserTokenPageRecord,
+    UserTokenRecord, UserTokenRepository, UserTokenRepositoryConfigError, UserTokenRepositoryError,
+    UserTokenWriteRecord,
 };
 
 /// 连接数据库并执行全部待处理迁移。

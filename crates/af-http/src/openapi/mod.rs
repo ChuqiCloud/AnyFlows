@@ -12,6 +12,7 @@ mod session;
 mod setup;
 mod tokens;
 mod usage_logs;
+mod user_tokens;
 mod users;
 
 use utoipa::openapi::{
@@ -31,6 +32,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(models::document());
     document.merge(playground_shares::document());
     document.merge(playground_conversations::document());
+    document.merge(user_tokens::document());
     document.merge(tokens::document());
     document.merge(usage_logs::document());
     document.merge(channels::document());
@@ -45,6 +47,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("模型目录"),
         Tag::new("Playground 分享"),
         Tag::new("Playground 历史"),
+        Tag::new("我的 API Key"),
         Tag::new("令牌管理"),
         Tag::new("用量日志"),
         Tag::new("渠道管理"),
@@ -75,7 +78,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 22);
+        assert_eq!(document.paths.paths.len(), 24);
         let operation_count = document
             .paths
             .paths
@@ -96,7 +99,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 40);
+        assert_eq!(operation_count, 45);
         assert!(
             document
                 .components
@@ -123,12 +126,14 @@ mod tests {
             "createAdminToken",
             "createAdminUser",
             "createPlaygroundShare",
+            "createUserToken",
             "deletePlaygroundConversation",
             "deleteAdminChannel",
             "deleteAdminCredential",
             "deleteAdminGroup",
             "deleteAdminToken",
             "deleteAdminUser",
+            "deleteUserToken",
             "getAdminChannel",
             "getAdminCredential",
             "getAdminDashboard",
@@ -138,6 +143,7 @@ mod tests {
             "getManagementSession",
             "getPlaygroundShare",
             "getPlaygroundConversation",
+            "getUserToken",
             "getInitialSetupStatus",
             "initializeAdminSetup",
             "listAdminChannels",
@@ -148,6 +154,7 @@ mod tests {
             "listAdminUsers",
             "listModels",
             "listPlaygroundConversations",
+            "listUserTokens",
             "loginManagementSession",
             "probeAdminChannel",
             "revokePlaygroundShare",
@@ -157,6 +164,7 @@ mod tests {
             "updateAdminGroup",
             "updateAdminToken",
             "updateAdminUser",
+            "updateUserToken",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -164,7 +172,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 59);
+        assert_eq!(schemas.len(), 64);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
@@ -177,6 +185,19 @@ mod tests {
         assert!(schemas.contains_key("PlaygroundConversationSaveRequest"));
         assert!(schemas.contains_key("PlaygroundConversationListResponse"));
         assert!(schemas.contains_key("PlaygroundConversationResponse"));
+        assert!(schemas.contains_key("UserTokenWriteRequest"));
+        assert!(schemas.contains_key("IssuedUserToken"));
+        assert!(
+            schemas["UserTokenWriteRequest"]["properties"]
+                .as_object()
+                .is_some_and(|properties| {
+                    !properties.contains_key("user_id")
+                        && !properties.contains_key("group_id")
+                        && !properties.contains_key("cross_group_retry")
+                        && !properties.contains_key("rate_limit_5h")
+                        && !properties.contains_key("max_requests")
+                })
+        );
         assert_eq!(
             schemas["PlaygroundShareCreateRequest"]["properties"]["ttl_days"]["enum"],
             serde_json::json!([1, 7, 30])

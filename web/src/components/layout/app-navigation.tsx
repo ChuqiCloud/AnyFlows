@@ -1,4 +1,4 @@
-import { Boxes, Gauge, KeyRound, MessageSquareText, Network, ScrollText } from 'lucide-react'
+import { Boxes, Gauge, KeyRound, MessageSquareText, Network, ScrollText, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
@@ -21,8 +21,9 @@ const navItems = [
   { key: 'overview', icon: Gauge, href: '#/console', adminOnly: true },
   { key: 'models', icon: Boxes, href: '#/console/models', adminOnly: false },
   { key: 'playground', icon: MessageSquareText, href: '#/console/playground', adminOnly: false },
+  { key: 'apiKeys', icon: KeyRound, href: '#/console/api-keys', adminOnly: false },
   { key: 'channels', icon: Network, href: '#/console/channels', adminOnly: true },
-  { key: 'keys', icon: KeyRound, href: '#/console/tokens', adminOnly: true },
+  { key: 'keys', icon: ShieldCheck, href: '#/console/tokens', adminOnly: true },
   { key: 'usage', icon: ScrollText, href: '#/console/usage-logs', adminOnly: true },
 ] as const
 

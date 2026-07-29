@@ -193,6 +193,7 @@ fn map_write_error(error: AdminTokenWriteError) -> ManagementError {
         AdminTokenWriteError::InvalidInput => ManagementError::InvalidRequest,
         AdminTokenWriteError::Forbidden => ManagementError::Forbidden,
         AdminTokenWriteError::NotFound => ManagementError::TokenNotFound,
+        AdminTokenWriteError::LimitReached => ManagementError::TokenLimitReached,
         AdminTokenWriteError::Internal => ManagementError::Internal,
     }
 }

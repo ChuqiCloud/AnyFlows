@@ -6,6 +6,7 @@ import { AppShell } from '@/components/layout/app-shell'
 import { LoginPage, type LoginNotice } from '@/features/auth/login-page'
 import { SessionBoundary } from '@/features/auth/session-boundary'
 import { endManagementSession } from '@/features/auth/session-query'
+import { ApiKeyPage } from '@/features/api-keys/api-key-page'
 import { ChannelPage } from '@/features/channels/channel-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
 import { LandingPage } from '@/features/landing/landing-page'
@@ -92,6 +93,8 @@ function ManagementEntry({
 
   const titleKey = view === 'channels'
     ? 'channels.title'
+    : view === 'api-keys'
+      ? 'apiKeys.title'
     : view === 'models'
       ? 'models.title'
       : view === 'playground'
@@ -103,6 +106,8 @@ function ManagementEntry({
             : 'dashboard.title'
   const content = view === 'channels'
     ? <ChannelPage />
+    : view === 'api-keys'
+      ? <ApiKeyPage />
     : view === 'models'
       ? <ModelPage authenticated />
       : view === 'playground'
@@ -113,9 +118,11 @@ function ManagementEntry({
             ? <UsageLogPage />
             : <DashboardPage />
 
+  const requireAdmin = view !== 'api-keys' && view !== 'models' && view !== 'playground'
+
   return (
     <SessionBoundary
-      requireAdmin={view !== 'models' && view !== 'playground'}
+      requireAdmin={requireAdmin}
       onSessionEnded={onLoginRequired}
       onUserHomeRequired={onUserHomeRequired}
     >

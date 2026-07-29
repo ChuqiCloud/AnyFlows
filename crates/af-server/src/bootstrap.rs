@@ -10,9 +10,9 @@ use af_admin::{
     DatabaseAdminGroupWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
     DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
     DatabaseInitialSetup, DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, InitialSetup, ModelCatalogReader,
-    PlaygroundConversationService, PlaygroundShareService, SessionAuthenticator,
-    SessionAuthenticatorConfigError, TokenAuthenticator,
+    DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, DatabaseUserTokenService,
+    InitialSetup, ModelCatalogReader, PlaygroundConversationService, PlaygroundShareService,
+    SessionAuthenticator, SessionAuthenticatorConfigError, TokenAuthenticator, UserTokenService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -34,7 +34,8 @@ use af_db::{
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, TokenAuthRepository,
     TokenAuthRepositoryConfigError, UsageLogRepository, UserSessionRepository,
-    UserSessionRepositoryConfigError, connect_and_migrate,
+    UserSessionRepositoryConfigError, UserTokenRepository, UserTokenRepositoryConfigError,
+    connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle,
@@ -92,6 +93,7 @@ pub struct AuthenticationReady {
     initial_setup: Arc<dyn InitialSetup>,
     playground_share_service: Arc<dyn PlaygroundShareService>,
     playground_conversation_service: Arc<dyn PlaygroundConversationService>,
+    user_token_service: Arc<dyn UserTokenService>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
     admin_dashboard_reader: Arc<dyn AdminDashboardReader>,
@@ -223,6 +225,9 @@ pub enum BootstrapError {
     /// Playground 私有会话仓储的启动参数无效。
     #[error("Playground 会话历史仓储启动参数无效")]
     PlaygroundConversationRepository(#[source] PlaygroundConversationRepositoryConfigError),
+    /// 普通用户 API Key 仓储的启动参数无效。
+    #[error("用户 API Key 仓储启动参数无效")]
+    UserTokenRepository(#[source] UserTokenRepositoryConfigError),
     /// 管理员用户仓储的启动参数无效。
     #[error("管理员用户仓储启动参数无效")]
     AdminUserRepository(#[source] AdminUserRepositoryConfigError),
@@ -394,6 +399,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::PlaygroundConversationRepository)?;
+        let user_token_repository = UserTokenRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::UserTokenRepository)?;
         let admin_user_repository = AdminUserRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -456,6 +466,7 @@ impl Bootstrap<DatabaseReady> {
                 playground_conversation_service: Arc::new(
                     DatabasePlaygroundConversationService::new(playground_conversation_repository),
                 ),
+                user_token_service: Arc::new(DatabaseUserTokenService::new(user_token_repository)),
                 admin_channel_reader: Arc::new(DatabaseAdminChannelReader::new(
                     admin_channel_repository.clone(),
                 )),
@@ -782,6 +793,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.model_catalog_reader),
             Arc::clone(&self.stage.infrastructure.playground_share_service),
             Arc::clone(&self.stage.infrastructure.playground_conversation_service),
+            Arc::clone(&self.stage.infrastructure.user_token_service),
             Arc::clone(&self.stage.infrastructure.initial_setup),
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_channel_writer),

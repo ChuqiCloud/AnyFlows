@@ -8,8 +8,9 @@
     "overview": "Overview",
     "models": "Models",
     "playground": "Playground",
+    "apiKeys": "API Keys",
     "channels": "Channels",
-    "keys": "Keys",
+    "keys": "Managed keys",
     "usage": "Usage",
     "billing": "Billing",
     "settings": "Settings"
@@ -277,6 +278,137 @@
       "deleteTitle": "Delete channel credential",
       "deleteDescription": "Credential #{{id}} will be permanently removed. This cannot be undone.",
       "deleteFailed": "The credential could not be deleted. Try again shortly."
+    }
+  },
+  "apiKeys": {
+    "title": "API Keys",
+    "subtitle": "Manage your downstream credentials, quota, and access scope. A full key is shown only once after issuance.",
+    "count_one": "{{count}} key, {{active}} currently available",
+    "count_other": "{{count}} keys, {{active}} currently available",
+    "loading": "Loading API keys",
+    "capacity": {
+      "pending": "Loading capacity",
+      "value": "{{count}} / {{capacity}}",
+      "reached": "The key limit has been reached. Existing keys can still be edited or deleted, and deleting one frees a slot."
+    },
+    "columns": {
+      "key": "API key",
+      "quota": "Quota",
+      "policy": "Access scope",
+      "validity": "Validity",
+      "actions": "Actions"
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "expired": "Expired"
+    },
+    "values": {
+      "unlimited": "Unlimited quota",
+      "remaining": "{{value}} remaining",
+      "usedQuota": "{{value}} used",
+      "models_one": "{{count}} model",
+      "models_other": "{{count}} models",
+      "allModels": "All models",
+      "ips_one": "{{count}} IP/CIDR",
+      "ips_other": "{{count}} IP/CIDRs",
+      "allIps": "Any source IP",
+      "neverExpires": "Never expires",
+      "updatedAt": "Updated {{value}}"
+    },
+    "actions": {
+      "create": "Issue key",
+      "edit": "Edit key",
+      "delete": "Delete key",
+      "enable": "Enable key",
+      "disable": "Disable key",
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "loadMore": "Load more",
+      "cancel": "Cancel",
+      "save": "Save changes",
+      "done": "Done"
+    },
+    "empty": {
+      "title": "No API keys yet",
+      "body": "Your first issued key will appear here."
+    },
+    "error": {
+      "title": "API keys could not be loaded",
+      "body": "The service did not return the key list. Try again shortly.",
+      "toggle": "The status update failed. The key remains unchanged."
+    },
+    "editor": {
+      "createTitle": "Issue API key",
+      "createDescription": "Set quota and access scope. The full key is shown once.",
+      "editTitle": "Edit API key",
+      "editDescription": "Change quota and access scope without rotating the key or resetting usage."
+    },
+    "form": {
+      "basic": "Basic settings",
+      "quota": "Independent quota",
+      "policy": "Access scope",
+      "statusHint": "Disabling the key immediately rejects requests that use it.",
+      "expiryHint": "Leave blank for no expiry. Times use this device's time zone.",
+      "unlimitedHint": "Do not apply an additional quota limit to this key.",
+      "quotaHint": "Used only when unlimited quota is off.",
+      "modelsHint": "Leave empty to allow every model available to your group.",
+      "ipsHint": "Add IP or CIDR entries individually. Leave empty for any source.",
+      "submitError": "The key could not be saved. Check the fields and try again.",
+      "limitError": "This account has reached its API key limit."
+    },
+    "fields": {
+      "name": "Name",
+      "status": "Enable key",
+      "expiredAt": "Expiry",
+      "remainQuota": "Remaining quota",
+      "unlimitedQuota": "Unlimited quota",
+      "modelLimits": "Model allowlist",
+      "allowIps": "IP/CIDR allowlist"
+    },
+    "validation": {
+      "field": "Enter a valid name or an in-range integer.",
+      "models": "The model allowlist format or size is invalid.",
+      "ips": "Enter valid IP/CIDR values, up to 64 entries.",
+      "date": "Enter a valid date and time."
+    },
+    "modelSelector": {
+      "title": "Select available models",
+      "description": "Leave the selection empty to allow every available model.",
+      "search": "Search models",
+      "placeholder": "Search by model name",
+      "selectedCount_one": "{{count}} model selected",
+      "selectedCount_other": "{{count}} models selected",
+      "selectedLabel": "Selected models",
+      "unrestricted": "All available models",
+      "loading": "Loading available models",
+      "loadingMore": "Loading",
+      "error": "Models for the current group are unavailable",
+      "empty": "No matching available models",
+      "remove": "Remove model {{model}}"
+    },
+    "ipEditor": {
+      "placeholder": "For example, 203.0.113.8 or 203.0.113.0/24",
+      "add": "Add IP/CIDR",
+      "selected": "Added IP/CIDR entries",
+      "remove": "Remove {{value}}",
+      "invalid": "Enter a valid IP address or CIDR.",
+      "limit": "The IP/CIDR allowlist supports up to 64 entries within the total size limit."
+    },
+    "issued": {
+      "title": "API key issued",
+      "description": "The full key for {{name}} is ready.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyFailed": "Clipboard access failed. Select and copy the key manually.",
+      "warning": "The full key is shown only once. Save it securely before closing this window.",
+      "playground": "Use in Playground",
+      "done": "I have saved it"
+    },
+    "delete": {
+      "title": "Delete API key",
+      "description": "Deleting {{name}} immediately revokes requests that use this key. This action cannot be undone.",
+      "failed": "Deletion failed. The key is still valid. Try again shortly."
     }
   },
   "tokens": {

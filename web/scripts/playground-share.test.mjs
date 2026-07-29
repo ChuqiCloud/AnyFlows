@@ -29,6 +29,7 @@ test('公开分享路由只接受完整的固定格式令牌', () => {
   assert.deepEqual(routeFromHash('#/share/short'), { view: 'share', shareToken: undefined })
   assert.deepEqual(routeFromHash(`#/share/${token}/extra`), { view: 'share', shareToken: undefined })
   assert.deepEqual(routeFromHash('#/console/playground'), { view: 'playground' })
+  assert.deepEqual(routeFromHash('#/console/api-keys'), { view: 'api-keys' })
 })
 
 test('分享快照只保留完成往返且不携带隐藏会话字段', () => {

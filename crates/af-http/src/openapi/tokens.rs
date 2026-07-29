@@ -44,6 +44,7 @@ fn list_admin_tokens() {}
         (status = 400, description = "请求正文无效", body = ManagementErrorBody),
         (status = 401, description = "会话无效", body = ManagementErrorBody),
         (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 409, description = "所属用户的 Key 已达到 32 个", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     ),
     security(("bearerAuth" = []))

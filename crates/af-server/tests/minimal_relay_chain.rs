@@ -33,7 +33,9 @@ use af_admin::{
     PlaygroundShareError, PlaygroundShareReadFuture, PlaygroundShareRevokeFuture,
     PlaygroundShareService, SessionAuthenticationError, SessionAuthenticationFuture,
     SessionAuthenticator, SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture,
-    TokenAuthenticator,
+    TokenAuthenticator, UserTokenCreateFuture, UserTokenDeleteFuture, UserTokenError,
+    UserTokenGetFuture, UserTokenListFuture, UserTokenListQuery, UserTokenService,
+    UserTokenUpdateFuture, UserTokenWriteCommand,
 };
 use af_analytics::{
     AdminDashboardAccess, AdminDashboardReadError, AdminDashboardReadFuture, AdminDashboardReader,
@@ -75,6 +77,7 @@ struct RejectSessions;
 struct RejectModelCatalog;
 struct RejectPlaygroundShares;
 struct RejectPlaygroundConversations;
+struct RejectUserTokens;
 struct RejectInitialSetup;
 struct RejectAdminChannels;
 struct RejectAdminGroups;
@@ -152,6 +155,49 @@ impl PlaygroundConversationService for RejectPlaygroundConversations {
         _conversation_id: String,
     ) -> PlaygroundConversationDeleteFuture<'_> {
         Box::pin(async { Err(PlaygroundConversationError::Internal) })
+    }
+}
+
+impl UserTokenService for RejectUserTokens {
+    fn list(
+        &self,
+        _principal: af_admin::SessionPrincipal,
+        _query: UserTokenListQuery,
+    ) -> UserTokenListFuture<'_> {
+        Box::pin(async { Err(UserTokenError::Internal) })
+    }
+
+    fn get(
+        &self,
+        _principal: af_admin::SessionPrincipal,
+        _token_id: TokenId,
+    ) -> UserTokenGetFuture<'_> {
+        Box::pin(async { Err(UserTokenError::Internal) })
+    }
+
+    fn create(
+        &self,
+        _principal: af_admin::SessionPrincipal,
+        _command: UserTokenWriteCommand,
+    ) -> UserTokenCreateFuture<'_> {
+        Box::pin(async { Err(UserTokenError::Internal) })
+    }
+
+    fn update(
+        &self,
+        _principal: af_admin::SessionPrincipal,
+        _token_id: TokenId,
+        _command: UserTokenWriteCommand,
+    ) -> UserTokenUpdateFuture<'_> {
+        Box::pin(async { Err(UserTokenError::Internal) })
+    }
+
+    fn delete(
+        &self,
+        _principal: af_admin::SessionPrincipal,
+        _token_id: TokenId,
+    ) -> UserTokenDeleteFuture<'_> {
+        Box::pin(async { Err(UserTokenError::Internal) })
     }
 }
 
@@ -737,6 +783,7 @@ async fn start_server(
         Arc::new(RejectModelCatalog),
         Arc::new(RejectPlaygroundShares),
         Arc::new(RejectPlaygroundConversations),
+        Arc::new(RejectUserTokens),
         Arc::new(RejectInitialSetup),
         Arc::new(RejectAdminChannels),
         Arc::new(RejectAdminChannels),

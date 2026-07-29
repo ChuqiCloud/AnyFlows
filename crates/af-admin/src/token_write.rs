@@ -269,6 +269,9 @@ pub enum AdminTokenWriteError {
     /// 令牌不存在或已经软删除。
     #[error("管理令牌不存在")]
     NotFound,
+    /// 用户现有未软删除令牌已经达到统一容量上限。
+    #[error("用户 API Key 数量已达上限")]
+    LimitReached,
     /// 随机数、数据库或持久化状态发生内部故障。
     #[error("管理令牌写入内部失败")]
     Internal,
@@ -410,6 +413,7 @@ fn map_repository_error(error: AdminTokenWriteRepositoryError) -> AdminTokenWrit
     match error {
         AdminTokenWriteRepositoryError::InvalidInput
         | AdminTokenWriteRepositoryError::InvalidReference => AdminTokenWriteError::InvalidInput,
+        AdminTokenWriteRepositoryError::LimitReached => AdminTokenWriteError::LimitReached,
         AdminTokenWriteRepositoryError::Query
         | AdminTokenWriteRepositoryError::Timeout
         | AdminTokenWriteRepositoryError::Invariant => AdminTokenWriteError::Internal,
@@ -425,7 +429,7 @@ fn map_read_error(error: AdminTokenReadError) -> AdminTokenWriteError {
     AdminTokenWriteError::Internal
 }
 
-fn validate_name(name: &str) -> Result<(), AdminTokenWriteError> {
+pub(crate) fn validate_name(name: &str) -> Result<(), AdminTokenWriteError> {
     if name.is_empty()
         || name.len() > 128
         || name.trim() != name
@@ -436,14 +440,16 @@ fn validate_name(name: &str) -> Result<(), AdminTokenWriteError> {
     Ok(())
 }
 
-fn validate_non_negative(value: i64) -> Result<(), AdminTokenWriteError> {
+pub(crate) fn validate_non_negative(value: i64) -> Result<(), AdminTokenWriteError> {
     if value < 0 {
         return Err(AdminTokenWriteError::InvalidInput);
     }
     Ok(())
 }
 
-fn validate_model_limits(model_limits: Option<&[String]>) -> Result<(), AdminTokenWriteError> {
+pub(crate) fn validate_model_limits(
+    model_limits: Option<&[String]>,
+) -> Result<(), AdminTokenWriteError> {
     let Some(model_limits) = model_limits else {
         return Ok(());
     };
@@ -452,7 +458,9 @@ fn validate_model_limits(model_limits: Option<&[String]>) -> Result<(), AdminTok
         .map_err(|_| AdminTokenWriteError::InvalidInput)
 }
 
-fn validate_ip_allowlist(allow_ips: Option<&[String]>) -> Result<(), AdminTokenWriteError> {
+pub(crate) fn validate_ip_allowlist(
+    allow_ips: Option<&[String]>,
+) -> Result<(), AdminTokenWriteError> {
     let Some(allow_ips) = allow_ips else {
         return Ok(());
     };
