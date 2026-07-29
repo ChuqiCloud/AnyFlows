@@ -9,6 +9,7 @@ use std::{
 use af_adapter::{
     Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Bytes, ChannelType, Credential, HeaderMap,
     Method, OpenAiAdaptor, Operation, PooledClient, Protocol, RelayContext, ResponseMode,
+    UpstreamRequest,
 };
 use af_domain::{ChannelId, UpstreamError, UpstreamServerStatus};
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
@@ -29,6 +30,7 @@ struct ProxyResponse {
 enum RejectionStage {
     Credential,
     Url,
+    Finalize,
 }
 
 struct RejectingAdaptor {
@@ -58,7 +60,7 @@ impl Adaptor for RejectingAdaptor {
         target: AdaptorTarget<'_>,
     ) -> AdaptorResult<String> {
         match self.stage {
-            RejectionStage::Credential => {
+            RejectionStage::Credential | RejectionStage::Finalize => {
                 context.append_path(self.default_base_url(), "v1/chat/completions")
             }
             RejectionStage::Url => Err(AdaptorError::UnsupportedOperation {
@@ -75,7 +77,18 @@ impl Adaptor for RejectingAdaptor {
     ) -> AdaptorResult<()> {
         match self.stage {
             RejectionStage::Credential => Err(AdaptorError::InvalidHeader),
-            RejectionStage::Url => Ok(()),
+            RejectionStage::Url | RejectionStage::Finalize => Ok(()),
+        }
+    }
+
+    fn finalize_request(
+        &self,
+        request: UpstreamRequest,
+        _credential: &Credential,
+    ) -> AdaptorResult<UpstreamRequest> {
+        match self.stage {
+            RejectionStage::Finalize => Err(AdaptorError::RequestSigning),
+            RejectionStage::Credential | RejectionStage::Url => Ok(request),
         }
     }
 }
@@ -340,7 +353,7 @@ async fn does_not_retry_client_bad_request() {
 }
 
 #[tokio::test]
-async fn credential_and_url_failures_fall_through_to_next_candidate() {
+async fn credential_url_and_finalization_failures_fall_through_to_next_candidate() {
     let (address, server) = spawn_proxy(vec![ProxyResponse {
         status_line: "200 OK",
         body: br#"{"ok":true}"#,
@@ -364,15 +377,25 @@ async fn credential_and_url_failures_fall_through_to_next_candidate() {
             .unwrap(),
         Credential::api_key("credential-secret").unwrap(),
     );
+    let rejecting_finalization = RelayCandidate::new(
+        Arc::new(RejectingAdaptor {
+            stage: RejectionStage::Finalize,
+        }),
+        RelayContext::new(client.clone())
+            .with_base_url("http://finalization.invalid")
+            .unwrap(),
+        Credential::api_key("credential-secret").unwrap(),
+    );
     let machine = RelayStateMachine::new(vec![
         rejecting_credential,
         rejecting_url,
+        rejecting_finalization,
         candidate(&client, "http://fallback.invalid", &[TEST_MODEL]),
     ])
     .unwrap();
 
     let response = machine.execute(request()).await.unwrap();
-    assert_eq!(response.attempts().get(), 3);
+    assert_eq!(response.attempts().get(), 4);
     server.join().unwrap();
 }
 

@@ -4,6 +4,7 @@
 
 mod adaptor;
 mod anthropic;
+mod bedrock;
 mod context;
 mod credential;
 mod error;
@@ -14,12 +15,16 @@ mod request;
 
 pub use adaptor::{Adaptor, AdaptorSendExt, AdaptorTarget};
 pub use anthropic::AnthropicAdaptor;
+pub use bedrock::{BedrockAdaptor, MAX_AWS_REGION_BYTES, MAX_BEDROCK_MODEL_ID_BYTES};
 pub use context::{MAX_REQUEST_ID_BYTES, MAX_UPSTREAM_BASE_URL_BYTES, RelayContext};
-pub use credential::{Credential, MAX_CREDENTIAL_SECRET_BYTES};
+pub use credential::{
+    Credential, MAX_AWS_ACCESS_KEY_ID_BYTES, MAX_AWS_SECRET_ACCESS_KEY_BYTES,
+    MAX_AWS_SESSION_TOKEN_BYTES, MAX_CREDENTIAL_SECRET_BYTES,
+};
 pub use error::{AdaptorError, AdaptorResult, AdaptorTransportError};
 pub use factory::{
-    AdaptorSettings, AnthropicAdaptorSettings, GeminiAdaptorSettings, OpenAiAdaptorSettings,
-    get_adaptor,
+    AdaptorSettings, AnthropicAdaptorSettings, BedrockAdaptorSettings, GeminiAdaptorSettings,
+    OpenAiAdaptorSettings, get_adaptor,
 };
 pub use gemini::GeminiAdaptor;
 pub use openai::OpenAiAdaptor;
