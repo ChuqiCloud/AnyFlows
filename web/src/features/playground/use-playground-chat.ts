@@ -21,7 +21,7 @@ export function usePlaygroundChat(settings: PlaygroundGenerationSettings) {
   const [requestState, setRequestState] = useState<PlaygroundRequestState>('idle')
   const [errorKind, setErrorKind] = useState<PlaygroundErrorKind>()
   const [usage, setUsage] = useState<PlaygroundUsage>()
-  const controllerRef = useRef<AbortController>()
+  const controllerRef = useRef<AbortController | undefined>(undefined)
   const requestSequenceRef = useRef(0)
 
   const stop = useCallback(() => {
