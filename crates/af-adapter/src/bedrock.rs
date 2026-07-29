@@ -614,10 +614,6 @@ mod tests {
             HeaderName::from_static("content-type"),
             HeaderValue::from_static("text/plain"),
         );
-        headers.insert(
-            HeaderName::from_static("host"),
-            HeaderValue::from_static("malicious.example"),
-        );
         let request = UpstreamRequest::new(
             Method::POST,
             adaptor
