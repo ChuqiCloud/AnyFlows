@@ -53,6 +53,7 @@ name = "af-admin"
 version = "0.1.0"
 dependencies = [
  "af-account",
+ "af-config",
  "af-db",
  "af-domain",
  "base64 0.22.1",
@@ -153,15 +154,18 @@ dependencies = [
 name = "af-http"
 version = "0.1.0"
 dependencies = [
+ "af-account",
  "af-admin",
  "af-analytics",
  "af-config",
+ "af-db",
  "af-domain",
  "af-protocol",
  "af-relay",
  "af-telemetry",
  "axum",
  "axum-server",
+ "base64 0.22.1",
  "futures-core",
  "futures-util",
  "http 1.4.2",
