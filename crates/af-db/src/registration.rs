@@ -365,11 +365,7 @@ impl RegistrationRepository {
             created_at: Set(now),
             updated_at: Set(now),
         })
-        .on_conflict(
-            OnConflict::column(registration_rate_limits::Column::IpFingerprint)
-                .do_nothing()
-                .to_owned(),
-        )
+        .on_conflict(registration_attempt_on_conflict())
         .exec_without_returning(&transaction)
         .with_subscriber(NoSubscriber::default())
         .await
@@ -405,6 +401,13 @@ impl RegistrationRepository {
             )),
         }
     }
+}
+
+fn registration_attempt_on_conflict() -> OnConflict {
+    OnConflict::column(registration_rate_limits::Column::IpFingerprint)
+        // SeaQuery 的无参数 do_nothing 会生成 MySQL 不支持的 ON DUPLICATE KEY IGNORE。
+        .do_nothing_on([registration_rate_limits::Column::IpFingerprint])
+        .to_owned()
 }
 
 fn claim_attempt_update(
@@ -640,6 +643,23 @@ mod sql_tests {
     use sea_orm::sea_query::MysqlQueryBuilder;
 
     use super::*;
+
+    #[test]
+    fn mysql_attempt_insert_uses_supported_duplicate_key_noop() {
+        let statement = Query::insert()
+            .into_table(registration_rate_limits::Entity)
+            .columns([registration_rate_limits::Column::IpFingerprint])
+            .values_panic(["11".repeat(32).into()])
+            .on_conflict(registration_attempt_on_conflict())
+            .to_owned()
+            .to_string(MysqlQueryBuilder);
+
+        assert!(
+            statement.contains("ON DUPLICATE KEY UPDATE `ip_fingerprint` = `ip_fingerprint`"),
+            "{statement}"
+        );
+        assert!(!statement.contains("IGNORE"), "{statement}");
+    }
 
     #[test]
     fn mysql_attempt_update_keeps_counter_assignment_before_window_assignment() {
