@@ -18,7 +18,8 @@ use serde_json::{Value, json};
 use support::{
     CLIENT_KEY, GROUP_ID, IO_TIMEOUT, RUNTIME_HEADER_NAME, RUNTIME_HEADER_VALUE, UPSTREAM_BASE_URL,
     UPSTREAM_KEY, UPSTREAM_MODEL, credential_encryption_key, seed_anthropic_runtime_channel_with,
-    send_request, spawn_delayed_proxy, spawn_proxy, spawn_streaming_proxy,
+    send_request, send_request_with_timeout, spawn_delayed_proxy, spawn_proxy,
+    spawn_streaming_proxy,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -278,12 +279,13 @@ async fn live_native_anthropic_runtime() {
     seed_database(&database, &base_url, &upstream_model, &api_key, Some(60)).await;
     let (address, shutdown, server) = start_gateway(&database, &proxy_url).await;
 
-    let response = send_request(
+    let response = send_request_with_timeout(
         address,
         "POST",
         "/v1/messages",
         br#"{"model":"test-model","max_tokens":4,"messages":[{"role":"user","content":"Reply with OK."}]}"#,
         &[("Content-Type", "application/json"), ("x-api-key", CLIENT_KEY)],
+        Duration::from_secs(75),
     )
     .await;
     stop_gateway(shutdown, server).await;

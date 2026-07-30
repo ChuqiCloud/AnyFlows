@@ -252,6 +252,18 @@ pub async fn send_request(
     body: &[u8],
     headers: &[(&str, &str)],
 ) -> RawResponse {
+    send_request_with_timeout(address, method, path, body, headers, IO_TIMEOUT).await
+}
+
+/// 发送一次原始 HTTP 请求，并允许真实供应商联调使用更长的响应等待上限。
+pub async fn send_request_with_timeout(
+    address: SocketAddr,
+    method: &str,
+    path: &str,
+    body: &[u8],
+    headers: &[(&str, &str)],
+    response_timeout: Duration,
+) -> RawResponse {
     let deadline = Instant::now() + IO_TIMEOUT;
     let mut stream = loop {
         match TcpStream::connect(address).await {
@@ -281,7 +293,7 @@ pub async fn send_request(
     stream.write_all(body).await.unwrap();
 
     let mut bytes = Vec::new();
-    timeout(IO_TIMEOUT, stream.read_to_end(&mut bytes))
+    timeout(response_timeout, stream.read_to_end(&mut bytes))
         .await
         .unwrap()
         .unwrap();
