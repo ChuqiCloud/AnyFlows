@@ -58,6 +58,56 @@ pub struct AdminEmailSettings {
 }
 
 impl AdminEmailSettings {
+    /// 为替代应用服务实现构造经过校验的脱敏设置投影。
+    #[allow(clippy::too_many_arguments, reason = "字段与 SMTP 设置投影一一对应")]
+    pub fn new(
+        enabled: bool,
+        host: String,
+        port: u16,
+        tls_mode: AdminEmailTlsMode,
+        username: Option<String>,
+        password_configured: bool,
+        from_address: String,
+        from_name: Option<String>,
+        reply_to: Option<String>,
+        timeout_seconds: u16,
+        version: i64,
+    ) -> Result<Self, AdminEmailSettingsError> {
+        let username = normalize_optional(username);
+        let from_name = normalize_optional(from_name);
+        let reply_to = normalize_optional(reply_to);
+        if port == 0
+            || version <= 0
+            || !(MIN_TIMEOUT_SECONDS..=MAX_TIMEOUT_SECONDS).contains(&timeout_seconds)
+            || (!host.is_empty() && !is_valid_host(&host))
+            || (!from_address.is_empty() && !is_valid_email_address(&from_address))
+            || !valid_optional_text(username.as_deref(), MAX_EMAIL_BYTES)
+            || !valid_optional_text(from_name.as_deref(), MAX_FROM_NAME_BYTES)
+            || reply_to
+                .as_deref()
+                .is_some_and(|value| !is_valid_email_address(value))
+            || (enabled && (host.is_empty() || from_address.is_empty()))
+            || username.is_some() != password_configured
+        {
+            return Err(AdminEmailSettingsError::InvalidInput);
+        }
+        let delivery_ready = enabled && !host.is_empty() && !from_address.is_empty();
+        Ok(Self {
+            enabled,
+            host,
+            port,
+            tls_mode,
+            username,
+            password_configured,
+            from_address,
+            from_name,
+            reply_to,
+            timeout_seconds,
+            version,
+            delivery_ready,
+        })
+    }
+
     #[must_use]
     pub const fn enabled(&self) -> bool {
         self.enabled

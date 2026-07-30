@@ -1,17 +1,20 @@
-use std::{error::Error, sync::Arc, time::Duration};
-
-use af_account::SystemSecretCipher;
-use af_admin::{
-    DatabaseAdminEmailSettingsService, EmailDelivery, EmailDeliveryError, EmailDeliveryFuture,
-    EmailDeliveryRequest, LoginCredentials, SessionAuthentication, SessionAuthenticationError,
-    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
-    SessionRole,
+use std::{
+    error::Error,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering},
+    },
 };
-use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
-use af_db::{DatabaseOptions, EmailSettingsRepository, MigrationOptions};
+
+use af_admin::{
+    AdminEmailSettings, AdminEmailSettingsCommand, AdminEmailSettingsError,
+    AdminEmailSettingsReadFuture, AdminEmailSettingsService, AdminEmailSettingsUpdateFuture,
+    AdminEmailTestCommand, AdminEmailTestFuture, AdminEmailTlsMode, LoginCredentials,
+    SessionAuthentication, SessionAuthenticationError, SessionAuthenticationFuture,
+    SessionAuthenticator, SessionLoginFuture, SessionPrincipal, SessionRole,
+};
 use af_domain::{GroupId, UserId};
 use axum::body::{Body, to_bytes};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use http::{
     Request, StatusCode,
     header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE},
@@ -26,42 +29,66 @@ const ADMIN_TOKEN: &str = "email-admin-token";
 const USER_TOKEN: &str = "email-user-token";
 const SMTP_PASSWORD: &str = "private smtp password";
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct ObservedTestMail {
-    recipient: String,
-    username: Option<String>,
-    password: Option<String>,
+struct FakeEmailSettingsService {
+    configured: AtomicBool,
+    version: AtomicI64,
+    result: Mutex<Result<(), AdminEmailSettingsError>>,
+    test_calls: AtomicUsize,
 }
 
-struct MutableDelivery {
-    result: Mutex<Result<(), EmailDeliveryError>>,
-    requests: Mutex<Vec<ObservedTestMail>>,
-}
-
-impl MutableDelivery {
+impl FakeEmailSettingsService {
     fn new() -> Self {
         Self {
+            configured: AtomicBool::new(false),
+            version: AtomicI64::new(1),
             result: Mutex::new(Ok(())),
-            requests: Mutex::new(Vec::new()),
+            test_calls: AtomicUsize::new(0),
         }
     }
 
     fn fail(&self) {
-        *self.result.lock().unwrap() = Err(EmailDeliveryError::Failed);
+        *self.result.lock().unwrap() = Err(AdminEmailSettingsError::DeliveryFailed);
     }
 
-    fn requests(&self) -> Vec<ObservedTestMail> {
-        self.requests.lock().unwrap().clone()
+    fn test_calls(&self) -> usize {
+        self.test_calls.load(Ordering::SeqCst)
+    }
+
+    fn snapshot(&self) -> AdminEmailSettings {
+        let version = self.version.load(Ordering::SeqCst);
+        if self.configured.load(Ordering::SeqCst) {
+            configured_settings(version)
+        } else {
+            disabled_settings(version)
+        }
     }
 }
 
-impl EmailDelivery for MutableDelivery {
-    fn send_test<'a>(&'a self, request: EmailDeliveryRequest) -> EmailDeliveryFuture<'a> {
-        self.requests.lock().unwrap().push(ObservedTestMail {
-            recipient: request.recipient().to_owned(),
-            username: request.username().map(str::to_owned),
-            password: request.password().map(str::to_owned),
-        });
+impl AdminEmailSettingsService for FakeEmailSettingsService {
+    fn settings<'a>(&'a self, _principal: SessionPrincipal) -> AdminEmailSettingsReadFuture<'a> {
+        let settings = self.snapshot();
+        Box::pin(async move { Ok(settings) })
+    }
+
+    fn update<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: AdminEmailSettingsCommand,
+    ) -> AdminEmailSettingsUpdateFuture<'a> {
+        self.configured.store(true, Ordering::SeqCst);
+        let version = self.version.fetch_add(1, Ordering::SeqCst) + 1;
+        Box::pin(async move { Ok(configured_settings(version)) })
+    }
+
+    fn send_test<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: AdminEmailTestCommand,
+    ) -> AdminEmailTestFuture<'a> {
+        if !self.configured.load(Ordering::SeqCst) {
+            return Box::pin(async { Err(AdminEmailSettingsError::NotConfigured) });
+        }
+        self.test_calls.fetch_add(1, Ordering::SeqCst);
         let result = *self.result.lock().unwrap();
         Box::pin(async move { result })
     }
@@ -100,36 +127,49 @@ impl SessionAuthenticator for FakeSessionAuthenticator {
     }
 }
 
-async fn fixture()
--> Result<(af_db::DatabasePool, Arc<MutableDelivery>, axum::Router), Box<dyn Error>> {
-    let pool = af_db::connect_and_migrate(
-        &DatabaseOptions::new("sqlite::memory:")?,
-        MigrationOptions::default(),
-    )
-    .await?;
-    let repository = EmailSettingsRepository::new(pool.clone(), Duration::from_secs(5))?;
-    let delivery = Arc::new(MutableDelivery::new());
-    let service = Arc::new(DatabaseAdminEmailSettingsService::new(
-        repository,
-        cipher(),
-        delivery.clone(),
-    ));
-    let router = build_email_settings_router(service, Arc::new(FakeSessionAuthenticator));
-    Ok((pool, delivery, router))
+fn fixture() -> (Arc<FakeEmailSettingsService>, axum::Router) {
+    let service = Arc::new(FakeEmailSettingsService::new());
+    let router = build_email_settings_router(service.clone(), Arc::new(FakeSessionAuthenticator));
+    (service, router)
 }
 
-fn cipher() -> SystemSecretCipher {
-    let settings: CredentialEncryptionSettings = serde_json::from_value(json!({
-        "key_id": "email-http-test-key",
-        "key": URL_SAFE_NO_PAD.encode([0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES])
-    }))
-    .unwrap();
-    SystemSecretCipher::new(&settings).unwrap()
+fn disabled_settings(version: i64) -> AdminEmailSettings {
+    AdminEmailSettings::new(
+        false,
+        String::new(),
+        587,
+        AdminEmailTlsMode::StartTls,
+        None,
+        false,
+        String::new(),
+        None,
+        None,
+        15,
+        version,
+    )
+    .unwrap()
+}
+
+fn configured_settings(version: i64) -> AdminEmailSettings {
+    AdminEmailSettings::new(
+        true,
+        "smtp.example.com".to_owned(),
+        587,
+        AdminEmailTlsMode::StartTls,
+        Some("mailer@example.com".to_owned()),
+        true,
+        "from@example.com".to_owned(),
+        Some("AnyFlows".to_owned()),
+        Some("reply@example.com".to_owned()),
+        15,
+        version,
+    )
+    .unwrap()
 }
 
 #[tokio::test]
 async fn admin_can_update_read_and_test_email_without_secret_echo() -> Result<(), Box<dyn Error>> {
-    let (pool, delivery, app) = fixture().await?;
+    let (service, app) = fixture();
 
     let initial = app
         .clone()
@@ -186,24 +226,14 @@ async fn admin_can_update_read_and_test_email_without_secret_echo() -> Result<()
     assert_eq!(tested.status(), StatusCode::NO_CONTENT);
     assert_eq!(tested.headers()[CACHE_CONTROL], "no-store");
     assert!(to_bytes(tested.into_body(), 1024).await?.is_empty());
-    assert_eq!(
-        delivery.requests(),
-        vec![ObservedTestMail {
-            recipient: "recipient@example.com".to_owned(),
-            username: Some("mailer@example.com".to_owned()),
-            password: Some(SMTP_PASSWORD.to_owned()),
-        }]
-    );
-
-    drop(app);
-    pool.close().await?;
+    assert_eq!(service.test_calls(), 1);
     Ok(())
 }
 
 #[tokio::test]
 async fn authentication_and_delivery_errors_use_stable_sanitized_codes()
 -> Result<(), Box<dyn Error>> {
-    let (pool, delivery, app) = fixture().await?;
+    let (service, app) = fixture();
 
     let unauthorized = app
         .clone()
@@ -263,7 +293,7 @@ async fn authentication_and_delivery_errors_use_stable_sanitized_codes()
             Some(ADMIN_TOKEN),
         ))
         .await?;
-    delivery.fail();
+    service.fail();
     let failed = app
         .clone()
         .oneshot(json_request(
@@ -280,8 +310,6 @@ async fn authentication_and_delivery_errors_use_stable_sanitized_codes()
     assert!(!rendered.contains("private-recipient"));
     assert!(!rendered.contains(SMTP_PASSWORD));
 
-    drop(app);
-    pool.close().await?;
     Ok(())
 }
 
