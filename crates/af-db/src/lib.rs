@@ -81,6 +81,9 @@ mod scheduler_ability;
 #[cfg(test)]
 mod scheduler_ability_tests;
 mod scheduler_runtime;
+mod site_settings;
+#[cfg(test)]
+mod site_settings_tests;
 mod token_owner_guard;
 mod usage_log;
 #[cfg(test)]
@@ -222,6 +225,10 @@ pub use scheduler_runtime::{
     SchedulerRuntimeCredentialRecord, SchedulerRuntimeHeader, SchedulerRuntimeRecord,
     SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
     SchedulerRuntimeTargetRecordError, validate_channel_header_overrides,
+};
+pub use site_settings::{
+    SiteSettingsRecord, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
+    SiteSettingsRepositoryError, SiteSettingsWriteRecord,
 };
 pub use usage_log::{
     UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics,

@@ -22,10 +22,10 @@ use crate::entity::{
     BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
     EncryptedJson, HeaderOverrides, PasswordHash, PlaygroundConversationKey, SensitiveDecimal,
     SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, abilities,
-    billing_batch_checkpoints, billing_reservations, channel_groups, channel_models, channels,
-    credentials, email_settings, group_model_ratios, groups, model_prices, options,
-    playground_conversations, playground_shares, registration_rate_limits, tokens, usage_logs,
-    users,
+    authentication_settings, billing_batch_checkpoints, billing_reservations, channel_groups,
+    channel_models, channels, credentials, email_settings, group_model_ratios, groups,
+    model_prices, options, playground_conversations, playground_shares, registration_rate_limits,
+    site_settings, tokens, usage_logs, users,
 };
 use crate::{
     AdminDashboardRepository, BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome,
@@ -34,17 +34,18 @@ use crate::{
     ModelPriceBillingMode, ModelPriceRepository, PlaygroundConversationRepository,
     PlaygroundConversationWrite, PlaygroundShareRepository, PlaygroundShareWrite, PoolOptions,
     QuotaMutationOutcome, QuotaRepository, QuotaReservationStatus, RegistrationAttemptOutcome,
-    RegistrationPolicyWriteRecord, RegistrationRepository, TokenAuthLookup, TokenAuthLookupOutcome,
-    TokenAuthRepository, TokenBillingWrite, UsageLogBillingMode, UsageLogRepository,
-    UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogWrite,
-    UsageLogWriteOutcome, UserBillingWrite, connect,
+    RegistrationPolicyWriteRecord, RegistrationRepository, SiteSettingsRepository,
+    SiteSettingsWriteRecord, TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository,
+    TokenBillingWrite, UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError,
+    UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogWrite, UsageLogWriteOutcome,
+    UserBillingWrite, connect,
 };
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量；列变更不会增加核心表数量。
-const EXPECTED_MIGRATION_COUNT: usize = 19;
+const EXPECTED_MIGRATION_COUNT: usize = 20;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -58,7 +59,7 @@ const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
 const PLAYGROUND_CONVERSATION_KEY: &str = "55555555555555555555555555555555";
-const CORE_TABLES: [&str; 18] = [
+const CORE_TABLES: [&str; 20] = [
     "groups",
     "users",
     "channels",
@@ -77,6 +78,8 @@ const CORE_TABLES: [&str; 18] = [
     "playground_conversations",
     "registration_rate_limits",
     "email_settings",
+    "site_settings",
+    "authentication_settings",
 ];
 
 struct SlowMigrator;
@@ -106,6 +109,53 @@ async fn standard_startup_installs_core_schema() -> Result<(), Box<dyn Error>> {
 
     assert!(manager.has_table("seaql_migrations").await?);
     assert!(manager.has_table("users").await?);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn site_authentication_migration_moves_legacy_registration_policy()
+-> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), Some(19)).await?;
+    let group = group_active_model("legacy-registration", "旧注册分组")
+        .insert(pool.connection())
+        .await?;
+    option_active_model(
+        "system.registration.policy.v1",
+        &serde_json::json!({
+            "version": 1,
+            "enabled": true,
+            "default_group_id": group.id,
+            "initial_quota": 250,
+            "email_required": true,
+            "rate_limit_attempts": 7,
+            "rate_limit_window_seconds": 1800
+        })
+        .to_string(),
+    )
+    .insert(pool.connection())
+    .await?;
+
+    Migrator::up(pool.connection(), None).await?;
+    let settings = authentication_settings::Entity::find_by_id(1)
+        .one(pool.connection())
+        .await?
+        .expect("认证设置固定记录必须存在");
+    assert!(settings.password_login_enabled);
+    assert!(settings.registration_enabled);
+    assert_eq!(settings.registration_default_group_id, Some(group.id));
+    assert_eq!(settings.registration_initial_quota, 250);
+    assert!(settings.registration_email_required);
+    assert_eq!(settings.registration_rate_limit_attempts, 7);
+    assert_eq!(settings.registration_rate_limit_window_seconds, 1_800);
+    assert!(
+        options::Entity::find_by_id("system.registration.policy.v1".to_owned())
+            .one(pool.connection())
+            .await?
+            .is_none()
+    );
+
     pool.close().await?;
     Ok(())
 }
@@ -274,6 +324,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     exercise_playground_share_repository(&pool).await?;
     exercise_playground_conversation_repository(&pool).await?;
     exercise_registration_repository(&pool).await?;
+    exercise_site_settings_repository(&pool).await?;
     exercise_email_settings_repository(&pool).await?;
     exercise_admin_dashboard_repository(&pool).await?;
     exercise_core_schema(pool.connection()).await?;
@@ -1121,7 +1172,7 @@ async fn exercise_registration_repository(pool: &DatabasePool) -> Result<(), Box
     let repository = RegistrationRepository::new(pool.clone(), Duration::from_secs(5))?;
     repository
         .update_policy(RegistrationPolicyWriteRecord::new(
-            true, group_id, 100, true, 1, 60,
+            true, true, group_id, 100, true, 1, 60,
         ))
         .await
         .expect("注册冒烟必须成功写入策略");
@@ -1145,12 +1196,43 @@ async fn exercise_registration_repository(pool: &DatabasePool) -> Result<(), Box
     registration_rate_limits::Entity::delete_many()
         .exec(pool.connection())
         .await?;
-    options::Entity::delete_by_id("system.registration.policy.v1".to_owned())
-        .exec(pool.connection())
-        .await?;
+    authentication_settings::ActiveModel {
+        id: Set(1),
+        password_login_enabled: Set(true),
+        registration_enabled: Set(false),
+        registration_default_group_id: Set(None),
+        registration_initial_quota: Set(0),
+        registration_email_required: Set(false),
+        registration_rate_limit_attempts: Set(5),
+        registration_rate_limit_window_seconds: Set(3_600),
+        ..Default::default()
+    }
+    .update(pool.connection())
+    .await?;
     groups::Entity::delete_by_id(group.id)
         .exec(pool.connection())
         .await?;
+    Ok(())
+}
+
+/// 在三方言真实事务中验证站点固定记录和单调版本。
+async fn exercise_site_settings_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let repository = SiteSettingsRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let initial = repository.settings().await?;
+    assert_eq!(initial.site_name(), "AnyFlows");
+    assert_eq!(initial.version(), 1);
+
+    let saved = repository
+        .update(SiteSettingsWriteRecord::new(
+            "AnyFlows Smoke".to_owned(),
+            Some("https://example.com/gateway".to_owned()),
+            Some("/brand.svg".to_owned()),
+            Some("统一访问模型".to_owned()),
+            Some("三方言站点设置冒烟。".to_owned()),
+        ))
+        .await?;
+    assert_eq!(saved.version(), 2);
+    assert_eq!(saved.site_name(), "AnyFlows Smoke");
     Ok(())
 }
 
@@ -1246,6 +1328,9 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<registration_rate_limits::Column>(&manager, "registration_rate_limits")
         .await?;
     assert_entity_columns::<email_settings::Column>(&manager, "email_settings").await?;
+    assert_entity_columns::<site_settings::Column>(&manager, "site_settings").await?;
+    assert_entity_columns::<authentication_settings::Column>(&manager, "authentication_settings")
+        .await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -1335,6 +1420,7 @@ async fn assert_updated_at_behaviors(connection: &DatabaseConnection) -> Result<
     }
 
     assert_behavior!(abilities::ActiveModel);
+    assert_behavior!(authentication_settings::ActiveModel);
     assert_behavior!(billing_batch_checkpoints::ActiveModel);
     assert_behavior!(billing_reservations::ActiveModel);
     assert_behavior!(channel_groups::ActiveModel);
@@ -1345,6 +1431,7 @@ async fn assert_updated_at_behaviors(connection: &DatabaseConnection) -> Result<
     assert_behavior!(groups::ActiveModel);
     assert_behavior!(options::ActiveModel);
     assert_behavior!(registration_rate_limits::ActiveModel);
+    assert_behavior!(site_settings::ActiveModel);
     assert_behavior!(email_settings::ActiveModel);
     assert_behavior!(tokens::ActiveModel);
     assert_behavior!(users::ActiveModel);

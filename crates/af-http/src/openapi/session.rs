@@ -20,6 +20,7 @@ use crate::{
         (status = 200, description = "登录成功", body = LoginResponse),
         (status = 400, description = "请求正文无效", body = ManagementErrorBody),
         (status = 401, description = "用户名或密码错误", body = ManagementErrorBody),
+        (status = 403, description = "用户名密码登录已关闭", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     )
 )]

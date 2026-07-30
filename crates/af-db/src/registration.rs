@@ -2,24 +2,21 @@ use std::{fmt, time::Duration};
 
 use af_domain::GroupId;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseTransaction, DbErr, EntityTrait, QueryFilter, QueryOrder,
-    Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
+    EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
-    sea_query::{Expr, OnConflict, Query, UpdateStatement},
+    sea_query::{Expr, LockType, OnConflict, Query, UpdateStatement},
 };
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool,
-    entity::{SensitiveString, groups, options, registration_rate_limits},
+    entity::{authentication_settings, groups, registration_rate_limits},
 };
 
-const REGISTRATION_POLICY_KEY: &str = "system.registration.policy.v1";
-const REGISTRATION_POLICY_VERSION: u8 = 1;
-const MAX_REGISTRATION_POLICY_BYTES: usize = 2_048;
+const AUTHENTICATION_SETTINGS_ID: i16 = 1;
 
 /// 缺省注册限流允许的窗口内尝试次数。
 pub const DEFAULT_REGISTRATION_RATE_LIMIT_ATTEMPTS: u32 = 5;
@@ -35,11 +32,18 @@ pub const MAX_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS: u64 = 86_400;
 /// 可公开读取的注册能力状态，不暴露默认分组、额度或限流细节。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RegistrationStatusRecord {
+    password_login_enabled: bool,
     enabled: bool,
     email_required: bool,
 }
 
 impl RegistrationStatusRecord {
+    /// 返回用户名密码登录是否可用。
+    #[must_use]
+    pub const fn password_login_enabled(self) -> bool {
+        self.password_login_enabled
+    }
+
     /// 返回是否允许公开创建普通用户。
     #[must_use]
     pub const fn enabled(self) -> bool {
@@ -56,15 +60,23 @@ impl RegistrationStatusRecord {
 /// 已完成持久化校验的注册策略快照。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RegistrationPolicyRecord {
+    password_login_enabled: bool,
     enabled: bool,
     default_group_id: GroupId,
     initial_quota: i64,
     email_required: bool,
     rate_limit_attempts: u32,
     rate_limit_window_seconds: u64,
+    version: i64,
 }
 
 impl RegistrationPolicyRecord {
+    /// 返回用户名密码登录是否可用。
+    #[must_use]
+    pub const fn password_login_enabled(self) -> bool {
+        self.password_login_enabled
+    }
+
     /// 返回是否允许公开注册。
     #[must_use]
     pub const fn enabled(self) -> bool {
@@ -100,11 +112,18 @@ impl RegistrationPolicyRecord {
     pub const fn rate_limit_window_seconds(self) -> u64 {
         self.rate_limit_window_seconds
     }
+
+    /// 返回认证设置的单调版本。
+    #[must_use]
+    pub const fn version(self) -> i64 {
+        self.version
+    }
 }
 
 /// 管理员写入注册策略时使用的完整记录。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RegistrationPolicyWriteRecord {
+    password_login_enabled: bool,
     enabled: bool,
     default_group_id: GroupId,
     initial_quota: i64,
@@ -118,6 +137,7 @@ impl RegistrationPolicyWriteRecord {
     #[allow(clippy::too_many_arguments, reason = "字段与注册策略契约一一对应")]
     #[must_use]
     pub const fn new(
+        password_login_enabled: bool,
         enabled: bool,
         default_group_id: GroupId,
         initial_quota: i64,
@@ -126,6 +146,7 @@ impl RegistrationPolicyWriteRecord {
         rate_limit_window_seconds: u64,
     ) -> Self {
         Self {
+            password_login_enabled,
             enabled,
             default_group_id,
             initial_quota,
@@ -135,14 +156,16 @@ impl RegistrationPolicyWriteRecord {
         }
     }
 
-    fn into_policy(self) -> RegistrationPolicyRecord {
+    fn into_policy(self, version: i64) -> RegistrationPolicyRecord {
         RegistrationPolicyRecord {
+            password_login_enabled: self.password_login_enabled,
             enabled: self.enabled,
             default_group_id: self.default_group_id,
             initial_quota: self.initial_quota,
             email_required: self.email_required,
             rate_limit_attempts: self.rate_limit_attempts,
             rate_limit_window_seconds: self.rate_limit_window_seconds,
+            version,
         }
     }
 }
@@ -253,75 +276,70 @@ impl RegistrationRepository {
     }
 
     async fn status_inner(&self) -> Result<RegistrationStatusRecord, RegistrationRepositoryError> {
-        let policy = load_stored_policy(self.pool.connection()).await?;
-        let Some(policy) = policy else {
-            return Ok(RegistrationStatusRecord {
-                enabled: false,
-                email_required: false,
-            });
-        };
-        if policy.enabled
-            && !active_group_exists(self.pool.connection(), policy.default_group_id).await?
-        {
-            return Err(record_internal_error(
-                RegistrationRepositoryError::Invariant,
-            ));
-        }
-        Ok(RegistrationStatusRecord {
-            enabled: policy.enabled,
-            email_required: policy.email_required,
-        })
-    }
-
-    async fn policy_inner(&self) -> Result<RegistrationPolicyRecord, RegistrationRepositoryError> {
-        if let Some(policy) = load_stored_policy(self.pool.connection()).await? {
-            if !active_group_exists(self.pool.connection(), policy.default_group_id).await? {
+        let settings = load_authentication_settings(self.pool.connection()).await?;
+        if settings.registration_enabled {
+            let group_id = settings
+                .registration_default_group_id
+                .ok_or_else(|| record_internal_error(RegistrationRepositoryError::Invariant))?;
+            if !active_group_exists(self.pool.connection(), group_id).await? {
                 return Err(record_internal_error(
                     RegistrationRepositoryError::Invariant,
                 ));
             }
-            return Ok(policy);
         }
-        let default_group_id = first_active_group(self.pool.connection()).await?;
-        Ok(RegistrationPolicyRecord {
-            enabled: false,
-            default_group_id,
-            initial_quota: 0,
-            email_required: false,
-            rate_limit_attempts: DEFAULT_REGISTRATION_RATE_LIMIT_ATTEMPTS,
-            rate_limit_window_seconds: DEFAULT_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
+        Ok(RegistrationStatusRecord {
+            password_login_enabled: settings.password_login_enabled,
+            enabled: settings.registration_enabled,
+            email_required: settings.registration_email_required,
         })
+    }
+
+    async fn policy_inner(&self) -> Result<RegistrationPolicyRecord, RegistrationRepositoryError> {
+        let settings = load_authentication_settings(self.pool.connection()).await?;
+        policy_from_settings(self.pool.connection(), settings).await
     }
 
     async fn update_policy_inner(
         &self,
         record: RegistrationPolicyWriteRecord,
     ) -> Result<RegistrationPolicyRecord, RegistrationRepositoryError> {
-        let policy = record.into_policy();
+        let policy = record.into_policy(1);
         validate_policy(policy).map_err(|_| RegistrationRepositoryError::InvalidPolicy)?;
         let transaction = begin_transaction(&self.pool).await?;
         if !active_group_exists(&transaction, policy.default_group_id).await? {
             return Err(RegistrationRepositoryError::InvalidReference);
         }
-        let value = serialize_policy(policy)?;
+        let existing = lock_authentication_settings(&transaction).await?;
+        let version = existing
+            .version
+            .checked_add(1)
+            .ok_or_else(|| record_internal_error(RegistrationRepositoryError::Invariant))?;
+        let policy = record.into_policy(version);
         let now = TimeDateTimeWithTimeZone::now_utc();
-        options::Entity::insert(options::ActiveModel {
-            key: Set(REGISTRATION_POLICY_KEY.to_owned()),
-            value: Set(SensitiveString::from(value)),
-            created_at: Set(now),
+        let saved = authentication_settings::ActiveModel {
+            id: Set(AUTHENTICATION_SETTINGS_ID),
+            password_login_enabled: Set(policy.password_login_enabled),
+            registration_enabled: Set(policy.enabled),
+            registration_default_group_id: Set(Some(policy.default_group_id.get())),
+            registration_initial_quota: Set(policy.initial_quota),
+            registration_email_required: Set(policy.email_required),
+            registration_rate_limit_attempts: Set(i32::try_from(policy.rate_limit_attempts)
+                .map_err(|_| RegistrationRepositoryError::InvalidPolicy)?),
+            registration_rate_limit_window_seconds: Set(i64::try_from(
+                policy.rate_limit_window_seconds,
+            )
+            .map_err(|_| RegistrationRepositoryError::InvalidPolicy)?),
+            version: Set(version),
+            created_at: Set(existing.created_at),
             updated_at: Set(now),
-        })
-        .on_conflict(
-            OnConflict::column(options::Column::Key)
-                .update_columns([options::Column::Value, options::Column::UpdatedAt])
-                .to_owned(),
-        )
-        .exec_without_returning(&transaction)
+        }
+        .update(&transaction)
         .with_subscriber(NoSubscriber::default())
         .await
-        .map_err(|error| record_query_error("registration_policy_upsert", error))?;
+        .map_err(|error| record_query_error("authentication_settings_update", error))?;
+        let saved = settings_from_model(saved)?;
         commit_transaction(transaction).await?;
-        Ok(policy)
+        policy_from_settings(self.pool.connection(), saved).await
     }
 
     async fn claim_attempt_inner(
@@ -330,19 +348,29 @@ impl RegistrationRepository {
         attempted_at: u64,
     ) -> Result<RegistrationAttemptOutcome, RegistrationRepositoryError> {
         let transaction = begin_transaction(&self.pool).await?;
-        let Some(policy) = load_stored_policy(&transaction).await? else {
-            commit_transaction(transaction).await?;
-            return Ok(RegistrationAttemptOutcome::Disabled);
-        };
-        if !policy.enabled {
+        let settings = settings_from_model(lock_authentication_settings(&transaction).await?)?;
+        if !settings.password_login_enabled || !settings.registration_enabled {
             commit_transaction(transaction).await?;
             return Ok(RegistrationAttemptOutcome::Disabled);
         }
-        if !active_group_exists(&transaction, policy.default_group_id).await? {
+        let default_group_id = settings
+            .registration_default_group_id
+            .ok_or_else(|| record_internal_error(RegistrationRepositoryError::Invariant))?;
+        if !active_group_exists(&transaction, default_group_id).await? {
             return Err(record_internal_error(
                 RegistrationRepositoryError::Invariant,
             ));
         }
+        let policy = RegistrationPolicyRecord {
+            password_login_enabled: settings.password_login_enabled,
+            enabled: settings.registration_enabled,
+            default_group_id,
+            initial_quota: settings.registration_initial_quota,
+            email_required: settings.registration_email_required,
+            rate_limit_attempts: settings.registration_rate_limit_attempts,
+            rate_limit_window_seconds: settings.registration_rate_limit_window_seconds,
+            version: settings.version,
+        };
 
         let window_seconds = policy.rate_limit_window_seconds;
         let window_started_at = attempted_at
@@ -451,16 +479,16 @@ impl fmt::Debug for RegistrationRepository {
     }
 }
 
-#[derive(Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct StoredRegistrationPolicy {
-    version: u8,
-    enabled: bool,
-    default_group_id: i64,
-    initial_quota: i64,
-    email_required: bool,
-    rate_limit_attempts: u32,
-    rate_limit_window_seconds: u64,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AuthenticationSettingsState {
+    password_login_enabled: bool,
+    registration_enabled: bool,
+    registration_default_group_id: Option<GroupId>,
+    registration_initial_quota: i64,
+    registration_email_required: bool,
+    registration_rate_limit_attempts: u32,
+    registration_rate_limit_window_seconds: u64,
+    version: i64,
 }
 
 async fn begin_transaction(
@@ -483,73 +511,128 @@ async fn commit_transaction(
         .map_err(|_| record_internal_error(RegistrationRepositoryError::Query))
 }
 
-async fn load_stored_policy<C>(
+async fn load_authentication_settings<C>(
     connection: &C,
-) -> Result<Option<RegistrationPolicyRecord>, RegistrationRepositoryError>
+) -> Result<AuthenticationSettingsState, RegistrationRepositoryError>
 where
     C: ConnectionTrait,
 {
-    let model = options::Entity::find_by_id(REGISTRATION_POLICY_KEY)
+    let model = authentication_settings::Entity::find_by_id(AUTHENTICATION_SETTINGS_ID)
         .one(connection)
         .with_subscriber(NoSubscriber::default())
         .await
-        .map_err(|_| record_internal_error(RegistrationRepositoryError::Query))?;
-    model
-        .map(|model| parse_policy(model.value.as_str()))
+        .map_err(|error| record_query_error("authentication_settings_read", error))?
+        .ok_or_else(|| record_internal_error(RegistrationRepositoryError::Invariant))?;
+    settings_from_model(model)
+}
+
+async fn lock_authentication_settings(
+    transaction: &DatabaseTransaction,
+) -> Result<authentication_settings::Model, RegistrationRepositoryError> {
+    if transaction.get_database_backend() == DbBackend::Sqlite {
+        // SQLite 没有 FOR UPDATE，通过无变化写入先取得数据库写锁。
+        let result = authentication_settings::Entity::update_many()
+            .filter(authentication_settings::Column::Id.eq(AUTHENTICATION_SETTINGS_ID))
+            .col_expr(
+                authentication_settings::Column::Version,
+                Expr::col(authentication_settings::Column::Version).into(),
+            )
+            .exec(transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|error| record_query_error("authentication_settings_lock", error))?;
+        if result.rows_affected != 1 {
+            return Err(record_internal_error(
+                RegistrationRepositoryError::Invariant,
+            ));
+        }
+    }
+
+    let mut query = authentication_settings::Entity::find()
+        .filter(authentication_settings::Column::Id.eq(AUTHENTICATION_SETTINGS_ID));
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|error| record_query_error("authentication_settings_read_for_update", error))?
+        .ok_or_else(|| record_internal_error(RegistrationRepositoryError::Invariant))
+}
+
+fn settings_from_model(
+    model: authentication_settings::Model,
+) -> Result<AuthenticationSettingsState, RegistrationRepositoryError> {
+    let default_group_id = model
+        .registration_default_group_id
+        .map(GroupId::new)
         .transpose()
+        .map_err(|_| record_internal_error(RegistrationRepositoryError::Invariant))?;
+    let rate_limit_attempts = u32::try_from(model.registration_rate_limit_attempts)
+        .map_err(|_| record_internal_error(RegistrationRepositoryError::Invariant))?;
+    let rate_limit_window_seconds = u64::try_from(model.registration_rate_limit_window_seconds)
+        .map_err(|_| record_internal_error(RegistrationRepositoryError::Invariant))?;
+    let settings = AuthenticationSettingsState {
+        password_login_enabled: model.password_login_enabled,
+        registration_enabled: model.registration_enabled,
+        registration_default_group_id: default_group_id,
+        registration_initial_quota: model.registration_initial_quota,
+        registration_email_required: model.registration_email_required,
+        registration_rate_limit_attempts: rate_limit_attempts,
+        registration_rate_limit_window_seconds: rate_limit_window_seconds,
+        version: model.version,
+    };
+    if model.id != AUTHENTICATION_SETTINGS_ID
+        || settings.version < 1
+        || settings.registration_initial_quota < 0
+        || !(1..=MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS)
+            .contains(&settings.registration_rate_limit_attempts)
+        || !(MIN_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS
+            ..=MAX_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS)
+            .contains(&settings.registration_rate_limit_window_seconds)
+        || (settings.registration_enabled
+            && (!settings.password_login_enabled
+                || settings.registration_default_group_id.is_none()))
+    {
+        return Err(record_internal_error(
+            RegistrationRepositoryError::Invariant,
+        ));
+    }
+    Ok(settings)
 }
 
-fn parse_policy(value: &str) -> Result<RegistrationPolicyRecord, RegistrationRepositoryError> {
-    if value.len() > MAX_REGISTRATION_POLICY_BYTES {
-        return Err(record_internal_error(
-            RegistrationRepositoryError::Invariant,
-        ));
-    }
-    let stored = serde_json::from_str::<StoredRegistrationPolicy>(value)
-        .map_err(|_| record_internal_error(RegistrationRepositoryError::Invariant))?;
-    if stored.version != REGISTRATION_POLICY_VERSION {
-        return Err(record_internal_error(
-            RegistrationRepositoryError::Invariant,
-        ));
-    }
-    let policy = RegistrationPolicyRecord {
-        enabled: stored.enabled,
-        default_group_id: GroupId::new(stored.default_group_id)
-            .map_err(|_| record_internal_error(RegistrationRepositoryError::Invariant))?,
-        initial_quota: stored.initial_quota,
-        email_required: stored.email_required,
-        rate_limit_attempts: stored.rate_limit_attempts,
-        rate_limit_window_seconds: stored.rate_limit_window_seconds,
+async fn policy_from_settings<C>(
+    connection: &C,
+    settings: AuthenticationSettingsState,
+) -> Result<RegistrationPolicyRecord, RegistrationRepositoryError>
+where
+    C: ConnectionTrait,
+{
+    let default_group_id = match settings.registration_default_group_id {
+        Some(group_id) if active_group_exists(connection, group_id).await? => group_id,
+        Some(_) if settings.registration_enabled => {
+            return Err(record_internal_error(
+                RegistrationRepositoryError::Invariant,
+            ));
+        }
+        _ => first_active_group(connection).await?,
     };
-    validate_policy(policy)
-        .map(|()| policy)
-        .map_err(|_| record_internal_error(RegistrationRepositoryError::Invariant))
-}
-
-fn serialize_policy(
-    policy: RegistrationPolicyRecord,
-) -> Result<String, RegistrationRepositoryError> {
-    let stored = StoredRegistrationPolicy {
-        version: REGISTRATION_POLICY_VERSION,
-        enabled: policy.enabled,
-        default_group_id: policy.default_group_id.get(),
-        initial_quota: policy.initial_quota,
-        email_required: policy.email_required,
-        rate_limit_attempts: policy.rate_limit_attempts,
-        rate_limit_window_seconds: policy.rate_limit_window_seconds,
-    };
-    let value = serde_json::to_string(&stored)
-        .map_err(|_| record_internal_error(RegistrationRepositoryError::Invariant))?;
-    if value.len() > MAX_REGISTRATION_POLICY_BYTES {
-        return Err(record_internal_error(
-            RegistrationRepositoryError::Invariant,
-        ));
-    }
-    Ok(value)
+    Ok(RegistrationPolicyRecord {
+        password_login_enabled: settings.password_login_enabled,
+        enabled: settings.registration_enabled,
+        default_group_id,
+        initial_quota: settings.registration_initial_quota,
+        email_required: settings.registration_email_required,
+        rate_limit_attempts: settings.registration_rate_limit_attempts,
+        rate_limit_window_seconds: settings.registration_rate_limit_window_seconds,
+        version: settings.version,
+    })
 }
 
 fn validate_policy(policy: RegistrationPolicyRecord) -> Result<(), ()> {
-    if policy.initial_quota < 0
+    if (policy.enabled && !policy.password_login_enabled)
+        || policy.initial_quota < 0
         || !(1..=MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS).contains(&policy.rate_limit_attempts)
         || !(MIN_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS
             ..=MAX_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS)

@@ -22,7 +22,7 @@ use crate::{
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_authorization::authorize_management_admin,
     management_error::ManagementError,
-    management_session::{login_with_authenticator, no_store_json},
+    management_session::{LoginRequest, login_with_authenticator, no_store_json},
 };
 
 #[derive(Clone)]
@@ -35,6 +35,7 @@ struct RegistrationHttpState {
 #[serde(deny_unknown_fields)]
 #[schema(as = RegistrationStatusResponse)]
 pub(crate) struct RegistrationStatusResponse {
+    password_login_enabled: bool,
     enabled: bool,
     email_required: bool,
 }
@@ -53,9 +54,10 @@ pub(crate) struct RegistrationRequest {
 
 #[derive(Clone, Copy, Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-#[schema(as = RegistrationPolicyResponse)]
-pub(crate) struct RegistrationPolicyResponse {
-    enabled: bool,
+#[schema(as = AdminAuthenticationSettings)]
+pub(crate) struct AdminAuthenticationSettingsResponse {
+    password_login_enabled: bool,
+    registration_enabled: bool,
     #[schema(minimum = 1)]
     default_group_id: i64,
     #[schema(minimum = 0)]
@@ -65,26 +67,31 @@ pub(crate) struct RegistrationPolicyResponse {
     rate_limit_attempts: u32,
     #[schema(minimum = 60, maximum = 86400)]
     rate_limit_window_seconds: u64,
+    #[schema(minimum = 1)]
+    version: i64,
 }
 
-impl From<RegistrationPolicy> for RegistrationPolicyResponse {
+impl From<RegistrationPolicy> for AdminAuthenticationSettingsResponse {
     fn from(policy: RegistrationPolicy) -> Self {
         Self {
-            enabled: policy.enabled(),
+            password_login_enabled: policy.password_login_enabled(),
+            registration_enabled: policy.enabled(),
             default_group_id: policy.default_group_id().get(),
             initial_quota: policy.initial_quota(),
             email_required: policy.email_required(),
             rate_limit_attempts: policy.rate_limit_attempts(),
             rate_limit_window_seconds: policy.rate_limit_window_seconds(),
+            version: policy.version(),
         }
     }
 }
 
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-#[schema(as = RegistrationPolicyRequest)]
-pub(crate) struct RegistrationPolicyRequest {
-    enabled: bool,
+#[schema(as = AdminAuthenticationSettingsRequest)]
+pub(crate) struct AdminAuthenticationSettingsRequest {
+    password_login_enabled: bool,
+    registration_enabled: bool,
     #[schema(minimum = 1)]
     default_group_id: i64,
     #[schema(minimum = 0)]
@@ -116,15 +123,16 @@ pub(crate) fn build_registration_router(
     );
 
     Router::new()
+        .route("/api/auth/login", post(login))
         .route("/api/registration/status", get(registration_status))
         .route(
             "/api/registration",
             post(register).route_layer(registration_ip),
         )
         .route(
-            "/api/admin/registration",
-            get(get_registration_policy)
-                .put(update_registration_policy)
+            "/api/admin/authentication-settings",
+            get(get_authentication_settings)
+                .put(update_authentication_settings)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(policy_authentication),
         )
@@ -141,9 +149,31 @@ async fn registration_status(
         .await
         .map_err(map_registration_error)?;
     Ok(no_store_json(RegistrationStatusResponse {
+        password_login_enabled: status.password_login_enabled(),
         enabled: status.enabled(),
         email_required: status.email_required(),
     }))
+}
+
+/// 在用户名密码能力开启时校验凭据并签发统一会话。
+async fn login(
+    State(state): State<RegistrationHttpState>,
+    request: Result<Json<LoginRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let status = state
+        .service
+        .status()
+        .await
+        .map_err(map_registration_error)?;
+    if !status.password_login_enabled() {
+        return Err(ManagementError::LoginDisabled);
+    }
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    login_with_authenticator(
+        state.session_authenticator.as_ref(),
+        af_admin::LoginCredentials::new(request.username, request.password),
+    )
+    .await
 }
 
 /// 创建普通用户并由服务端立即签发统一登录会话。
@@ -175,7 +205,7 @@ async fn register(
 }
 
 /// 返回管理员完整注册策略。
-async fn get_registration_policy(
+async fn get_authentication_settings(
     State(state): State<RegistrationHttpState>,
     Extension(authentication): Extension<af_admin::SessionAuthentication>,
 ) -> Result<Response, ManagementError> {
@@ -184,20 +214,23 @@ async fn get_registration_policy(
         .policy(authentication.principal())
         .await
         .map_err(map_registration_error)?;
-    Ok(no_store_json(RegistrationPolicyResponse::from(policy)))
+    Ok(no_store_json(AdminAuthenticationSettingsResponse::from(
+        policy,
+    )))
 }
 
-/// 原子覆盖管理员完整注册策略。
-async fn update_registration_policy(
+/// 原子覆盖管理员完整认证与注册设置。
+async fn update_authentication_settings(
     State(state): State<RegistrationHttpState>,
     Extension(authentication): Extension<af_admin::SessionAuthentication>,
-    request: Result<Json<RegistrationPolicyRequest>, JsonRejection>,
+    request: Result<Json<AdminAuthenticationSettingsRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
     let default_group_id =
         GroupId::new(request.default_group_id).map_err(|_| ManagementError::InvalidRequest)?;
     let command = RegistrationPolicyCommand::new(
-        request.enabled,
+        request.password_login_enabled,
+        request.registration_enabled,
         default_group_id,
         request.initial_quota,
         request.email_required,
@@ -210,7 +243,9 @@ async fn update_registration_policy(
         .update_policy(authentication.principal(), command)
         .await
         .map_err(map_registration_error)?;
-    Ok(no_store_json(RegistrationPolicyResponse::from(policy)))
+    Ok(no_store_json(AdminAuthenticationSettingsResponse::from(
+        policy,
+    )))
 }
 
 async fn resolve_registration_client_ip(
@@ -241,6 +276,7 @@ fn map_registration_error(error: RegistrationError) -> ManagementError {
     match error {
         RegistrationError::InvalidInput => ManagementError::InvalidRequest,
         RegistrationError::Forbidden => ManagementError::Forbidden,
+        RegistrationError::LoginDisabled => ManagementError::LoginDisabled,
         RegistrationError::Disabled => ManagementError::RegistrationDisabled,
         RegistrationError::Conflict => ManagementError::UserConflict,
         RegistrationError::RateLimited {

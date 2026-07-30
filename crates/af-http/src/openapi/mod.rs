@@ -12,6 +12,7 @@ mod registration;
 pub(crate) mod schema;
 mod session;
 mod setup;
+mod site_settings;
 mod tokens;
 mod usage_logs;
 mod user_tokens;
@@ -30,6 +31,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(setup::document());
     document.merge(registration::document());
     document.merge(email_settings::document());
+    document.merge(site_settings::document());
     document.merge(dashboard::document());
     document.merge(users::document());
     document.merge(groups::document());
@@ -44,7 +46,8 @@ pub fn openapi_document() -> OpenApi {
 
     document.tags = Some(vec![
         Tag::new("公开注册"),
-        Tag::new("注册设置"),
+        Tag::new("认证设置"),
+        Tag::new("站点设置"),
         Tag::new("邮件设置"),
         Tag::new("管理会话"),
         Tag::new("首次安装"),
@@ -85,7 +88,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 29);
+        assert_eq!(document.paths.paths.len(), 31);
         let operation_count = document
             .paths
             .paths
@@ -106,7 +109,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 52);
+        assert_eq!(operation_count, 55);
         assert!(
             document
                 .components
@@ -146,7 +149,8 @@ mod tests {
             "getAdminDashboard",
             "getAdminEmailSettings",
             "getAdminGroup",
-            "getAdminRegistrationPolicy",
+            "getAdminAuthenticationSettings",
+            "getAdminSiteSettings",
             "getAdminToken",
             "getAdminUser",
             "getManagementSession",
@@ -155,6 +159,7 @@ mod tests {
             "getUserToken",
             "getInitialSetupStatus",
             "getRegistrationStatus",
+            "getPublicSiteSettings",
             "initializeAdminSetup",
             "listAdminChannels",
             "listAdminCredentials",
@@ -175,7 +180,8 @@ mod tests {
             "updateAdminCredential",
             "updateAdminGroup",
             "updateAdminEmailSettings",
-            "updateAdminRegistrationPolicy",
+            "updateAdminAuthenticationSettings",
+            "updateAdminSiteSettings",
             "updateAdminToken",
             "updateAdminUser",
             "updateUserToken",
@@ -186,7 +192,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 72);
+        assert_eq!(schemas.len(), 78);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
@@ -194,8 +200,14 @@ mod tests {
         assert!(schemas.contains_key("SetupStatusResponse"));
         assert!(schemas.contains_key("RegistrationStatusResponse"));
         assert!(schemas.contains_key("RegistrationRequest"));
-        assert!(schemas.contains_key("RegistrationPolicyResponse"));
-        assert!(schemas.contains_key("RegistrationPolicyRequest"));
+        assert!(schemas.contains_key("AdminAuthenticationSettings"));
+        assert!(schemas.contains_key("AdminAuthenticationSettingsRequest"));
+        assert!(schemas.contains_key("PublicSiteSettings"));
+        assert!(schemas.contains_key("PublicBrandSettings"));
+        assert!(schemas.contains_key("PublicAuthenticationCapabilities"));
+        assert!(schemas.contains_key("AdminSiteSettings"));
+        assert!(schemas.contains_key("AdminSiteSettingsRequest"));
+        assert!(schemas.contains_key("AdminBrandSettingsRequest"));
         assert!(schemas.contains_key("AdminEmailSettings"));
         assert!(schemas.contains_key("AdminEmailSettingsRequest"));
         assert!(schemas.contains_key("AdminEmailTestRequest"));

@@ -47,7 +47,7 @@ async fn registration_reuses_identity_creation_and_counts_conflicts() -> Result<
     registration
         .update_policy(
             admin,
-            RegistrationPolicyCommand::new(true, default_group_id, 500, true, 2, 86_400)?,
+            RegistrationPolicyCommand::new(true, true, default_group_id, 500, true, 2, 86_400)?,
         )
         .await?;
 
@@ -118,7 +118,7 @@ async fn policy_access_requires_admin_before_repository_work() -> Result<(), Box
         registration
             .update_policy(
                 normal_user,
-                RegistrationPolicyCommand::new(false, GroupId::new(1)?, 0, false, 5, 3_600,)?,
+                RegistrationPolicyCommand::new(true, false, GroupId::new(1)?, 0, false, 5, 3_600,)?,
             )
             .await,
         Err(RegistrationError::Forbidden)

@@ -34,6 +34,7 @@ const USER_TOKEN: &str = "user-token";
 const ISSUED_TOKEN: &str = "issued-session";
 
 struct FakeRegistrationService {
+    status: Mutex<RegistrationStatus>,
     register_outcome: Mutex<Result<RegistrationResult, RegistrationError>>,
     register_calls: AtomicUsize,
     policy_calls: AtomicUsize,
@@ -43,6 +44,7 @@ struct FakeRegistrationService {
 impl FakeRegistrationService {
     fn new() -> Self {
         Self {
+            status: Mutex::new(RegistrationStatus::from_parts(true, true, true)),
             register_outcome: Mutex::new(Ok(RegistrationResult::from_user_id(
                 UserId::new(9).unwrap(),
             ))),
@@ -56,14 +58,19 @@ impl FakeRegistrationService {
         *self.register_outcome.lock().unwrap() = outcome;
     }
 
+    fn set_status(&self, status: RegistrationStatus) {
+        *self.status.lock().unwrap() = status;
+    }
+
     fn policy() -> RegistrationPolicy {
-        RegistrationPolicy::from_parts(true, GroupId::new(3).unwrap(), 500, true, 5, 3_600)
+        RegistrationPolicy::from_parts(true, true, GroupId::new(3).unwrap(), 500, true, 5, 3_600, 2)
     }
 }
 
 impl RegistrationService for FakeRegistrationService {
     fn status(&self) -> RegistrationStatusFuture<'_> {
-        Box::pin(async { Ok(RegistrationStatus::from_parts(true, true)) })
+        let status = *self.status.lock().unwrap();
+        Box::pin(async move { Ok(status) })
     }
 
     fn register<'a>(
@@ -89,6 +96,43 @@ impl RegistrationService for FakeRegistrationService {
         self.update_calls.fetch_add(1, Ordering::Relaxed);
         Box::pin(async { Ok(Self::policy()) })
     }
+}
+
+#[tokio::test]
+async fn password_login_obeys_the_persisted_capability_switch() {
+    let service = Arc::new(FakeRegistrationService::new());
+    let success = router(Arc::clone(&service))
+        .oneshot(json_request(
+            "POST",
+            "/api/auth/login",
+            json!({
+                "username": "new-user",
+                "password": "correct horse battery staple",
+            }),
+            None,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(success.status(), StatusCode::OK);
+
+    service.set_status(RegistrationStatus::from_parts(false, false, false));
+    let disabled = router(service)
+        .oneshot(json_request(
+            "POST",
+            "/api/auth/login",
+            json!({
+                "username": "new-user",
+                "password": "correct horse battery staple",
+            }),
+            None,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(disabled.status(), StatusCode::FORBIDDEN);
+    assert_eq!(
+        response_json(disabled).await["code"],
+        "password_login_disabled"
+    );
 }
 
 struct FakeSessionAuthenticator;
@@ -165,6 +209,7 @@ async fn public_status_and_successful_registration_use_no_store_session_contract
     assert_eq!(
         response_json(status).await,
         json!({
+            "password_login_enabled": true,
             "enabled": true,
             "email_required": true,
         })
@@ -227,7 +272,7 @@ async fn admin_policy_route_rejects_normal_users_before_service_access() {
         .clone()
         .oneshot(json_request(
             "GET",
-            "/api/admin/registration",
+            "/api/admin/authentication-settings",
             Value::Null,
             Some(USER_TOKEN),
         ))
@@ -240,7 +285,7 @@ async fn admin_policy_route_rejects_normal_users_before_service_access() {
         .clone()
         .oneshot(json_request(
             "GET",
-            "/api/admin/registration",
+            "/api/admin/authentication-settings",
             Value::Null,
             Some(ADMIN_TOKEN),
         ))
@@ -252,9 +297,10 @@ async fn admin_policy_route_rejects_normal_users_before_service_access() {
     let updated = app
         .oneshot(json_request(
             "PUT",
-            "/api/admin/registration",
+            "/api/admin/authentication-settings",
             json!({
-                "enabled": true,
+                "password_login_enabled": true,
+                "registration_enabled": true,
                 "default_group_id": 3,
                 "initial_quota": 500,
                 "email_required": true,

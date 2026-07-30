@@ -32,6 +32,7 @@ pub const MAX_REGISTRATION_PASSWORD_BYTES: usize = 128;
 /// 游客可读取的最小注册能力状态。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RegistrationStatus {
+    password_login_enabled: bool,
     enabled: bool,
     email_required: bool,
 }
@@ -39,11 +40,22 @@ pub struct RegistrationStatus {
 impl RegistrationStatus {
     /// 组合已完成业务校验的公开能力状态，供端口适配器与测试实现使用。
     #[must_use]
-    pub const fn from_parts(enabled: bool, email_required: bool) -> Self {
+    pub const fn from_parts(
+        password_login_enabled: bool,
+        enabled: bool,
+        email_required: bool,
+    ) -> Self {
         Self {
+            password_login_enabled,
             enabled,
             email_required,
         }
+    }
+
+    /// 返回用户名密码登录是否可用。
+    #[must_use]
+    pub const fn password_login_enabled(self) -> bool {
+        self.password_login_enabled
     }
 
     /// 返回公开注册是否可用。
@@ -62,12 +74,14 @@ impl RegistrationStatus {
 /// 管理员可读取的完整注册策略。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RegistrationPolicy {
+    password_login_enabled: bool,
     enabled: bool,
     default_group_id: GroupId,
     initial_quota: i64,
     email_required: bool,
     rate_limit_attempts: u32,
     rate_limit_window_seconds: u64,
+    version: i64,
 }
 
 impl RegistrationPolicy {
@@ -75,21 +89,31 @@ impl RegistrationPolicy {
     #[allow(clippy::too_many_arguments, reason = "字段与注册策略契约一一对应")]
     #[must_use]
     pub const fn from_parts(
+        password_login_enabled: bool,
         enabled: bool,
         default_group_id: GroupId,
         initial_quota: i64,
         email_required: bool,
         rate_limit_attempts: u32,
         rate_limit_window_seconds: u64,
+        version: i64,
     ) -> Self {
         Self {
+            password_login_enabled,
             enabled,
             default_group_id,
             initial_quota,
             email_required,
             rate_limit_attempts,
             rate_limit_window_seconds,
+            version,
         }
+    }
+
+    /// 返回用户名密码登录是否可用。
+    #[must_use]
+    pub const fn password_login_enabled(self) -> bool {
+        self.password_login_enabled
     }
 
     /// 返回公开注册是否启用。
@@ -127,17 +151,25 @@ impl RegistrationPolicy {
     pub const fn rate_limit_window_seconds(self) -> u64 {
         self.rate_limit_window_seconds
     }
+
+    /// 返回认证设置的单调版本。
+    #[must_use]
+    pub const fn version(self) -> i64 {
+        self.version
+    }
 }
 
 impl From<RegistrationPolicyRecord> for RegistrationPolicy {
     fn from(record: RegistrationPolicyRecord) -> Self {
         Self {
+            password_login_enabled: record.password_login_enabled(),
             enabled: record.enabled(),
             default_group_id: record.default_group_id(),
             initial_quota: record.initial_quota(),
             email_required: record.email_required(),
             rate_limit_attempts: record.rate_limit_attempts(),
             rate_limit_window_seconds: record.rate_limit_window_seconds(),
+            version: record.version(),
         }
     }
 }
@@ -145,6 +177,7 @@ impl From<RegistrationPolicyRecord> for RegistrationPolicy {
 /// 管理员覆盖注册策略时提交的完整命令。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RegistrationPolicyCommand {
+    password_login_enabled: bool,
     enabled: bool,
     default_group_id: GroupId,
     initial_quota: i64,
@@ -157,6 +190,7 @@ impl RegistrationPolicyCommand {
     /// 校验非负额度和固定窗口硬边界。
     #[allow(clippy::too_many_arguments, reason = "字段与注册策略契约一一对应")]
     pub fn new(
+        password_login_enabled: bool,
         enabled: bool,
         default_group_id: GroupId,
         initial_quota: i64,
@@ -164,7 +198,8 @@ impl RegistrationPolicyCommand {
         rate_limit_attempts: u32,
         rate_limit_window_seconds: u64,
     ) -> Result<Self, RegistrationError> {
-        if initial_quota < 0
+        if (enabled && !password_login_enabled)
+            || initial_quota < 0
             || !(1..=MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS).contains(&rate_limit_attempts)
             || !(MIN_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS
                 ..=MAX_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS)
@@ -173,6 +208,7 @@ impl RegistrationPolicyCommand {
             return Err(RegistrationError::InvalidInput);
         }
         Ok(Self {
+            password_login_enabled,
             enabled,
             default_group_id,
             initial_quota,
@@ -184,6 +220,7 @@ impl RegistrationPolicyCommand {
 
     fn into_record(self) -> RegistrationPolicyWriteRecord {
         RegistrationPolicyWriteRecord::new(
+            self.password_login_enabled,
             self.enabled,
             self.default_group_id,
             self.initial_quota,
@@ -285,6 +322,9 @@ pub enum RegistrationError {
     /// 当前会话不是管理员。
     #[error("注册策略权限不足")]
     Forbidden,
+    /// 用户名密码登录已被管理员关闭。
+    #[error("用户名密码登录未启用")]
+    LoginDisabled,
     /// 公开注册未启用。
     #[error("公开注册未启用")]
     Disabled,
@@ -364,6 +404,7 @@ impl RegistrationService for DatabaseRegistrationService {
                 .status()
                 .await
                 .map(|status| RegistrationStatus {
+                    password_login_enabled: status.password_login_enabled(),
                     enabled: status.enabled(),
                     email_required: status.email_required(),
                 })
@@ -645,6 +686,7 @@ mod tests {
         assert_eq!(af_db::DEFAULT_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS, 3_600);
         assert!(
             RegistrationPolicyCommand::new(
+                true,
                 false,
                 GroupId::new(1).unwrap(),
                 0,
@@ -655,8 +697,20 @@ mod tests {
             .is_ok()
         );
         assert!(
-            RegistrationPolicyCommand::new(true, GroupId::new(1).unwrap(), -1, false, 0, 1,)
+            RegistrationPolicyCommand::new(true, true, GroupId::new(1).unwrap(), -1, false, 0, 1,)
                 .is_err()
+        );
+        assert!(
+            RegistrationPolicyCommand::new(
+                false,
+                true,
+                GroupId::new(1).unwrap(),
+                0,
+                false,
+                5,
+                3_600,
+            )
+            .is_err()
         );
     }
 }

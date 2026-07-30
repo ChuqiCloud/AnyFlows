@@ -4,7 +4,8 @@ use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminEmailSettingsService, AdminGroupReader,
     AdminGroupWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
     AdminUserWriter, InitialSetup, ModelCatalogReader, PlaygroundConversationService,
-    PlaygroundShareService, RegistrationService, SessionAuthenticator, TokenAuthenticator,
+    PlaygroundShareService, RegistrationService, SessionAuthenticator, SiteSettingsService,
+    TokenAuthenticator,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -44,7 +45,7 @@ use crate::management_credentials::{get_admin_credential, list_admin_credentials
 use crate::management_dashboard::get_admin_dashboard;
 use crate::management_group_writes::{create_admin_group, delete_admin_group, update_admin_group};
 use crate::management_groups::{get_admin_group, list_admin_groups};
-use crate::management_session::{current_session, login};
+use crate::management_session::current_session;
 use crate::management_setup::{initialize_setup, setup_status};
 use crate::management_token_writes::{create_admin_token, delete_admin_token, update_admin_token};
 use crate::management_tokens::{get_admin_token, list_admin_tokens};
@@ -62,6 +63,7 @@ use crate::operations::{ReadinessHandle, operations_router};
 use crate::playground_conversations::build_playground_conversation_router;
 use crate::playground_shares::build_playground_share_router;
 use crate::registration::build_registration_router;
+use crate::site_settings::build_site_settings_router;
 use crate::user_tokens::build_user_token_router;
 use crate::{
     ChatService, QueryApiKeyPolicy, chat_completions::HttpState, chat_completions::chat_completions,
@@ -106,6 +108,7 @@ pub fn build_router(
     user_token_service: Arc<dyn af_admin::UserTokenService>,
     initial_setup: Arc<dyn InitialSetup>,
     registration_service: Arc<dyn RegistrationService>,
+    site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
@@ -248,9 +251,14 @@ pub fn build_router(
         Arc::clone(&http_state.session_authenticator),
     );
     let registration_routes = build_registration_router(
-        registration_service,
+        Arc::clone(&registration_service),
         Arc::clone(&http_state.session_authenticator),
         config,
+    );
+    let site_settings_routes = build_site_settings_router(
+        site_settings_service,
+        registration_service,
+        Arc::clone(&http_state.session_authenticator),
     );
     let email_settings_routes = build_email_settings_router(
         admin_email_settings_service,
@@ -259,7 +267,6 @@ pub fn build_router(
     let management_routes = Router::new()
         .route("/api/setup/status", get(setup_status))
         .route("/api/setup", post(initialize_setup))
-        .route("/api/auth/login", post(login))
         .route(
             "/api/auth/session",
             get(current_session).route_layer(session_route_authentication),
@@ -366,6 +373,7 @@ pub fn build_router(
         .merge(playground_conversation_routes)
         .merge(user_token_routes)
         .merge(registration_routes)
+        .merge(site_settings_routes)
         .merge(email_settings_routes);
     HttpRouter::new(build_router_with_routes_and_frontend(
         public_routes.merge(management_routes),

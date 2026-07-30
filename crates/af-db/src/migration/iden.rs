@@ -561,3 +561,59 @@ pub(in crate::migration) mod email_settings {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod site_settings {
+    use super::DeriveIden;
+
+    /// `site_settings` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "site_settings")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 站点身份与公开品牌设置迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        SiteName,
+        PublicBaseUrl,
+        BrandLogoUrl,
+        BrandTagline,
+        BrandDescription,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod authentication_settings {
+    use super::DeriveIden;
+
+    /// `authentication_settings` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "authentication_settings")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 密码登录与公开注册设置迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        PasswordLoginEnabled,
+        RegistrationEnabled,
+        RegistrationDefaultGroupId,
+        RegistrationInitialQuota,
+        RegistrationEmailRequired,
+        RegistrationRateLimitAttempts,
+        RegistrationRateLimitWindowSeconds,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}

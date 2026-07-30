@@ -13,6 +13,8 @@ pub(crate) enum ManagementError {
     InvalidRequest,
     /// 用户名或密码不正确。
     InvalidCredentials,
+    /// 用户名密码登录已被运营设置关闭。
+    LoginDisabled,
     /// JWT 缺失、无效、过期或对应用户已失效。
     InvalidSession,
     /// 当前会话没有访问该管理端点的角色权限。
@@ -94,6 +96,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "invalid_credentials",
                     message: "Invalid credentials",
+                },
+            ),
+            Self::LoginDisabled => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "password_login_disabled",
+                    message: "Password login disabled",
                 },
             ),
             Self::InvalidSession => (
