@@ -13,7 +13,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool,
-    entity::{authentication_settings, groups, registration_rate_limits},
+    entity::{SensitiveString, authentication_settings, groups, registration_rate_limits},
 };
 
 const AUTHENTICATION_SETTINGS_ID: i16 = 1;

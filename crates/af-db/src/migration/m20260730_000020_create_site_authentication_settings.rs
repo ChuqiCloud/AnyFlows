@@ -56,9 +56,11 @@ async fn migrate_legacy_registration_policy(manager: &SchemaManager<'_>) -> Resu
     };
     let policy = parse_legacy_registration_policy(&value)?;
     let rate_limit_attempts =
-        i32::try_from(policy.rate_limit_attempts).map_err(|_| invalid_legacy_policy())?;
+        <i32 as std::convert::TryFrom<u32>>::try_from(policy.rate_limit_attempts)
+            .map_err(|_| invalid_legacy_policy())?;
     let rate_limit_window_seconds =
-        i64::try_from(policy.rate_limit_window_seconds).map_err(|_| invalid_legacy_policy())?;
+        <i64 as std::convert::TryFrom<u64>>::try_from(policy.rate_limit_window_seconds)
+            .map_err(|_| invalid_legacy_policy())?;
     manager
         .exec_stmt(
             Query::update()
@@ -143,9 +145,9 @@ async fn restore_legacy_registration_policy(manager: &SchemaManager<'_>) -> Resu
         default_group_id,
         initial_quota: try_get(&row, "registration_initial_quota")?,
         email_required: try_get(&row, "registration_email_required")?,
-        rate_limit_attempts: u32::try_from(attempts)
+        rate_limit_attempts: <u32 as std::convert::TryFrom<i32>>::try_from(attempts)
             .map_err(|_| DbErr::Custom("认证设置限流次数无效".to_owned()))?,
-        rate_limit_window_seconds: u64::try_from(window)
+        rate_limit_window_seconds: <u64 as std::convert::TryFrom<i64>>::try_from(window)
             .map_err(|_| DbErr::Custom("认证设置限流窗口无效".to_owned()))?,
     };
     let value = serde_json::to_string(&policy)

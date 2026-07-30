@@ -138,7 +138,7 @@ async fn site_authentication_migration_moves_legacy_registration_policy()
     .await?;
 
     Migrator::up(pool.connection(), None).await?;
-    let settings = authentication_settings::Entity::find_by_id(1)
+    let settings = authentication_settings::Entity::find_by_id(1_i16)
         .one(pool.connection())
         .await?
         .expect("认证设置固定记录必须存在");
