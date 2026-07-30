@@ -80,14 +80,6 @@ pub(in crate::migration) async fn create_auth_challenges(
             Expr::col(auth_challenges::Column::Purpose)
                 .is_in([REGISTRATION_EMAIL_PURPOSE, PASSWORD_RESET_PURPOSE]),
         )
-        .check(
-            Expr::col(auth_challenges::Column::Purpose)
-                .eq(REGISTRATION_EMAIL_PURPOSE)
-                .and(Expr::col(auth_challenges::Column::TargetUserId).is_null())
-                .or(Expr::col(auth_challenges::Column::Purpose)
-                    .eq(PASSWORD_RESET_PURPOSE)
-                    .and(Expr::col(auth_challenges::Column::TargetUserId).is_not_null())),
-        )
         .check(Expr::col(auth_challenges::Column::Attempts).gte(0_i32))
         .check(
             Expr::col(auth_challenges::Column::Attempts)
@@ -118,7 +110,20 @@ pub(in crate::migration) async fn create_auth_challenges(
                     )),
         )
         .check(hash_format_check(manager.get_database_backend()));
+    // MySQL 8.4 禁止 CHECK 引用带级联动作的外键列；该方言由实体与仓储双重校验同一不变量。
+    if manager.get_database_backend() != DbBackend::MySql {
+        statement.check(purpose_target_check());
+    }
     manager.create_table(statement).await
+}
+
+fn purpose_target_check() -> SimpleExpr {
+    Expr::col(auth_challenges::Column::Purpose)
+        .eq(REGISTRATION_EMAIL_PURPOSE)
+        .and(Expr::col(auth_challenges::Column::TargetUserId).is_null())
+        .or(Expr::col(auth_challenges::Column::Purpose)
+            .eq(PASSWORD_RESET_PURPOSE)
+            .and(Expr::col(auth_challenges::Column::TargetUserId).is_not_null()))
 }
 
 /// 创建挑战定位、用户撤销和过期清理所需索引。
