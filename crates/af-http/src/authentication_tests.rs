@@ -419,14 +419,19 @@ async fn responses_route_authentication_failure_uses_openai_error_wire() {
         .oneshot(bearer_request("/v1/responses"))
         .await
         .unwrap();
-    assert_auth_error(
-        response,
-        StatusCode::UNAUTHORIZED,
-        "Invalid API key.",
-        "invalid_request_error",
-        "invalid_api_key",
-    )
-    .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = response_json(response).await;
+    assert_eq!(
+        body,
+        json!({
+            "error": {
+                "message": "Invalid API key.",
+                "type": "invalid_request_error",
+                "param": null,
+                "code": "invalid_api_key",
+            }
+        })
+    );
     assert_eq!(authenticator.calls(), 1);
 }
 
