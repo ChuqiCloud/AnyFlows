@@ -529,3 +529,35 @@ pub(in crate::migration) mod registration_rate_limits {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod email_settings {
+    use super::DeriveIden;
+
+    /// `email_settings` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "email_settings")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 系统 SMTP 邮件设置迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        Enabled,
+        Host,
+        Port,
+        TlsMode,
+        Username,
+        PasswordSecret,
+        FromAddress,
+        FromName,
+        ReplyTo,
+        TimeoutSeconds,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}

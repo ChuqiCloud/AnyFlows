@@ -3,6 +3,7 @@
 mod channels;
 mod credentials;
 mod dashboard;
+mod email_settings;
 mod groups;
 mod models;
 mod playground_conversations;
@@ -28,6 +29,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(session::document());
     document.merge(setup::document());
     document.merge(registration::document());
+    document.merge(email_settings::document());
     document.merge(dashboard::document());
     document.merge(users::document());
     document.merge(groups::document());
@@ -43,6 +45,7 @@ pub fn openapi_document() -> OpenApi {
     document.tags = Some(vec![
         Tag::new("公开注册"),
         Tag::new("注册设置"),
+        Tag::new("邮件设置"),
         Tag::new("管理会话"),
         Tag::new("首次安装"),
         Tag::new("管理看板"),
@@ -82,7 +85,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 27);
+        assert_eq!(document.paths.paths.len(), 29);
         let operation_count = document
             .paths
             .paths
@@ -103,7 +106,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 49);
+        assert_eq!(operation_count, 52);
         assert!(
             document
                 .components
@@ -141,6 +144,7 @@ mod tests {
             "getAdminChannel",
             "getAdminCredential",
             "getAdminDashboard",
+            "getAdminEmailSettings",
             "getAdminGroup",
             "getAdminRegistrationPolicy",
             "getAdminToken",
@@ -166,9 +170,11 @@ mod tests {
             "registerUser",
             "revokePlaygroundShare",
             "savePlaygroundConversation",
+            "sendAdminEmailTest",
             "updateAdminChannel",
             "updateAdminCredential",
             "updateAdminGroup",
+            "updateAdminEmailSettings",
             "updateAdminRegistrationPolicy",
             "updateAdminToken",
             "updateAdminUser",
@@ -180,7 +186,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 68);
+        assert_eq!(schemas.len(), 72);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
@@ -190,6 +196,10 @@ mod tests {
         assert!(schemas.contains_key("RegistrationRequest"));
         assert!(schemas.contains_key("RegistrationPolicyResponse"));
         assert!(schemas.contains_key("RegistrationPolicyRequest"));
+        assert!(schemas.contains_key("AdminEmailSettings"));
+        assert!(schemas.contains_key("AdminEmailSettingsRequest"));
+        assert!(schemas.contains_key("AdminEmailTestRequest"));
+        assert!(schemas.contains_key("AdminEmailTlsMode"));
         assert!(schemas.contains_key("ModelCatalogListResponse"));
         assert!(schemas.contains_key("ModelCatalogPricingScope"));
         assert!(schemas.contains_key("PlaygroundShareCreateRequest"));
@@ -278,6 +288,15 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|field| field == "settings" || field == "header_override")
+        );
+        assert_eq!(
+            schemas["AdminEmailSettingsRequest"]["properties"]["password"]["writeOnly"],
+            true
+        );
+        assert!(
+            schemas["AdminEmailSettings"]["properties"]
+                .as_object()
+                .is_some_and(|properties| !properties.contains_key("password"))
         );
     }
 }

@@ -3,6 +3,7 @@ use sea_orm_migration::prelude::*;
 
 mod billing;
 mod billing_batch;
+mod email;
 mod identity;
 mod indexes;
 mod playground;
@@ -12,6 +13,7 @@ mod registration;
 mod routing;
 mod usage;
 
+pub(super) use email::create_email_settings;
 pub(super) use identity::{create_groups, create_options, create_tokens, create_users};
 pub(super) use indexes::{
     create_abilities_indexes, create_billing_reservations_indexes, create_channel_groups_indexes,

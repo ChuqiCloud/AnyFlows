@@ -48,6 +48,9 @@ mod credential_probe_tests;
 mod credential_state;
 #[cfg(test)]
 mod credential_state_tests;
+mod email_settings;
+#[cfg(test)]
+mod email_settings_tests;
 mod entity;
 mod error;
 mod group_pricing;
@@ -163,6 +166,11 @@ pub use credential_probe::{
 pub use credential_state::{
     CredentialStateChange, CredentialStateEvent, CredentialStateRepository,
     CredentialStateRepositoryError, CredentialStateWriteReport, MAX_CREDENTIAL_STATE_BATCH,
+};
+pub use email_settings::{
+    EmailPasswordUpdate, EmailSettingsRecord, EmailSettingsRepository,
+    EmailSettingsRepositoryConfigError, EmailSettingsRepositoryError, EmailSettingsWriteRecord,
+    EmailTlsMode,
 };
 pub use error::{DatabaseError, DatabaseOptionsError};
 pub use group_pricing::{

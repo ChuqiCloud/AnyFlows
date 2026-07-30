@@ -2,6 +2,7 @@ import {
   Boxes,
   Gauge,
   KeyRound,
+  Mail,
   MessageSquareText,
   Network,
   ScrollText,
@@ -30,7 +31,7 @@ type AppNavigationProps = {
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'users' | 'registration' | 'channels' | 'keys' | 'usage'
+  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'users' | 'emailSettings' | 'registration' | 'channels' | 'keys' | 'usage'
   icon: LucideIcon
   href: `#/console${string}`
 }
@@ -63,6 +64,7 @@ const navGroups: readonly NavGroup[] = [
     items: [
       { key: 'overview', icon: Gauge, href: '#/console' },
       { key: 'users', icon: UsersRound, href: '#/console/users' },
+      { key: 'emailSettings', icon: Mail, href: '#/console/system-settings/email' },
       { key: 'registration', icon: UserRoundCog, href: '#/console/registration' },
       { key: 'channels', icon: Network, href: '#/console/channels' },
       { key: 'keys', icon: ShieldCheck, href: '#/console/tokens' },

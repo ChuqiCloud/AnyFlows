@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminTokenReader,
-    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, InitialSetup,
-    ModelCatalogReader, PlaygroundConversationService, PlaygroundShareService, RegistrationService,
-    SessionAuthenticator, TokenAuthenticator,
+    AdminChannelReader, AdminChannelWriter, AdminEmailSettingsService, AdminGroupReader,
+    AdminGroupWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
+    AdminUserWriter, InitialSetup, ModelCatalogReader, PlaygroundConversationService,
+    PlaygroundShareService, RegistrationService, SessionAuthenticator, TokenAuthenticator,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -24,6 +24,7 @@ use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLaye
 
 use crate::anthropic_messages::anthropic_messages;
 use crate::authentication::{AuthenticationState, authenticate_api_key};
+use crate::email_settings::build_email_settings_router;
 use crate::frontend_assets::{FrontendAssetSource, frontend_fallback};
 use crate::gemini_generate_content::gemini_generate_content;
 use crate::management_auth::{
@@ -105,6 +106,7 @@ pub fn build_router(
     user_token_service: Arc<dyn af_admin::UserTokenService>,
     initial_setup: Arc<dyn InitialSetup>,
     registration_service: Arc<dyn RegistrationService>,
+    admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
     admin_channel_probe: Option<Arc<dyn crate::AdminChannelProbe>>,
@@ -250,6 +252,10 @@ pub fn build_router(
         Arc::clone(&http_state.session_authenticator),
         config,
     );
+    let email_settings_routes = build_email_settings_router(
+        admin_email_settings_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
     let management_routes = Router::new()
         .route("/api/setup/status", get(setup_status))
         .route("/api/setup", post(initialize_setup))
@@ -359,7 +365,8 @@ pub fn build_router(
         .merge(playground_share_routes)
         .merge(playground_conversation_routes)
         .merge(user_token_routes)
-        .merge(registration_routes);
+        .merge(registration_routes)
+        .merge(email_settings_routes);
     HttpRouter::new(build_router_with_routes_and_frontend(
         public_routes.merge(management_routes),
         operations_router(readiness),

@@ -1,0 +1,632 @@
+use std::{fmt, future::Future, pin::Pin, sync::Arc};
+
+use af_account::{DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretKind};
+use af_db::{
+    EmailPasswordUpdate, EmailSettingsRecord, EmailSettingsRepository,
+    EmailSettingsRepositoryError, EmailSettingsWriteRecord, EmailTlsMode,
+};
+use thiserror::Error;
+
+use crate::{SessionPrincipal, SessionRole};
+
+const MAX_HOST_BYTES: usize = 255;
+const MAX_EMAIL_BYTES: usize = 320;
+const MAX_FROM_NAME_BYTES: usize = 128;
+const MIN_TIMEOUT_SECONDS: u16 = 1;
+const MAX_TIMEOUT_SECONDS: u16 = 60;
+
+/// 管理 API 使用的 SMTP TLS 模式。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AdminEmailTlsMode {
+    StartTls,
+    Tls,
+}
+
+impl From<AdminEmailTlsMode> for EmailTlsMode {
+    fn from(value: AdminEmailTlsMode) -> Self {
+        match value {
+            AdminEmailTlsMode::StartTls => Self::StartTls,
+            AdminEmailTlsMode::Tls => Self::Tls,
+        }
+    }
+}
+
+impl From<EmailTlsMode> for AdminEmailTlsMode {
+    fn from(value: EmailTlsMode) -> Self {
+        match value {
+            EmailTlsMode::StartTls => Self::StartTls,
+            EmailTlsMode::Tls => Self::Tls,
+        }
+    }
+}
+
+/// 管理员可读取的 SMTP 设置投影，永不包含密码密文或明文。
+#[derive(Clone, Eq, PartialEq)]
+pub struct AdminEmailSettings {
+    enabled: bool,
+    host: String,
+    port: u16,
+    tls_mode: AdminEmailTlsMode,
+    username: Option<String>,
+    password_configured: bool,
+    from_address: String,
+    from_name: Option<String>,
+    reply_to: Option<String>,
+    timeout_seconds: u16,
+    version: i64,
+    delivery_ready: bool,
+}
+
+impl AdminEmailSettings {
+    #[must_use]
+    pub const fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    #[must_use]
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+
+    #[must_use]
+    pub const fn port(&self) -> u16 {
+        self.port
+    }
+
+    #[must_use]
+    pub const fn tls_mode(&self) -> AdminEmailTlsMode {
+        self.tls_mode
+    }
+
+    #[must_use]
+    pub fn username(&self) -> Option<&str> {
+        self.username.as_deref()
+    }
+
+    #[must_use]
+    pub const fn password_configured(&self) -> bool {
+        self.password_configured
+    }
+
+    #[must_use]
+    pub fn from_address(&self) -> &str {
+        &self.from_address
+    }
+
+    #[must_use]
+    pub fn from_name(&self) -> Option<&str> {
+        self.from_name.as_deref()
+    }
+
+    #[must_use]
+    pub fn reply_to(&self) -> Option<&str> {
+        self.reply_to.as_deref()
+    }
+
+    #[must_use]
+    pub const fn timeout_seconds(&self) -> u16 {
+        self.timeout_seconds
+    }
+
+    #[must_use]
+    pub const fn version(&self) -> i64 {
+        self.version
+    }
+
+    #[must_use]
+    pub const fn delivery_ready(&self) -> bool {
+        self.delivery_ready
+    }
+
+    fn from_record(record: &EmailSettingsRecord) -> Self {
+        Self {
+            enabled: record.enabled(),
+            host: record.host().to_owned(),
+            port: record.port(),
+            tls_mode: record.tls_mode().into(),
+            username: record.username().map(str::to_owned),
+            password_configured: record.password_configured(),
+            from_address: record.from_address().to_owned(),
+            from_name: record.from_name().map(str::to_owned),
+            reply_to: record.reply_to().map(str::to_owned),
+            timeout_seconds: record.timeout_seconds(),
+            version: record.version(),
+            delivery_ready: record.delivery_ready(),
+        }
+    }
+}
+
+impl fmt::Debug for AdminEmailSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AdminEmailSettings")
+            .field("enabled", &self.enabled)
+            .field("host", &"<已脱敏>")
+            .field("port", &self.port)
+            .field("tls_mode", &self.tls_mode)
+            .field("username", &self.username.as_ref().map(|_| "<已脱敏>"))
+            .field("password_configured", &self.password_configured)
+            .field("from_address", &"<已脱敏>")
+            .field("from_name", &self.from_name.as_ref().map(|_| "<已脱敏>"))
+            .field("reply_to", &self.reply_to.as_ref().map(|_| "<已脱敏>"))
+            .field("timeout_seconds", &self.timeout_seconds)
+            .field("version", &self.version)
+            .field("delivery_ready", &self.delivery_ready)
+            .finish()
+    }
+}
+
+/// 管理员完整保存 SMTP 设置的命令，密码缺失表示保留现有密文。
+pub struct AdminEmailSettingsCommand {
+    enabled: bool,
+    host: String,
+    port: u16,
+    tls_mode: AdminEmailTlsMode,
+    username: Option<String>,
+    password: Option<PlainSystemSecret>,
+    from_address: String,
+    from_name: Option<String>,
+    reply_to: Option<String>,
+    timeout_seconds: u16,
+}
+
+impl AdminEmailSettingsCommand {
+    /// 校验全部结构化字段；是否具备旧密码由持久化后的有效快照再次闭合。
+    #[allow(clippy::too_many_arguments, reason = "字段与 SMTP 设置契约一一对应")]
+    pub fn new(
+        enabled: bool,
+        host: String,
+        port: u16,
+        tls_mode: AdminEmailTlsMode,
+        username: Option<String>,
+        password: Option<String>,
+        from_address: String,
+        from_name: Option<String>,
+        reply_to: Option<String>,
+        timeout_seconds: u16,
+    ) -> Result<Self, AdminEmailSettingsError> {
+        let username = normalize_optional(username);
+        let from_name = normalize_optional(from_name);
+        let reply_to = normalize_optional(reply_to);
+        if port == 0
+            || !(MIN_TIMEOUT_SECONDS..=MAX_TIMEOUT_SECONDS).contains(&timeout_seconds)
+            || (!host.is_empty() && !is_valid_host(&host))
+            || (!from_address.is_empty() && !is_valid_email_address(&from_address))
+            || !valid_optional_text(username.as_deref(), MAX_EMAIL_BYTES)
+            || !valid_optional_text(from_name.as_deref(), MAX_FROM_NAME_BYTES)
+            || reply_to
+                .as_deref()
+                .is_some_and(|value| !is_valid_email_address(value))
+            || (enabled && (host.is_empty() || from_address.is_empty()))
+            || (username.is_none() && password.is_some())
+        {
+            return Err(AdminEmailSettingsError::InvalidInput);
+        }
+        let password = password
+            .map(PlainSystemSecret::new)
+            .transpose()
+            .map_err(|_| AdminEmailSettingsError::InvalidInput)?;
+        Ok(Self {
+            enabled,
+            host,
+            port,
+            tls_mode,
+            username,
+            password,
+            from_address,
+            from_name,
+            reply_to,
+            timeout_seconds,
+        })
+    }
+
+    fn into_record(
+        self,
+        cipher: &SystemSecretCipher,
+    ) -> Result<EmailSettingsWriteRecord, AdminEmailSettingsError> {
+        let password_update = if self.username.is_none() {
+            EmailPasswordUpdate::Clear
+        } else if let Some(password) = self.password.as_ref() {
+            EmailPasswordUpdate::Replace(
+                cipher
+                    .encrypt(SystemSecretKind::SmtpPassword, password)
+                    .map_err(|_| AdminEmailSettingsError::Internal)?,
+            )
+        } else {
+            EmailPasswordUpdate::Keep
+        };
+        Ok(EmailSettingsWriteRecord::new(
+            self.enabled,
+            self.host,
+            self.port,
+            self.tls_mode.into(),
+            self.username,
+            password_update,
+            self.from_address,
+            self.from_name,
+            self.reply_to,
+            self.timeout_seconds,
+        ))
+    }
+}
+
+impl fmt::Debug for AdminEmailSettingsCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AdminEmailSettingsCommand(<已脱敏>)")
+    }
+}
+
+/// 发送测试邮件的目标地址命令。
+pub struct AdminEmailTestCommand {
+    recipient: String,
+}
+
+impl AdminEmailTestCommand {
+    pub fn new(recipient: String) -> Result<Self, AdminEmailSettingsError> {
+        if !is_valid_email_address(&recipient) {
+            return Err(AdminEmailSettingsError::InvalidInput);
+        }
+        Ok(Self { recipient })
+    }
+}
+
+impl fmt::Debug for AdminEmailTestCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AdminEmailTestCommand(<已脱敏>)")
+    }
+}
+
+/// 应用服务交给 SMTP 适配器的完整投递请求。
+pub struct EmailDeliveryRequest {
+    host: String,
+    port: u16,
+    tls_mode: AdminEmailTlsMode,
+    username: Option<String>,
+    password: Option<DecryptedSystemSecret>,
+    from_address: String,
+    from_name: Option<String>,
+    reply_to: Option<String>,
+    recipient: String,
+    timeout_seconds: u16,
+}
+
+impl EmailDeliveryRequest {
+    #[must_use]
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+
+    #[must_use]
+    pub const fn port(&self) -> u16 {
+        self.port
+    }
+
+    #[must_use]
+    pub const fn tls_mode(&self) -> AdminEmailTlsMode {
+        self.tls_mode
+    }
+
+    #[must_use]
+    pub fn username(&self) -> Option<&str> {
+        self.username.as_deref()
+    }
+
+    #[must_use]
+    pub fn password(&self) -> Option<&str> {
+        self.password
+            .as_ref()
+            .map(DecryptedSystemSecret::expose_secret)
+    }
+
+    #[must_use]
+    pub fn from_address(&self) -> &str {
+        &self.from_address
+    }
+
+    #[must_use]
+    pub fn from_name(&self) -> Option<&str> {
+        self.from_name.as_deref()
+    }
+
+    #[must_use]
+    pub fn reply_to(&self) -> Option<&str> {
+        self.reply_to.as_deref()
+    }
+
+    #[must_use]
+    pub fn recipient(&self) -> &str {
+        &self.recipient
+    }
+
+    #[must_use]
+    pub const fn timeout_seconds(&self) -> u16 {
+        self.timeout_seconds
+    }
+}
+
+impl fmt::Debug for EmailDeliveryRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("EmailDeliveryRequest")
+            .field("host", &"<已脱敏>")
+            .field("port", &self.port)
+            .field("tls_mode", &self.tls_mode)
+            .field("authenticated", &self.username.is_some())
+            .field("from_address", &"<已脱敏>")
+            .field("recipient", &"<已脱敏>")
+            .field("timeout_seconds", &self.timeout_seconds)
+            .finish_non_exhaustive()
+    }
+}
+
+/// SMTP 适配器的固定失败分类。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum EmailDeliveryError {
+    #[error("邮件投递配置无效")]
+    InvalidConfiguration,
+    #[error("邮件投递超时")]
+    Timeout,
+    #[error("邮件投递失败")]
+    Failed,
+}
+
+pub type EmailDeliveryFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<(), EmailDeliveryError>> + Send + 'a>>;
+
+/// 邮件投递端口；实现不得把请求内容或底层服务器响应写入日志。
+pub trait EmailDelivery: Send + Sync {
+    fn send_test<'a>(&'a self, request: EmailDeliveryRequest) -> EmailDeliveryFuture<'a>;
+}
+
+/// 管理员邮件设置应用服务错误。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum AdminEmailSettingsError {
+    #[error("SMTP 设置输入无效")]
+    InvalidInput,
+    #[error("当前会话无权管理 SMTP 设置")]
+    Forbidden,
+    #[error("SMTP 设置尚未完整配置")]
+    NotConfigured,
+    #[error("测试邮件投递失败")]
+    DeliveryFailed,
+    #[error("SMTP 设置服务内部错误")]
+    Internal,
+}
+
+pub type AdminEmailSettingsReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<AdminEmailSettings, AdminEmailSettingsError>> + Send + 'a>>;
+pub type AdminEmailSettingsUpdateFuture<'a> = AdminEmailSettingsReadFuture<'a>;
+pub type AdminEmailTestFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<(), AdminEmailSettingsError>> + Send + 'a>>;
+
+/// 管理员 SMTP 设置与测试邮件用例端口。
+pub trait AdminEmailSettingsService: Send + Sync {
+    fn settings<'a>(&'a self, principal: SessionPrincipal) -> AdminEmailSettingsReadFuture<'a>;
+    fn update<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: AdminEmailSettingsCommand,
+    ) -> AdminEmailSettingsUpdateFuture<'a>;
+    fn send_test<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: AdminEmailTestCommand,
+    ) -> AdminEmailTestFuture<'a>;
+}
+
+/// 使用数据库、系统密钥和 SMTP 适配器实现管理员邮件设置用例。
+pub struct DatabaseAdminEmailSettingsService {
+    repository: EmailSettingsRepository,
+    cipher: SystemSecretCipher,
+    delivery: Arc<dyn EmailDelivery>,
+}
+
+impl DatabaseAdminEmailSettingsService {
+    #[must_use]
+    pub fn new(
+        repository: EmailSettingsRepository,
+        cipher: SystemSecretCipher,
+        delivery: Arc<dyn EmailDelivery>,
+    ) -> Self {
+        Self {
+            repository,
+            cipher,
+            delivery,
+        }
+    }
+}
+
+impl AdminEmailSettingsService for DatabaseAdminEmailSettingsService {
+    fn settings<'a>(&'a self, principal: SessionPrincipal) -> AdminEmailSettingsReadFuture<'a> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            self.repository
+                .settings()
+                .await
+                .map(|record| AdminEmailSettings::from_record(&record))
+                .map_err(map_repository_error)
+        })
+    }
+
+    fn update<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: AdminEmailSettingsCommand,
+    ) -> AdminEmailSettingsUpdateFuture<'a> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            let record = command.into_record(&self.cipher)?;
+            self.repository
+                .update(record)
+                .await
+                .map(|record| AdminEmailSettings::from_record(&record))
+                .map_err(map_repository_error)
+        })
+    }
+
+    fn send_test<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: AdminEmailTestCommand,
+    ) -> AdminEmailTestFuture<'a> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            let record = self
+                .repository
+                .settings()
+                .await
+                .map_err(map_repository_error)?;
+            if !record.delivery_ready() {
+                return Err(AdminEmailSettingsError::NotConfigured);
+            }
+            let password = record
+                .password_secret()
+                .map(|secret| {
+                    self.cipher
+                        .decrypt(SystemSecretKind::SmtpPassword, secret)
+                        .map_err(|_| AdminEmailSettingsError::Internal)
+                })
+                .transpose()?;
+            let request = EmailDeliveryRequest {
+                host: record.host().to_owned(),
+                port: record.port(),
+                tls_mode: record.tls_mode().into(),
+                username: record.username().map(str::to_owned),
+                password,
+                from_address: record.from_address().to_owned(),
+                from_name: record.from_name().map(str::to_owned),
+                reply_to: record.reply_to().map(str::to_owned),
+                recipient: command.recipient,
+                timeout_seconds: record.timeout_seconds(),
+            };
+            self.delivery
+                .send_test(request)
+                .await
+                .map_err(|_| AdminEmailSettingsError::DeliveryFailed)
+        })
+    }
+}
+
+fn require_admin(principal: SessionPrincipal) -> Result<(), AdminEmailSettingsError> {
+    if principal.role() != SessionRole::Admin {
+        return Err(AdminEmailSettingsError::Forbidden);
+    }
+    Ok(())
+}
+
+fn map_repository_error(error: EmailSettingsRepositoryError) -> AdminEmailSettingsError {
+    match error {
+        EmailSettingsRepositoryError::InvalidSettings => AdminEmailSettingsError::InvalidInput,
+        EmailSettingsRepositoryError::Query
+        | EmailSettingsRepositoryError::Timeout
+        | EmailSettingsRepositoryError::Invariant => AdminEmailSettingsError::Internal,
+    }
+}
+
+fn normalize_optional(value: Option<String>) -> Option<String> {
+    value.filter(|value| !value.is_empty())
+}
+
+fn is_valid_host(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_HOST_BYTES
+        && value.trim() == value
+        && value.is_ascii()
+        && !value
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
+        && !value.contains("://")
+        && !value.contains(['/', '\\', '@'])
+}
+
+fn is_valid_email_address(value: &str) -> bool {
+    if value.is_empty()
+        || value.len() > MAX_EMAIL_BYTES
+        || value.trim() != value
+        || value
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+    {
+        return false;
+    }
+    let mut parts = value.split('@');
+    let local = parts.next().unwrap_or_default();
+    let domain = parts.next().unwrap_or_default();
+    !local.is_empty()
+        && !domain.is_empty()
+        && parts.next().is_none()
+        && !local.starts_with('.')
+        && !local.ends_with('.')
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
+}
+
+fn valid_optional_text(value: Option<&str>, maximum_bytes: usize) -> bool {
+    value.is_none_or(|value| {
+        !value.is_empty()
+            && value.len() <= maximum_bytes
+            && value.trim() == value
+            && !value.chars().any(char::is_control)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validates_structured_settings_without_leaking_fields() {
+        let command = AdminEmailSettingsCommand::new(
+            true,
+            "smtp.example.com".to_owned(),
+            587,
+            AdminEmailTlsMode::StartTls,
+            Some("mailer@example.com".to_owned()),
+            Some("secret password".to_owned()),
+            "from@example.com".to_owned(),
+            Some("AnyFlows".to_owned()),
+            Some("reply@example.com".to_owned()),
+            10,
+        )
+        .unwrap();
+        let rendered = format!("{command:?}");
+        for private in ["smtp.example.com", "mailer@example.com", "secret password"] {
+            assert!(!rendered.contains(private));
+        }
+        assert!(
+            AdminEmailSettingsCommand::new(
+                true,
+                "http://smtp.example.com".to_owned(),
+                587,
+                AdminEmailTlsMode::StartTls,
+                None,
+                None,
+                "from@example.com".to_owned(),
+                None,
+                None,
+                10,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn rejects_password_without_authentication_user() {
+        assert!(
+            AdminEmailSettingsCommand::new(
+                false,
+                "smtp.example.com".to_owned(),
+                465,
+                AdminEmailTlsMode::Tls,
+                None,
+                Some("secret".to_owned()),
+                "from@example.com".to_owned(),
+                None,
+                None,
+                10,
+            )
+            .is_err()
+        );
+        assert!(AdminEmailTestCommand::new("invalid".to_owned()).is_err());
+    }
+}

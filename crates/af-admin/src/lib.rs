@@ -4,6 +4,9 @@ mod api_key;
 mod channel_read;
 mod channel_write;
 mod credential_read;
+mod email_settings;
+#[cfg(test)]
+mod email_settings_tests;
 mod group_read;
 mod group_write;
 mod initial_setup;
@@ -43,6 +46,13 @@ pub use channel_write::{
 pub use credential_read::{
     AdminCredential, AdminCredentialListQuery, AdminCredentialMultiKeyMode, AdminCredentialPage,
     AdminCredentialQuotaDimension,
+};
+pub use email_settings::{
+    AdminEmailSettings, AdminEmailSettingsCommand, AdminEmailSettingsError,
+    AdminEmailSettingsReadFuture, AdminEmailSettingsService, AdminEmailSettingsUpdateFuture,
+    AdminEmailTestCommand, AdminEmailTestFuture, AdminEmailTlsMode,
+    DatabaseAdminEmailSettingsService, EmailDelivery, EmailDeliveryError, EmailDeliveryFuture,
+    EmailDeliveryRequest,
 };
 pub use group_read::{
     AdminGroup, AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery, AdminGroupPage,

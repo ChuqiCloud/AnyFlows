@@ -2,6 +2,7 @@
 
 mod credential_decryption;
 mod credential_encryption;
+mod system_secret;
 
 pub use credential_decryption::{
     CredentialDecryptionError, CredentialDecryptor, DecryptedCredential,
@@ -9,4 +10,8 @@ pub use credential_decryption::{
 };
 pub use credential_encryption::{
     CredentialEncryptionError, CredentialEncryptor, PlainCredentialSecret,
+};
+pub use system_secret::{
+    DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretError,
+    SystemSecretKind,
 };
