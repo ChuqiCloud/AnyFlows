@@ -24,6 +24,7 @@ mod m20260729_000015_create_playground_shares;
 mod m20260729_000016_create_playground_conversations;
 mod m20260730_000017_create_registration_rate_limits;
 mod m20260730_000018_add_channel_timeout;
+mod m20260730_000019_create_email_settings;
 mod schema;
 
 #[cfg(test)]
@@ -85,6 +86,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260729_000016_create_playground_conversations::Migration),
             Box::new(m20260730_000017_create_registration_rate_limits::Migration),
             Box::new(m20260730_000018_add_channel_timeout::Migration),
+            Box::new(m20260730_000019_create_email_settings::Migration),
         ]
     }
 }

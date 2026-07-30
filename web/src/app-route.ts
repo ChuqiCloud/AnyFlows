@@ -1,6 +1,7 @@
 export type AppView =
   | 'api-keys'
   | 'channels'
+  | 'email-settings'
   | 'models'
   | 'playground'
   | 'public-models'
@@ -33,6 +34,7 @@ export function routeFromHash(hash: string): AppRoute {
     }
   }
   if (hash.startsWith('#/console/channels')) return { view: 'channels' }
+  if (hash.startsWith('#/console/system-settings/email')) return { view: 'email-settings' }
   if (hash.startsWith('#/console/api-keys')) return { view: 'api-keys' }
   if (hash.startsWith('#/console/models')) return { view: 'models' }
   if (hash.startsWith('#/console/playground')) return { view: 'playground' }

@@ -13,6 +13,7 @@ mod model_catalog;
 mod readiness;
 mod scheduled_chat;
 mod shutdown;
+mod smtp_delivery;
 mod supervisor;
 mod utc_time;
 
@@ -25,6 +26,7 @@ pub use bootstrap::{
     ListenerReady, RelayReady, RouterReady, ShutdownReport, Supervised, TelemetryReady, run,
 };
 pub use shutdown::{ShutdownController, system_shutdown_signal};
+pub use smtp_delivery::SmtpEmailDelivery;
 pub use supervisor::{BackgroundTaskSupervisor, SupervisorError, SupervisorShutdown};
 
 /// 安装服务进程必须独占的脱敏 panic hook。

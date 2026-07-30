@@ -2,14 +2,16 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{
     CredentialDecryptionError, CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
+    SystemSecretCipher, SystemSecretError,
 };
 use af_admin::{
-    AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminTokenReader,
-    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter,
-    DatabaseAdminChannelReader, DatabaseAdminChannelWriter, DatabaseAdminGroupReader,
-    DatabaseAdminGroupWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
-    DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
-    DatabaseInitialSetup, DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    AdminChannelReader, AdminChannelWriter, AdminEmailSettingsService, AdminGroupReader,
+    AdminGroupWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
+    AdminUserWriter, DatabaseAdminChannelReader, DatabaseAdminChannelWriter,
+    DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader, DatabaseAdminGroupWriter,
+    DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
+    DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseInitialSetup,
+    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
     DatabaseRegistrationService, DatabaseSessionAuthenticator, DatabaseTokenAuthenticator,
     DatabaseUserTokenService, InitialSetup, ModelCatalogReader, PlaygroundConversationService,
     PlaygroundShareService, RegistrationService, RegistrationServiceConfigError,
@@ -30,7 +32,8 @@ use af_db::{
     AdminTokenRepository, AdminTokenRepositoryConfigError, AdminUsageLogRepository,
     AdminUsageLogRepositoryConfigError, AdminUserRepository, AdminUserRepositoryConfigError,
     ChannelStateRepository, CredentialStateRepository, DatabaseError, DatabaseOptions,
-    DatabaseOptionsError, DatabasePool, InitialSetupRepository, InitialSetupRepositoryConfigError,
+    DatabaseOptionsError, DatabasePool, EmailSettingsRepository,
+    EmailSettingsRepositoryConfigError, InitialSetupRepository, InitialSetupRepositoryConfigError,
     MigrationOptions, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RegistrationRepository,
@@ -63,6 +66,7 @@ use crate::{
     frontend::EmbeddedFrontendAssets,
     model_catalog::RuntimeModelCatalogReader,
     scheduled_chat::ScheduledChatService,
+    smtp_delivery::SmtpEmailDelivery,
     system_shutdown_signal,
 };
 
@@ -95,6 +99,7 @@ pub struct AuthenticationReady {
     session_authenticator: Arc<dyn SessionAuthenticator>,
     initial_setup: Arc<dyn InitialSetup>,
     registration_service: Arc<dyn RegistrationService>,
+    admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     playground_share_service: Arc<dyn PlaygroundShareService>,
     playground_conversation_service: Arc<dyn PlaygroundConversationService>,
     user_token_service: Arc<dyn UserTokenService>,
@@ -229,6 +234,12 @@ pub enum BootstrapError {
     /// 注册 IP 指纹密钥缺失或无效。
     #[error("注册服务启动配置无效")]
     RegistrationService(#[source] RegistrationServiceConfigError),
+    /// SMTP 设置仓储的启动参数无效。
+    #[error("SMTP 设置仓储启动参数无效")]
+    EmailSettingsRepository(#[source] EmailSettingsRepositoryConfigError),
+    /// SMTP 密码加解密器无法从启动配置安全装配。
+    #[error("初始化 SMTP 密码加解密器失败")]
+    SystemSecret(#[source] SystemSecretError),
     /// Playground 分享仓储的启动参数无效。
     #[error("Playground 分享仓储启动参数无效")]
     PlaygroundShareRepository(#[source] PlaygroundShareRepositoryConfigError),
@@ -404,6 +415,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::RegistrationRepository)?;
+        let email_settings_repository = EmailSettingsRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::EmailSettingsRepository)?;
         let playground_share_repository = PlaygroundShareRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -430,6 +446,13 @@ impl Bootstrap<DatabaseReady> {
             auth.session_signing_key().map(|key| key.expose()),
         )
         .map_err(BootstrapError::RegistrationService)?;
+        let system_secret_cipher = SystemSecretCipher::new(self.config.credential_encryption())
+            .map_err(BootstrapError::SystemSecret)?;
+        let admin_email_settings_service = DatabaseAdminEmailSettingsService::new(
+            email_settings_repository,
+            system_secret_cipher,
+            Arc::new(SmtpEmailDelivery),
+        );
         let admin_group_repository = AdminGroupRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -482,6 +505,7 @@ impl Bootstrap<DatabaseReady> {
                 session_authenticator: Arc::new(session_authenticator),
                 initial_setup: Arc::new(DatabaseInitialSetup::new(initial_setup_repository)),
                 registration_service: Arc::new(registration_service),
+                admin_email_settings_service: Arc::new(admin_email_settings_service),
                 playground_share_service: Arc::new(DatabasePlaygroundShareService::new(
                     playground_share_repository,
                 )),
@@ -825,6 +849,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.user_token_service),
             Arc::clone(&self.stage.infrastructure.initial_setup),
             Arc::clone(&self.stage.infrastructure.registration_service),
+            Arc::clone(&self.stage.infrastructure.admin_email_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_channel_writer),
             Some(Arc::clone(&self.stage.admin_channel_probe)),

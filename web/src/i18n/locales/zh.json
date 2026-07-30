@@ -15,6 +15,7 @@
     "playground": "对话试炼场",
     "apiKeys": "我的 API Key",
     "users": "用户管理",
+    "emailSettings": "邮件设置",
     "registration": "注册设置",
     "channels": "渠道管理",
     "keys": "全局令牌",
@@ -1021,6 +1022,108 @@
       "admin": "管理员",
       "user": "用户",
       "logout": "退出登录"
+    }
+  },
+  "emailSettings": {
+    "title": "邮件设置",
+    "subtitle": "配置系统 SMTP 投递基础。密码加密保存，测试邮件使用固定正文且不会持久化收件人。",
+    "loading": "正在加载邮件设置",
+    "status": {
+      "title": "SMTP 投递",
+      "enabled": "已启用",
+      "disabled": "已停用",
+      "ready": "配置完整",
+      "incomplete": "配置未完成",
+      "version": "配置版本 {{version}}",
+      "delivery": "允许业务邮件投递"
+    },
+    "connection": {
+      "title": "连接与认证",
+      "description": "只支持强制 STARTTLS 或隐式 TLS，不会回退到明文 SMTP。"
+    },
+    "sender": {
+      "title": "发件人身份",
+      "description": "设置收件箱中显示的发件人和可选回复地址。"
+    },
+    "fields": {
+      "host": "SMTP 主机",
+      "hostHint": "只填写主机名或 IP，不包含协议和路径。",
+      "port": "端口",
+      "tlsMode": "TLS 模式",
+      "tlsHint": "STARTTLS 常用 587，隐式 TLS 常用 465。",
+      "timeout": "硬超时（秒）",
+      "timeoutHint": "连接、认证和投递共享 1 至 60 秒的总截止时间。",
+      "username": "认证用户名",
+      "usernameHint": "留空会关闭 SMTP 认证，并在保存时清除已有密码。",
+      "password": "认证密码",
+      "passwordKeepHint": "已配置。留空保留现有密文，输入新值则替换。",
+      "passwordEmptyHint": "尚未配置。填写认证用户名时必须同时设置密码。",
+      "fromName": "发件人名称",
+      "fromAddress": "发件地址",
+      "replyTo": "回复地址",
+      "replyToHint": "可选。留空时由收件人直接回复发件地址。"
+    },
+    "tls": {
+      "startTls": "STARTTLS（连接后升级）",
+      "tls": "隐式 TLS（全程加密）"
+    },
+    "validation": {
+      "host": "请输入不含协议、路径或空格的有效 SMTP 主机。",
+      "port": "端口必须是 1 至 65535 的整数。",
+      "username": "认证用户名不能有首尾空格或控制字符，最多 320 字节。",
+      "password": "密码必须为 1 至 4096 字节，且不能包含控制字符。",
+      "passwordRequired": "首次配置认证用户名时必须同时填写密码。",
+      "passwordWithoutUser": "填写密码前请先配置认证用户名。",
+      "fromAddress": "请输入有效的发件邮箱地址。",
+      "fromAddressRequired": "启用邮件投递前必须填写发件地址。",
+      "fromName": "发件人名称不能有首尾空格或控制字符，最多 128 字节。",
+      "replyTo": "请输入有效的回复邮箱地址。",
+      "timeout": "硬超时必须是 1 至 60 的整数秒。"
+    },
+    "passwordState": {
+      "disabled": "SMTP 认证将在保存后关闭",
+      "replace": "将替换现有 SMTP 密码",
+      "configured": "SMTP 密码已加密配置",
+      "missing": "SMTP 密码尚未配置"
+    },
+    "state": {
+      "saved": "邮件设置已保存",
+      "unsaved": "有未保存的更改"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "save": "保存设置",
+      "saving": "正在保存",
+      "showPassword": "显示 SMTP 密码",
+      "hidePassword": "隐藏 SMTP 密码"
+    },
+    "errors": {
+      "title": "无法读取邮件设置",
+      "load": "服务没有返回可靠的 SMTP 设置，请稍后重试。",
+      "save": "邮件设置保存失败，服务端状态未改变。"
+    },
+    "test": {
+      "title": "测试投递",
+      "description": "使用最近一次已保存配置发送固定正文测试邮件。",
+      "ready": "可以测试",
+      "blocked": "暂不可用",
+      "recipient": "测试收件人",
+      "recipientHint": "地址只用于本次请求，不会保存或回显。",
+      "saveFirst": "请先保存当前更改，再测试数据库中的最新配置。",
+      "configureFirst": "请先补全主机、发件地址和认证信息并保存。",
+      "send": "发送测试邮件",
+      "sending": "正在投递",
+      "success": "测试邮件已成功交给 SMTP 服务器。",
+      "errors": {
+        "recipient": "请输入有效的测试收件邮箱。",
+        "notConfigured": "当前 SMTP 配置尚不完整，请保存完整设置后重试。",
+        "delivery": "测试投递失败，请检查连接、TLS 和认证设置后重试。"
+      }
+    },
+    "security": {
+      "title": "凭据与内容边界",
+      "description": "管理读取只返回密码配置状态。密码、收件人、邮件正文和 SMTP 服务器响应不会进入页面缓存、URL 或错误详情。"
     }
   },
   "registration": {

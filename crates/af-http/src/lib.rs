@@ -7,6 +7,7 @@ mod chat_completions;
 mod chat_service;
 mod client_ip;
 mod credentials;
+mod email_settings;
 mod error_response;
 mod frontend_assets;
 mod gemini_generate_content;
@@ -59,6 +60,8 @@ mod authentication_tests;
 mod client_ip_tests;
 #[cfg(test)]
 mod credentials_tests;
+#[cfg(test)]
+mod email_settings_tests;
 #[cfg(test)]
 mod error_response_tests;
 #[cfg(test)]

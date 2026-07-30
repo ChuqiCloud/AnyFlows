@@ -27,6 +27,10 @@ pub(crate) enum ManagementError {
     RegistrationDisabled,
     /// 当前客户端已耗尽公开注册固定窗口尝试次数。
     RegistrationRateLimited { retry_after_seconds: u64 },
+    /// SMTP 设置尚未达到可投递状态。
+    EmailNotConfigured,
+    /// SMTP 连接、认证或投递失败，底层响应不会向外透传。
+    EmailDeliveryFailed,
     /// 分组不存在或已经被软删除。
     GroupNotFound,
     /// 分组名与当前有效分组冲突。
@@ -139,6 +143,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "registration_rate_limited",
                     message: "Registration rate limited",
+                },
+            ),
+            Self::EmailNotConfigured => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "email_not_configured",
+                    message: "Email delivery is not configured",
+                },
+            ),
+            Self::EmailDeliveryFailed => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "email_delivery_failed",
+                    message: "Email delivery failed",
                 },
             ),
             Self::GroupNotFound => (

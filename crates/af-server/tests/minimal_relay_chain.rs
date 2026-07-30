@@ -13,7 +13,9 @@ use af_admin::{
     AdminChannelWriteError, AdminChannelWriter, AdminCredentialCreateCommand,
     AdminCredentialCreateFuture, AdminCredentialDeleteFuture, AdminCredentialGetFuture,
     AdminCredentialListFuture, AdminCredentialListQuery, AdminCredentialUpdateCommand,
-    AdminCredentialUpdateFuture, AdminGroupCreateCommand, AdminGroupCreateFuture,
+    AdminCredentialUpdateFuture, AdminEmailSettingsCommand, AdminEmailSettingsError,
+    AdminEmailSettingsReadFuture, AdminEmailSettingsService, AdminEmailSettingsUpdateFuture,
+    AdminEmailTestCommand, AdminEmailTestFuture, AdminGroupCreateCommand, AdminGroupCreateFuture,
     AdminGroupDeleteFuture, AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery,
     AdminGroupReadError, AdminGroupReader, AdminGroupUpdateCommand, AdminGroupUpdateFuture,
     AdminGroupWriteError, AdminGroupWriter, AdminTokenCreateCommand, AdminTokenCreateFuture,
@@ -86,6 +88,7 @@ struct RejectPlaygroundConversations;
 struct RejectUserTokens;
 struct RejectInitialSetup;
 struct RejectRegistration;
+struct RejectAdminEmailSettings;
 struct RejectAdminChannels;
 struct RejectAdminGroups;
 struct RejectAdminTokens;
@@ -241,6 +244,28 @@ impl RegistrationService for RejectRegistration {
         _command: RegistrationPolicyCommand,
     ) -> RegistrationPolicyUpdateFuture<'_> {
         Box::pin(async { Err(RegistrationError::Internal) })
+    }
+}
+
+impl AdminEmailSettingsService for RejectAdminEmailSettings {
+    fn settings(&self, _principal: SessionPrincipal) -> AdminEmailSettingsReadFuture<'_> {
+        Box::pin(async { Err(AdminEmailSettingsError::Internal) })
+    }
+
+    fn update(
+        &self,
+        _principal: SessionPrincipal,
+        _command: AdminEmailSettingsCommand,
+    ) -> AdminEmailSettingsUpdateFuture<'_> {
+        Box::pin(async { Err(AdminEmailSettingsError::Internal) })
+    }
+
+    fn send_test(
+        &self,
+        _principal: SessionPrincipal,
+        _command: AdminEmailTestCommand,
+    ) -> AdminEmailTestFuture<'_> {
+        Box::pin(async { Err(AdminEmailSettingsError::Internal) })
     }
 }
 
@@ -1421,6 +1446,7 @@ async fn start_server(
         Arc::new(RejectUserTokens),
         Arc::new(RejectInitialSetup),
         Arc::new(RejectRegistration),
+        Arc::new(RejectAdminEmailSettings),
         Arc::new(RejectAdminChannels),
         Arc::new(RejectAdminChannels),
         None,

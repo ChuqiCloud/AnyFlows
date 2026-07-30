@@ -187,6 +187,35 @@ export type AdminDashboardResponse = {
     disabled_channel_count: number;
     auto_disabled_channel_count: number;
 };
+export type AdminEmailSettings = {
+    enabled: boolean;
+    host: string;
+    port: number;
+    tls_mode: AdminEmailTlsMode;
+    username?: string | null;
+    password_configured: boolean;
+    from_address: string;
+    from_name?: string | null;
+    reply_to?: string | null;
+    timeout_seconds: number;
+    version: number;
+    delivery_ready: boolean;
+};
+export type AdminEmailSettingsRequest = {
+    enabled: boolean;
+    host: string;
+    port: number;
+    tls_mode: AdminEmailTlsMode;
+    username?: string | null;
+    from_address: string;
+    from_name?: string | null;
+    reply_to?: string | null;
+    timeout_seconds: number;
+};
+export type AdminEmailTestRequest = {
+    recipient: string;
+};
+export type AdminEmailTlsMode = 'start_tls' | 'tls';
 export type AdminGroup = {
     id: number;
     name: string;
@@ -352,7 +381,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'registration_disabled' | 'registration_rate_limited' | 'group_conflict' | 'group_in_use' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'registration_disabled' | 'registration_rate_limited' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -587,6 +616,18 @@ export type AdminCredentialUpdateRequestWritable = {
     oauth_account_key: string | null;
     oauth_project_id: string | null;
 };
+export type AdminEmailSettingsRequestWritable = {
+    enabled: boolean;
+    host: string;
+    port: number;
+    tls_mode: AdminEmailTlsMode;
+    username?: string | null;
+    password?: string | null;
+    from_address: string;
+    from_name?: string | null;
+    reply_to?: string | null;
+    timeout_seconds: number;
+};
 export type RegistrationRequestWritable = {
     username: string;
     email?: string | null;
@@ -722,6 +763,58 @@ export type UpdateAdminRegistrationPolicyResponses = {
     200: RegistrationPolicyResponse;
 };
 export type UpdateAdminRegistrationPolicyResponse = UpdateAdminRegistrationPolicyResponses[keyof UpdateAdminRegistrationPolicyResponses];
+export type GetAdminEmailSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/email-settings';
+};
+export type GetAdminEmailSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminEmailSettingsError = GetAdminEmailSettingsErrors[keyof GetAdminEmailSettingsErrors];
+export type GetAdminEmailSettingsResponses = {
+    200: AdminEmailSettings;
+};
+export type GetAdminEmailSettingsResponse = GetAdminEmailSettingsResponses[keyof GetAdminEmailSettingsResponses];
+export type UpdateAdminEmailSettingsData = {
+    body: AdminEmailSettingsRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/admin/email-settings';
+};
+export type UpdateAdminEmailSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminEmailSettingsError = UpdateAdminEmailSettingsErrors[keyof UpdateAdminEmailSettingsErrors];
+export type UpdateAdminEmailSettingsResponses = {
+    200: AdminEmailSettings;
+};
+export type UpdateAdminEmailSettingsResponse = UpdateAdminEmailSettingsResponses[keyof UpdateAdminEmailSettingsResponses];
+export type SendAdminEmailTestData = {
+    body: AdminEmailTestRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/email-settings/test';
+};
+export type SendAdminEmailTestErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    502: ManagementError;
+};
+export type SendAdminEmailTestError = SendAdminEmailTestErrors[keyof SendAdminEmailTestErrors];
+export type SendAdminEmailTestResponses = {
+    204: void;
+};
+export type SendAdminEmailTestResponse = SendAdminEmailTestResponses[keyof SendAdminEmailTestResponses];
 export type GetAdminDashboardData = {
     body?: never;
     path?: never;

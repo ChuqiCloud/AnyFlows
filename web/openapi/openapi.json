@@ -446,6 +446,225 @@
         ]
       }
     },
+    "/api/admin/email-settings": {
+      "get": {
+        "tags": [
+          "邮件设置"
+        ],
+        "summary": "读取管理员 SMTP 设置",
+        "operationId": "getAdminEmailSettings",
+        "responses": {
+          "200": {
+            "description": "密码保持脱敏的完整 SMTP 设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminEmailSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "邮件设置"
+        ],
+        "summary": "覆盖管理员 SMTP 设置",
+        "operationId": "updateAdminEmailSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminEmailSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的脱敏 SMTP 设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminEmailSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文或 SMTP 字段无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/email-settings/test": {
+      "post": {
+        "tags": [
+          "邮件设置"
+        ],
+        "summary": "发送固定正文 SMTP 测试邮件",
+        "operationId": "sendAdminEmailTest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminEmailTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "测试邮件投递成功，不回显收件人或正文"
+          },
+          "400": {
+            "description": "请求正文或收件人无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SMTP 设置尚未完整配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "SMTP 连接、认证或投递失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/dashboard": {
       "get": {
         "tags": [
@@ -5260,6 +5479,182 @@
         },
         "additionalProperties": false
       },
+      "AdminEmailSettings": {
+        "type": "object",
+        "description": "管理员读取的完整 SMTP 设置；密码只返回是否已配置。",
+        "required": [
+          "enabled",
+          "host",
+          "port",
+          "tls_mode",
+          "password_configured",
+          "from_address",
+          "timeout_seconds",
+          "version",
+          "delivery_ready"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "host": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 65535,
+            "minimum": 1
+          },
+          "tls_mode": {
+            "$ref": "#/components/schemas/AdminEmailTlsMode"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 320
+          },
+          "password_configured": {
+            "type": "boolean"
+          },
+          "from_address": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320
+          },
+          "from_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "reply_to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "email",
+            "maxLength": 320
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 60,
+            "minimum": 1
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "delivery_ready": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminEmailSettingsRequest": {
+        "type": "object",
+        "description": "管理员完整覆盖 SMTP 设置的结构化请求。",
+        "required": [
+          "enabled",
+          "host",
+          "port",
+          "tls_mode",
+          "from_address",
+          "timeout_seconds"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "host": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 65535,
+            "minimum": 1
+          },
+          "tls_mode": {
+            "$ref": "#/components/schemas/AdminEmailTlsMode"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 320
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          },
+          "from_address": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320
+          },
+          "from_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "reply_to": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "email",
+            "maxLength": 320
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 60,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminEmailTestRequest": {
+        "type": "object",
+        "description": "测试邮件只允许指定收件人，不接受主题或正文。",
+        "required": [
+          "recipient"
+        ],
+        "properties": {
+          "recipient": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320,
+            "minLength": 3
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminEmailTlsMode": {
+        "type": "string",
+        "description": "管理邮件设置 API 使用的闭合 TLS 模式。",
+        "enum": [
+          "start_tls",
+          "tls"
+        ]
+      },
       "AdminGroup": {
         "type": "object",
         "required": [
@@ -6335,6 +6730,8 @@
               "user_conflict",
               "registration_disabled",
               "registration_rate_limited",
+              "email_not_configured",
+              "email_delivery_failed",
               "group_conflict",
               "group_in_use",
               "internal_error"
@@ -7187,6 +7584,9 @@
     },
     {
       "name": "注册设置"
+    },
+    {
+      "name": "邮件设置"
     },
     {
       "name": "管理会话"

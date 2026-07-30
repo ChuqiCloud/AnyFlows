@@ -9,6 +9,7 @@ import { endManagementSession } from '@/features/auth/session-query'
 import { ApiKeyPage } from '@/features/api-keys/api-key-page'
 import { ChannelPage } from '@/features/channels/channel-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
+import { EmailSettingsPage } from '@/features/email-settings/email-settings-page'
 import { LandingPage } from '@/features/landing/landing-page'
 import { ModelPage } from '@/features/models/model-page'
 import { PublicModelPage } from '@/features/models/public-model-page'
@@ -96,6 +97,8 @@ function ManagementEntry({
 
   const titleKey = view === 'channels'
     ? 'channels.title'
+    : view === 'email-settings'
+      ? 'emailSettings.title'
     : view === 'registration'
       ? 'registration.settings.title'
     : view === 'users'
@@ -113,6 +116,8 @@ function ManagementEntry({
             : 'dashboard.title'
   const content = view === 'channels'
     ? <ChannelPage />
+    : view === 'email-settings'
+      ? <EmailSettingsPage />
     : view === 'registration'
       ? <RegistrationSettingsPage />
     : view === 'users'

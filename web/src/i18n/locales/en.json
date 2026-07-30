@@ -15,6 +15,7 @@
     "playground": "Playground",
     "apiKeys": "My API keys",
     "users": "Users",
+    "emailSettings": "Email settings",
     "registration": "Registration",
     "channels": "Channels",
     "keys": "Global keys",
@@ -1022,6 +1023,108 @@
       "admin": "Administrator",
       "user": "User",
       "logout": "Sign out"
+    }
+  },
+  "emailSettings": {
+    "title": "Email settings",
+    "subtitle": "Configure system SMTP delivery. Passwords are encrypted, and test recipients are never persisted.",
+    "loading": "Loading email settings",
+    "status": {
+      "title": "SMTP delivery",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "ready": "Configuration complete",
+      "incomplete": "Configuration incomplete",
+      "version": "Configuration version {{version}}",
+      "delivery": "Allow application email delivery"
+    },
+    "connection": {
+      "title": "Connection and authentication",
+      "description": "Only required STARTTLS or implicit TLS is supported. Plaintext SMTP fallback is disabled."
+    },
+    "sender": {
+      "title": "Sender identity",
+      "description": "Set the sender shown in the inbox and an optional reply address."
+    },
+    "fields": {
+      "host": "SMTP host",
+      "hostHint": "Enter a hostname or IP address without a scheme or path.",
+      "port": "Port",
+      "tlsMode": "TLS mode",
+      "tlsHint": "STARTTLS commonly uses 587. Implicit TLS commonly uses 465.",
+      "timeout": "Hard timeout (seconds)",
+      "timeoutHint": "Connection, authentication, and delivery share a 1 to 60 second deadline.",
+      "username": "Authentication username",
+      "usernameHint": "Leave blank to disable SMTP authentication and clear the saved password.",
+      "password": "Authentication password",
+      "passwordKeepHint": "Configured. Leave blank to keep the encrypted value, or enter a replacement.",
+      "passwordEmptyHint": "Not configured. A password is required when an authentication username is set.",
+      "fromName": "Sender name",
+      "fromAddress": "From address",
+      "replyTo": "Reply address",
+      "replyToHint": "Optional. Leave blank to direct replies to the from address."
+    },
+    "tls": {
+      "startTls": "STARTTLS (upgrade after connection)",
+      "tls": "Implicit TLS (encrypted from connection)"
+    },
+    "validation": {
+      "host": "Enter a valid SMTP host without a scheme, path, or whitespace.",
+      "port": "Port must be an integer from 1 to 65535.",
+      "username": "Username cannot have surrounding spaces or control characters and is limited to 320 bytes.",
+      "password": "Password must be 1 to 4096 bytes without control characters.",
+      "passwordRequired": "Set a password when adding an authentication username for the first time.",
+      "passwordWithoutUser": "Set an authentication username before entering a password.",
+      "fromAddress": "Enter a valid sender email address.",
+      "fromAddressRequired": "A from address is required before email delivery can be enabled.",
+      "fromName": "Sender name cannot have surrounding spaces or control characters and is limited to 128 bytes.",
+      "replyTo": "Enter a valid reply email address.",
+      "timeout": "Hard timeout must be an integer from 1 to 60 seconds."
+    },
+    "passwordState": {
+      "disabled": "SMTP authentication will be disabled after saving",
+      "replace": "The saved SMTP password will be replaced",
+      "configured": "SMTP password is encrypted and configured",
+      "missing": "SMTP password is not configured"
+    },
+    "state": {
+      "saved": "Email settings saved",
+      "unsaved": "Unsaved changes"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "save": "Save settings",
+      "saving": "Saving",
+      "showPassword": "Show SMTP password",
+      "hidePassword": "Hide SMTP password"
+    },
+    "errors": {
+      "title": "Email settings could not be loaded",
+      "load": "The service did not return reliable SMTP settings. Try again shortly.",
+      "save": "Email settings could not be saved. Server state is unchanged."
+    },
+    "test": {
+      "title": "Test delivery",
+      "description": "Send a fixed test message with the latest saved configuration.",
+      "ready": "Ready to test",
+      "blocked": "Unavailable",
+      "recipient": "Test recipient",
+      "recipientHint": "This address is used for one request and is not saved or echoed.",
+      "saveFirst": "Save the current changes before testing the latest database configuration.",
+      "configureFirst": "Complete and save the host, sender, and authentication settings first.",
+      "send": "Send test email",
+      "sending": "Delivering",
+      "success": "The SMTP server accepted the test email.",
+      "errors": {
+        "recipient": "Enter a valid test recipient email address.",
+        "notConfigured": "The SMTP configuration is incomplete. Save a complete configuration and try again.",
+        "delivery": "Test delivery failed. Check the connection, TLS, and authentication settings."
+      }
+    },
+    "security": {
+      "title": "Credential and content boundary",
+      "description": "Management reads return only password status. Passwords, recipients, message bodies, and SMTP server responses stay out of page caches, URLs, and error details."
     }
   },
   "registration": {

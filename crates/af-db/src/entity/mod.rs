@@ -18,6 +18,7 @@ pub(crate) mod channel_groups;
 pub(crate) mod channel_models;
 pub(crate) mod channels;
 pub(crate) mod credentials;
+pub(crate) mod email_settings;
 pub(crate) mod group_model_ratios;
 pub(crate) mod groups;
 pub(crate) mod model_prices;
@@ -395,6 +396,7 @@ impl_updated_at_behavior!(
     channel_models::ActiveModel => validate_default,
     channels::ActiveModel => validate_channel,
     credentials::ActiveModel => validate_credential,
+    email_settings::ActiveModel => validate_default,
     group_model_ratios::ActiveModel => validate_group_model_ratio,
     groups::ActiveModel => validate_group,
     model_prices::ActiveModel => validate_model_price,

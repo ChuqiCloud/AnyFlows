@@ -23,15 +23,17 @@ use crate::entity::{
     EncryptedJson, HeaderOverrides, PasswordHash, PlaygroundConversationKey, SensitiveDecimal,
     SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, abilities,
     billing_batch_checkpoints, billing_reservations, channel_groups, channel_models, channels,
-    credentials, group_model_ratios, groups, model_prices, options, playground_conversations,
-    playground_shares, registration_rate_limits, tokens, usage_logs, users,
+    credentials, email_settings, group_model_ratios, groups, model_prices, options,
+    playground_conversations, playground_shares, registration_rate_limits, tokens, usage_logs,
+    users,
 };
 use crate::{
     AdminDashboardRepository, BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome,
-    ChannelBillingWrite, DatabaseOptions, GroupPricingRepository, ModelPriceBillingMode,
-    ModelPriceRepository, PlaygroundConversationRepository, PlaygroundConversationWrite,
-    PlaygroundShareRepository, PlaygroundShareWrite, PoolOptions, QuotaMutationOutcome,
-    QuotaRepository, QuotaReservationStatus, RegistrationAttemptOutcome,
+    ChannelBillingWrite, DatabaseOptions, EmailPasswordUpdate, EmailSettingsRepository,
+    EmailSettingsWriteRecord, EmailTlsMode, EncryptedCredentialEnvelope, GroupPricingRepository,
+    ModelPriceBillingMode, ModelPriceRepository, PlaygroundConversationRepository,
+    PlaygroundConversationWrite, PlaygroundShareRepository, PlaygroundShareWrite, PoolOptions,
+    QuotaMutationOutcome, QuotaRepository, QuotaReservationStatus, RegistrationAttemptOutcome,
     RegistrationPolicyWriteRecord, RegistrationRepository, TokenAuthLookup, TokenAuthLookupOutcome,
     TokenAuthRepository, TokenBillingWrite, UsageLogBillingMode, UsageLogRepository,
     UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogWrite,
@@ -42,7 +44,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量；列变更不会增加核心表数量。
-const EXPECTED_MIGRATION_COUNT: usize = 18;
+const EXPECTED_MIGRATION_COUNT: usize = 19;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -56,7 +58,7 @@ const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
 const PLAYGROUND_CONVERSATION_KEY: &str = "55555555555555555555555555555555";
-const CORE_TABLES: [&str; 17] = [
+const CORE_TABLES: [&str; 18] = [
     "groups",
     "users",
     "channels",
@@ -74,6 +76,7 @@ const CORE_TABLES: [&str; 17] = [
     "playground_shares",
     "playground_conversations",
     "registration_rate_limits",
+    "email_settings",
 ];
 
 struct SlowMigrator;
@@ -271,6 +274,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     exercise_playground_share_repository(&pool).await?;
     exercise_playground_conversation_repository(&pool).await?;
     exercise_registration_repository(&pool).await?;
+    exercise_email_settings_repository(&pool).await?;
     exercise_admin_dashboard_repository(&pool).await?;
     exercise_core_schema(pool.connection()).await?;
 
@@ -1150,6 +1154,53 @@ async fn exercise_registration_repository(pool: &DatabasePool) -> Result<(), Box
     Ok(())
 }
 
+/// 在三方言真实事务中验证固定邮件设置行、密文保留和单调版本。
+async fn exercise_email_settings_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let repository = EmailSettingsRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let initial = repository.settings().await?;
+    assert!(!initial.enabled());
+    assert_eq!(initial.port(), 587);
+    assert_eq!(initial.timeout_seconds(), 10);
+    assert_eq!(initial.version(), 1);
+    assert!(!initial.password_configured());
+
+    let envelope = EncryptedCredentialEnvelope::new("email-smoke-key", [0x2a; 24], vec![0x5a; 32])?;
+    let replaced = repository
+        .update(EmailSettingsWriteRecord::new(
+            true,
+            "smtp.example.com".to_owned(),
+            587,
+            EmailTlsMode::StartTls,
+            Some("mailer@example.com".to_owned()),
+            EmailPasswordUpdate::Replace(envelope.clone()),
+            "from@example.com".to_owned(),
+            Some("AnyFlows".to_owned()),
+            Some("reply@example.com".to_owned()),
+            15,
+        ))
+        .await?;
+    assert_eq!(replaced.version(), 2);
+    assert_eq!(replaced.password_secret(), Some(&envelope));
+
+    let kept = repository
+        .update(EmailSettingsWriteRecord::new(
+            true,
+            "smtp.example.com".to_owned(),
+            465,
+            EmailTlsMode::Tls,
+            Some("mailer@example.com".to_owned()),
+            EmailPasswordUpdate::Keep,
+            "from@example.com".to_owned(),
+            Some("AnyFlows".to_owned()),
+            None,
+            20,
+        ))
+        .await?;
+    assert_eq!(kept.version(), 3);
+    assert_eq!(kept.password_secret(), Some(&envelope));
+    Ok(())
+}
+
 async fn assert_database_session(connection: &DatabaseConnection) -> Result<(), DbErr> {
     if connection.get_database_backend() != DbBackend::MySql {
         return Ok(());
@@ -1194,6 +1245,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         .await?;
     assert_entity_columns::<registration_rate_limits::Column>(&manager, "registration_rate_limits")
         .await?;
+    assert_entity_columns::<email_settings::Column>(&manager, "email_settings").await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -1293,6 +1345,7 @@ async fn assert_updated_at_behaviors(connection: &DatabaseConnection) -> Result<
     assert_behavior!(groups::ActiveModel);
     assert_behavior!(options::ActiveModel);
     assert_behavior!(registration_rate_limits::ActiveModel);
+    assert_behavior!(email_settings::ActiveModel);
     assert_behavior!(tokens::ActiveModel);
     assert_behavior!(users::ActiveModel);
     Ok(())

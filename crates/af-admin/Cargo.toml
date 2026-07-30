@@ -20,6 +20,7 @@ thiserror.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+af-config = { path = "../af-config", version = "0.1.0" }
 tokio.workspace = true
 
 [lints]
