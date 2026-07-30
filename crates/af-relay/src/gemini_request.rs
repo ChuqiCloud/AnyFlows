@@ -3,8 +3,8 @@ use std::fmt;
 use af_adapter::Bytes;
 use af_domain::{AfError, MAX_MODEL_NAME_BYTES, Protocol};
 use af_protocol::{
-    CanonicalRequest, CanonicalRequestEnvelope, SameProtocolDecision, Sampling, TokenCount,
-    gemini::build_request,
+    CanonicalRequest, CanonicalRequestEnvelope, SameProtocolDecision, Sampling, StreamOptions,
+    TokenCount, gemini::build_request,
 };
 use thiserror::Error;
 
@@ -161,7 +161,11 @@ fn apply_sampling(
 }
 
 fn build_body(request: &CanonicalRequest) -> Result<Bytes, ()> {
-    let value = build_request(request).map_err(|_| ())?;
+    let mut body_request = request.clone();
+    // Gemini 的流式模式由 URL 上的 streamGenerateContent 表达，正文仍沿用 generateContent 结构。
+    body_request.stream = false;
+    body_request.stream_options = StreamOptions::EMPTY;
+    let value = build_request(&body_request).map_err(|_| ())?;
     serde_json::to_vec(&value).map(Bytes::from).map_err(|_| ())
 }
 
