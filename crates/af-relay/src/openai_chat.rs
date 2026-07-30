@@ -338,6 +338,7 @@ mod tests {
     use af_domain::UpstreamServerStatus;
 
     use super::*;
+    use crate::UsageResolutionError;
 
     #[test]
     fn model_validation_matches_openai_protocol_boundary() {

@@ -13,7 +13,7 @@ pub(crate) enum ChatStreamEncoder {
         include_usage: bool,
     },
     Anthropic {
-        encoder: AnthropicMessagesStreamEncoder,
+        encoder: Box<AnthropicMessagesStreamEncoder>,
         usage_estimator: OpenAiChatUsageEstimator,
     },
 }
@@ -54,7 +54,7 @@ impl ChatStreamEncoder {
                 )
                 .map_err(|_| AfError::Internal)?;
                 Ok(Self::Anthropic {
-                    encoder,
+                    encoder: Box::new(encoder),
                     usage_estimator,
                 })
             }
