@@ -1,12 +1,12 @@
 use std::{future::Future, pin::Pin};
 
-use af_domain::{AfError, GatewayPrincipal};
+use af_domain::{AfError, GatewayPrincipal, Protocol};
 use af_protocol::CanonicalRequestEnvelope;
-use af_relay::{OpenAiChatResponse, RelayService};
+use af_relay::{ChatResponse, RelayService};
 
 /// Chat 业务服务的一次异步调用结果，保持完整响应与流式 usage 句柄不变。
 pub type ChatServiceFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<OpenAiChatResponse, AfError>> + Send + 'a>>;
+    Pin<Box<dyn Future<Output = Result<ChatResponse, AfError>> + Send + 'a>>;
 
 /// HTTP 层依赖的对象安全 Chat 服务端口。
 ///
@@ -17,6 +17,7 @@ pub trait ChatService: Send + Sync {
         &'a self,
         principal: &'a GatewayPrincipal,
         request: CanonicalRequestEnvelope,
+        response_protocol: Protocol,
         request_id: &'a str,
     ) -> ChatServiceFuture<'a>;
 }
@@ -26,10 +27,12 @@ impl ChatService for RelayService {
         &'a self,
         principal: &'a GatewayPrincipal,
         request: CanonicalRequestEnvelope,
+        response_protocol: Protocol,
         request_id: &'a str,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async move {
-            RelayService::chat_completions(self, principal, request, request_id).await
+            RelayService::chat_completions(self, principal, request, response_protocol, request_id)
+                .await
         })
     }
 }
@@ -50,10 +53,11 @@ mod tests {
             &'a self,
             _principal: &'a GatewayPrincipal,
             _request: CanonicalRequestEnvelope,
+            _response_protocol: Protocol,
             _request_id: &'a str,
         ) -> ChatServiceFuture<'a> {
             Box::pin(async {
-                Ok(OpenAiChatResponse::Full {
+                Ok(ChatResponse::Full {
                     body: Bytes::from_static(b"{}"),
                     usage: Err(af_relay::UsageResolutionError::UnsupportedContent),
                 })
@@ -78,9 +82,9 @@ mod tests {
         .into();
 
         let response = service
-            .chat_completions(&principal, request, "request-id")
+            .chat_completions(&principal, request, Protocol::OpenAiChat, "request-id")
             .await
             .unwrap();
-        assert!(matches!(response, OpenAiChatResponse::Full { .. }));
+        assert!(matches!(response, ChatResponse::Full { .. }));
     }
 }

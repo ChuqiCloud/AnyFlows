@@ -1,15 +1,16 @@
 use std::sync::Arc;
 
 use af_admin::{TokenAuthenticationError, TokenAuthenticator};
-use af_domain::AfError;
+use af_domain::{AfError, Protocol};
 use axum::{
     extract::{Request, State},
     middleware::Next,
-    response::{IntoResponse, Response},
+    response::Response,
 };
 
 use crate::client_ip::{ClientIpResolutionError, ClientIpResolver};
-use crate::{OpenAiHttpError, QueryApiKeyPolicy, extract_presented_api_key};
+use crate::error_response::api_error_response;
+use crate::{QueryApiKeyPolicy, extract_presented_api_key};
 
 /// HTTP API Key 鉴权中间件所需的不可变状态。
 #[derive(Clone)]
@@ -17,6 +18,7 @@ pub(crate) struct AuthenticationState {
     authenticator: Arc<dyn TokenAuthenticator>,
     query_api_key_policy: QueryApiKeyPolicy,
     client_ip_resolver: ClientIpResolver,
+    error_protocol: Protocol,
 }
 
 impl AuthenticationState {
@@ -30,7 +32,14 @@ impl AuthenticationState {
             authenticator,
             query_api_key_policy,
             client_ip_resolver: ClientIpResolver::from_config(server_config),
+            error_protocol: Protocol::OpenAiChat,
         }
+    }
+
+    /// 为独立协议入口选择对应的公开错误 wire。
+    pub(crate) const fn with_error_protocol(mut self, protocol: Protocol) -> Self {
+        self.error_protocol = protocol;
+        self
     }
 }
 
@@ -48,15 +57,15 @@ pub(crate) async fn authenticate_api_key(
                 error_kind = "client_ip_missing_peer",
                 "HTTP 服务入口缺少 TCP 对端信息"
             );
-            return OpenAiHttpError::from(AfError::Internal).into_response();
+            return api_error_response(state.error_protocol, AfError::Internal);
         }
         Err(ClientIpResolutionError::InvalidProxyChain) => {
-            return OpenAiHttpError::from(AfError::InvalidApiKey).into_response();
+            return api_error_response(state.error_protocol, AfError::InvalidApiKey);
         }
     };
     let presented = match extract_presented_api_key(&mut request, state.query_api_key_policy) {
         Ok(presented) => presented,
-        Err(error) => return OpenAiHttpError::from(error).into_response(),
+        Err(_) => return api_error_response(state.error_protocol, AfError::InvalidApiKey),
     };
 
     // 明文只活到摘要计算完成；数据库查询期间不得继续持有它。
@@ -73,10 +82,10 @@ pub(crate) async fn authenticate_api_key(
             next.run(request).await
         }
         Err(TokenAuthenticationError::InvalidApiKey) => {
-            OpenAiHttpError::from(AfError::InvalidApiKey).into_response()
+            api_error_response(state.error_protocol, AfError::InvalidApiKey)
         }
         Err(TokenAuthenticationError::Internal) => {
-            OpenAiHttpError::from(AfError::Internal).into_response()
+            api_error_response(state.error_protocol, AfError::Internal)
         }
     }
 }

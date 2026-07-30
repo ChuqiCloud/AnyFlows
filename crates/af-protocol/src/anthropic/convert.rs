@@ -64,7 +64,7 @@ pub(super) fn convert_request(
     } = wire;
 
     validate_model(&model)?;
-    validate_stream(stream)?;
+    let stream = convert_stream(stream);
     let sampling = convert_sampling(max_tokens, temperature, top_p, stop_sequences)?;
     let reasoning = convert_reasoning(thinking, max_tokens)?;
     let metadata = convert_metadata(metadata)?;
@@ -72,7 +72,7 @@ pub(super) fn convert_request(
     let tool_choice = convert_tool_choice(tool_choice, &tool_names)?;
     let messages = convert_messages(system, messages)?;
 
-    let mut request = CanonicalRequest::new(Operation::Chat, model, messages, false);
+    let mut request = CanonicalRequest::new(Operation::Chat, model, messages, stream);
     request.tools = tools;
     request.tool_choice = tool_choice;
     request.reasoning = reasoning;
@@ -92,10 +92,10 @@ pub(super) fn validate_model(model: &str) -> Result<(), ParseRequestError> {
     Ok(())
 }
 
-fn validate_stream(stream: Field<bool>) -> Result<(), ParseRequestError> {
+fn convert_stream(stream: Field<bool>) -> bool {
     match stream {
-        Field::Missing | Field::Value(false) => Ok(()),
-        Field::Value(true) => Err(ParseRequestError::UnsupportedFeature),
+        Field::Missing | Field::Value(false) => false,
+        Field::Value(true) => true,
     }
 }
 

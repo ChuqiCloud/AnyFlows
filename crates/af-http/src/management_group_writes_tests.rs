@@ -52,6 +52,7 @@ impl ChatService for UnusedChatService {
         &'a self,
         _principal: &'a GatewayPrincipal,
         _request: CanonicalRequestEnvelope,
+        _response_protocol: af_domain::Protocol,
         _request_id: &'a str,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async { Err(AfError::Internal) })

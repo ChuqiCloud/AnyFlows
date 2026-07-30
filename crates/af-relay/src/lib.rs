@@ -1,5 +1,7 @@
 //! 端到端转发生命周期与故障转移编排。
 
+mod chat_response;
+mod chat_stream_encoder;
 mod error;
 mod openai_chat;
 mod openai_chat_request;
@@ -7,10 +9,10 @@ mod openai_chat_stream;
 mod openai_chat_usage;
 mod state_machine;
 
+pub use chat_response::ChatResponse;
 pub use error::{RelayBuildError, RelayError};
 pub use openai_chat::{
-    OpenAiChatResponse, RelayOpenAiChatOutcome, RelayService, relay_openai_chat,
-    relay_openai_chat_with_report,
+    RelayOpenAiChatOutcome, RelayService, relay_openai_chat, relay_openai_chat_with_report,
 };
 pub use openai_chat_request::{OpenAiChatRequestOverrideError, OpenAiChatRequestOverrides};
 pub use openai_chat_stream::{

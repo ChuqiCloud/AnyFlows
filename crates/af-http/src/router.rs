@@ -8,6 +8,7 @@ use af_admin::{
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
+use af_domain::Protocol;
 use af_protocol::openai_chat::MAX_BODY_BYTES;
 use axum::{
     Router,
@@ -21,6 +22,7 @@ use http::{
 };
 use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLayer};
 
+use crate::anthropic_messages::anthropic_messages;
 use crate::authentication::{AuthenticationState, authenticate_api_key};
 use crate::frontend_assets::{FrontendAssetSource, frontend_fallback};
 use crate::management_auth::{
@@ -115,8 +117,13 @@ pub fn build_router(
     query_api_key_policy: QueryApiKeyPolicy,
     frontend_assets: Option<Arc<dyn FrontendAssetSource>>,
 ) -> HttpRouter {
-    let authentication = middleware::from_fn_with_state(
-        AuthenticationState::new(authenticator, query_api_key_policy, config),
+    let openai_authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config),
+        authenticate_api_key,
+    );
+    let anthropic_authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(authenticator, query_api_key_policy, config)
+            .with_error_protocol(Protocol::Anthropic),
         authenticate_api_key,
     );
     let http_state = HttpState::new(
@@ -140,7 +147,12 @@ pub fn build_router(
         .route(
             "/v1/chat/completions",
             // 只包裹已注册的 POST endpoint，不把路径级 405 改写为 401。
-            post(chat_completions).route_layer(authentication),
+            post(chat_completions).route_layer(openai_authentication),
+        )
+        .route(
+            "/v1/messages",
+            // Anthropic 入口独立选择错误 wire，框架级 404/405 仍保持原始边界。
+            post(anthropic_messages).route_layer(anthropic_authentication),
         )
         .with_state(http_state.clone());
     let session_route_authentication = middleware::from_fn_with_state(

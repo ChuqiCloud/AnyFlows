@@ -5,11 +5,11 @@ use af_billing::{
     BillingRequestPlan, BillingSettlementPort, RefundSignalPort, RequestPricingSnapshotError,
     RequestPricingSnapshotSource, UsageRecordPort,
 };
-use af_domain::{AfError, BillingReservationId, GatewayPrincipal, GroupId};
+use af_domain::{AfError, BillingReservationId, GatewayPrincipal, GroupId, Protocol};
 use af_http::{ChatService, ChatServiceFuture};
 use af_protocol::{CanonicalRequestEnvelope, Usage};
 use af_relay::{
-    OpenAiChatCompletionFuture, OpenAiChatCompletionHook, OpenAiChatResponse, UsageResolutionError,
+    ChatResponse, OpenAiChatCompletionFuture, OpenAiChatCompletionHook, UsageResolutionError,
     estimate_openai_chat_request_upper_bound,
 };
 use tokio::time::sleep;
@@ -21,7 +21,7 @@ const RETRY_DELAY: Duration = Duration::from_millis(20);
 
 /// 已固定路由计划的一次异步执行结果。
 pub type PlannedChatExecutionFuture =
-    Pin<Box<dyn Future<Output = Result<OpenAiChatResponse, AfError>> + Send + 'static>>;
+    Pin<Box<dyn Future<Output = Result<ChatResponse, AfError>> + Send + 'static>>;
 
 /// 在计费前完成候选、目标分组与运行时目标装配的请求级计划。
 pub trait PlannedChatExecution: Send {
@@ -39,6 +39,7 @@ pub trait ChatRoutePlanner: Send + Sync {
         &self,
         principal: &GatewayPrincipal,
         request: CanonicalRequestEnvelope,
+        response_protocol: Protocol,
         request_id: &str,
     ) -> Result<Box<dyn PlannedChatExecution>, AfError>;
 }
@@ -82,12 +83,15 @@ impl BillingChatService {
         &self,
         principal: &GatewayPrincipal,
         request: CanonicalRequestEnvelope,
+        response_protocol: Protocol,
         request_id: &str,
-    ) -> Result<OpenAiChatResponse, AfError> {
+    ) -> Result<ChatResponse, AfError> {
         let upper_bound = estimate_openai_chat_request_upper_bound(request.canonical())
             .map_err(map_upper_bound_error)?;
         let model = request.canonical().model.clone();
-        let planned = self.inner.plan(principal, request, request_id)?;
+        let planned = self
+            .inner
+            .plan(principal, request, response_protocol, request_id)?;
         let source_group_id = principal.group_id();
         let target_group_id = planned.target_group_id();
         let snapshot = self
@@ -129,22 +133,22 @@ impl BillingChatService {
 
         let response = planned.execute().await?;
         match response {
-            OpenAiChatResponse::Full { body, usage } => {
+            ChatResponse::Full { body, usage } => {
                 let usage = usage.map_err(|_| AfError::Internal)?;
                 let _ = complete_with_retries(&mut lifecycle, usage)
                     .await
                     .map_err(map_lifecycle_error)?;
-                Ok(OpenAiChatResponse::Full {
+                Ok(ChatResponse::Full {
                     body,
                     usage: Ok(usage),
                 })
             }
-            OpenAiChatResponse::Stream { body, usage } => {
+            ChatResponse::Stream { body, usage } => {
                 let hook = BillingStreamCompletionHook {
                     lifecycle: Some(lifecycle),
                 };
                 let body = Box::new((*body).with_completion_hook(Box::new(hook)));
-                Ok(OpenAiChatResponse::Stream { body, usage })
+                Ok(ChatResponse::Stream { body, usage })
             }
         }
     }
@@ -155,9 +159,10 @@ impl ChatService for BillingChatService {
         &'a self,
         principal: &'a GatewayPrincipal,
         request: CanonicalRequestEnvelope,
+        response_protocol: Protocol,
         request_id: &'a str,
     ) -> ChatServiceFuture<'a> {
-        Box::pin(self.call(principal, request, request_id))
+        Box::pin(self.call(principal, request, response_protocol, request_id))
     }
 }
 
@@ -314,6 +319,7 @@ mod tests {
             &self,
             _principal: &GatewayPrincipal,
             _request: CanonicalRequestEnvelope,
+            _response_protocol: Protocol,
             _request_id: &str,
         ) -> Result<Box<dyn PlannedChatExecution>, AfError> {
             Ok(Box::new(FullExecution {
@@ -326,6 +332,26 @@ mod tests {
         target_group_id: GroupId,
     }
 
+    struct ProtocolTrackingStub {
+        protocols: Arc<Mutex<Vec<Protocol>>>,
+        target_group_id: GroupId,
+    }
+
+    impl ChatRoutePlanner for ProtocolTrackingStub {
+        fn plan(
+            &self,
+            _principal: &GatewayPrincipal,
+            _request: CanonicalRequestEnvelope,
+            response_protocol: Protocol,
+            _request_id: &str,
+        ) -> Result<Box<dyn PlannedChatExecution>, AfError> {
+            self.protocols.lock().unwrap().push(response_protocol);
+            Ok(Box::new(FullExecution {
+                target_group_id: self.target_group_id,
+            }))
+        }
+    }
+
     impl PlannedChatExecution for FullExecution {
         fn target_group_id(&self) -> GroupId {
             self.target_group_id
@@ -333,7 +359,7 @@ mod tests {
 
         fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
             Box::pin(async move {
-                Ok(OpenAiChatResponse::Full {
+                Ok(ChatResponse::Full {
                     body: Bytes::from_static(b"{}"),
                     usage: Ok(usage()),
                 })
@@ -413,13 +439,43 @@ mod tests {
             usage_port.clone(),
         );
         let response = service
-            .chat_completions(&principal(), request(), "request-1")
+            .chat_completions(&principal(), request(), Protocol::OpenAiChat, "request-1")
             .await
             .unwrap();
-        assert!(matches!(response, OpenAiChatResponse::Full { .. }));
+        assert!(matches!(response, ChatResponse::Full { .. }));
         assert_eq!(precharge.calls.lock().unwrap().len(), 1);
         assert_eq!(settlement.calls.lock().unwrap().len(), 1);
         assert_eq!(usage_port.records.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn response_protocol_reaches_the_route_plan_without_changing_billing() {
+        let protocols = Arc::new(Mutex::new(Vec::new()));
+        let settlement = Arc::new(SettlementStub::default());
+        let service = BillingChatService::new(
+            Arc::new(ProtocolTrackingStub {
+                protocols: Arc::clone(&protocols),
+                target_group_id: GroupId::new(3).unwrap(),
+            }),
+            Arc::new(metered_snapshot_source().await),
+            Some(Arc::new(PrechargeStub::default())),
+            Some(Arc::new(RefundStub)),
+            Some(settlement.clone()),
+            Arc::new(UsageStub::default()),
+        );
+
+        service
+            .chat_completions(
+                &principal(),
+                request(),
+                Protocol::Anthropic,
+                "request-anthropic",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(protocols.lock().unwrap().as_slice(), &[Protocol::Anthropic]);
+        assert_eq!(settlement.calls.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]
@@ -440,7 +496,12 @@ mod tests {
         );
 
         service
-            .chat_completions(&principal(), request(), "request-target-group")
+            .chat_completions(
+                &principal(),
+                request(),
+                Protocol::OpenAiChat,
+                "request-target-group",
+            )
             .await
             .unwrap();
 
@@ -467,7 +528,12 @@ mod tests {
         );
 
         service
-            .chat_completions(&principal(), request(), "request-failover")
+            .chat_completions(
+                &principal(),
+                request(),
+                Protocol::OpenAiChat,
+                "request-failover",
+            )
             .await
             .unwrap();
 
@@ -621,6 +687,7 @@ mod tests {
             &self,
             principal: &GatewayPrincipal,
             _request: CanonicalRequestEnvelope,
+            _response_protocol: Protocol,
             _request_id: &str,
         ) -> Result<Box<dyn PlannedChatExecution>, AfError> {
             Ok(Box::new(SimulatedFailoverExecution {
@@ -644,7 +711,7 @@ mod tests {
             Box::pin(async move {
                 // 两次内部尝试模拟 RelayStateMachine 完成一次故障转移。
                 *self.attempts.lock().unwrap() = 2;
-                Ok(OpenAiChatResponse::Full {
+                Ok(ChatResponse::Full {
                     body: Bytes::from_static(b"{}"),
                     usage: Ok(usage()),
                 })

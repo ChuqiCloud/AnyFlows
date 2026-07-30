@@ -12,7 +12,7 @@ use af_admin::{
 };
 use af_config::{ClientIpSource, CorsOrigin, ServerConfig};
 use af_domain::{
-    GatewayPrincipal, GroupId, IpCidr, TokenId, TokenModelPolicy, TrustedClientIp, UserId,
+    GatewayPrincipal, GroupId, IpCidr, Protocol, TokenId, TokenModelPolicy, TrustedClientIp, UserId,
 };
 use axum::{
     Extension, Router,
@@ -354,6 +354,44 @@ async fn presentation_and_repository_failures_use_closed_openai_errors() {
         assert_eq!(authenticator.calls(), 1);
         assert_eq!(authenticator.digests(), vec![expected_digest()]);
     }
+}
+
+#[tokio::test]
+async fn anthropic_route_authentication_failure_uses_anthropic_error_wire() {
+    let config = ServerConfig::default();
+    let authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::InvalidApiKey));
+    let authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(Arc::clone(&authenticator), QueryApiKeyPolicy::Deny, &config)
+            .with_error_protocol(Protocol::Anthropic),
+        authenticate_api_key,
+    );
+    let router = Router::new()
+        .route(
+            "/v1/messages",
+            post(protected_handler).route_layer(authentication),
+        )
+        .layer(Extension(ConnectInfo(SocketAddr::new(
+            TEST_PEER_IP.parse().unwrap(),
+            45123,
+        ))));
+
+    let response = router
+        .oneshot(bearer_request("/v1/messages"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = response_json(response).await;
+    assert_eq!(
+        body,
+        json!({
+            "type": "error",
+            "error": {
+                "type": "authentication_error",
+                "message": "Invalid API key."
+            }
+        })
+    );
+    assert_eq!(authenticator.calls(), 1);
 }
 
 #[tokio::test]

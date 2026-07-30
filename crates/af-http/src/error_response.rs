@@ -1,5 +1,5 @@
-use af_domain::{AfError, PublicErrorCode, UpstreamError};
-use af_protocol::openai_chat;
+use af_domain::{AfError, Protocol, PublicErrorCode, UpstreamError};
+use af_protocol::{anthropic, openai_chat};
 use axum::{Json, response::IntoResponse};
 use http::StatusCode;
 
@@ -25,14 +25,40 @@ impl From<ApiKeyExtractionError> for OpenAiHttpError {
 
 impl IntoResponse for OpenAiHttpError {
     fn into_response(self) -> axum::response::Response {
-        let mapped = self.0;
-        log_error(mapped);
-        (
-            mapped.status(),
-            Json(openai_chat::encode_error(mapped.code, mapped.message())),
-        )
-            .into_response()
+        protocol_error_response(Protocol::OpenAiChat, self.0)
     }
+}
+
+/// 将统一领域错误转换为 Anthropic Messages HTTP 响应的本地封装。
+#[derive(Debug)]
+pub(crate) struct AnthropicHttpError(MappedError);
+
+impl From<AfError> for AnthropicHttpError {
+    fn from(error: AfError) -> Self {
+        Self(classify_error(error))
+    }
+}
+
+impl IntoResponse for AnthropicHttpError {
+    fn into_response(self) -> axum::response::Response {
+        protocol_error_response(Protocol::Anthropic, self.0)
+    }
+}
+
+/// 为路由级中间件按客户端协议构造错误响应。
+pub(crate) fn api_error_response(protocol: Protocol, error: AfError) -> axum::response::Response {
+    protocol_error_response(protocol, classify_error(error))
+}
+
+fn protocol_error_response(protocol: Protocol, mapped: MappedError) -> axum::response::Response {
+    log_error(protocol, mapped);
+    let body = match protocol {
+        Protocol::Anthropic => anthropic::encode_error(mapped.code, mapped.message()),
+        Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Gemini => {
+            openai_chat::encode_error(mapped.code, mapped.message())
+        }
+    };
+    (mapped.status(), Json(body)).into_response()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -138,23 +164,25 @@ fn classify_upstream_error(error: UpstreamError) -> MappedError {
 }
 
 /// 错误事件只记录闭合分类，避免内部诊断和外部输入进入结构化日志。
-fn log_error(mapped: MappedError) {
+fn log_error(protocol: Protocol, mapped: MappedError) {
     let status_code = u64::from(mapped.status().as_u16());
     if mapped.status().is_server_error() {
         tracing::error!(
             target: "af_http::error_response",
             status_code,
+            protocol = protocol.as_str(),
             error_code = mapped.code.as_str(),
             error_kind = mapped.error_kind,
-            "返回 OpenAI 错误响应"
+            "返回协议错误响应"
         );
     } else {
         tracing::warn!(
             target: "af_http::error_response",
             status_code,
+            protocol = protocol.as_str(),
             error_code = mapped.code.as_str(),
             error_kind = mapped.error_kind,
-            "返回 OpenAI 错误响应"
+            "返回协议错误响应"
         );
     }
 }

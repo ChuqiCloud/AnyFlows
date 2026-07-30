@@ -206,6 +206,16 @@ fn parses_full_non_streaming_request_into_canonical() {
 }
 
 #[test]
+fn parses_streaming_request_into_canonical() {
+    let mut streaming = minimal_request();
+    streaming["stream"] = json!(true);
+
+    let request = parse_json(streaming).unwrap();
+
+    assert!(request.stream);
+}
+
+#[test]
 fn maps_adaptive_and_disabled_thinking_without_guessing_budget() {
     let mut adaptive = minimal_request();
     adaptive["thinking"] = json!({"type": "adaptive", "display": "omitted"});
@@ -261,10 +271,6 @@ fn rejects_unknown_null_invalid_and_known_unsupported_fields() {
     let mut top_k = minimal_request();
     top_k["top_k"] = json!(20);
     assert_json_error(top_k, ParseRequestError::UnsupportedFeature);
-
-    let mut streaming = minimal_request();
-    streaming["stream"] = json!(true);
-    assert_json_error(streaming, ParseRequestError::UnsupportedFeature);
 
     let mut document = minimal_request();
     document["messages"][0]["content"] = json!([{
