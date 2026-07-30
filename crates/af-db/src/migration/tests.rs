@@ -21,19 +21,21 @@ use super::*;
 use crate::entity::{
     BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
     EncryptedJson, HeaderOverrides, PasswordHash, PlaygroundConversationKey, SensitiveDecimal,
-    SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, abilities,
+    SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, abilities, auth_challenges,
     authentication_settings, billing_batch_checkpoints, billing_reservations, channel_groups,
     channel_models, channels, credentials, email_settings, group_model_ratios, groups,
     model_prices, options, playground_conversations, playground_shares, registration_rate_limits,
     site_settings, tokens, usage_logs, users,
 };
 use crate::{
-    AdminDashboardRepository, BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome,
-    ChannelBillingWrite, DatabaseOptions, EmailPasswordUpdate, EmailSettingsRepository,
-    EmailSettingsWriteRecord, EmailTlsMode, EncryptedCredentialEnvelope, GroupPricingRepository,
-    ModelPriceBillingMode, ModelPriceRepository, PlaygroundConversationRepository,
-    PlaygroundConversationWrite, PlaygroundShareRepository, PlaygroundShareWrite, PoolOptions,
-    QuotaMutationOutcome, QuotaRepository, QuotaReservationStatus, RegistrationAttemptOutcome,
+    AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
+    AuthChallengeIssue, AuthChallengeIssueOutcome, AuthChallengePurpose, AuthChallengeRepository,
+    BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome, ChannelBillingWrite,
+    DatabaseOptions, EmailPasswordUpdate, EmailSettingsRepository, EmailSettingsWriteRecord,
+    EmailTlsMode, EncryptedCredentialEnvelope, GroupPricingRepository, ModelPriceBillingMode,
+    ModelPriceRepository, PlaygroundConversationRepository, PlaygroundConversationWrite,
+    PlaygroundShareRepository, PlaygroundShareWrite, PoolOptions, QuotaMutationOutcome,
+    QuotaRepository, QuotaReservationStatus, RegistrationAttemptOutcome,
     RegistrationPolicyWriteRecord, RegistrationRepository, SiteSettingsRepository,
     SiteSettingsWriteRecord, TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository,
     TokenBillingWrite, UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError,
@@ -45,7 +47,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量；列变更不会增加核心表数量。
-const EXPECTED_MIGRATION_COUNT: usize = 20;
+const EXPECTED_MIGRATION_COUNT: usize = 21;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -59,7 +61,7 @@ const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
 const PLAYGROUND_CONVERSATION_KEY: &str = "55555555555555555555555555555555";
-const CORE_TABLES: [&str; 20] = [
+const CORE_TABLES: [&str; 21] = [
     "groups",
     "users",
     "channels",
@@ -80,6 +82,7 @@ const CORE_TABLES: [&str; 20] = [
     "email_settings",
     "site_settings",
     "authentication_settings",
+    "auth_challenges",
 ];
 
 struct SlowMigrator;
@@ -324,6 +327,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     exercise_playground_share_repository(&pool).await?;
     exercise_playground_conversation_repository(&pool).await?;
     exercise_registration_repository(&pool).await?;
+    exercise_auth_challenge_repository(&pool).await?;
     exercise_site_settings_repository(&pool).await?;
     exercise_email_settings_repository(&pool).await?;
     exercise_admin_dashboard_repository(&pool).await?;
@@ -1215,6 +1219,47 @@ async fn exercise_registration_repository(pool: &DatabasePool) -> Result<(), Box
     Ok(())
 }
 
+/// 在三方言真实事务中验证挑战签发、冷却、摘要替换与单次消费。
+async fn exercise_auth_challenge_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let repository = AuthChallengeRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let issued = repository
+        .issue(AuthChallengeIssue::new(
+            AuthChallengePurpose::RegistrationEmail,
+            [0x6a; 32],
+            [0x6b; 32],
+            None,
+            10_000,
+            600,
+            60,
+            3,
+        )?)
+        .await?;
+    assert!(matches!(
+        issued,
+        AuthChallengeIssueOutcome::Issued(record)
+            if record.version() == 1 && record.next_send_at() == 10_060
+    ));
+    let consumed = repository
+        .consume(AuthChallengeConsume::new(
+            AuthChallengePurpose::RegistrationEmail,
+            [0x6a; 32],
+            [0x6b; 32],
+            10_001,
+        )?)
+        .await?;
+    assert!(matches!(
+        consumed,
+        AuthChallengeConsumeOutcome::Consumed(record)
+            if record.target_user_id().is_none() && record.version() == 2
+    ));
+
+    // 冒烟数据只验证短生命周期状态，不进入后续核心实体计数。
+    auth_challenges::Entity::delete_many()
+        .exec(pool.connection())
+        .await?;
+    Ok(())
+}
+
 /// 在三方言真实事务中验证站点固定记录和单调版本。
 async fn exercise_site_settings_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
     let repository = SiteSettingsRepository::new(pool.clone(), Duration::from_secs(5))?;
@@ -1331,6 +1376,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<site_settings::Column>(&manager, "site_settings").await?;
     assert_entity_columns::<authentication_settings::Column>(&manager, "authentication_settings")
         .await?;
+    assert_entity_columns::<auth_challenges::Column>(&manager, "auth_challenges").await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -1364,6 +1410,9 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "playground_conversations",
             "idx_playground_conversations_owner_updated",
         ),
+        ("auth_challenges", "uq_auth_challenges_purpose_subject"),
+        ("auth_challenges", "idx_auth_challenges_target_purpose"),
+        ("auth_challenges", "idx_auth_challenges_expires_at"),
     ] {
         assert!(
             manager.has_index(table, index).await?,

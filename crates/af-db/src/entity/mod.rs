@@ -12,6 +12,7 @@ use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 use af_domain::ChannelTimeout;
 
 pub(crate) mod abilities;
+pub(crate) mod auth_challenges;
 pub(crate) mod authentication_settings;
 pub(crate) mod billing_batch_checkpoints;
 pub(crate) mod billing_reservations;
@@ -35,8 +36,8 @@ pub(crate) mod users;
 mod sensitive;
 
 pub(crate) use sensitive::{
-    BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
-    EncryptedJson, HeaderOverrides, MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES,
+    AuthChallengeHash, BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey,
+    ChannelBaseUrl, EncryptedJson, HeaderOverrides, MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES,
     MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES, PasswordHash, PlaygroundConversationKey,
     SensitiveDecimal, SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist,
     TokenModelAllowlist,
@@ -315,6 +316,79 @@ where
     Ok(())
 }
 
+async fn validate_auth_challenge<C>(
+    model: &auth_challenges::ActiveModel,
+    database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // MySQL 5.7 会忽略 CHECK；局部更新必须与持久化行合并后再校验全部跨列不变量。
+    let persisted = if insert {
+        None
+    } else {
+        let id = model
+            .id
+            .try_as_ref()
+            .copied()
+            .ok_or_else(|| DbErr::Custom("认证挑战更新缺少标识".to_owned()))?;
+        Some(
+            auth_challenges::Entity::find_by_id(id)
+                .one(database)
+                .await?
+                .ok_or_else(|| DbErr::Custom("认证挑战记录不存在".to_owned()))?,
+        )
+    };
+    let purpose = effective_value(&model.purpose, persisted.as_ref().map(|row| row.purpose))
+        .ok_or_else(|| DbErr::Custom("认证挑战用途无效".to_owned()))?;
+    let target_user_id = effective_optional_value(
+        &model.target_user_id,
+        persisted.as_ref().and_then(|row| row.target_user_id),
+    );
+    let attempts = effective_value(&model.attempts, persisted.as_ref().map(|row| row.attempts))
+        .ok_or_else(|| DbErr::Custom("认证挑战错误次数无效".to_owned()))?;
+    let max_attempts = effective_value(
+        &model.max_attempts,
+        persisted.as_ref().map(|row| row.max_attempts),
+    )
+    .ok_or_else(|| DbErr::Custom("认证挑战错误次数上限无效".to_owned()))?;
+    let version = effective_value(&model.version, persisted.as_ref().map(|row| row.version))
+        .ok_or_else(|| DbErr::Custom("认证挑战版本无效".to_owned()))?;
+    let issued_at = effective_value(
+        &model.issued_at,
+        persisted.as_ref().map(|row| row.issued_at),
+    )
+    .ok_or_else(|| DbErr::Custom("认证挑战签发时间无效".to_owned()))?;
+    let expires_at = effective_value(
+        &model.expires_at,
+        persisted.as_ref().map(|row| row.expires_at),
+    )
+    .ok_or_else(|| DbErr::Custom("认证挑战过期时间无效".to_owned()))?;
+    let next_send_at = effective_value(
+        &model.next_send_at,
+        persisted.as_ref().map(|row| row.next_send_at),
+    )
+    .ok_or_else(|| DbErr::Custom("认证挑战重发时间无效".to_owned()))?;
+    let consumed_at = effective_optional_value(
+        &model.consumed_at,
+        persisted.as_ref().and_then(|row| row.consumed_at),
+    );
+
+    if !matches!((purpose, target_user_id), (1, None) | (2, Some(_)))
+        || !(0..=max_attempts).contains(&attempts)
+        || !(1..=10).contains(&max_attempts)
+        || version < 1
+        || expires_at <= issued_at
+        || next_send_at < issued_at
+        || next_send_at > expires_at
+        || consumed_at.is_some_and(|consumed| consumed < issued_at || consumed >= expires_at)
+    {
+        return Err(DbErr::Custom("认证挑战状态无效".to_owned()));
+    }
+    Ok(())
+}
+
 async fn validate_usage_log<C>(
     model: &usage_logs::ActiveModel,
     _database: &C,
@@ -371,6 +445,20 @@ fn effective_price(
         .unwrap_or(Decimal::ZERO)
 }
 
+fn effective_value<T: Copy>(value: &ActiveValue<T>, persisted: Option<T>) -> Option<T> {
+    value.try_as_ref().copied().or(persisted)
+}
+
+fn effective_optional_value<T: Copy>(
+    value: &ActiveValue<Option<T>>,
+    persisted: Option<T>,
+) -> Option<T> {
+    match value {
+        ActiveValue::Set(value) | ActiveValue::Unchanged(value) => *value,
+        ActiveValue::NotSet => persisted,
+    }
+}
+
 /// MySQL 无法用 CHECK 约束自增主键，自引用在持久化入口补充拒绝。
 fn validate_not_self_reference(
     id: &ActiveValue<i64>,
@@ -392,6 +480,7 @@ fn changed_reference(reference: &ActiveValue<Option<i64>>, insert: bool) -> Opti
 
 impl_updated_at_behavior!(
     abilities::ActiveModel => validate_default,
+    auth_challenges::ActiveModel => validate_auth_challenge,
     authentication_settings::ActiveModel => validate_default,
     billing_batch_checkpoints::ActiveModel => validate_default,
     billing_reservations::ActiveModel => validate_default,

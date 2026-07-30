@@ -26,6 +26,7 @@ mod m20260730_000017_create_registration_rate_limits;
 mod m20260730_000018_add_channel_timeout;
 mod m20260730_000019_create_email_settings;
 mod m20260730_000020_create_site_authentication_settings;
+mod m20260731_000021_create_auth_challenges;
 mod schema;
 
 #[cfg(test)]
@@ -89,6 +90,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260730_000018_add_channel_timeout::Migration),
             Box::new(m20260730_000019_create_email_settings::Migration),
             Box::new(m20260730_000020_create_site_authentication_settings::Migration),
+            Box::new(m20260731_000021_create_auth_challenges::Migration),
         ]
     }
 }

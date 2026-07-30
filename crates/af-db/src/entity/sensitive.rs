@@ -80,6 +80,9 @@ pub(crate) enum SensitiveValueError {
     /// 令牌哈希不是规范化的 SHA-256 十六进制编码。
     #[error("令牌哈希必须是 64 位小写十六进制字符串")]
     InvalidTokenHash,
+    /// 认证挑战哈希不是规范化的 32 字节十六进制编码。
+    #[error("认证挑战哈希必须是 64 位小写十六进制字符串")]
+    InvalidAuthChallengeHash,
     /// 计费预留键不是非零的 128 位规范化十六进制编码。
     #[error("计费预留键必须是非零的 32 位小写十六进制字符串")]
     InvalidBillingReservationKey,
@@ -286,6 +289,60 @@ impl TokenHash {
 impl fmt::Debug for TokenHash {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("<redacted>")
+    }
+}
+
+/// 认证挑战主体指纹或凭据摘要；持久化和调试边界均不暴露原值。
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct AuthChallengeHash(String);
+
+impl AuthChallengeHash {
+    /// 把已经完成带密钥派生的 32 字节值编码为规范化持久化文本。
+    pub(crate) fn from_bytes(bytes: [u8; 32]) -> Self {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut encoded = String::with_capacity(64);
+        for byte in bytes {
+            encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+            encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+        Self(encoded)
+    }
+
+    /// 解析数据库中的规范化文本；非法状态在实体解码边界失败关闭。
+    pub(crate) fn parse(value: &str) -> Result<Self, SensitiveValueError> {
+        if value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        {
+            return Ok(Self(value.to_owned()));
+        }
+        Err(SensitiveValueError::InvalidAuthChallengeHash)
+    }
+
+    /// 恒定工作量比较调用层提供的带密钥摘要，避免低熵验证码的时序旁路。
+    pub(crate) fn matches_bytes(&self, candidate: &[u8; 32]) -> bool {
+        let mut difference = 0_u8;
+        for (index, byte) in candidate.iter().copied().enumerate() {
+            let high = decode_hex(self.0.as_bytes()[index * 2]);
+            let low = decode_hex(self.0.as_bytes()[index * 2 + 1]);
+            difference |= ((high << 4) | low) ^ byte;
+        }
+        difference == 0
+    }
+}
+
+impl fmt::Debug for AuthChallengeHash {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("<redacted>")
+    }
+}
+
+const fn decode_hex(byte: u8) -> u8 {
+    match byte {
+        b'0'..=b'9' => byte - b'0',
+        b'a'..=b'f' => byte - b'a' + 10,
+        _ => 0,
     }
 }
 
@@ -855,6 +912,7 @@ fn invalid_db_value(
 }
 
 impl_validated_string_value!(TokenHash, parse, ColumnType::Char(Some(64)));
+impl_validated_string_value!(AuthChallengeHash, parse, ColumnType::Char(Some(64)));
 impl_validated_string_value!(BillingReservationKey, parse, ColumnType::Char(Some(32)));
 impl_validated_string_value!(PlaygroundConversationKey, parse, ColumnType::Char(Some(32)));
 impl_validated_string_value!(BillingBatchWriterKey, parse, ColumnType::Char(Some(32)));
@@ -960,6 +1018,7 @@ mod tests {
         let text = SensitiveString::from("sensitive-token");
         let password_hash = PasswordHash::parse(TEST_PASSWORD_HASH).unwrap();
         let token_hash = TokenHash::parse(&"a".repeat(64)).unwrap();
+        let challenge_hash = AuthChallengeHash::from_bytes([0xab; 32]);
         let reservation_key = BillingReservationKey::parse(&"b".repeat(32)).unwrap();
         let writer_key = BillingBatchWriterKey::parse(&"c".repeat(32)).unwrap();
         let batch_fingerprint = BillingBatchFingerprint::parse(&"d".repeat(64)).unwrap();
@@ -979,6 +1038,7 @@ mod tests {
             format!("{text:?}"),
             format!("{password_hash:?}"),
             format!("{token_hash:?}"),
+            format!("{challenge_hash:?}"),
             format!("{reservation_key:?}"),
             format!("{writer_key:?}"),
             format!("{batch_fingerprint:?}"),
@@ -1018,6 +1078,11 @@ mod tests {
         assert!(PasswordHash::parse(&TEST_PASSWORD_HASH.replace("argon2id", "argon2i")).is_err());
         assert!(TokenHash::parse("plaintext-token").is_err());
         assert!(TokenHash::parse(&"A".repeat(64)).is_err());
+        assert!(AuthChallengeHash::parse(&"A".repeat(64)).is_err());
+        assert!(AuthChallengeHash::parse(&"g".repeat(64)).is_err());
+        let challenge_hash = AuthChallengeHash::from_bytes([0xab; 32]);
+        assert!(challenge_hash.matches_bytes(&[0xab; 32]));
+        assert!(!challenge_hash.matches_bytes(&[0xac; 32]));
         for invalid_key in [
             "0".repeat(32),
             "A".repeat(32),
