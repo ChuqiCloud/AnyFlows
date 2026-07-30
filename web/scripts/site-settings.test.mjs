@@ -1,0 +1,52 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+
+import { routeFromHash } from '../src/app-route.ts'
+import {
+  buildSiteSettingsSchema,
+  siteSettingsValues,
+  toSiteSettingsRequest,
+} from '../src/features/site-settings/site-settings-form-model.ts'
+
+const messages = {
+  siteName: 'site-name',
+  publicBaseUrl: 'base-url',
+  logoUrl: 'logo-url',
+  tagline: 'tagline',
+  description: 'description',
+}
+
+test('站点设置使用独立管理员路由', () => {
+  assert.deepEqual(routeFromHash('#/console/system-settings/site'), { view: 'site-settings' })
+})
+
+test('站点设置表单接受公开地址与站内 Logo 并归一化空值', () => {
+  const values = siteSettingsValues({
+    site_name: 'AnyFlows Cloud',
+    public_base_url: 'https://example.com/gateway',
+    brand: {
+      logo_url: '/brand.svg',
+      tagline: '统一访问模型',
+      description: '面向团队的模型 API 工作台。',
+    },
+    version: 2,
+  })
+  assert.equal(buildSiteSettingsSchema(messages).safeParse(values).success, true)
+  assert.equal(buildSiteSettingsSchema(messages).safeParse({
+    ...values,
+    publicBaseUrl: 'https://user@example.com',
+  }).success, false)
+  assert.equal(buildSiteSettingsSchema(messages).safeParse({
+    ...values,
+    logoUrl: 'javascript:alert(1)',
+  }).success, false)
+  assert.deepEqual(toSiteSettingsRequest({ ...values, publicBaseUrl: '', tagline: '' }), {
+    site_name: 'AnyFlows Cloud',
+    public_base_url: null,
+    brand: {
+      logo_url: '/brand.svg',
+      tagline: null,
+      description: '面向团队的模型 API 工作台。',
+    },
+  })
+})

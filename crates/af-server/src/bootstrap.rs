@@ -12,10 +12,11 @@ use af_admin::{
     DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
     DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseInitialSetup,
     DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRegistrationService, DatabaseSessionAuthenticator, DatabaseTokenAuthenticator,
-    DatabaseUserTokenService, InitialSetup, ModelCatalogReader, PlaygroundConversationService,
-    PlaygroundShareService, RegistrationService, RegistrationServiceConfigError,
-    SessionAuthenticator, SessionAuthenticatorConfigError, TokenAuthenticator, UserTokenService,
+    DatabaseRegistrationService, DatabaseSessionAuthenticator, DatabaseSiteSettingsService,
+    DatabaseTokenAuthenticator, DatabaseUserTokenService, InitialSetup, ModelCatalogReader,
+    PlaygroundConversationService, PlaygroundShareService, RegistrationService,
+    RegistrationServiceConfigError, SessionAuthenticator, SessionAuthenticatorConfigError,
+    SiteSettingsService, TokenAuthenticator, UserTokenService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -37,9 +38,10 @@ use af_db::{
     MigrationOptions, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RegistrationRepository,
-    RegistrationRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
-    UsageLogRepository, UserSessionRepository, UserSessionRepositoryConfigError,
-    UserTokenRepository, UserTokenRepositoryConfigError, connect_and_migrate,
+    RegistrationRepositoryConfigError, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
+    TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository, UserSessionRepository,
+    UserSessionRepositoryConfigError, UserTokenRepository, UserTokenRepositoryConfigError,
+    connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle,
@@ -99,6 +101,7 @@ pub struct AuthenticationReady {
     session_authenticator: Arc<dyn SessionAuthenticator>,
     initial_setup: Arc<dyn InitialSetup>,
     registration_service: Arc<dyn RegistrationService>,
+    site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     playground_share_service: Arc<dyn PlaygroundShareService>,
     playground_conversation_service: Arc<dyn PlaygroundConversationService>,
@@ -234,6 +237,9 @@ pub enum BootstrapError {
     /// 注册 IP 指纹密钥缺失或无效。
     #[error("注册服务启动配置无效")]
     RegistrationService(#[source] RegistrationServiceConfigError),
+    /// 站点设置仓储的启动参数无效。
+    #[error("站点设置仓储启动参数无效")]
+    SiteSettingsRepository(#[source] SiteSettingsRepositoryConfigError),
     /// SMTP 设置仓储的启动参数无效。
     #[error("SMTP 设置仓储启动参数无效")]
     EmailSettingsRepository(#[source] EmailSettingsRepositoryConfigError),
@@ -420,6 +426,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::EmailSettingsRepository)?;
+        let site_settings_repository = SiteSettingsRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::SiteSettingsRepository)?;
         let playground_share_repository = PlaygroundShareRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -505,6 +516,9 @@ impl Bootstrap<DatabaseReady> {
                 session_authenticator: Arc::new(session_authenticator),
                 initial_setup: Arc::new(DatabaseInitialSetup::new(initial_setup_repository)),
                 registration_service: Arc::new(registration_service),
+                site_settings_service: Arc::new(DatabaseSiteSettingsService::new(
+                    site_settings_repository,
+                )),
                 admin_email_settings_service: Arc::new(admin_email_settings_service),
                 playground_share_service: Arc::new(DatabasePlaygroundShareService::new(
                     playground_share_repository,
@@ -849,6 +863,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.user_token_service),
             Arc::clone(&self.stage.infrastructure.initial_setup),
             Arc::clone(&self.stage.infrastructure.registration_service),
+            Arc::clone(&self.stage.infrastructure.site_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_email_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_channel_writer),

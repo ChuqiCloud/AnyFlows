@@ -11,6 +11,7 @@ mod playground_conversation;
 mod pricing;
 mod registration;
 mod routing;
+mod site;
 mod usage;
 
 pub(super) use email::create_email_settings;
@@ -89,4 +90,5 @@ pub(super) use playground_conversation::{
 };
 pub(super) use pricing::{create_group_model_ratios, create_model_prices};
 pub(super) use registration::create_registration_rate_limits;
+pub(super) use site::{create_authentication_settings, create_site_settings};
 pub(super) use usage::{create_usage_logs, create_usage_logs_indexes};

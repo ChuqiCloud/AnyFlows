@@ -12,6 +12,7 @@ use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 use af_domain::ChannelTimeout;
 
 pub(crate) mod abilities;
+pub(crate) mod authentication_settings;
 pub(crate) mod billing_batch_checkpoints;
 pub(crate) mod billing_reservations;
 pub(crate) mod channel_groups;
@@ -26,6 +27,7 @@ pub(crate) mod options;
 pub(crate) mod playground_conversations;
 pub(crate) mod playground_shares;
 pub(crate) mod registration_rate_limits;
+pub(crate) mod site_settings;
 pub(crate) mod tokens;
 pub(crate) mod usage_logs;
 pub(crate) mod users;
@@ -390,6 +392,7 @@ fn changed_reference(reference: &ActiveValue<Option<i64>>, insert: bool) -> Opti
 
 impl_updated_at_behavior!(
     abilities::ActiveModel => validate_default,
+    authentication_settings::ActiveModel => validate_default,
     billing_batch_checkpoints::ActiveModel => validate_default,
     billing_reservations::ActiveModel => validate_default,
     channel_groups::ActiveModel => validate_default,
@@ -402,6 +405,7 @@ impl_updated_at_behavior!(
     model_prices::ActiveModel => validate_model_price,
     options::ActiveModel => validate_default,
     registration_rate_limits::ActiveModel => validate_default,
+    site_settings::ActiveModel => validate_default,
     tokens::ActiveModel => validate_default,
     users::ActiveModel => validate_user,
 );

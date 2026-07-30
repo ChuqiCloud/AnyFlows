@@ -53,6 +53,16 @@
               }
             }
           },
+          "403": {
+            "description": "用户名密码登录已关闭",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
           "500": {
             "description": "服务内部错误",
             "content": {
@@ -316,20 +326,20 @@
         }
       }
     },
-    "/api/admin/registration": {
+    "/api/admin/authentication-settings": {
       "get": {
         "tags": [
-          "注册设置"
+          "认证设置"
         ],
-        "summary": "读取管理员注册策略",
-        "operationId": "getAdminRegistrationPolicy",
+        "summary": "读取管理员认证与注册设置",
+        "operationId": "getAdminAuthenticationSettings",
         "responses": {
           "200": {
-            "description": "完整注册策略",
+            "description": "完整认证与注册设置",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RegistrationPolicyResponse"
+                  "$ref": "#/components/schemas/AdminAuthenticationSettings"
                 }
               }
             }
@@ -373,15 +383,15 @@
       },
       "put": {
         "tags": [
-          "注册设置"
+          "认证设置"
         ],
-        "summary": "覆盖管理员注册策略",
-        "operationId": "updateAdminRegistrationPolicy",
+        "summary": "覆盖管理员认证与注册设置",
+        "operationId": "updateAdminAuthenticationSettings",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RegistrationPolicyRequest"
+                "$ref": "#/components/schemas/AdminAuthenticationSettingsRequest"
               }
             }
           },
@@ -389,17 +399,17 @@
         },
         "responses": {
           "200": {
-            "description": "更新后的完整注册策略",
+            "description": "更新后的完整认证与注册设置",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RegistrationPolicyResponse"
+                  "$ref": "#/components/schemas/AdminAuthenticationSettings"
                 }
               }
             }
           },
           "400": {
-            "description": "策略字段或默认分组无效",
+            "description": "认证字段或默认分组无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -649,6 +659,167 @@
           },
           "502": {
             "description": "SMTP 连接、认证或投递失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/site": {
+      "get": {
+        "tags": [
+          "站点设置"
+        ],
+        "summary": "读取公开站点与认证能力投影",
+        "operationId": "getPublicSiteSettings",
+        "responses": {
+          "200": {
+            "description": "公开站点身份、品牌与认证能力",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicSiteSettings"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/site-settings": {
+      "get": {
+        "tags": [
+          "站点设置"
+        ],
+        "summary": "读取管理员站点设置",
+        "operationId": "getAdminSiteSettings",
+        "responses": {
+          "200": {
+            "description": "完整站点设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSiteSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "站点设置"
+        ],
+        "summary": "覆盖管理员站点设置",
+        "operationId": "updateAdminSiteSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSiteSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的完整站点设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSiteSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "站点文本或 URL 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
             "content": {
               "application/json": {
                 "schema": {
@@ -4150,6 +4321,132 @@
   },
   "components": {
     "schemas": {
+      "AdminAuthenticationSettings": {
+        "type": "object",
+        "required": [
+          "password_login_enabled",
+          "registration_enabled",
+          "default_group_id",
+          "initial_quota",
+          "email_required",
+          "rate_limit_attempts",
+          "rate_limit_window_seconds",
+          "version"
+        ],
+        "properties": {
+          "password_login_enabled": {
+            "type": "boolean"
+          },
+          "registration_enabled": {
+            "type": "boolean"
+          },
+          "default_group_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "initial_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "email_required": {
+            "type": "boolean"
+          },
+          "rate_limit_attempts": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 100,
+            "minimum": 1
+          },
+          "rate_limit_window_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 86400,
+            "minimum": 60
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminAuthenticationSettingsRequest": {
+        "type": "object",
+        "required": [
+          "password_login_enabled",
+          "registration_enabled",
+          "default_group_id",
+          "initial_quota",
+          "email_required",
+          "rate_limit_attempts",
+          "rate_limit_window_seconds"
+        ],
+        "properties": {
+          "password_login_enabled": {
+            "type": "boolean"
+          },
+          "registration_enabled": {
+            "type": "boolean"
+          },
+          "default_group_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "initial_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "email_required": {
+            "type": "boolean"
+          },
+          "rate_limit_attempts": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 100,
+            "minimum": 1
+          },
+          "rate_limit_window_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 86400,
+            "minimum": 60
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminBrandSettingsRequest": {
+        "type": "object",
+        "properties": {
+          "logo_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 160
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminChannel": {
         "type": "object",
         "required": [
@@ -5908,6 +6205,64 @@
           "disabled"
         ]
       },
+      "AdminSiteSettings": {
+        "type": "object",
+        "required": [
+          "site_name",
+          "brand",
+          "version"
+        ],
+        "properties": {
+          "site_name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1
+          },
+          "public_base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "brand": {
+            "$ref": "#/components/schemas/PublicBrandSettings"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminSiteSettingsRequest": {
+        "type": "object",
+        "required": [
+          "site_name",
+          "brand"
+        ],
+        "properties": {
+          "site_name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1
+          },
+          "public_base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "brand": {
+            "$ref": "#/components/schemas/AdminBrandSettingsRequest"
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminToken": {
         "type": "object",
         "required": [
@@ -6712,6 +7067,7 @@
             "enum": [
               "invalid_request",
               "invalid_credentials",
+              "password_login_disabled",
               "invalid_session",
               "forbidden",
               "setup_conflict",
@@ -7155,86 +7511,80 @@
         },
         "additionalProperties": false
       },
-      "RegistrationPolicyRequest": {
+      "PublicAuthenticationCapabilities": {
         "type": "object",
         "required": [
-          "enabled",
-          "default_group_id",
-          "initial_quota",
-          "email_required",
-          "rate_limit_attempts",
-          "rate_limit_window_seconds"
+          "password_login_enabled",
+          "registration_enabled",
+          "registration_email_required"
         ],
         "properties": {
-          "enabled": {
+          "password_login_enabled": {
             "type": "boolean"
           },
-          "default_group_id": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "initial_quota": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "email_required": {
+          "registration_enabled": {
             "type": "boolean"
           },
-          "rate_limit_attempts": {
-            "type": "integer",
-            "format": "int32",
-            "maximum": 100,
-            "minimum": 1
-          },
-          "rate_limit_window_seconds": {
-            "type": "integer",
-            "format": "int64",
-            "maximum": 86400,
-            "minimum": 60
+          "registration_email_required": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
       },
-      "RegistrationPolicyResponse": {
+      "PublicBrandSettings": {
+        "type": "object",
+        "properties": {
+          "logo_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "tagline": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 160
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          }
+        },
+        "additionalProperties": false
+      },
+      "PublicSiteSettings": {
         "type": "object",
         "required": [
-          "enabled",
-          "default_group_id",
-          "initial_quota",
-          "email_required",
-          "rate_limit_attempts",
-          "rate_limit_window_seconds"
+          "site_name",
+          "brand",
+          "authentication"
         ],
         "properties": {
-          "enabled": {
-            "type": "boolean"
+          "site_name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1
           },
-          "default_group_id": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
+          "public_base_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "maxLength": 2048
           },
-          "initial_quota": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
+          "brand": {
+            "$ref": "#/components/schemas/PublicBrandSettings"
           },
-          "email_required": {
-            "type": "boolean"
-          },
-          "rate_limit_attempts": {
-            "type": "integer",
-            "format": "int32",
-            "maximum": 100,
-            "minimum": 1
-          },
-          "rate_limit_window_seconds": {
-            "type": "integer",
-            "format": "int64",
-            "maximum": 86400,
-            "minimum": 60
+          "authentication": {
+            "$ref": "#/components/schemas/PublicAuthenticationCapabilities"
           }
         },
         "additionalProperties": false
@@ -7273,10 +7623,14 @@
       "RegistrationStatusResponse": {
         "type": "object",
         "required": [
+          "password_login_enabled",
           "enabled",
           "email_required"
         ],
         "properties": {
+          "password_login_enabled": {
+            "type": "boolean"
+          },
           "enabled": {
             "type": "boolean"
           },
@@ -7583,7 +7937,10 @@
       "name": "公开注册"
     },
     {
-      "name": "注册设置"
+      "name": "认证设置"
+    },
+    {
+      "name": "站点设置"
     },
     {
       "name": "邮件设置"

@@ -7,8 +7,8 @@ use crate::{
     management_error::ManagementErrorBody,
     management_session::{LoginResponse, SessionUser},
     registration::{
-        RegistrationPolicyRequest, RegistrationPolicyResponse, RegistrationRequest,
-        RegistrationStatusResponse,
+        AdminAuthenticationSettingsRequest, AdminAuthenticationSettingsResponse,
+        RegistrationRequest, RegistrationStatusResponse,
     },
 };
 
@@ -45,51 +45,51 @@ fn register_user() {}
 
 #[utoipa::path(
     get,
-    path = "/api/admin/registration",
-    operation_id = "getAdminRegistrationPolicy",
-    tag = "注册设置",
-    summary = "读取管理员注册策略",
+    path = "/api/admin/authentication-settings",
+    operation_id = "getAdminAuthenticationSettings",
+    tag = "认证设置",
+    summary = "读取管理员认证与注册设置",
     responses(
-        (status = 200, description = "完整注册策略", body = RegistrationPolicyResponse),
+        (status = 200, description = "完整认证与注册设置", body = AdminAuthenticationSettingsResponse),
         (status = 401, description = "登录会话无效", body = ManagementErrorBody),
         (status = 403, description = "当前用户不是管理员", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     ),
     security(("bearerAuth" = []))
 )]
-fn get_admin_registration_policy() {}
+fn get_admin_authentication_settings() {}
 
 #[utoipa::path(
     put,
-    path = "/api/admin/registration",
-    operation_id = "updateAdminRegistrationPolicy",
-    tag = "注册设置",
-    summary = "覆盖管理员注册策略",
-    request_body = RegistrationPolicyRequest,
+    path = "/api/admin/authentication-settings",
+    operation_id = "updateAdminAuthenticationSettings",
+    tag = "认证设置",
+    summary = "覆盖管理员认证与注册设置",
+    request_body = AdminAuthenticationSettingsRequest,
     responses(
-        (status = 200, description = "更新后的完整注册策略", body = RegistrationPolicyResponse),
-        (status = 400, description = "策略字段或默认分组无效", body = ManagementErrorBody),
+        (status = 200, description = "更新后的完整认证与注册设置", body = AdminAuthenticationSettingsResponse),
+        (status = 400, description = "认证字段或默认分组无效", body = ManagementErrorBody),
         (status = 401, description = "登录会话无效", body = ManagementErrorBody),
         (status = 403, description = "当前用户不是管理员", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     ),
     security(("bearerAuth" = []))
 )]
-fn update_admin_registration_policy() {}
+fn update_admin_authentication_settings() {}
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
         get_registration_status,
         register_user,
-        get_admin_registration_policy,
-        update_admin_registration_policy
+        get_admin_authentication_settings,
+        update_admin_authentication_settings
     ),
     components(schemas(
         RegistrationStatusResponse,
         RegistrationRequest,
-        RegistrationPolicyResponse,
-        RegistrationPolicyRequest,
+        AdminAuthenticationSettingsResponse,
+        AdminAuthenticationSettingsRequest,
         SessionUser,
         LoginResponse,
         ManagementErrorBody

@@ -20,6 +20,7 @@ mod registration;
 mod registration_tests;
 mod routing_read;
 mod session;
+mod site_settings;
 mod token_auth;
 mod token_read;
 mod token_write;
@@ -111,6 +112,11 @@ pub use session::{
     SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
     SessionAuthenticatorConfigError, SessionLoginFuture, SessionPrincipal, SessionRole,
     SessionToken,
+};
+pub use site_settings::{
+    AdminSiteSettings, AdminSiteSettingsReadFuture, AdminSiteSettingsUpdateFuture,
+    DatabaseSiteSettingsService, PublicSiteSettings, PublicSiteSettingsFuture, SiteSettingsCommand,
+    SiteSettingsError, SiteSettingsService,
 };
 pub use token_auth::{
     DatabaseTokenAuthenticator, TokenAuthentication, TokenAuthenticationError,

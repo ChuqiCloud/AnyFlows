@@ -468,6 +468,7 @@ pub(crate) enum BearerTokenTypeSchema {
 pub(crate) enum ManagementErrorCodeSchema {
     InvalidRequest,
     InvalidCredentials,
+    PasswordLoginDisabled,
     InvalidSession,
     Forbidden,
     SetupConflict,

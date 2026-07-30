@@ -1,12 +1,13 @@
 export type AppView =
   | 'api-keys'
+  | 'authentication-settings'
   | 'channels'
   | 'email-settings'
   | 'models'
   | 'playground'
   | 'public-models'
   | 'register'
-  | 'registration'
+  | 'site-settings'
   | 'share'
   | 'tokens'
   | 'usage-logs'
@@ -34,6 +35,8 @@ export function routeFromHash(hash: string): AppRoute {
     }
   }
   if (hash.startsWith('#/console/channels')) return { view: 'channels' }
+  if (hash.startsWith('#/console/system-settings/site')) return { view: 'site-settings' }
+  if (hash.startsWith('#/console/system-settings/authentication')) return { view: 'authentication-settings' }
   if (hash.startsWith('#/console/system-settings/email')) return { view: 'email-settings' }
   if (hash.startsWith('#/console/api-keys')) return { view: 'api-keys' }
   if (hash.startsWith('#/console/models')) return { view: 'models' }
@@ -41,7 +44,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/tokens')) return { view: 'tokens' }
   if (hash.startsWith('#/console/usage-logs')) return { view: 'usage-logs' }
   if (hash.startsWith('#/console/users')) return { view: 'users' }
-  if (hash.startsWith('#/console/registration')) return { view: 'registration' }
+  if (hash.startsWith('#/console/registration')) return { view: 'authentication-settings' }
   if (hash.startsWith('#/console')) return { view: 'overview' }
   if (hash.startsWith('#/models')) return { view: 'public-models' }
   if (hash.startsWith('#/register')) return { view: 'register' }

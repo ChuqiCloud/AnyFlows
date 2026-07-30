@@ -18,7 +18,8 @@ use af_admin::{
     AdminEmailTestCommand, AdminEmailTestFuture, AdminGroupCreateCommand, AdminGroupCreateFuture,
     AdminGroupDeleteFuture, AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery,
     AdminGroupReadError, AdminGroupReader, AdminGroupUpdateCommand, AdminGroupUpdateFuture,
-    AdminGroupWriteError, AdminGroupWriter, AdminTokenCreateCommand, AdminTokenCreateFuture,
+    AdminGroupWriteError, AdminGroupWriter, AdminSiteSettingsReadFuture,
+    AdminSiteSettingsUpdateFuture, AdminTokenCreateCommand, AdminTokenCreateFuture,
     AdminTokenDeleteFuture, AdminTokenGetFuture, AdminTokenListFuture, AdminTokenListQuery,
     AdminTokenReadError, AdminTokenReader, AdminTokenUpdateCommand, AdminTokenUpdateFuture,
     AdminTokenWriteError, AdminTokenWriter, AdminUsageLogListFuture, AdminUsageLogListQuery,
@@ -33,13 +34,15 @@ use af_admin::{
     PlaygroundConversationSaveCommand, PlaygroundConversationSaveFuture,
     PlaygroundConversationService, PlaygroundShareCreateCommand, PlaygroundShareCreateFuture,
     PlaygroundShareError, PlaygroundShareReadFuture, PlaygroundShareRevokeFuture,
-    PlaygroundShareService, RegistrationCommand, RegistrationError, RegistrationFuture,
-    RegistrationPolicyCommand, RegistrationPolicyFuture, RegistrationPolicyUpdateFuture,
-    RegistrationService, RegistrationStatusFuture, SessionAuthenticationError,
-    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
-    TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator, UserTokenCreateFuture,
-    UserTokenDeleteFuture, UserTokenError, UserTokenGetFuture, UserTokenListFuture,
-    UserTokenListQuery, UserTokenService, UserTokenUpdateFuture, UserTokenWriteCommand,
+    PlaygroundShareService, PublicSiteSettingsFuture, RegistrationCommand, RegistrationError,
+    RegistrationFuture, RegistrationPolicyCommand, RegistrationPolicyFuture,
+    RegistrationPolicyUpdateFuture, RegistrationService, RegistrationStatusFuture,
+    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
+    SessionLoginFuture, SessionPrincipal, SiteSettingsCommand, SiteSettingsError,
+    SiteSettingsService, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
+    UserTokenCreateFuture, UserTokenDeleteFuture, UserTokenError, UserTokenGetFuture,
+    UserTokenListFuture, UserTokenListQuery, UserTokenService, UserTokenUpdateFuture,
+    UserTokenWriteCommand,
 };
 use af_analytics::{
     AdminDashboardAccess, AdminDashboardReadError, AdminDashboardReadFuture, AdminDashboardReader,
@@ -88,6 +91,7 @@ struct RejectPlaygroundConversations;
 struct RejectUserTokens;
 struct RejectInitialSetup;
 struct RejectRegistration;
+struct RejectSiteSettings;
 struct RejectAdminEmailSettings;
 struct RejectAdminChannels;
 struct RejectAdminGroups;
@@ -244,6 +248,24 @@ impl RegistrationService for RejectRegistration {
         _command: RegistrationPolicyCommand,
     ) -> RegistrationPolicyUpdateFuture<'_> {
         Box::pin(async { Err(RegistrationError::Internal) })
+    }
+}
+
+impl SiteSettingsService for RejectSiteSettings {
+    fn public_settings(&self) -> PublicSiteSettingsFuture<'_> {
+        Box::pin(async { Err(SiteSettingsError::Internal) })
+    }
+
+    fn admin_settings(&self, _principal: SessionPrincipal) -> AdminSiteSettingsReadFuture<'_> {
+        Box::pin(async { Err(SiteSettingsError::Internal) })
+    }
+
+    fn update(
+        &self,
+        _principal: SessionPrincipal,
+        _command: SiteSettingsCommand,
+    ) -> AdminSiteSettingsUpdateFuture<'_> {
+        Box::pin(async { Err(SiteSettingsError::Internal) })
     }
 }
 
@@ -1446,6 +1468,7 @@ async fn start_server(
         Arc::new(RejectUserTokens),
         Arc::new(RejectInitialSetup),
         Arc::new(RejectRegistration),
+        Arc::new(RejectSiteSettings),
         Arc::new(RejectAdminEmailSettings),
         Arc::new(RejectAdminChannels),
         Arc::new(RejectAdminChannels),

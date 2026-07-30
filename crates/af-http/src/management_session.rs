@@ -1,7 +1,7 @@
 use af_admin::{IssuedSession, LoginCredentials, SessionAuthenticationError};
 use axum::{
     Json,
-    extract::{Extension, State, rejection::JsonRejection},
+    extract::{Extension, State},
     response::{IntoResponse, Response},
 };
 use http::{HeaderValue, header::CACHE_CONTROL};
@@ -15,9 +15,9 @@ use crate::{chat_completions::HttpState, management_error::ManagementError};
 #[schema(as = LoginRequest)]
 pub(crate) struct LoginRequest {
     #[schema(min_length = 1, max_length = 64)]
-    username: String,
+    pub(crate) username: String,
     #[schema(max_length = 4096, format = Password)]
-    password: String,
+    pub(crate) password: String,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -58,15 +58,6 @@ pub(crate) struct SessionResponse {
     user: SessionUser,
     #[schema(minimum = 1)]
     expires_at: u64,
-}
-
-/// 校验用户名密码并返回短期 Bearer JWT。
-pub(crate) async fn login(
-    State(state): State<HttpState>,
-    request: Result<Json<LoginRequest>, JsonRejection>,
-) -> Result<Response, ManagementError> {
-    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    login_with_credentials(&state, request.username, request.password).await
 }
 
 /// 使用受控凭据完成认证并返回统一的无缓存登录响应。
