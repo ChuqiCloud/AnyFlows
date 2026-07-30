@@ -418,6 +418,7 @@ async fn gemini_route_authentication_failure_uses_google_error_wire() {
     let response = router
         .oneshot(
             Request::builder()
+                .method(Method::POST)
                 .uri("/v1beta/models/test-model:generateContent")
                 .header("x-goog-api-key", TEST_KEY)
                 .body(Body::empty())
