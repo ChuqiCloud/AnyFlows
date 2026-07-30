@@ -832,10 +832,12 @@ fn validate_channel_fields(
     if !valid_trimmed_text(&record.name, 128)
         || record.weight < 0
         || !matches!(record.status, Status::Enabled | Status::Disabled)
-        || record.channel_type != ChannelType::OpenAi
         || !matches!(
-            record.protocol,
-            Protocol::OpenAiChat | Protocol::OpenAiResponses
+            (record.channel_type, record.protocol),
+            (
+                ChannelType::OpenAi,
+                Protocol::OpenAiChat | Protocol::OpenAiResponses
+            ) | (ChannelType::Anthropic, Protocol::Anthropic)
         )
         || record
             .tag
@@ -852,11 +854,9 @@ fn validate_channel_fields(
     validate_json_object(&record.param_override, false)?;
     let parameter_overrides = ChannelParameterOverrides::parse(&record.param_override)
         .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
-    if record.protocol == Protocol::OpenAiResponses
-        && parameter_overrides.stop_sequences().is_some()
-    {
-        return Err(AdminChannelWriteRepositoryError::InvalidInput);
-    }
+    parameter_overrides
+        .validate_for_protocol(record.protocol)
+        .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
     if let Some(header_override) = &record.header_override {
         validate_json_object(header_override, false)?;
         validate_channel_header_overrides(header_override)

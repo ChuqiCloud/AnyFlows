@@ -105,6 +105,10 @@
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
+    "type": {
+      "openai": "OpenAI",
+      "anthropic": "Anthropic"
+    },
     "values": {
       "defaultUrl": "默认上游地址",
       "models_one": "{{count}} 个模型",
@@ -147,7 +151,7 @@
     },
     "editor": {
       "createTitle": "新建渠道",
-      "createDescription": "配置一个可参与路由的 OpenAI 原生上游。",
+      "createDescription": "配置一个可参与路由的 OpenAI 或 Anthropic 原生上游。",
       "editTitle": "编辑渠道",
       "editDescription": "读取字段可直接修改，敏感对象按留空规则单独处理。"
     },
@@ -165,8 +169,8 @@
       "groupsLoadFailed": "分组加载失败",
       "groupsHint": "从已有分组中选择；模型与分组必须同时为空或同时设置。",
       "mappingHint": "左侧是客户端模型名，右侧是上游实际模型名。",
-      "parametersHint": "支持温度、Top P 与最大输出 Token 上限；停止序列仅适用于 Chat。",
-      "headersHint": "认证、Cookie、Host、Content-Type、Accept、请求 ID 和连接级 Header 不允许覆盖。",
+      "parametersHint": "支持温度、Top P、最大输出 Token 与停止序列；Responses 不支持停止序列。",
+      "headersHint": "认证、协议版本、Cookie、Host、Content-Type、Accept、请求 ID 和连接级 Header 不允许覆盖。",
       "settingsHint": "仅用于适配器专有能力，普通渠道通常保持空对象。",
       "submitError": "保存失败，请检查字段或稍后重试。"
     },
@@ -236,6 +240,7 @@
       },
       "ranges": {
         "temperature": "0 - 2",
+        "temperatureAnthropic": "0 - 1",
         "top_p": "0 - 1",
         "max_output_tokens": "1 - 1,000,000"
       }

@@ -47,8 +47,7 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
     validate_request_capabilities(Protocol::Anthropic, request)
         .map_err(BuildRequestError::UnsupportedCapability)?;
     validate_model(&request.model).map_err(map_request_validation_error)?;
-    if request.stream
-        || request.stream_options.include_usage()
+    if request.stream_options.include_usage()
         || !request.attachments.is_empty()
         || request.tools.iter().any(|tool| tool.strict == Some(true))
         || !request.continuation.is_empty()
@@ -68,6 +67,9 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
     let mut root = Map::new();
     root.insert("model".to_owned(), Value::String(request.model.clone()));
     root.insert("messages".to_owned(), Value::Array(messages));
+    if request.stream {
+        root.insert("stream".to_owned(), Value::Bool(true));
+    }
     if let Some(system) = system {
         root.insert("system".to_owned(), system);
     }

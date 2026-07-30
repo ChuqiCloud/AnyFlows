@@ -50,6 +50,9 @@ impl SchedulerRuntimeChannelSource {
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let parameter_overrides = ChannelParameterOverrides::parse(&channel.param_override)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        parameter_overrides
+            .validate_for_protocol(protocol)
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let headers = channel
             .header_override
             .pairs()

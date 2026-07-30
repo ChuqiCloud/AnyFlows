@@ -409,6 +409,12 @@ mod tests {
                 UpstreamError::AuthRevoked,
             ),
             (
+                StatusCode::UNAUTHORIZED,
+                br#"{"type":"error","error":{"type":"authentication_error","message":"private"}}"#
+                    .as_slice(),
+                UpstreamError::AuthRevoked,
+            ),
+            (
                 StatusCode::FORBIDDEN,
                 b"{}".as_slice(),
                 UpstreamError::ProtocolError,
@@ -416,6 +422,12 @@ mod tests {
             (
                 StatusCode::PAYMENT_REQUIRED,
                 b"{}".as_slice(),
+                UpstreamError::QuotaExhausted,
+            ),
+            (
+                StatusCode::BAD_REQUEST,
+                br#"{"type":"error","error":{"type":"billing_error","message":"private"}}"#
+                    .as_slice(),
                 UpstreamError::QuotaExhausted,
             ),
             (
@@ -431,6 +443,12 @@ mod tests {
             (
                 StatusCode::TOO_MANY_REQUESTS,
                 br#"{"error":{"code":"rate_limit_exceeded"}}"#.as_slice(),
+                UpstreamError::RateLimited,
+            ),
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                br#"{"type":"error","error":{"type":"rate_limit_error","message":"private"}}"#
+                    .as_slice(),
                 UpstreamError::RateLimited,
             ),
             (

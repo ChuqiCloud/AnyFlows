@@ -33,6 +33,8 @@ pub const USER_ID: i64 = 8_100_002;
 pub const GROUP_ID: i64 = 8_100_003;
 pub const CHANNEL_ID: i64 = 8_100_004;
 pub const CREDENTIAL_ID: i64 = 8_100_005;
+pub const ANTHROPIC_CHANNEL_ID: i64 = 8_100_006;
+pub const ANTHROPIC_CREDENTIAL_ID: i64 = 8_100_007;
 pub const RUNTIME_HEADER_NAME: &str = "x-runtime-header";
 pub const RUNTIME_HEADER_VALUE: &str = "runtime-header-value";
 const CREDENTIAL_KEY_ID: &str = "gateway-test-key";
@@ -87,7 +89,7 @@ pub async fn seed_runtime_channel(connection: &DatabaseConnection, group_id: i64
                 CREDENTIAL_ID.into(),
                 CHANNEL_ID.into(),
                 "api_key".into(),
-                encrypted_api_key().into(),
+                encrypted_api_key_for(CHANNEL_ID, CREDENTIAL_ID, UPSTREAM_KEY).into(),
                 1_i16.into(),
                 10_i32.into(),
                 true.into(),
@@ -105,19 +107,112 @@ pub async fn seed_runtime_channel(connection: &DatabaseConnection, group_id: i64
     }
 }
 
-fn encrypted_api_key() -> String {
+/// 写入一条标准 Anthropic Messages 渠道，用于生产调度的真实 TCP 回归。
+pub async fn seed_anthropic_runtime_channel(connection: &DatabaseConnection, group_id: i64) {
+    seed_anthropic_runtime_channel_with(
+        connection,
+        group_id,
+        UPSTREAM_BASE_URL,
+        UPSTREAM_MODEL,
+        UPSTREAM_MODEL,
+        UPSTREAM_KEY,
+    )
+    .await;
+}
+
+/// 按显式地址、模型映射和凭据写入标准 Anthropic 测试渠道。
+pub async fn seed_anthropic_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+) {
+    let model_mapping = if public_model == upstream_model {
+        "{}".to_owned()
+    } else {
+        serde_json::Value::Object(serde_json::Map::from_iter([(
+            public_model.to_owned(),
+            serde_json::Value::String(upstream_model.to_owned()),
+        )]))
+        .to_string()
+    };
+    for (sql, values) in [
+        (
+            "INSERT INTO channels (id, name, type, protocol, base_url, status, model_mapping, param_override, header_override, settings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            vec![
+                ANTHROPIC_CHANNEL_ID.into(),
+                "runtime-anthropic".into(),
+                "anthropic".into(),
+                "anthropic".into(),
+                base_url.into(),
+                1_i16.into(),
+                model_mapping.clone().into(),
+                "{}".into(),
+                json!({"x-runtime-header": RUNTIME_HEADER_VALUE})
+                    .to_string()
+                    .into(),
+                "{}".into(),
+            ],
+        ),
+        (
+            "INSERT INTO channel_models (channel_id, model) VALUES (?, ?)",
+            vec![ANTHROPIC_CHANNEL_ID.into(), public_model.into()],
+        ),
+        (
+            "INSERT INTO channel_groups (channel_id, group_id) VALUES (?, ?)",
+            vec![ANTHROPIC_CHANNEL_ID.into(), group_id.into()],
+        ),
+        (
+            "INSERT INTO abilities (group_id, model, channel_id, enabled, priority, weight) VALUES (?, ?, ?, ?, ?, ?)",
+            vec![
+                group_id.into(),
+                public_model.into(),
+                ANTHROPIC_CHANNEL_ID.into(),
+                true.into(),
+                10_i32.into(),
+                0_i32.into(),
+            ],
+        ),
+        (
+            "INSERT INTO credentials (id, channel_id, kind, secret, status, priority, schedulable) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            vec![
+                ANTHROPIC_CREDENTIAL_ID.into(),
+                ANTHROPIC_CHANNEL_ID.into(),
+                "api_key".into(),
+                encrypted_api_key_for(ANTHROPIC_CHANNEL_ID, ANTHROPIC_CREDENTIAL_ID, api_key)
+                    .into(),
+                1_i16.into(),
+                10_i32.into(),
+                true.into(),
+            ],
+        ),
+    ] {
+        connection
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                sql,
+                values,
+            ))
+            .await
+            .unwrap();
+    }
+}
+
+fn encrypted_api_key_for(channel_id: i64, credential_id: i64, api_key: &str) -> String {
     let key = [0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES];
     let nonce = [0x24; 24];
     let cipher = XChaCha20Poly1305::new_from_slice(&key).unwrap();
-    let plaintext = json!({"kind": "api_key", "api_key": UPSTREAM_KEY}).to_string();
+    let plaintext = json!({"kind": "api_key", "api_key": api_key}).to_string();
     let ciphertext = cipher
         .encrypt(
             XNonce::from_slice(&nonce),
             Payload {
                 msg: plaintext.as_bytes(),
                 aad: &credential_plaintext_aad(
-                    ChannelId::new(CHANNEL_ID).unwrap(),
-                    CREDENTIAL_ID,
+                    ChannelId::new(channel_id).unwrap(),
+                    credential_id,
                     CredentialKind::ApiKey,
                 ),
             },

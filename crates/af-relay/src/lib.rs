@@ -1,5 +1,8 @@
 //! 端到端转发生命周期与故障转移编排。
 
+mod anthropic;
+mod anthropic_request;
+mod anthropic_stream;
 mod chat_response;
 mod chat_stream_encoder;
 mod error;
@@ -13,6 +16,9 @@ mod openai_responses_request;
 mod openai_responses_stream;
 mod state_machine;
 
+pub use anthropic::{RelayAnthropicOutcome, relay_anthropic, relay_anthropic_with_report};
+pub use anthropic_request::{AnthropicRequestOverrideError, AnthropicRequestOverrides};
+pub use anthropic_stream::AnthropicMessagesStream;
 pub use chat_response::ChatResponse;
 pub use error::{RelayBuildError, RelayError};
 pub use generation_stream::{

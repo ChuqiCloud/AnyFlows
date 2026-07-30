@@ -52,9 +52,9 @@ async fn channel_create_and_update_preserve_runtime_totals() -> Result<(), Box<d
         fixture
             .repository
             .create_channel(AdminChannelWriteRecord::new(
-                "unsupported".to_owned(),
+                "mismatched".to_owned(),
                 ChannelType::Anthropic,
-                Protocol::Anthropic,
+                Protocol::OpenAiChat,
                 None,
                 Status::Disabled,
                 0,

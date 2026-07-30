@@ -105,6 +105,10 @@
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
+    "type": {
+      "openai": "OpenAI",
+      "anthropic": "Anthropic"
+    },
     "values": {
       "defaultUrl": "Default upstream URL",
       "models_one": "{{count}} model",
@@ -147,7 +151,7 @@
     },
     "editor": {
       "createTitle": "New channel",
-      "createDescription": "Configure a native OpenAI upstream that can participate in routing.",
+      "createDescription": "Configure a native OpenAI or Anthropic upstream for routing.",
       "editTitle": "Edit channel",
       "editDescription": "Read fields can be changed directly. Sensitive objects follow the blank-value rule."
     },
@@ -165,8 +169,8 @@
       "groupsLoadFailed": "Groups could not be loaded",
       "groupsHint": "Select existing groups. Models and groups must both be empty or both be set.",
       "mappingHint": "Map the client model name on the left to the upstream model name on the right.",
-      "parametersHint": "Supports temperature, Top P, and a maximum output token cap. Stop sequences are Chat-only.",
-      "headersHint": "Authentication, Cookie, Host, Content-Type, Accept, request ID, and connection-level headers cannot be overridden.",
+      "parametersHint": "Supports temperature, Top P, maximum output tokens, and stop sequences. Responses does not support stop sequences.",
+      "headersHint": "Authentication, protocol version, Cookie, Host, Content-Type, Accept, request ID, and connection-level headers cannot be overridden.",
       "settingsHint": "Reserved for adapter-specific capabilities. Most channels should keep an empty object.",
       "submitError": "The channel could not be saved. Check the fields and try again."
     },
@@ -236,6 +240,7 @@
       },
       "ranges": {
         "temperature": "0 - 2",
+        "temperatureAnthropic": "0 - 1",
         "top_p": "0 - 1",
         "max_output_tokens": "1 - 1,000,000"
       }

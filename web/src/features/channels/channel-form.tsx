@@ -4,7 +4,6 @@ import { LoaderCircle } from 'lucide-react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -21,6 +20,8 @@ import {
   toUpdateRequest,
   type ChannelEditorMode,
   type ChannelFormValues,
+  type ChannelProtocol,
+  type ChannelType,
 } from './channel-form-model'
 import { ChannelGroupSelector } from './channel-group-selector'
 import { ChannelKeyValueEditor } from './channel-key-value-editor'
@@ -60,7 +61,16 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
 
   const pending = createMutation.isPending || updateMutation.isPending
   const submitError = createMutation.isError || updateMutation.isError
+  const channelType = form.watch('channelType')
   const protocol = form.watch('protocol')
+  const removeUnsupportedParameters = (nextProtocol: ChannelProtocol) => {
+    if (nextProtocol !== 'openai_responses') return
+    form.setValue(
+      'paramOverride',
+      form.getValues('paramOverride').filter((row) => row.key !== 'stop_sequences'),
+      { shouldDirty: true, shouldValidate: true },
+    )
+  }
   const onSubmit = form.handleSubmit(async (values) => {
     try {
       const savedChannel = mode === 'create'
@@ -86,7 +96,33 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
             <Input id="channel-url" placeholder="https://api.example.com/v1" aria-invalid={!!form.formState.errors.baseUrl} {...form.register('baseUrl')} />
           </ChannelFormField>
           <div className="grid gap-3 sm:grid-cols-2">
-            <StaticBadgeField label={t('channels.fields.type')} value="OpenAI" />
+            <ChannelFormField id="channel-type" label={t('channels.fields.type')}>
+              <Controller control={form.control} name="channelType" render={({ field }) => (
+                <Select
+                  id="channel-type"
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  name={field.name}
+                  ref={field.ref}
+                  onChange={(event) => {
+                    const nextType = event.target.value as ChannelType
+                    const currentProtocol = form.getValues('protocol')
+                    const nextProtocol = nextType === 'anthropic'
+                      ? 'anthropic'
+                      : currentProtocol === 'anthropic' ? 'openai_chat' : currentProtocol
+                    field.onChange(nextType)
+                    form.setValue('protocol', nextProtocol, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                    removeUnsupportedParameters(nextProtocol)
+                  }}
+                >
+                  <option value="openai">{t('channels.type.openai')}</option>
+                  <option value="anthropic">{t('channels.type.anthropic')}</option>
+                </Select>
+              )} />
+            </ChannelFormField>
             <ChannelFormField id="channel-protocol" label={t('channels.fields.protocol')}>
               <Controller control={form.control} name="protocol" render={({ field }) => (
                 <Select
@@ -98,17 +134,17 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                   onChange={(event) => {
                     const nextProtocol = event.target.value as ChannelFormValues['protocol']
                     field.onChange(nextProtocol)
-                    if (nextProtocol === 'openai_responses') {
-                      form.setValue(
-                        'paramOverride',
-                        form.getValues('paramOverride').filter((row) => row.key !== 'stop_sequences'),
-                        { shouldDirty: true, shouldValidate: true },
-                      )
-                    }
+                    removeUnsupportedParameters(nextProtocol)
                   }}
                 >
-                  <option value="openai_chat">{t('channels.protocol.openai_chat')}</option>
-                  <option value="openai_responses">{t('channels.protocol.openai_responses')}</option>
+                  {channelType === 'anthropic' ? (
+                    <option value="anthropic">{t('channels.protocol.anthropic')}</option>
+                  ) : (
+                    <>
+                      <option value="openai_chat">{t('channels.protocol.openai_chat')}</option>
+                      <option value="openai_responses">{t('channels.protocol.openai_responses')}</option>
+                    </>
+                  )}
                 </Select>
               )} />
             </ChannelFormField>
@@ -170,8 +206,4 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
       </div>
     </form>
   )
-}
-
-function StaticBadgeField({ label, value }: { label: string; value: string }) {
-  return <div className="grid gap-1.5"><span className="text-xs font-medium">{label}</span><div className="flex h-8 items-center"><Badge className="h-6 border-transparent bg-info/10 px-2 text-info">{value}</Badge></div></div>
 }

@@ -98,6 +98,33 @@ async fn valid_openai_responses_response_is_healthy_and_disables_storage() {
 }
 
 #[tokio::test]
+async fn valid_anthropic_response_is_healthy_and_sends_messages_headers() {
+    let key = [0x44; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    let database = test_database().await;
+    seed_probe_target(&database.seed, &key, Protocol::Anthropic, false, false).await;
+    let response = br#"{"id":"msg_probe","type":"message","role":"assistant","model":"probe-model-canary","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}"#;
+    let (proxy_address, captured, server) = spawn_proxy("200 OK", response);
+    let probe = probe(&database.pool, &key, proxy_address);
+
+    assert_eq!(probe.check(channel_id()).await, ChannelProbeStatus::Healthy);
+
+    let request = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    server.join().unwrap();
+    let head = request.head.to_ascii_lowercase();
+    assert!(head.starts_with("post http://probe-upstream.example/v1/messages http/1.1"));
+    assert!(head.contains("x-api-key: probe-secret-canary"));
+    assert!(head.contains("anthropic-version: 2023-06-01"));
+    assert!(!head.contains("authorization:"));
+    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["model"], MODEL_CANARY);
+    assert_eq!(body["stream"], serde_json::Value::Null);
+    assert_eq!(body["max_tokens"], 1);
+    assert_eq!(body["messages"][0]["content"], "ping");
+
+    database.close().await;
+}
+
+#[tokio::test]
 async fn non_success_and_invalid_success_response_are_unhealthy() {
     let key = [0x24; CREDENTIAL_ENCRYPTION_KEY_BYTES];
     for (status_line, body) in [
@@ -179,8 +206,14 @@ async fn seed_probe_target(
     corrupt_aad: bool,
 ) {
     let header_override = json!({"x-probe-header": "probe-header-value-canary"}).to_string();
+    let channel_type = match protocol {
+        Protocol::Anthropic => "anthropic",
+        Protocol::OpenAiChat | Protocol::OpenAiResponses => "openai",
+        Protocol::Gemini => "gemini",
+    };
     let channel_sql = format!(
-        "INSERT INTO channels (id, name, type, protocol, base_url, status, auto_ban, model_mapping, param_override, header_override, settings) VALUES ({TEST_CHANNEL_ID}, 'probe-channel', 'openai', {}, 'http://probe-upstream.example', {}, 1, '{{}}', '{{}}', {}, '{{}}')",
+        "INSERT INTO channels (id, name, type, protocol, base_url, status, auto_ban, model_mapping, param_override, header_override, settings) VALUES ({TEST_CHANNEL_ID}, 'probe-channel', {}, {}, 'http://probe-upstream.example', {}, 1, '{{}}', '{{}}', {}, '{{}}')",
+        sql_text(channel_type),
         sql_text(protocol.as_str()),
         Status::AutoDisabled.code(),
         sql_text(&header_override),

@@ -280,6 +280,7 @@ pub(super) const ANTHROPIC: &[RequestCapability] = &[
     RequestCapability::TopP,
     RequestCapability::MaxOutputTokens,
     RequestCapability::StopSequences,
+    RequestCapability::Streaming,
     RequestCapability::UserMetadata,
 ];
 

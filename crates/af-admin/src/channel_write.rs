@@ -202,8 +202,13 @@ impl AdminChannelWriteFields {
     ) -> Result<Self, AdminChannelWriteError> {
         if !valid_text(&name, 128)
             || weight < 0
-            || channel_type != ChannelType::OpenAi
-            || !matches!(protocol, Protocol::OpenAiChat | Protocol::OpenAiResponses)
+            || !matches!(
+                (channel_type, protocol),
+                (
+                    ChannelType::OpenAi,
+                    Protocol::OpenAiChat | Protocol::OpenAiResponses
+                ) | (ChannelType::Anthropic, Protocol::Anthropic)
+            )
             || base_url
                 .as_deref()
                 .is_some_and(|value| value.is_empty() || value.len() > 2_048)
@@ -219,9 +224,9 @@ impl AdminChannelWriteFields {
         validate_json_object(&param_override, false)?;
         let parameter_overrides = ChannelParameterOverrides::parse(&param_override)
             .map_err(|_| AdminChannelWriteError::InvalidInput)?;
-        if protocol == Protocol::OpenAiResponses && parameter_overrides.stop_sequences().is_some() {
-            return Err(AdminChannelWriteError::InvalidInput);
-        }
+        parameter_overrides
+            .validate_for_protocol(protocol)
+            .map_err(|_| AdminChannelWriteError::InvalidInput)?;
         if let Some(header_override) = &header_override {
             validate_json_object(header_override, false)?;
             validate_channel_header_overrides(header_override)
@@ -900,12 +905,32 @@ mod tests {
 
         assert!(
             AdminChannelCreateCommand::new(
-                "unsupported".to_owned(),
+                "anthropic".to_owned(),
                 ChannelType::Anthropic,
                 Protocol::Anthropic,
                 None,
                 AdminRoutingWriteStatus::Disabled,
+                10,
                 0,
+                true,
+                Vec::new(),
+                Vec::new(),
+                serde_json::json!({}),
+                serde_json::json!({}),
+                serde_json::json!({}),
+                serde_json::json!({}),
+                None,
+            )
+            .is_ok()
+        );
+        assert!(
+            AdminChannelCreateCommand::new(
+                "mismatch".to_owned(),
+                ChannelType::Anthropic,
+                Protocol::OpenAiChat,
+                None,
+                AdminRoutingWriteStatus::Disabled,
+                10,
                 0,
                 true,
                 Vec::new(),
@@ -965,5 +990,37 @@ mod tests {
 
         assert!(build(serde_json::json!({"max_output_tokens": 128})).is_ok());
         assert!(build(serde_json::json!({"stop_sequences": ["private"]})).is_err());
+    }
+
+    #[test]
+    fn anthropic_channels_accept_messages_parameters_and_reject_hot_temperature() {
+        let build = |parameters| {
+            AdminChannelCreateCommand::new(
+                "anthropic".to_owned(),
+                ChannelType::Anthropic,
+                Protocol::Anthropic,
+                None,
+                AdminRoutingWriteStatus::Disabled,
+                10,
+                0,
+                true,
+                Vec::new(),
+                Vec::new(),
+                serde_json::json!({}),
+                parameters,
+                serde_json::json!({}),
+                serde_json::json!({}),
+                None,
+            )
+        };
+
+        assert!(
+            build(serde_json::json!({
+                "temperature": 1.0,
+                "stop_sequences": ["private"]
+            }))
+            .is_ok()
+        );
+        assert!(build(serde_json::json!({"temperature": 1.01})).is_err());
     }
 }

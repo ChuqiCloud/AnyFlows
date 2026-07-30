@@ -4124,11 +4124,12 @@
               {
                 "type": "string",
                 "enum": [
-                  "openai"
+                  "openai",
+                  "anthropic"
                 ]
               }
             ],
-            "description": "当前生产写链路仅支持 OpenAI 兼容适配器。"
+            "description": "当前生产写链路支持 OpenAI 与标准 Anthropic 适配器。"
           },
           "protocol": {
             "oneOf": [
@@ -4136,11 +4137,12 @@
                 "type": "string",
                 "enum": [
                   "openai_chat",
-                  "openai_responses"
+                  "openai_responses",
+                  "anthropic"
                 ]
               }
             ],
-            "description": "当前生产写链路支持 OpenAI Chat 与原生 Responses 协议。"
+            "description": "当前生产写链路支持 OpenAI Chat、Responses 与 Anthropic Messages 协议。"
           },
           "base_url": {
             "type": [
@@ -4352,14 +4354,16 @@
           "type": {
             "type": "string",
             "enum": [
-              "openai"
+              "openai",
+              "anthropic"
             ]
           },
           "protocol": {
             "type": "string",
             "enum": [
               "openai_chat",
-              "openai_responses"
+              "openai_responses",
+              "anthropic"
             ]
           },
           "base_url": {
