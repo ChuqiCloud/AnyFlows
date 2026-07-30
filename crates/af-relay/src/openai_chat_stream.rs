@@ -304,6 +304,18 @@ mod tests {
         .unwrap()
     }
 
+    fn gemini_encoder() -> ChatStreamEncoder {
+        ChatStreamEncoder::new(
+            Protocol::Gemini,
+            "relay-test",
+            "public-model",
+            1_700_000_000,
+            &request(),
+            false,
+        )
+        .unwrap()
+    }
+
     fn request() -> CanonicalRequest {
         CanonicalRequest::new(
             Operation::Chat,
@@ -417,6 +429,35 @@ mod tests {
         assert!(output.contains("event: message_stop"));
         assert!(output.contains("public-model"));
         assert!(output.contains("answer"));
+        assert!(!output.contains("[DONE]"));
+        assert!(!output.contains("upstream-private-id"));
+        assert!(!output.contains("upstream-private-model"));
+
+        let usage = usage.resolve().await.unwrap();
+        assert_eq!(usage.input_tokens().get(), 11);
+        assert_eq!(usage.output_tokens().get(), 7);
+    }
+
+    #[tokio::test]
+    async fn openai_upstream_stream_is_encoded_as_gemini_sse() {
+        let body = Bytes::from_static(
+            b"data: {\"id\":\"upstream-private-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"upstream-private-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"answer\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"upstream-private-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"upstream-private-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: {\"id\":\"upstream-private-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"upstream-private-model\",\"choices\":[],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":7,\"total_tokens\":18}}\n\ndata: [DONE]\n\n",
+        );
+        let response = UpstreamResponse::full(StatusCode::OK, HeaderMap::new(), body).unwrap();
+        let (stream, usage) =
+            OpenAiChatStream::new(response.into_body(), gemini_encoder(), estimator());
+        let mut stream = stream.prefetch_first(Duration::from_secs(1)).await.unwrap();
+
+        let mut output = Vec::new();
+        while let Some(chunk) = stream.next_chunk().await {
+            output.extend(chunk.unwrap());
+        }
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("response-relay-test"));
+        assert!(output.contains("public-model"));
+        assert!(output.contains("answer"));
+        assert!(output.contains("usageMetadata"));
+        assert!(output.contains("promptTokenCount"));
         assert!(!output.contains("[DONE]"));
         assert!(!output.contains("upstream-private-id"));
         assert!(!output.contains("upstream-private-model"));

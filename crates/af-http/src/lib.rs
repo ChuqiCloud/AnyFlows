@@ -9,6 +9,7 @@ mod client_ip;
 mod credentials;
 mod error_response;
 mod frontend_assets;
+mod gemini_generate_content;
 mod management_auth;
 mod management_authorization;
 mod management_channel_probe;

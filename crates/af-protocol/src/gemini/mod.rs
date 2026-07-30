@@ -14,6 +14,7 @@ use crate::{
 mod build;
 mod build_response;
 mod convert;
+mod error;
 mod parse_response;
 mod response_wire;
 mod streaming;
@@ -21,6 +22,7 @@ mod wire;
 
 pub use build::{BuildRequestError, build_request};
 pub use build_response::{BuildResponseError, build_response};
+pub use error::encode_error;
 pub use parse_response::{ParseResponseError, parse_response};
 pub use streaming::{
     DEFAULT_MAX_SSE_EVENT_BYTES, EncodeStreamError, GeminiGenerateContentStreamDecoder,
@@ -29,6 +31,8 @@ pub use streaming::{
 
 #[cfg(test)]
 mod build_tests;
+#[cfg(test)]
+mod error_tests;
 #[cfg(test)]
 mod response_tests;
 #[cfg(test)]
@@ -70,7 +74,27 @@ pub fn parse_request_envelope(
     model_resource: &str,
     body: Bytes,
 ) -> Result<CanonicalRequestEnvelope, ParseRequestError> {
-    let canonical = parse_request(model_resource, &body)?;
+    parse_request_envelope_for_mode(model_resource, body, false)
+}
+
+/// 解析由 `streamGenerateContent` 或 `alt=sse` 选择的流式请求。
+///
+/// Gemini 把响应模式放在 URL 而不是正文中，因此协议边界必须在保留已验证源正文的
+/// 同时显式写入 Canonical `stream` 语义。
+pub fn parse_stream_request_envelope(
+    model_resource: &str,
+    body: Bytes,
+) -> Result<CanonicalRequestEnvelope, ParseRequestError> {
+    parse_request_envelope_for_mode(model_resource, body, true)
+}
+
+fn parse_request_envelope_for_mode(
+    model_resource: &str,
+    body: Bytes,
+    stream: bool,
+) -> Result<CanonicalRequestEnvelope, ParseRequestError> {
+    let mut canonical = parse_request(model_resource, &body)?;
+    canonical.stream = stream;
     Ok(CanonicalRequestEnvelope::from_validated_source(
         canonical,
         Protocol::Gemini,

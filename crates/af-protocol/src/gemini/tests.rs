@@ -2,9 +2,10 @@ use std::error::Error as _;
 
 use af_domain::Role;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use bytes::Bytes;
 use serde_json::{Value, json};
 
-use super::{MAX_BODY_BYTES, ParseRequestError, parse_request};
+use super::{MAX_BODY_BYTES, ParseRequestError, parse_request, parse_stream_request_envelope};
 use crate::{ContentBlock, MediaSource, ReasoningEffort, ToolChoice};
 
 fn parse(value: Value) -> Result<crate::CanonicalRequest, ParseRequestError> {
@@ -37,6 +38,25 @@ fn parses_minimal_request_and_uses_path_model() {
     ));
     assert_eq!(request.tool_choice, ToolChoice::None);
     assert!(request.reasoning.is_none());
+}
+
+#[test]
+fn stream_path_sets_canonical_mode_without_losing_source_proof() {
+    let body = Bytes::from(serde_json::to_vec(&minimal_body()).unwrap());
+    let envelope = parse_stream_request_envelope("models/gemini-2.5-pro", body.clone()).unwrap();
+
+    assert!(envelope.canonical().stream);
+    assert_eq!(
+        envelope.source_protocol(),
+        Some(af_domain::Protocol::Gemini)
+    );
+    let crate::SameProtocolDecision::Passthrough(source) =
+        envelope.into_same_protocol(af_domain::Protocol::Gemini)
+    else {
+        panic!("Gemini 流式模式位于 URL，正文仍应保持同协议直通资格");
+    };
+    assert_eq!(source.body(), &body);
+    assert!(source.canonical().stream);
 }
 
 #[test]

@@ -1,7 +1,7 @@
 use af_domain::{AfError, Protocol};
 use af_protocol::{
     CanonicalRequest, CanonicalStreamEvent, Usage, anthropic::AnthropicMessagesStreamEncoder,
-    openai_chat::OpenAiChatStreamEncoder,
+    gemini::GeminiGenerateContentStreamEncoder, openai_chat::OpenAiChatStreamEncoder,
 };
 
 use crate::openai_chat_usage::{OpenAiChatUsageEstimator, UsageResolutionError};
@@ -15,6 +15,9 @@ pub(crate) enum ChatStreamEncoder {
     Anthropic {
         encoder: Box<AnthropicMessagesStreamEncoder>,
         usage_estimator: OpenAiChatUsageEstimator,
+    },
+    Gemini {
+        encoder: Box<GeminiGenerateContentStreamEncoder>,
     },
 }
 
@@ -58,7 +61,17 @@ impl ChatStreamEncoder {
                     usage_estimator,
                 })
             }
-            Protocol::OpenAiResponses | Protocol::Gemini => Err(AfError::Internal),
+            Protocol::Gemini => {
+                let encoder = GeminiGenerateContentStreamEncoder::new(
+                    format!("response-{request_id}"),
+                    client_model,
+                )
+                .map_err(|_| AfError::Internal)?;
+                Ok(Self::Gemini {
+                    encoder: Box::new(encoder),
+                })
+            }
+            Protocol::OpenAiResponses => Err(AfError::Internal),
         }
     }
 
@@ -84,6 +97,7 @@ impl ChatStreamEncoder {
                 usage_estimator.observe(&event);
                 encoder.encode(event).map_err(|_| AfError::Internal)
             }
+            Self::Gemini { encoder } => encoder.encode(event).map_err(|_| AfError::Internal),
         }
     }
 
@@ -125,6 +139,21 @@ impl ChatStreamEncoder {
                         .encode(CanonicalStreamEvent::Usage(usage))
                         .map_err(|_| AfError::Internal)?,
                 );
+                output.extend(
+                    encoder
+                        .encode(CanonicalStreamEvent::StreamEnd)
+                        .map_err(|_| AfError::Internal)?,
+                );
+            }
+            Self::Gemini { encoder } => {
+                if !upstream_usage_seen {
+                    let usage = billing_usage.map_err(|_| AfError::Internal)?;
+                    output.extend(
+                        encoder
+                            .encode(CanonicalStreamEvent::Usage(usage))
+                            .map_err(|_| AfError::Internal)?,
+                    );
+                }
                 output.extend(
                     encoder
                         .encode(CanonicalStreamEvent::StreamEnd)

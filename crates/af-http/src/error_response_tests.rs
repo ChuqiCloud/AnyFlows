@@ -19,7 +19,7 @@ use tower::ServiceExt;
 
 use crate::{
     ApiKeyExtractionError, REQUEST_ID_HEADER_NAME,
-    error_response::{AnthropicHttpError, MappedError, OpenAiHttpError},
+    error_response::{AnthropicHttpError, GeminiHttpError, MappedError, OpenAiHttpError},
     router::build_router_with_routes,
 };
 
@@ -263,6 +263,37 @@ async fn maps_every_current_domain_error_to_anthropic_wire() {
                 "error": {
                     "type": expected_kind,
                     "message": case.message,
+                }
+            })
+        );
+        assert!(!body.to_string().contains(&diagnostic));
+    }
+}
+
+#[tokio::test]
+async fn maps_every_current_domain_error_to_google_json_api_wire() {
+    for case in error_cases() {
+        let diagnostic = case.error.to_string();
+        let response = GeminiHttpError::from(case.error).into_response();
+        assert_eq!(response.status(), case.status);
+        let body = response_json(response).await;
+        let expected_status = match case.code {
+            PublicErrorCode::InvalidRequest => "INVALID_ARGUMENT",
+            PublicErrorCode::InvalidApiKey => "UNAUTHENTICATED",
+            PublicErrorCode::InsufficientQuota | PublicErrorCode::RateLimited => {
+                "RESOURCE_EXHAUSTED"
+            }
+            PublicErrorCode::ModelNotFound => "NOT_FOUND",
+            PublicErrorCode::UpstreamUnavailable => "UNAVAILABLE",
+            PublicErrorCode::InternalError => "INTERNAL",
+        };
+        assert_eq!(
+            body,
+            json!({
+                "error": {
+                    "code": case.status.as_u16(),
+                    "message": case.message,
+                    "status": expected_status,
                 }
             })
         );

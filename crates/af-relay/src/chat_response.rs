@@ -2,7 +2,7 @@ use std::fmt;
 
 use af_adapter::Bytes;
 use af_domain::{AfError, Protocol, UpstreamError};
-use af_protocol::{CanonicalResponse, Usage, anthropic};
+use af_protocol::{CanonicalResponse, Usage, anthropic, gemini};
 
 use crate::{OpenAiChatStream, OpenAiChatUsageHandle, UsageResolutionError};
 
@@ -56,22 +56,28 @@ pub(crate) fn encode_full_response(
             usage,
         });
     }
-    if protocol != Protocol::Anthropic {
-        return Err(AfError::Internal);
-    }
-
     let usage = usage.map_err(|_| AfError::from(UpstreamError::ProtocolError))?;
     // 跨协议响应只保留 Canonical 语义，丢弃 OpenAI 同源 raw，并回显客户端模型。
+    let response_id = match protocol {
+        Protocol::Anthropic => format!("msg_{request_id}"),
+        Protocol::Gemini => format!("response-{request_id}"),
+        Protocol::OpenAiChat | Protocol::OpenAiResponses => return Err(AfError::Internal),
+    };
     let response = CanonicalResponse::new(
         response.operation,
-        format!("msg_{request_id}"),
+        response_id,
         client_model.to_owned(),
         response.created_at,
         response.choices.clone(),
         Some(usage),
     );
-    let value = anthropic::build_response(&response)
-        .map_err(|_| AfError::from(UpstreamError::ProtocolError))?;
+    let value = match protocol {
+        Protocol::Anthropic => anthropic::build_response(&response)
+            .map_err(|_| AfError::from(UpstreamError::ProtocolError))?,
+        Protocol::Gemini => gemini::build_response(&response)
+            .map_err(|_| AfError::from(UpstreamError::ProtocolError))?,
+        Protocol::OpenAiChat | Protocol::OpenAiResponses => unreachable!("协议分支已在上方闭合"),
+    };
     let body = serde_json::to_vec(&value)
         .map(Bytes::from)
         .map_err(|_| AfError::Internal)?;
@@ -123,5 +129,45 @@ mod tests {
         assert!(!text.contains("upstream-private-id"));
         assert!(!text.contains("upstream-private-model"));
         assert!(!text.contains("\"service_tier\":\"default\""));
+    }
+
+    #[test]
+    fn openai_response_is_rebuilt_as_gemini_without_upstream_identity() {
+        let original = Bytes::from_static(
+            br#"{"id":"upstream-private-id","object":"chat.completion","created":1700000000,"model":"upstream-private-model","choices":[{"index":0,"message":{"role":"assistant","content":"answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}"#,
+        );
+        let canonical = openai_chat::parse_response(&original).unwrap();
+        let usage = canonical.usage.unwrap();
+
+        let ChatResponse::Full {
+            body,
+            usage: result,
+        } = encode_full_response(
+            Protocol::Gemini,
+            original,
+            &canonical,
+            Ok(usage),
+            "public-model",
+            "request-1",
+        )
+        .unwrap()
+        else {
+            panic!("非流式响应必须保持完整响应模式");
+        };
+
+        assert_eq!(result.unwrap(), usage);
+        let value: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["responseId"], "response-request-1");
+        assert_eq!(value["modelVersion"], "public-model");
+        assert_eq!(value["candidates"][0]["content"]["role"], "model");
+        assert_eq!(
+            value["candidates"][0]["content"]["parts"][0]["text"],
+            "answer"
+        );
+        assert_eq!(value["usageMetadata"]["promptTokenCount"], 2);
+        assert_eq!(value["usageMetadata"]["candidatesTokenCount"], 1);
+        let text = String::from_utf8(body.to_vec()).unwrap();
+        assert!(!text.contains("upstream-private-id"));
+        assert!(!text.contains("upstream-private-model"));
     }
 }

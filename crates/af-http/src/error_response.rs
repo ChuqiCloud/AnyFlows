@@ -1,5 +1,5 @@
 use af_domain::{AfError, Protocol, PublicErrorCode, UpstreamError};
-use af_protocol::{anthropic, openai_chat};
+use af_protocol::{anthropic, gemini, openai_chat};
 use axum::{Json, response::IntoResponse};
 use http::StatusCode;
 
@@ -45,6 +45,22 @@ impl IntoResponse for AnthropicHttpError {
     }
 }
 
+/// 将统一领域错误转换为 Gemini Google JSON API 响应的本地封装。
+#[derive(Debug)]
+pub(crate) struct GeminiHttpError(MappedError);
+
+impl From<AfError> for GeminiHttpError {
+    fn from(error: AfError) -> Self {
+        Self(classify_error(error))
+    }
+}
+
+impl IntoResponse for GeminiHttpError {
+    fn into_response(self) -> axum::response::Response {
+        protocol_error_response(Protocol::Gemini, self.0)
+    }
+}
+
 /// 为路由级中间件按客户端协议构造错误响应。
 pub(crate) fn api_error_response(protocol: Protocol, error: AfError) -> axum::response::Response {
     protocol_error_response(protocol, classify_error(error))
@@ -54,7 +70,8 @@ fn protocol_error_response(protocol: Protocol, mapped: MappedError) -> axum::res
     log_error(protocol, mapped);
     let body = match protocol {
         Protocol::Anthropic => anthropic::encode_error(mapped.code, mapped.message()),
-        Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::Gemini => {
+        Protocol::Gemini => gemini::encode_error(mapped.code, mapped.message()),
+        Protocol::OpenAiChat | Protocol::OpenAiResponses => {
             openai_chat::encode_error(mapped.code, mapped.message())
         }
     };

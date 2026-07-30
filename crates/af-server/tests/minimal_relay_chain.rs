@@ -604,6 +604,54 @@ async fn anthropic_invalid_requests_use_messages_errors_and_never_reach_upstream
 }
 
 #[tokio::test]
+async fn gemini_invalid_requests_use_google_errors_and_never_reach_upstream() {
+    let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+    proxy.set_nonblocking(true).unwrap();
+    let (address, shutdown, server) =
+        start_server(proxy.local_addr().unwrap(), ServerConfig::default()).await;
+
+    for (path, body, expected_status, expected_google_status) in [
+        (
+            "/v1beta/models/test-model:generateContent",
+            br#"{"contents":[{"role":"user","parts":[{"text":"hello"}]}],"contents":[]}"#
+                .as_slice(),
+            400,
+            "INVALID_ARGUMENT",
+        ),
+        (
+            "/v1beta/models/private-wrong-model:generateContent",
+            br#"{"contents":[{"role":"user","parts":[{"text":"hello"}]}]}"#.as_slice(),
+            404,
+            "NOT_FOUND",
+        ),
+    ] {
+        let response = send_request(
+            address,
+            "POST",
+            path,
+            body,
+            &[
+                ("Content-Type", "application/json"),
+                ("x-goog-api-key", CLIENT_KEY),
+            ],
+        )
+        .await;
+        assert_eq!(response.status, expected_status);
+        let value: Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(value["error"]["code"], expected_status);
+        assert_eq!(value["error"]["status"], expected_google_status);
+        let text = String::from_utf8_lossy(&response.body);
+        assert!(!text.contains("private-wrong-model"));
+    }
+
+    stop_server(shutdown, server).await;
+    assert!(matches!(
+        proxy.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    ));
+}
+
+#[tokio::test]
 async fn verified_same_protocol_full_request_and_response_preserve_exact_bytes() {
     let upstream_body = br#"{
   "id": "chatcmpl-byte-exact",
@@ -697,6 +745,68 @@ async fn anthropic_full_request_and_response_cross_the_canonical_boundary() {
     assert_eq!(body["content"][0]["text"], "cross-protocol-answer");
     assert_eq!(body["usage"]["input_tokens"], 2);
     assert_eq!(body["usage"]["output_tokens"], 1);
+    let text = String::from_utf8_lossy(&response.body);
+    assert!(!text.contains("upstream-private-id"));
+    assert!(!text.contains("upstream-private-model"));
+}
+
+#[tokio::test]
+async fn gemini_full_request_and_response_cross_the_canonical_boundary() {
+    let upstream_body = br#"{
+  "id": "upstream-private-id",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "upstream-private-model",
+  "choices": [{"index":0,"message":{"role":"assistant","content":"gemini-answer"},"finish_reason":"stop"}],
+  "usage": {"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}
+}"#;
+    let request_body = br#"{
+  "contents": [{"role":"user","parts":[{"text":"hello"}]}],
+  "generationConfig": {"maxOutputTokens":32}
+}"#;
+    let (proxy_address, captured, proxy) = spawn_proxy(
+        "200 OK",
+        upstream_body,
+        &[("Content-Type", "application/json")],
+    );
+    let (address, shutdown, server) = start_server(proxy_address, ServerConfig::default()).await;
+
+    let response = send_request(
+        address,
+        "POST",
+        "/v1beta/models/test-model:generateContent",
+        request_body,
+        &[
+            ("Content-Type", "application/json"),
+            ("x-goog-api-key", CLIENT_KEY),
+        ],
+    )
+    .await;
+    stop_server(shutdown, server).await;
+    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    proxy.join().unwrap();
+
+    assert_ne!(upstream.body, request_body);
+    let upstream_head = upstream.head.to_ascii_lowercase();
+    assert!(!upstream_head.contains("x-goog-api-key"));
+    assert!(!upstream.head.contains(CLIENT_KEY));
+    assert!(upstream_head.contains(&format!("authorization: bearer {UPSTREAM_KEY}")));
+    let upstream_json: Value = serde_json::from_slice(&upstream.body).unwrap();
+    assert_eq!(upstream_json["model"], "test-model");
+    assert_eq!(upstream_json["max_completion_tokens"], 32);
+    assert_eq!(upstream_json["messages"][0]["role"], "user");
+    assert_eq!(upstream_json["messages"][0]["content"], "hello");
+
+    assert_eq!(response.status, 200);
+    let body: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body["modelVersion"], "test-model");
+    assert_eq!(body["candidates"][0]["content"]["role"], "model");
+    assert_eq!(
+        body["candidates"][0]["content"]["parts"][0]["text"],
+        "gemini-answer"
+    );
+    assert_eq!(body["usageMetadata"]["promptTokenCount"], 2);
+    assert_eq!(body["usageMetadata"]["candidatesTokenCount"], 1);
     let text = String::from_utf8_lossy(&response.body);
     assert!(!text.contains("upstream-private-id"));
     assert!(!text.contains("upstream-private-model"));
@@ -812,6 +922,66 @@ data: [DONE]
 }
 
 #[tokio::test]
+async fn gemini_streaming_response_is_incremental_and_uses_generate_content_sse() {
+    let first = br#"data: {"id":"upstream-private-id","object":"chat.completion.chunk","created":1,"model":"upstream-private-model","choices":[{"index":0,"delta":{"role":"assistant","content":"first-part"},"finish_reason":null}]}
+
+"#;
+    let rest = br#"data: {"id":"upstream-private-id","object":"chat.completion.chunk","created":1,"model":"upstream-private-model","choices":[{"index":0,"delta":{"content":"second-part"},"finish_reason":null}]}
+
+data: {"id":"upstream-private-id","object":"chat.completion.chunk","created":1,"model":"upstream-private-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"upstream-private-id","object":"chat.completion.chunk","created":1,"model":"upstream-private-model","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}
+
+data: [DONE]
+
+"#;
+    let (proxy_address, captured, release, proxy) = spawn_streaming_proxy(first, rest);
+    let (address, shutdown, server) = start_server(proxy_address, ServerConfig::default()).await;
+    let request_body = br#"{"contents":[{"role":"user","parts":[{"text":"hello"}]}]}"#;
+    let mut client = connect_and_send_gemini(
+        address,
+        "/v1beta/models/test-model:streamGenerateContent?alt=sse",
+        request_body,
+    )
+    .await;
+
+    let first_response = read_until(&mut client, b"first-part").await;
+    let first_text = String::from_utf8_lossy(&first_response);
+    let first_lower = first_text.to_ascii_lowercase();
+    assert!(first_lower.starts_with("http/1.1 200"));
+    assert!(first_lower.contains("content-type: text/event-stream; charset=utf-8"));
+    assert!(first_lower.contains("cache-control: no-cache, no-transform"));
+    assert!(first_lower.contains("x-accel-buffering: no"));
+    assert!(first_text.contains("data:"));
+    assert!(first_text.contains("modelVersion"));
+    assert!(!first_text.contains("second-part"));
+    assert!(!first_text.contains("[DONE]"));
+    assert!(!first_text.contains("upstream-private-id"));
+
+    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    let upstream_json: Value = serde_json::from_slice(&upstream.body).unwrap();
+    assert_eq!(upstream_json["stream"], true);
+    assert_eq!(upstream_json["stream_options"]["include_usage"], true);
+    release.send(()).unwrap();
+
+    let mut complete = first_response;
+    timeout(IO_TIMEOUT, client.read_to_end(&mut complete))
+        .await
+        .unwrap()
+        .unwrap();
+    let complete = String::from_utf8_lossy(&complete);
+    assert!(complete.contains("second-part"));
+    assert!(complete.contains("usageMetadata"));
+    assert!(complete.contains("promptTokenCount"));
+    assert!(complete.contains("candidatesTokenCount"));
+    assert!(!complete.contains("data: [DONE]"));
+    assert!(!complete.contains("upstream-private-model"));
+
+    stop_server(shutdown, server).await;
+    proxy.join().unwrap();
+}
+
+#[tokio::test]
 async fn client_disconnect_aborts_pending_upstream_stream() {
     let first = br#"data: {"id":"abort-private-id","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":"abort-first-part"},"finish_reason":null}]}
 
@@ -862,6 +1032,17 @@ async fn connect_and_send_anthropic(address: SocketAddr, body: &[u8]) -> TcpStre
     let mut client = TcpStream::connect(address).await.unwrap();
     let request = format!(
         "POST /v1/messages HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nx-api-key: {CLIENT_KEY}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    client.write_all(request.as_bytes()).await.unwrap();
+    client.write_all(body).await.unwrap();
+    client
+}
+
+async fn connect_and_send_gemini(address: SocketAddr, path: &str, body: &[u8]) -> TcpStream {
+    let mut client = TcpStream::connect(address).await.unwrap();
+    let request = format!(
+        "POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nx-goog-api-key: {CLIENT_KEY}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
     client.write_all(request.as_bytes()).await.unwrap();
