@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
-import { AlertCircle, Boxes, Eye, EyeOff, LoaderCircle, LockKeyhole } from 'lucide-react'
+import { AlertCircle, Boxes, Eye, EyeOff, LoaderCircle, LockKeyhole, UserRoundPlus } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { AuthPageShell } from '@/features/auth/auth-page-shell'
 import { establishManagementSession } from '@/features/auth/session-query'
+import { useRegistrationStatus } from '@/features/registration/registration-api'
 import { apiClient, ApiError } from '@/lib/api'
 import { loginManagementSession } from '@/lib/api/generated/sdk.gen'
 import type { LoginRequest } from '@/lib/api/generated/types.gen'
@@ -36,6 +37,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [loginError, setLoginError] = useState<LoginError>()
   const [noticeDismissed, setNoticeDismissed] = useState(false)
+  const registrationStatus = useRegistrationStatus()
 
   const loginMutation = useMutation({
     mutationFn: async (body: LoginRequest) => {
@@ -173,6 +175,15 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                 ) : null}
                 {loginMutation.isPending ? t('auth.login.submitting') : t('auth.login.submit')}
               </Button>
+              {registrationStatus.data?.enabled ? (
+                <p className="text-center text-sm text-muted-foreground">
+                  {t('auth.login.noAccount')}{' '}
+                  <a href="#/register" className="font-medium text-info underline-offset-4 hover:underline">
+                    <UserRoundPlus className="mr-1 inline size-3.5" aria-hidden="true" />
+                    {t('auth.login.register')}
+                  </a>
+                </p>
+              ) : null}
               <Button variant="ghost" className="w-full" asChild>
                 <a href="#/models">
                   <Boxes className="size-4" aria-hidden="true" />

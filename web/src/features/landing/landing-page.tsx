@@ -29,6 +29,7 @@ import { BillingVisual } from '@/features/landing/billing-visual'
 import { ApiConsole } from '@/features/landing/api-console'
 import { ProtocolMatrix } from '@/features/landing/protocol-matrix'
 import { RouteVisual } from '@/features/landing/route-visual'
+import { useRegistrationStatus } from '@/features/registration/registration-api'
 
 /** 三种部署形态，顺序对应 design/00-overview.md 里的场景编号 */
 const deployModes = [
@@ -51,6 +52,10 @@ const openConsole = () => {
 
 export function LandingPage() {
   const { t } = useTranslation()
+  const registrationStatus = useRegistrationStatus()
+  const openAccount = () => {
+    window.location.hash = registrationStatus.data?.enabled ? '#/register' : '#/console'
+  }
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
@@ -147,7 +152,7 @@ export function LandingPage() {
             </p>
 
             <div className="mt-9 flex flex-wrap items-center justify-center gap-2.5">
-              <Button size="lg" onClick={openConsole}>
+              <Button size="lg" onClick={openAccount}>
                 {t('landing.hero.cta')}
                 <ArrowRight className="size-4" aria-hidden="true" />
               </Button>
@@ -330,7 +335,7 @@ export function LandingPage() {
               {t('landing.closing.body')}
             </p>
             <div className="mt-9 flex flex-wrap items-center justify-center gap-2.5">
-              <Button size="lg" onClick={openConsole}>
+              <Button size="lg" onClick={openAccount}>
                 {t('landing.closing.cta')}
                 <ArrowRight className="size-4" aria-hidden="true" />
               </Button>

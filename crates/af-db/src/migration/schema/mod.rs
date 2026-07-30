@@ -8,6 +8,7 @@ mod indexes;
 mod playground;
 mod playground_conversation;
 mod pricing;
+mod registration;
 mod routing;
 mod usage;
 
@@ -85,4 +86,5 @@ pub(super) use playground_conversation::{
     create_playground_conversation_indexes, create_playground_conversations,
 };
 pub(super) use pricing::{create_group_model_ratios, create_model_prices};
+pub(super) use registration::create_registration_rate_limits;
 pub(super) use usage::{create_usage_logs, create_usage_logs_indexes};

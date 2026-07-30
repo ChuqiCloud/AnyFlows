@@ -71,6 +71,9 @@ mod playground_share_tests;
 mod quota;
 #[cfg(test)]
 mod quota_tests;
+mod registration;
+#[cfg(test)]
+mod registration_tests;
 mod scheduler_ability;
 #[cfg(test)]
 mod scheduler_ability_tests;
@@ -191,6 +194,13 @@ pub use playground_share::{
 };
 pub use quota::{
     QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationStatus,
+};
+pub use registration::{
+    DEFAULT_REGISTRATION_RATE_LIMIT_ATTEMPTS, DEFAULT_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
+    MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS, MAX_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
+    MIN_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS, RegistrationAttemptOutcome,
+    RegistrationPolicyRecord, RegistrationPolicyWriteRecord, RegistrationRepository,
+    RegistrationRepositoryConfigError, RegistrationRepositoryError, RegistrationStatusRecord,
 };
 pub use scheduler_ability::{
     MAX_SCHEDULER_ABILITY_ENTRIES, MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES, SchedulerAbilityRecord,

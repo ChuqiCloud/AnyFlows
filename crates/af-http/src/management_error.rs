@@ -1,5 +1,8 @@
 use axum::response::{IntoResponse, Response};
-use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
+use http::{
+    HeaderValue, StatusCode,
+    header::{CACHE_CONTROL, RETRY_AFTER},
+};
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -20,6 +23,10 @@ pub(crate) enum ManagementError {
     UserNotFound,
     /// 用户名或邮箱与当前有效用户冲突。
     UserConflict,
+    /// 当前实例尚未启用公开注册。
+    RegistrationDisabled,
+    /// 当前客户端已耗尽公开注册固定窗口尝试次数。
+    RegistrationRateLimited { retry_after_seconds: u64 },
     /// 分组不存在或已经被软删除。
     GroupNotFound,
     /// 分组名与当前有效分组冲突。
@@ -64,6 +71,12 @@ pub(crate) struct ManagementErrorBody {
 
 impl IntoResponse for ManagementError {
     fn into_response(self) -> Response {
+        let retry_after_seconds = match self {
+            Self::RegistrationRateLimited {
+                retry_after_seconds,
+            } => Some(retry_after_seconds),
+            _ => None,
+        };
         let (status, body) = match self {
             Self::InvalidRequest => (
                 StatusCode::BAD_REQUEST,
@@ -112,6 +125,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "user_conflict",
                     message: "User conflict",
+                },
+            ),
+            Self::RegistrationDisabled => (
+                StatusCode::FORBIDDEN,
+                ManagementErrorBody {
+                    code: "registration_disabled",
+                    message: "Registration disabled",
+                },
+            ),
+            Self::RegistrationRateLimited { .. } => (
+                StatusCode::TOO_MANY_REQUESTS,
+                ManagementErrorBody {
+                    code: "registration_rate_limited",
+                    message: "Registration rate limited",
                 },
             ),
             Self::GroupNotFound => (
@@ -217,6 +244,13 @@ impl IntoResponse for ManagementError {
         response
             .headers_mut()
             .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        if let Some(retry_after_seconds) = retry_after_seconds {
+            response.headers_mut().insert(
+                RETRY_AFTER,
+                HeaderValue::from_str(&retry_after_seconds.to_string())
+                    .expect("非负整数秒数必须始终是有效响应头"),
+            );
+        }
         response
     }
 }

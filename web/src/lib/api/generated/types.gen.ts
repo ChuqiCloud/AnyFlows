@@ -349,7 +349,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'group_conflict' | 'group_in_use' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'registration_disabled' | 'registration_rate_limited' | 'group_conflict' | 'group_in_use' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -422,6 +422,30 @@ export type PlaygroundShareReadResponse = {
 export type PlaygroundShareSession = {
     model: string;
     messages: Array<PlaygroundShareMessage>;
+};
+export type RegistrationPolicyRequest = {
+    enabled: boolean;
+    default_group_id: number;
+    initial_quota: number;
+    email_required: boolean;
+    rate_limit_attempts: number;
+    rate_limit_window_seconds: number;
+};
+export type RegistrationPolicyResponse = {
+    enabled: boolean;
+    default_group_id: number;
+    initial_quota: number;
+    email_required: boolean;
+    rate_limit_attempts: number;
+    rate_limit_window_seconds: number;
+};
+export type RegistrationRequest = {
+    username: string;
+    email?: string | null;
+};
+export type RegistrationStatusResponse = {
+    enabled: boolean;
+    email_required: boolean;
 };
 export type SessionResponse = {
     user: SessionUser;
@@ -558,6 +582,11 @@ export type AdminCredentialUpdateRequestWritable = {
     oauth_account_key: string | null;
     oauth_project_id: string | null;
 };
+export type RegistrationRequestWritable = {
+    username: string;
+    email?: string | null;
+    password: string;
+};
 export type SetupRequestWritable = {
     username: string;
     password: string;
@@ -623,6 +652,71 @@ export type InitializeAdminSetupResponses = {
     200: LoginResponse;
 };
 export type InitializeAdminSetupResponse = InitializeAdminSetupResponses[keyof InitializeAdminSetupResponses];
+export type GetRegistrationStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/registration/status';
+};
+export type GetRegistrationStatusErrors = {
+    500: ManagementError;
+};
+export type GetRegistrationStatusError = GetRegistrationStatusErrors[keyof GetRegistrationStatusErrors];
+export type GetRegistrationStatusResponses = {
+    200: RegistrationStatusResponse;
+};
+export type GetRegistrationStatusResponse = GetRegistrationStatusResponses[keyof GetRegistrationStatusResponses];
+export type RegisterUserData = {
+    body: RegistrationRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/registration';
+};
+export type RegisterUserErrors = {
+    400: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    429: ManagementError;
+    500: ManagementError;
+};
+export type RegisterUserError = RegisterUserErrors[keyof RegisterUserErrors];
+export type RegisterUserResponses = {
+    201: LoginResponse;
+};
+export type RegisterUserResponse = RegisterUserResponses[keyof RegisterUserResponses];
+export type GetAdminRegistrationPolicyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/registration';
+};
+export type GetAdminRegistrationPolicyErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminRegistrationPolicyError = GetAdminRegistrationPolicyErrors[keyof GetAdminRegistrationPolicyErrors];
+export type GetAdminRegistrationPolicyResponses = {
+    200: RegistrationPolicyResponse;
+};
+export type GetAdminRegistrationPolicyResponse = GetAdminRegistrationPolicyResponses[keyof GetAdminRegistrationPolicyResponses];
+export type UpdateAdminRegistrationPolicyData = {
+    body: RegistrationPolicyRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/registration';
+};
+export type UpdateAdminRegistrationPolicyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminRegistrationPolicyError = UpdateAdminRegistrationPolicyErrors[keyof UpdateAdminRegistrationPolicyErrors];
+export type UpdateAdminRegistrationPolicyResponses = {
+    200: RegistrationPolicyResponse;
+};
+export type UpdateAdminRegistrationPolicyResponse = UpdateAdminRegistrationPolicyResponses[keyof UpdateAdminRegistrationPolicyResponses];
 export type GetAdminDashboardData = {
     body?: never;
     path?: never;

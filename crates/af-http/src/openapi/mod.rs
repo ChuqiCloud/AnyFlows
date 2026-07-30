@@ -7,6 +7,7 @@ mod groups;
 mod models;
 mod playground_conversations;
 mod playground_shares;
+mod registration;
 pub(crate) mod schema;
 mod session;
 mod setup;
@@ -26,6 +27,7 @@ pub fn openapi_document() -> OpenApi {
     let mut document = OpenApi::new(Info::new("AnyFlows 管理 API", "0.1.0"), Paths::new());
     document.merge(session::document());
     document.merge(setup::document());
+    document.merge(registration::document());
     document.merge(dashboard::document());
     document.merge(users::document());
     document.merge(groups::document());
@@ -39,6 +41,8 @@ pub fn openapi_document() -> OpenApi {
     document.merge(credentials::document());
 
     document.tags = Some(vec![
+        Tag::new("公开注册"),
+        Tag::new("注册设置"),
         Tag::new("管理会话"),
         Tag::new("首次安装"),
         Tag::new("管理看板"),
@@ -78,7 +82,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 24);
+        assert_eq!(document.paths.paths.len(), 27);
         let operation_count = document
             .paths
             .paths
@@ -99,7 +103,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 45);
+        assert_eq!(operation_count, 49);
         assert!(
             document
                 .components
@@ -138,6 +142,7 @@ mod tests {
             "getAdminCredential",
             "getAdminDashboard",
             "getAdminGroup",
+            "getAdminRegistrationPolicy",
             "getAdminToken",
             "getAdminUser",
             "getManagementSession",
@@ -145,6 +150,7 @@ mod tests {
             "getPlaygroundConversation",
             "getUserToken",
             "getInitialSetupStatus",
+            "getRegistrationStatus",
             "initializeAdminSetup",
             "listAdminChannels",
             "listAdminCredentials",
@@ -157,11 +163,13 @@ mod tests {
             "listUserTokens",
             "loginManagementSession",
             "probeAdminChannel",
+            "registerUser",
             "revokePlaygroundShare",
             "savePlaygroundConversation",
             "updateAdminChannel",
             "updateAdminCredential",
             "updateAdminGroup",
+            "updateAdminRegistrationPolicy",
             "updateAdminToken",
             "updateAdminUser",
             "updateUserToken",
@@ -172,12 +180,16 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 64);
+        assert_eq!(schemas.len(), 68);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
         assert!(schemas.contains_key("SetupRequest"));
         assert!(schemas.contains_key("SetupStatusResponse"));
+        assert!(schemas.contains_key("RegistrationStatusResponse"));
+        assert!(schemas.contains_key("RegistrationRequest"));
+        assert!(schemas.contains_key("RegistrationPolicyResponse"));
+        assert!(schemas.contains_key("RegistrationPolicyRequest"));
         assert!(schemas.contains_key("ModelCatalogListResponse"));
         assert!(schemas.contains_key("ModelCatalogPricingScope"));
         assert!(schemas.contains_key("PlaygroundShareCreateRequest"));

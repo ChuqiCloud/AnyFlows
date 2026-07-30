@@ -3,7 +3,7 @@ use std::sync::Arc;
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminTokenReader,
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, InitialSetup,
-    ModelCatalogReader, PlaygroundConversationService, PlaygroundShareService,
+    ModelCatalogReader, PlaygroundConversationService, PlaygroundShareService, RegistrationService,
     SessionAuthenticator, TokenAuthenticator,
 };
 use af_analytics::AdminDashboardReader;
@@ -56,6 +56,7 @@ use crate::model_catalog::list_models;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::playground_conversations::build_playground_conversation_router;
 use crate::playground_shares::build_playground_share_router;
+use crate::registration::build_registration_router;
 use crate::user_tokens::build_user_token_router;
 use crate::{
     ChatService, QueryApiKeyPolicy, chat_completions::HttpState, chat_completions::chat_completions,
@@ -99,6 +100,7 @@ pub fn build_router(
     playground_conversation_service: Arc<dyn PlaygroundConversationService>,
     user_token_service: Arc<dyn af_admin::UserTokenService>,
     initial_setup: Arc<dyn InitialSetup>,
+    registration_service: Arc<dyn RegistrationService>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
     admin_channel_probe: Option<Arc<dyn crate::AdminChannelProbe>>,
@@ -209,6 +211,11 @@ pub fn build_router(
         user_token_service,
         Arc::clone(&http_state.session_authenticator),
     );
+    let registration_routes = build_registration_router(
+        registration_service,
+        Arc::clone(&http_state.session_authenticator),
+        config,
+    );
     let management_routes = Router::new()
         .route("/api/setup/status", get(setup_status))
         .route("/api/setup", post(initialize_setup))
@@ -317,7 +324,8 @@ pub fn build_router(
         .with_state(http_state)
         .merge(playground_share_routes)
         .merge(playground_conversation_routes)
-        .merge(user_token_routes);
+        .merge(user_token_routes)
+        .merge(registration_routes);
     HttpRouter::new(build_router_with_routes_and_frontend(
         public_routes.merge(management_routes),
         operations_router(readiness),

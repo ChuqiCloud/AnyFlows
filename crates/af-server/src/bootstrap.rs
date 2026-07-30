@@ -10,8 +10,9 @@ use af_admin::{
     DatabaseAdminGroupWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
     DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
     DatabaseInitialSetup, DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseSessionAuthenticator, DatabaseTokenAuthenticator, DatabaseUserTokenService,
-    InitialSetup, ModelCatalogReader, PlaygroundConversationService, PlaygroundShareService,
+    DatabaseRegistrationService, DatabaseSessionAuthenticator, DatabaseTokenAuthenticator,
+    DatabaseUserTokenService, InitialSetup, ModelCatalogReader, PlaygroundConversationService,
+    PlaygroundShareService, RegistrationService, RegistrationServiceConfigError,
     SessionAuthenticator, SessionAuthenticatorConfigError, TokenAuthenticator, UserTokenService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
@@ -32,10 +33,10 @@ use af_db::{
     DatabaseOptionsError, DatabasePool, InitialSetupRepository, InitialSetupRepositoryConfigError,
     MigrationOptions, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
-    PlaygroundShareRepositoryConfigError, QuotaRepository, TokenAuthRepository,
-    TokenAuthRepositoryConfigError, UsageLogRepository, UserSessionRepository,
-    UserSessionRepositoryConfigError, UserTokenRepository, UserTokenRepositoryConfigError,
-    connect_and_migrate,
+    PlaygroundShareRepositoryConfigError, QuotaRepository, RegistrationRepository,
+    RegistrationRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
+    UsageLogRepository, UserSessionRepository, UserSessionRepositoryConfigError,
+    UserTokenRepository, UserTokenRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle,
@@ -91,6 +92,7 @@ pub struct AuthenticationReady {
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
     initial_setup: Arc<dyn InitialSetup>,
+    registration_service: Arc<dyn RegistrationService>,
     playground_share_service: Arc<dyn PlaygroundShareService>,
     playground_conversation_service: Arc<dyn PlaygroundConversationService>,
     user_token_service: Arc<dyn UserTokenService>,
@@ -219,6 +221,12 @@ pub enum BootstrapError {
     /// 首次安装仓储的启动参数无效。
     #[error("首次安装仓储启动参数无效")]
     InitialSetupRepository(#[source] InitialSetupRepositoryConfigError),
+    /// 注册策略与限流仓储的启动参数无效。
+    #[error("注册策略仓储启动参数无效")]
+    RegistrationRepository(#[source] RegistrationRepositoryConfigError),
+    /// 注册 IP 指纹密钥缺失或无效。
+    #[error("注册服务启动配置无效")]
+    RegistrationService(#[source] RegistrationServiceConfigError),
     /// Playground 分享仓储的启动参数无效。
     #[error("Playground 分享仓储启动参数无效")]
     PlaygroundShareRepository(#[source] PlaygroundShareRepositoryConfigError),
@@ -389,6 +397,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::InitialSetupRepository)?;
+        let registration_repository = RegistrationRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::RegistrationRepository)?;
         let playground_share_repository = PlaygroundShareRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -409,6 +422,12 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::AdminUserRepository)?;
+        let registration_service = DatabaseRegistrationService::new(
+            registration_repository,
+            admin_user_repository.clone(),
+            auth.session_signing_key().map(|key| key.expose()),
+        )
+        .map_err(BootstrapError::RegistrationService)?;
         let admin_group_repository = AdminGroupRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -460,6 +479,7 @@ impl Bootstrap<DatabaseReady> {
                 authenticator: Arc::new(DatabaseTokenAuthenticator::new(repository)),
                 session_authenticator: Arc::new(session_authenticator),
                 initial_setup: Arc::new(DatabaseInitialSetup::new(initial_setup_repository)),
+                registration_service: Arc::new(registration_service),
                 playground_share_service: Arc::new(DatabasePlaygroundShareService::new(
                     playground_share_repository,
                 )),
@@ -795,6 +815,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.playground_conversation_service),
             Arc::clone(&self.stage.infrastructure.user_token_service),
             Arc::clone(&self.stage.infrastructure.initial_setup),
+            Arc::clone(&self.stage.infrastructure.registration_service),
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_channel_writer),
             Some(Arc::clone(&self.stage.admin_channel_probe)),

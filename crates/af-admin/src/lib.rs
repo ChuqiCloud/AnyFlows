@@ -12,6 +12,9 @@ mod playground_conversation;
 mod playground_share;
 mod playground_share_snapshot;
 mod playground_share_token;
+mod registration;
+#[cfg(test)]
+mod registration_tests;
 mod routing_read;
 mod session;
 mod token_auth;
@@ -81,6 +84,13 @@ pub use playground_share_snapshot::{
 pub use playground_share_token::{
     IssuedPlaygroundShareToken, PlaygroundShareTokenDigest, PlaygroundShareTokenError,
     PresentedPlaygroundShareToken,
+};
+pub use registration::{
+    DatabaseRegistrationService, MAX_REGISTRATION_PASSWORD_BYTES, MIN_REGISTRATION_PASSWORD_BYTES,
+    RegistrationCommand, RegistrationError, RegistrationFuture, RegistrationPolicy,
+    RegistrationPolicyCommand, RegistrationPolicyFuture, RegistrationPolicyUpdateFuture,
+    RegistrationResult, RegistrationService, RegistrationServiceConfigError, RegistrationStatus,
+    RegistrationStatusFuture,
 };
 pub use routing_read::{
     AdminChannelGetFuture, AdminChannelListFuture, AdminChannelReadError, AdminChannelReader,

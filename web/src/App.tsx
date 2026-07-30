@@ -14,6 +14,8 @@ import { ModelPage } from '@/features/models/model-page'
 import { PublicModelPage } from '@/features/models/public-model-page'
 import { PlaygroundPage } from '@/features/playground/playground-page'
 import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
+import { RegistrationPage } from '@/features/registration/registration-page'
+import { RegistrationSettingsPage } from '@/features/registration/registration-settings-page'
 import { TokenPage } from '@/features/tokens/token-page'
 import { UsageLogPage } from '@/features/usage-logs/usage-log-page'
 import { UserPage } from '@/features/users/user-page'
@@ -43,7 +45,7 @@ function useHashRoute(): [AppRoute, (hash: string) => void] {
 }
 
 type ManagementEntryProps = {
-  view: Exclude<AppView, 'landing' | 'public-models' | 'share'>
+  view: Exclude<AppView, 'landing' | 'public-models' | 'register' | 'share'>
   loginNotice?: LoginNotice
   onAuthenticated: () => void
   onLoginRequired: (reason: 'required' | 'sessionExpired' | 'setupComplete') => void
@@ -94,6 +96,8 @@ function ManagementEntry({
 
   const titleKey = view === 'channels'
     ? 'channels.title'
+    : view === 'registration'
+      ? 'registration.settings.title'
     : view === 'users'
       ? 'users.title'
     : view === 'api-keys'
@@ -109,6 +113,8 @@ function ManagementEntry({
             : 'dashboard.title'
   const content = view === 'channels'
     ? <ChannelPage />
+    : view === 'registration'
+      ? <RegistrationSettingsPage />
     : view === 'users'
       ? <UserPage />
     : view === 'api-keys'
@@ -171,6 +177,9 @@ export default function App() {
   }
   if (view === 'public-models') {
     return <PublicModelPage />
+  }
+  if (view === 'register') {
+    return <RegistrationPage onAuthenticated={openUserHome} />
   }
   if (view === 'share') {
     return <PublicPlaygroundSharePage key={route.shareToken ?? 'invalid'} token={route.shareToken} />

@@ -75,8 +75,19 @@ pub(crate) async fn login_with_credentials(
     username: String,
     password: String,
 ) -> Result<Response, ManagementError> {
-    let credentials = LoginCredentials::new(username, password);
-    let result = state.session_authenticator.login(&credentials).await;
+    login_with_authenticator(
+        state.session_authenticator.as_ref(),
+        LoginCredentials::new(username, password),
+    )
+    .await
+}
+
+/// 使用统一认证器签发登录会话，并确保原始凭据在调用结束后立即释放。
+pub(crate) async fn login_with_authenticator(
+    authenticator: &dyn af_admin::SessionAuthenticator,
+    credentials: LoginCredentials,
+) -> Result<Response, ManagementError> {
+    let result = authenticator.login(&credentials).await;
     drop(credentials);
     let session = result.map_err(map_session_error)?;
     Ok(no_store_json(login_response(session)))

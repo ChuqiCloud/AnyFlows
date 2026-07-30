@@ -6,6 +6,7 @@ import {
   Network,
   ScrollText,
   ShieldCheck,
+  UserRoundCog,
   UsersRound,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -29,7 +30,7 @@ type AppNavigationProps = {
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'users' | 'channels' | 'keys' | 'usage'
+  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'users' | 'registration' | 'channels' | 'keys' | 'usage'
   icon: LucideIcon
   href: `#/console${string}`
 }
@@ -62,6 +63,7 @@ const navGroups: readonly NavGroup[] = [
     items: [
       { key: 'overview', icon: Gauge, href: '#/console' },
       { key: 'users', icon: UsersRound, href: '#/console/users' },
+      { key: 'registration', icon: UserRoundCog, href: '#/console/registration' },
       { key: 'channels', icon: Network, href: '#/console/channels' },
       { key: 'keys', icon: ShieldCheck, href: '#/console/tokens' },
       { key: 'usage', icon: ScrollText, href: '#/console/usage-logs' },
