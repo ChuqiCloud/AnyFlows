@@ -1,10 +1,11 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol};
+use af_domain::{ChannelId, CredentialKind};
 
 use super::{
     SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord,
     source::{SchedulerRuntimeChannelSource, SchedulerRuntimeCredentialSource},
+    target::is_supported_runtime_target,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,9 +51,7 @@ fn try_runtime_target(
     }
     let channel_type = channel.channel_type();
     let protocol = channel.protocol();
-    if channel_type != ChannelType::OpenAi
-        || !matches!(protocol, Protocol::OpenAiChat | Protocol::OpenAiResponses)
-    {
+    if !is_supported_runtime_target(channel_type, protocol) {
         return Ok(None);
     }
     let mut records = Vec::with_capacity(credentials.len());

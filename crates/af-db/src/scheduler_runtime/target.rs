@@ -14,6 +14,20 @@ use super::{ChannelModelMappings, ChannelParameterOverrides};
 /// 单个渠道进入运行时快照的凭据数量上限。
 pub const MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL: usize = 64;
 
+/// 判断渠道类型与原生协议是否已经完成生产运行时装配。
+pub(super) const fn is_supported_runtime_target(
+    channel_type: ChannelType,
+    protocol: Protocol,
+) -> bool {
+    matches!(
+        (channel_type, protocol),
+        (
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat | Protocol::OpenAiResponses
+        ) | (ChannelType::Anthropic, Protocol::Anthropic)
+    )
+}
+
 /// 渠道转发时需要附加的非认证请求头。
 #[derive(Clone, Eq, PartialEq)]
 pub struct SchedulerRuntimeHeader {
@@ -171,7 +185,7 @@ pub struct SchedulerRuntimeTargetRecord {
 }
 
 impl SchedulerRuntimeTargetRecord {
-    /// 校验当前支持的 OpenAI 原生目标及安全 Header 后构造记录。
+    /// 校验当前支持的原生协议目标及安全 Header 后构造记录。
     pub fn new(
         channel_id: ChannelId,
         channel_type: ChannelType,
@@ -226,12 +240,10 @@ impl SchedulerRuntimeTargetRecord {
         parameter_overrides: ChannelParameterOverrides,
         headers: Vec<(String, String)>,
     ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
-        if channel_type != ChannelType::OpenAi
-            || !matches!(protocol, Protocol::OpenAiChat | Protocol::OpenAiResponses)
+        if !is_supported_runtime_target(channel_type, protocol)
             || credentials.is_empty()
             || credentials.len() > MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL
-            || (protocol == Protocol::OpenAiResponses
-                && parameter_overrides.stop_sequences().is_some())
+            || parameter_overrides.validate_for_protocol(protocol).is_err()
         {
             return Err(SchedulerRuntimeTargetRecordError);
         }
