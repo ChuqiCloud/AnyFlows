@@ -15,8 +15,9 @@
     "playground": "Playground",
     "apiKeys": "My API keys",
     "users": "Users",
+    "siteSettings": "Site settings",
+    "authenticationSettings": "Authentication",
     "emailSettings": "Email settings",
-    "registration": "Registration",
     "channels": "Channels",
     "keys": "Global keys",
     "usage": "Global usage",
@@ -988,7 +989,7 @@
   },
   "auth": {
     "login": {
-      "eyebrow": "AnyFlows account sign-in",
+      "eyebrow": "Sign in to {{siteName}}",
       "heroTitle": "Your models and prices, in one place",
       "heroBody": "Sign in for models and effective prices in your group. Administrators can continue managing the gateway.",
       "title": "Welcome back",
@@ -1003,13 +1004,20 @@
       "submitting": "Verifying",
       "noAccount": "New to AnyFlows?",
       "register": "Create an account",
-      "browseModels": "Browse models as a guest"
+      "browseModels": "Browse models as a guest",
+      "loadingCapabilities": "Checking sign-in capabilities",
+      "capabilityUnavailableTitle": "Sign-in capability is unavailable",
+      "capabilityUnavailableBody": "The service did not return a reliable authentication state, so the password form remains closed.",
+      "disabledTitle": "Password sign-in is disabled",
+      "disabledBody": "This site does not currently accept username and password sign-in. You can still browse the model catalog as a guest.",
+      "retry": "Check again"
     },
     "errors": {
       "invalidCredentials": "The username or password is incorrect.",
       "adminRequired": "This account does not have administrator access.",
       "sessionExpired": "Your session has expired. Sign in again.",
       "setupComplete": "Setup is complete. Sign in with an administrator account.",
+      "passwordLoginDisabled": "Password sign-in was just disabled. Use an authentication method currently offered by this site.",
       "unavailable": "The service is unavailable. Try again shortly."
     },
     "session": {
@@ -1023,6 +1031,137 @@
       "admin": "Administrator",
       "user": "User",
       "logout": "Sign out"
+    }
+  },
+  "siteSettings": {
+    "title": "Site settings",
+    "subtitle": "Configure the public site name, external base URL, and brand content. Guest pages read a filtered public projection.",
+    "loading": "Loading site settings",
+    "form": {
+      "title": "Site identity and brand",
+      "version": "Version {{version}}",
+      "description": "The landing, sign-in, and registration surfaces use the public brand after saving."
+    },
+    "identity": {
+      "title": "Site identity",
+      "description": "The name identifies public entry points. The public base URL communicates the stable external address."
+    },
+    "brand": {
+      "title": "Brand content",
+      "description": "The logo, tagline, and description are public. Do not enter credentials or internal operations data."
+    },
+    "fields": {
+      "siteName": "Site name",
+      "publicBaseUrl": "Public base URL",
+      "publicBaseUrlHint": "Optional. Only HTTP(S) URLs without credentials, query parameters, or fragments are accepted.",
+      "logoUrl": "Logo URL",
+      "logoUrlHint": "Use a site-relative absolute path or an HTTP(S) URL. Failed images fall back to the built-in mark.",
+      "tagline": "Brand tagline",
+      "description": "Brand description"
+    },
+    "validation": {
+      "siteName": "Site name is required, cannot contain control characters, and is limited to 80 UTF-8 bytes.",
+      "publicBaseUrl": "Enter a valid HTTP(S) URL without credentials, query parameters, or a fragment.",
+      "logoUrl": "Enter a site-relative absolute path or a valid HTTP(S) logo URL.",
+      "tagline": "The tagline cannot contain control characters and is limited to 160 UTF-8 bytes.",
+      "description": "The description is limited to 500 UTF-8 bytes and cannot contain invalid control characters."
+    },
+    "preview": {
+      "title": "Public brand preview",
+      "description": "Live preview of the current draft",
+      "taglineFallback": "One gateway for every model",
+      "descriptionFallback": "A model API workspace built for teams."
+    },
+    "state": {
+      "saved": "Site settings saved",
+      "unsaved": "Unsaved changes",
+      "synced": "Settings are in sync"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "save": "Save settings",
+      "saving": "Saving"
+    },
+    "errors": {
+      "title": "Site settings could not be loaded",
+      "load": "The service did not return reliable site settings. Try again shortly.",
+      "save": "Site settings could not be saved. Server state is unchanged."
+    }
+  },
+  "authenticationSettings": {
+    "title": "Authentication settings",
+    "subtitle": "Control password sign-in, public registration, new-user allocation, and database-backed fixed-window protection.",
+    "loading": "Loading authentication settings",
+    "status": {
+      "title": "Authentication capabilities",
+      "version": "Version {{version}}",
+      "enabled": "Open",
+      "disabled": "Closed"
+    },
+    "passwordLogin": {
+      "title": "Username and password sign-in",
+      "description": "When closed, the public sign-in page no longer renders a password form. Existing sessions are not immediately revoked."
+    },
+    "registration": {
+      "title": "Public registration",
+      "description": "Registration depends on password sign-in and closes automatically when password sign-in is disabled."
+    },
+    "email": {
+      "title": "Require email at registration",
+      "description": "This only controls whether the field is required. Verification and password recovery belong to a later lifecycle slice."
+    },
+    "allocation": {
+      "title": "New-user allocation",
+      "description": "Every new user is assigned to an active group and receives the configured non-negative initial quota."
+    },
+    "protection": {
+      "title": "Registration rate protection",
+      "description": "A keyed client IP fingerprint enforces a cross-instance fixed window without storing raw IP addresses."
+    },
+    "fields": {
+      "defaultGroup": "Default group",
+      "initialQuota": "Initial quota",
+      "initialQuotaHint": "Uses the system integer quota unit.",
+      "attempts": "Attempts per window",
+      "window": "Fixed window"
+    },
+    "windows": {
+      "60": "1 minute",
+      "300": "5 minutes",
+      "900": "15 minutes",
+      "3600": "1 hour",
+      "21600": "6 hours",
+      "86400": "24 hours",
+      "custom": "Current value: {{seconds}} seconds"
+    },
+    "validation": {
+      "capabilities": "Password sign-in must be enabled while public registration is open.",
+      "group": "Select a valid default group.",
+      "quota": "Initial quota must be a non-negative safe integer.",
+      "attempts": "Attempts must be an integer from 1 to 100.",
+      "window": "Select an allowed fixed window."
+    },
+    "state": {
+      "saved": "Authentication settings saved",
+      "unsaved": "Unsaved changes",
+      "synced": "Settings are in sync"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "save": "Save settings",
+      "saving": "Saving"
+    },
+    "errors": {
+      "title": "Authentication settings cannot be edited",
+      "load": "The authentication settings or group catalog is unavailable. Try again.",
+      "groupsEmpty": "No active group is available. Keep at least one active group before configuring registration.",
+      "save": "Authentication settings could not be saved. Server state is unchanged."
+    },
+    "warning": {
+      "title": "Confirm another entry point before disabling passwords",
+      "description": "OAuth sign-in is not available in this version. After existing sessions expire, an operator must restore the database switch before users can sign in again."
     }
   },
   "emailSettings": {
@@ -1129,7 +1268,7 @@
   },
   "registration": {
     "hero": {
-      "eyebrow": "Create an AnyFlows account",
+      "eyebrow": "Create a {{siteName}} account",
       "title": "Models, pricing, and API keys in your workspace",
       "body": "Register to see group pricing, issue API keys, and compare models in your own workspace."
     },
@@ -1174,69 +1313,6 @@
       "retry": "Check again",
       "login": "Sign in",
       "models": "Browse models"
-    },
-    "settings": {
-      "title": "Registration settings",
-      "subtitle": "Control public account creation, new-user allocation, and database-backed fixed-window protection.",
-      "loading": "Loading registration policy",
-      "status": {
-        "enabled": "Open",
-        "disabled": "Closed"
-      },
-      "access": {
-        "title": "Public registration",
-        "description": "When closed, visitors cannot create accounts. Sign-in and administrator-created users are unaffected."
-      },
-      "email": {
-        "title": "Require email at registration",
-        "description": "This only controls whether the field is required. Email verification and delivery are not enabled or implied."
-      },
-      "allocation": {
-        "title": "New-user allocation",
-        "description": "Every new user receives an active default group and the configured non-negative initial quota."
-      },
-      "protection": {
-        "title": "Registration rate protection",
-        "description": "A keyed client IP fingerprint enforces a cross-instance fixed window. Raw IP addresses are not stored."
-      },
-      "fields": {
-        "defaultGroup": "Default group",
-        "initialQuota": "Initial quota",
-        "initialQuotaHint": "Uses integer system quota units.",
-        "attempts": "Attempts per window",
-        "window": "Fixed window"
-      },
-      "windows": {
-        "60": "1 minute",
-        "300": "5 minutes",
-        "900": "15 minutes",
-        "3600": "1 hour",
-        "21600": "6 hours",
-        "86400": "24 hours",
-        "custom": "Current value: {{seconds}} seconds"
-      },
-      "validation": {
-        "group": "Select an active default group.",
-        "quota": "Initial quota must be a non-negative safe integer.",
-        "attempts": "Attempts must be an integer from 1 to 100.",
-        "window": "Select one of the supported fixed windows."
-      },
-      "state": {
-        "saved": "Policy saved",
-        "unsaved": "Unsaved changes"
-      },
-      "actions": {
-        "refresh": "Refresh",
-        "retry": "Retry",
-        "save": "Save policy",
-        "saving": "Saving"
-      },
-      "errors": {
-        "title": "Registration policy cannot be edited",
-        "load": "The policy or group catalog is unavailable. Try again.",
-        "groupsEmpty": "No active group is available. Keep at least one active group before configuring registration.",
-        "save": "The policy could not be saved. Server state is unchanged."
-      }
     }
   },
   "setup": {
@@ -1280,7 +1356,11 @@
     "hero": {
       "eyebrow": "LLM API aggregation gateway",
       "subtitle": "Unified access, intelligent routing, precise billing. Collapse scattered model channels into a single observable flow.",
-      "cta": "Get started",
+      "cta": {
+        "register": "Create account",
+        "login": "Sign in",
+        "models": "Browse models"
+      },
       "secondary": "Read the docs"
     },
     "providers": "Providers already supported",

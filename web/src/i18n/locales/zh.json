@@ -15,8 +15,9 @@
     "playground": "对话试炼场",
     "apiKeys": "我的 API Key",
     "users": "用户管理",
+    "siteSettings": "站点设置",
+    "authenticationSettings": "认证设置",
     "emailSettings": "邮件设置",
-    "registration": "注册设置",
     "channels": "渠道管理",
     "keys": "全局令牌",
     "usage": "全局用量",
@@ -987,7 +988,7 @@
   },
   "auth": {
     "login": {
-      "eyebrow": "AnyFlows 账户登录",
+      "eyebrow": "{{siteName}} 账户登录",
       "heroTitle": "你的模型与价格，一处查看",
       "heroBody": "登录后查看当前分组可用模型与实际价格；管理员可继续管理网关。",
       "title": "欢迎回来",
@@ -1002,13 +1003,20 @@
       "submitting": "正在验证",
       "noAccount": "还没有账户？",
       "register": "创建账户",
-      "browseModels": "游客浏览模型广场"
+      "browseModels": "游客浏览模型广场",
+      "loadingCapabilities": "正在确认登录能力",
+      "capabilityUnavailableTitle": "暂时无法确认登录能力",
+      "capabilityUnavailableBody": "服务没有返回可靠的认证能力状态。为保护账户入口，当前不会展示密码表单。",
+      "disabledTitle": "密码登录已关闭",
+      "disabledBody": "当前站点不接受用户名密码登录，你仍可以游客身份查看模型广场。",
+      "retry": "重新检查"
     },
     "errors": {
       "invalidCredentials": "用户名或密码不正确。",
       "adminRequired": "该账户没有管理员权限。",
       "sessionExpired": "会话已过期，请重新登录。",
       "setupComplete": "系统已完成初始化，请使用管理员账户登录。",
+      "passwordLoginDisabled": "密码登录刚刚被关闭，请使用站点当前开放的认证方式。",
       "unavailable": "暂时无法连接服务，请稍后重试。"
     },
     "session": {
@@ -1022,6 +1030,137 @@
       "admin": "管理员",
       "user": "用户",
       "logout": "退出登录"
+    }
+  },
+  "siteSettings": {
+    "title": "站点设置",
+    "subtitle": "配置公开站点名称、访问基址和品牌内容。游客页面只读取经过筛选的公开投影。",
+    "loading": "正在加载站点设置",
+    "form": {
+      "title": "站点身份与品牌",
+      "version": "版本 {{version}}",
+      "description": "保存后首页、登录和注册入口会读取新的公开品牌。"
+    },
+    "identity": {
+      "title": "站点身份",
+      "description": "站点名称用于公开入口，公开基址用于向用户展示稳定的外部访问地址。"
+    },
+    "brand": {
+      "title": "品牌内容",
+      "description": "Logo、标语和描述会进入公开投影，不应填写密钥或内部运维信息。"
+    },
+    "fields": {
+      "siteName": "站点名称",
+      "publicBaseUrl": "公开基址",
+      "publicBaseUrlHint": "可选。只接受不含凭据、查询参数和片段的 HTTP(S) 地址。",
+      "logoUrl": "Logo 地址",
+      "logoUrlHint": "可使用站内绝对路径或 HTTP(S) 地址，加载失败会回退到内置标识。",
+      "tagline": "品牌标语",
+      "description": "品牌描述"
+    },
+    "validation": {
+      "siteName": "站点名称不能为空，不能包含控制字符，最多 80 个 UTF-8 字节。",
+      "publicBaseUrl": "请输入不含凭据、查询参数或片段的有效 HTTP(S) 地址。",
+      "logoUrl": "请输入站内绝对路径或有效 HTTP(S) Logo 地址。",
+      "tagline": "品牌标语不能包含控制字符，最多 160 个 UTF-8 字节。",
+      "description": "品牌描述最多 500 个 UTF-8 字节，且不能包含非法控制字符。"
+    },
+    "preview": {
+      "title": "公开品牌预览",
+      "description": "使用当前草稿即时预览",
+      "taglineFallback": "统一访问模型",
+      "descriptionFallback": "一套面向团队的模型 API 工作台。"
+    },
+    "state": {
+      "saved": "站点设置已保存",
+      "unsaved": "有未保存的更改",
+      "synced": "当前设置已同步"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "save": "保存设置",
+      "saving": "正在保存"
+    },
+    "errors": {
+      "title": "无法读取站点设置",
+      "load": "服务没有返回可靠的站点设置，请稍后重试。",
+      "save": "站点设置保存失败，服务端状态未改变。"
+    }
+  },
+  "authenticationSettings": {
+    "title": "认证设置",
+    "subtitle": "控制密码登录、公开注册、新用户归属与数据库固定窗口保护。",
+    "loading": "正在加载认证设置",
+    "status": {
+      "title": "认证能力",
+      "version": "版本 {{version}}",
+      "enabled": "已开放",
+      "disabled": "已关闭"
+    },
+    "passwordLogin": {
+      "title": "用户名密码登录",
+      "description": "关闭后公开登录页不再渲染密码表单，现有会话不会被立即撤销。"
+    },
+    "registration": {
+      "title": "公开注册",
+      "description": "公开注册依赖密码登录。关闭密码登录时，公开注册会同步关闭。"
+    },
+    "email": {
+      "title": "注册时要求邮箱",
+      "description": "仅控制字段是否必填。邮箱验证与密码找回将在后续用户生命周期切片实现。"
+    },
+    "allocation": {
+      "title": "新用户归属",
+      "description": "每位新用户都绑定一个有效分组，并获得指定的非负初始额度。"
+    },
+    "protection": {
+      "title": "注册频率保护",
+      "description": "按带密钥的客户端 IP 指纹执行跨实例固定窗口限流，数据库不保存原始 IP。"
+    },
+    "fields": {
+      "defaultGroup": "默认分组",
+      "initialQuota": "初始额度",
+      "initialQuotaHint": "使用系统额度整数单位。",
+      "attempts": "窗口内尝试次数",
+      "window": "固定窗口"
+    },
+    "windows": {
+      "60": "1 分钟",
+      "300": "5 分钟",
+      "900": "15 分钟",
+      "3600": "1 小时",
+      "21600": "6 小时",
+      "86400": "24 小时",
+      "custom": "当前值：{{seconds}} 秒"
+    },
+    "validation": {
+      "capabilities": "公开注册开启时必须同时开启密码登录。",
+      "group": "请选择有效默认分组。",
+      "quota": "初始额度必须是非负安全整数。",
+      "attempts": "尝试次数必须是 1 至 100 的整数。",
+      "window": "请选择允许的固定窗口。"
+    },
+    "state": {
+      "saved": "认证设置已保存",
+      "unsaved": "有尚未保存的修改",
+      "synced": "当前设置已同步"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "save": "保存设置",
+      "saving": "正在保存"
+    },
+    "errors": {
+      "title": "无法编辑认证设置",
+      "load": "认证设置或分组目录暂时不可用，请重试。",
+      "groupsEmpty": "当前没有可用分组。至少保留一个有效分组后才能配置注册。",
+      "save": "认证设置保存失败，服务端状态未改变。"
+    },
+    "warning": {
+      "title": "关闭密码登录前确认其他入口",
+      "description": "当前版本尚未提供 OAuth 登录。关闭后，现有会话过期的用户需要由运维恢复数据库开关才能再次登录。"
     }
   },
   "emailSettings": {
@@ -1128,7 +1267,7 @@
   },
   "registration": {
     "hero": {
-      "eyebrow": "创建 AnyFlows 账户",
+      "eyebrow": "创建 {{siteName}} 账户",
       "title": "模型、价格与 API Key，都在你的工作台",
       "body": "注册后查看当前分组价格、创建 API Key，并使用多模型对话试炼场。"
     },
@@ -1173,69 +1312,6 @@
       "retry": "重新检查",
       "login": "登录",
       "models": "浏览模型"
-    },
-    "settings": {
-      "title": "注册设置",
-      "subtitle": "控制公开注册入口、新用户归属与数据库固定窗口保护。",
-      "loading": "正在加载注册策略",
-      "status": {
-        "enabled": "已开放",
-        "disabled": "已关闭"
-      },
-      "access": {
-        "title": "公开注册",
-        "description": "关闭后游客无法创建账户，登录与管理员创建用户不受影响。"
-      },
-      "email": {
-        "title": "注册时要求邮箱",
-        "description": "仅控制是否必填。邮箱验证与邮件投递尚未启用，也不会在前端作出已验证承诺。"
-      },
-      "allocation": {
-        "title": "新用户归属",
-        "description": "每位新用户都绑定一个有效分组，并获得指定的非负初始额度。"
-      },
-      "protection": {
-        "title": "注册频率保护",
-        "description": "按带密钥的客户端 IP 指纹执行跨实例固定窗口限流，数据库不保存原始 IP。"
-      },
-      "fields": {
-        "defaultGroup": "默认分组",
-        "initialQuota": "初始额度",
-        "initialQuotaHint": "使用系统额度整数单位。",
-        "attempts": "窗口内尝试次数",
-        "window": "固定窗口"
-      },
-      "windows": {
-        "60": "1 分钟",
-        "300": "5 分钟",
-        "900": "15 分钟",
-        "3600": "1 小时",
-        "21600": "6 小时",
-        "86400": "24 小时",
-        "custom": "当前值：{{seconds}} 秒"
-      },
-      "validation": {
-        "group": "请选择有效默认分组。",
-        "quota": "初始额度必须是非负安全整数。",
-        "attempts": "尝试次数必须是 1 至 100 的整数。",
-        "window": "请选择允许的固定窗口。"
-      },
-      "state": {
-        "saved": "策略已保存",
-        "unsaved": "有尚未保存的修改"
-      },
-      "actions": {
-        "refresh": "刷新",
-        "retry": "重试",
-        "save": "保存策略",
-        "saving": "正在保存"
-      },
-      "errors": {
-        "title": "无法编辑注册策略",
-        "load": "策略或分组目录暂时不可用，请重试。",
-        "groupsEmpty": "当前没有可用分组。至少保留一个有效分组后才能配置注册。",
-        "save": "策略保存失败，服务端状态未改变。"
-      }
     }
   },
   "setup": {
@@ -1279,7 +1355,11 @@
     "hero": {
       "eyebrow": "大模型 API 聚合网关",
       "subtitle": "统一接入、智能选路、精确计费。把分散的模型渠道收敛成一条可观测的流。",
-      "cta": "开始接入",
+      "cta": {
+        "register": "创建账户",
+        "login": "登录控制台",
+        "models": "浏览模型"
+      },
       "secondary": "查看文档"
     },
     "providers": "已接入的模型厂商",

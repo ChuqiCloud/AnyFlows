@@ -3,6 +3,30 @@
 export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
+export type AdminAuthenticationSettings = {
+    password_login_enabled: boolean;
+    registration_enabled: boolean;
+    default_group_id: number;
+    initial_quota: number;
+    email_required: boolean;
+    rate_limit_attempts: number;
+    rate_limit_window_seconds: number;
+    version: number;
+};
+export type AdminAuthenticationSettingsRequest = {
+    password_login_enabled: boolean;
+    registration_enabled: boolean;
+    default_group_id: number;
+    initial_quota: number;
+    email_required: boolean;
+    rate_limit_attempts: number;
+    rate_limit_window_seconds: number;
+};
+export type AdminBrandSettingsRequest = {
+    logo_url?: string | null;
+    tagline?: string | null;
+    description?: string | null;
+};
 export type AdminChannel = {
     id: number;
     type: AdminChannelType;
@@ -257,6 +281,17 @@ export type AdminGroupWriteRequest = {
 };
 export type AdminRoutingStatus = 'enabled' | 'disabled' | 'auto_disabled';
 export type AdminRoutingWriteStatus = 'enabled' | 'disabled';
+export type AdminSiteSettings = {
+    site_name: string;
+    public_base_url?: string | null;
+    brand: PublicBrandSettings;
+    version: number;
+};
+export type AdminSiteSettingsRequest = {
+    site_name: string;
+    public_base_url?: string | null;
+    brand: AdminBrandSettingsRequest;
+};
 export type AdminToken = {
     id: number;
     user_id: number;
@@ -381,7 +416,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'registration_disabled' | 'registration_rate_limited' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'registration_disabled' | 'registration_rate_limited' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -455,27 +490,28 @@ export type PlaygroundShareSession = {
     model: string;
     messages: Array<PlaygroundShareMessage>;
 };
-export type RegistrationPolicyRequest = {
-    enabled: boolean;
-    default_group_id: number;
-    initial_quota: number;
-    email_required: boolean;
-    rate_limit_attempts: number;
-    rate_limit_window_seconds: number;
+export type PublicAuthenticationCapabilities = {
+    password_login_enabled: boolean;
+    registration_enabled: boolean;
+    registration_email_required: boolean;
 };
-export type RegistrationPolicyResponse = {
-    enabled: boolean;
-    default_group_id: number;
-    initial_quota: number;
-    email_required: boolean;
-    rate_limit_attempts: number;
-    rate_limit_window_seconds: number;
+export type PublicBrandSettings = {
+    logo_url?: string | null;
+    tagline?: string | null;
+    description?: string | null;
+};
+export type PublicSiteSettings = {
+    site_name: string;
+    public_base_url?: string | null;
+    brand: PublicBrandSettings;
+    authentication: PublicAuthenticationCapabilities;
 };
 export type RegistrationRequest = {
     username: string;
     email?: string | null;
 };
 export type RegistrationStatusResponse = {
+    password_login_enabled: boolean;
     enabled: boolean;
     email_required: boolean;
 };
@@ -646,6 +682,7 @@ export type LoginManagementSessionData = {
 export type LoginManagementSessionErrors = {
     400: ManagementError;
     401: ManagementError;
+    403: ManagementError;
     500: ManagementError;
 };
 export type LoginManagementSessionError = LoginManagementSessionErrors[keyof LoginManagementSessionErrors];
@@ -730,39 +767,39 @@ export type RegisterUserResponses = {
     201: LoginResponse;
 };
 export type RegisterUserResponse = RegisterUserResponses[keyof RegisterUserResponses];
-export type GetAdminRegistrationPolicyData = {
+export type GetAdminAuthenticationSettingsData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/api/admin/registration';
+    url: '/api/admin/authentication-settings';
 };
-export type GetAdminRegistrationPolicyErrors = {
+export type GetAdminAuthenticationSettingsErrors = {
     401: ManagementError;
     403: ManagementError;
     500: ManagementError;
 };
-export type GetAdminRegistrationPolicyError = GetAdminRegistrationPolicyErrors[keyof GetAdminRegistrationPolicyErrors];
-export type GetAdminRegistrationPolicyResponses = {
-    200: RegistrationPolicyResponse;
+export type GetAdminAuthenticationSettingsError = GetAdminAuthenticationSettingsErrors[keyof GetAdminAuthenticationSettingsErrors];
+export type GetAdminAuthenticationSettingsResponses = {
+    200: AdminAuthenticationSettings;
 };
-export type GetAdminRegistrationPolicyResponse = GetAdminRegistrationPolicyResponses[keyof GetAdminRegistrationPolicyResponses];
-export type UpdateAdminRegistrationPolicyData = {
-    body: RegistrationPolicyRequest;
+export type GetAdminAuthenticationSettingsResponse = GetAdminAuthenticationSettingsResponses[keyof GetAdminAuthenticationSettingsResponses];
+export type UpdateAdminAuthenticationSettingsData = {
+    body: AdminAuthenticationSettingsRequest;
     path?: never;
     query?: never;
-    url: '/api/admin/registration';
+    url: '/api/admin/authentication-settings';
 };
-export type UpdateAdminRegistrationPolicyErrors = {
+export type UpdateAdminAuthenticationSettingsErrors = {
     400: ManagementError;
     401: ManagementError;
     403: ManagementError;
     500: ManagementError;
 };
-export type UpdateAdminRegistrationPolicyError = UpdateAdminRegistrationPolicyErrors[keyof UpdateAdminRegistrationPolicyErrors];
-export type UpdateAdminRegistrationPolicyResponses = {
-    200: RegistrationPolicyResponse;
+export type UpdateAdminAuthenticationSettingsError = UpdateAdminAuthenticationSettingsErrors[keyof UpdateAdminAuthenticationSettingsErrors];
+export type UpdateAdminAuthenticationSettingsResponses = {
+    200: AdminAuthenticationSettings;
 };
-export type UpdateAdminRegistrationPolicyResponse = UpdateAdminRegistrationPolicyResponses[keyof UpdateAdminRegistrationPolicyResponses];
+export type UpdateAdminAuthenticationSettingsResponse = UpdateAdminAuthenticationSettingsResponses[keyof UpdateAdminAuthenticationSettingsResponses];
 export type GetAdminEmailSettingsData = {
     body?: never;
     path?: never;
@@ -815,6 +852,53 @@ export type SendAdminEmailTestResponses = {
     204: void;
 };
 export type SendAdminEmailTestResponse = SendAdminEmailTestResponses[keyof SendAdminEmailTestResponses];
+export type GetPublicSiteSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/site';
+};
+export type GetPublicSiteSettingsErrors = {
+    500: ManagementError;
+};
+export type GetPublicSiteSettingsError = GetPublicSiteSettingsErrors[keyof GetPublicSiteSettingsErrors];
+export type GetPublicSiteSettingsResponses = {
+    200: PublicSiteSettings;
+};
+export type GetPublicSiteSettingsResponse = GetPublicSiteSettingsResponses[keyof GetPublicSiteSettingsResponses];
+export type GetAdminSiteSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/site-settings';
+};
+export type GetAdminSiteSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminSiteSettingsError = GetAdminSiteSettingsErrors[keyof GetAdminSiteSettingsErrors];
+export type GetAdminSiteSettingsResponses = {
+    200: AdminSiteSettings;
+};
+export type GetAdminSiteSettingsResponse = GetAdminSiteSettingsResponses[keyof GetAdminSiteSettingsResponses];
+export type UpdateAdminSiteSettingsData = {
+    body: AdminSiteSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/site-settings';
+};
+export type UpdateAdminSiteSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminSiteSettingsError = UpdateAdminSiteSettingsErrors[keyof UpdateAdminSiteSettingsErrors];
+export type UpdateAdminSiteSettingsResponses = {
+    200: AdminSiteSettings;
+};
+export type UpdateAdminSiteSettingsResponse = UpdateAdminSiteSettingsResponses[keyof UpdateAdminSiteSettingsResponses];
 export type GetAdminDashboardData = {
     body?: never;
     path?: never;

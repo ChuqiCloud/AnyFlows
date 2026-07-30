@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { routeFromHash, type AppRoute, type AppView } from '@/app-route'
 import { AppShell } from '@/components/layout/app-shell'
+import { AuthenticationSettingsPage } from '@/features/authentication-settings/authentication-settings-page'
 import { LoginPage, type LoginNotice } from '@/features/auth/login-page'
 import { SessionBoundary } from '@/features/auth/session-boundary'
 import { endManagementSession } from '@/features/auth/session-query'
@@ -16,7 +17,7 @@ import { PublicModelPage } from '@/features/models/public-model-page'
 import { PlaygroundPage } from '@/features/playground/playground-page'
 import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
 import { RegistrationPage } from '@/features/registration/registration-page'
-import { RegistrationSettingsPage } from '@/features/registration/registration-settings-page'
+import { SiteSettingsPage } from '@/features/site-settings/site-settings-page'
 import { TokenPage } from '@/features/tokens/token-page'
 import { UsageLogPage } from '@/features/usage-logs/usage-log-page'
 import { UserPage } from '@/features/users/user-page'
@@ -97,10 +98,12 @@ function ManagementEntry({
 
   const titleKey = view === 'channels'
     ? 'channels.title'
+    : view === 'site-settings'
+      ? 'siteSettings.title'
+    : view === 'authentication-settings'
+      ? 'authenticationSettings.title'
     : view === 'email-settings'
       ? 'emailSettings.title'
-    : view === 'registration'
-      ? 'registration.settings.title'
     : view === 'users'
       ? 'users.title'
     : view === 'api-keys'
@@ -116,10 +119,12 @@ function ManagementEntry({
             : 'dashboard.title'
   const content = view === 'channels'
     ? <ChannelPage />
+    : view === 'site-settings'
+      ? <SiteSettingsPage />
+    : view === 'authentication-settings'
+      ? <AuthenticationSettingsPage />
     : view === 'email-settings'
       ? <EmailSettingsPage />
-    : view === 'registration'
-      ? <RegistrationSettingsPage />
     : view === 'users'
       ? <UserPage />
     : view === 'api-keys'

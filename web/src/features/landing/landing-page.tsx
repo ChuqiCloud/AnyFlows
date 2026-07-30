@@ -18,7 +18,6 @@ import { LogoMarquee } from '@/components/brand/logo-marquee'
 import { ParticleField } from '@/components/brand/particle-field'
 import { RibbonBeam } from '@/components/brand/ribbon-beam'
 import { KineticText } from '@/components/kinetic/kinetic-text'
-import { BrandMark } from '@/components/layout/brand-mark'
 import { LanguageToggle } from '@/components/language-toggle'
 import { MotionToggle } from '@/components/motion-toggle'
 import { ThemeToggle } from '@/components/theme-toggle'
@@ -29,7 +28,8 @@ import { BillingVisual } from '@/features/landing/billing-visual'
 import { ApiConsole } from '@/features/landing/api-console'
 import { ProtocolMatrix } from '@/features/landing/protocol-matrix'
 import { RouteVisual } from '@/features/landing/route-visual'
-import { useRegistrationStatus } from '@/features/registration/registration-api'
+import { SiteBrandMark } from '@/features/site-settings/site-brand-mark'
+import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 
 /** 三种部署形态，顺序对应 design/00-overview.md 里的场景编号 */
 const deployModes = [
@@ -52,9 +52,26 @@ const openConsole = () => {
 
 export function LandingPage() {
   const { t } = useTranslation()
-  const registrationStatus = useRegistrationStatus()
+  const siteQuery = usePublicSiteSettings()
+  const site = siteQuery.data
+  const siteName = site?.site_name ?? t('brand.name')
+  const heroTagline = site?.brand.tagline ?? t('landing.hero.eyebrow')
+  const heroDescription = site?.brand.description ?? t('landing.hero.subtitle')
+  const authentication = site?.authentication
+  const registrationAvailable = Boolean(
+    authentication?.password_login_enabled && authentication.registration_enabled,
+  )
+  const accountCtaKey = registrationAvailable
+    ? 'register'
+    : authentication?.password_login_enabled
+      ? 'login'
+      : 'models'
   const openAccount = () => {
-    window.location.hash = registrationStatus.data?.enabled ? '#/register' : '#/console'
+    window.location.hash = accountCtaKey === 'register'
+      ? '#/register'
+      : accountCtaKey === 'login'
+        ? '#/login'
+        : '#/models'
   }
 
   return (
@@ -62,9 +79,9 @@ export function LandingPage() {
       <header className="fixed inset-x-0 top-0 z-50 border-b border-[var(--hairline)] bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex h-14 max-w-[1120px] items-center justify-between px-3 sm:px-6">
           <div className="flex items-center gap-2.5">
-            <BrandMark />
+            <SiteBrandMark siteName={siteName} logoUrl={site?.brand.logo_url} />
             <span className="hidden text-[0.9375rem] font-semibold sm:inline">
-              {t('brand.name')}
+              {siteName}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -132,14 +149,14 @@ export function LandingPage() {
 
           <div className="w-full max-w-[1120px] text-center">
             <p className="text-[0.8125rem] font-medium text-muted-foreground">
-              {t('landing.hero.eyebrow')}
+              {heroTagline}
             </p>
 
             {/* 字标即标题，不翻译，保留原始大小写 */}
             <h1 className="mt-6">
               <KineticText
                 as="span"
-                text={t('brand.name')}
+                text={siteName}
                 className="block text-[clamp(3.75rem,13vw,11rem)]"
                 delay={0.05}
                 stagger={0.04}
@@ -148,12 +165,12 @@ export function LandingPage() {
             </h1>
 
             <p className="mx-auto mt-7 max-w-lg text-lg leading-relaxed text-muted-foreground">
-              {t('landing.hero.subtitle')}
+              {heroDescription}
             </p>
 
             <div className="mt-9 flex flex-wrap items-center justify-center gap-2.5">
               <Button size="lg" onClick={openAccount}>
-                {t('landing.hero.cta')}
+                {t(`landing.hero.cta.${accountCtaKey}`)}
                 <ArrowRight className="size-4" aria-hidden="true" />
               </Button>
               <Button variant="secondary" size="lg">
@@ -336,7 +353,7 @@ export function LandingPage() {
             </p>
             <div className="mt-9 flex flex-wrap items-center justify-center gap-2.5">
               <Button size="lg" onClick={openAccount}>
-                {t('landing.closing.cta')}
+                {t(`landing.hero.cta.${accountCtaKey}`)}
                 <ArrowRight className="size-4" aria-hidden="true" />
               </Button>
               <Button variant="secondary" size="lg">

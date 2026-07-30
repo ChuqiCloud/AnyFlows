@@ -1,18 +1,20 @@
 import {
   Boxes,
   Gauge,
+  Fingerprint,
   KeyRound,
   Mail,
   MessageSquareText,
   Network,
+  PanelsTopLeft,
   ScrollText,
   ShieldCheck,
-  UserRoundCog,
   UsersRound,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { routeFromHash, type AppView } from '@/app-route'
 import { cn } from '@/lib/utils'
 import {
   SidebarGroup,
@@ -31,7 +33,7 @@ type AppNavigationProps = {
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'users' | 'emailSettings' | 'registration' | 'channels' | 'keys' | 'usage'
+  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'users' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'channels' | 'keys' | 'usage'
   icon: LucideIcon
   href: `#/console${string}`
 }
@@ -64,8 +66,9 @@ const navGroups: readonly NavGroup[] = [
     items: [
       { key: 'overview', icon: Gauge, href: '#/console' },
       { key: 'users', icon: UsersRound, href: '#/console/users' },
+      { key: 'siteSettings', icon: PanelsTopLeft, href: '#/console/system-settings/site' },
+      { key: 'authenticationSettings', icon: Fingerprint, href: '#/console/system-settings/authentication' },
       { key: 'emailSettings', icon: Mail, href: '#/console/system-settings/email' },
-      { key: 'registration', icon: UserRoundCog, href: '#/console/registration' },
       { key: 'channels', icon: Network, href: '#/console/channels' },
       { key: 'keys', icon: ShieldCheck, href: '#/console/tokens' },
       { key: 'usage', icon: ScrollText, href: '#/console/usage-logs' },
@@ -73,12 +76,23 @@ const navGroups: readonly NavGroup[] = [
   },
 ]
 
-const navItems = navGroups.flatMap((group) => group.items)
+const activeKeyByView: Partial<Record<AppView, NavItem['key']>> = {
+  overview: 'overview',
+  models: 'models',
+  playground: 'playground',
+  'api-keys': 'apiKeys',
+  users: 'users',
+  'site-settings': 'siteSettings',
+  'authentication-settings': 'authenticationSettings',
+  'email-settings': 'emailSettings',
+  channels: 'channels',
+  tokens: 'keys',
+  'usage-logs': 'usage',
+}
 
 function useActiveKey() {
   if (typeof window === 'undefined') return 'overview'
-  const hash = window.location.hash
-  return navItems.find((item) => item.key !== 'overview' && hash.startsWith(item.href))?.key ?? 'overview'
+  return activeKeyByView[routeFromHash(window.location.hash).view] ?? 'overview'
 }
 
 export function AppNavigation({ className, compact = false, role }: AppNavigationProps) {

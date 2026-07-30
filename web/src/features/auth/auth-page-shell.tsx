@@ -3,18 +3,21 @@ import { useTranslation } from 'react-i18next'
 
 import { RibbonBeam } from '@/components/brand/ribbon-beam'
 import { LanguageToggle } from '@/components/language-toggle'
-import { BrandMark } from '@/components/layout/brand-mark'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { SiteBrandMark } from '@/features/site-settings/site-brand-mark'
+import type { PublicSiteSettings } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 
 type AuthPageShellProps = {
   children: ReactNode
   className?: string
+  site?: PublicSiteSettings
 }
 
 /** 为登录与会话状态提供一致的品牌背景和无障碍导航。 */
-export function AuthPageShell({ children, className }: AuthPageShellProps) {
+export function AuthPageShell({ children, className, site }: AuthPageShellProps) {
   const { t } = useTranslation()
+  const siteName = site?.site_name ?? t('brand.name')
 
   return (
     <div className="relative isolate min-h-dvh overflow-hidden bg-background text-foreground">
@@ -27,8 +30,8 @@ export function AuthPageShell({ children, className }: AuthPageShellProps) {
             className="flex items-center gap-2.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             aria-label={t('shell.home')}
           >
-            <BrandMark />
-            <span className="text-[0.9375rem] font-semibold">{t('brand.name')}</span>
+            <SiteBrandMark siteName={siteName} logoUrl={site?.brand.logo_url} />
+            <span className="text-[0.9375rem] font-semibold">{siteName}</span>
           </a>
 
           <div className="flex items-center gap-1.5">
