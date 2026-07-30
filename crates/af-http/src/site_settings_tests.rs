@@ -10,7 +10,7 @@ use af_admin::{
     RegistrationPolicyUpdateFuture, RegistrationService, RegistrationStatus,
     RegistrationStatusFuture, SessionAuthentication, SessionAuthenticationError,
     SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
-    SessionRole, SiteSettingsCommand, SiteSettingsError, SiteSettingsService,
+    SessionRole, SiteSettingsCommand, SiteSettingsService,
 };
 use af_domain::{GroupId, TrustedClientIp, UserId};
 use axum::body::{Body, to_bytes};
