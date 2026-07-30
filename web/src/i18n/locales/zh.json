@@ -15,6 +15,7 @@
     "playground": "对话试炼场",
     "apiKeys": "我的 API Key",
     "users": "用户管理",
+    "registration": "注册设置",
     "channels": "渠道管理",
     "keys": "全局令牌",
     "usage": "全局用量",
@@ -980,6 +981,8 @@
       "hidePassword": "隐藏密码",
       "submit": "登录",
       "submitting": "正在验证",
+      "noAccount": "还没有账户？",
+      "register": "创建账户",
       "browseModels": "游客浏览模型广场"
     },
     "errors": {
@@ -1000,6 +1003,118 @@
       "admin": "管理员",
       "user": "用户",
       "logout": "退出登录"
+    }
+  },
+  "registration": {
+    "hero": {
+      "eyebrow": "创建 AnyFlows 账户",
+      "title": "模型、价格与 API Key，都在你的工作台",
+      "body": "注册后查看当前分组价格、创建 API Key，并使用多模型对话试炼场。"
+    },
+    "form": {
+      "title": "创建账户",
+      "subtitle": "注册成功后直接进入用户工作台",
+      "username": "用户名",
+      "email": "邮箱",
+      "optional": "可选",
+      "emailHelp": "基础版只保存邮箱，不代表邮箱已经验证。",
+      "password": "密码",
+      "passwordHelp": "使用 12 至 128 个 UTF-8 字节，不支持控制字符。",
+      "passwordConfirmation": "确认密码",
+      "showPassword": "显示密码",
+      "hidePassword": "隐藏密码",
+      "submit": "创建并登录",
+      "submitting": "正在创建",
+      "hasAccount": "已有账户？"
+    },
+    "validation": {
+      "username": "用户名不能为空、不能包含首尾空格或控制字符，且最多 64 个 UTF-8 字节。",
+      "email": "请输入有效邮箱地址，且最多 320 个 UTF-8 字节。",
+      "emailRequired": "当前站点要求填写邮箱。",
+      "password": "密码必须为 12 至 128 个 UTF-8 字节，且不能包含控制字符。",
+      "passwordMismatch": "两次输入的密码不一致。"
+    },
+    "errors": {
+      "conflict": "用户名或邮箱已被使用，请更换后重试。",
+      "disabled": "公开注册刚刚被关闭，请使用已有账户登录。",
+      "invalidInput": "注册信息不符合服务端要求，请检查后重试。",
+      "rateLimited": "当前网络的注册尝试过于频繁，请稍后再试。",
+      "unavailable": "暂时无法创建账户，请稍后重试。"
+    },
+    "status": {
+      "loading": "正在确认注册状态",
+      "unavailableTitle": "暂时无法确认注册状态",
+      "unavailableBody": "服务没有返回可靠的注册能力状态。为保护账户入口，当前不会展示表单。",
+      "disabledTitle": "公开注册暂未开放",
+      "disabledBody": "你仍可使用已有账户登录，或以游客身份查看模型广场。"
+    },
+    "actions": {
+      "retry": "重新检查",
+      "login": "登录",
+      "models": "浏览模型"
+    },
+    "settings": {
+      "title": "注册设置",
+      "subtitle": "控制公开注册入口、新用户归属与数据库固定窗口保护。",
+      "loading": "正在加载注册策略",
+      "status": {
+        "enabled": "已开放",
+        "disabled": "已关闭"
+      },
+      "access": {
+        "title": "公开注册",
+        "description": "关闭后游客无法创建账户，登录与管理员创建用户不受影响。"
+      },
+      "email": {
+        "title": "注册时要求邮箱",
+        "description": "仅控制是否必填。邮箱验证与邮件投递尚未启用，也不会在前端作出已验证承诺。"
+      },
+      "allocation": {
+        "title": "新用户归属",
+        "description": "每位新用户都绑定一个有效分组，并获得指定的非负初始额度。"
+      },
+      "protection": {
+        "title": "注册频率保护",
+        "description": "按带密钥的客户端 IP 指纹执行跨实例固定窗口限流，数据库不保存原始 IP。"
+      },
+      "fields": {
+        "defaultGroup": "默认分组",
+        "initialQuota": "初始额度",
+        "initialQuotaHint": "使用系统额度整数单位。",
+        "attempts": "窗口内尝试次数",
+        "window": "固定窗口"
+      },
+      "windows": {
+        "60": "1 分钟",
+        "300": "5 分钟",
+        "900": "15 分钟",
+        "3600": "1 小时",
+        "21600": "6 小时",
+        "86400": "24 小时",
+        "custom": "当前值：{{seconds}} 秒"
+      },
+      "validation": {
+        "group": "请选择有效默认分组。",
+        "quota": "初始额度必须是非负安全整数。",
+        "attempts": "尝试次数必须是 1 至 100 的整数。",
+        "window": "请选择允许的固定窗口。"
+      },
+      "state": {
+        "saved": "策略已保存",
+        "unsaved": "有尚未保存的修改"
+      },
+      "actions": {
+        "refresh": "刷新",
+        "retry": "重试",
+        "save": "保存策略",
+        "saving": "正在保存"
+      },
+      "errors": {
+        "title": "无法编辑注册策略",
+        "load": "策略或分组目录暂时不可用，请重试。",
+        "groupsEmpty": "当前没有可用分组。至少保留一个有效分组后才能配置注册。",
+        "save": "策略保存失败，服务端状态未改变。"
+      }
     }
   },
   "setup": {

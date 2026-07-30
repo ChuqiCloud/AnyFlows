@@ -31,6 +31,7 @@ mod openapi;
 mod operations;
 mod playground_conversations;
 mod playground_shares;
+mod registration;
 mod router;
 mod serve;
 mod streaming;
@@ -77,6 +78,8 @@ mod operations_tests;
 mod playground_conversations_tests;
 #[cfg(test)]
 mod playground_shares_tests;
+#[cfg(test)]
+mod registration_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

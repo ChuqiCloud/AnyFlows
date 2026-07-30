@@ -24,14 +24,15 @@ use crate::entity::{
     SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, abilities,
     billing_batch_checkpoints, billing_reservations, channel_groups, channel_models, channels,
     credentials, group_model_ratios, groups, model_prices, options, playground_conversations,
-    playground_shares, tokens, usage_logs, users,
+    playground_shares, registration_rate_limits, tokens, usage_logs, users,
 };
 use crate::{
     AdminDashboardRepository, BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome,
     ChannelBillingWrite, DatabaseOptions, GroupPricingRepository, ModelPriceBillingMode,
     ModelPriceRepository, PlaygroundConversationRepository, PlaygroundConversationWrite,
     PlaygroundShareRepository, PlaygroundShareWrite, PoolOptions, QuotaMutationOutcome,
-    QuotaRepository, QuotaReservationStatus, TokenAuthLookup, TokenAuthLookupOutcome,
+    QuotaRepository, QuotaReservationStatus, RegistrationAttemptOutcome,
+    RegistrationPolicyWriteRecord, RegistrationRepository, TokenAuthLookup, TokenAuthLookupOutcome,
     TokenAuthRepository, TokenBillingWrite, UsageLogBillingMode, UsageLogRepository,
     UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogWrite,
     UsageLogWriteOutcome, UserBillingWrite, connect,
@@ -53,7 +54,7 @@ const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
 const PLAYGROUND_CONVERSATION_KEY: &str = "55555555555555555555555555555555";
-const CORE_TABLES: [&str; 16] = [
+const CORE_TABLES: [&str; 17] = [
     "groups",
     "users",
     "channels",
@@ -70,6 +71,7 @@ const CORE_TABLES: [&str; 16] = [
     "usage_logs",
     "playground_shares",
     "playground_conversations",
+    "registration_rate_limits",
 ];
 
 struct SlowMigrator;
@@ -266,6 +268,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     exercise_usage_log_repository(&pool).await?;
     exercise_playground_share_repository(&pool).await?;
     exercise_playground_conversation_repository(&pool).await?;
+    exercise_registration_repository(&pool).await?;
     exercise_admin_dashboard_repository(&pool).await?;
     exercise_core_schema(pool.connection()).await?;
 
@@ -1103,6 +1106,48 @@ fn validate_destructive_test_target(database_url: &str, gate: Option<&str>) -> R
     Ok(())
 }
 
+/// 在三方言真实事务中验证注册策略与固定窗口限流的原子判定。
+async fn exercise_registration_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let group = group_active_model("registration-smoke", "注册冒烟分组")
+        .insert(pool.connection())
+        .await?;
+    let group_id = GroupId::new(group.id)?;
+    let repository = RegistrationRepository::new(pool.clone(), Duration::from_secs(5))?;
+    repository
+        .update_policy(RegistrationPolicyWriteRecord::new(
+            true, group_id, 100, true, 1, 60,
+        ))
+        .await
+        .expect("注册冒烟必须成功写入策略");
+
+    let first = repository
+        .claim_attempt([0x5a; 32], 120)
+        .await
+        .expect("注册冒烟必须成功占用首次尝试");
+    assert!(matches!(first, RegistrationAttemptOutcome::Allowed(_)));
+    assert_eq!(
+        repository
+            .claim_attempt([0x5a; 32], 121)
+            .await
+            .expect("注册冒烟必须完成限流判定"),
+        RegistrationAttemptOutcome::RateLimited {
+            retry_after_seconds: 59
+        }
+    );
+
+    // 冒烟数据不得改变后续核心表计数与外键行为基线。
+    registration_rate_limits::Entity::delete_many()
+        .exec(pool.connection())
+        .await?;
+    options::Entity::delete_by_id("system.registration.policy.v1".to_owned())
+        .exec(pool.connection())
+        .await?;
+    groups::Entity::delete_by_id(group.id)
+        .exec(pool.connection())
+        .await?;
+    Ok(())
+}
+
 async fn assert_database_session(connection: &DatabaseConnection) -> Result<(), DbErr> {
     if connection.get_database_backend() != DbBackend::MySql {
         return Ok(());
@@ -1144,6 +1189,8 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<group_model_ratios::Column>(&manager, "group_model_ratios").await?;
     assert_entity_columns::<playground_shares::Column>(&manager, "playground_shares").await?;
     assert_entity_columns::<playground_conversations::Column>(&manager, "playground_conversations")
+        .await?;
+    assert_entity_columns::<registration_rate_limits::Column>(&manager, "registration_rate_limits")
         .await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
@@ -1243,6 +1290,7 @@ async fn assert_updated_at_behaviors(connection: &DatabaseConnection) -> Result<
     assert_behavior!(group_model_ratios::ActiveModel);
     assert_behavior!(groups::ActiveModel);
     assert_behavior!(options::ActiveModel);
+    assert_behavior!(registration_rate_limits::ActiveModel);
     assert_behavior!(tokens::ActiveModel);
     assert_behavior!(users::ActiveModel);
     Ok(())

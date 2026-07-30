@@ -4,6 +4,8 @@ export type AppView =
   | 'models'
   | 'playground'
   | 'public-models'
+  | 'register'
+  | 'registration'
   | 'share'
   | 'tokens'
   | 'usage-logs'
@@ -37,8 +39,10 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/tokens')) return { view: 'tokens' }
   if (hash.startsWith('#/console/usage-logs')) return { view: 'usage-logs' }
   if (hash.startsWith('#/console/users')) return { view: 'users' }
+  if (hash.startsWith('#/console/registration')) return { view: 'registration' }
   if (hash.startsWith('#/console')) return { view: 'overview' }
   if (hash.startsWith('#/models')) return { view: 'public-models' }
+  if (hash.startsWith('#/register')) return { view: 'register' }
   if (hash.startsWith('#/login')) return { view: 'login' }
   if (hash.startsWith('#/setup')) return { view: 'setup' }
   return { view: 'landing' }

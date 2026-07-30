@@ -204,6 +204,248 @@
         }
       }
     },
+    "/api/registration/status": {
+      "get": {
+        "tags": [
+          "公开注册"
+        ],
+        "summary": "读取公开注册状态",
+        "operationId": "getRegistrationStatus",
+        "responses": {
+          "200": {
+            "description": "公开注册能力状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationStatusResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/registration": {
+      "post": {
+        "tags": [
+          "公开注册"
+        ],
+        "summary": "注册普通用户并签发登录会话",
+        "operationId": "registerUser",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "注册及自动登录成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文或字段无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "公开注册未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "用户名或邮箱冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "固定窗口注册尝试次数已耗尽",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/registration": {
+      "get": {
+        "tags": [
+          "注册设置"
+        ],
+        "summary": "读取管理员注册策略",
+        "operationId": "getAdminRegistrationPolicy",
+        "responses": {
+          "200": {
+            "description": "完整注册策略",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationPolicyResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "注册设置"
+        ],
+        "summary": "覆盖管理员注册策略",
+        "operationId": "updateAdminRegistrationPolicy",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationPolicyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的完整注册策略",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationPolicyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "策略字段或默认分组无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/dashboard": {
       "get": {
         "tags": [
@@ -6050,6 +6292,8 @@
               "playground_conversation_limit_reached",
               "playground_conversation_conflict",
               "user_conflict",
+              "registration_disabled",
+              "registration_rate_limited",
               "group_conflict",
               "group_in_use",
               "internal_error"
@@ -6473,6 +6717,137 @@
         },
         "additionalProperties": false
       },
+      "RegistrationPolicyRequest": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "default_group_id",
+          "initial_quota",
+          "email_required",
+          "rate_limit_attempts",
+          "rate_limit_window_seconds"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "default_group_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "initial_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "email_required": {
+            "type": "boolean"
+          },
+          "rate_limit_attempts": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 100,
+            "minimum": 1
+          },
+          "rate_limit_window_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 86400,
+            "minimum": 60
+          }
+        },
+        "additionalProperties": false
+      },
+      "RegistrationPolicyResponse": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "default_group_id",
+          "initial_quota",
+          "email_required",
+          "rate_limit_attempts",
+          "rate_limit_window_seconds"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "default_group_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "initial_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "email_required": {
+            "type": "boolean"
+          },
+          "rate_limit_attempts": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 100,
+            "minimum": 1
+          },
+          "rate_limit_window_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 86400,
+            "minimum": 60
+          }
+        },
+        "additionalProperties": false
+      },
+      "RegistrationRequest": {
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "email",
+            "maxLength": 320,
+            "minLength": 3
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 128,
+            "minLength": 12
+          }
+        },
+        "additionalProperties": false
+      },
+      "RegistrationStatusResponse": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "email_required"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "email_required": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "SessionResponse": {
         "type": "object",
         "required": [
@@ -6766,6 +7141,12 @@
     }
   },
   "tags": [
+    {
+      "name": "公开注册"
+    },
+    {
+      "name": "注册设置"
+    },
     {
       "name": "管理会话"
     },

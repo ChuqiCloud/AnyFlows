@@ -129,6 +129,7 @@ dependencies = [
  "rust_decimal",
  "sea-orm",
  "sea-orm-migration",
+ "serde",
  "serde_json",
  "sha2 0.10.9",
  "thiserror",

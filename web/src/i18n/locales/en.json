@@ -15,6 +15,7 @@
     "playground": "Playground",
     "apiKeys": "My API keys",
     "users": "Users",
+    "registration": "Registration",
     "channels": "Channels",
     "keys": "Global keys",
     "usage": "Global usage",
@@ -981,6 +982,8 @@
       "hidePassword": "Hide password",
       "submit": "Sign in",
       "submitting": "Verifying",
+      "noAccount": "New to AnyFlows?",
+      "register": "Create an account",
       "browseModels": "Browse models as a guest"
     },
     "errors": {
@@ -1001,6 +1004,118 @@
       "admin": "Administrator",
       "user": "User",
       "logout": "Sign out"
+    }
+  },
+  "registration": {
+    "hero": {
+      "eyebrow": "Create an AnyFlows account",
+      "title": "Models, pricing, and API keys in your workspace",
+      "body": "Register to see group pricing, issue API keys, and compare models in your own workspace."
+    },
+    "form": {
+      "title": "Create your account",
+      "subtitle": "Continue directly to your workspace after registration",
+      "username": "Username",
+      "email": "Email",
+      "optional": "Optional",
+      "emailHelp": "The basic release stores this address but does not claim it is verified.",
+      "password": "Password",
+      "passwordHelp": "Use 12 to 128 UTF-8 bytes. Control characters are not supported.",
+      "passwordConfirmation": "Confirm password",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "submit": "Create and sign in",
+      "submitting": "Creating account",
+      "hasAccount": "Already have an account?"
+    },
+    "validation": {
+      "username": "Use a username without surrounding spaces or control characters, up to 64 UTF-8 bytes.",
+      "email": "Enter a valid email address up to 320 UTF-8 bytes.",
+      "emailRequired": "This site requires an email address.",
+      "password": "Use a password from 12 to 128 UTF-8 bytes without control characters.",
+      "passwordMismatch": "The passwords do not match."
+    },
+    "errors": {
+      "conflict": "That username or email is already in use. Choose another and try again.",
+      "disabled": "Public registration was just closed. Sign in with an existing account.",
+      "invalidInput": "The server rejected these registration details. Check them and try again.",
+      "rateLimited": "There have been too many registration attempts from this network. Try again later.",
+      "unavailable": "An account could not be created. Try again shortly."
+    },
+    "status": {
+      "loading": "Checking registration status",
+      "unavailableTitle": "Registration status is unavailable",
+      "unavailableBody": "The service did not return a reliable capability state, so the registration form remains closed.",
+      "disabledTitle": "Public registration is closed",
+      "disabledBody": "You can still sign in with an existing account or browse the model catalog as a guest."
+    },
+    "actions": {
+      "retry": "Check again",
+      "login": "Sign in",
+      "models": "Browse models"
+    },
+    "settings": {
+      "title": "Registration settings",
+      "subtitle": "Control public account creation, new-user allocation, and database-backed fixed-window protection.",
+      "loading": "Loading registration policy",
+      "status": {
+        "enabled": "Open",
+        "disabled": "Closed"
+      },
+      "access": {
+        "title": "Public registration",
+        "description": "When closed, visitors cannot create accounts. Sign-in and administrator-created users are unaffected."
+      },
+      "email": {
+        "title": "Require email at registration",
+        "description": "This only controls whether the field is required. Email verification and delivery are not enabled or implied."
+      },
+      "allocation": {
+        "title": "New-user allocation",
+        "description": "Every new user receives an active default group and the configured non-negative initial quota."
+      },
+      "protection": {
+        "title": "Registration rate protection",
+        "description": "A keyed client IP fingerprint enforces a cross-instance fixed window. Raw IP addresses are not stored."
+      },
+      "fields": {
+        "defaultGroup": "Default group",
+        "initialQuota": "Initial quota",
+        "initialQuotaHint": "Uses integer system quota units.",
+        "attempts": "Attempts per window",
+        "window": "Fixed window"
+      },
+      "windows": {
+        "60": "1 minute",
+        "300": "5 minutes",
+        "900": "15 minutes",
+        "3600": "1 hour",
+        "21600": "6 hours",
+        "86400": "24 hours",
+        "custom": "Current value: {{seconds}} seconds"
+      },
+      "validation": {
+        "group": "Select an active default group.",
+        "quota": "Initial quota must be a non-negative safe integer.",
+        "attempts": "Attempts must be an integer from 1 to 100.",
+        "window": "Select one of the supported fixed windows."
+      },
+      "state": {
+        "saved": "Policy saved",
+        "unsaved": "Unsaved changes"
+      },
+      "actions": {
+        "refresh": "Refresh",
+        "retry": "Retry",
+        "save": "Save policy",
+        "saving": "Saving"
+      },
+      "errors": {
+        "title": "Registration policy cannot be edited",
+        "load": "The policy or group catalog is unavailable. Try again.",
+        "groupsEmpty": "No active group is available. Keep at least one active group before configuring registration.",
+        "save": "The policy could not be saved. Server state is unchanged."
+      }
     }
   },
   "setup": {
@@ -1062,7 +1177,7 @@
     "modes": {
       "eyebrow": "Three shapes",
       "heading": "One gateway, three ways in",
-      "subheading": "Official keys, subscription accounts, or other relays — downstream sees the same endpoint.",
+      "subheading": "Official keys, subscription accounts, or other relays all use the same downstream endpoint.",
       "relay": {
         "label": "API relay",
         "title": "Official & compatible keys",
@@ -1082,7 +1197,7 @@
     "protocol": {
       "eyebrow": "Protocol matrix",
       "heading": "Any protocol in, any protocol out",
-      "subheading": "Every request normalizes to a protocol-agnostic representation first, then converts to the target — streaming included.",
+      "subheading": "Every request normalizes to a protocol-agnostic representation before conversion, including streaming.",
       "clientLabel": "Client protocol",
       "upstreamLabel": "Upstream protocol",
       "canonical": "Canonical IR",

@@ -506,3 +506,26 @@ pub(in crate::migration) mod playground_conversations {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod registration_rate_limits {
+    use super::DeriveIden;
+
+    /// `registration_rate_limits` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "registration_rate_limits")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 公开注册限流迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        IpFingerprint,
+        WindowStartedAt,
+        Attempts,
+        CreatedAt,
+        UpdatedAt,
+    }
+}

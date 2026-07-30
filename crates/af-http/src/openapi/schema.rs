@@ -479,6 +479,8 @@ pub(crate) enum ManagementErrorCodeSchema {
     PlaygroundConversationLimitReached,
     PlaygroundConversationConflict,
     UserConflict,
+    RegistrationDisabled,
+    RegistrationRateLimited,
     GroupConflict,
     GroupInUse,
     InternalError,

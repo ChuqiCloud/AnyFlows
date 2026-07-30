@@ -31,11 +31,13 @@ use af_admin::{
     PlaygroundConversationSaveCommand, PlaygroundConversationSaveFuture,
     PlaygroundConversationService, PlaygroundShareCreateCommand, PlaygroundShareCreateFuture,
     PlaygroundShareError, PlaygroundShareReadFuture, PlaygroundShareRevokeFuture,
-    PlaygroundShareService, SessionAuthenticationError, SessionAuthenticationFuture,
-    SessionAuthenticator, SessionLoginFuture, TokenAuthentication, TokenAuthenticationFuture,
-    TokenAuthenticator, UserTokenCreateFuture, UserTokenDeleteFuture, UserTokenError,
-    UserTokenGetFuture, UserTokenListFuture, UserTokenListQuery, UserTokenService,
-    UserTokenUpdateFuture, UserTokenWriteCommand,
+    PlaygroundShareService, RegistrationCommand, RegistrationError, RegistrationFuture,
+    RegistrationPolicyCommand, RegistrationPolicyFuture, RegistrationPolicyUpdateFuture,
+    RegistrationService, RegistrationStatusFuture, SessionAuthenticationError,
+    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
+    TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator, UserTokenCreateFuture,
+    UserTokenDeleteFuture, UserTokenError, UserTokenGetFuture, UserTokenListFuture,
+    UserTokenListQuery, UserTokenService, UserTokenUpdateFuture, UserTokenWriteCommand,
 };
 use af_analytics::{
     AdminDashboardAccess, AdminDashboardReadError, AdminDashboardReadFuture, AdminDashboardReader,
@@ -79,6 +81,7 @@ struct RejectPlaygroundShares;
 struct RejectPlaygroundConversations;
 struct RejectUserTokens;
 struct RejectInitialSetup;
+struct RejectRegistration;
 struct RejectAdminChannels;
 struct RejectAdminGroups;
 struct RejectAdminTokens;
@@ -208,6 +211,32 @@ impl InitialSetup for RejectInitialSetup {
 
     fn initialize(&self, _command: InitialSetupCommand) -> InitialSetupFuture<'_> {
         Box::pin(async { Err(InitialSetupError::Internal) })
+    }
+}
+
+impl RegistrationService for RejectRegistration {
+    fn status(&self) -> RegistrationStatusFuture<'_> {
+        Box::pin(async { Err(RegistrationError::Internal) })
+    }
+
+    fn register<'a>(
+        &'a self,
+        _client_ip: TrustedClientIp,
+        _command: &'a RegistrationCommand,
+    ) -> RegistrationFuture<'a> {
+        Box::pin(async { Err(RegistrationError::Internal) })
+    }
+
+    fn policy(&self, _principal: SessionPrincipal) -> RegistrationPolicyFuture<'_> {
+        Box::pin(async { Err(RegistrationError::Internal) })
+    }
+
+    fn update_policy(
+        &self,
+        _principal: SessionPrincipal,
+        _command: RegistrationPolicyCommand,
+    ) -> RegistrationPolicyUpdateFuture<'_> {
+        Box::pin(async { Err(RegistrationError::Internal) })
     }
 }
 
@@ -785,6 +814,7 @@ async fn start_server(
         Arc::new(RejectPlaygroundConversations),
         Arc::new(RejectUserTokens),
         Arc::new(RejectInitialSetup),
+        Arc::new(RejectRegistration),
         Arc::new(RejectAdminChannels),
         Arc::new(RejectAdminChannels),
         None,

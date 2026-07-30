@@ -22,6 +22,7 @@ pub(crate) mod model_prices;
 pub(crate) mod options;
 pub(crate) mod playground_conversations;
 pub(crate) mod playground_shares;
+pub(crate) mod registration_rate_limits;
 pub(crate) mod tokens;
 pub(crate) mod usage_logs;
 pub(crate) mod users;
@@ -376,6 +377,7 @@ impl_updated_at_behavior!(
     groups::ActiveModel => validate_group,
     model_prices::ActiveModel => validate_model_price,
     options::ActiveModel => validate_default,
+    registration_rate_limits::ActiveModel => validate_default,
     tokens::ActiveModel => validate_default,
     users::ActiveModel => validate_user,
 );

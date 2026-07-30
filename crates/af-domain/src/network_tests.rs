@@ -35,6 +35,13 @@ fn ipv4_mapped_ipv6_is_normalized_consistently() {
             .unwrap()
             .contains(client_ip("192.0.2.7"))
     );
+
+    let mut mapped_input = [0_u8; 17];
+    let mut ipv4_input = [0_u8; 17];
+    let mapped_length = mapped.write_fingerprint_input(&mut mapped_input);
+    let ipv4_length = client_ip("192.0.2.9").write_fingerprint_input(&mut ipv4_input);
+    assert_eq!(mapped_length, 5);
+    assert_eq!(mapped_input[..mapped_length], ipv4_input[..ipv4_length]);
 }
 
 #[test]
