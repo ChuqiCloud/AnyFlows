@@ -258,16 +258,14 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
             let mut value = openai_responses::build_request(&request)
                 .map_err(|_| ProbeFailure::RequestBuild)?;
             // 探活不产生可续接的供应商状态，避免周期任务累积无主响应。
-            value["store"] = serde_json::Value::Bool(false);
+            value["store"] = false.into();
             value
         }
         Protocol::Anthropic | Protocol::Gemini => {
             return Err(ProbeFailure::UnsupportedTarget);
         }
     };
-    serde_json::to_vec(&value)
-        .map(Bytes::from)
-        .map_err(|_| ProbeFailure::RequestBuild)
+    Ok(Bytes::from(value.to_string()))
 }
 
 fn validate_probe_response(protocol: Protocol, body: &[u8]) -> Result<(), ProbeFailure> {
