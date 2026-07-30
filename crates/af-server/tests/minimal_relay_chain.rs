@@ -790,11 +790,7 @@ async fn gemini_full_request_and_response_cross_the_canonical_boundary() {
     let upstream_head = upstream.head.to_ascii_lowercase();
     assert!(!upstream_head.contains("x-goog-api-key"));
     assert!(!upstream.head.contains(CLIENT_KEY));
-    assert!(
-        upstream
-            .head
-            .contains(&format!("Authorization: Bearer {UPSTREAM_KEY}"))
-    );
+    assert!(upstream_head.contains(&format!("authorization: bearer {UPSTREAM_KEY}")));
     let upstream_json: Value = serde_json::from_slice(&upstream.body).unwrap();
     assert_eq!(upstream_json["model"], "test-model");
     assert_eq!(upstream_json["max_completion_tokens"], 32);
