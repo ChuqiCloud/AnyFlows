@@ -2,8 +2,8 @@ use std::{fmt, time::Duration};
 
 use af_domain::GroupId;
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter, QueryOrder, Set,
-    TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseTransaction, DbErr, EntityTrait, QueryFilter, QueryOrder,
+    Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, OnConflict, Query, UpdateStatement},
 };
@@ -319,7 +319,7 @@ impl RegistrationRepository {
         .exec_without_returning(&transaction)
         .with_subscriber(NoSubscriber::default())
         .await
-        .map_err(|_| record_internal_error(RegistrationRepositoryError::Query))?;
+        .map_err(|error| record_query_error("registration_policy_upsert", error))?;
         commit_transaction(transaction).await?;
         Ok(policy)
     }
@@ -373,7 +373,7 @@ impl RegistrationRepository {
         .exec_without_returning(&transaction)
         .with_subscriber(NoSubscriber::default())
         .await
-        .map_err(|_| record_internal_error(RegistrationRepositoryError::Query))?;
+        .map_err(|error| record_query_error("registration_attempt_insert", error))?;
 
         let max_attempts = i32::try_from(policy.rate_limit_attempts)
             .map_err(|_| record_internal_error(RegistrationRepositoryError::Invariant))?;
@@ -382,8 +382,12 @@ impl RegistrationRepository {
             .execute(transaction.get_database_backend().build(&update))
             .with_subscriber(NoSubscriber::default())
             .await
-            .map_err(|_| record_internal_error(RegistrationRepositoryError::Query))?;
-        commit_transaction(transaction).await?;
+            .map_err(|error| record_query_error("registration_attempt_update", error))?;
+        transaction
+            .commit()
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|error| record_query_error("registration_attempt_commit", error))?;
 
         match result.rows_affected() {
             1 => Ok(RegistrationAttemptOutcome::Allowed(policy)),
@@ -616,6 +620,19 @@ fn record_internal_error(error: RegistrationRepositoryError) -> RegistrationRepo
         );
     }
     error
+}
+
+fn record_query_error(operation: &'static str, error: DbErr) -> RegistrationRepositoryError {
+    #[cfg(test)]
+    eprintln!("注册数据库测试失败：operation={operation} error={error}");
+    #[cfg(not(test))]
+    let _ = error;
+    tracing::error!(
+        error_kind = "registration_query",
+        operation,
+        "注册策略仓储数据库操作失败"
+    );
+    RegistrationRepositoryError::Query
 }
 
 #[cfg(test)]
