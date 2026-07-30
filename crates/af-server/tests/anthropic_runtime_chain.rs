@@ -31,6 +31,10 @@ use tokio::{
 const CLIENT_KEY_DIGEST: &str = "58e7607fb7ed996d551ba517addbcf51a35206b43706e233737d242773845efa";
 const LOOPBACK_ALLOWLIST: &str = r#"["127.0.0.1/32"]"#;
 const LIVE_ANTHROPIC_CASE: &str = "live_native_anthropic_runtime";
+/// 真实聚合上游可能执行较长推理，验收渠道保留三分钟总时限。
+const LIVE_ANTHROPIC_TIMEOUT_SECS: i32 = 180;
+/// 测试客户端必须比渠道总时限更长，避免辅助层抢先中断网关响应。
+const LIVE_CLIENT_TIMEOUT: Duration = Duration::from_secs(210);
 static NEXT_DATABASE: AtomicU64 = AtomicU64::new(0);
 
 struct TestDatabase {
@@ -276,7 +280,14 @@ async fn live_native_anthropic_runtime() {
     let proxy_url = env::var("ANYFLOWS_LIVE_ANTHROPIC_PROXY_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:10808".to_owned());
     let database = TestDatabase::new();
-    seed_database(&database, &base_url, &upstream_model, &api_key, Some(60)).await;
+    seed_database(
+        &database,
+        &base_url,
+        &upstream_model,
+        &api_key,
+        Some(LIVE_ANTHROPIC_TIMEOUT_SECS),
+    )
+    .await;
     let (address, shutdown, server) = start_gateway(&database, &proxy_url).await;
 
     let response = send_request_with_timeout(
@@ -285,7 +296,7 @@ async fn live_native_anthropic_runtime() {
         "/v1/messages",
         br#"{"model":"test-model","max_tokens":4,"messages":[{"role":"user","content":"Reply with OK."}]}"#,
         &[("Content-Type", "application/json"), ("x-api-key", CLIENT_KEY)],
-        Duration::from_secs(75),
+        LIVE_CLIENT_TIMEOUT,
     )
     .await;
     stop_gateway(shutdown, server).await;
