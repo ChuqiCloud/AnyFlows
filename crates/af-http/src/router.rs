@@ -56,6 +56,7 @@ use crate::middleware::{
     request_id_header,
 };
 use crate::model_catalog::list_models;
+use crate::openai_responses::openai_responses;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::playground_conversations::build_playground_conversation_router;
 use crate::playground_shares::build_playground_share_router;
@@ -122,6 +123,11 @@ pub fn build_router(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config),
         authenticate_api_key,
     );
+    let responses_authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config)
+            .with_error_protocol(Protocol::OpenAiResponses),
+        authenticate_api_key,
+    );
     let anthropic_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config)
             .with_error_protocol(Protocol::Anthropic),
@@ -154,6 +160,11 @@ pub fn build_router(
             "/v1/chat/completions",
             // 只包裹已注册的 POST endpoint，不把路径级 405 改写为 401。
             post(chat_completions).route_layer(openai_authentication),
+        )
+        .route(
+            "/v1/responses",
+            // Responses 使用独立协议标记，OpenAI 错误 wire 与 Chat 保持兼容。
+            post(openai_responses).route_layer(responses_authentication),
         )
         .route(
             "/v1/messages",

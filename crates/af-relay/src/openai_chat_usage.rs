@@ -36,6 +36,9 @@ pub enum UsageResolutionError {
     /// 结构化内容无法转换为稳定估算输入。
     #[error("usage 估算输入无法编码")]
     EstimationFailed,
+    /// Responses 远程续接上下文无法在预扣前确定输入令牌数。
+    #[error("远程续接上下文无法安全预估")]
+    StatefulContextUnsupported,
 }
 
 /// 流式响应完成后可消费一次的规范化 usage 结果。
@@ -80,6 +83,19 @@ pub(crate) struct OpenAiChatUsageEstimator {
 pub fn estimate_openai_chat_request_upper_bound(
     request: &CanonicalRequest,
 ) -> Result<Usage, UsageResolutionError> {
+    estimate_openai_request_upper_bound(request)
+}
+
+/// 按 Canonical 请求边界估算 Chat 或 Responses 调用的最大 usage。
+pub fn estimate_openai_request_upper_bound(
+    request: &CanonicalRequest,
+) -> Result<Usage, UsageResolutionError> {
+    if request.operation == af_domain::Operation::Responses
+        && (request.continuation.previous_response_id().is_some()
+            || request.continuation.conversation_id().is_some())
+    {
+        return Err(UsageResolutionError::StatefulContextUnsupported);
+    }
     let estimator = OpenAiChatUsageEstimator::new(request);
     let input_tokens = estimator.input_tokens?;
     let output_tokens = request

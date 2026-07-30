@@ -13,7 +13,7 @@ use std::{
 use af_account::{CredentialDecryptor, credential_plaintext_aad};
 use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
 use af_db::{DatabaseOptions, DatabasePool, MigrationOptions, connect_and_migrate};
-use af_domain::{ChannelId, CredentialKind, Status};
+use af_domain::{ChannelId, CredentialKind, Protocol, Status};
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
 use af_scheduler::{ChannelProbe as _, ChannelProbeStatus};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -37,7 +37,7 @@ static NEXT_DATABASE: AtomicU64 = AtomicU64::new(0);
 async fn valid_openai_response_is_healthy_and_sends_required_headers() {
     let key = [0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES];
     let database = test_database().await;
-    seed_probe_target(&database.seed, &key, false, false).await;
+    seed_probe_target(&database.seed, &key, Protocol::OpenAiChat, false, false).await;
     let response = br#"{"id":"chatcmpl-probe","object":"chat.completion","created":1700000000,"model":"probe-model-canary","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}"#;
     let (proxy_address, captured, server) = spawn_proxy("200 OK", response);
     let probe = probe(&database.pool, &key, proxy_address);
@@ -65,6 +65,39 @@ async fn valid_openai_response_is_healthy_and_sends_required_headers() {
 }
 
 #[tokio::test]
+async fn valid_openai_responses_response_is_healthy_and_disables_storage() {
+    let key = [0x43; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    let database = test_database().await;
+    seed_probe_target(
+        &database.seed,
+        &key,
+        Protocol::OpenAiResponses,
+        false,
+        false,
+    )
+    .await;
+    let response = br#"{"id":"resp_probe","object":"response","created_at":1700000000,"status":"completed","error":null,"incomplete_details":null,"model":"probe-model-canary","output":[{"id":"msg_probe","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"ok","annotations":[],"logprobs":[]}]}],"usage":{"input_tokens":1,"input_tokens_details":{"cache_write_tokens":0,"cached_tokens":0},"output_tokens":1,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":2}}"#;
+    let (proxy_address, captured, server) = spawn_proxy("200 OK", response);
+    let probe = probe(&database.pool, &key, proxy_address);
+
+    assert_eq!(probe.check(channel_id()).await, ChannelProbeStatus::Healthy);
+
+    let request = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    server.join().unwrap();
+    let head = request.head.to_ascii_lowercase();
+    assert!(head.starts_with("post http://probe-upstream.example/v1/responses http/1.1"));
+    assert!(head.contains("authorization: bearer probe-secret-canary"));
+    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["model"], MODEL_CANARY);
+    assert_eq!(body["stream"], false);
+    assert_eq!(body["store"], false);
+    assert_eq!(body["max_output_tokens"], 1);
+    assert_eq!(body["input"][0]["content"][0]["text"], "ping");
+
+    database.close().await;
+}
+
+#[tokio::test]
 async fn non_success_and_invalid_success_response_are_unhealthy() {
     let key = [0x24; CREDENTIAL_ENCRYPTION_KEY_BYTES];
     for (status_line, body) in [
@@ -75,7 +108,7 @@ async fn non_success_and_invalid_success_response_are_unhealthy() {
         ("200 OK", br#"{"invalid":"response-secret"}"#.as_slice()),
     ] {
         let database = test_database().await;
-        seed_probe_target(&database.seed, &key, false, false).await;
+        seed_probe_target(&database.seed, &key, Protocol::OpenAiChat, false, false).await;
         let (proxy_address, captured, server) = spawn_proxy(status_line, body);
         let probe = probe(&database.pool, &key, proxy_address);
 
@@ -94,7 +127,14 @@ async fn decryption_failure_and_required_proxy_never_recover_channel() {
     let key = [0x66; CREDENTIAL_ENCRYPTION_KEY_BYTES];
 
     let broken_database = test_database().await;
-    seed_probe_target(&broken_database.seed, &key, false, true).await;
+    seed_probe_target(
+        &broken_database.seed,
+        &key,
+        Protocol::OpenAiChat,
+        false,
+        true,
+    )
+    .await;
     let broken_probe = probe_without_reachable_upstream(&broken_database.pool, &key);
     assert_eq!(
         broken_probe.check(channel_id()).await,
@@ -103,7 +143,14 @@ async fn decryption_failure_and_required_proxy_never_recover_channel() {
     broken_database.close().await;
 
     let proxy_bound_database = test_database().await;
-    seed_probe_target(&proxy_bound_database.seed, &key, true, false).await;
+    seed_probe_target(
+        &proxy_bound_database.seed,
+        &key,
+        Protocol::OpenAiChat,
+        true,
+        false,
+    )
+    .await;
     let proxy_bound_probe = probe_without_reachable_upstream(&proxy_bound_database.pool, &key);
     assert_eq!(
         proxy_bound_probe.check(channel_id()).await,
@@ -127,12 +174,14 @@ async fn test_database() -> TestDatabase {
 async fn seed_probe_target(
     database: &DatabaseConnection,
     key: &[u8; CREDENTIAL_ENCRYPTION_KEY_BYTES],
+    protocol: Protocol,
     proxy_required: bool,
     corrupt_aad: bool,
 ) {
     let header_override = json!({"x-probe-header": "probe-header-value-canary"}).to_string();
     let channel_sql = format!(
-        "INSERT INTO channels (id, name, type, protocol, base_url, status, auto_ban, model_mapping, param_override, header_override, settings) VALUES ({TEST_CHANNEL_ID}, 'probe-channel', 'openai', 'openai_chat', 'http://probe-upstream.example', {}, 1, '{{}}', '{{}}', {}, '{{}}')",
+        "INSERT INTO channels (id, name, type, protocol, base_url, status, auto_ban, model_mapping, param_override, header_override, settings) VALUES ({TEST_CHANNEL_ID}, 'probe-channel', 'openai', {}, 'http://probe-upstream.example', {}, 1, '{{}}', '{{}}', {}, '{{}}')",
+        sql_text(protocol.as_str()),
         Status::AutoDisabled.code(),
         sql_text(&header_override),
     );

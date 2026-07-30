@@ -44,14 +44,18 @@ use af_analytics::{
 };
 use af_config::ServerConfig;
 use af_domain::{
-    ChannelId, CredentialId, GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp,
-    UserId,
+    ChannelId, CredentialId, GatewayPrincipal, GroupId, Role, TokenId, TokenModelPolicy,
+    TrustedClientIp, UserId,
 };
 use af_http::{
     HttpListener, QueryApiKeyPolicy, ReadinessFuture, ReadinessHandle, ReadinessProbe,
     ServeOutcome, build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
+use af_protocol::{
+    CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage, UsageDetails,
+    UsageSemantics, UsageSource, openai_responses::OpenAiResponsesStreamEncoder,
+};
 use af_relay::RelayService;
 use serde_json::Value;
 use support::{
@@ -558,6 +562,70 @@ async fn invalid_requests_and_wrong_model_never_reach_upstream() {
 }
 
 #[tokio::test]
+async fn responses_stateful_requests_and_wrong_model_never_reach_upstream() {
+    let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+    proxy.set_nonblocking(true).unwrap();
+    let (address, shutdown, server) =
+        start_server(proxy.local_addr().unwrap(), ServerConfig::default()).await;
+    let authorization = format!("Bearer {CLIENT_KEY}");
+
+    for (method, body, expected_status, expected_code) in [
+        (
+            "POST",
+            br#"{"model":"test-model","model":"private-duplicate","input":"hello"}"#.as_slice(),
+            400,
+            "invalid_request",
+        ),
+        (
+            "POST",
+            br#"{"model":"test-model","input":"hello","store":true}"#.as_slice(),
+            400,
+            "invalid_request",
+        ),
+        (
+            "POST",
+            br#"{"model":"test-model","previous_response_id":"resp_private"}"#.as_slice(),
+            400,
+            "invalid_request",
+        ),
+        (
+            "POST",
+            br#"{"model":"private-wrong-model","input":"hello","store":false}"#.as_slice(),
+            404,
+            "model_not_found",
+        ),
+        ("GET", b"".as_slice(), 405, ""),
+    ] {
+        let response = send_request(
+            address,
+            method,
+            "/v1/responses",
+            body,
+            &[
+                ("Content-Type", "application/json"),
+                ("Authorization", &authorization),
+            ],
+        )
+        .await;
+        assert_eq!(response.status, expected_status);
+        if !expected_code.is_empty() {
+            let value: Value = serde_json::from_slice(&response.body).unwrap();
+            assert_eq!(value["error"]["code"], expected_code);
+            let text = String::from_utf8_lossy(&response.body);
+            for private in ["private-duplicate", "resp_private", "private-wrong-model"] {
+                assert!(!text.contains(private));
+            }
+        }
+    }
+
+    stop_server(shutdown, server).await;
+    assert!(matches!(
+        proxy.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    ));
+}
+
+#[tokio::test]
 async fn anthropic_invalid_requests_use_messages_errors_and_never_reach_upstream() {
     let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
     proxy.set_nonblocking(true).unwrap();
@@ -691,6 +759,74 @@ async fn verified_same_protocol_full_request_and_response_preserve_exact_bytes()
     assert_eq!(upstream.body, request_body);
     assert_eq!(response.status, 200);
     assert_eq!(response.body, upstream_body);
+}
+
+#[tokio::test]
+async fn responses_full_request_is_stateless_and_rebuilds_public_identity() {
+    let upstream_body = br#"{
+  "id": "resp_private_upstream",
+  "object": "response",
+  "created_at": 1700000000,
+  "status": "completed",
+  "error": null,
+  "incomplete_details": null,
+  "model": "private-upstream-model",
+  "output": [{"id":"msg_private","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"responses-answer","annotations":[],"logprobs":[]}]}],
+  "usage": {"input_tokens":2,"input_tokens_details":{"cache_write_tokens":0,"cached_tokens":0},"output_tokens":1,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":3},
+  "service_tier": "priority"
+}"#;
+    let request_body = br#"{
+  "model": "test-model",
+  "input": "hello",
+  "max_output_tokens": 32
+}"#;
+    let (proxy_address, captured, proxy) = spawn_proxy(
+        "200 OK",
+        upstream_body,
+        &[("Content-Type", "application/json")],
+    );
+    let (address, shutdown, server) = start_server(proxy_address, ServerConfig::default()).await;
+    let authorization = format!("Bearer {CLIENT_KEY}");
+
+    let response = send_request(
+        address,
+        "POST",
+        "/v1/responses",
+        request_body,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &authorization),
+        ],
+    )
+    .await;
+    stop_server(shutdown, server).await;
+    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    proxy.join().unwrap();
+
+    let upstream_head = upstream.head.to_ascii_lowercase();
+    assert!(upstream_head.starts_with("post http://upstream.example/proxy/v1/responses http/1.1"));
+    assert!(!upstream.head.contains(CLIENT_KEY));
+    assert!(upstream_head.contains(&format!("authorization: bearer {UPSTREAM_KEY}")));
+    let upstream_json: Value = serde_json::from_slice(&upstream.body).unwrap();
+    assert_eq!(upstream_json["model"], "test-model");
+    assert_eq!(upstream_json["stream"], false);
+    assert_eq!(upstream_json["store"], false);
+    assert_eq!(upstream_json["max_output_tokens"], 32);
+    assert_eq!(upstream_json["input"][0]["content"][0]["text"], "hello");
+
+    assert_eq!(response.status, 200);
+    let body: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body["object"], "response");
+    assert_eq!(body["model"], "test-model");
+    assert_eq!(body["output"][0]["content"][0]["text"], "responses-answer");
+    assert_eq!(body["usage"]["input_tokens"], 2);
+    assert_eq!(body["usage"]["output_tokens"], 1);
+    assert!(body["id"].as_str().unwrap().starts_with("resp_"));
+    assert!(body.get("service_tier").is_none());
+    let text = String::from_utf8_lossy(&response.body);
+    assert!(!text.contains("resp_private_upstream"));
+    assert!(!text.contains("private-upstream-model"));
+    assert!(!text.contains("msg_private"));
 }
 
 #[tokio::test]
@@ -867,6 +1003,55 @@ data: [DONE]
 }
 
 #[tokio::test]
+async fn responses_streaming_is_incremental_stateless_and_rebuilds_identity() {
+    let (first, rest) = responses_stream_chunks();
+    let (proxy_address, captured, release, proxy) = spawn_streaming_proxy(&first, &rest);
+    let (address, shutdown, server) = start_server(proxy_address, ServerConfig::default()).await;
+    let authorization = format!("Bearer {CLIENT_KEY}");
+    let request_body = br#"{"model":"test-model","input":"hello","stream":true,"store":false}"#;
+    let mut client = connect_and_send_responses(address, request_body, &authorization).await;
+
+    let first_response = read_until(&mut client, b"first-part").await;
+    let first_text = String::from_utf8_lossy(&first_response);
+    let first_lower = first_text.to_ascii_lowercase();
+    assert!(first_lower.starts_with("http/1.1 200"));
+    assert!(first_lower.contains("content-type: text/event-stream; charset=utf-8"));
+    assert!(first_lower.contains("cache-control: no-cache, no-transform"));
+    assert!(first_lower.contains("x-accel-buffering: no"));
+    assert!(first_text.contains("event: response.created"));
+    assert!(first_text.contains("event: response.output_text.delta"));
+    assert!(!first_text.contains("second-part"));
+    assert!(!first_text.contains("resp_private_upstream"));
+    assert!(!first_text.contains("private-upstream-model"));
+
+    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    let upstream_head = upstream.head.to_ascii_lowercase();
+    assert!(upstream_head.starts_with("post http://upstream.example/proxy/v1/responses http/1.1"));
+    let upstream_json: Value = serde_json::from_slice(&upstream.body).unwrap();
+    assert_eq!(upstream_json["stream"], true);
+    assert_eq!(upstream_json["store"], false);
+    assert_eq!(upstream_json["model"], "test-model");
+    release.send(()).unwrap();
+
+    let mut complete = first_response;
+    timeout(IO_TIMEOUT, client.read_to_end(&mut complete))
+        .await
+        .unwrap()
+        .unwrap();
+    let complete = String::from_utf8_lossy(&complete);
+    assert!(complete.contains("second-part"));
+    assert!(complete.contains("event: response.completed"));
+    assert!(complete.contains("\"input_tokens\":3"));
+    assert!(complete.contains("\"output_tokens\":2"));
+    assert!(!complete.contains("data: [DONE]"));
+    assert!(!complete.contains("resp_private_upstream"));
+    assert!(!complete.contains("private-upstream-model"));
+
+    stop_server(shutdown, server).await;
+    proxy.join().unwrap();
+}
+
+#[tokio::test]
 async fn anthropic_streaming_response_is_incremental_and_uses_messages_events() {
     let first = br#"data: {"id":"upstream-private-id","object":"chat.completion.chunk","created":1,"model":"upstream-private-model","choices":[{"index":0,"delta":{"role":"assistant","content":"first-part"},"finish_reason":null}]}
 
@@ -1017,10 +1202,81 @@ async fn client_disconnect_aborts_pending_upstream_stream() {
     proxy.join().unwrap();
 }
 
+fn responses_stream_chunks() -> (Vec<u8>, Vec<u8>) {
+    let mut encoder = OpenAiResponsesStreamEncoder::new(
+        "resp_private_upstream",
+        "private-upstream-model",
+        1_700_000_000,
+    )
+    .unwrap();
+    let mut first = Vec::new();
+    for event in [
+        CanonicalStreamEvent::MessageStart {
+            choice_index: 0,
+            role: Role::Assistant,
+        },
+        CanonicalStreamEvent::ContentDelta {
+            choice_index: 0,
+            content_index: 0,
+            delta: ContentDelta::Text("first-part".to_owned()),
+        },
+    ] {
+        first.extend(encoder.encode(event).unwrap());
+    }
+    let usage = Usage::new(
+        TokenCount::new(3).unwrap(),
+        TokenCount::new(2).unwrap(),
+        UsageDetails::new(
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+        ),
+        UsageSource::Upstream,
+        UsageSemantics::Inclusive,
+    )
+    .unwrap();
+    let mut rest = Vec::new();
+    for event in [
+        CanonicalStreamEvent::ContentDelta {
+            choice_index: 0,
+            content_index: 0,
+            delta: ContentDelta::Text("second-part".to_owned()),
+        },
+        CanonicalStreamEvent::Finish {
+            choice_index: 0,
+            reason: FinishReason::Stop,
+            stop_sequence: None,
+        },
+        CanonicalStreamEvent::Usage(usage),
+        CanonicalStreamEvent::StreamEnd,
+    ] {
+        rest.extend(encoder.encode(event).unwrap());
+    }
+    (first, rest)
+}
+
 async fn connect_and_send(address: SocketAddr, body: &[u8], authorization: &str) -> TcpStream {
     let mut client = TcpStream::connect(address).await.unwrap();
     let request = format!(
         "POST /v1/chat/completions HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nAuthorization: {authorization}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    client.write_all(request.as_bytes()).await.unwrap();
+    client.write_all(body).await.unwrap();
+    client
+}
+
+async fn connect_and_send_responses(
+    address: SocketAddr,
+    body: &[u8],
+    authorization: &str,
+) -> TcpStream {
+    let mut client = TcpStream::connect(address).await.unwrap();
+    let request = format!(
+        "POST /v1/responses HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nAuthorization: {authorization}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
     client.write_all(request.as_bytes()).await.unwrap();

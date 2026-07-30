@@ -8,8 +8,9 @@ use sea_orm::{ActiveModelTrait, Set};
 use crate::EncryptedCredentialEnvelope;
 
 use super::{
-    MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL, SchedulerRuntimeCredentialRecord,
-    SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
+    ChannelModelMappings, ChannelParameterOverrides, MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL,
+    SchedulerRuntimeCredentialRecord, SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError,
+    SchedulerRuntimeTargetRecord,
 };
 
 use self::support::{ability, attach, group, runtime_channel, runtime_credential};
@@ -245,6 +246,38 @@ fn runtime_target_rejects_empty_oversized_and_duplicate_credential_pools() {
 
     let duplicate = runtime_credential_record(7);
     assert!(build(vec![duplicate.clone(), duplicate]).is_err());
+}
+
+#[test]
+fn responses_runtime_target_rejects_chat_only_stop_sequences() {
+    let credential = runtime_credential_record(1);
+    assert!(
+        SchedulerRuntimeTargetRecord::new_pool(
+            ChannelId::new(1).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiResponses,
+            None,
+            vec![credential.clone()],
+            Vec::new(),
+        )
+        .is_ok()
+    );
+    let parameters =
+        ChannelParameterOverrides::parse(&serde_json::json!({"stop_sequences": ["private"]}))
+            .unwrap();
+    assert!(
+        SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
+            ChannelId::new(1).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiResponses,
+            None,
+            vec![credential],
+            ChannelModelMappings::default(),
+            parameters,
+            Vec::new(),
+        )
+        .is_err()
+    );
 }
 
 fn runtime_credential_record(credential_id: i64) -> SchedulerRuntimeCredentialRecord {

@@ -20,7 +20,7 @@ const MAX_USER_ID_BYTES: usize = 512;
 const MAX_CONTINUATION_ID_BYTES: usize = 512;
 const MAX_PROMPT_CACHE_KEY_BYTES: usize = 256;
 
-/// 将 Canonical 请求构造为 OpenAI Responses 非流式 JSON。
+/// 将 Canonical 请求构造为 OpenAI Responses JSON。
 ///
 /// Canonical 可由调用方直接构造，因此本函数会重新校验协议预算、工具关联、
 /// continuation 互斥关系和同源 raw，未建模能力一律失败关闭。
@@ -31,8 +31,7 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
     validate_request_capabilities(Protocol::OpenAiResponses, request)
         .map_err(BuildRequestError::UnsupportedCapability)?;
     validate_model(&request.model).map_err(map_request_validation_error)?;
-    if request.stream
-        || request.stream_options.include_usage()
+    if request.stream_options.include_usage()
         || !request.attachments.is_empty()
         || request.metadata.session_id().is_some()
     {
@@ -46,7 +45,7 @@ pub fn build_request(request: &CanonicalRequest) -> Result<Value, BuildRequestEr
     let mut root = Map::new();
     root.insert("model".to_owned(), Value::String(request.model.clone()));
     root.insert("input".to_owned(), Value::Array(input));
-    root.insert("stream".to_owned(), Value::Bool(false));
+    root.insert("stream".to_owned(), Value::Bool(request.stream));
     if !tools.is_empty() {
         root.insert("tools".to_owned(), Value::Array(tools));
     }

@@ -372,6 +372,7 @@ pub(crate) enum AdminChannelWriteTypeSchema {
 #[schema(as = AdminChannelWriteProtocol, rename_all = "snake_case")]
 pub(crate) enum AdminChannelWriteProtocolSchema {
     OpenaiChat,
+    OpenaiResponses,
 }
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]

@@ -11,11 +11,12 @@ use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Role};
 use af_http::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 use af_protocol::{
     CanonicalRequest, ContentBlock, Message, Sampling, TokenCount, ToolChoice, openai_chat,
+    openai_responses,
 };
 use af_scheduler::{ChannelProbe, ChannelProbeStatus};
 use tokio::time::timeout;
 
-/// 从数据库装配目标并执行最小 OpenAI Chat 请求的真实渠道探活器。
+/// 从数据库装配目标并执行最小 OpenAI 原生请求的真实渠道探活器。
 #[derive(Clone)]
 pub(crate) struct DatabaseChannelProbe {
     targets: ChannelProbeTargetRepository,
@@ -49,7 +50,11 @@ impl DatabaseChannelProbe {
             // 专属代理仓储尚未落地，绑定代理的凭据绝不能回退直连。
             return Err(ProbeFailure::RequiredProxyUnavailable);
         }
-        if target.channel_type() != ChannelType::OpenAi || target.protocol() != Protocol::OpenAiChat
+        if target.channel_type() != ChannelType::OpenAi
+            || !matches!(
+                target.protocol(),
+                Protocol::OpenAiChat | Protocol::OpenAiResponses
+            )
         {
             return Err(ProbeFailure::UnsupportedTarget);
         }
@@ -61,7 +66,13 @@ impl DatabaseChannelProbe {
         let credential = adaptor_credential(&decrypted)?;
         let adaptor = get_adaptor(
             target.channel_type(),
-            AdaptorSettings::OpenAi(OpenAiAdaptorSettings::new(vec![target.model().to_owned()])),
+            AdaptorSettings::OpenAi(
+                OpenAiAdaptorSettings::for_protocol(
+                    target.protocol(),
+                    vec![target.model().to_owned()],
+                )
+                .map_err(|_| ProbeFailure::AdapterBuild)?,
+            ),
         )
         .map_err(|_| ProbeFailure::AdapterBuild)?;
         if adaptor.default_protocol() != target.protocol() {
@@ -85,11 +96,15 @@ impl DatabaseChannelProbe {
             adaptor
                 .build_url(
                     &context,
-                    AdaptorTarget::new(target.model(), Operation::Chat, ResponseMode::Full),
+                    AdaptorTarget::new(
+                        target.model(),
+                        probe_operation(target.protocol())?,
+                        ResponseMode::Full,
+                    ),
                 )
                 .map_err(|_| ProbeFailure::RequestBuild)?,
             headers,
-            Some(probe_body(target.model())?),
+            Some(probe_body(target.model(), target.protocol())?),
         )
         .map_err(|_| ProbeFailure::RequestBuild)?;
         let response = adaptor
@@ -104,7 +119,7 @@ impl DatabaseChannelProbe {
             .into_bytes()
             .await
             .map_err(|_| ProbeFailure::ResponseRead)?;
-        openai_chat::parse_response(&body).map_err(|_| ProbeFailure::InvalidResponse)?;
+        validate_probe_response(target.protocol(), &body)?;
         Ok(())
     }
 }
@@ -209,9 +224,17 @@ fn apply_header_overrides(
     Ok(())
 }
 
-fn probe_body(model: &str) -> Result<Bytes, ProbeFailure> {
+fn probe_operation(protocol: Protocol) -> Result<Operation, ProbeFailure> {
+    match protocol {
+        Protocol::OpenAiChat => Ok(Operation::Chat),
+        Protocol::OpenAiResponses => Ok(Operation::Responses),
+        Protocol::Anthropic | Protocol::Gemini => Err(ProbeFailure::UnsupportedTarget),
+    }
+}
+
+fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
     let mut request = CanonicalRequest::new(
-        Operation::Chat,
+        probe_operation(protocol)?,
         model.to_owned(),
         vec![Message::new(
             Role::User,
@@ -227,8 +250,34 @@ fn probe_body(model: &str) -> Result<Bytes, ProbeFailure> {
         Vec::new(),
     )
     .expect("固定探活采样参数必须有效");
-    let value = openai_chat::build_request(&request).map_err(|_| ProbeFailure::RequestBuild)?;
+    let value = match protocol {
+        Protocol::OpenAiChat => {
+            openai_chat::build_request(&request).map_err(|_| ProbeFailure::RequestBuild)?
+        }
+        Protocol::OpenAiResponses => {
+            let mut value = openai_responses::build_request(&request)
+                .map_err(|_| ProbeFailure::RequestBuild)?;
+            // 探活不产生可续接的供应商状态，避免周期任务累积无主响应。
+            value["store"] = false.into();
+            value
+        }
+        Protocol::Anthropic | Protocol::Gemini => {
+            return Err(ProbeFailure::UnsupportedTarget);
+        }
+    };
     Ok(Bytes::from(value.to_string()))
+}
+
+fn validate_probe_response(protocol: Protocol, body: &[u8]) -> Result<(), ProbeFailure> {
+    match protocol {
+        Protocol::OpenAiChat => openai_chat::parse_response(body)
+            .map(|_| ())
+            .map_err(|_| ProbeFailure::InvalidResponse),
+        Protocol::OpenAiResponses => openai_responses::parse_response(body)
+            .map(|_| ())
+            .map_err(|_| ProbeFailure::InvalidResponse),
+        Protocol::Anthropic | Protocol::Gemini => Err(ProbeFailure::UnsupportedTarget),
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

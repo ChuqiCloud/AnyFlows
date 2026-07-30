@@ -249,6 +249,7 @@ pub(super) const OPENAI_RESPONSES: &[RequestCapability] = &[
     RequestCapability::Temperature,
     RequestCapability::TopP,
     RequestCapability::MaxOutputTokens,
+    RequestCapability::Streaming,
     RequestCapability::UserMetadata,
     RequestCapability::PreviousResponseContinuation,
     RequestCapability::ConversationContinuation,

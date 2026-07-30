@@ -6,15 +6,22 @@ use af_httpclient::{HeaderMap, HeaderName, HeaderValue};
 use crate::credential::clear_authentication_headers;
 use crate::{Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Credential, RelayContext};
 
-/// OpenAI Chat Completions 及兼容渠道适配器。
+/// OpenAI Chat Completions、Responses 及兼容渠道适配器。
 ///
 /// 渠道基础地址由 `RelayContext` 覆盖，可传服务根或反向代理前缀；末尾非空段精确为
 /// `v1`（可带尾斜杠）时不会重复追加版本路径，其他路径会追加 `/v1/chat/completions`。
 /// 空模型清单表示无内建模型限制，具体模型由渠道配置提供。当前只实现 Bearer-compatible
 /// OpenAI Chat 的 URL 与认证 Header 构造，Azure deployment 等专用参数留待后续适配器切片。
-#[derive(Clone, Default, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct OpenAiAdaptor {
+    protocol: Protocol,
     supported_models: Vec<String>,
+}
+
+impl Default for OpenAiAdaptor {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl OpenAiAdaptor {
@@ -25,6 +32,7 @@ impl OpenAiAdaptor {
     #[must_use]
     pub const fn new() -> Self {
         Self {
+            protocol: Protocol::OpenAiChat,
             supported_models: Vec::new(),
         }
     }
@@ -37,20 +45,54 @@ impl OpenAiAdaptor {
         S: Into<String>,
     {
         Self {
+            protocol: Protocol::OpenAiChat,
             supported_models: models.into_iter().map(Into::into).collect(),
         }
     }
 
-    fn endpoint_path(&self, context: &RelayContext) -> AdaptorResult<&'static str> {
+    /// 创建绑定单一 OpenAI 原生协议的适配器。
+    pub fn with_protocol_and_supported_models<I, S>(
+        protocol: Protocol,
+        models: I,
+    ) -> AdaptorResult<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        if !matches!(protocol, Protocol::OpenAiChat | Protocol::OpenAiResponses) {
+            return Err(AdaptorError::InvalidChannelSettings {
+                channel_type: ChannelType::OpenAi,
+            });
+        }
+        Ok(Self {
+            protocol,
+            supported_models: models.into_iter().map(Into::into).collect(),
+        })
+    }
+
+    fn endpoint_path(
+        &self,
+        context: &RelayContext,
+        operation: Operation,
+    ) -> AdaptorResult<&'static str> {
+        let endpoint = match (self.protocol, operation) {
+            (Protocol::OpenAiChat, Operation::Chat) => "chat/completions",
+            (Protocol::OpenAiResponses, Operation::Responses) => "responses",
+            (_, operation) => return Err(AdaptorError::UnsupportedOperation { operation }),
+        };
         let base_url = context.resolve_base_url(Self::DEFAULT_BASE_URL)?;
         let has_v1_suffix = base_url
             .path_segments()
             .and_then(|mut segments| segments.rfind(|segment| !segment.is_empty()))
             .is_some_and(|segment| segment == "v1");
         Ok(if has_v1_suffix {
-            "chat/completions"
+            endpoint
         } else {
-            "v1/chat/completions"
+            match endpoint {
+                "chat/completions" => "v1/chat/completions",
+                "responses" => "v1/responses",
+                _ => unreachable!("OpenAI 端点集合保持闭合"),
+            }
         })
     }
 }
@@ -61,7 +103,7 @@ impl Adaptor for OpenAiAdaptor {
     }
 
     fn default_protocol(&self) -> Protocol {
-        Protocol::OpenAiChat
+        self.protocol
     }
 
     fn default_base_url(&self) -> &str {
@@ -77,12 +119,10 @@ impl Adaptor for OpenAiAdaptor {
         context: &RelayContext,
         target: AdaptorTarget<'_>,
     ) -> AdaptorResult<String> {
-        if target.operation() != Operation::Chat {
-            return Err(AdaptorError::UnsupportedOperation {
-                operation: target.operation(),
-            });
-        }
-        context.append_path(Self::DEFAULT_BASE_URL, self.endpoint_path(context)?)
+        context.append_path(
+            Self::DEFAULT_BASE_URL,
+            self.endpoint_path(context, target.operation())?,
+        )
     }
 
     fn setup_headers(
@@ -128,6 +168,7 @@ impl fmt::Debug for OpenAiAdaptor {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("OpenAiAdaptor")
+            .field("protocol", &self.protocol)
             .field("supported_model_count", &self.supported_models.len())
             .finish()
     }
@@ -197,6 +238,39 @@ mod tests {
                 .unwrap_err(),
             AdaptorError::UnsupportedOperation {
                 operation: Operation::Responses
+            }
+        );
+    }
+
+    #[test]
+    fn responses_protocol_uses_the_native_endpoint_only() {
+        let adaptor = OpenAiAdaptor::with_protocol_and_supported_models(
+            Protocol::OpenAiResponses,
+            ["gpt-test"],
+        )
+        .unwrap();
+        assert_eq!(adaptor.default_protocol(), Protocol::OpenAiResponses);
+        assert_eq!(
+            adaptor
+                .build_url(&context(), target(Operation::Responses))
+                .unwrap(),
+            "https://api.openai.com/v1/responses"
+        );
+        let proxied = adaptor
+            .build_url(
+                &context()
+                    .with_base_url("https://gateway.example/proxy/openai/v1")
+                    .unwrap(),
+                target(Operation::Responses),
+            )
+            .unwrap();
+        assert!(proxied.ends_with("/proxy/openai/v1/responses"));
+        assert_eq!(
+            adaptor
+                .build_url(&context(), target(Operation::Chat))
+                .unwrap_err(),
+            AdaptorError::UnsupportedOperation {
+                operation: Operation::Chat
             }
         );
     }

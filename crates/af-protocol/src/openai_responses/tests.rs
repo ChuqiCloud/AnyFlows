@@ -418,10 +418,8 @@ fn validates_function_tools_and_choices() {
 
 #[test]
 fn validates_sampling_model_and_stream_boundaries() {
-    assert_eq!(
-        parse_json(json!({"model": "gpt-test", "stream": true})),
-        Err(ParseRequestError::UnsupportedFeature)
-    );
+    let streaming = parse_json(json!({"model": "gpt-test", "stream": true})).unwrap();
+    assert!(streaming.stream);
     for request in [
         json!({"model": "", "input": "x"}),
         json!({"model": " gpt-test", "input": "x"}),

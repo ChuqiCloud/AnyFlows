@@ -167,7 +167,8 @@ impl ChatStreamEncoder {
 
 fn map_initial_usage_error(error: UsageResolutionError) -> AfError {
     match error {
-        UsageResolutionError::UnsupportedContent => AfError::InvalidRequest,
+        UsageResolutionError::UnsupportedContent
+        | UsageResolutionError::StatefulContextUnsupported => AfError::InvalidRequest,
         UsageResolutionError::Interrupted
         | UsageResolutionError::InvalidSequence
         | UsageResolutionError::Overflow

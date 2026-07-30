@@ -1,0 +1,376 @@
+use std::{
+    collections::VecDeque,
+    fmt,
+    future::poll_fn,
+    pin::Pin,
+    task::{Context, Poll},
+    time::Duration,
+};
+
+use af_adapter::{Bytes, UpstreamBody};
+use af_domain::{AfError, UpstreamError};
+use af_protocol::{
+    CanonicalRequest, CanonicalStreamEvent, Usage,
+    openai_responses::{OpenAiResponsesStreamDecoder, OpenAiResponsesStreamEncoder},
+};
+use futures_core::Stream;
+
+use crate::error::map_adaptor_error;
+use crate::generation_stream::StreamSource;
+use crate::openai_chat_usage::{
+    OpenAiChatUsageEstimator, OpenAiChatUsageHandle, UsageResolutionError, UsageSender,
+    usage_channel,
+};
+use crate::{GenerationCompletionFuture, GenerationCompletionHook, GenerationStream};
+
+/// 已验证并重新生成公开身份的 OpenAI Responses SSE 流。
+pub struct OpenAiResponsesStream {
+    source: Option<StreamSource>,
+    decoder: OpenAiResponsesStreamDecoder,
+    encoder: OpenAiResponsesStreamEncoder,
+    usage_estimator: OpenAiChatUsageEstimator,
+    usage_sender: Option<UsageSender>,
+    completion_hook: Option<Box<dyn GenerationCompletionHook>>,
+    completion_future: Option<GenerationCompletionFuture>,
+    pending_terminal_error: Option<UpstreamError>,
+    prefetched: VecDeque<Bytes>,
+    terminated: bool,
+}
+
+impl OpenAiResponsesStream {
+    /// 使用客户端公开身份创建 Responses 流；上游身份只在 decoder 内部校验。
+    pub(crate) fn new(
+        source: UpstreamBody,
+        request: &CanonicalRequest,
+        response_id: &str,
+        client_model: &str,
+        created_at: i64,
+    ) -> Result<(Self, OpenAiChatUsageHandle), AfError> {
+        let encoder = OpenAiResponsesStreamEncoder::new(response_id, client_model, created_at)
+            .map_err(|_| AfError::Internal)?;
+        let (usage_sender, usage_handle) = usage_channel();
+        Ok((
+            Self {
+                source: Some(StreamSource::from(source)),
+                decoder: OpenAiResponsesStreamDecoder::new(),
+                encoder,
+                usage_estimator: OpenAiChatUsageEstimator::new(request),
+                usage_sender: Some(usage_sender),
+                completion_hook: None,
+                completion_future: None,
+                pending_terminal_error: None,
+                prefetched: VecDeque::new(),
+                terminated: false,
+            },
+            usage_handle,
+        ))
+    }
+
+    /// 在提交 HTTP 200 前读取并验证首个可交付事件。
+    pub(crate) async fn prefetch_first(
+        mut self,
+        first_event_timeout: Duration,
+    ) -> Result<Self, UpstreamError> {
+        let first = tokio::time::timeout(first_event_timeout, self.next_chunk())
+            .await
+            .map_err(|_| UpstreamError::Network)?
+            .ok_or(UpstreamError::ProtocolError)??;
+        self.prefetched.push_front(first);
+        Ok(self)
+    }
+
+    /// 等待下一段已经完成身份清理与协议重编码的 SSE 字节。
+    pub async fn next_chunk(&mut self) -> Option<Result<Bytes, UpstreamError>> {
+        poll_fn(|context| Pin::new(&mut *self).poll_next(context)).await
+    }
+
+    fn transform(&mut self, bytes: &[u8]) -> Result<Option<Bytes>, UpstreamError> {
+        let events = self
+            .decoder
+            .push(bytes)
+            .map_err(|_| UpstreamError::ProtocolError)?;
+        let mut output = Vec::new();
+        let mut completed = false;
+        let mut resolved_usage = None;
+        for event in events {
+            match event {
+                CanonicalStreamEvent::Usage(usage) => {
+                    self.usage_estimator
+                        .observe(&CanonicalStreamEvent::Usage(usage));
+                    output.extend(
+                        self.encoder
+                            .encode(CanonicalStreamEvent::Usage(usage))
+                            .map_err(|_| UpstreamError::ProtocolError)?,
+                    );
+                }
+                CanonicalStreamEvent::StreamEnd => {
+                    let upstream_usage_seen = self.usage_estimator.has_upstream_usage();
+                    let usage = self.usage_estimator.resolve();
+                    if !upstream_usage_seen && let Ok(estimated) = usage {
+                        output.extend(
+                            self.encoder
+                                .encode(CanonicalStreamEvent::Usage(estimated))
+                                .map_err(|_| UpstreamError::ProtocolError)?,
+                        );
+                    }
+                    output.extend(
+                        self.encoder
+                            .encode(CanonicalStreamEvent::StreamEnd)
+                            .map_err(|_| UpstreamError::ProtocolError)?,
+                    );
+                    resolved_usage = Some(usage);
+                    completed = true;
+                }
+                event => {
+                    self.usage_estimator.observe(&event);
+                    output.extend(
+                        self.encoder
+                            .encode(event)
+                            .map_err(|_| UpstreamError::ProtocolError)?,
+                    );
+                }
+            }
+        }
+        if completed {
+            self.begin_completion(resolved_usage.expect("流结束时必须固化 usage 结果"));
+            // 官方终态事件已经定义逻辑终点，立即释放上游连接并传播取消。
+            self.source = None;
+            if self.completion_future.is_none() {
+                self.terminated = true;
+            }
+        }
+        Ok((!output.is_empty()).then(|| Bytes::from(output)))
+    }
+
+    fn fail(
+        &mut self,
+        error: UpstreamError,
+        context: &mut Context<'_>,
+    ) -> Poll<Option<Result<Bytes, UpstreamError>>> {
+        self.begin_completion(Err(UsageResolutionError::Interrupted));
+        self.source = None;
+        self.pending_terminal_error = Some(error);
+        self.poll_terminal_completion(context)
+    }
+
+    fn begin_completion(&mut self, usage: Result<Usage, UsageResolutionError>) {
+        if let Some(sender) = self.usage_sender.take() {
+            let _ = sender.send(usage);
+        }
+        if let Some(hook) = self.completion_hook.take() {
+            self.completion_future = Some(hook.on_complete(usage));
+        }
+    }
+
+    fn poll_terminal_completion(
+        &mut self,
+        context: &mut Context<'_>,
+    ) -> Poll<Option<Result<Bytes, UpstreamError>>> {
+        if let Some(future) = &mut self.completion_future {
+            match future.as_mut().poll(context) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(()) => self.completion_future = None,
+            }
+        }
+        self.terminated = true;
+        if let Some(error) = self.pending_terminal_error.take() {
+            return Poll::Ready(Some(Err(error)));
+        }
+        Poll::Ready(None)
+    }
+}
+
+impl Stream for OpenAiResponsesStream {
+    type Item = Result<Bytes, UpstreamError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if let Some(bytes) = self.prefetched.pop_front() {
+            return Poll::Ready(Some(Ok(bytes)));
+        }
+        if self.completion_future.is_some() {
+            return self.poll_terminal_completion(context);
+        }
+        if self.terminated {
+            return Poll::Ready(None);
+        }
+
+        loop {
+            let next = self
+                .source
+                .as_mut()
+                .expect("未终止的 Responses 流必须保留上游响应体")
+                .poll_next(context);
+            match next {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(Some(Ok(bytes))) => match self.transform(&bytes) {
+                    Ok(Some(output)) => return Poll::Ready(Some(Ok(output))),
+                    Ok(None) => {}
+                    Err(error) => return self.fail(error, context),
+                },
+                Poll::Ready(Some(Err(error))) => {
+                    return self.fail(map_adaptor_error(error), context);
+                }
+                Poll::Ready(None) => {
+                    self.source = None;
+                    if self.decoder.finish().is_err() {
+                        return self.fail(UpstreamError::ProtocolError, context);
+                    }
+                    self.terminated = true;
+                    return Poll::Ready(None);
+                }
+            }
+        }
+    }
+}
+
+impl GenerationStream for OpenAiResponsesStream {
+    fn with_completion_hook(
+        mut self: Box<Self>,
+        hook: Box<dyn GenerationCompletionHook>,
+    ) -> Box<dyn GenerationStream> {
+        self.completion_hook = Some(hook);
+        self
+    }
+}
+
+impl fmt::Debug for OpenAiResponsesStream {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OpenAiResponsesStream")
+            .field("prefetched_chunks", &self.prefetched.len())
+            .field("terminated", &self.terminated)
+            .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use af_adapter::{HeaderMap, StatusCode, UpstreamResponse};
+    use af_domain::{Operation, Role};
+    use af_protocol::{
+        ContentBlock, ContentDelta, FinishReason, Message, TokenCount, UsageDetails,
+        UsageSemantics, UsageSource,
+    };
+
+    use super::*;
+
+    #[tokio::test]
+    async fn stream_rebuilds_public_identity_and_closes_usage() {
+        let expected_usage = usage(3, 2);
+        let mut upstream_encoder = OpenAiResponsesStreamEncoder::new(
+            "resp_private_upstream",
+            "private-upstream-model",
+            1_700_000_000,
+        )
+        .unwrap();
+        let mut upstream = Vec::new();
+        for event in [
+            CanonicalStreamEvent::MessageStart {
+                choice_index: 0,
+                role: Role::Assistant,
+            },
+            CanonicalStreamEvent::ContentDelta {
+                choice_index: 0,
+                content_index: 0,
+                delta: ContentDelta::Text("answer".to_owned()),
+            },
+            CanonicalStreamEvent::Finish {
+                choice_index: 0,
+                reason: FinishReason::Stop,
+                stop_sequence: None,
+            },
+            CanonicalStreamEvent::Usage(expected_usage),
+            CanonicalStreamEvent::StreamEnd,
+        ] {
+            upstream.extend(upstream_encoder.encode(event).unwrap());
+        }
+        let response =
+            UpstreamResponse::full(StatusCode::OK, HeaderMap::new(), Bytes::from(upstream))
+                .unwrap();
+        let request = request();
+        let (mut stream, usage_handle) = OpenAiResponsesStream::new(
+            response.into_body(),
+            &request,
+            "resp_public",
+            "public-model",
+            1_700_000_001,
+        )
+        .unwrap();
+
+        let mut output = Vec::new();
+        while let Some(chunk) = stream.next_chunk().await {
+            output.extend(chunk.unwrap());
+        }
+        let rendered = String::from_utf8(output.clone()).unwrap();
+        assert!(rendered.contains("resp_public"));
+        assert!(rendered.contains("public-model"));
+        assert!(!rendered.contains("resp_private_upstream"));
+        assert!(!rendered.contains("private-upstream-model"));
+
+        let mut decoder = OpenAiResponsesStreamDecoder::new();
+        let events = decoder.push(&output).unwrap();
+        decoder.finish().unwrap();
+        assert!(events.contains(&CanonicalStreamEvent::Usage(expected_usage)));
+        assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+        assert_eq!(usage_handle.resolve().await.unwrap(), expected_usage);
+    }
+
+    #[tokio::test]
+    async fn stream_without_an_official_terminal_event_fails_closed() {
+        let response = UpstreamResponse::full(
+            StatusCode::OK,
+            HeaderMap::new(),
+            Bytes::from_static(b": heartbeat\n\n"),
+        )
+        .unwrap();
+        let (stream, usage_handle) = OpenAiResponsesStream::new(
+            response.into_body(),
+            &request(),
+            "resp_public",
+            "public-model",
+            1_700_000_001,
+        )
+        .unwrap();
+        let mut stream = stream.prefetch_first(Duration::from_secs(1)).await.unwrap();
+
+        assert!(matches!(stream.next_chunk().await, Some(Ok(_))));
+        assert_eq!(
+            stream.next_chunk().await,
+            Some(Err(UpstreamError::ProtocolError))
+        );
+        assert_eq!(
+            usage_handle.resolve().await,
+            Err(UsageResolutionError::Interrupted)
+        );
+    }
+
+    fn request() -> CanonicalRequest {
+        CanonicalRequest::new(
+            Operation::Responses,
+            "public-model".to_owned(),
+            vec![Message::new(
+                Role::User,
+                vec![ContentBlock::Text("hello".to_owned())],
+            )],
+            true,
+        )
+    }
+
+    fn usage(input: i64, output: i64) -> Usage {
+        Usage::new(
+            TokenCount::new(input).unwrap(),
+            TokenCount::new(output).unwrap(),
+            UsageDetails::new(
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+            ),
+            UsageSource::Upstream,
+            UsageSemantics::Inclusive,
+        )
+        .unwrap()
+    }
+}

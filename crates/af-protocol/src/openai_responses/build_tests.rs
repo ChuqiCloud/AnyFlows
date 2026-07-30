@@ -57,7 +57,7 @@ fn tool_result(id: &str) -> ContentBlock {
 }
 
 #[test]
-fn builds_minimal_non_streaming_request() {
+fn builds_minimal_request_in_both_response_modes() {
     let value = build_request(&minimal_request()).unwrap();
 
     assert_eq!(
@@ -76,6 +76,15 @@ fn builds_minimal_non_streaming_request() {
     assert_eq!(
         parse_request(&serde_json::to_vec(&value).unwrap()).unwrap(),
         minimal_request()
+    );
+
+    let mut streaming = minimal_request();
+    streaming.stream = true;
+    let value = build_request(&streaming).unwrap();
+    assert_eq!(value["stream"], true);
+    assert_eq!(
+        parse_request(&serde_json::to_vec(&value).unwrap()).unwrap(),
+        streaming
     );
 }
 
@@ -296,10 +305,6 @@ fn rejects_wrong_operation_and_unmodeled_request_features() {
         build_request(&wrong_operation),
         Err(BuildRequestError::UnsupportedOperation)
     );
-
-    let mut streaming = minimal_request();
-    streaming.stream = true;
-    assert_unsupported_capability(&streaming, RequestCapability::Streaming);
 
     let mut stream_options = minimal_request();
     stream_options.stream_options = StreamOptions::new(true);

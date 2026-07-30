@@ -15,6 +15,7 @@ use crate::{
 /// 管理，不在工厂配置中重复保存。
 #[derive(Clone, Eq, PartialEq)]
 pub struct OpenAiAdaptorSettings {
+    protocol: Protocol,
     supported_models: Vec<String>,
 }
 
@@ -22,11 +23,27 @@ impl OpenAiAdaptorSettings {
     /// 使用已校验的模型清单创建 OpenAI 适配器配置；空清单表示无内建限制。
     #[must_use]
     pub fn new(supported_models: Vec<String>) -> Self {
-        Self { supported_models }
+        Self {
+            protocol: Protocol::OpenAiChat,
+            supported_models,
+        }
     }
 
-    fn into_supported_models(self) -> Vec<String> {
-        self.supported_models
+    /// 为 OpenAI Chat 或 Responses 原生端点创建配置。
+    pub fn for_protocol(protocol: Protocol, supported_models: Vec<String>) -> AdaptorResult<Self> {
+        if !matches!(protocol, Protocol::OpenAiChat | Protocol::OpenAiResponses) {
+            return Err(AdaptorError::InvalidChannelSettings {
+                channel_type: ChannelType::OpenAi,
+            });
+        }
+        Ok(Self {
+            protocol,
+            supported_models,
+        })
+    }
+
+    fn into_parts(self) -> (Protocol, Vec<String>) {
+        (self.protocol, self.supported_models)
     }
 }
 
@@ -34,6 +51,7 @@ impl fmt::Debug for OpenAiAdaptorSettings {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("OpenAiAdaptorSettings")
+            .field("protocol", &self.protocol)
             .field("supported_model_count", &self.supported_models.len())
             .finish()
     }
@@ -306,9 +324,12 @@ pub fn get_adaptor(
     settings: AdaptorSettings,
 ) -> AdaptorResult<Arc<dyn Adaptor>> {
     match (channel_type, settings) {
-        (ChannelType::OpenAi, AdaptorSettings::OpenAi(settings)) => Ok(Arc::new(
-            OpenAiAdaptor::with_supported_models(settings.into_supported_models()),
-        )),
+        (ChannelType::OpenAi, AdaptorSettings::OpenAi(settings)) => {
+            let (protocol, models) = settings.into_parts();
+            Ok(Arc::new(OpenAiAdaptor::with_protocol_and_supported_models(
+                protocol, models,
+            )?))
+        }
         (ChannelType::Anthropic, AdaptorSettings::Anthropic(settings)) => Ok(Arc::new(
             AnthropicAdaptor::with_supported_models(settings.into_supported_models()),
         )),

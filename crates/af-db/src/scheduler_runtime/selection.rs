@@ -50,7 +50,9 @@ fn try_runtime_target(
     }
     let channel_type = channel.channel_type();
     let protocol = channel.protocol();
-    if channel_type != ChannelType::OpenAi || protocol != Protocol::OpenAiChat {
+    if channel_type != ChannelType::OpenAi
+        || !matches!(protocol, Protocol::OpenAiChat | Protocol::OpenAiResponses)
+    {
         return Ok(None);
     }
     let mut records = Vec::with_capacity(credentials.len());

@@ -90,7 +90,7 @@ const UNSUPPORTED_INPUT_ITEM_TYPES: &[&str] = &[
     "web_search_call",
 ];
 
-/// 解析 OpenAI Responses 非流式请求。
+/// 解析 OpenAI Responses 完整或流式请求。
 ///
 /// 本函数是协议输入的信任边界，会拒绝重复 JSON 键、结构超限、未知字段和
 /// 当前 Canonical IR 无法无损表达的请求特性。
