@@ -7,12 +7,11 @@ use std::{
 };
 
 use af_db::{DatabaseOptions, MigrationOptions, connect_and_migrate};
-use af_http::ServeOutcome;
 use af_protocol::{
     CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage, UsageDetails,
     UsageSemantics, UsageSource, anthropic::AnthropicMessagesStreamEncoder,
 };
-use af_server::{Bootstrap, SupervisorShutdown};
+use af_server::{Bootstrap, BootstrapError, ShutdownReport};
 use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
 use serde_json::{Value, json};
 use support::{
@@ -333,7 +332,7 @@ async fn start_gateway(
 ) -> (
     SocketAddr,
     oneshot::Sender<()>,
-    tokio::task::JoinHandle<Result<ServeOutcome, af_http::ServeError>>,
+    tokio::task::JoinHandle<Result<ShutdownReport, BootstrapError>>,
 ) {
     let config_path = database.path.with_extension("toml");
     let credential_key = credential_encryption_key();
@@ -379,7 +378,7 @@ async fn start_gateway(
 
 async fn stop_gateway(
     shutdown: oneshot::Sender<()>,
-    server: tokio::task::JoinHandle<Result<ServeOutcome, af_http::ServeError>>,
+    server: tokio::task::JoinHandle<Result<ShutdownReport, BootstrapError>>,
 ) {
     let _ = shutdown.send(());
     timeout(IO_TIMEOUT, server).await.unwrap().unwrap().unwrap();

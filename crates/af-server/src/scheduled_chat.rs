@@ -349,14 +349,13 @@ fn select_upstream_protocol(
         (Operation::Chat, Protocol::OpenAiChat | Protocol::Gemini) => Ok(Protocol::OpenAiChat),
         (Operation::Chat, Protocol::Anthropic) => {
             // 原生 Anthropic 同协议优先；没有标准 Anthropic 渠道时保留既有 OpenAI 跨协议链路。
-            Ok(route
-                .candidates()
-                .iter()
-                .any(|candidate| {
-                    target_matches_protocol(candidate.runtime_target(), Protocol::Anthropic)
-                })
-                .then_some(Protocol::Anthropic)
-                .unwrap_or(Protocol::OpenAiChat))
+            if route.candidates().iter().any(|candidate| {
+                target_matches_protocol(candidate.runtime_target(), Protocol::Anthropic)
+            }) {
+                Ok(Protocol::Anthropic)
+            } else {
+                Ok(Protocol::OpenAiChat)
+            }
         }
         (Operation::Responses, Protocol::OpenAiResponses) => Ok(Protocol::OpenAiResponses),
         _ => Err(AfError::InvalidRequest),
