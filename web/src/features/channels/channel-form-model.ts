@@ -8,6 +8,7 @@ import type {
 
 export type ChannelEditorMode = 'create' | 'update'
 export type SensitiveEditMode = 'preserve' | 'replace' | 'clear'
+export type ChannelProtocol = 'openai_chat' | 'openai_responses'
 
 export const channelParameterNames = [
   'temperature',
@@ -34,6 +35,7 @@ export type ParameterRow = {
 export type ChannelFormValues = {
   name: string
   baseUrl: string
+  protocol: ChannelProtocol
   tag: string
   status: 'enabled' | 'disabled'
   weight: number
@@ -78,6 +80,7 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
   return z.object({
     name: z.string().trim().min(1, messages.invalidField).max(128, messages.invalidField),
     baseUrl: z.string().trim().max(2048, messages.invalidField),
+    protocol: z.enum(['openai_chat', 'openai_responses']),
     tag: z.string().trim().max(64, messages.invalidField),
     status: z.enum(['enabled', 'disabled']),
     weight: z.number().int(messages.invalidField).min(0, messages.invalidField),
@@ -109,7 +112,7 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
     if (!routingValid) addIssue(context, 'groupIds', messages.invalidRouting)
 
     validateStringRows(values.modelMapping, 'modelMapping', messages, context)
-    validateParameterRows(values.paramOverride, messages, context)
+    validateParameterRows(values.paramOverride, values.protocol, messages, context)
     if (mode === 'create' || values.headerOverrideMode === 'replace') {
       validateHeaderRows(values.headerOverride, messages, context)
     }
@@ -123,6 +126,7 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
   return {
     name: channel?.name ?? '',
     baseUrl: channel?.base_url ?? '',
+    protocol: channel?.protocol === 'openai_responses' ? 'openai_responses' : 'openai_chat',
     tag: channel?.tag ?? '',
     status: channel?.status === 'enabled' ? 'enabled' : 'disabled',
     weight: channel?.weight ?? 10,
@@ -180,7 +184,7 @@ function commonRequest(values: ChannelFormValues) {
   return {
     name: values.name.trim(),
     type: 'openai' as const,
-    protocol: 'openai_chat' as const,
+    protocol: values.protocol,
     base_url: values.baseUrl.trim() || null,
     status: values.status,
     weight: values.weight,
@@ -285,13 +289,15 @@ function validateHeaderRows(
 
 function validateParameterRows(
   rows: ParameterRow[],
+  protocol: ChannelProtocol,
   messages: ValidationMessages,
   context: z.RefinementCtx,
 ) {
   const valid = rows.length <= channelParameterNames.length && rows.every((row) => {
     if (!isChannelParameterName(row.key)) return false
     if (row.key === 'stop_sequences') {
-      return row.values.length >= 1
+      return protocol === 'openai_chat'
+        && row.values.length >= 1
         && row.values.length <= 4
         && row.values.every((value) => value.length > 0 && new TextEncoder().encode(value).length <= 1024)
     }

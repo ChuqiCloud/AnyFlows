@@ -4135,11 +4135,12 @@
               {
                 "type": "string",
                 "enum": [
-                  "openai_chat"
+                  "openai_chat",
+                  "openai_responses"
                 ]
               }
             ],
-            "description": "当前生产写链路仅支持 OpenAI Chat 协议。"
+            "description": "当前生产写链路支持 OpenAI Chat 与原生 Responses 协议。"
           },
           "base_url": {
             "type": [
@@ -4357,7 +4358,8 @@
           "protocol": {
             "type": "string",
             "enum": [
-              "openai_chat"
+              "openai_chat",
+              "openai_responses"
             ]
           },
           "base_url": {

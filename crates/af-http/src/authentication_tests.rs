@@ -396,6 +396,41 @@ async fn anthropic_route_authentication_failure_uses_anthropic_error_wire() {
 }
 
 #[tokio::test]
+async fn responses_route_authentication_failure_uses_openai_error_wire() {
+    let config = ServerConfig::default();
+    let authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::InvalidApiKey));
+    let authentication_port: Arc<dyn TokenAuthenticator> = authenticator.clone();
+    let authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(authentication_port, QueryApiKeyPolicy::Deny, &config)
+            .with_error_protocol(Protocol::OpenAiResponses),
+        authenticate_api_key,
+    );
+    let router = Router::new()
+        .route(
+            "/v1/responses",
+            post(protected_handler).route_layer(authentication),
+        )
+        .layer(Extension(ConnectInfo(SocketAddr::new(
+            TEST_PEER_IP.parse().unwrap(),
+            45123,
+        ))));
+
+    let response = router
+        .oneshot(bearer_request("/v1/responses"))
+        .await
+        .unwrap();
+    assert_auth_error(
+        response,
+        StatusCode::UNAUTHORIZED,
+        "Invalid API key.",
+        "invalid_request_error",
+        "invalid_api_key",
+    )
+    .await;
+    assert_eq!(authenticator.calls(), 1);
+}
+
+#[tokio::test]
 async fn gemini_route_authentication_failure_uses_google_error_wire() {
     let config = ServerConfig::default();
     let authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::InvalidApiKey));

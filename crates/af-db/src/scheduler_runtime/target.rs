@@ -171,7 +171,7 @@ pub struct SchedulerRuntimeTargetRecord {
 }
 
 impl SchedulerRuntimeTargetRecord {
-    /// 校验当前 M1 支持的 OpenAI Chat 目标及安全 Header 后构造记录。
+    /// 校验当前支持的 OpenAI 原生目标及安全 Header 后构造记录。
     pub fn new(
         channel_id: ChannelId,
         channel_type: ChannelType,
@@ -227,9 +227,11 @@ impl SchedulerRuntimeTargetRecord {
         headers: Vec<(String, String)>,
     ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
         if channel_type != ChannelType::OpenAi
-            || protocol != Protocol::OpenAiChat
+            || !matches!(protocol, Protocol::OpenAiChat | Protocol::OpenAiResponses)
             || credentials.is_empty()
             || credentials.len() > MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL
+            || (protocol == Protocol::OpenAiResponses
+                && parameter_overrides.stop_sequences().is_some())
         {
             return Err(SchedulerRuntimeTargetRecordError);
         }

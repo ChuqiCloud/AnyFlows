@@ -82,7 +82,7 @@
   "channels": {
     "title": "Channels",
     "subtitle": "Maintain routing and sensitive settings for OpenAI-compatible upstreams, then run a real probe when needed.",
-    "scope": "OpenAI Chat only for now",
+    "scope": "OpenAI Chat and native Responses endpoints",
     "count_one": "{{count}} channel",
     "count_other": "{{count}} channels",
     "loading": "Loading channels",
@@ -98,6 +98,12 @@
       "enabled": "Enabled",
       "disabled": "Disabled",
       "auto_disabled": "Auto-disabled"
+    },
+    "protocol": {
+      "openai_chat": "OpenAI Chat",
+      "openai_responses": "OpenAI Responses",
+      "anthropic": "Anthropic Messages",
+      "gemini": "Gemini"
     },
     "values": {
       "defaultUrl": "Default upstream URL",
@@ -133,7 +139,7 @@
     },
     "empty": {
       "title": "No channels yet",
-      "body": "Create the first OpenAI Chat channel and it will appear here."
+      "body": "Create the first OpenAI channel and it will appear here."
     },
     "error": {
       "title": "Channels could not be loaded",
@@ -141,7 +147,7 @@
     },
     "editor": {
       "createTitle": "New channel",
-      "createDescription": "Configure an OpenAI Chat upstream that can participate in routing.",
+      "createDescription": "Configure a native OpenAI upstream that can participate in routing.",
       "editTitle": "Edit channel",
       "editDescription": "Read fields can be changed directly. Sensitive objects follow the blank-value rule."
     },
@@ -159,7 +165,7 @@
       "groupsLoadFailed": "Groups could not be loaded",
       "groupsHint": "Select existing groups. Models and groups must both be empty or both be set.",
       "mappingHint": "Map the client model name on the left to the upstream model name on the right.",
-      "parametersHint": "Supports temperature, Top P, a maximum output token cap, and up to four stop sequences.",
+      "parametersHint": "Supports temperature, Top P, and a maximum output token cap. Stop sequences are Chat-only.",
       "headersHint": "Authentication, Cookie, Host, Content-Type, Accept, request ID, and connection-level headers cannot be overridden.",
       "settingsHint": "Reserved for adapter-specific capabilities. Most channels should keep an empty object.",
       "submitError": "The channel could not be saved. Check the fields and try again."

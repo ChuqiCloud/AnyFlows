@@ -4,7 +4,7 @@ use af_adapter::Bytes;
 use af_domain::{AfError, Protocol, UpstreamError};
 use af_protocol::{CanonicalResponse, Usage, anthropic, gemini};
 
-use crate::{OpenAiChatStream, OpenAiChatUsageHandle, UsageResolutionError};
+use crate::{GenerationStream, OpenAiChatUsageHandle, UsageResolutionError};
 
 /// 已按客户端协议完成编码的完整或流式 Chat 响应。
 pub enum ChatResponse {
@@ -18,7 +18,7 @@ pub enum ChatResponse {
     /// 从上游协议逐事件转换到客户端协议的 SSE。
     Stream {
         /// 写入下游的 Canonical 重编码流。
-        body: Box<OpenAiChatStream>,
+        body: Box<dyn GenerationStream>,
         /// 流完整结束后只可消费一次的 usage 结果。
         usage: OpenAiChatUsageHandle,
     },
@@ -32,10 +32,9 @@ impl fmt::Debug for ChatResponse {
                 .field("mode", &"full")
                 .field("body_bytes", &body.len())
                 .finish(),
-            Self::Stream { body, usage: _ } => formatter
+            Self::Stream { body: _, usage: _ } => formatter
                 .debug_struct("ChatResponse")
                 .field("mode", &"stream")
-                .field("body", body)
                 .finish(),
         }
     }

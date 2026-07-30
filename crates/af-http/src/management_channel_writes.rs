@@ -33,7 +33,7 @@ pub(crate) struct AdminChannelCreateRequest {
         inline
     )]
     channel_type: af_domain::ChannelType,
-    /// 当前生产写链路仅支持 OpenAI Chat 协议。
+    /// 当前生产写链路支持 OpenAI Chat 与原生 Responses 协议。
     #[schema(
         value_type = crate::openapi::schema::AdminChannelWriteProtocolSchema,
         inline

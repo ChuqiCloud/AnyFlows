@@ -6,11 +6,14 @@ use af_adapter::{
     PooledClient, RelayContext, get_adaptor,
 };
 use af_db::CredentialStateRepository;
-use af_domain::{AfError, ChannelType, CredentialKind, GatewayPrincipal, GroupId, Protocol};
+use af_domain::{
+    AfError, ChannelType, CredentialKind, GatewayPrincipal, GroupId, Operation, Protocol,
+};
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::{
-    OpenAiChatRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayStateMachine,
-    relay_openai_chat_with_report,
+    OpenAiChatRequestOverrides, OpenAiResponsesRequestOverrides, RelayCandidate,
+    RelayCandidateRequest, RelayStateMachine, relay_openai_chat_with_report,
+    relay_openai_responses_with_report,
 };
 use af_scheduler::{IndexedRoutePlan, IndexedWeightedScheduler, IndexedWeightedSchedulerError};
 
@@ -20,7 +23,7 @@ use crate::{
     credential_order::order_credentials,
 };
 
-/// 基于内存运行时快照装配生产 OpenAI Chat 候选的服务。
+/// 基于内存运行时快照装配生产 OpenAI 原生候选的服务。
 #[derive(Clone)]
 pub(crate) struct ScheduledChatService {
     scheduler: IndexedWeightedScheduler,
@@ -54,6 +57,7 @@ impl ScheduledChatService {
         request_id: &str,
     ) -> Result<ScheduledChatExecution, AfError> {
         let model = request.canonical().model.clone();
+        let upstream_protocol = required_upstream_protocol(&request, response_protocol)?;
         let target_group_id = route.target_group_id();
         let mut relay_candidates = Vec::with_capacity(
             route
@@ -64,6 +68,11 @@ impl ScheduledChatService {
         let mut attempt_targets = Vec::with_capacity(relay_candidates.capacity());
         'channels: for candidate in route.candidates() {
             let target = candidate.runtime_target();
+            if target.channel_type() != ChannelType::OpenAi
+                || target.protocol() != upstream_protocol
+            {
+                continue;
+            }
             if target
                 .credentials()
                 .iter()
@@ -72,16 +81,14 @@ impl ScheduledChatService {
                 // 专属代理仓储尚未落地，绑定代理的凭据绝不能回退共享 Client 或直连。
                 return Err(AfError::Internal);
             }
-            if target.channel_type() != ChannelType::OpenAi
-                || target.protocol() != Protocol::OpenAiChat
-            {
-                return Err(AfError::Internal);
-            }
             let upstream_model = target.mapped_model(&model).unwrap_or(&model).to_owned();
             let candidate_request = candidate_request(target, &request, &model, &upstream_model)?;
             let adaptor = get_adaptor(
                 target.channel_type(),
-                AdaptorSettings::OpenAi(OpenAiAdaptorSettings::new(vec![upstream_model])),
+                AdaptorSettings::OpenAi(
+                    OpenAiAdaptorSettings::for_protocol(target.protocol(), vec![upstream_model])
+                        .map_err(|_| AfError::Internal)?,
+                ),
             )
             .map_err(|_| AfError::Internal)?;
             if adaptor.default_protocol() != target.protocol() {
@@ -128,6 +135,9 @@ impl ScheduledChatService {
                     runtime_credential.credential_kind(),
                 )?);
             }
+        }
+        if relay_candidates.is_empty() {
+            return Err(af_domain::UpstreamError::ModelUnsupported.into());
         }
         let machine = RelayStateMachine::new(relay_candidates).map_err(|_| AfError::Internal)?;
         Ok(ScheduledChatExecution {
@@ -201,10 +211,20 @@ impl PlannedChatExecution for ScheduledChatExecution {
             request_id,
         } = *self;
         Box::pin(async move {
-            let outcome =
-                relay_openai_chat_with_report(&machine, request, response_protocol, &request_id)
-                    .await;
-            let (result, report) = outcome.into_parts();
+            let operation = request.canonical().operation;
+            let (result, report) = match operation {
+                Operation::Chat => {
+                    relay_openai_chat_with_report(&machine, request, response_protocol, &request_id)
+                        .await
+                        .into_parts()
+                }
+                Operation::Responses => {
+                    relay_openai_responses_with_report(&machine, request, &request_id)
+                        .await
+                        .into_parts()
+                }
+                _ => return Err(AfError::InvalidRequest),
+            };
             persist_credential_feedback(&credential_states, &scheduler, &attempt_targets, &report)
                 .await;
             result
@@ -246,18 +266,46 @@ fn candidate_request(
     if upstream_model == requested_model && parameters.is_empty() {
         return Ok(None);
     }
-    let overrides = OpenAiChatRequestOverrides::new(
-        upstream_model,
-        parameters.temperature(),
-        parameters.top_p(),
-        parameters.max_output_tokens(),
-        parameters.stop_sequences().map(<[String]>::to_vec),
-    )
-    .map_err(|_| AfError::Internal)?;
-    overrides
-        .prepare(request.clone())
+    match target.protocol() {
+        Protocol::OpenAiChat => OpenAiChatRequestOverrides::new(
+            upstream_model,
+            parameters.temperature(),
+            parameters.top_p(),
+            parameters.max_output_tokens(),
+            parameters.stop_sequences().map(<[String]>::to_vec),
+        )
+        .and_then(|overrides| overrides.prepare(request.clone()))
         .map(Some)
-        .map_err(|_| AfError::Internal)
+        .map_err(|_| AfError::Internal),
+        Protocol::OpenAiResponses => {
+            if parameters.stop_sequences().is_some() {
+                return Err(AfError::Internal);
+            }
+            OpenAiResponsesRequestOverrides::new(
+                upstream_model,
+                parameters.temperature(),
+                parameters.top_p(),
+                parameters.max_output_tokens(),
+            )
+            .and_then(|overrides| overrides.prepare(request.clone()))
+            .map(Some)
+            .map_err(|_| AfError::Internal)
+        }
+        Protocol::Anthropic | Protocol::Gemini => Err(AfError::Internal),
+    }
+}
+
+fn required_upstream_protocol(
+    request: &CanonicalRequestEnvelope,
+    response_protocol: Protocol,
+) -> Result<Protocol, AfError> {
+    match (request.canonical().operation, response_protocol) {
+        (Operation::Chat, Protocol::OpenAiChat | Protocol::Anthropic | Protocol::Gemini) => {
+            Ok(Protocol::OpenAiChat)
+        }
+        (Operation::Responses, Protocol::OpenAiResponses) => Ok(Protocol::OpenAiResponses),
+        _ => Err(AfError::InvalidRequest),
+    }
 }
 
 fn map_scheduler_error(error: IndexedWeightedSchedulerError) -> AfError {
@@ -364,6 +412,50 @@ mod tests {
             .unwrap();
 
         assert_eq!(execution.response_protocol, Protocol::Anthropic);
+    }
+
+    #[tokio::test]
+    async fn responses_plan_requires_a_native_responses_channel() {
+        let credential = SchedulerRuntimeCredentialRecord::new(
+            CREDENTIAL_ID,
+            CredentialKind::ApiKey,
+            valid_envelope(),
+            false,
+        )
+        .unwrap();
+        let responses = service(vec![record_pool_with_protocol(
+            vec![credential],
+            Protocol::OpenAiResponses,
+        )])
+        .await;
+        let route = responses
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let execution = responses
+            .build_plan(
+                route,
+                responses_request(),
+                Protocol::OpenAiResponses,
+                "request-responses",
+            )
+            .unwrap();
+        assert_eq!(execution.response_protocol, Protocol::OpenAiResponses);
+        assert_eq!(execution.attempt_targets.len(), 1);
+
+        let chat_only = service(vec![record(false, valid_envelope())]).await;
+        assert_eq!(
+            chat_only
+                .plan(
+                    &principal(7),
+                    responses_request(),
+                    Protocol::OpenAiResponses,
+                    "request-wrong-protocol",
+                )
+                .err(),
+            Some(AfError::Upstream(UpstreamError::ModelUnsupported))
+        );
     }
 
     #[tokio::test]
@@ -496,10 +588,17 @@ mod tests {
     }
 
     fn record_pool(credentials: Vec<SchedulerRuntimeCredentialRecord>) -> ChannelIndexSourceRecord {
+        record_pool_with_protocol(credentials, Protocol::OpenAiChat)
+    }
+
+    fn record_pool_with_protocol(
+        credentials: Vec<SchedulerRuntimeCredentialRecord>,
+        protocol: Protocol,
+    ) -> ChannelIndexSourceRecord {
         let target = SchedulerRuntimeTargetRecord::new_pool(
             ChannelId::new(CHANNEL_ID).unwrap(),
             ChannelType::OpenAi,
-            Protocol::OpenAiChat,
+            protocol,
             Some("https://scheduled-chat.example".to_owned()),
             credentials,
             vec![("x-scheduled-test".to_owned(), "test-value".to_owned())],
@@ -518,6 +617,16 @@ mod tests {
     fn request() -> CanonicalRequestEnvelope {
         CanonicalRequest::new(
             Operation::Chat,
+            "gpt-scheduled".to_owned(),
+            Vec::new(),
+            false,
+        )
+        .into()
+    }
+
+    fn responses_request() -> CanonicalRequestEnvelope {
+        CanonicalRequest::new(
+            Operation::Responses,
             "gpt-scheduled".to_owned(),
             Vec::new(),
             false,

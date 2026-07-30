@@ -78,7 +78,7 @@ pub(super) fn convert_request(
     wire: ResponsesRequestWire,
 ) -> Result<CanonicalRequest, ParseRequestError> {
     validate_model(&wire.model)?;
-    validate_stream(wire.stream)?;
+    let stream = convert_stream(wire.stream);
     let continuation = convert_continuation(
         wire.conversation,
         wire.previous_response_id,
@@ -92,7 +92,7 @@ pub(super) fn convert_request(
     let metadata = convert_metadata(wire.user)?;
     let raw = validate_raw(wire.extra)?;
 
-    let mut request = CanonicalRequest::new(Operation::Responses, wire.model, messages, false);
+    let mut request = CanonicalRequest::new(Operation::Responses, wire.model, messages, stream);
     request.tools = tools;
     request.tool_choice = tool_choice;
     request.reasoning = reasoning;
@@ -114,10 +114,10 @@ pub(super) fn validate_model(model: &str) -> Result<(), ParseRequestError> {
     Ok(())
 }
 
-fn validate_stream(stream: Field<bool>) -> Result<(), ParseRequestError> {
+fn convert_stream(stream: Field<bool>) -> bool {
     match stream {
-        Field::Missing | Field::Value(false) => Ok(()),
-        Field::Value(true) => Err(ParseRequestError::UnsupportedFeature),
+        Field::Missing | Field::Value(false) => false,
+        Field::Value(true) => true,
     }
 }
 

@@ -203,7 +203,7 @@ impl AdminChannelWriteFields {
         if !valid_text(&name, 128)
             || weight < 0
             || channel_type != ChannelType::OpenAi
-            || protocol != Protocol::OpenAiChat
+            || !matches!(protocol, Protocol::OpenAiChat | Protocol::OpenAiResponses)
             || base_url
                 .as_deref()
                 .is_some_and(|value| value.is_empty() || value.len() > 2_048)
@@ -217,8 +217,11 @@ impl AdminChannelWriteFields {
         ChannelModelMappings::parse(&model_mapping)
             .map_err(|_| AdminChannelWriteError::InvalidInput)?;
         validate_json_object(&param_override, false)?;
-        ChannelParameterOverrides::parse(&param_override)
+        let parameter_overrides = ChannelParameterOverrides::parse(&param_override)
             .map_err(|_| AdminChannelWriteError::InvalidInput)?;
+        if protocol == Protocol::OpenAiResponses && parameter_overrides.stop_sequences().is_some() {
+            return Err(AdminChannelWriteError::InvalidInput);
+        }
         if let Some(header_override) = &header_override {
             validate_json_object(header_override, false)?;
             validate_channel_header_overrides(header_override)
@@ -936,5 +939,31 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn responses_channels_accept_supported_overrides_and_reject_stop_sequences() {
+        let build = |parameters| {
+            AdminChannelCreateCommand::new(
+                "responses".to_owned(),
+                ChannelType::OpenAi,
+                Protocol::OpenAiResponses,
+                None,
+                AdminRoutingWriteStatus::Disabled,
+                10,
+                0,
+                true,
+                Vec::new(),
+                Vec::new(),
+                serde_json::json!({}),
+                parameters,
+                serde_json::json!({}),
+                serde_json::json!({}),
+                None,
+            )
+        };
+
+        assert!(build(serde_json::json!({"max_output_tokens": 128})).is_ok());
+        assert!(build(serde_json::json!({"stop_sequences": ["private"]})).is_err());
     }
 }

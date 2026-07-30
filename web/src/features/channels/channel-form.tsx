@@ -60,6 +60,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
 
   const pending = createMutation.isPending || updateMutation.isPending
   const submitError = createMutation.isError || updateMutation.isError
+  const protocol = form.watch('protocol')
   const onSubmit = form.handleSubmit(async (values) => {
     try {
       const savedChannel = mode === 'create'
@@ -86,7 +87,31 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
           </ChannelFormField>
           <div className="grid gap-3 sm:grid-cols-2">
             <StaticBadgeField label={t('channels.fields.type')} value="OpenAI" />
-            <StaticBadgeField label={t('channels.fields.protocol')} value="OpenAI Chat" />
+            <ChannelFormField id="channel-protocol" label={t('channels.fields.protocol')}>
+              <Controller control={form.control} name="protocol" render={({ field }) => (
+                <Select
+                  id="channel-protocol"
+                  value={field.value}
+                  onBlur={field.onBlur}
+                  name={field.name}
+                  ref={field.ref}
+                  onChange={(event) => {
+                    const nextProtocol = event.target.value as ChannelFormValues['protocol']
+                    field.onChange(nextProtocol)
+                    if (nextProtocol === 'openai_responses') {
+                      form.setValue(
+                        'paramOverride',
+                        form.getValues('paramOverride').filter((row) => row.key !== 'stop_sequences'),
+                        { shouldDirty: true, shouldValidate: true },
+                      )
+                    }
+                  }}
+                >
+                  <option value="openai_chat">{t('channels.protocol.openai_chat')}</option>
+                  <option value="openai_responses">{t('channels.protocol.openai_responses')}</option>
+                </Select>
+              )} />
+            </ChannelFormField>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <ChannelFormField id="channel-status" label={t('channels.fields.status')}>
@@ -129,7 +154,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
             )} />
           </ChannelFormField>
           <ChannelFormField id="channel-params" htmlFor={false} label={t('channels.fields.paramOverride')} error={form.formState.errors.paramOverride?.message} hint={t('channels.form.parametersHint')}>
-            <Controller control={form.control} name="paramOverride" render={({ field }) => <ChannelParameterEditor rows={field.value} onChange={field.onChange} />} />
+            <Controller control={form.control} name="paramOverride" render={({ field }) => <ChannelParameterEditor protocol={protocol} rows={field.value} onChange={field.onChange} />} />
           </ChannelFormField>
           <ChannelHeaderOverrideField mode={mode} form={form} />
         </section>

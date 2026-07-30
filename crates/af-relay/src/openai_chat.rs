@@ -29,7 +29,8 @@ const STREAM_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(30);
 /// 替换静态单上游装配，但 HTTP 层仍只依赖本 crate 的转发入口。
 #[derive(Clone)]
 pub struct RelayService {
-    adaptor: Arc<dyn Adaptor>,
+    chat_adaptor: Arc<dyn Adaptor>,
+    responses_adaptor: Arc<dyn Adaptor>,
     context: RelayContext,
     credential: Credential,
     model: String,
@@ -48,12 +49,20 @@ impl RelayService {
         }
         let context = RelayContext::new(client).with_base_url(base_url)?;
         let credential = Credential::api_key(api_key)?;
-        let adaptor = get_adaptor(
+        let chat_adaptor = get_adaptor(
             ChannelType::OpenAi,
             AdaptorSettings::OpenAi(OpenAiAdaptorSettings::new(vec![model.to_owned()])),
         )?;
+        let responses_adaptor = get_adaptor(
+            ChannelType::OpenAi,
+            AdaptorSettings::OpenAi(OpenAiAdaptorSettings::for_protocol(
+                Protocol::OpenAiResponses,
+                vec![model.to_owned()],
+            )?),
+        )?;
         Ok(Self {
-            adaptor,
+            chat_adaptor,
+            responses_adaptor,
             context,
             credential,
             model: model.to_owned(),
@@ -80,13 +89,27 @@ impl RelayService {
             .clone()
             .with_request_id(request_id.to_owned())
             .map_err(|_| AfError::Internal)?;
+        let adaptor = match request.canonical().operation {
+            Operation::Chat => self.chat_adaptor.clone(),
+            Operation::Responses => self.responses_adaptor.clone(),
+            _ => return Err(AfError::InvalidRequest),
+        };
         let machine = RelayStateMachine::new(vec![RelayCandidate::new(
-            self.adaptor.clone(),
+            adaptor,
             context,
             self.credential.clone(),
         )])
         .map_err(|_| AfError::Internal)?;
-        relay_openai_chat(&machine, request, response_protocol, request_id).await
+        match request.canonical().operation {
+            Operation::Chat => {
+                relay_openai_chat(&machine, request, response_protocol, request_id).await
+            }
+            Operation::Responses if response_protocol == Protocol::OpenAiResponses => {
+                crate::relay_openai_responses(&machine, request, request_id).await
+            }
+            Operation::Responses => Err(AfError::InvalidRequest),
+            _ => Err(AfError::InvalidRequest),
+        }
     }
 }
 
@@ -280,7 +303,7 @@ impl fmt::Debug for RelayService {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("RelayService")
-            .field("adaptor", &"<OpenAI-compatible>")
+            .field("adaptors", &"<OpenAI-compatible>")
             .field("context", &self.context)
             .field("credential", &self.credential)
             .field("model", &"<已脱敏>")
@@ -317,7 +340,7 @@ fn validate_downstream_request(
     }
 }
 
-fn unix_timestamp() -> Result<i64, AfError> {
+pub(crate) fn unix_timestamp() -> Result<i64, AfError> {
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| AfError::Internal)?

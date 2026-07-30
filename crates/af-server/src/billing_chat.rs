@@ -9,8 +9,8 @@ use af_domain::{AfError, BillingReservationId, GatewayPrincipal, GroupId, Protoc
 use af_http::{ChatService, ChatServiceFuture};
 use af_protocol::{CanonicalRequestEnvelope, Usage};
 use af_relay::{
-    ChatResponse, OpenAiChatCompletionFuture, OpenAiChatCompletionHook, UsageResolutionError,
-    estimate_openai_chat_request_upper_bound,
+    ChatResponse, GenerationCompletionFuture, GenerationCompletionHook, UsageResolutionError,
+    estimate_openai_request_upper_bound,
 };
 use tokio::time::sleep;
 use uuid::Uuid;
@@ -86,7 +86,7 @@ impl BillingChatService {
         response_protocol: Protocol,
         request_id: &str,
     ) -> Result<ChatResponse, AfError> {
-        let upper_bound = estimate_openai_chat_request_upper_bound(request.canonical())
+        let upper_bound = estimate_openai_request_upper_bound(request.canonical())
             .map_err(map_upper_bound_error)?;
         let model = request.canonical().model.clone();
         let planned = self
@@ -147,7 +147,7 @@ impl BillingChatService {
                 let hook = BillingStreamCompletionHook {
                     lifecycle: Some(lifecycle),
                 };
-                let body = Box::new((*body).with_completion_hook(Box::new(hook)));
+                let body = body.with_completion_hook(Box::new(hook));
                 Ok(ChatResponse::Stream { body, usage })
             }
         }
@@ -171,11 +171,11 @@ struct BillingStreamCompletionHook {
     lifecycle: Option<BillingRequestLifecycle>,
 }
 
-impl OpenAiChatCompletionHook for BillingStreamCompletionHook {
+impl GenerationCompletionHook for BillingStreamCompletionHook {
     fn on_complete(
         mut self: Box<Self>,
         usage: Result<Usage, UsageResolutionError>,
-    ) -> OpenAiChatCompletionFuture {
+    ) -> GenerationCompletionFuture {
         Box::pin(async move {
             let Some(mut lifecycle) = self.lifecycle.take() else {
                 return;
@@ -246,7 +246,8 @@ fn new_reservation_id() -> Result<BillingReservationId, AfError> {
 
 fn map_upper_bound_error(error: UsageResolutionError) -> AfError {
     match error {
-        UsageResolutionError::UnsupportedContent => AfError::InvalidRequest,
+        UsageResolutionError::UnsupportedContent
+        | UsageResolutionError::StatefulContextUnsupported => AfError::InvalidRequest,
         UsageResolutionError::Interrupted
         | UsageResolutionError::InvalidSequence
         | UsageResolutionError::Overflow
@@ -305,6 +306,7 @@ mod tests {
     use af_http::ChatService;
     use af_protocol::{
         CanonicalRequest, CanonicalRequestEnvelope, ContentBlock, Message, TokenCount, Usage,
+        openai_responses,
     };
     use rust_decimal::Decimal;
 
@@ -473,9 +475,21 @@ mod tests {
             )
             .await
             .unwrap();
+        service
+            .chat_completions(
+                &principal(),
+                responses_request(),
+                Protocol::OpenAiResponses,
+                "request-responses",
+            )
+            .await
+            .unwrap();
 
-        assert_eq!(protocols.lock().unwrap().as_slice(), &[Protocol::Anthropic]);
-        assert_eq!(settlement.calls.lock().unwrap().len(), 1);
+        assert_eq!(
+            protocols.lock().unwrap().as_slice(),
+            &[Protocol::Anthropic, Protocol::OpenAiResponses]
+        );
+        assert_eq!(settlement.calls.lock().unwrap().len(), 2);
     }
 
     #[tokio::test]
@@ -570,6 +584,13 @@ mod tests {
             false,
         )
         .into()
+    }
+
+    fn responses_request() -> CanonicalRequestEnvelope {
+        openai_responses::parse_request_envelope(Bytes::from_static(
+            br#"{"model":"gpt-test","input":"hello","store":false}"#,
+        ))
+        .unwrap()
     }
 
     fn usage() -> Usage {

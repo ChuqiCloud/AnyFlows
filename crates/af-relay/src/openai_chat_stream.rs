@@ -1,38 +1,25 @@
 use std::{
     collections::VecDeque,
     fmt,
-    future::{Future, poll_fn},
+    future::poll_fn,
     pin::Pin,
     task::{Context, Poll},
     time::Duration,
 };
 
-use af_adapter::{AdaptorResult, Bytes, UpstreamBody, UpstreamBodyStream};
+use af_adapter::{Bytes, UpstreamBody};
 use af_domain::UpstreamError;
 use af_protocol::{CanonicalStreamEvent, Usage, openai_chat::OpenAiChatStreamDecoder};
 use futures_core::Stream;
 
 use crate::chat_stream_encoder::ChatStreamEncoder;
 use crate::error::map_adaptor_error;
+use crate::generation_stream::StreamSource;
 use crate::openai_chat_usage::{
     OpenAiChatUsageEstimator, OpenAiChatUsageHandle, UsageResolutionError, UsageSender,
     usage_channel,
 };
-
-/// OpenAI Chat 流结束回调执行异步收尾的对象安全 Future。
-pub type OpenAiChatCompletionFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
-
-/// OpenAI Chat 流结束或中断时接收最终 usage 的一次性回调。
-///
-/// 回调由流对象消费；若流在终点前被丢弃，回调也会随其所有权一起丢弃，调用方可以借此
-/// 保留计费生命周期的 RAII 收尾责任。流到达终点后会等待返回的 Future，再真正返回 EOF。
-pub trait OpenAiChatCompletionHook: Send + 'static {
-    /// 接收上游 usage 或闭合的中断分类；实现不得依赖原始响应字节。
-    fn on_complete(
-        self: Box<Self>,
-        usage: Result<Usage, UsageResolutionError>,
-    ) -> OpenAiChatCompletionFuture;
-}
+use crate::{GenerationCompletionFuture, GenerationCompletionHook, GenerationStream};
 
 /// 已完成 OpenAI Chat 协议转换的下游 SSE 字节流。
 ///
@@ -44,8 +31,8 @@ pub struct OpenAiChatStream {
     encoder: ChatStreamEncoder,
     usage_estimator: OpenAiChatUsageEstimator,
     usage_sender: Option<UsageSender>,
-    completion_hook: Option<Box<dyn OpenAiChatCompletionHook>>,
-    completion_future: Option<OpenAiChatCompletionFuture>,
+    completion_hook: Option<Box<dyn GenerationCompletionHook>>,
+    completion_future: Option<GenerationCompletionFuture>,
     pending_terminal_error: Option<UpstreamError>,
     prefetched: VecDeque<Bytes>,
     terminated: bool,
@@ -76,7 +63,7 @@ impl OpenAiChatStream {
     }
 
     /// 为流结束时的计费或审计收尾安装一次性回调。
-    pub fn with_completion_hook(mut self, hook: Box<dyn OpenAiChatCompletionHook>) -> Self {
+    pub fn with_completion_hook(mut self, hook: Box<dyn GenerationCompletionHook>) -> Self {
         self.completion_hook = Some(hook);
         self
     }
@@ -233,6 +220,16 @@ impl Stream for OpenAiChatStream {
     }
 }
 
+impl GenerationStream for OpenAiChatStream {
+    fn with_completion_hook(
+        mut self: Box<Self>,
+        hook: Box<dyn GenerationCompletionHook>,
+    ) -> Box<dyn GenerationStream> {
+        self.completion_hook = Some(hook);
+        self
+    }
+}
+
 impl fmt::Debug for OpenAiChatStream {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -240,29 +237,6 @@ impl fmt::Debug for OpenAiChatStream {
             .field("prefetched_chunks", &self.prefetched.len())
             .field("terminated", &self.terminated)
             .finish()
-    }
-}
-
-enum StreamSource {
-    Full(Option<Bytes>),
-    Stream(UpstreamBodyStream),
-}
-
-impl From<UpstreamBody> for StreamSource {
-    fn from(body: UpstreamBody) -> Self {
-        match body {
-            UpstreamBody::Full(bytes) => Self::Full(Some(bytes)),
-            UpstreamBody::Stream(stream) => Self::Stream(stream),
-        }
-    }
-}
-
-impl StreamSource {
-    fn poll_next(&mut self, context: &mut Context<'_>) -> Poll<Option<AdaptorResult<Bytes>>> {
-        match self {
-            Self::Full(bytes) => Poll::Ready(bytes.take().map(Ok)),
-            Self::Stream(stream) => Pin::new(stream).poll_next(context),
-        }
     }
 }
 
@@ -336,11 +310,11 @@ mod tests {
         sender: oneshot::Sender<Result<Usage, UsageResolutionError>>,
     }
 
-    impl OpenAiChatCompletionHook for RecordingHook {
+    impl GenerationCompletionHook for RecordingHook {
         fn on_complete(
             self: Box<Self>,
             usage: Result<Usage, UsageResolutionError>,
-        ) -> OpenAiChatCompletionFuture {
+        ) -> GenerationCompletionFuture {
             Box::pin(async move {
                 let Self { sender } = *self;
                 let _ = sender.send(usage);
@@ -354,11 +328,11 @@ mod tests {
         completed: Arc<AtomicBool>,
     }
 
-    impl OpenAiChatCompletionHook for DelayedHook {
+    impl GenerationCompletionHook for DelayedHook {
         fn on_complete(
             self: Box<Self>,
             _usage: Result<Usage, UsageResolutionError>,
-        ) -> OpenAiChatCompletionFuture {
+        ) -> GenerationCompletionFuture {
             Box::pin(async move {
                 self.entered.notify_waiters();
                 self.release.notified().await;

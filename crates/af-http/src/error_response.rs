@@ -29,6 +29,22 @@ impl IntoResponse for OpenAiHttpError {
     }
 }
 
+/// 将统一领域错误转换为 OpenAI Responses HTTP 响应。
+#[derive(Debug)]
+pub(crate) struct OpenAiResponsesHttpError(MappedError);
+
+impl From<AfError> for OpenAiResponsesHttpError {
+    fn from(error: AfError) -> Self {
+        Self(classify_error(error))
+    }
+}
+
+impl IntoResponse for OpenAiResponsesHttpError {
+    fn into_response(self) -> axum::response::Response {
+        protocol_error_response(Protocol::OpenAiResponses, self.0)
+    }
+}
+
 /// 将统一领域错误转换为 Anthropic Messages HTTP 响应的本地封装。
 #[derive(Debug)]
 pub(crate) struct AnthropicHttpError(MappedError);

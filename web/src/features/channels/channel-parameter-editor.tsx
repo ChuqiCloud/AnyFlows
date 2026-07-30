@@ -8,11 +8,13 @@ import { Select } from '@/components/ui/select'
 import {
   channelParameterNames,
   createParameterRow,
+  type ChannelProtocol,
   type ChannelParameterName,
   type ParameterRow,
 } from './channel-form-model'
 
 type ChannelParameterEditorProps = {
+  protocol: ChannelProtocol
   rows: ParameterRow[]
   onChange: (rows: ParameterRow[]) => void
 }
@@ -24,9 +26,12 @@ const numericParameterLimits = {
 } as const
 
 /** 使用闭合参数控件编辑覆盖策略，避免让用户手写 JSON。 */
-export function ChannelParameterEditor({ rows, onChange }: ChannelParameterEditorProps) {
+export function ChannelParameterEditor({ protocol, rows, onChange }: ChannelParameterEditorProps) {
   const { t } = useTranslation()
-  const nextParameter = channelParameterNames.find((name) => !rows.some((row) => row.key === name))
+  const availableParameters = channelParameterNames.filter(
+    (name) => protocol === 'openai_chat' || name !== 'stop_sequences',
+  )
+  const nextParameter = availableParameters.find((name) => !rows.some((row) => row.key === name))
   const updateRow = (id: string, patch: Partial<ParameterRow>) => {
     onChange(rows.map((row) => row.id === id ? { ...row, ...patch } : row))
   }
@@ -52,7 +57,7 @@ export function ChannelParameterEditor({ rows, onChange }: ChannelParameterEdito
                   onChange={(event) => updateParameterName(row, event.target.value as ChannelParameterName)}
                 >
                   <option value="" disabled>{t('channels.parameters.name')}</option>
-                  {channelParameterNames.map((name) => (
+                  {availableParameters.map((name) => (
                     <option
                       key={name}
                       value={name}
