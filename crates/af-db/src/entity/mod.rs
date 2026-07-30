@@ -445,14 +445,17 @@ fn effective_price(
         .unwrap_or(Decimal::ZERO)
 }
 
-fn effective_value<T: Copy>(value: &ActiveValue<T>, persisted: Option<T>) -> Option<T> {
+fn effective_value<T>(value: &ActiveValue<T>, persisted: Option<T>) -> Option<T>
+where
+    T: Copy + Into<sea_orm::Value>,
+{
     value.try_as_ref().copied().or(persisted)
 }
 
-fn effective_optional_value<T: Copy>(
-    value: &ActiveValue<Option<T>>,
-    persisted: Option<T>,
-) -> Option<T> {
+fn effective_optional_value<T>(value: &ActiveValue<Option<T>>, persisted: Option<T>) -> Option<T>
+where
+    T: Copy + Into<sea_orm::Value> + sea_orm::sea_query::Nullable,
+{
     match value {
         ActiveValue::Set(value) | ActiveValue::Unchanged(value) => *value,
         ActiveValue::NotSet => persisted,

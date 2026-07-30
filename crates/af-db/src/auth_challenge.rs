@@ -2,8 +2,8 @@ use std::{fmt, time::Duration};
 
 use af_domain::UserId;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseTransaction, DbBackend, DbErr, EntityTrait,
-    IntoActiveModel, QueryFilter, QuerySelect, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
+    EntityTrait, IntoActiveModel, QueryFilter, QuerySelect, Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, LockType, OnConflict},
 };
