@@ -31,6 +31,7 @@ pub struct OpenAiResponsesStream {
     usage_estimator: OpenAiChatUsageEstimator,
     usage_sender: Option<UsageSender>,
     completion_hook: Option<Box<dyn GenerationCompletionHook>>,
+    deferred_completion: Option<Result<Usage, UsageResolutionError>>,
     completion_future: Option<GenerationCompletionFuture>,
     pending_terminal_error: Option<UpstreamError>,
     prefetched: VecDeque<Bytes>,
@@ -57,6 +58,7 @@ impl OpenAiResponsesStream {
                 usage_estimator: OpenAiChatUsageEstimator::new(request),
                 usage_sender: Some(usage_sender),
                 completion_hook: None,
+                deferred_completion: None,
                 completion_future: None,
                 pending_terminal_error: None,
                 prefetched: VecDeque::new(),
@@ -159,6 +161,9 @@ impl OpenAiResponsesStream {
         }
         if let Some(hook) = self.completion_hook.take() {
             self.completion_future = Some(hook.on_complete(usage));
+        } else {
+            // 预取首块可能已经包含完整流；延迟到计费层安装回调后再执行终态收尾。
+            self.deferred_completion = Some(usage);
         }
     }
 
@@ -228,7 +233,11 @@ impl GenerationStream for OpenAiResponsesStream {
         mut self: Box<Self>,
         hook: Box<dyn GenerationCompletionHook>,
     ) -> Box<dyn GenerationStream> {
-        self.completion_hook = Some(hook);
+        if let Some(usage) = self.deferred_completion.take() {
+            self.completion_future = Some(hook.on_complete(usage));
+        } else {
+            self.completion_hook = Some(hook);
+        }
         self
     }
 }
@@ -237,6 +246,10 @@ impl fmt::Debug for OpenAiResponsesStream {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("OpenAiResponsesStream")
+            .field(
+                "has_deferred_completion",
+                &self.deferred_completion.is_some(),
+            )
             .field("prefetched_chunks", &self.prefetched.len())
             .field("terminated", &self.terminated)
             .finish()
@@ -251,8 +264,25 @@ mod tests {
         ContentBlock, ContentDelta, FinishReason, Message, TokenCount, UsageDetails,
         UsageSemantics, UsageSource,
     };
+    use tokio::sync::oneshot;
 
     use super::*;
+
+    struct RecordingHook {
+        sender: oneshot::Sender<Result<Usage, UsageResolutionError>>,
+    }
+
+    impl GenerationCompletionHook for RecordingHook {
+        fn on_complete(
+            self: Box<Self>,
+            usage: Result<Usage, UsageResolutionError>,
+        ) -> GenerationCompletionFuture {
+            Box::pin(async move {
+                let Self { sender } = *self;
+                let _ = sender.send(usage);
+            })
+        }
+    }
 
     #[tokio::test]
     async fn stream_rebuilds_public_identity_and_closes_usage() {
@@ -313,6 +343,65 @@ mod tests {
         assert!(events.contains(&CanonicalStreamEvent::Usage(expected_usage)));
         assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
         assert_eq!(usage_handle.resolve().await.unwrap(), expected_usage);
+    }
+
+    #[tokio::test]
+    async fn completion_hook_installed_after_prefetch_receives_terminal_usage() {
+        let expected_usage = usage(3, 2);
+        let mut encoder = OpenAiResponsesStreamEncoder::new(
+            "resp_private_upstream",
+            "private-upstream-model",
+            1_700_000_000,
+        )
+        .unwrap();
+        let mut upstream = Vec::new();
+        for event in [
+            CanonicalStreamEvent::MessageStart {
+                choice_index: 0,
+                role: Role::Assistant,
+            },
+            CanonicalStreamEvent::ContentDelta {
+                choice_index: 0,
+                content_index: 0,
+                delta: ContentDelta::Text("answer".to_owned()),
+            },
+            CanonicalStreamEvent::Finish {
+                choice_index: 0,
+                reason: FinishReason::Stop,
+                stop_sequence: None,
+            },
+            CanonicalStreamEvent::Usage(expected_usage),
+            CanonicalStreamEvent::StreamEnd,
+        ] {
+            upstream.extend(encoder.encode(event).unwrap());
+        }
+        let response =
+            UpstreamResponse::full(StatusCode::OK, HeaderMap::new(), Bytes::from(upstream))
+                .unwrap();
+        let request = request();
+        let (stream, usage_handle) = OpenAiResponsesStream::new(
+            response.into_body(),
+            &request,
+            "resp_public",
+            "public-model",
+            1_700_000_001,
+        )
+        .unwrap();
+        let stream = stream.prefetch_first(Duration::from_secs(1)).await.unwrap();
+        let (sender, completed) = oneshot::channel();
+        let mut stream = GenerationStream::with_completion_hook(
+            Box::new(stream),
+            Box::new(RecordingHook { sender }),
+        );
+
+        while let Some(chunk) =
+            poll_fn(|context| Pin::new(stream.as_mut()).poll_next(context)).await
+        {
+            chunk.unwrap();
+        }
+
+        assert_eq!(usage_handle.resolve().await.unwrap(), expected_usage);
+        assert_eq!(completed.await.unwrap().unwrap(), expected_usage);
     }
 
     #[tokio::test]

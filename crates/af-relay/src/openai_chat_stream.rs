@@ -32,6 +32,7 @@ pub struct OpenAiChatStream {
     usage_estimator: OpenAiChatUsageEstimator,
     usage_sender: Option<UsageSender>,
     completion_hook: Option<Box<dyn GenerationCompletionHook>>,
+    deferred_completion: Option<Result<Usage, UsageResolutionError>>,
     completion_future: Option<GenerationCompletionFuture>,
     pending_terminal_error: Option<UpstreamError>,
     prefetched: VecDeque<Bytes>,
@@ -53,6 +54,7 @@ impl OpenAiChatStream {
                 usage_estimator,
                 usage_sender: Some(usage_sender),
                 completion_hook: None,
+                deferred_completion: None,
                 completion_future: None,
                 pending_terminal_error: None,
                 prefetched: VecDeque::new(),
@@ -64,7 +66,11 @@ impl OpenAiChatStream {
 
     /// 为流结束时的计费或审计收尾安装一次性回调。
     pub fn with_completion_hook(mut self, hook: Box<dyn GenerationCompletionHook>) -> Self {
-        self.completion_hook = Some(hook);
+        if let Some(usage) = self.deferred_completion.take() {
+            self.completion_future = Some(hook.on_complete(usage));
+        } else {
+            self.completion_hook = Some(hook);
+        }
         self
     }
 
@@ -154,6 +160,9 @@ impl OpenAiChatStream {
         }
         if let Some(hook) = self.completion_hook.take() {
             self.completion_future = Some(hook.on_complete(usage));
+        } else {
+            // 预取首块可能已经包含完整流；延迟到计费层安装回调后再执行终态收尾。
+            self.deferred_completion = Some(usage);
         }
     }
 
@@ -222,11 +231,10 @@ impl Stream for OpenAiChatStream {
 
 impl GenerationStream for OpenAiChatStream {
     fn with_completion_hook(
-        mut self: Box<Self>,
+        self: Box<Self>,
         hook: Box<dyn GenerationCompletionHook>,
     ) -> Box<dyn GenerationStream> {
-        self.completion_hook = Some(hook);
-        self
+        Box::new((*self).with_completion_hook(hook))
     }
 }
 
@@ -234,6 +242,10 @@ impl fmt::Debug for OpenAiChatStream {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("OpenAiChatStream")
+            .field(
+                "has_deferred_completion",
+                &self.deferred_completion.is_some(),
+            )
             .field("prefetched_chunks", &self.prefetched.len())
             .field("terminated", &self.terminated)
             .finish()
@@ -459,6 +471,27 @@ mod tests {
         while let Some(chunk) = stream.next_chunk().await {
             chunk.unwrap();
         }
+        let from_handle = usage.resolve().await.unwrap();
+        let from_hook = completed.await.unwrap().unwrap();
+        assert_eq!(from_hook, from_handle);
+    }
+
+    #[tokio::test]
+    async fn completion_hook_installed_after_prefetch_receives_terminal_usage() {
+        let body = Bytes::from_static(
+            b"data: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"answer\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+        );
+        let response = UpstreamResponse::full(StatusCode::OK, HeaderMap::new(), body).unwrap();
+        let (stream, usage) =
+            OpenAiChatStream::new(response.into_body(), encoder(false), estimator());
+        let stream = stream.prefetch_first(Duration::from_secs(1)).await.unwrap();
+        let (sender, completed) = oneshot::channel();
+        let mut stream = stream.with_completion_hook(Box::new(RecordingHook { sender }));
+
+        while let Some(chunk) = stream.next_chunk().await {
+            chunk.unwrap();
+        }
+
         let from_handle = usage.resolve().await.unwrap();
         let from_hook = completed.await.unwrap().unwrap();
         assert_eq!(from_hook, from_handle);
