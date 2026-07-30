@@ -396,6 +396,51 @@ async fn anthropic_route_authentication_failure_uses_anthropic_error_wire() {
 }
 
 #[tokio::test]
+async fn gemini_route_authentication_failure_uses_google_error_wire() {
+    let config = ServerConfig::default();
+    let authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::InvalidApiKey));
+    let authentication_port: Arc<dyn TokenAuthenticator> = authenticator.clone();
+    let authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(authentication_port, QueryApiKeyPolicy::Deny, &config)
+            .with_error_protocol(Protocol::Gemini),
+        authenticate_api_key,
+    );
+    let router = Router::new()
+        .route(
+            "/v1beta/models/{model_action}",
+            post(protected_handler).route_layer(authentication),
+        )
+        .layer(Extension(ConnectInfo(SocketAddr::new(
+            TEST_PEER_IP.parse().unwrap(),
+            45123,
+        ))));
+
+    let response = router
+        .oneshot(
+            Request::builder()
+                .uri("/v1beta/models/test-model:generateContent")
+                .header("x-goog-api-key", TEST_KEY)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = response_json(response).await;
+    assert_eq!(
+        body,
+        json!({
+            "error": {
+                "code": 401,
+                "message": "Invalid API key.",
+                "status": "UNAUTHENTICATED",
+            }
+        })
+    );
+    assert_eq!(authenticator.calls(), 1);
+}
+
+#[tokio::test]
 async fn missing_peer_is_internal_and_never_invokes_authenticator() {
     let authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::Success));
     let response = authenticated_router_with_network(

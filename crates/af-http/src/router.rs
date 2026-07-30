@@ -25,6 +25,7 @@ use tower_http::{cors::CorsLayer, limit::RequestBodyLimitLayer, trace::TraceLaye
 use crate::anthropic_messages::anthropic_messages;
 use crate::authentication::{AuthenticationState, authenticate_api_key};
 use crate::frontend_assets::{FrontendAssetSource, frontend_fallback};
+use crate::gemini_generate_content::gemini_generate_content;
 use crate::management_auth::{
     ManagementAuthenticationState, authenticate_management_session,
     authenticate_optional_management_session,
@@ -122,8 +123,13 @@ pub fn build_router(
         authenticate_api_key,
     );
     let anthropic_authentication = middleware::from_fn_with_state(
-        AuthenticationState::new(authenticator, query_api_key_policy, config)
+        AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config)
             .with_error_protocol(Protocol::Anthropic),
+        authenticate_api_key,
+    );
+    let gemini_authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(authenticator, query_api_key_policy, config)
+            .with_error_protocol(Protocol::Gemini),
         authenticate_api_key,
     );
     let http_state = HttpState::new(
@@ -153,6 +159,11 @@ pub fn build_router(
             "/v1/messages",
             // Anthropic 入口独立选择错误 wire，框架级 404/405 仍保持原始边界。
             post(anthropic_messages).route_layer(anthropic_authentication),
+        )
+        .route(
+            "/v1beta/models/{model_action}",
+            // Google 风格动作与模型共享一个路径段，由 handler 严格拆分两个已实现动作。
+            post(gemini_generate_content).route_layer(gemini_authentication),
         )
         .with_state(http_state.clone());
     let session_route_authentication = middleware::from_fn_with_state(
