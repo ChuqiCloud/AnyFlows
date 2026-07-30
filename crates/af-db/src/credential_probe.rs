@@ -1,6 +1,6 @@
 use std::{fmt, time::Duration};
 
-use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Status};
+use af_domain::{ChannelId, ChannelTimeout, ChannelType, CredentialKind, Protocol, Status};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use thiserror::Error;
 use tokio::time::timeout;
@@ -128,6 +128,7 @@ pub struct ChannelProbeTargetRecord {
     channel_type: ChannelType,
     protocol: Protocol,
     base_url: Option<String>,
+    timeout: Option<ChannelTimeout>,
     model: String,
     credential_kind: CredentialKind,
     envelope: EncryptedCredentialEnvelope,
@@ -164,6 +165,12 @@ impl ChannelProbeTargetRecord {
     #[must_use]
     pub fn base_url(&self) -> Option<&str> {
         self.base_url.as_deref()
+    }
+
+    /// 返回渠道级读取与完整请求超时；空值表示使用探活默认值。
+    #[must_use]
+    pub const fn timeout(&self) -> Option<ChannelTimeout> {
+        self.timeout
     }
 
     /// 返回用于最小探活请求的规范模型名；调用方不得写入日志。
@@ -206,6 +213,7 @@ impl fmt::Debug for ChannelProbeTargetRecord {
             .field("channel_type", &self.channel_type)
             .field("protocol", &self.protocol)
             .field("base_url", &self.base_url.as_ref().map(|_| "<已脱敏>"))
+            .field("timeout", &self.timeout)
             .field("model", &"<已脱敏>")
             .field("credential_kind", &self.credential_kind)
             .field("envelope", &self.envelope)
@@ -322,6 +330,15 @@ impl ChannelProbeTargetRepository {
                 .kind
                 .parse()
                 .map_err(|_| ChannelProbeTargetRepositoryError::Invariant)?;
+            let channel_timeout = channel
+                .timeout_secs
+                .map(|value| {
+                    <u64 as std::convert::TryFrom<i32>>::try_from(value)
+                        .ok()
+                        .and_then(|value| ChannelTimeout::new(value).ok())
+                        .ok_or(ChannelProbeTargetRepositoryError::Invariant)
+                })
+                .transpose()?;
             let (key_id, nonce, ciphertext) = credential
                 .secret
                 .envelope_parts()
@@ -342,6 +359,7 @@ impl ChannelProbeTargetRepository {
                 channel_type,
                 protocol,
                 base_url: channel.base_url.map(|value| value.as_str().to_owned()),
+                timeout: channel_timeout,
                 model: channel_model.model,
                 credential_kind,
                 envelope,

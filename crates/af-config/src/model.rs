@@ -405,7 +405,7 @@ impl ChannelProbeSettings {
         self.interval_secs
     }
 
-    /// 返回单渠道探活允许占用的最大秒数。
+    /// 返回未设置渠道超时时，单次真实探活使用的默认秒数。
     #[must_use]
     pub const fn probe_timeout_secs(&self) -> u64 {
         self.probe_timeout_secs

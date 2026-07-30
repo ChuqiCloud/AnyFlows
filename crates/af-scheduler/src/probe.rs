@@ -23,6 +23,8 @@ pub enum ChannelProbeStatus {
     Healthy,
     /// 探活失败或上游仍不可用，不得恢复渠道。
     Unhealthy,
+    /// 探活达到渠道或执行器硬截止时间，不得恢复渠道。
+    TimedOut,
 }
 
 /// 周期探活执行器依赖的抽象探活端口。
@@ -280,6 +282,7 @@ where
                     }
                 }
                 Ok(ChannelProbeStatus::Unhealthy) => report.unhealthy += 1,
+                Ok(ChannelProbeStatus::TimedOut) => report.timed_out += 1,
                 Err(_) => report.timed_out += 1,
             }
         }

@@ -19,6 +19,8 @@ type ChannelParameterEditorProps = {
   onChange: (rows: ParameterRow[]) => void
 }
 
+type NumericParameterName = Exclude<ChannelParameterName, 'stop_sequences'>
+
 const numericParameterLimits = {
   temperature: { min: 0, max: 2, step: 0.01 },
   top_p: { min: 0, max: 1, step: 0.01 },
@@ -29,7 +31,7 @@ const numericParameterLimits = {
 export function ChannelParameterEditor({ protocol, rows, onChange }: ChannelParameterEditorProps) {
   const { t } = useTranslation()
   const availableParameters = channelParameterNames.filter(
-    (name) => protocol === 'openai_chat' || name !== 'stop_sequences',
+    (name) => protocol !== 'openai_responses' || name !== 'stop_sequences',
   )
   const nextParameter = availableParameters.find((name) => !rows.some((row) => row.key === name))
   const updateRow = (id: string, patch: Partial<ParameterRow>) => {
@@ -86,25 +88,13 @@ export function ChannelParameterEditor({ protocol, rows, onChange }: ChannelPara
 
               {row.key === 'stop_sequences' ? (
                 <StopSequenceInputs row={row} onChange={(values) => updateRow(row.id, { values })} />
-              ) : row.key ? (
-                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-                  <Input
-                    type="number"
-                    inputMode={row.key === 'max_output_tokens' ? 'numeric' : 'decimal'}
-                    min={numericParameterLimits[row.key].min}
-                    max={numericParameterLimits[row.key].max}
-                    step={numericParameterLimits[row.key].step}
-                    value={row.value}
-                    placeholder={t(`channels.parameters.placeholders.${row.key}`)}
-                    aria-label={t('channels.parameters.valueFor', {
-                      name: t(`channels.parameters.names.${row.key}`),
-                    })}
-                    onChange={(event) => updateRow(row.id, { value: event.target.value })}
-                  />
-                  <Badge className="whitespace-nowrap text-muted-foreground">
-                    {t(`channels.parameters.ranges.${row.key}`)}
-                  </Badge>
-                </div>
+              ) : isNumericParameterName(row.key) ? (
+                <NumericParameterInput
+                  protocol={protocol}
+                  name={row.key}
+                  value={row.value}
+                  onChange={(value) => updateRow(row.id, { value })}
+                />
               ) : null}
             </div>
           ))}
@@ -127,6 +117,46 @@ export function ChannelParameterEditor({ protocol, rows, onChange }: ChannelPara
         <Plus aria-hidden="true" />
         {t('channels.parameters.add')}
       </Button>
+    </div>
+  )
+}
+
+function isNumericParameterName(name: ChannelParameterName | ''): name is NumericParameterName {
+  return name !== '' && name !== 'stop_sequences'
+}
+
+function NumericParameterInput({ protocol, name, value, onChange }: {
+  protocol: ChannelProtocol
+  name: NumericParameterName
+  value: string
+  onChange: (value: string) => void
+}) {
+  const { t } = useTranslation()
+  const limits = name === 'temperature' && protocol === 'anthropic'
+    ? { ...numericParameterLimits.temperature, max: 1 }
+    : numericParameterLimits[name]
+  const rangeKey = name === 'temperature' && protocol === 'anthropic'
+    ? 'temperatureAnthropic'
+    : name
+
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+      <Input
+        type="number"
+        inputMode={name === 'max_output_tokens' ? 'numeric' : 'decimal'}
+        min={limits.min}
+        max={limits.max}
+        step={limits.step}
+        value={value}
+        placeholder={t(`channels.parameters.placeholders.${name}`)}
+        aria-label={t('channels.parameters.valueFor', {
+          name: t(`channels.parameters.names.${name}`),
+        })}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <Badge className="whitespace-nowrap text-muted-foreground">
+        {t(`channels.parameters.ranges.${rangeKey}`)}
+      </Badge>
     </div>
   )
 }

@@ -16,15 +16,15 @@ use crate::{
 #[tokio::test]
 async fn load_selects_stable_model_and_highest_priority_credential() -> Result<(), Box<dyn Error>> {
     let pool = test_pool().await?;
-    let channel = channel(
+    let mut channel = channel(
         "probe-target",
         Status::AutoDisabled,
         true,
         "https://probe-url-canary.example.com/prefix",
         [("x-probe-header", "probe-header-value-canary")],
-    )
-    .insert(pool.connection())
-    .await?;
+    );
+    channel.timeout_secs = Set(Some(60));
+    let channel = channel.insert(pool.connection()).await?;
     channel_model(channel.id, "z-model-canary")
         .insert(pool.connection())
         .await?;
@@ -81,6 +81,7 @@ async fn load_selects_stable_model_and_highest_priority_credential() -> Result<(
         target.base_url(),
         Some("https://probe-url-canary.example.com/prefix")
     );
+    assert_eq!(target.timeout().unwrap().seconds(), 60);
     assert_eq!(target.model(), "a-model-canary");
     assert_eq!(target.credential_kind(), CredentialKind::Oauth);
     assert_eq!(target.envelope().key_id(), "selected-key-id-canary");

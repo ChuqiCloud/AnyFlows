@@ -41,6 +41,8 @@ use crate::{
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
+/// 当前必须完整应用的迁移数量；列变更不会增加核心表数量。
+const EXPECTED_MIGRATION_COUNT: usize = 18;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -257,7 +259,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         Migrator::get_applied_migrations(pool.connection())
             .await?
             .len(),
-        CORE_TABLES.len()
+        EXPECTED_MIGRATION_COUNT
     );
 
     assert_updated_at_behaviors(pool.connection()).await?;
@@ -1756,6 +1758,13 @@ async fn assert_persistence_constraints(
     let mut invalid_channel_weight = channel_active_model("invalid-channel-weight");
     invalid_channel_weight.weight = Set(-1);
     assert!(invalid_channel_weight.insert(connection).await.is_err());
+
+    for timeout_secs in [0, 901] {
+        let mut invalid_channel_timeout =
+            channel_active_model(&format!("invalid-channel-timeout-{timeout_secs}"));
+        invalid_channel_timeout.timeout_secs = Set(Some(timeout_secs));
+        assert!(invalid_channel_timeout.insert(connection).await.is_err());
+    }
 
     let mut invalid_credential_status = credential_active_model(channel_id, "invalid-status");
     invalid_credential_status.status = Set(0);

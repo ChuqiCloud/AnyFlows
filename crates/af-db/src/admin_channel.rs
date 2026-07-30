@@ -1,6 +1,6 @@
 use std::{fmt, str::FromStr as _, time::Duration};
 
-use af_domain::{ChannelId, ChannelType, GroupId, Protocol, Status};
+use af_domain::{ChannelId, ChannelTimeout, ChannelType, GroupId, Protocol, Status};
 use sea_orm::{
     ConnectionTrait, DbBackend, DbErr, JsonValue, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -28,6 +28,7 @@ pub struct AdminChannelRecord {
     channel_type: ChannelType,
     protocol: Protocol,
     base_url: Option<String>,
+    timeout: Option<ChannelTimeout>,
     status: Status,
     weight: i32,
     priority: i32,
@@ -61,6 +62,7 @@ impl AdminChannelRecord {
             channel_type: model.r#type,
             protocol: model.protocol,
             base_url: model.base_url.map(|value| value.as_str().to_owned()),
+            timeout_secs: model.timeout_secs,
             status: model.status,
             weight: model.weight,
             priority: model.priority,
@@ -108,6 +110,12 @@ impl AdminChannelRecord {
     #[must_use]
     pub fn base_url(&self) -> Option<&str> {
         self.base_url.as_deref()
+    }
+
+    /// 返回可选渠道超时；空值表示使用对应场景的服务默认值。
+    #[must_use]
+    pub const fn timeout(&self) -> Option<ChannelTimeout> {
+        self.timeout
     }
 
     /// 返回渠道运行状态。
@@ -410,6 +418,7 @@ struct AdminChannelRow {
     channel_type: String,
     protocol: String,
     base_url: Option<String>,
+    timeout_secs: Option<i32>,
     status: i16,
     weight: i32,
     priority: i32,
@@ -435,6 +444,7 @@ impl AdminChannelRow {
             channel_type: result.try_get("", "channel_type")?,
             protocol: result.try_get("", "protocol")?,
             base_url: result.try_get("", "base_url")?,
+            timeout_secs: result.try_get("", "timeout_secs")?,
             status: result.try_get("", "status")?,
             weight: result.try_get("", "weight")?,
             priority: result.try_get("", "priority")?,
@@ -467,6 +477,15 @@ impl AdminChannelRow {
                     .map_err(|_| internal_invariant())
             })
             .transpose()?;
+        let timeout = self
+            .timeout_secs
+            .map(|value| {
+                <u64 as std::convert::TryFrom<i32>>::try_from(value)
+                    .ok()
+                    .and_then(|value| ChannelTimeout::new(value).ok())
+                    .ok_or_else(internal_invariant)
+            })
+            .transpose()?;
         let model_mapping =
             validated_json_object(self.model_mapping, self.model_mapping_oversized, true)?;
         ChannelModelMappings::parse(&model_mapping).map_err(|_| internal_invariant())?;
@@ -493,6 +512,7 @@ impl AdminChannelRow {
             channel_type,
             protocol,
             base_url,
+            timeout,
             status,
             weight: self.weight,
             priority: self.priority,
@@ -562,6 +582,10 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
         .expr_as(
             Expr::col((channels::Entity, channels::Column::BaseUrl)),
             Alias::new("base_url"),
+        )
+        .expr_as(
+            Expr::col((channels::Entity, channels::Column::TimeoutSecs)),
+            Alias::new("timeout_secs"),
         )
         .expr_as(
             Expr::col((channels::Entity, channels::Column::Status)),

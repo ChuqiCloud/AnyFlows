@@ -101,6 +101,12 @@ impl AnthropicMessagesStreamDecoder {
         result
     }
 
+    /// 返回已经由 `message_start` 验证的初始累计 usage，尚未开始消息时返回 `None`。
+    #[must_use]
+    pub const fn initial_usage(&self) -> Option<Usage> {
+        self.initial_usage
+    }
+
     fn push_inner(&mut self, chunk: &[u8]) -> Result<Vec<CanonicalStreamEvent>, ParseStreamError> {
         let frames = self.parser.push(chunk)?;
         let mut output = Vec::new();

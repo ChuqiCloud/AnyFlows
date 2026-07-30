@@ -46,6 +46,7 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         "max_output_tokens": 4096,
         "stop_sequences": ["runtime-stop-canary"]
     }));
+    supported.timeout_secs = Set(Some(60));
     let supported = supported.insert(pool.connection()).await?;
     attach(supported.id, group.id, "gpt-runtime-canary")
         .insert(pool.connection())
@@ -127,23 +128,23 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     .insert(pool.connection())
     .await?;
 
-    let unsupported_channel = runtime_channel(
-        "unsupported-channel",
+    let anthropic_channel = runtime_channel(
+        "anthropic-channel",
         Status::Enabled,
         ChannelType::Anthropic.as_str(),
         Protocol::Anthropic.as_str(),
-        "https://unsupported-channel-canary.example.com",
+        "https://anthropic-channel-canary.example.com",
         [],
     )
     .insert(pool.connection())
     .await?;
-    attach(unsupported_channel.id, group.id, "gpt-runtime-canary")
+    attach(anthropic_channel.id, group.id, "gpt-runtime-canary")
         .insert(pool.connection())
         .await?;
     ability(
         group.id,
         "gpt-runtime-canary",
-        unsupported_channel.id,
+        anthropic_channel.id,
         true,
         7,
         0,
@@ -151,12 +152,12 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     .insert(pool.connection())
     .await?;
     runtime_credential(
-        unsupported_channel.id,
+        anthropic_channel.id,
         CredentialKind::ApiKey,
         10,
         true,
         None,
-        "unsupported-channel-key",
+        "anthropic-channel-key",
         0x55,
         false,
     )
@@ -167,8 +168,11 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         .load_all()
         .await?;
 
-    assert_eq!(records.len(), 1);
-    let record = &records[0];
+    assert_eq!(records.len(), 2);
+    let record = records
+        .iter()
+        .find(|record| record.target().channel_id().get() == supported.id)
+        .unwrap();
     assert_eq!(record.ability().group_id().get(), group.id);
     assert_eq!(record.ability().model(), "gpt-runtime-canary");
     assert_eq!(record.ability().priority(), 9);
@@ -183,6 +187,7 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         record.target().base_url(),
         Some("https://runtime-url-canary.example.com/prefix")
     );
+    assert_eq!(record.target().timeout().unwrap().seconds(), 60);
     assert_eq!(record.target().headers().len(), 1);
     assert_eq!(record.target().headers()[0].name(), "x-runtime-header");
     assert_eq!(
@@ -207,7 +212,22 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     assert_eq!(overrides.max_output_tokens(), Some(4096));
     assert_eq!(overrides.stop_sequences().unwrap(), ["runtime-stop-canary"]);
 
-    let rendered = format!("{record:?}");
+    let anthropic_record = records
+        .iter()
+        .find(|record| record.target().channel_id().get() == anthropic_channel.id)
+        .unwrap();
+    assert_eq!(anthropic_record.target().timeout(), None);
+    assert_eq!(
+        anthropic_record.target().channel_type(),
+        ChannelType::Anthropic
+    );
+    assert_eq!(anthropic_record.target().protocol(), Protocol::Anthropic);
+    assert_eq!(
+        anthropic_record.target().credential_kind(),
+        CredentialKind::ApiKey
+    );
+
+    let rendered = format!("{records:?}");
     for secret in [
         "gpt-runtime-canary",
         "runtime-url-canary",
@@ -215,6 +235,8 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         "gpt-upstream-canary",
         "runtime-stop-canary",
         "selected-key-id-canary",
+        "anthropic-channel-canary",
+        "anthropic-channel-key",
     ] {
         assert!(!rendered.contains(secret));
     }
@@ -274,6 +296,33 @@ fn responses_runtime_target_rejects_chat_only_stop_sequences() {
             vec![credential],
             ChannelModelMappings::default(),
             parameters,
+            Vec::new(),
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn anthropic_runtime_target_accepts_messages_pair_and_rejects_mismatch() {
+    let credential = runtime_credential_record(1);
+    assert!(
+        SchedulerRuntimeTargetRecord::new_pool(
+            ChannelId::new(1).unwrap(),
+            ChannelType::Anthropic,
+            Protocol::Anthropic,
+            None,
+            vec![credential.clone()],
+            Vec::new(),
+        )
+        .is_ok()
+    );
+    assert!(
+        SchedulerRuntimeTargetRecord::new_pool(
+            ChannelId::new(1).unwrap(),
+            ChannelType::Anthropic,
+            Protocol::OpenAiChat,
+            None,
+            vec![credential],
             Vec::new(),
         )
         .is_err()

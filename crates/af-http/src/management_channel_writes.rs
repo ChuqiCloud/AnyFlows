@@ -27,13 +27,13 @@ pub(crate) struct AdminChannelCreateRequest {
     #[schema(min_length = 1, max_length = 128)]
     name: String,
     #[serde(rename = "type")]
-    /// 当前生产写链路仅支持 OpenAI 兼容适配器。
+    /// 当前生产写链路支持 OpenAI 与标准 Anthropic 适配器。
     #[schema(
         value_type = crate::openapi::schema::AdminChannelWriteTypeSchema,
         inline
     )]
     channel_type: af_domain::ChannelType,
-    /// 当前生产写链路支持 OpenAI Chat 与原生 Responses 协议。
+    /// 当前生产写链路支持 OpenAI Chat、Responses 与 Anthropic Messages 协议。
     #[schema(
         value_type = crate::openapi::schema::AdminChannelWriteProtocolSchema,
         inline
@@ -42,6 +42,9 @@ pub(crate) struct AdminChannelCreateRequest {
     /// 不含 userinfo、查询串或片段的 HTTP(S) 基础地址。
     #[schema(max_length = 2048, format = "uri", required = true)]
     base_url: Option<String>,
+    /// 同时覆盖上游读取停顿与完整请求总时限；省略或 null 时使用服务默认值。
+    #[schema(minimum = 1, maximum = 900)]
+    timeout_secs: Option<u64>,
     #[schema(value_type = crate::openapi::schema::AdminRoutingWriteStatusSchema)]
     status: AdminRoutingWriteStatus,
     #[schema(minimum = 0)]
@@ -87,6 +90,9 @@ pub(crate) struct AdminChannelUpdateRequest {
     protocol: af_domain::Protocol,
     #[schema(max_length = 2048, format = "uri", required = true)]
     base_url: Option<String>,
+    /// 同时覆盖上游读取停顿与完整请求总时限；省略或 null 时使用服务默认值。
+    #[schema(minimum = 1, maximum = 900)]
+    timeout_secs: Option<u64>,
     #[schema(value_type = crate::openapi::schema::AdminRoutingWriteStatusSchema)]
     status: AdminRoutingWriteStatus,
     #[schema(minimum = 0)]
@@ -182,6 +188,7 @@ impl AdminChannelCreateRequest {
             self.channel_type,
             self.protocol,
             self.base_url,
+            self.timeout_secs,
             self.status,
             self.weight,
             self.priority,
@@ -206,6 +213,7 @@ impl AdminChannelUpdateRequest {
             self.channel_type,
             self.protocol,
             self.base_url,
+            self.timeout_secs,
             self.status,
             self.weight,
             self.priority,

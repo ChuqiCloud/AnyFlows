@@ -105,6 +105,10 @@
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
+    "type": {
+      "openai": "OpenAI",
+      "anthropic": "Anthropic"
+    },
     "values": {
       "defaultUrl": "Default upstream URL",
       "models_one": "{{count}} model",
@@ -112,7 +116,9 @@
       "groups_one": "{{count}} group",
       "groups_other": "{{count}} groups",
       "priority": "Priority {{value}}",
-      "weight": "Weight {{value}}"
+      "weight": "Weight {{value}}",
+      "timeout": "Timeout {{value}}s",
+      "inheritTimeout": "Service default"
     },
     "probe": {
       "notTested": "Not tested",
@@ -147,7 +153,7 @@
     },
     "editor": {
       "createTitle": "New channel",
-      "createDescription": "Configure a native OpenAI upstream that can participate in routing.",
+      "createDescription": "Configure a native OpenAI or Anthropic upstream for routing.",
       "editTitle": "Edit channel",
       "editDescription": "Read fields can be changed directly. Sensitive objects follow the blank-value rule."
     },
@@ -158,6 +164,8 @@
       "advanced": "Advanced adapter settings",
       "autoBanHint": "Allow the runtime to disable this channel after a deterministic failure.",
       "tagHint": "Optional label for filtering and recognition.",
+      "timeoutHint": "Controls read stalls and the full request deadline for forwarding and probes. Connection timeout remains global; blank uses each service default.",
+      "timeoutPlaceholder": "Use service default",
       "modelPlaceholder": "Enter a model name and press Enter",
       "modelsHint": "Press Enter to add. Pasted comma-separated and line-separated lists are supported.",
       "groupPlaceholder": "Select a group",
@@ -165,14 +173,15 @@
       "groupsLoadFailed": "Groups could not be loaded",
       "groupsHint": "Select existing groups. Models and groups must both be empty or both be set.",
       "mappingHint": "Map the client model name on the left to the upstream model name on the right.",
-      "parametersHint": "Supports temperature, Top P, and a maximum output token cap. Stop sequences are Chat-only.",
-      "headersHint": "Authentication, Cookie, Host, Content-Type, Accept, request ID, and connection-level headers cannot be overridden.",
+      "parametersHint": "Supports temperature, Top P, maximum output tokens, and stop sequences. Responses does not support stop sequences.",
+      "headersHint": "Authentication, protocol version, Cookie, Host, Content-Type, Accept, request ID, and connection-level headers cannot be overridden.",
       "settingsHint": "Reserved for adapter-specific capabilities. Most channels should keep an empty object.",
       "submitError": "The channel could not be saved. Check the fields and try again."
     },
     "fields": {
       "name": "Name",
       "baseUrl": "Upstream base URL",
+      "timeout": "Channel timeout (seconds)",
       "type": "Channel type",
       "protocol": "Protocol",
       "status": "Status",
@@ -196,6 +205,7 @@
       "header": "A header name or value is invalid, or the name cannot be overridden.",
       "parameter": "A parameter value is outside its allowed range, or a parameter is duplicated.",
       "schedule": "Priority must be an integer and weight must be a non-negative integer.",
+      "timeout": "Enter an integer from 1 to 900 seconds, or leave it blank to use the service default.",
       "url": "Enter an HTTP(S) URL without credentials, a query string, or a fragment.",
       "routing": "Models and groups must both be set or both be empty, with no duplicates or capacity overflow."
     },
@@ -236,6 +246,7 @@
       },
       "ranges": {
         "temperature": "0 - 2",
+        "temperatureAnthropic": "0 - 1",
         "top_p": "0 - 1",
         "max_output_tokens": "1 - 1,000,000"
       }

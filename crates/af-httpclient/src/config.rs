@@ -301,6 +301,13 @@ impl HttpClientConfig {
         self.timeouts
     }
 
+    /// 替换三层超时，同时保留代理、DNS 与目标地址安全策略。
+    #[must_use]
+    pub const fn with_timeouts(mut self, timeouts: HttpTimeouts) -> Self {
+        self.timeouts = timeouts;
+        self
+    }
+
     /// 仅供 crate 内回环测试设置精确地址，生产构建不存在该入口。
     #[cfg(test)]
     #[must_use]

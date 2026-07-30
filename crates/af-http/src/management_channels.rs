@@ -27,6 +27,9 @@ pub(crate) struct AdminChannelResponse {
     /// 不含 userinfo、查询串或片段的 HTTP(S) 基础地址。
     #[schema(max_length = 2048, format = "uri", required = true)]
     base_url: Option<String>,
+    /// 渠道级读取与完整请求超时；null 表示使用对应场景的服务默认值。
+    #[schema(minimum = 1, maximum = 900, required = true)]
+    timeout_secs: Option<u64>,
     #[schema(value_type = crate::openapi::schema::AdminRoutingStatusSchema)]
     status: af_admin::AdminRoutingStatus,
     #[schema(minimum = 0)]
@@ -123,6 +126,7 @@ impl AdminChannelResponse {
             name: channel.name().to_owned(),
             protocol: channel.protocol(),
             base_url: channel.base_url().map(str::to_owned),
+            timeout_secs: channel.timeout().map(af_domain::ChannelTimeout::seconds),
             status: channel.status(),
             weight: channel.weight(),
             priority: channel.priority(),

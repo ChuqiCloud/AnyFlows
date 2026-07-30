@@ -8,7 +8,9 @@ import type {
 
 export type ChannelEditorMode = 'create' | 'update'
 export type SensitiveEditMode = 'preserve' | 'replace' | 'clear'
-export type ChannelProtocol = 'openai_chat' | 'openai_responses'
+export type ChannelType = 'openai' | 'anthropic'
+export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'anthropic'
+export const MAX_CHANNEL_TIMEOUT_SECONDS = 900
 
 export const channelParameterNames = [
   'temperature',
@@ -35,6 +37,8 @@ export type ParameterRow = {
 export type ChannelFormValues = {
   name: string
   baseUrl: string
+  timeoutSeconds: string
+  channelType: ChannelType
   protocol: ChannelProtocol
   tag: string
   status: 'enabled' | 'disabled'
@@ -59,6 +63,7 @@ type ValidationMessages = {
   invalidJson: string
   invalidParameter: string
   invalidRouting: string
+  invalidTimeout: string
   invalidUrl: string
 }
 
@@ -80,7 +85,9 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
   return z.object({
     name: z.string().trim().min(1, messages.invalidField).max(128, messages.invalidField),
     baseUrl: z.string().trim().max(2048, messages.invalidField),
-    protocol: z.enum(['openai_chat', 'openai_responses']),
+    timeoutSeconds: z.string(),
+    channelType: z.enum(['openai', 'anthropic']),
+    protocol: z.enum(['openai_chat', 'openai_responses', 'anthropic']),
     tag: z.string().trim().max(64, messages.invalidField),
     status: z.enum(['enabled', 'disabled']),
     weight: z.number().int(messages.invalidField).min(0, messages.invalidField),
@@ -95,8 +102,16 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
     settingsMode: z.enum(['preserve', 'replace', 'clear']),
     settings: z.string(),
   }).superRefine((values, context) => {
+    const protocolMatchesType = values.channelType === 'anthropic'
+      ? values.protocol === 'anthropic'
+      : values.protocol === 'openai_chat' || values.protocol === 'openai_responses'
+    if (!protocolMatchesType) addIssue(context, 'protocol', messages.invalidField)
+
     if (values.baseUrl && !isSafeBaseUrl(values.baseUrl)) {
       addIssue(context, 'baseUrl', messages.invalidUrl)
+    }
+    if (!isValidOptionalTimeout(values.timeoutSeconds)) {
+      addIssue(context, 'timeoutSeconds', messages.invalidTimeout)
     }
 
     const modelsValid = values.models.length <= 512
@@ -126,7 +141,11 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
   return {
     name: channel?.name ?? '',
     baseUrl: channel?.base_url ?? '',
-    protocol: channel?.protocol === 'openai_responses' ? 'openai_responses' : 'openai_chat',
+    timeoutSeconds: channel?.timeout_secs == null ? '' : String(channel.timeout_secs),
+    channelType: channel?.type === 'anthropic' ? 'anthropic' : 'openai',
+    protocol: channel?.protocol === 'anthropic'
+      ? 'anthropic'
+      : channel?.protocol === 'openai_responses' ? 'openai_responses' : 'openai_chat',
     tag: channel?.tag ?? '',
     status: channel?.status === 'enabled' ? 'enabled' : 'disabled',
     weight: channel?.weight ?? 10,
@@ -183,9 +202,10 @@ export function createParameterRow(key: ChannelParameterName | '' = ''): Paramet
 function commonRequest(values: ChannelFormValues) {
   return {
     name: values.name.trim(),
-    type: 'openai' as const,
+    type: values.channelType,
     protocol: values.protocol,
     base_url: values.baseUrl.trim() || null,
+    timeout_secs: values.timeoutSeconds.trim() === '' ? null : Number(values.timeoutSeconds),
     status: values.status,
     weight: values.weight,
     priority: values.priority,
@@ -296,14 +316,16 @@ function validateParameterRows(
   const valid = rows.length <= channelParameterNames.length && rows.every((row) => {
     if (!isChannelParameterName(row.key)) return false
     if (row.key === 'stop_sequences') {
-      return protocol === 'openai_chat'
+      return protocol !== 'openai_responses'
         && row.values.length >= 1
         && row.values.length <= 4
         && row.values.every((value) => value.length > 0 && new TextEncoder().encode(value).length <= 1024)
     }
     if (row.value.trim() === '' || !Number.isFinite(Number(row.value))) return false
     const value = Number(row.value)
-    if (row.key === 'temperature') return value >= 0 && value <= 2
+    if (row.key === 'temperature') {
+      return value >= 0 && value <= (protocol === 'anthropic' ? 1 : 2)
+    }
     if (row.key === 'top_p') return value >= 0 && value <= 1
     return Number.isSafeInteger(value) && value >= 1 && value <= 1_000_000
   })
@@ -350,6 +372,12 @@ function isSafeBaseUrl(value: string) {
   }
 }
 
+function isValidOptionalTimeout(value: string) {
+  if (value.trim() === '') return true
+  const seconds = Number(value)
+  return Number.isSafeInteger(seconds) && seconds >= 1 && seconds <= MAX_CHANNEL_TIMEOUT_SECONDS
+}
+
 function createRowId(prefix: string) {
   return `${prefix}-${globalThis.crypto.randomUUID()}`
 }
@@ -367,6 +395,7 @@ const FORBIDDEN_HEADERS = new Set([
   'accept',
   'authorization',
   'content-type',
+  'anthropic-version',
   'proxy-authorization',
   'x-api-key',
   'api-key',

@@ -31,9 +31,11 @@ function StatusBadge({ status }: { status: AdminChannel['status'] }) {
 
 function ProtocolBadge({ protocol }: { protocol: AdminChannel['protocol'] }) {
   const { t } = useTranslation()
-  const tone = protocol === 'openai_responses'
-    ? 'bg-success/10 text-success'
-    : 'bg-info/10 text-info'
+  const tone = protocol === 'anthropic'
+    ? 'bg-warning/10 text-warning'
+    : protocol === 'openai_responses'
+      ? 'bg-success/10 text-success'
+      : 'bg-info/10 text-info'
   return <Badge className={cn('border-transparent', tone)}>{t(`channels.protocol.${protocol}`)}</Badge>
 }
 
@@ -66,6 +68,11 @@ function ScheduleBadges({ channel }: { channel: AdminChannel }) {
     <div className="flex flex-wrap gap-1 tabular-nums">
       <Badge>{t('channels.values.priority', { value: channel.priority })}</Badge>
       <Badge>{t('channels.values.weight', { value: channel.weight })}</Badge>
+      <Badge className="text-muted-foreground">
+        {channel.timeout_secs == null
+          ? t('channels.values.inheritTimeout')
+          : t('channels.values.timeout', { value: channel.timeout_secs })}
+      </Badge>
     </div>
   )
 }

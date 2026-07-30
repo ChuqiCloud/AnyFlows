@@ -46,6 +46,7 @@ const FORBIDDEN_OVERRIDE_HEADERS: &[&str] = &[
     "accept",
     "authorization",
     "content-type",
+    "anthropic-version",
     "proxy-authorization",
     "x-api-key",
     "api-key",

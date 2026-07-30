@@ -68,6 +68,7 @@ async fn snapshot_uses_half_open_window_and_excludes_deleted_channels() -> Resul
             r#type: Set("openai".to_owned()),
             protocol: Set("openai_chat".to_owned()),
             base_url: Set(None),
+            timeout_secs: Set(None),
             status: Set(status),
             weight: Set(1),
             priority: Set(0),

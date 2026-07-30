@@ -240,6 +240,7 @@ fn channel_record(
         ChannelType::OpenAi,
         Protocol::OpenAiChat,
         Some("https://api.example.com/v1".to_owned()),
+        None,
         status,
         weight,
         priority,

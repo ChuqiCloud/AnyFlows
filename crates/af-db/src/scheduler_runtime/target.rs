@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, fmt};
 
-use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol};
+use af_domain::{ChannelId, ChannelTimeout, ChannelType, CredentialKind, Protocol};
 use sea_orm::entity::prelude::Json;
 use thiserror::Error;
 
@@ -13,6 +13,20 @@ use super::{ChannelModelMappings, ChannelParameterOverrides};
 
 /// 单个渠道进入运行时快照的凭据数量上限。
 pub const MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL: usize = 64;
+
+/// 判断渠道类型与原生协议是否已经完成生产运行时装配。
+pub(super) const fn is_supported_runtime_target(
+    channel_type: ChannelType,
+    protocol: Protocol,
+) -> bool {
+    matches!(
+        (channel_type, protocol),
+        (
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat | Protocol::OpenAiResponses
+        ) | (ChannelType::Anthropic, Protocol::Anthropic)
+    )
+}
 
 /// 渠道转发时需要附加的非认证请求头。
 #[derive(Clone, Eq, PartialEq)]
@@ -164,6 +178,7 @@ pub struct SchedulerRuntimeTargetRecord {
     channel_type: ChannelType,
     protocol: Protocol,
     base_url: Option<String>,
+    timeout: Option<ChannelTimeout>,
     credentials: Vec<SchedulerRuntimeCredentialRecord>,
     model_mappings: ChannelModelMappings,
     parameter_overrides: ChannelParameterOverrides,
@@ -171,7 +186,7 @@ pub struct SchedulerRuntimeTargetRecord {
 }
 
 impl SchedulerRuntimeTargetRecord {
-    /// 校验当前支持的 OpenAI 原生目标及安全 Header 后构造记录。
+    /// 校验当前支持的原生协议目标及安全 Header 后构造记录。
     pub fn new(
         channel_id: ChannelId,
         channel_type: ChannelType,
@@ -226,12 +241,10 @@ impl SchedulerRuntimeTargetRecord {
         parameter_overrides: ChannelParameterOverrides,
         headers: Vec<(String, String)>,
     ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
-        if channel_type != ChannelType::OpenAi
-            || !matches!(protocol, Protocol::OpenAiChat | Protocol::OpenAiResponses)
+        if !is_supported_runtime_target(channel_type, protocol)
             || credentials.is_empty()
             || credentials.len() > MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL
-            || (protocol == Protocol::OpenAiResponses
-                && parameter_overrides.stop_sequences().is_some())
+            || parameter_overrides.validate_for_protocol(protocol).is_err()
         {
             return Err(SchedulerRuntimeTargetRecordError);
         }
@@ -271,6 +284,7 @@ impl SchedulerRuntimeTargetRecord {
             channel_type,
             protocol,
             base_url,
+            timeout: None,
             credentials,
             model_mappings,
             parameter_overrides,
@@ -306,6 +320,19 @@ impl SchedulerRuntimeTargetRecord {
     #[must_use]
     pub fn base_url(&self) -> Option<&str> {
         self.base_url.as_deref()
+    }
+
+    /// 覆盖该不可变运行时目标使用的渠道级超时。
+    #[must_use]
+    pub fn with_timeout(mut self, timeout: Option<ChannelTimeout>) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// 返回渠道级读取与完整请求超时；空值表示继承全局配置。
+    #[must_use]
+    pub const fn timeout(&self) -> Option<ChannelTimeout> {
+        self.timeout
     }
 
     /// 返回数据库声明的凭据类型。
@@ -359,6 +386,7 @@ impl fmt::Debug for SchedulerRuntimeTargetRecord {
             .field("channel_type", &self.channel_type)
             .field("protocol", &self.protocol)
             .field("base_url", &self.base_url.as_ref().map(|_| "<已脱敏>"))
+            .field("timeout", &self.timeout)
             .field("credential_count", &self.credentials.len())
             .field("model_mapping_count", &self.model_mappings.len())
             .field("parameter_overrides", &self.parameter_overrides)

@@ -18,16 +18,19 @@ mod error;
 mod parse_response;
 mod response_wire;
 mod streaming;
+mod upstream_error;
 mod wire;
 
 pub use build::{BuildRequestError, build_request};
 pub use build_response::{BuildResponseError, build_response};
+pub use convert::{MAX_STOP_BYTES, MAX_STOP_SEQUENCES};
 pub use error::encode_error;
 pub use parse_response::{ParseResponseError, parse_response};
 pub use streaming::{
     AnthropicMessagesStreamDecoder, AnthropicMessagesStreamEncoder, DEFAULT_MAX_SSE_EVENT_BYTES,
     EncodeStreamError, MAX_SSE_EVENT_BYTES, ParseStreamError, SseParseError,
 };
+pub use upstream_error::{AnthropicUpstreamErrorKind, classify_error_response};
 
 #[cfg(test)]
 mod build_tests;

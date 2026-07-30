@@ -2,26 +2,28 @@ use std::{fmt, time::Duration};
 
 use af_account::{CredentialDecryptor, DecryptedCredential};
 use af_adapter::{
-    AdaptorSendExt as _, AdaptorSettings, AdaptorTarget, Bytes, Credential, HeaderMap, HeaderName,
-    HeaderValue, Method, OpenAiAdaptorSettings, Operation, PooledClient, RelayContext,
-    ResponseMode, UpstreamRequest, get_adaptor,
+    AdaptorError, AdaptorSendExt as _, AdaptorSettings, AdaptorTarget, AdaptorTransportError,
+    AnthropicAdaptorSettings, Bytes, Credential, HeaderMap, HeaderName, HeaderValue, Method,
+    OpenAiAdaptorSettings, Operation, RelayContext, ResponseMode, UpstreamRequest, get_adaptor,
 };
 use af_db::{ChannelProbeTargetRecord, ChannelProbeTargetRepository, DatabasePool};
 use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Role};
 use af_http::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
+use af_httpclient::HttpClientProvider;
 use af_protocol::{
-    CanonicalRequest, ContentBlock, Message, Sampling, TokenCount, ToolChoice, openai_chat,
-    openai_responses,
+    CanonicalRequest, ContentBlock, Message, Sampling, TokenCount, ToolChoice, anthropic,
+    openai_chat, openai_responses,
 };
 use af_scheduler::{ChannelProbe, ChannelProbeStatus};
 use tokio::time::timeout;
 
-/// 从数据库装配目标并执行最小 OpenAI 原生请求的真实渠道探活器。
+/// 从数据库装配目标并执行最小原生协议请求的真实渠道探活器。
 #[derive(Clone)]
 pub(crate) struct DatabaseChannelProbe {
     targets: ChannelProbeTargetRepository,
     decryptor: CredentialDecryptor,
-    client: PooledClient,
+    clients: HttpClientProvider,
+    default_timeout: Duration,
 }
 
 impl DatabaseChannelProbe {
@@ -30,12 +32,15 @@ impl DatabaseChannelProbe {
     pub(crate) fn new(
         database: DatabasePool,
         decryptor: CredentialDecryptor,
-        client: PooledClient,
+        clients: HttpClientProvider,
+        default_timeout: Duration,
     ) -> Self {
+        debug_assert!(!default_timeout.is_zero());
         Self {
             targets: ChannelProbeTargetRepository::new(database),
             decryptor,
-            client,
+            clients,
+            default_timeout,
         }
     }
 
@@ -50,12 +55,7 @@ impl DatabaseChannelProbe {
             // 专属代理仓储尚未落地，绑定代理的凭据绝不能回退直连。
             return Err(ProbeFailure::RequiredProxyUnavailable);
         }
-        if target.channel_type() != ChannelType::OpenAi
-            || !matches!(
-                target.protocol(),
-                Protocol::OpenAiChat | Protocol::OpenAiResponses
-            )
-        {
+        if !supported_target(&target) {
             return Err(ProbeFailure::UnsupportedTarget);
         }
 
@@ -64,22 +64,20 @@ impl DatabaseChannelProbe {
             .decrypt_target(&target)
             .map_err(|_| ProbeFailure::CredentialDecrypt)?;
         let credential = adaptor_credential(&decrypted)?;
-        let adaptor = get_adaptor(
-            target.channel_type(),
-            AdaptorSettings::OpenAi(
-                OpenAiAdaptorSettings::for_protocol(
-                    target.protocol(),
-                    vec![target.model().to_owned()],
-                )
-                .map_err(|_| ProbeFailure::AdapterBuild)?,
-            ),
-        )
-        .map_err(|_| ProbeFailure::AdapterBuild)?;
+        let adaptor = get_adaptor(target.channel_type(), adaptor_settings(&target)?)
+            .map_err(|_| ProbeFailure::AdapterBuild)?;
         if adaptor.default_protocol() != target.protocol() {
             return Err(ProbeFailure::UnsupportedTarget);
         }
 
-        let mut context = RelayContext::new(self.client.clone());
+        let timeout = target
+            .timeout()
+            .map_or(self.default_timeout, af_domain::ChannelTimeout::duration);
+        let client = self
+            .clients
+            .get(Some(timeout))
+            .map_err(|_| ProbeFailure::ContextBuild)?;
+        let mut context = RelayContext::new(client);
         if let Some(base_url) = target.base_url() {
             context = context
                 .with_base_url(base_url)
@@ -110,7 +108,7 @@ impl DatabaseChannelProbe {
         let response = adaptor
             .send(request, &context)
             .await
-            .map_err(|_| ProbeFailure::Transport)?;
+            .map_err(map_transport_failure)?;
         if !response.status().is_success() {
             return Err(ProbeFailure::UpstreamStatus);
         }
@@ -118,7 +116,7 @@ impl DatabaseChannelProbe {
             .into_body()
             .into_bytes()
             .await
-            .map_err(|_| ProbeFailure::ResponseRead)?;
+            .map_err(map_response_read_failure)?;
         validate_probe_response(target.protocol(), &body)?;
         Ok(())
     }
@@ -142,7 +140,11 @@ impl ChannelProbe for DatabaseChannelProbe {
                     error_kind = failure.as_str(),
                     "渠道真实探活失败"
                 );
-                ChannelProbeStatus::Unhealthy
+                if failure == ProbeFailure::TimedOut {
+                    ChannelProbeStatus::TimedOut
+                } else {
+                    ChannelProbeStatus::Unhealthy
+                }
             }
         }
     }
@@ -168,6 +170,7 @@ impl AdminChannelProbe for BoundedAdminChannelProbe {
             match timeout(self.timeout, self.probe.check(channel_id)).await {
                 Ok(ChannelProbeStatus::Healthy) => AdminChannelProbeOutcome::Healthy,
                 Ok(ChannelProbeStatus::Unhealthy) => AdminChannelProbeOutcome::Unhealthy,
+                Ok(ChannelProbeStatus::TimedOut) => AdminChannelProbeOutcome::TimedOut,
                 // 调度层未来新增的状态默认按不健康处理，避免未知结论被误报为成功。
                 Ok(_) => AdminChannelProbeOutcome::Unhealthy,
                 Err(_) => AdminChannelProbeOutcome::TimedOut,
@@ -192,7 +195,8 @@ impl fmt::Debug for DatabaseChannelProbe {
             .debug_struct("DatabaseChannelProbe")
             .field("targets", &"<受控>")
             .field("decryptor", &"<受控>")
-            .field("client", &"<受控>")
+            .field("clients", &"<受控>")
+            .field("default_timeout", &self.default_timeout)
             .finish()
     }
 }
@@ -226,9 +230,9 @@ fn apply_header_overrides(
 
 fn probe_operation(protocol: Protocol) -> Result<Operation, ProbeFailure> {
     match protocol {
-        Protocol::OpenAiChat => Ok(Operation::Chat),
+        Protocol::OpenAiChat | Protocol::Anthropic => Ok(Operation::Chat),
         Protocol::OpenAiResponses => Ok(Operation::Responses),
-        Protocol::Anthropic | Protocol::Gemini => Err(ProbeFailure::UnsupportedTarget),
+        Protocol::Gemini => Err(ProbeFailure::UnsupportedTarget),
     }
 }
 
@@ -261,9 +265,10 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
             value["store"] = false.into();
             value
         }
-        Protocol::Anthropic | Protocol::Gemini => {
-            return Err(ProbeFailure::UnsupportedTarget);
+        Protocol::Anthropic => {
+            anthropic::build_request(&request).map_err(|_| ProbeFailure::RequestBuild)?
         }
+        Protocol::Gemini => return Err(ProbeFailure::UnsupportedTarget),
     };
     Ok(Bytes::from(value.to_string()))
 }
@@ -276,7 +281,54 @@ fn validate_probe_response(protocol: Protocol, body: &[u8]) -> Result<(), ProbeF
         Protocol::OpenAiResponses => openai_responses::parse_response(body)
             .map(|_| ())
             .map_err(|_| ProbeFailure::InvalidResponse),
-        Protocol::Anthropic | Protocol::Gemini => Err(ProbeFailure::UnsupportedTarget),
+        Protocol::Anthropic => anthropic::parse_response(body)
+            .map(|_| ())
+            .map_err(|_| ProbeFailure::InvalidResponse),
+        Protocol::Gemini => Err(ProbeFailure::UnsupportedTarget),
+    }
+}
+
+fn supported_target(target: &ChannelProbeTargetRecord) -> bool {
+    matches!(
+        (target.channel_type(), target.protocol()),
+        (
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat | Protocol::OpenAiResponses
+        ) | (ChannelType::Anthropic, Protocol::Anthropic)
+    )
+}
+
+fn map_transport_failure(error: AdaptorError) -> ProbeFailure {
+    match error {
+        AdaptorError::Transport(
+            AdaptorTransportError::ConnectTimeout
+            | AdaptorTransportError::ReadTimeout
+            | AdaptorTransportError::RequestTimeout,
+        ) => ProbeFailure::TimedOut,
+        _ => ProbeFailure::Transport,
+    }
+}
+
+fn map_response_read_failure(error: AdaptorError) -> ProbeFailure {
+    match map_transport_failure(error) {
+        ProbeFailure::TimedOut => ProbeFailure::TimedOut,
+        _ => ProbeFailure::ResponseRead,
+    }
+}
+
+fn adaptor_settings(target: &ChannelProbeTargetRecord) -> Result<AdaptorSettings, ProbeFailure> {
+    let models = vec![target.model().to_owned()];
+    match (target.channel_type(), target.protocol()) {
+        (ChannelType::OpenAi, Protocol::OpenAiChat | Protocol::OpenAiResponses) => {
+            Ok(AdaptorSettings::OpenAi(
+                OpenAiAdaptorSettings::for_protocol(target.protocol(), models)
+                    .map_err(|_| ProbeFailure::AdapterBuild)?,
+            ))
+        }
+        (ChannelType::Anthropic, Protocol::Anthropic) => Ok(AdaptorSettings::Anthropic(
+            AnthropicAdaptorSettings::new(models),
+        )),
+        _ => Err(ProbeFailure::UnsupportedTarget),
     }
 }
 
@@ -292,6 +344,7 @@ enum ProbeFailure {
     ContextBuild,
     HeaderOverride,
     RequestBuild,
+    TimedOut,
     Transport,
     UpstreamStatus,
     ResponseRead,
@@ -311,6 +364,7 @@ impl ProbeFailure {
             Self::ContextBuild => "probe_context_build",
             Self::HeaderOverride => "probe_header_override",
             Self::RequestBuild => "probe_request_build",
+            Self::TimedOut => "probe_timeout",
             Self::Transport => "probe_transport",
             Self::UpstreamStatus => "probe_upstream_status",
             Self::ResponseRead => "probe_response_read",

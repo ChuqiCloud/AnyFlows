@@ -1,6 +1,7 @@
 //! 无 IO 的领域类型、值对象与错误。
 
 mod billing;
+mod channel;
 mod enums;
 mod error;
 mod network;
@@ -37,3 +38,9 @@ mod quota_tests;
 #[cfg(test)]
 mod token_policy_tests;
 pub use billing::{BillingReservationId, BillingReservationIdError};
+pub use channel::{
+    ChannelTimeout, ChannelTimeoutError, MAX_CHANNEL_TIMEOUT_SECS, MIN_CHANNEL_TIMEOUT_SECS,
+};
+
+#[cfg(test)]
+mod channel_tests;

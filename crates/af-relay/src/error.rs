@@ -1,6 +1,9 @@
 use af_adapter::{AdaptorError, StatusCode};
 use af_domain::UpstreamError;
-use af_protocol::openai_chat::{OpenAiUpstreamErrorKind, classify_error_response};
+use af_protocol::{
+    anthropic::{AnthropicUpstreamErrorKind, classify_error_response as classify_anthropic_error},
+    openai_chat::{OpenAiUpstreamErrorKind, classify_error_response as classify_openai_error},
+};
 use thiserror::Error;
 
 /// 转发服务启动或候选装配阶段的构造错误。
@@ -58,10 +61,26 @@ pub(crate) fn map_adaptor_error(error: AdaptorError) -> UpstreamError {
     }
 }
 
-/// 按状态码和 OpenAI 结构化错误信号得出脱敏的领域错误。
+/// 按状态码和已审定的上游结构化错误信号得出脱敏领域分类。
 pub(crate) fn classify_upstream_status(status: StatusCode, body: &[u8]) -> UpstreamError {
-    let signal = classify_error_response(body);
-    match (status, signal) {
+    let anthropic_signal = classify_anthropic_error(body);
+    match (status, anthropic_signal) {
+        (
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN,
+            AnthropicUpstreamErrorKind::Authentication,
+        ) => return UpstreamError::AuthRevoked,
+        (
+            StatusCode::BAD_REQUEST | StatusCode::PAYMENT_REQUIRED | StatusCode::TOO_MANY_REQUESTS,
+            AnthropicUpstreamErrorKind::Billing,
+        ) => return UpstreamError::QuotaExhausted,
+        (StatusCode::TOO_MANY_REQUESTS, AnthropicUpstreamErrorKind::RateLimited) => {
+            return UpstreamError::RateLimited;
+        }
+        _ => {}
+    }
+
+    let openai_signal = classify_openai_error(body);
+    match (status, openai_signal) {
         (
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN,
             OpenAiUpstreamErrorKind::AuthRevoked,

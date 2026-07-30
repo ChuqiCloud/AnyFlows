@@ -3939,6 +3939,7 @@
           "name",
           "protocol",
           "base_url",
+          "timeout_secs",
           "status",
           "weight",
           "priority",
@@ -3978,6 +3979,16 @@
             "format": "uri",
             "description": "不含 userinfo、查询串或片段的 HTTP(S) 基础地址。",
             "maxLength": 2048
+          },
+          "timeout_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "渠道级读取与完整请求超时；null 表示使用对应场景的服务默认值。",
+            "maximum": 900,
+            "minimum": 1
           },
           "status": {
             "$ref": "#/components/schemas/AdminRoutingStatus"
@@ -4124,11 +4135,12 @@
               {
                 "type": "string",
                 "enum": [
-                  "openai"
+                  "openai",
+                  "anthropic"
                 ]
               }
             ],
-            "description": "当前生产写链路仅支持 OpenAI 兼容适配器。"
+            "description": "当前生产写链路支持 OpenAI 与标准 Anthropic 适配器。"
           },
           "protocol": {
             "oneOf": [
@@ -4136,11 +4148,12 @@
                 "type": "string",
                 "enum": [
                   "openai_chat",
-                  "openai_responses"
+                  "openai_responses",
+                  "anthropic"
                 ]
               }
             ],
-            "description": "当前生产写链路支持 OpenAI Chat 与原生 Responses 协议。"
+            "description": "当前生产写链路支持 OpenAI Chat、Responses 与 Anthropic Messages 协议。"
           },
           "base_url": {
             "type": [
@@ -4150,6 +4163,16 @@
             "format": "uri",
             "description": "不含 userinfo、查询串或片段的 HTTP(S) 基础地址。",
             "maxLength": 2048
+          },
+          "timeout_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "同时覆盖上游读取停顿与完整请求总时限；省略或 null 时使用服务默认值。",
+            "maximum": 900,
+            "minimum": 1
           },
           "status": {
             "$ref": "#/components/schemas/AdminRoutingWriteStatus"
@@ -4352,14 +4375,16 @@
           "type": {
             "type": "string",
             "enum": [
-              "openai"
+              "openai",
+              "anthropic"
             ]
           },
           "protocol": {
             "type": "string",
             "enum": [
               "openai_chat",
-              "openai_responses"
+              "openai_responses",
+              "anthropic"
             ]
           },
           "base_url": {
@@ -4369,6 +4394,16 @@
             ],
             "format": "uri",
             "maxLength": 2048
+          },
+          "timeout_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "同时覆盖上游读取停顿与完整请求总时限；省略或 null 时使用服务默认值。",
+            "maximum": 900,
+            "minimum": 1
           },
           "status": {
             "$ref": "#/components/schemas/AdminRoutingWriteStatus"

@@ -10,6 +10,7 @@ mod error;
 #[cfg(test)]
 mod http_client_tests;
 mod pool;
+mod provider;
 mod resolver;
 mod transport;
 
@@ -25,5 +26,6 @@ pub use pool::{
     DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_POOL_IDLE_TIMEOUT, DEFAULT_POOL_MAX_IDLE_PER_HOST,
     HttpClientPool,
 };
+pub use provider::HttpClientProvider;
 pub use reqwest::Body;
 pub use transport::{HttpBodyStream, HttpResponse, PooledClient};

@@ -18,6 +18,7 @@ async fn channel_create_and_update_preserve_runtime_totals() -> Result<(), Box<d
         .create_channel(channel_record("primary", "https://api.example.com/v1"))
         .await?;
     let channel_id = created.channel_id();
+    assert_eq!(created.timeout().unwrap().seconds(), 60);
     assert_eq!(created.used_quota(), 0);
     assert_eq!(created.balance(), None);
 
@@ -44,6 +45,7 @@ async fn channel_create_and_update_preserve_runtime_totals() -> Result<(), Box<d
     );
     assert_eq!(updated.balance(), Some(5_000));
     assert_eq!(updated.used_quota(), 125);
+    assert_eq!(updated.timeout().unwrap().seconds(), 90);
     let (header_override, settings) = channel_sensitive_fields(&fixture, channel_id).await?;
     assert_eq!(header_override, r#"{"x-runtime":"private-header-value"}"#);
     assert_eq!(settings, r#"{"private_setting":"private-setting-value"}"#);
@@ -52,9 +54,10 @@ async fn channel_create_and_update_preserve_runtime_totals() -> Result<(), Box<d
         fixture
             .repository
             .create_channel(AdminChannelWriteRecord::new(
-                "unsupported".to_owned(),
+                "mismatched".to_owned(),
                 ChannelType::Anthropic,
-                Protocol::Anthropic,
+                Protocol::OpenAiChat,
+                None,
                 None,
                 Status::Disabled,
                 0,
@@ -300,6 +303,7 @@ fn channel_record(name: &str, base_url: &str) -> AdminChannelWriteRecord {
         ChannelType::OpenAi,
         Protocol::OpenAiChat,
         Some(base_url.to_owned()),
+        Some(af_domain::ChannelTimeout::new(60).unwrap()),
         Status::Enabled,
         10,
         20,
@@ -320,6 +324,7 @@ fn channel_update_record(name: &str, base_url: &str) -> AdminChannelWriteRecord 
         ChannelType::OpenAi,
         Protocol::OpenAiChat,
         Some(base_url.to_owned()),
+        Some(af_domain::ChannelTimeout::new(90).unwrap()),
         Status::Enabled,
         10,
         20,

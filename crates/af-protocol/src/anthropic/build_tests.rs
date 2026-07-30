@@ -78,6 +78,20 @@ fn builds_minimal_non_streaming_request() {
 }
 
 #[test]
+fn builds_streaming_request_without_private_usage_switch() {
+    let mut request = minimal_request();
+    request.stream = true;
+
+    let value = build_request(&request).unwrap();
+
+    assert_eq!(value["stream"], true);
+    assert_eq!(
+        parse_request(&serde_json::to_vec(&value).unwrap()).unwrap(),
+        request
+    );
+}
+
+#[test]
 fn round_trips_full_supported_request() {
     let request = parsed_request(json!({
         "model": "claude-sonnet-test",
@@ -255,10 +269,6 @@ fn rejects_unmapped_top_level_capabilities() {
         build_request(&wrong_operation),
         Err(BuildRequestError::UnsupportedOperation)
     );
-
-    let mut streaming = minimal_request();
-    streaming.stream = true;
-    assert_unsupported_capability(&streaming, RequestCapability::Streaming);
 
     let mut stream_options = minimal_request();
     stream_options.stream_options = StreamOptions::new(true);

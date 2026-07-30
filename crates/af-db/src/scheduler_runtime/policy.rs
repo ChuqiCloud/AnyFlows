@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fmt};
 
-use af_domain::MAX_MODEL_NAME_BYTES;
+use af_domain::{MAX_MODEL_NAME_BYTES, Protocol};
 use sea_orm::entity::prelude::Json;
 use serde_json::Number;
 use thiserror::Error;
@@ -135,6 +135,24 @@ impl ChannelParameterOverrides {
             }
         }
         Ok(parsed)
+    }
+
+    /// 按目标协议收紧通用参数集合，防止合法 JSON 在协议构造阶段才暴露配置错误。
+    pub fn validate_for_protocol(
+        &self,
+        protocol: Protocol,
+    ) -> Result<(), ChannelRequestPolicyError> {
+        if protocol == Protocol::OpenAiResponses && self.stop_sequences.is_some() {
+            return Err(ChannelRequestPolicyError);
+        }
+        if protocol == Protocol::Anthropic
+            && self
+                .temperature()
+                .is_some_and(|temperature| temperature > 1.0)
+        {
+            return Err(ChannelRequestPolicyError);
+        }
+        Ok(())
     }
 
     /// 返回强制 temperature；未配置时保留客户端值。
@@ -300,6 +318,21 @@ mod tests {
         ] {
             assert!(ChannelParameterOverrides::parse(&invalid).is_err());
         }
+
+        assert!(
+            overrides
+                .validate_for_protocol(Protocol::OpenAiChat)
+                .is_ok()
+        );
+        assert!(overrides.validate_for_protocol(Protocol::Anthropic).is_ok());
+        assert!(
+            overrides
+                .validate_for_protocol(Protocol::OpenAiResponses)
+                .is_err()
+        );
+        let hot = ChannelParameterOverrides::parse(&json!({"temperature": 1.5})).unwrap();
+        assert!(hot.validate_for_protocol(Protocol::OpenAiChat).is_ok());
+        assert!(hot.validate_for_protocol(Protocol::Anthropic).is_err());
     }
 
     #[test]
@@ -312,6 +345,7 @@ mod tests {
         );
         for invalid in [
             json!({"content-type": "text/plain"}),
+            json!({"anthropic-version": "private-version"}),
             json!({"x-request-id": "untrusted"}),
             json!({"authorization": "secret"}),
         ] {

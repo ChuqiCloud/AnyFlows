@@ -1,7 +1,7 @@
 use std::fmt;
 
 use af_db::AdminChannelRecord;
-use af_domain::{ChannelId, ChannelType, GroupId, Protocol, Status};
+use af_domain::{ChannelId, ChannelTimeout, ChannelType, GroupId, Protocol, Status};
 use serde::{Deserialize, Serialize};
 
 use crate::AdminChannelReadError;
@@ -75,6 +75,7 @@ pub struct AdminChannel {
     channel_type: ChannelType,
     protocol: Protocol,
     base_url: Option<String>,
+    timeout: Option<ChannelTimeout>,
     status: AdminRoutingStatus,
     weight: i32,
     priority: i32,
@@ -100,6 +101,7 @@ impl AdminChannel {
         channel_type: ChannelType,
         protocol: Protocol,
         base_url: Option<String>,
+        timeout: Option<ChannelTimeout>,
         status: AdminRoutingStatus,
         weight: i32,
         priority: i32,
@@ -120,6 +122,7 @@ impl AdminChannel {
             channel_type,
             protocol,
             base_url,
+            timeout,
             status,
             weight,
             priority,
@@ -160,6 +163,11 @@ impl AdminChannel {
     #[must_use]
     pub fn base_url(&self) -> Option<&str> {
         self.base_url.as_deref()
+    }
+    /// 返回渠道级读取与完整请求超时；空值表示使用对应场景的服务默认值。
+    #[must_use]
+    pub const fn timeout(&self) -> Option<ChannelTimeout> {
+        self.timeout
     }
     /// 返回渠道运行状态。
     #[must_use]
@@ -234,6 +242,7 @@ impl AdminChannel {
             record.channel_type(),
             record.protocol(),
             record.base_url().map(str::to_owned),
+            record.timeout(),
             AdminRoutingStatus::from_domain(record.status()),
             record.weight(),
             record.priority(),
@@ -302,6 +311,7 @@ mod tests {
             ChannelType::OpenAi,
             Protocol::OpenAiChat,
             Some("https://private.example.com".to_owned()),
+            Some(ChannelTimeout::new(60).unwrap()),
             AdminRoutingStatus::Enabled,
             10,
             20,
