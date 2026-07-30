@@ -360,8 +360,9 @@ async fn presentation_and_repository_failures_use_closed_openai_errors() {
 async fn anthropic_route_authentication_failure_uses_anthropic_error_wire() {
     let config = ServerConfig::default();
     let authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::InvalidApiKey));
+    let authentication_port: Arc<dyn TokenAuthenticator> = authenticator.clone();
     let authentication = middleware::from_fn_with_state(
-        AuthenticationState::new(Arc::clone(&authenticator), QueryApiKeyPolicy::Deny, &config)
+        AuthenticationState::new(authentication_port, QueryApiKeyPolicy::Deny, &config)
             .with_error_protocol(Protocol::Anthropic),
         authenticate_api_key,
     );
