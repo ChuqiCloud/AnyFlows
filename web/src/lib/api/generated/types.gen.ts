@@ -33,8 +33,8 @@ export type AdminChannel = {
 };
 export type AdminChannelCreateRequest = {
     name: string;
-    type: 'openai' | 'anthropic';
-    protocol: 'openai_chat' | 'openai_responses' | 'anthropic';
+    type: 'openai' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -67,8 +67,8 @@ export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'anthrop
 export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'bedrock' | 'vertex' | 'custom';
 export type AdminChannelUpdateRequest = {
     name: string;
-    type: 'openai' | 'anthropic';
-    protocol: 'openai_chat' | 'openai_responses' | 'anthropic';
+    type: 'openai' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -495,8 +495,8 @@ export type UserTokenWriteRequest = {
 };
 export type AdminChannelCreateRequestWritable = {
     name: string;
-    type: 'openai' | 'anthropic';
-    protocol: 'openai_chat' | 'openai_responses' | 'anthropic';
+    type: 'openai' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -524,8 +524,8 @@ export type AdminChannelCreateRequestWritable = {
 };
 export type AdminChannelUpdateRequestWritable = {
     name: string;
-    type: 'openai' | 'anthropic';
-    protocol: 'openai_chat' | 'openai_responses' | 'anthropic';
+    type: 'openai' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;

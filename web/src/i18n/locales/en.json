@@ -81,8 +81,8 @@
   },
   "channels": {
     "title": "Channels",
-    "subtitle": "Maintain routing and sensitive settings for OpenAI-compatible upstreams, then run a real probe when needed.",
-    "scope": "OpenAI Chat and native Responses endpoints",
+    "subtitle": "Maintain routing, credentials, and request policies for native OpenAI, Anthropic, and Gemini upstreams, then run a real probe when needed.",
+    "scope": "OpenAI Chat / Responses, Anthropic Messages, and Gemini generateContent",
     "count_one": "{{count}} channel",
     "count_other": "{{count}} channels",
     "loading": "Loading channels",
@@ -107,7 +107,8 @@
     },
     "type": {
       "openai": "OpenAI",
-      "anthropic": "Anthropic"
+      "anthropic": "Anthropic",
+      "gemini": "Gemini"
     },
     "values": {
       "defaultUrl": "Default upstream URL",
@@ -145,7 +146,7 @@
     },
     "empty": {
       "title": "No channels yet",
-      "body": "Create the first OpenAI channel and it will appear here."
+      "body": "Create the first native upstream channel and it will appear here."
     },
     "error": {
       "title": "Channels could not be loaded",
@@ -153,7 +154,7 @@
     },
     "editor": {
       "createTitle": "New channel",
-      "createDescription": "Configure a native OpenAI or Anthropic upstream for routing.",
+      "createDescription": "Configure a native OpenAI, Anthropic, or Gemini upstream for routing.",
       "editTitle": "Edit channel",
       "editDescription": "Read fields can be changed directly. Sensitive objects follow the blank-value rule."
     },

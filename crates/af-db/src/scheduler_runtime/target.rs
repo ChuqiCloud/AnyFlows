@@ -25,6 +25,7 @@ pub(super) const fn is_supported_runtime_target(
             ChannelType::OpenAi,
             Protocol::OpenAiChat | Protocol::OpenAiResponses
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
+            | (ChannelType::Gemini, Protocol::Gemini)
     )
 }
 

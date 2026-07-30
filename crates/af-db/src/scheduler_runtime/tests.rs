@@ -329,6 +329,42 @@ fn anthropic_runtime_target_accepts_messages_pair_and_rejects_mismatch() {
     );
 }
 
+#[test]
+fn gemini_runtime_target_accepts_native_pair_and_rejects_mismatch() {
+    let credential = runtime_credential_record(1);
+    let oauth = SchedulerRuntimeCredentialRecord::with_scheduling(
+        2,
+        CredentialKind::Oauth,
+        EncryptedCredentialEnvelope::new("runtime-test-key", [0x43; 24], vec![0x25; 16]).unwrap(),
+        false,
+        0,
+        10,
+    )
+    .unwrap();
+    assert!(
+        SchedulerRuntimeTargetRecord::new_pool(
+            ChannelId::new(1).unwrap(),
+            ChannelType::Gemini,
+            Protocol::Gemini,
+            None,
+            vec![credential.clone(), oauth],
+            Vec::new(),
+        )
+        .is_ok()
+    );
+    assert!(
+        SchedulerRuntimeTargetRecord::new_pool(
+            ChannelId::new(1).unwrap(),
+            ChannelType::Gemini,
+            Protocol::OpenAiChat,
+            None,
+            vec![credential],
+            Vec::new(),
+        )
+        .is_err()
+    );
+}
+
 fn runtime_credential_record(credential_id: i64) -> SchedulerRuntimeCredentialRecord {
     SchedulerRuntimeCredentialRecord::with_scheduling(
         credential_id,

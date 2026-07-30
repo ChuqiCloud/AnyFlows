@@ -127,6 +127,33 @@ async fn valid_anthropic_response_is_healthy_and_sends_messages_headers() {
 }
 
 #[tokio::test]
+async fn valid_gemini_response_is_healthy_and_sends_google_headers() {
+    let key = [0x46; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    let database = test_database().await;
+    seed_probe_target(&database.seed, &key, Protocol::Gemini, false, false).await;
+    let response = br#"{"responseId":"response-probe","modelVersion":"probe-model-canary","candidates":[{"index":0,"content":{"role":"model","parts":[{"text":"ok"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}"#;
+    let (proxy_address, captured, server) = spawn_proxy("200 OK", response);
+    let probe = probe(&database.pool, &key, proxy_address);
+
+    assert_eq!(probe.check(channel_id()).await, ChannelProbeStatus::Healthy);
+
+    let request = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    server.join().unwrap();
+    let head = request.head.to_ascii_lowercase();
+    assert!(head.starts_with(
+        "post http://probe-upstream.example/v1beta/models/probe-model-canary:generatecontent http/1.1"
+    ));
+    assert!(head.contains("x-goog-api-key: probe-secret-canary"));
+    assert!(!head.contains("authorization:"));
+    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+    assert!(body.get("model").is_none());
+    assert_eq!(body["generationConfig"]["maxOutputTokens"], 1);
+    assert_eq!(body["contents"][0]["parts"][0]["text"], "ping");
+
+    database.close().await;
+}
+
+#[tokio::test]
 async fn channel_timeout_override_outlives_probe_default_timeout() {
     let key = [0x45; CREDENTIAL_ENCRYPTION_KEY_BYTES];
     let database = test_database().await;

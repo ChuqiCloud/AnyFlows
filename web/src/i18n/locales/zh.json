@@ -81,8 +81,8 @@
   },
   "channels": {
     "title": "渠道管理",
-    "subtitle": "维护 OpenAI 兼容上游的路由参数与敏感配置，并按需执行一次真实测活。",
-    "scope": "支持 OpenAI Chat 与 Responses 原生端点",
+    "subtitle": "维护 OpenAI、Anthropic 与 Gemini 原生上游的路由参数、凭据和请求策略，并按需执行真实测活。",
+    "scope": "支持 OpenAI Chat / Responses、Anthropic Messages 与 Gemini generateContent",
     "count_one": "共 {{count}} 个渠道",
     "count_other": "共 {{count}} 个渠道",
     "loading": "正在加载渠道",
@@ -107,7 +107,8 @@
     },
     "type": {
       "openai": "OpenAI",
-      "anthropic": "Anthropic"
+      "anthropic": "Anthropic",
+      "gemini": "Gemini"
     },
     "values": {
       "defaultUrl": "默认上游地址",
@@ -145,7 +146,7 @@
     },
     "empty": {
       "title": "还没有渠道",
-      "body": "创建第一个 OpenAI 渠道后，它会出现在这里。"
+      "body": "创建第一个原生上游渠道后，它会出现在这里。"
     },
     "error": {
       "title": "无法读取渠道",
@@ -153,7 +154,7 @@
     },
     "editor": {
       "createTitle": "新建渠道",
-      "createDescription": "配置一个可参与路由的 OpenAI 或 Anthropic 原生上游。",
+      "createDescription": "配置一个可参与路由的 OpenAI、Anthropic 或 Gemini 原生上游。",
       "editTitle": "编辑渠道",
       "editDescription": "读取字段可直接修改，敏感对象按留空规则单独处理。"
     },

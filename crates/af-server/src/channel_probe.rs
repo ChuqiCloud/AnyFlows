@@ -3,15 +3,16 @@ use std::{fmt, time::Duration};
 use af_account::{CredentialDecryptor, DecryptedCredential};
 use af_adapter::{
     AdaptorError, AdaptorSendExt as _, AdaptorSettings, AdaptorTarget, AdaptorTransportError,
-    AnthropicAdaptorSettings, Bytes, Credential, HeaderMap, HeaderName, HeaderValue, Method,
-    OpenAiAdaptorSettings, Operation, RelayContext, ResponseMode, UpstreamRequest, get_adaptor,
+    AnthropicAdaptorSettings, Bytes, Credential, GeminiAdaptorSettings, HeaderMap, HeaderName,
+    HeaderValue, Method, OpenAiAdaptorSettings, Operation, RelayContext, ResponseMode,
+    UpstreamRequest, get_adaptor,
 };
 use af_db::{ChannelProbeTargetRecord, ChannelProbeTargetRepository, DatabasePool};
 use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Role};
 use af_http::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 use af_httpclient::HttpClientProvider;
 use af_protocol::{
-    CanonicalRequest, ContentBlock, Message, Sampling, TokenCount, ToolChoice, anthropic,
+    CanonicalRequest, ContentBlock, Message, Sampling, TokenCount, ToolChoice, anthropic, gemini,
     openai_chat, openai_responses,
 };
 use af_scheduler::{ChannelProbe, ChannelProbeStatus};
@@ -230,9 +231,8 @@ fn apply_header_overrides(
 
 fn probe_operation(protocol: Protocol) -> Result<Operation, ProbeFailure> {
     match protocol {
-        Protocol::OpenAiChat | Protocol::Anthropic => Ok(Operation::Chat),
+        Protocol::OpenAiChat | Protocol::Anthropic | Protocol::Gemini => Ok(Operation::Chat),
         Protocol::OpenAiResponses => Ok(Operation::Responses),
-        Protocol::Gemini => Err(ProbeFailure::UnsupportedTarget),
     }
 }
 
@@ -268,7 +268,9 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
         Protocol::Anthropic => {
             anthropic::build_request(&request).map_err(|_| ProbeFailure::RequestBuild)?
         }
-        Protocol::Gemini => return Err(ProbeFailure::UnsupportedTarget),
+        Protocol::Gemini => {
+            gemini::build_request(&request).map_err(|_| ProbeFailure::RequestBuild)?
+        }
     };
     Ok(Bytes::from(value.to_string()))
 }
@@ -284,7 +286,9 @@ fn validate_probe_response(protocol: Protocol, body: &[u8]) -> Result<(), ProbeF
         Protocol::Anthropic => anthropic::parse_response(body)
             .map(|_| ())
             .map_err(|_| ProbeFailure::InvalidResponse),
-        Protocol::Gemini => Err(ProbeFailure::UnsupportedTarget),
+        Protocol::Gemini => gemini::parse_response(body)
+            .map(|_| ())
+            .map_err(|_| ProbeFailure::InvalidResponse),
     }
 }
 
@@ -295,6 +299,7 @@ fn supported_target(target: &ChannelProbeTargetRecord) -> bool {
             ChannelType::OpenAi,
             Protocol::OpenAiChat | Protocol::OpenAiResponses
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
+            | (ChannelType::Gemini, Protocol::Gemini)
     )
 }
 
@@ -328,6 +333,9 @@ fn adaptor_settings(target: &ChannelProbeTargetRecord) -> Result<AdaptorSettings
         (ChannelType::Anthropic, Protocol::Anthropic) => Ok(AdaptorSettings::Anthropic(
             AnthropicAdaptorSettings::new(models),
         )),
+        (ChannelType::Gemini, Protocol::Gemini) => {
+            Ok(AdaptorSettings::Gemini(GeminiAdaptorSettings::new(models)))
+        }
         _ => Err(ProbeFailure::UnsupportedTarget),
     }
 }

@@ -8,8 +8,8 @@ import type {
 
 export type ChannelEditorMode = 'create' | 'update'
 export type SensitiveEditMode = 'preserve' | 'replace' | 'clear'
-export type ChannelType = 'openai' | 'anthropic'
-export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'anthropic'
+export type ChannelType = 'openai' | 'anthropic' | 'gemini'
+export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini'
 export const MAX_CHANNEL_TIMEOUT_SECONDS = 900
 
 export const channelParameterNames = [
@@ -86,8 +86,8 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
     name: z.string().trim().min(1, messages.invalidField).max(128, messages.invalidField),
     baseUrl: z.string().trim().max(2048, messages.invalidField),
     timeoutSeconds: z.string(),
-    channelType: z.enum(['openai', 'anthropic']),
-    protocol: z.enum(['openai_chat', 'openai_responses', 'anthropic']),
+    channelType: z.enum(['openai', 'anthropic', 'gemini']),
+    protocol: z.enum(['openai_chat', 'openai_responses', 'anthropic', 'gemini']),
     tag: z.string().trim().max(64, messages.invalidField),
     status: z.enum(['enabled', 'disabled']),
     weight: z.number().int(messages.invalidField).min(0, messages.invalidField),
@@ -104,7 +104,9 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
   }).superRefine((values, context) => {
     const protocolMatchesType = values.channelType === 'anthropic'
       ? values.protocol === 'anthropic'
-      : values.protocol === 'openai_chat' || values.protocol === 'openai_responses'
+      : values.channelType === 'gemini'
+        ? values.protocol === 'gemini'
+        : values.protocol === 'openai_chat' || values.protocol === 'openai_responses'
     if (!protocolMatchesType) addIssue(context, 'protocol', messages.invalidField)
 
     if (values.baseUrl && !isSafeBaseUrl(values.baseUrl)) {
@@ -142,10 +144,14 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
     name: channel?.name ?? '',
     baseUrl: channel?.base_url ?? '',
     timeoutSeconds: channel?.timeout_secs == null ? '' : String(channel.timeout_secs),
-    channelType: channel?.type === 'anthropic' ? 'anthropic' : 'openai',
+    channelType: channel?.type === 'anthropic'
+      ? 'anthropic'
+      : channel?.type === 'gemini' ? 'gemini' : 'openai',
     protocol: channel?.protocol === 'anthropic'
       ? 'anthropic'
-      : channel?.protocol === 'openai_responses' ? 'openai_responses' : 'openai_chat',
+      : channel?.protocol === 'gemini'
+        ? 'gemini'
+        : channel?.protocol === 'openai_responses' ? 'openai_responses' : 'openai_chat',
     tag: channel?.tag ?? '',
     status: channel?.status === 'enabled' ? 'enabled' : 'disabled',
     weight: channel?.weight ?? 10,

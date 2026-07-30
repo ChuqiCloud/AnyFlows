@@ -125,7 +125,11 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                     const currentProtocol = form.getValues('protocol')
                     const nextProtocol = nextType === 'anthropic'
                       ? 'anthropic'
-                      : currentProtocol === 'anthropic' ? 'openai_chat' : currentProtocol
+                      : nextType === 'gemini'
+                        ? 'gemini'
+                        : currentProtocol === 'openai_chat' || currentProtocol === 'openai_responses'
+                          ? currentProtocol
+                          : 'openai_chat'
                     field.onChange(nextType)
                     form.setValue('protocol', nextProtocol, {
                       shouldDirty: true,
@@ -136,6 +140,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                 >
                   <option value="openai">{t('channels.type.openai')}</option>
                   <option value="anthropic">{t('channels.type.anthropic')}</option>
+                  <option value="gemini">{t('channels.type.gemini')}</option>
                 </Select>
               )} />
             </ChannelFormField>
@@ -155,6 +160,8 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                 >
                   {channelType === 'anthropic' ? (
                     <option value="anthropic">{t('channels.protocol.anthropic')}</option>
+                  ) : channelType === 'gemini' ? (
+                    <option value="gemini">{t('channels.protocol.gemini')}</option>
                   ) : (
                     <>
                       <option value="openai_chat">{t('channels.protocol.openai_chat')}</option>
