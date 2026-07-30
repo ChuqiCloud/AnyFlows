@@ -195,16 +195,16 @@ async fn native_anthropic_runtime_streams_real_usage_and_public_identity() {
 
 #[tokio::test]
 async fn live_native_anthropic_runtime() {
-    if env::var("AF_LIVE_ANTHROPIC_CASE").as_deref() != Ok(LIVE_ANTHROPIC_CASE) {
+    if env::var("ANYFLOWS_LIVE_ANTHROPIC_CASE").as_deref() != Ok(LIVE_ANTHROPIC_CASE) {
         return;
     }
-    let base_url = env::var("AF_LIVE_ANTHROPIC_BASE_URL")
-        .expect("真实 Anthropic 联调必须设置 AF_LIVE_ANTHROPIC_BASE_URL");
-    let api_key = env::var("AF_LIVE_ANTHROPIC_API_KEY")
-        .expect("真实 Anthropic 联调必须设置 AF_LIVE_ANTHROPIC_API_KEY");
-    let upstream_model = env::var("AF_LIVE_ANTHROPIC_MODEL")
-        .expect("真实 Anthropic 联调必须设置 AF_LIVE_ANTHROPIC_MODEL");
-    let proxy_url = env::var("AF_LIVE_ANTHROPIC_PROXY_URL")
+    let base_url = env::var("ANYFLOWS_LIVE_ANTHROPIC_BASE_URL")
+        .expect("真实 Anthropic 联调必须设置 ANYFLOWS_LIVE_ANTHROPIC_BASE_URL");
+    let api_key = env::var("ANYFLOWS_LIVE_ANTHROPIC_API_KEY")
+        .expect("真实 Anthropic 联调必须设置 ANYFLOWS_LIVE_ANTHROPIC_API_KEY");
+    let upstream_model = env::var("ANYFLOWS_LIVE_ANTHROPIC_MODEL")
+        .expect("真实 Anthropic 联调必须设置 ANYFLOWS_LIVE_ANTHROPIC_MODEL");
+    let proxy_url = env::var("ANYFLOWS_LIVE_ANTHROPIC_PROXY_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:10808".to_owned());
     let database = TestDatabase::new();
     seed_database(&database, &base_url, &upstream_model, &api_key).await;
