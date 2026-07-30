@@ -33,6 +33,9 @@ mod admin_user;
 mod admin_user_tests;
 mod admin_user_write;
 mod auth;
+mod auth_challenge;
+#[cfg(test)]
+mod auth_challenge_tests;
 #[cfg(test)]
 mod auth_tests;
 mod billing_batch;
@@ -149,6 +152,14 @@ pub use admin_user_write::{
 pub use auth::{
     TokenAuthLookup, TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,
     TokenAuthRepositoryConfigError, TokenAuthRepositoryError,
+};
+pub use auth_challenge::{
+    AuthChallengeConsume, AuthChallengeConsumeOutcome, AuthChallengeConsumption,
+    AuthChallengeInputError, AuthChallengeIssue, AuthChallengeIssueOutcome, AuthChallengeIssued,
+    AuthChallengePurpose, AuthChallengeRepository, AuthChallengeRepositoryConfigError,
+    AuthChallengeRepositoryError, MAX_AUTH_CHALLENGE_ATTEMPTS,
+    MAX_AUTH_CHALLENGE_RESEND_COOLDOWN_SECONDS, MAX_AUTH_CHALLENGE_TTL_SECONDS,
+    MIN_AUTH_CHALLENGE_RESEND_COOLDOWN_SECONDS, MIN_AUTH_CHALLENGE_TTL_SECONDS,
 };
 pub use billing_batch::{
     BillingBatchRepository, BillingBatchRepositoryError, BillingBatchWrite, BillingBatchWriteError,
