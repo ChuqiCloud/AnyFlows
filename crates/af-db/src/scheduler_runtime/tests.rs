@@ -46,6 +46,7 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         "max_output_tokens": 4096,
         "stop_sequences": ["runtime-stop-canary"]
     }));
+    supported.timeout_secs = Set(Some(60));
     let supported = supported.insert(pool.connection()).await?;
     attach(supported.id, group.id, "gpt-runtime-canary")
         .insert(pool.connection())
@@ -186,6 +187,7 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         record.target().base_url(),
         Some("https://runtime-url-canary.example.com/prefix")
     );
+    assert_eq!(record.target().timeout().unwrap().seconds(), 60);
     assert_eq!(record.target().headers().len(), 1);
     assert_eq!(record.target().headers()[0].name(), "x-runtime-header");
     assert_eq!(
@@ -214,6 +216,7 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         .iter()
         .find(|record| record.target().channel_id().get() == anthropic_channel.id)
         .unwrap();
+    assert_eq!(anthropic_record.target().timeout(), None);
     assert_eq!(
         anthropic_record.target().channel_type(),
         ChannelType::Anthropic

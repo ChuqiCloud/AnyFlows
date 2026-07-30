@@ -10,6 +10,7 @@ export type ChannelEditorMode = 'create' | 'update'
 export type SensitiveEditMode = 'preserve' | 'replace' | 'clear'
 export type ChannelType = 'openai' | 'anthropic'
 export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'anthropic'
+export const MAX_CHANNEL_TIMEOUT_SECONDS = 900
 
 export const channelParameterNames = [
   'temperature',
@@ -36,6 +37,7 @@ export type ParameterRow = {
 export type ChannelFormValues = {
   name: string
   baseUrl: string
+  timeoutSeconds: string
   channelType: ChannelType
   protocol: ChannelProtocol
   tag: string
@@ -61,6 +63,7 @@ type ValidationMessages = {
   invalidJson: string
   invalidParameter: string
   invalidRouting: string
+  invalidTimeout: string
   invalidUrl: string
 }
 
@@ -82,6 +85,7 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
   return z.object({
     name: z.string().trim().min(1, messages.invalidField).max(128, messages.invalidField),
     baseUrl: z.string().trim().max(2048, messages.invalidField),
+    timeoutSeconds: z.string(),
     channelType: z.enum(['openai', 'anthropic']),
     protocol: z.enum(['openai_chat', 'openai_responses', 'anthropic']),
     tag: z.string().trim().max(64, messages.invalidField),
@@ -105,6 +109,9 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
 
     if (values.baseUrl && !isSafeBaseUrl(values.baseUrl)) {
       addIssue(context, 'baseUrl', messages.invalidUrl)
+    }
+    if (!isValidOptionalTimeout(values.timeoutSeconds)) {
+      addIssue(context, 'timeoutSeconds', messages.invalidTimeout)
     }
 
     const modelsValid = values.models.length <= 512
@@ -134,6 +141,7 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
   return {
     name: channel?.name ?? '',
     baseUrl: channel?.base_url ?? '',
+    timeoutSeconds: channel?.timeout_secs == null ? '' : String(channel.timeout_secs),
     channelType: channel?.type === 'anthropic' ? 'anthropic' : 'openai',
     protocol: channel?.protocol === 'anthropic'
       ? 'anthropic'
@@ -197,6 +205,7 @@ function commonRequest(values: ChannelFormValues) {
     type: values.channelType,
     protocol: values.protocol,
     base_url: values.baseUrl.trim() || null,
+    timeout_secs: values.timeoutSeconds.trim() === '' ? null : Number(values.timeoutSeconds),
     status: values.status,
     weight: values.weight,
     priority: values.priority,
@@ -361,6 +370,12 @@ function isSafeBaseUrl(value: string) {
   } catch {
     return false
   }
+}
+
+function isValidOptionalTimeout(value: string) {
+  if (value.trim() === '') return true
+  const seconds = Number(value)
+  return Number.isSafeInteger(seconds) && seconds >= 1 && seconds <= MAX_CHANNEL_TIMEOUT_SECONDS
 }
 
 function createRowId(prefix: string) {

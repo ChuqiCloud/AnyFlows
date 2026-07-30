@@ -4,6 +4,7 @@ use std::{
     env, fs,
     net::SocketAddr,
     sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
 };
 
 use af_db::{DatabaseOptions, MigrationOptions, connect_and_migrate};
@@ -17,7 +18,7 @@ use serde_json::{Value, json};
 use support::{
     CLIENT_KEY, GROUP_ID, IO_TIMEOUT, RUNTIME_HEADER_NAME, RUNTIME_HEADER_VALUE, UPSTREAM_BASE_URL,
     UPSTREAM_KEY, UPSTREAM_MODEL, credential_encryption_key, seed_anthropic_runtime_channel_with,
-    send_request, spawn_proxy, spawn_streaming_proxy,
+    send_request, spawn_delayed_proxy, spawn_proxy, spawn_streaming_proxy,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -92,7 +93,14 @@ async fn native_anthropic_runtime_preserves_request_and_rebuilds_public_response
   "messages": [{"role":"user","content":"hello"}]
 }"#;
     let database = TestDatabase::new();
-    seed_database(&database, UPSTREAM_BASE_URL, UPSTREAM_MODEL, UPSTREAM_KEY).await;
+    seed_database(
+        &database,
+        UPSTREAM_BASE_URL,
+        UPSTREAM_MODEL,
+        UPSTREAM_KEY,
+        None,
+    )
+    .await;
     let (proxy_address, captured, proxy) = spawn_proxy(
         "200 OK",
         &upstream_body,
@@ -144,7 +152,14 @@ async fn native_anthropic_runtime_streams_real_usage_and_public_identity() {
     let (first, rest) = anthropic_stream_chunks();
     let request_body = br#"{"model":"test-model","max_tokens":32,"messages":[{"role":"user","content":"hello"}],"stream":true}"#;
     let database = TestDatabase::new();
-    seed_database(&database, UPSTREAM_BASE_URL, UPSTREAM_MODEL, UPSTREAM_KEY).await;
+    seed_database(
+        &database,
+        UPSTREAM_BASE_URL,
+        UPSTREAM_MODEL,
+        UPSTREAM_KEY,
+        None,
+    )
+    .await;
     let (proxy_address, captured, release, proxy) = spawn_streaming_proxy(&first, &rest);
     let (address, shutdown, server) =
         start_gateway(&database, &format!("http://{proxy_address}")).await;
@@ -194,6 +209,59 @@ async fn native_anthropic_runtime_streams_real_usage_and_public_identity() {
 }
 
 #[tokio::test]
+async fn channel_timeout_override_outlives_short_global_http_timeout() {
+    let upstream_body = serde_json::to_vec(&json!({
+        "id": "msg_delayed_upstream",
+        "type": "message",
+        "role": "assistant",
+        "model": "private-upstream-model",
+        "content": [{"type": "text", "text": "delayed-answer"}],
+        "stop_reason": "end_turn",
+        "stop_sequence": null,
+        "usage": {
+            "input_tokens": 3,
+            "output_tokens": 2,
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0
+        }
+    }))
+    .unwrap();
+    let database = TestDatabase::new();
+    seed_database(
+        &database,
+        UPSTREAM_BASE_URL,
+        UPSTREAM_MODEL,
+        UPSTREAM_KEY,
+        Some(2),
+    )
+    .await;
+    let (proxy_address, captured, proxy) = spawn_delayed_proxy(
+        "200 OK",
+        &upstream_body,
+        &[("Content-Type", "application/json")],
+        Duration::from_millis(1_200),
+    );
+    let (address, shutdown, server) =
+        start_gateway_with_http_timeout(&database, &format!("http://{proxy_address}"), 1).await;
+
+    let response = send_request(
+        address,
+        "POST",
+        "/v1/messages",
+        br#"{"model":"test-model","max_tokens":4,"messages":[{"role":"user","content":"Reply with OK."}]}"#,
+        &[("Content-Type", "application/json"), ("x-api-key", CLIENT_KEY)],
+    )
+    .await;
+    stop_gateway(shutdown, server).await;
+    captured.recv_timeout(IO_TIMEOUT).unwrap();
+    proxy.join().unwrap();
+
+    assert_eq!(response.status, 200);
+    let body: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body["content"][0]["text"], "delayed-answer");
+}
+
+#[tokio::test]
 async fn live_native_anthropic_runtime() {
     if env::var("ANYFLOWS_LIVE_ANTHROPIC_CASE").as_deref() != Ok(LIVE_ANTHROPIC_CASE) {
         return;
@@ -207,7 +275,7 @@ async fn live_native_anthropic_runtime() {
     let proxy_url = env::var("ANYFLOWS_LIVE_ANTHROPIC_PROXY_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:10808".to_owned());
     let database = TestDatabase::new();
-    seed_database(&database, &base_url, &upstream_model, &api_key).await;
+    seed_database(&database, &base_url, &upstream_model, &api_key, Some(60)).await;
     let (address, shutdown, server) = start_gateway(&database, &proxy_url).await;
 
     let response = send_request(
@@ -246,6 +314,7 @@ async fn seed_database(
     base_url: &str,
     upstream_model: &str,
     api_key: &str,
+    timeout_secs: Option<i32>,
 ) {
     let pool = connect_and_migrate(
         &DatabaseOptions::new(&database.url).unwrap(),
@@ -321,6 +390,7 @@ async fn seed_database(
         UPSTREAM_MODEL,
         upstream_model,
         api_key,
+        timeout_secs,
     )
     .await;
     connection.close().await.unwrap();
@@ -334,12 +404,24 @@ async fn start_gateway(
     oneshot::Sender<()>,
     tokio::task::JoinHandle<Result<ShutdownReport, BootstrapError>>,
 ) {
+    start_gateway_with_http_timeout(database, proxy_url, 5).await
+}
+
+async fn start_gateway_with_http_timeout(
+    database: &TestDatabase,
+    proxy_url: &str,
+    http_timeout_secs: u64,
+) -> (
+    SocketAddr,
+    oneshot::Sender<()>,
+    tokio::task::JoinHandle<Result<ShutdownReport, BootstrapError>>,
+) {
     let config_path = database.path.with_extension("toml");
     let credential_key = credential_encryption_key();
     fs::write(
         &config_path,
         format!(
-            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'gateway-test-key'\nkey = '{credential_key}'\n[auth]\nlookup_timeout_secs = 1\nsession_signing_key = '{credential_key}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = '{proxy_url}'\ntrust_proxy_dns = true\n",
+            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'gateway-test-key'\nkey = '{credential_key}'\n[auth]\nlookup_timeout_secs = 1\nsession_signing_key = '{credential_key}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = {http_timeout_secs}\nrequest_timeout_secs = {http_timeout_secs}\nproxy_url = '{proxy_url}'\ntrust_proxy_dns = true\n",
             database.url,
             database
                 .billing_wal_directory()

@@ -89,6 +89,7 @@ fn try_runtime_target(
         channel.parameter_overrides().clone(),
         channel.headers().to_vec(),
     )
+    .map(|target| target.with_timeout(channel.timeout()))
     .map(Some)
     .map_err(|_| SchedulerRuntimeSelectionError::Invariant)
 }

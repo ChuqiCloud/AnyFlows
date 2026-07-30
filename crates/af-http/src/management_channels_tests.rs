@@ -609,6 +609,7 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
         "type": "openai",
         "protocol": "openai_chat",
         "base_url": "https://private.example.com/v1",
+        "timeout_secs": 60,
         "status": "disabled",
         "weight": 10,
         "priority": 20,
@@ -639,6 +640,7 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
     assert_eq!(created.status(), StatusCode::CREATED);
     let created = response_json(created).await;
     assert_eq!(created["id"], 90);
+    assert_eq!(created["timeout_secs"], 60);
     for secret in ["header-secret-canary", "settings-secret-canary"] {
         assert!(!created.to_string().contains(secret));
     }
@@ -646,6 +648,8 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
     for (field, invalid) in [
         ("param_override", json!({"messages": []})),
         ("param_override", json!({"max_output_tokens": 0})),
+        ("timeout_secs", json!(0)),
+        ("timeout_secs", json!(901)),
         ("header_override", json!({"content-type": "text/plain"})),
         ("header_override", json!({"x-request-id": "untrusted"})),
     ] {
@@ -886,6 +890,7 @@ fn sample_channel(id: i64, name: &str) -> AdminChannel {
         ChannelType::OpenAi,
         Protocol::OpenAiChat,
         Some("https://api.example.com/v1".to_owned()),
+        Some(af_domain::ChannelTimeout::new(60).unwrap()),
         AdminRoutingStatus::Enabled,
         10,
         20,

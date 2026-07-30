@@ -4,7 +4,9 @@ use std::{
     str::FromStr as _,
 };
 
-use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, GroupId, Protocol, Status};
+use af_domain::{
+    ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind, GroupId, Protocol, Status,
+};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
@@ -42,6 +44,7 @@ pub struct AdminChannelWriteRecord {
     channel_type: ChannelType,
     protocol: Protocol,
     base_url: Option<String>,
+    timeout: Option<ChannelTimeout>,
     status: Status,
     weight: i32,
     priority: i32,
@@ -67,6 +70,7 @@ impl AdminChannelWriteRecord {
         channel_type: ChannelType,
         protocol: Protocol,
         base_url: Option<String>,
+        timeout: Option<ChannelTimeout>,
         status: Status,
         weight: i32,
         priority: i32,
@@ -84,6 +88,7 @@ impl AdminChannelWriteRecord {
             channel_type,
             protocol,
             base_url,
+            timeout,
             status,
             weight,
             priority,
@@ -109,6 +114,7 @@ impl AdminChannelWriteRecord {
         channel_type: ChannelType,
         protocol: Protocol,
         base_url: Option<String>,
+        timeout: Option<ChannelTimeout>,
         status: Status,
         weight: i32,
         priority: i32,
@@ -126,6 +132,7 @@ impl AdminChannelWriteRecord {
             channel_type,
             protocol,
             base_url,
+            timeout,
             status,
             weight,
             priority,
@@ -453,6 +460,7 @@ impl AdminChannelRepository {
             r#type: Set(fields.channel_type.as_str().to_owned()),
             protocol: Set(fields.protocol.as_str().to_owned()),
             base_url: Set(fields.base_url),
+            timeout_secs: Set(fields.timeout_secs),
             status: Set(fields.status.code()),
             weight: Set(fields.weight),
             priority: Set(fields.priority),
@@ -519,6 +527,10 @@ impl AdminChannelRepository {
                 Expr::value(fields.protocol.as_str()),
             )
             .col_expr(channels::Column::BaseUrl, Expr::value(fields.base_url))
+            .col_expr(
+                channels::Column::TimeoutSecs,
+                Expr::value(fields.timeout_secs),
+            )
             .col_expr(channels::Column::Status, Expr::value(fields.status.code()))
             .col_expr(channels::Column::Weight, Expr::value(fields.weight))
             .col_expr(channels::Column::Priority, Expr::value(fields.priority))
@@ -813,6 +825,7 @@ struct ValidatedChannelFields {
     channel_type: ChannelType,
     protocol: Protocol,
     base_url: Option<ChannelBaseUrl>,
+    timeout_secs: Option<i32>,
     status: Status,
     weight: i32,
     priority: i32,
@@ -871,6 +884,13 @@ fn validate_channel_fields(
         .map(ChannelBaseUrl::parse)
         .transpose()
         .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+    let timeout_secs = record
+        .timeout
+        .map(|timeout| {
+            <i32 as std::convert::TryFrom<u64>>::try_from(timeout.seconds())
+                .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)
+        })
+        .transpose()?;
     let header_override = record
         .header_override
         .map(HeaderOverrides::validate)
@@ -883,6 +903,7 @@ fn validate_channel_fields(
         channel_type: record.channel_type,
         protocol: record.protocol,
         base_url,
+        timeout_secs,
         status: record.status,
         weight: record.weight,
         priority: record.priority,

@@ -9,6 +9,8 @@
 use rust_decimal::Decimal;
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
+use af_domain::ChannelTimeout;
+
 pub(crate) mod abilities;
 pub(crate) mod billing_batch_checkpoints;
 pub(crate) mod billing_reservations;
@@ -89,6 +91,26 @@ where
                 "fallback_group_id 必须引用已存在的分组".to_owned(),
             ));
         }
+    }
+    Ok(())
+}
+
+async fn validate_channel<C>(
+    model: &channels::ActiveModel,
+    _database: &C,
+    _insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // MySQL 5.7 会忽略 CHECK；ORM 写入口仍必须拒绝超出领域边界的渠道超时。
+    if let Some(Some(timeout_secs)) = model.timeout_secs.try_as_ref()
+        && <u64 as std::convert::TryFrom<i32>>::try_from(*timeout_secs)
+            .ok()
+            .and_then(|value| ChannelTimeout::new(value).ok())
+            .is_none()
+    {
+        return Err(DbErr::Custom("渠道上游超时无效".to_owned()));
     }
     Ok(())
 }
@@ -371,7 +393,7 @@ impl_updated_at_behavior!(
     billing_reservations::ActiveModel => validate_default,
     channel_groups::ActiveModel => validate_default,
     channel_models::ActiveModel => validate_default,
-    channels::ActiveModel => validate_default,
+    channels::ActiveModel => validate_channel,
     credentials::ActiveModel => validate_credential,
     group_model_ratios::ActiveModel => validate_group_model_ratio,
     groups::ActiveModel => validate_group,

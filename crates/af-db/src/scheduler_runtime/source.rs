@@ -1,4 +1,4 @@
-use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Status};
+use af_domain::{ChannelId, ChannelTimeout, ChannelType, CredentialKind, Protocol, Status};
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 
 use crate::{
@@ -20,6 +20,7 @@ pub(super) struct SchedulerRuntimeChannelSource {
     channel_type: ChannelType,
     protocol: Protocol,
     base_url: Option<String>,
+    timeout: Option<ChannelTimeout>,
     model_mappings: ChannelModelMappings,
     parameter_overrides: ChannelParameterOverrides,
     headers: Vec<(String, String)>,
@@ -46,6 +47,15 @@ impl SchedulerRuntimeChannelSource {
             .protocol
             .parse()
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let timeout = channel
+            .timeout_secs
+            .map(|value| {
+                <u64 as std::convert::TryFrom<i32>>::try_from(value)
+                    .ok()
+                    .and_then(|value| ChannelTimeout::new(value).ok())
+                    .ok_or(SchedulerRuntimeSourceError::Invariant)
+            })
+            .transpose()?;
         let model_mappings = ChannelModelMappings::parse(&channel.model_mapping)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let parameter_overrides = ChannelParameterOverrides::parse(&channel.param_override)
@@ -62,6 +72,7 @@ impl SchedulerRuntimeChannelSource {
             channel_type,
             protocol,
             base_url: channel.base_url.map(|value| value.as_str().to_owned()),
+            timeout,
             model_mappings,
             parameter_overrides,
             headers,
@@ -86,6 +97,11 @@ impl SchedulerRuntimeChannelSource {
     /// 返回可选基础地址；调用方不得写入日志。
     pub(super) fn base_url(&self) -> Option<&str> {
         self.base_url.as_deref()
+    }
+
+    /// 返回渠道级读取与完整请求超时；空值表示继承全局配置。
+    pub(super) const fn timeout(&self) -> Option<ChannelTimeout> {
+        self.timeout
     }
 
     /// 返回已验证的精确模型映射。

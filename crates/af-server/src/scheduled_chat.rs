@@ -3,12 +3,13 @@ use std::fmt;
 use af_account::{CredentialDecryptor, DecryptedCredential};
 use af_adapter::{
     AdaptorSettings, AnthropicAdaptorSettings, Credential, HeaderMap, HeaderName, HeaderValue,
-    OpenAiAdaptorSettings, PooledClient, RelayContext, get_adaptor,
+    OpenAiAdaptorSettings, RelayContext, get_adaptor,
 };
 use af_db::CredentialStateRepository;
 use af_domain::{
     AfError, ChannelType, CredentialKind, GatewayPrincipal, GroupId, Operation, Protocol,
 };
+use af_httpclient::HttpClientProvider;
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::{
     AnthropicRequestOverrides, OpenAiChatRequestOverrides, OpenAiResponsesRequestOverrides,
@@ -28,7 +29,7 @@ use crate::{
 pub(crate) struct ScheduledChatService {
     scheduler: IndexedWeightedScheduler,
     decryptor: CredentialDecryptor,
-    client: PooledClient,
+    clients: HttpClientProvider,
     credential_states: CredentialStateRepository,
 }
 
@@ -38,13 +39,13 @@ impl ScheduledChatService {
     pub(crate) const fn new(
         scheduler: IndexedWeightedScheduler,
         decryptor: CredentialDecryptor,
-        client: PooledClient,
+        clients: HttpClientProvider,
         credential_states: CredentialStateRepository,
     ) -> Self {
         Self {
             scheduler,
             decryptor,
-            client,
+            clients,
             credential_states,
         }
     }
@@ -90,7 +91,11 @@ impl ScheduledChatService {
                 return Err(AfError::Internal);
             }
 
-            let mut context = RelayContext::new(self.client.clone());
+            let client = self
+                .clients
+                .get(target.timeout().map(af_domain::ChannelTimeout::duration))
+                .map_err(|_| AfError::Internal)?;
+            let mut context = RelayContext::new(client);
             if let Some(base_url) = target.base_url() {
                 context = context
                     .with_base_url(base_url)
@@ -173,7 +178,7 @@ impl fmt::Debug for ScheduledChatService {
             .debug_struct("ScheduledChatService")
             .field("scheduler", &self.scheduler)
             .field("decryptor", &"<受控>")
-            .field("client", &"<受控>")
+            .field("clients", &"<受控>")
             .field("credential_states", &self.credential_states)
             .finish()
     }
@@ -385,7 +390,7 @@ mod tests {
         SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord, connect_and_migrate,
     };
     use af_domain::{ChannelId, Operation, UpstreamError};
-    use af_httpclient::{HttpClientConfig, HttpClientPool};
+    use af_httpclient::{HttpClientConfig, HttpClientProvider};
     use af_protocol::{CanonicalRequest, openai_chat};
     use af_scheduler::{
         ChannelIndexSource, ChannelIndexSourceFuture, ChannelIndexSourceRecord,
@@ -655,9 +660,7 @@ mod tests {
         ScheduledChatService::new(
             IndexedWeightedScheduler::new(index),
             decryptor(),
-            HttpClientPool::default()
-                .get(&HttpClientConfig::default())
-                .unwrap(),
+            HttpClientProvider::new(HttpClientConfig::default(), 4).unwrap(),
             CredentialStateRepository::new(
                 connect_and_migrate(
                     &DatabaseOptions::new("sqlite::memory:").unwrap(),

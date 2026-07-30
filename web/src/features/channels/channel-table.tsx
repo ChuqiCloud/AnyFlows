@@ -68,6 +68,11 @@ function ScheduleBadges({ channel }: { channel: AdminChannel }) {
     <div className="flex flex-wrap gap-1 tabular-nums">
       <Badge>{t('channels.values.priority', { value: channel.priority })}</Badge>
       <Badge>{t('channels.values.weight', { value: channel.weight })}</Badge>
+      <Badge className="text-muted-foreground">
+        {channel.timeout_secs == null
+          ? t('channels.values.inheritTimeout')
+          : t('channels.values.timeout', { value: channel.timeout_secs })}
+      </Badge>
     </div>
   )
 }

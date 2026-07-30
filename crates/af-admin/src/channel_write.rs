@@ -9,7 +9,9 @@ use af_db::{
     MAX_ADMIN_CHANNEL_GROUPS, MAX_ADMIN_CHANNEL_JSON_BYTES, MAX_ADMIN_CHANNEL_MODEL_BYTES,
     MAX_ADMIN_CHANNEL_MODELS, validate_channel_header_overrides,
 };
-use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, GroupId, Protocol, Status};
+use af_domain::{
+    ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind, GroupId, Protocol, Status,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -53,6 +55,7 @@ impl AdminChannelCreateCommand {
         channel_type: ChannelType,
         protocol: Protocol,
         base_url: Option<String>,
+        timeout_secs: Option<u64>,
         status: AdminRoutingWriteStatus,
         weight: i32,
         priority: i32,
@@ -71,6 +74,7 @@ impl AdminChannelCreateCommand {
                 channel_type,
                 protocol,
                 base_url,
+                timeout_secs,
                 status,
                 weight,
                 priority,
@@ -114,6 +118,7 @@ impl AdminChannelUpdateCommand {
         channel_type: ChannelType,
         protocol: Protocol,
         base_url: Option<String>,
+        timeout_secs: Option<u64>,
         status: AdminRoutingWriteStatus,
         weight: i32,
         priority: i32,
@@ -132,6 +137,7 @@ impl AdminChannelUpdateCommand {
                 channel_type,
                 protocol,
                 base_url,
+                timeout_secs,
                 status,
                 weight,
                 priority,
@@ -164,6 +170,7 @@ struct AdminChannelWriteFields {
     channel_type: ChannelType,
     protocol: Protocol,
     base_url: Option<String>,
+    timeout: Option<ChannelTimeout>,
     status: AdminRoutingWriteStatus,
     weight: i32,
     priority: i32,
@@ -187,6 +194,7 @@ impl AdminChannelWriteFields {
         channel_type: ChannelType,
         protocol: Protocol,
         base_url: Option<String>,
+        timeout_secs: Option<u64>,
         status: AdminRoutingWriteStatus,
         weight: i32,
         priority: i32,
@@ -235,11 +243,16 @@ impl AdminChannelWriteFields {
         if let Some(settings) = &settings {
             validate_json_object(settings, false)?;
         }
+        let timeout = timeout_secs
+            .map(ChannelTimeout::new)
+            .transpose()
+            .map_err(|_| AdminChannelWriteError::InvalidInput)?;
         Ok(Self {
             name,
             channel_type,
             protocol,
             base_url,
+            timeout,
             status,
             weight,
             priority,
@@ -260,6 +273,7 @@ impl AdminChannelWriteFields {
             self.channel_type,
             self.protocol,
             self.base_url,
+            self.timeout,
             self.status.into_domain(),
             self.weight,
             self.priority,
@@ -861,6 +875,7 @@ mod tests {
             ChannelType::OpenAi,
             Protocol::OpenAiChat,
             Some("https://private.example.com".to_owned()),
+            Some(60),
             AdminRoutingWriteStatus::Disabled,
             10,
             20,
@@ -909,6 +924,7 @@ mod tests {
                 ChannelType::Anthropic,
                 Protocol::Anthropic,
                 None,
+                None,
                 AdminRoutingWriteStatus::Disabled,
                 10,
                 0,
@@ -928,6 +944,7 @@ mod tests {
                 "mismatch".to_owned(),
                 ChannelType::Anthropic,
                 Protocol::OpenAiChat,
+                None,
                 None,
                 AdminRoutingWriteStatus::Disabled,
                 10,
@@ -974,6 +991,7 @@ mod tests {
                 ChannelType::OpenAi,
                 Protocol::OpenAiResponses,
                 None,
+                None,
                 AdminRoutingWriteStatus::Disabled,
                 10,
                 0,
@@ -1000,6 +1018,7 @@ mod tests {
                 ChannelType::Anthropic,
                 Protocol::Anthropic,
                 None,
+                None,
                 AdminRoutingWriteStatus::Disabled,
                 10,
                 0,
@@ -1022,5 +1041,35 @@ mod tests {
             .is_ok()
         );
         assert!(build(serde_json::json!({"temperature": 1.01})).is_err());
+    }
+
+    #[test]
+    fn channel_timeout_is_optional_and_bounded() {
+        let build = |timeout_secs| {
+            AdminChannelCreateCommand::new(
+                "timeout".to_owned(),
+                ChannelType::OpenAi,
+                Protocol::OpenAiChat,
+                None,
+                timeout_secs,
+                AdminRoutingWriteStatus::Disabled,
+                10,
+                0,
+                true,
+                Vec::new(),
+                Vec::new(),
+                serde_json::json!({}),
+                serde_json::json!({}),
+                serde_json::json!({}),
+                serde_json::json!({}),
+                None,
+            )
+        };
+
+        assert!(build(None).is_ok());
+        assert!(build(Some(1)).is_ok());
+        assert!(build(Some(900)).is_ok());
+        assert!(build(Some(0)).is_err());
+        assert!(build(Some(901)).is_err());
     }
 }

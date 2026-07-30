@@ -116,7 +116,9 @@
       "groups_one": "{{count}} 个分组",
       "groups_other": "{{count}} 个分组",
       "priority": "优先级 {{value}}",
-      "weight": "权重 {{value}}"
+      "weight": "权重 {{value}}",
+      "timeout": "超时 {{value}} 秒",
+      "inheritTimeout": "使用默认超时"
     },
     "probe": {
       "notTested": "尚未测试",
@@ -162,6 +164,8 @@
       "advanced": "高级适配器设置",
       "autoBanHint": "发生确定性故障时允许运行时自动停用。",
       "tagHint": "用于列表筛选与识别，可留空。",
+      "timeoutHint": "同时控制生产转发和测活的读取停顿与完整请求总时限；连接超时仍继承全局。留空时分别使用转发与测活默认值。",
+      "timeoutPlaceholder": "使用服务默认",
       "modelPlaceholder": "输入模型名后按 Enter",
       "modelsHint": "按 Enter 添加，支持粘贴逗号或换行分隔的模型列表。",
       "groupPlaceholder": "选择分组",
@@ -177,6 +181,7 @@
     "fields": {
       "name": "名称",
       "baseUrl": "上游基础地址",
+      "timeout": "渠道超时（秒）",
       "type": "渠道类型",
       "protocol": "协议",
       "status": "状态",
@@ -200,6 +205,7 @@
       "header": "Header 名称或值无效，或包含禁止覆盖的名称。",
       "parameter": "参数值超出允许范围，或存在重复参数。",
       "schedule": "优先级必须为整数，权重必须为非负整数。",
+      "timeout": "渠道超时必须是 1 到 900 秒的整数，或留空使用服务默认值。",
       "url": "请输入不含账号、查询串和片段的 HTTP(S) 地址。",
       "routing": "模型和分组必须同时设置或同时留空，且不能重复或超过容量限制。"
     },

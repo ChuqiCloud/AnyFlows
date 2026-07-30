@@ -116,6 +116,7 @@ pub async fn seed_anthropic_runtime_channel(connection: &DatabaseConnection, gro
         UPSTREAM_MODEL,
         UPSTREAM_MODEL,
         UPSTREAM_KEY,
+        None,
     )
     .await;
 }
@@ -128,6 +129,7 @@ pub async fn seed_anthropic_runtime_channel_with(
     public_model: &str,
     upstream_model: &str,
     api_key: &str,
+    timeout_secs: Option<i32>,
 ) {
     let model_mapping = if public_model == upstream_model {
         "{}".to_owned()
@@ -140,13 +142,14 @@ pub async fn seed_anthropic_runtime_channel_with(
     };
     for (sql, values) in [
         (
-            "INSERT INTO channels (id, name, type, protocol, base_url, status, model_mapping, param_override, header_override, settings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO channels (id, name, type, protocol, base_url, timeout_secs, status, model_mapping, param_override, header_override, settings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             vec![
                 ANTHROPIC_CHANNEL_ID.into(),
                 "runtime-anthropic".into(),
                 "anthropic".into(),
                 "anthropic".into(),
                 base_url.into(),
+                timeout_secs.into(),
                 1_i16.into(),
                 model_mapping.clone().into(),
                 "{}".into(),
@@ -322,6 +325,20 @@ pub fn spawn_proxy(
     mpsc::Receiver<CapturedRequest>,
     thread::JoinHandle<()>,
 ) {
+    spawn_delayed_proxy(status_line, body, headers, Duration::ZERO)
+}
+
+/// 启动只处理一次请求且可延迟响应头的本地代理。
+pub fn spawn_delayed_proxy(
+    status_line: &str,
+    body: &[u8],
+    headers: &[(&str, &str)],
+    response_delay: Duration,
+) -> (
+    SocketAddr,
+    mpsc::Receiver<CapturedRequest>,
+    thread::JoinHandle<()>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
@@ -349,6 +366,7 @@ pub fn spawn_proxy(
         stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
         let captured = read_proxy_request(&mut stream);
         captured_tx.send(captured).unwrap();
+        thread::sleep(response_delay);
 
         let mut response = format!(
             "HTTP/1.1 {status_line}\r\nContent-Length: {}\r\nConnection: close\r\n",

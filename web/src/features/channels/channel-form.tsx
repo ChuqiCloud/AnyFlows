@@ -16,6 +16,7 @@ import {
   buildChannelFormSchema,
   createKeyValueRow,
   defaultChannelValues,
+  MAX_CHANNEL_TIMEOUT_SECONDS,
   toCreateRequest,
   toUpdateRequest,
   type ChannelEditorMode,
@@ -48,6 +49,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
     invalidJson: t('channels.validation.json'),
     invalidParameter: t('channels.validation.parameter'),
     invalidRouting: t('channels.validation.routing'),
+    invalidTimeout: t('channels.validation.timeout'),
     invalidUrl: t('channels.validation.url'),
   })
   const form = useForm<ChannelFormValues>({
@@ -92,9 +94,23 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
           <ChannelFormField id="channel-name" label={t('channels.fields.name')} error={form.formState.errors.name?.message}>
             <Input id="channel-name" aria-invalid={!!form.formState.errors.name} {...form.register('name')} />
           </ChannelFormField>
-          <ChannelFormField id="channel-url" label={t('channels.fields.baseUrl')} error={form.formState.errors.baseUrl?.message}>
-            <Input id="channel-url" placeholder="https://api.example.com/v1" aria-invalid={!!form.formState.errors.baseUrl} {...form.register('baseUrl')} />
-          </ChannelFormField>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(11rem,0.36fr)]">
+            <ChannelFormField id="channel-url" label={t('channels.fields.baseUrl')} error={form.formState.errors.baseUrl?.message}>
+              <Input id="channel-url" placeholder="https://api.example.com/v1" aria-invalid={!!form.formState.errors.baseUrl} {...form.register('baseUrl')} />
+            </ChannelFormField>
+            <ChannelFormField id="channel-timeout" label={t('channels.fields.timeout')} error={form.formState.errors.timeoutSeconds?.message} hint={t('channels.form.timeoutHint')}>
+              <Input
+                id="channel-timeout"
+                type="number"
+                min={1}
+                max={MAX_CHANNEL_TIMEOUT_SECONDS}
+                step={1}
+                placeholder={t('channels.form.timeoutPlaceholder')}
+                aria-invalid={!!form.formState.errors.timeoutSeconds}
+                {...form.register('timeoutSeconds')}
+              />
+            </ChannelFormField>
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <ChannelFormField id="channel-type" label={t('channels.fields.type')}>
               <Controller control={form.control} name="channelType" render={({ field }) => (

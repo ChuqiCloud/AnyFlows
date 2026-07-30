@@ -2,13 +2,14 @@ use std::{fmt, time::Duration};
 
 use af_account::{CredentialDecryptor, DecryptedCredential};
 use af_adapter::{
-    AdaptorSendExt as _, AdaptorSettings, AdaptorTarget, AnthropicAdaptorSettings, Bytes,
-    Credential, HeaderMap, HeaderName, HeaderValue, Method, OpenAiAdaptorSettings, Operation,
-    PooledClient, RelayContext, ResponseMode, UpstreamRequest, get_adaptor,
+    AdaptorError, AdaptorSendExt as _, AdaptorSettings, AdaptorTarget, AdaptorTransportError,
+    AnthropicAdaptorSettings, Bytes, Credential, HeaderMap, HeaderName, HeaderValue, Method,
+    OpenAiAdaptorSettings, Operation, RelayContext, ResponseMode, UpstreamRequest, get_adaptor,
 };
 use af_db::{ChannelProbeTargetRecord, ChannelProbeTargetRepository, DatabasePool};
 use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Role};
 use af_http::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
+use af_httpclient::HttpClientProvider;
 use af_protocol::{
     CanonicalRequest, ContentBlock, Message, Sampling, TokenCount, ToolChoice, anthropic,
     openai_chat, openai_responses,
@@ -21,7 +22,8 @@ use tokio::time::timeout;
 pub(crate) struct DatabaseChannelProbe {
     targets: ChannelProbeTargetRepository,
     decryptor: CredentialDecryptor,
-    client: PooledClient,
+    clients: HttpClientProvider,
+    default_timeout: Duration,
 }
 
 impl DatabaseChannelProbe {
@@ -30,12 +32,15 @@ impl DatabaseChannelProbe {
     pub(crate) fn new(
         database: DatabasePool,
         decryptor: CredentialDecryptor,
-        client: PooledClient,
+        clients: HttpClientProvider,
+        default_timeout: Duration,
     ) -> Self {
+        debug_assert!(!default_timeout.is_zero());
         Self {
             targets: ChannelProbeTargetRepository::new(database),
             decryptor,
-            client,
+            clients,
+            default_timeout,
         }
     }
 
@@ -65,7 +70,14 @@ impl DatabaseChannelProbe {
             return Err(ProbeFailure::UnsupportedTarget);
         }
 
-        let mut context = RelayContext::new(self.client.clone());
+        let timeout = target
+            .timeout()
+            .map_or(self.default_timeout, af_domain::ChannelTimeout::duration);
+        let client = self
+            .clients
+            .get(Some(timeout))
+            .map_err(|_| ProbeFailure::ContextBuild)?;
+        let mut context = RelayContext::new(client);
         if let Some(base_url) = target.base_url() {
             context = context
                 .with_base_url(base_url)
@@ -96,7 +108,7 @@ impl DatabaseChannelProbe {
         let response = adaptor
             .send(request, &context)
             .await
-            .map_err(|_| ProbeFailure::Transport)?;
+            .map_err(map_transport_failure)?;
         if !response.status().is_success() {
             return Err(ProbeFailure::UpstreamStatus);
         }
@@ -104,7 +116,7 @@ impl DatabaseChannelProbe {
             .into_body()
             .into_bytes()
             .await
-            .map_err(|_| ProbeFailure::ResponseRead)?;
+            .map_err(map_response_read_failure)?;
         validate_probe_response(target.protocol(), &body)?;
         Ok(())
     }
@@ -128,7 +140,11 @@ impl ChannelProbe for DatabaseChannelProbe {
                     error_kind = failure.as_str(),
                     "渠道真实探活失败"
                 );
-                ChannelProbeStatus::Unhealthy
+                if failure == ProbeFailure::TimedOut {
+                    ChannelProbeStatus::TimedOut
+                } else {
+                    ChannelProbeStatus::Unhealthy
+                }
             }
         }
     }
@@ -154,6 +170,7 @@ impl AdminChannelProbe for BoundedAdminChannelProbe {
             match timeout(self.timeout, self.probe.check(channel_id)).await {
                 Ok(ChannelProbeStatus::Healthy) => AdminChannelProbeOutcome::Healthy,
                 Ok(ChannelProbeStatus::Unhealthy) => AdminChannelProbeOutcome::Unhealthy,
+                Ok(ChannelProbeStatus::TimedOut) => AdminChannelProbeOutcome::TimedOut,
                 // 调度层未来新增的状态默认按不健康处理，避免未知结论被误报为成功。
                 Ok(_) => AdminChannelProbeOutcome::Unhealthy,
                 Err(_) => AdminChannelProbeOutcome::TimedOut,
@@ -178,7 +195,8 @@ impl fmt::Debug for DatabaseChannelProbe {
             .debug_struct("DatabaseChannelProbe")
             .field("targets", &"<受控>")
             .field("decryptor", &"<受控>")
-            .field("client", &"<受控>")
+            .field("clients", &"<受控>")
+            .field("default_timeout", &self.default_timeout)
             .finish()
     }
 }
@@ -280,6 +298,24 @@ fn supported_target(target: &ChannelProbeTargetRecord) -> bool {
     )
 }
 
+fn map_transport_failure(error: AdaptorError) -> ProbeFailure {
+    match error {
+        AdaptorError::Transport(
+            AdaptorTransportError::ConnectTimeout
+            | AdaptorTransportError::ReadTimeout
+            | AdaptorTransportError::RequestTimeout,
+        ) => ProbeFailure::TimedOut,
+        _ => ProbeFailure::Transport,
+    }
+}
+
+fn map_response_read_failure(error: AdaptorError) -> ProbeFailure {
+    match map_transport_failure(error) {
+        ProbeFailure::TimedOut => ProbeFailure::TimedOut,
+        _ => ProbeFailure::ResponseRead,
+    }
+}
+
 fn adaptor_settings(target: &ChannelProbeTargetRecord) -> Result<AdaptorSettings, ProbeFailure> {
     let models = vec![target.model().to_owned()];
     match (target.channel_type(), target.protocol()) {
@@ -308,6 +344,7 @@ enum ProbeFailure {
     ContextBuild,
     HeaderOverride,
     RequestBuild,
+    TimedOut,
     Transport,
     UpstreamStatus,
     ResponseRead,
@@ -327,6 +364,7 @@ impl ProbeFailure {
             Self::ContextBuild => "probe_context_build",
             Self::HeaderOverride => "probe_header_override",
             Self::RequestBuild => "probe_request_build",
+            Self::TimedOut => "probe_timeout",
             Self::Transport => "probe_transport",
             Self::UpstreamStatus => "probe_upstream_status",
             Self::ResponseRead => "probe_response_read",

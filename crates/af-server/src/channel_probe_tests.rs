@@ -14,7 +14,9 @@ use af_account::{CredentialDecryptor, credential_plaintext_aad};
 use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
 use af_db::{DatabaseOptions, DatabasePool, MigrationOptions, connect_and_migrate};
 use af_domain::{ChannelId, CredentialKind, Protocol, Status};
-use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
+use af_httpclient::{
+    HttpClientConfig, HttpClientProvider, HttpTimeouts, ProxyConfig, RemoteDnsPolicy,
+};
 use af_scheduler::{ChannelProbe as _, ChannelProbeStatus};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chacha20poly1305::{
@@ -121,6 +123,34 @@ async fn valid_anthropic_response_is_healthy_and_sends_messages_headers() {
     assert_eq!(body["max_tokens"], 1);
     assert_eq!(body["messages"][0]["content"], "ping");
 
+    database.close().await;
+}
+
+#[tokio::test]
+async fn channel_timeout_override_outlives_probe_default_timeout() {
+    let key = [0x45; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    let database = test_database().await;
+    seed_probe_target(&database.seed, &key, Protocol::Anthropic, false, false).await;
+    database
+        .seed
+        .execute_unprepared(&format!(
+            "UPDATE channels SET timeout_secs = 1 WHERE id = {TEST_CHANNEL_ID}"
+        ))
+        .await
+        .unwrap();
+    let response = br#"{"id":"msg_probe","type":"message","role":"assistant","model":"probe-model-canary","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}"#;
+    let (proxy_address, captured, server) =
+        spawn_delayed_proxy("200 OK", response, Duration::from_millis(200));
+    let probe = probe_with_default_timeout(
+        &database.pool,
+        &key,
+        proxy_address,
+        Duration::from_millis(100),
+    );
+
+    assert_eq!(probe.check(channel_id()).await, ChannelProbeStatus::Healthy);
+    captured.recv_timeout(IO_TIMEOUT).unwrap();
+    server.join().unwrap();
     database.close().await;
 }
 
@@ -276,23 +306,30 @@ fn probe(
     key: &[u8; CREDENTIAL_ENCRYPTION_KEY_BYTES],
     proxy_address: SocketAddr,
 ) -> DatabaseChannelProbe {
+    probe_with_default_timeout(database, key, proxy_address, IO_TIMEOUT)
+}
+
+fn probe_with_default_timeout(
+    database: &DatabasePool,
+    key: &[u8; CREDENTIAL_ENCRYPTION_KEY_BYTES],
+    proxy_address: SocketAddr,
+    default_timeout: Duration,
+) -> DatabaseChannelProbe {
     let config = HttpClientConfig::new(
         ProxyConfig::parse(format!("http://{proxy_address}")).unwrap(),
-        HttpTimeouts::new(IO_TIMEOUT, IO_TIMEOUT, IO_TIMEOUT).unwrap(),
+        HttpTimeouts::new(IO_TIMEOUT, default_timeout, default_timeout).unwrap(),
     )
     .with_remote_dns_policy(RemoteDnsPolicy::TrustProxy);
-    let client = HttpClientPool::default().get(&config).unwrap();
-    DatabaseChannelProbe::new(database.clone(), decryptor(key), client)
+    let clients = HttpClientProvider::new(config, 4).unwrap();
+    DatabaseChannelProbe::new(database.clone(), decryptor(key), clients, default_timeout)
 }
 
 fn probe_without_reachable_upstream(
     database: &DatabasePool,
     key: &[u8; CREDENTIAL_ENCRYPTION_KEY_BYTES],
 ) -> DatabaseChannelProbe {
-    let client = HttpClientPool::default()
-        .get(&HttpClientConfig::default())
-        .unwrap();
-    DatabaseChannelProbe::new(database.clone(), decryptor(key), client)
+    let clients = HttpClientProvider::new(HttpClientConfig::default(), 4).unwrap();
+    DatabaseChannelProbe::new(database.clone(), decryptor(key), clients, IO_TIMEOUT)
 }
 
 fn decryptor(key: &[u8; CREDENTIAL_ENCRYPTION_KEY_BYTES]) -> CredentialDecryptor {
@@ -371,6 +408,18 @@ fn spawn_proxy(
     mpsc::Receiver<CapturedRequest>,
     thread::JoinHandle<()>,
 ) {
+    spawn_delayed_proxy(status_line, body, Duration::ZERO)
+}
+
+fn spawn_delayed_proxy(
+    status_line: &str,
+    body: &[u8],
+    response_delay: Duration,
+) -> (
+    SocketAddr,
+    mpsc::Receiver<CapturedRequest>,
+    thread::JoinHandle<()>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let status_line = status_line.to_owned();
@@ -381,6 +430,7 @@ fn spawn_proxy(
         stream.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
         stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
         captured_tx.send(read_request(&mut stream)).unwrap();
+        thread::sleep(response_delay);
         let head = format!(
             "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
             body.len()

@@ -15,6 +15,7 @@ const messages = {
   invalidJson: 'json',
   invalidParameter: 'parameter',
   invalidRouting: 'routing',
+  invalidTimeout: 'timeout',
   invalidUrl: 'url',
 }
 
@@ -25,6 +26,7 @@ test('Anthropic 渠道默认值保留类型和 Messages 协议', () => {
     name: 'Anthropic',
     protocol: 'anthropic',
     base_url: 'https://api.anthropic.com',
+    timeout_secs: 60,
     status: 'enabled',
     weight: 10,
     priority: 0,
@@ -42,6 +44,7 @@ test('Anthropic 渠道默认值保留类型和 Messages 协议', () => {
 
   assert.equal(values.channelType, 'anthropic')
   assert.equal(values.protocol, 'anthropic')
+  assert.equal(values.timeoutSeconds, '60')
 })
 
 test('渠道类型和协议错配必须失败关闭', () => {
@@ -78,4 +81,23 @@ test('Anthropic 支持停止序列但温度上限为一', () => {
   assert.equal(request.type, 'anthropic')
   assert.equal(request.protocol, 'anthropic')
   assert.deepEqual(request.param_override.stop_sequences, ['private'])
+})
+
+test('渠道超时留空使用服务默认并只接受一到九百秒整数', () => {
+  const schema = buildChannelFormSchema('create', messages)
+  const inherited = {
+    ...defaultChannelValues(),
+    name: 'Inherited timeout',
+  }
+  assert.equal(schema.safeParse(inherited).success, true)
+  assert.equal(toCreateRequest(inherited).timeout_secs, null)
+
+  for (const timeoutSeconds of ['1', '60', '900']) {
+    const values = { ...inherited, timeoutSeconds }
+    assert.equal(schema.safeParse(values).success, true)
+    assert.equal(toCreateRequest(values).timeout_secs, Number(timeoutSeconds))
+  }
+  for (const timeoutSeconds of ['0', '1.5', '901', 'not-a-number']) {
+    assert.equal(schema.safeParse({ ...inherited, timeoutSeconds }).success, false)
+  }
 })

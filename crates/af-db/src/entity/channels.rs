@@ -17,6 +17,8 @@ pub struct Model {
     pub protocol: String,
     #[sea_orm(column_type = "Text", nullable)]
     pub base_url: Option<ChannelBaseUrl>,
+    /// 空值使用对应场景的服务默认值；非空值同时覆盖读取停顿和完整请求超时。
+    pub timeout_secs: Option<i32>,
     pub status: i16,
     pub weight: i32,
     pub priority: i32,

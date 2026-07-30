@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, fmt};
 
-use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol};
+use af_domain::{ChannelId, ChannelTimeout, ChannelType, CredentialKind, Protocol};
 use sea_orm::entity::prelude::Json;
 use thiserror::Error;
 
@@ -178,6 +178,7 @@ pub struct SchedulerRuntimeTargetRecord {
     channel_type: ChannelType,
     protocol: Protocol,
     base_url: Option<String>,
+    timeout: Option<ChannelTimeout>,
     credentials: Vec<SchedulerRuntimeCredentialRecord>,
     model_mappings: ChannelModelMappings,
     parameter_overrides: ChannelParameterOverrides,
@@ -283,6 +284,7 @@ impl SchedulerRuntimeTargetRecord {
             channel_type,
             protocol,
             base_url,
+            timeout: None,
             credentials,
             model_mappings,
             parameter_overrides,
@@ -318,6 +320,19 @@ impl SchedulerRuntimeTargetRecord {
     #[must_use]
     pub fn base_url(&self) -> Option<&str> {
         self.base_url.as_deref()
+    }
+
+    /// 覆盖该不可变运行时目标使用的渠道级超时。
+    #[must_use]
+    pub fn with_timeout(mut self, timeout: Option<ChannelTimeout>) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    /// 返回渠道级读取与完整请求超时；空值表示继承全局配置。
+    #[must_use]
+    pub const fn timeout(&self) -> Option<ChannelTimeout> {
+        self.timeout
     }
 
     /// 返回数据库声明的凭据类型。
@@ -371,6 +386,7 @@ impl fmt::Debug for SchedulerRuntimeTargetRecord {
             .field("channel_type", &self.channel_type)
             .field("protocol", &self.protocol)
             .field("base_url", &self.base_url.as_ref().map(|_| "<已脱敏>"))
+            .field("timeout", &self.timeout)
             .field("credential_count", &self.credentials.len())
             .field("model_mapping_count", &self.model_mappings.len())
             .field("parameter_overrides", &self.parameter_overrides)

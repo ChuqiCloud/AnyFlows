@@ -1757,6 +1757,13 @@ async fn assert_persistence_constraints(
     invalid_channel_weight.weight = Set(-1);
     assert!(invalid_channel_weight.insert(connection).await.is_err());
 
+    for timeout_secs in [0, 901] {
+        let mut invalid_channel_timeout =
+            channel_active_model(&format!("invalid-channel-timeout-{timeout_secs}"));
+        invalid_channel_timeout.timeout_secs = Set(Some(timeout_secs));
+        assert!(invalid_channel_timeout.insert(connection).await.is_err());
+    }
+
     let mut invalid_credential_status = credential_active_model(channel_id, "invalid-status");
     invalid_credential_status.status = Set(0);
     assert!(invalid_credential_status.insert(connection).await.is_err());

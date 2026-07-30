@@ -44,8 +44,8 @@ use af_http::{
 };
 use af_httpclient::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
-    DEFAULT_REQUEST_TIMEOUT, HttpClientConfig, HttpClientError, HttpClientPool, HttpTimeouts,
-    PooledClient, ProxyConfig, RemoteDnsPolicy,
+    DEFAULT_REQUEST_TIMEOUT, HttpClientConfig, HttpClientError, HttpClientProvider, HttpTimeouts,
+    ProxyConfig, RemoteDnsPolicy,
 };
 use af_scheduler::{
     ChannelIndexCacheError, ChannelIndexRefreshConfig, ChannelIndexRefreshSupervisor, ChannelProbe,
@@ -67,6 +67,8 @@ use crate::{
 };
 
 const BILLING_QUEUE_RETRY_DELAY: Duration = Duration::from_millis(100);
+/// 为数据库读取和任务调度保留的探活硬截止余量。
+const CHANNEL_PROBE_HARD_TIMEOUT_PADDING: Duration = Duration::from_secs(10);
 
 /// 已加载并校验静态配置。
 pub struct Configured;
@@ -112,7 +114,7 @@ pub struct AuthenticationReady {
 /// 生产转发共用的受控 HTTP Client 已完成安全配置与装配。
 pub struct RelayReady {
     infrastructure: AuthenticationReady,
-    upstream_client: PooledClient,
+    upstream_clients: HttpClientProvider,
 }
 
 /// 计费 WAL、定价缓存、额度仓储及内部可靠队列均已完成装配。
@@ -125,7 +127,7 @@ pub struct BillingReady {
     usage_record_worker_count: usize,
     refund_signal_queue: RefundSignalQueue,
     refund_signal_consumer: RefundSignalConsumer,
-    upstream_client: PooledClient,
+    upstream_clients: HttpClientProvider,
     channel_index: InMemoryChannelIndex,
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
 }
@@ -521,7 +523,7 @@ impl Bootstrap<DatabaseReady> {
 impl Bootstrap<AuthenticationReady> {
     /// 使用启动配置建立生产转发共用的受控 HTTP Client。
     pub fn init_relay(self) -> Result<Bootstrap<RelayReady>, BootstrapError> {
-        let upstream_client = build_http_client(&self.config)?;
+        let upstream_clients = build_http_clients(&self.config)?;
         let Bootstrap {
             config,
             shutdown_timeout,
@@ -534,7 +536,7 @@ impl Bootstrap<AuthenticationReady> {
             shutdown,
             stage: RelayReady {
                 infrastructure: stage,
-                upstream_client,
+                upstream_clients,
             },
         })
     }
@@ -579,7 +581,7 @@ impl Bootstrap<RelayReady> {
         let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(ScheduledChatService::new(
             IndexedWeightedScheduler::new(channel_index.clone()),
             decryptor,
-            self.stage.upstream_client.clone(),
+            self.stage.upstream_clients.clone(),
             CredentialStateRepository::new(
                 self.stage.infrastructure.infrastructure.database.clone(),
             ),
@@ -644,7 +646,7 @@ impl Bootstrap<RelayReady> {
                 usage_record_worker_count,
                 refund_signal_queue,
                 refund_signal_consumer,
-                upstream_client: stage.upstream_client,
+                upstream_clients: stage.upstream_clients,
                 channel_index,
                 model_catalog_reader,
             },
@@ -672,7 +674,7 @@ impl Bootstrap<BillingReady> {
             usage_record_worker_count,
             refund_signal_queue,
             refund_signal_consumer,
-            upstream_client,
+            upstream_clients,
             channel_index,
             model_catalog_reader,
         } = stage;
@@ -719,7 +721,8 @@ impl Bootstrap<BillingReady> {
         let probe = DatabaseChannelProbe::new(
             infrastructure.infrastructure.database.clone(),
             decryptor,
-            upstream_client.clone(),
+            upstream_clients.clone(),
+            Duration::from_secs(config.channel_probe().probe_timeout_secs()),
         );
         let probe_config = channel_probe_config(&config);
         let admin_channel_probe: Arc<dyn AdminChannelProbe> = Arc::new(
@@ -789,10 +792,16 @@ fn spawn_channel_probe_task<P>(
 /// 将已校验的启动配置转换为调度层的强类型探活边界。
 fn channel_probe_config(config: &AppConfig) -> ChannelProbeSupervisorConfig {
     let settings = config.channel_probe();
+    let configured_default = Duration::from_secs(settings.probe_timeout_secs());
+    let maximum_channel_timeout = Duration::from_secs(af_domain::MAX_CHANNEL_TIMEOUT_SECS);
+    // 渠道覆盖由探活实现自身执行；外层只兜底失控实现和数据库读取停滞。
+    let hard_timeout = std::cmp::max(configured_default, maximum_channel_timeout)
+        .checked_add(CHANNEL_PROBE_HARD_TIMEOUT_PADDING)
+        .expect("渠道探活硬截止必须可表示");
     ChannelProbeSupervisorConfig::new(
         settings.batch_size(),
         Duration::from_secs(settings.interval_secs()),
-        Duration::from_secs(settings.probe_timeout_secs()),
+        hard_timeout,
     )
     .expect("已校验的渠道探活配置必须满足调度层边界")
 }
@@ -1080,7 +1089,7 @@ fn migration_options(config: &AppConfig) -> Result<MigrationOptions, BootstrapEr
     )
 }
 
-fn build_http_client(config: &AppConfig) -> Result<PooledClient, BootstrapError> {
+fn build_http_clients(config: &AppConfig) -> Result<HttpClientProvider, BootstrapError> {
     let settings = config.http_client();
     let timeouts = HttpTimeouts::new(
         settings
@@ -1108,13 +1117,13 @@ fn build_http_client(config: &AppConfig) -> Result<PooledClient, BootstrapError>
     };
     let client_config =
         HttpClientConfig::new(proxy, timeouts).with_remote_dns_policy(remote_dns_policy);
-    let pool = HttpClientPool::new(
+    HttpClientProvider::new(
+        client_config,
         settings
             .max_cached_clients()
             .unwrap_or(DEFAULT_MAX_CACHED_CLIENTS),
     )
-    .map_err(BootstrapError::HttpClient)?;
-    pool.get(&client_config).map_err(BootstrapError::HttpClient)
+    .map_err(BootstrapError::HttpClient)
 }
 
 fn terminate_unconfirmed_shutdown(error_kind: &'static str) -> ! {

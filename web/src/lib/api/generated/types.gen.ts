@@ -9,6 +9,7 @@ export type AdminChannel = {
     name: string;
     protocol: AdminChannelProtocol;
     base_url: string | null;
+    timeout_secs: number | null;
     status: AdminRoutingStatus;
     weight: number;
     priority: number;
@@ -35,6 +36,7 @@ export type AdminChannelCreateRequest = {
     type: 'openai' | 'anthropic';
     protocol: 'openai_chat' | 'openai_responses' | 'anthropic';
     base_url: string | null;
+    timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
     weight: number;
     priority: number;
@@ -68,6 +70,7 @@ export type AdminChannelUpdateRequest = {
     type: 'openai' | 'anthropic';
     protocol: 'openai_chat' | 'openai_responses' | 'anthropic';
     base_url: string | null;
+    timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
     weight: number;
     priority: number;
@@ -495,6 +498,7 @@ export type AdminChannelCreateRequestWritable = {
     type: 'openai' | 'anthropic';
     protocol: 'openai_chat' | 'openai_responses' | 'anthropic';
     base_url: string | null;
+    timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
     weight: number;
     priority: number;
@@ -523,6 +527,7 @@ export type AdminChannelUpdateRequestWritable = {
     type: 'openai' | 'anthropic';
     protocol: 'openai_chat' | 'openai_responses' | 'anthropic';
     base_url: string | null;
+    timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
     weight: number;
     priority: number;

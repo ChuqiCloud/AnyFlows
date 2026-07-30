@@ -3939,6 +3939,7 @@
           "name",
           "protocol",
           "base_url",
+          "timeout_secs",
           "status",
           "weight",
           "priority",
@@ -3978,6 +3979,16 @@
             "format": "uri",
             "description": "不含 userinfo、查询串或片段的 HTTP(S) 基础地址。",
             "maxLength": 2048
+          },
+          "timeout_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "渠道级读取与完整请求超时；null 表示使用对应场景的服务默认值。",
+            "maximum": 900,
+            "minimum": 1
           },
           "status": {
             "$ref": "#/components/schemas/AdminRoutingStatus"
@@ -4152,6 +4163,16 @@
             "format": "uri",
             "description": "不含 userinfo、查询串或片段的 HTTP(S) 基础地址。",
             "maxLength": 2048
+          },
+          "timeout_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "同时覆盖上游读取停顿与完整请求总时限；省略或 null 时使用服务默认值。",
+            "maximum": 900,
+            "minimum": 1
           },
           "status": {
             "$ref": "#/components/schemas/AdminRoutingWriteStatus"
@@ -4373,6 +4394,16 @@
             ],
             "format": "uri",
             "maxLength": 2048
+          },
+          "timeout_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "同时覆盖上游读取停顿与完整请求总时限；省略或 null 时使用服务默认值。",
+            "maximum": 900,
+            "minimum": 1
           },
           "status": {
             "$ref": "#/components/schemas/AdminRoutingWriteStatus"
