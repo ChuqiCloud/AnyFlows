@@ -10,18 +10,14 @@ use lettre::{
 };
 use tokio::time::timeout;
 
-const TEST_EMAIL_SUBJECT: &str = "AnyFlows SMTP 配置测试";
-const TEST_EMAIL_BODY: &str =
-    "这是一封由 AnyFlows 发送的 SMTP 配置测试邮件。收到此邮件表示当前邮件服务器配置可用。";
-
 /// 基于 lettre 的异步 SMTP 投递器，只允许强制 STARTTLS 或隐式 TLS。
 #[derive(Clone, Copy, Default)]
 pub struct SmtpEmailDelivery;
 
 impl EmailDelivery for SmtpEmailDelivery {
-    fn send_test<'a>(&'a self, request: EmailDeliveryRequest) -> EmailDeliveryFuture<'a> {
+    fn send<'a>(&'a self, request: EmailDeliveryRequest) -> EmailDeliveryFuture<'a> {
         Box::pin(async move {
-            let message = build_test_message(&request)?;
+            let message = build_message(&request)?;
             let deadline = Duration::from_secs(u64::from(request.timeout_seconds()));
             let transport = build_transport(&request, deadline)?;
             match timeout(deadline, transport.send(message)).await {
@@ -40,19 +36,19 @@ impl fmt::Debug for SmtpEmailDelivery {
     }
 }
 
-fn build_test_message(request: &EmailDeliveryRequest) -> Result<Message, EmailDeliveryError> {
+fn build_message(request: &EmailDeliveryRequest) -> Result<Message, EmailDeliveryError> {
     let from = mailbox(request.from_address(), request.from_name())?;
     let recipient = mailbox(request.recipient(), None)?;
     let mut builder = Message::builder()
         .from(from)
         .to(recipient)
-        .subject(TEST_EMAIL_SUBJECT)
+        .subject(request.subject())
         .header(ContentType::TEXT_PLAIN);
     if let Some(reply_to) = request.reply_to() {
         builder = builder.reply_to(mailbox(reply_to, None)?);
     }
     builder
-        .body(TEST_EMAIL_BODY.to_owned())
+        .body(request.body().to_owned())
         .map_err(|_| EmailDeliveryError::InvalidConfiguration)
 }
 
@@ -124,8 +120,8 @@ mod tests {
         let message = Message::builder()
             .from("sender@example.com".parse().unwrap())
             .to("recipient@example.com".parse().unwrap())
-            .subject(TEST_EMAIL_SUBJECT)
-            .body(TEST_EMAIL_BODY.to_owned())
+            .subject("AnyFlows SMTP 配置测试")
+            .body("测试正文".to_owned())
             .unwrap();
 
         let result = timeout(deadline, transport.send(message)).await;

@@ -1,19 +1,96 @@
-use std::{error::Error, net::IpAddr, time::Duration};
+use std::{
+    error::Error,
+    net::IpAddr,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
+use af_account::SystemSecretCipher;
+use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
 use af_db::{
-    AdminUserLookupOutcome, AdminUserRepository, DatabaseOptions, InitialSetupOutcome,
-    InitialSetupRecord, InitialSetupRepository, MigrationOptions, RegistrationRepository,
-    UserSessionLookupOutcome, UserSessionRepository,
+    AdminUserLookupOutcome, AdminUserRepository, AuthChallengeRateLimitRepository,
+    AuthChallengeRepository, DatabaseOptions, EmailPasswordUpdate, EmailSettingsRepository,
+    EmailSettingsWriteRecord, EmailTlsMode, InitialSetupOutcome, InitialSetupRecord,
+    InitialSetupRepository, MigrationOptions, RegistrationRepository, UserSessionLookupOutcome,
+    UserSessionRepository,
 };
 use af_domain::{GroupId, TrustedClientIp, UserId};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
 use crate::{
-    DatabaseRegistrationService, RegistrationCommand, RegistrationError, RegistrationPolicyCommand,
-    RegistrationService, SessionPrincipal, SessionRole,
+    DatabaseRegistrationService, EmailDelivery, EmailDeliveryError, EmailDeliveryFuture,
+    EmailDeliveryRequest, RegistrationCommand, RegistrationEmailVerificationCommand,
+    RegistrationError, RegistrationPolicyCommand, RegistrationService, SessionPrincipal,
+    SessionRole,
 };
 
 const PASSWORD: &str = "correct horse battery staple";
+
+#[derive(Default)]
+struct RecordingDelivery {
+    bodies: Mutex<Vec<String>>,
+}
+
+impl RecordingDelivery {
+    fn last_code(&self) -> String {
+        self.bodies
+            .lock()
+            .unwrap()
+            .last()
+            .and_then(|body| body.split('：').nth(1))
+            .and_then(|tail| tail.lines().next())
+            .map(str::to_owned)
+            .expect("测试邮件必须包含验证码")
+    }
+}
+
+impl EmailDelivery for RecordingDelivery {
+    fn send<'a>(&'a self, request: EmailDeliveryRequest) -> EmailDeliveryFuture<'a> {
+        self.bodies.lock().unwrap().push(request.body().to_owned());
+        Box::pin(async { Ok(()) })
+    }
+}
+
+fn cipher() -> SystemSecretCipher {
+    let settings: CredentialEncryptionSettings = serde_json::from_value(serde_json::json!({
+        "key_id": "registration-test-key",
+        "key": URL_SAFE_NO_PAD.encode([0x24; CREDENTIAL_ENCRYPTION_KEY_BYTES]),
+    }))
+    .unwrap();
+    SystemSecretCipher::new(&settings).unwrap()
+}
+
+async fn registration_service(
+    pool: &af_db::DatabasePool,
+    users: AdminUserRepository,
+    delivery: Arc<dyn EmailDelivery>,
+) -> Result<DatabaseRegistrationService, Box<dyn Error>> {
+    let timeout = Duration::from_secs(5);
+    EmailSettingsRepository::new(pool.clone(), timeout)?
+        .update(EmailSettingsWriteRecord::new(
+            true,
+            "smtp.example.com".to_owned(),
+            465,
+            EmailTlsMode::Tls,
+            None,
+            EmailPasswordUpdate::Clear,
+            "noreply@example.com".to_owned(),
+            Some("AnyFlows".to_owned()),
+            None,
+            10,
+        ))
+        .await?;
+    Ok(DatabaseRegistrationService::new(
+        RegistrationRepository::new(pool.clone(), timeout)?,
+        users,
+        AuthChallengeRepository::new(pool.clone(), timeout)?,
+        AuthChallengeRateLimitRepository::new(pool.clone(), timeout)?,
+        EmailSettingsRepository::new(pool.clone(), timeout)?,
+        cipher(),
+        delivery,
+        Some(&URL_SAFE_NO_PAD.encode([0x42; 32])),
+    )?)
+}
 
 #[tokio::test]
 async fn registration_reuses_identity_creation_and_counts_conflicts() -> Result<(), Box<dyn Error>>
@@ -34,11 +111,8 @@ async fn registration_reuses_identity_creation_and_counts_conflicts() -> Result<
         panic!("空数据库必须完成首次安装");
     };
     let users = AdminUserRepository::new(pool.clone(), Duration::from_secs(5))?;
-    let registration = DatabaseRegistrationService::new(
-        RegistrationRepository::new(pool.clone(), Duration::from_secs(5))?,
-        users.clone(),
-        Some(&URL_SAFE_NO_PAD.encode([0x42; 32])),
-    )?;
+    let delivery = Arc::new(RecordingDelivery::default());
+    let registration = registration_service(&pool, users.clone(), delivery.clone()).await?;
     let admin = SessionPrincipal::new(admin_id, SessionRole::Admin);
     let default_group_id = match users.get(admin_id).await? {
         AdminUserLookupOutcome::Found(user) => user.default_group_id(),
@@ -52,10 +126,18 @@ async fn registration_reuses_identity_creation_and_counts_conflicts() -> Result<
         .await?;
 
     let client_ip = TrustedClientIp::new("192.0.2.10".parse::<IpAddr>()?);
+    registration
+        .send_email_verification(
+            client_ip,
+            &RegistrationEmailVerificationCommand::new("registered@example.com".to_owned())?,
+        )
+        .await?;
+    let verification_code = delivery.last_code();
     let command = RegistrationCommand::new(
         "registered-user".to_owned(),
         Some("registered@example.com".to_owned()),
         PASSWORD.to_owned(),
+        Some(verification_code),
     )?;
     let registered = registration.register(client_ip, &command).await?;
     let record = match users.get(registered.user_id()).await? {
@@ -79,12 +161,13 @@ async fn registration_reuses_identity_creation_and_counts_conflicts() -> Result<
 
     assert_eq!(
         registration.register(client_ip, &command).await,
-        Err(RegistrationError::Conflict)
+        Err(RegistrationError::VerificationRejected)
     );
     let another = RegistrationCommand::new(
         "another-user".to_owned(),
         Some("another@example.com".to_owned()),
         PASSWORD.to_owned(),
+        Some("123456".to_owned()),
     )?;
     assert!(matches!(
         registration.register(client_ip, &another).await,
@@ -103,11 +186,8 @@ async fn policy_access_requires_admin_before_repository_work() -> Result<(), Box
     )
     .await?;
     let users = AdminUserRepository::new(pool.clone(), Duration::from_secs(5))?;
-    let registration = DatabaseRegistrationService::new(
-        RegistrationRepository::new(pool.clone(), Duration::from_secs(5))?,
-        users,
-        Some(&URL_SAFE_NO_PAD.encode([0x42; 32])),
-    )?;
+    let registration =
+        registration_service(&pool, users, Arc::new(RecordingDelivery::default())).await?;
     let normal_user = SessionPrincipal::new(UserId::new(9)?, SessionRole::User);
 
     assert_eq!(

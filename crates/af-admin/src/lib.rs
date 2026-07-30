@@ -18,6 +18,7 @@ mod playground_share_token;
 mod registration;
 #[cfg(test)]
 mod registration_tests;
+mod registration_verification;
 mod routing_read;
 mod session;
 mod site_settings;
@@ -98,7 +99,8 @@ pub use playground_share_token::{
 };
 pub use registration::{
     DatabaseRegistrationService, MAX_REGISTRATION_PASSWORD_BYTES, MIN_REGISTRATION_PASSWORD_BYTES,
-    RegistrationCommand, RegistrationError, RegistrationFuture, RegistrationPolicy,
+    RegistrationCommand, RegistrationEmailVerificationCommand, RegistrationEmailVerificationFuture,
+    RegistrationEmailVerificationResult, RegistrationError, RegistrationFuture, RegistrationPolicy,
     RegistrationPolicyCommand, RegistrationPolicyFuture, RegistrationPolicyUpdateFuture,
     RegistrationResult, RegistrationService, RegistrationServiceConfigError, RegistrationStatus,
     RegistrationStatusFuture,

@@ -8,6 +8,7 @@ use crate::{
     management_session::{LoginResponse, SessionUser},
     registration::{
         AdminAuthenticationSettingsRequest, AdminAuthenticationSettingsResponse,
+        RegistrationEmailVerificationRequest, RegistrationEmailVerificationResponse,
         RegistrationRequest, RegistrationStatusResponse,
     },
 };
@@ -27,6 +28,25 @@ fn get_registration_status() {}
 
 #[utoipa::path(
     post,
+    path = "/api/registration/email-verification",
+    operation_id = "sendRegistrationEmailVerification",
+    tag = "公开注册",
+    summary = "发送注册邮箱验证码",
+    request_body = RegistrationEmailVerificationRequest,
+    responses(
+        (status = 202, description = "验证码已投递，并返回服务端时间边界", body = RegistrationEmailVerificationResponse),
+        (status = 400, description = "请求正文或邮箱无效", body = ManagementErrorBody),
+        (status = 403, description = "公开注册未启用", body = ManagementErrorBody),
+        (status = 409, description = "SMTP 设置尚未完整配置", body = ManagementErrorBody),
+        (status = 429, description = "主体、客户端 IP 或发送冷却窗口仍受限", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody),
+        (status = 502, description = "SMTP 连接、认证或投递失败", body = ManagementErrorBody)
+    )
+)]
+fn send_registration_email_verification() {}
+
+#[utoipa::path(
+    post,
     path = "/api/registration",
     operation_id = "registerUser",
     tag = "公开注册",
@@ -36,7 +56,7 @@ fn get_registration_status() {}
         (status = 201, description = "注册及自动登录成功", body = LoginResponse),
         (status = 400, description = "请求正文或字段无效", body = ManagementErrorBody),
         (status = 403, description = "公开注册未启用", body = ManagementErrorBody),
-        (status = 409, description = "用户名或邮箱冲突", body = ManagementErrorBody),
+        (status = 409, description = "验证码无效或公开身份无法创建", body = ManagementErrorBody),
         (status = 429, description = "固定窗口注册尝试次数已耗尽", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     )
@@ -81,12 +101,15 @@ fn update_admin_authentication_settings() {}
 #[openapi(
     paths(
         get_registration_status,
+        send_registration_email_verification,
         register_user,
         get_admin_authentication_settings,
         update_admin_authentication_settings
     ),
     components(schemas(
         RegistrationStatusResponse,
+        RegistrationEmailVerificationRequest,
+        RegistrationEmailVerificationResponse,
         RegistrationRequest,
         AdminAuthenticationSettingsResponse,
         AdminAuthenticationSettingsRequest,

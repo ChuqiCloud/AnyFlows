@@ -40,7 +40,7 @@ pub enum AuthChallengePurpose {
 }
 
 impl AuthChallengePurpose {
-    const fn to_database(self) -> i16 {
+    pub(crate) const fn to_database(self) -> i16 {
         match self {
             Self::RegistrationEmail => REGISTRATION_EMAIL_PURPOSE,
             Self::PasswordReset => PASSWORD_RESET_PURPOSE,
@@ -154,6 +154,10 @@ impl AuthChallengeConsume {
             secret_digest,
             attempted_at,
         })
+    }
+
+    pub(crate) const fn purpose(&self) -> AuthChallengePurpose {
+        self.purpose
     }
 }
 
@@ -406,61 +410,67 @@ impl AuthChallengeRepository {
         record: AuthChallengeConsume,
     ) -> Result<AuthChallengeConsumeOutcome, AuthChallengeRepositoryError> {
         let transaction = begin_transaction(&self.pool).await?;
-        let purpose = record.purpose.to_database();
-        let subject_fingerprint = AuthChallengeHash::from_bytes(record.subject_fingerprint);
-        let Some(existing) = lock_challenge(&transaction, purpose, &subject_fingerprint).await?
-        else {
-            commit_transaction(transaction).await?;
-            return Ok(AuthChallengeConsumeOutcome::Rejected);
-        };
-        validate_persisted(&existing)?;
-        let attempted_at = to_database_time(record.attempted_at)?;
-        if attempted_at < existing.issued_at
-            || attempted_at >= existing.expires_at
-            || existing.consumed_at.is_some()
-            || existing.attempts >= existing.max_attempts
-        {
-            commit_transaction(transaction).await?;
-            return Ok(AuthChallengeConsumeOutcome::Rejected);
-        }
-
-        let matched = existing.secret_digest.matches_bytes(&record.secret_digest);
-        let attempts = existing
-            .attempts
-            .checked_add(1)
-            .ok_or_else(|| record_internal_error(AuthChallengeRepositoryError::Invariant))?;
-        let version = existing
-            .version
-            .checked_add(1)
-            .ok_or_else(|| record_internal_error(AuthChallengeRepositoryError::Invariant))?;
-        let target_user_id = existing
-            .target_user_id
-            .map(UserId::new)
-            .transpose()
-            .map_err(|_| record_internal_error(AuthChallengeRepositoryError::Invariant))?;
-        let mut active = existing.into_active_model();
-        active.attempts = Set(attempts);
-        active.version = Set(version);
-        if matched {
-            active.consumed_at = Set(Some(attempted_at));
-        }
-        active
-            .update(&transaction)
-            .with_subscriber(NoSubscriber::default())
-            .await
-            .map_err(|error| record_query_error("auth_challenge_consume", error))?;
+        let outcome = consume_in_transaction(&transaction, &record).await?;
         commit_transaction(transaction).await?;
+        Ok(outcome)
+    }
+}
 
-        if matched {
-            Ok(AuthChallengeConsumeOutcome::Consumed(
-                AuthChallengeConsumption {
-                    target_user_id,
-                    version,
-                },
-            ))
-        } else {
-            Ok(AuthChallengeConsumeOutcome::Rejected)
-        }
+/// 在调用方事务中累计校验并消费挑战，供身份变更与挑战消费形成同一原子边界。
+pub(crate) async fn consume_in_transaction(
+    transaction: &DatabaseTransaction,
+    record: &AuthChallengeConsume,
+) -> Result<AuthChallengeConsumeOutcome, AuthChallengeRepositoryError> {
+    let purpose = record.purpose.to_database();
+    let subject_fingerprint = AuthChallengeHash::from_bytes(record.subject_fingerprint);
+    let Some(existing) = lock_challenge(transaction, purpose, &subject_fingerprint).await? else {
+        return Ok(AuthChallengeConsumeOutcome::Rejected);
+    };
+    validate_persisted(&existing)?;
+    let attempted_at = to_database_time(record.attempted_at)?;
+    if attempted_at < existing.issued_at
+        || attempted_at >= existing.expires_at
+        || existing.consumed_at.is_some()
+        || existing.attempts >= existing.max_attempts
+    {
+        return Ok(AuthChallengeConsumeOutcome::Rejected);
+    }
+
+    let matched = existing.secret_digest.matches_bytes(&record.secret_digest);
+    let attempts = existing
+        .attempts
+        .checked_add(1)
+        .ok_or_else(|| record_internal_error(AuthChallengeRepositoryError::Invariant))?;
+    let version = existing
+        .version
+        .checked_add(1)
+        .ok_or_else(|| record_internal_error(AuthChallengeRepositoryError::Invariant))?;
+    let target_user_id = existing
+        .target_user_id
+        .map(UserId::new)
+        .transpose()
+        .map_err(|_| record_internal_error(AuthChallengeRepositoryError::Invariant))?;
+    let mut active = existing.into_active_model();
+    active.attempts = Set(attempts);
+    active.version = Set(version);
+    if matched {
+        active.consumed_at = Set(Some(attempted_at));
+    }
+    active
+        .update(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|error| record_query_error("auth_challenge_consume", error))?;
+
+    if matched {
+        Ok(AuthChallengeConsumeOutcome::Consumed(
+            AuthChallengeConsumption {
+                target_user_id,
+                version,
+            },
+        ))
+    } else {
+        Ok(AuthChallengeConsumeOutcome::Rejected)
     }
 }
 

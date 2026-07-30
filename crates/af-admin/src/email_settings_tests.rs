@@ -49,7 +49,7 @@ impl RecordingDelivery {
 }
 
 impl EmailDelivery for RecordingDelivery {
-    fn send_test<'a>(&'a self, request: EmailDeliveryRequest) -> EmailDeliveryFuture<'a> {
+    fn send<'a>(&'a self, request: EmailDeliveryRequest) -> EmailDeliveryFuture<'a> {
         self.requests.lock().unwrap().push(ObservedDelivery {
             host: request.host().to_owned(),
             username: request.username().map(str::to_owned),

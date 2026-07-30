@@ -7,8 +7,9 @@ use std::{
 };
 
 use af_admin::{
-    IssuedSession, LoginCredentials, RegistrationCommand, RegistrationError, RegistrationFuture,
-    RegistrationPolicy, RegistrationPolicyCommand, RegistrationPolicyFuture,
+    IssuedSession, LoginCredentials, RegistrationCommand, RegistrationEmailVerificationCommand,
+    RegistrationEmailVerificationFuture, RegistrationEmailVerificationResult, RegistrationError,
+    RegistrationFuture, RegistrationPolicy, RegistrationPolicyCommand, RegistrationPolicyFuture,
     RegistrationPolicyUpdateFuture, RegistrationResult, RegistrationService, RegistrationStatus,
     RegistrationStatusFuture, SessionAuthentication, SessionAuthenticationError,
     SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
@@ -36,7 +37,9 @@ const ISSUED_TOKEN: &str = "issued-session";
 struct FakeRegistrationService {
     status: Mutex<RegistrationStatus>,
     register_outcome: Mutex<Result<RegistrationResult, RegistrationError>>,
+    verification_outcome: Mutex<Result<RegistrationEmailVerificationResult, RegistrationError>>,
     register_calls: AtomicUsize,
+    verification_calls: AtomicUsize,
     policy_calls: AtomicUsize,
     update_calls: AtomicUsize,
 }
@@ -48,7 +51,11 @@ impl FakeRegistrationService {
             register_outcome: Mutex::new(Ok(RegistrationResult::from_user_id(
                 UserId::new(9).unwrap(),
             ))),
+            verification_outcome: Mutex::new(Ok(RegistrationEmailVerificationResult::from_parts(
+                10_600, 10_060,
+            ))),
             register_calls: AtomicUsize::new(0),
+            verification_calls: AtomicUsize::new(0),
             policy_calls: AtomicUsize::new(0),
             update_calls: AtomicUsize::new(0),
         }
@@ -80,6 +87,16 @@ impl RegistrationService for FakeRegistrationService {
     ) -> RegistrationFuture<'a> {
         self.register_calls.fetch_add(1, Ordering::Relaxed);
         let outcome = *self.register_outcome.lock().unwrap();
+        Box::pin(async move { outcome })
+    }
+
+    fn send_email_verification<'a>(
+        &'a self,
+        _client_ip: TrustedClientIp,
+        _command: &'a RegistrationEmailVerificationCommand,
+    ) -> RegistrationEmailVerificationFuture<'a> {
+        self.verification_calls.fetch_add(1, Ordering::Relaxed);
+        let outcome = *self.verification_outcome.lock().unwrap();
         Box::pin(async move { outcome })
     }
 
@@ -223,6 +240,7 @@ async fn public_status_and_successful_registration_use_no_store_session_contract
                 "username": "new-user",
                 "email": "new@example.com",
                 "password": "correct horse battery staple",
+                "verification_code": "042731",
             }),
             None,
         ))
@@ -234,6 +252,28 @@ async fn public_status_and_successful_registration_use_no_store_session_contract
     assert_eq!(body["access_token"], ISSUED_TOKEN);
     assert_eq!(body["user"], json!({"id": 9, "role": "user"}));
     assert_eq!(service.register_calls.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
+async fn email_verification_returns_only_server_time_boundaries() {
+    let service = Arc::new(FakeRegistrationService::new());
+    let response = router(Arc::clone(&service))
+        .oneshot(json_request(
+            "POST",
+            "/api/registration/email-verification",
+            json!({"email": "new@example.com"}),
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
+    assert_eq!(
+        response_json(response).await,
+        json!({"expires_at": 10_600, "next_send_at": 10_060})
+    );
+    assert_eq!(service.verification_calls.load(Ordering::Relaxed), 1);
 }
 
 #[tokio::test]

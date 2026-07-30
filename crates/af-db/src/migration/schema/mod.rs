@@ -2,6 +2,7 @@ use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 
 mod auth_challenge;
+mod auth_challenge_rate_limit;
 mod billing;
 mod billing_batch;
 mod email;
@@ -16,6 +17,7 @@ mod site;
 mod usage;
 
 pub(super) use auth_challenge::{create_auth_challenge_indexes, create_auth_challenges};
+pub(super) use auth_challenge_rate_limit::create_auth_challenge_rate_limits;
 pub(super) use email::create_email_settings;
 pub(super) use identity::{create_groups, create_options, create_tokens, create_users};
 pub(super) use indexes::{

@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 31);
+        assert_eq!(document.paths.paths.len(), 32);
         let operation_count = document
             .paths
             .paths
@@ -109,7 +109,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 55);
+        assert_eq!(operation_count, 56);
         assert!(
             document
                 .components
@@ -176,6 +176,7 @@ mod tests {
             "revokePlaygroundShare",
             "savePlaygroundConversation",
             "sendAdminEmailTest",
+            "sendRegistrationEmailVerification",
             "updateAdminChannel",
             "updateAdminCredential",
             "updateAdminGroup",
@@ -192,13 +193,15 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 78);
+        assert_eq!(schemas.len(), 80);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
         assert!(schemas.contains_key("SetupRequest"));
         assert!(schemas.contains_key("SetupStatusResponse"));
         assert!(schemas.contains_key("RegistrationStatusResponse"));
+        assert!(schemas.contains_key("RegistrationEmailVerificationRequest"));
+        assert!(schemas.contains_key("RegistrationEmailVerificationResponse"));
         assert!(schemas.contains_key("RegistrationRequest"));
         assert!(schemas.contains_key("AdminAuthenticationSettings"));
         assert!(schemas.contains_key("AdminAuthenticationSettingsRequest"));

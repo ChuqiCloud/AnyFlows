@@ -562,6 +562,31 @@ pub(in crate::migration) mod auth_challenges {
     }
 }
 
+pub(in crate::migration) mod auth_challenge_rate_limits {
+    use super::DeriveIden;
+
+    /// `auth_challenge_rate_limits` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "auth_challenge_rate_limits")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 认证挑战发送限流迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Purpose,
+        Scope,
+        Fingerprint,
+        WindowStartedAt,
+        Attempts,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod email_settings {
     use super::DeriveIden;
 

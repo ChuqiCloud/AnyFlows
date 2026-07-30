@@ -2,27 +2,27 @@ use std::{
     fmt,
     future::Future,
     pin::Pin,
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use af_account::SystemSecretCipher;
 use af_db::{
     AdminUserCreateRecord, AdminUserRepository, AdminUserRepositoryError,
-    MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS, MAX_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
-    MIN_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS, RegistrationAttemptOutcome,
-    RegistrationPolicyRecord, RegistrationPolicyWriteRecord, RegistrationRepository,
-    RegistrationRepositoryError,
+    AdminUserVerifiedCreateOutcome, AuthChallengeRateLimitRepository, AuthChallengeRepository,
+    EmailSettingsRepository, MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS,
+    MAX_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS, MIN_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
+    RegistrationAttemptOutcome, RegistrationPolicyRecord, RegistrationPolicyWriteRecord,
+    RegistrationRepository, RegistrationRepositoryError,
 };
 use af_domain::{GroupId, TrustedClientIp, UserId};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use sha2::{Digest as _, Sha256};
 use thiserror::Error;
-use zeroize::{Zeroize as _, Zeroizing};
+use zeroize::Zeroizing;
 
-use crate::{AdminUserStatus, LoginCredentials, SessionPrincipal, SessionRole};
-
-const REGISTRATION_FINGERPRINT_KEY_BYTES: usize = 32;
-const SHA256_BLOCK_BYTES: usize = 64;
-const REGISTRATION_FINGERPRINT_DOMAIN: &[u8] = b"AnyFlows registration IP fingerprint v1";
+use crate::{
+    AdminUserStatus, EmailDelivery, LoginCredentials, SessionPrincipal, SessionRole,
+    registration_verification::{REGISTRATION_EMAIL_CODE_BYTES, RegistrationEmailVerification},
+};
 
 /// 公开注册密码的最小 UTF-8 字节数。
 pub const MIN_REGISTRATION_PASSWORD_BYTES: usize = 12;
@@ -236,6 +236,7 @@ pub struct RegistrationCommand {
     username: String,
     email: Option<String>,
     password: String,
+    verification_code: Option<Zeroizing<String>>,
 }
 
 impl RegistrationCommand {
@@ -244,14 +245,23 @@ impl RegistrationCommand {
         username: String,
         email: Option<String>,
         password: String,
+        verification_code: Option<String>,
     ) -> Result<Self, RegistrationError> {
         validate_username(&username)?;
-        validate_email(email.as_deref())?;
+        let email = email.map(normalize_email).transpose()?;
         validate_password(&password)?;
+        let verification_code = match (email.as_ref(), verification_code) {
+            (Some(_), Some(code)) if is_valid_verification_code(&code) => {
+                Some(Zeroizing::new(code))
+            }
+            (None, None) => None,
+            _ => return Err(RegistrationError::InvalidInput),
+        };
         Ok(Self {
             username,
             email,
             password,
+            verification_code,
         })
     }
 
@@ -282,6 +292,56 @@ impl fmt::Debug for RegistrationCommand {
     }
 }
 
+/// 公开发码入口已经完成规范化的邮箱命令。
+pub struct RegistrationEmailVerificationCommand {
+    email: String,
+}
+
+impl RegistrationEmailVerificationCommand {
+    /// 校验并规范化邮箱；调试输出不会暴露邮箱内容。
+    pub fn new(email: String) -> Result<Self, RegistrationError> {
+        Ok(Self {
+            email: normalize_email(email)?,
+        })
+    }
+}
+
+impl fmt::Debug for RegistrationEmailVerificationCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RegistrationEmailVerificationCommand(<redacted>)")
+    }
+}
+
+/// 注册验证码成功投递后返回的服务端时间边界。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RegistrationEmailVerificationResult {
+    expires_at: u64,
+    next_send_at: u64,
+}
+
+impl RegistrationEmailVerificationResult {
+    /// 为端口适配器与替代实现组装已经校验的服务端时间边界。
+    #[must_use]
+    pub const fn from_parts(expires_at: u64, next_send_at: u64) -> Self {
+        Self {
+            expires_at,
+            next_send_at,
+        }
+    }
+
+    /// 返回当前验证码失效的 Unix 秒时间戳。
+    #[must_use]
+    pub const fn expires_at(self) -> u64 {
+        self.expires_at
+    }
+
+    /// 返回服务端允许同一主体再次发送的 Unix 秒时间戳。
+    #[must_use]
+    pub const fn next_send_at(self) -> u64 {
+        self.next_send_at
+    }
+}
+
 /// 注册成功结果，只携带新普通用户的稳定标识。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RegistrationResult {
@@ -305,12 +365,12 @@ impl RegistrationResult {
 /// 注册服务构造错误。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum RegistrationServiceConfigError {
-    /// 缺少用于派生不可逆 IP 指纹的应用密钥。
-    #[error("注册 IP 指纹密钥缺失")]
-    MissingFingerprintKey,
-    /// 指纹密钥不是规范的 32 字节 Base64URL 文本。
-    #[error("注册 IP 指纹密钥无效")]
-    InvalidFingerprintKey,
+    /// 缺少用于派生注册指纹和挑战摘要的应用密钥。
+    #[error("注册安全派生密钥缺失")]
+    MissingSecurityKey,
+    /// 注册安全派生密钥不是规范的 32 字节 Base64URL 文本。
+    #[error("注册安全派生密钥无效")]
+    InvalidSecurityKey,
 }
 
 /// 公开注册与管理员策略操作的闭合错误分类。
@@ -331,9 +391,18 @@ pub enum RegistrationError {
     /// 用户名或邮箱与现有有效用户冲突。
     #[error("注册身份冲突")]
     Conflict,
+    /// 验证码无效或带邮箱的公开身份无法创建；公开边界不得细分原因。
+    #[error("注册验证被拒绝")]
+    VerificationRejected,
     /// 当前客户端已耗尽固定窗口尝试次数。
     #[error("注册尝试过于频繁")]
     RateLimited { retry_after_seconds: u64 },
+    /// SMTP 设置尚未达到可投递状态。
+    #[error("注册邮件未配置")]
+    EmailNotConfigured,
+    /// SMTP 连接、认证或投递失败。
+    #[error("注册邮件投递失败")]
+    EmailDeliveryFailed,
     /// 仓储、时钟、随机源或持久化状态发生内部故障。
     #[error("注册内部失败")]
     Internal,
@@ -345,6 +414,14 @@ pub type RegistrationStatusFuture<'a> =
 /// 公开注册写入 Future。
 pub type RegistrationFuture<'a> =
     Pin<Box<dyn Future<Output = Result<RegistrationResult, RegistrationError>> + Send + 'a>>;
+/// 注册邮箱验证码发送 Future。
+pub type RegistrationEmailVerificationFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<RegistrationEmailVerificationResult, RegistrationError>>
+            + Send
+            + 'a,
+    >,
+>;
 /// 管理员注册策略读取 Future。
 pub type RegistrationPolicyFuture<'a> =
     Pin<Box<dyn Future<Output = Result<RegistrationPolicy, RegistrationError>> + Send + 'a>>;
@@ -356,6 +433,13 @@ pub type RegistrationPolicyUpdateFuture<'a> =
 pub trait RegistrationService: Send + Sync {
     /// 读取游客可见的最小能力状态。
     fn status(&self) -> RegistrationStatusFuture<'_>;
+
+    /// 受主体与客户端 IP 双作用域限流保护地发送注册邮箱验证码。
+    fn send_email_verification<'a>(
+        &'a self,
+        client_ip: TrustedClientIp,
+        command: &'a RegistrationEmailVerificationCommand,
+    ) -> RegistrationEmailVerificationFuture<'a>;
 
     /// 占用限流配额并创建普通用户。
     fn register<'a>(
@@ -379,20 +463,33 @@ pub trait RegistrationService: Send + Sync {
 pub struct DatabaseRegistrationService {
     registration_repository: RegistrationRepository,
     user_repository: AdminUserRepository,
-    fingerprint_key: RegistrationFingerprintKey,
+    email_verification: RegistrationEmailVerification,
 }
 
 impl DatabaseRegistrationService {
-    /// 绑定仓储，并从管理会话密钥派生独立的 IP 指纹密钥用途。
+    /// 绑定注册、挑战、邮件与安全派生依赖。
+    #[allow(clippy::too_many_arguments, reason = "显式注入独立仓储和邮件投递边界")]
     pub fn new(
         registration_repository: RegistrationRepository,
         user_repository: AdminUserRepository,
-        fingerprint_key: Option<&str>,
+        challenge_repository: AuthChallengeRepository,
+        rate_limit_repository: AuthChallengeRateLimitRepository,
+        email_settings_repository: EmailSettingsRepository,
+        system_secret_cipher: SystemSecretCipher,
+        delivery: Arc<dyn EmailDelivery>,
+        security_key: Option<&str>,
     ) -> Result<Self, RegistrationServiceConfigError> {
         Ok(Self {
             registration_repository,
             user_repository,
-            fingerprint_key: RegistrationFingerprintKey::new(fingerprint_key)?,
+            email_verification: RegistrationEmailVerification::new(
+                challenge_repository,
+                rate_limit_repository,
+                email_settings_repository,
+                system_secret_cipher,
+                delivery,
+                security_key,
+            )?,
         })
     }
 }
@@ -412,6 +509,29 @@ impl RegistrationService for DatabaseRegistrationService {
         })
     }
 
+    fn send_email_verification<'a>(
+        &'a self,
+        client_ip: TrustedClientIp,
+        command: &'a RegistrationEmailVerificationCommand,
+    ) -> RegistrationEmailVerificationFuture<'a> {
+        Box::pin(async move {
+            let issued_at = current_timestamp().ok_or(RegistrationError::Internal)?;
+            let policy = self
+                .registration_repository
+                .policy()
+                .await
+                .map_err(map_registration_repository_error)?;
+            let issued = self
+                .email_verification
+                .issue(client_ip, &command.email, policy, issued_at)
+                .await?;
+            Ok(RegistrationEmailVerificationResult {
+                expires_at: issued.expires_at(),
+                next_send_at: issued.next_send_at(),
+            })
+        })
+    }
+
     fn register<'a>(
         &'a self,
         client_ip: TrustedClientIp,
@@ -419,7 +539,9 @@ impl RegistrationService for DatabaseRegistrationService {
     ) -> RegistrationFuture<'a> {
         Box::pin(async move {
             let attempted_at = current_timestamp().ok_or(RegistrationError::Internal)?;
-            let fingerprint = self.fingerprint_key.derive(client_ip);
+            let fingerprint = self
+                .email_verification
+                .registration_ip_fingerprint(client_ip);
             let policy = match self
                 .registration_repository
                 .claim_attempt(fingerprint, attempted_at)
@@ -439,11 +561,28 @@ impl RegistrationService for DatabaseRegistrationService {
             if policy.email_required() && command.email.is_none() {
                 return Err(RegistrationError::InvalidInput);
             }
-            let user = self
-                .user_repository
-                .create(command.user_record(policy))
-                .await
-                .map_err(map_user_repository_error)?;
+            let user = if let (Some(email), Some(code)) = (
+                command.email.as_deref(),
+                command.verification_code.as_deref(),
+            ) {
+                let challenge = self.email_verification.consume(email, code, attempted_at)?;
+                match self
+                    .user_repository
+                    .create_verified(command.user_record(policy), challenge)
+                    .await
+                    .map_err(map_verified_user_repository_error)?
+                {
+                    AdminUserVerifiedCreateOutcome::Created(user) => user,
+                    AdminUserVerifiedCreateOutcome::Rejected => {
+                        return Err(RegistrationError::VerificationRejected);
+                    }
+                }
+            } else {
+                self.user_repository
+                    .create(command.user_record(policy))
+                    .await
+                    .map_err(map_user_repository_error)?
+            };
             Ok(RegistrationResult {
                 user_id: user.user_id(),
             })
@@ -480,56 +619,6 @@ impl RegistrationService for DatabaseRegistrationService {
 impl fmt::Debug for DatabaseRegistrationService {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("DatabaseRegistrationService(<redacted>)")
-    }
-}
-
-struct RegistrationFingerprintKey(Zeroizing<[u8; REGISTRATION_FINGERPRINT_KEY_BYTES]>);
-
-impl RegistrationFingerprintKey {
-    fn new(value: Option<&str>) -> Result<Self, RegistrationServiceConfigError> {
-        let value = value.ok_or(RegistrationServiceConfigError::MissingFingerprintKey)?;
-        let mut decoded = [0_u8; REGISTRATION_FINGERPRINT_KEY_BYTES];
-        let length = URL_SAFE_NO_PAD
-            .decode_slice(value, &mut decoded)
-            .map_err(|_| RegistrationServiceConfigError::InvalidFingerprintKey)?;
-        if length != REGISTRATION_FINGERPRINT_KEY_BYTES {
-            decoded.zeroize();
-            return Err(RegistrationServiceConfigError::InvalidFingerprintKey);
-        }
-        Ok(Self(Zeroizing::new(decoded)))
-    }
-
-    fn derive(&self, client_ip: TrustedClientIp) -> [u8; 32] {
-        let mut inner_pad = [0x36_u8; SHA256_BLOCK_BYTES];
-        let mut outer_pad = [0x5c_u8; SHA256_BLOCK_BYTES];
-        for (index, key_byte) in self.0.iter().copied().enumerate() {
-            inner_pad[index] ^= key_byte;
-            outer_pad[index] ^= key_byte;
-        }
-
-        let mut address = [0_u8; 17];
-        let address_length = client_ip.write_fingerprint_input(&mut address);
-        let mut inner = Sha256::new();
-        inner.update(inner_pad);
-        inner.update(REGISTRATION_FINGERPRINT_DOMAIN);
-        inner.update(&address[..address_length]);
-        let inner_digest = inner.finalize();
-
-        let mut outer = Sha256::new();
-        outer.update(outer_pad);
-        outer.update(inner_digest);
-        let fingerprint = outer.finalize().into();
-
-        address.zeroize();
-        inner_pad.zeroize();
-        outer_pad.zeroize();
-        fingerprint
-    }
-}
-
-impl fmt::Debug for RegistrationFingerprintKey {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("RegistrationFingerprintKey(<redacted>)")
     }
 }
 
@@ -581,6 +670,16 @@ fn validate_email(email: Option<&str>) -> Result<(), RegistrationError> {
     Ok(())
 }
 
+fn normalize_email(mut email: String) -> Result<String, RegistrationError> {
+    validate_email(Some(&email))?;
+    email.make_ascii_lowercase();
+    Ok(email)
+}
+
+fn is_valid_verification_code(code: &str) -> bool {
+    code.len() == REGISTRATION_EMAIL_CODE_BYTES && code.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 fn validate_password(password: &str) -> Result<(), RegistrationError> {
     if !(MIN_REGISTRATION_PASSWORD_BYTES..=MAX_REGISTRATION_PASSWORD_BYTES)
         .contains(&password.len())
@@ -612,6 +711,17 @@ fn map_user_repository_error(error: AdminUserRepositoryError) -> RegistrationErr
     }
 }
 
+fn map_verified_user_repository_error(error: AdminUserRepositoryError) -> RegistrationError {
+    match error {
+        AdminUserRepositoryError::Conflict => RegistrationError::VerificationRejected,
+        AdminUserRepositoryError::Query
+        | AdminUserRepositoryError::Timeout
+        | AdminUserRepositoryError::Invariant
+        | AdminUserRepositoryError::InvalidReference
+        | AdminUserRepositoryError::Entropy => RegistrationError::Internal,
+    }
+}
+
 fn current_timestamp() -> Option<u64> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -621,24 +731,18 @@ fn current_timestamp() -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
-    use std::net::IpAddr;
-
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-
     use super::*;
-
-    fn key() -> String {
-        URL_SAFE_NO_PAD.encode([0x42; REGISTRATION_FINGERPRINT_KEY_BYTES])
-    }
 
     #[test]
     fn command_boundaries_and_debug_output_are_stable() {
         let command = RegistrationCommand::new(
             "new-user".to_owned(),
-            Some("new@example.com".to_owned()),
+            Some("New@Example.COM".to_owned()),
             "correct horse battery staple".to_owned(),
+            Some("042731".to_owned()),
         )
         .unwrap();
+        assert_eq!(command.email.as_deref(), Some("new@example.com"));
         assert_eq!(format!("{command:?}"), "RegistrationCommand(<redacted>)");
         assert!(!format!("{command:?}").contains("new@example.com"));
         assert!(
@@ -646,6 +750,7 @@ mod tests {
                 " bad ".to_owned(),
                 None,
                 "correct horse battery staple".to_owned(),
+                None,
             )
             .is_err()
         );
@@ -654,30 +759,22 @@ mod tests {
                 "user".to_owned(),
                 Some("invalid-email".to_owned()),
                 "correct horse battery staple".to_owned(),
+                Some("042731".to_owned()),
             )
             .is_err()
         );
         assert!(
-            RegistrationCommand::new("user".to_owned(), None, "too-short".to_owned(),).is_err()
+            RegistrationCommand::new("user".to_owned(), None, "too-short".to_owned(), None)
+                .is_err()
         );
-    }
-
-    #[test]
-    fn keyed_fingerprint_is_stable_normalized_and_key_scoped() {
-        let first = RegistrationFingerprintKey::new(Some(&key())).unwrap();
-        let second_key = URL_SAFE_NO_PAD.encode([0x24; REGISTRATION_FINGERPRINT_KEY_BYTES]);
-        let second = RegistrationFingerprintKey::new(Some(&second_key)).unwrap();
-        let ipv4 = TrustedClientIp::new("192.0.2.9".parse::<IpAddr>().unwrap());
-        let mapped = TrustedClientIp::new("::ffff:192.0.2.9".parse::<IpAddr>().unwrap());
-        let other = TrustedClientIp::new("192.0.2.10".parse::<IpAddr>().unwrap());
-
-        assert_eq!(first.derive(ipv4), first.derive(mapped));
-        assert_ne!(first.derive(ipv4), first.derive(other));
-        assert_ne!(first.derive(ipv4), second.derive(ipv4));
         assert_eq!(
-            format!("{first:?}"),
-            "RegistrationFingerprintKey(<redacted>)"
+            format!(
+                "{:?}",
+                RegistrationEmailVerificationCommand::new("New@Example.COM".to_owned()).unwrap()
+            ),
+            "RegistrationEmailVerificationCommand(<redacted>)"
         );
+        assert!(RegistrationEmailVerificationCommand::new("invalid".to_owned()).is_err());
     }
 
     #[test]
