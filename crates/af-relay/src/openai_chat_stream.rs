@@ -247,7 +247,7 @@ mod tests {
         atomic::{AtomicBool, Ordering},
     };
 
-    use af_adapter::{HeaderMap, StatusCode, UpstreamResponse};
+    use af_adapter::{AdaptorResult, HeaderMap, StatusCode, UpstreamResponse};
     use af_domain::{Operation, Protocol, Role};
     use af_protocol::{CanonicalRequest, ContentBlock, Message, UsageSource};
     use tokio::sync::{Notify, oneshot};
