@@ -118,9 +118,10 @@ mod tests {
         assert_eq!(value["type"], "message");
         assert_eq!(value["model"], "public-model");
         assert_eq!(value["content"][0]["text"], "answer");
+        assert_eq!(value["usage"]["service_tier"], Value::Null);
         let text = String::from_utf8(body.to_vec()).unwrap();
         assert!(!text.contains("upstream-private-id"));
         assert!(!text.contains("upstream-private-model"));
-        assert!(!text.contains("service_tier"));
+        assert!(!text.contains("\"service_tier\":\"default\""));
     }
 }
