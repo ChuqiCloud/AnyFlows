@@ -20,7 +20,6 @@ use http::{
     header::{AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE},
 };
 use serde_json::{Value, json};
-use std::sync::Mutex;
 use tower::ServiceExt;
 
 use crate::email_settings::build_email_settings_router;
