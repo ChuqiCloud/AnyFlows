@@ -323,7 +323,7 @@ mod tests {
             Bytes::from_static(b": heartbeat\n\n"),
         )
         .unwrap();
-        let (stream, _usage_handle) = OpenAiResponsesStream::new(
+        let (stream, usage_handle) = OpenAiResponsesStream::new(
             response.into_body(),
             &request(),
             "resp_public",
@@ -331,13 +331,16 @@ mod tests {
             1_700_000_001,
         )
         .unwrap();
+        let mut stream = stream.prefetch_first(Duration::from_secs(1)).await.unwrap();
 
+        assert!(matches!(stream.next_chunk().await, Some(Ok(_))));
         assert_eq!(
-            stream
-                .prefetch_first(Duration::from_secs(1))
-                .await
-                .unwrap_err(),
-            UpstreamError::ProtocolError
+            stream.next_chunk().await,
+            Some(Err(UpstreamError::ProtocolError))
+        );
+        assert_eq!(
+            usage_handle.resolve().await,
+            Err(UsageResolutionError::Interrupted)
         );
     }
 
