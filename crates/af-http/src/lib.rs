@@ -1,5 +1,6 @@
 //! HTTP 路由、中间件、提取器与响应映射。
 
+mod anthropic_messages;
 mod authentication;
 mod channel_probe;
 mod chat_completions;

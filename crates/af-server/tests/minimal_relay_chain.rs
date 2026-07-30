@@ -558,6 +558,52 @@ async fn invalid_requests_and_wrong_model_never_reach_upstream() {
 }
 
 #[tokio::test]
+async fn anthropic_invalid_requests_use_messages_errors_and_never_reach_upstream() {
+    let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+    proxy.set_nonblocking(true).unwrap();
+    let (address, shutdown, server) =
+        start_server(proxy.local_addr().unwrap(), ServerConfig::default()).await;
+
+    for (body, expected_status, expected_type) in [
+        (
+            br#"{"model":"test-model","model":"private-duplicate","max_tokens":8,"messages":[{"role":"user","content":"hello"}]}"#.as_slice(),
+            400,
+            "invalid_request_error",
+        ),
+        (
+            br#"{"model":"private-wrong-model","max_tokens":8,"messages":[{"role":"user","content":"hello"}]}"#.as_slice(),
+            404,
+            "not_found_error",
+        ),
+    ] {
+        let response = send_request(
+            address,
+            "POST",
+            "/v1/messages",
+            body,
+            &[
+                ("Content-Type", "application/json"),
+                ("x-api-key", CLIENT_KEY),
+            ],
+        )
+        .await;
+        assert_eq!(response.status, expected_status);
+        let value: Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(value["type"], "error");
+        assert_eq!(value["error"]["type"], expected_type);
+        let text = String::from_utf8_lossy(&response.body);
+        assert!(!text.contains("private-duplicate"));
+        assert!(!text.contains("private-wrong-model"));
+    }
+
+    stop_server(shutdown, server).await;
+    assert!(matches!(
+        proxy.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    ));
+}
+
+#[tokio::test]
 async fn verified_same_protocol_full_request_and_response_preserve_exact_bytes() {
     let upstream_body = br#"{
   "id": "chatcmpl-byte-exact",
@@ -597,6 +643,63 @@ async fn verified_same_protocol_full_request_and_response_preserve_exact_bytes()
     assert_eq!(upstream.body, request_body);
     assert_eq!(response.status, 200);
     assert_eq!(response.body, upstream_body);
+}
+
+#[tokio::test]
+async fn anthropic_full_request_and_response_cross_the_canonical_boundary() {
+    let upstream_body = br#"{
+  "id": "upstream-private-id",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "upstream-private-model",
+  "choices": [{"index":0,"message":{"role":"assistant","content":"cross-protocol-answer"},"finish_reason":"stop"}],
+  "usage": {"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}
+}"#;
+    let request_body = br#"{
+  "model": "test-model",
+  "max_tokens": 32,
+  "messages": [{"role":"user","content":"hello"}]
+}"#;
+    let (proxy_address, captured, proxy) = spawn_proxy(
+        "200 OK",
+        upstream_body,
+        &[("Content-Type", "application/json")],
+    );
+    let (address, shutdown, server) = start_server(proxy_address, ServerConfig::default()).await;
+
+    let response = send_request(
+        address,
+        "POST",
+        "/v1/messages",
+        request_body,
+        &[
+            ("Content-Type", "application/json"),
+            ("x-api-key", CLIENT_KEY),
+        ],
+    )
+    .await;
+    stop_server(shutdown, server).await;
+    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    proxy.join().unwrap();
+
+    assert_ne!(upstream.body, request_body);
+    let upstream_json: Value = serde_json::from_slice(&upstream.body).unwrap();
+    assert_eq!(upstream_json["model"], "test-model");
+    assert_eq!(upstream_json["max_completion_tokens"], 32);
+    assert_eq!(upstream_json["messages"][0]["role"], "user");
+
+    assert_eq!(response.status, 200);
+    let body: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body["type"], "message");
+    assert_eq!(body["role"], "assistant");
+    assert_eq!(body["model"], "test-model");
+    assert_eq!(body["content"][0]["type"], "text");
+    assert_eq!(body["content"][0]["text"], "cross-protocol-answer");
+    assert_eq!(body["usage"]["input_tokens"], 2);
+    assert_eq!(body["usage"]["output_tokens"], 1);
+    let text = String::from_utf8_lossy(&response.body);
+    assert!(!text.contains("upstream-private-id"));
+    assert!(!text.contains("upstream-private-model"));
 }
 
 #[tokio::test]
@@ -654,6 +757,61 @@ data: [DONE]
 }
 
 #[tokio::test]
+async fn anthropic_streaming_response_is_incremental_and_uses_messages_events() {
+    let first = br#"data: {"id":"upstream-private-id","object":"chat.completion.chunk","created":1,"model":"upstream-private-model","choices":[{"index":0,"delta":{"role":"assistant","content":"first-part"},"finish_reason":null}]}
+
+"#;
+    let rest = br#"data: {"id":"upstream-private-id","object":"chat.completion.chunk","created":1,"model":"upstream-private-model","choices":[{"index":0,"delta":{"content":"second-part"},"finish_reason":null}]}
+
+data: {"id":"upstream-private-id","object":"chat.completion.chunk","created":1,"model":"upstream-private-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"upstream-private-id","object":"chat.completion.chunk","created":1,"model":"upstream-private-model","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":7,"total_tokens":18}}
+
+data: [DONE]
+
+"#;
+    let (proxy_address, captured, release, proxy) = spawn_streaming_proxy(first, rest);
+    let (address, shutdown, server) = start_server(proxy_address, ServerConfig::default()).await;
+    let request_body = br#"{"model":"test-model","max_tokens":32,"messages":[{"role":"user","content":"hello"}],"stream":true}"#;
+    let mut client = connect_and_send_anthropic(address, request_body).await;
+
+    let first_response = read_until(&mut client, b"first-part").await;
+    let first_text = String::from_utf8_lossy(&first_response);
+    let first_lower = first_text.to_ascii_lowercase();
+    assert!(first_lower.starts_with("http/1.1 200"));
+    assert!(first_lower.contains("content-type: text/event-stream; charset=utf-8"));
+    assert!(first_text.contains("event: message_start"));
+    assert!(first_text.contains("event: content_block_delta"));
+    assert!(!first_text.contains("second-part"));
+    assert!(!first_text.contains("[DONE]"));
+    assert!(!first_text.contains("upstream-private-id"));
+
+    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    let upstream_json: Value = serde_json::from_slice(&upstream.body).unwrap();
+    assert_eq!(upstream_json["stream"], true);
+    assert_eq!(upstream_json["stream_options"]["include_usage"], true);
+    assert_eq!(upstream_json["max_completion_tokens"], 32);
+    release.send(()).unwrap();
+
+    let mut complete = first_response;
+    timeout(IO_TIMEOUT, client.read_to_end(&mut complete))
+        .await
+        .unwrap()
+        .unwrap();
+    let complete = String::from_utf8_lossy(&complete);
+    assert!(complete.contains("second-part"));
+    assert!(complete.contains("event: message_delta"));
+    assert!(complete.contains("event: message_stop"));
+    assert!(complete.contains("\"input_tokens\""));
+    assert!(complete.contains("\"output_tokens\""));
+    assert!(!complete.contains("data: [DONE]"));
+    assert!(!complete.contains("upstream-private-model"));
+
+    stop_server(shutdown, server).await;
+    proxy.join().unwrap();
+}
+
+#[tokio::test]
 async fn client_disconnect_aborts_pending_upstream_stream() {
     let first = br#"data: {"id":"abort-private-id","object":"chat.completion.chunk","created":1,"model":"test-model","choices":[{"index":0,"delta":{"role":"assistant","content":"abort-first-part"},"finish_reason":null}]}
 
@@ -693,6 +851,17 @@ async fn connect_and_send(address: SocketAddr, body: &[u8], authorization: &str)
     let mut client = TcpStream::connect(address).await.unwrap();
     let request = format!(
         "POST /v1/chat/completions HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nAuthorization: {authorization}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    client.write_all(request.as_bytes()).await.unwrap();
+    client.write_all(body).await.unwrap();
+    client
+}
+
+async fn connect_and_send_anthropic(address: SocketAddr, body: &[u8]) -> TcpStream {
+    let mut client = TcpStream::connect(address).await.unwrap();
+    let request = format!(
+        "POST /v1/messages HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nx-api-key: {CLIENT_KEY}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
     client.write_all(request.as_bytes()).await.unwrap();

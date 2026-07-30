@@ -119,6 +119,25 @@ impl OpenAiChatUsageEstimator {
         self.upstream_usage.is_some()
     }
 
+    /// 返回流起点可公开的受控本地输入用量，不用零值代替未知输入。
+    pub(crate) fn initial_usage(&self) -> Result<Usage, UsageResolutionError> {
+        Usage::new(
+            self.input_tokens?,
+            TokenCount::ZERO,
+            UsageDetails::new(
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+            ),
+            UsageSource::Estimated,
+            UsageSemantics::Inclusive,
+        )
+        .map_err(|_| UsageResolutionError::Overflow)
+    }
+
     pub(crate) fn observe(&mut self, event: &CanonicalStreamEvent) {
         match event {
             CanonicalStreamEvent::MessageStart { choice_index, .. } => {
@@ -168,6 +187,11 @@ impl OpenAiChatUsageEstimator {
         if let Some(usage) = self.upstream_usage {
             return Ok(usage);
         }
+        self.resolve_estimated()
+    }
+
+    /// 忽略上游快照并按本地计数器闭合 usage，供要求流起点 usage 的目标协议使用。
+    pub(crate) fn resolve_estimated(&self) -> Result<Usage, UsageResolutionError> {
         estimate_usage(self.input_tokens, &self.output, self.counter)
     }
 

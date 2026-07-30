@@ -19,7 +19,7 @@ use tower::ServiceExt;
 
 use crate::{
     ApiKeyExtractionError, REQUEST_ID_HEADER_NAME,
-    error_response::{MappedError, OpenAiHttpError},
+    error_response::{AnthropicHttpError, MappedError, OpenAiHttpError},
     router::build_router_with_routes,
 };
 
@@ -237,6 +237,36 @@ async fn maps_every_current_domain_error_without_exposing_diagnostics() {
         let rendered = body.to_string();
         assert!(!rendered.contains(&diagnostic));
         assert!(rendered.is_ascii());
+    }
+}
+
+#[tokio::test]
+async fn maps_every_current_domain_error_to_anthropic_wire() {
+    for case in error_cases() {
+        let diagnostic = case.error.to_string();
+        let response = AnthropicHttpError::from(case.error).into_response();
+        assert_eq!(response.status(), case.status);
+        let body = response_json(response).await;
+        let expected_kind = match case.code {
+            PublicErrorCode::InvalidRequest => "invalid_request_error",
+            PublicErrorCode::InvalidApiKey => "authentication_error",
+            PublicErrorCode::InsufficientQuota => "billing_error",
+            PublicErrorCode::ModelNotFound => "not_found_error",
+            PublicErrorCode::UpstreamUnavailable => "overloaded_error",
+            PublicErrorCode::RateLimited => "rate_limit_error",
+            PublicErrorCode::InternalError => "api_error",
+        };
+        assert_eq!(
+            body,
+            json!({
+                "type": "error",
+                "error": {
+                    "type": expected_kind,
+                    "message": case.message,
+                }
+            })
+        );
+        assert!(!body.to_string().contains(&diagnostic));
     }
 }
 

@@ -14,6 +14,7 @@ use crate::{
 mod build;
 mod build_response;
 mod convert;
+mod error;
 mod parse_response;
 mod response_wire;
 mod streaming;
@@ -21,6 +22,7 @@ mod wire;
 
 pub use build::{BuildRequestError, build_request};
 pub use build_response::{BuildResponseError, build_response};
+pub use error::encode_error;
 pub use parse_response::{ParseResponseError, parse_response};
 pub use streaming::{
     AnthropicMessagesStreamDecoder, AnthropicMessagesStreamEncoder, DEFAULT_MAX_SSE_EVENT_BYTES,
@@ -29,6 +31,8 @@ pub use streaming::{
 
 #[cfg(test)]
 mod build_tests;
+#[cfg(test)]
+mod error_tests;
 #[cfg(test)]
 mod response_tests;
 #[cfg(test)]

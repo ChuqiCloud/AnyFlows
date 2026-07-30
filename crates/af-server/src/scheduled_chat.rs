@@ -50,6 +50,7 @@ impl ScheduledChatService {
         &self,
         route: IndexedRoutePlan,
         request: CanonicalRequestEnvelope,
+        response_protocol: Protocol,
         request_id: &str,
     ) -> Result<ScheduledChatExecution, AfError> {
         let model = request.canonical().model.clone();
@@ -136,6 +137,7 @@ impl ScheduledChatService {
             credential_states: self.credential_states.clone(),
             scheduler: self.scheduler.clone(),
             request,
+            response_protocol,
             request_id: request_id.to_owned(),
         })
     }
@@ -146,6 +148,7 @@ impl ChatRoutePlanner for ScheduledChatService {
         &self,
         principal: &GatewayPrincipal,
         request: CanonicalRequestEnvelope,
+        response_protocol: Protocol,
         request_id: &str,
     ) -> Result<Box<dyn PlannedChatExecution>, AfError> {
         let route = self
@@ -153,7 +156,7 @@ impl ChatRoutePlanner for ScheduledChatService {
             .route_plan(principal.group_id(), &request.canonical().model)
             .map_err(map_scheduler_error)?
             .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?;
-        self.build_plan(route, request, request_id)
+        self.build_plan(route, request, response_protocol, request_id)
             .map(|plan| Box::new(plan) as Box<dyn PlannedChatExecution>)
     }
 }
@@ -177,6 +180,7 @@ struct ScheduledChatExecution {
     credential_states: CredentialStateRepository,
     scheduler: IndexedWeightedScheduler,
     request: CanonicalRequestEnvelope,
+    response_protocol: Protocol,
     request_id: String,
 }
 
@@ -193,10 +197,13 @@ impl PlannedChatExecution for ScheduledChatExecution {
             credential_states,
             scheduler,
             request,
+            response_protocol,
             request_id,
         } = *self;
         Box::pin(async move {
-            let outcome = relay_openai_chat_with_report(&machine, request, &request_id).await;
+            let outcome =
+                relay_openai_chat_with_report(&machine, request, response_protocol, &request_id)
+                    .await;
             let (result, report) = outcome.into_parts();
             persist_credential_feedback(&credential_states, &scheduler, &attempt_targets, &report)
                 .await;
@@ -300,7 +307,9 @@ mod tests {
         let service = service(vec![record(false, valid_envelope())]).await;
         let principal = principal(7);
 
-        let plan = service.plan(&principal, request(), "request-plan").unwrap();
+        let plan = service
+            .plan(&principal, request(), Protocol::OpenAiChat, "request-plan")
+            .unwrap();
 
         assert_eq!(plan.target_group_id(), GroupId::new(7).unwrap());
     }
@@ -335,10 +344,26 @@ mod tests {
             .unwrap();
 
         let execution = service
-            .build_plan(route, request(), "request-key-pool")
+            .build_plan(route, request(), Protocol::OpenAiChat, "request-key-pool")
             .unwrap();
 
         assert_eq!(execution.attempt_targets.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn plan_pins_the_client_response_protocol_for_execution() {
+        let service = service(vec![record(false, valid_envelope())]).await;
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+
+        let execution = service
+            .build_plan(route, request(), Protocol::Anthropic, "request-anthropic")
+            .unwrap();
+
+        assert_eq!(execution.response_protocol, Protocol::Anthropic);
     }
 
     #[tokio::test]
@@ -346,14 +371,16 @@ mod tests {
         let principal = principal(7);
         let empty = service(Vec::new()).await;
         assert_eq!(
-            empty.plan(&principal, request(), "request-empty").err(),
+            empty
+                .plan(&principal, request(), Protocol::OpenAiChat, "request-empty",)
+                .err(),
             Some(AfError::Upstream(UpstreamError::ModelUnsupported))
         );
 
         let proxy_required = service(vec![record(true, valid_envelope())]).await;
         assert_eq!(
             proxy_required
-                .plan(&principal, request(), "request-proxy")
+                .plan(&principal, request(), Protocol::OpenAiChat, "request-proxy",)
                 .err(),
             Some(AfError::Internal)
         );
@@ -362,7 +389,12 @@ mod tests {
         let decrypt_failure = service(vec![record(false, broken)]).await;
         assert_eq!(
             decrypt_failure
-                .plan(&principal, request(), "request-decrypt")
+                .plan(
+                    &principal,
+                    request(),
+                    Protocol::OpenAiChat,
+                    "request-decrypt",
+                )
                 .err(),
             Some(AfError::Internal)
         );

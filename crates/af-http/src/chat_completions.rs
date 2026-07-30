@@ -6,11 +6,11 @@ use af_admin::{
     SessionAuthenticator, TokenAuthentication,
 };
 use af_analytics::AdminDashboardReader;
-use af_domain::{AfError, TokenModelPolicy};
+use af_domain::{AfError, Protocol, TokenModelPolicy};
 use af_protocol::{
     CanonicalRequestEnvelope, apply_reasoning_model_suffix, openai_chat::parse_request_envelope,
 };
-use af_relay::OpenAiChatResponse;
+use af_relay::ChatResponse;
 use af_telemetry::RequestId;
 use axum::{
     body::Bytes,
@@ -132,6 +132,16 @@ impl HttpState {
         self.admin_channel_probe = probe;
         self
     }
+
+    /// 返回协议入口共享的 Chat 执行端口。
+    pub(crate) fn chat_service(&self) -> &Arc<dyn ChatService> {
+        &self.chat
+    }
+
+    /// 返回统一的下游 SSE 交付策略。
+    pub(crate) const fn stream_delivery(&self) -> StreamDeliveryPolicy {
+        self.stream_delivery
+    }
 }
 
 /// 解析受限正文、执行请求级令牌策略，再把不可变请求信封交给 Relay。
@@ -145,15 +155,28 @@ pub(crate) async fn chat_completions(
     let principal = authentication.principal();
     let response = state
         .chat
-        .chat_completions(&principal, request, request_id.as_str())
+        .chat_completions(
+            &principal,
+            request,
+            Protocol::OpenAiChat,
+            request_id.as_str(),
+        )
         .await
         .map_err(OpenAiHttpError::from)?;
+    Ok(render_chat_response(response, state.stream_delivery))
+}
+
+/// 把已按客户端协议编码的 Relay 结果转换为统一 HTTP 完整或 SSE 响应。
+pub(crate) fn render_chat_response(
+    response: ChatResponse,
+    stream_delivery: StreamDeliveryPolicy,
+) -> Response {
     match response {
-        OpenAiChatResponse::Full { body, usage: _ } => {
-            Ok((StatusCode::OK, [(CONTENT_TYPE, "application/json")], body).into_response())
+        ChatResponse::Full { body, usage: _ } => {
+            (StatusCode::OK, [(CONTENT_TYPE, "application/json")], body).into_response()
         }
-        OpenAiChatResponse::Stream { body, usage: _ } => {
-            let mut response = openai_chat_body(body, state.stream_delivery).into_response();
+        ChatResponse::Stream { body, usage: _ } => {
+            let mut response = openai_chat_body(body, stream_delivery).into_response();
             response.headers_mut().insert(
                 CONTENT_TYPE,
                 HeaderValue::from_static("text/event-stream; charset=utf-8"),
@@ -168,7 +191,7 @@ pub(crate) async fn chat_completions(
             );
             // 不设置 Content-Length 或 Content-Encoding，交由 Hyper 按流式帧发送。
             *response.status_mut() = StatusCode::OK;
-            Ok(response)
+            response
         }
     }
 }
@@ -180,10 +203,17 @@ fn prepare_chat_request(
 ) -> Result<CanonicalRequestEnvelope, OpenAiHttpError> {
     let request =
         parse_request_envelope(body).map_err(|_| OpenAiHttpError::from(AfError::InvalidRequest))?;
-    let request = apply_reasoning_model_suffix(request)
-        .map_err(|_| OpenAiHttpError::from(AfError::InvalidRequest))?;
+    prepare_canonical_request(request, model_policy).map_err(OpenAiHttpError::from)
+}
+
+/// 在所有 Chat 协议入口共享模型后缀和令牌白名单语义。
+pub(crate) fn prepare_canonical_request(
+    request: CanonicalRequestEnvelope,
+    model_policy: &TokenModelPolicy,
+) -> Result<CanonicalRequestEnvelope, AfError> {
+    let request = apply_reasoning_model_suffix(request).map_err(|_| AfError::InvalidRequest)?;
     if !model_policy.allows(&request.canonical().model) {
-        return Err(OpenAiHttpError::from(AfError::ModelNotAllowed));
+        return Err(AfError::ModelNotAllowed);
     }
     Ok(request)
 }
