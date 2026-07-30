@@ -1117,16 +1117,34 @@ async fn exercise_registration_repository(pool: &DatabasePool) -> Result<(), Box
         .update_policy(RegistrationPolicyWriteRecord::new(
             true, group_id, 100, true, 1, 60,
         ))
-        .await?;
+        .await
+        .expect("注册冒烟必须成功写入策略");
 
-    let first = repository.claim_attempt([0x5a; 32], 120).await?;
+    let first = repository
+        .claim_attempt([0x5a; 32], 120)
+        .await
+        .expect("注册冒烟必须成功占用首次尝试");
     assert!(matches!(first, RegistrationAttemptOutcome::Allowed(_)));
     assert_eq!(
-        repository.claim_attempt([0x5a; 32], 121).await?,
+        repository
+            .claim_attempt([0x5a; 32], 121)
+            .await
+            .expect("注册冒烟必须完成限流判定"),
         RegistrationAttemptOutcome::RateLimited {
             retry_after_seconds: 59
         }
     );
+
+    // 冒烟数据不得改变后续核心表计数与外键行为基线。
+    registration_rate_limits::Entity::delete_many()
+        .exec(pool.connection())
+        .await?;
+    options::Entity::delete_by_id("system.registration.policy.v1".to_owned())
+        .exec(pool.connection())
+        .await?;
+    groups::Entity::delete_by_id(group.id)
+        .exec(pool.connection())
+        .await?;
     Ok(())
 }
 

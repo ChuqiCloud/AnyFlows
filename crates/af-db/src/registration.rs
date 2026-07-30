@@ -620,7 +620,7 @@ fn record_internal_error(error: RegistrationRepositoryError) -> RegistrationRepo
 
 #[cfg(test)]
 mod sql_tests {
-    use sea_orm::sea_query::{MysqlQueryBuilder, QueryStatementBuilder as _};
+    use sea_orm::sea_query::MysqlQueryBuilder;
 
     use super::*;
 
