@@ -315,6 +315,18 @@ include:
         - name: 运行 Redis 缓存冒烟
           script: bash tools/ci/run-cache-redis-test.sh
 
+"**/!(master|develop)":
+  push:
+    - name: 功能分支推送确认
+      runner:
+        tags: cnb:arch:amd64
+        cpus: 64
+      docker:
+        image: alpine:3.22
+      stages:
+        - name: 确认流水线配置
+          script: test -s .cnb.yml
+
 "**":
   web_trigger_ci:
     - <<: *frontend-quality
