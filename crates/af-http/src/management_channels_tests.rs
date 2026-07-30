@@ -798,7 +798,7 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
             .unwrap();
         assert_eq!(deleted.status(), StatusCode::NO_CONTENT);
     }
-    assert_eq!(reader.calls.load(Ordering::Relaxed), 6);
+    assert_eq!(reader.calls.load(Ordering::Relaxed), 7);
 }
 
 #[tokio::test]
