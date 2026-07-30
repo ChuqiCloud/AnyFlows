@@ -577,6 +577,7 @@ pub(in crate::migration) mod auth_challenge_rate_limits {
     /// 认证挑战发送限流迁移的固定列标识。
     #[derive(Clone, Copy, DeriveIden)]
     pub(in crate::migration) enum Column {
+        Id,
         Purpose,
         Scope,
         Fingerprint,

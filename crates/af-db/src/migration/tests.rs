@@ -1420,6 +1420,10 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("auth_challenges", "uq_auth_challenges_purpose_subject"),
         ("auth_challenges", "idx_auth_challenges_target_purpose"),
         ("auth_challenges", "idx_auth_challenges_expires_at"),
+        (
+            "auth_challenge_rate_limits",
+            "uq_auth_challenge_rate_limits_scope",
+        ),
     ] {
         assert!(
             manager.has_index(table, index).await?,

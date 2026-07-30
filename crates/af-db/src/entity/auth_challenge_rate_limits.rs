@@ -7,11 +7,11 @@ use super::AuthChallengeHash;
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "auth_challenge_rate_limits")]
 pub struct Model {
-    #[sea_orm(primary_key, auto_increment = false)]
+    #[sea_orm(primary_key)]
+    pub id: i64,
     pub purpose: i16,
-    #[sea_orm(primary_key, auto_increment = false)]
     pub scope: i16,
-    #[sea_orm(primary_key, auto_increment = false, column_type = "Char(Some(64))")]
+    #[sea_orm(column_type = "Char(Some(64))")]
     pub fingerprint: AuthChallengeHash,
     pub window_started_at: i64,
     pub attempts: i32,

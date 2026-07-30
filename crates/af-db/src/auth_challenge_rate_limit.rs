@@ -1,7 +1,7 @@
 use std::{fmt, time::Duration};
 
 use sea_orm::{
-    ConnectionTrait, DatabaseTransaction, DbErr, TransactionTrait,
+    ConnectionTrait, DatabaseTransaction, DbErr, EntityTrait, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, OnConflict, Query, UpdateStatement},
 };

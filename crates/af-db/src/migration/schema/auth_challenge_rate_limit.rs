@@ -3,7 +3,7 @@ use sea_orm_migration::prelude::*;
 
 use crate::migration::iden::auth_challenge_rate_limits;
 
-use super::{table, timestamp};
+use super::{auto_id, table, timestamp};
 
 const REGISTRATION_EMAIL_PURPOSE: i16 = 1;
 const PASSWORD_RESET_PURPOSE: i16 = 2;
@@ -16,6 +16,7 @@ pub(in crate::migration) async fn create_auth_challenge_rate_limits(
     manager: &SchemaManager<'_>,
 ) -> Result<(), DbErr> {
     let statement = table(manager, auth_challenge_rate_limits::Entity)
+        .col(auto_id(auth_challenge_rate_limits::Column::Id))
         .col(
             ColumnDef::new(auth_challenge_rate_limits::Column::Purpose)
                 .small_integer()
@@ -53,13 +54,6 @@ pub(in crate::migration) async fn create_auth_challenge_rate_limits(
             manager,
             auth_challenge_rate_limits::Column::UpdatedAt,
         ))
-        .primary_key(
-            Index::create()
-                .name("pk_auth_challenge_rate_limits")
-                .col(auth_challenge_rate_limits::Column::Purpose)
-                .col(auth_challenge_rate_limits::Column::Scope)
-                .col(auth_challenge_rate_limits::Column::Fingerprint),
-        )
         .check(
             Expr::col(auth_challenge_rate_limits::Column::Purpose)
                 .is_in([REGISTRATION_EMAIL_PURPOSE, PASSWORD_RESET_PURPOSE]),
@@ -70,7 +64,19 @@ pub(in crate::migration) async fn create_auth_challenge_rate_limits(
         )
         .check(fingerprint_format_check(manager.get_database_backend()))
         .to_owned();
-    manager.create_table(statement).await
+    manager.create_table(statement).await?;
+    manager
+        .create_index(
+            Index::create()
+                .name("uq_auth_challenge_rate_limits_scope")
+                .table(auth_challenge_rate_limits::Entity)
+                .col(auth_challenge_rate_limits::Column::Purpose)
+                .col(auth_challenge_rate_limits::Column::Scope)
+                .col(auth_challenge_rate_limits::Column::Fingerprint)
+                .unique()
+                .to_owned(),
+        )
+        .await
 }
 
 fn fingerprint_format_check(database_backend: DbBackend) -> SimpleExpr {
