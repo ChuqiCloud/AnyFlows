@@ -41,6 +41,11 @@ allow = ["CDLA-Permissive-2.0"]
 crate = "xxhash-rust"
 allow = ["BSL-1.0"]
 
+# lettre 的 quoted-printable 编码依赖使用 OSI 认可的零条款 BSD 宽松许可证。
+[[licenses.exceptions]]
+crate = "quoted_printable"
+allow = ["0BSD"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
