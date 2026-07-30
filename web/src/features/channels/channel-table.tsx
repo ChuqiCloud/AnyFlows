@@ -33,9 +33,11 @@ function ProtocolBadge({ protocol }: { protocol: AdminChannel['protocol'] }) {
   const { t } = useTranslation()
   const tone = protocol === 'anthropic'
     ? 'bg-warning/10 text-warning'
-    : protocol === 'openai_responses'
-      ? 'bg-success/10 text-success'
-      : 'bg-info/10 text-info'
+    : protocol === 'gemini'
+      ? 'bg-brand/10 text-brand'
+      : protocol === 'openai_responses'
+        ? 'bg-success/10 text-success'
+        : 'bg-info/10 text-info'
   return <Badge className={cn('border-transparent', tone)}>{t(`channels.protocol.${protocol}`)}</Badge>
 }
 

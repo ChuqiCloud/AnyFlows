@@ -851,6 +851,7 @@ fn validate_channel_fields(
                 ChannelType::OpenAi,
                 Protocol::OpenAiChat | Protocol::OpenAiResponses
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
+                | (ChannelType::Gemini, Protocol::Gemini)
         )
         || record
             .tag

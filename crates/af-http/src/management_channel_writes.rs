@@ -27,13 +27,13 @@ pub(crate) struct AdminChannelCreateRequest {
     #[schema(min_length = 1, max_length = 128)]
     name: String,
     #[serde(rename = "type")]
-    /// 当前生产写链路支持 OpenAI 与标准 Anthropic 适配器。
+    /// 当前生产写链路支持 OpenAI、标准 Anthropic 与 Gemini Developer API 适配器。
     #[schema(
         value_type = crate::openapi::schema::AdminChannelWriteTypeSchema,
         inline
     )]
     channel_type: af_domain::ChannelType,
-    /// 当前生产写链路支持 OpenAI Chat、Responses 与 Anthropic Messages 协议。
+    /// 当前生产写链路支持 OpenAI Chat、Responses、Anthropic Messages 与 Gemini 协议。
     #[schema(
         value_type = crate::openapi::schema::AdminChannelWriteProtocolSchema,
         inline

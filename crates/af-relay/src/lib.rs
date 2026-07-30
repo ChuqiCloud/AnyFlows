@@ -6,6 +6,9 @@ mod anthropic_stream;
 mod chat_response;
 mod chat_stream_encoder;
 mod error;
+mod gemini;
+mod gemini_request;
+mod gemini_stream;
 mod generation_stream;
 mod openai_chat;
 mod openai_chat_request;
@@ -21,6 +24,9 @@ pub use anthropic_request::{AnthropicRequestOverrideError, AnthropicRequestOverr
 pub use anthropic_stream::AnthropicMessagesStream;
 pub use chat_response::ChatResponse;
 pub use error::{RelayBuildError, RelayError};
+pub use gemini::{RelayGeminiOutcome, relay_gemini, relay_gemini_with_report};
+pub use gemini_request::{GeminiRequestOverrideError, GeminiRequestOverrides};
+pub use gemini_stream::GeminiGenerateContentStream;
 pub use generation_stream::{
     GenerationCompletionFuture, GenerationCompletionHook, GenerationStream,
 };

@@ -63,6 +63,10 @@ pub(crate) fn map_adaptor_error(error: AdaptorError) -> UpstreamError {
 
 /// 按状态码和已审定的上游结构化错误信号得出脱敏领域分类。
 pub(crate) fn classify_upstream_status(status: StatusCode, body: &[u8]) -> UpstreamError {
+    if let Some(error) = classify_gemini_error(status, body) {
+        return error;
+    }
+
     let anthropic_signal = classify_anthropic_error(body);
     match (status, anthropic_signal) {
         (
@@ -116,6 +120,31 @@ pub(crate) fn classify_upstream_status(status: StatusCode, body: &[u8]) -> Upstr
     }
 }
 
+/// 只读取 Google JSON API 的状态码与稳定状态名，不保留 message 或 details。
+fn classify_gemini_error(status: StatusCode, body: &[u8]) -> Option<UpstreamError> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let error = value.as_object()?.get("error")?.as_object()?;
+    let code = error.get("code")?.as_u64()?;
+    let code = u16::try_from(code).ok()?;
+    if code != status.as_u16() {
+        return None;
+    }
+    let upstream_status = error.get("status")?.as_str()?;
+    match (code, upstream_status) {
+        (400, "INVALID_ARGUMENT") => Some(UpstreamError::BadRequest),
+        (401, "UNAUTHENTICATED") => Some(UpstreamError::AuthExpired),
+        (403, "PERMISSION_DENIED") => Some(UpstreamError::AuthRevoked),
+        (404, "NOT_FOUND") => Some(UpstreamError::ModelUnsupported),
+        (429, "RESOURCE_EXHAUSTED") => Some(UpstreamError::RateLimited),
+        (503, "UNAVAILABLE") => Some(UpstreamError::Overloaded),
+        (500..=599, _) => Some(UpstreamError::ServerError {
+            status: af_domain::UpstreamServerStatus::new(code)
+                .expect("500..=599 必须始终满足上游服务器状态约束"),
+        }),
+        _ => None,
+    }
+}
+
 /// 判定当前候选失败后能否继续选路；健康惩罚、刷新和禁用由调度层处理。
 pub(crate) const fn is_retryable(error: UpstreamError) -> bool {
     matches!(
@@ -129,4 +158,49 @@ pub(crate) const fn is_retryable(error: UpstreamError) -> bool {
             | UpstreamError::Network
             | UpstreamError::ServerError { .. }
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gemini_error_classifier_uses_only_structured_code_and_status() {
+        for (status, signal, expected) in [
+            (400, "INVALID_ARGUMENT", UpstreamError::BadRequest),
+            (401, "UNAUTHENTICATED", UpstreamError::AuthExpired),
+            (403, "PERMISSION_DENIED", UpstreamError::AuthRevoked),
+            (404, "NOT_FOUND", UpstreamError::ModelUnsupported),
+            (429, "RESOURCE_EXHAUSTED", UpstreamError::RateLimited),
+            (503, "UNAVAILABLE", UpstreamError::Overloaded),
+        ] {
+            let status = StatusCode::from_u16(status).unwrap();
+            let body = format!(
+                r#"{{"error":{{"code":{},"message":"private-canary","status":"{signal}","details":[{{"private":"canary"}}]}}}}"#,
+                status.as_u16()
+            );
+            assert_eq!(
+                classify_gemini_error(status, body.as_bytes()),
+                Some(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn gemini_error_classifier_rejects_mismatched_or_unstructured_signals() {
+        assert_eq!(
+            classify_gemini_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                br#"{"error":{"code":503,"status":"UNAVAILABLE"}}"#,
+            ),
+            None
+        );
+        assert_eq!(
+            classify_gemini_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                br#"{"error":{"code":429,"message":"RESOURCE_EXHAUSTED"}}"#,
+            ),
+            None
+        );
+    }
 }

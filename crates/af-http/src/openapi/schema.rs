@@ -366,6 +366,7 @@ pub(crate) enum AdminChannelProtocolSchema {
 pub(crate) enum AdminChannelWriteTypeSchema {
     Openai,
     Anthropic,
+    Gemini,
 }
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
@@ -375,6 +376,7 @@ pub(crate) enum AdminChannelWriteProtocolSchema {
     OpenaiChat,
     OpenaiResponses,
     Anthropic,
+    Gemini,
 }
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]

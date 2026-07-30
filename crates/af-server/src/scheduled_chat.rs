@@ -2,8 +2,8 @@ use std::fmt;
 
 use af_account::{CredentialDecryptor, DecryptedCredential};
 use af_adapter::{
-    AdaptorSettings, AnthropicAdaptorSettings, Credential, HeaderMap, HeaderName, HeaderValue,
-    OpenAiAdaptorSettings, RelayContext, get_adaptor,
+    AdaptorSettings, AnthropicAdaptorSettings, Credential, GeminiAdaptorSettings, HeaderMap,
+    HeaderName, HeaderValue, OpenAiAdaptorSettings, RelayContext, get_adaptor,
 };
 use af_db::CredentialStateRepository;
 use af_domain::{
@@ -12,9 +12,10 @@ use af_domain::{
 use af_httpclient::HttpClientProvider;
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::{
-    AnthropicRequestOverrides, OpenAiChatRequestOverrides, OpenAiResponsesRequestOverrides,
-    RelayCandidate, RelayCandidateRequest, RelayStateMachine, relay_anthropic_with_report,
-    relay_openai_chat_with_report, relay_openai_responses_with_report,
+    AnthropicRequestOverrides, GeminiRequestOverrides, OpenAiChatRequestOverrides,
+    OpenAiResponsesRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayStateMachine,
+    relay_anthropic_with_report, relay_gemini_with_report, relay_openai_chat_with_report,
+    relay_openai_responses_with_report,
 };
 use af_scheduler::{IndexedRoutePlan, IndexedWeightedScheduler, IndexedWeightedSchedulerError};
 
@@ -226,6 +227,11 @@ impl PlannedChatExecution for ScheduledChatExecution {
                         .await
                         .into_parts()
                 }
+                (Operation::Chat, Protocol::Gemini) => {
+                    relay_gemini_with_report(&machine, request, &request_id)
+                        .await
+                        .into_parts()
+                }
                 (Operation::Responses, Protocol::OpenAiResponses) => {
                     relay_openai_responses_with_report(&machine, request, &request_id)
                         .await
@@ -309,7 +315,16 @@ fn candidate_request(
         .and_then(|overrides| overrides.prepare(request.clone()))
         .map(Some)
         .map_err(|_| AfError::Internal),
-        Protocol::Gemini => Err(AfError::Internal),
+        Protocol::Gemini => GeminiRequestOverrides::new(
+            upstream_model,
+            parameters.temperature(),
+            parameters.top_p(),
+            parameters.max_output_tokens(),
+            parameters.stop_sequences().map(<[String]>::to_vec),
+        )
+        .and_then(|overrides| overrides.prepare(request.clone()))
+        .map(Some)
+        .map_err(|_| AfError::Internal),
     }
 }
 
@@ -324,6 +339,7 @@ fn target_matches_protocol(
                 ChannelType::OpenAi,
                 Protocol::OpenAiChat | Protocol::OpenAiResponses
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
+                | (ChannelType::Gemini, Protocol::Gemini)
         )
 }
 
@@ -341,6 +357,11 @@ fn adaptor_settings(
         (ChannelType::Anthropic, Protocol::Anthropic) => Ok(AdaptorSettings::Anthropic(
             AnthropicAdaptorSettings::new(vec![upstream_model]),
         )),
+        (ChannelType::Gemini, Protocol::Gemini) => {
+            Ok(AdaptorSettings::Gemini(GeminiAdaptorSettings::new(vec![
+                upstream_model,
+            ])))
+        }
         _ => Err(AfError::Internal),
     }
 }
@@ -351,13 +372,23 @@ fn select_upstream_protocol(
     response_protocol: Protocol,
 ) -> Result<Protocol, AfError> {
     match (request.canonical().operation, response_protocol) {
-        (Operation::Chat, Protocol::OpenAiChat | Protocol::Gemini) => Ok(Protocol::OpenAiChat),
+        (Operation::Chat, Protocol::OpenAiChat) => Ok(Protocol::OpenAiChat),
         (Operation::Chat, Protocol::Anthropic) => {
             // 原生 Anthropic 同协议优先；没有标准 Anthropic 渠道时保留既有 OpenAI 跨协议链路。
             if route.candidates().iter().any(|candidate| {
                 target_matches_protocol(candidate.runtime_target(), Protocol::Anthropic)
             }) {
                 Ok(Protocol::Anthropic)
+            } else {
+                Ok(Protocol::OpenAiChat)
+            }
+        }
+        (Operation::Chat, Protocol::Gemini) => {
+            // 原生 Gemini 同协议优先；没有标准 Gemini 渠道时保留既有 OpenAI 跨协议链路。
+            if route.candidates().iter().any(|candidate| {
+                target_matches_protocol(candidate.runtime_target(), Protocol::Gemini)
+            }) {
+                Ok(Protocol::Gemini)
             } else {
                 Ok(Protocol::OpenAiChat)
             }
@@ -499,6 +530,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn gemini_client_prefers_native_channel_and_keeps_openai_fallback() {
+        let native = service(vec![gemini_record(valid_envelope_for(
+            CREDENTIAL_ID + 1,
+            0x26,
+        ))])
+        .await;
+        let route = native
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let execution = native
+            .build_plan(route, request(), Protocol::Gemini, "request-gemini-native")
+            .unwrap();
+        assert_eq!(execution.response_protocol, Protocol::Gemini);
+        assert_eq!(execution.upstream_protocol, Protocol::Gemini);
+        assert_eq!(execution.attempt_targets.len(), 1);
+
+        let fallback = service(vec![record(false, valid_envelope())]).await;
+        let route = fallback
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+            .unwrap()
+            .unwrap();
+        let execution = fallback
+            .build_plan(
+                route,
+                request(),
+                Protocol::Gemini,
+                "request-gemini-fallback",
+            )
+            .unwrap();
+        assert_eq!(execution.response_protocol, Protocol::Gemini);
+        assert_eq!(execution.upstream_protocol, Protocol::OpenAiChat);
+        assert_eq!(execution.attempt_targets.len(), 1);
+    }
+
+    #[tokio::test]
     async fn openai_client_does_not_schedule_anthropic_upstream() {
         let service = service(vec![anthropic_record(valid_envelope())]).await;
 
@@ -509,6 +578,23 @@ mod tests {
                     request(),
                     Protocol::OpenAiChat,
                     "request-openai-client",
+                )
+                .err(),
+            Some(AfError::Upstream(UpstreamError::ModelUnsupported))
+        );
+    }
+
+    #[tokio::test]
+    async fn openai_client_does_not_schedule_gemini_upstream() {
+        let service = service(vec![gemini_record(valid_envelope())]).await;
+
+        assert_eq!(
+            service
+                .plan(
+                    &principal(7),
+                    request(),
+                    Protocol::OpenAiChat,
+                    "request-openai-gemini-upstream",
                 )
                 .err(),
             Some(AfError::Upstream(UpstreamError::ModelUnsupported))
@@ -710,6 +796,17 @@ mod tests {
             ChannelType::Anthropic,
             Protocol::Anthropic,
         )
+    }
+
+    fn gemini_record(envelope: EncryptedCredentialEnvelope) -> ChannelIndexSourceRecord {
+        let credential = SchedulerRuntimeCredentialRecord::new(
+            CREDENTIAL_ID + 1,
+            CredentialKind::ApiKey,
+            envelope,
+            false,
+        )
+        .unwrap();
+        record_pool_with_target(vec![credential], ChannelType::Gemini, Protocol::Gemini)
     }
 
     fn record_pool_with_target(

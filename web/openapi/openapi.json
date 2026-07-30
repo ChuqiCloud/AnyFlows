@@ -4136,11 +4136,12 @@
                 "type": "string",
                 "enum": [
                   "openai",
-                  "anthropic"
+                  "anthropic",
+                  "gemini"
                 ]
               }
             ],
-            "description": "当前生产写链路支持 OpenAI 与标准 Anthropic 适配器。"
+            "description": "当前生产写链路支持 OpenAI、标准 Anthropic 与 Gemini Developer API 适配器。"
           },
           "protocol": {
             "oneOf": [
@@ -4149,11 +4150,12 @@
                 "enum": [
                   "openai_chat",
                   "openai_responses",
-                  "anthropic"
+                  "anthropic",
+                  "gemini"
                 ]
               }
             ],
-            "description": "当前生产写链路支持 OpenAI Chat、Responses 与 Anthropic Messages 协议。"
+            "description": "当前生产写链路支持 OpenAI Chat、Responses、Anthropic Messages 与 Gemini 协议。"
           },
           "base_url": {
             "type": [
@@ -4376,7 +4378,8 @@
             "type": "string",
             "enum": [
               "openai",
-              "anthropic"
+              "anthropic",
+              "gemini"
             ]
           },
           "protocol": {
@@ -4384,7 +4387,8 @@
             "enum": [
               "openai_chat",
               "openai_responses",
-              "anthropic"
+              "anthropic",
+              "gemini"
             ]
           },
           "base_url": {

@@ -645,6 +645,25 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
         assert!(!created.to_string().contains(secret));
     }
 
+    let mut gemini_body = channel_body.clone();
+    let gemini_object = gemini_body
+        .as_object_mut()
+        .expect("Gemini 测试渠道正文必须是对象");
+    gemini_object.insert("name".to_owned(), json!("gemini"));
+    gemini_object.insert("type".to_owned(), json!("gemini"));
+    gemini_object.insert("protocol".to_owned(), json!("gemini"));
+    let gemini_created = app
+        .clone()
+        .oneshot(write_request(
+            "POST",
+            "/api/admin/channels",
+            ADMIN_TOKEN,
+            &gemini_body,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(gemini_created.status(), StatusCode::CREATED);
+
     for (field, invalid) in [
         ("param_override", json!({"messages": []})),
         ("param_override", json!({"max_output_tokens": 0})),

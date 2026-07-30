@@ -324,6 +324,7 @@ mod tests {
                 .validate_for_protocol(Protocol::OpenAiChat)
                 .is_ok()
         );
+        assert!(overrides.validate_for_protocol(Protocol::Gemini).is_ok());
         assert!(overrides.validate_for_protocol(Protocol::Anthropic).is_ok());
         assert!(
             overrides

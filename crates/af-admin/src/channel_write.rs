@@ -216,6 +216,7 @@ impl AdminChannelWriteFields {
                     ChannelType::OpenAi,
                     Protocol::OpenAiChat | Protocol::OpenAiResponses
                 ) | (ChannelType::Anthropic, Protocol::Anthropic)
+                    | (ChannelType::Gemini, Protocol::Gemini)
             )
             || base_url
                 .as_deref()
@@ -923,6 +924,27 @@ mod tests {
                 "anthropic".to_owned(),
                 ChannelType::Anthropic,
                 Protocol::Anthropic,
+                None,
+                None,
+                AdminRoutingWriteStatus::Disabled,
+                10,
+                0,
+                true,
+                Vec::new(),
+                Vec::new(),
+                serde_json::json!({}),
+                serde_json::json!({}),
+                serde_json::json!({}),
+                serde_json::json!({}),
+                None,
+            )
+            .is_ok()
+        );
+        assert!(
+            AdminChannelCreateCommand::new(
+                "gemini".to_owned(),
+                ChannelType::Gemini,
+                Protocol::Gemini,
                 None,
                 None,
                 AdminRoutingWriteStatus::Disabled,
