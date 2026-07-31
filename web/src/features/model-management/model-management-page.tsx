@@ -1,17 +1,19 @@
-import { Boxes, ScanSearch } from 'lucide-react'
+import { BadgeDollarSign, Boxes, ScanSearch } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { ModelManagementCatalogWorkspace } from './model-management-catalog-workspace'
+import { ModelPriceWorkspace } from './model-price-workspace'
 import { ModelSyncWorkspace } from './model-sync-workspace'
 
-type ModelManagementView = 'catalog' | 'sync'
+type ModelManagementView = 'catalog' | 'sync' | 'prices'
 
 const views = [
   { id: 'catalog', Icon: Boxes },
   { id: 'sync', Icon: ScanSearch },
+  { id: 'prices', Icon: BadgeDollarSign },
 ] as const
 
 /** 在独立商品目录与受控上游同步之间切换，不混用两类服务端状态。 */
@@ -47,7 +49,11 @@ export function ModelManagementPage() {
         ))}
       </div>
 
-      {view === 'catalog' ? <ModelManagementCatalogWorkspace /> : <ModelSyncWorkspace />}
+      {view === 'catalog'
+        ? <ModelManagementCatalogWorkspace />
+        : view === 'sync'
+          ? <ModelSyncWorkspace />
+          : <ModelPriceWorkspace />}
     </div>
   )
 }

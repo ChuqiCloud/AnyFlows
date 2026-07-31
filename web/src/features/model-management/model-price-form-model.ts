@@ -1,0 +1,120 @@
+import { z } from 'zod'
+
+import type {
+  AdminModelPrice,
+  AdminModelPriceBillingMode,
+  AdminModelPriceSourceCandidate,
+  AdminModelPriceWriteItem,
+} from '@/lib/api/generated/types.gen'
+
+export type ModelPriceDraft = {
+  billingMode: AdminModelPriceBillingMode
+  input: string
+  output: string
+  cacheRead: string
+  cacheCreation5m: string
+  cacheCreation1h: string
+}
+
+export type StagedModelPriceDraft = {
+  draft: ModelPriceDraft
+  expectedVersion: number | null
+}
+
+export type ModelPriceValidationMessages = {
+  decimal: string
+  free: string
+}
+
+export type ModelPriceEvidenceField = 'input' | 'output' | 'cacheRead'
+
+const DECIMAL_PATTERN = /^(0|[0-9]+)(\.[0-9]+)?$/
+const ZERO_DECIMAL_PATTERN = /^0+(\.0+)?$/
+
+/** 创建与后端十进制字符串边界一致的价格草稿校验器。 */
+export function buildModelPriceDraftSchema(messages: ModelPriceValidationMessages) {
+  const decimal = z.string().max(64, messages.decimal).regex(DECIMAL_PATTERN, messages.decimal)
+  return z.object({
+    billingMode: z.enum(['per_token', 'free']),
+    input: decimal,
+    output: decimal,
+    cacheRead: decimal,
+    cacheCreation5m: decimal,
+    cacheCreation1h: decimal,
+  }).superRefine((value, context) => {
+    if (value.billingMode !== 'free') return
+    const fields = ['input', 'output', 'cacheRead', 'cacheCreation5m', 'cacheCreation1h'] as const
+    for (const field of fields) {
+      if (!ZERO_DECIMAL_PATTERN.test(value[field])) {
+        context.addIssue({ code: 'custom', message: messages.free, path: [field] })
+      }
+    }
+  })
+}
+
+export function defaultModelPriceDraft(price?: AdminModelPrice): ModelPriceDraft {
+  return {
+    billingMode: price?.billing_mode ?? 'per_token',
+    input: price?.prices.input ?? '',
+    output: price?.prices.output ?? '',
+    cacheRead: price?.prices.cache_read ?? '',
+    cacheCreation5m: price?.prices.cache_creation_5m ?? '',
+    cacheCreation1h: price?.prices.cache_creation_1h ?? '',
+  }
+}
+
+export function freeModelPriceDraft(): ModelPriceDraft {
+  return {
+    billingMode: 'free',
+    input: '0',
+    output: '0',
+    cacheRead: '0',
+    cacheCreation5m: '0',
+    cacheCreation1h: '0',
+  }
+}
+
+/** 仅用于控制选择状态，显示文案由表单使用本地化校验器提供。 */
+export function modelPriceDraftIsComplete(draft?: ModelPriceDraft) {
+  if (!draft) return false
+  return buildModelPriceDraftSchema({ decimal: 'decimal', free: 'free' }).safeParse(draft).success
+}
+
+export function toModelPriceWriteItem(
+  model: string,
+  staged: StagedModelPriceDraft,
+): AdminModelPriceWriteItem {
+  const { draft } = staged
+  return {
+    model,
+    expected_version: staged.expectedVersion,
+    billing_mode: draft.billingMode,
+    prices: {
+      input: draft.input,
+      output: draft.output,
+      cache_read: draft.cacheRead,
+      cache_creation_5m: draft.cacheCreation5m,
+      cache_creation_1h: draft.cacheCreation1h,
+    },
+  }
+}
+
+/** 只允许语义等价的输入、输出和缓存读取证据进入对应正式字段。 */
+export function applyModelPriceEvidence(
+  draft: ModelPriceDraft,
+  candidate: AdminModelPriceSourceCandidate,
+  field: ModelPriceEvidenceField,
+): ModelPriceDraft {
+  const sourceKey = field === 'cacheRead' ? 'cache_read' : field
+  const value = candidate.costs[sourceKey]
+  return value === null ? draft : { ...draft, [field]: value }
+}
+
+export function modelPriceCandidateNeedsReview(candidate?: AdminModelPriceSourceCandidate) {
+  return candidate !== undefined && (
+    candidate.has_tiered_pricing
+    || candidate.source_deprecated
+    || candidate.costs.input === null
+    || candidate.costs.output === null
+  )
+}

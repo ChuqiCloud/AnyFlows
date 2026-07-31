@@ -1,0 +1,230 @@
+import { useEffect, useRef } from 'react'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { ArrowDownToLine, CircleDollarSign, Info, TriangleAlert } from 'lucide-react'
+import { useForm } from 'react-hook-form'
+import { useTranslation } from 'react-i18next'
+
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import type {
+  AdminModel,
+  AdminModelPrice,
+  AdminModelPriceSourceCandidate,
+} from '@/lib/api/generated/types.gen'
+import { ModelManagementField } from './model-management-field'
+import {
+  applyModelPriceEvidence,
+  buildModelPriceDraftSchema,
+  defaultModelPriceDraft,
+  freeModelPriceDraft,
+  type ModelPriceDraft,
+  type ModelPriceEvidenceField,
+  type StagedModelPriceDraft,
+} from './model-price-form-model'
+
+type ModelPriceFormProps = {
+  candidate?: AdminModelPriceSourceCandidate
+  model: AdminModel
+  onCancel: () => void
+  onStage: (draft: ModelPriceDraft) => void
+  price?: AdminModelPrice
+  staged?: StagedModelPriceDraft
+}
+
+const priceFields = [
+  { key: 'input', translation: 'input' },
+  { key: 'output', translation: 'output' },
+  { key: 'cacheRead', translation: 'cacheRead' },
+  { key: 'cacheCreation5m', translation: 'cacheCreation5m' },
+  { key: 'cacheCreation1h', translation: 'cacheCreation1h' },
+] as const
+
+/** 编辑正式五价草稿；公开来源只能由管理员逐字段采用。 */
+export function ModelPriceForm(props: ModelPriceFormProps) {
+  const { t } = useTranslation()
+  const schema = buildModelPriceDraftSchema({
+    decimal: t('modelManagement.prices.validation.decimal'),
+    free: t('modelManagement.prices.validation.free'),
+  })
+  const initialDraft = props.staged?.draft ?? defaultModelPriceDraft(props.price)
+  const perTokenDraft = useRef<ModelPriceDraft>(
+    initialDraft.billingMode === 'per_token'
+      ? initialDraft
+      : { ...freeModelPriceDraft(), billingMode: 'per_token' },
+  )
+  const form = useForm<ModelPriceDraft>({
+    defaultValues: initialDraft,
+    resolver: zodResolver(schema),
+  })
+
+  useEffect(() => {
+    const next = props.staged?.draft ?? defaultModelPriceDraft(props.price)
+    if (next.billingMode === 'per_token') perTokenDraft.current = next
+    form.reset(next)
+  }, [form, props.model.model, props.price, props.staged])
+
+  const billingMode = form.watch('billingMode')
+  const changeBillingMode = (nextMode: ModelPriceDraft['billingMode']) => {
+    const current = form.getValues()
+    if (nextMode === 'free') {
+      if (current.billingMode === 'per_token') perTokenDraft.current = current
+      form.reset(freeModelPriceDraft())
+      return
+    }
+    form.reset({ ...perTokenDraft.current, billingMode: 'per_token' })
+  }
+  const useEvidence = (field: ModelPriceEvidenceField) => {
+    if (!props.candidate) return
+    const current = form.getValues()
+    const base = current.billingMode === 'free'
+      ? { ...perTokenDraft.current, billingMode: 'per_token' as const }
+      : current
+    const next = applyModelPriceEvidence(base, props.candidate, field)
+    perTokenDraft.current = next
+    form.reset(next, { keepDefaultValues: true })
+  }
+  const submit = form.handleSubmit((draft) => props.onStage(draft))
+
+  return (
+    <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit} noValidate>
+      <div className="flex-1 space-y-6 overflow-y-auto px-4 py-5">
+        <section className="grid gap-3" aria-labelledby="model-price-identity">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 id="model-price-identity" className="truncate font-mono text-sm font-semibold">{props.model.model}</h3>
+              <p className="mt-1 text-xs text-muted-foreground">{props.model.display_name} · {props.model.provider}</p>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <Badge>{props.price ? t('modelManagement.prices.version', { version: props.price.version }) : t('modelManagement.prices.status.unpriced')}</Badge>
+              {props.staged ? <Badge className="border-transparent bg-warning/10 text-warning">{t('modelManagement.prices.status.staged')}</Badge> : null}
+            </div>
+          </div>
+          <div
+            role="radiogroup"
+            aria-label={t('modelManagement.prices.form.billingMode')}
+            className="grid grid-cols-2 gap-1 rounded-lg border border-[var(--hairline)] bg-surface-2/55 p-1"
+          >
+            {(['per_token', 'free'] as const).map((mode) => (
+              <Button
+                key={mode}
+                type="button"
+                variant="ghost"
+                role="radio"
+                aria-checked={billingMode === mode}
+                className={billingMode === mode ? 'bg-surface-1 shadow-sm hover:bg-surface-1' : undefined}
+                onClick={() => changeBillingMode(mode)}
+              >
+                <CircleDollarSign aria-hidden="true" />
+                {t(`modelManagement.prices.billing.${mode}`)}
+              </Button>
+            ))}
+          </div>
+          <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+            <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+            {t(billingMode === 'free' ? 'modelManagement.prices.form.freeHint' : 'modelManagement.prices.form.perTokenHint')}
+          </p>
+        </section>
+
+        <section className="grid gap-3 border-t border-[var(--hairline)] pt-5" aria-labelledby="model-price-values">
+          <div>
+            <h3 id="model-price-values" className="text-xs font-semibold">{t('modelManagement.prices.form.values')}</h3>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('modelManagement.prices.form.valuesHint')}</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {priceFields.map(({ key, translation }) => (
+              <ModelManagementField
+                key={key}
+                id={`model-price-${key}`}
+                label={t(`modelManagement.prices.fields.${translation}`)}
+                hint={t('modelManagement.prices.form.priceUnit')}
+                error={form.formState.errors[key]?.message}
+              >
+                <Input
+                  id={`model-price-${key}`}
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  disabled={billingMode === 'free'}
+                  aria-invalid={!!form.formState.errors[key]}
+                  className="font-mono tabular-nums"
+                  {...form.register(key)}
+                />
+              </ModelManagementField>
+            ))}
+          </div>
+        </section>
+
+        <PriceEvidence candidate={props.candidate} onUse={useEvidence} />
+      </div>
+
+      <div className="flex justify-end gap-2 border-t border-[var(--hairline)] p-4">
+        <Button type="button" variant="secondary" onClick={props.onCancel}>{t('modelManagement.actions.cancel')}</Button>
+        <Button type="submit">{t('modelManagement.prices.actions.stage')}</Button>
+      </div>
+    </form>
+  )
+}
+
+function PriceEvidence(props: {
+  candidate?: AdminModelPriceSourceCandidate
+  onUse: (field: ModelPriceEvidenceField) => void
+}) {
+  const { t } = useTranslation()
+  const candidate = props.candidate
+  if (!candidate) {
+    return (
+      <section className="border-t border-[var(--hairline)] pt-5" aria-labelledby="model-price-evidence">
+        <h3 id="model-price-evidence" className="text-xs font-semibold">{t('modelManagement.prices.evidence.title')}</h3>
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">{t('modelManagement.prices.evidence.none')}</p>
+      </section>
+    )
+  }
+  const evidence = [
+    { field: 'input', label: 'input', value: candidate.costs.input },
+    { field: 'output', label: 'output', value: candidate.costs.output },
+    { field: 'cacheRead', label: 'cacheRead', value: candidate.costs.cache_read },
+  ] as const
+  return (
+    <section className="grid gap-3 border-t border-[var(--hairline)] pt-5" aria-labelledby="model-price-evidence">
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 id="model-price-evidence" className="text-xs font-semibold">{t('modelManagement.prices.evidence.title')}</h3>
+          <Badge>{candidate.provider_name}</Badge>
+          {candidate.has_tiered_pricing ? <Badge className="border-transparent bg-warning/10 text-warning">{t('modelManagement.prices.status.review')}</Badge> : null}
+          {candidate.source_deprecated ? <Badge className="border-transparent bg-destructive/10 text-destructive">{t('modelManagement.prices.evidence.deprecated')}</Badge> : null}
+        </div>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('modelManagement.prices.evidence.disclaimer')}</p>
+      </div>
+      {candidate.has_tiered_pricing ? (
+        <div className="flex items-start gap-2 rounded-lg border border-warning/20 bg-warning/8 px-3 py-2 text-xs leading-5 text-warning">
+          <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          {t('modelManagement.prices.evidence.tieredWarning')}
+        </div>
+      ) : null}
+      <dl className="grid gap-2 sm:grid-cols-2">
+        {evidence.map(({ field, label, value }) => (
+          <div key={field} className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-[var(--hairline)] px-3 py-2">
+            <div className="min-w-0">
+              <dt className="text-[0.6875rem] text-muted-foreground">{t(`modelManagement.prices.fields.${label}`)}</dt>
+              <dd className="mt-1 truncate font-mono text-xs tabular-nums">{value === null ? t('modelManagement.prices.evidence.missing') : `$${value}`}</dd>
+            </div>
+            <Button type="button" size="icon-sm" variant="ghost" disabled={value === null} aria-label={t('modelManagement.prices.evidence.use', { field: t(`modelManagement.prices.fields.${label}`) })} onClick={() => props.onUse(field)}>
+              <ArrowDownToLine aria-hidden="true" />
+            </Button>
+          </div>
+        ))}
+        <div className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-[var(--hairline)] px-3 py-2 sm:col-span-2">
+          <div className="min-w-0">
+            <dt className="text-[0.6875rem] text-muted-foreground">{t('modelManagement.prices.fields.cacheWriteEvidence')}</dt>
+            <dd className="mt-1 truncate font-mono text-xs tabular-nums">{candidate.costs.cache_write === null ? t('modelManagement.prices.evidence.missing') : `$${candidate.costs.cache_write}`}</dd>
+          </div>
+          <span className="max-w-52 text-right text-[0.6875rem] leading-4 text-muted-foreground">{t('modelManagement.prices.evidence.cacheWriteBoundary')}</span>
+        </div>
+      </dl>
+      <p className="text-[0.6875rem] text-muted-foreground">
+        {t('modelManagement.prices.evidence.source', { model: candidate.source_model, updated: candidate.last_updated ?? t('modelManagement.prices.evidence.unknownDate') })}
+      </p>
+    </section>
+  )
+}

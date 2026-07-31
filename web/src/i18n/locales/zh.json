@@ -556,7 +556,8 @@
     "views": {
       "label": "模型管理视图",
       "catalog": "模型目录",
-      "sync": "同步模型"
+      "sync": "同步模型",
+      "prices": "模型价格"
     },
     "columns": {
       "model": "模型商品",
@@ -777,6 +778,132 @@
         "model_sync_conflict": "模型元数据已被并发修改或创建，请刷新目录并重新预览。",
         "internal_error": "模型同步暂时不可用，请稍后重试。",
         "unknown": "模型同步请求失败，请检查网络后重试。"
+      }
+    },
+    "prices": {
+      "loading": "正在核对模型与正式价格",
+      "version": "价格版本 v{{version}}",
+      "columns": {
+        "select": "选择待提交价格",
+        "model": "模型商品",
+        "status": "定价状态"
+      },
+      "summary": {
+        "loaded_one": "已加载 {{count}} 个模型",
+        "loaded_other": "已加载 {{count}} 个模型",
+        "priced_one": "{{count}} 个已有价格",
+        "priced_other": "{{count}} 个已有价格",
+        "free_one": "{{count}} 个显式免费",
+        "free_other": "{{count}} 个显式免费",
+        "staged_one": "{{count}} 个待提交草稿",
+        "staged_other": "{{count}} 个待提交草稿"
+      },
+      "status": {
+        "unpriced": "未定价",
+        "priced": "已定价",
+        "free": "显式免费",
+        "staged": "待提交",
+        "review": "需复核",
+        "checking": "核对中",
+        "publicMissing": "公开活动模型未定价，不会进入模型广场。"
+      },
+      "billing": {
+        "per_token": "按 Token 计费",
+        "free": "显式免费"
+      },
+      "fields": {
+        "input": "输入",
+        "output": "输出",
+        "cacheRead": "缓存读取",
+        "cacheCreation5m": "5m 缓存创建",
+        "cacheCreation1h": "1h 缓存创建",
+        "cacheWriteEvidence": "通用缓存写证据"
+      },
+      "form": {
+        "billingMode": "计费模式",
+        "perTokenHint": "五项价格均为美元/百万 Token 的精确十进制值，可明确填写 0。",
+        "freeHint": "显式免费与零倍率语义不同，保存时五项价格必须全部为 0。",
+        "values": "正式销售价格",
+        "valuesHint": "这些值会直接参与新请求计费，不会根据参考来源自动覆盖。",
+        "priceUnit": "美元 / 百万 Token"
+      },
+      "validation": {
+        "decimal": "请输入不带符号或科学计数法的非负十进制数，最多 64 个字符。",
+        "free": "显式免费模式的五项价格必须全部为 0。"
+      },
+      "actions": {
+        "preview": "从 models.dev 获取参考价",
+        "previewing": "正在读取参考价",
+        "stage": "加入待提交",
+        "reviewApply": "复核并应用（{{count}}）",
+        "apply": "应用 {{count}} 项价格",
+        "select": "选择模型 {{model}} 的价格草稿",
+        "selectionReady": "此草稿可加入批量提交",
+        "editBeforeSelect": "先编辑并补齐五项价格",
+        "edit": "编辑模型 {{model}} 的价格",
+        "editPrice": "编辑价格",
+        "setPrice": "设置价格"
+      },
+      "preview": {
+        "loaded_one": "匹配 {{count}} 条公开参考价",
+        "loaded_other": "匹配 {{count}} 条公开参考价",
+        "fetchedAt": "读取于 {{value}}"
+      },
+      "evidence": {
+        "title": "models.dev 公开参考证据",
+        "sourceBadge": "models.dev",
+        "none": "尚未获取与当前厂商和 Canonical 标识精确匹配的参考价。",
+        "disclaimer": "公开成本只用于人工复核，不代表本站正式售价，也不会自动覆盖草稿。",
+        "deprecated": "来源已弃用",
+        "tieredWarning": "来源包含分层或长上下文价格，当前计费引擎不能等价表达，禁止直接套用。",
+        "missing": "未提供",
+        "use": "采用{{field}}参考值",
+        "cacheWriteBoundary": "不能等价映射到 5m 或 1h，必须分别人工确认。",
+        "source": "来源模型 {{model}}，更新日期 {{updated}}",
+        "unknownDate": "未知"
+      },
+      "editor": {
+        "title": "编辑正式模型价格",
+        "description": "为 {{model}} 创建可复核的五价草稿。",
+        "fallbackDescription": "创建可复核的五价草稿。"
+      },
+      "apply": {
+        "title": "确认应用正式价格",
+        "description_one": "核对所选 {{count}} 个模型的最终五价与版本前置条件。",
+        "description_other": "核对所选 {{count}} 个模型的最终五价与版本前置条件。",
+        "createVersion": "创建新价格",
+        "updateVersion": "基于 v{{version}} 更新",
+        "boundary": "全部价格会在同一事务中写入；任一模型或版本冲突都会整体失败。成功后立即刷新运行时快照，并影响后续新请求。",
+        "success_one": "已应用 {{count}} 个模型价格，模型广场已刷新。",
+        "success_other": "已应用 {{count}} 个模型价格，模型广场已刷新。"
+      },
+      "pagination": {
+        "priceIndexIncomplete": "已读取 {{count}} 条正式价格，未完成全部价格索引前不会把缺失项误标为未定价。",
+        "loadMorePrices": "继续核对价格",
+        "loadMoreModels": "加载更多模型",
+        "moreError": "后续模型或价格读取失败，已加载内容和草稿仍然保留。"
+      },
+      "empty": {
+        "title": "还没有可定价模型",
+        "body": "先在模型目录登记商品元数据，再为它维护正式价格。"
+      },
+      "error": {
+        "title": "无法读取模型价格",
+        "body": "模型或价格目录没有返回可靠快照，请稍后重试。"
+      },
+      "errors": {
+        "invalid_request": "价格草稿无效，请检查计费模式、版本和五项十进制价格。",
+        "invalid_session": "登录会话已失效，请重新登录。",
+        "forbidden": "当前会话没有模型价格管理权限。",
+        "model_not_found": "模型元数据已不存在，请刷新模型目录。",
+        "model_price_conflict": "正式价格已被其他请求修改。草稿已保留，请刷新后重新核对版本。",
+        "model_price_source_timeout": "models.dev 请求超时，请稍后重试。",
+        "model_price_source_unavailable": "models.dev 当前不可用，请稍后重试。",
+        "model_price_source_response_too_large": "models.dev 响应超过固定容量上限，未生成参考预览。",
+        "model_price_source_invalid_response": "models.dev 响应无法通过结构或金额校验。",
+        "model_price_source_candidate_limit_exceeded": "公开来源或本地模型数量超过单次预览上限。",
+        "internal_error": "价格持久化或运行时快照刷新失败，提交结果需要重新读取确认。",
+        "unknown": "模型价格请求失败，请检查网络后重试。"
       }
     },
     "delete": {
