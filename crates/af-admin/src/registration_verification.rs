@@ -280,6 +280,8 @@ mod tests {
 
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
+    use crate::auth_challenge_security::AUTH_CHALLENGE_SECURITY_KEY_BYTES;
+
     use super::*;
 
     fn key() -> String {

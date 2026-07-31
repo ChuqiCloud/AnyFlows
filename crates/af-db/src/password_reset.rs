@@ -361,9 +361,15 @@ mod tests {
             UserSessionLookupOutcome::Authenticated { user_id: actual, .. }
                 if actual == user_id
         ));
+        let replay = AuthChallengeConsume::new(
+            AuthChallengePurpose::PasswordReset,
+            [0x11; 32],
+            [0x22; 32],
+            1_001,
+        )?;
         assert_eq!(
             repository
-                .reset_password(consume, Zeroizing::new("another password".to_owned()))
+                .reset_password(replay, Zeroizing::new("another password".to_owned()))
                 .await?,
             PasswordResetOutcome::Rejected
         );
