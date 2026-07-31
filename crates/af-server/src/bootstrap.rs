@@ -11,12 +11,13 @@ use af_admin::{
     DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader, DatabaseAdminGroupWriter,
     DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
     DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseInitialSetup,
-    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRegistrationService, DatabaseSessionAuthenticator, DatabaseSiteSettingsService,
-    DatabaseTokenAuthenticator, DatabaseUserTokenService, EmailDelivery, InitialSetup,
-    ModelCatalogReader, PlaygroundConversationService, PlaygroundShareService, RegistrationService,
-    RegistrationServiceConfigError, SessionAuthenticator, SessionAuthenticatorConfigError,
-    SiteSettingsService, TokenAuthenticator, UserTokenService,
+    DatabasePasswordResetService, DatabasePlaygroundConversationService,
+    DatabasePlaygroundShareService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
+    DatabaseSiteSettingsService, DatabaseTokenAuthenticator, DatabaseUserTokenService,
+    EmailDelivery, InitialSetup, ModelCatalogReader, PasswordResetService,
+    PasswordResetServiceConfigError, PlaygroundConversationService, PlaygroundShareService,
+    RegistrationService, RegistrationServiceConfigError, SessionAuthenticator,
+    SessionAuthenticatorConfigError, SiteSettingsService, TokenAuthenticator, UserTokenService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -36,7 +37,8 @@ use af_db::{
     AuthChallengeRepository, AuthChallengeRepositoryConfigError, ChannelStateRepository,
     CredentialStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
     EmailSettingsRepository, EmailSettingsRepositoryConfigError, InitialSetupRepository,
-    InitialSetupRepositoryConfigError, MigrationOptions, PlaygroundConversationRepository,
+    InitialSetupRepositoryConfigError, MigrationOptions, PasswordResetRepository,
+    PasswordResetRepositoryConfigError, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RegistrationRepository,
     RegistrationRepositoryConfigError, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
@@ -102,6 +104,7 @@ pub struct AuthenticationReady {
     session_authenticator: Arc<dyn SessionAuthenticator>,
     initial_setup: Arc<dyn InitialSetup>,
     registration_service: Arc<dyn RegistrationService>,
+    password_reset_service: Arc<dyn PasswordResetService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     playground_share_service: Arc<dyn PlaygroundShareService>,
@@ -244,6 +247,12 @@ pub enum BootstrapError {
     /// 注册 IP 指纹密钥缺失或无效。
     #[error("注册服务启动配置无效")]
     RegistrationService(#[source] RegistrationServiceConfigError),
+    /// 密码重置仓储的启动参数无效。
+    #[error("密码重置仓储启动参数无效")]
+    PasswordResetRepository(#[source] PasswordResetRepositoryConfigError),
+    /// 密码重置安全派生密钥缺失或无效。
+    #[error("密码重置服务启动配置无效")]
+    PasswordResetService(#[source] PasswordResetServiceConfigError),
     /// 站点设置仓储的启动参数无效。
     #[error("站点设置仓储启动参数无效")]
     SiteSettingsRepository(#[source] SiteSettingsRepositoryConfigError),
@@ -448,6 +457,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::SiteSettingsRepository)?;
+        let password_reset_repository = PasswordResetRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::PasswordResetRepository)?;
         let playground_share_repository = PlaygroundShareRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -471,6 +485,17 @@ impl Bootstrap<DatabaseReady> {
         let system_secret_cipher = SystemSecretCipher::new(self.config.credential_encryption())
             .map_err(BootstrapError::SystemSecret)?;
         let smtp_delivery: Arc<dyn EmailDelivery> = Arc::new(SmtpEmailDelivery);
+        let password_reset_service = DatabasePasswordResetService::new(
+            password_reset_repository,
+            auth_challenge_repository.clone(),
+            auth_challenge_rate_limit_repository.clone(),
+            email_settings_repository.clone(),
+            site_settings_repository.clone(),
+            system_secret_cipher.clone(),
+            Arc::clone(&smtp_delivery),
+            auth.session_signing_key().map(|key| key.expose()),
+        )
+        .map_err(BootstrapError::PasswordResetService)?;
         let registration_service = DatabaseRegistrationService::new(
             registration_repository,
             admin_user_repository.clone(),
@@ -539,6 +564,7 @@ impl Bootstrap<DatabaseReady> {
                 session_authenticator: Arc::new(session_authenticator),
                 initial_setup: Arc::new(DatabaseInitialSetup::new(initial_setup_repository)),
                 registration_service: Arc::new(registration_service),
+                password_reset_service: Arc::new(password_reset_service),
                 site_settings_service: Arc::new(DatabaseSiteSettingsService::new(
                     site_settings_repository,
                 )),
@@ -886,6 +912,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.user_token_service),
             Arc::clone(&self.stage.infrastructure.initial_setup),
             Arc::clone(&self.stage.infrastructure.registration_service),
+            Arc::clone(&self.stage.infrastructure.password_reset_service),
             Arc::clone(&self.stage.infrastructure.site_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_email_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),

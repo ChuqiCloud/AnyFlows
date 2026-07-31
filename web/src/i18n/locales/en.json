@@ -1004,6 +1004,7 @@
       "submitting": "Verifying",
       "noAccount": "New to AnyFlows?",
       "register": "Create an account",
+      "forgotPassword": "Forgot password?",
       "browseModels": "Browse models as a guest",
       "loadingCapabilities": "Checking sign-in capabilities",
       "capabilityUnavailableTitle": "Sign-in capability is unavailable",
@@ -1017,6 +1018,7 @@
       "adminRequired": "This account does not have administrator access.",
       "sessionExpired": "Your session has expired. Sign in again.",
       "setupComplete": "Setup is complete. Sign in with an administrator account.",
+      "passwordResetSuccess": "Your password was updated. Sign in with the new password.",
       "passwordLoginDisabled": "Password sign-in was just disabled. Use an authentication method currently offered by this site.",
       "unavailable": "The service is unavailable. Try again shortly."
     },
@@ -1264,6 +1266,52 @@
     "security": {
       "title": "Credential and content boundary",
       "description": "Management reads return only password status. Passwords, recipients, message bodies, and SMTP server responses stay out of page caches, URLs, and error details."
+    }
+  },
+  "passwordReset": {
+    "actions": {
+      "backToLogin": "Back to sign in",
+      "requestAgain": "Request a new reset link"
+    },
+    "errors": {
+      "emailNotConfigured": "Password reset email is not configured yet. Try again later or contact the site administrator.",
+      "emailDeliveryFailed": "The reset email could not be delivered. Try again shortly.",
+      "invalidInput": "Enter a valid email or a password that meets the requirements.",
+      "rateLimited": "Too many requests. Try again later.",
+      "unavailable": "Password reset is temporarily unavailable. Try again shortly.",
+      "missingToken": "This reset link is invalid or has been cleared. Request a new one.",
+      "rejected": "This reset link is invalid, expired, or already used. Request a new one."
+    },
+    "forgot": {
+      "eyebrow": "Recover your {{siteName}} account",
+      "heroTitle": "Recover your account securely",
+      "heroBody": "Submit your account email and we will send a time-limited, single-use password reset link.",
+      "title": "Forgot password",
+      "subtitle": "Enter your account email and we will send a reset link.",
+      "email": "Account email",
+      "emailPlaceholder": "Enter your registration email",
+      "emailHelp": "If the address belongs to a resettable account, the message should arrive shortly.",
+      "submit": "Send reset email",
+      "submitting": "Sending",
+      "successTitle": "Check your inbox",
+      "successBody": "If the address belongs to a resettable account, we sent a password reset link.",
+      "successHint": "The link expires soon and can only be used once. Check your spam folder if you do not see it."
+    },
+    "reset": {
+      "eyebrow": "Update your {{siteName}} password",
+      "heroTitle": "Set a new sign-in password",
+      "heroBody": "Existing sign-in sessions are revoked as soon as the reset completes, so only the new password remains active.",
+      "title": "Reset password",
+      "subtitle": "Enter and confirm a new password, then return to sign in.",
+      "password": "New password",
+      "passwordConfirmation": "Confirm new password",
+      "passwordHelp": "Use 12 to 128 UTF-8 bytes without control characters.",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password",
+      "submit": "Update password",
+      "submitting": "Updating",
+      "successTitle": "Password updated",
+      "successBody": "Your password was updated and existing sign-in sessions were revoked."
     }
   },
   "registration": {

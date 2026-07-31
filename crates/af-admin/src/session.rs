@@ -310,10 +310,14 @@ impl SessionAuthenticator for DatabaseSessionAuthenticator {
                 .await
                 .map_err(map_repository_error)?
             {
-                UserSessionLookupOutcome::Authenticated { user_id, role } => {
+                UserSessionLookupOutcome::Authenticated {
+                    user_id,
+                    role,
+                    session_version,
+                } => {
                     let principal =
                         SessionPrincipal::new(user_id, SessionRole::from_database(role)?);
-                    self.codec.issue(principal)
+                    self.codec.issue(principal, session_version)
                 }
                 UserSessionLookupOutcome::Rejected => {
                     Err(SessionAuthenticationError::InvalidCredentials)
@@ -342,11 +346,15 @@ impl SessionAuthenticator for DatabaseSessionAuthenticator {
                     user_id,
                     role,
                     group_id,
-                } => Ok(SessionAuthentication::new(
+                    session_version,
+                } if session_version == claims.session_version => Ok(SessionAuthentication::new(
                     SessionPrincipal::new(user_id, SessionRole::from_database(role)?),
                     group_id,
                     claims.exp,
                 )),
+                UserSessionLookupByIdOutcome::Authenticated { .. } => {
+                    Err(SessionAuthenticationError::InvalidSession)
+                }
                 UserSessionLookupByIdOutcome::Rejected => {
                     Err(SessionAuthenticationError::InvalidSession)
                 }
@@ -380,6 +388,7 @@ struct SessionClaims {
     aud: String,
     exp: u64,
     iat: u64,
+    session_version: i64,
 }
 
 impl SessionCodec {
@@ -412,7 +421,11 @@ impl SessionCodec {
     fn issue(
         &self,
         principal: SessionPrincipal,
+        session_version: i64,
     ) -> Result<IssuedSession, SessionAuthenticationError> {
+        if session_version < 1 {
+            return Err(SessionAuthenticationError::Internal);
+        }
         let issued_at = current_timestamp().ok_or(SessionAuthenticationError::Internal)?;
         let expires_at = issued_at
             .checked_add(self.ttl_secs)
@@ -423,6 +436,7 @@ impl SessionCodec {
             aud: SESSION_AUDIENCE.to_owned(),
             exp: expires_at,
             iat: issued_at,
+            session_version,
         };
         let token = encode(&Header::new(Algorithm::HS256), &claims, &self.encoding_key)
             .map_err(|_| SessionAuthenticationError::Internal)?;
@@ -446,6 +460,7 @@ impl SessionCodec {
             || decoded.claims.exp <= decoded.claims.iat
             || decoded.claims.iat > now.saturating_add(60)
             || decoded.claims.exp - decoded.claims.iat > self.ttl_secs
+            || decoded.claims.session_version < 1
         {
             return Err(SessionAuthenticationError::InvalidSession);
         }
@@ -473,7 +488,7 @@ mod tests {
         let key = signing_key();
         let codec = SessionCodec::new(&key, 3_600).unwrap();
         let principal = SessionPrincipal::new(UserId::new(7).unwrap(), SessionRole::Admin);
-        let issued = codec.issue(principal).unwrap();
+        let issued = codec.issue(principal, 1).unwrap();
         let claims = codec.decode(issued.token().as_str()).unwrap();
 
         assert_eq!(claims.sub, "7");
@@ -492,7 +507,7 @@ mod tests {
         let key = signing_key();
         let codec = SessionCodec::new(&key, 3_600).unwrap();
         let principal = SessionPrincipal::new(UserId::new(7).unwrap(), SessionRole::User);
-        let issued = codec.issue(principal).unwrap();
+        let issued = codec.issue(principal, 1).unwrap();
         let mut tampered = issued.token().as_str().to_owned();
         let replacement = if tampered.ends_with('a') { 'b' } else { 'a' };
         tampered.pop();
@@ -509,6 +524,7 @@ mod tests {
             aud: SESSION_AUDIENCE.to_owned(),
             exp: now - 1,
             iat: now - 100,
+            session_version: 1,
         };
         let secret = [0x42; SESSION_SIGNING_KEY_BYTES];
         let expired_token = encode(

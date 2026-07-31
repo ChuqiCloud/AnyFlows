@@ -56,7 +56,11 @@ async fn setup_creates_login_ready_admin_and_canonical_group() -> Result<(), Box
     let sessions = UserSessionRepository::new(pool.clone(), Duration::from_secs(5))?;
     assert_eq!(
         sessions.login(USERNAME, PASSWORD.as_bytes()).await?,
-        UserSessionLookupOutcome::Authenticated { user_id, role: 1 }
+        UserSessionLookupOutcome::Authenticated {
+            user_id,
+            role: 1,
+            session_version: 1,
+        }
     );
     pool.close().await?;
     Ok(())

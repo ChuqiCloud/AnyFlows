@@ -24,7 +24,11 @@ const DUMMY_PASSWORD_HASH: &str =
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UserSessionLookupOutcome {
     /// 用户名、密码、状态和软删除均已通过校验。
-    Authenticated { user_id: UserId, role: i16 },
+    Authenticated {
+        user_id: UserId,
+        role: i16,
+        session_version: i64,
+    },
     /// 用户不存在、密码错误、禁用、删除或没有密码。
     Rejected,
 }
@@ -37,6 +41,7 @@ pub enum UserSessionLookupByIdOutcome {
         user_id: UserId,
         role: i16,
         group_id: GroupId,
+        session_version: i64,
     },
     /// 用户不存在、禁用或已软删除。
     Rejected,
@@ -114,10 +119,15 @@ impl UserSessionRepository {
             .map_err(|_| record_internal_error(UserSessionRepositoryError::Invariant))?;
         let role = valid_role(row.role)?;
         let status = valid_status(row.status)?;
+        let session_version = valid_session_version(row.session_version)?;
         if !password_matches || !status || row.deleted_at.is_some() {
             return Ok(UserSessionLookupOutcome::Rejected);
         }
-        Ok(UserSessionLookupOutcome::Authenticated { user_id, role })
+        Ok(UserSessionLookupOutcome::Authenticated {
+            user_id,
+            role,
+            session_version,
+        })
     }
 
     /// 按 JWT 中的稳定用户 ID 回查当前状态，使禁用和软删除立即撤销现有会话。
@@ -172,6 +182,7 @@ impl UserSessionRepository {
             .map_err(|_| record_internal_error(UserSessionRepositoryError::Invariant))?;
         let role = valid_role(row.role)?;
         let status = valid_status(row.status)?;
+        let session_version = valid_session_version(row.session_version)?;
         if !status || row.deleted_at.is_some() {
             return Ok(UserSessionLookupByIdOutcome::Rejected);
         }
@@ -179,6 +190,7 @@ impl UserSessionRepository {
             user_id: id,
             role,
             group_id,
+            session_version,
         })
     }
 }
@@ -214,6 +226,10 @@ fn login_query(username: &str) -> SelectStatement {
             Expr::col((users::Entity, users::Column::PasswordHash)),
             Alias::new("user_password_hash"),
         )
+        .expr_as(
+            Expr::col((users::Entity, users::Column::SessionVersion)),
+            Alias::new("user_session_version"),
+        )
         .from(users::Entity)
         .and_where(Expr::col((users::Entity, users::Column::Username)).eq(username))
         // 软删除用户名可被重新使用，登录查询只能命中当前有效身份行。
@@ -244,6 +260,10 @@ fn session_query(user_id: UserId) -> SelectStatement {
             Expr::col((users::Entity, users::Column::DeletedAt)),
             Alias::new("user_deleted_at"),
         )
+        .expr_as(
+            Expr::col((users::Entity, users::Column::SessionVersion)),
+            Alias::new("user_session_version"),
+        )
         .from(users::Entity)
         .and_where(Expr::col((users::Entity, users::Column::Id)).eq(user_id.get()))
         .limit(2)
@@ -256,6 +276,7 @@ struct LoginUserRow {
     status: i16,
     deleted_at: Option<TimeDateTimeWithTimeZone>,
     password_hash: Option<crate::entity::PasswordHash>,
+    session_version: i64,
 }
 
 impl LoginUserRow {
@@ -266,6 +287,7 @@ impl LoginUserRow {
             status: result.try_get("", "user_status")?,
             deleted_at: result.try_get("", "user_deleted_at")?,
             password_hash: result.try_get("", "user_password_hash")?,
+            session_version: result.try_get("", "user_session_version")?,
         })
     }
 }
@@ -276,6 +298,7 @@ struct SessionUserRow {
     default_group_id: i64,
     status: i16,
     deleted_at: Option<TimeDateTimeWithTimeZone>,
+    session_version: i64,
 }
 
 impl SessionUserRow {
@@ -286,6 +309,7 @@ impl SessionUserRow {
             default_group_id: result.try_get("", "user_default_group_id")?,
             status: result.try_get("", "user_status")?,
             deleted_at: result.try_get("", "user_deleted_at")?,
+            session_version: result.try_get("", "user_session_version")?,
         })
     }
 }
@@ -302,6 +326,14 @@ fn valid_status(status: i16) -> Result<bool, UserSessionRepositoryError> {
         1 => Ok(true),
         2 => Ok(false),
         _ => Err(record_internal_error(UserSessionRepositoryError::Invariant)),
+    }
+}
+
+fn valid_session_version(version: i64) -> Result<i64, UserSessionRepositoryError> {
+    if version >= 1 {
+        Ok(version)
+    } else {
+        Err(record_internal_error(UserSessionRepositoryError::Invariant))
     }
 }
 

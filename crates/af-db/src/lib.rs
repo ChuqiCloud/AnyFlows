@@ -69,6 +69,7 @@ mod model_price;
 #[cfg(test)]
 mod model_price_tests;
 mod options;
+mod password_reset;
 mod playground_conversation;
 #[cfg(test)]
 mod playground_conversation_tests;
@@ -210,6 +211,10 @@ pub use model_price::{
     ModelPriceRepositoryError,
 };
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
+pub use password_reset::{
+    PasswordResetOutcome, PasswordResetRepository, PasswordResetRepositoryConfigError,
+    PasswordResetRepositoryError, PasswordResetTargetOutcome,
+};
 pub use playground_conversation::{
     MAX_PLAYGROUND_CONVERSATIONS_PER_USER, PlaygroundConversationDeleteOutcome,
     PlaygroundConversationRecord, PlaygroundConversationRepository,
