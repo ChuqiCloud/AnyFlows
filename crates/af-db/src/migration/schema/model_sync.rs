@@ -1,3 +1,4 @@
+use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 
 use crate::migration::iden::{channels, model_sync_items, model_sync_runs, models, users};
@@ -105,81 +106,81 @@ async fn create_runs(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
 }
 
 async fn create_items(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
-    manager
-        .create_table(
-            table(manager, model_sync_items::Entity)
-                .col(auto_id(model_sync_items::Column::Id))
-                .col(
-                    ColumnDef::new(model_sync_items::Column::RunId)
-                        .big_integer()
-                        .not_null(),
-                )
-                .col(
-                    ColumnDef::new(model_sync_items::Column::Ordinal)
-                        .integer()
-                        .not_null()
-                        .check(Expr::col(model_sync_items::Column::Ordinal).gte(0_i32)),
-                )
-                .col(
-                    ColumnDef::new(model_sync_items::Column::CanonicalModel)
-                        .string_len(256)
-                        .not_null()
-                        .check(Expr::col(model_sync_items::Column::CanonicalModel).ne("")),
-                )
-                .col(ColumnDef::new(model_sync_items::Column::UpstreamModel).string_len(256))
-                .col(
-                    ColumnDef::new(model_sync_items::Column::Relation)
-                        .small_integer()
-                        .not_null()
-                        .check(
-                            Expr::col(model_sync_items::Column::Relation)
-                                .is_in([1_i16, 2_i16, 3_i16, 4_i16]),
-                        ),
-                )
-                .col(ColumnDef::new(model_sync_items::Column::DisplayNameHint).string_len(128))
-                .col(ColumnDef::new(model_sync_items::Column::DescriptionHint).text())
-                .col(positive_optional(
-                    model_sync_items::Column::ContextWindowHint,
-                ))
-                .col(positive_optional(
-                    model_sync_items::Column::InputTokenLimitHint,
-                ))
-                .col(positive_optional(
-                    model_sync_items::Column::OutputTokenLimitHint,
-                ))
-                .col(
-                    ColumnDef::new(model_sync_items::Column::SupportedMethods)
-                        .json_binary()
-                        .not_null(),
-                )
-                .col(ColumnDef::new(model_sync_items::Column::AppliedModelId).big_integer())
-                .foreign_key(
-                    ForeignKey::create()
-                        .name("fk_model_sync_items_run")
-                        .from(model_sync_items::Entity, model_sync_items::Column::RunId)
-                        .to(model_sync_runs::Entity, model_sync_runs::Column::Id)
-                        .on_update(ForeignKeyAction::Cascade)
-                        .on_delete(ForeignKeyAction::Cascade),
-                )
-                .foreign_key(
-                    ForeignKey::create()
-                        .name("fk_model_sync_items_applied_model")
-                        .from(
-                            model_sync_items::Entity,
-                            model_sync_items::Column::AppliedModelId,
-                        )
-                        .to(models::Entity, models::Column::Id)
-                        .on_update(ForeignKeyAction::Cascade)
-                        .on_delete(ForeignKeyAction::Restrict),
-                )
-                .check(
-                    Expr::col(model_sync_items::Column::AppliedModelId)
-                        .is_null()
-                        .or(Expr::col(model_sync_items::Column::Relation).is_in([1_i16, 2_i16])),
-                )
-                .to_owned(),
+    let mut statement = table(manager, model_sync_items::Entity);
+    statement
+        .col(auto_id(model_sync_items::Column::Id))
+        .col(
+            ColumnDef::new(model_sync_items::Column::RunId)
+                .big_integer()
+                .not_null(),
         )
-        .await
+        .col(
+            ColumnDef::new(model_sync_items::Column::Ordinal)
+                .integer()
+                .not_null()
+                .check(Expr::col(model_sync_items::Column::Ordinal).gte(0_i32)),
+        )
+        .col(
+            ColumnDef::new(model_sync_items::Column::CanonicalModel)
+                .string_len(256)
+                .not_null()
+                .check(Expr::col(model_sync_items::Column::CanonicalModel).ne("")),
+        )
+        .col(ColumnDef::new(model_sync_items::Column::UpstreamModel).string_len(256))
+        .col(
+            ColumnDef::new(model_sync_items::Column::Relation)
+                .small_integer()
+                .not_null()
+                .check(
+                    Expr::col(model_sync_items::Column::Relation)
+                        .is_in([1_i16, 2_i16, 3_i16, 4_i16]),
+                ),
+        )
+        .col(ColumnDef::new(model_sync_items::Column::DisplayNameHint).string_len(128))
+        .col(ColumnDef::new(model_sync_items::Column::DescriptionHint).text())
+        .col(positive_optional(
+            model_sync_items::Column::ContextWindowHint,
+        ))
+        .col(positive_optional(
+            model_sync_items::Column::InputTokenLimitHint,
+        ))
+        .col(positive_optional(
+            model_sync_items::Column::OutputTokenLimitHint,
+        ))
+        .col(
+            ColumnDef::new(model_sync_items::Column::SupportedMethods)
+                .json_binary()
+                .not_null(),
+        )
+        .col(ColumnDef::new(model_sync_items::Column::AppliedModelId).big_integer())
+        .foreign_key(
+            ForeignKey::create()
+                .name("fk_model_sync_items_run")
+                .from(model_sync_items::Entity, model_sync_items::Column::RunId)
+                .to(model_sync_runs::Entity, model_sync_runs::Column::Id)
+                .on_update(ForeignKeyAction::Cascade)
+                .on_delete(ForeignKeyAction::Cascade),
+        )
+        .foreign_key(
+            ForeignKey::create()
+                .name("fk_model_sync_items_applied_model")
+                .from(
+                    model_sync_items::Entity,
+                    model_sync_items::Column::AppliedModelId,
+                )
+                .to(models::Entity, models::Column::Id)
+                .on_update(ForeignKeyAction::Cascade)
+                .on_delete(ForeignKeyAction::Restrict),
+        );
+    // MySQL 8.4 禁止 CHECK 引用带级联动作的外键列；该方言由实体与仓储双重校验同一不变量。
+    if manager.get_database_backend() != DbBackend::MySql {
+        statement.check(
+            Expr::col(model_sync_items::Column::AppliedModelId)
+                .is_null()
+                .or(Expr::col(model_sync_items::Column::Relation).is_in([1_i16, 2_i16])),
+        );
+    }
+    manager.create_table(statement).await
 }
 
 fn positive_optional<T>(column: T) -> ColumnDef

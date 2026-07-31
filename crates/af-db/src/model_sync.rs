@@ -370,14 +370,6 @@ impl DiscoveredModelRecord {
         Ok(record)
     }
 
-    pub(super) fn canonical_model(&self) -> &str {
-        &self.canonical_model
-    }
-
-    pub(super) fn upstream_model(&self) -> &str {
-        &self.upstream_model
-    }
-
     pub(super) fn is_valid(&self) -> bool {
         valid_model(&self.canonical_model)
             && valid_model(&self.upstream_model)

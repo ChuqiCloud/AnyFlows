@@ -99,9 +99,9 @@ pub use model_sync::{
     AdminModelSyncService, DEFAULT_MISSING_MODEL_PAGE_SIZE, DatabaseAdminModelSyncService,
     MAX_MISSING_MODEL_PAGE_SIZE, MAX_MODEL_SYNC_APPLY_ITEMS, MissingModelChannelRecord,
     MissingModelListFuture, MissingModelPageRecord, MissingModelQuery, MissingModelRecord,
-    ModelSyncApplyFuture, ModelSyncItemRecord, ModelSyncPreviewFuture, ModelSyncRelationRecord,
-    UpstreamModelDiscoverer, UpstreamModelDiscovery, UpstreamModelDiscoveryError,
-    UpstreamModelDiscoveryFuture,
+    ModelSyncApplyFuture, ModelSyncItemRecord, ModelSyncPreviewFuture, ModelSyncPreviewRecord,
+    ModelSyncRelationRecord, UpstreamModelDiscoverer, UpstreamModelDiscovery,
+    UpstreamModelDiscoveryError, UpstreamModelDiscoveryFuture,
 };
 pub use password_reset::{
     DatabasePasswordResetService, MAX_PASSWORD_RESET_PASSWORD_BYTES,
