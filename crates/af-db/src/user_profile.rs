@@ -559,7 +559,7 @@ mod tests {
             panic!("初始用户资料必须存在");
         };
         assert_eq!(profile.username(), "owner");
-        assert_eq!(profile.notifications().email_usage_alerts(), true);
+        assert!(profile.notifications().email_usage_alerts());
 
         let UserProfileMutationOutcome::Updated(profile) = repository
             .update_username(user_id, "owner-renamed".to_owned())
