@@ -13,8 +13,8 @@ use af_admin::{
     DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseInitialSetup,
     DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
     DatabaseRegistrationService, DatabaseSessionAuthenticator, DatabaseSiteSettingsService,
-    DatabaseTokenAuthenticator, DatabaseUserTokenService, InitialSetup, ModelCatalogReader,
-    PlaygroundConversationService, PlaygroundShareService, RegistrationService,
+    DatabaseTokenAuthenticator, DatabaseUserTokenService, EmailDelivery, InitialSetup,
+    ModelCatalogReader, PlaygroundConversationService, PlaygroundShareService, RegistrationService,
     RegistrationServiceConfigError, SessionAuthenticator, SessionAuthenticatorConfigError,
     SiteSettingsService, TokenAuthenticator, UserTokenService,
 };
@@ -32,10 +32,11 @@ use af_db::{
     AdminDashboardRepositoryConfigError, AdminGroupRepository, AdminGroupRepositoryConfigError,
     AdminTokenRepository, AdminTokenRepositoryConfigError, AdminUsageLogRepository,
     AdminUsageLogRepositoryConfigError, AdminUserRepository, AdminUserRepositoryConfigError,
-    ChannelStateRepository, CredentialStateRepository, DatabaseError, DatabaseOptions,
-    DatabaseOptionsError, DatabasePool, EmailSettingsRepository,
-    EmailSettingsRepositoryConfigError, InitialSetupRepository, InitialSetupRepositoryConfigError,
-    MigrationOptions, PlaygroundConversationRepository,
+    AuthChallengeRateLimitRepository, AuthChallengeRateLimitRepositoryConfigError,
+    AuthChallengeRepository, AuthChallengeRepositoryConfigError, ChannelStateRepository,
+    CredentialStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
+    EmailSettingsRepository, EmailSettingsRepositoryConfigError, InitialSetupRepository,
+    InitialSetupRepositoryConfigError, MigrationOptions, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RegistrationRepository,
     RegistrationRepositoryConfigError, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
@@ -234,6 +235,12 @@ pub enum BootstrapError {
     /// 注册策略与限流仓储的启动参数无效。
     #[error("注册策略仓储启动参数无效")]
     RegistrationRepository(#[source] RegistrationRepositoryConfigError),
+    /// 认证挑战仓储的启动参数无效。
+    #[error("认证挑战仓储启动参数无效")]
+    AuthChallengeRepository(#[source] AuthChallengeRepositoryConfigError),
+    /// 认证挑战发送限流仓储的启动参数无效。
+    #[error("认证挑战发送限流仓储启动参数无效")]
+    AuthChallengeRateLimitRepository(#[source] AuthChallengeRateLimitRepositoryConfigError),
     /// 注册 IP 指纹密钥缺失或无效。
     #[error("注册服务启动配置无效")]
     RegistrationService(#[source] RegistrationServiceConfigError),
@@ -421,6 +428,16 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::RegistrationRepository)?;
+        let auth_challenge_repository = AuthChallengeRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::AuthChallengeRepository)?;
+        let auth_challenge_rate_limit_repository = AuthChallengeRateLimitRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::AuthChallengeRateLimitRepository)?;
         let email_settings_repository = EmailSettingsRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -451,18 +468,24 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::AdminUserRepository)?;
+        let system_secret_cipher = SystemSecretCipher::new(self.config.credential_encryption())
+            .map_err(BootstrapError::SystemSecret)?;
+        let smtp_delivery: Arc<dyn EmailDelivery> = Arc::new(SmtpEmailDelivery);
         let registration_service = DatabaseRegistrationService::new(
             registration_repository,
             admin_user_repository.clone(),
+            auth_challenge_repository,
+            auth_challenge_rate_limit_repository,
+            email_settings_repository.clone(),
+            system_secret_cipher.clone(),
+            Arc::clone(&smtp_delivery),
             auth.session_signing_key().map(|key| key.expose()),
         )
         .map_err(BootstrapError::RegistrationService)?;
-        let system_secret_cipher = SystemSecretCipher::new(self.config.credential_encryption())
-            .map_err(BootstrapError::SystemSecret)?;
         let admin_email_settings_service = DatabaseAdminEmailSettingsService::new(
             email_settings_repository,
             system_secret_cipher,
-            Arc::new(SmtpEmailDelivery),
+            smtp_delivery,
         );
         let admin_group_repository = AdminGroupRepository::new(
             self.stage.database.clone(),

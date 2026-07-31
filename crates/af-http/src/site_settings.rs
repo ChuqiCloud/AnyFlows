@@ -218,11 +218,14 @@ fn map_registration_error(error: RegistrationError) -> ManagementError {
         RegistrationError::LoginDisabled => ManagementError::LoginDisabled,
         RegistrationError::Disabled => ManagementError::RegistrationDisabled,
         RegistrationError::Conflict => ManagementError::UserConflict,
+        RegistrationError::VerificationRejected => ManagementError::RegistrationRejected,
         RegistrationError::RateLimited {
             retry_after_seconds,
         } => ManagementError::RegistrationRateLimited {
             retry_after_seconds,
         },
+        RegistrationError::EmailNotConfigured => ManagementError::EmailNotConfigured,
+        RegistrationError::EmailDeliveryFailed => ManagementError::EmailDeliveryFailed,
         RegistrationError::Internal => ManagementError::Internal,
     }
 }

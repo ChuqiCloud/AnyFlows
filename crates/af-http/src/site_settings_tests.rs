@@ -5,7 +5,8 @@ use std::sync::{
 
 use af_admin::{
     AdminSiteSettings, AdminSiteSettingsReadFuture, AdminSiteSettingsUpdateFuture,
-    PublicSiteSettings, PublicSiteSettingsFuture, RegistrationCommand, RegistrationError,
+    PublicSiteSettings, PublicSiteSettingsFuture, RegistrationCommand,
+    RegistrationEmailVerificationCommand, RegistrationEmailVerificationFuture, RegistrationError,
     RegistrationFuture, RegistrationPolicyCommand, RegistrationPolicyFuture,
     RegistrationPolicyUpdateFuture, RegistrationService, RegistrationStatus,
     RegistrationStatusFuture, SessionAuthentication, SessionAuthenticationError,
@@ -73,6 +74,14 @@ struct FakeRegistrationService;
 impl RegistrationService for FakeRegistrationService {
     fn status(&self) -> RegistrationStatusFuture<'_> {
         Box::pin(async { Ok(RegistrationStatus::from_parts(true, true, false)) })
+    }
+
+    fn send_email_verification<'a>(
+        &'a self,
+        _client_ip: TrustedClientIp,
+        _command: &'a RegistrationEmailVerificationCommand,
+    ) -> RegistrationEmailVerificationFuture<'a> {
+        Box::pin(async { Err(RegistrationError::Internal) })
     }
 
     fn register<'a>(

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use af_admin::{
-    RegistrationCommand, RegistrationError, RegistrationPolicy, RegistrationPolicyCommand,
-    RegistrationService, SessionAuthenticator,
+    RegistrationCommand, RegistrationEmailVerificationCommand, RegistrationError,
+    RegistrationPolicy, RegistrationPolicyCommand, RegistrationService, SessionAuthenticator,
 };
 use af_config::ServerConfig;
 use af_domain::{GroupId, TrustedClientIp};
@@ -50,6 +50,26 @@ pub(crate) struct RegistrationRequest {
     email: Option<String>,
     #[schema(min_length = 12, max_length = 128, format = Password, write_only)]
     password: String,
+    #[schema(min_length = 6, max_length = 6, pattern = "^[0-9]{6}$", write_only)]
+    verification_code: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = RegistrationEmailVerificationRequest)]
+pub(crate) struct RegistrationEmailVerificationRequest {
+    #[schema(min_length = 3, max_length = 320, format = Email)]
+    email: String,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = RegistrationEmailVerificationResponse)]
+pub(crate) struct RegistrationEmailVerificationResponse {
+    #[schema(minimum = 0)]
+    expires_at: u64,
+    #[schema(minimum = 0)]
+    next_send_at: u64,
 }
 
 #[derive(Clone, Copy, Serialize, ToSchema)]
@@ -126,6 +146,10 @@ pub(crate) fn build_registration_router(
         .route("/api/auth/login", post(login))
         .route("/api/registration/status", get(registration_status))
         .route(
+            "/api/registration/email-verification",
+            post(send_email_verification).route_layer(registration_ip.clone()),
+        )
+        .route(
             "/api/registration",
             post(register).route_layer(registration_ip),
         )
@@ -137,6 +161,28 @@ pub(crate) fn build_registration_router(
                 .route_layer(policy_authentication),
         )
         .with_state(state)
+}
+
+/// 发送注册邮箱验证码，并只返回服务端计算的过期与重发边界。
+async fn send_email_verification(
+    State(state): State<RegistrationHttpState>,
+    Extension(client_ip): Extension<TrustedClientIp>,
+    request: Result<Json<RegistrationEmailVerificationRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command =
+        RegistrationEmailVerificationCommand::new(request.email).map_err(map_registration_error)?;
+    let issued = state
+        .service
+        .send_email_verification(client_ip, &command)
+        .await
+        .map_err(map_registration_error)?;
+    let mut response = no_store_json(RegistrationEmailVerificationResponse {
+        expires_at: issued.expires_at(),
+        next_send_at: issued.next_send_at(),
+    });
+    *response.status_mut() = StatusCode::ACCEPTED;
+    Ok(response)
 }
 
 /// 返回失败关闭的公开注册状态。
@@ -183,8 +229,13 @@ async fn register(
     request: Result<Json<RegistrationRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let command = RegistrationCommand::new(request.username, request.email, request.password)
-        .map_err(map_registration_error)?;
+    let command = RegistrationCommand::new(
+        request.username,
+        request.email,
+        request.password,
+        request.verification_code,
+    )
+    .map_err(map_registration_error)?;
     state
         .service
         .register(client_ip, &command)
@@ -279,11 +330,14 @@ fn map_registration_error(error: RegistrationError) -> ManagementError {
         RegistrationError::LoginDisabled => ManagementError::LoginDisabled,
         RegistrationError::Disabled => ManagementError::RegistrationDisabled,
         RegistrationError::Conflict => ManagementError::UserConflict,
+        RegistrationError::VerificationRejected => ManagementError::RegistrationRejected,
         RegistrationError::RateLimited {
             retry_after_seconds,
         } => ManagementError::RegistrationRateLimited {
             retry_after_seconds,
         },
+        RegistrationError::EmailNotConfigured => ManagementError::EmailNotConfigured,
+        RegistrationError::EmailDeliveryFailed => ManagementError::EmailDeliveryFailed,
         RegistrationError::Internal => ManagementError::Internal,
     }
 }

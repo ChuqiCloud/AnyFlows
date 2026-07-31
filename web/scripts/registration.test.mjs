@@ -12,6 +12,8 @@ const registrationMessages = {
   invalidUsername: 'username',
   invalidEmail: 'email',
   emailRequired: 'email-required',
+  invalidVerificationCode: 'verification-code',
+  verificationCodeRequired: 'verification-code-required',
   invalidPassword: 'password',
   passwordMismatch: 'password-mismatch',
 }
@@ -52,12 +54,14 @@ test('可选空邮箱归一化为 null 且不发送确认密码', () => {
   const request = toRegistrationRequest({
     username: 'reader',
     email: '',
+    verificationCode: '',
     password: 'correct horse battery staple',
     passwordConfirmation: 'correct horse battery staple',
   })
   assert.deepEqual(request, {
     username: 'reader',
     email: null,
+    verification_code: null,
     password: 'correct horse battery staple',
   })
 })

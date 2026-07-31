@@ -6,6 +6,7 @@ use af_db::{
     EmailSettingsRepositoryError, EmailSettingsWriteRecord, EmailTlsMode,
 };
 use thiserror::Error;
+use zeroize::Zeroizing;
 
 use crate::{SessionPrincipal, SessionRole};
 
@@ -14,6 +15,10 @@ const MAX_EMAIL_BYTES: usize = 320;
 const MAX_FROM_NAME_BYTES: usize = 128;
 const MIN_TIMEOUT_SECONDS: u16 = 1;
 const MAX_TIMEOUT_SECONDS: u16 = 60;
+const TEST_EMAIL_SUBJECT: &str = "AnyFlows SMTP 配置测试";
+const TEST_EMAIL_BODY: &str =
+    "这是一封由 AnyFlows 发送的 SMTP 配置测试邮件。收到此邮件表示当前邮件服务器配置可用。";
+const REGISTRATION_EMAIL_SUBJECT: &str = "AnyFlows 注册验证码";
 
 /// 管理 API 使用的 SMTP TLS 模式。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -337,10 +342,83 @@ pub struct EmailDeliveryRequest {
     from_name: Option<String>,
     reply_to: Option<String>,
     recipient: String,
+    subject: String,
+    body: Zeroizing<String>,
     timeout_seconds: u16,
 }
 
 impl EmailDeliveryRequest {
+    fn from_record(
+        record: &EmailSettingsRecord,
+        cipher: &SystemSecretCipher,
+        recipient: String,
+        subject: String,
+        body: String,
+    ) -> Result<Self, AdminEmailSettingsError> {
+        if !record.delivery_ready() || !is_valid_email_address(&recipient) {
+            return Err(AdminEmailSettingsError::NotConfigured);
+        }
+        let password = record
+            .password_secret()
+            .map(|secret| {
+                cipher
+                    .decrypt(SystemSecretKind::SmtpPassword, secret)
+                    .map_err(|_| AdminEmailSettingsError::Internal)
+            })
+            .transpose()?;
+        Ok(Self {
+            host: record.host().to_owned(),
+            port: record.port(),
+            tls_mode: record.tls_mode().into(),
+            username: record.username().map(str::to_owned),
+            password,
+            from_address: record.from_address().to_owned(),
+            from_name: record.from_name().map(str::to_owned),
+            reply_to: record.reply_to().map(str::to_owned),
+            recipient,
+            subject,
+            body: Zeroizing::new(body),
+            timeout_seconds: record.timeout_seconds(),
+        })
+    }
+
+    pub(crate) fn test(
+        record: &EmailSettingsRecord,
+        cipher: &SystemSecretCipher,
+        recipient: String,
+    ) -> Result<Self, AdminEmailSettingsError> {
+        Self::from_record(
+            record,
+            cipher,
+            recipient,
+            TEST_EMAIL_SUBJECT.to_owned(),
+            TEST_EMAIL_BODY.to_owned(),
+        )
+    }
+
+    pub(crate) fn registration_verification(
+        record: &EmailSettingsRecord,
+        cipher: &SystemSecretCipher,
+        recipient: String,
+        code: &str,
+        ttl_seconds: u64,
+    ) -> Result<Self, AdminEmailSettingsError> {
+        if code.len() != 6 || !code.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(AdminEmailSettingsError::Internal);
+        }
+        let ttl_minutes = ttl_seconds.div_ceil(60);
+        let body = format!(
+            "您的 AnyFlows 注册验证码是：{code}\n\n验证码将在 {ttl_minutes} 分钟后失效。若非本人操作，请忽略此邮件。"
+        );
+        Self::from_record(
+            record,
+            cipher,
+            recipient,
+            REGISTRATION_EMAIL_SUBJECT.to_owned(),
+            body,
+        )
+    }
+
     #[must_use]
     pub fn host(&self) -> &str {
         &self.host
@@ -389,6 +467,16 @@ impl EmailDeliveryRequest {
     }
 
     #[must_use]
+    pub fn subject(&self) -> &str {
+        &self.subject
+    }
+
+    #[must_use]
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    #[must_use]
     pub const fn timeout_seconds(&self) -> u16 {
         self.timeout_seconds
     }
@@ -425,7 +513,7 @@ pub type EmailDeliveryFuture<'a> =
 
 /// 邮件投递端口；实现不得把请求内容或底层服务器响应写入日志。
 pub trait EmailDelivery: Send + Sync {
-    fn send_test<'a>(&'a self, request: EmailDeliveryRequest) -> EmailDeliveryFuture<'a>;
+    fn send<'a>(&'a self, request: EmailDeliveryRequest) -> EmailDeliveryFuture<'a>;
 }
 
 /// 管理员邮件设置应用服务错误。
@@ -526,31 +614,9 @@ impl AdminEmailSettingsService for DatabaseAdminEmailSettingsService {
                 .settings()
                 .await
                 .map_err(map_repository_error)?;
-            if !record.delivery_ready() {
-                return Err(AdminEmailSettingsError::NotConfigured);
-            }
-            let password = record
-                .password_secret()
-                .map(|secret| {
-                    self.cipher
-                        .decrypt(SystemSecretKind::SmtpPassword, secret)
-                        .map_err(|_| AdminEmailSettingsError::Internal)
-                })
-                .transpose()?;
-            let request = EmailDeliveryRequest {
-                host: record.host().to_owned(),
-                port: record.port(),
-                tls_mode: record.tls_mode().into(),
-                username: record.username().map(str::to_owned),
-                password,
-                from_address: record.from_address().to_owned(),
-                from_name: record.from_name().map(str::to_owned),
-                reply_to: record.reply_to().map(str::to_owned),
-                recipient: command.recipient,
-                timeout_seconds: record.timeout_seconds(),
-            };
+            let request = EmailDeliveryRequest::test(&record, &self.cipher, command.recipient)?;
             self.delivery
-                .send_test(request)
+                .send(request)
                 .await
                 .map_err(|_| AdminEmailSettingsError::DeliveryFailed)
         })

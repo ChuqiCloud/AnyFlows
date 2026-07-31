@@ -12,6 +12,7 @@ use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 use af_domain::ChannelTimeout;
 
 pub(crate) mod abilities;
+pub(crate) mod auth_challenge_rate_limits;
 pub(crate) mod auth_challenges;
 pub(crate) mod authentication_settings;
 pub(crate) mod billing_batch_checkpoints;
@@ -483,6 +484,7 @@ fn changed_reference(reference: &ActiveValue<Option<i64>>, insert: bool) -> Opti
 
 impl_updated_at_behavior!(
     abilities::ActiveModel => validate_default,
+    auth_challenge_rate_limits::ActiveModel => validate_default,
     auth_challenges::ActiveModel => validate_auth_challenge,
     authentication_settings::ActiveModel => validate_default,
     billing_batch_checkpoints::ActiveModel => validate_default,

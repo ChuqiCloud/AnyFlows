@@ -34,7 +34,8 @@ use af_admin::{
     PlaygroundConversationSaveCommand, PlaygroundConversationSaveFuture,
     PlaygroundConversationService, PlaygroundShareCreateCommand, PlaygroundShareCreateFuture,
     PlaygroundShareError, PlaygroundShareReadFuture, PlaygroundShareRevokeFuture,
-    PlaygroundShareService, PublicSiteSettingsFuture, RegistrationCommand, RegistrationError,
+    PlaygroundShareService, PublicSiteSettingsFuture, RegistrationCommand,
+    RegistrationEmailVerificationCommand, RegistrationEmailVerificationFuture, RegistrationError,
     RegistrationFuture, RegistrationPolicyCommand, RegistrationPolicyFuture,
     RegistrationPolicyUpdateFuture, RegistrationService, RegistrationStatusFuture,
     SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
@@ -227,6 +228,14 @@ impl InitialSetup for RejectInitialSetup {
 
 impl RegistrationService for RejectRegistration {
     fn status(&self) -> RegistrationStatusFuture<'_> {
+        Box::pin(async { Err(RegistrationError::Internal) })
+    }
+
+    fn send_email_verification<'a>(
+        &'a self,
+        _client_ip: TrustedClientIp,
+        _command: &'a RegistrationEmailVerificationCommand,
+    ) -> RegistrationEmailVerificationFuture<'a> {
         Box::pin(async { Err(RegistrationError::Internal) })
     }
 

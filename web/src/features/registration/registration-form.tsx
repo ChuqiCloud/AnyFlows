@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertCircle, Eye, EyeOff, LoaderCircle, UserRoundPlus } from 'lucide-react'
-import { useState } from 'react'
+import { AlertCircle, Eye, EyeOff, LoaderCircle, MailCheck, UserRoundPlus } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
@@ -9,7 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { establishManagementSession } from '@/features/auth/session-query'
 import { ApiError } from '@/lib/api'
-import { useRegisterUser } from './registration-api'
+import {
+  useRegisterUser,
+  useSendRegistrationEmailVerification,
+} from './registration-api'
 import {
   buildRegistrationFormSchema,
   defaultRegistrationFormValues,
@@ -26,25 +29,83 @@ type RegistrationSubmitError =
   | 'conflict'
   | 'disabled'
   | 'invalidInput'
+  | 'verificationRejected'
   | 'rateLimited'
   | 'unavailable'
+
+type RegistrationVerificationError =
+  | 'disabled'
+  | 'emailNotConfigured'
+  | 'emailDeliveryFailed'
+  | 'invalidInput'
+  | 'rateLimited'
+  | 'unavailable'
+
+const verificationCooldownStorageKey = 'anyflows.registration.verification.nextSendAt'
 
 /** 提交公开注册并只接受服务端签发的统一登录会话。 */
 export function RegistrationForm({ emailRequired, onAuthenticated }: RegistrationFormProps) {
   const { t } = useTranslation()
   const [showPassword, setShowPassword] = useState(false)
   const [submitError, setSubmitError] = useState<RegistrationSubmitError>()
+  const [verificationError, setVerificationError] = useState<RegistrationVerificationError>()
+  const [verificationNotice, setVerificationNotice] = useState(false)
+  const [nextSendAt, setNextSendAt] = useState(readVerificationCooldown)
+  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
   const mutation = useRegisterUser()
+  const sendVerificationMutation = useSendRegistrationEmailVerification()
   const form = useForm<RegistrationFormValues>({
     defaultValues: defaultRegistrationFormValues,
     resolver: zodResolver(buildRegistrationFormSchema(emailRequired, {
       invalidUsername: t('registration.validation.username'),
       invalidEmail: t('registration.validation.email'),
       emailRequired: t('registration.validation.emailRequired'),
+      invalidVerificationCode: t('registration.validation.verificationCode'),
+      verificationCodeRequired: t('registration.validation.verificationCodeRequired'),
       invalidPassword: t('registration.validation.password'),
       passwordMismatch: t('registration.validation.passwordMismatch'),
     })),
   })
+  const email = form.watch('email')
+  const cooldownSeconds = Math.max(0, nextSendAt - now)
+  const hasEmail = email.trim().length > 0
+
+  useEffect(() => {
+    if (cooldownSeconds === 0) return undefined
+    const timer = window.setInterval(() => {
+      setNow(Math.floor(Date.now() / 1000))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [cooldownSeconds])
+
+  useEffect(() => {
+    if (nextSendAt > 0 && cooldownSeconds === 0) {
+      writeVerificationCooldown(0)
+    }
+  }, [cooldownSeconds, nextSendAt])
+
+  const onSendVerification = async () => {
+    setVerificationError(undefined)
+    setVerificationNotice(false)
+    if (cooldownSeconds > 0 || !(await form.trigger('email'))) return
+    try {
+      const response = await sendVerificationMutation.mutateAsync({ email: form.getValues('email') })
+      setNextSendAt(response.next_send_at)
+      setNow(Math.floor(Date.now() / 1000))
+      writeVerificationCooldown(response.next_send_at)
+      setVerificationNotice(true)
+    } catch (error) {
+      setVerificationError(classifyVerificationError(error))
+      if (error instanceof ApiError && error.status === 429) {
+        const retryAfter = retryAfterSeconds(error.details)
+        if (retryAfter > 0) {
+          const serverBoundary = Math.floor(Date.now() / 1000) + retryAfter
+          setNextSendAt(serverBoundary)
+          writeVerificationCooldown(serverBoundary)
+        }
+      }
+    }
+  }
 
   const onSubmit = form.handleSubmit(async (values) => {
     setSubmitError(undefined)
@@ -117,7 +178,13 @@ export function RegistrationForm({ emailRequired, onAuthenticated }: Registratio
               className="h-11 px-3"
               aria-invalid={!!form.formState.errors.email}
               aria-describedby={form.formState.errors.email ? 'registration-email-error' : 'registration-email-help'}
-              {...form.register('email', { onChange: () => setSubmitError(undefined) })}
+              {...form.register('email', {
+                onChange: () => {
+                  setSubmitError(undefined)
+                  setVerificationError(undefined)
+                  setVerificationNotice(false)
+                },
+              })}
             />
             {form.formState.errors.email ? (
               <p id="registration-email-error" className="text-xs text-destructive">
@@ -129,6 +196,73 @@ export function RegistrationForm({ emailRequired, onAuthenticated }: Registratio
               </p>
             )}
           </div>
+
+          {hasEmail ? (
+            <div className="grid gap-1.5">
+              <div className="flex items-center justify-between gap-3">
+                <label htmlFor="registration-verification-code" className="text-sm font-medium">
+                  {t('registration.form.verificationCode')}
+                </label>
+                <span className="text-[0.6875rem] text-muted-foreground">
+                  {t('registration.form.verificationCodeHint')}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  id="registration-verification-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  className="h-11 min-w-0 flex-1 px-3 tracking-[0.28em]"
+                  aria-invalid={!!form.formState.errors.verificationCode}
+                  aria-describedby={form.formState.errors.verificationCode ? 'registration-verification-code-error' : 'registration-verification-code-help'}
+                  {...form.register('verificationCode', {
+                    onChange: () => {
+                      setSubmitError(undefined)
+                      setVerificationError(undefined)
+                    },
+                  })}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 shrink-0 px-3"
+                  disabled={sendVerificationMutation.isPending || cooldownSeconds > 0}
+                  onClick={onSendVerification}
+                >
+                  {sendVerificationMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : <MailCheck className="size-4" aria-hidden="true" />}
+                  <span className="sr-only sm:not-sr-only">
+                    {sendVerificationMutation.isPending
+                      ? t('registration.form.sendingVerification')
+                      : cooldownSeconds > 0
+                        ? t('registration.form.resendIn', { seconds: cooldownSeconds })
+                        : t('registration.form.sendVerification')}
+                  </span>
+                </Button>
+              </div>
+              {form.formState.errors.verificationCode ? (
+                <p id="registration-verification-code-error" className="text-xs text-destructive">
+                  {form.formState.errors.verificationCode.message}
+                </p>
+              ) : verificationError ? (
+                <p id="registration-verification-code-help" className="text-xs text-destructive">
+                  {t(`registration.verificationErrors.${verificationError}`)}
+                </p>
+              ) : verificationNotice ? (
+                <p id="registration-verification-code-help" className="text-xs text-success">
+                  {t('registration.form.verificationSent')}
+                </p>
+              ) : cooldownSeconds > 0 ? (
+                <p id="registration-verification-code-help" className="text-xs text-muted-foreground">
+                  {t('registration.form.resendIn', { seconds: cooldownSeconds })}
+                </p>
+              ) : (
+                <p id="registration-verification-code-help" className="text-[0.6875rem] leading-4 text-muted-foreground">
+                  {t('registration.form.verificationCodeHelp')}
+                </p>
+              )}
+            </div>
+          ) : null}
 
           <div className="grid gap-1.5">
             <label htmlFor="registration-password" className="text-sm font-medium">
@@ -223,11 +357,47 @@ export function RegistrationForm({ emailRequired, onAuthenticated }: Registratio
 function classifyRegistrationError(error: unknown): RegistrationSubmitError {
   if (!(error instanceof ApiError)) return 'unavailable'
   const code = errorCode(error.details)
+  if (code === 'registration_rejected') return 'verificationRejected'
   if (error.status === 409 || code === 'user_conflict') return 'conflict'
   if (code === 'registration_disabled') return 'disabled'
   if (error.status === 429 || code === 'registration_rate_limited') return 'rateLimited'
   if (error.status === 400) return 'invalidInput'
   return 'unavailable'
+}
+
+function classifyVerificationError(error: unknown): RegistrationVerificationError {
+  if (!(error instanceof ApiError)) return 'unavailable'
+  const code = errorCode(error.details)
+  if (code === 'registration_disabled') return 'disabled'
+  if (code === 'email_not_configured') return 'emailNotConfigured'
+  if (code === 'email_delivery_failed') return 'emailDeliveryFailed'
+  if (error.status === 429 || code === 'registration_rate_limited') return 'rateLimited'
+  if (error.status === 400) return 'invalidInput'
+  return 'unavailable'
+}
+
+function retryAfterSeconds(details: unknown) {
+  if (typeof details !== 'object' || details === null || !('retry_after_seconds' in details)) return 0
+  const value = details.retry_after_seconds
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.ceil(value)) : 0
+}
+
+function readVerificationCooldown() {
+  try {
+    const value = Number(globalThis.sessionStorage.getItem(verificationCooldownStorageKey))
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+  } catch {
+    return 0
+  }
+}
+
+function writeVerificationCooldown(value: number) {
+  try {
+    if (value > 0) globalThis.sessionStorage.setItem(verificationCooldownStorageKey, String(value))
+    else globalThis.sessionStorage.removeItem(verificationCooldownStorageKey)
+  } catch {
+    // 浏览器隐私模式禁止 sessionStorage 时仍以服务端响应为准。
+  }
 }
 
 function errorCode(details: unknown) {

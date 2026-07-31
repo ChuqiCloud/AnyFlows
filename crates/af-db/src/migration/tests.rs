@@ -21,11 +21,12 @@ use super::*;
 use crate::entity::{
     BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
     EncryptedJson, HeaderOverrides, PasswordHash, PlaygroundConversationKey, SensitiveDecimal,
-    SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, abilities, auth_challenges,
-    authentication_settings, billing_batch_checkpoints, billing_reservations, channel_groups,
-    channel_models, channels, credentials, email_settings, group_model_ratios, groups,
-    model_prices, options, playground_conversations, playground_shares, registration_rate_limits,
-    site_settings, tokens, usage_logs, users,
+    SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, abilities,
+    auth_challenge_rate_limits, auth_challenges, authentication_settings,
+    billing_batch_checkpoints, billing_reservations, channel_groups, channel_models, channels,
+    credentials, email_settings, group_model_ratios, groups, model_prices, options,
+    playground_conversations, playground_shares, registration_rate_limits, site_settings, tokens,
+    usage_logs, users,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -47,7 +48,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量；列变更不会增加核心表数量。
-const EXPECTED_MIGRATION_COUNT: usize = 21;
+const EXPECTED_MIGRATION_COUNT: usize = 22;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -61,7 +62,7 @@ const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
 const PLAYGROUND_CONVERSATION_KEY: &str = "55555555555555555555555555555555";
-const CORE_TABLES: [&str; 21] = [
+const CORE_TABLES: [&str; 22] = [
     "groups",
     "users",
     "channels",
@@ -83,6 +84,7 @@ const CORE_TABLES: [&str; 21] = [
     "site_settings",
     "authentication_settings",
     "auth_challenges",
+    "auth_challenge_rate_limits",
 ];
 
 struct SlowMigrator;
@@ -1377,6 +1379,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<authentication_settings::Column>(&manager, "authentication_settings")
         .await?;
     assert_entity_columns::<auth_challenges::Column>(&manager, "auth_challenges").await?;
+    assert_entity_columns::<auth_challenge_rate_limits::Column>(
+        &manager,
+        "auth_challenge_rate_limits",
+    )
+    .await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -1413,6 +1420,10 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("auth_challenges", "uq_auth_challenges_purpose_subject"),
         ("auth_challenges", "idx_auth_challenges_target_purpose"),
         ("auth_challenges", "idx_auth_challenges_expires_at"),
+        (
+            "auth_challenge_rate_limits",
+            "uq_auth_challenge_rate_limits_scope",
+        ),
     ] {
         assert!(
             manager.has_index(table, index).await?,

@@ -12,8 +12,10 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use zeroize::Zeroizing;
 
 use crate::{
-    AdminUserRecord, AdminUserRepository, AdminUserRepositoryError,
+    AdminUserRecord, AdminUserRepository, AdminUserRepositoryError, AuthChallengeConsume,
+    AuthChallengeConsumeOutcome, AuthChallengePurpose, AuthChallengeRepositoryError,
     admin_user::{detail_query, record_internal_error},
+    auth_challenge::consume_in_transaction,
     entity::{groups, tokens, users},
     identity_secret::{IdentitySecretError, generate_aff_code, hash_password},
 };
@@ -142,6 +144,25 @@ pub enum AdminUserDeleteOutcome {
     NotFound,
 }
 
+/// 邮箱挑战消费与用户创建的原子结果。
+pub enum AdminUserVerifiedCreateOutcome {
+    /// 挑战已消费且用户已在同一事务内创建。
+    Created(AdminUserRecord),
+    /// 挑战不存在、无效、过期、已消费或次数耗尽。
+    Rejected,
+}
+
+impl fmt::Debug for AdminUserVerifiedCreateOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Created(_) => {
+                formatter.write_str("AdminUserVerifiedCreateOutcome::Created(<redacted>)")
+            }
+            Self::Rejected => formatter.write_str("AdminUserVerifiedCreateOutcome::Rejected"),
+        }
+    }
+}
+
 impl AdminUserRepository {
     /// 创建一个未软删除用户并返回非敏感管理快照。
     pub async fn create(
@@ -149,6 +170,26 @@ impl AdminUserRepository {
         record: AdminUserCreateRecord,
     ) -> Result<AdminUserRecord, AdminUserRepositoryError> {
         match timeout(self.lookup_timeout, self.create_inner(record)).await {
+            Ok(result) => result,
+            Err(_) => Err(record_internal_error(AdminUserRepositoryError::Timeout)),
+        }
+    }
+
+    /// 在同一数据库事务内消费注册邮箱挑战并创建用户。
+    pub async fn create_verified(
+        &self,
+        record: AdminUserCreateRecord,
+        challenge: AuthChallengeConsume,
+    ) -> Result<AdminUserVerifiedCreateOutcome, AdminUserRepositoryError> {
+        if challenge.purpose() != AuthChallengePurpose::RegistrationEmail {
+            return Err(record_internal_error(AdminUserRepositoryError::Invariant));
+        }
+        match timeout(
+            self.lookup_timeout,
+            self.create_verified_inner(record, challenge),
+        )
+        .await
+        {
             Ok(result) => result,
             Err(_) => Err(record_internal_error(AdminUserRepositoryError::Timeout)),
         }
@@ -182,44 +223,34 @@ impl AdminUserRepository {
         record: AdminUserCreateRecord,
     ) -> Result<AdminUserRecord, AdminUserRepositoryError> {
         let transaction = begin_transaction(self).await?;
-        ensure_group_exists(&transaction, record.default_group_id).await?;
-        ensure_identity_available(
-            &transaction,
-            &record.username,
-            record.email.as_deref(),
-            None,
-        )
-        .await?;
-        let password_hash = record
-            .password
-            .as_ref()
-            .map(hash_password)
-            .transpose()
-            .map_err(map_identity_secret_error)?;
-        let aff_code = generate_aff_code().map_err(map_identity_secret_error)?;
-        let inserted = users::ActiveModel {
-            username: Set(record.username),
-            email: Set(record.email),
-            password_hash: Set(password_hash),
-            role: Set(record.role),
-            status: Set(record.status),
-            default_group_id: Set(record.default_group_id.get()),
-            quota: Set(record.quota),
-            aff_code: Set(aff_code),
-            rpm_limit: Set(record.rpm_limit),
-            concurrency: Set(record.concurrency),
-            settings: Set(serde_json::json!({})),
-            ..Default::default()
-        }
-        .insert(&transaction)
-        .with_subscriber(NoSubscriber::default())
-        .await
-        .map_err(map_write_db_error)?;
-        let user_id = UserId::new(inserted.id)
-            .map_err(|_| record_internal_error(AdminUserRepositoryError::Invariant))?;
-        let snapshot = fetch_user_snapshot(&transaction, user_id).await?;
+        let snapshot = create_user_in_transaction(&transaction, record).await?;
         commit_transaction(transaction).await?;
         Ok(snapshot)
+    }
+
+    async fn create_verified_inner(
+        &self,
+        record: AdminUserCreateRecord,
+        challenge: AuthChallengeConsume,
+    ) -> Result<AdminUserVerifiedCreateOutcome, AdminUserRepositoryError> {
+        let transaction = begin_transaction(self).await?;
+        match consume_in_transaction(&transaction, &challenge)
+            .await
+            .map_err(map_auth_challenge_error)?
+        {
+            AuthChallengeConsumeOutcome::Rejected => {
+                commit_transaction(transaction).await?;
+                Ok(AdminUserVerifiedCreateOutcome::Rejected)
+            }
+            AuthChallengeConsumeOutcome::Consumed(consumption) => {
+                if consumption.target_user_id().is_some() {
+                    return Err(record_internal_error(AdminUserRepositoryError::Invariant));
+                }
+                let snapshot = create_user_in_transaction(&transaction, record).await?;
+                commit_transaction(transaction).await?;
+                Ok(AdminUserVerifiedCreateOutcome::Created(snapshot))
+            }
+        }
     }
 
     async fn update_inner(
@@ -323,6 +354,42 @@ async fn begin_transaction(
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(|_| record_internal_error(AdminUserRepositoryError::Query))
+}
+
+async fn create_user_in_transaction(
+    transaction: &DatabaseTransaction,
+    record: AdminUserCreateRecord,
+) -> Result<AdminUserRecord, AdminUserRepositoryError> {
+    ensure_group_exists(transaction, record.default_group_id).await?;
+    ensure_identity_available(transaction, &record.username, record.email.as_deref(), None).await?;
+    let password_hash = record
+        .password
+        .as_ref()
+        .map(hash_password)
+        .transpose()
+        .map_err(map_identity_secret_error)?;
+    let aff_code = generate_aff_code().map_err(map_identity_secret_error)?;
+    let inserted = users::ActiveModel {
+        username: Set(record.username),
+        email: Set(record.email),
+        password_hash: Set(password_hash),
+        role: Set(record.role),
+        status: Set(record.status),
+        default_group_id: Set(record.default_group_id.get()),
+        quota: Set(record.quota),
+        aff_code: Set(aff_code),
+        rpm_limit: Set(record.rpm_limit),
+        concurrency: Set(record.concurrency),
+        settings: Set(serde_json::json!({})),
+        ..Default::default()
+    }
+    .insert(transaction)
+    .with_subscriber(NoSubscriber::default())
+    .await
+    .map_err(map_write_db_error)?;
+    let user_id = UserId::new(inserted.id)
+        .map_err(|_| record_internal_error(AdminUserRepositoryError::Invariant))?;
+    fetch_user_snapshot(transaction, user_id).await
 }
 
 async fn commit_transaction(
@@ -465,6 +532,14 @@ fn map_identity_secret_error(error: IdentitySecretError) -> AdminUserRepositoryE
         IdentitySecretError::InvalidHash => {
             record_internal_error(AdminUserRepositoryError::Invariant)
         }
+    }
+}
+
+fn map_auth_challenge_error(error: AuthChallengeRepositoryError) -> AdminUserRepositoryError {
+    match error {
+        AuthChallengeRepositoryError::Query => AdminUserRepositoryError::Query,
+        AuthChallengeRepositoryError::Timeout => AdminUserRepositoryError::Timeout,
+        AuthChallengeRepositoryError::Invariant => AdminUserRepositoryError::Invariant,
     }
 }
 

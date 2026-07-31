@@ -34,6 +34,7 @@ mod admin_user_tests;
 mod admin_user_write;
 mod auth;
 mod auth_challenge;
+mod auth_challenge_rate_limit;
 #[cfg(test)]
 mod auth_challenge_tests;
 #[cfg(test)]
@@ -148,6 +149,7 @@ pub use admin_user::{
 };
 pub use admin_user_write::{
     AdminUserCreateRecord, AdminUserDeleteOutcome, AdminUserMutationOutcome, AdminUserUpdateRecord,
+    AdminUserVerifiedCreateOutcome,
 };
 pub use auth::{
     TokenAuthLookup, TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,
@@ -160,6 +162,12 @@ pub use auth_challenge::{
     AuthChallengeRepositoryError, MAX_AUTH_CHALLENGE_ATTEMPTS,
     MAX_AUTH_CHALLENGE_RESEND_COOLDOWN_SECONDS, MAX_AUTH_CHALLENGE_TTL_SECONDS,
     MIN_AUTH_CHALLENGE_RESEND_COOLDOWN_SECONDS, MIN_AUTH_CHALLENGE_TTL_SECONDS,
+};
+pub use auth_challenge_rate_limit::{
+    AuthChallengeRateLimitClaim, AuthChallengeRateLimitInputError, AuthChallengeRateLimitOutcome,
+    AuthChallengeRateLimitRepository, AuthChallengeRateLimitRepositoryConfigError,
+    AuthChallengeRateLimitRepositoryError, MAX_AUTH_CHALLENGE_RATE_LIMIT_ATTEMPTS,
+    MAX_AUTH_CHALLENGE_RATE_LIMIT_WINDOW_SECONDS, MIN_AUTH_CHALLENGE_RATE_LIMIT_WINDOW_SECONDS,
 };
 pub use billing_batch::{
     BillingBatchRepository, BillingBatchRepositoryError, BillingBatchWrite, BillingBatchWriteError,
