@@ -3,6 +3,7 @@ import {
   Gauge,
   Fingerprint,
   KeyRound,
+  Layers3,
   Mail,
   MessageSquareText,
   Network,
@@ -35,7 +36,7 @@ type AppNavigationProps = {
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'profile' | 'users' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'modelSettings' | 'channels' | 'keys' | 'usage'
+  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'profile' | 'users' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'keys' | 'usage'
   icon: LucideIcon
   href: `#/console${string}`
 }
@@ -72,6 +73,7 @@ const navGroups: readonly NavGroup[] = [
       { key: 'siteSettings', icon: PanelsTopLeft, href: '#/console/system-settings/site' },
       { key: 'authenticationSettings', icon: Fingerprint, href: '#/console/system-settings/authentication' },
       { key: 'emailSettings', icon: Mail, href: '#/console/system-settings/email' },
+      { key: 'groupSettings', icon: Layers3, href: '#/console/system-settings/groups' },
       { key: 'modelSettings', icon: PackageSearch, href: '#/console/system-settings/models' },
       { key: 'channels', icon: Network, href: '#/console/channels' },
       { key: 'keys', icon: ShieldCheck, href: '#/console/tokens' },
@@ -90,6 +92,7 @@ const activeKeyByView: Partial<Record<AppView, NavItem['key']>> = {
   'site-settings': 'siteSettings',
   'authentication-settings': 'authenticationSettings',
   'email-settings': 'emailSettings',
+  'group-settings': 'groupSettings',
   'model-settings': 'modelSettings',
   channels: 'channels',
   tokens: 'keys',

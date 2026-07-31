@@ -19,6 +19,7 @@
     "siteSettings": "站点设置",
     "authenticationSettings": "认证设置",
     "emailSettings": "邮件设置",
+    "groupSettings": "分组管理",
     "modelSettings": "模型管理",
     "channels": "渠道管理",
     "keys": "全局令牌",
@@ -542,6 +543,113 @@
       "title": "删除用户",
       "description": "删除 {{username}} 后，该账户及其直接签发的 API Key 将被软删除，无法继续登录或调用。此操作不可撤销。",
       "failed": "删除失败，用户仍然有效，请稍后重试。"
+    }
+  },
+  "groups": {
+    "title": "分组管理",
+    "subtitle": "维护用户分组的基础倍率、高峰倍率、资源限额与运行时回退策略。",
+    "loading": "正在加载分组",
+    "summary": {
+      "loaded_one": "已加载 {{count}} 个分组",
+      "loaded_other": "已加载 {{count}} 个分组",
+      "exclusive_one": "{{count}} 个独占分组",
+      "exclusive_other": "{{count}} 个独占分组",
+      "peak_one": "{{count}} 个高峰窗口",
+      "peak_other": "{{count}} 个高峰窗口"
+    },
+    "columns": {
+      "group": "分组",
+      "pricing": "计费倍率",
+      "limits": "资源限额",
+      "routing": "回退策略",
+      "actions": "操作"
+    },
+    "badges": {
+      "exclusive": "独占",
+      "claudeCodeOnly": "仅 Claude Code",
+      "peak": "高峰倍率"
+    },
+    "values": {
+      "ratio": "{{value}} 倍",
+      "peakWindow": "{{ratio}} 倍 · {{start}}-{{end}} UTC",
+      "noPeak": "无高峰窗口",
+      "daily": "日限额",
+      "weekly": "周限额",
+      "monthly": "月限额",
+      "unlimited": "不限",
+      "fallback": "回退目标",
+      "noFallback": "不设置回退"
+    },
+    "actions": {
+      "create": "创建分组",
+      "edit": "编辑分组",
+      "delete": "删除分组",
+      "refresh": "刷新",
+      "retry": "重试",
+      "cancel": "取消",
+      "save": "保存修改"
+    },
+    "empty": {
+      "title": "没有可管理的分组",
+      "body": "创建首个分组后，倍率与资源策略会显示在这里。"
+    },
+    "error": {
+      "title": "无法读取分组",
+      "body": "服务暂时没有返回分组目录，请稍后重试。"
+    },
+    "editor": {
+      "createTitle": "创建分组",
+      "createDescription": "配置分组身份、计费倍率、资源限额与回退策略。",
+      "editTitle": "编辑分组",
+      "editDescription": "完整更新该分组，保存后运行时计费快照会立即刷新。"
+    },
+    "form": {
+      "identity": "分组信息",
+      "pricing": "计费倍率",
+      "limits": "资源限额",
+      "routing": "访问与回退",
+      "ratioHint": "使用最多 6 位小数的非负倍率，1 表示原价。",
+      "peakDescription": "在每日固定 UTC 时间窗口应用额外高峰倍率。",
+      "utcHint": "时间统一使用 UTC。",
+      "optionalLimitHint": "留空表示不设置分组级限制。",
+      "fallbackHint": "客户端限制触发时使用的目标分组，不能指向自身。",
+      "exclusiveDescription": "仅允许显式绑定到该分组的用户与令牌使用。",
+      "claudeCodeDescription": "将该分组限制为 Claude Code 客户端场景。"
+    },
+    "fields": {
+      "name": "稳定名称",
+      "displayName": "显示名称",
+      "ratio": "基础倍率",
+      "peakEnabled": "启用高峰倍率",
+      "peakRatio": "高峰倍率",
+      "peakStart": "开始时间",
+      "peakEnd": "结束时间",
+      "dailyLimit": "每日限额",
+      "weeklyLimit": "每周限额",
+      "monthlyLimit": "每月限额",
+      "rpmLimit": "每分钟请求数",
+      "fallback": "回退分组",
+      "exclusive": "独占分组",
+      "claudeCodeOnly": "仅限 Claude Code"
+    },
+    "validation": {
+      "name": "稳定名称需为 1 至 64 字节，且不能包含首尾空白或控制字符。",
+      "displayName": "显示名称需为 1 至 128 字节，且不能包含首尾空白或控制字符。",
+      "ratio": "请输入最多 6 位小数的非负倍率。",
+      "number": "请输入范围内的非负整数，或留空表示不限。",
+      "fallback": "请选择有效且非自身的回退分组。",
+      "peakWindow": "请选择有效且起止不同的 UTC 时间。"
+    },
+    "errors": {
+      "group_conflict": "稳定名称已被其他有效分组使用。",
+      "group_in_use": "该分组仍被有效用户或 API Key 使用，暂时不能删除。",
+      "invalid_request": "分组字段无效，请检查后重试。",
+      "internal_error": "数据可能已经提交，但运行时刷新或存储暂时失败。请刷新列表确认后重试。",
+      "unknown": "分组操作失败，请刷新列表确认当前状态。"
+    },
+    "delete": {
+      "title": "删除分组",
+      "description": "删除 {{name}} 后，与该分组关联且可安全解除的渠道、能力与回退关系会被清理。此操作不可撤销。"
     }
   },
   "modelManagement": {

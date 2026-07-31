@@ -13,6 +13,7 @@ import { ApiKeyPage } from '@/features/api-keys/api-key-page'
 import { ChannelPage } from '@/features/channels/channel-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
 import { EmailSettingsPage } from '@/features/email-settings/email-settings-page'
+import { GroupPage } from '@/features/groups/group-page'
 import { LandingPage } from '@/features/landing/landing-page'
 import { ModelPage } from '@/features/models/model-page'
 import { ModelManagementPage } from '@/features/model-management/model-management-page'
@@ -110,10 +111,12 @@ function ManagementEntry({
         ? 'authenticationSettings.title'
         : view === 'email-settings'
           ? 'emailSettings.title'
-          : view === 'model-settings'
-            ? 'modelManagement.title'
-          : view === 'users'
-            ? 'users.title'
+          : view === 'group-settings'
+            ? 'groups.title'
+            : view === 'model-settings'
+              ? 'modelManagement.title'
+              : view === 'users'
+                ? 'users.title'
             : view === 'api-keys'
               ? 'apiKeys.title'
               : view === 'models'
@@ -135,10 +138,12 @@ function ManagementEntry({
         ? <AuthenticationSettingsPage />
         : view === 'email-settings'
           ? <EmailSettingsPage />
-          : view === 'model-settings'
-            ? <ModelManagementPage />
-          : view === 'users'
-            ? <UserPage />
+          : view === 'group-settings'
+            ? <GroupPage />
+            : view === 'model-settings'
+              ? <ModelManagementPage />
+              : view === 'users'
+                ? <UserPage />
             : view === 'api-keys'
               ? <ApiKeyPage />
               : view === 'models'

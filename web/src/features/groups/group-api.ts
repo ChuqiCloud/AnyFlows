@@ -1,8 +1,14 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
 
-import { apiClient } from '@/lib/api'
-import { listAdminGroups } from '@/lib/api/generated/sdk.gen'
-import type { AdminGroup } from '@/lib/api/generated/types.gen'
+import { apiClient, ApiError } from '@/lib/api'
+import {
+  createAdminGroup,
+  deleteAdminGroup,
+  listAdminGroups,
+  updateAdminGroup,
+} from '@/lib/api/generated/sdk.gen'
+import type { AdminGroup, AdminGroupWriteRequest } from '@/lib/api/generated/types.gen'
 
 export const adminGroupCatalogQueryKey = ['admin-group-catalog'] as const
 
@@ -30,4 +36,53 @@ export function useAdminGroupCatalog() {
       }
     },
   })
+}
+
+export function useCreateAdminGroup() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: AdminGroupWriteRequest) => {
+      const { data } = await createAdminGroup({ body, client: apiClient })
+      return data
+    },
+    onSuccess: () => invalidateGroupConsumers(queryClient),
+  })
+}
+
+export function useUpdateAdminGroup() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, body }: { id: number; body: AdminGroupWriteRequest }) => {
+      const { data } = await updateAdminGroup({ body, client: apiClient, path: { id } })
+      return data
+    },
+    onSuccess: () => invalidateGroupConsumers(queryClient),
+  })
+}
+
+export function useDeleteAdminGroup() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: number) => {
+      await deleteAdminGroup({ client: apiClient, path: { id } })
+    },
+    onSuccess: () => invalidateGroupConsumers(queryClient),
+  })
+}
+
+/** 分组变更同时影响管理选择器与登录用户看到的实际模型倍率。 */
+function invalidateGroupConsumers(queryClient: QueryClient) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: adminGroupCatalogQueryKey }),
+    queryClient.invalidateQueries({ queryKey: ['model-catalog'] }),
+  ])
+}
+
+export function groupWriteErrorCode(error: unknown) {
+  if (!(error instanceof ApiError) || typeof error.details !== 'object' || error.details === null) {
+    return undefined
+  }
+  return 'code' in error.details && typeof error.details.code === 'string'
+    ? error.details.code
+    : undefined
 }

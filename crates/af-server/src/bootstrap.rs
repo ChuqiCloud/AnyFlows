@@ -19,8 +19,8 @@ use af_admin::{
     DatabaseUserTokenService, EmailDelivery, InitialSetup, ModelCatalogReader,
     PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
     PlaygroundShareService, RegistrationService, RegistrationServiceConfigError,
-    SessionAuthenticator, SessionAuthenticatorConfigError, SiteSettingsService, TokenAuthenticator,
-    UserProfileService, UserTokenService,
+    RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
+    SiteSettingsService, TokenAuthenticator, UserProfileService, UserTokenService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -73,6 +73,7 @@ use crate::{
     BillingRuntimeError, ChatRoutePlanner, ShutdownController, SupervisorError, SupervisorShutdown,
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     frontend::EmbeddedFrontendAssets,
+    group_pricing_refresh::RuntimeGroupPricingRefresher,
     model_catalog::RuntimeModelCatalogReader,
     model_discovery::DatabaseUpstreamModelDiscoverer,
     model_price_source::{ModelsDevPriceDiscoverer, RuntimeModelPriceRefresher},
@@ -706,6 +707,11 @@ impl Bootstrap<RelayReady> {
         )
         .await
         .map_err(BootstrapError::GroupPricingCache)?;
+        let admin_group_writer: Arc<dyn AdminGroupWriter> =
+            Arc::new(RuntimeRefreshingAdminGroupWriter::new(
+                Arc::clone(&self.stage.infrastructure.admin_group_writer),
+                Arc::new(RuntimeGroupPricingRefresher::new(group_pricing.clone())),
+            ));
         let model_catalog_metadata = AdminModelRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
@@ -783,12 +789,14 @@ impl Bootstrap<RelayReady> {
             shutdown,
             stage,
         } = self;
+        let mut infrastructure = stage.infrastructure;
+        infrastructure.admin_group_writer = admin_group_writer;
         Ok(Bootstrap {
             config,
             shutdown_timeout,
             shutdown,
             stage: BillingReady {
-                infrastructure: stage.infrastructure,
+                infrastructure,
                 chat,
                 billing,
                 usage_record_queue,
