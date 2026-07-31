@@ -208,10 +208,10 @@ fn parse_models_dev(
             model.name.clone(),
             model.last_updated.clone(),
             [
-                parse_decimal(cost.input.as_ref())?,
-                parse_decimal(cost.output.as_ref())?,
-                parse_decimal(cost.cache_read.as_ref())?,
-                parse_decimal(cost.cache_write.as_ref())?,
+                parse_decimal(cost.input.as_deref())?,
+                parse_decimal(cost.output.as_deref())?,
+                parse_decimal(cost.cache_read.as_deref())?,
+                parse_decimal(cost.cache_write.as_deref())?,
             ],
             cost.tiers.as_ref().is_some_and(nonempty_json) || cost.context_over_200k.is_some(),
             model.status.as_deref() == Some("deprecated"),
@@ -222,13 +222,14 @@ fn parse_models_dev(
 }
 
 fn parse_decimal(
-    number: Option<&serde_json::Number>,
+    number: Option<&serde_json::value::RawValue>,
 ) -> Result<Option<Decimal>, ModelPriceSourceDiscoveryError> {
     number
         .map(|number| {
-            let value = number.to_string();
-            Decimal::from_str_exact(&value)
-                .or_else(|_| Decimal::from_scientific(&value))
+            // 公开价必须从原始 JSON 数字文本构造，避免先经过浮点数而损失精度。
+            let value = number.get();
+            Decimal::from_str_exact(value)
+                .or_else(|_| Decimal::from_scientific(value))
                 .map_err(|_| ModelPriceSourceDiscoveryError::InvalidResponse)
                 .and_then(|decimal| {
                     if decimal < Decimal::ZERO {
@@ -296,10 +297,10 @@ struct ModelsDevModel {
 
 #[derive(Deserialize)]
 struct ModelsDevCost {
-    input: Option<serde_json::Number>,
-    output: Option<serde_json::Number>,
-    cache_read: Option<serde_json::Number>,
-    cache_write: Option<serde_json::Number>,
+    input: Option<Box<serde_json::value::RawValue>>,
+    output: Option<Box<serde_json::value::RawValue>>,
+    cache_read: Option<Box<serde_json::value::RawValue>>,
+    cache_write: Option<Box<serde_json::value::RawValue>>,
     tiers: Option<serde_json::Value>,
     context_over_200k: Option<serde_json::Value>,
 }
@@ -373,5 +374,30 @@ mod tests {
             ),
             Err(ModelPriceSourceDiscoveryError::InvalidResponse)
         ));
+        assert!(matches!(
+            parse_models_dev(
+                br#"{"openai":{"name":"OpenAI","models":{"gpt-test":{"name":"GPT","cost":{"input":"1.25","output":1}}}}}"#,
+                target(),
+                1,
+                None,
+            ),
+            Err(ModelPriceSourceDiscoveryError::InvalidResponse)
+        ));
+    }
+
+    #[test]
+    fn parser_accepts_scientific_cost_without_float_rounding() {
+        let preview = parse_models_dev(
+            br#"{"openai":{"name":"OpenAI","models":{"gpt-test":{"name":"GPT","cost":{"input":1.234567890123456789e-3}}}}}"#,
+            vec![ModelPriceSourceTarget::new("gpt-test".to_owned(), "openai".to_owned()).unwrap()],
+            1,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(
+            preview.candidates()[0].costs()[0],
+            Some(Decimal::from_str_exact("0.001234567890123456789").unwrap())
+        );
     }
 }
