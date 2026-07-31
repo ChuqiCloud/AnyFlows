@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminModelReader,
-    AdminModelSyncService, AdminModelWriter, AdminTokenReader, AdminTokenWriter,
-    AdminUsageLogReader, AdminUserReader, AdminUserWriter, InitialSetup, SessionAuthenticator,
-    TokenAuthentication,
+    AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter,
+    AdminModelPriceService, AdminModelReader, AdminModelSyncService, AdminModelWriter,
+    AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter,
+    InitialSetup, SessionAuthenticator, TokenAuthentication,
 };
 use af_analytics::AdminDashboardReader;
 use af_domain::{AfError, Protocol, TokenModelPolicy};
@@ -42,6 +42,7 @@ pub(crate) struct HttpState {
     pub(crate) admin_group_reader: Arc<dyn AdminGroupReader>,
     pub(crate) admin_group_writer: Arc<dyn AdminGroupWriter>,
     pub(crate) admin_model_reader: Option<Arc<dyn AdminModelReader>>,
+    pub(crate) admin_model_price_service: Option<Arc<dyn AdminModelPriceService>>,
     pub(crate) admin_model_writer: Option<Arc<dyn AdminModelWriter>>,
     pub(crate) admin_model_sync_service: Option<Arc<dyn AdminModelSyncService>>,
     pub(crate) admin_token_reader: Arc<dyn AdminTokenReader>,
@@ -75,6 +76,7 @@ impl HttpState {
             admin_group_reader,
             admin_group_writer,
             admin_model_reader: None,
+            admin_model_price_service: None,
             admin_model_writer: None,
             admin_model_sync_service: None,
             admin_token_reader,
@@ -116,6 +118,15 @@ impl HttpState {
         reader: Option<Arc<dyn AdminModelReader>>,
     ) -> Self {
         self.admin_model_reader = reader;
+        self
+    }
+
+    /// 为正式模型价格、公开参考价和原子应用路由注入真实服务。
+    pub(crate) fn with_admin_model_price_service(
+        mut self,
+        service: Option<Arc<dyn AdminModelPriceService>>,
+    ) -> Self {
+        self.admin_model_price_service = service;
         self
     }
 

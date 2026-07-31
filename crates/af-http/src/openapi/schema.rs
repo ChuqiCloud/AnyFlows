@@ -506,5 +506,11 @@ pub(crate) enum ManagementErrorCodeSchema {
     ModelSyncPreviewExpired,
     ModelSyncPreviewAlreadyApplied,
     ModelSyncConflict,
+    ModelPriceConflict,
+    ModelPriceSourceTimeout,
+    ModelPriceSourceUnavailable,
+    ModelPriceSourceResponseTooLarge,
+    ModelPriceSourceInvalidResponse,
+    ModelPriceSourceCandidateLimitExceeded,
     InternalError,
 }

@@ -23,11 +23,18 @@ pub enum ModelPriceBillingMode {
 }
 
 impl ModelPriceBillingMode {
-    const fn from_code(code: i16) -> Result<Self, ModelPriceRepositoryError> {
+    pub(crate) const fn from_code(code: i16) -> Result<Self, ModelPriceRepositoryError> {
         match code {
             1 => Ok(Self::PerToken),
             2 => Ok(Self::Free),
             _ => Err(ModelPriceRepositoryError::Invariant),
+        }
+    }
+
+    pub(crate) const fn database_value(self) -> i16 {
+        match self {
+            Self::PerToken => 1,
+            Self::Free => 2,
         }
     }
 }
@@ -66,7 +73,9 @@ impl ModelPriceRecord {
         self.version
     }
 
-    fn try_from_model(model: model_prices::Model) -> Result<Self, ModelPriceRepositoryError> {
+    pub(crate) fn try_from_model(
+        model: model_prices::Model,
+    ) -> Result<Self, ModelPriceRepositoryError> {
         let name = model.model.as_str();
         let billing_mode = ModelPriceBillingMode::from_code(model.billing_mode)?;
         let prices = [
@@ -127,8 +136,8 @@ pub enum ModelPriceRepositoryError {
 /// 有界读取完整模型价格目录的数据库仓储。
 #[derive(Clone)]
 pub struct ModelPriceRepository {
-    pool: DatabasePool,
-    load_timeout: Duration,
+    pub(crate) pool: DatabasePool,
+    pub(crate) load_timeout: Duration,
 }
 
 impl ModelPriceRepository {

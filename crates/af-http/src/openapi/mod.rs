@@ -6,6 +6,7 @@ mod dashboard;
 mod email_settings;
 mod groups;
 mod model_metadata;
+mod model_prices;
 mod model_sync;
 mod models;
 mod password_reset;
@@ -44,6 +45,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(models::document());
     document.merge(model_metadata::document());
     document.merge(model_sync::document());
+    document.merge(model_prices::document());
     document.merge(playground_shares::document());
     document.merge(playground_conversations::document());
     document.merge(user_tokens::document());
@@ -99,7 +101,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 42);
+        assert_eq!(document.paths.paths.len(), 45);
         let operation_count = document
             .paths
             .paths
@@ -120,7 +122,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 70);
+        assert_eq!(operation_count, 73);
         assert!(
             document
                 .components
@@ -182,10 +184,12 @@ mod tests {
             "getPublicSiteSettings",
             "initializeAdminSetup",
             "applyAdminModelSyncPreview",
+            "applyAdminModelPrices",
             "listAdminChannels",
             "listAdminCredentials",
             "listAdminGroups",
             "listAdminModels",
+            "listAdminModelPrices",
             "listMissingAdminModels",
             "listAdminTokens",
             "listAdminUsageLogs",
@@ -195,6 +199,7 @@ mod tests {
             "listUserTokens",
             "loginManagementSession",
             "probeAdminChannel",
+            "previewAdminModelPrices",
             "registerUser",
             "revokePlaygroundShare",
             "savePlaygroundConversation",
@@ -218,7 +223,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 107);
+        assert_eq!(schemas.len(), 117);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
@@ -262,6 +267,12 @@ mod tests {
         assert!(schemas.contains_key("AdminModelSyncPreview"));
         assert!(schemas.contains_key("AdminModelSyncApplyRequest"));
         assert!(schemas.contains_key("AdminModelSyncRelation"));
+        assert!(schemas.contains_key("AdminModelPrice"));
+        assert!(schemas.contains_key("AdminModelPriceBillingMode"));
+        assert!(schemas.contains_key("AdminModelPriceValues"));
+        assert!(schemas.contains_key("AdminModelPriceListResponse"));
+        assert!(schemas.contains_key("AdminModelPriceSourcePreview"));
+        assert!(schemas.contains_key("AdminModelPriceBatchRequest"));
         assert!(schemas.contains_key("PlaygroundShareCreateRequest"));
         assert!(schemas.contains_key("PlaygroundShareReadResponse"));
         assert!(schemas.contains_key("PlaygroundConversationSaveRequest"));

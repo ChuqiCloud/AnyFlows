@@ -71,6 +71,9 @@ mod initial_setup_tests;
 mod migration;
 mod model_catalog_metadata;
 mod model_price;
+mod model_price_admin;
+#[cfg(test)]
+mod model_price_admin_tests;
 #[cfg(test)]
 mod model_price_tests;
 mod model_sync;
@@ -231,6 +234,10 @@ pub use model_catalog_metadata::ModelCatalogMetadataPageRecord;
 pub use model_price::{
     MAX_MODEL_PRICE_ENTRIES, ModelPriceBillingMode, ModelPriceRecord, ModelPriceRepository,
     ModelPriceRepositoryError,
+};
+pub use model_price_admin::{
+    MAX_MODEL_PRICE_PAGE_SIZE, MAX_MODEL_PRICE_WRITE_BATCH, ModelPricePageRecord,
+    ModelPriceWriteError, ModelPriceWriteRecord,
 };
 pub use model_sync::{
     DiscoveredModelRecord, MAX_MISSING_MODEL_CHANNELS, MAX_MISSING_MODEL_PAGE_SIZE,
