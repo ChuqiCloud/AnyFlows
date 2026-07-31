@@ -52,7 +52,7 @@ fn list_missing_admin_models() {}
         (status = 404, description = "渠道不存在", body = ManagementErrorBody),
         (status = 409, description = "渠道或凭据当前不可用于同步", body = ManagementErrorBody),
         (status = 422, description = "渠道类型或协议不支持同步", body = ManagementErrorBody),
-        (status = 502, description = "上游拒绝请求或响应无效", body = ManagementErrorBody),
+        (status = 502, description = "上游拒绝请求、响应无效或候选数量超限", body = ManagementErrorBody),
         (status = 504, description = "上游模型枚举超时", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     ),

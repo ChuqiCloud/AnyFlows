@@ -5,34 +5,39 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
-export function ModelCopyButton({ model }: { model: string }) {
+type ModelCopyButtonProps = {
+  model: string
+  size?: 'icon-xs' | 'icon-sm'
+}
+
+export function ModelCopyButton({ model, size = 'icon-sm' }: ModelCopyButtonProps) {
   const { t } = useTranslation()
-  const [copied, setCopied] = useState(false)
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
   useEffect(() => {
-    if (!copied) return
-    const timer = window.setTimeout(() => setCopied(false), 1_600)
+    if (state === 'idle') return
+    const timer = window.setTimeout(() => setState('idle'), 1_600)
     return () => window.clearTimeout(timer)
-  }, [copied])
+  }, [state])
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(model)
-      setCopied(true)
+      setState('copied')
     } catch {
-      setCopied(false)
+      setState('failed')
     }
   }
 
-  const label = copied ? t('models.actions.copied') : t('models.actions.copy')
-  const Icon = copied ? Check : Copy
+  const label = t(state === 'copied' ? 'models.actions.copied' : state === 'failed' ? 'models.actions.copyFailed' : 'models.actions.copy')
+  const Icon = state === 'copied' ? Check : Copy
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
           type="button"
           variant="ghost"
-          size="icon-sm"
+          size={size}
           className="shrink-0 text-muted-foreground hover:text-foreground"
           aria-label={label}
           onClick={() => void copy()}

@@ -55,8 +55,12 @@ pub(crate) enum ManagementError {
     ModelSyncUnsupportedChannel,
     /// 上游模型枚举超过渠道级截止时间。
     ModelSyncUpstreamTimeout,
-    /// 上游拒绝模型枚举请求或返回了无效响应。
-    ModelSyncUpstreamFailed,
+    /// 上游以非成功状态拒绝模型枚举请求。
+    ModelSyncUpstreamRejected,
+    /// 上游模型枚举响应无法通过结构与容量校验。
+    ModelSyncInvalidResponse,
+    /// 上游返回的模型候选数量超过服务端固定上限。
+    ModelSyncCandidateLimitExceeded,
     /// 同步预览不存在或不属于当前管理员。
     ModelSyncPreviewNotFound,
     /// 同步预览已经超过服务端固定有效期。
@@ -271,11 +275,25 @@ impl IntoResponse for ManagementError {
                     message: "Model sync upstream timeout",
                 },
             ),
-            Self::ModelSyncUpstreamFailed => (
+            Self::ModelSyncUpstreamRejected => (
                 StatusCode::BAD_GATEWAY,
                 ManagementErrorBody {
-                    code: "model_sync_upstream_failed",
-                    message: "Model sync upstream failed",
+                    code: "model_sync_upstream_rejected",
+                    message: "Model sync upstream rejected",
+                },
+            ),
+            Self::ModelSyncInvalidResponse => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "model_sync_invalid_response",
+                    message: "Model sync invalid upstream response",
+                },
+            ),
+            Self::ModelSyncCandidateLimitExceeded => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "model_sync_candidate_limit_exceeded",
+                    message: "Model sync candidate limit exceeded",
                 },
             ),
             Self::ModelSyncPreviewNotFound => (

@@ -440,7 +440,7 @@ fn enforce_candidate_bound(count: usize) -> Result<(), UpstreamModelDiscoveryErr
     if count <= MAX_MODEL_SYNC_CANDIDATES {
         Ok(())
     } else {
-        Err(UpstreamModelDiscoveryError::InvalidResponse)
+        Err(UpstreamModelDiscoveryError::CandidateLimitExceeded)
     }
 }
 
@@ -469,6 +469,9 @@ const fn discovery_error_kind(error: UpstreamModelDiscoveryError) -> &'static st
         UpstreamModelDiscoveryError::Timeout => "model_discovery_timeout",
         UpstreamModelDiscoveryError::UpstreamRejected => "model_discovery_upstream_rejected",
         UpstreamModelDiscoveryError::InvalidResponse => "model_discovery_invalid_response",
+        UpstreamModelDiscoveryError::CandidateLimitExceeded => {
+            "model_discovery_candidate_limit_exceeded"
+        }
         UpstreamModelDiscoveryError::Internal => "model_discovery_internal",
     }
 }
@@ -606,5 +609,14 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(gemini.models[0].input_token_limit, Some(1000));
+    }
+
+    #[test]
+    fn candidate_capacity_has_a_distinct_failure_classification() {
+        assert_eq!(enforce_candidate_bound(MAX_MODEL_SYNC_CANDIDATES), Ok(()));
+        assert_eq!(
+            enforce_candidate_bound(MAX_MODEL_SYNC_CANDIDATES + 1),
+            Err(UpstreamModelDiscoveryError::CandidateLimitExceeded)
+        );
     }
 }

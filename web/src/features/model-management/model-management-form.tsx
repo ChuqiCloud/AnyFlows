@@ -15,6 +15,7 @@ import { ModelManagementField } from './model-management-field'
 import {
   buildModelManagementSchema,
   defaultModelManagementValues,
+  MODEL_PROVIDER_SUGGESTIONS,
   toModelCreateRequest,
   toModelUpdateRequest,
   type ModelEditorMode,
@@ -28,25 +29,6 @@ type ModelManagementFormProps = {
   onCancel: () => void
   onSaved: (model: AdminModel) => void
 }
-
-const providerSuggestions = [
-  'openai',
-  'anthropic',
-  'google',
-  'deepseek',
-  'qwen',
-  'moonshot',
-  'zhipu',
-  'minimax',
-  'bytedance',
-  'tencent',
-  'xai',
-  'meta',
-  'mistral',
-  'cohere',
-  'amazon',
-  'microsoft',
-] as const
 
 export function ModelManagementForm({ mode, model, onCancel, onSaved }: ModelManagementFormProps) {
   const { t } = useTranslation()
@@ -107,7 +89,7 @@ export function ModelManagementForm({ mode, model, onCancel, onSaved }: ModelMan
             <ModelManagementField id="model-provider" label={t('modelManagement.fields.provider')} hint={t('modelManagement.form.providerHint')} error={form.formState.errors.provider?.message}>
               <Input id="model-provider" list="model-provider-suggestions" autoComplete="off" aria-invalid={!!form.formState.errors.provider} {...form.register('provider')} />
               <datalist id="model-provider-suggestions">
-                {providerSuggestions.map((provider) => <option key={provider} value={provider} />)}
+                {MODEL_PROVIDER_SUGGESTIONS.map((provider) => <option key={provider} value={provider} />)}
               </datalist>
             </ModelManagementField>
           </div>

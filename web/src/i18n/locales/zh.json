@@ -546,13 +546,18 @@
   },
   "modelManagement": {
     "title": "模型管理",
-    "subtitle": "维护独立的模型商品身份、权威能力、可见范围和运营生命周期，不在这里修改价格或渠道映射。",
+    "subtitle": "维护独立的模型商品身份与权威能力，或从受控上游生成待人工确认的同步预览。",
     "count_one": "已加载 {{count}} 个模型",
     "count_other": "已加载 {{count}} 个模型",
     "activeCount_one": "{{count}} 个处于活动状态",
     "activeCount_other": "{{count}} 个处于活动状态",
     "loading": "正在加载模型元数据",
     "loadingMore": "正在加载",
+    "views": {
+      "label": "模型管理视图",
+      "catalog": "模型目录",
+      "sync": "同步模型"
+    },
     "columns": {
       "model": "模型商品",
       "operation": "运营状态",
@@ -658,6 +663,121 @@
       "updated": "更新于 {{value}}",
       "input": "输入",
       "output": "输出"
+    },
+    "sync": {
+      "channel": {
+        "label": "来源渠道",
+        "loading": "正在加载渠道",
+        "placeholder": "选择一个渠道创建预览",
+        "option": "{{name}}（{{protocol}}，{{status}}）",
+        "error": "无法读取渠道目录，暂时不能创建同步预览。",
+        "moreError": "后续渠道读取失败，已加载渠道仍可使用。",
+        "loadMore": "加载更多渠道"
+      },
+      "actions": {
+        "preview": "创建同步预览",
+        "previewing": "正在读取上游",
+        "reviewApply": "复核并应用（{{count}}）",
+        "selectItem": "选择模型 {{model}}",
+        "editItem": "填写元数据",
+        "confirmItem": "确认此项",
+        "apply": "创建隐藏草稿"
+      },
+      "missing": {
+        "title": "缺失模型元数据",
+        "loaded_one": "已加载 {{count}} 个缺失模型",
+        "loaded_other": "已加载 {{count}} 个缺失模型",
+        "loading": "正在检测缺失模型",
+        "errorTitle": "无法检测缺失模型",
+        "errorBody": "服务暂时没有返回渠道引用与商品元数据的可靠差异。",
+        "emptyTitle": "没有缺失模型",
+        "emptyBody": "当前活动渠道引用的 Canonical 模型都已有商品元数据。",
+        "channelCount_one": "由 {{count}} 个渠道引用",
+        "channelCount_other": "由 {{count}} 个渠道引用",
+        "moreError": "后续缺失模型读取失败，已加载内容仍可查看。"
+      },
+      "preview": {
+        "title": "固定同步预览",
+        "expiresAt": "有效至 {{value}}",
+        "expired": "预览已过期",
+        "sourceUnknown": "来源渠道已不在当前列表",
+        "summary_one": "共 {{count}} 项，已选择 {{selected}} 项",
+        "summary_other": "共 {{count}} 项，已选择 {{selected}} 项",
+        "notReported": "本次上游未报告",
+        "evidenceCount_one": "{{count}} 条证据",
+        "evidenceCount_other": "{{count}} 条证据",
+        "applied": "已应用",
+        "ready": "可应用",
+        "incomplete": "待补齐"
+      },
+      "relations": {
+        "missing_metadata": {
+          "title": "缺失元数据",
+          "description": "渠道已引用，商品目录尚未登记",
+          "badge": "待登记"
+        },
+        "discovered_unconfigured": {
+          "title": "上游新增",
+          "description": "上游已报告，当前渠道尚未配置",
+          "badge": "新发现"
+        },
+        "existing": {
+          "title": "已有元数据",
+          "description": "商品目录中已经存在权威记录",
+          "badge": "已登记"
+        },
+        "not_reported": {
+          "title": "上游未报告",
+          "description": "渠道已配置，但本次枚举没有返回",
+          "badge": "未报告"
+        }
+      },
+      "editor": {
+        "title": "确认模型权威元数据",
+        "description": "为 {{model}} 逐项核实展示信息与能力。"
+      },
+      "form": {
+        "authority": "人工确认信息",
+        "authorityHint": "上游返回值只是证据。展示名、厂商和上下文需要管理员明确确认。",
+        "capabilitiesHint": "输入和输出各至少选择一种模态，不根据模型名或支持方法自动推断。"
+      },
+      "evidence": {
+        "title": "上游证据",
+        "disclaimer": "以下内容来自本次受控枚举，仅供复核，不会自动成为权威能力声明。",
+        "upstreamModel": "上游模型标识",
+        "contextLimit": "上下文 {{value}}",
+        "inputLimit": "输入上限 {{value}}",
+        "outputLimit": "输出上限 {{value}}",
+        "useContext": "采用上下文值",
+        "methods": "支持方法",
+        "none": "未提供",
+        "use": "采用{{label}}证据"
+      },
+      "apply": {
+        "title": "创建隐藏模型草稿",
+        "description_one": "将所选 {{count}} 个模型作为隐藏草稿写入商品目录。",
+        "description_other": "将所选 {{count}} 个模型作为隐藏草稿写入商品目录。",
+        "boundary": "本次操作不会修改渠道模型、价格、能力索引、模型映射或凭据。全部条目会在同一事务中完成，任一冲突都会整体失败。",
+        "success_one": "已创建 {{count}} 个隐藏模型草稿，请在模型目录中继续审核。",
+        "success_other": "已创建 {{count}} 个隐藏模型草稿，请在模型目录中继续审核。"
+      },
+      "errors": {
+        "invalid_request": "同步参数无效，请检查所选条目和填写内容。",
+        "forbidden": "当前会话没有模型同步权限。",
+        "channel_not_found": "所选渠道已不存在，请刷新渠道目录后重试。",
+        "model_sync_channel_unavailable": "渠道或凭据当前不可用于模型同步，请先检查启用状态和凭据健康。",
+        "model_sync_unsupported_channel": "当前渠道类型或协议暂不支持模型枚举。",
+        "model_sync_upstream_timeout": "上游模型枚举超时，请检查渠道超时设置后重试。",
+        "model_sync_upstream_rejected": "上游拒绝了模型枚举，请检查渠道认证、权限和服务状态。",
+        "model_sync_invalid_response": "上游模型目录的响应正文大小或结构无法通过校验。",
+        "model_sync_candidate_limit_exceeded": "上游返回的模型候选超过 1000 项，请缩小上游目录范围后重试。",
+        "model_sync_preview_not_found": "同步预览不存在或不属于当前管理员，请重新创建预览。",
+        "model_sync_preview_expired": "同步预览已过期，当前填写内容已保留，请重新创建预览后再确认。",
+        "model_sync_preview_already_applied": "这份同步预览已经应用，请刷新模型目录。",
+        "model_sync_conflict": "模型元数据已被并发修改或创建，请刷新目录并重新预览。",
+        "internal_error": "模型同步暂时不可用，请稍后重试。",
+        "unknown": "模型同步请求失败，请检查网络后重试。"
+      }
     },
     "delete": {
       "title": "删除模型元数据",
@@ -857,7 +977,7 @@
     "loadedCount_other": "已加载 {{count}} 个模型",
     "filters": {
       "search": "搜索模型",
-      "searchPlaceholder": "输入 Canonical 模型名",
+      "searchPlaceholder": "输入名称、Canonical 标识或厂商",
       "billingMode": "计费模式",
       "all": "全部模式"
     },
@@ -872,7 +992,8 @@
       "cacheRead": "缓存读取",
       "cacheCreation5m": "缓存创建 5 分钟",
       "cacheCreation1h": "缓存创建 1 小时",
-      "billing": "计费与操作"
+      "billing": "计费与操作",
+      "status": "计费与状态"
     },
     "values": {
       "compatible": "兼容模型",
@@ -880,7 +1001,39 @@
       "priceTitle": "{{label}}：每百万 token ${{value}}",
       "perMillion": "每百万 token",
       "appliedRatios": "已应用倍率",
-      "baseRatios": "公开基础倍率"
+      "baseRatios": "公开基础倍率",
+      "moreTags": "+{{count}}",
+      "descriptionUnknown": "暂无模型说明。",
+      "context": "{{value}} tokens",
+      "contextUnknown": "尚无权威上下文数据",
+      "noAdditionalCapabilities": "未声明推理或工具调用",
+      "priceVersion": "价格版本 {{value}}"
+    },
+    "details": {
+      "capabilities": "权威模型能力",
+      "context": "上下文长度",
+      "inputModalities": "输入模态",
+      "outputModalities": "输出模态",
+      "additionalCapabilities": "扩展能力",
+      "pricing": "价格快照"
+    },
+    "modalities": {
+      "text": "文本",
+      "image": "图像",
+      "audio": "音频",
+      "video": "视频"
+    },
+    "capabilities": {
+      "reasoning": "推理",
+      "toolCalls": "工具调用"
+    },
+    "lifecycle": {
+      "active": "活动",
+      "deprecated": "已弃用"
+    },
+    "runtime": {
+      "available": "当前可用",
+      "not_evaluated": "未评估可用性"
     },
     "ratios": {
       "group": "分组",
@@ -893,7 +1046,8 @@
       "loadMore": "加载更多",
       "details": "价格详情",
       "copy": "复制模型名",
-      "copied": "已复制"
+      "copied": "已复制",
+      "copyFailed": "复制失败"
     },
     "empty": {
       "title": "暂无可展示模型",

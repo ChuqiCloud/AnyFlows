@@ -126,6 +126,8 @@ pub enum UpstreamModelDiscoveryError {
     UpstreamRejected,
     #[error("上游模型发现响应无效")]
     InvalidResponse,
+    #[error("上游模型发现候选数量超限")]
+    CandidateLimitExceeded,
     #[error("上游模型发现内部失败")]
     Internal,
 }
@@ -249,8 +251,12 @@ pub enum AdminModelSyncError {
     UnsupportedChannel,
     #[error("模型同步上游请求超时")]
     UpstreamTimeout,
-    #[error("模型同步上游请求失败")]
-    UpstreamFailed,
+    #[error("模型同步上游拒绝枚举请求")]
+    UpstreamRejected,
+    #[error("模型同步上游响应无效")]
+    InvalidResponse,
+    #[error("模型同步候选数量超限")]
+    CandidateLimitExceeded,
     #[error("模型同步预览不存在")]
     PreviewNotFound,
     #[error("模型同步预览已过期")]
@@ -405,8 +411,11 @@ fn map_discovery_error(error: UpstreamModelDiscoveryError) -> AdminModelSyncErro
         UpstreamModelDiscoveryError::ChannelUnavailable => AdminModelSyncError::ChannelUnavailable,
         UpstreamModelDiscoveryError::UnsupportedChannel => AdminModelSyncError::UnsupportedChannel,
         UpstreamModelDiscoveryError::Timeout => AdminModelSyncError::UpstreamTimeout,
-        UpstreamModelDiscoveryError::UpstreamRejected
-        | UpstreamModelDiscoveryError::InvalidResponse => AdminModelSyncError::UpstreamFailed,
+        UpstreamModelDiscoveryError::UpstreamRejected => AdminModelSyncError::UpstreamRejected,
+        UpstreamModelDiscoveryError::InvalidResponse => AdminModelSyncError::InvalidResponse,
+        UpstreamModelDiscoveryError::CandidateLimitExceeded => {
+            AdminModelSyncError::CandidateLimitExceeded
+        }
         UpstreamModelDiscoveryError::Internal => AdminModelSyncError::Internal,
     }
 }
@@ -508,6 +517,22 @@ mod tests {
         assert_eq!(
             require_admin(principal),
             Err(AdminModelSyncError::Forbidden)
+        );
+    }
+
+    #[test]
+    fn discovery_failures_keep_distinct_operator_actions() {
+        assert_eq!(
+            map_discovery_error(UpstreamModelDiscoveryError::UpstreamRejected),
+            AdminModelSyncError::UpstreamRejected
+        );
+        assert_eq!(
+            map_discovery_error(UpstreamModelDiscoveryError::InvalidResponse),
+            AdminModelSyncError::InvalidResponse
+        );
+        assert_eq!(
+            map_discovery_error(UpstreamModelDiscoveryError::CandidateLimitExceeded),
+            AdminModelSyncError::CandidateLimitExceeded
         );
     }
 }

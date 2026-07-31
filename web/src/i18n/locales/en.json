@@ -546,13 +546,18 @@
   },
   "modelManagement": {
     "title": "Model management",
-    "subtitle": "Maintain model identity, verified capabilities, visibility, and lifecycle independently from pricing and channel mappings.",
+    "subtitle": "Maintain verified model products or create an upstream sync preview for explicit review.",
     "count_one": "{{count}} model loaded",
     "count_other": "{{count}} models loaded",
     "activeCount_one": "{{count}} active model",
     "activeCount_other": "{{count}} active models",
     "loading": "Loading model metadata",
     "loadingMore": "Loading",
+    "views": {
+      "label": "Model management view",
+      "catalog": "Model catalog",
+      "sync": "Sync models"
+    },
     "columns": {
       "model": "Model product",
       "operation": "Operational state",
@@ -658,6 +663,121 @@
       "updated": "Updated {{value}}",
       "input": "Input",
       "output": "Output"
+    },
+    "sync": {
+      "channel": {
+        "label": "Source channel",
+        "loading": "Loading channels",
+        "placeholder": "Select one channel to create a preview",
+        "option": "{{name}} ({{protocol}}, {{status}})",
+        "error": "The channel catalog is unavailable, so a sync preview cannot be created yet.",
+        "moreError": "More channels could not be loaded. Existing channels remain usable.",
+        "loadMore": "Load more channels"
+      },
+      "actions": {
+        "preview": "Create sync preview",
+        "previewing": "Reading upstream",
+        "reviewApply": "Review and apply ({{count}})",
+        "selectItem": "Select model {{model}}",
+        "editItem": "Enter metadata",
+        "confirmItem": "Confirm item",
+        "apply": "Create hidden drafts"
+      },
+      "missing": {
+        "title": "Missing model metadata",
+        "loaded_one": "{{count}} missing model loaded",
+        "loaded_other": "{{count}} missing models loaded",
+        "loading": "Checking for missing models",
+        "errorTitle": "Missing models could not be checked",
+        "errorBody": "The service did not return a reliable comparison of channel references and product metadata.",
+        "emptyTitle": "No missing models",
+        "emptyBody": "Every Canonical model referenced by an active channel has product metadata.",
+        "channelCount_one": "Referenced by {{count}} channel",
+        "channelCount_other": "Referenced by {{count}} channels",
+        "moreError": "More missing models could not be loaded. Existing results remain available."
+      },
+      "preview": {
+        "title": "Fixed sync preview",
+        "expiresAt": "Valid until {{value}}",
+        "expired": "Preview expired",
+        "sourceUnknown": "Source channel is not in the current list",
+        "summary_one": "{{count}} item, {{selected}} selected",
+        "summary_other": "{{count}} items, {{selected}} selected",
+        "notReported": "Not reported by this upstream request",
+        "evidenceCount_one": "{{count}} evidence item",
+        "evidenceCount_other": "{{count}} evidence items",
+        "applied": "Applied",
+        "ready": "Ready",
+        "incomplete": "Incomplete"
+      },
+      "relations": {
+        "missing_metadata": {
+          "title": "Missing metadata",
+          "description": "Referenced by a channel but absent from the product catalog",
+          "badge": "Needs metadata"
+        },
+        "discovered_unconfigured": {
+          "title": "New upstream models",
+          "description": "Reported upstream but not configured on this channel",
+          "badge": "Discovered"
+        },
+        "existing": {
+          "title": "Existing metadata",
+          "description": "A verified product record already exists",
+          "badge": "Registered"
+        },
+        "not_reported": {
+          "title": "Not reported upstream",
+          "description": "Configured on the channel but absent from this response",
+          "badge": "Not reported"
+        }
+      },
+      "editor": {
+        "title": "Confirm verified model metadata",
+        "description": "Review display information and capabilities for {{model}}."
+      },
+      "form": {
+        "authority": "Explicitly verified information",
+        "authorityHint": "Upstream values are evidence only. Confirm the display name, provider, and context explicitly.",
+        "capabilitiesHint": "Select at least one input and output modality. Names and supported methods never imply capabilities."
+      },
+      "evidence": {
+        "title": "Upstream evidence",
+        "disclaimer": "These values came from this controlled listing request. They are not verified capability claims until you confirm them.",
+        "upstreamModel": "Upstream model identifier",
+        "contextLimit": "Context {{value}}",
+        "inputLimit": "Input limit {{value}}",
+        "outputLimit": "Output limit {{value}}",
+        "useContext": "Use context value",
+        "methods": "Supported methods",
+        "none": "Not provided",
+        "use": "Use {{label}} evidence"
+      },
+      "apply": {
+        "title": "Create hidden model drafts",
+        "description_one": "Write the selected {{count}} model to the product catalog as a hidden draft.",
+        "description_other": "Write the selected {{count}} models to the product catalog as hidden drafts.",
+        "boundary": "This does not change channel models, prices, capability indexes, model mappings, or credentials. Every item is applied in one transaction, and any conflict fails the whole operation.",
+        "success_one": "Created {{count}} hidden model draft. Continue its review in the model catalog.",
+        "success_other": "Created {{count}} hidden model drafts. Continue their review in the model catalog."
+      },
+      "errors": {
+        "invalid_request": "The sync request is invalid. Check the selected items and entered metadata.",
+        "forbidden": "This session does not have model sync permission.",
+        "channel_not_found": "The selected channel no longer exists. Refresh the channel catalog and try again.",
+        "model_sync_channel_unavailable": "The channel or its credentials cannot be used for sync. Check their enabled and health states.",
+        "model_sync_unsupported_channel": "This channel type or protocol does not support model listing yet.",
+        "model_sync_upstream_timeout": "The upstream model listing timed out. Review the channel timeout and try again.",
+        "model_sync_upstream_rejected": "The upstream rejected model listing. Check channel authentication, permission, and service status.",
+        "model_sync_invalid_response": "The upstream model catalog failed response-size or structural validation.",
+        "model_sync_candidate_limit_exceeded": "The upstream returned more than 1,000 model candidates. Narrow its catalog and try again.",
+        "model_sync_preview_not_found": "The sync preview does not exist or belongs to another administrator. Create a new preview.",
+        "model_sync_preview_expired": "The sync preview expired. Your entries remain visible; create a new preview before confirming them again.",
+        "model_sync_preview_already_applied": "This sync preview was already applied. Refresh the model catalog.",
+        "model_sync_conflict": "Model metadata changed concurrently. Refresh the catalog and create a new preview.",
+        "internal_error": "Model sync is temporarily unavailable. Try again shortly.",
+        "unknown": "The model sync request failed. Check the connection and try again."
+      }
     },
     "delete": {
       "title": "Delete model metadata",
@@ -857,7 +977,7 @@
     "loadedCount_other": "{{count}} models loaded",
     "filters": {
       "search": "Search models",
-      "searchPlaceholder": "Enter a Canonical model name",
+      "searchPlaceholder": "Enter a name, Canonical identifier, or provider",
       "billingMode": "Billing mode",
       "all": "All modes"
     },
@@ -872,7 +992,8 @@
       "cacheRead": "Cache read",
       "cacheCreation5m": "5-minute cache write",
       "cacheCreation1h": "1-hour cache write",
-      "billing": "Billing and actions"
+      "billing": "Billing and actions",
+      "status": "Billing and status"
     },
     "values": {
       "compatible": "Compatible model",
@@ -880,7 +1001,39 @@
       "priceTitle": "{{label}}: ${{value}} per million tokens",
       "perMillion": "per million tokens",
       "appliedRatios": "Applied ratios",
-      "baseRatios": "Public base ratios"
+      "baseRatios": "Public base ratios",
+      "moreTags": "+{{count}}",
+      "descriptionUnknown": "No model description is available.",
+      "context": "{{value}} tokens",
+      "contextUnknown": "No verified context value",
+      "noAdditionalCapabilities": "No reasoning or tool-call capability declared",
+      "priceVersion": "Price version {{value}}"
+    },
+    "details": {
+      "capabilities": "Verified model capabilities",
+      "context": "Context window",
+      "inputModalities": "Input modalities",
+      "outputModalities": "Output modalities",
+      "additionalCapabilities": "Additional capabilities",
+      "pricing": "Pricing snapshot"
+    },
+    "modalities": {
+      "text": "Text",
+      "image": "Image",
+      "audio": "Audio",
+      "video": "Video"
+    },
+    "capabilities": {
+      "reasoning": "Reasoning",
+      "toolCalls": "Tool calls"
+    },
+    "lifecycle": {
+      "active": "Active",
+      "deprecated": "Deprecated"
+    },
+    "runtime": {
+      "available": "Available now",
+      "not_evaluated": "Not evaluated"
     },
     "ratios": {
       "group": "Group",
@@ -893,7 +1046,8 @@
       "loadMore": "Load more",
       "details": "Price details",
       "copy": "Copy model name",
-      "copied": "Copied"
+      "copied": "Copied",
+      "copyFailed": "Copy failed"
     },
     "empty": {
       "title": "No models to display",

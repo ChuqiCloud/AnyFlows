@@ -397,7 +397,11 @@ fn map_sync_error(error: AdminModelSyncError) -> ManagementError {
         AdminModelSyncError::ChannelUnavailable => ManagementError::ModelSyncChannelUnavailable,
         AdminModelSyncError::UnsupportedChannel => ManagementError::ModelSyncUnsupportedChannel,
         AdminModelSyncError::UpstreamTimeout => ManagementError::ModelSyncUpstreamTimeout,
-        AdminModelSyncError::UpstreamFailed => ManagementError::ModelSyncUpstreamFailed,
+        AdminModelSyncError::UpstreamRejected => ManagementError::ModelSyncUpstreamRejected,
+        AdminModelSyncError::InvalidResponse => ManagementError::ModelSyncInvalidResponse,
+        AdminModelSyncError::CandidateLimitExceeded => {
+            ManagementError::ModelSyncCandidateLimitExceeded
+        }
         AdminModelSyncError::PreviewNotFound => ManagementError::ModelSyncPreviewNotFound,
         AdminModelSyncError::PreviewExpired => ManagementError::ModelSyncPreviewExpired,
         AdminModelSyncError::PreviewAlreadyApplied => {
@@ -494,6 +498,18 @@ mod tests {
             (
                 AdminModelSyncError::UpstreamTimeout,
                 ManagementError::ModelSyncUpstreamTimeout,
+            ),
+            (
+                AdminModelSyncError::UpstreamRejected,
+                ManagementError::ModelSyncUpstreamRejected,
+            ),
+            (
+                AdminModelSyncError::InvalidResponse,
+                ManagementError::ModelSyncInvalidResponse,
+            ),
+            (
+                AdminModelSyncError::CandidateLimitExceeded,
+                ManagementError::ModelSyncCandidateLimitExceeded,
             ),
             (
                 AdminModelSyncError::PreviewExpired,
