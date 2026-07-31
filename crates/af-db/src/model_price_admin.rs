@@ -2,8 +2,8 @@ use std::{collections::BTreeMap, fmt};
 
 use rust_decimal::Decimal;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseTransaction, DbBackend, EntityTrait, IntoActiveModel,
-    QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
     sea_query::{Expr, LockType},
 };
 use thiserror::Error;
