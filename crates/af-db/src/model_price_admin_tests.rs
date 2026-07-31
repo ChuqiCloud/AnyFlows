@@ -1,0 +1,110 @@
+use std::error::Error;
+
+use crate::{
+    AdminModelCreateRecord, AdminModelLifecycleRecord, AdminModelModalitiesRecord,
+    AdminModelRepository, AdminModelVisibilityRecord, AdminModelWriteRecord, DatabaseOptions,
+    MigrationOptions, ModelPriceBillingMode, ModelPriceRepository, ModelPriceWriteError,
+    ModelPriceWriteRecord,
+};
+use rust_decimal::Decimal;
+
+#[tokio::test]
+async fn batch_insert_and_update_enforce_optimistic_versions() -> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let models = AdminModelRepository::new(pool.clone(), std::time::Duration::from_secs(1))?;
+    models
+        .create(AdminModelCreateRecord::new(
+            "gpt-test".to_owned(),
+            model_fields(),
+        ))
+        .await?;
+    let prices = ModelPriceRepository::new(pool.clone());
+
+    let created = prices.apply_batch(vec![write(None, Decimal::ONE)]).await?;
+    assert_eq!(created[0].version(), 1);
+    assert_eq!(created[0].prices()[0], Decimal::ONE);
+
+    assert_eq!(
+        prices
+            .apply_batch(vec![write(None, Decimal::new(2, 0))])
+            .await,
+        Err(ModelPriceWriteError::Conflict)
+    );
+    let updated = prices
+        .apply_batch(vec![write(Some(1), Decimal::new(2, 0))])
+        .await?;
+    assert_eq!(updated[0].version(), 2);
+    assert_eq!(updated[0].prices()[4], Decimal::new(2, 0));
+
+    let (page, next) = prices.list_page(None, 100).await?.into_parts();
+    assert_eq!(page.len(), 1);
+    assert_eq!(page[0].model(), "gpt-test");
+    assert!(next.is_none());
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn batch_is_atomic_when_any_model_or_version_is_invalid() -> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let models = AdminModelRepository::new(pool.clone(), std::time::Duration::from_secs(1))?;
+    models
+        .create(AdminModelCreateRecord::new(
+            "gpt-test".to_owned(),
+            model_fields(),
+        ))
+        .await?;
+    let prices = ModelPriceRepository::new(pool.clone());
+
+    let error = prices
+        .apply_batch(vec![
+            write(None, Decimal::ONE),
+            ModelPriceWriteRecord::new(
+                "missing-model".to_owned(),
+                None,
+                ModelPriceBillingMode::PerToken,
+                [Decimal::ONE; 5],
+            )?,
+        ])
+        .await;
+    assert_eq!(error, Err(ModelPriceWriteError::ModelNotFound));
+    assert!(prices.load_all().await?.is_empty());
+
+    pool.close().await?;
+    Ok(())
+}
+
+fn write(expected_version: Option<u64>, price: Decimal) -> ModelPriceWriteRecord {
+    ModelPriceWriteRecord::new(
+        "gpt-test".to_owned(),
+        expected_version,
+        ModelPriceBillingMode::PerToken,
+        [price; 5],
+    )
+    .unwrap()
+}
+
+fn model_fields() -> AdminModelWriteRecord {
+    AdminModelWriteRecord::new(
+        "GPT Test".to_owned(),
+        "openai".to_owned(),
+        None,
+        None,
+        Vec::new(),
+        Some(128_000),
+        AdminModelModalitiesRecord::new(true, false, false, false),
+        AdminModelModalitiesRecord::new(true, false, false, false),
+        false,
+        true,
+        AdminModelVisibilityRecord::Public,
+        AdminModelLifecycleRecord::Active,
+    )
+}

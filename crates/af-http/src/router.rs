@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminEmailSettingsService, AdminGroupReader,
-    AdminGroupWriter, AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminTokenReader,
-    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, InitialSetup,
-    ModelCatalogReader, PasswordResetService, PlaygroundConversationService,
-    PlaygroundShareService, RegistrationService, SessionAuthenticator, SiteSettingsService,
-    TokenAuthenticator,
+    AdminGroupWriter, AdminModelPriceService, AdminModelReader, AdminModelSyncService,
+    AdminModelWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
+    AdminUserWriter, InitialSetup, ModelCatalogReader, PasswordResetService,
+    PlaygroundConversationService, PlaygroundShareService, RegistrationService,
+    SessionAuthenticator, SiteSettingsService, TokenAuthenticator,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -46,6 +46,9 @@ use crate::management_credentials::{get_admin_credential, list_admin_credentials
 use crate::management_dashboard::get_admin_dashboard;
 use crate::management_group_writes::{create_admin_group, delete_admin_group, update_admin_group};
 use crate::management_groups::{get_admin_group, list_admin_groups};
+use crate::management_model_prices::{
+    apply_admin_model_prices, list_admin_model_prices, preview_admin_model_prices,
+};
 use crate::management_model_sync::{
     apply_admin_model_sync_preview, create_admin_model_sync_preview, list_missing_admin_models,
 };
@@ -128,6 +131,7 @@ pub fn build_router(
     admin_model_reader: Option<Arc<dyn AdminModelReader>>,
     admin_model_writer: Option<Arc<dyn AdminModelWriter>>,
     admin_model_sync_service: Option<Arc<dyn AdminModelSyncService>>,
+    admin_model_price_service: Option<Arc<dyn AdminModelPriceService>>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
     admin_token_writer: Arc<dyn AdminTokenWriter>,
     admin_dashboard_reader: Arc<dyn AdminDashboardReader>,
@@ -171,6 +175,7 @@ pub fn build_router(
     .with_admin_model_reader(admin_model_reader)
     .with_admin_model_writer(admin_model_writer)
     .with_admin_model_sync_service(admin_model_sync_service)
+    .with_admin_model_price_service(admin_model_price_service)
     .with_admin_channel_reader(admin_channel_reader)
     .with_admin_channel_writer(admin_channel_writer)
     .with_admin_channel_probe(admin_channel_probe)
@@ -359,13 +364,31 @@ pub fn build_router(
             "/api/admin/models/sync-previews",
             post(create_admin_model_sync_preview)
                 .route_layer(middleware::from_fn(authorize_management_admin))
-                .route_layer(model_management_collection_authentication),
+                .route_layer(model_management_collection_authentication.clone()),
         )
         .route(
             "/api/admin/models/sync-previews/{preview_id}/apply",
             post(apply_admin_model_sync_preview)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(model_management_item_authentication),
+        )
+        .route(
+            "/api/admin/model-prices",
+            get(list_admin_model_prices)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(model_management_collection_authentication.clone()),
+        )
+        .route(
+            "/api/admin/model-prices/models-dev-preview",
+            post(preview_admin_model_prices)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(model_management_collection_authentication.clone()),
+        )
+        .route(
+            "/api/admin/model-prices/batch",
+            post(apply_admin_model_prices)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(model_management_collection_authentication),
         )
         .route(
             "/api/admin/tokens",

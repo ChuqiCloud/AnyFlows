@@ -3153,6 +3153,267 @@
         ]
       }
     },
+    "/api/admin/model-prices": {
+      "get": {
+        "tags": [
+          "模型管理"
+        ],
+        "summary": "按 Canonical 游标列出正式模型价格",
+        "operationId": "listAdminModelPrices",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "description": "上一页末尾的 Canonical 模型标识",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 50",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "正式模型价格列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminModelPriceListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/model-prices/models-dev-preview": {
+      "post": {
+        "tags": [
+          "模型管理"
+        ],
+        "summary": "从固定 models.dev 端点预览公开参考价",
+        "operationId": "previewAdminModelPrices",
+        "responses": {
+          "200": {
+            "description": "与本地权威模型身份精确匹配的参考价",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminModelPriceSourcePreview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "公开来源不可用、响应过大、损坏或候选超限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "公开来源请求超时",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/model-prices/batch": {
+      "post": {
+        "tags": [
+          "模型管理"
+        ],
+        "summary": "按乐观版本原子应用正式模型价格",
+        "operationId": "applyAdminModelPrices",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminModelPriceBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "正式模型价格已写入且运行时快照已刷新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminModelPriceBatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "模型、版本、模式或十进制价格无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "模型元数据不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "价格版本发生并发冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "持久化或运行时快照刷新失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/playground/shares": {
       "post": {
         "tags": [
@@ -7754,6 +8015,311 @@
           "video"
         ]
       },
+      "AdminModelPrice": {
+        "type": "object",
+        "required": [
+          "model",
+          "billing_mode",
+          "prices",
+          "version"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "billing_mode": {
+            "$ref": "#/components/schemas/AdminModelPriceBillingMode"
+          },
+          "prices": {
+            "$ref": "#/components/schemas/AdminModelPriceValues"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelPriceBatchRequest": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelPriceWriteItem"
+            },
+            "maxItems": 100,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelPriceBatchResponse": {
+        "type": "object",
+        "required": [
+          "prices"
+        ],
+        "properties": {
+          "prices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelPrice"
+            },
+            "maxItems": 100,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelPriceBillingMode": {
+        "type": "string",
+        "description": "HTTP 契约支持的闭合模型计费模式。",
+        "enum": [
+          "per_token",
+          "free"
+        ]
+      },
+      "AdminModelPriceListResponse": {
+        "type": "object",
+        "required": [
+          "prices",
+          "next_cursor"
+        ],
+        "properties": {
+          "prices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelPrice"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelPriceSourceCandidate": {
+        "type": "object",
+        "required": [
+          "model",
+          "provider",
+          "provider_name",
+          "source_model",
+          "source_name",
+          "last_updated",
+          "costs",
+          "has_tiered_pricing",
+          "source_deprecated"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "provider": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "provider_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "source_model": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "source_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "last_updated": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 32
+          },
+          "costs": {
+            "$ref": "#/components/schemas/AdminModelPriceSourceCosts"
+          },
+          "has_tiered_pricing": {
+            "type": "boolean"
+          },
+          "source_deprecated": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelPriceSourceCosts": {
+        "type": "object",
+        "description": "models.dev 公开来源返回的可选成本证据。",
+        "required": [
+          "input",
+          "output",
+          "cache_read",
+          "cache_write"
+        ],
+        "properties": {
+          "input": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "output": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "cache_read": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "cache_write": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "通用缓存写价格只作为证据，不能映射为正式 5m 或 1h 单价。",
+            "maxLength": 64
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelPriceSourcePreview": {
+        "type": "object",
+        "required": [
+          "source",
+          "fetched_at",
+          "revision",
+          "candidates"
+        ],
+        "properties": {
+          "source": {
+            "type": "string",
+            "pattern": "^models_dev$"
+          },
+          "fetched_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "revision": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "candidates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelPriceSourceCandidate"
+            },
+            "maxItems": 10000
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelPriceValues": {
+        "type": "object",
+        "description": "五类美元/百万 Token 单价；字符串边界避免 JSON 浮点数破坏精度。",
+        "required": [
+          "input",
+          "output",
+          "cache_read",
+          "cache_creation_5m",
+          "cache_creation_1h"
+        ],
+        "properties": {
+          "input": {
+            "type": "string",
+            "maxLength": 39,
+            "minLength": 1,
+            "pattern": "^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,28})?$"
+          },
+          "output": {
+            "type": "string",
+            "maxLength": 39,
+            "minLength": 1,
+            "pattern": "^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,28})?$"
+          },
+          "cache_read": {
+            "type": "string",
+            "maxLength": 39,
+            "minLength": 1,
+            "pattern": "^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,28})?$"
+          },
+          "cache_creation_5m": {
+            "type": "string",
+            "maxLength": 39,
+            "minLength": 1,
+            "pattern": "^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,28})?$"
+          },
+          "cache_creation_1h": {
+            "type": "string",
+            "maxLength": 39,
+            "minLength": 1,
+            "pattern": "^(0|[1-9][0-9]{0,9})(\\.[0-9]{1,28})?$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelPriceWriteItem": {
+        "type": "object",
+        "required": [
+          "model",
+          "expected_version",
+          "billing_mode",
+          "prices"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "expected_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "billing_mode": {
+            "$ref": "#/components/schemas/AdminModelPriceBillingMode"
+          },
+          "prices": {
+            "$ref": "#/components/schemas/AdminModelPriceValues"
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminModelSyncApplyItemRequest": {
         "type": "object",
         "required": [
@@ -9048,6 +9614,12 @@
               "model_sync_preview_expired",
               "model_sync_preview_already_applied",
               "model_sync_conflict",
+              "model_price_conflict",
+              "model_price_source_timeout",
+              "model_price_source_unavailable",
+              "model_price_source_response_too_large",
+              "model_price_source_invalid_response",
+              "model_price_source_candidate_limit_exceeded",
               "internal_error"
             ]
           },

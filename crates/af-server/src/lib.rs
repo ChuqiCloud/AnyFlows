@@ -11,6 +11,7 @@ mod credential_order;
 mod frontend;
 mod model_catalog;
 mod model_discovery;
+mod model_price_source;
 mod readiness;
 mod scheduled_chat;
 mod shutdown;

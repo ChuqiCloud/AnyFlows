@@ -6,21 +6,21 @@ use af_account::{
 };
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminEmailSettingsService, AdminGroupReader,
-    AdminGroupWriter, AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminTokenReader,
-    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter,
-    DatabaseAdminChannelReader, DatabaseAdminChannelWriter, DatabaseAdminEmailSettingsService,
-    DatabaseAdminGroupReader, DatabaseAdminGroupWriter, DatabaseAdminModelReader,
-    DatabaseAdminModelSyncService, DatabaseAdminModelWriter, DatabaseAdminTokenReader,
-    DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader, DatabaseAdminUserReader,
-    DatabaseAdminUserWriter, DatabaseInitialSetup, DatabasePasswordResetService,
-    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRegistrationService, DatabaseSessionAuthenticator, DatabaseSiteSettingsService,
-    DatabaseTokenAuthenticator, DatabaseUserProfileService, DatabaseUserTokenService,
-    EmailDelivery, InitialSetup, ModelCatalogReader, PasswordResetService,
-    PasswordResetServiceConfigError, PlaygroundConversationService, PlaygroundShareService,
-    RegistrationService, RegistrationServiceConfigError, SessionAuthenticator,
-    SessionAuthenticatorConfigError, SiteSettingsService, TokenAuthenticator, UserProfileService,
-    UserTokenService,
+    AdminGroupWriter, AdminModelPriceService, AdminModelReader, AdminModelSyncService,
+    AdminModelWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
+    AdminUserWriter, DatabaseAdminChannelReader, DatabaseAdminChannelWriter,
+    DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader, DatabaseAdminGroupWriter,
+    DatabaseAdminModelPriceService, DatabaseAdminModelReader, DatabaseAdminModelSyncService,
+    DatabaseAdminModelWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
+    DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
+    DatabaseInitialSetup, DatabasePasswordResetService, DatabasePlaygroundConversationService,
+    DatabasePlaygroundShareService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
+    DatabaseSiteSettingsService, DatabaseTokenAuthenticator, DatabaseUserProfileService,
+    DatabaseUserTokenService, EmailDelivery, InitialSetup, ModelCatalogReader,
+    PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
+    PlaygroundShareService, RegistrationService, RegistrationServiceConfigError,
+    SessionAuthenticator, SessionAuthenticatorConfigError, SiteSettingsService, TokenAuthenticator,
+    UserProfileService, UserTokenService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -41,7 +41,7 @@ use af_db::{
     AuthChallengeRepositoryConfigError, ChannelStateRepository, CredentialStateRepository,
     DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool, EmailSettingsRepository,
     EmailSettingsRepositoryConfigError, InitialSetupRepository, InitialSetupRepositoryConfigError,
-    MigrationOptions, ModelSyncRepository, PasswordResetRepository,
+    MigrationOptions, ModelPriceRepository, ModelSyncRepository, PasswordResetRepository,
     PasswordResetRepositoryConfigError, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RegistrationRepository,
@@ -75,6 +75,7 @@ use crate::{
     frontend::EmbeddedFrontendAssets,
     model_catalog::RuntimeModelCatalogReader,
     model_discovery::DatabaseUpstreamModelDiscoverer,
+    model_price_source::{ModelsDevPriceDiscoverer, RuntimeModelPriceRefresher},
     scheduled_chat::ScheduledChatService,
     smtp_delivery::SmtpEmailDelivery,
     system_shutdown_signal,
@@ -151,6 +152,7 @@ pub struct BillingReady {
     channel_index: InMemoryChannelIndex,
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     admin_model_sync_service: Arc<dyn AdminModelSyncService>,
+    admin_model_price_service: Arc<dyn AdminModelPriceService>,
 }
 
 /// 后台任务监督域已经建立，周期 flush、渠道索引、渠道探活与可靠队列 worker 已注册。
@@ -163,6 +165,7 @@ pub struct Supervised {
     _channel_index: InMemoryChannelIndex,
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     admin_model_sync_service: Arc<dyn AdminModelSyncService>,
+    admin_model_price_service: Arc<dyn AdminModelPriceService>,
     admin_channel_probe: Arc<dyn AdminChannelProbe>,
     supervisor: BackgroundTaskSupervisor,
 }
@@ -708,6 +711,17 @@ impl Bootstrap<RelayReady> {
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
         )
         .map_err(BootstrapError::AdminModelRepository)?;
+        let admin_model_price_service: Arc<dyn AdminModelPriceService> =
+            Arc::new(DatabaseAdminModelPriceService::new(
+                ModelPriceRepository::new(
+                    self.stage.infrastructure.infrastructure.database.clone(),
+                ),
+                model_catalog_metadata.clone(),
+                Arc::new(ModelsDevPriceDiscoverer::new(
+                    self.stage.upstream_clients.clone(),
+                )),
+                Arc::new(RuntimeModelPriceRefresher::new(model_prices.clone())),
+            ));
         let channel_index = InMemoryChannelIndex::load_from_database(
             self.stage.infrastructure.infrastructure.database.clone(),
         )
@@ -786,6 +800,7 @@ impl Bootstrap<RelayReady> {
                 channel_index,
                 model_catalog_reader,
                 admin_model_sync_service,
+                admin_model_price_service,
             },
         })
     }
@@ -815,6 +830,7 @@ impl Bootstrap<BillingReady> {
             channel_index,
             model_catalog_reader,
             admin_model_sync_service,
+            admin_model_price_service,
         } = stage;
         spawn_channel_index_refresh_task(
             &mut supervisor,
@@ -887,6 +903,7 @@ impl Bootstrap<BillingReady> {
                 _channel_index: channel_index,
                 model_catalog_reader,
                 admin_model_sync_service,
+                admin_model_price_service,
                 admin_channel_probe,
                 supervisor,
             },
@@ -976,6 +993,7 @@ impl Bootstrap<Supervised> {
             Some(Arc::clone(&self.stage.infrastructure.admin_model_reader)),
             Some(Arc::clone(&self.stage.infrastructure.admin_model_writer)),
             Some(Arc::clone(&self.stage.admin_model_sync_service)),
+            Some(Arc::clone(&self.stage.admin_model_price_service)),
             Arc::clone(&self.stage.infrastructure.admin_token_reader),
             Arc::clone(&self.stage.infrastructure.admin_token_writer),
             Arc::clone(&self.stage.infrastructure.admin_dashboard_reader),
@@ -1074,6 +1092,7 @@ impl Bootstrap<ListenerReady> {
             _channel_index: _,
             model_catalog_reader: _,
             admin_model_sync_service: _,
+            admin_model_price_service: _,
             admin_channel_probe: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);

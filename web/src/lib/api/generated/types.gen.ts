@@ -331,6 +331,59 @@ export type AdminModelListResponse = {
     next_cursor: number | null;
 };
 export type AdminModelModality = 'text' | 'image' | 'audio' | 'video';
+export type AdminModelPrice = {
+    model: string;
+    billing_mode: AdminModelPriceBillingMode;
+    prices: AdminModelPriceValues;
+    version: number;
+};
+export type AdminModelPriceBatchRequest = {
+    items: Array<AdminModelPriceWriteItem>;
+};
+export type AdminModelPriceBatchResponse = {
+    prices: Array<AdminModelPrice>;
+};
+export type AdminModelPriceBillingMode = 'per_token' | 'free';
+export type AdminModelPriceListResponse = {
+    prices: Array<AdminModelPrice>;
+    next_cursor: string | null;
+};
+export type AdminModelPriceSourceCandidate = {
+    model: string;
+    provider: string;
+    provider_name: string;
+    source_model: string;
+    source_name: string;
+    last_updated: string | null;
+    costs: AdminModelPriceSourceCosts;
+    has_tiered_pricing: boolean;
+    source_deprecated: boolean;
+};
+export type AdminModelPriceSourceCosts = {
+    input: string | null;
+    output: string | null;
+    cache_read: string | null;
+    cache_write: string | null;
+};
+export type AdminModelPriceSourcePreview = {
+    source: string;
+    fetched_at: number;
+    revision: string | null;
+    candidates: Array<AdminModelPriceSourceCandidate>;
+};
+export type AdminModelPriceValues = {
+    input: string;
+    output: string;
+    cache_read: string;
+    cache_creation_5m: string;
+    cache_creation_1h: string;
+};
+export type AdminModelPriceWriteItem = {
+    model: string;
+    expected_version: number | null;
+    billing_mode: AdminModelPriceBillingMode;
+    prices: AdminModelPriceValues;
+};
 export type AdminModelSyncApplyItemRequest = {
     item_id: number;
     display_name: string;
@@ -527,7 +580,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -1580,6 +1633,63 @@ export type ApplyAdminModelSyncPreviewResponses = {
     200: AdminModelSyncApplyResponse;
 };
 export type ApplyAdminModelSyncPreviewResponse = ApplyAdminModelSyncPreviewResponses[keyof ApplyAdminModelSyncPreviewResponses];
+export type ListAdminModelPricesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: string;
+        limit?: number;
+    };
+    url: '/api/admin/model-prices';
+};
+export type ListAdminModelPricesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminModelPricesError = ListAdminModelPricesErrors[keyof ListAdminModelPricesErrors];
+export type ListAdminModelPricesResponses = {
+    200: AdminModelPriceListResponse;
+};
+export type ListAdminModelPricesResponse = ListAdminModelPricesResponses[keyof ListAdminModelPricesResponses];
+export type PreviewAdminModelPricesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/model-prices/models-dev-preview';
+};
+export type PreviewAdminModelPricesErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+    502: ManagementError;
+    504: ManagementError;
+};
+export type PreviewAdminModelPricesError = PreviewAdminModelPricesErrors[keyof PreviewAdminModelPricesErrors];
+export type PreviewAdminModelPricesResponses = {
+    200: AdminModelPriceSourcePreview;
+};
+export type PreviewAdminModelPricesResponse = PreviewAdminModelPricesResponses[keyof PreviewAdminModelPricesResponses];
+export type ApplyAdminModelPricesData = {
+    body: AdminModelPriceBatchRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/model-prices/batch';
+};
+export type ApplyAdminModelPricesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ApplyAdminModelPricesError = ApplyAdminModelPricesErrors[keyof ApplyAdminModelPricesErrors];
+export type ApplyAdminModelPricesResponses = {
+    200: AdminModelPriceBatchResponse;
+};
+export type ApplyAdminModelPricesResponse = ApplyAdminModelPricesResponses[keyof ApplyAdminModelPricesResponses];
 export type CreatePlaygroundShareData = {
     body: PlaygroundShareCreateRequest;
     path?: never;

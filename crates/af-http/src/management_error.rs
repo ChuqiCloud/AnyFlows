@@ -69,6 +69,18 @@ pub(crate) enum ManagementError {
     ModelSyncPreviewAlreadyApplied,
     /// 同步应用与并发元数据写入发生冲突。
     ModelSyncConflict,
+    /// 正式模型价格与并发写入发生乐观版本冲突。
+    ModelPriceConflict,
+    /// models.dev 公开参考价读取超过硬截止时间。
+    ModelPriceSourceTimeout,
+    /// models.dev 公开参考价当前不可用。
+    ModelPriceSourceUnavailable,
+    /// models.dev 响应正文超过固定容量上限。
+    ModelPriceSourceResponseTooLarge,
+    /// models.dev 响应无法通过结构或金额校验。
+    ModelPriceSourceInvalidResponse,
+    /// models.dev 或本地匹配候选超过固定容量上限。
+    ModelPriceSourceCandidateLimitExceeded,
     /// 令牌不存在或已经被软删除。
     TokenNotFound,
     /// 当前用户的未软删除 API Key 已达到容量上限。
@@ -322,6 +334,48 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "model_sync_conflict",
                     message: "Model sync conflict",
+                },
+            ),
+            Self::ModelPriceConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "model_price_conflict",
+                    message: "Model price conflict",
+                },
+            ),
+            Self::ModelPriceSourceTimeout => (
+                StatusCode::GATEWAY_TIMEOUT,
+                ManagementErrorBody {
+                    code: "model_price_source_timeout",
+                    message: "Model price source timeout",
+                },
+            ),
+            Self::ModelPriceSourceUnavailable => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "model_price_source_unavailable",
+                    message: "Model price source unavailable",
+                },
+            ),
+            Self::ModelPriceSourceResponseTooLarge => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "model_price_source_response_too_large",
+                    message: "Model price source response too large",
+                },
+            ),
+            Self::ModelPriceSourceInvalidResponse => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "model_price_source_invalid_response",
+                    message: "Model price source invalid response",
+                },
+            ),
+            Self::ModelPriceSourceCandidateLimitExceeded => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "model_price_source_candidate_limit_exceeded",
+                    message: "Model price source candidate limit exceeded",
                 },
             ),
             Self::TokenNotFound => (

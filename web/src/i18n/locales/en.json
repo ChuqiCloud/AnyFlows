@@ -556,7 +556,8 @@
     "views": {
       "label": "Model management view",
       "catalog": "Model catalog",
-      "sync": "Sync models"
+      "sync": "Sync models",
+      "prices": "Model prices"
     },
     "columns": {
       "model": "Model product",
@@ -777,6 +778,136 @@
         "model_sync_conflict": "Model metadata changed concurrently. Refresh the catalog and create a new preview.",
         "internal_error": "Model sync is temporarily unavailable. Try again shortly.",
         "unknown": "The model sync request failed. Check the connection and try again."
+      }
+    },
+    "prices": {
+      "loading": "Checking models and formal prices",
+      "version": "Price version v{{version}}",
+      "columns": {
+        "select": "Select staged price",
+        "model": "Model product",
+        "status": "Pricing status"
+      },
+      "summary": {
+        "loaded_one": "{{count}} model loaded",
+        "loaded_other": "{{count}} models loaded",
+        "priced_one": "{{count}} model priced",
+        "priced_other": "{{count}} models priced",
+        "free_one": "{{count}} explicitly free model",
+        "free_other": "{{count}} explicitly free models",
+        "staged_one": "{{count}} staged draft",
+        "staged_other": "{{count}} staged drafts"
+      },
+      "status": {
+        "unpriced": "Unpriced",
+        "priced": "Priced",
+        "free": "Explicitly free",
+        "staged": "Staged",
+        "review": "Review needed",
+        "versionChanged": "Version changed",
+        "checking": "Checking",
+        "publicMissing": "This public active model stays out of the model catalog until it has a price."
+      },
+      "billing": {
+        "per_token": "Per Token",
+        "free": "Explicitly free"
+      },
+      "fields": {
+        "input": "Input",
+        "output": "Output",
+        "cacheRead": "Cache read",
+        "cacheCreation5m": "5m cache creation",
+        "cacheCreation1h": "1h cache creation",
+        "cacheWriteEvidence": "Generic cache write evidence"
+      },
+      "form": {
+        "billingMode": "Billing mode",
+        "perTokenHint": "All five prices are exact USD per million Token decimal values. Explicit zero values are allowed.",
+        "freeHint": "Explicitly free is not the same as a zero multiplier. All five prices must be zero.",
+        "values": "Formal sale prices",
+        "valuesHint": "These values affect new request billing and are never overwritten automatically from a reference source.",
+        "priceUnit": "USD / million Token",
+        "versionChanged": "This draft expects {{expected}}, while the current formal price is v{{current}}. Review it before updating the precondition.",
+        "newVersion": "a new-price precondition"
+      },
+      "validation": {
+        "decimal": "Enter a non-negative plain decimal without a sign or exponent, with up to 10 integer and 28 fractional digits.",
+        "free": "All five values must be zero in explicitly free mode."
+      },
+      "actions": {
+        "preview": "Get models.dev reference prices",
+        "previewing": "Reading reference prices",
+        "stage": "Add to pending batch",
+        "reviewApply": "Review and apply ({{count}})",
+        "apply": "Apply {{count}} prices",
+        "select": "Select the price draft for {{model}}",
+        "selectionReady": "This draft can be included in the batch",
+        "editBeforeSelect": "Edit and complete all five prices first",
+        "edit": "Edit pricing for {{model}}",
+        "editPrice": "Edit price",
+        "setPrice": "Set price",
+        "useCurrentVersion": "Use current version"
+      },
+      "preview": {
+        "loaded_one": "Matched {{count}} public reference price",
+        "loaded_other": "Matched {{count}} public reference prices",
+        "fetchedAt": "Fetched {{value}}"
+      },
+      "evidence": {
+        "title": "models.dev public reference evidence",
+        "sourceBadge": "models.dev",
+        "none": "No reference price has been fetched for this exact provider and Canonical identifier.",
+        "disclaimer": "Public costs are review evidence only. They are not this site's sale prices and never overwrite a draft automatically.",
+        "deprecated": "Deprecated at source",
+        "tieredWarning": "The source includes tiered or long-context pricing that the current billing engine cannot represent equivalently. Direct application is blocked.",
+        "missing": "Not provided",
+        "use": "Use the {{field}} reference",
+        "cacheWriteBoundary": "This cannot map equivalently to 5m or 1h. Confirm both formal prices manually.",
+        "source": "Source model {{model}}, updated {{updated}}",
+        "unknownDate": "unknown"
+      },
+      "editor": {
+        "title": "Edit formal model pricing",
+        "description": "Create a reviewable five-price draft for {{model}}.",
+        "fallbackDescription": "Create a reviewable five-price draft."
+      },
+      "apply": {
+        "title": "Confirm formal price application",
+        "description_one": "Review the final five prices and version precondition for {{count}} model.",
+        "description_other": "Review the final five prices and version preconditions for {{count}} models.",
+        "createVersion": "Create new price",
+        "updateVersion": "Update from v{{version}}",
+        "boundary": "Every price is written in one transaction. Any missing model or version conflict fails the whole batch. Success refreshes the runtime snapshot immediately and affects subsequent new requests.",
+        "success_one": "Applied pricing for {{count}} model and refreshed the model catalog.",
+        "success_other": "Applied pricing for {{count}} models and refreshed the model catalog."
+      },
+      "pagination": {
+        "priceIndexIncomplete": "{{count}} formal prices are loaded. Missing rows are not marked unpriced until the full price index is checked.",
+        "loadMorePrices": "Continue checking prices",
+        "loadMoreModels": "Load more models",
+        "moreError": "More models or prices could not be loaded. Existing rows and drafts remain available."
+      },
+      "empty": {
+        "title": "No models available for pricing",
+        "body": "Register model product metadata first, then maintain its formal price here."
+      },
+      "error": {
+        "title": "Model prices could not be loaded",
+        "body": "The model or price catalog did not return a reliable snapshot. Try again shortly."
+      },
+      "errors": {
+        "invalid_request": "The price draft is invalid. Check the mode, version, and all five decimal prices.",
+        "invalid_session": "The session expired. Sign in again.",
+        "forbidden": "This session does not have model price management permission.",
+        "model_not_found": "The model metadata no longer exists. Refresh the model catalog.",
+        "model_price_conflict": "The formal price changed concurrently. Your draft is preserved; refresh and review the version again.",
+        "model_price_source_timeout": "The models.dev request timed out. Try again shortly.",
+        "model_price_source_unavailable": "models.dev is currently unavailable. Try again shortly.",
+        "model_price_source_response_too_large": "The models.dev response exceeded the fixed capacity limit, so no preview was created.",
+        "model_price_source_invalid_response": "The models.dev response failed structural or decimal validation.",
+        "model_price_source_candidate_limit_exceeded": "The public source or local model catalog exceeded the preview candidate limit.",
+        "internal_error": "Persistence or runtime snapshot refresh failed. Reload formal prices to confirm the result.",
+        "unknown": "The model price request failed. Check the connection and try again."
       }
     },
     "delete": {

@@ -23,11 +23,18 @@ pub enum ModelPriceBillingMode {
 }
 
 impl ModelPriceBillingMode {
-    const fn from_code(code: i16) -> Result<Self, ModelPriceRepositoryError> {
+    pub(crate) const fn from_code(code: i16) -> Result<Self, ModelPriceRepositoryError> {
         match code {
             1 => Ok(Self::PerToken),
             2 => Ok(Self::Free),
             _ => Err(ModelPriceRepositoryError::Invariant),
+        }
+    }
+
+    pub(crate) const fn database_value(self) -> i16 {
+        match self {
+            Self::PerToken => 1,
+            Self::Free => 2,
         }
     }
 }
@@ -66,7 +73,9 @@ impl ModelPriceRecord {
         self.version
     }
 
-    fn try_from_model(model: model_prices::Model) -> Result<Self, ModelPriceRepositoryError> {
+    pub(crate) fn try_from_model(
+        model: model_prices::Model,
+    ) -> Result<Self, ModelPriceRepositoryError> {
         let name = model.model.as_str();
         let billing_mode = ModelPriceBillingMode::from_code(model.billing_mode)?;
         let prices = [
@@ -81,7 +90,9 @@ impl ModelPriceRecord {
             .filter(|version| *version > 0)
             .ok_or(ModelPriceRepositoryError::Invariant)?;
         if !is_valid_model_name(name)
-            || prices.iter().any(|price| *price < Decimal::ZERO)
+            || prices
+                .iter()
+                .any(|price| !is_valid_model_price_decimal(*price))
             || (billing_mode == ModelPriceBillingMode::Free
                 && prices.iter().any(|price| !price.is_zero()))
         {
@@ -127,8 +138,8 @@ pub enum ModelPriceRepositoryError {
 /// 有界读取完整模型价格目录的数据库仓储。
 #[derive(Clone)]
 pub struct ModelPriceRepository {
-    pool: DatabasePool,
-    load_timeout: Duration,
+    pub(crate) pool: DatabasePool,
+    pub(crate) load_timeout: Duration,
 }
 
 impl ModelPriceRepository {
@@ -196,6 +207,17 @@ pub(crate) fn is_valid_model_name(model: &str) -> bool {
         && model.len() <= MAX_MODEL_NAME_BYTES
         && model.trim() == model
         && !model.chars().any(char::is_control)
+}
+
+/// 保持 Rust Decimal 与 PostgreSQL/MySQL `DECIMAL(38,28)` 的共同可表示范围。
+pub(crate) fn is_valid_model_price_decimal(price: Decimal) -> bool {
+    if price < Decimal::ZERO || price.scale() > 28 {
+        return false;
+    }
+    let normalized = price.normalize();
+    let significant_digits = normalized.mantissa().unsigned_abs().to_string().len();
+    let integer_digits = significant_digits.saturating_sub(normalized.scale() as usize);
+    integer_digits <= 10
 }
 
 fn record_internal_error(error: ModelPriceRepositoryError) -> ModelPriceRepositoryError {
