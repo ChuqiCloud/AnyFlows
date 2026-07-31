@@ -3,7 +3,6 @@ import { CircleUserRound, LogOut, Search, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AppNavigation } from '@/components/layout/app-navigation'
-import { BrandMark } from '@/components/layout/brand-mark'
 import { LanguageToggle } from '@/components/language-toggle'
 import { ThemeToggle } from '@/components/theme-toggle'
 import {
@@ -18,6 +17,8 @@ import {
 import { Kbd } from '@/components/ui/kbd'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { SiteBrandMark } from '@/features/site-settings/site-brand-mark'
+import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import type { SessionUser } from '@/lib/api/generated/types.gen'
 
 type AppShellProps = {
@@ -40,20 +41,29 @@ function getDefaultOpen() {
 
 export function AppShell({ title, children, currentUser, onLogout }: AppShellProps) {
   const { t } = useTranslation()
+  // 控制台与首页共用公开站点设置缓存，保存站点设置后可即时同步品牌展示。
+  const siteQuery = usePublicSiteSettings()
+  const site = siteQuery.data
+  const siteName = site?.site_name ?? t('brand.name')
+  const siteScope = site?.brand.tagline ?? t('brand.scope')
 
   return (
     <SidebarProvider defaultOpen={getDefaultOpen()}>
       {/* ── 侧边栏 ────────────────────────────────────────── */}
       <Sidebar
         collapsible="icon"
-        mobileTitle={t('nav.label')}
-        mobileDescription={t('brand.scope')}
+        mobileTitle={siteName}
+        mobileDescription={siteScope}
       >
         <SidebarHeader className="flex-row items-center gap-2 px-2.5 py-2.5">
-          <BrandMark className="shrink-0 size-7" />
+          <SiteBrandMark
+            className="shrink-0 size-7"
+            siteName={siteName}
+            logoUrl={site?.brand.logo_url}
+          />
           <div className="min-w-0 leading-tight transition-opacity group-data-[state=collapsed]:hidden">
-            <div className="truncate text-[0.8125rem] font-semibold">{t('brand.name')}</div>
-            <div className="truncate text-[0.6875rem] text-muted-foreground">{t('brand.scope')}</div>
+            <div className="truncate text-[0.8125rem] font-semibold">{siteName}</div>
+            <div className="truncate text-[0.6875rem] text-muted-foreground">{siteScope}</div>
           </div>
         </SidebarHeader>
 
