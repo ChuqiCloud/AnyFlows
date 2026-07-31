@@ -79,8 +79,9 @@ pub use initial_setup::{
 };
 pub use model_catalog::{
     DEFAULT_MODEL_CATALOG_PAGE_SIZE, MAX_MODEL_CATALOG_PAGE_SIZE, ModelCatalogBillingMode,
-    ModelCatalogItem, ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogQuery,
-    ModelCatalogRatios, ModelCatalogReadError, ModelCatalogReader, ModelCatalogTokenPrices,
+    ModelCatalogItem, ModelCatalogLifecycle, ModelCatalogListFuture, ModelCatalogMetadata,
+    ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogQuery, ModelCatalogRatios,
+    ModelCatalogReadError, ModelCatalogReader, ModelCatalogRuntimeStatus, ModelCatalogTokenPrices,
 };
 pub use model_metadata_read::{
     AdminModel, AdminModelGetFuture, AdminModelLifecycle, AdminModelListFuture,

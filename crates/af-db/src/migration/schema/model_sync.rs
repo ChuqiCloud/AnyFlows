@@ -184,7 +184,7 @@ async fn create_items(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
 
 fn positive_optional<T>(column: T) -> ColumnDef
 where
-    T: IntoIden + Clone,
+    T: IntoIden + Clone + 'static,
 {
     let mut definition = ColumnDef::new(column.clone());
     definition.big_integer().check(Expr::col(column).gt(0_i64));

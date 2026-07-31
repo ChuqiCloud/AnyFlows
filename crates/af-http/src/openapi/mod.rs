@@ -218,7 +218,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 105);
+        assert_eq!(schemas.len(), 107);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
@@ -250,6 +250,8 @@ mod tests {
         assert!(schemas.contains_key("AdminEmailTlsMode"));
         assert!(schemas.contains_key("ModelCatalogListResponse"));
         assert!(schemas.contains_key("ModelCatalogPricingScope"));
+        assert!(schemas.contains_key("ModelCatalogLifecycle"));
+        assert!(schemas.contains_key("ModelCatalogRuntimeStatus"));
         assert!(schemas.contains_key("AdminModel"));
         assert!(schemas.contains_key("AdminModelCreateRequest"));
         assert!(schemas.contains_key("AdminModelUpdateRequest"));

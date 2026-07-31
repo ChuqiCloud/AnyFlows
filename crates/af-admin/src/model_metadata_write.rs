@@ -350,7 +350,7 @@ fn map_repository_error(error: AdminModelRepositoryError) -> AdminModelWriteErro
     }
 }
 
-fn validate_text(value: &str, maximum_bytes: usize) -> Result<(), AdminModelWriteError> {
+pub(crate) fn validate_text(value: &str, maximum_bytes: usize) -> Result<(), AdminModelWriteError> {
     if value.is_empty()
         || value.len() > maximum_bytes
         || value.trim() != value
@@ -361,14 +361,14 @@ fn validate_text(value: &str, maximum_bytes: usize) -> Result<(), AdminModelWrit
     Ok(())
 }
 
-fn validate_optional_text(
+pub(crate) fn validate_optional_text(
     value: Option<&str>,
     maximum_bytes: usize,
 ) -> Result<(), AdminModelWriteError> {
     value.map_or(Ok(()), |value| validate_text(value, maximum_bytes))
 }
 
-fn validate_optional_icon_url(value: Option<&str>) -> Result<(), AdminModelWriteError> {
+pub(crate) fn validate_optional_icon_url(value: Option<&str>) -> Result<(), AdminModelWriteError> {
     let Some(value) = value else {
         return Ok(());
     };
@@ -392,7 +392,7 @@ fn validate_optional_icon_url(value: Option<&str>) -> Result<(), AdminModelWrite
     Ok(())
 }
 
-fn validate_tags(tags: &[String]) -> Result<(), AdminModelWriteError> {
+pub(crate) fn validate_tags(tags: &[String]) -> Result<(), AdminModelWriteError> {
     if tags.len() > MAX_ADMIN_MODEL_TAGS
         || tags
             .iter()

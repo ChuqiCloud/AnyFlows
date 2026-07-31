@@ -69,6 +69,7 @@ mod initial_setup;
 #[cfg(test)]
 mod initial_setup_tests;
 mod migration;
+mod model_catalog_metadata;
 mod model_price;
 #[cfg(test)]
 mod model_price_tests;
@@ -226,6 +227,7 @@ pub use initial_setup::{
     InitialSetupRepositoryConfigError, InitialSetupRepositoryError, InitialSetupStatus,
 };
 pub use migration::{MigrationOptions, run_pending_migrations};
+pub use model_catalog_metadata::ModelCatalogMetadataPageRecord;
 pub use model_price::{
     MAX_MODEL_PRICE_ENTRIES, ModelPriceBillingMode, ModelPriceRecord, ModelPriceRepository,
     ModelPriceRepositoryError,

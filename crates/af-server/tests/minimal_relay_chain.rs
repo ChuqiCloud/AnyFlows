@@ -162,12 +162,12 @@ impl UserProfileService for RejectUserProfile {
 }
 
 impl ModelCatalogReader for RejectModelCatalog {
-    fn list(
-        &self,
+    fn list<'a>(
+        &'a self,
         _authentication: Option<af_admin::SessionAuthentication>,
-        _query: &ModelCatalogQuery,
-    ) -> Result<ModelCatalogPage, ModelCatalogReadError> {
-        Err(ModelCatalogReadError::Internal)
+        _query: &'a ModelCatalogQuery,
+    ) -> af_admin::ModelCatalogListFuture<'a> {
+        Box::pin(async { Err(ModelCatalogReadError::Internal) })
     }
 }
 

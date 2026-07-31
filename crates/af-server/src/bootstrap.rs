@@ -703,6 +703,11 @@ impl Bootstrap<RelayReady> {
         )
         .await
         .map_err(BootstrapError::GroupPricingCache)?;
+        let model_catalog_metadata = AdminModelRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::AdminModelRepository)?;
         let channel_index = InMemoryChannelIndex::load_from_database(
             self.stage.infrastructure.infrastructure.database.clone(),
         )
@@ -725,6 +730,7 @@ impl Bootstrap<RelayReady> {
                 channel_index.clone(),
                 model_prices,
                 pricing_source.clone(),
+                model_catalog_metadata,
             ));
         let quota_repository = Arc::new(QuotaRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),

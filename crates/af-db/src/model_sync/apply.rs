@@ -204,7 +204,7 @@ async fn lock_sqlite_run(
         .filter(model_sync_runs::Column::ActorUserId.eq(actor_user_id.get()))
         .col_expr(
             model_sync_runs::Column::State,
-            Expr::col(model_sync_runs::Column::State),
+            Expr::col(model_sync_runs::Column::State).into(),
         )
         .exec(transaction)
         .with_subscriber(NoSubscriber::default())

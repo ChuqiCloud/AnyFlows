@@ -1,11 +1,20 @@
-use std::fmt;
+use std::{fmt, future::Future, pin::Pin};
 
+use af_db::{
+    MAX_ADMIN_MODEL_CONTEXT_WINDOW, MAX_ADMIN_MODEL_DESCRIPTION_BYTES,
+    MAX_ADMIN_MODEL_DISPLAY_NAME_BYTES, MAX_ADMIN_MODEL_PROVIDER_BYTES,
+};
 use af_domain::MAX_MODEL_NAME_BYTES;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::SessionAuthentication;
+use crate::{
+    AdminModelModalities, SessionAuthentication,
+    model_metadata_write::{
+        validate_optional_icon_url, validate_optional_text, validate_tags, validate_text,
+    },
+};
 
 /// 模型目录默认每页条数。
 pub const DEFAULT_MODEL_CATALOG_PAGE_SIZE: usize = 24;
@@ -223,44 +232,211 @@ impl fmt::Debug for ModelCatalogRatios {
     }
 }
 
+/// 模型广场允许公开展示的闭合商品生命周期。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelCatalogLifecycle {
+    /// 正常提供的活动模型。
+    Active,
+    /// 仍可调用但应引导迁移的弃用模型。
+    Deprecated,
+}
+
+/// 模型广场公开的闭合运行时状态。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelCatalogRuntimeStatus {
+    /// 游客目录不探测或承诺当前运行时候选。
+    NotEvaluated,
+    /// 当前登录用户默认分组存在运行时候选且可以完成定价。
+    Available,
+}
+
+/// 一条已经通过可见性与生命周期筛选的权威商品元数据。
+pub struct ModelCatalogMetadata {
+    model: String,
+    display_name: String,
+    provider: String,
+    description: Option<String>,
+    icon_url: Option<String>,
+    tags: Vec<String>,
+    context_window: Option<i64>,
+    input_modalities: AdminModelModalities,
+    output_modalities: AdminModelModalities,
+    supports_reasoning: bool,
+    supports_tool_calls: bool,
+    lifecycle: ModelCatalogLifecycle,
+}
+
+impl ModelCatalogMetadata {
+    /// 组合数据库已校验字段，并再次守卫公开目录所需的闭合边界。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与权威模型商品元数据一一对应"
+    )]
+    pub fn new(
+        model: String,
+        display_name: String,
+        provider: String,
+        description: Option<String>,
+        icon_url: Option<String>,
+        tags: Vec<String>,
+        context_window: Option<i64>,
+        input_modalities: AdminModelModalities,
+        output_modalities: AdminModelModalities,
+        supports_reasoning: bool,
+        supports_tool_calls: bool,
+        lifecycle: ModelCatalogLifecycle,
+    ) -> Result<Self, ModelCatalogReadError> {
+        if !is_valid_model_name(&model)
+            || validate_text(&display_name, MAX_ADMIN_MODEL_DISPLAY_NAME_BYTES).is_err()
+            || validate_text(&provider, MAX_ADMIN_MODEL_PROVIDER_BYTES).is_err()
+            || validate_optional_text(description.as_deref(), MAX_ADMIN_MODEL_DESCRIPTION_BYTES)
+                .is_err()
+            || validate_optional_icon_url(icon_url.as_deref()).is_err()
+            || validate_tags(&tags).is_err()
+            || context_window
+                .is_some_and(|value| !(1..=MAX_ADMIN_MODEL_CONTEXT_WINDOW).contains(&value))
+            || input_modalities.is_empty()
+            || output_modalities.is_empty()
+        {
+            return Err(ModelCatalogReadError::Internal);
+        }
+        Ok(Self {
+            model,
+            display_name,
+            provider,
+            description,
+            icon_url,
+            tags,
+            context_window,
+            input_modalities,
+            output_modalities,
+            supports_reasoning,
+            supports_tool_calls,
+            lifecycle,
+        })
+    }
+
+    #[must_use]
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    #[must_use]
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+
+    #[must_use]
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+
+    #[must_use]
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+
+    #[must_use]
+    pub fn icon_url(&self) -> Option<&str> {
+        self.icon_url.as_deref()
+    }
+
+    #[must_use]
+    pub fn tags(&self) -> &[String] {
+        &self.tags
+    }
+
+    #[must_use]
+    pub const fn context_window(&self) -> Option<i64> {
+        self.context_window
+    }
+
+    #[must_use]
+    pub const fn input_modalities(&self) -> AdminModelModalities {
+        self.input_modalities
+    }
+
+    #[must_use]
+    pub const fn output_modalities(&self) -> AdminModelModalities {
+        self.output_modalities
+    }
+
+    #[must_use]
+    pub const fn supports_reasoning(&self) -> bool {
+        self.supports_reasoning
+    }
+
+    #[must_use]
+    pub const fn supports_tool_calls(&self) -> bool {
+        self.supports_tool_calls
+    }
+
+    #[must_use]
+    pub const fn lifecycle(&self) -> ModelCatalogLifecycle {
+        self.lifecycle
+    }
+}
+
+impl fmt::Debug for ModelCatalogMetadata {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ModelCatalogMetadata")
+            .field("tag_count", &self.tags.len())
+            .field("has_context_window", &self.context_window.is_some())
+            .field("lifecycle", &self.lifecycle)
+            .finish_non_exhaustive()
+    }
+}
+
 /// 一条已经完成可见性和价格边界校验的模型目录记录。
 pub struct ModelCatalogItem {
-    model: String,
+    metadata: ModelCatalogMetadata,
     billing_mode: ModelCatalogBillingMode,
     prices: Option<ModelCatalogTokenPrices>,
     ratios: ModelCatalogRatios,
     price_version: u64,
+    runtime_status: ModelCatalogRuntimeStatus,
 }
 
 impl ModelCatalogItem {
     /// 组合已经通过可见范围与定价快照校验的目录记录。
     pub fn new(
-        model: String,
+        metadata: ModelCatalogMetadata,
         billing_mode: ModelCatalogBillingMode,
         prices: Option<ModelCatalogTokenPrices>,
         ratios: ModelCatalogRatios,
         price_version: u64,
+        runtime_status: ModelCatalogRuntimeStatus,
     ) -> Result<Self, ModelCatalogReadError> {
         let prices_match_mode = matches!(
             (billing_mode, prices.is_some()),
             (ModelCatalogBillingMode::PerToken, true) | (ModelCatalogBillingMode::Free, false)
         );
-        if !is_valid_model_name(&model) || !prices_match_mode || price_version == 0 {
+        if !prices_match_mode || price_version == 0 {
             return Err(ModelCatalogReadError::Internal);
         }
         Ok(Self {
-            model,
+            metadata,
             billing_mode,
             prices,
             ratios,
             price_version,
+            runtime_status,
         })
     }
 
     /// 返回客户端请求使用的 Canonical 模型名。
     #[must_use]
     pub fn model(&self) -> &str {
-        &self.model
+        self.metadata.model()
+    }
+
+    /// 返回经过可见性与生命周期筛选的权威商品元数据。
+    #[must_use]
+    pub const fn metadata(&self) -> &ModelCatalogMetadata {
+        &self.metadata
     }
 
     /// 返回显式计费模式。
@@ -286,6 +462,12 @@ impl ModelCatalogItem {
     pub const fn price_version(&self) -> u64 {
         self.price_version
     }
+
+    /// 返回当前访问主体对应的运行时状态。
+    #[must_use]
+    pub const fn runtime_status(&self) -> ModelCatalogRuntimeStatus {
+        self.runtime_status
+    }
 }
 
 impl fmt::Debug for ModelCatalogItem {
@@ -295,6 +477,7 @@ impl fmt::Debug for ModelCatalogItem {
             .field("billing_mode", &self.billing_mode)
             .field("has_prices", &self.prices.is_some())
             .field("price_version", &self.price_version)
+            .field("runtime_status", &self.runtime_status)
             .finish_non_exhaustive()
     }
 }
@@ -362,14 +545,18 @@ pub enum ModelCatalogReadError {
     Internal,
 }
 
-/// 游客与登录用户共用的模型目录同步只读端口。
+/// 模型目录异步读取结果。
+pub type ModelCatalogListFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<ModelCatalogPage, ModelCatalogReadError>> + Send + 'a>>;
+
+/// 游客与登录用户共用的模型目录异步只读端口。
 pub trait ModelCatalogReader: Send + Sync {
     /// 无会话时读取公开基础目录，有会话时按数据库回查分组读取可用模型。
-    fn list(
-        &self,
+    fn list<'a>(
+        &'a self,
         authentication: Option<SessionAuthentication>,
-        query: &ModelCatalogQuery,
-    ) -> Result<ModelCatalogPage, ModelCatalogReadError>;
+        query: &'a ModelCatalogQuery,
+    ) -> ModelCatalogListFuture<'a>;
 }
 
 fn is_valid_model_name(value: &str) -> bool {
@@ -404,11 +591,12 @@ mod tests {
         let ratios = ModelCatalogRatios::new(1_000_000, 1_000_000, 1_000_000).unwrap();
         assert!(
             ModelCatalogItem::new(
-                "gpt-5".to_owned(),
+                metadata("gpt-5"),
                 ModelCatalogBillingMode::Free,
                 Some(ModelCatalogTokenPrices::from_decimals([Decimal::ZERO; 5]).unwrap()),
                 ratios,
                 1,
+                ModelCatalogRuntimeStatus::NotEvaluated,
             )
             .is_err()
         );
@@ -436,5 +624,23 @@ mod tests {
         let page =
             ModelCatalogPage::from_parts(ModelCatalogPricingScope::PublicBase, Vec::new(), None);
         assert_eq!(page.pricing_scope(), ModelCatalogPricingScope::PublicBase);
+    }
+
+    fn metadata(model: &str) -> ModelCatalogMetadata {
+        ModelCatalogMetadata::new(
+            model.to_owned(),
+            "Model".to_owned(),
+            "provider".to_owned(),
+            None,
+            None,
+            Vec::new(),
+            None,
+            AdminModelModalities::new(true, false, false, false),
+            AdminModelModalities::new(true, false, false, false),
+            false,
+            false,
+            ModelCatalogLifecycle::Active,
+        )
+        .unwrap()
     }
 }

@@ -203,7 +203,7 @@ impl AdminModelResponse {
     }
 }
 
-fn modality_values(modalities: AdminModelModalities) -> Vec<AdminModelModalityValue> {
+pub(crate) fn modality_values(modalities: AdminModelModalities) -> Vec<AdminModelModalityValue> {
     [
         (modalities.text(), AdminModelModalityValue::Text),
         (modalities.image(), AdminModelModalityValue::Image),

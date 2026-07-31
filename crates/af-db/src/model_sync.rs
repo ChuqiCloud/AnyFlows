@@ -323,7 +323,7 @@ impl ModelSyncRelationRecord {
 
     #[must_use]
     pub const fn is_applicable(self) -> bool {
-        matches!(Self::MissingMetadata | Self::DiscoveredUnconfigured, self)
+        matches!(self, Self::MissingMetadata | Self::DiscoveredUnconfigured)
     }
 }
 

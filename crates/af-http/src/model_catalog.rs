@@ -1,6 +1,6 @@
 use af_admin::{
-    ModelCatalogBillingMode, ModelCatalogItem, ModelCatalogPage, ModelCatalogPricingScope,
-    ModelCatalogQuery, ModelCatalogReadError,
+    ModelCatalogBillingMode, ModelCatalogItem, ModelCatalogLifecycle, ModelCatalogPage,
+    ModelCatalogPricingScope, ModelCatalogQuery, ModelCatalogReadError, ModelCatalogRuntimeStatus,
 };
 use axum::{
     extract::{Extension, RawQuery, State},
@@ -10,7 +10,9 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::{
-    chat_completions::HttpState, management_error::ManagementError,
+    chat_completions::HttpState,
+    management_error::ManagementError,
+    management_models::{AdminModelModalityValue, modality_values},
     management_session::no_store_json,
 };
 
@@ -50,11 +52,69 @@ pub(crate) struct ModelCatalogRatiosResponse {
 pub(crate) struct ModelCatalogItemResponse {
     #[schema(min_length = 1, max_length = 256)]
     model: String,
+    #[schema(min_length = 1, max_length = 128)]
+    display_name: String,
+    #[schema(min_length = 1, max_length = 64)]
+    provider: String,
+    #[schema(max_length = 4096, required = true)]
+    description: Option<String>,
+    #[schema(max_length = 2048, required = true)]
+    icon_url: Option<String>,
+    #[schema(max_items = 32)]
+    tags: Vec<String>,
+    #[schema(minimum = 1, maximum = 2147483647, required = true)]
+    context_window: Option<i64>,
+    #[schema(min_items = 1, max_items = 4)]
+    input_modalities: Vec<AdminModelModalityValue>,
+    #[schema(min_items = 1, max_items = 4)]
+    output_modalities: Vec<AdminModelModalityValue>,
+    supports_reasoning: bool,
+    supports_tool_calls: bool,
+    lifecycle: ModelCatalogLifecycleValue,
+    runtime_status: ModelCatalogRuntimeStatusValue,
     #[schema(value_type = crate::openapi::schema::ModelCatalogBillingModeSchema)]
     billing_mode: ModelCatalogBillingMode,
     #[schema(required = true)]
     prices: Option<ModelCatalogTokenPricesResponse>,
     ratios: ModelCatalogRatiosResponse,
+    #[schema(minimum = 1)]
+    price_version: u64,
+}
+
+/// 模型广场公开的闭合商品生命周期。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = ModelCatalogLifecycle)]
+pub(crate) enum ModelCatalogLifecycleValue {
+    Active,
+    Deprecated,
+}
+
+impl From<ModelCatalogLifecycle> for ModelCatalogLifecycleValue {
+    fn from(value: ModelCatalogLifecycle) -> Self {
+        match value {
+            ModelCatalogLifecycle::Active => Self::Active,
+            ModelCatalogLifecycle::Deprecated => Self::Deprecated,
+        }
+    }
+}
+
+/// 模型广场公开的闭合运行时状态。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = ModelCatalogRuntimeStatus)]
+pub(crate) enum ModelCatalogRuntimeStatusValue {
+    NotEvaluated,
+    Available,
+}
+
+impl From<ModelCatalogRuntimeStatus> for ModelCatalogRuntimeStatusValue {
+    fn from(value: ModelCatalogRuntimeStatus) -> Self {
+        match value {
+            ModelCatalogRuntimeStatus::NotEvaluated => Self::NotEvaluated,
+            ModelCatalogRuntimeStatus::Available => Self::Available,
+        }
+    }
 }
 
 #[derive(Serialize, ToSchema)]
@@ -85,6 +145,7 @@ pub(crate) async fn list_models(
             authentication.map(|Extension(authentication)| authentication),
             &query,
         )
+        .await
         .map_err(map_read_error)?;
     Ok(no_store_json(ModelCatalogListResponse::from_page(page)))
 }
@@ -105,6 +166,7 @@ impl ModelCatalogListResponse {
 
 impl ModelCatalogItemResponse {
     fn from_item(item: &ModelCatalogItem) -> Self {
+        let metadata = item.metadata();
         let prices = item.prices().map(|prices| ModelCatalogTokenPricesResponse {
             input: prices.input().to_owned(),
             output: prices.output().to_owned(),
@@ -115,6 +177,18 @@ impl ModelCatalogItemResponse {
         let ratios = item.ratios();
         Self {
             model: item.model().to_owned(),
+            display_name: metadata.display_name().to_owned(),
+            provider: metadata.provider().to_owned(),
+            description: metadata.description().map(str::to_owned),
+            icon_url: metadata.icon_url().map(str::to_owned),
+            tags: metadata.tags().to_vec(),
+            context_window: metadata.context_window(),
+            input_modalities: modality_values(metadata.input_modalities()),
+            output_modalities: modality_values(metadata.output_modalities()),
+            supports_reasoning: metadata.supports_reasoning(),
+            supports_tool_calls: metadata.supports_tool_calls(),
+            lifecycle: metadata.lifecycle().into(),
+            runtime_status: item.runtime_status().into(),
             billing_mode: item.billing_mode(),
             prices,
             ratios: ModelCatalogRatiosResponse {
@@ -122,6 +196,7 @@ impl ModelCatalogItemResponse {
                 group_model_micros: ratios.group_model_micros().to_string(),
                 peak_micros: ratios.peak_micros().to_string(),
             },
+            price_version: item.price_version(),
         }
     }
 }
