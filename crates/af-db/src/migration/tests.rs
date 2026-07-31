@@ -24,7 +24,7 @@ use crate::entity::{
     SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, abilities,
     auth_challenge_rate_limits, auth_challenges, authentication_settings,
     billing_batch_checkpoints, billing_reservations, channel_groups, channel_models, channels,
-    credentials, email_settings, group_model_ratios, groups, model_prices, options,
+    credentials, email_settings, group_model_ratios, groups, model_prices, models, options,
     playground_conversations, playground_shares, registration_rate_limits, site_settings, tokens,
     usage_logs, users,
 };
@@ -48,7 +48,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量；列变更不会增加核心表数量。
-const EXPECTED_MIGRATION_COUNT: usize = 24;
+const EXPECTED_MIGRATION_COUNT: usize = 25;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -62,7 +62,7 @@ const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
 const PLAYGROUND_CONVERSATION_KEY: &str = "55555555555555555555555555555555";
-const CORE_TABLES: [&str; 22] = [
+const CORE_TABLES: [&str; 23] = [
     "groups",
     "users",
     "channels",
@@ -85,6 +85,7 @@ const CORE_TABLES: [&str; 22] = [
     "authentication_settings",
     "auth_challenges",
     "auth_challenge_rate_limits",
+    "models",
 ];
 
 struct SlowMigrator;
@@ -1384,6 +1385,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         "auth_challenge_rate_limits",
     )
     .await?;
+    assert_entity_columns::<models::Column>(&manager, "models").await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -1424,6 +1426,8 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "auth_challenge_rate_limits",
             "uq_auth_challenge_rate_limits_scope",
         ),
+        ("models", "uq_models_active_model"),
+        ("models", "idx_models_lifecycle_visibility_id"),
     ] {
         assert!(
             manager.has_index(table, index).await?,

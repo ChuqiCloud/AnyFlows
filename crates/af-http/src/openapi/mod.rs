@@ -5,6 +5,7 @@ mod credentials;
 mod dashboard;
 mod email_settings;
 mod groups;
+mod model_metadata;
 mod models;
 mod password_reset;
 mod playground_conversations;
@@ -40,6 +41,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(users::document());
     document.merge(groups::document());
     document.merge(models::document());
+    document.merge(model_metadata::document());
     document.merge(playground_shares::document());
     document.merge(playground_conversations::document());
     document.merge(user_tokens::document());
@@ -61,6 +63,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("用户管理"),
         Tag::new("分组管理"),
         Tag::new("模型目录"),
+        Tag::new("模型管理"),
         Tag::new("Playground 分享"),
         Tag::new("Playground 历史"),
         Tag::new("我的 API Key"),
@@ -94,7 +97,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 37);
+        assert_eq!(document.paths.paths.len(), 39);
         let operation_count = document
             .paths
             .paths
@@ -115,7 +118,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 62);
+        assert_eq!(operation_count, 67);
         assert!(
             document
                 .components
@@ -139,6 +142,7 @@ mod tests {
             "createAdminChannel",
             "createAdminCredential",
             "createAdminGroup",
+            "createAdminModel",
             "createAdminToken",
             "createAdminUser",
             "confirmPasswordReset",
@@ -152,6 +156,7 @@ mod tests {
             "deleteAdminChannel",
             "deleteAdminCredential",
             "deleteAdminGroup",
+            "deleteAdminModel",
             "deleteAdminToken",
             "deleteAdminUser",
             "deleteUserToken",
@@ -160,6 +165,7 @@ mod tests {
             "getAdminDashboard",
             "getAdminEmailSettings",
             "getAdminGroup",
+            "getAdminModel",
             "getAdminAuthenticationSettings",
             "getAdminSiteSettings",
             "getAdminToken",
@@ -175,6 +181,7 @@ mod tests {
             "listAdminChannels",
             "listAdminCredentials",
             "listAdminGroups",
+            "listAdminModels",
             "listAdminTokens",
             "listAdminUsageLogs",
             "listAdminUsers",
@@ -192,6 +199,7 @@ mod tests {
             "updateAdminChannel",
             "updateAdminCredential",
             "updateAdminGroup",
+            "updateAdminModel",
             "updateAdminEmailSettings",
             "updateAdminAuthenticationSettings",
             "updateAdminSiteSettings",
@@ -205,7 +213,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 88);
+        assert_eq!(schemas.len(), 95);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
@@ -237,6 +245,12 @@ mod tests {
         assert!(schemas.contains_key("AdminEmailTlsMode"));
         assert!(schemas.contains_key("ModelCatalogListResponse"));
         assert!(schemas.contains_key("ModelCatalogPricingScope"));
+        assert!(schemas.contains_key("AdminModel"));
+        assert!(schemas.contains_key("AdminModelCreateRequest"));
+        assert!(schemas.contains_key("AdminModelUpdateRequest"));
+        assert!(schemas.contains_key("AdminModelVisibility"));
+        assert!(schemas.contains_key("AdminModelLifecycle"));
+        assert!(schemas.contains_key("AdminModelModality"));
         assert!(schemas.contains_key("PlaygroundShareCreateRequest"));
         assert!(schemas.contains_key("PlaygroundShareReadResponse"));
         assert!(schemas.contains_key("PlaygroundConversationSaveRequest"));
@@ -332,6 +346,21 @@ mod tests {
             schemas["AdminEmailSettings"]["properties"]
                 .as_object()
                 .is_some_and(|properties| !properties.contains_key("password"))
+        );
+        let model_update = &schemas["AdminModelUpdateRequest"];
+        assert_eq!(model_update["additionalProperties"], false);
+        assert!(
+            model_update["properties"]
+                .as_object()
+                .is_some_and(|properties| !properties.contains_key("model"))
+        );
+        assert_eq!(
+            model_update["properties"]["input_modalities"]["minItems"],
+            1
+        );
+        assert_eq!(
+            schemas["AdminModelModality"]["enum"],
+            serde_json::json!(["text", "image", "audio", "video"])
         );
     }
 }

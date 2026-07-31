@@ -394,6 +394,47 @@ pub(in crate::migration) mod model_prices {
     }
 }
 
+pub(in crate::migration) mod models {
+    use super::DeriveIden;
+
+    /// `models` 独立模型商品元数据表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "models")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 模型商品元数据初始迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        Model,
+        DisplayName,
+        Provider,
+        Description,
+        IconUrl,
+        Tags,
+        ContextWindow,
+        SupportsTextInput,
+        SupportsImageInput,
+        SupportsAudioInput,
+        SupportsVideoInput,
+        SupportsTextOutput,
+        SupportsImageOutput,
+        SupportsAudioOutput,
+        SupportsVideoOutput,
+        SupportsReasoning,
+        SupportsToolCalls,
+        Visibility,
+        Lifecycle,
+        CreatedAt,
+        UpdatedAt,
+        DeletedAt,
+    }
+}
+
 pub(in crate::migration) mod group_model_ratios {
     use super::DeriveIden;
 

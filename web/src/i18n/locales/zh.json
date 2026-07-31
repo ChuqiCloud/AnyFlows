@@ -19,6 +19,7 @@
     "siteSettings": "站点设置",
     "authenticationSettings": "认证设置",
     "emailSettings": "邮件设置",
+    "modelSettings": "模型管理",
     "channels": "渠道管理",
     "keys": "全局令牌",
     "usage": "全局用量",
@@ -541,6 +542,127 @@
       "title": "删除用户",
       "description": "删除 {{username}} 后，该账户及其直接签发的 API Key 将被软删除，无法继续登录或调用。此操作不可撤销。",
       "failed": "删除失败，用户仍然有效，请稍后重试。"
+    }
+  },
+  "modelManagement": {
+    "title": "模型管理",
+    "subtitle": "维护独立的模型商品身份、权威能力、可见范围和运营生命周期，不在这里修改价格或渠道映射。",
+    "count_one": "已加载 {{count}} 个模型",
+    "count_other": "已加载 {{count}} 个模型",
+    "activeCount_one": "{{count}} 个处于活动状态",
+    "activeCount_other": "{{count}} 个处于活动状态",
+    "loading": "正在加载模型元数据",
+    "loadingMore": "正在加载",
+    "columns": {
+      "model": "模型商品",
+      "operation": "运营状态",
+      "capabilities": "权威能力",
+      "actions": "操作"
+    },
+    "actions": {
+      "create": "添加模型",
+      "edit": "编辑模型",
+      "delete": "删除元数据",
+      "refresh": "刷新",
+      "retry": "重试",
+      "loadMore": "加载更多",
+      "cancel": "取消",
+      "save": "保存修改"
+    },
+    "empty": {
+      "title": "还没有模型元数据",
+      "body": "添加第一个 Canonical 模型后，商品信息会显示在这里。"
+    },
+    "error": {
+      "title": "无法读取模型元数据",
+      "body": "服务暂时没有返回模型商品列表，请稍后重试。",
+      "more": "下一页读取失败，已加载的模型仍可继续管理。"
+    },
+    "editor": {
+      "createTitle": "添加模型元数据",
+      "createDescription": "登记 Canonical 标识、展示信息和权威能力声明。",
+      "editTitle": "编辑模型元数据",
+      "editDescription": "更新展示信息、能力与运营状态，Canonical 标识保持不变。"
+    },
+    "form": {
+      "identity": "商品身份",
+      "capabilities": "权威能力",
+      "operation": "运营状态",
+      "modelCreateHint": "使用网关内部统一的 Canonical 模型标识，创建后不可修改。",
+      "modelImmutableHint": "Canonical 标识已锁定，避免破坏价格、渠道能力和映射引用。",
+      "providerHint": "可从常用厂商候选中选择，也可输入自定义厂商标识。",
+      "optionalHint": "可留空，最多 4096 字节。",
+      "iconHint": "可填写站内绝对路径或 HTTP(S) 图标地址，留空时使用厂商图标。",
+      "tagsHint": "按 Enter 添加标签，可粘贴逗号或换行分隔的列表。",
+      "contextHint": "留空表示尚无权威数据，不会根据模型名自动猜测。",
+      "capabilitiesHint": "每个方向至少选择一种模态。这里只登记已核实能力。",
+      "visibilityHint": "决定后续模型广场可向哪类访问者展示该商品。",
+      "lifecycleHint": "草稿、活动、弃用和退役是相互独立的运营阶段。",
+      "conflict": "Canonical 模型标识已存在，请使用现有记录或更换标识。",
+      "submitError": "保存失败，请检查字段后重试。"
+    },
+    "fields": {
+      "model": "Canonical 模型标识",
+      "displayName": "展示名",
+      "provider": "厂商",
+      "description": "描述",
+      "iconUrl": "图标地址",
+      "tags": "标签",
+      "contextWindow": "上下文长度",
+      "visibility": "可见范围",
+      "lifecycle": "生命周期"
+    },
+    "validation": {
+      "model": "模型标识需为 1 至 256 字节，且不能包含控制字符。",
+      "displayName": "展示名需为 1 至 128 字节。",
+      "provider": "厂商标识需为 1 至 64 字节。",
+      "description": "描述最多 4096 字节。",
+      "iconUrl": "请输入有效的站内路径或 HTTP(S) 图标地址。",
+      "tags": "最多 32 个不重复标签，单项不超过 64 字节。",
+      "contextWindow": "请输入 1 至 2147483647 的整数，或留空。",
+      "modalities": "输入和输出方向都必须至少选择一种模态。"
+    },
+    "tags": {
+      "placeholder": "输入标签",
+      "add": "添加标签",
+      "selected": "已选标签",
+      "remove": "移除标签 {{tag}}",
+      "empty": "未设置标签"
+    },
+    "modalities": {
+      "text": "文本",
+      "image": "图像",
+      "audio": "音频",
+      "video": "视频"
+    },
+    "capabilities": {
+      "reasoning": "推理",
+      "toolCalls": "工具调用"
+    },
+    "visibility": {
+      "public": "游客可见",
+      "authenticated": "登录可见",
+      "hidden": "仅管理端"
+    },
+    "lifecycle": {
+      "draft": "草稿",
+      "active": "活动",
+      "deprecated": "已弃用",
+      "retired": "已退役"
+    },
+    "values": {
+      "providerId": "{{provider}} · #{{id}}",
+      "moreTags": "+{{count}}",
+      "context": "上下文 {{value}} tokens",
+      "contextUnknown": "上下文未知",
+      "updated": "更新于 {{value}}",
+      "input": "输入",
+      "output": "输出"
+    },
+    "delete": {
+      "title": "删除模型元数据",
+      "description": "删除 {{model}} 的商品元数据后，价格、渠道能力和上游映射仍保持原状。元数据删除不可撤销。",
+      "failed": "删除失败，模型元数据仍然有效，请稍后重试。"
     }
   },
   "tokens": {

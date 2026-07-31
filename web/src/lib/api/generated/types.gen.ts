@@ -279,6 +279,60 @@ export type AdminGroupWriteRequest = {
         [key: string]: unknown;
     };
 };
+export type AdminModel = {
+    id: number;
+    model: string;
+    display_name: string;
+    provider: string;
+    description: string | null;
+    icon_url: string | null;
+    tags: Array<string>;
+    context_window: number | null;
+    input_modalities: Array<AdminModelModality>;
+    output_modalities: Array<AdminModelModality>;
+    supports_reasoning: boolean;
+    supports_tool_calls: boolean;
+    visibility: AdminModelVisibility;
+    lifecycle: AdminModelLifecycle;
+    created_at: number;
+    updated_at: number;
+};
+export type AdminModelCreateRequest = {
+    model: string;
+    display_name: string;
+    provider: string;
+    description?: string | null;
+    icon_url?: string | null;
+    tags: Array<string>;
+    context_window?: number | null;
+    input_modalities: Array<AdminModelModality>;
+    output_modalities: Array<AdminModelModality>;
+    supports_reasoning: boolean;
+    supports_tool_calls: boolean;
+    visibility: AdminModelVisibility;
+    lifecycle: AdminModelLifecycle;
+};
+export type AdminModelLifecycle = 'draft' | 'active' | 'deprecated' | 'retired';
+export type AdminModelListResponse = {
+    models: Array<AdminModel>;
+    next_cursor: number | null;
+};
+export type AdminModelModality = 'text' | 'image' | 'audio' | 'video';
+export type AdminModelUpdateRequest = {
+    display_name: string;
+    provider: string;
+    description?: string | null;
+    icon_url?: string | null;
+    tags: Array<string>;
+    context_window?: number | null;
+    input_modalities: Array<AdminModelModality>;
+    output_modalities: Array<AdminModelModality>;
+    supports_reasoning: boolean;
+    supports_tool_calls: boolean;
+    visibility: AdminModelVisibility;
+    lifecycle: AdminModelLifecycle;
+};
+export type AdminModelVisibility = 'public' | 'authenticated' | 'hidden';
 export type AdminRoutingStatus = 'enabled' | 'disabled' | 'auto_disabled';
 export type AdminRoutingWriteStatus = 'enabled' | 'disabled';
 export type AdminSiteSettings = {
@@ -416,7 +470,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'password_reset_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'password_reset_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'model_not_found' | 'model_conflict' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -1292,6 +1346,104 @@ export type ListModelsResponses = {
     200: ModelCatalogListResponse;
 };
 export type ListModelsResponse = ListModelsResponses[keyof ListModelsResponses];
+export type ListAdminModelsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/admin/models';
+};
+export type ListAdminModelsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminModelsError = ListAdminModelsErrors[keyof ListAdminModelsErrors];
+export type ListAdminModelsResponses = {
+    200: AdminModelListResponse;
+};
+export type ListAdminModelsResponse = ListAdminModelsResponses[keyof ListAdminModelsResponses];
+export type CreateAdminModelData = {
+    body: AdminModelCreateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/models';
+};
+export type CreateAdminModelErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateAdminModelError = CreateAdminModelErrors[keyof CreateAdminModelErrors];
+export type CreateAdminModelResponses = {
+    201: AdminModel;
+};
+export type CreateAdminModelResponse = CreateAdminModelResponses[keyof CreateAdminModelResponses];
+export type DeleteAdminModelData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/models/{id}';
+};
+export type DeleteAdminModelErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type DeleteAdminModelError = DeleteAdminModelErrors[keyof DeleteAdminModelErrors];
+export type DeleteAdminModelResponses = {
+    204: void;
+};
+export type DeleteAdminModelResponse = DeleteAdminModelResponses[keyof DeleteAdminModelResponses];
+export type GetAdminModelData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/models/{id}';
+};
+export type GetAdminModelErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminModelError = GetAdminModelErrors[keyof GetAdminModelErrors];
+export type GetAdminModelResponses = {
+    200: AdminModel;
+};
+export type GetAdminModelResponse = GetAdminModelResponses[keyof GetAdminModelResponses];
+export type UpdateAdminModelData = {
+    body: AdminModelUpdateRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/models/{id}';
+};
+export type UpdateAdminModelErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminModelError = UpdateAdminModelErrors[keyof UpdateAdminModelErrors];
+export type UpdateAdminModelResponses = {
+    200: AdminModel;
+};
+export type UpdateAdminModelResponse = UpdateAdminModelResponses[keyof UpdateAdminModelResponses];
 export type CreatePlaygroundShareData = {
     body: PlaygroundShareCreateRequest;
     path?: never;

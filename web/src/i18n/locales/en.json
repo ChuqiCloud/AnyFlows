@@ -19,6 +19,7 @@
     "siteSettings": "Site settings",
     "authenticationSettings": "Authentication",
     "emailSettings": "Email settings",
+    "modelSettings": "Model management",
     "channels": "Channels",
     "keys": "Global keys",
     "usage": "Global usage",
@@ -541,6 +542,127 @@
       "title": "Delete user",
       "description": "Deleting {{username}} soft-deletes the account and its directly issued API keys. The user can no longer sign in or call the gateway. This action cannot be undone.",
       "failed": "Deletion failed. The user remains active. Try again shortly."
+    }
+  },
+  "modelManagement": {
+    "title": "Model management",
+    "subtitle": "Maintain model identity, verified capabilities, visibility, and lifecycle independently from pricing and channel mappings.",
+    "count_one": "{{count}} model loaded",
+    "count_other": "{{count}} models loaded",
+    "activeCount_one": "{{count}} active model",
+    "activeCount_other": "{{count}} active models",
+    "loading": "Loading model metadata",
+    "loadingMore": "Loading",
+    "columns": {
+      "model": "Model product",
+      "operation": "Operational state",
+      "capabilities": "Verified capabilities",
+      "actions": "Actions"
+    },
+    "actions": {
+      "create": "Add model",
+      "edit": "Edit model",
+      "delete": "Delete metadata",
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "loadMore": "Load more",
+      "cancel": "Cancel",
+      "save": "Save changes"
+    },
+    "empty": {
+      "title": "No model metadata yet",
+      "body": "Add a Canonical model to start building the product catalog."
+    },
+    "error": {
+      "title": "Model metadata could not be loaded",
+      "body": "The service did not return the model product list. Try again shortly.",
+      "more": "The next page failed to load. Existing models remain manageable."
+    },
+    "editor": {
+      "createTitle": "Add model metadata",
+      "createDescription": "Register the Canonical identity, display information, and verified capabilities.",
+      "editTitle": "Edit model metadata",
+      "editDescription": "Update display information, capabilities, and lifecycle while keeping the Canonical identity fixed."
+    },
+    "form": {
+      "identity": "Product identity",
+      "capabilities": "Verified capabilities",
+      "operation": "Operational state",
+      "modelCreateHint": "Use the gateway's Canonical model identifier. It cannot be changed after creation.",
+      "modelImmutableHint": "The Canonical identifier is locked to protect pricing, capabilities, and mapping references.",
+      "providerHint": "Choose a common provider suggestion or enter a custom provider identifier.",
+      "optionalHint": "Optional, up to 4096 bytes.",
+      "iconHint": "Use a site path or HTTP(S) image URL. The provider icon is used when empty.",
+      "tagsHint": "Press Enter to add. Comma-separated and line-separated pasted lists are supported.",
+      "contextHint": "Leave empty when there is no verified value. The service never guesses from the model name.",
+      "capabilitiesHint": "Select at least one modality in each direction and record only verified capabilities.",
+      "visibilityHint": "Controls which audience may see this product in a future composed model catalog.",
+      "lifecycleHint": "Draft, active, deprecated, and retired are explicit operational stages.",
+      "conflict": "This Canonical model identifier already exists. Edit the existing record or choose another identifier.",
+      "submitError": "The model could not be saved. Check the fields and try again."
+    },
+    "fields": {
+      "model": "Canonical model identifier",
+      "displayName": "Display name",
+      "provider": "Provider",
+      "description": "Description",
+      "iconUrl": "Icon URL",
+      "tags": "Tags",
+      "contextWindow": "Context window",
+      "visibility": "Visibility",
+      "lifecycle": "Lifecycle"
+    },
+    "validation": {
+      "model": "Use 1 to 256 bytes without control characters.",
+      "displayName": "Use 1 to 128 bytes for the display name.",
+      "provider": "Use 1 to 64 bytes for the provider identifier.",
+      "description": "The description may contain up to 4096 bytes.",
+      "iconUrl": "Use a valid site path or HTTP(S) icon URL.",
+      "tags": "Use at most 32 unique tags, each up to 64 bytes.",
+      "contextWindow": "Enter an integer from 1 to 2147483647, or leave it empty.",
+      "modalities": "Select at least one input and one output modality."
+    },
+    "tags": {
+      "placeholder": "Enter a tag",
+      "add": "Add tag",
+      "selected": "Selected tags",
+      "remove": "Remove tag {{tag}}",
+      "empty": "No tags"
+    },
+    "modalities": {
+      "text": "Text",
+      "image": "Image",
+      "audio": "Audio",
+      "video": "Video"
+    },
+    "capabilities": {
+      "reasoning": "Reasoning",
+      "toolCalls": "Tool calls"
+    },
+    "visibility": {
+      "public": "Public",
+      "authenticated": "Signed-in users",
+      "hidden": "Management only"
+    },
+    "lifecycle": {
+      "draft": "Draft",
+      "active": "Active",
+      "deprecated": "Deprecated",
+      "retired": "Retired"
+    },
+    "values": {
+      "providerId": "{{provider}} · #{{id}}",
+      "moreTags": "+{{count}}",
+      "context": "{{value}} token context",
+      "contextUnknown": "Context unknown",
+      "updated": "Updated {{value}}",
+      "input": "Input",
+      "output": "Output"
+    },
+    "delete": {
+      "title": "Delete model metadata",
+      "description": "Deleting metadata for {{model}} leaves prices, channel capabilities, and upstream mappings unchanged. Metadata deletion cannot be undone.",
+      "failed": "Deletion failed. The model metadata remains active. Try again shortly."
     }
   },
   "tokens": {

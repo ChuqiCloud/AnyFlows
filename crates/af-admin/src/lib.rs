@@ -12,6 +12,8 @@ mod group_read;
 mod group_write;
 mod initial_setup;
 mod model_catalog;
+mod model_metadata_read;
+mod model_metadata_write;
 mod password_reset;
 mod playground_conversation;
 mod playground_share;
@@ -78,6 +80,17 @@ pub use model_catalog::{
     DEFAULT_MODEL_CATALOG_PAGE_SIZE, MAX_MODEL_CATALOG_PAGE_SIZE, ModelCatalogBillingMode,
     ModelCatalogItem, ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogQuery,
     ModelCatalogRatios, ModelCatalogReadError, ModelCatalogReader, ModelCatalogTokenPrices,
+};
+pub use model_metadata_read::{
+    AdminModel, AdminModelGetFuture, AdminModelLifecycle, AdminModelListFuture,
+    AdminModelListQuery, AdminModelModalities, AdminModelPage, AdminModelReadError,
+    AdminModelReader, AdminModelVisibility, DEFAULT_ADMIN_MODEL_PAGE_SIZE,
+    DatabaseAdminModelReader,
+};
+pub use model_metadata_write::{
+    AdminModelCreateCommand, AdminModelCreateFuture, AdminModelDeleteFuture,
+    AdminModelUpdateCommand, AdminModelUpdateFuture, AdminModelWriteError, AdminModelWriter,
+    DatabaseAdminModelWriter,
 };
 pub use password_reset::{
     DatabasePasswordResetService, MAX_PASSWORD_RESET_PASSWORD_BYTES,

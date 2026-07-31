@@ -30,6 +30,7 @@ mod m20260731_000021_create_auth_challenges;
 mod m20260731_000022_create_auth_challenge_rate_limits;
 mod m20260731_000023_add_user_session_version;
 mod m20260731_000024_add_user_notification_preferences;
+mod m20260731_000025_create_models;
 mod schema;
 
 #[cfg(test)]
@@ -97,6 +98,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260731_000022_create_auth_challenge_rate_limits::Migration),
             Box::new(m20260731_000023_add_user_session_version::Migration),
             Box::new(m20260731_000024_add_user_notification_preferences::Migration),
+            Box::new(m20260731_000025_create_models::Migration),
         ]
     }
 }

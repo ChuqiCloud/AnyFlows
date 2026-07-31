@@ -45,6 +45,10 @@ pub(crate) enum ManagementError {
     GroupConflict,
     /// 分组仍被有效用户或有效令牌引用。
     GroupInUse,
+    /// 模型商品元数据不存在或已经被软删除。
+    ModelNotFound,
+    /// Canonical 模型标识与当前有效元数据冲突。
+    ModelConflict,
     /// 令牌不存在或已经被软删除。
     TokenNotFound,
     /// 当前用户的未软删除 API Key 已达到容量上限。
@@ -214,6 +218,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "group_in_use",
                     message: "Group in use",
+                },
+            ),
+            Self::ModelNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "model_not_found",
+                    message: "Model not found",
+                },
+            ),
+            Self::ModelConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "model_conflict",
+                    message: "Model conflict",
                 },
             ),
             Self::TokenNotFound => (

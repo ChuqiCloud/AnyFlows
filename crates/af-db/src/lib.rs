@@ -19,6 +19,10 @@ mod admin_group_tests;
 mod admin_group_write;
 #[cfg(test)]
 mod admin_group_write_tests;
+mod admin_model;
+#[cfg(test)]
+mod admin_model_tests;
+mod admin_model_write;
 mod admin_token;
 #[cfg(test)]
 mod admin_token_tests;
@@ -131,6 +135,18 @@ pub use admin_group::{
 pub use admin_group_write::{
     AdminGroupDeleteOutcome, AdminGroupMutationOutcome, AdminGroupPeakWriteRecord,
     AdminGroupWriteRecord,
+};
+pub use admin_model::{
+    AdminModelLifecycleRecord, AdminModelLookupOutcome, AdminModelModalitiesRecord,
+    AdminModelPageRecord, AdminModelRecord, AdminModelRepository, AdminModelRepositoryConfigError,
+    AdminModelRepositoryError, AdminModelVisibilityRecord, MAX_ADMIN_MODEL_CONTEXT_WINDOW,
+    MAX_ADMIN_MODEL_DESCRIPTION_BYTES, MAX_ADMIN_MODEL_DISPLAY_NAME_BYTES,
+    MAX_ADMIN_MODEL_ICON_URL_BYTES, MAX_ADMIN_MODEL_PAGE_SIZE, MAX_ADMIN_MODEL_PROVIDER_BYTES,
+    MAX_ADMIN_MODEL_TAG_BYTES, MAX_ADMIN_MODEL_TAGS, MAX_ADMIN_MODEL_TAGS_BYTES,
+};
+pub use admin_model_write::{
+    AdminModelCreateRecord, AdminModelDeleteOutcome, AdminModelMutationOutcome,
+    AdminModelWriteRecord,
 };
 pub use admin_token::{
     AdminTokenLookupOutcome, AdminTokenPageRecord, AdminTokenRecord, AdminTokenRepository,
