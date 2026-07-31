@@ -10,6 +10,7 @@ mod credential_feedback;
 mod credential_order;
 mod frontend;
 mod model_catalog;
+mod model_discovery;
 mod readiness;
 mod scheduled_chat;
 mod shutdown;

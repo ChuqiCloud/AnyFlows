@@ -69,9 +69,13 @@ mod initial_setup;
 #[cfg(test)]
 mod initial_setup_tests;
 mod migration;
+mod model_catalog_metadata;
 mod model_price;
 #[cfg(test)]
 mod model_price_tests;
+mod model_sync;
+#[cfg(test)]
+mod model_sync_tests;
 mod options;
 mod password_reset;
 mod playground_conversation;
@@ -223,9 +227,20 @@ pub use initial_setup::{
     InitialSetupRepositoryConfigError, InitialSetupRepositoryError, InitialSetupStatus,
 };
 pub use migration::{MigrationOptions, run_pending_migrations};
+pub use model_catalog_metadata::ModelCatalogMetadataPageRecord;
 pub use model_price::{
     MAX_MODEL_PRICE_ENTRIES, ModelPriceBillingMode, ModelPriceRecord, ModelPriceRepository,
     ModelPriceRepositoryError,
+};
+pub use model_sync::{
+    DiscoveredModelRecord, MAX_MISSING_MODEL_CHANNELS, MAX_MISSING_MODEL_PAGE_SIZE,
+    MAX_MODEL_SYNC_APPLY_ITEMS, MAX_MODEL_SYNC_CANDIDATES, MAX_MODEL_SYNC_METHOD_BYTES,
+    MAX_MODEL_SYNC_METHODS, MODEL_SYNC_PREVIEW_ID_BYTES, MODEL_SYNC_PREVIEW_TTL_SECONDS,
+    MissingModelChannelRecord, MissingModelPageRecord, MissingModelRecord,
+    ModelDiscoveryHeaderRecord, ModelDiscoveryMappingRecord, ModelDiscoveryTargetLookup,
+    ModelDiscoveryTargetRecord, ModelSyncApplyItemRecord, ModelSyncItemRecord,
+    ModelSyncPreviewRecord, ModelSyncPreviewWrite, ModelSyncRelationRecord, ModelSyncRepository,
+    ModelSyncRepositoryConfigError, ModelSyncRepositoryError,
 };
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
 pub use password_reset::{

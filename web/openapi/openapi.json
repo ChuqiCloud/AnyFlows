@@ -2287,7 +2287,7 @@
           {
             "name": "q",
             "in": "query",
-            "description": "模型名包含搜索",
+            "description": "匹配 Canonical 标识、展示名或厂商",
             "required": false,
             "schema": {
               "type": "string",
@@ -2793,6 +2793,340 @@
           },
           "404": {
             "description": "模型元数据不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/models/missing": {
+      "get": {
+        "tags": [
+          "模型管理"
+        ],
+        "summary": "列出渠道已引用但缺少商品元数据的模型",
+        "operationId": "listMissingAdminModels",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "description": "上一页末尾的 Canonical 模型标识",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 50",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "缺失模型列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminMissingModelListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/models/sync-previews": {
+      "post": {
+        "tags": [
+          "模型管理"
+        ],
+        "summary": "从单个渠道创建固定上游模型同步预览",
+        "operationId": "createAdminModelSyncPreview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminModelSyncPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "同步预览已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminModelSyncPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文或渠道 ID 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "渠道不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "渠道或凭据当前不可用于同步",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "渠道类型或协议不支持同步",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "上游拒绝请求、响应无效或候选数量超限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "上游模型枚举超时",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/models/sync-previews/{preview_id}/apply": {
+      "post": {
+        "tags": [
+          "模型管理"
+        ],
+        "summary": "原子应用同步预览并创建隐藏草稿",
+        "operationId": "applyAdminModelSyncPreview",
+        "parameters": [
+          {
+            "name": "preview_id",
+            "in": "path",
+            "description": "同步预览 UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 36,
+              "minLength": 36
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminModelSyncApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "所选模型已创建为隐藏草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminModelSyncApplyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "预览 ID 或结构化元数据无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "预览不存在或不属于当前管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "预览已应用或发生并发冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "预览已过期",
             "content": {
               "application/json": {
                 "schema": {
@@ -7101,6 +7435,78 @@
         },
         "additionalProperties": false
       },
+      "AdminMissingModel": {
+        "type": "object",
+        "required": [
+          "model",
+          "channel_count",
+          "channels"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "channel_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminMissingModelChannel"
+            },
+            "maxItems": 8
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminMissingModelChannel": {
+        "type": "object",
+        "required": [
+          "channel_id",
+          "channel_name"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "channel_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminMissingModelListResponse": {
+        "type": "object",
+        "required": [
+          "models",
+          "next_cursor"
+        ],
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminMissingModel"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminModel": {
         "type": "object",
         "required": [
@@ -7346,6 +7752,289 @@
           "image",
           "audio",
           "video"
+        ]
+      },
+      "AdminModelSyncApplyItemRequest": {
+        "type": "object",
+        "required": [
+          "item_id",
+          "display_name",
+          "provider",
+          "tags",
+          "input_modalities",
+          "output_modalities",
+          "supports_reasoning",
+          "supports_tool_calls"
+        ],
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "provider": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "icon_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32
+          },
+          "context_window": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 1
+          },
+          "input_modalities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelModality"
+            },
+            "maxItems": 4,
+            "minItems": 1
+          },
+          "output_modalities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelModality"
+            },
+            "maxItems": 4,
+            "minItems": 1
+          },
+          "supports_reasoning": {
+            "type": "boolean"
+          },
+          "supports_tool_calls": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelSyncApplyRequest": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelSyncApplyItemRequest"
+            },
+            "maxItems": 100,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelSyncApplyResponse": {
+        "type": "object",
+        "required": [
+          "models"
+        ],
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModel"
+            },
+            "maxItems": 100,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelSyncPreview": {
+        "type": "object",
+        "required": [
+          "preview_id",
+          "channel_id",
+          "type",
+          "protocol",
+          "expires_at",
+          "items"
+        ],
+        "properties": {
+          "preview_id": {
+            "type": "string",
+            "format": "uuid",
+            "maxLength": 36,
+            "minLength": 36
+          },
+          "channel_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "type": {
+            "$ref": "#/components/schemas/AdminChannelType"
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/AdminChannelProtocol"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "预览失效时间，使用 Unix 秒时间戳。",
+            "minimum": 1
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelSyncPreviewItem"
+            },
+            "maxItems": 1000
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelSyncPreviewItem": {
+        "type": "object",
+        "required": [
+          "item_id",
+          "canonical_model",
+          "upstream_model",
+          "relation",
+          "display_name_hint",
+          "description_hint",
+          "context_window_hint",
+          "input_token_limit_hint",
+          "output_token_limit_hint",
+          "supported_methods",
+          "applied_model_id"
+        ],
+        "properties": {
+          "item_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "canonical_model": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "upstream_model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "relation": {
+            "$ref": "#/components/schemas/AdminModelSyncRelation"
+          },
+          "display_name_hint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "description_hint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096,
+            "minLength": 1
+          },
+          "context_window_hint": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 1
+          },
+          "input_token_limit_hint": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 1
+          },
+          "output_token_limit_hint": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 1
+          },
+          "supported_methods": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32
+          },
+          "applied_model_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelSyncPreviewRequest": {
+        "type": "object",
+        "required": [
+          "channel_id"
+        ],
+        "properties": {
+          "channel_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelSyncRelation": {
+        "type": "string",
+        "description": "管理 API 使用的闭合同步候选关系。",
+        "enum": [
+          "missing_metadata",
+          "discovered_unconfigured",
+          "existing",
+          "not_reported"
         ]
       },
       "AdminModelUpdateRequest": {
@@ -8342,12 +9031,23 @@
               "registration_rate_limited",
               "registration_rejected",
               "password_reset_rejected",
+              "password_change_rejected",
               "email_not_configured",
               "email_delivery_failed",
               "group_conflict",
               "group_in_use",
               "model_not_found",
               "model_conflict",
+              "model_sync_channel_unavailable",
+              "model_sync_unsupported_channel",
+              "model_sync_upstream_timeout",
+              "model_sync_upstream_rejected",
+              "model_sync_invalid_response",
+              "model_sync_candidate_limit_exceeded",
+              "model_sync_preview_not_found",
+              "model_sync_preview_expired",
+              "model_sync_preview_already_applied",
+              "model_sync_conflict",
               "internal_error"
             ]
           },
@@ -8368,15 +9068,96 @@
         "type": "object",
         "required": [
           "model",
+          "display_name",
+          "provider",
+          "description",
+          "icon_url",
+          "tags",
+          "context_window",
+          "input_modalities",
+          "output_modalities",
+          "supports_reasoning",
+          "supports_tool_calls",
+          "lifecycle",
+          "runtime_status",
           "billing_mode",
           "prices",
-          "ratios"
+          "ratios",
+          "price_version"
         ],
         "properties": {
           "model": {
             "type": "string",
             "maxLength": 256,
             "minLength": 1
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "provider": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "icon_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32
+          },
+          "context_window": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 1
+          },
+          "input_modalities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelModality"
+            },
+            "maxItems": 4,
+            "minItems": 1
+          },
+          "output_modalities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminModelModality"
+            },
+            "maxItems": 4,
+            "minItems": 1
+          },
+          "supports_reasoning": {
+            "type": "boolean"
+          },
+          "supports_tool_calls": {
+            "type": "boolean"
+          },
+          "lifecycle": {
+            "$ref": "#/components/schemas/ModelCatalogLifecycle"
+          },
+          "runtime_status": {
+            "$ref": "#/components/schemas/ModelCatalogRuntimeStatus"
           },
           "billing_mode": {
             "$ref": "#/components/schemas/ModelCatalogBillingMode"
@@ -8393,9 +9174,22 @@
           },
           "ratios": {
             "$ref": "#/components/schemas/ModelCatalogRatios"
+          },
+          "price_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
           }
         },
         "additionalProperties": false
+      },
+      "ModelCatalogLifecycle": {
+        "type": "string",
+        "description": "模型广场公开的闭合商品生命周期。",
+        "enum": [
+          "active",
+          "deprecated"
+        ]
       },
       "ModelCatalogListResponse": {
         "type": "object",
@@ -8458,6 +9252,14 @@
           }
         },
         "additionalProperties": false
+      },
+      "ModelCatalogRuntimeStatus": {
+        "type": "string",
+        "description": "模型广场公开的闭合运行时状态。",
+        "enum": [
+          "not_evaluated",
+          "available"
+        ]
       },
       "ModelCatalogTokenPrices": {
         "type": "object",

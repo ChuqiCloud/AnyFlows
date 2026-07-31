@@ -1,23 +1,30 @@
 use std::{fmt, sync::Arc};
 
 use af_admin::{
-    ModelCatalogBillingMode, ModelCatalogItem, ModelCatalogPage, ModelCatalogPricingScope,
+    AdminModelModalities, ModelCatalogBillingMode, ModelCatalogItem, ModelCatalogLifecycle,
+    ModelCatalogListFuture, ModelCatalogMetadata, ModelCatalogPage, ModelCatalogPricingScope,
     ModelCatalogQuery, ModelCatalogRatios, ModelCatalogReadError, ModelCatalogReader,
-    ModelCatalogTokenPrices, SessionAuthentication,
+    ModelCatalogRuntimeStatus, ModelCatalogTokenPrices, SessionAuthentication,
 };
 use af_billing::{
     BillingMode, ModelPrice, ModelPriceCache, PricingRatio, PricingRatios, RatioPricingResolver,
-    RequestPricingSnapshotSource,
+    RequestPricingSnapshotError, RequestPricingSnapshotSource,
+};
+use af_db::{
+    AdminModelLifecycleRecord, AdminModelModalitiesRecord, AdminModelRecord, AdminModelRepository,
+    MAX_ADMIN_MODEL_PAGE_SIZE,
 };
 use af_scheduler::InMemoryChannelIndex;
 
 type CatalogClock = Arc<dyn Fn() -> Option<u32> + Send + Sync>;
+const MAX_METADATA_SCAN_PAGES: usize = 100;
 
 /// 组合模型价格、调度运行时与请求定价快照的模型目录读取服务。
 pub(crate) struct RuntimeModelCatalogReader {
     channel_index: InMemoryChannelIndex,
     model_prices: ModelPriceCache,
     pricing_source: Arc<dyn RequestPricingSnapshotSource>,
+    model_metadata: AdminModelRepository,
     clock: CatalogClock,
 }
 
@@ -27,21 +34,24 @@ impl RuntimeModelCatalogReader {
         channel_index: InMemoryChannelIndex,
         model_prices: ModelPriceCache,
         pricing_source: Arc<dyn RequestPricingSnapshotSource>,
+        model_metadata: AdminModelRepository,
     ) -> Self {
         Self {
             channel_index,
             model_prices,
             pricing_source,
+            model_metadata,
             clock: Arc::new(crate::utc_time::current_utc_day_second),
         }
     }
 
     fn catalog_item_from_pricing(
-        model: &str,
+        metadata: ModelCatalogMetadata,
         billing_mode: BillingMode,
         resolver: RatioPricingResolver,
         ratios: PricingRatios,
         model_version: u64,
+        runtime_status: ModelCatalogRuntimeStatus,
     ) -> Result<ModelCatalogItem, ModelCatalogReadError> {
         let billing_mode = Self::catalog_billing_mode(billing_mode)?;
         let prices = resolver
@@ -55,11 +65,12 @@ impl RuntimeModelCatalogReader {
             ratios.applied_peak().micros(),
         )?;
         ModelCatalogItem::new(
-            model.to_owned(),
+            metadata,
             billing_mode,
             prices,
             ratios,
             model_version,
+            runtime_status,
         )
     }
 
@@ -75,42 +86,53 @@ impl RuntimeModelCatalogReader {
 
     fn group_catalog_item(
         &self,
-        model: &str,
+        metadata: ModelCatalogMetadata,
         authentication: SessionAuthentication,
         current_second: u32,
-    ) -> Result<ModelCatalogItem, ModelCatalogReadError> {
+    ) -> Result<Option<ModelCatalogItem>, ModelCatalogReadError> {
         let group_id = authentication.group_id();
         // 当前调度快照按实际候选分组建键，因此目录与请求使用同一来源和目标分组。
-        let pricing = self
-            .pricing_source
-            .capture(model, group_id, group_id, current_second)
-            .map_err(|_| ModelCatalogReadError::Internal)?;
+        let pricing =
+            match self
+                .pricing_source
+                .capture(metadata.model(), group_id, group_id, current_second)
+            {
+                Ok(pricing) => pricing,
+                Err(RequestPricingSnapshotError::ModelNotFound) => return Ok(None),
+                Err(_) => return Err(ModelCatalogReadError::Internal),
+            };
         Self::catalog_item_from_pricing(
-            model,
+            metadata,
             pricing.billing_mode(),
             pricing.resolver(),
             pricing.ratios(),
             pricing.model_version(),
+            ModelCatalogRuntimeStatus::Available,
         )
+        .map(Some)
     }
 
     fn public_catalog_item(
-        model: &str,
+        metadata: ModelCatalogMetadata,
         price: ModelPrice,
     ) -> Result<ModelCatalogItem, ModelCatalogReadError> {
         let ratios = PricingRatios::new(PricingRatio::ONE, PricingRatio::ONE, PricingRatio::ONE);
         Self::catalog_item_from_pricing(
-            model,
+            metadata,
             price.billing_mode(),
             price.resolver(ratios),
             ratios,
             price.version(),
+            ModelCatalogRuntimeStatus::NotEvaluated,
         )
     }
 
-    fn model_matches_query(model: &str, search: Option<&str>, query: &ModelCatalogQuery) -> bool {
-        !query.after().is_some_and(|after| model <= after)
-            && !search.is_some_and(|search| !contains_search(model, search))
+    fn metadata_matches_search(record: &AdminModelRecord, search: Option<&str>) -> bool {
+        search.is_none_or(|search| {
+            [record.model(), record.display_name(), record.provider()]
+                .into_iter()
+                .any(|value| contains_search(value, search))
+        })
     }
 
     fn append_item(
@@ -130,75 +152,187 @@ impl RuntimeModelCatalogReader {
         items.push(item);
         false
     }
-}
 
-impl ModelCatalogReader for RuntimeModelCatalogReader {
-    fn list(
+    async fn list_public(
         &self,
-        authentication: Option<SessionAuthentication>,
         query: &ModelCatalogQuery,
     ) -> Result<ModelCatalogPage, ModelCatalogReadError> {
-        let search = query.search();
+        if self.model_prices.is_stale() {
+            return Err(ModelCatalogReadError::Internal);
+        }
+        let prices = self
+            .model_prices
+            .snapshot()
+            .map_err(|_| ModelCatalogReadError::Internal)?;
+        let mut cursor = query.after().map(str::to_owned);
         let mut items = Vec::with_capacity(query.limit());
         let mut has_more = false;
-        let pricing_scope = if let Some(authentication) = authentication {
-            let current_second = (self.clock)().ok_or(ModelCatalogReadError::Internal)?;
-            let snapshot = self
-                .channel_index
-                .snapshot()
+        let mut scan_complete = false;
+        for _ in 0..MAX_METADATA_SCAN_PAGES {
+            let page = self
+                .model_metadata
+                .list_catalog_metadata(false, cursor.as_deref(), MAX_ADMIN_MODEL_PAGE_SIZE)
+                .await
                 .map_err(|_| ModelCatalogReadError::Internal)?;
-            for model in snapshot.model_names(authentication.group_id()) {
-                if !Self::model_matches_query(model, search, query) {
+            let (records, next_cursor) = page.into_parts();
+            for record in records {
+                if !Self::metadata_matches_search(&record, query.search()) {
                     continue;
                 }
-                let item = self.group_catalog_item(model, authentication, current_second)?;
+                let Some(price) = prices.get(record.model()) else {
+                    continue;
+                };
+                let metadata = metadata_from_record(record)?;
+                let item = Self::public_catalog_item(metadata, price)?;
                 if Self::append_item(&mut items, item, query) {
                     has_more = true;
                     break;
                 }
             }
-            ModelCatalogPricingScope::Group
-        } else {
-            if self.model_prices.is_stale() {
+            if has_more {
+                break;
+            }
+            if next_cursor.is_none() {
+                scan_complete = true;
+                break;
+            }
+            if next_cursor.as_deref() <= cursor.as_deref() {
                 return Err(ModelCatalogReadError::Internal);
             }
-            let snapshot = self
-                .model_prices
-                .snapshot()
+            cursor = next_cursor;
+        }
+        if !has_more && !scan_complete {
+            return Err(ModelCatalogReadError::Internal);
+        }
+        // 捕获快照后再次检查，避免失效通知落在读取窗口内仍返回旧公开价格。
+        if self.model_prices.is_stale() {
+            return Err(ModelCatalogReadError::Internal);
+        }
+        Ok(catalog_page(
+            ModelCatalogPricingScope::PublicBase,
+            items,
+            has_more,
+        ))
+    }
+
+    async fn list_group(
+        &self,
+        authentication: SessionAuthentication,
+        query: &ModelCatalogQuery,
+    ) -> Result<ModelCatalogPage, ModelCatalogReadError> {
+        let current_second = (self.clock)().ok_or(ModelCatalogReadError::Internal)?;
+        let runtime = self
+            .channel_index
+            .snapshot()
+            .map_err(|_| ModelCatalogReadError::Internal)?;
+        let mut cursor = query.after().map(str::to_owned);
+        let mut items = Vec::with_capacity(query.limit());
+        let mut has_more = false;
+        let mut scan_complete = false;
+        for _ in 0..MAX_METADATA_SCAN_PAGES {
+            let page = self
+                .model_metadata
+                .list_catalog_metadata(true, cursor.as_deref(), MAX_ADMIN_MODEL_PAGE_SIZE)
+                .await
                 .map_err(|_| ModelCatalogReadError::Internal)?;
-            // 捕获快照后再次检查，避免失效通知落在读取窗口内仍返回旧公开价格。
-            if self.model_prices.is_stale() {
-                return Err(ModelCatalogReadError::Internal);
-            }
-            for (model, price) in snapshot.entries() {
-                if !Self::model_matches_query(model, search, query) {
-                    continue;
-                }
-                let billing_mode = Self::catalog_billing_mode(price.billing_mode())?;
-                if query
-                    .billing_mode()
-                    .is_some_and(|mode| mode != billing_mode)
+            let (records, next_cursor) = page.into_parts();
+            for record in records {
+                if !Self::metadata_matches_search(&record, query.search())
+                    || runtime
+                        .candidates(authentication.group_id(), record.model())
+                        .map_err(|_| ModelCatalogReadError::Internal)?
+                        .is_empty()
                 {
                     continue;
                 }
-                let item = Self::public_catalog_item(model, price)?;
+                let metadata = metadata_from_record(record)?;
+                let Some(item) =
+                    self.group_catalog_item(metadata, authentication, current_second)?
+                else {
+                    continue;
+                };
                 if Self::append_item(&mut items, item, query) {
                     has_more = true;
                     break;
                 }
             }
-            ModelCatalogPricingScope::PublicBase
-        };
-
-        let next_cursor = has_more
-            .then(|| items.last().map(|item| item.model().to_owned()))
-            .flatten();
-        Ok(ModelCatalogPage::from_parts(
-            pricing_scope,
+            if has_more {
+                break;
+            }
+            if next_cursor.is_none() {
+                scan_complete = true;
+                break;
+            }
+            if next_cursor.as_deref() <= cursor.as_deref() {
+                return Err(ModelCatalogReadError::Internal);
+            }
+            cursor = next_cursor;
+        }
+        if !has_more && !scan_complete {
+            return Err(ModelCatalogReadError::Internal);
+        }
+        Ok(catalog_page(
+            ModelCatalogPricingScope::Group,
             items,
-            next_cursor,
+            has_more,
         ))
     }
+}
+
+impl ModelCatalogReader for RuntimeModelCatalogReader {
+    fn list<'a>(
+        &'a self,
+        authentication: Option<SessionAuthentication>,
+        query: &'a ModelCatalogQuery,
+    ) -> ModelCatalogListFuture<'a> {
+        Box::pin(async move {
+            match authentication {
+                Some(authentication) => self.list_group(authentication, query).await,
+                None => self.list_public(query).await,
+            }
+        })
+    }
+}
+
+fn metadata_from_record(
+    record: AdminModelRecord,
+) -> Result<ModelCatalogMetadata, ModelCatalogReadError> {
+    let lifecycle = match record.lifecycle() {
+        AdminModelLifecycleRecord::Active => ModelCatalogLifecycle::Active,
+        AdminModelLifecycleRecord::Deprecated => ModelCatalogLifecycle::Deprecated,
+        AdminModelLifecycleRecord::Draft | AdminModelLifecycleRecord::Retired => {
+            return Err(ModelCatalogReadError::Internal);
+        }
+    };
+    ModelCatalogMetadata::new(
+        record.model().to_owned(),
+        record.display_name().to_owned(),
+        record.provider().to_owned(),
+        record.description().map(str::to_owned),
+        record.icon_url().map(str::to_owned),
+        record.tags().to_vec(),
+        record.context_window(),
+        modalities(record.input_modalities()),
+        modalities(record.output_modalities()),
+        record.supports_reasoning(),
+        record.supports_tool_calls(),
+        lifecycle,
+    )
+}
+
+const fn modalities(value: AdminModelModalitiesRecord) -> AdminModelModalities {
+    AdminModelModalities::new(value.text(), value.image(), value.audio(), value.video())
+}
+
+fn catalog_page(
+    pricing_scope: ModelCatalogPricingScope,
+    items: Vec<ModelCatalogItem>,
+    has_more: bool,
+) -> ModelCatalogPage {
+    let next_cursor = has_more
+        .then(|| items.last().map(|item| item.model().to_owned()))
+        .flatten();
+    ModelCatalogPage::from_parts(pricing_scope, items, next_cursor)
 }
 
 fn contains_search(model: &str, search: &str) -> bool {
@@ -220,9 +354,14 @@ mod tests {
         ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord, RequestPricingSnapshot,
         RequestPricingSnapshotError, TokenPrices,
     };
+    use af_db::{
+        AdminModelCreateRecord, AdminModelLifecycleRecord, AdminModelModalitiesRecord,
+        AdminModelVisibilityRecord, AdminModelWriteRecord, DatabaseOptions, MigrationOptions,
+    };
     use af_domain::GroupId;
     use af_scheduler::{ChannelIndexSource, ChannelIndexSourceFuture};
     use rust_decimal::Decimal;
+    use std::time::Duration;
 
     use super::*;
 
@@ -297,6 +436,23 @@ mod tests {
         }))
         .await
         .unwrap();
+        let pool = af_db::connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let model_metadata = AdminModelRepository::new(pool, Duration::from_secs(2)).unwrap();
+        for (model, display_name, provider) in [
+            ("free-test", "Community Free", "community"),
+            ("gpt-test", "Flagship Model", "OpenAI"),
+            ("no-price", "No Price", "provider"),
+        ] {
+            model_metadata
+                .create(catalog_model(model, display_name, provider))
+                .await
+                .unwrap();
+        }
         let channel_index = InMemoryChannelIndex::load(Arc::new(EmptyChannelSource))
             .await
             .unwrap();
@@ -304,6 +460,7 @@ mod tests {
             channel_index,
             model_prices.clone(),
             Arc::new(RejectPricingSource),
+            model_metadata,
         );
         (reader, model_prices)
     }
@@ -311,7 +468,10 @@ mod tests {
     #[tokio::test]
     async fn guest_catalog_uses_sorted_base_prices_without_runtime_groups() {
         let (reader, _) = public_reader().await;
-        let page = reader.list(None, &ModelCatalogQuery::default()).unwrap();
+        let page = reader
+            .list(None, &ModelCatalogQuery::default())
+            .await
+            .unwrap();
 
         assert_eq!(page.pricing_scope(), ModelCatalogPricingScope::PublicBase);
         assert_eq!(
@@ -338,6 +498,7 @@ mod tests {
                 )
                 .unwrap(),
             )
+            .await
             .unwrap();
         assert_eq!(filtered.items().len(), 1);
         assert_eq!(filtered.items()[0].model(), "gpt-test");
@@ -349,8 +510,28 @@ mod tests {
         model_prices.invalidate().unwrap();
 
         assert!(matches!(
-            reader.list(None, &ModelCatalogQuery::default()),
+            reader.list(None, &ModelCatalogQuery::default()).await,
             Err(ModelCatalogReadError::Internal)
         ));
+    }
+
+    fn catalog_model(model: &str, display_name: &str, provider: &str) -> AdminModelCreateRecord {
+        AdminModelCreateRecord::new(
+            model.to_owned(),
+            AdminModelWriteRecord::new(
+                display_name.to_owned(),
+                provider.to_owned(),
+                None,
+                None,
+                vec!["chat".to_owned()],
+                Some(128_000),
+                AdminModelModalitiesRecord::new(true, false, false, false),
+                AdminModelModalitiesRecord::new(true, false, false, false),
+                false,
+                true,
+                AdminModelVisibilityRecord::Public,
+                AdminModelLifecycleRecord::Active,
+            ),
+        )
     }
 }

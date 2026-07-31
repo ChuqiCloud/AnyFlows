@@ -279,6 +279,19 @@ export type AdminGroupWriteRequest = {
         [key: string]: unknown;
     };
 };
+export type AdminMissingModel = {
+    model: string;
+    channel_count: number;
+    channels: Array<AdminMissingModelChannel>;
+};
+export type AdminMissingModelChannel = {
+    channel_id: number;
+    channel_name: string;
+};
+export type AdminMissingModelListResponse = {
+    models: Array<AdminMissingModel>;
+    next_cursor: string | null;
+};
 export type AdminModel = {
     id: number;
     model: string;
@@ -318,6 +331,50 @@ export type AdminModelListResponse = {
     next_cursor: number | null;
 };
 export type AdminModelModality = 'text' | 'image' | 'audio' | 'video';
+export type AdminModelSyncApplyItemRequest = {
+    item_id: number;
+    display_name: string;
+    provider: string;
+    description?: string | null;
+    icon_url?: string | null;
+    tags: Array<string>;
+    context_window?: number | null;
+    input_modalities: Array<AdminModelModality>;
+    output_modalities: Array<AdminModelModality>;
+    supports_reasoning: boolean;
+    supports_tool_calls: boolean;
+};
+export type AdminModelSyncApplyRequest = {
+    items: Array<AdminModelSyncApplyItemRequest>;
+};
+export type AdminModelSyncApplyResponse = {
+    models: Array<AdminModel>;
+};
+export type AdminModelSyncPreview = {
+    preview_id: string;
+    channel_id: number;
+    type: AdminChannelType;
+    protocol: AdminChannelProtocol;
+    expires_at: number;
+    items: Array<AdminModelSyncPreviewItem>;
+};
+export type AdminModelSyncPreviewItem = {
+    item_id: number;
+    canonical_model: string;
+    upstream_model: string | null;
+    relation: AdminModelSyncRelation;
+    display_name_hint: string | null;
+    description_hint: string | null;
+    context_window_hint: number | null;
+    input_token_limit_hint: number | null;
+    output_token_limit_hint: number | null;
+    supported_methods: Array<string>;
+    applied_model_id: number | null;
+};
+export type AdminModelSyncPreviewRequest = {
+    channel_id: number;
+};
+export type AdminModelSyncRelation = 'missing_metadata' | 'discovered_unconfigured' | 'existing' | 'not_reported';
 export type AdminModelUpdateRequest = {
     display_name: string;
     provider: string;
@@ -470,16 +527,30 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'password_reset_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'model_not_found' | 'model_conflict' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
 export type ModelCatalogItem = {
     model: string;
+    display_name: string;
+    provider: string;
+    description: string | null;
+    icon_url: string | null;
+    tags: Array<string>;
+    context_window: number | null;
+    input_modalities: Array<AdminModelModality>;
+    output_modalities: Array<AdminModelModality>;
+    supports_reasoning: boolean;
+    supports_tool_calls: boolean;
+    lifecycle: ModelCatalogLifecycle;
+    runtime_status: ModelCatalogRuntimeStatus;
     billing_mode: ModelCatalogBillingMode;
     prices: null | ModelCatalogTokenPrices;
     ratios: ModelCatalogRatios;
+    price_version: number;
 };
+export type ModelCatalogLifecycle = 'active' | 'deprecated';
 export type ModelCatalogListResponse = {
     pricing_scope: ModelCatalogPricingScope;
     models: Array<ModelCatalogItem>;
@@ -491,6 +562,7 @@ export type ModelCatalogRatios = {
     group_model_micros: string;
     peak_micros: string;
 };
+export type ModelCatalogRuntimeStatus = 'not_evaluated' | 'available';
 export type ModelCatalogTokenPrices = {
     input: string;
     output: string;
@@ -1444,6 +1516,70 @@ export type UpdateAdminModelResponses = {
     200: AdminModel;
 };
 export type UpdateAdminModelResponse = UpdateAdminModelResponses[keyof UpdateAdminModelResponses];
+export type ListMissingAdminModelsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: string;
+        limit?: number;
+    };
+    url: '/api/admin/models/missing';
+};
+export type ListMissingAdminModelsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListMissingAdminModelsError = ListMissingAdminModelsErrors[keyof ListMissingAdminModelsErrors];
+export type ListMissingAdminModelsResponses = {
+    200: AdminMissingModelListResponse;
+};
+export type ListMissingAdminModelsResponse = ListMissingAdminModelsResponses[keyof ListMissingAdminModelsResponses];
+export type CreateAdminModelSyncPreviewData = {
+    body: AdminModelSyncPreviewRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/models/sync-previews';
+};
+export type CreateAdminModelSyncPreviewErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    422: ManagementError;
+    500: ManagementError;
+    502: ManagementError;
+    504: ManagementError;
+};
+export type CreateAdminModelSyncPreviewError = CreateAdminModelSyncPreviewErrors[keyof CreateAdminModelSyncPreviewErrors];
+export type CreateAdminModelSyncPreviewResponses = {
+    201: AdminModelSyncPreview;
+};
+export type CreateAdminModelSyncPreviewResponse = CreateAdminModelSyncPreviewResponses[keyof CreateAdminModelSyncPreviewResponses];
+export type ApplyAdminModelSyncPreviewData = {
+    body: AdminModelSyncApplyRequest;
+    path: {
+        preview_id: string;
+    };
+    query?: never;
+    url: '/api/admin/models/sync-previews/{preview_id}/apply';
+};
+export type ApplyAdminModelSyncPreviewErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    410: ManagementError;
+    500: ManagementError;
+};
+export type ApplyAdminModelSyncPreviewError = ApplyAdminModelSyncPreviewErrors[keyof ApplyAdminModelSyncPreviewErrors];
+export type ApplyAdminModelSyncPreviewResponses = {
+    200: AdminModelSyncApplyResponse;
+};
+export type ApplyAdminModelSyncPreviewResponse = ApplyAdminModelSyncPreviewResponses[keyof ApplyAdminModelSyncPreviewResponses];
 export type CreatePlaygroundShareData = {
     body: PlaygroundShareCreateRequest;
     path?: never;

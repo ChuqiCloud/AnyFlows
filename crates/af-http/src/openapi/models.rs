@@ -6,8 +6,10 @@ use utoipa::OpenApi;
 
 use crate::{
     management_error::ManagementErrorBody,
+    management_models::AdminModelModalityValue,
     model_catalog::{
-        ModelCatalogItemResponse, ModelCatalogListResponse, ModelCatalogRatiosResponse,
+        ModelCatalogItemResponse, ModelCatalogLifecycleValue, ModelCatalogListResponse,
+        ModelCatalogRatiosResponse, ModelCatalogRuntimeStatusValue,
         ModelCatalogTokenPricesResponse,
     },
     openapi::schema::{ModelCatalogBillingModeSchema, ModelCatalogPricingScopeSchema},
@@ -21,7 +23,7 @@ use crate::{
     summary = "读取公开或当前分组模型目录",
     description = "无 Authorization 时返回公开基础目录；携带 Bearer JWT 时严格认证并返回当前默认分组的可用模型与实际价格。",
     params(
-        ("q" = Option<String>, Query, min_length = 1, max_length = 128, description = "模型名包含搜索"),
+        ("q" = Option<String>, Query, min_length = 1, max_length = 128, description = "匹配 Canonical 标识、展示名或厂商"),
         ("billing_mode" = Option<ModelCatalogBillingModeSchema>, Query, description = "计费模式筛选"),
         ("after" = Option<String>, Query, min_length = 1, max_length = 256, description = "上一页最后一个模型名"),
         ("limit" = Option<i32>, Query, minimum = 1, maximum = 100, description = "每页数量，默认 24")
@@ -46,6 +48,9 @@ fn list_models() {}
         ModelCatalogRatiosResponse,
         ModelCatalogItemResponse,
         ModelCatalogListResponse,
+        ModelCatalogLifecycleValue,
+        ModelCatalogRuntimeStatusValue,
+        AdminModelModalityValue,
         ManagementErrorBody
     ))
 )]

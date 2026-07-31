@@ -40,16 +40,35 @@ export type ModelValidationMessages = {
 
 const modalitySchema = z.enum(['text', 'image', 'audio', 'video'])
 
+export const MODEL_PROVIDER_SUGGESTIONS = [
+  'openai',
+  'anthropic',
+  'google',
+  'deepseek',
+  'qwen',
+  'moonshot',
+  'zhipu',
+  'minimax',
+  'bytedance',
+  'tencent',
+  'xai',
+  'meta',
+  'mistral',
+  'cohere',
+  'amazon',
+  'microsoft',
+] as const
+
 /** 生成与当前界面语言一致的结构化模型元数据表单校验器。 */
 export function buildModelManagementSchema(messages: ModelValidationMessages) {
   return z.object({
-    model: z.string().refine((value) => validText(value, 256), messages.model),
-    displayName: z.string().refine((value) => validText(value, 128), messages.displayName),
-    provider: z.string().refine((value) => validText(value, 64), messages.provider),
-    description: z.string().refine((value) => validOptionalText(value, 4096), messages.description),
-    iconUrl: z.string().refine(validOptionalIconUrl, messages.iconUrl),
-    tags: z.array(z.string()).max(32, messages.tags).refine(validTags, messages.tags),
-    contextWindow: z.string().refine(validContextWindow, messages.contextWindow),
+    model: z.string().refine((value) => validModelText(value, 256), messages.model),
+    displayName: z.string().refine((value) => validModelText(value, 128), messages.displayName),
+    provider: z.string().refine((value) => validModelText(value, 64), messages.provider),
+    description: z.string().refine((value) => validOptionalModelText(value, 4096), messages.description),
+    iconUrl: z.string().refine(validOptionalModelIconUrl, messages.iconUrl),
+    tags: z.array(z.string()).max(32, messages.tags).refine(validModelTags, messages.tags),
+    contextWindow: z.string().refine(validModelContextWindow, messages.contextWindow),
     inputModalities: z.array(modalitySchema).min(1, messages.modalities),
     outputModalities: z.array(modalitySchema).min(1, messages.modalities),
     supportsReasoning: z.boolean(),
@@ -94,8 +113,8 @@ function toMutableRequest(values: ModelManagementFormValues): AdminModelUpdateRe
   return {
     display_name: values.displayName.trim(),
     provider: values.provider.trim(),
-    description: optionalText(values.description),
-    icon_url: optionalText(values.iconUrl),
+    description: optionalModelText(values.description),
+    icon_url: optionalModelText(values.iconUrl),
     tags: values.tags,
     context_window: values.contextWindow ? Number(values.contextWindow) : null,
     input_modalities: values.inputModalities,
@@ -107,23 +126,23 @@ function toMutableRequest(values: ModelManagementFormValues): AdminModelUpdateRe
   }
 }
 
-function optionalText(value: string) {
+export function optionalModelText(value: string) {
   const normalized = value.trim()
   return normalized || null
 }
 
-function validText(value: string, maximumBytes: number) {
+export function validModelText(value: string, maximumBytes: number) {
   const normalized = value.trim()
   return normalized.length > 0
     && byteLength(normalized) <= maximumBytes
     && ![...normalized].some((character) => /\p{Cc}/u.test(character))
 }
 
-function validOptionalText(value: string, maximumBytes: number) {
-  return value.trim().length === 0 || validText(value, maximumBytes)
+export function validOptionalModelText(value: string, maximumBytes: number) {
+  return value.trim().length === 0 || validModelText(value, maximumBytes)
 }
 
-function validOptionalIconUrl(value: string) {
+export function validOptionalModelIconUrl(value: string) {
   const normalized = value.trim()
   if (!normalized) return true
   if (byteLength(normalized) > 2048 || [...normalized].some((character) => /\p{Cc}/u.test(character))) {
@@ -143,13 +162,13 @@ function validOptionalIconUrl(value: string) {
   }
 }
 
-function validTags(tags: string[]) {
+export function validModelTags(tags: string[]) {
   return new Set(tags).size === tags.length
-    && tags.every((tag) => validText(tag, 64))
+    && tags.every((tag) => validModelText(tag, 64))
     && byteLength(JSON.stringify(tags)) <= 8192
 }
 
-function validContextWindow(value: string) {
+export function validModelContextWindow(value: string) {
   if (!value) return true
   const parsed = Number(value)
   return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= 2_147_483_647

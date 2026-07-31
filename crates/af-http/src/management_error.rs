@@ -49,6 +49,26 @@ pub(crate) enum ManagementError {
     ModelNotFound,
     /// Canonical 模型标识与当前有效元数据冲突。
     ModelConflict,
+    /// 渠道存在，但当前没有可用于模型发现的有效凭据或网络路径。
+    ModelSyncChannelUnavailable,
+    /// 当前渠道类型或协议不支持受控模型枚举。
+    ModelSyncUnsupportedChannel,
+    /// 上游模型枚举超过渠道级截止时间。
+    ModelSyncUpstreamTimeout,
+    /// 上游以非成功状态拒绝模型枚举请求。
+    ModelSyncUpstreamRejected,
+    /// 上游模型枚举响应无法通过结构与容量校验。
+    ModelSyncInvalidResponse,
+    /// 上游返回的模型候选数量超过服务端固定上限。
+    ModelSyncCandidateLimitExceeded,
+    /// 同步预览不存在或不属于当前管理员。
+    ModelSyncPreviewNotFound,
+    /// 同步预览已经超过服务端固定有效期。
+    ModelSyncPreviewExpired,
+    /// 同步预览已经成功应用，不能再次提交。
+    ModelSyncPreviewAlreadyApplied,
+    /// 同步应用与并发元数据写入发生冲突。
+    ModelSyncConflict,
     /// 令牌不存在或已经被软删除。
     TokenNotFound,
     /// 当前用户的未软删除 API Key 已达到容量上限。
@@ -232,6 +252,76 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "model_conflict",
                     message: "Model conflict",
+                },
+            ),
+            Self::ModelSyncChannelUnavailable => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "model_sync_channel_unavailable",
+                    message: "Model sync channel unavailable",
+                },
+            ),
+            Self::ModelSyncUnsupportedChannel => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ManagementErrorBody {
+                    code: "model_sync_unsupported_channel",
+                    message: "Model sync unsupported for channel",
+                },
+            ),
+            Self::ModelSyncUpstreamTimeout => (
+                StatusCode::GATEWAY_TIMEOUT,
+                ManagementErrorBody {
+                    code: "model_sync_upstream_timeout",
+                    message: "Model sync upstream timeout",
+                },
+            ),
+            Self::ModelSyncUpstreamRejected => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "model_sync_upstream_rejected",
+                    message: "Model sync upstream rejected",
+                },
+            ),
+            Self::ModelSyncInvalidResponse => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "model_sync_invalid_response",
+                    message: "Model sync invalid upstream response",
+                },
+            ),
+            Self::ModelSyncCandidateLimitExceeded => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "model_sync_candidate_limit_exceeded",
+                    message: "Model sync candidate limit exceeded",
+                },
+            ),
+            Self::ModelSyncPreviewNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "model_sync_preview_not_found",
+                    message: "Model sync preview not found",
+                },
+            ),
+            Self::ModelSyncPreviewExpired => (
+                StatusCode::GONE,
+                ManagementErrorBody {
+                    code: "model_sync_preview_expired",
+                    message: "Model sync preview expired",
+                },
+            ),
+            Self::ModelSyncPreviewAlreadyApplied => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "model_sync_preview_already_applied",
+                    message: "Model sync preview already applied",
+                },
+            ),
+            Self::ModelSyncConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "model_sync_conflict",
+                    message: "Model sync conflict",
                 },
             ),
             Self::TokenNotFound => (

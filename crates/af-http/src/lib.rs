@@ -22,6 +22,7 @@ mod management_dashboard;
 mod management_error;
 mod management_group_writes;
 mod management_groups;
+mod management_model_sync;
 mod management_model_writes;
 mod management_models;
 mod management_session;

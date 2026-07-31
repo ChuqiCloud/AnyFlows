@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminModelReader,
-    AdminModelWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
-    AdminUserWriter, InitialSetup, SessionAuthenticator, TokenAuthentication,
+    AdminModelSyncService, AdminModelWriter, AdminTokenReader, AdminTokenWriter,
+    AdminUsageLogReader, AdminUserReader, AdminUserWriter, InitialSetup, SessionAuthenticator,
+    TokenAuthentication,
 };
 use af_analytics::AdminDashboardReader;
 use af_domain::{AfError, Protocol, TokenModelPolicy};
@@ -42,6 +43,7 @@ pub(crate) struct HttpState {
     pub(crate) admin_group_writer: Arc<dyn AdminGroupWriter>,
     pub(crate) admin_model_reader: Option<Arc<dyn AdminModelReader>>,
     pub(crate) admin_model_writer: Option<Arc<dyn AdminModelWriter>>,
+    pub(crate) admin_model_sync_service: Option<Arc<dyn AdminModelSyncService>>,
     pub(crate) admin_token_reader: Arc<dyn AdminTokenReader>,
     pub(crate) admin_token_writer: Arc<dyn AdminTokenWriter>,
     pub(crate) admin_usage_log_reader: Option<Arc<dyn AdminUsageLogReader>>,
@@ -74,6 +76,7 @@ impl HttpState {
             admin_group_writer,
             admin_model_reader: None,
             admin_model_writer: None,
+            admin_model_sync_service: None,
             admin_token_reader,
             admin_token_writer,
             admin_usage_log_reader: None,
@@ -122,6 +125,15 @@ impl HttpState {
         writer: Option<Arc<dyn AdminModelWriter>>,
     ) -> Self {
         self.admin_model_writer = writer;
+        self
+    }
+
+    /// 为模型缺失检测、同步预览与原子应用路由注入真实服务。
+    pub(crate) fn with_admin_model_sync_service(
+        mut self,
+        service: Option<Arc<dyn AdminModelSyncService>>,
+    ) -> Self {
+        self.admin_model_sync_service = service;
         self
     }
 

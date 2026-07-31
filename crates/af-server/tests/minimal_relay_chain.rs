@@ -28,17 +28,16 @@ use af_admin::{
     AdminUserReadError, AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture,
     AdminUserWriteError, AdminUserWriter, ApiKeyDigest, InitialSetup, InitialSetupCommand,
     InitialSetupError, InitialSetupFuture, InitialSetupStatusFuture, LoginCredentials,
-    ModelCatalogPage, ModelCatalogQuery, ModelCatalogReadError, ModelCatalogReader,
-    PasswordResetConfirmCommand, PasswordResetConfirmFuture, PasswordResetError,
-    PasswordResetRequestCommand, PasswordResetRequestFuture, PasswordResetService,
-    PlaygroundConversationDeleteFuture, PlaygroundConversationError,
-    PlaygroundConversationListFuture, PlaygroundConversationReadFuture,
-    PlaygroundConversationSaveCommand, PlaygroundConversationSaveFuture,
-    PlaygroundConversationService, PlaygroundShareCreateCommand, PlaygroundShareCreateFuture,
-    PlaygroundShareError, PlaygroundShareReadFuture, PlaygroundShareRevokeFuture,
-    PlaygroundShareService, PublicSiteSettingsFuture, RegistrationCommand,
-    RegistrationEmailVerificationCommand, RegistrationEmailVerificationFuture, RegistrationError,
-    RegistrationFuture, RegistrationPolicyCommand, RegistrationPolicyFuture,
+    ModelCatalogQuery, ModelCatalogReadError, ModelCatalogReader, PasswordResetConfirmCommand,
+    PasswordResetConfirmFuture, PasswordResetError, PasswordResetRequestCommand,
+    PasswordResetRequestFuture, PasswordResetService, PlaygroundConversationDeleteFuture,
+    PlaygroundConversationError, PlaygroundConversationListFuture,
+    PlaygroundConversationReadFuture, PlaygroundConversationSaveCommand,
+    PlaygroundConversationSaveFuture, PlaygroundConversationService, PlaygroundShareCreateCommand,
+    PlaygroundShareCreateFuture, PlaygroundShareError, PlaygroundShareReadFuture,
+    PlaygroundShareRevokeFuture, PlaygroundShareService, PublicSiteSettingsFuture,
+    RegistrationCommand, RegistrationEmailVerificationCommand, RegistrationEmailVerificationFuture,
+    RegistrationError, RegistrationFuture, RegistrationPolicyCommand, RegistrationPolicyFuture,
     RegistrationPolicyUpdateFuture, RegistrationService, RegistrationStatusFuture,
     SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
     SessionLoginFuture, SessionPrincipal, SiteSettingsCommand, SiteSettingsError,
@@ -162,12 +161,12 @@ impl UserProfileService for RejectUserProfile {
 }
 
 impl ModelCatalogReader for RejectModelCatalog {
-    fn list(
-        &self,
+    fn list<'a>(
+        &'a self,
         _authentication: Option<af_admin::SessionAuthentication>,
-        _query: &ModelCatalogQuery,
-    ) -> Result<ModelCatalogPage, ModelCatalogReadError> {
-        Err(ModelCatalogReadError::Internal)
+        _query: &'a ModelCatalogQuery,
+    ) -> af_admin::ModelCatalogListFuture<'a> {
+        Box::pin(async { Err(ModelCatalogReadError::Internal) })
     }
 }
 
@@ -1536,6 +1535,7 @@ async fn start_server(
         None,
         Arc::new(RejectAdminGroups),
         Arc::new(RejectAdminGroups),
+        None,
         None,
         None,
         Arc::new(RejectAdminTokens),

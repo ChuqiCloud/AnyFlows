@@ -191,7 +191,7 @@ impl AdminModelUpdateRequest {
     }
 }
 
-fn parse_modalities(
+pub(crate) fn parse_modalities(
     values: Vec<AdminModelModalityValue>,
 ) -> Result<AdminModelModalities, ManagementError> {
     if values.is_empty() || values.len() > 4 {

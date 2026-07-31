@@ -24,9 +24,9 @@ use crate::entity::{
     SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, abilities,
     auth_challenge_rate_limits, auth_challenges, authentication_settings,
     billing_batch_checkpoints, billing_reservations, channel_groups, channel_models, channels,
-    credentials, email_settings, group_model_ratios, groups, model_prices, models, options,
-    playground_conversations, playground_shares, registration_rate_limits, site_settings, tokens,
-    usage_logs, users,
+    credentials, email_settings, group_model_ratios, groups, model_prices, model_sync_items,
+    model_sync_runs, models, options, playground_conversations, playground_shares,
+    registration_rate_limits, site_settings, tokens, usage_logs, users,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -48,7 +48,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量；列变更不会增加核心表数量。
-const EXPECTED_MIGRATION_COUNT: usize = 25;
+const EXPECTED_MIGRATION_COUNT: usize = 26;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -62,7 +62,7 @@ const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
 const PLAYGROUND_CONVERSATION_KEY: &str = "55555555555555555555555555555555";
-const CORE_TABLES: [&str; 23] = [
+const CORE_TABLES: [&str; 25] = [
     "groups",
     "users",
     "channels",
@@ -86,6 +86,8 @@ const CORE_TABLES: [&str; 23] = [
     "auth_challenges",
     "auth_challenge_rate_limits",
     "models",
+    "model_sync_runs",
+    "model_sync_items",
 ];
 
 struct SlowMigrator;
@@ -1386,6 +1388,8 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     )
     .await?;
     assert_entity_columns::<models::Column>(&manager, "models").await?;
+    assert_entity_columns::<model_sync_runs::Column>(&manager, "model_sync_runs").await?;
+    assert_entity_columns::<model_sync_items::Column>(&manager, "model_sync_items").await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -1428,6 +1432,10 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ),
         ("models", "uq_models_active_model"),
         ("models", "idx_models_lifecycle_visibility_id"),
+        ("model_sync_runs", "uq_model_sync_runs_preview_id"),
+        ("model_sync_runs", "idx_model_sync_runs_channel_created"),
+        ("model_sync_items", "uq_model_sync_items_run_ordinal"),
+        ("model_sync_items", "idx_model_sync_items_run_relation"),
     ] {
         assert!(
             manager.has_index(table, index).await?,

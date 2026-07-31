@@ -14,6 +14,7 @@ mod initial_setup;
 mod model_catalog;
 mod model_metadata_read;
 mod model_metadata_write;
+mod model_sync;
 mod password_reset;
 mod playground_conversation;
 mod playground_share;
@@ -78,8 +79,9 @@ pub use initial_setup::{
 };
 pub use model_catalog::{
     DEFAULT_MODEL_CATALOG_PAGE_SIZE, MAX_MODEL_CATALOG_PAGE_SIZE, ModelCatalogBillingMode,
-    ModelCatalogItem, ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogQuery,
-    ModelCatalogRatios, ModelCatalogReadError, ModelCatalogReader, ModelCatalogTokenPrices,
+    ModelCatalogItem, ModelCatalogLifecycle, ModelCatalogListFuture, ModelCatalogMetadata,
+    ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogQuery, ModelCatalogRatios,
+    ModelCatalogReadError, ModelCatalogReader, ModelCatalogRuntimeStatus, ModelCatalogTokenPrices,
 };
 pub use model_metadata_read::{
     AdminModel, AdminModelGetFuture, AdminModelLifecycle, AdminModelListFuture,
@@ -91,6 +93,15 @@ pub use model_metadata_write::{
     AdminModelCreateCommand, AdminModelCreateFuture, AdminModelDeleteFuture,
     AdminModelUpdateCommand, AdminModelUpdateFuture, AdminModelWriteError, AdminModelWriter,
     DatabaseAdminModelWriter,
+};
+pub use model_sync::{
+    AdminModelSyncApplyCommand, AdminModelSyncApplyItemCommand, AdminModelSyncError,
+    AdminModelSyncService, DEFAULT_MISSING_MODEL_PAGE_SIZE, DatabaseAdminModelSyncService,
+    MAX_MISSING_MODEL_PAGE_SIZE, MAX_MODEL_SYNC_APPLY_ITEMS, MissingModelChannelRecord,
+    MissingModelListFuture, MissingModelPageRecord, MissingModelQuery, MissingModelRecord,
+    ModelSyncApplyFuture, ModelSyncItemRecord, ModelSyncPreviewFuture, ModelSyncPreviewRecord,
+    ModelSyncRelationRecord, UpstreamModelDiscoverer, UpstreamModelDiscovery,
+    UpstreamModelDiscoveryError, UpstreamModelDiscoveryFuture,
 };
 pub use password_reset::{
     DatabasePasswordResetService, MAX_PASSWORD_RESET_PASSWORD_BYTES,

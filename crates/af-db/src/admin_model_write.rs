@@ -171,33 +171,11 @@ impl AdminModelRepository {
         }
         let transaction = begin_transaction(self).await?;
         ensure_model_available(&transaction, &record.model).await?;
-        let fields = record.fields;
-        let inserted = models::ActiveModel {
-            model: Set(record.model),
-            display_name: Set(fields.display_name),
-            provider: Set(fields.provider),
-            description: Set(fields.description),
-            icon_url: Set(fields.icon_url),
-            tags: Set(serde_json::to_value(fields.tags).map_err(|_| internal_invariant())?),
-            context_window: Set(fields.context_window),
-            supports_text_input: Set(fields.input_modalities.text()),
-            supports_image_input: Set(fields.input_modalities.image()),
-            supports_audio_input: Set(fields.input_modalities.audio()),
-            supports_video_input: Set(fields.input_modalities.video()),
-            supports_text_output: Set(fields.output_modalities.text()),
-            supports_image_output: Set(fields.output_modalities.image()),
-            supports_audio_output: Set(fields.output_modalities.audio()),
-            supports_video_output: Set(fields.output_modalities.video()),
-            supports_reasoning: Set(fields.supports_reasoning),
-            supports_tool_calls: Set(fields.supports_tool_calls),
-            visibility: Set(fields.visibility.database_value()),
-            lifecycle: Set(fields.lifecycle.database_value()),
-            ..Default::default()
-        }
-        .insert(&transaction)
-        .with_subscriber(NoSubscriber::default())
-        .await
-        .map_err(map_write_db_error)?;
+        let inserted = active_model_from_write(record.model, record.fields)?
+            .insert(&transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_write_db_error)?;
         let snapshot = AdminModelRecord::try_from_model(inserted)?;
         commit_transaction(transaction).await?;
         Ok(snapshot)
@@ -321,7 +299,7 @@ impl AdminModelRepository {
     }
 }
 
-fn valid_write_fields(fields: &AdminModelWriteRecord) -> bool {
+pub(super) fn valid_write_fields(fields: &AdminModelWriteRecord) -> bool {
     valid_text(&fields.display_name, MAX_ADMIN_MODEL_DISPLAY_NAME_BYTES)
         && valid_text(&fields.provider, MAX_ADMIN_MODEL_PROVIDER_BYTES)
         && valid_optional_text(
@@ -333,6 +311,38 @@ fn valid_write_fields(fields: &AdminModelWriteRecord) -> bool {
         && valid_context_window(fields.context_window)
         && !fields.input_modalities.is_empty()
         && !fields.output_modalities.is_empty()
+}
+
+/// 将已验证的元数据字段转换为唯一的模型实体写入形状。
+pub(super) fn active_model_from_write(
+    model: String,
+    fields: AdminModelWriteRecord,
+) -> Result<models::ActiveModel, AdminModelRepositoryError> {
+    if !valid_canonical_model(&model) || !valid_write_fields(&fields) {
+        return Err(internal_invariant());
+    }
+    Ok(models::ActiveModel {
+        model: Set(model),
+        display_name: Set(fields.display_name),
+        provider: Set(fields.provider),
+        description: Set(fields.description),
+        icon_url: Set(fields.icon_url),
+        tags: Set(serde_json::to_value(fields.tags).map_err(|_| internal_invariant())?),
+        context_window: Set(fields.context_window),
+        supports_text_input: Set(fields.input_modalities.text()),
+        supports_image_input: Set(fields.input_modalities.image()),
+        supports_audio_input: Set(fields.input_modalities.audio()),
+        supports_video_input: Set(fields.input_modalities.video()),
+        supports_text_output: Set(fields.output_modalities.text()),
+        supports_image_output: Set(fields.output_modalities.image()),
+        supports_audio_output: Set(fields.output_modalities.audio()),
+        supports_video_output: Set(fields.output_modalities.video()),
+        supports_reasoning: Set(fields.supports_reasoning),
+        supports_tool_calls: Set(fields.supports_tool_calls),
+        visibility: Set(fields.visibility.database_value()),
+        lifecycle: Set(fields.lifecycle.database_value()),
+        ..Default::default()
+    })
 }
 
 async fn begin_transaction(
@@ -403,7 +413,7 @@ async fn fetch_model_snapshot(
     AdminModelRecord::try_from_model(model)
 }
 
-fn map_write_db_error(error: DbErr) -> AdminModelRepositoryError {
+pub(super) fn map_write_db_error(error: DbErr) -> AdminModelRepositoryError {
     let rendered = error.to_string();
     if rendered.contains("uq_models_active_model")
         || rendered.contains("_active_model_hash")
