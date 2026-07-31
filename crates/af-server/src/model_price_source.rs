@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(candidate.provider(), "openai");
         assert_eq!(
             candidate.costs()[0],
-            Some(Decimal::from_str("1.234567890123456789").unwrap())
+            Some(Decimal::from_str_exact("1.234567890123456789").unwrap())
         );
         assert!(candidate.has_tiered_pricing());
         assert!(candidate.costs()[3].is_none());
