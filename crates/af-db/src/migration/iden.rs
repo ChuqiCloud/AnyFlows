@@ -435,6 +435,66 @@ pub(in crate::migration) mod models {
     }
 }
 
+pub(in crate::migration) mod model_sync_runs {
+    use super::DeriveIden;
+
+    /// `model_sync_runs` 上游模型同步运行审计表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "model_sync_runs")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 模型同步运行的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        PreviewId,
+        ChannelId,
+        ActorUserId,
+        ChannelType,
+        Protocol,
+        State,
+        CandidateCount,
+        ExpiresAt,
+        AppliedAt,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod model_sync_items {
+    use super::DeriveIden;
+
+    /// `model_sync_items` 上游模型同步候选审计表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "model_sync_items")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 模型同步候选的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        RunId,
+        Ordinal,
+        CanonicalModel,
+        UpstreamModel,
+        Relation,
+        DisplayNameHint,
+        DescriptionHint,
+        ContextWindowHint,
+        InputTokenLimitHint,
+        OutputTokenLimitHint,
+        SupportedMethods,
+        AppliedModelId,
+    }
+}
+
 pub(in crate::migration) mod group_model_ratios {
     use super::DeriveIden;
 

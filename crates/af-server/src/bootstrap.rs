@@ -6,20 +6,21 @@ use af_account::{
 };
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminEmailSettingsService, AdminGroupReader,
-    AdminGroupWriter, AdminModelReader, AdminModelWriter, AdminTokenReader, AdminTokenWriter,
-    AdminUsageLogReader, AdminUserReader, AdminUserWriter, DatabaseAdminChannelReader,
-    DatabaseAdminChannelWriter, DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader,
-    DatabaseAdminGroupWriter, DatabaseAdminModelReader, DatabaseAdminModelWriter,
-    DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
-    DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseInitialSetup,
-    DatabasePasswordResetService, DatabasePlaygroundConversationService,
-    DatabasePlaygroundShareService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
-    DatabaseSiteSettingsService, DatabaseTokenAuthenticator, DatabaseUserProfileService,
-    DatabaseUserTokenService, EmailDelivery, InitialSetup, ModelCatalogReader,
-    PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
-    PlaygroundShareService, RegistrationService, RegistrationServiceConfigError,
-    SessionAuthenticator, SessionAuthenticatorConfigError, SiteSettingsService, TokenAuthenticator,
-    UserProfileService, UserTokenService,
+    AdminGroupWriter, AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminTokenReader,
+    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter,
+    DatabaseAdminChannelReader, DatabaseAdminChannelWriter, DatabaseAdminEmailSettingsService,
+    DatabaseAdminGroupReader, DatabaseAdminGroupWriter, DatabaseAdminModelReader,
+    DatabaseAdminModelSyncService, DatabaseAdminModelWriter, DatabaseAdminTokenReader,
+    DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader, DatabaseAdminUserReader,
+    DatabaseAdminUserWriter, DatabaseInitialSetup, DatabasePasswordResetService,
+    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    DatabaseRegistrationService, DatabaseSessionAuthenticator, DatabaseSiteSettingsService,
+    DatabaseTokenAuthenticator, DatabaseUserProfileService, DatabaseUserTokenService,
+    EmailDelivery, InitialSetup, ModelCatalogReader, PasswordResetService,
+    PasswordResetServiceConfigError, PlaygroundConversationService, PlaygroundShareService,
+    RegistrationService, RegistrationServiceConfigError, SessionAuthenticator,
+    SessionAuthenticatorConfigError, SiteSettingsService, TokenAuthenticator, UserProfileService,
+    UserTokenService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -40,14 +41,14 @@ use af_db::{
     AuthChallengeRepositoryConfigError, ChannelStateRepository, CredentialStateRepository,
     DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool, EmailSettingsRepository,
     EmailSettingsRepositoryConfigError, InitialSetupRepository, InitialSetupRepositoryConfigError,
-    MigrationOptions, PasswordResetRepository, PasswordResetRepositoryConfigError,
-    PlaygroundConversationRepository, PlaygroundConversationRepositoryConfigError,
-    PlaygroundShareRepository, PlaygroundShareRepositoryConfigError, QuotaRepository,
-    RegistrationRepository, RegistrationRepositoryConfigError, SiteSettingsRepository,
-    SiteSettingsRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
-    UsageLogRepository, UserProfileRepository, UserProfileRepositoryConfigError,
-    UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
-    UserTokenRepositoryConfigError, connect_and_migrate,
+    MigrationOptions, ModelSyncRepository, PasswordResetRepository,
+    PasswordResetRepositoryConfigError, PlaygroundConversationRepository,
+    PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
+    PlaygroundShareRepositoryConfigError, QuotaRepository, RegistrationRepository,
+    RegistrationRepositoryConfigError, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
+    TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository, UserProfileRepository,
+    UserProfileRepositoryConfigError, UserSessionRepository, UserSessionRepositoryConfigError,
+    UserTokenRepository, UserTokenRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle,
@@ -73,6 +74,7 @@ use crate::{
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     frontend::EmbeddedFrontendAssets,
     model_catalog::RuntimeModelCatalogReader,
+    model_discovery::DatabaseUpstreamModelDiscoverer,
     scheduled_chat::ScheduledChatService,
     smtp_delivery::SmtpEmailDelivery,
     system_shutdown_signal,
@@ -148,6 +150,7 @@ pub struct BillingReady {
     upstream_clients: HttpClientProvider,
     channel_index: InMemoryChannelIndex,
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
+    admin_model_sync_service: Arc<dyn AdminModelSyncService>,
 }
 
 /// 后台任务监督域已经建立，周期 flush、渠道索引、渠道探活与可靠队列 worker 已注册。
@@ -159,6 +162,7 @@ pub struct Supervised {
     refund_signal_queue: RefundSignalQueue,
     _channel_index: InMemoryChannelIndex,
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
+    admin_model_sync_service: Arc<dyn AdminModelSyncService>,
     admin_channel_probe: Arc<dyn AdminChannelProbe>,
     supervisor: BackgroundTaskSupervisor,
 }
@@ -663,6 +667,16 @@ impl Bootstrap<RelayReady> {
     pub async fn init_billing(self) -> Result<Bootstrap<BillingReady>, BootstrapError> {
         let decryptor = CredentialDecryptor::new(self.config.credential_encryption())
             .map_err(BootstrapError::CredentialDecryption)?;
+        let model_sync_repository =
+            ModelSyncRepository::new(self.stage.infrastructure.infrastructure.database.clone());
+        let model_discoverer = Arc::new(DatabaseUpstreamModelDiscoverer::new(
+            model_sync_repository.clone(),
+            decryptor.clone(),
+            self.stage.upstream_clients.clone(),
+        ));
+        let admin_model_sync_service: Arc<dyn AdminModelSyncService> = Arc::new(
+            DatabaseAdminModelSyncService::new(model_sync_repository, model_discoverer),
+        );
         let billing = BillingRuntime::open(
             self.config.billing(),
             self.stage.infrastructure.infrastructure.database.clone(),
@@ -765,6 +779,7 @@ impl Bootstrap<RelayReady> {
                 upstream_clients: stage.upstream_clients,
                 channel_index,
                 model_catalog_reader,
+                admin_model_sync_service,
             },
         })
     }
@@ -793,6 +808,7 @@ impl Bootstrap<BillingReady> {
             upstream_clients,
             channel_index,
             model_catalog_reader,
+            admin_model_sync_service,
         } = stage;
         spawn_channel_index_refresh_task(
             &mut supervisor,
@@ -864,6 +880,7 @@ impl Bootstrap<BillingReady> {
                 refund_signal_queue,
                 _channel_index: channel_index,
                 model_catalog_reader,
+                admin_model_sync_service,
                 admin_channel_probe,
                 supervisor,
             },
@@ -952,6 +969,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.admin_group_writer),
             Some(Arc::clone(&self.stage.infrastructure.admin_model_reader)),
             Some(Arc::clone(&self.stage.infrastructure.admin_model_writer)),
+            Some(Arc::clone(&self.stage.admin_model_sync_service)),
             Arc::clone(&self.stage.infrastructure.admin_token_reader),
             Arc::clone(&self.stage.infrastructure.admin_token_writer),
             Arc::clone(&self.stage.infrastructure.admin_dashboard_reader),

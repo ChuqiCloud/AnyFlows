@@ -1538,6 +1538,7 @@ async fn start_server(
         Arc::new(RejectAdminGroups),
         None,
         None,
+        None,
         Arc::new(RejectAdminTokens),
         Arc::new(RejectAdminTokens),
         Arc::new(RejectAdminDashboard),

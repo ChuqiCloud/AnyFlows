@@ -25,6 +25,8 @@ pub(crate) mod email_settings;
 pub(crate) mod group_model_ratios;
 pub(crate) mod groups;
 pub(crate) mod model_prices;
+pub(crate) mod model_sync_items;
+pub(crate) mod model_sync_runs;
 pub(crate) mod models;
 pub(crate) mod options;
 pub(crate) mod playground_conversations;
@@ -512,6 +514,12 @@ impl_updated_at_behavior!(
     tokens::ActiveModel => validate_default,
     users::ActiveModel => validate_user,
 );
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for model_sync_runs::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for model_sync_items::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for usage_logs::ActiveModel {

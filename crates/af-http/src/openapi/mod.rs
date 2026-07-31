@@ -6,6 +6,7 @@ mod dashboard;
 mod email_settings;
 mod groups;
 mod model_metadata;
+mod model_sync;
 mod models;
 mod password_reset;
 mod playground_conversations;
@@ -42,6 +43,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(groups::document());
     document.merge(models::document());
     document.merge(model_metadata::document());
+    document.merge(model_sync::document());
     document.merge(playground_shares::document());
     document.merge(playground_conversations::document());
     document.merge(user_tokens::document());
@@ -97,7 +99,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 39);
+        assert_eq!(document.paths.paths.len(), 42);
         let operation_count = document
             .paths
             .paths
@@ -118,7 +120,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 67);
+        assert_eq!(operation_count, 70);
         assert!(
             document
                 .components
@@ -143,6 +145,7 @@ mod tests {
             "createAdminCredential",
             "createAdminGroup",
             "createAdminModel",
+            "createAdminModelSyncPreview",
             "createAdminToken",
             "createAdminUser",
             "confirmPasswordReset",
@@ -178,10 +181,12 @@ mod tests {
             "getRegistrationStatus",
             "getPublicSiteSettings",
             "initializeAdminSetup",
+            "applyAdminModelSyncPreview",
             "listAdminChannels",
             "listAdminCredentials",
             "listAdminGroups",
             "listAdminModels",
+            "listMissingAdminModels",
             "listAdminTokens",
             "listAdminUsageLogs",
             "listAdminUsers",
@@ -213,7 +218,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 95);
+        assert_eq!(schemas.len(), 105);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
@@ -251,6 +256,10 @@ mod tests {
         assert!(schemas.contains_key("AdminModelVisibility"));
         assert!(schemas.contains_key("AdminModelLifecycle"));
         assert!(schemas.contains_key("AdminModelModality"));
+        assert!(schemas.contains_key("AdminMissingModelListResponse"));
+        assert!(schemas.contains_key("AdminModelSyncPreview"));
+        assert!(schemas.contains_key("AdminModelSyncApplyRequest"));
+        assert!(schemas.contains_key("AdminModelSyncRelation"));
         assert!(schemas.contains_key("PlaygroundShareCreateRequest"));
         assert!(schemas.contains_key("PlaygroundShareReadResponse"));
         assert!(schemas.contains_key("PlaygroundConversationSaveRequest"));

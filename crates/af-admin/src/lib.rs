@@ -14,6 +14,7 @@ mod initial_setup;
 mod model_catalog;
 mod model_metadata_read;
 mod model_metadata_write;
+mod model_sync;
 mod password_reset;
 mod playground_conversation;
 mod playground_share;
@@ -91,6 +92,15 @@ pub use model_metadata_write::{
     AdminModelCreateCommand, AdminModelCreateFuture, AdminModelDeleteFuture,
     AdminModelUpdateCommand, AdminModelUpdateFuture, AdminModelWriteError, AdminModelWriter,
     DatabaseAdminModelWriter,
+};
+pub use model_sync::{
+    AdminModelSyncApplyCommand, AdminModelSyncApplyItemCommand, AdminModelSyncError,
+    AdminModelSyncService, DEFAULT_MISSING_MODEL_PAGE_SIZE, DatabaseAdminModelSyncService,
+    MAX_MISSING_MODEL_PAGE_SIZE, MAX_MODEL_SYNC_APPLY_ITEMS, MissingModelChannelRecord,
+    MissingModelListFuture, MissingModelPageRecord, MissingModelQuery, MissingModelRecord,
+    ModelSyncApplyFuture, ModelSyncItemRecord, ModelSyncPreviewFuture, ModelSyncRelationRecord,
+    UpstreamModelDiscoverer, UpstreamModelDiscovery, UpstreamModelDiscoveryError,
+    UpstreamModelDiscoveryFuture,
 };
 pub use password_reset::{
     DatabasePasswordResetService, MAX_PASSWORD_RESET_PASSWORD_BYTES,

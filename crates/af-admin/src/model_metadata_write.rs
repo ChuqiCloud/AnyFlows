@@ -118,7 +118,7 @@ impl AdminModelUpdateCommand {
         })
     }
 
-    fn into_record(self) -> AdminModelWriteRecord {
+    pub(crate) fn into_record(self) -> AdminModelWriteRecord {
         self.fields.into_record()
     }
 }
