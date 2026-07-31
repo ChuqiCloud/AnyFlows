@@ -3,8 +3,7 @@ use std::{collections::BTreeSet, fmt, future::Future, pin::Pin, sync::Arc};
 use af_db::{
     AdminModelRepository, MAX_ADMIN_MODEL_PAGE_SIZE, MAX_ADMIN_MODEL_PROVIDER_BYTES,
     MAX_MODEL_PRICE_PAGE_SIZE, MAX_MODEL_PRICE_WRITE_BATCH, ModelPriceBillingMode,
-    ModelPriceRecord, ModelPriceRepository, ModelPriceRepositoryError, ModelPriceWriteError,
-    ModelPriceWriteRecord,
+    ModelPriceRecord, ModelPriceRepository, ModelPriceWriteError, ModelPriceWriteRecord,
 };
 use af_domain::{MAX_MODEL_NAME_BYTES, ModelId};
 use rust_decimal::Decimal;

@@ -364,7 +364,7 @@ pub fn build_router(
             "/api/admin/models/sync-previews",
             post(create_admin_model_sync_preview)
                 .route_layer(middleware::from_fn(authorize_management_admin))
-                .route_layer(model_management_collection_authentication),
+                .route_layer(model_management_collection_authentication.clone()),
         )
         .route(
             "/api/admin/models/sync-previews/{preview_id}/apply",
