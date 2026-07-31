@@ -12,6 +12,22 @@ use crate::{
     entity::{SensitiveDecimal, SensitiveString, model_prices},
 };
 
+#[test]
+fn price_decimal_matches_production_column_precision() {
+    assert!(crate::model_price::is_valid_model_price_decimal(
+        Decimal::from(9_999_999_999_i64)
+    ));
+    assert!(crate::model_price::is_valid_model_price_decimal(
+        Decimal::new(1, 28)
+    ));
+    assert!(!crate::model_price::is_valid_model_price_decimal(
+        Decimal::from(10_000_000_000_i64)
+    ));
+    assert!(!crate::model_price::is_valid_model_price_decimal(
+        Decimal::NEGATIVE_ONE
+    ));
+}
+
 #[tokio::test]
 async fn repository_loads_a_stable_validated_catalog() -> Result<(), Box<dyn Error>> {
     let pool = crate::connect_and_migrate(
@@ -112,6 +128,7 @@ async fn active_model_enforces_pricing_invariants_without_database_checks()
         model_price("invalid-free", 2, [Decimal::ONE; 5], 1),
         model_price("invalid-mode", 3, [Decimal::ZERO; 5], 1),
         model_price("invalid-version", 1, [Decimal::ZERO; 5], 0),
+        model_price("too-large", 1, [Decimal::from(10_000_000_000_i64); 5], 1),
         model_price(" invalid-name ", 1, [Decimal::ZERO; 5], 1),
     ] {
         assert!(invalid.before_save(pool.connection(), true).await.is_err());

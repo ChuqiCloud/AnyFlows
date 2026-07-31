@@ -90,7 +90,9 @@ impl ModelPriceRecord {
             .filter(|version| *version > 0)
             .ok_or(ModelPriceRepositoryError::Invariant)?;
         if !is_valid_model_name(name)
-            || prices.iter().any(|price| *price < Decimal::ZERO)
+            || prices
+                .iter()
+                .any(|price| !is_valid_model_price_decimal(*price))
             || (billing_mode == ModelPriceBillingMode::Free
                 && prices.iter().any(|price| !price.is_zero()))
         {
@@ -205,6 +207,17 @@ pub(crate) fn is_valid_model_name(model: &str) -> bool {
         && model.len() <= MAX_MODEL_NAME_BYTES
         && model.trim() == model
         && !model.chars().any(char::is_control)
+}
+
+/// 保持 Rust Decimal 与 PostgreSQL/MySQL `DECIMAL(38,28)` 的共同可表示范围。
+pub(crate) fn is_valid_model_price_decimal(price: Decimal) -> bool {
+    if price < Decimal::ZERO || price.scale() > 28 {
+        return false;
+    }
+    let normalized = price.normalize();
+    let significant_digits = normalized.mantissa().unsigned_abs().to_string().len();
+    let integer_digits = significant_digits.saturating_sub(normalized.scale() as usize);
+    integer_digits <= 10
 }
 
 fn record_internal_error(error: ModelPriceRepositoryError) -> ModelPriceRepositoryError {

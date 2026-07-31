@@ -24,7 +24,7 @@ test('价格草稿只接受普通非负十进制字符串', () => {
   }
 
   assert.equal(schema.safeParse(valid).success, true)
-  for (const input of ['-1', '+1', '.5', '1.', '1e-3', '']) {
+  for (const input of ['-1', '+1', '.5', '1.', '1e-3', '', '01', '10000000000', '0.12345678901234567890123456789']) {
     assert.equal(schema.safeParse({ ...valid, input }).success, false, input)
   }
 })

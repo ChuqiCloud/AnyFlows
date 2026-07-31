@@ -828,7 +828,7 @@
         "priceUnit": "USD / million Token"
       },
       "validation": {
-        "decimal": "Enter a non-negative plain decimal without a sign or exponent, up to 64 characters.",
+        "decimal": "Enter a non-negative plain decimal without a sign or exponent, with up to 10 integer and 28 fractional digits.",
         "free": "All five values must be zero in explicitly free mode."
       },
       "actions": {

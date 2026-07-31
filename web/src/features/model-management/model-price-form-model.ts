@@ -28,12 +28,12 @@ export type ModelPriceValidationMessages = {
 
 export type ModelPriceEvidenceField = 'input' | 'output' | 'cacheRead'
 
-const DECIMAL_PATTERN = /^(0|[0-9]+)(\.[0-9]+)?$/
+const DECIMAL_PATTERN = /^(0|[1-9][0-9]{0,9})(\.[0-9]{1,28})?$/
 const ZERO_DECIMAL_PATTERN = /^0+(\.0+)?$/
 
 /** 创建与后端十进制字符串边界一致的价格草稿校验器。 */
 export function buildModelPriceDraftSchema(messages: ModelPriceValidationMessages) {
-  const decimal = z.string().max(64, messages.decimal).regex(DECIMAL_PATTERN, messages.decimal)
+  const decimal = z.string().max(39, messages.decimal).regex(DECIMAL_PATTERN, messages.decimal)
   return z.object({
     billingMode: z.enum(['per_token', 'free']),
     input: decimal,
@@ -116,5 +116,7 @@ export function modelPriceCandidateNeedsReview(candidate?: AdminModelPriceSource
     || candidate.source_deprecated
     || candidate.costs.input === null
     || candidate.costs.output === null
+    || candidate.costs.cache_read === null
+    || candidate.costs.cache_write !== null
   )
 }

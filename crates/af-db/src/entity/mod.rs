@@ -319,7 +319,9 @@ where
         .unwrap_or(1);
     if !matches!(billing_mode, 1 | 2)
         || version < 1
-        || prices.iter().any(|price| *price < Decimal::ZERO)
+        || prices
+            .iter()
+            .any(|price| !crate::model_price::is_valid_model_price_decimal(*price))
         || (billing_mode == 2 && prices.iter().any(|price| !price.is_zero()))
     {
         return Err(DbErr::Custom("模型价格状态无效".to_owned()));

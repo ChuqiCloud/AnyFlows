@@ -13,7 +13,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     ModelPriceBillingMode, ModelPriceRecord, ModelPriceRepository, ModelPriceRepositoryError,
     entity::{SensitiveDecimal, SensitiveString, model_prices, models},
-    model_price::is_valid_model_name,
+    model_price::{is_valid_model_name, is_valid_model_price_decimal},
 };
 
 /// 单页管理价格目录允许返回的最大记录数。
@@ -63,7 +63,9 @@ impl ModelPriceWriteRecord {
     ) -> Result<Self, ModelPriceWriteError> {
         if !is_valid_model_name(&model)
             || expected_version == Some(0)
-            || prices.iter().any(|price| *price < Decimal::ZERO)
+            || prices
+                .iter()
+                .any(|price| !is_valid_model_price_decimal(*price))
             || (billing_mode == ModelPriceBillingMode::Free
                 && prices.iter().any(|price| !price.is_zero()))
         {

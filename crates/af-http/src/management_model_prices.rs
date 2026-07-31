@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use af_admin::{
     AdminModelPrice, AdminModelPriceApplyCommand, AdminModelPriceBillingMode, AdminModelPriceError,
     AdminModelPriceListQuery, AdminModelPricePage, AdminModelPriceWriteCommand,
@@ -20,7 +18,7 @@ use crate::{
 };
 
 const MAX_MODEL_PRICE_QUERY_BYTES: usize = 1_024;
-const MAX_DECIMAL_TEXT_BYTES: usize = 64;
+const MAX_DECIMAL_TEXT_BYTES: usize = 39;
 
 /// HTTP 契约支持的闭合模型计费模式。
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, ToSchema)]
@@ -54,15 +52,15 @@ impl From<AdminModelPriceBillingModeValue> for AdminModelPriceBillingMode {
 #[serde(deny_unknown_fields)]
 #[schema(as = AdminModelPriceValues)]
 pub(crate) struct AdminModelPriceValues {
-    #[schema(value_type = String, min_length = 1, max_length = 64, pattern = r"^(0|[0-9]+)(\.[0-9]+)?$")]
+    #[schema(value_type = String, min_length = 1, max_length = 39, pattern = r"^(0|[1-9][0-9]{0,9})(\.[0-9]{1,28})?$")]
     input: String,
-    #[schema(value_type = String, min_length = 1, max_length = 64, pattern = r"^(0|[0-9]+)(\.[0-9]+)?$")]
+    #[schema(value_type = String, min_length = 1, max_length = 39, pattern = r"^(0|[1-9][0-9]{0,9})(\.[0-9]{1,28})?$")]
     output: String,
-    #[schema(value_type = String, min_length = 1, max_length = 64, pattern = r"^(0|[0-9]+)(\.[0-9]+)?$")]
+    #[schema(value_type = String, min_length = 1, max_length = 39, pattern = r"^(0|[1-9][0-9]{0,9})(\.[0-9]{1,28})?$")]
     cache_read: String,
-    #[schema(value_type = String, min_length = 1, max_length = 64, pattern = r"^(0|[0-9]+)(\.[0-9]+)?$")]
+    #[schema(value_type = String, min_length = 1, max_length = 39, pattern = r"^(0|[1-9][0-9]{0,9})(\.[0-9]{1,28})?$")]
     cache_creation_5m: String,
-    #[schema(value_type = String, min_length = 1, max_length = 64, pattern = r"^(0|[0-9]+)(\.[0-9]+)?$")]
+    #[schema(value_type = String, min_length = 1, max_length = 39, pattern = r"^(0|[1-9][0-9]{0,9})(\.[0-9]{1,28})?$")]
     cache_creation_1h: String,
 }
 
@@ -400,17 +398,23 @@ fn validate_percent_encoding(raw_query: &str) -> Result<(), ManagementError> {
 }
 
 fn parse_decimal(value: &str) -> Result<Decimal, ManagementError> {
+    let mut parts = value.split('.');
+    let integer = parts.next().unwrap_or_default();
+    let fraction = parts.next();
     if value.is_empty()
         || value.len() > MAX_DECIMAL_TEXT_BYTES
-        || value.trim() != value
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b'.')
-        || value.bytes().filter(|byte| *byte == b'.').count() > 1
+        || parts.next().is_some()
+        || integer.is_empty()
+        || integer.len() > 10
+        || (integer.len() > 1 && integer.starts_with('0'))
+        || !integer.bytes().all(|byte| byte.is_ascii_digit())
+        || fraction.is_some_and(|part| {
+            part.is_empty() || part.len() > 28 || !part.bytes().all(|byte| byte.is_ascii_digit())
+        })
     {
         return Err(ManagementError::InvalidRequest);
     }
-    Decimal::from_str(value).map_err(|_| ManagementError::InvalidRequest)
+    Decimal::from_str_exact(value).map_err(|_| ManagementError::InvalidRequest)
 }
 
 fn decimal_text(value: Decimal) -> String {
@@ -450,7 +454,19 @@ mod tests {
             parse_decimal("1.234500").unwrap().normalize().to_string(),
             "1.2345"
         );
-        for value in ["", "-1", "+1", ".5", "1.", "1e-3", " 1", "1..2"] {
+        for value in [
+            "",
+            "-1",
+            "+1",
+            ".5",
+            "1.",
+            "1e-3",
+            " 1",
+            "1..2",
+            "01",
+            "10000000000",
+            "0.12345678901234567890123456789",
+        ] {
             assert!(parse_decimal(value).is_err(), "{value}");
         }
     }
