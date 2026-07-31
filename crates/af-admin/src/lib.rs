@@ -28,6 +28,7 @@ mod token_auth;
 mod token_read;
 mod token_write;
 mod usage_log_read;
+mod user_profile;
 mod user_read;
 mod user_token;
 mod user_write;
@@ -149,6 +150,13 @@ pub use usage_log_read::{
     AdminUsageLogPage, AdminUsageLogReadError, AdminUsageLogReader, AdminUsageLogSemantics,
     AdminUsageLogSource, AdminUsageLogUsage, DEFAULT_ADMIN_USAGE_LOG_PAGE_SIZE,
     DatabaseAdminUsageLogReader,
+};
+pub use user_profile::{
+    DatabaseUserProfileService, MAX_USER_PROFILE_PASSWORD_BYTES, MAX_USER_PROFILE_USERNAME_BYTES,
+    MIN_USER_PROFILE_PASSWORD_BYTES, UserNotificationPreferences,
+    UserNotificationPreferencesCommand, UserNotificationUpdateFuture, UserPasswordChangeCommand,
+    UserPasswordChangeFuture, UserProfile, UserProfileError, UserProfileReadFuture,
+    UserProfileService, UserProfileUpdateCommand, UserProfileUpdateFuture,
 };
 pub use user_read::{
     AdminUser, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery, AdminUserPage,

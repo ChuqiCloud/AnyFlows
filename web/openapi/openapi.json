@@ -672,6 +672,261 @@
         }
       }
     },
+    "/api/account/profile": {
+      "get": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "读取当前用户个人资料",
+        "operationId": "getUserProfile",
+        "responses": {
+          "200": {
+            "description": "当前用户资料",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "更新当前用户登录用户名",
+        "operationId": "updateUserProfile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserProfileUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "资料已更新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "用户名冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/account/password": {
+      "put": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "修改当前用户密码",
+        "operationId": "changeUserPassword",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPasswordChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "密码已更新，旧会话已撤销"
+          },
+          "400": {
+            "description": "请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "当前密码不正确",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/account/notifications": {
+      "put": {
+        "tags": [
+          "个人资料与安全"
+        ],
+        "summary": "更新当前用户通知偏好",
+        "operationId": "updateUserNotificationPreferences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserNotificationPreferencesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "通知偏好已更新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/email-settings": {
       "get": {
         "tags": [
@@ -8027,6 +8282,117 @@
         },
         "additionalProperties": false
       },
+      "UserNotificationPreferencesRequest": {
+        "type": "object",
+        "required": [
+          "email_product_updates",
+          "email_usage_alerts"
+        ],
+        "properties": {
+          "email_product_updates": {
+            "type": "boolean"
+          },
+          "email_usage_alerts": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserNotificationPreferencesResponse": {
+        "type": "object",
+        "required": [
+          "email_product_updates",
+          "email_usage_alerts"
+        ],
+        "properties": {
+          "email_product_updates": {
+            "type": "boolean"
+          },
+          "email_usage_alerts": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserPasswordChangeRequest": {
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          },
+          "new_password": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 128,
+            "minLength": 12
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserProfileResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "username",
+          "email",
+          "role",
+          "notifications"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "email",
+            "maxLength": 320
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin"
+            ]
+          },
+          "notifications": {
+            "$ref": "#/components/schemas/UserNotificationPreferencesResponse"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserProfileUpdateRequest": {
+        "type": "object",
+        "required": [
+          "username"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "UserToken": {
         "type": "object",
         "description": "普通用户可读取的非敏感 API Key。",
@@ -8254,6 +8620,9 @@
     },
     {
       "name": "密码重置"
+    },
+    {
+      "name": "个人资料与安全"
     },
     {
       "name": "站点设置"

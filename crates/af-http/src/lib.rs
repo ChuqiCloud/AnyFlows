@@ -41,6 +41,7 @@ mod router;
 mod serve;
 mod site_settings;
 mod streaming;
+mod user_profile;
 mod user_tokens;
 
 pub use channel_probe::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};

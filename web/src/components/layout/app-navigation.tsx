@@ -9,6 +9,7 @@ import {
   PanelsTopLeft,
   ScrollText,
   ShieldCheck,
+  UserRound,
   UsersRound,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -33,7 +34,7 @@ type AppNavigationProps = {
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'users' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'channels' | 'keys' | 'usage'
+  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'profile' | 'users' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'channels' | 'keys' | 'usage'
   icon: LucideIcon
   href: `#/console${string}`
 }
@@ -58,6 +59,7 @@ const navGroups: readonly NavGroup[] = [
     adminOnly: false,
     items: [
       { key: 'apiKeys', icon: KeyRound, href: '#/console/api-keys' },
+      { key: 'profile', icon: UserRound, href: '#/console/profile' },
     ],
   },
   {
@@ -81,6 +83,7 @@ const activeKeyByView: Partial<Record<AppView, NavItem['key']>> = {
   models: 'models',
   playground: 'playground',
   'api-keys': 'apiKeys',
+  profile: 'profile',
   users: 'users',
   'site-settings': 'siteSettings',
   'authentication-settings': 'authenticationSettings',

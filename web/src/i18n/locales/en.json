@@ -14,6 +14,7 @@
     "models": "Models",
     "playground": "Playground",
     "apiKeys": "My API keys",
+    "profile": "Profile",
     "users": "Users",
     "siteSettings": "Site settings",
     "authenticationSettings": "Authentication",
@@ -1019,6 +1020,7 @@
       "sessionExpired": "Your session has expired. Sign in again.",
       "setupComplete": "Setup is complete. Sign in with an administrator account.",
       "passwordResetSuccess": "Your password was updated. Sign in with the new password.",
+      "passwordChanged": "Your password changed and older sessions were revoked. Sign in again with the new password.",
       "passwordLoginDisabled": "Password sign-in was just disabled. Use an authentication method currently offered by this site.",
       "unavailable": "The service is unavailable. Try again shortly."
     },
@@ -1412,6 +1414,59 @@
       "unavailableTitle": "Setup status is unavailable",
       "unavailableBody": "The service did not return a reliable status. Retry to protect the management entry point.",
       "retry": "Check again"
+    }
+  },
+  "profile": {
+    "eyebrow": "Account security",
+    "title": "Profile and security",
+    "subtitle": "Manage your account details, sign-in credentials, and email notification preferences.",
+    "profile": {
+      "title": "Profile",
+      "subtitle": "Update your name and confirm the identity of this account.",
+      "username": "Username",
+      "usernameHint": "Usernames cannot have surrounding spaces or control characters and are limited to 64 bytes.",
+      "email": "Email",
+      "emailEmpty": "No email linked",
+      "emailHint": "Email is read-only for now; changing it requires a separate verification flow.",
+      "saved": "Profile saved."
+    },
+    "password": {
+      "title": "Change password",
+      "subtitle": "Confirm your current password before setting a new sign-in password.",
+      "current": "Current password",
+      "next": "New password",
+      "confirm": "Confirm new password",
+      "hint": "Passwords must be 12–128 bytes and cannot contain control characters.",
+      "revokesSessions": "All older sign-in sessions are revoked immediately after a successful change."
+    },
+    "notifications": {
+      "title": "Notification preferences",
+      "subtitle": "Choose which non-security email reminders you want to receive.",
+      "productTitle": "Product updates",
+      "productDescription": "Receive new feature, version, and service announcements.",
+      "usageTitle": "Usage alerts",
+      "usageDescription": "Receive alerts when usage or quota approaches a boundary.",
+      "securityTitle": "Security notifications",
+      "securityDescription": "Password, session, and account security notices are always enabled.",
+      "alwaysOn": "Always on",
+      "saved": "Notification preferences saved.",
+      "footer": "These settings affect future email only; security notifications remain enabled."
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "saveProfile": "Save profile",
+      "changePassword": "Change password",
+      "saveNotifications": "Save preferences"
+    },
+    "errors": {
+      "loadTitle": "Profile is temporarily unavailable",
+      "loadBody": "The service did not return reliable account details. Try again shortly.",
+      "save": "The profile could not be saved. Try again shortly.",
+      "conflict": "That username is already in use. Choose another.",
+      "password": "The password could not be changed. Check the input and try again.",
+      "currentPassword": "The current password is incorrect.",
+      "notifications": "Notification preferences could not be saved. Try again shortly."
     }
   },
   "landing": {

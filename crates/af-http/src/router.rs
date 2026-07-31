@@ -65,6 +65,7 @@ use crate::playground_conversations::build_playground_conversation_router;
 use crate::playground_shares::build_playground_share_router;
 use crate::registration::build_registration_router;
 use crate::site_settings::build_site_settings_router;
+use crate::user_profile::build_user_profile_router;
 use crate::user_tokens::build_user_token_router;
 use crate::{
     ChatService, QueryApiKeyPolicy, chat_completions::HttpState, chat_completions::chat_completions,
@@ -110,6 +111,7 @@ pub fn build_router(
     initial_setup: Arc<dyn InitialSetup>,
     registration_service: Arc<dyn RegistrationService>,
     password_reset_service: Arc<dyn PasswordResetService>,
+    user_profile_service: Arc<dyn af_admin::UserProfileService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
@@ -258,6 +260,10 @@ pub fn build_router(
         config,
     );
     let password_reset_routes = build_password_reset_router(password_reset_service, config);
+    let user_profile_routes = build_user_profile_router(
+        user_profile_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
     let site_settings_routes = build_site_settings_router(
         site_settings_service,
         registration_service,
@@ -377,6 +383,7 @@ pub fn build_router(
         .merge(user_token_routes)
         .merge(registration_routes)
         .merge(password_reset_routes)
+        .merge(user_profile_routes)
         .merge(site_settings_routes)
         .merge(email_settings_routes);
     HttpRouter::new(build_router_with_routes_and_frontend(

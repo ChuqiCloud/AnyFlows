@@ -546,6 +546,28 @@ export type SetupRequest = {
 export type SetupStatusResponse = {
     setup_required: boolean;
 };
+export type UserNotificationPreferencesRequest = {
+    email_product_updates: boolean;
+    email_usage_alerts: boolean;
+};
+export type UserNotificationPreferencesResponse = {
+    email_product_updates: boolean;
+    email_usage_alerts: boolean;
+};
+export type UserPasswordChangeRequest = {
+    current_password: string;
+    new_password: string;
+};
+export type UserProfileResponse = {
+    id: number;
+    username: string;
+    email: string | null;
+    role: 'user' | 'admin';
+    notifications: UserNotificationPreferencesResponse;
+};
+export type UserProfileUpdateRequest = {
+    username: string;
+};
 export type UserToken = {
     id: number;
     key_prefix: string;
@@ -870,6 +892,71 @@ export type ConfirmPasswordResetResponses = {
     204: void;
 };
 export type ConfirmPasswordResetResponse = ConfirmPasswordResetResponses[keyof ConfirmPasswordResetResponses];
+export type GetUserProfileData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/profile';
+};
+export type GetUserProfileErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type GetUserProfileError = GetUserProfileErrors[keyof GetUserProfileErrors];
+export type GetUserProfileResponses = {
+    200: UserProfileResponse;
+};
+export type GetUserProfileResponse = GetUserProfileResponses[keyof GetUserProfileResponses];
+export type UpdateUserProfileData = {
+    body: UserProfileUpdateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/profile';
+};
+export type UpdateUserProfileErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateUserProfileError = UpdateUserProfileErrors[keyof UpdateUserProfileErrors];
+export type UpdateUserProfileResponses = {
+    200: UserProfileResponse;
+};
+export type UpdateUserProfileResponse = UpdateUserProfileResponses[keyof UpdateUserProfileResponses];
+export type ChangeUserPasswordData = {
+    body: UserPasswordChangeRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/password';
+};
+export type ChangeUserPasswordErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ChangeUserPasswordError = ChangeUserPasswordErrors[keyof ChangeUserPasswordErrors];
+export type ChangeUserPasswordResponses = {
+    204: void;
+};
+export type ChangeUserPasswordResponse = ChangeUserPasswordResponses[keyof ChangeUserPasswordResponses];
+export type UpdateUserNotificationPreferencesData = {
+    body: UserNotificationPreferencesRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/notifications';
+};
+export type UpdateUserNotificationPreferencesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type UpdateUserNotificationPreferencesError = UpdateUserNotificationPreferencesErrors[keyof UpdateUserNotificationPreferencesErrors];
+export type UpdateUserNotificationPreferencesResponses = {
+    200: UserProfileResponse;
+};
+export type UpdateUserNotificationPreferencesResponse = UpdateUserNotificationPreferencesResponses[keyof UpdateUserNotificationPreferencesResponses];
 export type GetAdminEmailSettingsData = {
     body?: never;
     path?: never;

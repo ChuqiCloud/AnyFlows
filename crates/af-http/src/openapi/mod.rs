@@ -16,6 +16,7 @@ mod setup;
 mod site_settings;
 mod tokens;
 mod usage_logs;
+mod user_profile;
 mod user_tokens;
 mod users;
 
@@ -32,6 +33,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(setup::document());
     document.merge(registration::document());
     document.merge(password_reset::document());
+    document.merge(user_profile::document());
     document.merge(email_settings::document());
     document.merge(site_settings::document());
     document.merge(dashboard::document());
@@ -50,6 +52,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("公开注册"),
         Tag::new("认证设置"),
         Tag::new("密码重置"),
+        Tag::new("个人资料与安全"),
         Tag::new("站点设置"),
         Tag::new("邮件设置"),
         Tag::new("管理会话"),
@@ -91,7 +94,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 34);
+        assert_eq!(document.paths.paths.len(), 37);
         let operation_count = document
             .paths
             .paths
@@ -112,7 +115,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 58);
+        assert_eq!(operation_count, 62);
         assert!(
             document
                 .components
@@ -139,6 +142,10 @@ mod tests {
             "createAdminToken",
             "createAdminUser",
             "confirmPasswordReset",
+            "getUserProfile",
+            "updateUserProfile",
+            "changeUserPassword",
+            "updateUserNotificationPreferences",
             "createPlaygroundShare",
             "createUserToken",
             "deletePlaygroundConversation",
@@ -198,7 +205,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 83);
+        assert_eq!(schemas.len(), 88);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
@@ -211,6 +218,11 @@ mod tests {
         assert!(schemas.contains_key("PasswordResetRequest"));
         assert!(schemas.contains_key("PasswordResetRequestResponse"));
         assert!(schemas.contains_key("PasswordResetConfirmRequest"));
+        assert!(schemas.contains_key("UserProfileResponse"));
+        assert!(schemas.contains_key("UserNotificationPreferencesResponse"));
+        assert!(schemas.contains_key("UserProfileUpdateRequest"));
+        assert!(schemas.contains_key("UserPasswordChangeRequest"));
+        assert!(schemas.contains_key("UserNotificationPreferencesRequest"));
         assert!(schemas.contains_key("AdminAuthenticationSettings"));
         assert!(schemas.contains_key("AdminAuthenticationSettingsRequest"));
         assert!(schemas.contains_key("PublicSiteSettings"));

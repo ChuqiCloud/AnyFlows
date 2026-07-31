@@ -33,6 +33,8 @@ pub(crate) enum ManagementError {
     RegistrationRejected,
     /// 密码重置令牌无效、过期、重放或目标已不可重置。
     PasswordResetRejected,
+    /// 当前密码校验失败；不代表当前会话已经失效。
+    PasswordChangeRejected,
     /// SMTP 设置尚未达到可投递状态。
     EmailNotConfigured,
     /// SMTP 连接、认证或投递失败，底层响应不会向外透传。
@@ -170,6 +172,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "password_reset_rejected",
                     message: "Password reset link is invalid or expired",
+                },
+            ),
+            Self::PasswordChangeRejected => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "password_change_rejected",
+                    message: "Current password is incorrect",
                 },
             ),
             Self::EmailNotConfigured => (
