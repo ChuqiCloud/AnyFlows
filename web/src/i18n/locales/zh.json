@@ -1277,7 +1277,14 @@
       "username": "用户名",
       "email": "邮箱",
       "optional": "可选",
-      "emailHelp": "基础版只保存邮箱，不代表邮箱已经验证。",
+      "emailHelp": "我们会先向这个邮箱发送六位验证码，再创建账户。",
+      "verificationCode": "邮箱验证码",
+      "verificationCodeHint": "6 位数字",
+      "verificationCodeHelp": "发送验证码验证邮箱后，再提交注册。",
+      "sendVerification": "发送验证码",
+      "sendingVerification": "正在发送",
+      "verificationSent": "验证码已发送，请查收邮件后填写。",
+      "resendIn": "{{seconds}} 秒后可重发",
       "password": "密码",
       "passwordHelp": "使用 12 至 128 个 UTF-8 字节，不支持控制字符。",
       "passwordConfirmation": "确认密码",
@@ -1291,6 +1298,8 @@
       "username": "用户名不能为空、不能包含首尾空格或控制字符，且最多 64 个 UTF-8 字节。",
       "email": "请输入有效邮箱地址，且最多 320 个 UTF-8 字节。",
       "emailRequired": "当前站点要求填写邮箱。",
+      "verificationCode": "请输入 6 位数字验证码。",
+      "verificationCodeRequired": "请先发送验证码并填写后再注册。",
       "password": "密码必须为 12 至 128 个 UTF-8 字节，且不能包含控制字符。",
       "passwordMismatch": "两次输入的密码不一致。"
     },
@@ -1298,8 +1307,17 @@
       "conflict": "用户名或邮箱已被使用，请更换后重试。",
       "disabled": "公开注册刚刚被关闭，请使用已有账户登录。",
       "invalidInput": "注册信息不符合服务端要求，请检查后重试。",
+      "verificationRejected": "验证码无效或注册未完成，请检查信息后重试。",
       "rateLimited": "当前网络的注册尝试过于频繁，请稍后再试。",
       "unavailable": "暂时无法创建账户，请稍后重试。"
+    },
+    "verificationErrors": {
+      "disabled": "公开注册当前已关闭。",
+      "emailNotConfigured": "站点尚未配置邮件投递，请稍后再试或联系管理员。",
+      "emailDeliveryFailed": "验证码暂时未能投递，请稍后重试。",
+      "invalidInput": "请先填写有效邮箱地址。",
+      "rateLimited": "验证码刚刚发送过，请等待倒计时结束后再试。",
+      "unavailable": "验证码服务暂时不可用，请稍后重试。"
     },
     "status": {
       "loading": "正在确认注册状态",

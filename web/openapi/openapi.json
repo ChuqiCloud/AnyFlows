@@ -245,6 +245,97 @@
         }
       }
     },
+    "/api/registration/email-verification": {
+      "post": {
+        "tags": [
+          "公开注册"
+        ],
+        "summary": "发送注册邮箱验证码",
+        "operationId": "sendRegistrationEmailVerification",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationEmailVerificationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "验证码已投递，并返回服务端时间边界",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationEmailVerificationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文或邮箱无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "公开注册未启用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "SMTP 设置尚未完整配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "主体、客户端 IP 或发送冷却窗口仍受限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "SMTP 连接、认证或投递失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/registration": {
       "post": {
         "tags": [
@@ -294,7 +385,7 @@
             }
           },
           "409": {
-            "description": "用户名或邮箱冲突",
+            "description": "验证码无效或公开身份无法创建",
             "content": {
               "application/json": {
                 "schema": {
@@ -7086,6 +7177,7 @@
               "user_conflict",
               "registration_disabled",
               "registration_rate_limited",
+              "registration_rejected",
               "email_not_configured",
               "email_delivery_failed",
               "group_conflict",
@@ -7589,6 +7681,41 @@
         },
         "additionalProperties": false
       },
+      "RegistrationEmailVerificationRequest": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320,
+            "minLength": 3
+          }
+        },
+        "additionalProperties": false
+      },
+      "RegistrationEmailVerificationResponse": {
+        "type": "object",
+        "required": [
+          "expires_at",
+          "next_send_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "next_send_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "RegistrationRequest": {
         "type": "object",
         "required": [
@@ -7616,6 +7743,16 @@
             "writeOnly": true,
             "maxLength": 128,
             "minLength": 12
+          },
+          "verification_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "writeOnly": true,
+            "maxLength": 6,
+            "minLength": 6,
+            "pattern": "^[0-9]{6}$"
           }
         },
         "additionalProperties": false

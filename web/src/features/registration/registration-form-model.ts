@@ -5,6 +5,7 @@ import type { RegistrationRequestWritable } from '@/lib/api/generated/types.gen'
 export type RegistrationFormValues = {
   username: string
   email: string
+  verificationCode: string
   password: string
   passwordConfirmation: string
 }
@@ -13,6 +14,8 @@ type RegistrationValidationMessages = {
   invalidUsername: string
   invalidEmail: string
   emailRequired: string
+  invalidVerificationCode: string
+  verificationCodeRequired: string
   invalidPassword: string
   passwordMismatch: string
 }
@@ -20,6 +23,7 @@ type RegistrationValidationMessages = {
 export const defaultRegistrationFormValues: RegistrationFormValues = {
   username: '',
   email: '',
+  verificationCode: '',
   password: '',
   passwordConfirmation: '',
 }
@@ -32,6 +36,10 @@ export function buildRegistrationFormSchema(
   return z.object({
     username: z.string().refine(isValidUsername, messages.invalidUsername),
     email: z.string().refine(isValidOptionalEmail, messages.invalidEmail),
+    verificationCode: z.string().refine(
+      (value) => value.length === 0 || isValidVerificationCode(value),
+      messages.invalidVerificationCode,
+    ),
     password: z.string().refine(isValidPassword, messages.invalidPassword),
     passwordConfirmation: z.string(),
   }).superRefine((values, context) => {
@@ -40,6 +48,13 @@ export function buildRegistrationFormSchema(
         code: 'custom',
         message: messages.emailRequired,
         path: ['email'],
+      })
+    }
+    if (values.email.length > 0 && values.verificationCode.length === 0) {
+      context.addIssue({
+        code: 'custom',
+        message: messages.verificationCodeRequired,
+        path: ['verificationCode'],
       })
     }
   }).refine(
@@ -52,6 +67,7 @@ export function toRegistrationRequest(values: RegistrationFormValues): Registrat
   return {
     username: values.username,
     email: values.email || null,
+    verification_code: values.verificationCode || null,
     password: values.password,
   }
 }
@@ -91,6 +107,10 @@ function isValidOptionalEmail(value: string) {
 function isValidPassword(value: string) {
   const bytes = new TextEncoder().encode(value).length
   return bytes >= 12 && bytes <= 128 && !hasControlCharacter(value)
+}
+
+function isValidVerificationCode(value: string) {
+  return /^\d{6}$/u.test(value)
 }
 
 function hasControlCharacter(value: string) {

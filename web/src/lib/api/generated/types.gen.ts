@@ -416,7 +416,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'registration_disabled' | 'registration_rate_limited' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -505,6 +505,13 @@ export type PublicSiteSettings = {
     public_base_url?: string | null;
     brand: PublicBrandSettings;
     authentication: PublicAuthenticationCapabilities;
+};
+export type RegistrationEmailVerificationRequest = {
+    email: string;
+};
+export type RegistrationEmailVerificationResponse = {
+    expires_at: number;
+    next_send_at: number;
 };
 export type RegistrationRequest = {
     username: string;
@@ -668,6 +675,7 @@ export type RegistrationRequestWritable = {
     username: string;
     email?: string | null;
     password: string;
+    verification_code?: string | null;
 };
 export type SetupRequestWritable = {
     username: string;
@@ -749,6 +757,25 @@ export type GetRegistrationStatusResponses = {
     200: RegistrationStatusResponse;
 };
 export type GetRegistrationStatusResponse = GetRegistrationStatusResponses[keyof GetRegistrationStatusResponses];
+export type SendRegistrationEmailVerificationData = {
+    body: RegistrationEmailVerificationRequest;
+    path?: never;
+    query?: never;
+    url: '/api/registration/email-verification';
+};
+export type SendRegistrationEmailVerificationErrors = {
+    400: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    429: ManagementError;
+    500: ManagementError;
+    502: ManagementError;
+};
+export type SendRegistrationEmailVerificationError = SendRegistrationEmailVerificationErrors[keyof SendRegistrationEmailVerificationErrors];
+export type SendRegistrationEmailVerificationResponses = {
+    202: RegistrationEmailVerificationResponse;
+};
+export type SendRegistrationEmailVerificationResponse = SendRegistrationEmailVerificationResponses[keyof SendRegistrationEmailVerificationResponses];
 export type RegisterUserData = {
     body: RegistrationRequestWritable;
     path?: never;

@@ -18,10 +18,9 @@ use af_domain::{GroupId, TrustedClientIp, UserId};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
 use crate::{
-    DatabaseRegistrationService, EmailDelivery, EmailDeliveryError, EmailDeliveryFuture,
-    EmailDeliveryRequest, RegistrationCommand, RegistrationEmailVerificationCommand,
-    RegistrationError, RegistrationPolicyCommand, RegistrationService, SessionPrincipal,
-    SessionRole,
+    DatabaseRegistrationService, EmailDelivery, EmailDeliveryFuture, EmailDeliveryRequest,
+    RegistrationCommand, RegistrationEmailVerificationCommand, RegistrationError,
+    RegistrationPolicyCommand, RegistrationService, SessionPrincipal, SessionRole,
 };
 
 const PASSWORD: &str = "correct horse battery staple";

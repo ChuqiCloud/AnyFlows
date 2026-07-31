@@ -1278,7 +1278,14 @@
       "username": "Username",
       "email": "Email",
       "optional": "Optional",
-      "emailHelp": "The basic release stores this address but does not claim it is verified.",
+      "emailHelp": "We will send a six-digit code here before creating an account.",
+      "verificationCode": "Verification code",
+      "verificationCodeHint": "6 digits",
+      "verificationCodeHelp": "Send a code to verify this address before registration.",
+      "sendVerification": "Send code",
+      "sendingVerification": "Sending",
+      "verificationSent": "Code sent. Check your inbox, then enter it here.",
+      "resendIn": "Resend in {{seconds}}s",
       "password": "Password",
       "passwordHelp": "Use 12 to 128 UTF-8 bytes. Control characters are not supported.",
       "passwordConfirmation": "Confirm password",
@@ -1292,6 +1299,8 @@
       "username": "Use a username without surrounding spaces or control characters, up to 64 UTF-8 bytes.",
       "email": "Enter a valid email address up to 320 UTF-8 bytes.",
       "emailRequired": "This site requires an email address.",
+      "verificationCode": "Enter the six-digit verification code.",
+      "verificationCodeRequired": "Send a code and enter it before registering with email.",
       "password": "Use a password from 12 to 128 UTF-8 bytes without control characters.",
       "passwordMismatch": "The passwords do not match."
     },
@@ -1299,8 +1308,17 @@
       "conflict": "That username or email is already in use. Choose another and try again.",
       "disabled": "Public registration was just closed. Sign in with an existing account.",
       "invalidInput": "The server rejected these registration details. Check them and try again.",
+      "verificationRejected": "The code is invalid or the registration could not be completed. Check the details and try again.",
       "rateLimited": "There have been too many registration attempts from this network. Try again later.",
       "unavailable": "An account could not be created. Try again shortly."
+    },
+    "verificationErrors": {
+      "disabled": "Public registration is currently closed.",
+      "emailNotConfigured": "Email delivery is not configured yet. Try again later or contact the site administrator.",
+      "emailDeliveryFailed": "The code could not be delivered. Try again shortly.",
+      "invalidInput": "Enter a valid email address first.",
+      "rateLimited": "A code was sent recently. Wait for the countdown before trying again.",
+      "unavailable": "The verification service is temporarily unavailable. Try again shortly."
     },
     "status": {
       "loading": "Checking registration status",
