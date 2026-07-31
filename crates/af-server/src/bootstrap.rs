@@ -1073,6 +1073,7 @@ impl Bootstrap<ListenerReady> {
             chat: _,
             _channel_index: _,
             model_catalog_reader: _,
+            admin_model_sync_service: _,
             admin_channel_probe: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
