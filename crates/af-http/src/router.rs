@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminEmailSettingsService, AdminGroupReader,
-    AdminGroupWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
-    AdminUserWriter, InitialSetup, ModelCatalogReader, PasswordResetService,
-    PlaygroundConversationService, PlaygroundShareService, RegistrationService,
-    SessionAuthenticator, SiteSettingsService, TokenAuthenticator,
+    AdminGroupWriter, AdminModelReader, AdminModelWriter, AdminTokenReader, AdminTokenWriter,
+    AdminUsageLogReader, AdminUserReader, AdminUserWriter, InitialSetup, ModelCatalogReader,
+    PasswordResetService, PlaygroundConversationService, PlaygroundShareService,
+    RegistrationService, SessionAuthenticator, SiteSettingsService, TokenAuthenticator,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -45,6 +45,8 @@ use crate::management_credentials::{get_admin_credential, list_admin_credentials
 use crate::management_dashboard::get_admin_dashboard;
 use crate::management_group_writes::{create_admin_group, delete_admin_group, update_admin_group};
 use crate::management_groups::{get_admin_group, list_admin_groups};
+use crate::management_model_writes::{create_admin_model, delete_admin_model, update_admin_model};
+use crate::management_models::{get_admin_model, list_admin_models};
 use crate::management_session::current_session;
 use crate::management_setup::{initialize_setup, setup_status};
 use crate::management_token_writes::{create_admin_token, delete_admin_token, update_admin_token};
@@ -119,6 +121,8 @@ pub fn build_router(
     admin_channel_probe: Option<Arc<dyn crate::AdminChannelProbe>>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
+    admin_model_reader: Option<Arc<dyn AdminModelReader>>,
+    admin_model_writer: Option<Arc<dyn AdminModelWriter>>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
     admin_token_writer: Arc<dyn AdminTokenWriter>,
     admin_dashboard_reader: Arc<dyn AdminDashboardReader>,
@@ -159,6 +163,8 @@ pub fn build_router(
     )
     .with_initial_setup(initial_setup)
     .with_model_catalog_reader(model_catalog_reader)
+    .with_admin_model_reader(admin_model_reader)
+    .with_admin_model_writer(admin_model_writer)
     .with_admin_channel_reader(admin_channel_reader)
     .with_admin_channel_writer(admin_channel_writer)
     .with_admin_channel_probe(admin_channel_probe)
@@ -207,6 +213,14 @@ pub fn build_router(
         authenticate_management_session,
     );
     let group_item_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let model_management_collection_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let model_management_item_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
         authenticate_management_session,
     );
@@ -313,6 +327,21 @@ pub fn build_router(
                 .delete(delete_admin_group)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(group_item_authentication),
+        )
+        .route(
+            "/api/admin/models",
+            get(list_admin_models)
+                .post(create_admin_model)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(model_management_collection_authentication),
+        )
+        .route(
+            "/api/admin/models/{id}",
+            get(get_admin_model)
+                .put(update_admin_model)
+                .delete(delete_admin_model)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(model_management_item_authentication),
         )
         .route(
             "/api/admin/tokens",

@@ -15,6 +15,7 @@ import { DashboardPage } from '@/features/dashboard/dashboard-page'
 import { EmailSettingsPage } from '@/features/email-settings/email-settings-page'
 import { LandingPage } from '@/features/landing/landing-page'
 import { ModelPage } from '@/features/models/model-page'
+import { ModelManagementPage } from '@/features/model-management/model-management-page'
 import { PublicModelPage } from '@/features/models/public-model-page'
 import { PlaygroundPage } from '@/features/playground/playground-page'
 import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
@@ -109,6 +110,8 @@ function ManagementEntry({
         ? 'authenticationSettings.title'
         : view === 'email-settings'
           ? 'emailSettings.title'
+          : view === 'model-settings'
+            ? 'modelManagement.title'
           : view === 'users'
             ? 'users.title'
             : view === 'api-keys'
@@ -132,6 +135,8 @@ function ManagementEntry({
         ? <AuthenticationSettingsPage />
         : view === 'email-settings'
           ? <EmailSettingsPage />
+          : view === 'model-settings'
+            ? <ModelManagementPage />
           : view === 'users'
             ? <UserPage />
             : view === 'api-keys'

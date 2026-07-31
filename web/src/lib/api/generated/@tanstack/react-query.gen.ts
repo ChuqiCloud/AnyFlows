@@ -2,8 +2,8 @@
 
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 import { client } from '../client.gen';
-import { changeUserPassword, confirmPasswordReset, createAdminChannel, createAdminCredential, createAdminGroup, createAdminToken, createAdminUser, createPlaygroundShare, createUserToken, deleteAdminChannel, deleteAdminCredential, deleteAdminGroup, deleteAdminToken, deleteAdminUser, deletePlaygroundConversation, deleteUserToken, getAdminAuthenticationSettings, getAdminChannel, getAdminCredential, getAdminDashboard, getAdminEmailSettings, getAdminGroup, getAdminSiteSettings, getAdminToken, getAdminUser, getInitialSetupStatus, getManagementSession, getPlaygroundConversation, getPlaygroundShare, getPublicSiteSettings, getRegistrationStatus, getUserProfile, getUserToken, initializeAdminSetup, listAdminChannels, listAdminCredentials, listAdminGroups, listAdminTokens, listAdminUsageLogs, listAdminUsers, listModels, listPlaygroundConversations, listUserTokens, loginManagementSession, type Options, probeAdminChannel, registerUser, requestPasswordReset, revokePlaygroundShare, savePlaygroundConversation, sendAdminEmailTest, sendRegistrationEmailVerification, updateAdminAuthenticationSettings, updateAdminChannel, updateAdminCredential, updateAdminEmailSettings, updateAdminGroup, updateAdminSiteSettings, updateAdminToken, updateAdminUser, updateUserNotificationPreferences, updateUserProfile, updateUserToken } from '../sdk.gen';
-import type { ChangeUserPasswordData, ChangeUserPasswordError, ChangeUserPasswordResponse, ConfirmPasswordResetData, ConfirmPasswordResetError, ConfirmPasswordResetResponse, CreateAdminChannelData, CreateAdminChannelError, CreateAdminChannelResponse, CreateAdminCredentialData, CreateAdminCredentialError, CreateAdminCredentialResponse, CreateAdminGroupData, CreateAdminGroupError, CreateAdminGroupResponse, CreateAdminTokenData, CreateAdminTokenError, CreateAdminTokenResponse, CreateAdminUserData, CreateAdminUserError, CreateAdminUserResponse, CreatePlaygroundShareData, CreatePlaygroundShareError, CreatePlaygroundShareResponse, CreateUserTokenData, CreateUserTokenError, CreateUserTokenResponse, DeleteAdminChannelData, DeleteAdminChannelError, DeleteAdminChannelResponse, DeleteAdminCredentialData, DeleteAdminCredentialError, DeleteAdminCredentialResponse, DeleteAdminGroupData, DeleteAdminGroupError, DeleteAdminGroupResponse, DeleteAdminTokenData, DeleteAdminTokenError, DeleteAdminTokenResponse, DeleteAdminUserData, DeleteAdminUserError, DeleteAdminUserResponse, DeletePlaygroundConversationData, DeletePlaygroundConversationError, DeletePlaygroundConversationResponse, DeleteUserTokenData, DeleteUserTokenError, DeleteUserTokenResponse, GetAdminAuthenticationSettingsData, GetAdminAuthenticationSettingsError, GetAdminAuthenticationSettingsResponse, GetAdminChannelData, GetAdminChannelError, GetAdminChannelResponse, GetAdminCredentialData, GetAdminCredentialError, GetAdminCredentialResponse, GetAdminDashboardData, GetAdminDashboardError, GetAdminDashboardResponse, GetAdminEmailSettingsData, GetAdminEmailSettingsError, GetAdminEmailSettingsResponse, GetAdminGroupData, GetAdminGroupError, GetAdminGroupResponse, GetAdminSiteSettingsData, GetAdminSiteSettingsError, GetAdminSiteSettingsResponse, GetAdminTokenData, GetAdminTokenError, GetAdminTokenResponse, GetAdminUserData, GetAdminUserError, GetAdminUserResponse, GetInitialSetupStatusData, GetInitialSetupStatusError, GetInitialSetupStatusResponse, GetManagementSessionData, GetManagementSessionError, GetManagementSessionResponse, GetPlaygroundConversationData, GetPlaygroundConversationError, GetPlaygroundConversationResponse, GetPlaygroundShareData, GetPlaygroundShareError, GetPlaygroundShareResponse, GetPublicSiteSettingsData, GetPublicSiteSettingsError, GetPublicSiteSettingsResponse, GetRegistrationStatusData, GetRegistrationStatusError, GetRegistrationStatusResponse, GetUserProfileData, GetUserProfileError, GetUserProfileResponse, GetUserTokenData, GetUserTokenError, GetUserTokenResponse, InitializeAdminSetupData, InitializeAdminSetupError, InitializeAdminSetupResponse, ListAdminChannelsData, ListAdminChannelsError, ListAdminChannelsResponse, ListAdminCredentialsData, ListAdminCredentialsError, ListAdminCredentialsResponse, ListAdminGroupsData, ListAdminGroupsError, ListAdminGroupsResponse, ListAdminTokensData, ListAdminTokensError, ListAdminTokensResponse, ListAdminUsageLogsData, ListAdminUsageLogsError, ListAdminUsageLogsResponse, ListAdminUsersData, ListAdminUsersError, ListAdminUsersResponse, ListModelsData, ListModelsError, ListModelsResponse, ListPlaygroundConversationsData, ListPlaygroundConversationsError, ListPlaygroundConversationsResponse, ListUserTokensData, ListUserTokensError, ListUserTokensResponse, LoginManagementSessionData, LoginManagementSessionError, LoginManagementSessionResponse, ProbeAdminChannelData, ProbeAdminChannelError, ProbeAdminChannelResponse, RegisterUserData, RegisterUserError, RegisterUserResponse, RequestPasswordResetData, RequestPasswordResetError, RequestPasswordResetResponse, RevokePlaygroundShareData, RevokePlaygroundShareError, RevokePlaygroundShareResponse, SavePlaygroundConversationData, SavePlaygroundConversationError, SavePlaygroundConversationResponse, SendAdminEmailTestData, SendAdminEmailTestError, SendAdminEmailTestResponse, SendRegistrationEmailVerificationData, SendRegistrationEmailVerificationError, SendRegistrationEmailVerificationResponse, UpdateAdminAuthenticationSettingsData, UpdateAdminAuthenticationSettingsError, UpdateAdminAuthenticationSettingsResponse, UpdateAdminChannelData, UpdateAdminChannelError, UpdateAdminChannelResponse, UpdateAdminCredentialData, UpdateAdminCredentialError, UpdateAdminCredentialResponse, UpdateAdminEmailSettingsData, UpdateAdminEmailSettingsError, UpdateAdminEmailSettingsResponse, UpdateAdminGroupData, UpdateAdminGroupError, UpdateAdminGroupResponse, UpdateAdminSiteSettingsData, UpdateAdminSiteSettingsError, UpdateAdminSiteSettingsResponse, UpdateAdminTokenData, UpdateAdminTokenError, UpdateAdminTokenResponse, UpdateAdminUserData, UpdateAdminUserError, UpdateAdminUserResponse, UpdateUserNotificationPreferencesData, UpdateUserNotificationPreferencesError, UpdateUserNotificationPreferencesResponse, UpdateUserProfileData, UpdateUserProfileError, UpdateUserProfileResponse, UpdateUserTokenData, UpdateUserTokenError, UpdateUserTokenResponse } from '../types.gen';
+import { changeUserPassword, confirmPasswordReset, createAdminChannel, createAdminCredential, createAdminGroup, createAdminModel, createAdminToken, createAdminUser, createPlaygroundShare, createUserToken, deleteAdminChannel, deleteAdminCredential, deleteAdminGroup, deleteAdminModel, deleteAdminToken, deleteAdminUser, deletePlaygroundConversation, deleteUserToken, getAdminAuthenticationSettings, getAdminChannel, getAdminCredential, getAdminDashboard, getAdminEmailSettings, getAdminGroup, getAdminModel, getAdminSiteSettings, getAdminToken, getAdminUser, getInitialSetupStatus, getManagementSession, getPlaygroundConversation, getPlaygroundShare, getPublicSiteSettings, getRegistrationStatus, getUserProfile, getUserToken, initializeAdminSetup, listAdminChannels, listAdminCredentials, listAdminGroups, listAdminModels, listAdminTokens, listAdminUsageLogs, listAdminUsers, listModels, listPlaygroundConversations, listUserTokens, loginManagementSession, type Options, probeAdminChannel, registerUser, requestPasswordReset, revokePlaygroundShare, savePlaygroundConversation, sendAdminEmailTest, sendRegistrationEmailVerification, updateAdminAuthenticationSettings, updateAdminChannel, updateAdminCredential, updateAdminEmailSettings, updateAdminGroup, updateAdminModel, updateAdminSiteSettings, updateAdminToken, updateAdminUser, updateUserNotificationPreferences, updateUserProfile, updateUserToken } from '../sdk.gen';
+import type { ChangeUserPasswordData, ChangeUserPasswordError, ChangeUserPasswordResponse, ConfirmPasswordResetData, ConfirmPasswordResetError, ConfirmPasswordResetResponse, CreateAdminChannelData, CreateAdminChannelError, CreateAdminChannelResponse, CreateAdminCredentialData, CreateAdminCredentialError, CreateAdminCredentialResponse, CreateAdminGroupData, CreateAdminGroupError, CreateAdminGroupResponse, CreateAdminModelData, CreateAdminModelError, CreateAdminModelResponse, CreateAdminTokenData, CreateAdminTokenError, CreateAdminTokenResponse, CreateAdminUserData, CreateAdminUserError, CreateAdminUserResponse, CreatePlaygroundShareData, CreatePlaygroundShareError, CreatePlaygroundShareResponse, CreateUserTokenData, CreateUserTokenError, CreateUserTokenResponse, DeleteAdminChannelData, DeleteAdminChannelError, DeleteAdminChannelResponse, DeleteAdminCredentialData, DeleteAdminCredentialError, DeleteAdminCredentialResponse, DeleteAdminGroupData, DeleteAdminGroupError, DeleteAdminGroupResponse, DeleteAdminModelData, DeleteAdminModelError, DeleteAdminModelResponse, DeleteAdminTokenData, DeleteAdminTokenError, DeleteAdminTokenResponse, DeleteAdminUserData, DeleteAdminUserError, DeleteAdminUserResponse, DeletePlaygroundConversationData, DeletePlaygroundConversationError, DeletePlaygroundConversationResponse, DeleteUserTokenData, DeleteUserTokenError, DeleteUserTokenResponse, GetAdminAuthenticationSettingsData, GetAdminAuthenticationSettingsError, GetAdminAuthenticationSettingsResponse, GetAdminChannelData, GetAdminChannelError, GetAdminChannelResponse, GetAdminCredentialData, GetAdminCredentialError, GetAdminCredentialResponse, GetAdminDashboardData, GetAdminDashboardError, GetAdminDashboardResponse, GetAdminEmailSettingsData, GetAdminEmailSettingsError, GetAdminEmailSettingsResponse, GetAdminGroupData, GetAdminGroupError, GetAdminGroupResponse, GetAdminModelData, GetAdminModelError, GetAdminModelResponse, GetAdminSiteSettingsData, GetAdminSiteSettingsError, GetAdminSiteSettingsResponse, GetAdminTokenData, GetAdminTokenError, GetAdminTokenResponse, GetAdminUserData, GetAdminUserError, GetAdminUserResponse, GetInitialSetupStatusData, GetInitialSetupStatusError, GetInitialSetupStatusResponse, GetManagementSessionData, GetManagementSessionError, GetManagementSessionResponse, GetPlaygroundConversationData, GetPlaygroundConversationError, GetPlaygroundConversationResponse, GetPlaygroundShareData, GetPlaygroundShareError, GetPlaygroundShareResponse, GetPublicSiteSettingsData, GetPublicSiteSettingsError, GetPublicSiteSettingsResponse, GetRegistrationStatusData, GetRegistrationStatusError, GetRegistrationStatusResponse, GetUserProfileData, GetUserProfileError, GetUserProfileResponse, GetUserTokenData, GetUserTokenError, GetUserTokenResponse, InitializeAdminSetupData, InitializeAdminSetupError, InitializeAdminSetupResponse, ListAdminChannelsData, ListAdminChannelsError, ListAdminChannelsResponse, ListAdminCredentialsData, ListAdminCredentialsError, ListAdminCredentialsResponse, ListAdminGroupsData, ListAdminGroupsError, ListAdminGroupsResponse, ListAdminModelsData, ListAdminModelsError, ListAdminModelsResponse, ListAdminTokensData, ListAdminTokensError, ListAdminTokensResponse, ListAdminUsageLogsData, ListAdminUsageLogsError, ListAdminUsageLogsResponse, ListAdminUsersData, ListAdminUsersError, ListAdminUsersResponse, ListModelsData, ListModelsError, ListModelsResponse, ListPlaygroundConversationsData, ListPlaygroundConversationsError, ListPlaygroundConversationsResponse, ListUserTokensData, ListUserTokensError, ListUserTokensResponse, LoginManagementSessionData, LoginManagementSessionError, LoginManagementSessionResponse, ProbeAdminChannelData, ProbeAdminChannelError, ProbeAdminChannelResponse, RegisterUserData, RegisterUserError, RegisterUserResponse, RequestPasswordResetData, RequestPasswordResetError, RequestPasswordResetResponse, RevokePlaygroundShareData, RevokePlaygroundShareError, RevokePlaygroundShareResponse, SavePlaygroundConversationData, SavePlaygroundConversationError, SavePlaygroundConversationResponse, SendAdminEmailTestData, SendAdminEmailTestError, SendAdminEmailTestResponse, SendRegistrationEmailVerificationData, SendRegistrationEmailVerificationError, SendRegistrationEmailVerificationResponse, UpdateAdminAuthenticationSettingsData, UpdateAdminAuthenticationSettingsError, UpdateAdminAuthenticationSettingsResponse, UpdateAdminChannelData, UpdateAdminChannelError, UpdateAdminChannelResponse, UpdateAdminCredentialData, UpdateAdminCredentialError, UpdateAdminCredentialResponse, UpdateAdminEmailSettingsData, UpdateAdminEmailSettingsError, UpdateAdminEmailSettingsResponse, UpdateAdminGroupData, UpdateAdminGroupError, UpdateAdminGroupResponse, UpdateAdminModelData, UpdateAdminModelError, UpdateAdminModelResponse, UpdateAdminSiteSettingsData, UpdateAdminSiteSettingsError, UpdateAdminSiteSettingsResponse, UpdateAdminTokenData, UpdateAdminTokenError, UpdateAdminTokenResponse, UpdateAdminUserData, UpdateAdminUserError, UpdateAdminUserResponse, UpdateUserNotificationPreferencesData, UpdateUserNotificationPreferencesError, UpdateUserNotificationPreferencesResponse, UpdateUserProfileData, UpdateUserProfileError, UpdateUserProfileResponse, UpdateUserTokenData, UpdateUserTokenError, UpdateUserTokenResponse } from '../types.gen';
 export const loginManagementSessionMutation = (options?: Partial<Options<LoginManagementSessionData>>): UseMutationOptions<LoginManagementSessionResponse, LoginManagementSessionError, Options<LoginManagementSessionData>> => {
     const mutationOptions: UseMutationOptions<LoginManagementSessionResponse, LoginManagementSessionError, Options<LoginManagementSessionData>> = {
         mutationFn: async (fnOptions) => {
@@ -566,6 +566,96 @@ export const listModelsInfiniteOptions = (options?: Options<ListModelsData>) => 
         queryKey: listModelsInfiniteQueryKey(options)
     });
     return opts as Omit<typeof opts, 'initialData'>;
+};
+export const listAdminModelsQueryKey = (options?: Options<ListAdminModelsData>) => createQueryKey('listAdminModels', options);
+export const listAdminModelsOptions = (options?: Options<ListAdminModelsData>) => queryOptions<ListAdminModelsResponse, ListAdminModelsError, ListAdminModelsResponse, ReturnType<typeof listAdminModelsQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listAdminModels({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listAdminModelsQueryKey(options)
+});
+export const listAdminModelsInfiniteQueryKey = (options?: Options<ListAdminModelsData>): QueryKey<Options<ListAdminModelsData>> => createQueryKey('listAdminModels', options, true);
+export const listAdminModelsInfiniteOptions = (options?: Options<ListAdminModelsData>) => {
+    const opts = infiniteQueryOptions<ListAdminModelsResponse, ListAdminModelsError, InfiniteData<ListAdminModelsResponse>, QueryKey<Options<ListAdminModelsData>>, number | Pick<QueryKey<Options<ListAdminModelsData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+    {
+        queryFn: async ({ pageParam, queryKey, signal }) => {
+            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+            const page: Pick<QueryKey<Options<ListAdminModelsData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
+                query: {
+                    after: pageParam
+                }
+            };
+            const params = createInfiniteParams(queryKey, page);
+            const { data } = await listAdminModels({
+                ...options,
+                ...params,
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: listAdminModelsInfiniteQueryKey(options)
+    });
+    return opts as Omit<typeof opts, 'initialData'>;
+};
+export const createAdminModelMutation = (options?: Partial<Options<CreateAdminModelData>>): UseMutationOptions<CreateAdminModelResponse, CreateAdminModelError, Options<CreateAdminModelData>> => {
+    const mutationOptions: UseMutationOptions<CreateAdminModelResponse, CreateAdminModelError, Options<CreateAdminModelData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await createAdminModel({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+export const deleteAdminModelMutation = (options?: Partial<Options<DeleteAdminModelData>>): UseMutationOptions<DeleteAdminModelResponse, DeleteAdminModelError, Options<DeleteAdminModelData>> => {
+    const mutationOptions: UseMutationOptions<DeleteAdminModelResponse, DeleteAdminModelError, Options<DeleteAdminModelData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await deleteAdminModel({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+export const getAdminModelQueryKey = (options: Options<GetAdminModelData>) => createQueryKey('getAdminModel', options);
+export const getAdminModelOptions = (options: Options<GetAdminModelData>) => queryOptions<GetAdminModelResponse, GetAdminModelError, GetAdminModelResponse, ReturnType<typeof getAdminModelQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getAdminModel({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getAdminModelQueryKey(options)
+});
+export const updateAdminModelMutation = (options?: Partial<Options<UpdateAdminModelData>>): UseMutationOptions<UpdateAdminModelResponse, UpdateAdminModelError, Options<UpdateAdminModelData>> => {
+    const mutationOptions: UseMutationOptions<UpdateAdminModelResponse, UpdateAdminModelError, Options<UpdateAdminModelData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await updateAdminModel({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
 };
 export const createPlaygroundShareMutation = (options?: Partial<Options<CreatePlaygroundShareData>>): UseMutationOptions<CreatePlaygroundShareResponse, CreatePlaygroundShareError, Options<CreatePlaygroundShareData>> => {
     const mutationOptions: UseMutationOptions<CreatePlaygroundShareResponse, CreatePlaygroundShareError, Options<CreatePlaygroundShareData>> = {

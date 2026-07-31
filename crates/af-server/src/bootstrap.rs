@@ -6,9 +6,10 @@ use af_account::{
 };
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminEmailSettingsService, AdminGroupReader,
-    AdminGroupWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
-    AdminUserWriter, DatabaseAdminChannelReader, DatabaseAdminChannelWriter,
-    DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader, DatabaseAdminGroupWriter,
+    AdminGroupWriter, AdminModelReader, AdminModelWriter, AdminTokenReader, AdminTokenWriter,
+    AdminUsageLogReader, AdminUserReader, AdminUserWriter, DatabaseAdminChannelReader,
+    DatabaseAdminChannelWriter, DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader,
+    DatabaseAdminGroupWriter, DatabaseAdminModelReader, DatabaseAdminModelWriter,
     DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
     DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseInitialSetup,
     DatabasePasswordResetService, DatabasePlaygroundConversationService,
@@ -32,20 +33,21 @@ use af_config::{AppConfig, ConfigError};
 use af_db::{
     AdminChannelRepository, AdminChannelRepositoryConfigError, AdminDashboardRepository,
     AdminDashboardRepositoryConfigError, AdminGroupRepository, AdminGroupRepositoryConfigError,
-    AdminTokenRepository, AdminTokenRepositoryConfigError, AdminUsageLogRepository,
-    AdminUsageLogRepositoryConfigError, AdminUserRepository, AdminUserRepositoryConfigError,
-    AuthChallengeRateLimitRepository, AuthChallengeRateLimitRepositoryConfigError,
-    AuthChallengeRepository, AuthChallengeRepositoryConfigError, ChannelStateRepository,
-    CredentialStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
-    EmailSettingsRepository, EmailSettingsRepositoryConfigError, InitialSetupRepository,
-    InitialSetupRepositoryConfigError, MigrationOptions, PasswordResetRepository,
-    PasswordResetRepositoryConfigError, PlaygroundConversationRepository,
-    PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
-    PlaygroundShareRepositoryConfigError, QuotaRepository, RegistrationRepository,
-    RegistrationRepositoryConfigError, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
-    TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository, UserProfileRepository,
-    UserProfileRepositoryConfigError, UserSessionRepository, UserSessionRepositoryConfigError,
-    UserTokenRepository, UserTokenRepositoryConfigError, connect_and_migrate,
+    AdminModelRepository, AdminModelRepositoryConfigError, AdminTokenRepository,
+    AdminTokenRepositoryConfigError, AdminUsageLogRepository, AdminUsageLogRepositoryConfigError,
+    AdminUserRepository, AdminUserRepositoryConfigError, AuthChallengeRateLimitRepository,
+    AuthChallengeRateLimitRepositoryConfigError, AuthChallengeRepository,
+    AuthChallengeRepositoryConfigError, ChannelStateRepository, CredentialStateRepository,
+    DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool, EmailSettingsRepository,
+    EmailSettingsRepositoryConfigError, InitialSetupRepository, InitialSetupRepositoryConfigError,
+    MigrationOptions, PasswordResetRepository, PasswordResetRepositoryConfigError,
+    PlaygroundConversationRepository, PlaygroundConversationRepositoryConfigError,
+    PlaygroundShareRepository, PlaygroundShareRepositoryConfigError, QuotaRepository,
+    RegistrationRepository, RegistrationRepositoryConfigError, SiteSettingsRepository,
+    SiteSettingsRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
+    UsageLogRepository, UserProfileRepository, UserProfileRepositoryConfigError,
+    UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
+    UserTokenRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle,
@@ -117,6 +119,8 @@ pub struct AuthenticationReady {
     admin_dashboard_reader: Arc<dyn AdminDashboardReader>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
+    admin_model_reader: Arc<dyn AdminModelReader>,
+    admin_model_writer: Arc<dyn AdminModelWriter>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
     admin_token_writer: Arc<dyn AdminTokenWriter>,
     admin_usage_log_reader: Arc<dyn AdminUsageLogReader>,
@@ -282,6 +286,9 @@ pub enum BootstrapError {
     /// 管理员分组仓储的启动参数无效。
     #[error("管理员分组仓储启动参数无效")]
     AdminGroupRepository(#[source] AdminGroupRepositoryConfigError),
+    /// 管理员模型元数据仓储的启动参数无效。
+    #[error("管理员模型元数据仓储启动参数无效")]
+    AdminModelRepository(#[source] AdminModelRepositoryConfigError),
     /// 管理员令牌仓储的启动参数无效。
     #[error("管理员令牌仓储启动参数无效")]
     AdminTokenRepository(#[source] AdminTokenRepositoryConfigError),
@@ -527,6 +534,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::AdminGroupRepository)?;
+        let admin_model_repository = AdminModelRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::AdminModelRepository)?;
         let admin_token_repository = AdminTokenRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -603,6 +615,10 @@ impl Bootstrap<DatabaseReady> {
                     admin_group_repository.clone(),
                 )),
                 admin_group_writer: Arc::new(DatabaseAdminGroupWriter::new(admin_group_repository)),
+                admin_model_reader: Arc::new(DatabaseAdminModelReader::new(
+                    admin_model_repository.clone(),
+                )),
+                admin_model_writer: Arc::new(DatabaseAdminModelWriter::new(admin_model_repository)),
                 admin_token_reader: Arc::new(DatabaseAdminTokenReader::new(
                     admin_token_repository.clone(),
                 )),
@@ -934,6 +950,8 @@ impl Bootstrap<Supervised> {
             Some(Arc::clone(&self.stage.admin_channel_probe)),
             Arc::clone(&self.stage.infrastructure.admin_group_reader),
             Arc::clone(&self.stage.infrastructure.admin_group_writer),
+            Some(Arc::clone(&self.stage.infrastructure.admin_model_reader)),
+            Some(Arc::clone(&self.stage.infrastructure.admin_model_writer)),
             Arc::clone(&self.stage.infrastructure.admin_token_reader),
             Arc::clone(&self.stage.infrastructure.admin_token_writer),
             Arc::clone(&self.stage.infrastructure.admin_dashboard_reader),

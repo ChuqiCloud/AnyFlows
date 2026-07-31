@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminTokenReader,
-    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, InitialSetup,
-    SessionAuthenticator, TokenAuthentication,
+    AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter, AdminModelReader,
+    AdminModelWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
+    AdminUserWriter, InitialSetup, SessionAuthenticator, TokenAuthentication,
 };
 use af_analytics::AdminDashboardReader;
 use af_domain::{AfError, Protocol, TokenModelPolicy};
@@ -40,6 +40,8 @@ pub(crate) struct HttpState {
     pub(crate) admin_dashboard_reader: Option<Arc<dyn AdminDashboardReader>>,
     pub(crate) admin_group_reader: Arc<dyn AdminGroupReader>,
     pub(crate) admin_group_writer: Arc<dyn AdminGroupWriter>,
+    pub(crate) admin_model_reader: Option<Arc<dyn AdminModelReader>>,
+    pub(crate) admin_model_writer: Option<Arc<dyn AdminModelWriter>>,
     pub(crate) admin_token_reader: Arc<dyn AdminTokenReader>,
     pub(crate) admin_token_writer: Arc<dyn AdminTokenWriter>,
     pub(crate) admin_usage_log_reader: Option<Arc<dyn AdminUsageLogReader>>,
@@ -70,6 +72,8 @@ impl HttpState {
             admin_dashboard_reader: None,
             admin_group_reader,
             admin_group_writer,
+            admin_model_reader: None,
+            admin_model_writer: None,
             admin_token_reader,
             admin_token_writer,
             admin_usage_log_reader: None,
@@ -100,6 +104,24 @@ impl HttpState {
         reader: Arc<dyn AdminUsageLogReader>,
     ) -> Self {
         self.admin_usage_log_reader = Some(reader);
+        self
+    }
+
+    /// 为模型商品元数据管理路由注入真实只读服务。
+    pub(crate) fn with_admin_model_reader(
+        mut self,
+        reader: Option<Arc<dyn AdminModelReader>>,
+    ) -> Self {
+        self.admin_model_reader = reader;
+        self
+    }
+
+    /// 为模型商品元数据管理路由注入真实写入服务。
+    pub(crate) fn with_admin_model_writer(
+        mut self,
+        writer: Option<Arc<dyn AdminModelWriter>>,
+    ) -> Self {
+        self.admin_model_writer = writer;
         self
     }
 

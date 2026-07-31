@@ -493,5 +493,7 @@ pub(crate) enum ManagementErrorCodeSchema {
     EmailDeliveryFailed,
     GroupConflict,
     GroupInUse,
+    ModelNotFound,
+    ModelConflict,
     InternalError,
 }

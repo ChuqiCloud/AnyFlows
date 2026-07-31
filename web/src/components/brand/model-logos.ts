@@ -105,3 +105,39 @@ export function findModelLogo(model: string) {
                                     : undefined
   return brand ? logoByName.get(brand) : undefined
 }
+
+const providerLogoNames: Readonly<Record<string, string>> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic',
+  google: 'Gemini',
+  gemini: 'Gemini',
+  deepseek: 'DeepSeek',
+  qwen: 'Qwen',
+  alibaba: 'Qwen',
+  moonshot: 'Moonshot',
+  kimi: 'Kimi',
+  zhipu: 'Zhipu',
+  minimax: 'MiniMax',
+  doubao: 'Doubao',
+  bytedance: 'Doubao',
+  hunyuan: 'Hunyuan',
+  tencent: 'Hunyuan',
+  wenxin: 'Wenxin',
+  baidu: 'Wenxin',
+  xai: 'xAI',
+  meta: 'Meta',
+  mistral: 'Mistral',
+  cohere: 'Cohere',
+  perplexity: 'Perplexity',
+  groq: 'Groq',
+  together: 'Together',
+  openrouter: 'OpenRouter',
+  ollama: 'Ollama',
+}
+
+/** 根据权威厂商字段选择界面图标，不从模型名推断后端能力或归属。 */
+export function findProviderLogo(provider: string) {
+  const normalized = provider.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const name = providerLogoNames[normalized]
+  return name ? logoByName.get(name) : undefined
+}
