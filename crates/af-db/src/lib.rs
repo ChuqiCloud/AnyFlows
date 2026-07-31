@@ -93,6 +93,7 @@ mod token_owner_guard;
 mod usage_log;
 #[cfg(test)]
 mod usage_log_tests;
+mod user_profile;
 mod user_session;
 #[cfg(test)]
 mod user_session_tests;
@@ -257,6 +258,11 @@ pub use site_settings::{
 pub use usage_log::{
     UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics,
     UsageLogSource, UsageLogUsage, UsageLogWrite, UsageLogWriteError, UsageLogWriteOutcome,
+};
+pub use user_profile::{
+    MAX_USER_PROFILE_USERNAME_BYTES, UserNotificationPreferencesRecord, UserPasswordChangeOutcome,
+    UserProfileLookupOutcome, UserProfileMutationOutcome, UserProfileRecord, UserProfileRepository,
+    UserProfileRepositoryConfigError, UserProfileRepositoryError,
 };
 pub use user_session::{
     UserSessionLookupByIdOutcome, UserSessionLookupOutcome, UserSessionRepository,

@@ -24,7 +24,7 @@ import { apiClient, ApiError } from '@/lib/api'
 import { loginManagementSession } from '@/lib/api/generated/sdk.gen'
 import type { LoginRequest } from '@/lib/api/generated/types.gen'
 
-export type LoginNotice = 'sessionExpired' | 'setupComplete' | 'passwordResetSuccess'
+export type LoginNotice = 'sessionExpired' | 'setupComplete' | 'passwordResetSuccess' | 'passwordChanged'
 
 type LoginPageProps = {
   notice?: LoginNotice
@@ -80,7 +80,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const registrationAvailable = passwordLoginEnabled && registrationEnabled
   const visibleError = loginError ?? (noticeDismissed ? undefined : notice)
   const hasFieldError = visibleError === 'invalidCredentials'
-  const isSuccessNotice = visibleError === 'passwordResetSuccess'
+  const isSuccessNotice = visibleError === 'passwordResetSuccess' || visibleError === 'passwordChanged'
   const passwordToggleLabel = showPassword
     ? t('auth.login.hidePassword')
     : t('auth.login.showPassword')

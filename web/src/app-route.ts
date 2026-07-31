@@ -6,6 +6,7 @@ export type AppView =
   | 'forgot-password'
   | 'models'
   | 'playground'
+  | 'profile'
   | 'public-models'
   | 'register'
   | 'reset-password'
@@ -55,6 +56,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/api-keys')) return { view: 'api-keys' }
   if (hash.startsWith('#/console/models')) return { view: 'models' }
   if (hash.startsWith('#/console/playground')) return { view: 'playground' }
+  if (hash.startsWith('#/console/profile')) return { view: 'profile' }
   if (hash.startsWith('#/console/tokens')) return { view: 'tokens' }
   if (hash.startsWith('#/console/usage-logs')) return { view: 'usage-logs' }
   if (hash.startsWith('#/console/users')) return { view: 'users' }

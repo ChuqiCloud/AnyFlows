@@ -14,6 +14,7 @@
     "models": "模型广场",
     "playground": "对话试炼场",
     "apiKeys": "我的 API Key",
+    "profile": "个人资料",
     "users": "用户管理",
     "siteSettings": "站点设置",
     "authenticationSettings": "认证设置",
@@ -1018,6 +1019,7 @@
       "sessionExpired": "会话已过期，请重新登录。",
       "setupComplete": "系统已完成初始化，请使用管理员账户登录。",
       "passwordResetSuccess": "密码已更新，请使用新密码登录。",
+      "passwordChanged": "密码已修改，旧会话已失效，请使用新密码登录。",
       "passwordLoginDisabled": "密码登录刚刚被关闭，请使用站点当前开放的认证方式。",
       "unavailable": "暂时无法连接服务，请稍后重试。"
     },
@@ -1411,6 +1413,59 @@
       "unavailableTitle": "无法确认安装状态",
       "unavailableBody": "服务暂时没有返回可靠状态，为保护管理入口，请重试。",
       "retry": "重新检查"
+    }
+  },
+  "profile": {
+    "eyebrow": "账户安全",
+    "title": "个人资料与安全",
+    "subtitle": "管理你的账户信息、登录凭据和邮件通知偏好。",
+    "profile": {
+      "title": "个人资料",
+      "subtitle": "更新名称，确认当前账户身份。",
+      "username": "用户名",
+      "usernameHint": "用户名不能包含首尾空格或控制字符，最长 64 字节。",
+      "email": "邮箱",
+      "emailEmpty": "未绑定邮箱",
+      "emailHint": "邮箱暂时只读；地址变更需要独立的验证流程。",
+      "saved": "个人资料已保存。"
+    },
+    "password": {
+      "title": "修改密码",
+      "subtitle": "使用当前密码确认后设置新的登录密码。",
+      "current": "当前密码",
+      "next": "新密码",
+      "confirm": "确认新密码",
+      "hint": "密码长度为 12–128 字节，不能包含控制字符。",
+      "revokesSessions": "修改成功后，所有旧登录会话会立即失效。"
+    },
+    "notifications": {
+      "title": "通知偏好",
+      "subtitle": "选择希望接收的非安全类邮件提醒。",
+      "productTitle": "产品更新",
+      "productDescription": "接收新功能、版本和服务公告。",
+      "usageTitle": "用量提醒",
+      "usageDescription": "在用量或额度接近边界时接收提醒。",
+      "securityTitle": "安全通知",
+      "securityDescription": "密码、会话和账户安全通知始终开启。",
+      "alwaysOn": "始终开启",
+      "saved": "通知偏好已保存。",
+      "footer": "设置只影响后续邮件，不会改变账户安全通知。"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "saveProfile": "保存资料",
+      "changePassword": "修改密码",
+      "saveNotifications": "保存通知偏好"
+    },
+    "errors": {
+      "loadTitle": "个人资料暂时无法加载",
+      "loadBody": "服务没有返回可靠的账户信息，请稍后重试。",
+      "save": "个人资料保存失败，请稍后重试。",
+      "conflict": "用户名已被使用，请换一个名称。",
+      "password": "密码修改失败，请检查输入后重试。",
+      "currentPassword": "当前密码不正确，请重新输入。",
+      "notifications": "通知偏好保存失败，请稍后重试。"
     }
   },
   "landing": {

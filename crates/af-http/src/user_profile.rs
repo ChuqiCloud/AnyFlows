@@ -1,0 +1,216 @@
+use std::sync::Arc;
+
+use af_admin::{
+    SessionAuthentication, SessionAuthenticator, UserNotificationPreferences,
+    UserNotificationPreferencesCommand, UserPasswordChangeCommand, UserProfile, UserProfileError,
+    UserProfileService, UserProfileUpdateCommand,
+};
+use axum::{
+    Json, Router,
+    extract::{DefaultBodyLimit, Extension, State, rejection::JsonRejection},
+    middleware,
+    response::{IntoResponse, Response},
+    routing::{get, put},
+};
+use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
+use serde::{Deserialize, Serialize};
+use tower_http::limit::RequestBodyLimitLayer;
+use utoipa::ToSchema;
+
+use crate::{
+    management_auth::{ManagementAuthenticationState, authenticate_management_session},
+    management_error::ManagementError,
+    management_session::no_store_json,
+};
+
+/// 个人资料路由独立持有的应用服务状态。
+#[derive(Clone)]
+pub(crate) struct UserProfileHttpState {
+    service: Arc<dyn UserProfileService>,
+}
+
+impl UserProfileHttpState {
+    /// 绑定启动期装配的用户资料应用服务。
+    pub(crate) fn new(service: Arc<dyn UserProfileService>) -> Self {
+        Self { service }
+    }
+}
+
+/// 构建只要求有效登录会话的个人资料与安全设置路由。
+pub(crate) fn build_user_profile_router(
+    service: Arc<dyn UserProfileService>,
+    session_authenticator: Arc<dyn SessionAuthenticator>,
+) -> Router {
+    let authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(session_authenticator),
+        authenticate_management_session,
+    );
+    Router::new()
+        .route("/api/account/profile", get(get_profile).put(update_profile))
+        .route("/api/account/password", put(change_password))
+        .route("/api/account/notifications", put(update_notifications))
+        .layer(DefaultBodyLimit::max(16 * 1024))
+        .layer(RequestBodyLimitLayer::new(16 * 1024))
+        .layer(authentication)
+        .with_state(UserProfileHttpState::new(service))
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserProfileResponse)]
+pub(crate) struct UserProfileResponse {
+    #[schema(minimum = 1)]
+    id: i64,
+    #[schema(min_length = 1, max_length = 64)]
+    username: String,
+    #[schema(max_length = 320, format = Email, required = true)]
+    email: Option<String>,
+    #[schema(value_type = crate::openapi::schema::AdminSessionRoleSchema, inline)]
+    role: af_admin::SessionRole,
+    notifications: UserNotificationPreferencesResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserNotificationPreferencesResponse)]
+pub(crate) struct UserNotificationPreferencesResponse {
+    email_product_updates: bool,
+    email_usage_alerts: bool,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserProfileUpdateRequest)]
+pub(crate) struct UserProfileUpdateRequest {
+    #[schema(min_length = 1, max_length = 64)]
+    username: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserPasswordChangeRequest)]
+pub(crate) struct UserPasswordChangeRequest {
+    #[schema(min_length = 1, max_length = 4096, format = Password, write_only)]
+    current_password: String,
+    #[schema(
+        min_length = 12,
+        max_length = 128,
+        format = Password,
+        write_only
+    )]
+    new_password: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserNotificationPreferencesRequest)]
+pub(crate) struct UserNotificationPreferencesRequest {
+    email_product_updates: bool,
+    email_usage_alerts: bool,
+}
+
+/// 返回当前会话用户资料；不会读取或返回其他用户记录。
+pub(crate) async fn get_profile(
+    State(state): State<UserProfileHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    let profile = state
+        .service
+        .get(authentication.principal())
+        .await
+        .map_err(map_profile_error)?;
+    Ok(no_store_json(UserProfileResponse::from_profile(&profile)))
+}
+
+/// 更新当前会话用户登录用户名；邮箱变更保留给后续验证切片。
+pub(crate) async fn update_profile(
+    State(state): State<UserProfileHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    request: Result<Json<UserProfileUpdateRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command = UserProfileUpdateCommand::new(request.username).map_err(map_profile_error)?;
+    let profile = state
+        .service
+        .update_profile(authentication.principal(), command)
+        .await
+        .map_err(map_profile_error)?;
+    Ok(no_store_json(UserProfileResponse::from_profile(&profile)))
+}
+
+/// 校验当前密码并更新新密码；成功后客户端必须重新登录。
+pub(crate) async fn change_password(
+    State(state): State<UserProfileHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    request: Result<Json<UserPasswordChangeRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command = UserPasswordChangeCommand::new(request.current_password, request.new_password)
+        .map_err(map_profile_error)?;
+    state
+        .service
+        .change_password(authentication.principal(), command)
+        .await
+        .map_err(map_profile_error)?;
+    Ok(no_store_empty(StatusCode::NO_CONTENT))
+}
+
+/// 更新当前会话用户的邮件通知偏好。
+pub(crate) async fn update_notifications(
+    State(state): State<UserProfileHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    request: Result<Json<UserNotificationPreferencesRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command = UserNotificationPreferencesCommand::new(UserNotificationPreferences::new(
+        request.email_product_updates,
+        request.email_usage_alerts,
+    ));
+    let profile = state
+        .service
+        .update_notifications(authentication.principal(), command)
+        .await
+        .map_err(map_profile_error)?;
+    Ok(no_store_json(UserProfileResponse::from_profile(&profile)))
+}
+
+impl UserProfileResponse {
+    fn from_profile(profile: &UserProfile) -> Self {
+        Self {
+            id: profile.user_id().get(),
+            username: profile.username().to_owned(),
+            email: profile.email().map(str::to_owned),
+            role: profile.role(),
+            notifications: UserNotificationPreferencesResponse::from_preferences(
+                profile.notifications(),
+            ),
+        }
+    }
+}
+
+impl UserNotificationPreferencesResponse {
+    fn from_preferences(preferences: UserNotificationPreferences) -> Self {
+        Self {
+            email_product_updates: preferences.email_product_updates(),
+            email_usage_alerts: preferences.email_usage_alerts(),
+        }
+    }
+}
+
+fn map_profile_error(error: UserProfileError) -> ManagementError {
+    match error {
+        UserProfileError::InvalidInput => ManagementError::InvalidRequest,
+        UserProfileError::InvalidSession => ManagementError::InvalidSession,
+        UserProfileError::CurrentPasswordInvalid => ManagementError::PasswordChangeRejected,
+        UserProfileError::Conflict => ManagementError::UserConflict,
+        UserProfileError::Internal => ManagementError::Internal,
+    }
+}
+
+fn no_store_empty(status: StatusCode) -> Response {
+    let mut response = status.into_response();
+    response
+        .headers_mut()
+        .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}

@@ -18,6 +18,7 @@ import { ModelPage } from '@/features/models/model-page'
 import { PublicModelPage } from '@/features/models/public-model-page'
 import { PlaygroundPage } from '@/features/playground/playground-page'
 import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
+import { ProfilePage } from '@/features/profile/profile-page'
 import { RegistrationPage } from '@/features/registration/registration-page'
 import { SiteSettingsPage } from '@/features/site-settings/site-settings-page'
 import { TokenPage } from '@/features/tokens/token-page'
@@ -54,6 +55,7 @@ type ManagementEntryProps = {
   onAuthenticated: () => void
   onLoginRequired: (reason: 'required' | 'sessionExpired' | 'setupComplete') => void
   onUserHomeRequired: () => void
+  onPasswordChanged: () => void
   onLogout: () => void
 }
 
@@ -64,6 +66,7 @@ function ManagementEntry({
   onAuthenticated,
   onLoginRequired,
   onUserHomeRequired,
+  onPasswordChanged,
   onLogout,
 }: ManagementEntryProps) {
   const { t } = useTranslation()
@@ -102,46 +105,50 @@ function ManagementEntry({
     ? 'channels.title'
     : view === 'site-settings'
       ? 'siteSettings.title'
-    : view === 'authentication-settings'
-      ? 'authenticationSettings.title'
-    : view === 'email-settings'
-      ? 'emailSettings.title'
-    : view === 'users'
-      ? 'users.title'
-    : view === 'api-keys'
-      ? 'apiKeys.title'
-    : view === 'models'
-      ? 'models.title'
-      : view === 'playground'
-        ? 'playground.title'
-        : view === 'tokens'
-          ? 'tokens.title'
-          : view === 'usage-logs'
-            ? 'usageLogs.title'
-            : 'dashboard.title'
+      : view === 'authentication-settings'
+        ? 'authenticationSettings.title'
+        : view === 'email-settings'
+          ? 'emailSettings.title'
+          : view === 'users'
+            ? 'users.title'
+            : view === 'api-keys'
+              ? 'apiKeys.title'
+              : view === 'models'
+                ? 'models.title'
+                : view === 'playground'
+                  ? 'playground.title'
+                  : view === 'profile'
+                    ? 'profile.title'
+                    : view === 'tokens'
+                      ? 'tokens.title'
+                      : view === 'usage-logs'
+                        ? 'usageLogs.title'
+                        : 'dashboard.title'
   const content = view === 'channels'
     ? <ChannelPage />
     : view === 'site-settings'
       ? <SiteSettingsPage />
-    : view === 'authentication-settings'
-      ? <AuthenticationSettingsPage />
-    : view === 'email-settings'
-      ? <EmailSettingsPage />
-    : view === 'users'
-      ? <UserPage />
-    : view === 'api-keys'
-      ? <ApiKeyPage />
-    : view === 'models'
-      ? <ModelPage authenticated />
-      : view === 'playground'
-        ? <PlaygroundPage />
-        : view === 'tokens'
-          ? <TokenPage />
-          : view === 'usage-logs'
-            ? <UsageLogPage />
-            : <DashboardPage />
+      : view === 'authentication-settings'
+        ? <AuthenticationSettingsPage />
+        : view === 'email-settings'
+          ? <EmailSettingsPage />
+          : view === 'users'
+            ? <UserPage />
+            : view === 'api-keys'
+              ? <ApiKeyPage />
+              : view === 'models'
+                ? <ModelPage authenticated />
+                : view === 'playground'
+                  ? <PlaygroundPage />
+                  : view === 'profile'
+                    ? <ProfilePage onPasswordChanged={onPasswordChanged} />
+                    : view === 'tokens'
+                      ? <TokenPage />
+                      : view === 'usage-logs'
+                        ? <UsageLogPage />
+                        : <DashboardPage />
 
-  const requireAdmin = view !== 'api-keys' && view !== 'models' && view !== 'playground'
+  const requireAdmin = view !== 'api-keys' && view !== 'models' && view !== 'playground' && view !== 'profile'
 
   return (
     <SessionBoundary
@@ -183,6 +190,13 @@ export default function App() {
     navigate('#/login')
   }, [navigate])
 
+  const openPasswordChanged = useCallback(() => {
+    // 密码修改会递增会话版本，先清理本地旧令牌，再回到登录入口。
+    endManagementSession()
+    setLoginNotice('passwordChanged')
+    navigate('#/login')
+  }, [navigate])
+
   const logout = useCallback(() => {
     endManagementSession()
     setLoginNotice(undefined)
@@ -215,6 +229,7 @@ export default function App() {
       onAuthenticated={openConsole}
       onLoginRequired={openLogin}
       onUserHomeRequired={openUserHome}
+      onPasswordChanged={openPasswordChanged}
       onLogout={logout}
     />
   )

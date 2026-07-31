@@ -43,9 +43,11 @@ use af_admin::{
     SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
     SessionLoginFuture, SessionPrincipal, SiteSettingsCommand, SiteSettingsError,
     SiteSettingsService, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
-    UserTokenCreateFuture, UserTokenDeleteFuture, UserTokenError, UserTokenGetFuture,
-    UserTokenListFuture, UserTokenListQuery, UserTokenService, UserTokenUpdateFuture,
-    UserTokenWriteCommand,
+    UserNotificationPreferencesCommand, UserNotificationUpdateFuture, UserPasswordChangeCommand,
+    UserPasswordChangeFuture, UserProfileError, UserProfileReadFuture, UserProfileService,
+    UserProfileUpdateCommand, UserProfileUpdateFuture, UserTokenCreateFuture,
+    UserTokenDeleteFuture, UserTokenError, UserTokenGetFuture, UserTokenListFuture,
+    UserTokenListQuery, UserTokenService, UserTokenUpdateFuture, UserTokenWriteCommand,
 };
 use af_analytics::{
     AdminDashboardAccess, AdminDashboardReadError, AdminDashboardReadFuture, AdminDashboardReader,
@@ -95,6 +97,7 @@ struct RejectUserTokens;
 struct RejectInitialSetup;
 struct RejectRegistration;
 struct RejectPasswordReset;
+struct RejectUserProfile;
 struct RejectSiteSettings;
 struct RejectAdminEmailSettings;
 struct RejectAdminChannels;
@@ -125,6 +128,36 @@ impl PasswordResetService for RejectPasswordReset {
 
     fn confirm(&self, _command: PasswordResetConfirmCommand) -> PasswordResetConfirmFuture<'_> {
         Box::pin(async { Err(PasswordResetError::Internal) })
+    }
+}
+
+impl UserProfileService for RejectUserProfile {
+    fn get<'a>(&'a self, _principal: SessionPrincipal) -> UserProfileReadFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
+
+    fn update_profile<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: UserProfileUpdateCommand,
+    ) -> UserProfileUpdateFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
+
+    fn change_password<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: UserPasswordChangeCommand,
+    ) -> UserPasswordChangeFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
+    }
+
+    fn update_notifications<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: UserNotificationPreferencesCommand,
+    ) -> UserNotificationUpdateFuture<'a> {
+        Box::pin(async { Err(UserProfileError::Internal) })
     }
 }
 
@@ -1495,6 +1528,7 @@ async fn start_server(
         Arc::new(RejectInitialSetup),
         Arc::new(RejectRegistration),
         Arc::new(RejectPasswordReset),
+        Arc::new(RejectUserProfile),
         Arc::new(RejectSiteSettings),
         Arc::new(RejectAdminEmailSettings),
         Arc::new(RejectAdminChannels),
