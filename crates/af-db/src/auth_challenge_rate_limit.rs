@@ -177,6 +177,7 @@ impl AuthChallengeRateLimitRepository {
         ] {
             let fingerprint = AuthChallengeHash::from_bytes(fingerprint);
             auth_challenge_rate_limits::Entity::insert(auth_challenge_rate_limits::ActiveModel {
+                id: sea_orm::NotSet,
                 purpose: sea_orm::Set(purpose),
                 scope: sea_orm::Set(scope),
                 fingerprint: sea_orm::Set(fingerprint.clone()),
