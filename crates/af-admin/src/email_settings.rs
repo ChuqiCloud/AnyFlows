@@ -19,6 +19,7 @@ const TEST_EMAIL_SUBJECT: &str = "AnyFlows SMTP 配置测试";
 const TEST_EMAIL_BODY: &str =
     "这是一封由 AnyFlows 发送的 SMTP 配置测试邮件。收到此邮件表示当前邮件服务器配置可用。";
 const REGISTRATION_EMAIL_SUBJECT: &str = "AnyFlows 注册验证码";
+const PASSWORD_RESET_EMAIL_SUBJECT: &str = "AnyFlows 密码重置";
 
 /// 管理 API 使用的 SMTP TLS 模式。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -415,6 +416,35 @@ impl EmailDeliveryRequest {
             cipher,
             recipient,
             REGISTRATION_EMAIL_SUBJECT.to_owned(),
+            body,
+        )
+    }
+
+    pub(crate) fn password_reset(
+        record: &EmailSettingsRecord,
+        cipher: &SystemSecretCipher,
+        recipient: String,
+        site_name: &str,
+        reset_url: &str,
+        ttl_seconds: u64,
+    ) -> Result<Self, AdminEmailSettingsError> {
+        if site_name.is_empty()
+            || site_name.chars().any(char::is_control)
+            || reset_url.is_empty()
+            || reset_url.len() > 4_096
+            || reset_url.chars().any(char::is_control)
+        {
+            return Err(AdminEmailSettingsError::Internal);
+        }
+        let ttl_minutes = ttl_seconds.div_ceil(60);
+        let body = format!(
+            "您好，您正在重置 {site_name} 的登录密码。\n\n请在 {ttl_minutes} 分钟内打开以下链接完成重置：\n{reset_url}\n\n若非本人操作，请忽略此邮件。"
+        );
+        Self::from_record(
+            record,
+            cipher,
+            recipient,
+            PASSWORD_RESET_EMAIL_SUBJECT.to_owned(),
             body,
         )
     }

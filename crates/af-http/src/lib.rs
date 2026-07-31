@@ -33,6 +33,7 @@ mod model_catalog;
 mod openai_responses;
 mod openapi;
 mod operations;
+mod password_reset;
 mod playground_conversations;
 mod playground_shares;
 mod registration;
@@ -81,6 +82,8 @@ mod management_tokens_tests;
 mod management_users_tests;
 #[cfg(test)]
 mod operations_tests;
+#[cfg(test)]
+mod password_reset_tests;
 #[cfg(test)]
 mod playground_conversations_tests;
 #[cfg(test)]

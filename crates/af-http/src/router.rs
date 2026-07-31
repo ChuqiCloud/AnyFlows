@@ -3,9 +3,9 @@ use std::sync::Arc;
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminEmailSettingsService, AdminGroupReader,
     AdminGroupWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
-    AdminUserWriter, InitialSetup, ModelCatalogReader, PlaygroundConversationService,
-    PlaygroundShareService, RegistrationService, SessionAuthenticator, SiteSettingsService,
-    TokenAuthenticator,
+    AdminUserWriter, InitialSetup, ModelCatalogReader, PasswordResetService,
+    PlaygroundConversationService, PlaygroundShareService, RegistrationService,
+    SessionAuthenticator, SiteSettingsService, TokenAuthenticator,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -60,6 +60,7 @@ use crate::middleware::{
 use crate::model_catalog::list_models;
 use crate::openai_responses::openai_responses;
 use crate::operations::{ReadinessHandle, operations_router};
+use crate::password_reset::build_password_reset_router;
 use crate::playground_conversations::build_playground_conversation_router;
 use crate::playground_shares::build_playground_share_router;
 use crate::registration::build_registration_router;
@@ -108,6 +109,7 @@ pub fn build_router(
     user_token_service: Arc<dyn af_admin::UserTokenService>,
     initial_setup: Arc<dyn InitialSetup>,
     registration_service: Arc<dyn RegistrationService>,
+    password_reset_service: Arc<dyn PasswordResetService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
@@ -255,6 +257,7 @@ pub fn build_router(
         Arc::clone(&http_state.session_authenticator),
         config,
     );
+    let password_reset_routes = build_password_reset_router(password_reset_service, config);
     let site_settings_routes = build_site_settings_router(
         site_settings_service,
         registration_service,
@@ -373,6 +376,7 @@ pub fn build_router(
         .merge(playground_conversation_routes)
         .merge(user_token_routes)
         .merge(registration_routes)
+        .merge(password_reset_routes)
         .merge(site_settings_routes)
         .merge(email_settings_routes);
     HttpRouter::new(build_router_with_routes_and_frontend(

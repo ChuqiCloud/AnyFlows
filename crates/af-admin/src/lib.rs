@@ -1,6 +1,7 @@
 //! 登录用户与管理域应用服务。
 
 mod api_key;
+mod auth_challenge_security;
 mod channel_read;
 mod channel_write;
 mod credential_read;
@@ -11,6 +12,7 @@ mod group_read;
 mod group_write;
 mod initial_setup;
 mod model_catalog;
+mod password_reset;
 mod playground_conversation;
 mod playground_share;
 mod playground_share_snapshot;
@@ -75,6 +77,13 @@ pub use model_catalog::{
     DEFAULT_MODEL_CATALOG_PAGE_SIZE, MAX_MODEL_CATALOG_PAGE_SIZE, ModelCatalogBillingMode,
     ModelCatalogItem, ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogQuery,
     ModelCatalogRatios, ModelCatalogReadError, ModelCatalogReader, ModelCatalogTokenPrices,
+};
+pub use password_reset::{
+    DatabasePasswordResetService, MAX_PASSWORD_RESET_PASSWORD_BYTES,
+    MIN_PASSWORD_RESET_PASSWORD_BYTES, PasswordResetConfirmCommand, PasswordResetConfirmFuture,
+    PasswordResetConfirmResult, PasswordResetError, PasswordResetRequestCommand,
+    PasswordResetRequestFuture, PasswordResetRequestResult, PasswordResetService,
+    PasswordResetServiceConfigError,
 };
 pub use playground_conversation::{
     DatabasePlaygroundConversationService, PlaygroundConversation,

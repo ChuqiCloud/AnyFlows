@@ -8,18 +8,15 @@ use af_db::{
     EmailSettingsRepository, EmailSettingsRepositoryError, RegistrationPolicyRecord,
 };
 use af_domain::TrustedClientIp;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use sha2::{Digest as _, Sha256};
 use zeroize::{Zeroize as _, Zeroizing};
 
 use crate::{
     AdminEmailSettingsError, EmailDelivery, EmailDeliveryRequest,
+    auth_challenge_security::{AuthChallengeSecurityKey, AuthChallengeSecurityKeyError},
     registration::{RegistrationError, RegistrationServiceConfigError},
 };
 
 pub(super) const REGISTRATION_EMAIL_CODE_BYTES: usize = 6;
-const REGISTRATION_SECURITY_KEY_BYTES: usize = 32;
-const SHA256_BLOCK_BYTES: usize = 64;
 const REGISTRATION_EMAIL_TTL_SECONDS: u64 = 10 * 60;
 const REGISTRATION_EMAIL_RESEND_COOLDOWN_SECONDS: u64 = 60;
 const REGISTRATION_EMAIL_MAX_ATTEMPTS: u32 = 5;
@@ -55,7 +52,7 @@ pub(super) struct RegistrationEmailVerification {
     email_settings_repository: EmailSettingsRepository,
     system_secret_cipher: SystemSecretCipher,
     delivery: Arc<dyn EmailDelivery>,
-    security_key: RegistrationSecurityKey,
+    security_key: AuthChallengeSecurityKey,
 }
 
 impl RegistrationEmailVerification {
@@ -74,7 +71,8 @@ impl RegistrationEmailVerification {
             email_settings_repository,
             system_secret_cipher,
             delivery,
-            security_key: RegistrationSecurityKey::new(security_key)?,
+            security_key: AuthChallengeSecurityKey::new(security_key)
+                .map_err(map_security_key_error)?,
         })
     }
 
@@ -214,63 +212,6 @@ impl fmt::Debug for RegistrationEmailVerification {
     }
 }
 
-struct RegistrationSecurityKey(Zeroizing<[u8; REGISTRATION_SECURITY_KEY_BYTES]>);
-
-impl RegistrationSecurityKey {
-    fn new(value: Option<&str>) -> Result<Self, RegistrationServiceConfigError> {
-        let value = value.ok_or(RegistrationServiceConfigError::MissingSecurityKey)?;
-        let mut decoded = [0_u8; REGISTRATION_SECURITY_KEY_BYTES];
-        let length = URL_SAFE_NO_PAD
-            .decode_slice(value, &mut decoded)
-            .map_err(|_| RegistrationServiceConfigError::InvalidSecurityKey)?;
-        if length != REGISTRATION_SECURITY_KEY_BYTES {
-            decoded.zeroize();
-            return Err(RegistrationServiceConfigError::InvalidSecurityKey);
-        }
-        Ok(Self(Zeroizing::new(decoded)))
-    }
-
-    fn derive_client(&self, domain: &[u8], client_ip: TrustedClientIp) -> [u8; 32] {
-        let mut address = [0_u8; 17];
-        let address_length = client_ip.write_fingerprint_input(&mut address);
-        let digest = self.derive(domain, &[&address[..address_length]]);
-        address.zeroize();
-        digest
-    }
-
-    fn derive(&self, domain: &[u8], parts: &[&[u8]]) -> [u8; 32] {
-        let mut inner_pad = [0x36_u8; SHA256_BLOCK_BYTES];
-        let mut outer_pad = [0x5c_u8; SHA256_BLOCK_BYTES];
-        for (index, key_byte) in self.0.iter().copied().enumerate() {
-            inner_pad[index] ^= key_byte;
-            outer_pad[index] ^= key_byte;
-        }
-
-        let mut inner = Sha256::new();
-        inner.update(inner_pad);
-        inner.update(domain);
-        for part in parts {
-            inner.update(u64::try_from(part.len()).unwrap_or(u64::MAX).to_be_bytes());
-            inner.update(part);
-        }
-        let inner_digest = inner.finalize();
-
-        let mut outer = Sha256::new();
-        outer.update(outer_pad);
-        outer.update(inner_digest);
-        let digest = outer.finalize().into();
-        inner_pad.zeroize();
-        outer_pad.zeroize();
-        digest
-    }
-}
-
-impl fmt::Debug for RegistrationSecurityKey {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("RegistrationSecurityKey(<redacted>)")
-    }
-}
-
 fn generate_verification_code() -> Result<Zeroizing<String>, RegistrationError> {
     const RANGE: u64 = 1_000_000;
     const ACCEPT_BELOW: u64 = u64::MAX - (u64::MAX % RANGE);
@@ -281,6 +222,17 @@ fn generate_verification_code() -> Result<Zeroizing<String>, RegistrationError> 
         entropy.zeroize();
         if value < ACCEPT_BELOW {
             return Ok(Zeroizing::new(format!("{:06}", value % RANGE)));
+        }
+    }
+}
+
+fn map_security_key_error(error: AuthChallengeSecurityKeyError) -> RegistrationServiceConfigError {
+    match error {
+        AuthChallengeSecurityKeyError::Missing => {
+            RegistrationServiceConfigError::MissingSecurityKey
+        }
+        AuthChallengeSecurityKeyError::Invalid => {
+            RegistrationServiceConfigError::InvalidSecurityKey
         }
     }
 }
@@ -326,17 +278,21 @@ fn map_challenge_repository_error(error: AuthChallengeRepositoryError) -> Regist
 mod tests {
     use std::net::IpAddr;
 
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
+    use crate::auth_challenge_security::AUTH_CHALLENGE_SECURITY_KEY_BYTES;
+
     use super::*;
 
     fn key() -> String {
-        URL_SAFE_NO_PAD.encode([0x42; REGISTRATION_SECURITY_KEY_BYTES])
+        URL_SAFE_NO_PAD.encode([0x42; AUTH_CHALLENGE_SECURITY_KEY_BYTES])
     }
 
     #[test]
     fn keyed_derivation_is_normalized_and_domain_separated() {
-        let first = RegistrationSecurityKey::new(Some(&key())).unwrap();
-        let second_key = URL_SAFE_NO_PAD.encode([0x24; REGISTRATION_SECURITY_KEY_BYTES]);
-        let second = RegistrationSecurityKey::new(Some(&second_key)).unwrap();
+        let first = AuthChallengeSecurityKey::new(Some(&key())).unwrap();
+        let second_key = URL_SAFE_NO_PAD.encode([0x24; AUTH_CHALLENGE_SECURITY_KEY_BYTES]);
+        let second = AuthChallengeSecurityKey::new(Some(&second_key)).unwrap();
         let ipv4 = TrustedClientIp::new("192.0.2.9".parse::<IpAddr>().unwrap());
         let mapped = TrustedClientIp::new("::ffff:192.0.2.9".parse::<IpAddr>().unwrap());
 
@@ -352,7 +308,7 @@ mod tests {
             first.derive(REGISTRATION_EMAIL_SUBJECT_DOMAIN, &[b"user@example.com"]),
             second.derive(REGISTRATION_EMAIL_SUBJECT_DOMAIN, &[b"user@example.com"])
         );
-        assert_eq!(format!("{first:?}"), "RegistrationSecurityKey(<redacted>)");
+        assert_eq!(format!("{first:?}"), "AuthChallengeSecurityKey(<redacted>)");
     }
 
     #[test]

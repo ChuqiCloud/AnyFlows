@@ -29,6 +29,8 @@ use af_admin::{
     AdminUserWriteError, AdminUserWriter, ApiKeyDigest, InitialSetup, InitialSetupCommand,
     InitialSetupError, InitialSetupFuture, InitialSetupStatusFuture, LoginCredentials,
     ModelCatalogPage, ModelCatalogQuery, ModelCatalogReadError, ModelCatalogReader,
+    PasswordResetConfirmCommand, PasswordResetConfirmFuture, PasswordResetError,
+    PasswordResetRequestCommand, PasswordResetRequestFuture, PasswordResetService,
     PlaygroundConversationDeleteFuture, PlaygroundConversationError,
     PlaygroundConversationListFuture, PlaygroundConversationReadFuture,
     PlaygroundConversationSaveCommand, PlaygroundConversationSaveFuture,
@@ -92,6 +94,7 @@ struct RejectPlaygroundConversations;
 struct RejectUserTokens;
 struct RejectInitialSetup;
 struct RejectRegistration;
+struct RejectPasswordReset;
 struct RejectSiteSettings;
 struct RejectAdminEmailSettings;
 struct RejectAdminChannels;
@@ -108,6 +111,20 @@ impl SessionAuthenticator for RejectSessions {
 
     fn authenticate<'a>(&'a self, _token: &'a str) -> SessionAuthenticationFuture<'a> {
         Box::pin(async { Err(SessionAuthenticationError::InvalidSession) })
+    }
+}
+
+impl PasswordResetService for RejectPasswordReset {
+    fn request<'a>(
+        &'a self,
+        _client_ip: TrustedClientIp,
+        _command: &'a PasswordResetRequestCommand,
+    ) -> PasswordResetRequestFuture<'a> {
+        Box::pin(async { Err(PasswordResetError::Internal) })
+    }
+
+    fn confirm(&self, _command: PasswordResetConfirmCommand) -> PasswordResetConfirmFuture<'_> {
+        Box::pin(async { Err(PasswordResetError::Internal) })
     }
 }
 
@@ -1477,6 +1494,7 @@ async fn start_server(
         Arc::new(RejectUserTokens),
         Arc::new(RejectInitialSetup),
         Arc::new(RejectRegistration),
+        Arc::new(RejectPasswordReset),
         Arc::new(RejectSiteSettings),
         Arc::new(RejectAdminEmailSettings),
         Arc::new(RejectAdminChannels),

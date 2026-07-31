@@ -2,6 +2,7 @@ import { useMutation } from '@tanstack/react-query'
 import {
   AlertCircle,
   Boxes,
+  CheckCircle2,
   Eye,
   EyeOff,
   LoaderCircle,
@@ -23,7 +24,7 @@ import { apiClient, ApiError } from '@/lib/api'
 import { loginManagementSession } from '@/lib/api/generated/sdk.gen'
 import type { LoginRequest } from '@/lib/api/generated/types.gen'
 
-export type LoginNotice = 'sessionExpired' | 'setupComplete'
+export type LoginNotice = 'sessionExpired' | 'setupComplete' | 'passwordResetSuccess'
 
 type LoginPageProps = {
   notice?: LoginNotice
@@ -79,6 +80,7 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
   const registrationAvailable = passwordLoginEnabled && registrationEnabled
   const visibleError = loginError ?? (noticeDismissed ? undefined : notice)
   const hasFieldError = visibleError === 'invalidCredentials'
+  const isSuccessNotice = visibleError === 'passwordResetSuccess'
   const passwordToggleLabel = showPassword
     ? t('auth.login.hidePassword')
     : t('auth.login.showPassword')
@@ -197,9 +199,13 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                     id="login-error"
                     role="alert"
                     aria-live="polite"
-                    className="flex gap-2.5 rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2.5 text-sm leading-5 text-destructive"
+                    className={isSuccessNotice
+                      ? 'flex gap-2.5 rounded-lg border border-success/20 bg-success/8 px-3 py-2.5 text-sm leading-5 text-success'
+                      : 'flex gap-2.5 rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2.5 text-sm leading-5 text-destructive'}
                   >
-                    <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                    {isSuccessNotice
+                      ? <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                      : <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />}
                     <span>{t(`auth.errors.${visibleError}`)}</span>
                   </div>
                 ) : null}
@@ -208,6 +214,11 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
                   {loginMutation.isPending ? <LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> : null}
                   {loginMutation.isPending ? t('auth.login.submitting') : t('auth.login.submit')}
                 </Button>
+                <p className="text-center text-sm">
+                  <a href="#/forgot-password" className="font-medium text-info underline-offset-4 hover:underline">
+                    {t('auth.login.forgotPassword')}
+                  </a>
+                </p>
                 {registrationAvailable ? (
                   <p className="text-center text-sm text-muted-foreground">
                     {t('auth.login.noAccount')}{' '}

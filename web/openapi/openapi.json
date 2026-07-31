@@ -547,6 +547,131 @@
         ]
       }
     },
+    "/api/auth/password-reset/request": {
+      "post": {
+        "tags": [
+          "密码重置"
+        ],
+        "summary": "请求密码重置邮件",
+        "operationId": "requestPasswordReset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "请求已受理，不区分邮箱是否存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordResetRequestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "邮箱或请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "邮件或公开站点基址尚未配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "SMTP 投递失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/password-reset/confirm": {
+      "post": {
+        "tags": [
+          "密码重置"
+        ],
+        "summary": "确认密码重置",
+        "operationId": "confirmPasswordReset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "密码已更新并撤销既有会话"
+          },
+          "400": {
+            "description": "请求正文、令牌或密码无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "令牌无效、过期、重放或目标不可重置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/email-settings": {
       "get": {
         "tags": [
@@ -7178,6 +7303,7 @@
               "registration_disabled",
               "registration_rate_limited",
               "registration_rejected",
+              "password_reset_rejected",
               "email_not_configured",
               "email_delivery_failed",
               "group_conflict",
@@ -7327,6 +7453,56 @@
             "type": "string",
             "maxLength": 64,
             "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordResetConfirmRequest": {
+        "type": "object",
+        "required": [
+          "token",
+          "password"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "writeOnly": true,
+            "maxLength": 100,
+            "minLength": 60
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 128,
+            "minLength": 12
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordResetRequest": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320,
+            "minLength": 3
+          }
+        },
+        "additionalProperties": false
+      },
+      "PasswordResetRequestResponse": {
+        "type": "object",
+        "required": [
+          "accepted"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -8075,6 +8251,9 @@
     },
     {
       "name": "认证设置"
+    },
+    {
+      "name": "密码重置"
     },
     {
       "name": "站点设置"

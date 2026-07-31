@@ -670,7 +670,7 @@ fn validate_email(email: Option<&str>) -> Result<(), RegistrationError> {
     Ok(())
 }
 
-fn normalize_email(mut email: String) -> Result<String, RegistrationError> {
+pub(crate) fn normalize_email(mut email: String) -> Result<String, RegistrationError> {
     validate_email(Some(&email))?;
     email.make_ascii_lowercase();
     Ok(email)
@@ -680,7 +680,7 @@ fn is_valid_verification_code(code: &str) -> bool {
     code.len() == REGISTRATION_EMAIL_CODE_BYTES && code.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-fn validate_password(password: &str) -> Result<(), RegistrationError> {
+pub(crate) fn validate_password(password: &str) -> Result<(), RegistrationError> {
     if !(MIN_REGISTRATION_PASSWORD_BYTES..=MAX_REGISTRATION_PASSWORD_BYTES)
         .contains(&password.len())
         || password.chars().any(char::is_control)

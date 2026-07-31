@@ -189,6 +189,13 @@ async fn validate_user<C>(
 where
     C: ConnectionTrait,
 {
+    if model
+        .session_version
+        .try_as_ref()
+        .is_some_and(|version| *version < 1)
+    {
+        return Err(DbErr::Custom("用户会话版本必须为正数".to_owned()));
+    }
     let Some(reference_id) = changed_reference(&model.inviter_id, insert) else {
         return Ok(());
     };

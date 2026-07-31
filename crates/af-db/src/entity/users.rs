@@ -15,6 +15,7 @@ pub struct Model {
     pub email: Option<String>,
     #[sea_orm(column_type = "String(StringLen::N(255))", nullable)]
     pub password_hash: Option<PasswordHash>,
+    pub session_version: i64,
     pub role: i16,
     pub status: i16,
     pub default_group_id: i64,

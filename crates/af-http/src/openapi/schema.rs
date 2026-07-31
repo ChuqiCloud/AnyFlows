@@ -488,6 +488,7 @@ pub(crate) enum ManagementErrorCodeSchema {
     RegistrationDisabled,
     RegistrationRateLimited,
     RegistrationRejected,
+    PasswordResetRejected,
     EmailNotConfigured,
     EmailDeliveryFailed,
     GroupConflict,

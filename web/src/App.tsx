@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next'
 import { routeFromHash, type AppRoute, type AppView } from '@/app-route'
 import { AppShell } from '@/components/layout/app-shell'
 import { AuthenticationSettingsPage } from '@/features/authentication-settings/authentication-settings-page'
+import { ForgotPasswordPage } from '@/features/auth/forgot-password-page'
 import { LoginPage, type LoginNotice } from '@/features/auth/login-page'
+import { ResetPasswordPage } from '@/features/auth/reset-password-page'
 import { SessionBoundary } from '@/features/auth/session-boundary'
 import { endManagementSession } from '@/features/auth/session-query'
 import { ApiKeyPage } from '@/features/api-keys/api-key-page'
@@ -47,7 +49,7 @@ function useHashRoute(): [AppRoute, (hash: string) => void] {
 }
 
 type ManagementEntryProps = {
-  view: Exclude<AppView, 'landing' | 'public-models' | 'register' | 'share'>
+  view: Exclude<AppView, 'landing' | 'public-models' | 'register' | 'share' | 'forgot-password' | 'reset-password'>
   loginNotice?: LoginNotice
   onAuthenticated: () => void
   onLoginRequired: (reason: 'required' | 'sessionExpired' | 'setupComplete') => void
@@ -176,6 +178,11 @@ export default function App() {
     navigate('#/console/models')
   }, [navigate])
 
+  const openPasswordResetSuccess = useCallback(() => {
+    setLoginNotice('passwordResetSuccess')
+    navigate('#/login')
+  }, [navigate])
+
   const logout = useCallback(() => {
     endManagementSession()
     setLoginNotice(undefined)
@@ -190,6 +197,12 @@ export default function App() {
   }
   if (view === 'register') {
     return <RegistrationPage onAuthenticated={openUserHome} />
+  }
+  if (view === 'forgot-password') {
+    return <ForgotPasswordPage />
+  }
+  if (view === 'reset-password') {
+    return <ResetPasswordPage token={route.resetToken} onCompleted={openPasswordResetSuccess} />
   }
   if (view === 'share') {
     return <PublicPlaygroundSharePage key={route.shareToken ?? 'invalid'} token={route.shareToken} />

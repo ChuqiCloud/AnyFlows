@@ -6,6 +6,7 @@ mod dashboard;
 mod email_settings;
 mod groups;
 mod models;
+mod password_reset;
 mod playground_conversations;
 mod playground_shares;
 mod registration;
@@ -30,6 +31,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(session::document());
     document.merge(setup::document());
     document.merge(registration::document());
+    document.merge(password_reset::document());
     document.merge(email_settings::document());
     document.merge(site_settings::document());
     document.merge(dashboard::document());
@@ -47,6 +49,7 @@ pub fn openapi_document() -> OpenApi {
     document.tags = Some(vec![
         Tag::new("公开注册"),
         Tag::new("认证设置"),
+        Tag::new("密码重置"),
         Tag::new("站点设置"),
         Tag::new("邮件设置"),
         Tag::new("管理会话"),
@@ -88,7 +91,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 32);
+        assert_eq!(document.paths.paths.len(), 34);
         let operation_count = document
             .paths
             .paths
@@ -109,7 +112,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 56);
+        assert_eq!(operation_count, 58);
         assert!(
             document
                 .components
@@ -135,6 +138,7 @@ mod tests {
             "createAdminGroup",
             "createAdminToken",
             "createAdminUser",
+            "confirmPasswordReset",
             "createPlaygroundShare",
             "createUserToken",
             "deletePlaygroundConversation",
@@ -176,6 +180,7 @@ mod tests {
             "revokePlaygroundShare",
             "savePlaygroundConversation",
             "sendAdminEmailTest",
+            "requestPasswordReset",
             "sendRegistrationEmailVerification",
             "updateAdminChannel",
             "updateAdminCredential",
@@ -193,7 +198,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 80);
+        assert_eq!(schemas.len(), 83);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
@@ -203,6 +208,9 @@ mod tests {
         assert!(schemas.contains_key("RegistrationEmailVerificationRequest"));
         assert!(schemas.contains_key("RegistrationEmailVerificationResponse"));
         assert!(schemas.contains_key("RegistrationRequest"));
+        assert!(schemas.contains_key("PasswordResetRequest"));
+        assert!(schemas.contains_key("PasswordResetRequestResponse"));
+        assert!(schemas.contains_key("PasswordResetConfirmRequest"));
         assert!(schemas.contains_key("AdminAuthenticationSettings"));
         assert!(schemas.contains_key("AdminAuthenticationSettingsRequest"));
         assert!(schemas.contains_key("PublicSiteSettings"));
