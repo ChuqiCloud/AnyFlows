@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { ArrowDownToLine, CircleDollarSign, Info, TriangleAlert } from 'lucide-react'
 import { useForm } from 'react-hook-form'
@@ -27,7 +27,7 @@ type ModelPriceFormProps = {
   candidate?: AdminModelPriceSourceCandidate
   model: AdminModel
   onCancel: () => void
-  onStage: (draft: ModelPriceDraft) => void
+  onStage: (draft: ModelPriceDraft, expectedVersion: number | null) => void
   price?: AdminModelPrice
   staged?: StagedModelPriceDraft
 }
@@ -57,11 +57,13 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
     defaultValues: initialDraft,
     resolver: zodResolver(schema),
   })
+  const [expectedVersion, setExpectedVersion] = useState(props.staged?.expectedVersion ?? props.price?.version ?? null)
 
   useEffect(() => {
     const next = props.staged?.draft ?? defaultModelPriceDraft(props.price)
     if (next.billingMode === 'per_token') perTokenDraft.current = next
     form.reset(next)
+    setExpectedVersion(props.staged?.expectedVersion ?? props.price?.version ?? null)
   }, [form, props.model.model, props.price, props.staged])
 
   const billingMode = form.watch('billingMode')
@@ -84,7 +86,8 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
     perTokenDraft.current = next
     form.reset(next, { keepDefaultValues: true })
   }
-  const submit = form.handleSubmit((draft) => props.onStage(draft))
+  const versionChanged = props.price !== undefined && expectedVersion !== props.price.version
+  const submit = form.handleSubmit((draft) => props.onStage(draft, expectedVersion))
 
   return (
     <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit} noValidate>
@@ -124,6 +127,14 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
             <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
             {t(billingMode === 'free' ? 'modelManagement.prices.form.freeHint' : 'modelManagement.prices.form.perTokenHint')}
           </p>
+          {versionChanged ? (
+            <div className="flex flex-col gap-2 rounded-lg border border-warning/20 bg-warning/8 px-3 py-2 text-xs text-warning sm:flex-row sm:items-center sm:justify-between">
+              <span>{t('modelManagement.prices.form.versionChanged', { current: props.price?.version, expected: expectedVersion ?? t('modelManagement.prices.form.newVersion') })}</span>
+              <Button type="button" size="sm" variant="secondary" onClick={() => setExpectedVersion(props.price?.version ?? null)}>
+                {t('modelManagement.prices.actions.useCurrentVersion')}
+              </Button>
+            </div>
+          ) : null}
         </section>
 
         <section className="grid gap-3 border-t border-[var(--hairline)] pt-5" aria-labelledby="model-price-values">
@@ -160,7 +171,7 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
 
       <div className="flex justify-end gap-2 border-t border-[var(--hairline)] p-4">
         <Button type="button" variant="secondary" onClick={props.onCancel}>{t('modelManagement.actions.cancel')}</Button>
-        <Button type="submit">{t('modelManagement.prices.actions.stage')}</Button>
+        <Button type="submit" disabled={versionChanged}>{t('modelManagement.prices.actions.stage')}</Button>
       </div>
     </form>
   )

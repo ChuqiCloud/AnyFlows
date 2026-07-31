@@ -55,8 +55,10 @@ export function ModelPriceWorkspace() {
     .sort()
     .flatMap((model) => {
       const draft = staged[model]
-      return draft && modelPriceDraftIsComplete(draft.draft) ? [{ model, staged: draft }] : []
-    }), [selected, staged])
+      const currentPrice = rowByModel.get(model)?.price
+      const versionReady = currentPrice === undefined || draft?.expectedVersion === currentPrice.version
+      return draft && versionReady && modelPriceDraftIsComplete(draft.draft) ? [{ model, staged: draft }] : []
+    }), [rowByModel, selected, staged])
   const editorTarget = editingModel ? rowToEditorTarget(rowByModel.get(editingModel)) : undefined
   const initialError = (modelsQuery.isError && modelsQuery.data === undefined)
     || (pricesQuery.isError && pricesQuery.data === undefined)
@@ -69,14 +71,10 @@ export function ModelPriceWorkspace() {
       // 已编辑草稿和上一份成功预览保持不变，管理员可以按稳定错误分类重试。
     }
   }
-  const stageDraft = (model: string, draft: ModelPriceDraft) => {
-    const row = rowByModel.get(model)
+  const stageDraft = (model: string, draft: ModelPriceDraft, expectedVersion: number | null) => {
     setStaged((current) => ({
       ...current,
-      [model]: {
-        draft,
-        expectedVersion: current[model]?.expectedVersion ?? row?.price?.version ?? null,
-      },
+      [model]: { draft, expectedVersion },
     }))
     setSelected((current) => new Set(current).add(model))
     setEditingModel(undefined)

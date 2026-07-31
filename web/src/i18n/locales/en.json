@@ -804,6 +804,7 @@
         "free": "Explicitly free",
         "staged": "Staged",
         "review": "Review needed",
+        "versionChanged": "Version changed",
         "checking": "Checking",
         "publicMissing": "This public active model stays out of the model catalog until it has a price."
       },
@@ -825,7 +826,9 @@
         "freeHint": "Explicitly free is not the same as a zero multiplier. All five prices must be zero.",
         "values": "Formal sale prices",
         "valuesHint": "These values affect new request billing and are never overwritten automatically from a reference source.",
-        "priceUnit": "USD / million Token"
+        "priceUnit": "USD / million Token",
+        "versionChanged": "This draft expects {{expected}}, while the current formal price is v{{current}}. Review it before updating the precondition.",
+        "newVersion": "a new-price precondition"
       },
       "validation": {
         "decimal": "Enter a non-negative plain decimal without a sign or exponent, with up to 10 integer and 28 fractional digits.",
@@ -842,7 +845,8 @@
         "editBeforeSelect": "Edit and complete all five prices first",
         "edit": "Edit pricing for {{model}}",
         "editPrice": "Edit price",
-        "setPrice": "Set price"
+        "setPrice": "Set price",
+        "useCurrentVersion": "Use current version"
       },
       "preview": {
         "loaded_one": "Matched {{count}} public reference price",

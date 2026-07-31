@@ -18,32 +18,33 @@ export type ModelPriceEditorTarget = {
 
 type ModelPriceEditorSheetProps = {
   onOpenChange: (open: boolean) => void
-  onStage: (model: string, draft: ModelPriceDraft) => void
+  onStage: (model: string, draft: ModelPriceDraft, expectedVersion: number | null) => void
   target?: ModelPriceEditorTarget
 }
 
 /** 使用独立 Sheet 承载五价编辑，关闭时由工作区保留已形成的草稿。 */
 export function ModelPriceEditorSheet(props: ModelPriceEditorSheetProps) {
   const { t } = useTranslation()
+  const target = props.target
   return (
-    <Sheet open={props.target !== undefined} onOpenChange={props.onOpenChange}>
+    <Sheet open={target !== undefined} onOpenChange={props.onOpenChange}>
       <SheetContent className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-2xl" aria-describedby="model-price-editor-description">
         <SheetHeader className="border-b border-[var(--hairline)] pr-12">
           <SheetTitle>{t('modelManagement.prices.editor.title')}</SheetTitle>
           <SheetDescription id="model-price-editor-description">
-            {props.target
-              ? t('modelManagement.prices.editor.description', { model: props.target.model.model })
+            {target
+              ? t('modelManagement.prices.editor.description', { model: target.model.model })
               : t('modelManagement.prices.editor.fallbackDescription')}
           </SheetDescription>
         </SheetHeader>
-        {props.target ? (
+        {target ? (
           <ModelPriceForm
-            candidate={props.target.candidate}
-            model={props.target.model}
-            price={props.target.price}
-            staged={props.target.staged}
+            candidate={target.candidate}
+            model={target.model}
+            price={target.price}
+            staged={target.staged}
             onCancel={() => props.onOpenChange(false)}
-            onStage={(draft) => props.onStage(props.target!.model.model, draft)}
+            onStage={(draft, expectedVersion) => props.onStage(target.model.model, draft, expectedVersion)}
           />
         ) : null}
       </SheetContent>

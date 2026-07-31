@@ -804,6 +804,7 @@
         "free": "显式免费",
         "staged": "待提交",
         "review": "需复核",
+        "versionChanged": "版本已变化",
         "checking": "核对中",
         "publicMissing": "公开活动模型未定价，不会进入模型广场。"
       },
@@ -825,7 +826,9 @@
         "freeHint": "显式免费与零倍率语义不同，保存时五项价格必须全部为 0。",
         "values": "正式销售价格",
         "valuesHint": "这些值会直接参与新请求计费，不会根据参考来源自动覆盖。",
-        "priceUnit": "美元 / 百万 Token"
+        "priceUnit": "美元 / 百万 Token",
+        "versionChanged": "草稿基于 {{expected}}，当前正式价格为 v{{current}}。核对后才能更新版本前置条件。",
+        "newVersion": "新建前置条件"
       },
       "validation": {
         "decimal": "请输入不带符号或科学计数法的非负十进制数，整数最多 10 位，小数最多 28 位。",
@@ -842,7 +845,8 @@
         "editBeforeSelect": "先编辑并补齐五项价格",
         "edit": "编辑模型 {{model}} 的价格",
         "editPrice": "编辑价格",
-        "setPrice": "设置价格"
+        "setPrice": "设置价格",
+        "useCurrentVersion": "采用当前版本"
       },
       "preview": {
         "loaded_one": "匹配 {{count}} 条公开参考价",

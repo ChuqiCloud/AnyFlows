@@ -149,6 +149,7 @@ function PriceStatus({ row, priceIndexComplete }: { row: ModelPriceRow; priceInd
     <div className="flex flex-wrap items-center gap-1.5">
       <Badge className={cn(styles[status])}>{t(`modelManagement.prices.status.${status}`)}</Badge>
       {modelPriceCandidateNeedsReview(row.candidate) ? <Badge className="border-transparent bg-warning/10 text-warning">{t('modelManagement.prices.status.review')}</Badge> : null}
+      {row.staged && row.price && row.staged.expectedVersion !== row.price.version ? <Badge className="border-transparent bg-destructive/10 text-destructive">{t('modelManagement.prices.status.versionChanged')}</Badge> : null}
       {row.price ? <span className="font-mono text-[0.6875rem] text-muted-foreground">v{row.price.version}</span> : null}
     </div>
   )
@@ -160,7 +161,8 @@ function RowCheckbox(props: {
   selected: boolean
 }) {
   const { t } = useTranslation()
-  const enabled = modelPriceDraftIsComplete(props.row.staged?.draft)
+  const versionReady = !props.row.price || props.row.staged?.expectedVersion === props.row.price.version
+  const enabled = versionReady && modelPriceDraftIsComplete(props.row.staged?.draft)
   const id = `select-price-${props.row.model.id}`
   return (
     <Tooltip>
