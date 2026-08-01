@@ -86,6 +86,9 @@ pub(crate) enum SensitiveValueError {
     /// 计费预留键不是非零的 128 位规范化十六进制编码。
     #[error("计费预留键必须是非零的 32 位小写十六进制字符串")]
     InvalidBillingReservationKey,
+    /// 钱包账本事件键不是非零的 128 位规范化十六进制编码。
+    #[error("钱包账本事件键必须是非零的 32 位小写十六进制字符串")]
+    InvalidWalletLedgerKey,
     /// Playground 会话标识不是非零的 128 位规范化十六进制编码。
     #[error("Playground 会话标识必须是非零的 32 位小写十六进制字符串")]
     InvalidPlaygroundConversationKey,
@@ -380,6 +383,43 @@ impl TryFromU64 for BillingReservationKey {
     fn try_from_u64(_: u64) -> Result<Self, DbErr> {
         // 幂等键不是自增主键，拒绝 SeaORM 将插入结果误转成业务标识。
         Err(DbErr::ConvertFromU64("BillingReservationKey"))
+    }
+}
+
+/// 经过格式校验且禁止日志输出的钱包账本事件键。
+#[derive(Clone, PartialEq, Eq)]
+pub struct WalletLedgerKey(String);
+
+impl WalletLedgerKey {
+    /// 解析非全零的 32 位小写十六进制事件键。
+    pub(crate) fn parse(value: &str) -> Result<Self, SensitiveValueError> {
+        if value.len() == 32
+            && value
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+            && value.bytes().any(|byte| byte != b'0')
+        {
+            return Ok(Self(value.to_owned()));
+        }
+        Err(SensitiveValueError::InvalidWalletLedgerKey)
+    }
+
+    /// 仅供经过鉴权的账本审计响应读取持久化事件标识。
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for WalletLedgerKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("<redacted>")
+    }
+}
+
+impl TryFromU64 for WalletLedgerKey {
+    fn try_from_u64(_: u64) -> Result<Self, DbErr> {
+        // 钱包事件键不是自增主键，拒绝 SeaORM 将插入结果误转成业务标识。
+        Err(DbErr::ConvertFromU64("WalletLedgerKey"))
     }
 }
 
@@ -914,6 +954,7 @@ fn invalid_db_value(
 impl_validated_string_value!(TokenHash, parse, ColumnType::Char(Some(64)));
 impl_validated_string_value!(AuthChallengeHash, parse, ColumnType::Char(Some(64)));
 impl_validated_string_value!(BillingReservationKey, parse, ColumnType::Char(Some(32)));
+impl_validated_string_value!(WalletLedgerKey, parse, ColumnType::Char(Some(32)));
 impl_validated_string_value!(PlaygroundConversationKey, parse, ColumnType::Char(Some(32)));
 impl_validated_string_value!(BillingBatchWriterKey, parse, ColumnType::Char(Some(32)));
 impl_validated_string_value!(BillingBatchFingerprint, parse, ColumnType::Char(Some(64)));
@@ -1020,6 +1061,7 @@ mod tests {
         let token_hash = TokenHash::parse(&"a".repeat(64)).unwrap();
         let challenge_hash = AuthChallengeHash::from_bytes([0xab; 32]);
         let reservation_key = BillingReservationKey::parse(&"b".repeat(32)).unwrap();
+        let wallet_key = WalletLedgerKey::parse(&"e".repeat(32)).unwrap();
         let writer_key = BillingBatchWriterKey::parse(&"c".repeat(32)).unwrap();
         let batch_fingerprint = BillingBatchFingerprint::parse(&"d".repeat(64)).unwrap();
         let json = EncryptedJson::from_envelope(encrypted_envelope()).unwrap();
@@ -1040,6 +1082,7 @@ mod tests {
             format!("{token_hash:?}"),
             format!("{challenge_hash:?}"),
             format!("{reservation_key:?}"),
+            format!("{wallet_key:?}"),
             format!("{writer_key:?}"),
             format!("{batch_fingerprint:?}"),
             format!("{json:?}"),
@@ -1091,6 +1134,7 @@ mod tests {
             "a".repeat(33),
         ] {
             assert!(BillingReservationKey::parse(&invalid_key).is_err());
+            assert!(WalletLedgerKey::parse(&invalid_key).is_err());
             assert!(BillingBatchWriterKey::parse(&invalid_key).is_err());
         }
         assert!(BillingBatchFingerprint::parse(&"A".repeat(64)).is_err());
@@ -1222,6 +1266,7 @@ mod tests {
         assert!(
             <BillingReservationKey as ValueType>::try_from(Value::from("0".repeat(32))).is_err()
         );
+        assert!(<WalletLedgerKey as ValueType>::try_from(Value::from("0".repeat(32))).is_err());
         assert!(
             <BillingBatchWriterKey as ValueType>::try_from(Value::from("0".repeat(32))).is_err()
         );

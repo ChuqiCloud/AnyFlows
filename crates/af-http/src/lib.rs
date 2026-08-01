@@ -32,6 +32,7 @@ mod management_token_writes;
 mod management_tokens;
 mod management_usage_logs;
 mod management_users;
+mod management_wallet;
 mod middleware;
 mod model_catalog;
 mod openai_responses;

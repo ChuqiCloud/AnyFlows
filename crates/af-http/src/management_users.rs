@@ -59,9 +59,9 @@ pub(crate) struct AdminUserListResponse {
 
 #[derive(Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
-#[schema(as = AdminUserWriteRequest)]
-/// 管理端创建或完整更新用户时使用的写入正文。
-pub(crate) struct AdminUserWriteRequest {
+#[schema(as = AdminUserCreateRequest)]
+/// 管理端创建用户时使用的写入正文；初始额度会同步写入 opening 账本。
+pub(crate) struct AdminUserCreateRequest {
     #[schema(min_length = 1, max_length = 64)]
     username: String,
     #[schema(min_length = 1, max_length = 320)]
@@ -79,6 +79,32 @@ pub(crate) struct AdminUserWriteRequest {
     default_group_id: i64,
     #[schema(minimum = 0)]
     quota: i64,
+    #[schema(minimum = 0)]
+    rpm_limit: Option<i32>,
+    #[schema(minimum = 0)]
+    concurrency: Option<i32>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminUserUpdateRequest)]
+/// 管理端更新用户资料时使用的写入正文；额度只能通过独立调账接口变更。
+pub(crate) struct AdminUserUpdateRequest {
+    #[schema(min_length = 1, max_length = 64)]
+    username: String,
+    #[schema(min_length = 1, max_length = 320)]
+    email: Option<String>,
+    #[schema(min_length = 1, max_length = 4096, format = Password)]
+    password: Option<String>,
+    #[schema(
+        value_type = crate::openapi::schema::AdminSessionRoleSchema,
+        inline
+    )]
+    role: af_admin::SessionRole,
+    #[schema(value_type = crate::openapi::schema::AdminUserStatusSchema)]
+    status: af_admin::AdminUserStatus,
+    #[schema(minimum = 1)]
+    default_group_id: i64,
     #[schema(minimum = 0)]
     rpm_limit: Option<i32>,
     #[schema(minimum = 0)]
@@ -119,7 +145,7 @@ pub(crate) async fn get_admin_user(
 pub(crate) async fn create_admin_user(
     State(state): State<HttpState>,
     Extension(authentication): Extension<af_admin::SessionAuthentication>,
-    request: Result<Json<AdminUserWriteRequest>, JsonRejection>,
+    request: Result<Json<AdminUserCreateRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
     let user = state
@@ -138,7 +164,7 @@ pub(crate) async fn update_admin_user(
     State(state): State<HttpState>,
     Path(user_id): Path<String>,
     Extension(authentication): Extension<af_admin::SessionAuthentication>,
-    request: Result<Json<AdminUserWriteRequest>, JsonRejection>,
+    request: Result<Json<AdminUserUpdateRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let user_id = parse_user_id(&user_id)?;
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
@@ -201,7 +227,7 @@ impl AdminUserResponse {
     }
 }
 
-impl AdminUserWriteRequest {
+impl AdminUserCreateRequest {
     fn into_create_command(self) -> Result<AdminUserCreateCommand, ManagementError> {
         AdminUserCreateCommand::new(
             self.username,
@@ -216,7 +242,9 @@ impl AdminUserWriteRequest {
         )
         .map_err(map_write_error)
     }
+}
 
+impl AdminUserUpdateRequest {
     fn into_update_command(self) -> Result<AdminUserUpdateCommand, ManagementError> {
         AdminUserUpdateCommand::new(
             self.username,
@@ -225,7 +253,6 @@ impl AdminUserWriteRequest {
             self.role,
             self.status,
             parse_group_id(self.default_group_id)?,
-            self.quota,
             self.rpm_limit,
             self.concurrency,
         )

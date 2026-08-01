@@ -4,7 +4,7 @@ use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminEmailSettingsService, AdminGroupReader,
     AdminGroupWriter, AdminModelPriceService, AdminModelReader, AdminModelSyncService,
     AdminModelWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
-    AdminUserWriter, InitialSetup, ModelCatalogReader, PasswordResetService,
+    AdminUserWriter, AdminWalletService, InitialSetup, ModelCatalogReader, PasswordResetService,
     PlaygroundConversationService, PlaygroundShareService, RegistrationService,
     SessionAuthenticator, SiteSettingsService, TokenAuthenticator,
 };
@@ -62,6 +62,7 @@ use crate::management_usage_logs::list_admin_usage_logs;
 use crate::management_users::{
     create_admin_user, delete_admin_user, get_admin_user, list_admin_users, update_admin_user,
 };
+use crate::management_wallet::{adjust_admin_wallet, list_admin_wallet_entries};
 use crate::middleware::{
     AllowedOrigins, LogHttpResponse, MakeHttpSpan, assign_request_id, enforce_allowed_origin,
     request_id_header,
@@ -138,6 +139,7 @@ pub fn build_router(
     admin_usage_log_reader: Arc<dyn AdminUsageLogReader>,
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
+    admin_wallet_service: Option<Arc<dyn AdminWalletService>>,
     query_api_key_policy: QueryApiKeyPolicy,
     frontend_assets: Option<Arc<dyn FrontendAssetSource>>,
 ) -> HttpRouter {
@@ -180,7 +182,8 @@ pub fn build_router(
     .with_admin_channel_writer(admin_channel_writer)
     .with_admin_channel_probe(admin_channel_probe)
     .with_admin_dashboard_reader(admin_dashboard_reader)
-    .with_admin_usage_log_reader(admin_usage_log_reader);
+    .with_admin_usage_log_reader(admin_usage_log_reader)
+    .with_admin_wallet_service(admin_wallet_service);
     let public_routes = Router::new()
         .route(
             "/v1/chat/completions",
@@ -216,6 +219,14 @@ pub fn build_router(
         authenticate_management_session,
     );
     let user_item_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let wallet_entries_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let wallet_adjustment_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
         authenticate_management_session,
     );
@@ -323,6 +334,18 @@ pub fn build_router(
                 .delete(delete_admin_user)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(user_item_authentication),
+        )
+        .route(
+            "/api/admin/users/{id}/wallet/entries",
+            get(list_admin_wallet_entries)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(wallet_entries_authentication),
+        )
+        .route(
+            "/api/admin/users/{id}/wallet/adjustments",
+            post(adjust_admin_wallet)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(wallet_adjustment_authentication),
         )
         .route(
             "/api/admin/groups",

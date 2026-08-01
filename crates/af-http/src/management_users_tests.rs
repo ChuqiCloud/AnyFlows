@@ -422,7 +422,7 @@ async fn admin_can_read_user_list_and_detail_with_no_store_responses() {
 async fn admin_can_create_update_and_delete_users_with_no_store_responses() {
     let reader = Arc::new(FakeAdminUserReader::new());
     let app = router(Arc::clone(&reader));
-    let body = valid_write_body();
+    let create_body = valid_create_body();
 
     let created = app
         .clone()
@@ -430,7 +430,7 @@ async fn admin_can_create_update_and_delete_users_with_no_store_responses() {
             "POST",
             "/api/admin/users",
             ADMIN_TOKEN,
-            body.clone(),
+            create_body,
         ))
         .await
         .unwrap();
@@ -447,7 +447,7 @@ async fn admin_can_create_update_and_delete_users_with_no_store_responses() {
             "PUT",
             "/api/admin/users/21",
             ADMIN_TOKEN,
-            body,
+            valid_update_body(),
         ))
         .await
         .unwrap();
@@ -506,7 +506,7 @@ async fn non_admin_and_invalid_requests_do_not_reach_user_service() {
             "PUT",
             "/api/admin/users/10",
             ADMIN_TOKEN,
-            json!({"username":" bad ","role":"user","status":"enabled","default_group_id":20,"quota":0}),
+            json!({"username":" bad ","role":"user","status":"enabled","default_group_id":20}),
         ),
     ] {
         let response = app.clone().oneshot(request).await.unwrap();
@@ -555,7 +555,7 @@ async fn reader_failures_map_to_stable_management_errors() {
 async fn writer_failures_map_to_stable_management_errors() {
     let reader = Arc::new(FakeAdminUserReader::new());
     let app = router(reader);
-    let body = valid_write_body();
+    let body = valid_update_body();
 
     let missing = app
         .clone()
@@ -697,7 +697,7 @@ fn authorized_json_request(method: &str, uri: &str, token: &str, body: Value) ->
         .unwrap()
 }
 
-fn valid_write_body() -> Value {
+fn valid_create_body() -> Value {
     json!({
         "username": "new-user",
         "email": "new-user@example.com",
@@ -706,6 +706,19 @@ fn valid_write_body() -> Value {
         "status": "enabled",
         "default_group_id": 20,
         "quota": 1000,
+        "rpm_limit": 60,
+        "concurrency": 3
+    })
+}
+
+fn valid_update_body() -> Value {
+    json!({
+        "username": "updated-user",
+        "email": "updated@example.com",
+        "password": null,
+        "role": "admin",
+        "status": "disabled",
+        "default_group_id": 20,
         "rpm_limit": 60,
         "concurrency": 3
     })

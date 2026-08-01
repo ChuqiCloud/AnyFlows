@@ -26,7 +26,7 @@ use crate::entity::{
     billing_batch_checkpoints, billing_reservations, channel_groups, channel_models, channels,
     credentials, email_settings, group_model_ratios, groups, model_prices, model_sync_items,
     model_sync_runs, models, options, playground_conversations, playground_shares,
-    registration_rate_limits, site_settings, tokens, usage_logs, users,
+    registration_rate_limits, site_settings, tokens, usage_logs, users, wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -48,7 +48,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量；列变更不会增加核心表数量。
-const EXPECTED_MIGRATION_COUNT: usize = 26;
+const EXPECTED_MIGRATION_COUNT: usize = 27;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -62,7 +62,7 @@ const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
 const PLAYGROUND_CONVERSATION_KEY: &str = "55555555555555555555555555555555";
-const CORE_TABLES: [&str; 25] = [
+const CORE_TABLES: [&str; 26] = [
     "groups",
     "users",
     "channels",
@@ -88,6 +88,7 @@ const CORE_TABLES: [&str; 25] = [
     "models",
     "model_sync_runs",
     "model_sync_items",
+    "wallet_ledger_entries",
 ];
 
 struct SlowMigrator;
@@ -164,6 +165,43 @@ async fn site_authentication_migration_moves_legacy_registration_policy()
             .is_none()
     );
 
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn wallet_migration_backfills_existing_nonzero_balances() -> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), Some(26)).await?;
+    let group = group_active_model("legacy-wallet", "旧钱包分组")
+        .insert(pool.connection())
+        .await?;
+    let mut user = user_active_model(
+        group.id,
+        "legacy-wallet-user",
+        "legacy-wallet@example.com",
+        "invite-legacy-wallet",
+    );
+    user.quota = Set(250);
+    let user = user.insert(pool.connection()).await?;
+
+    Migrator::up(pool.connection(), None).await?;
+    let entries = wallet_ledger_entries::Entity::find()
+        .filter(wallet_ledger_entries::Column::UserId.eq(user.id))
+        .all(pool.connection())
+        .await?;
+    assert_eq!(entries.len(), 1);
+    let opening = &entries[0];
+    assert_eq!(
+        opening.event_key.as_str(),
+        format!("0000000000000001{:016x}", user.id)
+    );
+    assert_eq!(opening.entry_type, 1);
+    assert_eq!(opening.quota_delta, 250);
+    assert_eq!(opening.balance_before, 0);
+    assert_eq!(opening.balance_after, 250);
+    assert!(opening.actor_user_id.is_none());
+    assert!(opening.reason.is_none());
     pool.close().await?;
     Ok(())
 }
@@ -1390,6 +1428,8 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<models::Column>(&manager, "models").await?;
     assert_entity_columns::<model_sync_runs::Column>(&manager, "model_sync_runs").await?;
     assert_entity_columns::<model_sync_items::Column>(&manager, "model_sync_items").await?;
+    assert_entity_columns::<wallet_ledger_entries::Column>(&manager, "wallet_ledger_entries")
+        .await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -1436,6 +1476,8 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("model_sync_runs", "idx_model_sync_runs_channel_created"),
         ("model_sync_items", "uq_model_sync_items_run_ordinal"),
         ("model_sync_items", "idx_model_sync_items_run_relation"),
+        ("wallet_ledger_entries", "uq_wallet_ledger_event_key"),
+        ("wallet_ledger_entries", "idx_wallet_ledger_user_id"),
     ] {
         assert!(
             manager.has_index(table, index).await?,

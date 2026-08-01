@@ -8,6 +8,7 @@ mod network;
 mod principal;
 mod quota;
 mod token_policy;
+mod wallet;
 
 pub use enums::{
     ChannelType, CredentialKind, Operation, ParseEnumError, Protocol, PublicErrorCode, Role, Status,
@@ -22,6 +23,7 @@ pub use token_policy::{
     MAX_MODEL_NAME_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_COUNT, MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES,
     TokenModelPolicy, TokenModelPolicyError,
 };
+pub use wallet::{WalletEventId, WalletEventIdError};
 
 #[cfg(test)]
 mod billing_tests;
@@ -37,6 +39,8 @@ mod principal_tests;
 mod quota_tests;
 #[cfg(test)]
 mod token_policy_tests;
+#[cfg(test)]
+mod wallet_tests;
 pub use billing::{BillingReservationId, BillingReservationIdError};
 pub use channel::{
     ChannelTimeout, ChannelTimeoutError, MAX_CHANNEL_TIMEOUT_SECS, MIN_CHANNEL_TIMEOUT_SECS,

@@ -17,6 +17,7 @@ mod registration;
 mod routing;
 mod site;
 mod usage;
+mod wallet;
 
 pub(super) use auth_challenge::{create_auth_challenge_indexes, create_auth_challenges};
 pub(super) use auth_challenge_rate_limit::create_auth_challenge_rate_limits;
@@ -100,3 +101,4 @@ pub(super) use pricing::{create_group_model_ratios, create_model_prices};
 pub(super) use registration::create_registration_rate_limits;
 pub(super) use site::{create_authentication_settings, create_site_settings};
 pub(super) use usage::{create_usage_logs, create_usage_logs_indexes};
+pub(super) use wallet::create_wallet_ledger;

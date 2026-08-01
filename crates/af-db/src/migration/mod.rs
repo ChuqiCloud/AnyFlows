@@ -32,6 +32,7 @@ mod m20260731_000023_add_user_session_version;
 mod m20260731_000024_add_user_notification_preferences;
 mod m20260731_000025_create_models;
 mod m20260731_000026_create_model_sync_audit;
+mod m20260801_000027_create_wallet_ledger;
 mod schema;
 
 #[cfg(test)]
@@ -101,6 +102,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260731_000024_add_user_notification_preferences::Migration),
             Box::new(m20260731_000025_create_models::Migration),
             Box::new(m20260731_000026_create_model_sync_audit::Migration),
+            Box::new(m20260801_000027_create_wallet_ledger::Migration),
         ]
     }
 }

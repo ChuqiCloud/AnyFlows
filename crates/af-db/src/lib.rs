@@ -111,6 +111,7 @@ mod user_session_tests;
 mod user_token;
 #[cfg(test)]
 mod user_token_tests;
+mod wallet_ledger;
 
 pub use ability_write::{
     MAX_ADMIN_CHANNEL_ABILITIES, MAX_ADMIN_CHANNEL_GROUPS, MAX_ADMIN_CHANNEL_MODEL_BYTES,
@@ -311,6 +312,12 @@ pub use user_token::{
     UserTokenDeleteOutcome, UserTokenLookupOutcome, UserTokenMutationOutcome, UserTokenPageRecord,
     UserTokenRecord, UserTokenRepository, UserTokenRepositoryConfigError, UserTokenRepositoryError,
     UserTokenWriteRecord,
+};
+pub use wallet_ledger::{
+    MAX_WALLET_ADJUSTMENT_REASON_BYTES, MAX_WALLET_LEDGER_PAGE_SIZE, WalletAdjustmentOutcome,
+    WalletAdjustmentWrite, WalletLedgerEntryRecord, WalletLedgerEntryType, WalletLedgerError,
+    WalletLedgerListOutcome, WalletLedgerPageRecord, WalletLedgerRepository,
+    WalletLedgerRepositoryConfigError,
 };
 
 /// 连接数据库并执行全部待处理迁移。
