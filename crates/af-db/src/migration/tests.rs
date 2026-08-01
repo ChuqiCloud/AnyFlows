@@ -1838,7 +1838,7 @@ async fn assert_updated_at_behaviors(connection: &DatabaseConnection) -> Result<
 async fn exercise_balance_alert_migration(
     connection: &DatabaseConnection,
 ) -> Result<(), Box<dyn Error>> {
-    let settings = balance_alert_settings::Entity::find_by_id(1)
+    let settings = balance_alert_settings::Entity::find_by_id(1_i16)
         .one(connection)
         .await?
         .expect("余额预警固定设置行必须存在");

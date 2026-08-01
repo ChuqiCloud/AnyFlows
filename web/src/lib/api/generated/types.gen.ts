@@ -24,6 +24,17 @@ export type AdminAuthenticationSettingsRequest = {
     rate_limit_attempts: number;
     rate_limit_window_seconds: number;
 };
+export type AdminBalanceAlertSettings = {
+    enabled: boolean;
+    default_threshold: number;
+    reminder_interval_seconds: number;
+    version: number;
+};
+export type AdminBalanceAlertSettingsRequest = {
+    enabled: boolean;
+    default_threshold: number;
+    reminder_interval_seconds: number;
+};
 export type AdminBrandSettingsRequest = {
     logo_url?: string | null;
     tagline?: string | null;
@@ -775,10 +786,14 @@ export type UserInvitationSummaryResponse = {
 export type UserNotificationPreferencesRequest = {
     email_product_updates: boolean;
     email_usage_alerts: boolean;
+    balance_alert_threshold: number | null;
 };
 export type UserNotificationPreferencesResponse = {
     email_product_updates: boolean;
     email_usage_alerts: boolean;
+    balance_alert_enabled: boolean;
+    balance_alert_threshold: number | null;
+    effective_balance_alert_threshold: number;
 };
 export type UserPasswordChangeRequest = {
     current_password: string;
@@ -1251,6 +1266,39 @@ export type SendAdminEmailTestResponses = {
     204: void;
 };
 export type SendAdminEmailTestResponse = SendAdminEmailTestResponses[keyof SendAdminEmailTestResponses];
+export type GetAdminBalanceAlertSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/balance-alert-settings';
+};
+export type GetAdminBalanceAlertSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminBalanceAlertSettingsError = GetAdminBalanceAlertSettingsErrors[keyof GetAdminBalanceAlertSettingsErrors];
+export type GetAdminBalanceAlertSettingsResponses = {
+    200: AdminBalanceAlertSettings;
+};
+export type GetAdminBalanceAlertSettingsResponse = GetAdminBalanceAlertSettingsResponses[keyof GetAdminBalanceAlertSettingsResponses];
+export type UpdateAdminBalanceAlertSettingsData = {
+    body: AdminBalanceAlertSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/balance-alert-settings';
+};
+export type UpdateAdminBalanceAlertSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminBalanceAlertSettingsError = UpdateAdminBalanceAlertSettingsErrors[keyof UpdateAdminBalanceAlertSettingsErrors];
+export type UpdateAdminBalanceAlertSettingsResponses = {
+    200: AdminBalanceAlertSettings;
+};
+export type UpdateAdminBalanceAlertSettingsResponse = UpdateAdminBalanceAlertSettingsResponses[keyof UpdateAdminBalanceAlertSettingsResponses];
 export type GetPublicSiteSettingsData = {
     body?: never;
     path?: never;
