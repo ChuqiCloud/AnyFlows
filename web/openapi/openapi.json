@@ -9874,6 +9874,7 @@
       },
       "AdminWalletEntryType": {
         "type": "string",
+        "description": "管理端钱包账本事件类型响应。",
         "enum": [
           "opening_balance",
           "admin_adjustment"
