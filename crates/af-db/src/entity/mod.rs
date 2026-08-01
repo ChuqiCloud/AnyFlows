@@ -34,6 +34,8 @@ pub(crate) mod playground_shares;
 pub(crate) mod registration_rate_limits;
 pub(crate) mod site_settings;
 pub(crate) mod tokens;
+pub(crate) mod topup_orders;
+pub(crate) mod topup_payment_events;
 pub(crate) mod usage_logs;
 pub(crate) mod users;
 pub(crate) mod wallet_ledger_entries;
@@ -527,6 +529,201 @@ where
         .ok_or_else(|| DbErr::Custom("钱包账本事件形态无效".to_owned()))
 }
 
+async fn validate_topup_order<C>(
+    model: &topup_orders::ActiveModel,
+    database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let persisted = if insert {
+        None
+    } else {
+        let id = model
+            .id
+            .try_as_ref()
+            .copied()
+            .ok_or_else(|| DbErr::Custom("充值订单更新缺少标识".to_owned()))?;
+        Some(
+            topup_orders::Entity::find_by_id(id)
+                .one(database)
+                .await?
+                .ok_or_else(|| DbErr::Custom("充值订单不存在".to_owned()))?,
+        )
+    };
+    let order_key = merge_required(
+        &model.order_key,
+        persisted.as_ref().map(|row| row.order_key.clone()),
+        "充值订单标识缺失",
+    )?;
+    let provider = merge_required(
+        &model.provider,
+        persisted.as_ref().map(|row| row.provider.clone()),
+        "充值渠道缺失",
+    )?;
+    let status = merge_required(
+        &model.status,
+        persisted.as_ref().map(|row| row.status),
+        "充值订单状态缺失",
+    )?;
+    let amount_minor = merge_required(
+        &model.amount_minor,
+        persisted.as_ref().map(|row| row.amount_minor),
+        "充值金额缺失",
+    )?;
+    let currency = merge_required(
+        &model.currency,
+        persisted.as_ref().map(|row| row.currency.clone()),
+        "充值币种缺失",
+    )?;
+    let quota_amount = merge_required(
+        &model.quota_amount,
+        persisted.as_ref().map(|row| row.quota_amount),
+        "充值到账额度缺失",
+    )?;
+    let idempotency_key = merge_required(
+        &model.idempotency_key,
+        persisted.as_ref().map(|row| row.idempotency_key.clone()),
+        "充值幂等键缺失",
+    )?;
+    let created_at = merge_required(
+        &model.created_at,
+        persisted.as_ref().map(|row| row.created_at),
+        "充值创建时间缺失",
+    )?;
+    let expires_at = merge_optional(
+        &model.expires_at,
+        persisted.as_ref().and_then(|row| row.expires_at),
+    );
+    let paid_at = merge_optional(
+        &model.paid_at,
+        persisted.as_ref().and_then(|row| row.paid_at),
+    );
+    let closed_at = merge_optional(
+        &model.closed_at,
+        persisted.as_ref().and_then(|row| row.closed_at),
+    );
+
+    if !valid_hex(&order_key, 32, true)
+        || !valid_hex(&idempotency_key, 32, true)
+        || provider.is_empty()
+        || !valid_currency(&currency)
+        || amount_minor <= 0
+        || quota_amount <= 0
+        || model
+            .user_id
+            .try_as_ref()
+            .copied()
+            .or_else(|| persisted.as_ref().map(|row| row.user_id))
+            .is_none_or(|id| id <= 0)
+        || expires_at.is_some_and(|expires_at| expires_at <= created_at)
+        || !valid_topup_order_state(status, paid_at, closed_at)
+    {
+        return Err(DbErr::Custom("充值订单状态无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_topup_payment_event<C>(
+    model: &topup_payment_events::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 支付事件是只追加审计事实；重复 webhook 只能通过唯一键幂等识别，不能更新旧事件。
+    if !insert {
+        return Err(DbErr::Custom("支付事件不允许更新".to_owned()));
+    }
+    let event_key = model
+        .event_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("支付事件标识缺失".to_owned()))?;
+    let provider = model
+        .provider
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("支付事件渠道缺失".to_owned()))?;
+    let provider_event_id = model
+        .provider_event_id
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("支付事件 Provider 标识缺失".to_owned()))?;
+    let signature_key_fingerprint = model
+        .signature_key_fingerprint
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("支付事件签名指纹缺失".to_owned()))?;
+    let payload_sha256 = model
+        .payload_sha256
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("支付事件负载哈希缺失".to_owned()))?;
+    let order_id = model.order_id.try_as_ref().copied().unwrap_or_default();
+    let event_type = model.event_type.try_as_ref().copied().unwrap_or_default();
+    if order_id <= 0
+        || !valid_hex(event_key, 32, true)
+        || provider.is_empty()
+        || provider_event_id.as_str().is_empty()
+        || !matches!(event_type, 1..=3)
+        || !valid_hex(signature_key_fingerprint.as_str(), 64, false)
+        || !valid_hex(payload_sha256.as_str(), 64, false)
+        || model.received_at.try_as_ref().is_none()
+        || model.created_at.try_as_ref().is_none()
+    {
+        return Err(DbErr::Custom("支付事件状态无效".to_owned()));
+    }
+    Ok(())
+}
+
+fn merge_required<T>(
+    active: &ActiveValue<T>,
+    persisted: Option<T>,
+    message: &'static str,
+) -> Result<T, DbErr>
+where
+    T: Clone + Into<sea_orm::Value>,
+{
+    active
+        .try_as_ref()
+        .cloned()
+        .or(persisted)
+        .ok_or_else(|| DbErr::Custom(message.to_owned()))
+}
+
+fn merge_optional<T>(active: &ActiveValue<Option<T>>, persisted: Option<T>) -> Option<T>
+where
+    T: Copy + Into<sea_orm::Value> + sea_orm::sea_query::Nullable,
+{
+    match active {
+        ActiveValue::Set(value) | ActiveValue::Unchanged(value) => *value,
+        ActiveValue::NotSet => persisted,
+    }
+}
+
+fn valid_topup_order_state(
+    status: i16,
+    paid_at: Option<TimeDateTimeWithTimeZone>,
+    closed_at: Option<TimeDateTimeWithTimeZone>,
+) -> bool {
+    match status {
+        1 | 2 => paid_at.is_none() && closed_at.is_none(),
+        3 => paid_at.is_some() && closed_at.is_none(),
+        4..=6 => paid_at.is_none() && closed_at.is_some(),
+        _ => false,
+    }
+}
+
+fn valid_currency(value: &str) -> bool {
+    value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_uppercase())
+}
+
+fn valid_hex(value: &str, length: usize, non_zero: bool) -> bool {
+    value.len() == length
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        && (!non_zero || value.bytes().any(|byte| byte != b'0'))
+}
+
 fn effective_price(
     active: &ActiveValue<SensitiveDecimal>,
     persisted: Option<SensitiveDecimal>,
@@ -595,8 +792,20 @@ impl_updated_at_behavior!(
     registration_rate_limits::ActiveModel => validate_default,
     site_settings::ActiveModel => validate_default,
     tokens::ActiveModel => validate_default,
+    topup_orders::ActiveModel => validate_topup_order,
     users::ActiveModel => validate_user,
 );
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for topup_payment_events::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_topup_payment_event(&self, database, insert).await?;
+        Ok(self)
+    }
+}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for model_sync_runs::ActiveModel {}
