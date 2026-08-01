@@ -89,6 +89,11 @@ function WalletEntryRow(props: {
   const { entry } = props
   const positive = entry.quota_delta > 0
   const opening = entry.entry_type === 'opening_balance'
+  const topup = entry.entry_type === 'topup'
+  const reason = entry.reason ?? t(topup ? 'users.wallet.history.topupReason' : 'users.wallet.history.openingReason')
+  const actor = entry.actor_user_id === null
+    ? t(topup ? 'users.wallet.history.paymentActor' : 'users.wallet.history.systemActor')
+    : t('users.wallet.history.adminActor', { id: entry.actor_user_id })
   const delta = `${positive ? '+' : ''}${props.formatQuota(entry.quota_delta)}`
   const Icon = positive ? ArrowUpRight : ArrowDownRight
   return (
@@ -101,13 +106,11 @@ function WalletEntryRow(props: {
       </span>
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="truncate text-xs font-medium">{entry.reason ?? t('users.wallet.history.openingReason')}</span>
-          <Badge className={opening ? 'text-info' : undefined}>{t(`users.wallet.entryType.${entry.entry_type}`)}</Badge>
+          <span className="truncate text-xs font-medium">{reason}</span>
+          <Badge className={opening ? 'text-info' : topup ? 'text-success' : undefined}>{t(`users.wallet.entryType.${entry.entry_type}`)}</Badge>
         </div>
         <p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">
-          {props.formatTime(entry.created_at)} · {entry.actor_user_id === null
-            ? t('users.wallet.history.systemActor')
-            : t('users.wallet.history.adminActor', { id: entry.actor_user_id })}
+          {props.formatTime(entry.created_at)} · {actor}
         </p>
         <p title={entry.event_id} className="mt-1 truncate font-mono text-[0.625rem] text-muted-foreground/80">
           {entry.event_id.slice(0, 8)}…{entry.event_id.slice(-8)} · #{entry.id}

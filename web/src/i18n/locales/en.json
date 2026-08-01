@@ -569,7 +569,8 @@
       },
       "entryType": {
         "opening_balance": "Opening baseline",
-        "admin_adjustment": "Admin adjustment"
+        "admin_adjustment": "Admin adjustment",
+        "topup": "Top-up credit"
       },
       "history": {
         "title": "Ledger history",
@@ -583,7 +584,9 @@
         "errorBody": "The service did not return this user's ledger history.",
         "moreError": "Earlier ledger entries could not be loaded.",
         "openingReason": "Wallet opening baseline",
+        "topupReason": "Payment top-up credit",
         "systemActor": "System migration",
+        "paymentActor": "Payment system",
         "adminActor": "Administrator #{{id}}",
         "balanceAfter": "Balance {{value}}"
       },

@@ -19,6 +19,8 @@ pub enum AdminWalletEntryType {
     OpeningBalance,
     /// 管理员人工有符号调账。
     AdminAdjustment,
+    /// 已验证支付事件完成的充值到账。
+    Topup,
 }
 
 /// 管理端可见的一条钱包余额变更事实。
@@ -86,7 +88,7 @@ impl AdminWalletEntry {
         self.user_id
     }
 
-    /// 返回执行变更的管理员；opening 基线没有管理员主体。
+    /// 返回执行变更的管理员；系统基线与充值到账没有管理员主体。
     #[must_use]
     pub const fn actor_user_id(&self) -> Option<UserId> {
         self.actor_user_id
@@ -116,7 +118,7 @@ impl AdminWalletEntry {
         self.balance_after
     }
 
-    /// 返回管理员填写的调账原因。
+    /// 返回管理员填写的调账原因；系统事件没有人工原因。
     #[must_use]
     pub fn reason(&self) -> Option<&str> {
         self.reason.as_deref()
@@ -137,6 +139,7 @@ impl AdminWalletEntry {
             entry_type: match record.entry_type() {
                 WalletLedgerEntryType::OpeningBalance => AdminWalletEntryType::OpeningBalance,
                 WalletLedgerEntryType::AdminAdjustment => AdminWalletEntryType::AdminAdjustment,
+                WalletLedgerEntryType::Topup => AdminWalletEntryType::Topup,
             },
             quota_delta: record.quota_delta().units(),
             balance_before: record.balance_before().units(),
