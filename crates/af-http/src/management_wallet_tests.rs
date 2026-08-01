@@ -45,6 +45,7 @@ use crate::{
 const ADMIN_TOKEN: &str = "admin-token";
 const USER_TOKEN: &str = "user-token";
 const EVENT_ID: &str = "abababababababababababababababab";
+const TOPUP_EVENT_ID: &str = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
 
 struct UnusedChatService;
 struct UnusedAdminServices;
@@ -255,7 +256,7 @@ impl AdminWalletService for FakeAdminWalletService {
                 404 => Err(AdminWalletError::NotFound),
                 500 => Err(AdminWalletError::Internal),
                 _ => Ok(AdminWalletPage::from_parts(
-                    vec![sample_adjustment_entry()],
+                    vec![sample_topup_entry(), sample_adjustment_entry()],
                     Some(40),
                 )),
             }
@@ -308,10 +309,13 @@ async fn admin_reads_wallet_ledger_with_stable_cursor_and_no_store() {
     assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
     let body = response_json(response).await;
     assert_eq!(body["next_cursor"], 40);
-    assert_eq!(body["entries"][0]["event_id"], EVENT_ID);
-    assert_eq!(body["entries"][0]["entry_type"], "admin_adjustment");
-    assert_eq!(body["entries"][0]["quota_delta"], 25);
-    assert_eq!(body["entries"][0]["balance_after"], 125);
+    assert_eq!(body["entries"][0]["event_id"], TOPUP_EVENT_ID);
+    assert_eq!(body["entries"][0]["entry_type"], "topup");
+    assert_eq!(body["entries"][0]["actor_user_id"], Value::Null);
+    assert_eq!(body["entries"][0]["reason"], Value::Null);
+    assert_eq!(body["entries"][0]["quota_delta"], 50);
+    assert_eq!(body["entries"][0]["balance_after"], 175);
+    assert_eq!(body["entries"][1]["entry_type"], "admin_adjustment");
     assert_eq!(service.list_calls.load(Ordering::Relaxed), 1);
 }
 
@@ -501,6 +505,21 @@ fn sample_adjustment_entry() -> AdminWalletEntry {
         125,
         Some("人工调账".to_owned()),
         1_722_470_400,
+    )
+}
+
+fn sample_topup_entry() -> AdminWalletEntry {
+    AdminWalletEntry::from_parts(
+        42,
+        WalletEventId::from_persistence_key(TOPUP_EVENT_ID).unwrap(),
+        UserId::new(10).unwrap(),
+        None,
+        AdminWalletEntryType::Topup,
+        50,
+        125,
+        175,
+        None,
+        1_722_470_500,
     )
 }
 

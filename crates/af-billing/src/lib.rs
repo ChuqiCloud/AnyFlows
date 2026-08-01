@@ -6,6 +6,7 @@ mod database_sink;
 mod group_pricing_cache;
 mod lifecycle;
 mod model_price_cache;
+mod payment_webhook;
 mod pricing;
 mod pricing_snapshot;
 pub mod quota_math;
@@ -40,6 +41,14 @@ pub use lifecycle::{
 pub use model_price_cache::{
     ModelPrice, ModelPriceCache, ModelPriceCacheError, ModelPriceSnapshot, ModelPriceSource,
     ModelPriceSourceError, ModelPriceSourceFuture, ModelPriceSourceRecord,
+};
+pub use payment_webhook::{
+    MAX_PAYMENT_WEBHOOK_HEADER_NAME_BYTES, MAX_PAYMENT_WEBHOOK_HEADER_VALUE_BYTES,
+    MAX_PAYMENT_WEBHOOK_HEADERS, MAX_PAYMENT_WEBHOOK_PAYLOAD_BYTES, PaymentWebhookHeader,
+    PaymentWebhookInputError, PaymentWebhookRequest, PaymentWebhookVerificationError,
+    PaymentWebhookVerifier, TopupPaymentEventFuture, TopupPaymentEventPort,
+    TopupPaymentEventPortError, TopupWebhookOutcome, TopupWebhookProcessor,
+    TopupWebhookProcessorError, VerifiedTopupPaymentEvent,
 };
 pub use pricing::{
     BillingMode, CostBreakdown, EffectiveTokenPrices, PriceData, PricingContext, PricingError,
@@ -77,6 +86,8 @@ mod group_pricing_cache_tests;
 mod lifecycle_tests;
 #[cfg(test)]
 mod model_price_cache_tests;
+#[cfg(test)]
+mod payment_webhook_tests;
 #[cfg(test)]
 mod pricing_snapshot_tests;
 #[cfg(test)]

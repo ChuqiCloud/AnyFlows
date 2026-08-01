@@ -5,6 +5,7 @@ mod channel;
 mod enums;
 mod error;
 mod network;
+mod payment;
 mod principal;
 mod quota;
 mod token_policy;
@@ -15,6 +16,10 @@ pub use enums::{
 };
 pub use error::{AfError, UpstreamError, UpstreamServerStatus};
 pub use network::{IpCidr, IpCidrParseError, TrustedClientIp};
+pub use payment::{
+    TopupIdentifierError, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,
+    TopupPaymentEventType, TopupRequestId, TopupStateCodeError,
+};
 pub use principal::{
     ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, PrincipalIdError, TokenId, UserId,
 };
@@ -33,6 +38,8 @@ mod enums_tests;
 mod error_tests;
 #[cfg(test)]
 mod network_tests;
+#[cfg(test)]
+mod payment_tests;
 #[cfg(test)]
 mod principal_tests;
 #[cfg(test)]

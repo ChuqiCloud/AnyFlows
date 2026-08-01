@@ -569,7 +569,8 @@
       },
       "entryType": {
         "opening_balance": "初始基线",
-        "admin_adjustment": "管理员调账"
+        "admin_adjustment": "管理员调账",
+        "topup": "充值到账"
       },
       "history": {
         "title": "账本历史",
@@ -583,7 +584,9 @@
         "errorBody": "服务暂时没有返回该用户的账本历史。",
         "moreError": "更早的账本读取失败。",
         "openingReason": "用户钱包初始基线",
+        "topupReason": "支付充值到账",
         "systemActor": "系统迁移",
+        "paymentActor": "支付系统",
         "adminActor": "管理员 #{{id}}",
         "balanceAfter": "余额 {{value}}"
       },

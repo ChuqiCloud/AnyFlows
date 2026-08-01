@@ -21,6 +21,7 @@ use crate::{chat_completions::HttpState, management_error::ManagementError};
 pub(crate) enum AdminWalletEntryTypeResponse {
     OpeningBalance,
     AdminAdjustment,
+    Topup,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -157,6 +158,7 @@ impl AdminWalletEntryResponse {
                 AdminWalletEntryType::AdminAdjustment => {
                     AdminWalletEntryTypeResponse::AdminAdjustment
                 }
+                AdminWalletEntryType::Topup => AdminWalletEntryTypeResponse::Topup,
             },
             quota_delta: entry.quota_delta(),
             balance_before: entry.balance_before(),

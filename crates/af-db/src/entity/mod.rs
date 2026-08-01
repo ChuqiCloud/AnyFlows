@@ -522,6 +522,12 @@ where
                 && actor_user_id.is_some_and(|actor| actor > 0)
                 && valid_reason
         }
+        3 => {
+            !event_id.is_system_opening()
+                && actor_user_id.is_none()
+                && delta.is_positive()
+                && reason.is_none()
+        }
         _ => false,
     };
     valid_shape

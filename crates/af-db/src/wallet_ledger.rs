@@ -35,6 +35,8 @@ pub enum WalletLedgerEntryType {
     OpeningBalance = 1,
     /// 管理员通过有符号增量执行的人工调账。
     AdminAdjustment = 2,
+    /// 已验证支付事件在订单事务内完成的充值到账。
+    Topup = 3,
 }
 
 impl WalletLedgerEntryType {
@@ -42,6 +44,7 @@ impl WalletLedgerEntryType {
         match value {
             1 => Some(Self::OpeningBalance),
             2 => Some(Self::AdminAdjustment),
+            3 => Some(Self::Topup),
             _ => None,
         }
     }
@@ -641,6 +644,12 @@ fn valid_event_shape(
             !event_id.is_system_opening()
                 && actor_user_id.is_some()
                 && reason.is_some_and(valid_reason)
+        }
+        WalletLedgerEntryType::Topup => {
+            !event_id.is_system_opening()
+                && actor_user_id.is_none()
+                && quota_delta.is_positive()
+                && reason.is_none()
         }
     }
 }
