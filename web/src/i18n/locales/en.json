@@ -19,6 +19,7 @@
     "siteSettings": "Site settings",
     "authenticationSettings": "Authentication",
     "emailSettings": "Email settings",
+    "groupSettings": "Group management",
     "modelSettings": "Model management",
     "channels": "Channels",
     "keys": "Global keys",
@@ -542,6 +543,113 @@
       "title": "Delete user",
       "description": "Deleting {{username}} soft-deletes the account and its directly issued API keys. The user can no longer sign in or call the gateway. This action cannot be undone.",
       "failed": "Deletion failed. The user remains active. Try again shortly."
+    }
+  },
+  "groups": {
+    "title": "Group management",
+    "subtitle": "Manage base and peak pricing ratios, resource limits, and runtime fallback policies for user groups.",
+    "loading": "Loading groups",
+    "summary": {
+      "loaded_one": "{{count}} group loaded",
+      "loaded_other": "{{count}} groups loaded",
+      "exclusive_one": "{{count}} exclusive group",
+      "exclusive_other": "{{count}} exclusive groups",
+      "peak_one": "{{count}} peak window",
+      "peak_other": "{{count}} peak windows"
+    },
+    "columns": {
+      "group": "Group",
+      "pricing": "Pricing ratios",
+      "limits": "Resource limits",
+      "routing": "Fallback policy",
+      "actions": "Actions"
+    },
+    "badges": {
+      "exclusive": "Exclusive",
+      "claudeCodeOnly": "Claude Code only",
+      "peak": "Peak pricing"
+    },
+    "values": {
+      "ratio": "{{value}}x",
+      "peakWindow": "{{ratio}}x · {{start}}-{{end}} UTC",
+      "noPeak": "No peak window",
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "monthly": "Monthly",
+      "unlimited": "No limit",
+      "fallback": "Fallback target",
+      "noFallback": "No fallback"
+    },
+    "actions": {
+      "create": "Create group",
+      "edit": "Edit group",
+      "delete": "Delete group",
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "cancel": "Cancel",
+      "save": "Save changes"
+    },
+    "empty": {
+      "title": "No groups to manage",
+      "body": "Create the first group to manage its pricing and resource policies here."
+    },
+    "error": {
+      "title": "Groups could not be loaded",
+      "body": "The service did not return the group catalog. Try again shortly."
+    },
+    "editor": {
+      "createTitle": "Create group",
+      "createDescription": "Configure group identity, pricing ratios, resource limits, and fallback policy.",
+      "editTitle": "Edit group",
+      "editDescription": "Update the full group record. Saving immediately refreshes the runtime pricing snapshot."
+    },
+    "form": {
+      "identity": "Group information",
+      "pricing": "Pricing ratios",
+      "limits": "Resource limits",
+      "routing": "Access and fallback",
+      "ratioHint": "Use a non-negative ratio with up to 6 decimal places. 1 keeps the base price.",
+      "peakDescription": "Apply an additional peak ratio during a fixed daily UTC window.",
+      "utcHint": "All times use UTC.",
+      "optionalLimitHint": "Leave blank for no group-level limit.",
+      "fallbackHint": "Target group used when client limits apply. A group cannot fall back to itself.",
+      "exclusiveDescription": "Only users and API keys explicitly bound to this group may use it.",
+      "claudeCodeDescription": "Restrict this group to Claude Code client usage."
+    },
+    "fields": {
+      "name": "Stable name",
+      "displayName": "Display name",
+      "ratio": "Base ratio",
+      "peakEnabled": "Enable peak pricing",
+      "peakRatio": "Peak ratio",
+      "peakStart": "Start time",
+      "peakEnd": "End time",
+      "dailyLimit": "Daily limit",
+      "weeklyLimit": "Weekly limit",
+      "monthlyLimit": "Monthly limit",
+      "rpmLimit": "Requests per minute",
+      "fallback": "Fallback group",
+      "exclusive": "Exclusive group",
+      "claudeCodeOnly": "Claude Code only"
+    },
+    "validation": {
+      "name": "Use 1 to 64 bytes without leading, trailing, or control characters.",
+      "displayName": "Use 1 to 128 bytes without leading, trailing, or control characters.",
+      "ratio": "Enter a non-negative ratio with up to 6 decimal places.",
+      "number": "Enter an in-range non-negative integer, or leave blank for no limit.",
+      "fallback": "Select a valid fallback group other than the current group.",
+      "peakWindow": "Select valid, distinct UTC start and end times."
+    },
+    "errors": {
+      "group_conflict": "The stable name is already used by another active group.",
+      "group_in_use": "Active users or API keys still use this group, so it cannot be deleted.",
+      "invalid_request": "The group fields are invalid. Check them and try again.",
+      "internal_error": "The data may have committed, but runtime refresh or storage failed. Refresh the list before retrying.",
+      "unknown": "The group operation failed. Refresh the list to confirm its current state."
+    },
+    "delete": {
+      "title": "Delete group",
+      "description": "Deleting {{name}} also clears channel, ability, and fallback relationships that can be safely detached. This action cannot be undone."
     }
   },
   "modelManagement": {

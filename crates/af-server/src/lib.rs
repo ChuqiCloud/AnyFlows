@@ -9,6 +9,7 @@ mod channel_probe_tests;
 mod credential_feedback;
 mod credential_order;
 mod frontend;
+mod group_pricing_refresh;
 mod model_catalog;
 mod model_discovery;
 mod model_price_source;

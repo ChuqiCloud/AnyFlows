@@ -4,6 +4,7 @@ export type AppView =
   | 'channels'
   | 'email-settings'
   | 'forgot-password'
+  | 'group-settings'
   | 'models'
   | 'model-settings'
   | 'playground'
@@ -54,6 +55,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/system-settings/site')) return { view: 'site-settings' }
   if (hash.startsWith('#/console/system-settings/authentication')) return { view: 'authentication-settings' }
   if (hash.startsWith('#/console/system-settings/email')) return { view: 'email-settings' }
+  if (hash.startsWith('#/console/system-settings/groups')) return { view: 'group-settings' }
   if (hash.startsWith('#/console/system-settings/models')) return { view: 'model-settings' }
   if (hash.startsWith('#/console/api-keys')) return { view: 'api-keys' }
   if (hash.startsWith('#/console/models')) return { view: 'models' }
