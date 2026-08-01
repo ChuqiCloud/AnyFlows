@@ -19,6 +19,8 @@ pub(crate) mod abilities;
 pub(crate) mod auth_challenge_rate_limits;
 pub(crate) mod auth_challenges;
 pub(crate) mod authentication_settings;
+pub(crate) mod balance_alert_events;
+pub(crate) mod balance_alert_settings;
 pub(crate) mod billing_batch_checkpoints;
 pub(crate) mod billing_reservations;
 pub(crate) mod channel_groups;
@@ -208,8 +210,12 @@ where
         .session_version
         .try_as_ref()
         .is_some_and(|version| *version < 1)
+        || model
+            .balance_alert_threshold
+            .try_as_ref()
+            .is_some_and(|threshold| threshold.is_some_and(|threshold| threshold <= 0))
     {
-        return Err(DbErr::Custom("用户会话版本必须为正数".to_owned()));
+        return Err(DbErr::Custom("用户会话版本或余额预警阈值无效".to_owned()));
     }
     let Some(reference_id) = changed_reference(&model.inviter_id, insert) else {
         return Ok(());
@@ -1097,6 +1103,7 @@ impl_updated_at_behavior!(
     auth_challenge_rate_limits::ActiveModel => validate_default,
     auth_challenges::ActiveModel => validate_auth_challenge,
     authentication_settings::ActiveModel => validate_default,
+    balance_alert_settings::ActiveModel => validate_default,
     billing_batch_checkpoints::ActiveModel => validate_default,
     billing_reservations::ActiveModel => validate_default,
     channel_groups::ActiveModel => validate_default,
@@ -1115,6 +1122,62 @@ impl_updated_at_behavior!(
     topup_orders::ActiveModel => validate_topup_order,
     users::ActiveModel => validate_user,
 );
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for balance_alert_events::ActiveModel {
+    async fn before_save<C>(self, _database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        // 投递状态只能由余额预警仓储使用带版本条件的批量更新推进。
+        if !insert {
+            return Err(DbErr::Custom("余额预警事件必须通过仓储更新".to_owned()));
+        }
+        let status = self.status.try_as_ref().copied().unwrap_or_default();
+        let attempts = self.attempt_count.try_as_ref().copied().unwrap_or_default();
+        let lease = self.lease_expires_at.try_as_ref().copied().flatten();
+        let sent_at = self.sent_at.try_as_ref().copied().flatten();
+        let last_error = self.last_error_kind.try_as_ref().copied().flatten();
+        let shape_valid = match status {
+            1 => {
+                (0..=4).contains(&attempts)
+                    && lease.is_none()
+                    && sent_at.is_none()
+                    && ((attempts == 0 && last_error.is_none())
+                        || (attempts > 0 && last_error.is_some()))
+            }
+            2 => (1..=5).contains(&attempts) && lease.is_some() && sent_at.is_none(),
+            3 => (1..=5).contains(&attempts) && lease.is_none() && sent_at.is_some(),
+            4 => (1..=5).contains(&attempts) && lease.is_none() && sent_at.is_none(),
+            5 => lease.is_none() && sent_at.is_none(),
+            _ => false,
+        };
+        if self.user_id.try_as_ref().copied().unwrap_or_default() <= 0
+            || self
+                .window_started_at_epoch
+                .try_as_ref()
+                .copied()
+                .unwrap_or(-1)
+                < 0
+            || self
+                .threshold_quota
+                .try_as_ref()
+                .copied()
+                .unwrap_or_default()
+                <= 0
+            || self.observed_quota.try_as_ref().copied().unwrap_or(-1) < 0
+            || self.version.try_as_ref().copied().unwrap_or_default() != 1
+            || self.next_attempt_at.try_as_ref().is_none()
+            || self.created_at.try_as_ref().is_none()
+            || self.updated_at.try_as_ref().is_none()
+            || last_error.is_some_and(|kind| !(1..=3).contains(&kind))
+            || !shape_valid
+        {
+            return Err(DbErr::Custom("余额预警事件状态无效".to_owned()));
+        }
+        Ok(self)
+    }
+}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for topup_payment_events::ActiveModel {

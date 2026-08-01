@@ -7,9 +7,11 @@ use std::{
 };
 
 use af_admin::{
-    AdminChannelCreateCommand, AdminChannelCreateFuture, AdminChannelDeleteFuture,
-    AdminChannelGetFuture, AdminChannelListFuture, AdminChannelListQuery, AdminChannelReadError,
-    AdminChannelReader, AdminChannelUpdateCommand, AdminChannelUpdateFuture,
+    AdminBalanceAlertSettingsCommand, AdminBalanceAlertSettingsError,
+    AdminBalanceAlertSettingsReadFuture, AdminBalanceAlertSettingsService,
+    AdminBalanceAlertSettingsUpdateFuture, AdminChannelCreateCommand, AdminChannelCreateFuture,
+    AdminChannelDeleteFuture, AdminChannelGetFuture, AdminChannelListFuture, AdminChannelListQuery,
+    AdminChannelReadError, AdminChannelReader, AdminChannelUpdateCommand, AdminChannelUpdateFuture,
     AdminChannelWriteError, AdminChannelWriter, AdminCredentialCreateCommand,
     AdminCredentialCreateFuture, AdminCredentialDeleteFuture, AdminCredentialGetFuture,
     AdminCredentialListFuture, AdminCredentialListQuery, AdminCredentialUpdateCommand,
@@ -101,6 +103,7 @@ struct RejectUserProfile;
 struct RejectUserInvitations;
 struct RejectSiteSettings;
 struct RejectAdminEmailSettings;
+struct RejectAdminBalanceAlertSettings;
 struct RejectAdminChannels;
 struct RejectAdminGroups;
 struct RejectAdminTokens;
@@ -354,6 +357,20 @@ impl AdminEmailSettingsService for RejectAdminEmailSettings {
         _command: AdminEmailTestCommand,
     ) -> AdminEmailTestFuture<'_> {
         Box::pin(async { Err(AdminEmailSettingsError::Internal) })
+    }
+}
+
+impl AdminBalanceAlertSettingsService for RejectAdminBalanceAlertSettings {
+    fn settings(&self, _principal: SessionPrincipal) -> AdminBalanceAlertSettingsReadFuture<'_> {
+        Box::pin(async { Err(AdminBalanceAlertSettingsError::Internal) })
+    }
+
+    fn update(
+        &self,
+        _principal: SessionPrincipal,
+        _command: AdminBalanceAlertSettingsCommand,
+    ) -> AdminBalanceAlertSettingsUpdateFuture<'_> {
+        Box::pin(async { Err(AdminBalanceAlertSettingsError::Internal) })
     }
 }
 
@@ -1539,6 +1556,7 @@ async fn start_server(
         Arc::new(RejectUserInvitations),
         Arc::new(RejectSiteSettings),
         Arc::new(RejectAdminEmailSettings),
+        Arc::new(RejectAdminBalanceAlertSettings),
         Arc::new(RejectAdminChannels),
         Arc::new(RejectAdminChannels),
         None,

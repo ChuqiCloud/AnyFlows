@@ -1192,6 +1192,136 @@
         ]
       }
     },
+    "/api/admin/balance-alert-settings": {
+      "get": {
+        "tags": [
+          "余额预警"
+        ],
+        "summary": "读取余额预警全局设置",
+        "operationId": "getAdminBalanceAlertSettings",
+        "responses": {
+          "200": {
+            "description": "余额预警设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBalanceAlertSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "余额预警"
+        ],
+        "summary": "更新余额预警全局设置",
+        "operationId": "updateAdminBalanceAlertSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminBalanceAlertSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "余额预警设置已更新",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminBalanceAlertSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/site": {
       "get": {
         "tags": [
@@ -6225,6 +6355,62 @@
         },
         "additionalProperties": false
       },
+      "AdminBalanceAlertSettings": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "default_threshold",
+          "reminder_interval_seconds",
+          "version"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "default_threshold": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "reminder_interval_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 604800,
+            "minimum": 3600
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminBalanceAlertSettingsRequest": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "default_threshold",
+          "reminder_interval_seconds"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "default_threshold": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "reminder_interval_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 604800,
+            "minimum": 3600
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminBrandSettingsRequest": {
         "type": "object",
         "properties": {
@@ -11025,7 +11211,8 @@
         "type": "object",
         "required": [
           "email_product_updates",
-          "email_usage_alerts"
+          "email_usage_alerts",
+          "balance_alert_threshold"
         ],
         "properties": {
           "email_product_updates": {
@@ -11033,6 +11220,14 @@
           },
           "email_usage_alerts": {
             "type": "boolean"
+          },
+          "balance_alert_threshold": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
           }
         },
         "additionalProperties": false
@@ -11041,7 +11236,10 @@
         "type": "object",
         "required": [
           "email_product_updates",
-          "email_usage_alerts"
+          "email_usage_alerts",
+          "balance_alert_enabled",
+          "balance_alert_threshold",
+          "effective_balance_alert_threshold"
         ],
         "properties": {
           "email_product_updates": {
@@ -11049,6 +11247,22 @@
           },
           "email_usage_alerts": {
             "type": "boolean"
+          },
+          "balance_alert_enabled": {
+            "type": "boolean"
+          },
+          "balance_alert_threshold": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "effective_balance_alert_threshold": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
           }
         },
         "additionalProperties": false
@@ -11371,6 +11585,9 @@
     },
     {
       "name": "邮件设置"
+    },
+    {
+      "name": "余额预警"
     },
     {
       "name": "管理会话"

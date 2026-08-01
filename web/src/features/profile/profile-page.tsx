@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   BellRing,
   Check,
+  CircleDollarSign,
   KeyRound,
   LoaderCircle,
   Mail,
@@ -16,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
@@ -171,17 +173,37 @@ function NotificationsCard({ profile }: { profile: UserProfileResponse }) {
   const mutation = useUpdateUserNotificationPreferences()
   const [productUpdates, setProductUpdates] = useState(profile.notifications.email_product_updates)
   const [usageAlerts, setUsageAlerts] = useState(profile.notifications.email_usage_alerts)
+  const [thresholdMode, setThresholdMode] = useState<'inherit' | 'custom'>(
+    profile.notifications.balance_alert_threshold === null ? 'inherit' : 'custom',
+  )
+  const [thresholdInput, setThresholdInput] = useState(String(
+    profile.notifications.balance_alert_threshold ?? profile.notifications.effective_balance_alert_threshold,
+  ))
 
   useEffect(() => {
     setProductUpdates(profile.notifications.email_product_updates)
     setUsageAlerts(profile.notifications.email_usage_alerts)
-  }, [profile.notifications.email_product_updates, profile.notifications.email_usage_alerts])
+    setThresholdMode(profile.notifications.balance_alert_threshold === null ? 'inherit' : 'custom')
+    setThresholdInput(String(
+      profile.notifications.balance_alert_threshold ?? profile.notifications.effective_balance_alert_threshold,
+    ))
+  }, [profile.notifications])
 
-  const changed = productUpdates !== profile.notifications.email_product_updates || usageAlerts !== profile.notifications.email_usage_alerts
+  const parsedThreshold = Number(thresholdInput)
+  const thresholdValid = thresholdMode === 'inherit'
+    || (Number.isSafeInteger(parsedThreshold) && parsedThreshold >= 1)
+  const savedThreshold = thresholdMode === 'inherit' ? null : parsedThreshold
+  const changed = productUpdates !== profile.notifications.email_product_updates
+    || usageAlerts !== profile.notifications.email_usage_alerts
+    || (thresholdValid && savedThreshold !== profile.notifications.balance_alert_threshold)
   const submit = async () => {
-    if (!changed) return
+    if (!changed || !thresholdValid) return
     try {
-      await mutation.mutateAsync({ email_product_updates: productUpdates, email_usage_alerts: usageAlerts })
+      await mutation.mutateAsync({
+        email_product_updates: productUpdates,
+        email_usage_alerts: usageAlerts,
+        balance_alert_threshold: savedThreshold,
+      })
     } catch {
       // 保留本地选择，允许用户修复网络或服务端问题后重试。
     }
@@ -196,10 +218,67 @@ function NotificationsCard({ profile }: { profile: UserProfileResponse }) {
         <div className="divide-y divide-[var(--hairline)]">
           <PreferenceRow id="profile-product-updates" title={t('profile.notifications.productTitle')} description={t('profile.notifications.productDescription')} checked={productUpdates} onCheckedChange={setProductUpdates} />
           <PreferenceRow id="profile-usage-alerts" title={t('profile.notifications.usageTitle')} description={t('profile.notifications.usageDescription')} checked={usageAlerts} onCheckedChange={setUsageAlerts} />
+          <div className="py-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex min-w-0 gap-3">
+                <CircleDollarSign className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-medium">{t('profile.notifications.balanceAlertTitle')}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('profile.notifications.balanceAlertDescription')}</p>
+                </div>
+              </div>
+              <Badge className={profile.notifications.balance_alert_enabled ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}>
+                {t(profile.notifications.balance_alert_enabled
+                  ? 'profile.notifications.balanceAlertActive'
+                  : 'profile.notifications.balanceAlertPaused')}
+              </Badge>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="profile-balance-alert-mode">{t('profile.notifications.thresholdMode')}</Label>
+                <Select
+                  id="profile-balance-alert-mode"
+                  value={thresholdMode}
+                  onChange={(event) => setThresholdMode(event.target.value as 'inherit' | 'custom')}
+                >
+                  <option value="inherit">{t('profile.notifications.thresholdInherit')}</option>
+                  <option value="custom">{t('profile.notifications.thresholdCustom')}</option>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="profile-balance-alert-threshold">{t('profile.notifications.thresholdValue')}</Label>
+                <div className="relative">
+                  <Input
+                    id="profile-balance-alert-threshold"
+                    type="number"
+                    min={1}
+                    step={1}
+                    className="pr-16 tabular-nums"
+                    value={thresholdInput}
+                    disabled={thresholdMode === 'inherit'}
+                    aria-invalid={!thresholdValid}
+                    onChange={(event) => setThresholdInput(event.target.value)}
+                  />
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                    {t('profile.notifications.quotaUnit')}
+                  </span>
+                </div>
+                {!thresholdValid ? <p className="text-xs text-destructive">{t('profile.notifications.thresholdInvalid')}</p> : null}
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>{t('profile.notifications.effectiveThreshold')}</span>
+              <Badge className="bg-info/10 font-mono text-info">
+                {thresholdMode === 'custom' && thresholdValid
+                  ? parsedThreshold
+                  : profile.notifications.effective_balance_alert_threshold}
+              </Badge>
+            </div>
+          </div>
           <div className="flex items-start gap-3 py-4"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" /><div className="min-w-0"><p className="text-sm font-medium">{t('profile.notifications.securityTitle')}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{t('profile.notifications.securityDescription')}</p></div><Badge className="ml-auto shrink-0 bg-success/10 text-success">{t('profile.notifications.alwaysOn')}</Badge></div>
         </div>
         <Separator className="my-4" />
-        <div className="flex flex-wrap items-center justify-between gap-3"><div className="text-xs text-muted-foreground">{mutation.isSuccess ? <span className="flex items-center gap-1.5 text-success"><Check className="size-3.5" aria-hidden="true" />{t('profile.notifications.saved')}</span> : mutation.isError ? <span className="text-destructive">{t('profile.errors.notifications')}</span> : t('profile.notifications.footer')}</div><Button type="button" size="sm" disabled={!changed || mutation.isPending} onClick={() => void submit()}>{mutation.isPending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : null}{t('profile.actions.saveNotifications')}</Button></div>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div className="text-xs text-muted-foreground">{mutation.isSuccess ? <span className="flex items-center gap-1.5 text-success"><Check className="size-3.5" aria-hidden="true" />{t('profile.notifications.saved')}</span> : mutation.isError ? <span className="text-destructive">{t('profile.errors.notifications')}</span> : t('profile.notifications.footer')}</div><Button type="button" size="sm" disabled={!changed || !thresholdValid || mutation.isPending} onClick={() => void submit()}>{mutation.isPending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : null}{t('profile.actions.saveNotifications')}</Button></div>
       </CardContent>
     </Card>
   )

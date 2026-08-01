@@ -1,6 +1,6 @@
 use std::{fmt, time::Duration};
 
-use af_domain::UserId;
+use af_domain::{Quota, UserId};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
     EntityTrait, IntoActiveModel, QueryFilter, QuerySelect, Set, SqlErr, TransactionTrait,
@@ -25,15 +25,21 @@ pub const MAX_USER_PROFILE_USERNAME_BYTES: usize = 64;
 pub struct UserNotificationPreferencesRecord {
     email_product_updates: bool,
     email_usage_alerts: bool,
+    balance_alert_threshold: Option<Quota>,
 }
 
 impl UserNotificationPreferencesRecord {
     /// 组合已经通过持久化边界校验的通知偏好。
     #[must_use]
-    pub const fn new(email_product_updates: bool, email_usage_alerts: bool) -> Self {
+    pub const fn new(
+        email_product_updates: bool,
+        email_usage_alerts: bool,
+        balance_alert_threshold: Option<Quota>,
+    ) -> Self {
         Self {
             email_product_updates,
             email_usage_alerts,
+            balance_alert_threshold,
         }
     }
 
@@ -48,9 +54,15 @@ impl UserNotificationPreferencesRecord {
     pub const fn email_usage_alerts(self) -> bool {
         self.email_usage_alerts
     }
+
+    /// 返回个人余额预警阈值；空值表示继承系统默认值。
+    #[must_use]
+    pub const fn balance_alert_threshold(self) -> Option<Quota> {
+        self.balance_alert_threshold
+    }
 }
 
-/// 当前登录用户的非敏感资料快照；不包含密码、令牌、额度或内部设置。
+/// 当前登录用户的非敏感资料快照；不包含密码、令牌、余额或内部设置。
 #[derive(Clone, PartialEq, Eq)]
 pub struct UserProfileRecord {
     user_id: UserId,
@@ -232,6 +244,12 @@ impl UserProfileRepository {
         user_id: UserId,
         notifications: UserNotificationPreferencesRecord,
     ) -> Result<UserProfileMutationOutcome, UserProfileRepositoryError> {
+        if notifications
+            .balance_alert_threshold()
+            .is_some_and(|threshold| threshold.is_zero())
+        {
+            return Err(record_internal_error(UserProfileRepositoryError::Invariant));
+        }
         match timeout(
             self.operation_timeout,
             self.update_notifications_inner(user_id, notifications),
@@ -332,6 +350,8 @@ impl UserProfileRepository {
         };
         if existing.email_product_updates == notifications.email_product_updates()
             && existing.email_usage_alerts == notifications.email_usage_alerts()
+            && existing.balance_alert_threshold
+                == notifications.balance_alert_threshold().map(Quota::units)
         {
             let record = record_from_model(existing)?;
             commit_transaction(transaction).await?;
@@ -340,6 +360,8 @@ impl UserProfileRepository {
         let mut active = existing.into_active_model();
         active.email_product_updates = Set(notifications.email_product_updates());
         active.email_usage_alerts = Set(notifications.email_usage_alerts());
+        active.balance_alert_threshold =
+            Set(notifications.balance_alert_threshold().map(Quota::units));
         let saved = active
             .update(&transaction)
             .with_subscriber(NoSubscriber::default())
@@ -445,6 +467,11 @@ async fn lock_user(
 }
 
 fn record_from_model(model: users::Model) -> Result<UserProfileRecord, UserProfileRepositoryError> {
+    let balance_alert_threshold = model
+        .balance_alert_threshold
+        .map(Quota::new)
+        .transpose()
+        .map_err(|_| record_internal_error(UserProfileRepositoryError::Invariant))?;
     if !valid_username(&model.username)
         || model
             .email
@@ -453,6 +480,7 @@ fn record_from_model(model: users::Model) -> Result<UserProfileRecord, UserProfi
         || !matches!(model.role, 0 | 1)
         || !matches!(model.status, 1 | 2)
         || model.session_version < 1
+        || balance_alert_threshold.is_some_and(|threshold| threshold.is_zero())
     {
         return Err(record_internal_error(UserProfileRepositoryError::Invariant));
     }
@@ -465,6 +493,7 @@ fn record_from_model(model: users::Model) -> Result<UserProfileRecord, UserProfi
         notifications: UserNotificationPreferencesRecord::new(
             model.email_product_updates,
             model.email_usage_alerts,
+            balance_alert_threshold,
         ),
     })
 }
@@ -570,13 +599,23 @@ mod tests {
         assert_eq!(profile.username(), "owner-renamed");
 
         let UserProfileMutationOutcome::Updated(profile) = repository
-            .update_notifications(user_id, UserNotificationPreferencesRecord::new(true, false))
+            .update_notifications(
+                user_id,
+                UserNotificationPreferencesRecord::new(true, false, Some(Quota::new(250)?)),
+            )
             .await?
         else {
             panic!("通知偏好更新必须成功");
         };
         assert!(profile.notifications().email_product_updates());
         assert!(!profile.notifications().email_usage_alerts());
+        assert_eq!(
+            profile
+                .notifications()
+                .balance_alert_threshold()
+                .map(Quota::units),
+            Some(250)
+        );
 
         assert!(matches!(
             repository.get(UserId::new(999).unwrap()).await?,
@@ -631,7 +670,7 @@ mod tests {
             username: "owner".to_owned(),
             email: Some("private@example.com".to_owned()),
             role: 0,
-            notifications: UserNotificationPreferencesRecord::new(false, true),
+            notifications: UserNotificationPreferencesRecord::new(false, true, None),
         };
         let debug = format!("{profile:?}");
         assert_eq!(debug, "UserProfileRecord(<redacted>)");

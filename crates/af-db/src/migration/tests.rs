@@ -23,13 +23,13 @@ use crate::entity::{
     BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
     EncryptedJson, HeaderOverrides, PasswordHash, PlaygroundConversationKey, SensitiveDecimal,
     SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, WalletLedgerKey, abilities,
-    auth_challenge_rate_limits, auth_challenges, authentication_settings,
-    billing_batch_checkpoints, billing_reservations, channel_groups, channel_models, channels,
-    credentials, email_settings, group_model_ratios, groups, invite_rebate_events, model_prices,
-    model_sync_items, model_sync_runs, models, options, playground_conversations,
-    playground_shares, redemption_batches, redemption_codes, registration_rate_limits,
-    site_settings, subscription_plans, tokens, topup_orders, topup_payment_events, usage_logs,
-    user_subscriptions, users, wallet_ledger_entries,
+    auth_challenge_rate_limits, auth_challenges, authentication_settings, balance_alert_events,
+    balance_alert_settings, billing_batch_checkpoints, billing_reservations, channel_groups,
+    channel_models, channels, credentials, email_settings, group_model_ratios, groups,
+    invite_rebate_events, model_prices, model_sync_items, model_sync_runs, models, options,
+    playground_conversations, playground_shares, redemption_batches, redemption_codes,
+    registration_rate_limits, site_settings, subscription_plans, tokens, topup_orders,
+    topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -51,7 +51,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 35;
+const EXPECTED_MIGRATION_COUNT: usize = 36;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -69,7 +69,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 33] = [
+const CORE_TABLES: [&str; 35] = [
     "groups",
     "users",
     "channels",
@@ -103,6 +103,8 @@ const CORE_TABLES: [&str; 33] = [
     "subscription_plans",
     "user_subscriptions",
     "invite_rebate_events",
+    "balance_alert_settings",
+    "balance_alert_events",
 ];
 
 struct SlowMigrator;
@@ -198,18 +200,22 @@ async fn wallet_migration_backfills_existing_nonzero_balances() -> Result<(), Bo
         "invite-legacy-wallet",
     );
     user.quota = Set(250);
-    let user = user.insert(pool.connection()).await?;
+    // 历史 schema 尚无后续用户列，只取自增主键以避免 RETURNING 读取最新实体字段。
+    let user_id = users::Entity::insert(user)
+        .exec(pool.connection())
+        .await?
+        .last_insert_id;
 
     Migrator::up(pool.connection(), None).await?;
     let entries = wallet_ledger_entries::Entity::find()
-        .filter(wallet_ledger_entries::Column::UserId.eq(user.id))
+        .filter(wallet_ledger_entries::Column::UserId.eq(user_id))
         .all(pool.connection())
         .await?;
     assert_eq!(entries.len(), 1);
     let opening = &entries[0];
     assert_eq!(
         opening.event_key.as_str(),
-        format!("0000000000000001{:016x}", user.id)
+        format!("0000000000000001{user_id:016x}")
     );
     assert_eq!(opening.entry_type, 1);
     assert_eq!(opening.quota_delta, 250);
@@ -577,6 +583,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     );
 
     assert_updated_at_behaviors(pool.connection()).await?;
+    exercise_balance_alert_migration(pool.connection()).await?;
     exercise_token_auth_repository(&pool).await?;
     exercise_quota_repository(&pool).await?;
     exercise_billing_batch_repository(&pool).await?;
@@ -1653,6 +1660,9 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<subscription_plans::Column>(&manager, "subscription_plans").await?;
     assert_entity_columns::<user_subscriptions::Column>(&manager, "user_subscriptions").await?;
     assert_entity_columns::<invite_rebate_events::Column>(&manager, "invite_rebate_events").await?;
+    assert_entity_columns::<balance_alert_settings::Column>(&manager, "balance_alert_settings")
+        .await?;
+    assert_entity_columns::<balance_alert_events::Column>(&manager, "balance_alert_events").await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -1744,6 +1754,15 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "invite_rebate_events",
             "idx_invite_rebate_events_inviter_created",
         ),
+        (
+            "balance_alert_events",
+            "uq_balance_alert_events_user_window",
+        ),
+        ("balance_alert_events", "idx_balance_alert_events_due"),
+        (
+            "balance_alert_events",
+            "idx_balance_alert_events_user_created",
+        ),
     ] {
         assert!(
             manager.has_index(table, index).await?,
@@ -1801,6 +1820,7 @@ async fn assert_updated_at_behaviors(connection: &DatabaseConnection) -> Result<
 
     assert_behavior!(abilities::ActiveModel);
     assert_behavior!(authentication_settings::ActiveModel);
+    assert_behavior!(balance_alert_settings::ActiveModel);
     assert_behavior!(billing_batch_checkpoints::ActiveModel);
     assert_behavior!(billing_reservations::ActiveModel);
     assert_behavior!(channel_groups::ActiveModel);
@@ -1815,6 +1835,91 @@ async fn assert_updated_at_behaviors(connection: &DatabaseConnection) -> Result<
     assert_behavior!(email_settings::ActiveModel);
     assert_behavior!(tokens::ActiveModel);
     assert_behavior!(users::ActiveModel);
+    Ok(())
+}
+
+/// 验证余额预警迁移的固定默认值、个人阈值和事件状态约束。
+async fn exercise_balance_alert_migration(
+    connection: &DatabaseConnection,
+) -> Result<(), Box<dyn Error>> {
+    let settings = balance_alert_settings::Entity::find_by_id(1_i16)
+        .one(connection)
+        .await?
+        .expect("余额预警固定设置行必须存在");
+    assert!(!settings.enabled);
+    assert_eq!(settings.default_threshold_quota, 1_000);
+    assert_eq!(settings.reminder_interval_seconds, 86_400);
+    assert_eq!(settings.version, 1);
+
+    let group = group_active_model("balance-alert-smoke", "余额预警迁移验证")
+        .insert(connection)
+        .await?;
+    let user = user_active_model(
+        group.id,
+        "balance-alert-user",
+        "balance-alert@example.com",
+        "BALANCEALERTSMOKE",
+    )
+    .insert(connection)
+    .await?;
+    assert_eq!(user.balance_alert_threshold, None);
+
+    let mut active_user = user.clone().into_active_model();
+    active_user.balance_alert_threshold = Set(Some(250));
+    let user = active_user.update(connection).await?;
+    assert_eq!(user.balance_alert_threshold, Some(250));
+
+    // 绕过 ActiveModel 校验，确保三种数据库自身都会拒绝非正阈值。
+    let invalid_threshold = Query::update()
+        .table(users::Entity)
+        .value(users::Column::BalanceAlertThreshold, 0_i64)
+        .and_where(Expr::col(users::Column::Id).eq(user.id))
+        .to_owned();
+    assert!(
+        connection
+            .execute(connection.get_database_backend().build(&invalid_threshold))
+            .await
+            .is_err()
+    );
+
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    let pending_event = || balance_alert_events::ActiveModel {
+        user_id: Set(user.id),
+        window_started_at_epoch: Set(86_400),
+        threshold_quota: Set(250),
+        observed_quota: Set(100),
+        status: Set(1),
+        attempt_count: Set(0),
+        next_attempt_at: Set(now),
+        lease_expires_at: Set(None),
+        last_error_kind: Set(None),
+        version: Set(1),
+        sent_at: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+    balance_alert_events::Entity::insert(pending_event())
+        .exec_without_returning(connection)
+        .await?;
+    assert!(
+        balance_alert_events::Entity::insert(pending_event())
+            .exec_without_returning(connection)
+            .await
+            .is_err()
+    );
+
+    // Sending 状态必须持有租约，防止崩溃后出现无法重领的永久悬挂事件。
+    let mut invalid_state = pending_event();
+    invalid_state.window_started_at_epoch = Set(172_800);
+    invalid_state.status = Set(2);
+    invalid_state.attempt_count = Set(1);
+    assert!(
+        balance_alert_events::Entity::insert(invalid_state)
+            .exec_without_returning(connection)
+            .await
+            .is_err()
+    );
     Ok(())
 }
 

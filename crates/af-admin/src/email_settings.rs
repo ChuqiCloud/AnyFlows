@@ -5,6 +5,7 @@ use af_db::{
     EmailPasswordUpdate, EmailSettingsRecord, EmailSettingsRepository,
     EmailSettingsRepositoryError, EmailSettingsWriteRecord, EmailTlsMode,
 };
+use af_domain::Quota;
 use thiserror::Error;
 use zeroize::Zeroizing;
 
@@ -447,6 +448,35 @@ impl EmailDeliveryRequest {
             PASSWORD_RESET_EMAIL_SUBJECT.to_owned(),
             body,
         )
+    }
+
+    pub(crate) fn balance_alert(
+        record: &EmailSettingsRecord,
+        cipher: &SystemSecretCipher,
+        recipient: String,
+        site_name: &str,
+        username: &str,
+        current_quota: Quota,
+        threshold: Quota,
+    ) -> Result<Self, AdminEmailSettingsError> {
+        if site_name.is_empty()
+            || site_name.len() > 80
+            || username.is_empty()
+            || username.len() > 64
+            || site_name.chars().any(char::is_control)
+            || username.chars().any(char::is_control)
+            || threshold.is_zero()
+            || current_quota >= threshold
+        {
+            return Err(AdminEmailSettingsError::Internal);
+        }
+        let subject = format!("{site_name} 余额预警");
+        let body = format!(
+            "您好，{username}：\n\n您的当前可用额度为 {}，已低于提醒阈值 {}。请及时检查账户余额，以免 API 请求受到影响。\n\n如不希望继续接收此类邮件，可在个人资料的通知偏好中关闭用量提醒。",
+            current_quota.units(),
+            threshold.units()
+        );
+        Self::from_record(record, cipher, recipient, subject, body)
     }
 
     #[must_use]

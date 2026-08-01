@@ -2,6 +2,7 @@
 
 mod anthropic_messages;
 mod authentication;
+mod balance_alert_settings;
 mod channel_probe;
 mod chat_completions;
 mod chat_service;

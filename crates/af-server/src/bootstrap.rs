@@ -5,24 +5,25 @@ use af_account::{
     SystemSecretCipher, SystemSecretError,
 };
 use af_admin::{
-    AdminChannelReader, AdminChannelWriter, AdminEmailSettingsService, AdminGroupReader,
-    AdminGroupWriter, AdminModelPriceService, AdminModelReader, AdminModelSyncService,
-    AdminModelWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
-    AdminUserWriter, AdminWalletService, DatabaseAdminChannelReader, DatabaseAdminChannelWriter,
-    DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader, DatabaseAdminGroupWriter,
-    DatabaseAdminModelPriceService, DatabaseAdminModelReader, DatabaseAdminModelSyncService,
-    DatabaseAdminModelWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
-    DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
-    DatabaseAdminWalletService, DatabaseInitialSetup, DatabasePasswordResetService,
-    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRegistrationService, DatabaseSessionAuthenticator, DatabaseSiteSettingsService,
-    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserProfileService,
-    DatabaseUserTokenService, EmailDelivery, InitialSetup, ModelCatalogReader,
-    PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
-    PlaygroundShareService, RegistrationService, RegistrationServiceConfigError,
-    RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
-    SiteSettingsService, TokenAuthenticator, UserInvitationService, UserProfileService,
-    UserTokenService,
+    AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
+    AdminEmailSettingsService, AdminGroupReader, AdminGroupWriter, AdminModelPriceService,
+    AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminTokenReader, AdminTokenWriter,
+    AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService, BalanceAlertTask,
+    DatabaseAdminBalanceAlertSettingsService, DatabaseAdminChannelReader,
+    DatabaseAdminChannelWriter, DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader,
+    DatabaseAdminGroupWriter, DatabaseAdminModelPriceService, DatabaseAdminModelReader,
+    DatabaseAdminModelSyncService, DatabaseAdminModelWriter, DatabaseAdminTokenReader,
+    DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader, DatabaseAdminUserReader,
+    DatabaseAdminUserWriter, DatabaseAdminWalletService, DatabaseInitialSetup,
+    DatabasePasswordResetService, DatabasePlaygroundConversationService,
+    DatabasePlaygroundShareService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
+    DatabaseSiteSettingsService, DatabaseTokenAuthenticator, DatabaseUserInvitationService,
+    DatabaseUserProfileService, DatabaseUserTokenService, EmailDelivery, InitialSetup,
+    ModelCatalogReader, PasswordResetService, PasswordResetServiceConfigError,
+    PlaygroundConversationService, PlaygroundShareService, RegistrationService,
+    RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter, SessionAuthenticator,
+    SessionAuthenticatorConfigError, SiteSettingsService, TokenAuthenticator,
+    UserInvitationService, UserProfileService, UserTokenService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -40,8 +41,10 @@ use af_db::{
     AdminTokenRepositoryConfigError, AdminUsageLogRepository, AdminUsageLogRepositoryConfigError,
     AdminUserRepository, AdminUserRepositoryConfigError, AuthChallengeRateLimitRepository,
     AuthChallengeRateLimitRepositoryConfigError, AuthChallengeRepository,
-    AuthChallengeRepositoryConfigError, ChannelStateRepository, CredentialStateRepository,
-    DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool, EmailSettingsRepository,
+    AuthChallengeRepositoryConfigError, BalanceAlertRepository, BalanceAlertRepositoryConfigError,
+    BalanceAlertSettingsRepository, BalanceAlertSettingsRepositoryConfigError,
+    ChannelStateRepository, CredentialStateRepository, DatabaseError, DatabaseOptions,
+    DatabaseOptionsError, DatabasePool, EmailSettingsRepository,
     EmailSettingsRepositoryConfigError, InitialSetupRepository, InitialSetupRepositoryConfigError,
     MigrationOptions, ModelPriceRepository, ModelSyncRepository, PasswordResetRepository,
     PasswordResetRepositoryConfigError, PlaygroundConversationRepository,
@@ -75,6 +78,7 @@ use crate::readiness::DatabaseReadinessProbe;
 use crate::{
     BackgroundTaskSupervisor, BillingChatService, BillingFlushReport, BillingRuntime,
     BillingRuntimeError, ChatRoutePlanner, ShutdownController, SupervisorError, SupervisorShutdown,
+    balance_alert_runtime::BalanceAlertRuntime,
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     frontend::EmbeddedFrontendAssets,
     group_pricing_refresh::RuntimeGroupPricingRefresher,
@@ -120,6 +124,8 @@ pub struct AuthenticationReady {
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
+    admin_balance_alert_settings_service: Arc<dyn AdminBalanceAlertSettingsService>,
+    balance_alert_task: BalanceAlertTask,
     playground_share_service: Arc<dyn PlaygroundShareService>,
     playground_conversation_service: Arc<dyn PlaygroundConversationService>,
     user_token_service: Arc<dyn UserTokenService>,
@@ -279,6 +285,12 @@ pub enum BootstrapError {
     /// SMTP 设置仓储的启动参数无效。
     #[error("SMTP 设置仓储启动参数无效")]
     EmailSettingsRepository(#[source] EmailSettingsRepositoryConfigError),
+    /// 余额预警全局设置仓储的启动参数无效。
+    #[error("余额预警设置仓储启动参数无效")]
+    BalanceAlertSettingsRepository(#[source] BalanceAlertSettingsRepositoryConfigError),
+    /// 余额预警事件仓储的启动参数无效。
+    #[error("余额预警事件仓储启动参数无效")]
+    BalanceAlertRepository(#[source] BalanceAlertRepositoryConfigError),
     /// SMTP 密码加解密器无法从启动配置安全装配。
     #[error("初始化 SMTP 密码加解密器失败")]
     SystemSecret(#[source] SystemSecretError),
@@ -489,6 +501,16 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::SiteSettingsRepository)?;
+        let balance_alert_settings_repository = BalanceAlertSettingsRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::BalanceAlertSettingsRepository)?;
+        let balance_alert_repository = BalanceAlertRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::BalanceAlertRepository)?;
         let password_reset_repository = PasswordResetRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -532,6 +554,17 @@ impl Bootstrap<DatabaseReady> {
         let system_secret_cipher = SystemSecretCipher::new(self.config.credential_encryption())
             .map_err(BootstrapError::SystemSecret)?;
         let smtp_delivery: Arc<dyn EmailDelivery> = Arc::new(SmtpEmailDelivery);
+        let balance_alert_task = BalanceAlertTask::new(
+            balance_alert_settings_repository.clone(),
+            balance_alert_repository,
+            email_settings_repository.clone(),
+            site_settings_repository.clone(),
+            system_secret_cipher.clone(),
+            Arc::clone(&smtp_delivery),
+        );
+        let admin_balance_alert_settings_service = DatabaseAdminBalanceAlertSettingsService::new(
+            balance_alert_settings_repository.clone(),
+        );
         let password_reset_service = DatabasePasswordResetService::new(
             password_reset_repository,
             auth_challenge_repository.clone(),
@@ -619,6 +652,7 @@ impl Bootstrap<DatabaseReady> {
                 password_reset_service: Arc::new(password_reset_service),
                 user_profile_service: Arc::new(DatabaseUserProfileService::new(
                     user_profile_repository,
+                    balance_alert_settings_repository,
                 )),
                 user_invitation_service: Arc::new(DatabaseUserInvitationService::new(
                     user_invitation_repository,
@@ -627,6 +661,10 @@ impl Bootstrap<DatabaseReady> {
                     site_settings_repository,
                 )),
                 admin_email_settings_service: Arc::new(admin_email_settings_service),
+                admin_balance_alert_settings_service: Arc::new(
+                    admin_balance_alert_settings_service,
+                ),
+                balance_alert_task,
                 playground_share_service: Arc::new(DatabasePlaygroundShareService::new(
                     playground_share_repository,
                 )),
@@ -873,6 +911,15 @@ impl Bootstrap<BillingReady> {
             channel_index.clone(),
             ChannelIndexRefreshConfig::default(),
         );
+        supervisor.spawn("balance-alert", {
+            let runtime = BalanceAlertRuntime::new(infrastructure.balance_alert_task.clone());
+            move |task_shutdown| {
+                let runtime = runtime.clone();
+                async move {
+                    runtime.run_until(task_shutdown.cancelled()).await;
+                }
+            }
+        });
         if billing.batch_enabled() {
             supervisor.spawn("billing-flush", {
                 let billing = billing.clone();
@@ -1022,6 +1069,12 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.user_invitation_service),
             Arc::clone(&self.stage.infrastructure.site_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_email_settings_service),
+            Arc::clone(
+                &self
+                    .stage
+                    .infrastructure
+                    .admin_balance_alert_settings_service,
+            ),
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_channel_writer),
             Some(Arc::clone(&self.stage.admin_channel_probe)),

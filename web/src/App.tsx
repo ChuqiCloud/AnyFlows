@@ -10,6 +10,7 @@ import { ResetPasswordPage } from '@/features/auth/reset-password-page'
 import { SessionBoundary } from '@/features/auth/session-boundary'
 import { endManagementSession } from '@/features/auth/session-query'
 import { ApiKeyPage } from '@/features/api-keys/api-key-page'
+import { BillingSettingsPage } from '@/features/billing-settings/billing-settings-page'
 import { ChannelPage } from '@/features/channels/channel-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
 import { EmailSettingsPage } from '@/features/email-settings/email-settings-page'
@@ -112,6 +113,8 @@ function ManagementEntry({
         ? 'authenticationSettings.title'
         : view === 'email-settings'
           ? 'emailSettings.title'
+          : view === 'billing-settings'
+            ? 'billingSettings.title'
           : view === 'group-settings'
             ? 'groups.title'
             : view === 'model-settings'
@@ -141,6 +144,8 @@ function ManagementEntry({
         ? <AuthenticationSettingsPage />
         : view === 'email-settings'
           ? <EmailSettingsPage />
+          : view === 'billing-settings'
+            ? <BillingSettingsPage />
           : view === 'group-settings'
             ? <GroupPage />
             : view === 'model-settings'
