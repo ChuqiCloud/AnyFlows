@@ -9,7 +9,7 @@ use crate::{
     management_models::AdminModelModalityValue,
     model_catalog::{
         ModelCatalogItemResponse, ModelCatalogLifecycleValue, ModelCatalogListResponse,
-        ModelCatalogRatiosResponse, ModelCatalogRuntimeStatusValue,
+        ModelCatalogProtocolValue, ModelCatalogRatiosResponse, ModelCatalogRuntimeStatusValue,
         ModelCatalogTokenPricesResponse,
     },
     openapi::schema::{ModelCatalogBillingModeSchema, ModelCatalogPricingScopeSchema},
@@ -47,6 +47,7 @@ fn list_models() {}
         ModelCatalogTokenPricesResponse,
         ModelCatalogRatiosResponse,
         ModelCatalogItemResponse,
+        ModelCatalogProtocolValue,
         ModelCatalogListResponse,
         ModelCatalogLifecycleValue,
         ModelCatalogRuntimeStatusValue,

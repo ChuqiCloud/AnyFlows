@@ -1,5 +1,7 @@
 use std::{error::Error, fmt, mem, str};
 
+const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
+
 /// 默认单个 SSE 事件最大 8 MiB，可覆盖大文本和 JSON 转义膨胀。
 pub const DEFAULT_MAX_SSE_EVENT_BYTES: usize = 8 * 1024 * 1024;
 /// 单个 SSE 事件的协议硬上限，与当前协议正文上限保持一致。
@@ -104,6 +106,7 @@ pub struct SseParser {
     saw_data: bool,
     saw_comment: bool,
     skip_lf: bool,
+    bom_checked: bool,
     failed: bool,
     closed: bool,
 }
@@ -129,6 +132,7 @@ impl SseParser {
             saw_data: false,
             saw_comment: false,
             skip_lf: false,
+            bom_checked: false,
             failed: false,
             closed: false,
         })
@@ -202,12 +206,19 @@ impl SseParser {
     }
 
     fn process_line(&mut self, events: &mut Vec<SseEvent>) -> Result<(), SseParseError> {
-        if self.line.is_empty() {
+        let mut line = mem::take(&mut self.line);
+        if !self.bom_checked {
+            self.bom_checked = true;
+            // SSE 流首部允许携带 UTF-8 BOM，只剥离首行，避免吞掉后续数据。
+            if line.starts_with(UTF8_BOM) {
+                line.drain(..UTF8_BOM.len());
+            }
+        }
+        if line.is_empty() {
             self.dispatch(events);
             return Ok(());
         }
 
-        let line = mem::take(&mut self.line);
         let line = str::from_utf8(&line).map_err(|_| SseParseError::InvalidUtf8)?;
         if line.starts_with(':') {
             self.saw_comment = true;
@@ -266,5 +277,30 @@ impl fmt::Debug for SseParser {
             .field("failed", &self.failed)
             .field("closed", &self.closed)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SseParser;
+
+    #[test]
+    fn accepts_utf8_bom_split_before_first_event() {
+        let chunks: [&[u8]; 4] = [
+            b"\xEF",
+            b"\xBB\xBFevent: message\n",
+            b"data: hello\n",
+            b"\n",
+        ];
+        let mut parser = SseParser::new();
+        let mut events = Vec::new();
+        for chunk in chunks {
+            events.extend(parser.push(chunk).expect("SSE 分块必须可解析"));
+        }
+        parser.finish().expect("SSE 流必须正常结束");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_name(), Some("message"));
+        assert_eq!(events[0].data(), b"hello");
     }
 }

@@ -28,6 +28,7 @@ const runtimeStyles = {
 
 function ModelStateBadges({ item }: { item: ModelCatalogItem }) {
   const { t } = useTranslation()
+  const availableProtocols = item.available_protocols ?? []
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1">
       <Badge className={cn(
@@ -38,6 +39,11 @@ function ModelStateBadges({ item }: { item: ModelCatalogItem }) {
       </Badge>
       <Badge className={cn('whitespace-nowrap', lifecycleStyles[item.lifecycle])}>{t(`models.lifecycle.${item.lifecycle}`)}</Badge>
       <Badge className={cn('whitespace-nowrap', runtimeStyles[item.runtime_status])}>{t(`models.runtime.${item.runtime_status}`)}</Badge>
+      {availableProtocols.map((protocol) => (
+        <Badge key={protocol} className="whitespace-nowrap border-transparent bg-surface-2 font-mono text-[0.625rem] text-muted-foreground">
+          {t(`models.protocols.${protocol}`)}
+        </Badge>
+      ))}
     </div>
   )
 }

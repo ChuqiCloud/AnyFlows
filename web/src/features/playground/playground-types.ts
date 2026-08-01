@@ -1,3 +1,5 @@
+import type { PlaygroundProtocol } from './playground-protocol'
+
 export type PlaygroundMessageStatus = 'complete' | 'streaming' | 'cancelled' | 'error'
 
 export type PlaygroundMessage = {
@@ -29,12 +31,13 @@ export type PlaygroundOverallState = PlaygroundRequestState | 'partial'
 export type PlaygroundGenerationSettings = {
   apiKey: string
   model: string
+  protocol: PlaygroundProtocol
   systemPrompt: string
   temperature?: number
   maxOutputTokens?: number
 }
 
-export type PlaygroundSharedSettings = Omit<PlaygroundGenerationSettings, 'model'>
+export type PlaygroundSharedSettings = Omit<PlaygroundGenerationSettings, 'model' | 'protocol'>
 
 export type PlaygroundSession = {
   model: string

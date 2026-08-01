@@ -4,7 +4,7 @@ use af_db::{
     MAX_ADMIN_MODEL_CONTEXT_WINDOW, MAX_ADMIN_MODEL_DESCRIPTION_BYTES,
     MAX_ADMIN_MODEL_DISPLAY_NAME_BYTES, MAX_ADMIN_MODEL_PROVIDER_BYTES,
 };
-use af_domain::MAX_MODEL_NAME_BYTES;
+use af_domain::{MAX_MODEL_NAME_BYTES, Protocol};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -398,6 +398,7 @@ pub struct ModelCatalogItem {
     ratios: ModelCatalogRatios,
     price_version: u64,
     runtime_status: ModelCatalogRuntimeStatus,
+    available_protocols: Vec<Protocol>,
 }
 
 impl ModelCatalogItem {
@@ -409,12 +410,16 @@ impl ModelCatalogItem {
         ratios: ModelCatalogRatios,
         price_version: u64,
         runtime_status: ModelCatalogRuntimeStatus,
+        available_protocols: Vec<Protocol>,
     ) -> Result<Self, ModelCatalogReadError> {
         let prices_match_mode = matches!(
             (billing_mode, prices.is_some()),
             (ModelCatalogBillingMode::PerToken, true) | (ModelCatalogBillingMode::Free, false)
         );
-        if !prices_match_mode || price_version == 0 {
+        let protocols_are_stable = available_protocols
+            .windows(2)
+            .all(|window| window[0] < window[1]);
+        if !prices_match_mode || price_version == 0 || !protocols_are_stable {
             return Err(ModelCatalogReadError::Internal);
         }
         Ok(Self {
@@ -424,6 +429,7 @@ impl ModelCatalogItem {
             ratios,
             price_version,
             runtime_status,
+            available_protocols,
         })
     }
 
@@ -468,6 +474,12 @@ impl ModelCatalogItem {
     pub const fn runtime_status(&self) -> ModelCatalogRuntimeStatus {
         self.runtime_status
     }
+
+    /// 返回当前目录访问主体可实际调度的协议集合；游客目录固定为空，表示不承诺可调用。
+    #[must_use]
+    pub fn available_protocols(&self) -> &[Protocol] {
+        &self.available_protocols
+    }
 }
 
 impl fmt::Debug for ModelCatalogItem {
@@ -478,6 +490,7 @@ impl fmt::Debug for ModelCatalogItem {
             .field("has_prices", &self.prices.is_some())
             .field("price_version", &self.price_version)
             .field("runtime_status", &self.runtime_status)
+            .field("available_protocol_count", &self.available_protocols.len())
             .finish_non_exhaustive()
     }
 }
@@ -597,6 +610,20 @@ mod tests {
                 ratios,
                 1,
                 ModelCatalogRuntimeStatus::NotEvaluated,
+                Vec::new(),
+            )
+            .is_err()
+        );
+
+        assert!(
+            ModelCatalogItem::new(
+                metadata("gpt-5"),
+                ModelCatalogBillingMode::Free,
+                None,
+                ratios,
+                1,
+                ModelCatalogRuntimeStatus::NotEvaluated,
+                vec![Protocol::OpenAiResponses, Protocol::OpenAiChat],
             )
             .is_err()
         );

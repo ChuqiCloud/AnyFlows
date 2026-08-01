@@ -1327,6 +1327,8 @@
       "context": "{{value}} tokens",
       "contextUnknown": "No verified context value",
       "noAdditionalCapabilities": "No reasoning or tool-call capability declared",
+      "protocolsUnavailable": "No callable protocol is available to this account",
+      "protocolsPublicUnknown": "The public catalog does not promise current callable protocols",
       "priceVersion": "Price version {{value}}"
     },
     "details": {
@@ -1335,6 +1337,7 @@
       "inputModalities": "Input modalities",
       "outputModalities": "Output modalities",
       "additionalCapabilities": "Additional capabilities",
+      "protocols": "Callable protocols",
       "pricing": "Pricing snapshot"
     },
     "modalities": {
@@ -1346,6 +1349,12 @@
     "capabilities": {
       "reasoning": "Reasoning",
       "toolCalls": "Tool calls"
+    },
+    "protocols": {
+      "openai_chat": "OpenAI Chat",
+      "openai_responses": "OpenAI Responses",
+      "anthropic": "Anthropic",
+      "gemini": "Gemini"
     },
     "lifecycle": {
       "active": "Active",
@@ -1429,6 +1438,13 @@
       "selectionCount": "{{count}} of {{max}} models selected",
       "selectedLabel": "Selected comparison models",
       "locked": "The model set is locked after the conversation starts",
+      "protocols": {
+        "openai_chat": "OpenAI Chat",
+        "openai_responses": "OpenAI Responses",
+        "anthropic": "Anthropic",
+        "gemini": "Gemini",
+        "unavailable": "Unsupported in Playground"
+      },
       "done": "Done"
     },
     "message": {

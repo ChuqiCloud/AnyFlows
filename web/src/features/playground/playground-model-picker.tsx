@@ -17,12 +17,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { ModelCatalogItem } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 import { togglePlaygroundModel } from './playground-model-selection'
+import { playgroundProtocolForModel, type PlaygroundProtocol } from './playground-protocol'
 import { MAX_PLAYGROUND_MODELS } from './playground-types'
 
 type PlaygroundModelPickerProps = {
   values: string[]
   search: string
   models: ModelCatalogItem[]
+  protocolByModel: Readonly<Record<string, PlaygroundProtocol>>
   loading: boolean
   error: boolean
   loadingMore: boolean
@@ -66,6 +68,11 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
           {props.values.map((model) => (
             <Badge key={model} className="max-w-full bg-surface-2 font-mono text-muted-foreground">
               <span className="truncate">{model}</span>
+              {props.protocolByModel[model] ? (
+                <span className="ml-1 shrink-0 font-sans text-[0.625rem]">
+                  {t(`playground.protocols.${props.protocolByModel[model]}`)}
+                </span>
+              ) : null}
             </Badge>
           ))}
         </div>
@@ -126,8 +133,11 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
             <div className="grid gap-0.5">
               {props.models.map((item) => {
                 const selected = props.values.includes(item.model)
+                const protocol = playgroundProtocolForModel(item)
+                const availableProtocols = item.available_protocols ?? []
                 const disabled = (selected && props.values.length === 1)
                   || (!selected && props.values.length >= MAX_PLAYGROUND_MODELS)
+                  || protocol === undefined
                 return (
                   <button
                     key={item.model}
@@ -144,9 +154,21 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
                   >
                     <Check className={cn('size-3.5 shrink-0 text-info', !selected && 'opacity-0')} aria-hidden="true" />
                     <span className="min-w-0 flex-1 truncate font-mono text-xs">{item.model}</span>
-                    <Badge className="shrink-0 bg-surface-2 text-muted-foreground">
-                      {t(`models.billing.${item.billing_mode}`)}
-                    </Badge>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {availableProtocols.map((availableProtocol) => (
+                        <Badge key={availableProtocol} className="bg-info/10 px-1.5 text-[0.625rem] text-info">
+                          {t(`playground.protocols.${availableProtocol}`)}
+                        </Badge>
+                      ))}
+                      {protocol === undefined ? (
+                        <Badge className="bg-warning/10 text-[0.625rem] text-warning">
+                          {t('playground.protocols.unavailable')}
+                        </Badge>
+                      ) : null}
+                      <Badge className="bg-surface-2 text-muted-foreground">
+                        {t(`models.billing.${item.billing_mode}`)}
+                      </Badge>
+                    </span>
                   </button>
                 )
               })}

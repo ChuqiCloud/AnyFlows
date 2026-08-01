@@ -456,7 +456,7 @@ impl OutputDecodeState {
         output: &mut Vec<CanonicalStreamEvent>,
     ) -> Result<(), ParseStreamError> {
         if self.phase != OutputPhase::Start
-            || item.status != Some(ItemStatusWire::InProgress)
+            || !matches!(item.status, None | Some(ItemStatusWire::InProgress))
             || !item.summary.is_empty()
             || item
                 .content
