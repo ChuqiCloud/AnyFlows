@@ -8,9 +8,10 @@ use std::sync::{
 
 use af_domain::{Quota, QuotaDelta, QuotaError, UserId, WalletEventId};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseTransaction, DbBackend, EntityTrait, LockType,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
     QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
-    entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
+    entity::prelude::TimeDateTimeWithTimeZone,
+    sea_query::{Expr, LockType},
 };
 use thiserror::Error;
 use tokio::time::timeout;
@@ -566,7 +567,7 @@ async fn lock_active_user(
         let result = users::Entity::update_many()
             .filter(users::Column::Id.eq(user_id.get()))
             .filter(users::Column::DeletedAt.is_null())
-            .col_expr(users::Column::Quota, Expr::col(users::Column::Quota))
+            .col_expr(users::Column::Quota, Expr::col(users::Column::Quota).into())
             .exec(transaction)
             .await
             .map_err(|_| WalletLedgerError::Query)?;

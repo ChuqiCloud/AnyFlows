@@ -11,8 +11,9 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rust_decimal::Decimal;
 use sea_orm::entity::prelude::{Json, TimeDateTimeWithTimeZone, TimeTime};
 use sea_orm::{
-    ActiveModelBehavior, ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbBackend,
-    EntityTrait, IdenStatic, IntoActiveModel, Iterable, PaginatorTrait, Set, Statement,
+    ActiveModelBehavior, ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection,
+    DbBackend, EntityTrait, IdenStatic, IntoActiveModel, Iterable, PaginatorTrait, QueryFilter,
+    Set, Statement,
 };
 use sea_orm_migration::prelude::*;
 use url::Url;
