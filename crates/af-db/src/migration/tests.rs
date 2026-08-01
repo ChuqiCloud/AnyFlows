@@ -22,7 +22,7 @@ use super::*;
 use crate::entity::{
     BillingBatchFingerprint, BillingBatchWriterKey, BillingReservationKey, ChannelBaseUrl,
     EncryptedJson, HeaderOverrides, PasswordHash, PlaygroundConversationKey, SensitiveDecimal,
-    SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, abilities,
+    SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, WalletLedgerKey, abilities,
     auth_challenge_rate_limits, auth_challenges, authentication_settings,
     billing_batch_checkpoints, billing_reservations, channel_groups, channel_models, channels,
     credentials, email_settings, group_model_ratios, groups, model_prices, model_sync_items,
@@ -50,7 +50,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量；列变更不会增加核心表数量。
-const EXPECTED_MIGRATION_COUNT: usize = 28;
+const EXPECTED_MIGRATION_COUNT: usize = 29;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -210,6 +210,59 @@ async fn wallet_migration_backfills_existing_nonzero_balances() -> Result<(), Bo
     assert_eq!(opening.balance_after, 250);
     assert!(opening.actor_user_id.is_none());
     assert!(opening.reason.is_none());
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn wallet_topup_migration_refuses_down_with_topup_entries() -> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), None).await?;
+    let group = group_active_model("topup-down-guard", "充值降级保护")
+        .insert(pool.connection())
+        .await?;
+    let mut user = user_active_model(
+        group.id,
+        "topup-down-user",
+        "topup-down@example.com",
+        "invite-topup-down",
+    );
+    user.quota = Set(25);
+    let user = user.insert(pool.connection()).await?;
+    wallet_ledger_entries::ActiveModel {
+        event_key: Set(WalletLedgerKey::parse("dddddddddddddddddddddddddddddddd")?),
+        user_id: Set(user.id),
+        actor_user_id: Set(None),
+        entry_type: Set(3),
+        quota_delta: Set(25),
+        balance_before: Set(0),
+        balance_after: Set(25),
+        reason: Set(None),
+        created_at: Set(historical_audit_time()),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+
+    let manager = SchemaManager::new(pool.connection());
+    let error = m20260801_000029_extend_wallet_ledger_topup::Migration
+        .down(&manager)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        DbErr::Custom(message) if message == "存在充值到账账本，无法回退钱包账本类型"
+    ));
+    assert!(manager.has_table("wallet_ledger_entries").await?);
+    assert!(!manager.has_table("wallet_ledger_entries_next").await?);
+    assert_eq!(
+        wallet_ledger_entries::Entity::find()
+            .filter(wallet_ledger_entries::Column::EntryType.eq(3))
+            .count(pool.connection())
+            .await?,
+        1
+    );
+
     pool.close().await?;
     Ok(())
 }

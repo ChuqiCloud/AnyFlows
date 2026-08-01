@@ -88,6 +88,7 @@ dependencies = [
  "fs2",
  "futures-util",
  "rust_decimal",
+ "sha2 0.10.9",
  "thiserror",
  "tokio",
  "tracing",
