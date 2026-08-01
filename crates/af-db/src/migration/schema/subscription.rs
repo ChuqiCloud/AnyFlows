@@ -290,28 +290,28 @@ async fn create_indexes(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
 fn hex_check(database_backend: DbBackend, column: &str, non_zero: bool) -> SimpleExpr {
     let zero_clause = if non_zero {
         match database_backend {
-            DbBackend::Postgres => format!(r#" AND \"{column}\" <> '{}'"#, "0".repeat(32)),
+            DbBackend::Postgres => format!(r#" AND "{column}" <> '{}'"#, "0".repeat(32)),
             DbBackend::MySql => format!(" AND `{column}` <> '{}'", "0".repeat(32)),
-            DbBackend::Sqlite => format!(r#" AND \"{column}\" <> '{}'"#, "0".repeat(32)),
+            DbBackend::Sqlite => format!(r#" AND "{column}" <> '{}'"#, "0".repeat(32)),
         }
     } else {
         String::new()
     };
     let sql = match database_backend {
-        DbBackend::Postgres => format!(r#"\"{column}\" ~ '^[0-9a-f]{{32}}$'{zero_clause}"#),
+        DbBackend::Postgres => format!(r#""{column}" ~ '^[0-9a-f]{{32}}$'{zero_clause}"#),
         DbBackend::MySql => format!(
             "CHAR_LENGTH(`{column}`) = 32 AND `{column}` REGEXP '^[0-9a-f]{{32}}$'{zero_clause}"
         ),
-        DbBackend::Sqlite => format!(
-            r#"length(\"{column}\") = 32 AND \"{column}\" NOT GLOB '*[^0-9a-f]*'{zero_clause}"#
-        ),
+        DbBackend::Sqlite => {
+            format!(r#"length("{column}") = 32 AND "{column}" NOT GLOB '*[^0-9a-f]*'{zero_clause}"#)
+        }
     };
     Expr::cust(sql)
 }
 
 #[cfg(test)]
 mod tests {
-    use sea_orm::sea_query::{MysqlQueryBuilder, Query};
+    use sea_orm::sea_query::{MysqlQueryBuilder, PostgresQueryBuilder, Query, SqliteQueryBuilder};
 
     use super::*;
 
@@ -323,5 +323,22 @@ mod tests {
             .to_string(MysqlQueryBuilder);
         assert!(rendered.contains("REGEXP '^[0-9a-f]"));
         assert!(!rendered.contains("BINARY"));
+    }
+
+    #[test]
+    fn quoted_identifier_checks_do_not_emit_escape_characters() {
+        let postgres = Query::select()
+            .expr(hex_check(DbBackend::Postgres, "plan_key", true))
+            .to_owned()
+            .to_string(PostgresQueryBuilder);
+        let sqlite = Query::select()
+            .expr(hex_check(DbBackend::Sqlite, "subscription_key", true))
+            .to_owned()
+            .to_string(SqliteQueryBuilder);
+
+        assert!(postgres.contains(r#""plan_key" ~ '^[0-9a-f]{32}$'"#));
+        assert!(sqlite.contains(r#"length("subscription_key") = 32"#));
+        assert!(!postgres.contains('\\'));
+        assert!(!sqlite.contains('\\'));
     }
 }
