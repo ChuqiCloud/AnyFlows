@@ -155,7 +155,8 @@ fn decodes_current_responses_stream_echoes_and_omitted_reasoning_status() {
     let reasoning_done = json!({
         "id": reasoning_id,
         "type": "reasoning",
-        "summary": [{"type": "summary_text", "text": ""}],
+        "status": "completed",
+        "summary": [],
         "content": [],
         "encrypted_content": "sig-current",
     });
