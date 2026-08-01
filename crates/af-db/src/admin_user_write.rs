@@ -353,24 +353,24 @@ impl AdminUserRepository {
         };
 
         let snapshot = create_user_in_transaction(&transaction, record).await?;
-        if let Some(inviter_id) = record_inviter(&transaction, snapshot.user_id()).await? {
-            if !rebate_quota.is_zero() {
-                let grant = InviteRebateGrant::new(
-                    registration_rebate_event_id(snapshot.user_id())?,
-                    snapshot.user_id(),
-                    rebate_quota,
-                    credited_at,
-                )
-                .map_err(|_| record_internal_error(AdminUserRepositoryError::Invariant))?;
-                match grant_in_transaction(&transaction, &grant)
-                    .await
-                    .map_err(map_invite_rebate_error)?
-                {
-                    InviteRebateGrantOutcome::Applied(record)
-                        if record.inviter_user_id() == inviter_id => {}
-                    _ => {
-                        return Err(record_internal_error(AdminUserRepositoryError::Invariant));
-                    }
+        if let Some(inviter_id) = record_inviter(&transaction, snapshot.user_id()).await?
+            && !rebate_quota.is_zero()
+        {
+            let grant = InviteRebateGrant::new(
+                registration_rebate_event_id(snapshot.user_id())?,
+                snapshot.user_id(),
+                rebate_quota,
+                credited_at,
+            )
+            .map_err(|_| record_internal_error(AdminUserRepositoryError::Invariant))?;
+            match grant_in_transaction(&transaction, &grant)
+                .await
+                .map_err(map_invite_rebate_error)?
+            {
+                InviteRebateGrantOutcome::Applied(record)
+                    if record.inviter_user_id() == inviter_id => {}
+                _ => {
+                    return Err(record_internal_error(AdminUserRepositoryError::Invariant));
                 }
             }
         }
