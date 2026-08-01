@@ -925,3 +925,66 @@ pub(in crate::migration) mod redemption_codes {
         CreatedAt,
     }
 }
+
+pub(in crate::migration) mod subscription_plans {
+    use super::DeriveIden;
+
+    /// `subscription_plans` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "subscription_plans")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 订阅计划迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        PlanKey,
+        Name,
+        CreatedByUserId,
+        Status,
+        QuotaAmount,
+        Cycle,
+        Version,
+        DisabledAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod user_subscriptions {
+    use super::DeriveIden;
+
+    /// `user_subscriptions` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "user_subscriptions")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 用户订阅迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        SubscriptionKey,
+        UserId,
+        PlanId,
+        PlanVersion,
+        Status,
+        QuotaAmount,
+        QuotaUsed,
+        Cycle,
+        WindowStartedAt,
+        WindowEndsAt,
+        Version,
+        BoundAt,
+        StatusChangedAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
