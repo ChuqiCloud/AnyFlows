@@ -28,9 +28,10 @@ async fn rebuild_wallet_ledger(
     // SQLite 文件库可配置多连接，重建操作必须固定在一个事务连接内，避免 schema
     // 查询与建表、删表、改名落到不同连接后观察到不一致的表状态。
     let transaction = manager.get_connection().begin().await?;
-    let transactional_manager = SchemaManager::new(&transaction);
-    let result = schema::rebuild_wallet_ledger_for_topup(&transactional_manager, allow_topup).await;
-    drop(transactional_manager);
+    let result = {
+        let transactional_manager = SchemaManager::new(&transaction);
+        schema::rebuild_wallet_ledger_for_topup(&transactional_manager, allow_topup).await
+    };
     match result {
         Ok(()) => transaction.commit().await,
         Err(error) => {
