@@ -73,7 +73,8 @@ async fn invalid_provider_contract_fails_closed_before_persistence() {
             outcome: TopupWebhookOutcome::Applied(TopupOrderStatus::Paid),
         }),
     );
-    let request = PaymentWebhookRequest::new(b"payload", &[], RECEIVED_AT).unwrap();
+    let headers = [PaymentWebhookHeader::new("x-signature", "valid").unwrap()];
+    let request = PaymentWebhookRequest::new(b"payload", &headers, RECEIVED_AT).unwrap();
 
     assert_eq!(
         processor.process(request).await,
