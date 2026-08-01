@@ -49,7 +49,7 @@ impl PresentedRedemptionCode {
             .decode_slice(random_text, &mut *decoded)
             .map_err(|_| RedemptionMaterialError::InvalidFormat)?;
         if decoded_length != REDEMPTION_CODE_ENTROPY_BYTES
-            || URL_SAFE_NO_PAD.encode(&*decoded) != random_text
+            || URL_SAFE_NO_PAD.encode(*decoded) != random_text
         {
             return Err(RedemptionMaterialError::InvalidFormat);
         }

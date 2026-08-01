@@ -210,6 +210,12 @@ impl RedemptionBatchRecord {
         self.disabled_at
     }
 
+    /// 返回保持单调的批次审计更新时间 Unix 秒数。
+    #[must_use]
+    pub const fn updated_at(&self) -> u64 {
+        self.updated_at
+    }
+
     pub(super) fn matches_write(&self, write: &RedemptionBatchWrite) -> bool {
         self.batch_id == write.batch_id
             && self.name == write.name
