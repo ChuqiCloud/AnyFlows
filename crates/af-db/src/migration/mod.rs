@@ -37,6 +37,7 @@ mod m20260801_000028_create_topup_payment_audit;
 mod m20260801_000029_extend_wallet_ledger_topup;
 mod m20260801_000030_create_redemption_storage;
 mod m20260801_000031_extend_wallet_ledger_redemption;
+mod m20260801_000032_create_subscription_storage;
 mod schema;
 
 #[cfg(test)]
@@ -111,6 +112,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260801_000029_extend_wallet_ledger_topup::Migration),
             Box::new(m20260801_000030_create_redemption_storage::Migration),
             Box::new(m20260801_000031_extend_wallet_ledger_redemption::Migration),
+            Box::new(m20260801_000032_create_subscription_storage::Migration),
         ]
     }
 }

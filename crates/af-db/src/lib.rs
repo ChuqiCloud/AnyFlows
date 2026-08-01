@@ -101,6 +101,7 @@ mod scheduler_runtime;
 mod site_settings;
 #[cfg(test)]
 mod site_settings_tests;
+mod subscription;
 mod token_owner_guard;
 mod topup;
 mod usage_log;
@@ -304,6 +305,13 @@ pub use scheduler_runtime::{
 pub use site_settings::{
     SiteSettingsRecord, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
     SiteSettingsRepositoryError, SiteSettingsWriteRecord,
+};
+pub use subscription::{
+    MAX_SUBSCRIPTION_PLAN_NAME_BYTES, SubscriptionInputError, SubscriptionPlanCreateOutcome,
+    SubscriptionPlanDisable, SubscriptionPlanDisableOutcome, SubscriptionPlanRecord,
+    SubscriptionPlanWrite, SubscriptionRepository, SubscriptionRepositoryConfigError,
+    SubscriptionRepositoryError, UserSubscriptionBind, UserSubscriptionBindOutcome,
+    UserSubscriptionRecord,
 };
 pub use topup::{
     MAX_PAYMENT_PROVIDER_BYTES, MAX_PROVIDER_EVENT_ID_BYTES, MAX_PROVIDER_ORDER_ID_BYTES,

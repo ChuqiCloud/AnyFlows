@@ -9,6 +9,7 @@ mod payment;
 mod principal;
 mod quota;
 mod redemption;
+mod subscription;
 mod token_policy;
 mod wallet;
 
@@ -28,6 +29,10 @@ pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{
     RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus,
     RedemptionIdentifierError, RedemptionStateCodeError,
+};
+pub use subscription::{
+    SubscriptionCycle, SubscriptionIdentifierError, SubscriptionPlanId, SubscriptionPlanStatus,
+    SubscriptionStateCodeError, UserSubscriptionId, UserSubscriptionStatus,
 };
 pub use token_policy::{
     MAX_MODEL_NAME_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_COUNT, MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES,
@@ -51,6 +56,8 @@ mod principal_tests;
 mod quota_tests;
 #[cfg(test)]
 mod redemption_tests;
+#[cfg(test)]
+mod subscription_tests;
 #[cfg(test)]
 mod token_policy_tests;
 #[cfg(test)]

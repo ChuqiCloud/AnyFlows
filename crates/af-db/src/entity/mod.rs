@@ -11,7 +11,8 @@ use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 use af_domain::{
     ChannelTimeout, Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId,
-    RedemptionCodeStatus, WalletEventId,
+    RedemptionCodeStatus, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
+    UserSubscriptionId, UserSubscriptionStatus, WalletEventId,
 };
 
 pub(crate) mod abilities;
@@ -38,10 +39,12 @@ pub(crate) mod redemption_batches;
 pub(crate) mod redemption_codes;
 pub(crate) mod registration_rate_limits;
 pub(crate) mod site_settings;
+pub(crate) mod subscription_plans;
 pub(crate) mod tokens;
 pub(crate) mod topup_orders;
 pub(crate) mod topup_payment_events;
 pub(crate) mod usage_logs;
+pub(crate) mod user_subscriptions;
 pub(crate) mod users;
 pub(crate) mod wallet_ledger_entries;
 
@@ -649,6 +652,143 @@ where
     Ok(())
 }
 
+async fn validate_subscription_plan<C>(
+    model: &subscription_plans::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 计划事实创建后只允许仓储通过 CAS 停用，避免改额度或周期影响既有语义。
+    if !insert {
+        return Err(DbErr::Custom("订阅计划必须通过仓储 CAS 更新".to_owned()));
+    }
+    let plan_key = model
+        .plan_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅计划标识缺失".to_owned()))?;
+    let name = model
+        .name
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("订阅计划名称缺失".to_owned()))?;
+    let creator_id = model
+        .created_by_user_id
+        .try_as_ref()
+        .copied()
+        .unwrap_or_default();
+    let status = model.status.try_as_ref().copied().unwrap_or_default();
+    let quota_amount = model.quota_amount.try_as_ref().copied().unwrap_or_default();
+    let cycle = model.cycle.try_as_ref().copied().unwrap_or_default();
+    let version = model.version.try_as_ref().copied().unwrap_or_default();
+    let disabled_at = model.disabled_at.try_as_ref().copied().flatten();
+    let created_at = model
+        .created_at
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("订阅计划创建时间缺失".to_owned()))?;
+    let updated_at = model
+        .updated_at
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("订阅计划更新时间缺失".to_owned()))?;
+
+    if SubscriptionPlanId::from_persistence_key(plan_key.as_str()).is_err()
+        || name.is_empty()
+        || name.len() > 80
+        || name.trim() != name.as_str()
+        || name.chars().any(char::is_control)
+        || creator_id <= 0
+        || status != SubscriptionPlanStatus::Active.code()
+        || quota_amount <= 0
+        || SubscriptionCycle::try_from(cycle).is_err()
+        || version != 1
+        || disabled_at.is_some()
+        || created_at.unix_timestamp() < 0
+        || updated_at < created_at
+    {
+        return Err(DbErr::Custom("订阅计划状态无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_user_subscription<C>(
+    model: &user_subscriptions::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 用量、周期推进和生命周期迁移必须由后续仓储原子维护，通用实体入口只允许首次绑定。
+    if !insert {
+        return Err(DbErr::Custom("用户订阅必须通过仓储更新".to_owned()));
+    }
+    let subscription_key = model
+        .subscription_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("用户订阅标识缺失".to_owned()))?;
+    let user_id = model.user_id.try_as_ref().copied().unwrap_or_default();
+    let plan_id = model.plan_id.try_as_ref().copied().unwrap_or_default();
+    let plan_version = model.plan_version.try_as_ref().copied().unwrap_or_default();
+    let status = model.status.try_as_ref().copied().unwrap_or_default();
+    let quota_amount = model.quota_amount.try_as_ref().copied().unwrap_or_default();
+    let quota_used = model.quota_used.try_as_ref().copied().unwrap_or_default();
+    let cycle = model.cycle.try_as_ref().copied().unwrap_or_default();
+    let version = model.version.try_as_ref().copied().unwrap_or_default();
+    let window_started_at = model
+        .window_started_at
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("用户订阅窗口起点缺失".to_owned()))?;
+    let window_ends_at = model
+        .window_ends_at
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("用户订阅窗口终点缺失".to_owned()))?;
+    let bound_at = model
+        .bound_at
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("用户订阅绑定时间缺失".to_owned()))?;
+    let status_changed_at = model
+        .status_changed_at
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("用户订阅状态时间缺失".to_owned()))?;
+    let created_at = model
+        .created_at
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("用户订阅创建时间缺失".to_owned()))?;
+    let updated_at = model
+        .updated_at
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("用户订阅更新时间缺失".to_owned()))?;
+
+    if UserSubscriptionId::from_persistence_key(subscription_key.as_str()).is_err()
+        || user_id <= 0
+        || plan_id <= 0
+        || plan_version <= 0
+        || status != UserSubscriptionStatus::Active.code()
+        || quota_amount <= 0
+        || quota_used != 0
+        || SubscriptionCycle::try_from(cycle).is_err()
+        || version != 1
+        || window_started_at.unix_timestamp() < 0
+        || window_ends_at <= window_started_at
+        || bound_at.unix_timestamp() < 0
+        || bound_at >= window_ends_at
+        || status_changed_at != bound_at
+        || created_at != bound_at
+        || updated_at < created_at
+    {
+        return Err(DbErr::Custom("用户订阅状态无效".to_owned()));
+    }
+    Ok(())
+}
+
 async fn validate_topup_order<C>(
     model: &topup_orders::ActiveModel,
     database: &C,
@@ -945,6 +1085,28 @@ impl ActiveModelBehavior for redemption_codes::ActiveModel {
         C: ConnectionTrait,
     {
         validate_redemption_code(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for subscription_plans::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_subscription_plan(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for user_subscriptions::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_user_subscription(&self, database, insert).await?;
         Ok(self)
     }
 }
