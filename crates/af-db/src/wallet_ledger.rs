@@ -37,6 +37,8 @@ pub enum WalletLedgerEntryType {
     AdminAdjustment = 2,
     /// 已验证支付事件在订单事务内完成的充值到账。
     Topup = 3,
+    /// 一次性兑换码在原子消费事务内完成的额度到账。
+    Redemption = 4,
 }
 
 impl WalletLedgerEntryType {
@@ -45,6 +47,7 @@ impl WalletLedgerEntryType {
             1 => Some(Self::OpeningBalance),
             2 => Some(Self::AdminAdjustment),
             3 => Some(Self::Topup),
+            4 => Some(Self::Redemption),
             _ => None,
         }
     }
@@ -645,7 +648,7 @@ fn valid_event_shape(
                 && actor_user_id.is_some()
                 && reason.is_some_and(valid_reason)
         }
-        WalletLedgerEntryType::Topup => {
+        WalletLedgerEntryType::Topup | WalletLedgerEntryType::Redemption => {
             !event_id.is_system_opening()
                 && actor_user_id.is_none()
                 && quota_delta.is_positive()

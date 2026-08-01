@@ -90,6 +90,7 @@ mod playground_share_tests;
 mod quota;
 #[cfg(test)]
 mod quota_tests;
+mod redemption;
 mod registration;
 #[cfg(test)]
 mod registration_tests;
@@ -270,6 +271,15 @@ pub use playground_share::{
 };
 pub use quota::{
     QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationStatus,
+};
+pub use redemption::{
+    IssuedRedemptionBatch, IssuedRedemptionCode, MAX_REDEMPTION_BATCH_CODES,
+    MAX_REDEMPTION_BATCH_NAME_BYTES, PresentedRedemptionCode, RedemptionAttempt,
+    RedemptionBatchCreateOutcome, RedemptionBatchDisable, RedemptionBatchDisableOutcome,
+    RedemptionBatchRecord, RedemptionBatchWrite, RedemptionCodeDefinition, RedemptionCodeDigest,
+    RedemptionInputError, RedemptionMaterialError, RedemptionOutcome, RedemptionRecord,
+    RedemptionRejection, RedemptionRepository, RedemptionRepositoryConfigError,
+    RedemptionRepositoryError,
 };
 pub use registration::{
     DEFAULT_REGISTRATION_RATE_LIMIT_ATTEMPTS, DEFAULT_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,

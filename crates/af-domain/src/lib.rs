@@ -8,6 +8,7 @@ mod network;
 mod payment;
 mod principal;
 mod quota;
+mod redemption;
 mod token_policy;
 mod wallet;
 
@@ -24,6 +25,10 @@ pub use principal::{
     ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, PrincipalIdError, TokenId, UserId,
 };
 pub use quota::{Quota, QuotaDelta, QuotaError};
+pub use redemption::{
+    RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus,
+    RedemptionIdentifierError, RedemptionStateCodeError,
+};
 pub use token_policy::{
     MAX_MODEL_NAME_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_COUNT, MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES,
     TokenModelPolicy, TokenModelPolicyError,
@@ -44,6 +49,8 @@ mod payment_tests;
 mod principal_tests;
 #[cfg(test)]
 mod quota_tests;
+#[cfg(test)]
+mod redemption_tests;
 #[cfg(test)]
 mod token_policy_tests;
 #[cfg(test)]

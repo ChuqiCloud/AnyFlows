@@ -22,6 +22,7 @@ pub(crate) enum AdminWalletEntryTypeResponse {
     OpeningBalance,
     AdminAdjustment,
     Topup,
+    Redemption,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -159,6 +160,7 @@ impl AdminWalletEntryResponse {
                     AdminWalletEntryTypeResponse::AdminAdjustment
                 }
                 AdminWalletEntryType::Topup => AdminWalletEntryTypeResponse::Topup,
+                AdminWalletEntryType::Redemption => AdminWalletEntryTypeResponse::Redemption,
             },
             quota_delta: entry.quota_delta(),
             balance_before: entry.balance_before(),

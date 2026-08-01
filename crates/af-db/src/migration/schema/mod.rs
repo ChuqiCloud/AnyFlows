@@ -14,6 +14,7 @@ mod payment;
 mod playground;
 mod playground_conversation;
 mod pricing;
+mod redemption;
 mod registration;
 mod routing;
 mod site;
@@ -100,8 +101,10 @@ pub(super) use playground_conversation::{
     create_playground_conversation_indexes, create_playground_conversations,
 };
 pub(super) use pricing::{create_group_model_ratios, create_model_prices};
+pub(super) use redemption::create_redemption_storage;
 pub(super) use registration::create_registration_rate_limits;
 pub(super) use site::{create_authentication_settings, create_site_settings};
 pub(super) use usage::{create_usage_logs, create_usage_logs_indexes};
 pub(super) use wallet::create_wallet_ledger;
+pub(super) use wallet::rebuild_wallet_ledger_for_redemption;
 pub(super) use wallet::rebuild_wallet_ledger_for_topup;

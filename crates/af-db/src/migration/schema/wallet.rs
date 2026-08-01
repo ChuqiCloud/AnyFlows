@@ -18,13 +18,13 @@ pub(in crate::migration) async fn create_wallet_ledger(
 }
 
 async fn create_table(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
-    create_table_named(manager, WALLET_LEDGER_TABLE, false, "current").await
+    create_table_named(manager, WALLET_LEDGER_TABLE, 2, "current").await
 }
 
 async fn create_table_named(
     manager: &SchemaManager<'_>,
     table_name: &'static str,
-    allow_topup: bool,
+    maximum_entry_type: i16,
     constraint_namespace: &'static str,
 ) -> Result<(), DbErr> {
     let mut statement = table(manager, Alias::new(table_name));
@@ -45,7 +45,7 @@ async fn create_table_named(
             ColumnDef::new(wallet_ledger_entries::Column::EntryType)
                 .small_integer()
                 .not_null()
-                .check(entry_type_check(allow_topup)),
+                .check(entry_type_check(maximum_entry_type)),
         )
         .col(
             ColumnDef::new(wallet_ledger_entries::Column::QuotaDelta)
@@ -103,21 +103,18 @@ async fn create_table_named(
 
     // MySQL 8.4 禁止 CHECK 引用带级联动作的外键列；该方言由实体与仓储校验事件形态。
     if manager.get_database_backend() != DbBackend::MySql {
-        statement.check(entry_shape_check(allow_topup));
+        statement.check(entry_shape_check(maximum_entry_type));
     }
     manager.create_table(statement).await
 }
 
-fn entry_type_check(allow_topup: bool) -> SimpleExpr {
-    if allow_topup {
-        Expr::col(wallet_ledger_entries::Column::EntryType).is_in([1_i16, 2_i16, 3_i16])
-    } else {
-        Expr::col(wallet_ledger_entries::Column::EntryType).is_in([1_i16, 2_i16])
-    }
+fn entry_type_check(maximum_entry_type: i16) -> SimpleExpr {
+    Expr::col(wallet_ledger_entries::Column::EntryType)
+        .is_in((1_i16..=maximum_entry_type).collect::<Vec<_>>())
 }
 
-fn entry_shape_check(allow_topup: bool) -> SimpleExpr {
-    let base = Expr::col(wallet_ledger_entries::Column::EntryType)
+fn entry_shape_check(maximum_entry_type: i16) -> SimpleExpr {
+    let mut shape = Expr::col(wallet_ledger_entries::Column::EntryType)
         .eq(1_i16)
         .and(Expr::col(wallet_ledger_entries::Column::ActorUserId).is_null())
         .and(Expr::col(wallet_ledger_entries::Column::QuotaDelta).gt(0_i64))
@@ -128,15 +125,21 @@ fn entry_shape_check(allow_topup: bool) -> SimpleExpr {
             .and(Expr::col(wallet_ledger_entries::Column::ActorUserId).is_not_null())
             .and(Expr::col(wallet_ledger_entries::Column::Reason).is_not_null())
             .and(Expr::col(wallet_ledger_entries::Column::Reason).ne("")));
-    if allow_topup {
-        base.or(Expr::col(wallet_ledger_entries::Column::EntryType)
+    if maximum_entry_type >= 3 {
+        shape = shape.or(Expr::col(wallet_ledger_entries::Column::EntryType)
             .eq(3_i16)
             .and(Expr::col(wallet_ledger_entries::Column::ActorUserId).is_null())
             .and(Expr::col(wallet_ledger_entries::Column::QuotaDelta).gt(0_i64))
-            .and(Expr::col(wallet_ledger_entries::Column::Reason).is_null()))
-    } else {
-        base
+            .and(Expr::col(wallet_ledger_entries::Column::Reason).is_null()));
     }
+    if maximum_entry_type >= 4 {
+        shape = shape.or(Expr::col(wallet_ledger_entries::Column::EntryType)
+            .eq(4_i16)
+            .and(Expr::col(wallet_ledger_entries::Column::ActorUserId).is_null())
+            .and(Expr::col(wallet_ledger_entries::Column::QuotaDelta).gt(0_i64))
+            .and(Expr::col(wallet_ledger_entries::Column::Reason).is_null()));
+    }
+    shape
 }
 
 fn event_key_format_check(database_backend: DbBackend) -> SimpleExpr {
@@ -186,16 +189,44 @@ pub(in crate::migration) async fn rebuild_wallet_ledger_for_topup(
     manager: &SchemaManager<'_>,
     allow_topup: bool,
 ) -> Result<(), DbErr> {
+    if !allow_topup {
+        ensure_no_entry_type(manager, 3, "存在充值到账账本，无法回退钱包账本类型").await?;
+    }
+    rebuild_wallet_ledger(
+        manager,
+        if allow_topup { 3 } else { 2 },
+        if allow_topup { "topup" } else { "base" },
+    )
+    .await
+}
+
+/// 重建钱包账本约束，以支持或移除兑换码到账事件。
+pub(in crate::migration) async fn rebuild_wallet_ledger_for_redemption(
+    manager: &SchemaManager<'_>,
+    allow_redemption: bool,
+) -> Result<(), DbErr> {
+    if !allow_redemption {
+        ensure_no_entry_type(manager, 4, "存在兑换码到账账本，无法回退钱包账本类型").await?;
+    }
+    rebuild_wallet_ledger(
+        manager,
+        if allow_redemption { 4 } else { 3 },
+        if allow_redemption {
+            "redemption"
+        } else {
+            "topup"
+        },
+    )
+    .await
+}
+
+async fn rebuild_wallet_ledger(
+    manager: &SchemaManager<'_>,
+    maximum_entry_type: i16,
+    namespace: &'static str,
+) -> Result<(), DbErr> {
     let current_exists = manager.has_table(WALLET_LEDGER_TABLE).await?;
     let next_exists = manager.has_table(WALLET_LEDGER_NEXT_TABLE).await?;
-    if !allow_topup {
-        let source_table = if current_exists {
-            WALLET_LEDGER_TABLE
-        } else {
-            WALLET_LEDGER_NEXT_TABLE
-        };
-        ensure_no_topup_entries(manager, source_table).await?;
-    }
     match (current_exists, next_exists) {
         (true, _) => {
             if next_exists {
@@ -207,8 +238,13 @@ pub(in crate::migration) async fn rebuild_wallet_ledger_for_topup(
                     )
                     .await?;
             }
-            let namespace = if allow_topup { "topup" } else { "base" };
-            create_table_named(manager, WALLET_LEDGER_NEXT_TABLE, allow_topup, namespace).await?;
+            create_table_named(
+                manager,
+                WALLET_LEDGER_NEXT_TABLE,
+                maximum_entry_type,
+                namespace,
+            )
+            .await?;
             copy_wallet_ledger(manager).await?;
             manager
                 .drop_table(
@@ -228,19 +264,26 @@ pub(in crate::migration) async fn rebuild_wallet_ledger_for_topup(
     reset_postgres_wallet_sequence(manager).await
 }
 
-async fn ensure_no_topup_entries(
+async fn ensure_no_entry_type(
     manager: &SchemaManager<'_>,
-    table_name: &'static str,
+    entry_type: i16,
+    message: &'static str,
 ) -> Result<(), DbErr> {
+    let current_exists = manager.has_table(WALLET_LEDGER_TABLE).await?;
+    let table_name = if current_exists {
+        WALLET_LEDGER_TABLE
+    } else {
+        WALLET_LEDGER_NEXT_TABLE
+    };
     if !manager.has_table(table_name).await? {
         return Ok(());
     }
     let statement = match manager.get_database_backend() {
         DbBackend::MySql => {
-            format!("SELECT 1 FROM `{table_name}` WHERE `entry_type` = 3 LIMIT 1")
+            format!("SELECT 1 FROM `{table_name}` WHERE `entry_type` = {entry_type} LIMIT 1")
         }
         DbBackend::Postgres | DbBackend::Sqlite => {
-            format!(r#"SELECT 1 FROM "{table_name}" WHERE "entry_type" = 3 LIMIT 1"#)
+            format!(r#"SELECT 1 FROM "{table_name}" WHERE "entry_type" = {entry_type} LIMIT 1"#)
         }
     };
     if manager
@@ -252,9 +295,7 @@ async fn ensure_no_topup_entries(
         .await?
         .is_some()
     {
-        return Err(DbErr::Custom(
-            "存在充值到账账本，无法回退钱包账本类型".to_owned(),
-        ));
+        return Err(DbErr::Custom(message.to_owned()));
     }
     Ok(())
 }
@@ -341,6 +382,7 @@ SELECT setval(
 
 fn user_foreign_key_name(namespace: &str) -> &'static str {
     match namespace {
+        "redemption" => "fk_wallet_ledger_redemption_user",
         "topup" => "fk_wallet_ledger_topup_user",
         "base" => "fk_wallet_ledger_base_user",
         _ => "fk_wallet_ledger_user",
@@ -349,6 +391,7 @@ fn user_foreign_key_name(namespace: &str) -> &'static str {
 
 fn actor_foreign_key_name(namespace: &str) -> &'static str {
     match namespace {
+        "redemption" => "fk_wallet_ledger_redemption_actor",
         "topup" => "fk_wallet_ledger_topup_actor",
         "base" => "fk_wallet_ledger_base_actor",
         _ => "fk_wallet_ledger_actor",
