@@ -9,7 +9,10 @@
 use rust_decimal::Decimal;
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
-use af_domain::{ChannelTimeout, Quota, QuotaDelta, WalletEventId};
+use af_domain::{
+    ChannelTimeout, Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId,
+    RedemptionCodeStatus, WalletEventId,
+};
 
 pub(crate) mod abilities;
 pub(crate) mod auth_challenge_rate_limits;
@@ -524,7 +527,7 @@ where
                 && actor_user_id.is_some_and(|actor| actor > 0)
                 && valid_reason
         }
-        3 => {
+        3 | 4 => {
             !event_id.is_system_opening()
                 && actor_user_id.is_none()
                 && delta.is_positive()
@@ -535,6 +538,115 @@ where
     valid_shape
         .then_some(())
         .ok_or_else(|| DbErr::Custom("钱包账本事件形态无效".to_owned()))
+}
+
+async fn validate_redemption_batch<C>(
+    model: &redemption_batches::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 批次创建后只有仓储 CAS 可以改变状态，避免通用实体更新绕过版本检查。
+    if !insert {
+        return Err(DbErr::Custom("兑换码批次必须通过仓储 CAS 更新".to_owned()));
+    }
+    let batch_key = model
+        .batch_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("兑换码批次标识缺失".to_owned()))?;
+    let name = model
+        .name
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("兑换码批次名称缺失".to_owned()))?;
+    let created_by_user_id = model
+        .created_by_user_id
+        .try_as_ref()
+        .copied()
+        .unwrap_or_default();
+    let status = model.status.try_as_ref().copied().unwrap_or_default();
+    let quota_amount = model.quota_amount.try_as_ref().copied().unwrap_or_default();
+    let code_count = model.code_count.try_as_ref().copied().unwrap_or_default();
+    let version = model.version.try_as_ref().copied().unwrap_or_default();
+    let expires_at = model.expires_at.try_as_ref().copied().flatten();
+    let disabled_at = model.disabled_at.try_as_ref().copied().flatten();
+    let created_at = model
+        .created_at
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("兑换码批次创建时间缺失".to_owned()))?;
+    let updated_at = model
+        .updated_at
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("兑换码批次更新时间缺失".to_owned()))?;
+
+    if RedemptionBatchId::from_persistence_key(batch_key.as_str()).is_err()
+        || name.is_empty()
+        || name.len() > 80
+        || name.trim() != name.as_str()
+        || name.chars().any(char::is_control)
+        || created_by_user_id <= 0
+        || status != RedemptionBatchStatus::Active.code()
+        || quota_amount <= 0
+        || !(1..=1_000).contains(&code_count)
+        || version != 1
+        || disabled_at.is_some()
+        || created_at.unix_timestamp() < 0
+        || updated_at < created_at
+        || expires_at.is_some_and(|value| value <= created_at)
+    {
+        return Err(DbErr::Custom("兑换码批次状态无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_redemption_code<C>(
+    model: &redemption_codes::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 单码消费只能由仓储在余额和账本事务中推进，通用实体入口保持只追加。
+    if !insert {
+        return Err(DbErr::Custom("兑换码状态必须通过仓储原子消费".to_owned()));
+    }
+    let code_key = model
+        .code_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("兑换码标识缺失".to_owned()))?;
+    let code_id = RedemptionCodeId::from_persistence_key(code_key.as_str())
+        .map_err(|_| DbErr::Custom("兑换码标识无效".to_owned()))?;
+    let wallet_event = WalletEventId::new(code_id.bytes())
+        .map_err(|_| DbErr::Custom("兑换码标识无效".to_owned()))?;
+    let batch_id = model.batch_id.try_as_ref().copied().unwrap_or_default();
+    let digest = model
+        .code_sha256
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("兑换码摘要缺失".to_owned()))?;
+    let status = model.status.try_as_ref().copied().unwrap_or_default();
+    let used_by_user_id = model.used_by_user_id.try_as_ref().copied().flatten();
+    let redeemed_at = model.redeemed_at.try_as_ref().copied().flatten();
+    let created_at = model
+        .created_at
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("兑换码创建时间缺失".to_owned()))?;
+
+    if wallet_event.is_system_opening()
+        || batch_id <= 0
+        || !valid_hex(digest.as_str(), 64, false)
+        || status != RedemptionCodeStatus::Available.code()
+        || used_by_user_id.is_some()
+        || redeemed_at.is_some()
+        || created_at.unix_timestamp() < 0
+    {
+        return Err(DbErr::Custom("兑换码状态无效".to_owned()));
+    }
+    Ok(())
 }
 
 async fn validate_topup_order<C>(
@@ -811,6 +923,28 @@ impl ActiveModelBehavior for topup_payment_events::ActiveModel {
         C: ConnectionTrait,
     {
         validate_topup_payment_event(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for redemption_batches::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_redemption_batch(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for redemption_codes::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_redemption_code(&self, database, insert).await?;
         Ok(self)
     }
 }
