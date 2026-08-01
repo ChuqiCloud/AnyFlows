@@ -1,6 +1,10 @@
 import { z } from 'zod'
 
-import type { AdminUser, AdminUserWriteRequest } from '@/lib/api/generated/types.gen'
+import type {
+  AdminUser,
+  AdminUserCreateRequest,
+  AdminUserUpdateRequest,
+} from '@/lib/api/generated/types.gen'
 
 export type UserEditorMode = 'create' | 'update'
 
@@ -28,6 +32,9 @@ const MAX_I32 = 2_147_483_647
 
 /** 前端复现用户写入的公开边界，最终结果仍以后端校验为准。 */
 export function buildUserFormSchema(mode: UserEditorMode, messages: ValidationMessages) {
+  const quota = mode === 'create'
+    ? z.number().int(messages.invalidNumber).safe(messages.invalidNumber).min(0, messages.invalidNumber)
+    : z.number()
   return z.object({
     username: z.string().refine(isValidUsername, messages.invalidUsername),
     email: z.string().refine(isValidOptionalEmail, messages.invalidEmail),
@@ -35,7 +42,7 @@ export function buildUserFormSchema(mode: UserEditorMode, messages: ValidationMe
     role: z.enum(['user', 'admin']),
     status: z.enum(['enabled', 'disabled']),
     defaultGroupId: z.string().refine((value) => parseInteger(value, 1) !== undefined, messages.invalidGroup),
-    quota: z.number().int(messages.invalidNumber).safe(messages.invalidNumber).min(0, messages.invalidNumber),
+    quota,
     rpmLimit: optionalNonNegativeInteger(messages.invalidNumber),
     concurrency: optionalNonNegativeInteger(messages.invalidNumber),
   })
@@ -55,7 +62,7 @@ export function defaultUserValues(user?: AdminUser): UserFormValues {
   }
 }
 
-export function toUserRequest(values: UserFormValues): AdminUserWriteRequest {
+export function toUserCreateRequest(values: UserFormValues): AdminUserCreateRequest {
   return {
     username: values.username,
     email: values.email || null,
@@ -69,8 +76,22 @@ export function toUserRequest(values: UserFormValues): AdminUserWriteRequest {
   }
 }
 
-/** 快速启停仍提交完整写模型，避免覆盖其他管理字段。 */
-export function userRequestWithStatus(user: AdminUser, status: AdminUser['status']): AdminUserWriteRequest {
+/** 编辑用户只提交资料和限制字段，钱包余额必须通过增量调账修改。 */
+export function toUserUpdateRequest(values: UserFormValues): AdminUserUpdateRequest {
+  return {
+    username: values.username,
+    email: values.email || null,
+    password: values.password || null,
+    role: values.role,
+    status: values.status,
+    default_group_id: requireInteger(values.defaultGroupId, 1),
+    rpm_limit: requireOptionalInteger(values.rpmLimit),
+    concurrency: requireOptionalInteger(values.concurrency),
+  }
+}
+
+/** 快速启停仍提交完整资料模型，但绝不直接覆盖钱包余额。 */
+export function userRequestWithStatus(user: AdminUser, status: AdminUser['status']): AdminUserUpdateRequest {
   return {
     username: user.username,
     email: user.email,
@@ -78,7 +99,6 @@ export function userRequestWithStatus(user: AdminUser, status: AdminUser['status
     role: user.role,
     status,
     default_group_id: user.default_group_id,
-    quota: user.quota,
     rpm_limit: user.rpm_limit,
     concurrency: user.concurrency,
   }

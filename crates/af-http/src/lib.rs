@@ -87,6 +87,8 @@ mod management_tokens_tests;
 #[cfg(test)]
 mod management_users_tests;
 #[cfg(test)]
+mod management_wallet_tests;
+#[cfg(test)]
 mod operations_tests;
 #[cfg(test)]
 mod password_reset_tests;

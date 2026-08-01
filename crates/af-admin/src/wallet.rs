@@ -36,6 +36,38 @@ pub struct AdminWalletEntry {
 }
 
 impl AdminWalletEntry {
+    /// 从已经校验的应用层字段组装钱包账本读取模型。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与不可变钱包账本事实一一对应"
+    )]
+    #[must_use]
+    pub fn from_parts(
+        id: i64,
+        event_id: WalletEventId,
+        user_id: UserId,
+        actor_user_id: Option<UserId>,
+        entry_type: AdminWalletEntryType,
+        quota_delta: i64,
+        balance_before: i64,
+        balance_after: i64,
+        reason: Option<String>,
+        created_at: i64,
+    ) -> Self {
+        Self {
+            id,
+            event_id,
+            user_id,
+            actor_user_id,
+            entry_type,
+            quota_delta,
+            balance_before,
+            balance_after,
+            reason,
+            created_at,
+        }
+    }
+
     /// 返回账本主键。
     #[must_use]
     pub const fn id(&self) -> i64 {
@@ -128,6 +160,15 @@ pub struct AdminWalletPage {
 }
 
 impl AdminWalletPage {
+    /// 从已经验证且按主键倒序排列的条目组装一页读取结果。
+    #[must_use]
+    pub fn from_parts(entries: Vec<AdminWalletEntry>, next_cursor: Option<i64>) -> Self {
+        Self {
+            entries,
+            next_cursor,
+        }
+    }
+
     /// 返回当前页账本条目。
     #[must_use]
     pub fn entries(&self) -> &[AdminWalletEntry] {
