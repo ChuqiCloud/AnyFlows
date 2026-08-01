@@ -680,7 +680,7 @@ fn merge_required<T>(
     message: &'static str,
 ) -> Result<T, DbErr>
 where
-    T: Clone,
+    T: Clone + Into<sea_orm::Value>,
 {
     active
         .try_as_ref()
@@ -691,7 +691,7 @@ where
 
 fn merge_optional<T>(active: &ActiveValue<Option<T>>, persisted: Option<T>) -> Option<T>
 where
-    T: Copy,
+    T: Copy + Into<sea_orm::Value> + sea_orm::sea_query::Nullable,
 {
     match active {
         ActiveValue::Set(value) | ActiveValue::Unchanged(value) => *value,

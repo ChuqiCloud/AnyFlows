@@ -12,14 +12,16 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        for table in [
-            iden::topup_payment_events::Entity,
-            iden::topup_orders::Entity,
-        ] {
-            manager
-                .drop_table(Table::drop().table(table).to_owned())
-                .await?;
-        }
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(iden::topup_payment_events::Entity)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(Table::drop().table(iden::topup_orders::Entity).to_owned())
+            .await?;
         Ok(())
     }
 }
