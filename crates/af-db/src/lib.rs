@@ -1,5 +1,8 @@
 //! 数据库连接池、迁移、实体与仓储边界。
 
+/// 数据库存储使用的 UTC 时间类型，供应用任务传递一致的扫描时刻。
+pub type DatabaseTimestamp = sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
+
 mod ability_write;
 #[cfg(test)]
 mod ability_write_tests;
@@ -43,6 +46,7 @@ mod auth_challenge_rate_limit;
 mod auth_challenge_tests;
 #[cfg(test)]
 mod auth_tests;
+mod balance_alert;
 mod billing_batch;
 #[cfg(test)]
 mod billing_batch_tests;
@@ -201,6 +205,16 @@ pub use auth_challenge_rate_limit::{
     AuthChallengeRateLimitRepository, AuthChallengeRateLimitRepositoryConfigError,
     AuthChallengeRateLimitRepositoryError, MAX_AUTH_CHALLENGE_RATE_LIMIT_ATTEMPTS,
     MAX_AUTH_CHALLENGE_RATE_LIMIT_WINDOW_SECONDS, MIN_AUTH_CHALLENGE_RATE_LIMIT_WINDOW_SECONDS,
+};
+pub use balance_alert::{
+    BalanceAlertClaimOutcome, BalanceAlertCompletionOutcome, BalanceAlertDeliveryFailureKind,
+    BalanceAlertDeliveryLease, BalanceAlertEnqueueReport, BalanceAlertRepository,
+    BalanceAlertRepositoryConfigError, BalanceAlertRepositoryError, BalanceAlertSettingsRecord,
+    BalanceAlertSettingsRepository, BalanceAlertSettingsRepositoryConfigError,
+    BalanceAlertSettingsRepositoryError, BalanceAlertSettingsWriteRecord,
+    DEFAULT_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS, DEFAULT_BALANCE_ALERT_THRESHOLD_QUOTA,
+    MAX_BALANCE_ALERT_ATTEMPTS, MAX_BALANCE_ALERT_BATCH_SIZE,
+    MAX_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS, MIN_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS,
 };
 pub use billing_batch::{
     BillingBatchRepository, BillingBatchRepositoryError, BillingBatchWrite, BillingBatchWriteError,

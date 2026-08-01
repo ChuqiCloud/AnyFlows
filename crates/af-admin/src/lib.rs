@@ -2,6 +2,10 @@
 
 mod api_key;
 mod auth_challenge_security;
+mod balance_alert_settings;
+mod balance_alert_task;
+#[cfg(test)]
+mod balance_alert_tests;
 mod channel_read;
 mod channel_write;
 mod credential_read;
@@ -43,6 +47,12 @@ pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,
     PresentedApiKey,
 };
+pub use balance_alert_settings::{
+    AdminBalanceAlertSettings, AdminBalanceAlertSettingsCommand, AdminBalanceAlertSettingsError,
+    AdminBalanceAlertSettingsReadFuture, AdminBalanceAlertSettingsService,
+    AdminBalanceAlertSettingsUpdateFuture, DatabaseAdminBalanceAlertSettingsService,
+};
+pub use balance_alert_task::{BalanceAlertTask, BalanceAlertTaskError, BalanceAlertTaskReport};
 pub use channel_read::{
     AdminChannel, AdminChannelListQuery, AdminChannelPage, AdminRoutingStatus,
     DEFAULT_ADMIN_CHANNEL_PAGE_SIZE,

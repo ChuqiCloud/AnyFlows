@@ -5,6 +5,7 @@ use af_admin::{
     UserNotificationPreferencesCommand, UserPasswordChangeCommand, UserProfile, UserProfileError,
     UserProfileService, UserProfileUpdateCommand,
 };
+use af_domain::Quota;
 use axum::{
     Json, Router,
     extract::{DefaultBodyLimit, Extension, State, rejection::JsonRejection},
@@ -76,6 +77,11 @@ pub(crate) struct UserProfileResponse {
 pub(crate) struct UserNotificationPreferencesResponse {
     email_product_updates: bool,
     email_usage_alerts: bool,
+    balance_alert_enabled: bool,
+    #[schema(minimum = 1, required = true)]
+    balance_alert_threshold: Option<i64>,
+    #[schema(minimum = 1)]
+    effective_balance_alert_threshold: i64,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -107,6 +113,8 @@ pub(crate) struct UserPasswordChangeRequest {
 pub(crate) struct UserNotificationPreferencesRequest {
     email_product_updates: bool,
     email_usage_alerts: bool,
+    #[schema(minimum = 1, required = true)]
+    balance_alert_threshold: Option<i64>,
 }
 
 /// 返回当前会话用户资料；不会读取或返回其他用户记录。
@@ -162,10 +170,17 @@ pub(crate) async fn update_notifications(
     request: Result<Json<UserNotificationPreferencesRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let command = UserNotificationPreferencesCommand::new(UserNotificationPreferences::new(
+    let balance_alert_threshold = request
+        .balance_alert_threshold
+        .map(Quota::new)
+        .transpose()
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let command = UserNotificationPreferencesCommand::new(
         request.email_product_updates,
         request.email_usage_alerts,
-    ));
+        balance_alert_threshold,
+    )
+    .map_err(map_profile_error)?;
     let profile = state
         .service
         .update_notifications(authentication.principal(), command)
@@ -193,6 +208,11 @@ impl UserNotificationPreferencesResponse {
         Self {
             email_product_updates: preferences.email_product_updates(),
             email_usage_alerts: preferences.email_usage_alerts(),
+            balance_alert_enabled: preferences.balance_alert_enabled(),
+            balance_alert_threshold: preferences.balance_alert_threshold().map(Quota::units),
+            effective_balance_alert_threshold: preferences
+                .effective_balance_alert_threshold()
+                .units(),
         }
     }
 }

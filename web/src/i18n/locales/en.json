@@ -20,6 +20,7 @@
     "siteSettings": "Site settings",
     "authenticationSettings": "Authentication",
     "emailSettings": "Email settings",
+    "billingSettings": "Billing settings",
     "groupSettings": "Group management",
     "modelSettings": "Model management",
     "channels": "Channels",
@@ -1766,6 +1767,60 @@
       "description": "OAuth sign-in is not available in this version. After existing sessions expire, an operator must restore the database switch before users can sign in again."
     }
   },
+  "billingSettings": {
+    "title": "Billing settings",
+    "subtitle": "Configure the global balance threshold, reminder window, and email delivery cadence.",
+    "loading": "Loading billing settings",
+    "form": {
+      "title": "Balance alerts",
+      "subtitle": "Control the low-balance email policy in one place."
+    },
+    "status": {
+      "enabled": "Running",
+      "disabled": "Paused",
+      "saved": "Billing settings saved.",
+      "version": "Configuration version {{version}}"
+    },
+    "fields": {
+      "enabled": "Enable balance alerts",
+      "enabledHint": "Pausing stops new alerts without clearing the saved threshold.",
+      "threshold": "System default threshold",
+      "thresholdHint": "Users without a personal threshold inherit this positive integer quota.",
+      "quotaUnit": "quota",
+      "window": "Repeat reminder window",
+      "windowHint": "Each user can receive at most one alert in a reminder window."
+    },
+    "windows": {
+      "3600": "Every hour",
+      "21600": "Every 6 hours",
+      "43200": "Every 12 hours",
+      "86400": "Every 24 hours",
+      "259200": "Every 3 days",
+      "604800": "Every 7 days",
+      "custom": "Keep current window ({{seconds}} seconds)"
+    },
+    "delivery": {
+      "title": "Delivery policy",
+      "subtitle": "Persistent state drives each delivery independently of process memory.",
+      "dedup": "A user and reminder window form a unique event across all instances.",
+      "retry": "Timeout and transport failures retry up to 5 times; configuration failures stop immediately."
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "save": "Save settings",
+      "emailSettings": "Check email settings"
+    },
+    "validation": {
+      "threshold": "The default threshold must be a positive safe integer.",
+      "window": "The reminder window must be between 1 hour and 7 days."
+    },
+    "errors": {
+      "title": "Billing settings are unavailable",
+      "load": "The service did not return reliable balance alert settings. Try again shortly.",
+      "save": "Billing settings could not be saved. Server state is unchanged."
+    }
+  },
   "emailSettings": {
     "title": "Email settings",
     "subtitle": "Configure system SMTP delivery. Passwords are encrypted, and test recipients are never persisted.",
@@ -2076,7 +2131,7 @@
       "current": "Current password",
       "next": "New password",
       "confirm": "Confirm new password",
-      "hint": "Passwords must be 12–128 bytes and cannot contain control characters.",
+      "hint": "Passwords must be 12-128 bytes and cannot contain control characters.",
       "revokesSessions": "All older sign-in sessions are revoked immediately after a successful change."
     },
     "notifications": {
@@ -2086,6 +2141,17 @@
       "productDescription": "Receive new feature, version, and service announcements.",
       "usageTitle": "Usage alerts",
       "usageDescription": "Receive alerts when usage or quota approaches a boundary.",
+      "balanceAlertTitle": "Balance alert threshold",
+      "balanceAlertDescription": "Receive a usage email when your balance falls below the effective threshold.",
+      "balanceAlertActive": "System enabled",
+      "balanceAlertPaused": "System paused",
+      "thresholdMode": "Threshold mode",
+      "thresholdInherit": "Inherit system default",
+      "thresholdCustom": "Use personal threshold",
+      "thresholdValue": "Personal threshold",
+      "thresholdInvalid": "The personal threshold must be a positive safe integer.",
+      "effectiveThreshold": "Current effective threshold",
+      "quotaUnit": "quota",
       "securityTitle": "Security notifications",
       "securityDescription": "Password, session, and account security notices are always enabled.",
       "alwaysOn": "Always on",

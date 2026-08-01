@@ -70,6 +70,7 @@ pub(in crate::migration) mod users {
         TotpSecret,
         RpmLimit,
         Concurrency,
+        BalanceAlertThreshold,
         Settings,
         CreatedAt,
         UpdatedAt,
@@ -1014,5 +1015,62 @@ pub(in crate::migration) mod invite_rebate_events {
         WalletLedgerEntryId,
         CreditedAt,
         CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod balance_alert_settings {
+    use super::DeriveIden;
+
+    /// `balance_alert_settings` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "balance_alert_settings")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 余额预警全局设置迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        Enabled,
+        DefaultThresholdQuota,
+        ReminderIntervalSeconds,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod balance_alert_events {
+    use super::DeriveIden;
+
+    /// `balance_alert_events` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "balance_alert_events")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 余额预警投递事件迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        UserId,
+        WindowStartedAtEpoch,
+        ThresholdQuota,
+        ObservedQuota,
+        Status,
+        AttemptCount,
+        NextAttemptAt,
+        LeaseExpiresAt,
+        LastErrorKind,
+        Version,
+        SentAt,
+        CreatedAt,
+        UpdatedAt,
     }
 }

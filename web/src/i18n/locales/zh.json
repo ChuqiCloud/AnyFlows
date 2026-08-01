@@ -20,6 +20,7 @@
     "siteSettings": "站点设置",
     "authenticationSettings": "认证设置",
     "emailSettings": "邮件设置",
+    "billingSettings": "计费设置",
     "groupSettings": "分组管理",
     "modelSettings": "模型管理",
     "channels": "渠道管理",
@@ -1765,6 +1766,60 @@
       "description": "当前版本尚未提供 OAuth 登录。关闭后，现有会话过期的用户需要由运维恢复数据库开关才能再次登录。"
     }
   },
+  "billingSettings": {
+    "title": "计费设置",
+    "subtitle": "配置全局余额预警阈值、提醒窗口和邮件投递节奏。",
+    "loading": "正在加载计费设置",
+    "form": {
+      "title": "余额预警",
+      "subtitle": "统一控制低余额邮件提醒规则。"
+    },
+    "status": {
+      "enabled": "运行中",
+      "disabled": "已暂停",
+      "saved": "计费设置已保存。",
+      "version": "配置版本 {{version}}"
+    },
+    "fields": {
+      "enabled": "启用余额预警",
+      "enabledHint": "关闭后停止发现和投递新提醒，已保存阈值不会被清除。",
+      "threshold": "系统默认阈值",
+      "thresholdHint": "没有设置个人阈值的用户继承此正整数额度。",
+      "quotaUnit": "额度",
+      "window": "重复提醒窗口",
+      "windowHint": "同一用户在一个窗口内最多生成一条提醒。"
+    },
+    "windows": {
+      "3600": "每 1 小时",
+      "21600": "每 6 小时",
+      "43200": "每 12 小时",
+      "86400": "每 24 小时",
+      "259200": "每 3 天",
+      "604800": "每 7 天",
+      "custom": "保留当前窗口（{{seconds}} 秒）"
+    },
+    "delivery": {
+      "title": "投递策略",
+      "subtitle": "任务按持久化状态推进，不依赖单个进程内存。",
+      "dedup": "按用户和提醒窗口唯一去重，多实例不会重复建单。",
+      "retry": "超时和传输失败最多尝试 5 次，配置错误直接终止。"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "save": "保存设置",
+      "emailSettings": "检查邮件设置"
+    },
+    "validation": {
+      "threshold": "默认阈值必须是大于 0 的安全整数。",
+      "window": "提醒窗口必须在 1 小时至 7 天之间。"
+    },
+    "errors": {
+      "title": "计费设置暂时不可用",
+      "load": "服务没有返回可靠的余额预警设置，请稍后重试。",
+      "save": "计费设置保存失败，服务端状态未改变。"
+    }
+  },
   "emailSettings": {
     "title": "邮件设置",
     "subtitle": "配置系统 SMTP 投递基础。密码加密保存，测试邮件使用固定正文且不会持久化收件人。",
@@ -2075,7 +2130,7 @@
       "current": "当前密码",
       "next": "新密码",
       "confirm": "确认新密码",
-      "hint": "密码长度为 12–128 字节，不能包含控制字符。",
+      "hint": "密码长度为 12 至 128 字节，不能包含控制字符。",
       "revokesSessions": "修改成功后，所有旧登录会话会立即失效。"
     },
     "notifications": {
@@ -2085,6 +2140,17 @@
       "productDescription": "接收新功能、版本和服务公告。",
       "usageTitle": "用量提醒",
       "usageDescription": "在用量或额度接近边界时接收提醒。",
+      "balanceAlertTitle": "余额预警阈值",
+      "balanceAlertDescription": "余额低于有效阈值时，通过用量提醒邮件通知你。",
+      "balanceAlertActive": "系统已启用",
+      "balanceAlertPaused": "系统已暂停",
+      "thresholdMode": "阈值模式",
+      "thresholdInherit": "继承系统默认",
+      "thresholdCustom": "使用个人阈值",
+      "thresholdValue": "个人阈值",
+      "thresholdInvalid": "个人阈值必须是大于 0 的安全整数。",
+      "effectiveThreshold": "当前有效阈值",
+      "quotaUnit": "额度",
       "securityTitle": "安全通知",
       "securityDescription": "密码、会话和账户安全通知始终开启。",
       "alwaysOn": "始终开启",

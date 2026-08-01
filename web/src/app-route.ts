@@ -1,6 +1,7 @@
 export type AppView =
   | 'api-keys'
   | 'authentication-settings'
+  | 'billing-settings'
   | 'channels'
   | 'email-settings'
   | 'forgot-password'
@@ -58,6 +59,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/system-settings/site')) return { view: 'site-settings' }
   if (hash.startsWith('#/console/system-settings/authentication')) return { view: 'authentication-settings' }
   if (hash.startsWith('#/console/system-settings/email')) return { view: 'email-settings' }
+  if (hash.startsWith('#/console/system-settings/billing')) return { view: 'billing-settings' }
   if (hash.startsWith('#/console/system-settings/groups')) return { view: 'group-settings' }
   if (hash.startsWith('#/console/system-settings/models')) return { view: 'model-settings' }
   if (hash.startsWith('#/console/api-keys')) return { view: 'api-keys' }

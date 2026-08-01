@@ -1,11 +1,12 @@
 use std::{fmt, future::Future, pin::Pin};
 
 use af_db::{
-    UserNotificationPreferencesRecord, UserPasswordChangeOutcome, UserProfileLookupOutcome,
-    UserProfileMutationOutcome, UserProfileRecord, UserProfileRepository,
-    UserProfileRepositoryError,
+    BalanceAlertSettingsRecord, BalanceAlertSettingsRepository,
+    BalanceAlertSettingsRepositoryError, UserNotificationPreferencesRecord,
+    UserPasswordChangeOutcome, UserProfileLookupOutcome, UserProfileMutationOutcome,
+    UserProfileRecord, UserProfileRepository, UserProfileRepositoryError,
 };
-use af_domain::UserId;
+use af_domain::{Quota, UserId};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
@@ -73,15 +74,27 @@ impl UserProfile {
 pub struct UserNotificationPreferences {
     email_product_updates: bool,
     email_usage_alerts: bool,
+    balance_alert_enabled: bool,
+    balance_alert_threshold: Option<Quota>,
+    effective_balance_alert_threshold: Quota,
 }
 
 impl UserNotificationPreferences {
     /// 组合通知偏好命令或读取结果。
     #[must_use]
-    pub const fn new(email_product_updates: bool, email_usage_alerts: bool) -> Self {
+    pub const fn new(
+        email_product_updates: bool,
+        email_usage_alerts: bool,
+        balance_alert_enabled: bool,
+        balance_alert_threshold: Option<Quota>,
+        effective_balance_alert_threshold: Quota,
+    ) -> Self {
         Self {
             email_product_updates,
             email_usage_alerts,
+            balance_alert_enabled,
+            balance_alert_threshold,
+            effective_balance_alert_threshold,
         }
     }
 
@@ -97,8 +110,22 @@ impl UserNotificationPreferences {
         self.email_usage_alerts
     }
 
-    fn into_record(self) -> UserNotificationPreferencesRecord {
-        UserNotificationPreferencesRecord::new(self.email_product_updates, self.email_usage_alerts)
+    /// 系统是否启用余额预警任务。
+    #[must_use]
+    pub const fn balance_alert_enabled(self) -> bool {
+        self.balance_alert_enabled
+    }
+
+    /// 返回个人阈值；空值表示继承系统默认值。
+    #[must_use]
+    pub const fn balance_alert_threshold(self) -> Option<Quota> {
+        self.balance_alert_threshold
+    }
+
+    /// 返回个人阈值与系统默认值合并后的当前有效阈值。
+    #[must_use]
+    pub const fn effective_balance_alert_threshold(self) -> Quota {
+        self.effective_balance_alert_threshold
     }
 }
 
@@ -130,18 +157,34 @@ impl fmt::Debug for UserProfileUpdateCommand {
 /// 更新当前用户通知偏好的命令。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct UserNotificationPreferencesCommand {
-    preferences: UserNotificationPreferences,
+    email_product_updates: bool,
+    email_usage_alerts: bool,
+    balance_alert_threshold: Option<Quota>,
 }
 
 impl UserNotificationPreferencesCommand {
-    /// 构造强类型通知偏好；布尔值本身无需额外归一化。
-    #[must_use]
-    pub const fn new(preferences: UserNotificationPreferences) -> Self {
-        Self { preferences }
+    /// 构造通知偏好写命令；零阈值不能表达有效提醒边界。
+    pub fn new(
+        email_product_updates: bool,
+        email_usage_alerts: bool,
+        balance_alert_threshold: Option<Quota>,
+    ) -> Result<Self, UserProfileError> {
+        if balance_alert_threshold.is_some_and(|threshold| threshold.is_zero()) {
+            return Err(UserProfileError::InvalidInput);
+        }
+        Ok(Self {
+            email_product_updates,
+            email_usage_alerts,
+            balance_alert_threshold,
+        })
     }
 
-    fn preferences(self) -> UserNotificationPreferences {
-        self.preferences
+    fn into_record(self) -> UserNotificationPreferencesRecord {
+        UserNotificationPreferencesRecord::new(
+            self.email_product_updates,
+            self.email_usage_alerts,
+            self.balance_alert_threshold,
+        )
     }
 }
 
@@ -244,26 +287,34 @@ pub trait UserProfileService: Send + Sync {
 /// 使用用户资料数据库仓储的生产应用服务。
 pub struct DatabaseUserProfileService {
     repository: UserProfileRepository,
+    balance_alert_settings: BalanceAlertSettingsRepository,
 }
 
 impl DatabaseUserProfileService {
     /// 绑定已经配置操作截止时间的用户资料仓储。
     #[must_use]
-    pub const fn new(repository: UserProfileRepository) -> Self {
-        Self { repository }
+    pub const fn new(
+        repository: UserProfileRepository,
+        balance_alert_settings: BalanceAlertSettingsRepository,
+    ) -> Self {
+        Self {
+            repository,
+            balance_alert_settings,
+        }
     }
 }
 
 impl UserProfileService for DatabaseUserProfileService {
     fn get<'a>(&'a self, principal: SessionPrincipal) -> UserProfileReadFuture<'a> {
         Box::pin(async move {
+            let settings = self.balance_alert_settings().await?;
             match self
                 .repository
                 .get(principal.user_id())
                 .await
                 .map_err(map_repository_error)?
             {
-                UserProfileLookupOutcome::Found(record) => profile_from_record(record),
+                UserProfileLookupOutcome::Found(record) => profile_from_record(record, settings),
                 UserProfileLookupOutcome::NotFound => Err(UserProfileError::InvalidSession),
             }
         })
@@ -275,13 +326,16 @@ impl UserProfileService for DatabaseUserProfileService {
         command: UserProfileUpdateCommand,
     ) -> UserProfileUpdateFuture<'a> {
         Box::pin(async move {
+            let settings = self.balance_alert_settings().await?;
             match self
                 .repository
                 .update_username(principal.user_id(), command.into_username())
                 .await
                 .map_err(map_repository_error)?
             {
-                UserProfileMutationOutcome::Updated(record) => profile_from_record(record),
+                UserProfileMutationOutcome::Updated(record) => {
+                    profile_from_record(record, settings)
+                }
                 UserProfileMutationOutcome::NotFound => Err(UserProfileError::InvalidSession),
                 UserProfileMutationOutcome::Conflict => Err(UserProfileError::Conflict),
             }
@@ -320,17 +374,29 @@ impl UserProfileService for DatabaseUserProfileService {
         command: UserNotificationPreferencesCommand,
     ) -> UserNotificationUpdateFuture<'a> {
         Box::pin(async move {
+            let settings = self.balance_alert_settings().await?;
             match self
                 .repository
-                .update_notifications(principal.user_id(), command.preferences().into_record())
+                .update_notifications(principal.user_id(), command.into_record())
                 .await
                 .map_err(map_repository_error)?
             {
-                UserProfileMutationOutcome::Updated(record) => profile_from_record(record),
+                UserProfileMutationOutcome::Updated(record) => {
+                    profile_from_record(record, settings)
+                }
                 UserProfileMutationOutcome::NotFound => Err(UserProfileError::InvalidSession),
                 UserProfileMutationOutcome::Conflict => Err(UserProfileError::Internal),
             }
         })
+    }
+}
+
+impl DatabaseUserProfileService {
+    async fn balance_alert_settings(&self) -> Result<BalanceAlertSettingsRecord, UserProfileError> {
+        self.balance_alert_settings
+            .settings()
+            .await
+            .map_err(map_balance_alert_settings_error)
     }
 }
 
@@ -340,7 +406,11 @@ impl fmt::Debug for DatabaseUserProfileService {
     }
 }
 
-fn profile_from_record(record: UserProfileRecord) -> Result<UserProfile, UserProfileError> {
+fn profile_from_record(
+    record: UserProfileRecord,
+    settings: BalanceAlertSettingsRecord,
+) -> Result<UserProfile, UserProfileError> {
+    let personal_threshold = record.notifications().balance_alert_threshold();
     Ok(UserProfile {
         user_id: record.user_id(),
         username: record.username().to_owned(),
@@ -349,8 +419,15 @@ fn profile_from_record(record: UserProfileRecord) -> Result<UserProfile, UserPro
         notifications: UserNotificationPreferences::new(
             record.notifications().email_product_updates(),
             record.notifications().email_usage_alerts(),
+            settings.enabled(),
+            personal_threshold,
+            personal_threshold.unwrap_or(settings.default_threshold()),
         ),
     })
+}
+
+fn map_balance_alert_settings_error(_: BalanceAlertSettingsRepositoryError) -> UserProfileError {
+    UserProfileError::Internal
 }
 
 fn map_repository_error(error: UserProfileRepositoryError) -> UserProfileError {
@@ -398,6 +475,11 @@ mod tests {
         assert!(!format!("{command:?}").contains("new secure password"));
         assert_eq!(
             UserPasswordChangeCommand::new("old".to_owned(), "short".to_owned()).unwrap_err(),
+            UserProfileError::InvalidInput
+        );
+        assert!(UserNotificationPreferencesCommand::new(false, true, None).is_ok());
+        assert_eq!(
+            UserNotificationPreferencesCommand::new(false, true, Some(Quota::ZERO)).unwrap_err(),
             UserProfileError::InvalidInput
         );
     }

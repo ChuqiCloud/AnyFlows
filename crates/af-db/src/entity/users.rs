@@ -36,6 +36,8 @@ pub struct Model {
     pub email_product_updates: bool,
     /// 是否接收用量提醒邮件；默认开启，便于用户及时发现额度风险。
     pub email_usage_alerts: bool,
+    /// 个人余额预警阈值；空值表示继承系统默认值。
+    pub balance_alert_threshold: Option<i64>,
     #[sea_orm(column_type = "JsonBinary")]
     pub settings: Json,
     pub created_at: TimeDateTimeWithTimeZone,
