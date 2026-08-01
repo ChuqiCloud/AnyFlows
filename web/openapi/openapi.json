@@ -9878,7 +9878,8 @@
         "enum": [
           "opening_balance",
           "admin_adjustment",
-          "topup"
+          "topup",
+          "redemption"
         ]
       },
       "AdminWalletListResponse": {

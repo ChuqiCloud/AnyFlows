@@ -869,3 +869,59 @@ pub(in crate::migration) mod topup_payment_events {
         CreatedAt,
     }
 }
+
+pub(in crate::migration) mod redemption_batches {
+    use super::DeriveIden;
+
+    /// `redemption_batches` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "redemption_batches")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 兑换码批次迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        BatchKey,
+        Name,
+        CreatedByUserId,
+        Status,
+        QuotaAmount,
+        CodeCount,
+        Version,
+        ExpiresAt,
+        DisabledAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod redemption_codes {
+    use super::DeriveIden;
+
+    /// `redemption_codes` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "redemption_codes")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 一次性兑换码迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        CodeKey,
+        BatchId,
+        CodeSha256,
+        Status,
+        UsedByUserId,
+        RedeemedAt,
+        CreatedAt,
+    }
+}

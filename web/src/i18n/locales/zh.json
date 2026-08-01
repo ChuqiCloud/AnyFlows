@@ -570,7 +570,8 @@
       "entryType": {
         "opening_balance": "初始基线",
         "admin_adjustment": "管理员调账",
-        "topup": "充值到账"
+        "topup": "充值到账",
+        "redemption": "兑换码到账"
       },
       "history": {
         "title": "账本历史",
@@ -585,8 +586,10 @@
         "moreError": "更早的账本读取失败。",
         "openingReason": "用户钱包初始基线",
         "topupReason": "支付充值到账",
+        "redemptionReason": "兑换码额度到账",
         "systemActor": "系统迁移",
         "paymentActor": "支付系统",
+        "redemptionActor": "兑换码系统",
         "adminActor": "管理员 #{{id}}",
         "balanceAfter": "余额 {{value}}"
       },

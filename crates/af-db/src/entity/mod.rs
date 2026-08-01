@@ -31,6 +31,8 @@ pub(crate) mod models;
 pub(crate) mod options;
 pub(crate) mod playground_conversations;
 pub(crate) mod playground_shares;
+pub(crate) mod redemption_batches;
+pub(crate) mod redemption_codes;
 pub(crate) mod registration_rate_limits;
 pub(crate) mod site_settings;
 pub(crate) mod tokens;

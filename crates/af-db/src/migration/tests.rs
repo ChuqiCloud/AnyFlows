@@ -27,8 +27,8 @@ use crate::entity::{
     billing_batch_checkpoints, billing_reservations, channel_groups, channel_models, channels,
     credentials, email_settings, group_model_ratios, groups, model_prices, model_sync_items,
     model_sync_runs, models, options, playground_conversations, playground_shares,
-    registration_rate_limits, site_settings, tokens, topup_orders, topup_payment_events,
-    usage_logs, users, wallet_ledger_entries,
+    redemption_batches, redemption_codes, registration_rate_limits, site_settings, tokens,
+    topup_orders, topup_payment_events, usage_logs, users, wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -50,7 +50,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量；列变更不会增加核心表数量。
-const EXPECTED_MIGRATION_COUNT: usize = 29;
+const EXPECTED_MIGRATION_COUNT: usize = 31;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -68,7 +68,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 28] = [
+const CORE_TABLES: [&str; 30] = [
     "groups",
     "users",
     "channels",
@@ -97,6 +97,8 @@ const CORE_TABLES: [&str; 28] = [
     "wallet_ledger_entries",
     "topup_orders",
     "topup_payment_events",
+    "redemption_batches",
+    "redemption_codes",
 ];
 
 struct SlowMigrator;
@@ -258,6 +260,60 @@ async fn wallet_topup_migration_refuses_down_with_topup_entries() -> Result<(), 
     assert_eq!(
         wallet_ledger_entries::Entity::find()
             .filter(wallet_ledger_entries::Column::EntryType.eq(3))
+            .count(pool.connection())
+            .await?,
+        1
+    );
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn wallet_redemption_migration_refuses_down_with_redemption_entries()
+-> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), None).await?;
+    let group = group_active_model("redemption-down-guard", "兑换码降级保护")
+        .insert(pool.connection())
+        .await?;
+    let mut user = user_active_model(
+        group.id,
+        "redemption-down-user",
+        "redemption-down@example.com",
+        "invite-redemption-down",
+    );
+    user.quota = Set(25);
+    let user = user.insert(pool.connection()).await?;
+    wallet_ledger_entries::ActiveModel {
+        event_key: Set(WalletLedgerKey::parse("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")?),
+        user_id: Set(user.id),
+        actor_user_id: Set(None),
+        entry_type: Set(4),
+        quota_delta: Set(25),
+        balance_before: Set(0),
+        balance_after: Set(25),
+        reason: Set(None),
+        created_at: Set(historical_audit_time()),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+
+    let manager = SchemaManager::new(pool.connection());
+    let error = m20260801_000031_extend_wallet_ledger_redemption::Migration
+        .down(&manager)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        DbErr::Custom(message) if message == "存在兑换码到账账本，无法回退钱包账本类型"
+    ));
+    assert!(manager.has_table("wallet_ledger_entries").await?);
+    assert!(!manager.has_table("wallet_ledger_entries_next").await?);
+    assert_eq!(
+        wallet_ledger_entries::Entity::find()
+            .filter(wallet_ledger_entries::Column::EntryType.eq(4))
             .count(pool.connection())
             .await?,
         1
@@ -1532,6 +1588,8 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         .await?;
     assert_entity_columns::<topup_orders::Column>(&manager, "topup_orders").await?;
     assert_entity_columns::<topup_payment_events::Column>(&manager, "topup_payment_events").await?;
+    assert_entity_columns::<redemption_batches::Column>(&manager, "redemption_batches").await?;
+    assert_entity_columns::<redemption_codes::Column>(&manager, "redemption_codes").await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -1594,6 +1652,15 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "topup_payment_events",
             "idx_topup_payment_events_order_created",
         ),
+        ("redemption_batches", "uq_redemption_batches_batch_key"),
+        (
+            "redemption_batches",
+            "idx_redemption_batches_status_expires",
+        ),
+        ("redemption_codes", "uq_redemption_codes_code_key"),
+        ("redemption_codes", "uq_redemption_codes_sha256"),
+        ("redemption_codes", "idx_redemption_codes_batch_status"),
+        ("redemption_codes", "idx_redemption_codes_user_redeemed"),
     ] {
         assert!(
             manager.has_index(table, index).await?,
