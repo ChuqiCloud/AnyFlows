@@ -8,6 +8,7 @@ export type AdminAuthenticationSettings = {
     registration_enabled: boolean;
     default_group_id: number;
     initial_quota: number;
+    invitation_rebate_quota: number;
     email_required: boolean;
     rate_limit_attempts: number;
     rate_limit_window_seconds: number;
@@ -18,6 +19,7 @@ export type AdminAuthenticationSettingsRequest = {
     registration_enabled: boolean;
     default_group_id: number;
     initial_quota: number;
+    invitation_rebate_quota: number;
     email_required: boolean;
     rate_limit_attempts: number;
     rate_limit_window_seconds: number;
@@ -587,7 +589,7 @@ export type AdminWalletEntry = {
     reason: string | null;
     created_at: number;
 };
-export type AdminWalletEntryType = 'opening_balance' | 'admin_adjustment' | 'topup' | 'redemption';
+export type AdminWalletEntryType = 'opening_balance' | 'admin_adjustment' | 'topup' | 'redemption' | 'invite_rebate';
 export type AdminWalletListResponse = {
     entries: Array<AdminWalletEntry>;
     next_cursor: number | null;
@@ -612,7 +614,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -737,6 +739,7 @@ export type RegistrationEmailVerificationResponse = {
 export type RegistrationRequest = {
     username: string;
     email?: string | null;
+    invite_code?: string | null;
 };
 export type RegistrationStatusResponse = {
     password_login_enabled: boolean;
@@ -756,6 +759,18 @@ export type SetupRequest = {
 };
 export type SetupStatusResponse = {
     setup_required: boolean;
+};
+export type UserInvitationRebateResponse = {
+    quota_amount: number;
+    credited_at: number;
+};
+export type UserInvitationSummaryResponse = {
+    invite_code: string;
+    invited_count: number;
+    credited_count: number;
+    current_rebate_quota: number;
+    historical_rebate_quota: number;
+    recent_rebates: Array<UserInvitationRebateResponse>;
 };
 export type UserNotificationPreferencesRequest = {
     email_product_updates: boolean;
@@ -919,6 +934,7 @@ export type RegistrationRequestWritable = {
     email?: string | null;
     password: string;
     verification_code?: string | null;
+    invite_code?: string | null;
 };
 export type SetupRequestWritable = {
     username: string;
@@ -1168,6 +1184,21 @@ export type UpdateUserNotificationPreferencesResponses = {
     200: UserProfileResponse;
 };
 export type UpdateUserNotificationPreferencesResponse = UpdateUserNotificationPreferencesResponses[keyof UpdateUserNotificationPreferencesResponses];
+export type GetUserInvitationsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/invitations';
+};
+export type GetUserInvitationsErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type GetUserInvitationsError = GetUserInvitationsErrors[keyof GetUserInvitationsErrors];
+export type GetUserInvitationsResponses = {
+    200: UserInvitationSummaryResponse;
+};
+export type GetUserInvitationsResponse = GetUserInvitationsResponses[keyof GetUserInvitationsResponses];
 export type GetAdminEmailSettingsData = {
     body?: never;
     path?: never;

@@ -11,6 +11,7 @@ mod email_settings_tests;
 mod group_read;
 mod group_write;
 mod initial_setup;
+mod invitation;
 mod model_catalog;
 mod model_metadata_read;
 mod model_metadata_write;
@@ -79,6 +80,10 @@ pub use initial_setup::{
     DatabaseInitialSetup, InitialSetup, InitialSetupCommand, InitialSetupError, InitialSetupFuture,
     InitialSetupStatus, InitialSetupStatusFuture, MAX_INITIAL_ADMIN_PASSWORD_BYTES,
     MIN_INITIAL_ADMIN_PASSWORD_BYTES,
+};
+pub use invitation::{
+    DatabaseUserInvitationService, UserInvitationError, UserInvitationReadFuture,
+    UserInvitationRebate, UserInvitationService, UserInvitationSummary,
 };
 pub use model_catalog::{
     DEFAULT_MODEL_CATALOG_PAGE_SIZE, MAX_MODEL_CATALOG_PAGE_SIZE, ModelCatalogBillingMode,

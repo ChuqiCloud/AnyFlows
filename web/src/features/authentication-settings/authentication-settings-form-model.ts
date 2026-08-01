@@ -10,6 +10,7 @@ export type AuthenticationSettingsValues = {
   registrationEnabled: boolean
   defaultGroupId: string
   initialQuota: number
+  invitationRebateQuota: number
   emailRequired: boolean
   rateLimitAttempts: number
   rateLimitWindowSeconds: string
@@ -19,6 +20,7 @@ type ValidationMessages = {
   incompatibleCapabilities: string
   invalidGroup: string
   invalidQuota: string
+  invalidRebateQuota: string
   invalidAttempts: string
   invalidWindow: string
 }
@@ -34,6 +36,7 @@ export function authenticationSettingsValues(
     registrationEnabled: settings.registration_enabled,
     defaultGroupId: String(settings.default_group_id),
     initialQuota: settings.initial_quota,
+    invitationRebateQuota: settings.invitation_rebate_quota,
     emailRequired: settings.email_required,
     rateLimitAttempts: settings.rate_limit_attempts,
     rateLimitWindowSeconds: String(settings.rate_limit_window_seconds),
@@ -53,6 +56,10 @@ export function buildAuthenticationSettingsSchema(messages: ValidationMessages) 
       .int(messages.invalidQuota)
       .safe(messages.invalidQuota)
       .min(0, messages.invalidQuota),
+    invitationRebateQuota: z.number()
+      .int(messages.invalidRebateQuota)
+      .safe(messages.invalidRebateQuota)
+      .min(0, messages.invalidRebateQuota),
     emailRequired: z.boolean(),
     rateLimitAttempts: z.number()
       .int(messages.invalidAttempts)
@@ -90,6 +97,7 @@ export function toAuthenticationSettingsRequest(
     registration_enabled: values.registrationEnabled,
     default_group_id: defaultGroupId,
     initial_quota: values.initialQuota,
+    invitation_rebate_quota: values.invitationRebateQuota,
     email_required: values.emailRequired,
     rate_limit_attempts: values.rateLimitAttempts,
     rate_limit_window_seconds: rateLimitWindowSeconds,

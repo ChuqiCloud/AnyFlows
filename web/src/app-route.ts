@@ -5,6 +5,7 @@ export type AppView =
   | 'email-settings'
   | 'forgot-password'
   | 'group-settings'
+  | 'invitations'
   | 'models'
   | 'model-settings'
   | 'playground'
@@ -26,12 +27,14 @@ export type AppRoute = {
   view: AppView
   shareToken?: string
   resetToken?: string
+  inviteCode?: string
 }
 
 const shareRoutePrefix = '#/share/'
 const shareTokenPattern = /^sh-af-[A-Za-z0-9_-]{43}$/
 const resetRoutePrefix = '#/reset-password'
 const resetTokenPattern = /^[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/
+const invitationCodePattern = /^af-[A-Za-z0-9_-]{22}$/
 
 /** 解析临时 hash 路由，并严格限制公开分享令牌的可接受格式。 */
 export function routeFromHash(hash: string): AppRoute {
@@ -60,6 +63,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/api-keys')) return { view: 'api-keys' }
   if (hash.startsWith('#/console/models')) return { view: 'models' }
   if (hash.startsWith('#/console/playground')) return { view: 'playground' }
+  if (hash.startsWith('#/console/invitations')) return { view: 'invitations' }
   if (hash.startsWith('#/console/profile')) return { view: 'profile' }
   if (hash.startsWith('#/console/tokens')) return { view: 'tokens' }
   if (hash.startsWith('#/console/usage-logs')) return { view: 'usage-logs' }
@@ -67,7 +71,14 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/registration')) return { view: 'authentication-settings' }
   if (hash.startsWith('#/console')) return { view: 'overview' }
   if (hash.startsWith('#/models')) return { view: 'public-models' }
-  if (hash.startsWith('#/register')) return { view: 'register' }
+  if (hash.startsWith('#/register')) {
+    const queryStart = hash.indexOf('?')
+    const query = queryStart >= 0 ? new URLSearchParams(hash.slice(queryStart + 1)) : undefined
+    const inviteCode = query?.get('invite') ?? undefined
+    return inviteCode && invitationCodePattern.test(inviteCode)
+      ? { view: 'register', inviteCode }
+      : { view: 'register' }
+  }
   if (hash.startsWith('#/forgot-password')) return { view: 'forgot-password' }
   if (hash.startsWith('#/login')) return { view: 'login' }
   if (hash.startsWith('#/setup')) return { view: 'setup' }

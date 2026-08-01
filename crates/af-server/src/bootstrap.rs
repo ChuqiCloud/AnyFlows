@@ -16,12 +16,13 @@ use af_admin::{
     DatabaseAdminWalletService, DatabaseInitialSetup, DatabasePasswordResetService,
     DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
     DatabaseRegistrationService, DatabaseSessionAuthenticator, DatabaseSiteSettingsService,
-    DatabaseTokenAuthenticator, DatabaseUserProfileService, DatabaseUserTokenService,
-    EmailDelivery, InitialSetup, ModelCatalogReader, PasswordResetService,
-    PasswordResetServiceConfigError, PlaygroundConversationService, PlaygroundShareService,
-    RegistrationService, RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter,
-    SessionAuthenticator, SessionAuthenticatorConfigError, SiteSettingsService, TokenAuthenticator,
-    UserProfileService, UserTokenService,
+    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserProfileService,
+    DatabaseUserTokenService, EmailDelivery, InitialSetup, ModelCatalogReader,
+    PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
+    PlaygroundShareService, RegistrationService, RegistrationServiceConfigError,
+    RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
+    SiteSettingsService, TokenAuthenticator, UserInvitationService, UserProfileService,
+    UserTokenService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -47,7 +48,8 @@ use af_db::{
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RegistrationRepository,
     RegistrationRepositoryConfigError, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
-    TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository, UserProfileRepository,
+    TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository,
+    UserInvitationRepository, UserInvitationRepositoryConfigError, UserProfileRepository,
     UserProfileRepositoryConfigError, UserSessionRepository, UserSessionRepositoryConfigError,
     UserTokenRepository, UserTokenRepositoryConfigError, WalletLedgerRepository,
     WalletLedgerRepositoryConfigError, connect_and_migrate,
@@ -115,6 +117,7 @@ pub struct AuthenticationReady {
     registration_service: Arc<dyn RegistrationService>,
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn UserProfileService>,
+    user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     playground_share_service: Arc<dyn PlaygroundShareService>,
@@ -297,6 +300,9 @@ pub enum BootstrapError {
     /// 普通用户资料仓储的启动参数无效。
     #[error("用户资料仓储启动参数无效")]
     UserProfileRepository(#[source] UserProfileRepositoryConfigError),
+    /// 当前用户邀请读仓储的启动参数无效。
+    #[error("用户邀请仓储启动参数无效")]
+    UserInvitationRepository(#[source] UserInvitationRepositoryConfigError),
     /// 管理员分组仓储的启动参数无效。
     #[error("管理员分组仓储启动参数无效")]
     AdminGroupRepository(#[source] AdminGroupRepositoryConfigError),
@@ -518,6 +524,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::UserProfileRepository)?;
+        let user_invitation_repository = UserInvitationRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::UserInvitationRepository)?;
         let system_secret_cipher = SystemSecretCipher::new(self.config.credential_encryption())
             .map_err(BootstrapError::SystemSecret)?;
         let smtp_delivery: Arc<dyn EmailDelivery> = Arc::new(SmtpEmailDelivery);
@@ -608,6 +619,9 @@ impl Bootstrap<DatabaseReady> {
                 password_reset_service: Arc::new(password_reset_service),
                 user_profile_service: Arc::new(DatabaseUserProfileService::new(
                     user_profile_repository,
+                )),
+                user_invitation_service: Arc::new(DatabaseUserInvitationService::new(
+                    user_invitation_repository,
                 )),
                 site_settings_service: Arc::new(DatabaseSiteSettingsService::new(
                     site_settings_repository,
@@ -1005,6 +1019,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.registration_service),
             Arc::clone(&self.stage.infrastructure.password_reset_service),
             Arc::clone(&self.stage.infrastructure.user_profile_service),
+            Arc::clone(&self.stage.infrastructure.user_invitation_service),
             Arc::clone(&self.stage.infrastructure.site_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_email_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),

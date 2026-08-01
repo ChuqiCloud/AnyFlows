@@ -8,11 +8,12 @@ import { usePublicSiteSettings } from '@/features/site-settings/site-settings-ap
 import { RegistrationForm } from './registration-form'
 
 type RegistrationPageProps = {
+  inviteCode?: string
   onAuthenticated: () => void
 }
 
 /** 根据公开站点能力呈现注册表单，并在未知状态下稳定失败关闭。 */
-export function RegistrationPage({ onAuthenticated }: RegistrationPageProps) {
+export function RegistrationPage({ inviteCode, onAuthenticated }: RegistrationPageProps) {
   const { t } = useTranslation()
   const siteQuery = usePublicSiteSettings()
   const site = siteQuery.data
@@ -50,6 +51,7 @@ export function RegistrationPage({ onAuthenticated }: RegistrationPageProps) {
         ) : registrationAvailable ? (
           <RegistrationForm
             emailRequired={registrationEmailRequired}
+            initialInviteCode={inviteCode}
             onAuthenticated={onAuthenticated}
           />
         ) : (

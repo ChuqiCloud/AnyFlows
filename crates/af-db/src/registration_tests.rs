@@ -76,6 +76,7 @@ async fn policy_update_validates_group_and_controls_public_status() -> Result<()
                 true,
                 af_domain::GroupId::new(i64::MAX)?,
                 500,
+                0,
                 true,
                 3,
                 900,
@@ -86,12 +87,13 @@ async fn policy_update_validates_group_and_controls_public_status() -> Result<()
 
     let policy = repository
         .update_policy(RegistrationPolicyWriteRecord::new(
-            true, true, group_id, 500, true, 3, 900,
+            true, true, group_id, 500, 0, true, 3, 900,
         ))
         .await?;
     assert!(policy.enabled());
     assert_eq!(policy.default_group_id(), group_id);
     assert_eq!(policy.initial_quota(), 500);
+    assert_eq!(policy.invitation_rebate_quota(), 0);
     assert!(policy.email_required());
     assert_eq!(policy.version(), 2);
 
@@ -110,7 +112,7 @@ async fn fixed_window_limit_is_atomic_and_reuses_one_fingerprint_row() -> Result
     let (pool, repository, group_id) = installed_repository().await?;
     repository
         .update_policy(RegistrationPolicyWriteRecord::new(
-            true, true, group_id, 0, false, 2, 60,
+            true, true, group_id, 0, 0, false, 2, 60,
         ))
         .await?;
 
@@ -157,7 +159,7 @@ async fn concurrent_claims_cannot_exceed_the_database_limit() -> Result<(), Box<
     let (pool, repository, group_id) = installed_repository().await?;
     repository
         .update_policy(RegistrationPolicyWriteRecord::new(
-            true, true, group_id, 0, false, 1, 60,
+            true, true, group_id, 0, 0, false, 1, 60,
         ))
         .await?;
 

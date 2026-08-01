@@ -25,11 +25,11 @@ use crate::entity::{
     SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, WalletLedgerKey, abilities,
     auth_challenge_rate_limits, auth_challenges, authentication_settings,
     billing_batch_checkpoints, billing_reservations, channel_groups, channel_models, channels,
-    credentials, email_settings, group_model_ratios, groups, model_prices, model_sync_items,
-    model_sync_runs, models, options, playground_conversations, playground_shares,
-    redemption_batches, redemption_codes, registration_rate_limits, site_settings,
-    subscription_plans, tokens, topup_orders, topup_payment_events, usage_logs, user_subscriptions,
-    users, wallet_ledger_entries,
+    credentials, email_settings, group_model_ratios, groups, invite_rebate_events, model_prices,
+    model_sync_items, model_sync_runs, models, options, playground_conversations,
+    playground_shares, redemption_batches, redemption_codes, registration_rate_limits,
+    site_settings, subscription_plans, tokens, topup_orders, topup_payment_events, usage_logs,
+    user_subscriptions, users, wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -50,8 +50,8 @@ use crate::{
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
-/// 当前必须完整应用的迁移数量；列变更不会增加核心表数量。
-const EXPECTED_MIGRATION_COUNT: usize = 32;
+/// 当前必须完整应用的迁移数量。
+const EXPECTED_MIGRATION_COUNT: usize = 35;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -69,7 +69,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 32] = [
+const CORE_TABLES: [&str; 33] = [
     "groups",
     "users",
     "channels",
@@ -102,6 +102,7 @@ const CORE_TABLES: [&str; 32] = [
     "redemption_codes",
     "subscription_plans",
     "user_subscriptions",
+    "invite_rebate_events",
 ];
 
 struct SlowMigrator;
@@ -168,6 +169,7 @@ async fn site_authentication_migration_moves_legacy_registration_policy()
     assert!(settings.registration_enabled);
     assert_eq!(settings.registration_default_group_id, Some(group.id));
     assert_eq!(settings.registration_initial_quota, 250);
+    assert_eq!(settings.invitation_rebate_quota, 0);
     assert!(settings.registration_email_required);
     assert_eq!(settings.registration_rate_limit_attempts, 7);
     assert_eq!(settings.registration_rate_limit_window_seconds, 1_800);
@@ -317,6 +319,60 @@ async fn wallet_redemption_migration_refuses_down_with_redemption_entries()
     assert_eq!(
         wallet_ledger_entries::Entity::find()
             .filter(wallet_ledger_entries::Column::EntryType.eq(4))
+            .count(pool.connection())
+            .await?,
+        1
+    );
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn wallet_invite_rebate_migration_refuses_down_with_invite_rebate_entries()
+-> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), None).await?;
+    let group = group_active_model("invite-rebate-down-guard", "邀请返利降级保护")
+        .insert(pool.connection())
+        .await?;
+    let mut user = user_active_model(
+        group.id,
+        "invite-rebate-down-user",
+        "invite-rebate-down@example.com",
+        "invite-invite-rebate-down",
+    );
+    user.quota = Set(25);
+    let user = user.insert(pool.connection()).await?;
+    wallet_ledger_entries::ActiveModel {
+        event_key: Set(WalletLedgerKey::parse("ffffffffffffffffffffffffffffffff")?),
+        user_id: Set(user.id),
+        actor_user_id: Set(None),
+        entry_type: Set(5),
+        quota_delta: Set(25),
+        balance_before: Set(0),
+        balance_after: Set(25),
+        reason: Set(None),
+        created_at: Set(historical_audit_time()),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+
+    let manager = SchemaManager::new(pool.connection());
+    let error = m20260801_000034_extend_wallet_ledger_invite_rebate::Migration
+        .down(&manager)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        DbErr::Custom(message) if message == "存在邀请返利到账账本，无法回退钱包账本类型"
+    ));
+    assert!(manager.has_table("wallet_ledger_entries").await?);
+    assert!(!manager.has_table("wallet_ledger_entries_next").await?);
+    assert_eq!(
+        wallet_ledger_entries::Entity::find()
+            .filter(wallet_ledger_entries::Column::EntryType.eq(5))
             .count(pool.connection())
             .await?,
         1
@@ -1378,7 +1434,7 @@ async fn exercise_registration_repository(pool: &DatabasePool) -> Result<(), Box
     let repository = RegistrationRepository::new(pool.clone(), Duration::from_secs(5))?;
     repository
         .update_policy(RegistrationPolicyWriteRecord::new(
-            true, true, group_id, 100, true, 1, 60,
+            true, true, group_id, 100, 0, true, 1, 60,
         ))
         .await
         .expect("注册冒烟必须成功写入策略");
@@ -1408,6 +1464,7 @@ async fn exercise_registration_repository(pool: &DatabasePool) -> Result<(), Box
         registration_enabled: Set(false),
         registration_default_group_id: Set(None),
         registration_initial_quota: Set(0),
+        invitation_rebate_quota: Set(0),
         registration_email_required: Set(false),
         registration_rate_limit_attempts: Set(5),
         registration_rate_limit_window_seconds: Set(3_600),
@@ -1595,6 +1652,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<redemption_codes::Column>(&manager, "redemption_codes").await?;
     assert_entity_columns::<subscription_plans::Column>(&manager, "subscription_plans").await?;
     assert_entity_columns::<user_subscriptions::Column>(&manager, "user_subscriptions").await?;
+    assert_entity_columns::<invite_rebate_events::Column>(&manager, "invite_rebate_events").await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -1676,6 +1734,16 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("user_subscriptions", "idx_user_subscriptions_user_window"),
         ("user_subscriptions", "idx_user_subscriptions_plan_status"),
         ("user_subscriptions", "idx_user_subscriptions_reset_due"),
+        ("invite_rebate_events", "uq_invite_rebate_events_event_key"),
+        ("invite_rebate_events", "uq_invite_rebate_events_invitee"),
+        (
+            "invite_rebate_events",
+            "uq_invite_rebate_events_wallet_entry",
+        ),
+        (
+            "invite_rebate_events",
+            "idx_invite_rebate_events_inviter_created",
+        ),
     ] {
         assert!(
             manager.has_index(table, index).await?,

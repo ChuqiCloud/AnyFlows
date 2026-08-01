@@ -139,6 +139,13 @@ fn entry_shape_check(maximum_entry_type: i16) -> SimpleExpr {
             .and(Expr::col(wallet_ledger_entries::Column::QuotaDelta).gt(0_i64))
             .and(Expr::col(wallet_ledger_entries::Column::Reason).is_null()));
     }
+    if maximum_entry_type >= 5 {
+        shape = shape.or(Expr::col(wallet_ledger_entries::Column::EntryType)
+            .eq(5_i16)
+            .and(Expr::col(wallet_ledger_entries::Column::ActorUserId).is_null())
+            .and(Expr::col(wallet_ledger_entries::Column::QuotaDelta).gt(0_i64))
+            .and(Expr::col(wallet_ledger_entries::Column::Reason).is_null()));
+    }
     shape
 }
 
@@ -215,6 +222,26 @@ pub(in crate::migration) async fn rebuild_wallet_ledger_for_redemption(
             "redemption"
         } else {
             "topup"
+        },
+    )
+    .await
+}
+
+/// 重建钱包账本约束，以支持或移除邀请返利到账事件。
+pub(in crate::migration) async fn rebuild_wallet_ledger_for_invite_rebate(
+    manager: &SchemaManager<'_>,
+    allow_invite_rebate: bool,
+) -> Result<(), DbErr> {
+    if !allow_invite_rebate {
+        ensure_no_entry_type(manager, 5, "存在邀请返利到账账本，无法回退钱包账本类型").await?;
+    }
+    rebuild_wallet_ledger(
+        manager,
+        if allow_invite_rebate { 5 } else { 4 },
+        if allow_invite_rebate {
+            "invite_rebate"
+        } else {
+            "redemption"
         },
     )
     .await
@@ -382,6 +409,7 @@ SELECT setval(
 
 fn user_foreign_key_name(namespace: &str) -> &'static str {
     match namespace {
+        "invite_rebate" => "fk_wallet_ledger_invite_rebate_user",
         "redemption" => "fk_wallet_ledger_redemption_user",
         "topup" => "fk_wallet_ledger_topup_user",
         "base" => "fk_wallet_ledger_base_user",
@@ -391,6 +419,7 @@ fn user_foreign_key_name(namespace: &str) -> &'static str {
 
 fn actor_foreign_key_name(namespace: &str) -> &'static str {
     match namespace {
+        "invite_rebate" => "fk_wallet_ledger_invite_rebate_actor",
         "redemption" => "fk_wallet_ledger_redemption_actor",
         "topup" => "fk_wallet_ledger_topup_actor",
         "base" => "fk_wallet_ledger_base_actor",

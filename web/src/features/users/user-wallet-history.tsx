@@ -14,6 +14,29 @@ type UserWalletHistoryProps = {
   userId: number
 }
 
+const walletEntryCopy = {
+  opening_balance: {
+    reason: 'users.wallet.history.openingReason',
+    actor: 'users.wallet.history.systemActor',
+  },
+  admin_adjustment: {
+    reason: 'users.wallet.history.openingReason',
+    actor: 'users.wallet.history.systemActor',
+  },
+  topup: {
+    reason: 'users.wallet.history.topupReason',
+    actor: 'users.wallet.history.paymentActor',
+  },
+  redemption: {
+    reason: 'users.wallet.history.redemptionReason',
+    actor: 'users.wallet.history.redemptionActor',
+  },
+  invite_rebate: {
+    reason: 'users.wallet.history.inviteRebateReason',
+    actor: 'users.wallet.history.inviteRebateActor',
+  },
+} as const satisfies Record<AdminWalletEntry['entry_type'], { reason: string; actor: string }>
+
 export function UserWalletHistory({ open, userId }: UserWalletHistoryProps) {
   const { i18n, t } = useTranslation()
   const query = useAdminWalletEntries(userId, open)
@@ -89,23 +112,13 @@ function WalletEntryRow(props: {
   const { entry } = props
   const positive = entry.quota_delta > 0
   const opening = entry.entry_type === 'opening_balance'
-  const topup = entry.entry_type === 'topup'
-  const redemption = entry.entry_type === 'redemption'
-  const reason = entry.reason ?? t(
-    redemption
-      ? 'users.wallet.history.redemptionReason'
-      : topup
-        ? 'users.wallet.history.topupReason'
-        : 'users.wallet.history.openingReason',
-  )
+  const automaticCredit = entry.entry_type === 'topup'
+    || entry.entry_type === 'redemption'
+    || entry.entry_type === 'invite_rebate'
+  const copy = walletEntryCopy[entry.entry_type]
+  const reason = entry.reason ?? t(copy.reason)
   const actor = entry.actor_user_id === null
-    ? t(
-        redemption
-          ? 'users.wallet.history.redemptionActor'
-          : topup
-            ? 'users.wallet.history.paymentActor'
-            : 'users.wallet.history.systemActor',
-      )
+    ? t(copy.actor)
     : t('users.wallet.history.adminActor', { id: entry.actor_user_id })
   const delta = `${positive ? '+' : ''}${props.formatQuota(entry.quota_delta)}`
   const Icon = positive ? ArrowUpRight : ArrowDownRight
@@ -120,7 +133,7 @@ function WalletEntryRow(props: {
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <span className="truncate text-xs font-medium">{reason}</span>
-          <Badge className={opening ? 'text-info' : topup || redemption ? 'text-success' : undefined}>{t(`users.wallet.entryType.${entry.entry_type}`)}</Badge>
+          <Badge className={cn(opening && 'text-info', automaticCredit && 'text-success')}>{t(`users.wallet.entryType.${entry.entry_type}`)}</Badge>
         </div>
         <p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">
           {props.formatTime(entry.created_at)} · {actor}

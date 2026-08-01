@@ -11,6 +11,9 @@ mod email_settings;
 mod error_response;
 mod frontend_assets;
 mod gemini_generate_content;
+mod invitations;
+#[cfg(test)]
+mod invitations_tests;
 mod management_auth;
 mod management_authorization;
 mod management_channel_probe;

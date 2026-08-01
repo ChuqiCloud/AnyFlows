@@ -39,6 +39,8 @@ pub(crate) enum ManagementError {
     RegistrationRateLimited { retry_after_seconds: u64 },
     /// 验证码无效或带邮箱身份无法创建；不得细分具体原因。
     RegistrationRejected,
+    /// 邀请码不存在、已失效或对应邀请人当前不可用。
+    RegistrationInvitationRejected,
     /// 密码重置令牌无效、过期、重放或目标已不可重置。
     PasswordResetRejected,
     /// 当前密码校验失败；不代表当前会话已经失效。
@@ -237,6 +239,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "registration_rejected",
                     message: "Registration rejected",
+                },
+            ),
+            Self::RegistrationInvitationRejected => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "invitation_rejected",
+                    message: "Invitation code rejected",
                 },
             ),
             Self::PasswordResetRejected => (

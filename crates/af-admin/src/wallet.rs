@@ -23,6 +23,8 @@ pub enum AdminWalletEntryType {
     Topup,
     /// 一次性兑换码原子消费完成的额度到账。
     Redemption,
+    /// 邀请关系触发的注册返利额度到账。
+    InviteRebate,
 }
 
 /// 管理端可见的一条钱包余额变更事实。
@@ -143,6 +145,7 @@ impl AdminWalletEntry {
                 WalletLedgerEntryType::AdminAdjustment => AdminWalletEntryType::AdminAdjustment,
                 WalletLedgerEntryType::Topup => AdminWalletEntryType::Topup,
                 WalletLedgerEntryType::Redemption => AdminWalletEntryType::Redemption,
+                WalletLedgerEntryType::InviteRebate => AdminWalletEntryType::InviteRebate,
             },
             quota_delta: record.quota_delta().units(),
             balance_before: record.balance_before().units(),

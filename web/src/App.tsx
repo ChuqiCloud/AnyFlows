@@ -14,6 +14,7 @@ import { ChannelPage } from '@/features/channels/channel-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
 import { EmailSettingsPage } from '@/features/email-settings/email-settings-page'
 import { GroupPage } from '@/features/groups/group-page'
+import { InvitationPage } from '@/features/invitations/invitation-page'
 import { LandingPage } from '@/features/landing/landing-page'
 import { ModelPage } from '@/features/models/model-page'
 import { ModelManagementPage } from '@/features/model-management/model-management-page'
@@ -119,6 +120,8 @@ function ManagementEntry({
                 ? 'users.title'
             : view === 'api-keys'
               ? 'apiKeys.title'
+              : view === 'invitations'
+                ? 'invitations.title'
               : view === 'models'
                 ? 'models.title'
                 : view === 'playground'
@@ -146,6 +149,8 @@ function ManagementEntry({
                 ? <UserPage />
             : view === 'api-keys'
               ? <ApiKeyPage />
+              : view === 'invitations'
+                ? <InvitationPage />
               : view === 'models'
                 ? <ModelPage authenticated />
                 : view === 'playground'
@@ -158,7 +163,11 @@ function ManagementEntry({
                         ? <UsageLogPage />
                         : <DashboardPage />
 
-  const requireAdmin = view !== 'api-keys' && view !== 'models' && view !== 'playground' && view !== 'profile'
+  const requireAdmin = view !== 'api-keys'
+    && view !== 'invitations'
+    && view !== 'models'
+    && view !== 'playground'
+    && view !== 'profile'
 
   return (
     <SessionBoundary
@@ -220,7 +229,7 @@ export default function App() {
     return <PublicModelPage />
   }
   if (view === 'register') {
-    return <RegistrationPage onAuthenticated={openUserHome} />
+    return <RegistrationPage inviteCode={route.inviteCode} onAuthenticated={openUserHome} />
   }
   if (view === 'forgot-password') {
     return <ForgotPasswordPage />

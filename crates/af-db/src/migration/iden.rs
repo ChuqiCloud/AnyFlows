@@ -768,6 +768,7 @@ pub(in crate::migration) mod authentication_settings {
         RegistrationEnabled,
         RegistrationDefaultGroupId,
         RegistrationInitialQuota,
+        InvitationRebateQuota,
         RegistrationEmailRequired,
         RegistrationRateLimitAttempts,
         RegistrationRateLimitWindowSeconds,
@@ -986,5 +987,32 @@ pub(in crate::migration) mod user_subscriptions {
         StatusChangedAt,
         CreatedAt,
         UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod invite_rebate_events {
+    use super::DeriveIden;
+
+    /// `invite_rebate_events` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "invite_rebate_events")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 邀请返利到账事件迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        EventKey,
+        InviterUserId,
+        InviteeUserId,
+        QuotaAmount,
+        BalanceAfter,
+        WalletLedgerEntryId,
+        CreditedAt,
+        CreatedAt,
     }
 }

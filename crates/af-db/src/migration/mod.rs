@@ -38,6 +38,9 @@ mod m20260801_000029_extend_wallet_ledger_topup;
 mod m20260801_000030_create_redemption_storage;
 mod m20260801_000031_extend_wallet_ledger_redemption;
 mod m20260801_000032_create_subscription_storage;
+mod m20260801_000033_create_invite_rebate_events;
+mod m20260801_000034_extend_wallet_ledger_invite_rebate;
+mod m20260801_000035_add_invitation_rebate_quota;
 mod schema;
 
 #[cfg(test)]
@@ -113,6 +116,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20260801_000030_create_redemption_storage::Migration),
             Box::new(m20260801_000031_extend_wallet_ledger_redemption::Migration),
             Box::new(m20260801_000032_create_subscription_storage::Migration),
+            Box::new(m20260801_000033_create_invite_rebate_events::Migration),
+            Box::new(m20260801_000034_extend_wallet_ledger_invite_rebate::Migration),
+            Box::new(m20260801_000035_add_invitation_rebate_quota::Migration),
         ]
     }
 }

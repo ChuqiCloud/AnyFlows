@@ -5,6 +5,7 @@ mod credentials;
 mod dashboard;
 mod email_settings;
 mod groups;
+mod invitations;
 mod model_metadata;
 mod model_prices;
 mod model_sync;
@@ -38,6 +39,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(registration::document());
     document.merge(password_reset::document());
     document.merge(user_profile::document());
+    document.merge(invitations::document());
     document.merge(email_settings::document());
     document.merge(site_settings::document());
     document.merge(dashboard::document());
@@ -61,6 +63,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("认证设置"),
         Tag::new("密码重置"),
         Tag::new("个人资料与安全"),
+        Tag::new("邀请中心"),
         Tag::new("站点设置"),
         Tag::new("邮件设置"),
         Tag::new("管理会话"),
@@ -104,7 +107,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 47);
+        assert_eq!(document.paths.paths.len(), 48);
         let operation_count = document
             .paths
             .paths
@@ -125,7 +128,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 75);
+        assert_eq!(operation_count, 76);
         assert!(
             document
                 .components
@@ -155,6 +158,7 @@ mod tests {
             "createAdminUser",
             "confirmPasswordReset",
             "getUserProfile",
+            "getUserInvitations",
             "updateUserProfile",
             "changeUserPassword",
             "updateUserNotificationPreferences",
@@ -228,7 +232,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 122);
+        assert_eq!(schemas.len(), 124);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
@@ -252,6 +256,8 @@ mod tests {
         assert!(schemas.contains_key("UserProfileUpdateRequest"));
         assert!(schemas.contains_key("UserPasswordChangeRequest"));
         assert!(schemas.contains_key("UserNotificationPreferencesRequest"));
+        assert!(schemas.contains_key("UserInvitationSummaryResponse"));
+        assert!(schemas.contains_key("UserInvitationRebateResponse"));
         assert!(schemas.contains_key("AdminAuthenticationSettings"));
         assert!(schemas.contains_key("AdminAuthenticationSettingsRequest"));
         assert!(schemas.contains_key("PublicSiteSettings"));

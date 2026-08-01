@@ -70,7 +70,17 @@ impl FakeRegistrationService {
     }
 
     fn policy() -> RegistrationPolicy {
-        RegistrationPolicy::from_parts(true, true, GroupId::new(3).unwrap(), 500, true, 5, 3_600, 2)
+        RegistrationPolicy::from_parts(
+            true,
+            true,
+            GroupId::new(3).unwrap(),
+            500,
+            25,
+            true,
+            5,
+            3_600,
+            2,
+        )
     }
 }
 
@@ -241,6 +251,7 @@ async fn public_status_and_successful_registration_use_no_store_session_contract
                 "email": "new@example.com",
                 "password": "correct horse battery staple",
                 "verification_code": "042731",
+                "invite_code": "af-AAAAAAAAAAAAAAAAAAAAAA",
             }),
             None,
         ))
@@ -332,7 +343,9 @@ async fn admin_policy_route_rejects_normal_users_before_service_access() {
         .await
         .unwrap();
     assert_eq!(policy.status(), StatusCode::OK);
-    assert_eq!(response_json(policy).await["default_group_id"], 3);
+    let policy = response_json(policy).await;
+    assert_eq!(policy["default_group_id"], 3);
+    assert_eq!(policy["invitation_rebate_quota"], 25);
 
     let updated = app
         .oneshot(json_request(
@@ -343,6 +356,7 @@ async fn admin_policy_route_rejects_normal_users_before_service_access() {
                 "registration_enabled": true,
                 "default_group_id": 3,
                 "initial_quota": 500,
+                "invitation_rebate_quota": 25,
                 "email_required": true,
                 "rate_limit_attempts": 5,
                 "rate_limit_window_seconds": 3600,

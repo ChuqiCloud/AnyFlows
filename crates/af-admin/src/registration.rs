@@ -8,14 +8,14 @@ use std::{
 
 use af_account::SystemSecretCipher;
 use af_db::{
-    AdminUserCreateRecord, AdminUserRepository, AdminUserRepositoryError,
-    AdminUserVerifiedCreateOutcome, AuthChallengeRateLimitRepository, AuthChallengeRepository,
+    AdminUserCreateRecord, AdminUserRegistrationCreateOutcome, AdminUserRepository,
+    AdminUserRepositoryError, AuthChallengeRateLimitRepository, AuthChallengeRepository,
     EmailSettingsRepository, MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS,
     MAX_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS, MIN_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
     RegistrationAttemptOutcome, RegistrationPolicyRecord, RegistrationPolicyWriteRecord,
     RegistrationRepository, RegistrationRepositoryError,
 };
-use af_domain::{GroupId, TrustedClientIp, UserId};
+use af_domain::{GroupId, Quota, TrustedClientIp, UserId};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
@@ -78,6 +78,7 @@ pub struct RegistrationPolicy {
     enabled: bool,
     default_group_id: GroupId,
     initial_quota: i64,
+    invitation_rebate_quota: i64,
     email_required: bool,
     rate_limit_attempts: u32,
     rate_limit_window_seconds: u64,
@@ -93,6 +94,7 @@ impl RegistrationPolicy {
         enabled: bool,
         default_group_id: GroupId,
         initial_quota: i64,
+        invitation_rebate_quota: i64,
         email_required: bool,
         rate_limit_attempts: u32,
         rate_limit_window_seconds: u64,
@@ -103,6 +105,7 @@ impl RegistrationPolicy {
             enabled,
             default_group_id,
             initial_quota,
+            invitation_rebate_quota,
             email_required,
             rate_limit_attempts,
             rate_limit_window_seconds,
@@ -132,6 +135,12 @@ impl RegistrationPolicy {
     #[must_use]
     pub const fn initial_quota(self) -> i64 {
         self.initial_quota
+    }
+
+    /// 返回每个有效邀请码注册触发的非负返利额度。
+    #[must_use]
+    pub const fn invitation_rebate_quota(self) -> i64 {
+        self.invitation_rebate_quota
     }
 
     /// 返回注册时是否必须填写邮箱。
@@ -166,6 +175,7 @@ impl From<RegistrationPolicyRecord> for RegistrationPolicy {
             enabled: record.enabled(),
             default_group_id: record.default_group_id(),
             initial_quota: record.initial_quota(),
+            invitation_rebate_quota: record.invitation_rebate_quota(),
             email_required: record.email_required(),
             rate_limit_attempts: record.rate_limit_attempts(),
             rate_limit_window_seconds: record.rate_limit_window_seconds(),
@@ -181,6 +191,7 @@ pub struct RegistrationPolicyCommand {
     enabled: bool,
     default_group_id: GroupId,
     initial_quota: i64,
+    invitation_rebate_quota: i64,
     email_required: bool,
     rate_limit_attempts: u32,
     rate_limit_window_seconds: u64,
@@ -194,12 +205,14 @@ impl RegistrationPolicyCommand {
         enabled: bool,
         default_group_id: GroupId,
         initial_quota: i64,
+        invitation_rebate_quota: i64,
         email_required: bool,
         rate_limit_attempts: u32,
         rate_limit_window_seconds: u64,
     ) -> Result<Self, RegistrationError> {
         if (enabled && !password_login_enabled)
             || initial_quota < 0
+            || invitation_rebate_quota < 0
             || !(1..=MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS).contains(&rate_limit_attempts)
             || !(MIN_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS
                 ..=MAX_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS)
@@ -212,6 +225,7 @@ impl RegistrationPolicyCommand {
             enabled,
             default_group_id,
             initial_quota,
+            invitation_rebate_quota,
             email_required,
             rate_limit_attempts,
             rate_limit_window_seconds,
@@ -224,6 +238,7 @@ impl RegistrationPolicyCommand {
             self.enabled,
             self.default_group_id,
             self.initial_quota,
+            self.invitation_rebate_quota,
             self.email_required,
             self.rate_limit_attempts,
             self.rate_limit_window_seconds,
@@ -237,6 +252,7 @@ pub struct RegistrationCommand {
     email: Option<String>,
     password: String,
     verification_code: Option<Zeroizing<String>>,
+    invite_code: Option<String>,
 }
 
 impl RegistrationCommand {
@@ -246,6 +262,7 @@ impl RegistrationCommand {
         email: Option<String>,
         password: String,
         verification_code: Option<String>,
+        invite_code: Option<String>,
     ) -> Result<Self, RegistrationError> {
         validate_username(&username)?;
         let email = email.map(normalize_email).transpose()?;
@@ -257,11 +274,21 @@ impl RegistrationCommand {
             (None, None) => None,
             _ => return Err(RegistrationError::InvalidInput),
         };
+        let invite_code = invite_code
+            .map(|code| {
+                if is_valid_invitation_code(&code) {
+                    Ok(code)
+                } else {
+                    Err(RegistrationError::InvalidInput)
+                }
+            })
+            .transpose()?;
         Ok(Self {
             username,
             email,
             password,
             verification_code,
+            invite_code,
         })
     }
 
@@ -394,6 +421,9 @@ pub enum RegistrationError {
     /// 验证码无效或带邮箱的公开身份无法创建；公开边界不得细分原因。
     #[error("注册验证被拒绝")]
     VerificationRejected,
+    /// 邀请码不存在、已失效或不能用于当前注册。
+    #[error("注册邀请码被拒绝")]
+    InvitationRejected,
     /// 当前客户端已耗尽固定窗口尝试次数。
     #[error("注册尝试过于频繁")]
     RateLimited { retry_after_seconds: u64 },
@@ -561,27 +591,41 @@ impl RegistrationService for DatabaseRegistrationService {
             if policy.email_required() && command.email.is_none() {
                 return Err(RegistrationError::InvalidInput);
             }
-            let user = if let (Some(email), Some(code)) = (
+            let challenge = if let (Some(email), Some(code)) = (
                 command.email.as_deref(),
                 command.verification_code.as_deref(),
             ) {
-                let challenge = self.email_verification.consume(email, code, attempted_at)?;
-                match self
-                    .user_repository
-                    .create_verified(command.user_record(policy), challenge)
-                    .await
-                    .map_err(map_verified_user_repository_error)?
-                {
-                    AdminUserVerifiedCreateOutcome::Created(user) => user,
-                    AdminUserVerifiedCreateOutcome::Rejected => {
-                        return Err(RegistrationError::VerificationRejected);
-                    }
-                }
+                Some(self.email_verification.consume(email, code, attempted_at)?)
             } else {
-                self.user_repository
-                    .create(command.user_record(policy))
-                    .await
-                    .map_err(map_user_repository_error)?
+                None
+            };
+            let rebate_quota = Quota::new(policy.invitation_rebate_quota())
+                .map_err(|_| RegistrationError::Internal)?;
+            let result = self
+                .user_repository
+                .create_registration(
+                    command.user_record(policy),
+                    challenge,
+                    command.invite_code.as_deref(),
+                    rebate_quota,
+                    attempted_at,
+                )
+                .await
+                .map_err(|error| {
+                    if command.email.is_some() {
+                        map_verified_user_repository_error(error)
+                    } else {
+                        map_user_repository_error(error)
+                    }
+                })?;
+            let user = match result {
+                AdminUserRegistrationCreateOutcome::Created(user) => user,
+                AdminUserRegistrationCreateOutcome::VerificationRejected => {
+                    return Err(RegistrationError::VerificationRejected);
+                }
+                AdminUserRegistrationCreateOutcome::InvitationRejected => {
+                    return Err(RegistrationError::InvitationRejected);
+                }
             };
             Ok(RegistrationResult {
                 user_id: user.user_id(),
@@ -680,6 +724,14 @@ fn is_valid_verification_code(code: &str) -> bool {
     code.len() == REGISTRATION_EMAIL_CODE_BYTES && code.bytes().all(|byte| byte.is_ascii_digit())
 }
 
+fn is_valid_invitation_code(code: &str) -> bool {
+    code.len() == 25
+        && code.starts_with("af-")
+        && code[3..]
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
 pub(crate) fn validate_password(password: &str) -> Result<(), RegistrationError> {
     if !(MIN_REGISTRATION_PASSWORD_BYTES..=MAX_REGISTRATION_PASSWORD_BYTES)
         .contains(&password.len())
@@ -740,6 +792,7 @@ mod tests {
             Some("New@Example.COM".to_owned()),
             "correct horse battery staple".to_owned(),
             Some("042731".to_owned()),
+            Some("af-AAAAAAAAAAAAAAAAAAAAAA".to_owned()),
         )
         .unwrap();
         assert_eq!(command.email.as_deref(), Some("new@example.com"));
@@ -751,6 +804,7 @@ mod tests {
                 None,
                 "correct horse battery staple".to_owned(),
                 None,
+                None,
             )
             .is_err()
         );
@@ -760,12 +814,23 @@ mod tests {
                 Some("invalid-email".to_owned()),
                 "correct horse battery staple".to_owned(),
                 Some("042731".to_owned()),
+                None,
             )
             .is_err()
         );
         assert!(
-            RegistrationCommand::new("user".to_owned(), None, "too-short".to_owned(), None)
+            RegistrationCommand::new("user".to_owned(), None, "too-short".to_owned(), None, None,)
                 .is_err()
+        );
+        assert!(
+            RegistrationCommand::new(
+                "user".to_owned(),
+                None,
+                "correct horse battery staple".to_owned(),
+                None,
+                Some("invalid-invite".to_owned()),
+            )
+            .is_err()
         );
         assert_eq!(
             format!(
@@ -787,6 +852,7 @@ mod tests {
                 false,
                 GroupId::new(1).unwrap(),
                 0,
+                0,
                 false,
                 af_db::DEFAULT_REGISTRATION_RATE_LIMIT_ATTEMPTS,
                 af_db::DEFAULT_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,
@@ -794,14 +860,24 @@ mod tests {
             .is_ok()
         );
         assert!(
-            RegistrationPolicyCommand::new(true, true, GroupId::new(1).unwrap(), -1, false, 0, 1,)
-                .is_err()
+            RegistrationPolicyCommand::new(
+                true,
+                true,
+                GroupId::new(1).unwrap(),
+                -1,
+                0,
+                false,
+                0,
+                1,
+            )
+            .is_err()
         );
         assert!(
             RegistrationPolicyCommand::new(
                 false,
                 true,
                 GroupId::new(1).unwrap(),
+                0,
                 0,
                 false,
                 5,

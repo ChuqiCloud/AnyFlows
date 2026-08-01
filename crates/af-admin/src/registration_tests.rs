@@ -11,8 +11,8 @@ use af_db::{
     AdminUserLookupOutcome, AdminUserRepository, AuthChallengeRateLimitRepository,
     AuthChallengeRepository, DatabaseOptions, EmailPasswordUpdate, EmailSettingsRepository,
     EmailSettingsWriteRecord, EmailTlsMode, InitialSetupOutcome, InitialSetupRecord,
-    InitialSetupRepository, MigrationOptions, RegistrationRepository, UserSessionLookupOutcome,
-    UserSessionRepository,
+    InitialSetupRepository, MigrationOptions, RegistrationRepository, UserInvitationLookupOutcome,
+    UserInvitationRepository, UserSessionLookupOutcome, UserSessionRepository,
 };
 use af_domain::{GroupId, TrustedClientIp, UserId};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -117,10 +117,18 @@ async fn registration_reuses_identity_creation_and_counts_conflicts() -> Result<
         AdminUserLookupOutcome::Found(user) => user.default_group_id(),
         AdminUserLookupOutcome::NotFound => panic!("首次安装管理员必须存在"),
     };
+    let invitation_repository =
+        UserInvitationRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let UserInvitationLookupOutcome::Found(invitation_summary) =
+        invitation_repository.get(admin_id).await?
+    else {
+        panic!("首次安装管理员必须拥有邀请码")
+    };
+    let invite_code = invitation_summary.invite_code().to_owned();
     registration
         .update_policy(
             admin,
-            RegistrationPolicyCommand::new(true, true, default_group_id, 500, true, 2, 86_400)?,
+            RegistrationPolicyCommand::new(true, true, default_group_id, 500, 40, true, 2, 86_400)?,
         )
         .await?;
 
@@ -137,6 +145,7 @@ async fn registration_reuses_identity_creation_and_counts_conflicts() -> Result<
         Some("registered@example.com".to_owned()),
         PASSWORD.to_owned(),
         Some(verification_code),
+        Some(invite_code),
     )?;
     let registered = registration.register(client_ip, &command).await?;
     let record = match users.get(registered.user_id()).await? {
@@ -148,6 +157,18 @@ async fn registration_reuses_identity_creation_and_counts_conflicts() -> Result<
     assert_eq!(record.default_group_id(), default_group_id);
     assert_eq!(record.quota(), 500);
     assert_eq!(record.email(), Some("registered@example.com"));
+    let inviter = match users.get(admin_id).await? {
+        AdminUserLookupOutcome::Found(user) => user,
+        AdminUserLookupOutcome::NotFound => panic!("邀请人必须存在"),
+    };
+    assert_eq!(inviter.quota(), 40);
+    let UserInvitationLookupOutcome::Found(summary) = invitation_repository.get(admin_id).await?
+    else {
+        panic!("邀请汇总必须存在")
+    };
+    assert_eq!(summary.invited_count(), 1);
+    assert_eq!(summary.credited_count(), 1);
+    assert_eq!(summary.current_rebate_quota().units(), 40);
     assert_eq!(
         UserSessionRepository::new(pool.clone(), Duration::from_secs(5))?
             .login("registered-user", PASSWORD.as_bytes())
@@ -168,6 +189,7 @@ async fn registration_reuses_identity_creation_and_counts_conflicts() -> Result<
         Some("another@example.com".to_owned()),
         PASSWORD.to_owned(),
         Some("123456".to_owned()),
+        None,
     )?;
     assert!(matches!(
         registration.register(client_ip, &another).await,
@@ -198,7 +220,16 @@ async fn policy_access_requires_admin_before_repository_work() -> Result<(), Box
         registration
             .update_policy(
                 normal_user,
-                RegistrationPolicyCommand::new(true, false, GroupId::new(1)?, 0, false, 5, 3_600,)?,
+                RegistrationPolicyCommand::new(
+                    true,
+                    false,
+                    GroupId::new(1)?,
+                    0,
+                    0,
+                    false,
+                    5,
+                    3_600,
+                )?,
             )
             .await,
         Err(RegistrationError::Forbidden)

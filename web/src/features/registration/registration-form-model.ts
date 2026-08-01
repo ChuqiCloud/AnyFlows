@@ -6,6 +6,7 @@ export type RegistrationFormValues = {
   username: string
   email: string
   verificationCode: string
+  inviteCode: string
   password: string
   passwordConfirmation: string
 }
@@ -16,6 +17,7 @@ type RegistrationValidationMessages = {
   emailRequired: string
   invalidVerificationCode: string
   verificationCodeRequired: string
+  invalidInviteCode: string
   invalidPassword: string
   passwordMismatch: string
 }
@@ -24,6 +26,7 @@ export const defaultRegistrationFormValues: RegistrationFormValues = {
   username: '',
   email: '',
   verificationCode: '',
+  inviteCode: '',
   password: '',
   passwordConfirmation: '',
 }
@@ -39,6 +42,10 @@ export function buildRegistrationFormSchema(
     verificationCode: z.string().refine(
       (value) => value.length === 0 || isValidVerificationCode(value),
       messages.invalidVerificationCode,
+    ),
+    inviteCode: z.string().refine(
+      (value) => value.length === 0 || /^af-[A-Za-z0-9_-]{22}$/u.test(value),
+      messages.invalidInviteCode,
     ),
     password: z.string().refine(isValidPassword, messages.invalidPassword),
     passwordConfirmation: z.string(),
@@ -68,6 +75,7 @@ export function toRegistrationRequest(values: RegistrationFormValues): Registrat
     username: values.username,
     email: values.email || null,
     verification_code: values.verificationCode || null,
+    invite_code: values.inviteCode || null,
     password: values.password,
   }
 }

@@ -68,6 +68,10 @@ mod identity_secret;
 mod initial_setup;
 #[cfg(test)]
 mod initial_setup_tests;
+mod invitation;
+#[cfg(test)]
+mod invitation_tests;
+mod invite_rebate;
 mod migration;
 mod model_catalog_metadata;
 mod model_price;
@@ -177,8 +181,8 @@ pub use admin_user::{
     AdminUserRepositoryConfigError, AdminUserRepositoryError, MAX_ADMIN_USER_PAGE_SIZE,
 };
 pub use admin_user_write::{
-    AdminUserCreateRecord, AdminUserDeleteOutcome, AdminUserMutationOutcome, AdminUserUpdateRecord,
-    AdminUserVerifiedCreateOutcome,
+    AdminUserCreateRecord, AdminUserDeleteOutcome, AdminUserMutationOutcome,
+    AdminUserRegistrationCreateOutcome, AdminUserUpdateRecord, AdminUserVerifiedCreateOutcome,
 };
 pub use auth::{
     TokenAuthLookup, TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,
@@ -232,6 +236,16 @@ pub use group_pricing::{
 pub use initial_setup::{
     InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
     InitialSetupRepositoryConfigError, InitialSetupRepositoryError, InitialSetupStatus,
+};
+pub use invitation::{
+    UserInvitationLookupOutcome, UserInvitationRebateRecord, UserInvitationRepository,
+    UserInvitationRepositoryConfigError, UserInvitationRepositoryError,
+    UserInvitationSummaryRecord,
+};
+pub use invite_rebate::{
+    InviteRebateGrant, InviteRebateGrantOutcome, InviteRebateInputError, InviteRebateRecord,
+    InviteRebateRejection, InviteRebateRepository, InviteRebateRepositoryConfigError,
+    InviteRebateRepositoryError,
 };
 pub use migration::{MigrationOptions, run_pending_migrations};
 pub use model_catalog_metadata::ModelCatalogMetadataPageRecord;
