@@ -405,7 +405,7 @@ async fn accept_event_in_transaction(
 
     if !order.status.is_open() {
         if terminal_event_matches(&order, write) {
-            mark_event_processed(transaction, inserted.id).await?;
+            mark_event_processed_at(transaction, inserted.id, processing_time(received_at)).await?;
             return Ok(TopupPaymentEventOutcome::Acknowledged(order));
         }
         return Ok(unprocessed(
@@ -414,7 +414,7 @@ async fn accept_event_in_transaction(
         ));
     }
 
-    let processed_at = TimeDateTimeWithTimeZone::now_utc();
+    let processed_at = processing_time(received_at);
     match write.event_type {
         TopupPaymentEventType::Succeeded => {
             let balance_before =
@@ -532,13 +532,6 @@ async fn transition_order(
     Ok(())
 }
 
-async fn mark_event_processed(
-    transaction: &DatabaseTransaction,
-    event_id: i64,
-) -> Result<(), TopupRepositoryError> {
-    mark_event_processed_at(transaction, event_id, TimeDateTimeWithTimeZone::now_utc()).await
-}
-
 async fn mark_event_processed_at(
     transaction: &DatabaseTransaction,
     event_id: i64,
@@ -558,6 +551,12 @@ async fn mark_event_processed_at(
         return Err(TopupRepositoryError::Invariant);
     }
     Ok(())
+}
+
+fn processing_time(received_at: TimeDateTimeWithTimeZone) -> TimeDateTimeWithTimeZone {
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    // 跨主机时钟偏差或可重复测试时间都不能让处理时间早于受信接收时间。
+    if now < received_at { received_at } else { now }
 }
 
 fn unprocessed(
