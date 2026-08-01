@@ -219,6 +219,7 @@ fn map_registration_error(error: RegistrationError) -> ManagementError {
         RegistrationError::Disabled => ManagementError::RegistrationDisabled,
         RegistrationError::Conflict => ManagementError::UserConflict,
         RegistrationError::VerificationRejected => ManagementError::RegistrationRejected,
+        RegistrationError::InvitationRejected => ManagementError::Internal,
         RegistrationError::RateLimited {
             retry_after_seconds,
         } => ManagementError::RegistrationRateLimited {

@@ -14,6 +14,7 @@
     "models": "Models",
     "playground": "Playground",
     "apiKeys": "My API keys",
+    "invitations": "Invitations",
     "profile": "Profile",
     "users": "Users",
     "siteSettings": "Site settings",
@@ -1711,7 +1712,7 @@
     },
     "allocation": {
       "title": "New-user allocation",
-      "description": "Every new user is assigned to an active group and receives the configured non-negative initial quota."
+      "description": "Every new user is assigned to an active group. A valid invitation can credit the inviter with the configured quota."
     },
     "protection": {
       "title": "Registration rate protection",
@@ -1721,6 +1722,8 @@
       "defaultGroup": "Default group",
       "initialQuota": "Initial quota",
       "initialQuotaHint": "Uses the system integer quota unit.",
+      "invitationRebateQuota": "Rebate per invitation",
+      "invitationRebateQuotaHint": "Set to 0 to record the relationship without creating a rebate ledger entry.",
       "attempts": "Attempts per window",
       "window": "Fixed window"
     },
@@ -1737,6 +1740,7 @@
       "capabilities": "Password sign-in must be enabled while public registration is open.",
       "group": "Select a valid default group.",
       "quota": "Initial quota must be a non-negative safe integer.",
+      "rebateQuota": "Invitation rebate must be a non-negative safe integer.",
       "attempts": "Attempts must be an integer from 1 to 100.",
       "window": "Select an allowed fixed window."
     },
@@ -1930,6 +1934,9 @@
       "sendingVerification": "Sending",
       "verificationSent": "Code sent. Check your inbox, then enter it here.",
       "resendIn": "Resend in {{seconds}}s",
+      "inviteCode": "Invitation code",
+      "inviteApplied": "Added from invitation link",
+      "inviteCodeHelp": "Enter a code when available. You can edit it before submitting.",
       "password": "Password",
       "passwordHelp": "Use 12 to 128 UTF-8 bytes. Control characters are not supported.",
       "passwordConfirmation": "Confirm password",
@@ -1945,6 +1952,7 @@
       "emailRequired": "This site requires an email address.",
       "verificationCode": "Enter the six-digit verification code.",
       "verificationCodeRequired": "Send a code and enter it before registering with email.",
+      "inviteCode": "Enter a valid AnyFlows invitation code.",
       "password": "Use a password from 12 to 128 UTF-8 bytes without control characters.",
       "passwordMismatch": "The passwords do not match."
     },
@@ -1952,6 +1960,7 @@
       "conflict": "That username or email is already in use. Choose another and try again.",
       "disabled": "Public registration was just closed. Sign in with an existing account.",
       "invalidInput": "The server rejected these registration details. Check them and try again.",
+      "invitationRejected": "That invitation code is invalid or no longer available.",
       "verificationRejected": "The code is invalid or the registration could not be completed. Check the details and try again.",
       "rateLimited": "There have been too many registration attempts from this network. Try again later.",
       "unavailable": "An account could not be created. Try again shortly."
@@ -1975,6 +1984,43 @@
       "retry": "Check again",
       "login": "Sign in",
       "models": "Browse models"
+    }
+  },
+  "invitations": {
+    "eyebrow": "Invitations and rebates",
+    "title": "Invitation center",
+    "subtitle": "Share your personal link and review confirmed invitation rebates.",
+    "share": {
+      "title": "Your invitation",
+      "subtitle": "The code is generated randomly and is ready to share.",
+      "private": "Reward history is private",
+      "code": "Invitation code",
+      "link": "Invitation link"
+    },
+    "metrics": {
+      "label": "Invitation metrics",
+      "invited": "Invited",
+      "credited": "Credited",
+      "current": "Current rebate",
+      "history": "Lifetime rebate"
+    },
+    "recent": {
+      "title": "Recent credits",
+      "count": "Latest {{count}}",
+      "rebate": "Invitation rebate credited",
+      "emptyTitle": "No rebates yet",
+      "emptyBody": "Eligible registrations will appear here after you share your invitation link."
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "copy": "Copy {{label}}",
+      "copied": "{{label}} copied"
+    },
+    "errors": {
+      "loadTitle": "Invitation center is unavailable",
+      "loadBody": "Invitation data could not be loaded. Try again shortly.",
+      "copy": "Clipboard access was denied. Select and copy the value manually."
     }
   },
   "setup": {

@@ -927,6 +927,52 @@
         ]
       }
     },
+    "/api/account/invitations": {
+      "get": {
+        "tags": [
+          "邀请中心"
+        ],
+        "summary": "读取当前用户邀请汇总",
+        "operationId": "getUserInvitations",
+        "responses": {
+          "200": {
+            "description": "当前用户的邀请码、统计与脱敏到账记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserInvitationSummaryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/email-settings": {
       "get": {
         "tags": [
@@ -6076,6 +6122,7 @@
           "registration_enabled",
           "default_group_id",
           "initial_quota",
+          "invitation_rebate_quota",
           "email_required",
           "rate_limit_attempts",
           "rate_limit_window_seconds",
@@ -6094,6 +6141,11 @@
             "minimum": 1
           },
           "initial_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "invitation_rebate_quota": {
             "type": "integer",
             "format": "int64",
             "minimum": 0
@@ -6128,6 +6180,7 @@
           "registration_enabled",
           "default_group_id",
           "initial_quota",
+          "invitation_rebate_quota",
           "email_required",
           "rate_limit_attempts",
           "rate_limit_window_seconds"
@@ -6145,6 +6198,11 @@
             "minimum": 1
           },
           "initial_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "invitation_rebate_quota": {
             "type": "integer",
             "format": "int64",
             "minimum": 0
@@ -10041,6 +10099,7 @@
               "registration_disabled",
               "registration_rate_limited",
               "registration_rejected",
+              "invitation_rejected",
               "password_reset_rejected",
               "password_change_rejected",
               "email_not_configured",
@@ -10788,6 +10847,15 @@
             "maxLength": 6,
             "minLength": 6,
             "pattern": "^[0-9]{6}$"
+          },
+          "invite_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 25,
+            "minLength": 25,
+            "pattern": "^af-[A-Za-z0-9_-]{22}$"
           }
         },
         "additionalProperties": false
@@ -10882,6 +10950,73 @@
         "properties": {
           "setup_required": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserInvitationRebateResponse": {
+        "type": "object",
+        "required": [
+          "quota_amount",
+          "credited_at"
+        ],
+        "properties": {
+          "quota_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "credited_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserInvitationSummaryResponse": {
+        "type": "object",
+        "description": "当前用户邀请中心响应；最近记录不包含被邀请用户身份。",
+        "required": [
+          "invite_code",
+          "invited_count",
+          "credited_count",
+          "current_rebate_quota",
+          "historical_rebate_quota",
+          "recent_rebates"
+        ],
+        "properties": {
+          "invite_code": {
+            "type": "string",
+            "maxLength": 25,
+            "minLength": 25,
+            "pattern": "^af-[A-Za-z0-9_-]{22}$"
+          },
+          "invited_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "credited_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "current_rebate_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "historical_rebate_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "recent_rebates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserInvitationRebateResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -11227,6 +11362,9 @@
     },
     {
       "name": "个人资料与安全"
+    },
+    {
+      "name": "邀请中心"
     },
     {
       "name": "站点设置"

@@ -11,6 +11,7 @@ import {
   PackageSearch,
   ScrollText,
   ShieldCheck,
+  TicketCheck,
   UserRound,
   UsersRound,
 } from 'lucide-react'
@@ -36,7 +37,7 @@ type AppNavigationProps = {
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'profile' | 'users' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'keys' | 'usage'
+  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'invitations' | 'profile' | 'users' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'keys' | 'usage'
   icon: LucideIcon
   href: `#/console${string}`
 }
@@ -61,6 +62,7 @@ const navGroups: readonly NavGroup[] = [
     adminOnly: false,
     items: [
       { key: 'apiKeys', icon: KeyRound, href: '#/console/api-keys' },
+      { key: 'invitations', icon: TicketCheck, href: '#/console/invitations' },
       { key: 'profile', icon: UserRound, href: '#/console/profile' },
     ],
   },
@@ -87,6 +89,7 @@ const activeKeyByView: Partial<Record<AppView, NavItem['key']>> = {
   models: 'models',
   playground: 'playground',
   'api-keys': 'apiKeys',
+  invitations: 'invitations',
   profile: 'profile',
   users: 'users',
   'site-settings': 'siteSettings',

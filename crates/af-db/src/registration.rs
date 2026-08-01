@@ -64,6 +64,7 @@ pub struct RegistrationPolicyRecord {
     enabled: bool,
     default_group_id: GroupId,
     initial_quota: i64,
+    invitation_rebate_quota: i64,
     email_required: bool,
     rate_limit_attempts: u32,
     rate_limit_window_seconds: u64,
@@ -93,6 +94,12 @@ impl RegistrationPolicyRecord {
     #[must_use]
     pub const fn initial_quota(self) -> i64 {
         self.initial_quota
+    }
+
+    /// 返回每个有效邀请码注册触发的非负返利额度。
+    #[must_use]
+    pub const fn invitation_rebate_quota(self) -> i64 {
+        self.invitation_rebate_quota
     }
 
     /// 返回注册时是否必须填写邮箱。
@@ -127,6 +134,7 @@ pub struct RegistrationPolicyWriteRecord {
     enabled: bool,
     default_group_id: GroupId,
     initial_quota: i64,
+    invitation_rebate_quota: i64,
     email_required: bool,
     rate_limit_attempts: u32,
     rate_limit_window_seconds: u64,
@@ -141,6 +149,7 @@ impl RegistrationPolicyWriteRecord {
         enabled: bool,
         default_group_id: GroupId,
         initial_quota: i64,
+        invitation_rebate_quota: i64,
         email_required: bool,
         rate_limit_attempts: u32,
         rate_limit_window_seconds: u64,
@@ -150,6 +159,7 @@ impl RegistrationPolicyWriteRecord {
             enabled,
             default_group_id,
             initial_quota,
+            invitation_rebate_quota,
             email_required,
             rate_limit_attempts,
             rate_limit_window_seconds,
@@ -162,6 +172,7 @@ impl RegistrationPolicyWriteRecord {
             enabled: self.enabled,
             default_group_id: self.default_group_id,
             initial_quota: self.initial_quota,
+            invitation_rebate_quota: self.invitation_rebate_quota,
             email_required: self.email_required,
             rate_limit_attempts: self.rate_limit_attempts,
             rate_limit_window_seconds: self.rate_limit_window_seconds,
@@ -322,6 +333,7 @@ impl RegistrationRepository {
             registration_enabled: Set(policy.enabled),
             registration_default_group_id: Set(Some(policy.default_group_id.get())),
             registration_initial_quota: Set(policy.initial_quota),
+            invitation_rebate_quota: Set(policy.invitation_rebate_quota),
             registration_email_required: Set(policy.email_required),
             registration_rate_limit_attempts: Set(i32::try_from(policy.rate_limit_attempts)
                 .map_err(|_| RegistrationRepositoryError::InvalidPolicy)?),
@@ -366,6 +378,7 @@ impl RegistrationRepository {
             enabled: settings.registration_enabled,
             default_group_id,
             initial_quota: settings.registration_initial_quota,
+            invitation_rebate_quota: settings.invitation_rebate_quota,
             email_required: settings.registration_email_required,
             rate_limit_attempts: settings.registration_rate_limit_attempts,
             rate_limit_window_seconds: settings.registration_rate_limit_window_seconds,
@@ -485,6 +498,7 @@ struct AuthenticationSettingsState {
     registration_enabled: bool,
     registration_default_group_id: Option<GroupId>,
     registration_initial_quota: i64,
+    invitation_rebate_quota: i64,
     registration_email_required: bool,
     registration_rate_limit_attempts: u32,
     registration_rate_limit_window_seconds: u64,
@@ -578,6 +592,7 @@ fn settings_from_model(
         registration_enabled: model.registration_enabled,
         registration_default_group_id: default_group_id,
         registration_initial_quota: model.registration_initial_quota,
+        invitation_rebate_quota: model.invitation_rebate_quota,
         registration_email_required: model.registration_email_required,
         registration_rate_limit_attempts: rate_limit_attempts,
         registration_rate_limit_window_seconds: rate_limit_window_seconds,
@@ -586,6 +601,7 @@ fn settings_from_model(
     if model.id != AUTHENTICATION_SETTINGS_ID
         || settings.version < 1
         || settings.registration_initial_quota < 0
+        || settings.invitation_rebate_quota < 0
         || !(1..=MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS)
             .contains(&settings.registration_rate_limit_attempts)
         || !(MIN_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS
@@ -623,6 +639,7 @@ where
         enabled: settings.registration_enabled,
         default_group_id,
         initial_quota: settings.registration_initial_quota,
+        invitation_rebate_quota: settings.invitation_rebate_quota,
         email_required: settings.registration_email_required,
         rate_limit_attempts: settings.registration_rate_limit_attempts,
         rate_limit_window_seconds: settings.registration_rate_limit_window_seconds,
@@ -633,6 +650,7 @@ where
 fn validate_policy(policy: RegistrationPolicyRecord) -> Result<(), ()> {
     if (policy.enabled && !policy.password_login_enabled)
         || policy.initial_quota < 0
+        || policy.invitation_rebate_quota < 0
         || !(1..=MAX_REGISTRATION_RATE_LIMIT_ATTEMPTS).contains(&policy.rate_limit_attempts)
         || !(MIN_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS
             ..=MAX_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS)

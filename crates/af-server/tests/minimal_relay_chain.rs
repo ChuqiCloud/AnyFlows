@@ -42,6 +42,7 @@ use af_admin::{
     SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
     SessionLoginFuture, SessionPrincipal, SiteSettingsCommand, SiteSettingsError,
     SiteSettingsService, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
+    UserInvitationError, UserInvitationReadFuture, UserInvitationService,
     UserNotificationPreferencesCommand, UserNotificationUpdateFuture, UserPasswordChangeCommand,
     UserPasswordChangeFuture, UserProfileError, UserProfileReadFuture, UserProfileService,
     UserProfileUpdateCommand, UserProfileUpdateFuture, UserTokenCreateFuture,
@@ -97,6 +98,7 @@ struct RejectInitialSetup;
 struct RejectRegistration;
 struct RejectPasswordReset;
 struct RejectUserProfile;
+struct RejectUserInvitations;
 struct RejectSiteSettings;
 struct RejectAdminEmailSettings;
 struct RejectAdminChannels;
@@ -157,6 +159,12 @@ impl UserProfileService for RejectUserProfile {
         _command: UserNotificationPreferencesCommand,
     ) -> UserNotificationUpdateFuture<'a> {
         Box::pin(async { Err(UserProfileError::Internal) })
+    }
+}
+
+impl UserInvitationService for RejectUserInvitations {
+    fn get<'a>(&'a self, _principal: SessionPrincipal) -> UserInvitationReadFuture<'a> {
+        Box::pin(async { Err(UserInvitationError::Internal) })
     }
 }
 
@@ -1528,6 +1536,7 @@ async fn start_server(
         Arc::new(RejectRegistration),
         Arc::new(RejectPasswordReset),
         Arc::new(RejectUserProfile),
+        Arc::new(RejectUserInvitations),
         Arc::new(RejectSiteSettings),
         Arc::new(RejectAdminEmailSettings),
         Arc::new(RejectAdminChannels),

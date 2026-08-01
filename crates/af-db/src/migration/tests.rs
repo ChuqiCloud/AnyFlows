@@ -169,6 +169,7 @@ async fn site_authentication_migration_moves_legacy_registration_policy()
     assert!(settings.registration_enabled);
     assert_eq!(settings.registration_default_group_id, Some(group.id));
     assert_eq!(settings.registration_initial_quota, 250);
+    assert_eq!(settings.invitation_rebate_quota, 0);
     assert!(settings.registration_email_required);
     assert_eq!(settings.registration_rate_limit_attempts, 7);
     assert_eq!(settings.registration_rate_limit_window_seconds, 1_800);
@@ -1433,7 +1434,7 @@ async fn exercise_registration_repository(pool: &DatabasePool) -> Result<(), Box
     let repository = RegistrationRepository::new(pool.clone(), Duration::from_secs(5))?;
     repository
         .update_policy(RegistrationPolicyWriteRecord::new(
-            true, true, group_id, 100, true, 1, 60,
+            true, true, group_id, 100, 0, true, 1, 60,
         ))
         .await
         .expect("注册冒烟必须成功写入策略");
@@ -1463,6 +1464,7 @@ async fn exercise_registration_repository(pool: &DatabasePool) -> Result<(), Box
         registration_enabled: Set(false),
         registration_default_group_id: Set(None),
         registration_initial_quota: Set(0),
+        invitation_rebate_quota: Set(0),
         registration_email_required: Set(false),
         registration_rate_limit_attempts: Set(5),
         registration_rate_limit_window_seconds: Set(3_600),

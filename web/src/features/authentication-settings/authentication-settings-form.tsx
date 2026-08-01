@@ -35,6 +35,7 @@ export function AuthenticationSettingsForm({ groups, settings }: AuthenticationS
       incompatibleCapabilities: t('authenticationSettings.validation.capabilities'),
       invalidGroup: t('authenticationSettings.validation.group'),
       invalidQuota: t('authenticationSettings.validation.quota'),
+      invalidRebateQuota: t('authenticationSettings.validation.rebateQuota'),
       invalidAttempts: t('authenticationSettings.validation.attempts'),
       invalidWindow: t('authenticationSettings.validation.window'),
     })),
@@ -164,7 +165,7 @@ export function AuthenticationSettingsForm({ groups, settings }: AuthenticationS
               {t('authenticationSettings.allocation.description')}
             </p>
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             <SettingsField
               id="authentication-default-group"
               label={t('authenticationSettings.fields.defaultGroup')}
@@ -196,6 +197,22 @@ export function AuthenticationSettingsForm({ groups, settings }: AuthenticationS
                 inputMode="numeric"
                 aria-invalid={!!form.formState.errors.initialQuota}
                 {...form.register('initialQuota', { valueAsNumber: true })}
+              />
+            </SettingsField>
+            <SettingsField
+              id="authentication-invitation-rebate-quota"
+              label={t('authenticationSettings.fields.invitationRebateQuota')}
+              hint={t('authenticationSettings.fields.invitationRebateQuotaHint')}
+              error={form.formState.errors.invitationRebateQuota?.message}
+            >
+              <Input
+                id="authentication-invitation-rebate-quota"
+                type="number"
+                min={0}
+                step={1}
+                inputMode="numeric"
+                aria-invalid={!!form.formState.errors.invitationRebateQuota}
+                {...form.register('invitationRebateQuota', { valueAsNumber: true })}
               />
             </SettingsField>
           </div>

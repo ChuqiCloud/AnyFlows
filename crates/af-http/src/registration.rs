@@ -52,6 +52,8 @@ pub(crate) struct RegistrationRequest {
     password: String,
     #[schema(min_length = 6, max_length = 6, pattern = "^[0-9]{6}$", write_only)]
     verification_code: Option<String>,
+    #[schema(min_length = 25, max_length = 25, pattern = "^af-[A-Za-z0-9_-]{22}$")]
+    invite_code: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -82,6 +84,8 @@ pub(crate) struct AdminAuthenticationSettingsResponse {
     default_group_id: i64,
     #[schema(minimum = 0)]
     initial_quota: i64,
+    #[schema(minimum = 0)]
+    invitation_rebate_quota: i64,
     email_required: bool,
     #[schema(minimum = 1, maximum = 100)]
     rate_limit_attempts: u32,
@@ -98,6 +102,7 @@ impl From<RegistrationPolicy> for AdminAuthenticationSettingsResponse {
             registration_enabled: policy.enabled(),
             default_group_id: policy.default_group_id().get(),
             initial_quota: policy.initial_quota(),
+            invitation_rebate_quota: policy.invitation_rebate_quota(),
             email_required: policy.email_required(),
             rate_limit_attempts: policy.rate_limit_attempts(),
             rate_limit_window_seconds: policy.rate_limit_window_seconds(),
@@ -116,6 +121,8 @@ pub(crate) struct AdminAuthenticationSettingsRequest {
     default_group_id: i64,
     #[schema(minimum = 0)]
     initial_quota: i64,
+    #[schema(minimum = 0)]
+    invitation_rebate_quota: i64,
     email_required: bool,
     #[schema(minimum = 1, maximum = 100)]
     rate_limit_attempts: u32,
@@ -234,6 +241,7 @@ async fn register(
         request.email,
         request.password,
         request.verification_code,
+        request.invite_code,
     )
     .map_err(map_registration_error)?;
     state
@@ -284,6 +292,7 @@ async fn update_authentication_settings(
         request.registration_enabled,
         default_group_id,
         request.initial_quota,
+        request.invitation_rebate_quota,
         request.email_required,
         request.rate_limit_attempts,
         request.rate_limit_window_seconds,
@@ -331,6 +340,7 @@ fn map_registration_error(error: RegistrationError) -> ManagementError {
         RegistrationError::Disabled => ManagementError::RegistrationDisabled,
         RegistrationError::Conflict => ManagementError::UserConflict,
         RegistrationError::VerificationRejected => ManagementError::RegistrationRejected,
+        RegistrationError::InvitationRejected => ManagementError::RegistrationInvitationRejected,
         RegistrationError::RateLimited {
             retry_after_seconds,
         } => ManagementError::RegistrationRateLimited {

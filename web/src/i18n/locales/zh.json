@@ -14,6 +14,7 @@
     "models": "模型广场",
     "playground": "对话试炼场",
     "apiKeys": "我的 API Key",
+    "invitations": "邀请中心",
     "profile": "个人资料",
     "users": "用户管理",
     "siteSettings": "站点设置",
@@ -1710,7 +1711,7 @@
     },
     "allocation": {
       "title": "新用户归属",
-      "description": "每位新用户都绑定一个有效分组，并获得指定的非负初始额度。"
+      "description": "每位新用户都绑定一个有效分组；有效邀请码可按配置为邀请人发放返利。"
     },
     "protection": {
       "title": "注册频率保护",
@@ -1720,6 +1721,8 @@
       "defaultGroup": "默认分组",
       "initialQuota": "初始额度",
       "initialQuotaHint": "使用系统额度整数单位。",
+      "invitationRebateQuota": "单次邀请返利",
+      "invitationRebateQuotaHint": "设为 0 时只记录邀请关系，不产生返利账本。",
       "attempts": "窗口内尝试次数",
       "window": "固定窗口"
     },
@@ -1736,6 +1739,7 @@
       "capabilities": "公开注册开启时必须同时开启密码登录。",
       "group": "请选择有效默认分组。",
       "quota": "初始额度必须是非负安全整数。",
+      "rebateQuota": "邀请返利必须是非负安全整数。",
       "attempts": "尝试次数必须是 1 至 100 的整数。",
       "window": "请选择允许的固定窗口。"
     },
@@ -1929,6 +1933,9 @@
       "sendingVerification": "正在发送",
       "verificationSent": "验证码已发送，请查收邮件后填写。",
       "resendIn": "{{seconds}} 秒后可重发",
+      "inviteCode": "邀请码",
+      "inviteApplied": "已从邀请链接带入",
+      "inviteCodeHelp": "有邀请码时填写；你仍可在提交前修改。",
       "password": "密码",
       "passwordHelp": "使用 12 至 128 个 UTF-8 字节，不支持控制字符。",
       "passwordConfirmation": "确认密码",
@@ -1944,6 +1951,7 @@
       "emailRequired": "当前站点要求填写邮箱。",
       "verificationCode": "请输入 6 位数字验证码。",
       "verificationCodeRequired": "请先发送验证码并填写后再注册。",
+      "inviteCode": "请输入有效的 AnyFlows 邀请码。",
       "password": "密码必须为 12 至 128 个 UTF-8 字节，且不能包含控制字符。",
       "passwordMismatch": "两次输入的密码不一致。"
     },
@@ -1951,6 +1959,7 @@
       "conflict": "用户名或邮箱已被使用，请更换后重试。",
       "disabled": "公开注册刚刚被关闭，请使用已有账户登录。",
       "invalidInput": "注册信息不符合服务端要求，请检查后重试。",
+      "invitationRejected": "邀请码不存在或已失效，请检查后重试。",
       "verificationRejected": "验证码无效或注册未完成，请检查信息后重试。",
       "rateLimited": "当前网络的注册尝试过于频繁，请稍后再试。",
       "unavailable": "暂时无法创建账户，请稍后重试。"
@@ -1974,6 +1983,43 @@
       "retry": "重新检查",
       "login": "登录",
       "models": "浏览模型"
+    }
+  },
+  "invitations": {
+    "eyebrow": "邀请与返利",
+    "title": "邀请中心",
+    "subtitle": "分享你的专属链接，并查看已经确认到账的邀请返利。",
+    "share": {
+      "title": "专属邀请",
+      "subtitle": "邀请码由系统随机生成，可随时复制分享。",
+      "private": "到账记录已脱敏",
+      "code": "邀请码",
+      "link": "邀请链接"
+    },
+    "metrics": {
+      "label": "邀请统计",
+      "invited": "已邀请",
+      "credited": "已到账",
+      "current": "当前返利",
+      "history": "历史返利"
+    },
+    "recent": {
+      "title": "最近到账",
+      "count": "最近 {{count}} 条",
+      "rebate": "邀请返利到账",
+      "emptyTitle": "还没有返利到账",
+      "emptyBody": "分享邀请链接后，符合规则的注册会显示在这里。"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "copy": "复制{{label}}",
+      "copied": "{{label}}已复制"
+    },
+    "errors": {
+      "loadTitle": "无法加载邀请中心",
+      "loadBody": "当前邀请数据暂时不可用，请稍后重试。",
+      "copy": "浏览器未允许写入剪贴板，请手动选择内容复制。"
     }
   },
   "setup": {

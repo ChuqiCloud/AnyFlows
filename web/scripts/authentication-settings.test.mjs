@@ -12,6 +12,7 @@ const messages = {
   incompatibleCapabilities: 'capabilities',
   invalidGroup: 'group',
   invalidQuota: 'quota',
+  invalidRebateQuota: 'rebate-quota',
   invalidAttempts: 'attempts',
   invalidWindow: 'window',
 }
@@ -31,6 +32,7 @@ test('认证设置拒绝开启注册但关闭密码登录的非法组合', () =>
     registration_enabled: true,
     default_group_id: 7,
     initial_quota: 500,
+    invitation_rebate_quota: 25,
     email_required: true,
     rate_limit_attempts: 5,
     rate_limit_window_seconds: 3_600,
@@ -45,11 +47,16 @@ test('认证设置拒绝开启注册但关闭密码登录的非法组合', () =>
     ...values,
     rateLimitWindowSeconds: '59',
   }).success, false)
+  assert.equal(buildAuthenticationSettingsSchema(messages).safeParse({
+    ...values,
+    invitationRebateQuota: -1,
+  }).success, false)
   assert.deepEqual(toAuthenticationSettingsRequest(values), {
     password_login_enabled: true,
     registration_enabled: true,
     default_group_id: 7,
     initial_quota: 500,
+    invitation_rebate_quota: 25,
     email_required: true,
     rate_limit_attempts: 5,
     rate_limit_window_seconds: 3_600,

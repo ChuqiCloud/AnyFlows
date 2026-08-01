@@ -1,10 +1,19 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertCircle, Eye, EyeOff, LoaderCircle, MailCheck, UserRoundPlus } from 'lucide-react'
+import {
+  AlertCircle,
+  Eye,
+  EyeOff,
+  LoaderCircle,
+  MailCheck,
+  TicketCheck,
+  UserRoundPlus,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { establishManagementSession } from '@/features/auth/session-query'
@@ -22,6 +31,7 @@ import {
 
 type RegistrationFormProps = {
   emailRequired: boolean
+  initialInviteCode?: string
   onAuthenticated: () => void
 }
 
@@ -29,6 +39,7 @@ type RegistrationSubmitError =
   | 'conflict'
   | 'disabled'
   | 'invalidInput'
+  | 'invitationRejected'
   | 'verificationRejected'
   | 'rateLimited'
   | 'unavailable'
@@ -44,7 +55,11 @@ type RegistrationVerificationError =
 const verificationCooldownStorageKey = 'anyflows.registration.verification.nextSendAt'
 
 /** 提交公开注册并只接受服务端签发的统一登录会话。 */
-export function RegistrationForm({ emailRequired, onAuthenticated }: RegistrationFormProps) {
+export function RegistrationForm({
+  emailRequired,
+  initialInviteCode,
+  onAuthenticated,
+}: RegistrationFormProps) {
   const { t } = useTranslation()
   const [showPassword, setShowPassword] = useState(false)
   const [submitError, setSubmitError] = useState<RegistrationSubmitError>()
@@ -55,13 +70,17 @@ export function RegistrationForm({ emailRequired, onAuthenticated }: Registratio
   const mutation = useRegisterUser()
   const sendVerificationMutation = useSendRegistrationEmailVerification()
   const form = useForm<RegistrationFormValues>({
-    defaultValues: defaultRegistrationFormValues,
+    defaultValues: {
+      ...defaultRegistrationFormValues,
+      inviteCode: initialInviteCode ?? '',
+    },
     resolver: zodResolver(buildRegistrationFormSchema(emailRequired, {
       invalidUsername: t('registration.validation.username'),
       invalidEmail: t('registration.validation.email'),
       emailRequired: t('registration.validation.emailRequired'),
       invalidVerificationCode: t('registration.validation.verificationCode'),
       verificationCodeRequired: t('registration.validation.verificationCodeRequired'),
+      invalidInviteCode: t('registration.validation.inviteCode'),
       invalidPassword: t('registration.validation.password'),
       passwordMismatch: t('registration.validation.passwordMismatch'),
     })),
@@ -83,6 +102,12 @@ export function RegistrationForm({ emailRequired, onAuthenticated }: Registratio
       writeVerificationCooldown(0)
     }
   }, [cooldownSeconds, nextSendAt])
+
+  useEffect(() => {
+    if (initialInviteCode) {
+      form.setValue('inviteCode', initialInviteCode, { shouldValidate: true })
+    }
+  }, [form, initialInviteCode])
 
   const onSendVerification = async () => {
     setVerificationError(undefined)
@@ -265,6 +290,47 @@ export function RegistrationForm({ emailRequired, onAuthenticated }: Registratio
           ) : null}
 
           <div className="grid gap-1.5">
+            <div className="flex items-center justify-between gap-3">
+              <label htmlFor="registration-invite-code" className="text-sm font-medium">
+                {t('registration.form.inviteCode')}
+              </label>
+              {initialInviteCode ? (
+                <Badge className="border-success/25 bg-success/10 text-success">
+                  {t('registration.form.inviteApplied')}
+                </Badge>
+              ) : (
+                <span className="text-[0.6875rem] text-muted-foreground">
+                  {t('registration.form.optional')}
+                </span>
+              )}
+            </div>
+            <div className="relative">
+              <TicketCheck
+                className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                id="registration-invite-code"
+                autoComplete="off"
+                maxLength={25}
+                className="h-11 px-3 pl-10 font-mono"
+                aria-invalid={!!form.formState.errors.inviteCode}
+                aria-describedby={form.formState.errors.inviteCode ? 'registration-invite-code-error' : 'registration-invite-code-help'}
+                {...form.register('inviteCode', { onChange: () => setSubmitError(undefined) })}
+              />
+            </div>
+            {form.formState.errors.inviteCode ? (
+              <p id="registration-invite-code-error" className="text-xs text-destructive">
+                {form.formState.errors.inviteCode.message}
+              </p>
+            ) : (
+              <p id="registration-invite-code-help" className="text-[0.6875rem] leading-4 text-muted-foreground">
+                {t('registration.form.inviteCodeHelp')}
+              </p>
+            )}
+          </div>
+
+          <div className="grid gap-1.5">
             <label htmlFor="registration-password" className="text-sm font-medium">
               {t('registration.form.password')}
             </label>
@@ -358,6 +424,7 @@ function classifyRegistrationError(error: unknown): RegistrationSubmitError {
   if (!(error instanceof ApiError)) return 'unavailable'
   const code = errorCode(error.details)
   if (code === 'registration_rejected') return 'verificationRejected'
+  if (code === 'invitation_rejected') return 'invitationRejected'
   if (error.status === 409 || code === 'user_conflict') return 'conflict'
   if (code === 'registration_disabled') return 'disabled'
   if (error.status === 429 || code === 'registration_rate_limited') return 'rateLimited'

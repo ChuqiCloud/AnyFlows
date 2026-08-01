@@ -99,158 +99,158 @@ impl InviteRebateRepository {
         }
 
         let transaction = begin(&self.pool).await?;
-        let Some(invitee) = lock_user(&transaction, grant.invitee_user_id).await? else {
-            rollback(transaction).await?;
-            return Ok(InviteRebateGrantOutcome::Rejected(
-                InviteRebateRejection::InviteeNotFound,
-            ));
-        };
-        let Some(inviter_id) = invitee.inviter_id.and_then(|id| UserId::new(id).ok()) else {
-            rollback(transaction).await?;
-            return Ok(InviteRebateGrantOutcome::Rejected(
-                InviteRebateRejection::NoInviter,
-            ));
-        };
-        let Some(inviter) = lock_user(&transaction, inviter_id).await? else {
-            rollback(transaction).await?;
-            return Ok(InviteRebateGrantOutcome::Rejected(
-                InviteRebateRejection::InviterNotFound,
-            ));
-        };
-        if inviter.id == invitee.id {
-            rollback(transaction).await?;
-            return Err(InviteRebateRepositoryError::Invariant);
-        }
-
-        if let Some(model) = load_event_by_key(&transaction, grant.event_id).await? {
-            let outcome = classify_existing_event(&transaction, model, grant).await;
-            rollback(transaction).await?;
-            return outcome;
-        }
-        if let Some(model) = load_event_by_invitee(&transaction, grant.invitee_user_id).await? {
-            let validation = validate_existing_event(&transaction, model).await;
-            rollback(transaction).await?;
-            validation?;
-            return Ok(InviteRebateGrantOutcome::Rejected(
-                InviteRebateRejection::AlreadyCredited,
-            ));
-        }
-
-        let delta = QuotaDelta::new(grant.quota_amount.units())
-            .map_err(|_| InviteRebateRepositoryError::Invariant)?;
-        let balance_before =
-            Quota::new(inviter.quota).map_err(|_| InviteRebateRepositoryError::Invariant)?;
-        let balance_after = match balance_before.checked_apply(delta) {
-            Ok(value) => value,
-            Err(_) => {
-                rollback(transaction).await?;
-                return Ok(InviteRebateGrantOutcome::Rejected(
-                    InviteRebateRejection::CreditOverflow,
-                ));
+        match grant_in_transaction(&transaction, grant).await {
+            Ok(InviteRebateGrantOutcome::Applied(record)) => {
+                commit(transaction).await?;
+                Ok(InviteRebateGrantOutcome::Applied(record))
             }
-        };
-        if inviter.aff_quota < 0 || inviter.aff_history_quota < 0 {
-            rollback(transaction).await?;
-            return Err(InviteRebateRepositoryError::Invariant);
-        }
-        let Some(aff_quota) = inviter.aff_quota.checked_add(grant.quota_amount.units()) else {
-            rollback(transaction).await?;
-            return Ok(InviteRebateGrantOutcome::Rejected(
-                InviteRebateRejection::CreditOverflow,
-            ));
-        };
-        let Some(aff_history_quota) = inviter
-            .aff_history_quota
-            .checked_add(grant.quota_amount.units())
-        else {
-            rollback(transaction).await?;
-            return Ok(InviteRebateGrantOutcome::Rejected(
-                InviteRebateRejection::CreditOverflow,
-            ));
-        };
-        let credited_at = to_database_time(grant.credited_at)?;
-        let updated_at = inviter
-            .updated_at
-            .max(TimeDateTimeWithTimeZone::now_utc())
-            .max(credited_at);
-
-        let update = users::Entity::update_many()
-            .filter(users::Column::Id.eq(inviter.id))
-            .filter(users::Column::DeletedAt.is_null())
-            .col_expr(users::Column::Quota, Expr::value(balance_after.units()))
-            .col_expr(users::Column::AffQuota, Expr::value(aff_quota))
-            .col_expr(
-                users::Column::AffHistoryQuota,
-                Expr::value(aff_history_quota),
-            )
-            .col_expr(users::Column::UpdatedAt, Expr::value(updated_at))
-            .exec(&transaction)
-            .await
-            .map_err(|_| InviteRebateRepositoryError::Query)?;
-        if update.rows_affected != 1 {
-            rollback(transaction).await?;
-            return Err(InviteRebateRepositoryError::Conflict);
-        }
-
-        let wallet = wallet_ledger_entries::ActiveModel {
-            event_key: Set(WalletLedgerKey::parse(&grant.event_id.persistence_key())
-                .map_err(|_| InviteRebateRepositoryError::Invariant)?),
-            user_id: Set(inviter.id),
-            actor_user_id: Set(None),
-            entry_type: Set(WalletLedgerEntryType::InviteRebate as i16),
-            quota_delta: Set(grant.quota_amount.units()),
-            balance_before: Set(balance_before.units()),
-            balance_after: Set(balance_after.units()),
-            reason: Set(None),
-            created_at: Set(credited_at),
-            ..Default::default()
-        }
-        .insert(&transaction)
-        .await;
-        let wallet = match wallet {
-            Ok(wallet) => wallet,
+            Ok(outcome) => {
+                rollback(transaction).await?;
+                Ok(outcome)
+            }
+            Err(InviteRebateRepositoryError::Conflict) => {
+                rollback(transaction).await?;
+                recover_after_collision(self.pool.connection(), grant).await
+            }
             Err(error) => {
-                let conflict = is_unique_conflict(&error);
                 rollback(transaction).await?;
-                return if conflict {
-                    recover_after_collision(self.pool.connection(), grant).await
-                } else {
-                    Err(InviteRebateRepositoryError::Query)
-                };
+                Err(error)
             }
-        };
-
-        let event = invite_rebate_events::ActiveModel {
-            event_key: Set(WalletLedgerKey::parse(&grant.event_id.persistence_key())
-                .map_err(|_| InviteRebateRepositoryError::Invariant)?),
-            inviter_user_id: Set(inviter.id),
-            invitee_user_id: Set(invitee.id),
-            quota_amount: Set(grant.quota_amount.units()),
-            balance_after: Set(balance_after.units()),
-            wallet_ledger_entry_id: Set(wallet.id),
-            credited_at: Set(credited_at),
-            created_at: Set(credited_at),
-            ..Default::default()
         }
-        .insert(&transaction)
-        .await;
-        let event = match event {
-            Ok(event) => event,
-            Err(error) => {
-                let conflict = is_unique_conflict(&error);
-                rollback(transaction).await?;
-                return if conflict {
-                    recover_after_collision(self.pool.connection(), grant).await
-                } else {
-                    Err(InviteRebateRepositoryError::Query)
-                };
-            }
-        };
-
-        let record = event_record(event)?;
-        commit(transaction).await?;
-        Ok(InviteRebateGrantOutcome::Applied(record))
     }
+}
+
+/// 在调用方已经开启的事务内完成邀请返利，不自行提交或回滚。
+pub(crate) async fn grant_in_transaction(
+    transaction: &DatabaseTransaction,
+    grant: &InviteRebateGrant,
+) -> Result<InviteRebateGrantOutcome, InviteRebateRepositoryError> {
+    let Some(invitee) = lock_user(transaction, grant.invitee_user_id).await? else {
+        return Ok(InviteRebateGrantOutcome::Rejected(
+            InviteRebateRejection::InviteeNotFound,
+        ));
+    };
+    let Some(inviter_id) = invitee.inviter_id.and_then(|id| UserId::new(id).ok()) else {
+        return Ok(InviteRebateGrantOutcome::Rejected(
+            InviteRebateRejection::NoInviter,
+        ));
+    };
+    let Some(inviter) = lock_user(transaction, inviter_id).await? else {
+        return Ok(InviteRebateGrantOutcome::Rejected(
+            InviteRebateRejection::InviterNotFound,
+        ));
+    };
+    if inviter.id == invitee.id {
+        return Err(InviteRebateRepositoryError::Invariant);
+    }
+
+    if let Some(model) = load_event_by_key(transaction, grant.event_id).await? {
+        return classify_existing_event(transaction, model, grant).await;
+    }
+    if let Some(model) = load_event_by_invitee(transaction, grant.invitee_user_id).await? {
+        validate_existing_event(transaction, model).await?;
+        return Ok(InviteRebateGrantOutcome::Rejected(
+            InviteRebateRejection::AlreadyCredited,
+        ));
+    }
+
+    let delta = QuotaDelta::new(grant.quota_amount.units())
+        .map_err(|_| InviteRebateRepositoryError::Invariant)?;
+    let balance_before =
+        Quota::new(inviter.quota).map_err(|_| InviteRebateRepositoryError::Invariant)?;
+    let balance_after = match balance_before.checked_apply(delta) {
+        Ok(value) => value,
+        Err(_) => {
+            return Ok(InviteRebateGrantOutcome::Rejected(
+                InviteRebateRejection::CreditOverflow,
+            ));
+        }
+    };
+    if inviter.aff_quota < 0 || inviter.aff_history_quota < 0 {
+        return Err(InviteRebateRepositoryError::Invariant);
+    }
+    let Some(aff_quota) = inviter.aff_quota.checked_add(grant.quota_amount.units()) else {
+        return Ok(InviteRebateGrantOutcome::Rejected(
+            InviteRebateRejection::CreditOverflow,
+        ));
+    };
+    let Some(aff_history_quota) = inviter
+        .aff_history_quota
+        .checked_add(grant.quota_amount.units())
+    else {
+        return Ok(InviteRebateGrantOutcome::Rejected(
+            InviteRebateRejection::CreditOverflow,
+        ));
+    };
+    let credited_at = to_database_time(grant.credited_at)?;
+    let updated_at = inviter
+        .updated_at
+        .max(TimeDateTimeWithTimeZone::now_utc())
+        .max(credited_at);
+
+    let update = users::Entity::update_many()
+        .filter(users::Column::Id.eq(inviter.id))
+        .filter(users::Column::DeletedAt.is_null())
+        .col_expr(users::Column::Quota, Expr::value(balance_after.units()))
+        .col_expr(users::Column::AffQuota, Expr::value(aff_quota))
+        .col_expr(
+            users::Column::AffHistoryQuota,
+            Expr::value(aff_history_quota),
+        )
+        .col_expr(users::Column::UpdatedAt, Expr::value(updated_at))
+        .exec(transaction)
+        .await
+        .map_err(|_| InviteRebateRepositoryError::Query)?;
+    if update.rows_affected != 1 {
+        return Err(InviteRebateRepositoryError::Conflict);
+    }
+
+    let wallet = wallet_ledger_entries::ActiveModel {
+        event_key: Set(WalletLedgerKey::parse(&grant.event_id.persistence_key())
+            .map_err(|_| InviteRebateRepositoryError::Invariant)?),
+        user_id: Set(inviter.id),
+        actor_user_id: Set(None),
+        entry_type: Set(WalletLedgerEntryType::InviteRebate as i16),
+        quota_delta: Set(grant.quota_amount.units()),
+        balance_before: Set(balance_before.units()),
+        balance_after: Set(balance_after.units()),
+        reason: Set(None),
+        created_at: Set(credited_at),
+        ..Default::default()
+    }
+    .insert(transaction)
+    .await
+    .map_err(|error| {
+        if is_unique_conflict(&error) {
+            InviteRebateRepositoryError::Conflict
+        } else {
+            InviteRebateRepositoryError::Query
+        }
+    })?;
+
+    let event = invite_rebate_events::ActiveModel {
+        event_key: Set(WalletLedgerKey::parse(&grant.event_id.persistence_key())
+            .map_err(|_| InviteRebateRepositoryError::Invariant)?),
+        inviter_user_id: Set(inviter.id),
+        invitee_user_id: Set(invitee.id),
+        quota_amount: Set(grant.quota_amount.units()),
+        balance_after: Set(balance_after.units()),
+        wallet_ledger_entry_id: Set(wallet.id),
+        credited_at: Set(credited_at),
+        created_at: Set(credited_at),
+        ..Default::default()
+    }
+    .insert(transaction)
+    .await
+    .map_err(|error| {
+        if is_unique_conflict(&error) {
+            InviteRebateRepositoryError::Conflict
+        } else {
+            InviteRebateRepositoryError::Query
+        }
+    })?;
+
+    Ok(InviteRebateGrantOutcome::Applied(event_record(event)?))
 }
 
 async fn recover_after_collision<C>(
