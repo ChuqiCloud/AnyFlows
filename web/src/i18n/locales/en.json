@@ -571,7 +571,8 @@
         "opening_balance": "Opening baseline",
         "admin_adjustment": "Admin adjustment",
         "topup": "Top-up credit",
-        "redemption": "Redemption credit"
+        "redemption": "Redemption credit",
+        "invite_rebate": "Invite rebate"
       },
       "history": {
         "title": "Ledger history",
@@ -587,9 +588,11 @@
         "openingReason": "Wallet opening baseline",
         "topupReason": "Payment top-up credit",
         "redemptionReason": "Redemption code credit",
+        "inviteRebateReason": "Invite rebate credit",
         "systemActor": "System migration",
         "paymentActor": "Payment system",
         "redemptionActor": "Redemption system",
+        "inviteRebateActor": "Invite rebate system",
         "adminActor": "Administrator #{{id}}",
         "balanceAfter": "Balance {{value}}"
       },

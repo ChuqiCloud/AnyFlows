@@ -28,6 +28,7 @@ pub(crate) mod credentials;
 pub(crate) mod email_settings;
 pub(crate) mod group_model_ratios;
 pub(crate) mod groups;
+pub(crate) mod invite_rebate_events;
 pub(crate) mod model_prices;
 pub(crate) mod model_sync_items;
 pub(crate) mod model_sync_runs;
@@ -530,7 +531,7 @@ where
                 && actor_user_id.is_some_and(|actor| actor > 0)
                 && valid_reason
         }
-        3 | 4 => {
+        3 | 4 | 5 => {
             !event_id.is_system_opening()
                 && actor_user_id.is_none()
                 && delta.is_positive()
@@ -708,6 +709,65 @@ where
         || updated_at < created_at
     {
         return Err(DbErr::Custom("订阅计划状态无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_invite_rebate_event<C>(
+    model: &invite_rebate_events::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 返利事件和对应钱包账本只能在同一仓储事务中首次追加，禁止通用实体更新。
+    if !insert {
+        return Err(DbErr::Custom("邀请返利事件不允许更新".to_owned()));
+    }
+    let event_key = model
+        .event_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("邀请返利事件标识缺失".to_owned()))?;
+    let event_id = WalletEventId::from_persistence_key(event_key.as_str())
+        .map_err(|_| DbErr::Custom("邀请返利事件标识无效".to_owned()))?;
+    let inviter = model
+        .inviter_user_id
+        .try_as_ref()
+        .copied()
+        .unwrap_or_default();
+    let invitee = model
+        .invitee_user_id
+        .try_as_ref()
+        .copied()
+        .unwrap_or_default();
+    let quota = model.quota_amount.try_as_ref().copied().unwrap_or_default();
+    let balance_after = model
+        .balance_after
+        .try_as_ref()
+        .copied()
+        .unwrap_or_default();
+    let wallet_entry = model
+        .wallet_ledger_entry_id
+        .try_as_ref()
+        .copied()
+        .unwrap_or_default();
+    let (Some(credited_at), Some(created_at)) = (
+        model.credited_at.try_as_ref().copied(),
+        model.created_at.try_as_ref().copied(),
+    ) else {
+        return Err(DbErr::Custom("邀请返利事件时间缺失".to_owned()));
+    };
+    if event_id.is_system_opening()
+        || inviter <= 0
+        || invitee <= 0
+        || inviter == invitee
+        || quota <= 0
+        || balance_after < quota
+        || wallet_entry <= 0
+        || created_at < credited_at
+    {
+        return Err(DbErr::Custom("邀请返利事件状态无效".to_owned()));
     }
     Ok(())
 }
@@ -1085,6 +1145,17 @@ impl ActiveModelBehavior for redemption_codes::ActiveModel {
         C: ConnectionTrait,
     {
         validate_redemption_code(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for invite_rebate_events::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_invite_rebate_event(&self, database, insert).await?;
         Ok(self)
     }
 }

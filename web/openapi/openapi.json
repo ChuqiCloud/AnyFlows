@@ -9879,7 +9879,8 @@
           "opening_balance",
           "admin_adjustment",
           "topup",
-          "redemption"
+          "redemption",
+          "invite_rebate"
         ]
       },
       "AdminWalletListResponse": {

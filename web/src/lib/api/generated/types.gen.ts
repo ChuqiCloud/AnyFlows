@@ -587,7 +587,7 @@ export type AdminWalletEntry = {
     reason: string | null;
     created_at: number;
 };
-export type AdminWalletEntryType = 'opening_balance' | 'admin_adjustment' | 'topup' | 'redemption';
+export type AdminWalletEntryType = 'opening_balance' | 'admin_adjustment' | 'topup' | 'redemption' | 'invite_rebate';
 export type AdminWalletListResponse = {
     entries: Array<AdminWalletEntry>;
     next_cursor: number | null;

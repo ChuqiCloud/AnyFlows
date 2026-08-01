@@ -8,6 +8,7 @@ mod billing_batch;
 mod email;
 mod identity;
 mod indexes;
+mod invite_rebate;
 mod model;
 mod model_sync;
 mod payment;
@@ -31,6 +32,7 @@ pub(super) use indexes::{
     create_channel_models_indexes, create_channels_indexes, create_credentials_indexes,
     create_groups_indexes, create_tokens_indexes, create_users_indexes,
 };
+pub(super) use invite_rebate::create_invite_rebate_events;
 pub(super) use routing::{
     create_abilities, create_channel_groups, create_channel_models, create_channels,
     create_credentials,
@@ -108,5 +110,6 @@ pub(super) use site::{create_authentication_settings, create_site_settings};
 pub(super) use subscription::create_subscription_storage;
 pub(super) use usage::{create_usage_logs, create_usage_logs_indexes};
 pub(super) use wallet::create_wallet_ledger;
+pub(super) use wallet::rebuild_wallet_ledger_for_invite_rebate;
 pub(super) use wallet::rebuild_wallet_ledger_for_redemption;
 pub(super) use wallet::rebuild_wallet_ledger_for_topup;

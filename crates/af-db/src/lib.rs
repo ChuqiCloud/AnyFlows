@@ -68,6 +68,7 @@ mod identity_secret;
 mod initial_setup;
 #[cfg(test)]
 mod initial_setup_tests;
+mod invite_rebate;
 mod migration;
 mod model_catalog_metadata;
 mod model_price;
@@ -232,6 +233,11 @@ pub use group_pricing::{
 pub use initial_setup::{
     InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
     InitialSetupRepositoryConfigError, InitialSetupRepositoryError, InitialSetupStatus,
+};
+pub use invite_rebate::{
+    InviteRebateGrant, InviteRebateGrantOutcome, InviteRebateInputError, InviteRebateRecord,
+    InviteRebateRejection, InviteRebateRepository, InviteRebateRepositoryConfigError,
+    InviteRebateRepositoryError,
 };
 pub use migration::{MigrationOptions, run_pending_migrations};
 pub use model_catalog_metadata::ModelCatalogMetadataPageRecord;
