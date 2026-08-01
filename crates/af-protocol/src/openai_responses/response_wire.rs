@@ -148,13 +148,23 @@ pub(super) enum ItemStatusWire {
 }
 
 /// 助手消息输出阶段。
-#[derive(Deserialize)]
+#[derive(Clone, Copy, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum MessagePhaseWire {
     /// 中间说明。
     Commentary,
     /// 最终回答。
     FinalAnswer,
+}
+
+impl MessagePhaseWire {
+    /// 返回官方 wire 字符串。
+    pub(super) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Commentary => "commentary",
+            Self::FinalAnswer => "final_answer",
+        }
+    }
 }
 
 /// 助手消息中的输出内容。

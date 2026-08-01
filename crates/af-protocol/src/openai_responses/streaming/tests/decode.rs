@@ -11,18 +11,25 @@ use crate::{CanonicalStreamEvent, ContentDelta, FinishReason};
 #[test]
 fn decodes_text_stream_across_transport_chunks() {
     let item_id = "msg_stream_1";
-    let terminal_item = message_item(item_id, "completed", "hello");
+    let mut terminal_item = message_item(item_id, "completed", "hello");
+    terminal_item["phase"] = json!("final_answer");
+    let mut lifecycle = initial_response();
+    lifecycle["service_tier"] = json!("auto");
+    let mut terminal = response(
+        "completed",
+        vec![terminal_item.clone()],
+        Some(usage_value(8, 3, 2, 1)),
+        None,
+        None,
+    );
+    terminal["service_tier"] = json!("default");
     let bytes = join([
         frame(
             "response.created",
             0,
-            json!({"response": initial_response()}),
+            json!({"response": lifecycle.clone()}),
         ),
-        frame(
-            "response.in_progress",
-            1,
-            json!({"response": initial_response()}),
-        ),
+        frame("response.in_progress", 1, json!({"response": lifecycle})),
         frame(
             "response.output_item.added",
             2,
@@ -34,6 +41,7 @@ fn decodes_text_stream_across_transport_chunks() {
                     "status": "in_progress",
                     "role": "assistant",
                     "content": [],
+                    "phase": "final_answer",
                 }
             }),
         ),
@@ -95,19 +103,7 @@ fn decodes_text_stream_across_transport_chunks() {
             8,
             json!({"output_index": 0, "item": terminal_item.clone()}),
         ),
-        frame(
-            "response.completed",
-            9,
-            json!({
-                "response": response(
-                    "completed",
-                    vec![terminal_item],
-                    Some(usage_value(8, 3, 2, 1)),
-                    None,
-                    None,
-                )
-            }),
-        ),
+        frame("response.completed", 9, json!({"response": terminal})),
     ]);
 
     let mut decoder = OpenAiResponsesStreamDecoder::new();
@@ -146,6 +142,42 @@ fn decodes_text_stream_across_transport_chunks() {
     let debug = format!("{events:?}");
     assert!(!debug.contains("hello"));
     assert!(!format!("{decoder:?}").contains(RESPONSE_ID));
+}
+
+#[test]
+fn rejects_commentary_message_phase() {
+    let bytes = join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.in_progress",
+            1,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.output_item.added",
+            2,
+            json!({
+                "output_index": 0,
+                "item": {
+                    "id": "msg_commentary",
+                    "type": "message",
+                    "status": "in_progress",
+                    "role": "assistant",
+                    "content": [],
+                    "phase": "commentary",
+                }
+            }),
+        ),
+    ]);
+    let mut decoder = OpenAiResponsesStreamDecoder::new();
+    assert_eq!(
+        decoder.push(&bytes),
+        Err(ParseStreamError::UnsupportedFeature)
+    );
 }
 
 #[test]
@@ -680,6 +712,18 @@ fn lifecycle_identity_is_stable() {
             json!({"response": initial_response()}),
         ),
         frame("response.in_progress", 1, json!({"response": changed})),
+    ]);
+    let mut decoder = OpenAiResponsesStreamDecoder::new();
+    assert_eq!(decoder.push(&bytes), Err(ParseStreamError::InvalidSequence));
+
+    let mut initial = initial_response();
+    initial["service_tier"] = json!("default");
+    let mut terminal = response("completed", Vec::new(), None, None, None);
+    terminal["service_tier"] = json!("flex");
+    let bytes = join([
+        frame("response.created", 0, json!({"response": initial.clone()})),
+        frame("response.in_progress", 1, json!({"response": initial})),
+        frame("response.completed", 2, json!({"response": terminal})),
     ]);
     let mut decoder = OpenAiResponsesStreamDecoder::new();
     assert_eq!(decoder.push(&bytes), Err(ParseStreamError::InvalidSequence));

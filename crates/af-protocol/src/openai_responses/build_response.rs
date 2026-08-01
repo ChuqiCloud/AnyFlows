@@ -299,16 +299,21 @@ fn build_output(
         output.push(Value::Object(item));
     }
     if !text_parts.is_empty() {
-        output.push(object_value([
+        let mut message = Map::from_iter([
             (
-                "id",
+                "id".to_owned(),
                 Value::String(derive_item_id("msg", response_id, output.len())),
             ),
-            ("type", Value::String("message".to_owned())),
-            ("status", Value::String(item_status.to_owned())),
-            ("role", Value::String("assistant".to_owned())),
-            ("content", Value::Array(text_parts)),
-        ]));
+            ("type".to_owned(), Value::String("message".to_owned())),
+            ("status".to_owned(), Value::String(item_status.to_owned())),
+            ("role".to_owned(), Value::String("assistant".to_owned())),
+            ("content".to_owned(), Value::Array(text_parts)),
+        ]);
+        // Canonical 的非工具终态消息等价于 Responses 最终回答；工具前说明仍不猜测阶段。
+        if choice.finish_reason != FinishReason::ToolCalls {
+            message.insert("phase".to_owned(), Value::String("final_answer".to_owned()));
+        }
+        output.push(Value::Object(message));
     }
     for (call_id, name, arguments) in tools {
         output.push(object_value([

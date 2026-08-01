@@ -10,8 +10,8 @@ use crate::openai_responses::{
     convert::validate_tool_name,
     input::validate_call_id,
     response_wire::{
-        AssistantRoleWire, FunctionCallWire, ItemStatusWire, OutputContentWire, OutputMessageWire,
-        ReasoningItemWire, ResponseOutputItemWire, SummaryTextWire,
+        AssistantRoleWire, FunctionCallWire, ItemStatusWire, MessagePhaseWire, OutputContentWire,
+        OutputMessageWire, ReasoningItemWire, ResponseOutputItemWire, SummaryTextWire,
     },
 };
 use crate::{CanonicalStreamEvent, ContentBlock, ContentDelta};
@@ -440,6 +440,7 @@ impl OutputDecodeState {
             {
                 return Err(ParseStreamError::InvalidSequence);
             }
+            validate_terminal_message_phase(item, expected.message_phase)?;
         }
         Ok(())
     }
@@ -503,11 +504,11 @@ impl OutputDecodeState {
         item: OutputMessageWire,
         output_index: u32,
     ) -> Result<(), ParseStreamError> {
+        let message_phase = supported_message_phase(item.phase)?;
         if !matches!(self.phase, OutputPhase::Start | OutputPhase::AfterReasoning)
             || !item.content.is_empty()
             || !matches!(item.role, AssistantRoleWire::Assistant)
             || item.status != ItemStatusWire::InProgress
-            || item.phase.is_some()
         {
             return Err(ParseStreamError::InvalidSequence);
         }
@@ -520,6 +521,7 @@ impl OutputDecodeState {
             next_part_index: 0,
             active_part: None,
             parts: Vec::new(),
+            phase: message_phase,
         }));
         Ok(())
     }
@@ -530,6 +532,13 @@ impl OutputDecodeState {
         output_index: u32,
         output: &mut Vec<CanonicalStreamEvent>,
     ) -> Result<(), ParseStreamError> {
+        if self
+            .identities
+            .last()
+            .is_some_and(|item| item.message_phase == Some(MessagePhaseWire::FinalAnswer))
+        {
+            return Err(ParseStreamError::UnsupportedFeature);
+        }
         let Some(id) = item.id else {
             return Err(ParseStreamError::InvalidValue);
         };
@@ -635,6 +644,7 @@ impl OutputDecodeState {
         self.identities.push(ItemIdentity {
             kind: ItemKind::Reasoning,
             id: active.id,
+            message_phase: None,
         });
         Ok(())
     }
@@ -644,15 +654,20 @@ impl OutputDecodeState {
         output_index: u32,
         item: OutputMessageWire,
     ) -> Result<(), ParseStreamError> {
+        let done_phase = supported_message_phase(item.phase)?;
         let Some(ActiveItem::Message(active)) = self.active.as_ref() else {
             return Err(ParseStreamError::InvalidSequence);
+        };
+        let message_phase = match (active.phase, done_phase) {
+            (phase, done) if phase == done => phase,
+            (None, Some(MessagePhaseWire::FinalAnswer)) => done_phase,
+            _ => return Err(ParseStreamError::InvalidSequence),
         };
         if active.output_index != output_index
             || active.id != item.id
             || active.active_part.is_some()
             || !matches!(item.role, AssistantRoleWire::Assistant)
             || !is_terminal_required_status(item.status)
-            || item.phase.is_some()
             || item.content.len() != active.parts.len()
         {
             return Err(ParseStreamError::InvalidSequence);
@@ -677,6 +692,7 @@ impl OutputDecodeState {
         self.identities.push(ItemIdentity {
             kind: ItemKind::Message,
             id: active.id,
+            message_phase,
         });
         Ok(())
     }
@@ -723,6 +739,7 @@ impl OutputDecodeState {
         self.identities.push(ItemIdentity {
             kind: ItemKind::Function,
             id: active.id,
+            message_phase: None,
         });
         Ok(())
     }
@@ -781,6 +798,7 @@ struct MessageState {
     next_part_index: u32,
     active_part: Option<TextPartState>,
     parts: Vec<String>,
+    phase: Option<MessagePhaseWire>,
 }
 
 struct TextPartState {
@@ -804,6 +822,7 @@ struct FunctionState {
 struct ItemIdentity {
     kind: ItemKind,
     id: String,
+    message_phase: Option<MessagePhaseWire>,
 }
 
 #[derive(Clone, Copy)]
@@ -820,6 +839,43 @@ impl ItemKind {
             Self::Message => "message",
             Self::Function => "function_call",
         }
+    }
+}
+
+fn supported_message_phase(
+    phase: Option<MessagePhaseWire>,
+) -> Result<Option<MessagePhaseWire>, ParseStreamError> {
+    match phase {
+        None | Some(MessagePhaseWire::FinalAnswer) => Ok(phase),
+        Some(MessagePhaseWire::Commentary) => Err(ParseStreamError::UnsupportedFeature),
+    }
+}
+
+fn validate_terminal_message_phase(
+    item: &serde_json::Map<String, Value>,
+    expected: Option<MessagePhaseWire>,
+) -> Result<(), ParseStreamError> {
+    if item.get("type").and_then(Value::as_str) != Some("message") {
+        return if expected.is_none() {
+            Ok(())
+        } else {
+            Err(ParseStreamError::InvalidSequence)
+        };
+    }
+    let actual = match item.get("phase") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(phase)) if phase == MessagePhaseWire::FinalAnswer.as_str() => {
+            Some(MessagePhaseWire::FinalAnswer)
+        }
+        Some(Value::String(phase)) if phase == MessagePhaseWire::Commentary.as_str() => {
+            return Err(ParseStreamError::UnsupportedFeature);
+        }
+        _ => return Err(ParseStreamError::InvalidValue),
+    };
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(ParseStreamError::InvalidSequence)
     }
 }
 
