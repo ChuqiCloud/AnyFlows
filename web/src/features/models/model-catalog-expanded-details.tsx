@@ -13,6 +13,7 @@ type ExpandedDetailsProps = {
 export function ModelCatalogExpandedDetails({ item, pricingScope }: ExpandedDetailsProps) {
   const { t } = useTranslation()
   const prices = item.prices ?? undefined
+  const availableProtocols = item.available_protocols ?? []
   const ratios = [
     ['group', item.ratios.group_micros],
     ['groupModel', item.ratios.group_model_micros],
@@ -46,6 +47,13 @@ export function ModelCatalogExpandedDetails({ item, pricingScope }: ExpandedDeta
             {capabilities.length > 0
               ? <BadgeList values={capabilities.map((value) => t(`models.capabilities.${value}`))} />
               : t('models.values.noAdditionalCapabilities')}
+          </DetailGroup>
+          <DetailGroup label={t('models.details.protocols')}>
+            {availableProtocols.length > 0
+              ? <BadgeList values={availableProtocols.map((value) => t(`models.protocols.${value}`))} />
+              : t(pricingScope === 'group'
+                ? 'models.values.protocolsUnavailable'
+                : 'models.values.protocolsPublicUnknown')}
           </DetailGroup>
         </dl>
       </section>

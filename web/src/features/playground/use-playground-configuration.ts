@@ -9,6 +9,7 @@ import {
   setPlaygroundApiKey,
 } from './playground-api-key'
 import { normalizePlaygroundModels } from './playground-model-selection'
+import { playgroundProtocolForModel, type PlaygroundProtocol } from './playground-protocol'
 
 const DEFAULT_TEMPERATURE = 0.7
 const DEFAULT_MAX_OUTPUT_TOKENS = 4096
@@ -20,6 +21,7 @@ export function usePlaygroundConfiguration() {
   const [apiKeyDraft, setApiKeyDraft] = useState(apiKey)
   const [apiKeyError, setApiKeyError] = useState<string>()
   const [selectedModels, setSelectedModels] = useState<string[]>([])
+  const [protocolByModel, setProtocolByModel] = useState<Record<string, PlaygroundProtocol>>({})
   const [modelSearchDraft, setModelSearchDraft] = useState('')
   const [modelSearch, setModelSearch] = useState('')
   const [systemPrompt, setSystemPrompt] = useState('')
@@ -33,6 +35,29 @@ export function usePlaygroundConfiguration() {
     () => catalogQuery.data?.pages.flatMap((page) => page.models) ?? [],
     [catalogQuery.data],
   )
+  const routableModels = useMemo(
+    () => models.filter((item) => playgroundProtocolForModel(item) !== undefined),
+    [models],
+  )
+  useEffect(() => {
+    setProtocolByModel((current) => {
+      const next = { ...current }
+      let changed = false
+      for (const item of models) {
+        const protocol = playgroundProtocolForModel(item)
+        if (protocol === undefined) {
+          if (Object.hasOwn(next, item.model)) {
+            delete next[item.model]
+            changed = true
+          }
+        } else if (next[item.model] !== protocol) {
+          next[item.model] = protocol
+          changed = true
+        }
+      }
+      return changed ? next : current
+    })
+  }, [models])
   const pricingScope = catalogQuery.data?.pages[0]?.pricing_scope
   const catalogInvalid = catalogQuery.isError
     || (pricingScope !== undefined && pricingScope !== 'group')
@@ -43,10 +68,10 @@ export function usePlaygroundConfiguration() {
   }, [modelSearchDraft])
 
   useEffect(() => {
-    if (selectedModels.length === 0 && models[0] && !catalogInvalid) {
-      setSelectedModels([models[0].model])
+    if (selectedModels.length === 0 && routableModels[0] && !catalogInvalid) {
+      setSelectedModels([routableModels[0].model])
     }
-  }, [catalogInvalid, models, selectedModels.length])
+  }, [catalogInvalid, routableModels, selectedModels.length])
 
   const saveApiKey = useCallback(() => {
     if (!isPlaygroundApiKey(apiKeyDraft)) {
@@ -93,6 +118,8 @@ export function usePlaygroundConfiguration() {
     maxOutputTokens: maxOutputTokensEnabled ? maxOutputTokens : undefined,
   }), [apiKey, maxOutputTokens, maxOutputTokensEnabled, systemPrompt, temperature, temperatureEnabled])
 
+  const selectedProtocolsReady = selectedModels.every((model) => protocolByModel[model] !== undefined)
+
   return {
     apiKey,
     apiKeyDraft,
@@ -104,9 +131,12 @@ export function usePlaygroundConfiguration() {
     maxOutputTokensEnabled,
     modelSearchDraft,
     models,
+    protocolByModel,
     restoreConversationConfiguration,
+    routableModels,
     saveApiKey,
     selectedModels,
+    selectedProtocolsReady,
     setMaxOutputTokens: (value: number) => setMaxOutputTokens(
       Math.min(1_000_000, Math.max(1, value || 1)),
     ),

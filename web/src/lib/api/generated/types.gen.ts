@@ -647,6 +647,7 @@ export type ModelCatalogItem = {
     prices: null | ModelCatalogTokenPrices;
     ratios: ModelCatalogRatios;
     price_version: number;
+    available_protocols: Array<ModelCatalogProtocol>;
 };
 export type ModelCatalogLifecycle = 'active' | 'deprecated';
 export type ModelCatalogListResponse = {
@@ -655,6 +656,7 @@ export type ModelCatalogListResponse = {
     next_cursor: string | null;
 };
 export type ModelCatalogPricingScope = 'public_base' | 'group';
+export type ModelCatalogProtocol = 'openai_chat' | 'openai_responses' | 'anthropic' | 'gemini';
 export type ModelCatalogRatios = {
     group_micros: string;
     group_model_micros: string;

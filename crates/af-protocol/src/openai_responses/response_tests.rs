@@ -606,6 +606,31 @@ fn rejects_invalid_or_unsupported_same_protocol_echoes() {
         Err(ParseResponseError::UnsupportedFeature)
     );
 
+    let mut nonzero_tool_usage = response(vec![], "completed");
+    nonzero_tool_usage["tool_usage"] = json!({
+        "web_search": { "num_requests": 1 }
+    });
+    assert_eq!(
+        parse_json(nonzero_tool_usage),
+        Err(ParseResponseError::UnsupportedFeature)
+    );
+
+    let mut malformed_tool_usage = response(vec![], "completed");
+    malformed_tool_usage["tool_usage"] = json!({
+        "web_search": { "num_requests": "0" }
+    });
+    assert_eq!(
+        parse_json(malformed_tool_usage),
+        Err(ParseResponseError::InvalidValue)
+    );
+
+    let mut out_of_range_penalty = response(vec![], "completed");
+    out_of_range_penalty["frequency_penalty"] = json!(2.1);
+    assert_eq!(
+        parse_json(out_of_range_penalty),
+        Err(ParseResponseError::InvalidValue)
+    );
+
     let mut early_completion = response(vec![], "completed");
     early_completion["completed_at"] = json!(1_699_999_999_i64);
     assert_eq!(

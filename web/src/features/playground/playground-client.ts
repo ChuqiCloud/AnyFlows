@@ -1,3 +1,4 @@
+import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { streamText, type ModelMessage } from 'ai'
 
@@ -6,12 +7,14 @@ import type {
   PlaygroundMessage,
   PlaygroundUsage,
 } from './playground-types'
+import type { PlaygroundProtocol } from './playground-protocol'
 import { playgroundRequestContext } from './playground-comparison-state'
 
-type PlaygroundStreamRequest = PlaygroundGenerationSettings & {
+type PlaygroundStreamRequest = Omit<PlaygroundGenerationSettings, 'protocol'> & {
   messages: PlaygroundMessage[]
   signal: AbortSignal
   onText: (delta: string) => void
+  protocol: PlaygroundProtocol
 }
 
 export type PlaygroundStreamResult = {
@@ -28,25 +31,40 @@ function getApiRoot() {
 export async function streamPlaygroundChat(
   request: PlaygroundStreamRequest,
 ): Promise<PlaygroundStreamResult> {
+  const fetchWithCredentials = (input: RequestInfo | URL, init?: RequestInit) => (
+    fetch(input, { ...init, credentials: 'same-origin' })
+  )
   const provider = createOpenAICompatible({
     name: 'anyflows',
     apiKey: request.apiKey,
     baseURL: `${getApiRoot()}/v1`,
     includeUsage: true,
-    fetch: (input, init) => fetch(input, { ...init, credentials: 'same-origin' }),
+    fetch: fetchWithCredentials,
+  })
+  const responsesProvider = createOpenAI({
+    name: 'anyflows',
+    apiKey: request.apiKey,
+    baseURL: `${getApiRoot()}/v1`,
+    fetch: fetchWithCredentials,
   })
   const messages: ModelMessage[] = playgroundRequestContext(request.messages)
     .map((message) => ({ role: message.role, content: message.content }))
   let streamError: unknown
 
   const result = streamText({
-    model: provider.chatModel(request.model),
+    model: request.protocol === 'openai_responses'
+      ? responsesProvider.responses(request.model)
+      : provider.chatModel(request.model),
     instructions: request.systemPrompt.trim() || undefined,
     messages,
     temperature: request.temperature,
     maxOutputTokens: request.maxOutputTokens,
     maxRetries: 0,
     abortSignal: request.signal,
+    // AnyFlows 当前只允许无状态 Responses；显式关闭 SDK 默认的 store=true。
+    providerOptions: request.protocol === 'openai_responses'
+      ? { openai: { store: false } }
+      : undefined,
     onError: ({ error }) => {
       streamError ??= error
     },

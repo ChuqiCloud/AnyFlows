@@ -10,6 +10,7 @@ import {
 } from './playground-comparison-state'
 import { classifyPlaygroundError } from './playground-error'
 import { normalizePlaygroundModels } from './playground-model-selection'
+import { resolvePlaygroundTargets, type PlaygroundProtocol } from './playground-protocol'
 import type { PlaygroundMessage, PlaygroundSession, PlaygroundSharedSettings } from './playground-types'
 
 function messageId() {
@@ -17,7 +18,11 @@ function messageId() {
 }
 
 /** 管理多模型独立流；清空或卸载后，旧请求不得再写回当前比较结果。 */
-export function usePlaygroundComparison(settings: PlaygroundSharedSettings, selectedModels: string[]) {
+export function usePlaygroundComparison(
+  settings: PlaygroundSharedSettings,
+  selectedModels: string[],
+  protocolByModel: Readonly<Record<string, PlaygroundProtocol>>,
+) {
   const models = useMemo(
     () => normalizePlaygroundModels(selectedModels),
     [selectedModels],
@@ -60,13 +65,14 @@ export function usePlaygroundComparison(settings: PlaygroundSharedSettings, sele
 
   const send = useCallback(async () => {
     const content = draft.trim()
-    if (!content || !settings.apiKey || models.length === 0 || controllersRef.current.size > 0) {
+    const targets = resolvePlaygroundTargets(models, protocolByModel)
+    if (!content || !settings.apiKey || !targets || controllersRef.current.size > 0) {
       return false
     }
 
     const sequence = ++requestSequenceRef.current
     const sharedUserId = messageId()
-    const turns = models.map((model): PlaygroundTurnSeed & { requestMessages: PlaygroundMessage[] } => {
+    const turns = targets.map(({ model, protocol }): PlaygroundTurnSeed & { requestMessages: PlaygroundMessage[]; protocol: PlaygroundProtocol } => {
       const current = sessions.find((session) => session.model === model)
         ?? createPlaygroundSession(model)
       const userMessage: PlaygroundMessage = {
@@ -83,6 +89,7 @@ export function usePlaygroundComparison(settings: PlaygroundSharedSettings, sele
       }
       return {
         model,
+        protocol,
         userMessage,
         assistantMessage,
         requestMessages: [...current.messages, userMessage],
@@ -102,6 +109,7 @@ export function usePlaygroundComparison(settings: PlaygroundSharedSettings, sele
         const result = await streamPlaygroundChat({
           ...settings,
           model: turn.model,
+          protocol: turn.protocol,
           messages: turn.requestMessages,
           signal: controller.signal,
           onText: (delta) => {
@@ -146,7 +154,7 @@ export function usePlaygroundComparison(settings: PlaygroundSharedSettings, sele
       }
     }))
     return true
-  }, [draft, models, sessions, settings])
+  }, [draft, models, protocolByModel, sessions, settings])
 
   useEffect(() => () => {
     requestSequenceRef.current += 1

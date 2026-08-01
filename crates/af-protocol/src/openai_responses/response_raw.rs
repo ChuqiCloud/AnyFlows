@@ -31,6 +31,7 @@ const RAW_FIELD_ALLOWLIST: &[&str] = &[
     "background",
     "completed_at",
     "conversation",
+    "frequency_penalty",
     "instructions",
     "max_output_tokens",
     "max_tool_calls",
@@ -41,6 +42,7 @@ const RAW_FIELD_ALLOWLIST: &[&str] = &[
     "prompt_cache_key",
     "prompt_cache_options",
     "prompt_cache_retention",
+    "presence_penalty",
     "reasoning",
     "safety_identifier",
     "service_tier",
@@ -48,6 +50,7 @@ const RAW_FIELD_ALLOWLIST: &[&str] = &[
     "temperature",
     "text",
     "tool_choice",
+    "tool_usage",
     "tools",
     "top_logprobs",
     "top_p",
@@ -96,6 +99,7 @@ pub(super) fn validate_raw_fields(
             },
             "completed_at" => validate_completed_at(value, status, created_at)?,
             "conversation" => validate_conversation(value)?,
+            "frequency_penalty" | "presence_penalty" => validate_number_range(value, -2.0, 2.0)?,
             "instructions" => validate_instructions(value)?,
             "max_output_tokens" => validate_max_output_tokens(value)?,
             "max_tool_calls" | "prompt" => {
@@ -118,6 +122,7 @@ pub(super) fn validate_raw_fields(
             }
             "temperature" => validate_number_range(value, 0.0, 2.0)?,
             "text" => validate_text_config(value)?,
+            "tool_usage" => validate_zero_tool_usage(value)?,
             "top_logprobs" => validate_top_logprobs(value)?,
             "top_p" => validate_number_range(value, 0.0, 1.0)?,
             "truncation" => validate_enum(value, &["auto", "disabled"])?,
@@ -424,6 +429,48 @@ fn validate_top_logprobs(value: &Value) -> Result<(), ResponseRawError> {
 fn validate_number_range(value: &Value, min: f64, max: f64) -> Result<(), ResponseRawError> {
     match value.as_f64() {
         Some(value) if value.is_finite() && (min..=max).contains(&value) => Ok(()),
+        _ => Err(ResponseRawError::InvalidValue),
+    }
+}
+
+fn validate_zero_tool_usage(value: &Value) -> Result<(), ResponseRawError> {
+    let mut visited = 0_usize;
+    validate_zero_tool_usage_value(value, 0, &mut visited)
+}
+
+fn validate_zero_tool_usage_value(
+    value: &Value,
+    depth: usize,
+    visited: &mut usize,
+) -> Result<(), ResponseRawError> {
+    *visited = visited
+        .checked_add(1)
+        .ok_or(ResponseRawError::StructureLimitExceeded)?;
+    if depth > 8 || *visited > 256 {
+        return Err(ResponseRawError::StructureLimitExceeded);
+    }
+    match value {
+        Value::Object(object) => {
+            if object.len() > 64 {
+                return Err(ResponseRawError::StructureLimitExceeded);
+            }
+            for (key, child) in object {
+                if key.is_empty()
+                    || key.len() > 64
+                    || !key
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+                {
+                    return Err(ResponseRawError::InvalidValue);
+                }
+                validate_zero_tool_usage_value(child, depth + 1, visited)?;
+            }
+            Ok(())
+        }
+        Value::Number(number) if number.as_i64() == Some(0) || number.as_f64() == Some(0.0) => {
+            Ok(())
+        }
+        Value::Number(_) => Err(ResponseRawError::UnsupportedFeature),
         _ => Err(ResponseRawError::InvalidValue),
     }
 }

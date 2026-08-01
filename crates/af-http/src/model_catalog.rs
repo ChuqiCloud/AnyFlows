@@ -2,6 +2,7 @@ use af_admin::{
     ModelCatalogBillingMode, ModelCatalogItem, ModelCatalogLifecycle, ModelCatalogPage,
     ModelCatalogPricingScope, ModelCatalogQuery, ModelCatalogReadError, ModelCatalogRuntimeStatus,
 };
+use af_domain::Protocol;
 use axum::{
     extract::{Extension, RawQuery, State},
     response::Response,
@@ -79,6 +80,30 @@ pub(crate) struct ModelCatalogItemResponse {
     ratios: ModelCatalogRatiosResponse,
     #[schema(minimum = 1)]
     price_version: u64,
+    #[schema(max_items = 4)]
+    available_protocols: Vec<ModelCatalogProtocolValue>,
+}
+
+/// 模型目录对外展示的可调用协议集合。
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = ModelCatalogProtocol)]
+pub(crate) enum ModelCatalogProtocolValue {
+    OpenaiChat,
+    OpenaiResponses,
+    Anthropic,
+    Gemini,
+}
+
+impl From<Protocol> for ModelCatalogProtocolValue {
+    fn from(value: Protocol) -> Self {
+        match value {
+            Protocol::OpenAiChat => Self::OpenaiChat,
+            Protocol::OpenAiResponses => Self::OpenaiResponses,
+            Protocol::Anthropic => Self::Anthropic,
+            Protocol::Gemini => Self::Gemini,
+        }
+    }
 }
 
 /// 模型广场公开的闭合商品生命周期。
@@ -197,6 +222,12 @@ impl ModelCatalogItemResponse {
                 peak_micros: ratios.peak_micros().to_string(),
             },
             price_version: item.price_version(),
+            available_protocols: item
+                .available_protocols()
+                .iter()
+                .copied()
+                .map(Into::into)
+                .collect(),
         }
     }
 }

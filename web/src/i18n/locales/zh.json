@@ -1327,6 +1327,8 @@
       "context": "{{value}} tokens",
       "contextUnknown": "尚无权威上下文数据",
       "noAdditionalCapabilities": "未声明推理或工具调用",
+      "protocolsUnavailable": "当前主体没有可调用协议",
+      "protocolsPublicUnknown": "游客目录不承诺当前可调用协议",
       "priceVersion": "价格版本 {{value}}"
     },
     "details": {
@@ -1335,6 +1337,7 @@
       "inputModalities": "输入模态",
       "outputModalities": "输出模态",
       "additionalCapabilities": "扩展能力",
+      "protocols": "可调用协议",
       "pricing": "价格快照"
     },
     "modalities": {
@@ -1346,6 +1349,12 @@
     "capabilities": {
       "reasoning": "推理",
       "toolCalls": "工具调用"
+    },
+    "protocols": {
+      "openai_chat": "OpenAI Chat",
+      "openai_responses": "OpenAI Responses",
+      "anthropic": "Anthropic",
+      "gemini": "Gemini"
     },
     "lifecycle": {
       "active": "活动",
@@ -1429,6 +1438,13 @@
       "selectionCount": "已选择 {{count}} / {{max}} 个模型",
       "selectedLabel": "已选择的比较模型",
       "locked": "会话开始后模型集合已锁定",
+      "protocols": {
+        "openai_chat": "OpenAI Chat",
+        "openai_responses": "OpenAI Responses",
+        "anthropic": "Anthropic",
+        "gemini": "Gemini",
+        "unavailable": "试炼场暂不支持"
+      },
       "done": "完成选择"
     },
     "message": {

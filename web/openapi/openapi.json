@@ -10345,7 +10345,8 @@
           "billing_mode",
           "prices",
           "ratios",
-          "price_version"
+          "price_version",
+          "available_protocols"
         ],
         "properties": {
           "model": {
@@ -10441,6 +10442,13 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          },
+          "available_protocols": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelCatalogProtocol"
+            },
+            "maxItems": 4
           }
         },
         "additionalProperties": false
@@ -10487,6 +10495,16 @@
         "enum": [
           "public_base",
           "group"
+        ]
+      },
+      "ModelCatalogProtocol": {
+        "type": "string",
+        "description": "模型目录对外展示的可调用协议集合。",
+        "enum": [
+          "openai_chat",
+          "openai_responses",
+          "anthropic",
+          "gemini"
         ]
       },
       "ModelCatalogRatios": {

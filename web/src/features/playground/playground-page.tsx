@@ -15,6 +15,7 @@ export function PlaygroundPage() {
   const comparison = usePlaygroundComparison(
     configuration.sharedSettings,
     configuration.selectedModels,
+    configuration.protocolByModel,
   )
   const history = usePlaygroundHistory(comparison.sessions, comparison.streaming)
 
@@ -36,6 +37,7 @@ export function PlaygroundPage() {
       values={configuration.selectedModels}
       search={configuration.modelSearchDraft}
       models={configuration.models}
+      protocolByModel={configuration.protocolByModel}
       loading={configuration.catalogQuery.isPending}
       error={configuration.catalogInvalid}
       loadingMore={configuration.catalogQuery.isFetchingNextPage}
@@ -76,7 +78,11 @@ export function PlaygroundPage() {
     : comparison.overallState
   if (!comparison.streaming) {
     if (configuration.catalogQuery.isPending) status = 'loadingModels'
-    else if (configuration.catalogInvalid || configuration.selectedModels.length === 0) {
+    else if (
+      configuration.catalogInvalid
+      || configuration.selectedModels.length === 0
+      || !configuration.selectedProtocolsReady
+    ) {
       status = 'modelUnavailable'
     } else if (!configuration.apiKey) status = 'keyRequired'
   }
@@ -84,6 +90,7 @@ export function PlaygroundPage() {
   const canSend = Boolean(
     configuration.apiKey
     && configuration.selectedModels.length > 0
+    && configuration.selectedProtocolsReady
     && !configuration.catalogInvalid
     && comparison.draft.trim()
     && !comparison.streaming

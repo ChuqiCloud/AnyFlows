@@ -1,5 +1,5 @@
 use af_domain::{Role, UpstreamError};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::{
     CREATED_AT, MODEL, RESPONSE_ID, frame, initial_response, join, message_item, output_text,
@@ -146,6 +146,155 @@ fn decodes_text_stream_across_transport_chunks() {
     let debug = format!("{events:?}");
     assert!(!debug.contains("hello"));
     assert!(!format!("{decoder:?}").contains(RESPONSE_ID));
+}
+
+#[test]
+fn decodes_current_responses_stream_echoes_and_omitted_reasoning_status() {
+    let reasoning_id = "rs_stream_current";
+    let message_id = "msg_stream_current";
+    let reasoning_done = json!({
+        "id": reasoning_id,
+        "type": "reasoning",
+        "summary": [{"type": "summary_text", "text": ""}],
+        "content": [],
+        "encrypted_content": "sig-current",
+    });
+    let terminal_item = message_item(message_id, "completed", "ok");
+    let bytes = join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": current_echo_response("in_progress", Vec::new(), None)}),
+        ),
+        frame(
+            "response.in_progress",
+            1,
+            json!({"response": current_echo_response("in_progress", Vec::new(), None)}),
+        ),
+        frame(
+            "response.output_item.added",
+            2,
+            json!({
+                "output_index": 0,
+                "item": {
+                    "id": reasoning_id,
+                    "type": "reasoning",
+                    "summary": [],
+                    "content": [],
+                    "encrypted_content": "sig-current",
+                }
+            }),
+        ),
+        frame(
+            "response.output_item.done",
+            3,
+            json!({"output_index": 0, "item": reasoning_done.clone()}),
+        ),
+        frame(
+            "response.output_item.added",
+            4,
+            json!({
+                "output_index": 1,
+                "item": {
+                    "id": message_id,
+                    "type": "message",
+                    "status": "in_progress",
+                    "role": "assistant",
+                    "content": [],
+                }
+            }),
+        ),
+        frame(
+            "response.content_part.added",
+            5,
+            json!({
+                "item_id": message_id,
+                "output_index": 1,
+                "content_index": 0,
+                "part": output_text(""),
+            }),
+        ),
+        frame(
+            "response.output_text.delta",
+            6,
+            json!({
+                "item_id": message_id,
+                "output_index": 1,
+                "content_index": 0,
+                "delta": "ok",
+                "logprobs": [],
+            }),
+        ),
+        frame(
+            "response.output_text.done",
+            7,
+            json!({
+                "item_id": message_id,
+                "output_index": 1,
+                "content_index": 0,
+                "text": "ok",
+                "logprobs": [],
+            }),
+        ),
+        frame(
+            "response.content_part.done",
+            8,
+            json!({
+                "item_id": message_id,
+                "output_index": 1,
+                "content_index": 0,
+                "part": output_text("ok"),
+            }),
+        ),
+        frame(
+            "response.output_item.done",
+            9,
+            json!({"output_index": 1, "item": terminal_item.clone()}),
+        ),
+        frame(
+            "response.completed",
+            10,
+            json!({
+                "response": current_echo_response(
+                    "completed",
+                    vec![reasoning_done, terminal_item],
+                    Some(usage_value(5, 2, 0, 1)),
+                )
+            }),
+        ),
+    ]);
+
+    let mut decoder = OpenAiResponsesStreamDecoder::new();
+    let events = decoder.push(&bytes).unwrap();
+    decoder.finish().unwrap();
+
+    assert_eq!(
+        events,
+        vec![
+            CanonicalStreamEvent::MessageStart {
+                choice_index: 0,
+                role: Role::Assistant,
+            },
+            CanonicalStreamEvent::ReasoningDelta {
+                choice_index: 0,
+                content_index: 0,
+                text: String::new(),
+                signature: Some("sig-current".to_owned()),
+            },
+            CanonicalStreamEvent::ContentDelta {
+                choice_index: 0,
+                content_index: 1,
+                delta: ContentDelta::Text("ok".to_owned()),
+            },
+            CanonicalStreamEvent::Finish {
+                choice_index: 0,
+                reason: FinishReason::Stop,
+                stop_sequence: None,
+            },
+            CanonicalStreamEvent::Usage(usage(5, 2, 0, 1)),
+            CanonicalStreamEvent::StreamEnd,
+        ]
+    );
 }
 
 #[test]
@@ -535,4 +684,28 @@ fn lifecycle_identity_is_stable() {
     assert_eq!(decoder.push(&bytes), Err(ParseStreamError::InvalidSequence));
     assert_eq!(MODEL, "gpt-5.5");
     assert_eq!(CREATED_AT, 1_700_000_000);
+}
+
+fn current_echo_response(status: &str, output: Vec<Value>, usage: Option<Value>) -> Value {
+    let mut value = response(status, output, usage, None, None);
+    let object = value.as_object_mut().expect("测试响应必须是对象");
+    object.insert("frequency_penalty".to_owned(), json!(0));
+    object.insert("presence_penalty".to_owned(), json!(0));
+    object.insert(
+        "tool_usage".to_owned(),
+        json!({
+            "image_gen": {
+                "input_tokens": 0,
+                "input_tokens_details": {"image_tokens": 0, "text_tokens": 0},
+                "output_tokens": 0,
+                "output_tokens_details": {"image_tokens": 0, "text_tokens": 0},
+                "total_tokens": 0,
+            },
+            "web_search": {"num_requests": 0},
+        }),
+    );
+    if status == "completed" {
+        object.insert("completed_at".to_owned(), json!(CREATED_AT + 1));
+    }
+    value
 }

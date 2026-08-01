@@ -1,4 +1,4 @@
-use std::{fmt, sync::Arc};
+use std::{collections::BTreeSet, fmt, sync::Arc};
 
 use af_admin::{
     AdminModelModalities, ModelCatalogBillingMode, ModelCatalogItem, ModelCatalogLifecycle,
@@ -14,7 +14,8 @@ use af_db::{
     AdminModelLifecycleRecord, AdminModelModalitiesRecord, AdminModelRecord, AdminModelRepository,
     MAX_ADMIN_MODEL_PAGE_SIZE,
 };
-use af_scheduler::InMemoryChannelIndex;
+use af_domain::{GroupId, Protocol};
+use af_scheduler::{ChannelIndexSnapshot, InMemoryChannelIndex};
 
 type CatalogClock = Arc<dyn Fn() -> Option<u32> + Send + Sync>;
 const MAX_METADATA_SCAN_PAGES: usize = 100;
@@ -52,6 +53,7 @@ impl RuntimeModelCatalogReader {
         ratios: PricingRatios,
         model_version: u64,
         runtime_status: ModelCatalogRuntimeStatus,
+        available_protocols: Vec<Protocol>,
     ) -> Result<ModelCatalogItem, ModelCatalogReadError> {
         let billing_mode = Self::catalog_billing_mode(billing_mode)?;
         let prices = resolver
@@ -71,6 +73,7 @@ impl RuntimeModelCatalogReader {
             ratios,
             model_version,
             runtime_status,
+            available_protocols,
         )
     }
 
@@ -88,6 +91,7 @@ impl RuntimeModelCatalogReader {
         &self,
         metadata: ModelCatalogMetadata,
         authentication: SessionAuthentication,
+        available_protocols: Vec<Protocol>,
         current_second: u32,
     ) -> Result<Option<ModelCatalogItem>, ModelCatalogReadError> {
         let group_id = authentication.group_id();
@@ -108,6 +112,7 @@ impl RuntimeModelCatalogReader {
             pricing.ratios(),
             pricing.model_version(),
             ModelCatalogRuntimeStatus::Available,
+            available_protocols,
         )
         .map(Some)
     }
@@ -124,6 +129,7 @@ impl RuntimeModelCatalogReader {
             ratios,
             price.version(),
             ModelCatalogRuntimeStatus::NotEvaluated,
+            Vec::new(),
         )
     }
 
@@ -237,17 +243,21 @@ impl RuntimeModelCatalogReader {
                 .map_err(|_| ModelCatalogReadError::Internal)?;
             let (records, next_cursor) = page.into_parts();
             for record in records {
-                if !Self::metadata_matches_search(&record, query.search())
-                    || runtime
-                        .candidates(authentication.group_id(), record.model())
-                        .map_err(|_| ModelCatalogReadError::Internal)?
-                        .is_empty()
-                {
+                if !Self::metadata_matches_search(&record, query.search()) {
+                    continue;
+                }
+                let available_protocols =
+                    available_protocols(&runtime, authentication.group_id(), record.model())?;
+                if available_protocols.is_empty() {
                     continue;
                 }
                 let metadata = metadata_from_record(record)?;
-                let Some(item) =
-                    self.group_catalog_item(metadata, authentication, current_second)?
+                let Some(item) = self.group_catalog_item(
+                    metadata,
+                    authentication,
+                    available_protocols,
+                    current_second,
+                )?
                 else {
                     continue;
                 };
@@ -335,6 +345,28 @@ fn catalog_page(
     ModelCatalogPage::from_parts(pricing_scope, items, next_cursor)
 }
 
+fn available_protocols(
+    runtime: &ChannelIndexSnapshot,
+    group_id: GroupId,
+    model: &str,
+) -> Result<Vec<Protocol>, ModelCatalogReadError> {
+    // 同一个 runtime 快照里可能有多个渠道候选，目录只暴露去重后的协议能力集合。
+    let protocols = runtime
+        .candidates(group_id, model)
+        .map_err(|_| ModelCatalogReadError::Internal)?
+        .iter()
+        .map(|candidate| {
+            runtime
+                .runtime_target(candidate.channel_id())
+                .map(|target| target.protocol())
+                .ok_or(ModelCatalogReadError::Internal)
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?
+        .into_iter()
+        .collect();
+    Ok(protocols)
+}
+
 fn contains_search(model: &str, search: &str) -> bool {
     model
         .as_bytes()
@@ -358,7 +390,6 @@ mod tests {
         AdminModelCreateRecord, AdminModelLifecycleRecord, AdminModelModalitiesRecord,
         AdminModelVisibilityRecord, AdminModelWriteRecord, DatabaseOptions, MigrationOptions,
     };
-    use af_domain::GroupId;
     use af_scheduler::{ChannelIndexSource, ChannelIndexSourceFuture};
     use rust_decimal::Decimal;
     use std::time::Duration;
