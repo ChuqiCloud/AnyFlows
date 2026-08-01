@@ -443,7 +443,7 @@
   },
   "users": {
     "title": "用户管理",
-    "subtitle": "管理平台账户、角色、默认分组与资源限制。管理员仍保留自己的用户功能。",
+    "subtitle": "管理平台账户、角色、默认分组、钱包与请求限制。管理员仍保留自己的用户功能。",
     "count_one": "已加载 {{count}} 个用户",
     "count_other": "已加载 {{count}} 个用户",
     "pages_one": "已读取 {{count}} 页",
@@ -478,6 +478,7 @@
     "actions": {
       "create": "创建用户",
       "edit": "编辑用户",
+      "wallet": "钱包与账本",
       "delete": "删除用户",
       "enable": "启用用户",
       "disable": "停用用户",
@@ -502,13 +503,13 @@
       "createTitle": "创建用户",
       "createDescription": "配置登录身份、默认分组和初始资源限制。",
       "editTitle": "编辑用户",
-      "editDescription": "修改账户与资源限制，密码留空时保持不变。"
+      "editDescription": "修改账户、默认分组与请求限制，密码留空时保持不变。"
     },
     "form": {
       "account": "账户信息",
       "access": "角色与归属",
       "limits": "资源限制",
-      "emailHint": "邮箱可留空，公开注册的验证策略将在独立切片中实现。",
+      "emailHint": "邮箱可留空，填写后可用于通知和找回密码。",
       "createPasswordHint": "创建用户必须设置初始密码，密码不会在保存后回显。",
       "updatePasswordHint": "留空表示保留当前密码，填写后将重置密码。",
       "groupHint": "用户自己的 API Key 默认绑定到该分组。",
@@ -516,7 +517,7 @@
       "groupsEmpty": "没有可用分组",
       "groupPlaceholder": "选择默认分组",
       "groupsFailed": "无法加载分组目录。",
-      "quotaHint": "非负整数，使用服务端额度单位。",
+      "quotaHint": "创建时写入钱包 opening 基线，后续余额只能通过增量调账修改。",
       "optionalLimitHint": "留空表示不设置账户级限制。",
       "conflict": "用户名或邮箱已被其他用户使用，请修改后重试。",
       "submitError": "保存失败，请检查字段后重试。"
@@ -529,6 +530,7 @@
       "status": "状态",
       "defaultGroup": "默认分组",
       "quota": "总额度",
+      "initialQuota": "初始额度",
       "rpmLimit": "每分钟请求数",
       "concurrency": "并发数"
     },
@@ -538,6 +540,74 @@
       "password": "创建时密码不能为空，最大 4096 字节。",
       "group": "请选择有效的默认分组。",
       "number": "请输入范围内的非负整数。"
+    },
+    "wallet": {
+      "title": "钱包与账本",
+      "description": "管理用户可用额度并核对不可变余额流水。",
+      "metrics": {
+        "available": "可用额度",
+        "used": "累计使用",
+        "frozen": "冻结额度"
+      },
+      "adjustment": {
+        "title": "增量调账",
+        "description": "每次提交都会追加独立账本事件。",
+        "preview": "调整后可用额度",
+        "pendingPreview": "等待输入",
+        "insufficientPreview": "余额不足",
+        "overflowPreview": "超出精确范围",
+        "reasonHint": "填写可审计的业务原因，最多 500 字节。"
+      },
+      "fields": {
+        "direction": "调整方向",
+        "amount": "调整额度",
+        "reason": "调账原因"
+      },
+      "direction": {
+        "increase": "增加额度",
+        "decrease": "扣减额度"
+      },
+      "entryType": {
+        "opening_balance": "初始基线",
+        "admin_adjustment": "管理员调账"
+      },
+      "history": {
+        "title": "账本历史",
+        "count_one": "已加载 {{count}} 条事件",
+        "count_other": "已加载 {{count}} 条事件",
+        "loading": "正在加载账本",
+        "loadingMore": "正在加载",
+        "emptyTitle": "暂无账本事件",
+        "emptyBody": "零初始额度且尚未调账的用户不会产生账本记录。",
+        "errorTitle": "无法读取账本",
+        "errorBody": "服务暂时没有返回该用户的账本历史。",
+        "moreError": "更早的账本读取失败。",
+        "openingReason": "用户钱包初始基线",
+        "systemActor": "系统迁移",
+        "adminActor": "管理员 #{{id}}",
+        "balanceAfter": "余额 {{value}}"
+      },
+      "actions": {
+        "submit": "提交调账",
+        "refresh": "刷新账本",
+        "retry": "重试",
+        "loadMore": "加载更早记录"
+      },
+      "validation": {
+        "amount": "请输入大于零且可精确表示的整数额度。",
+        "reason": "原因不能为空、不能含首尾空白或控制字符，且最多 500 字节。"
+      },
+      "success": {
+        "applied": "调账已提交，钱包余额与账本已同步更新。",
+        "replayed": "该调账此前已经提交，本次未重复改变余额。"
+      },
+      "error": {
+        "insufficient": "当前可用额度不足，刷新账本后再确认扣减金额。",
+        "overflow": "调整后的余额超出系统可表示范围。",
+        "outcomeUnknown": "提交结果暂时未知。保持字段不变并重试，系统会复用同一事件键。",
+        "eventConflict": "事件键已对应另一笔调账，请修改任一字段后重新提交。",
+        "submit": "调账失败，余额没有确认变化，请稍后重试。"
+      }
     },
     "delete": {
       "title": "删除用户",

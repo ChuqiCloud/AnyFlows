@@ -1,6 +1,6 @@
 use std::fmt;
 
-use af_domain::{GroupId, UserId};
+use af_domain::{GroupId, Quota, UserId};
 use sea_orm::{
     ActiveModelTrait, ConnectionTrait, DatabaseTransaction, DbErr, EntityTrait, QueryFilter, Set,
     TransactionTrait,
@@ -76,7 +76,6 @@ pub struct AdminUserUpdateRecord {
     role: i16,
     status: i16,
     default_group_id: GroupId,
-    quota: i64,
     rpm_limit: Option<i32>,
     concurrency: Option<i32>,
 }
@@ -92,7 +91,6 @@ impl AdminUserUpdateRecord {
         role: i16,
         status: i16,
         default_group_id: GroupId,
-        quota: i64,
         rpm_limit: Option<i32>,
         concurrency: Option<i32>,
     ) -> Self {
@@ -103,7 +101,6 @@ impl AdminUserUpdateRecord {
             role,
             status,
             default_group_id,
-            quota,
             rpm_limit,
             concurrency,
         }
@@ -283,7 +280,6 @@ impl AdminUserRepository {
                 users::Column::DefaultGroupId,
                 Expr::value(record.default_group_id.get()),
             )
-            .col_expr(users::Column::Quota, Expr::value(record.quota))
             .col_expr(users::Column::RpmLimit, Expr::value(record.rpm_limit))
             .col_expr(users::Column::Concurrency, Expr::value(record.concurrency))
             .col_expr(users::Column::UpdatedAt, Expr::value(now));
@@ -369,6 +365,8 @@ async fn create_user_in_transaction(
         .transpose()
         .map_err(map_identity_secret_error)?;
     let aff_code = generate_aff_code().map_err(map_identity_secret_error)?;
+    let quota = Quota::new(record.quota)
+        .map_err(|_| record_internal_error(AdminUserRepositoryError::Invariant))?;
     let inserted = users::ActiveModel {
         username: Set(record.username),
         email: Set(record.email),
@@ -376,7 +374,7 @@ async fn create_user_in_transaction(
         role: Set(record.role),
         status: Set(record.status),
         default_group_id: Set(record.default_group_id.get()),
-        quota: Set(record.quota),
+        quota: Set(quota.units()),
         aff_code: Set(aff_code),
         rpm_limit: Set(record.rpm_limit),
         concurrency: Set(record.concurrency),
@@ -389,6 +387,9 @@ async fn create_user_in_transaction(
     .map_err(map_write_db_error)?;
     let user_id = UserId::new(inserted.id)
         .map_err(|_| record_internal_error(AdminUserRepositoryError::Invariant))?;
+    crate::wallet_ledger::insert_opening_entry(transaction, user_id, quota, inserted.created_at)
+        .await
+        .map_err(map_write_db_error)?;
     fetch_user_snapshot(transaction, user_id).await
 }
 
@@ -584,7 +585,6 @@ mod tests {
             0,
             2,
             GroupId::new(1).unwrap(),
-            10,
             Some(60),
             Some(2),
         );

@@ -1545,6 +1545,7 @@ async fn start_server(
         Arc::new(RejectAdminUsageLogs),
         Arc::new(RejectAdminUsers),
         Arc::new(RejectAdminUsers),
+        None,
         QueryApiKeyPolicy::Deny,
         None,
     );

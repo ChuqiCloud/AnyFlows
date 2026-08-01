@@ -36,6 +36,7 @@ mod user_profile;
 mod user_read;
 mod user_token;
 mod user_write;
+mod wallet;
 
 pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,
@@ -209,6 +210,12 @@ pub use user_write::{
     AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserUpdateCommand,
     AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter, DatabaseAdminUserWriter,
     MAX_ADMIN_USER_PASSWORD_BYTES,
+};
+pub use wallet::{
+    AdminWalletAdjustmentCommand, AdminWalletAdjustmentFuture, AdminWalletAdjustmentResult,
+    AdminWalletEntry, AdminWalletEntryType, AdminWalletError, AdminWalletListFuture,
+    AdminWalletListQuery, AdminWalletPage, AdminWalletService, DEFAULT_ADMIN_WALLET_PAGE_SIZE,
+    DatabaseAdminWalletService,
 };
 
 #[cfg(test)]

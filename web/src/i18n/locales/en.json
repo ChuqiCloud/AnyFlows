@@ -443,7 +443,7 @@
   },
   "users": {
     "title": "User management",
-    "subtitle": "Manage platform accounts, roles, default groups, and resource limits. Administrators retain their own user features.",
+    "subtitle": "Manage platform accounts, roles, default groups, wallets, and request limits. Administrators retain their own user features.",
     "count_one": "{{count}} user loaded",
     "count_other": "{{count}} users loaded",
     "pages_one": "{{count}} page loaded",
@@ -478,6 +478,7 @@
     "actions": {
       "create": "Create user",
       "edit": "Edit user",
+      "wallet": "Wallet and ledger",
       "delete": "Delete user",
       "enable": "Enable user",
       "disable": "Disable user",
@@ -502,13 +503,13 @@
       "createTitle": "Create user",
       "createDescription": "Configure the sign-in identity, default group, and initial resource limits.",
       "editTitle": "Edit user",
-      "editDescription": "Update the account and resource limits. Leave the password blank to keep it unchanged."
+      "editDescription": "Update the account, default group, and request limits. Leave the password blank to keep it unchanged."
     },
     "form": {
       "account": "Account information",
       "access": "Role and ownership",
       "limits": "Resource limits",
-      "emailHint": "Email is optional. Public registration verification will be delivered as a separate slice.",
+      "emailHint": "Email is optional and can be used for notifications and password recovery.",
       "createPasswordHint": "An initial password is required and is never shown again after saving.",
       "updatePasswordHint": "Leave blank to keep the current password, or enter a value to reset it.",
       "groupHint": "The user's own API keys bind to this group by default.",
@@ -516,7 +517,7 @@
       "groupsEmpty": "No groups available",
       "groupPlaceholder": "Select a default group",
       "groupsFailed": "The group catalog could not be loaded.",
-      "quotaHint": "A non-negative integer in the server quota unit.",
+      "quotaHint": "Creates the wallet opening baseline. Later balance changes require an incremental adjustment.",
       "optionalLimitHint": "Leave blank for no account-level limit.",
       "conflict": "The username or email is already used by another account.",
       "submitError": "The user could not be saved. Check the fields and try again."
@@ -529,6 +530,7 @@
       "status": "Status",
       "defaultGroup": "Default group",
       "quota": "Total quota",
+      "initialQuota": "Initial quota",
       "rpmLimit": "Requests per minute",
       "concurrency": "Concurrency"
     },
@@ -538,6 +540,74 @@
       "password": "A password is required when creating a user and may contain up to 4096 bytes.",
       "group": "Select a valid default group.",
       "number": "Enter an in-range non-negative integer."
+    },
+    "wallet": {
+      "title": "Wallet and ledger",
+      "description": "Manage available quota and review the immutable balance ledger.",
+      "metrics": {
+        "available": "Available",
+        "used": "Used",
+        "frozen": "Frozen"
+      },
+      "adjustment": {
+        "title": "Incremental adjustment",
+        "description": "Each submission appends an independent ledger event.",
+        "preview": "Available after adjustment",
+        "pendingPreview": "Enter an amount",
+        "insufficientPreview": "Insufficient balance",
+        "overflowPreview": "Outside exact range",
+        "reasonHint": "Enter an auditable business reason, up to 500 bytes."
+      },
+      "fields": {
+        "direction": "Direction",
+        "amount": "Quota amount",
+        "reason": "Reason"
+      },
+      "direction": {
+        "increase": "Add quota",
+        "decrease": "Deduct quota"
+      },
+      "entryType": {
+        "opening_balance": "Opening baseline",
+        "admin_adjustment": "Admin adjustment"
+      },
+      "history": {
+        "title": "Ledger history",
+        "count_one": "{{count}} event loaded",
+        "count_other": "{{count}} events loaded",
+        "loading": "Loading ledger",
+        "loadingMore": "Loading",
+        "emptyTitle": "No ledger events",
+        "emptyBody": "A user with zero initial quota and no adjustments has no ledger entries.",
+        "errorTitle": "Ledger could not be loaded",
+        "errorBody": "The service did not return this user's ledger history.",
+        "moreError": "Earlier ledger entries could not be loaded.",
+        "openingReason": "Wallet opening baseline",
+        "systemActor": "System migration",
+        "adminActor": "Administrator #{{id}}",
+        "balanceAfter": "Balance {{value}}"
+      },
+      "actions": {
+        "submit": "Submit adjustment",
+        "refresh": "Refresh ledger",
+        "retry": "Retry",
+        "loadMore": "Load earlier entries"
+      },
+      "validation": {
+        "amount": "Enter a positive integer that can be represented exactly.",
+        "reason": "The reason cannot be empty, contain surrounding whitespace or control characters, or exceed 500 bytes."
+      },
+      "success": {
+        "applied": "The adjustment was committed and the wallet and ledger are in sync.",
+        "replayed": "This adjustment was already committed. The balance was not changed twice."
+      },
+      "error": {
+        "insufficient": "Available quota is insufficient. Refresh the ledger before confirming the deduction.",
+        "overflow": "The adjusted balance is outside the supported range.",
+        "outcomeUnknown": "The result is unknown. Keep the fields unchanged and retry with the same event key.",
+        "eventConflict": "The event key belongs to another adjustment. Change a field before submitting again.",
+        "submit": "The adjustment failed and no balance change was confirmed. Try again shortly."
+      }
     },
     "delete": {
       "title": "Delete user",

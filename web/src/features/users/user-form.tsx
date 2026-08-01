@@ -14,7 +14,8 @@ import { UserFormField } from './user-form-field'
 import {
   buildUserFormSchema,
   defaultUserValues,
-  toUserRequest,
+  toUserCreateRequest,
+  toUserUpdateRequest,
   type UserEditorMode,
   type UserFormValues,
 } from './user-form-model'
@@ -63,9 +64,9 @@ export function UserForm({ mode, user, onCancel, onSaved }: UserFormProps) {
   const onSubmit = form.handleSubmit(async (values) => {
     try {
       const saved = mode === 'create'
-        ? await createMutation.mutateAsync(toUserRequest(values))
+        ? await createMutation.mutateAsync(toUserCreateRequest(values))
         : user
-          ? await updateMutation.mutateAsync({ id: user.id, body: toUserRequest(values) })
+          ? await updateMutation.mutateAsync({ id: user.id, body: toUserUpdateRequest(values) })
           : undefined
       if (saved) onSaved(saved)
     } catch {
@@ -122,9 +123,11 @@ export function UserForm({ mode, user, onCancel, onSaved }: UserFormProps) {
 
         <section className="grid gap-3" aria-labelledby="user-limit-fields">
           <h3 id="user-limit-fields" className="text-xs font-semibold">{t('users.form.limits')}</h3>
-          <UserFormField id="user-quota" label={t('users.fields.quota')} hint={t('users.form.quotaHint')} error={form.formState.errors.quota?.message}>
-            <Input id="user-quota" type="number" min={0} step={1} inputMode="numeric" aria-invalid={!!form.formState.errors.quota} {...form.register('quota', { valueAsNumber: true })} />
-          </UserFormField>
+          {mode === 'create' ? (
+            <UserFormField id="user-quota" label={t('users.fields.initialQuota')} hint={t('users.form.quotaHint')} error={form.formState.errors.quota?.message}>
+              <Input id="user-quota" type="number" min={0} step={1} inputMode="numeric" aria-invalid={!!form.formState.errors.quota} {...form.register('quota', { valueAsNumber: true })} />
+            </UserFormField>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <UserFormField id="user-rpm" label={t('users.fields.rpmLimit')} hint={t('users.form.optionalLimitHint')} error={form.formState.errors.rpmLimit?.message}>
               <Input id="user-rpm" type="number" min={0} max={2_147_483_647} step={1} inputMode="numeric" aria-invalid={!!form.formState.errors.rpmLimit} {...form.register('rpmLimit')} />

@@ -8,19 +8,20 @@ use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminEmailSettingsService, AdminGroupReader,
     AdminGroupWriter, AdminModelPriceService, AdminModelReader, AdminModelSyncService,
     AdminModelWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
-    AdminUserWriter, DatabaseAdminChannelReader, DatabaseAdminChannelWriter,
+    AdminUserWriter, AdminWalletService, DatabaseAdminChannelReader, DatabaseAdminChannelWriter,
     DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader, DatabaseAdminGroupWriter,
     DatabaseAdminModelPriceService, DatabaseAdminModelReader, DatabaseAdminModelSyncService,
     DatabaseAdminModelWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
     DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
-    DatabaseInitialSetup, DatabasePasswordResetService, DatabasePlaygroundConversationService,
-    DatabasePlaygroundShareService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
-    DatabaseSiteSettingsService, DatabaseTokenAuthenticator, DatabaseUserProfileService,
-    DatabaseUserTokenService, EmailDelivery, InitialSetup, ModelCatalogReader,
-    PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
-    PlaygroundShareService, RegistrationService, RegistrationServiceConfigError,
-    RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
-    SiteSettingsService, TokenAuthenticator, UserProfileService, UserTokenService,
+    DatabaseAdminWalletService, DatabaseInitialSetup, DatabasePasswordResetService,
+    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    DatabaseRegistrationService, DatabaseSessionAuthenticator, DatabaseSiteSettingsService,
+    DatabaseTokenAuthenticator, DatabaseUserProfileService, DatabaseUserTokenService,
+    EmailDelivery, InitialSetup, ModelCatalogReader, PasswordResetService,
+    PasswordResetServiceConfigError, PlaygroundConversationService, PlaygroundShareService,
+    RegistrationService, RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter,
+    SessionAuthenticator, SessionAuthenticatorConfigError, SiteSettingsService, TokenAuthenticator,
+    UserProfileService, UserTokenService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -48,7 +49,8 @@ use af_db::{
     RegistrationRepositoryConfigError, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
     TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository, UserProfileRepository,
     UserProfileRepositoryConfigError, UserSessionRepository, UserSessionRepositoryConfigError,
-    UserTokenRepository, UserTokenRepositoryConfigError, connect_and_migrate,
+    UserTokenRepository, UserTokenRepositoryConfigError, WalletLedgerRepository,
+    WalletLedgerRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle,
@@ -130,6 +132,7 @@ pub struct AuthenticationReady {
     admin_usage_log_reader: Arc<dyn AdminUsageLogReader>,
     admin_user_reader: Arc<dyn AdminUserReader>,
     admin_user_writer: Arc<dyn AdminUserWriter>,
+    admin_wallet_service: Arc<dyn AdminWalletService>,
     query_api_key_policy: QueryApiKeyPolicy,
 }
 
@@ -288,6 +291,9 @@ pub enum BootstrapError {
     /// 管理员用户仓储的启动参数无效。
     #[error("管理员用户仓储启动参数无效")]
     AdminUserRepository(#[source] AdminUserRepositoryConfigError),
+    /// 钱包账本仓储的启动参数无效。
+    #[error("钱包账本仓储启动参数无效")]
+    WalletLedgerRepository(#[source] WalletLedgerRepositoryConfigError),
     /// 普通用户资料仓储的启动参数无效。
     #[error("用户资料仓储启动参数无效")]
     UserProfileRepository(#[source] UserProfileRepositoryConfigError),
@@ -502,6 +508,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::AdminUserRepository)?;
+        let wallet_ledger_repository = WalletLedgerRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::WalletLedgerRepository)?;
         let user_profile_repository = UserProfileRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -638,6 +649,9 @@ impl Bootstrap<DatabaseReady> {
                     admin_user_repository.clone(),
                 )),
                 admin_user_writer: Arc::new(DatabaseAdminUserWriter::new(admin_user_repository)),
+                admin_wallet_service: Arc::new(DatabaseAdminWalletService::new(
+                    wallet_ledger_repository,
+                )),
                 query_api_key_policy,
             },
         })
@@ -1008,6 +1022,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.admin_usage_log_reader),
             Arc::clone(&self.stage.infrastructure.admin_user_reader),
             Arc::clone(&self.stage.infrastructure.admin_user_writer),
+            Some(Arc::clone(&self.stage.infrastructure.admin_wallet_service)),
             self.stage.infrastructure.query_api_key_policy,
             Some(Arc::new(EmbeddedFrontendAssets)),
         );

@@ -25,6 +25,14 @@ pub(crate) enum ManagementError {
     UserNotFound,
     /// 用户名或邮箱与当前有效用户冲突。
     UserConflict,
+    /// 钱包事件键已经绑定不同业务事实。
+    WalletEventConflict,
+    /// 负向调账会使用户余额低于零。
+    WalletInsufficientQuota,
+    /// 正向调账会超过额度整数上界。
+    WalletOverflow,
+    /// 调账提交结果未知，调用方必须复用同一事件键确认。
+    WalletOutcomeUnknown,
     /// 当前实例尚未启用公开注册。
     RegistrationDisabled,
     /// 当前客户端已耗尽公开注册固定窗口尝试次数。
@@ -180,6 +188,34 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "user_conflict",
                     message: "User conflict",
+                },
+            ),
+            Self::WalletEventConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "wallet_event_conflict",
+                    message: "Wallet event conflict",
+                },
+            ),
+            Self::WalletInsufficientQuota => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "wallet_insufficient_quota",
+                    message: "Wallet balance insufficient",
+                },
+            ),
+            Self::WalletOverflow => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "wallet_overflow",
+                    message: "Wallet balance overflow",
+                },
+            ),
+            Self::WalletOutcomeUnknown => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "wallet_outcome_unknown",
+                    message: "Wallet outcome unknown",
                 },
             ),
             Self::RegistrationDisabled => (

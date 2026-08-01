@@ -544,12 +544,7 @@ export type AdminUser = {
     rpm_limit: number | null;
     concurrency: number | null;
 };
-export type AdminUserListResponse = {
-    users: Array<AdminUser>;
-    next_cursor: number | null;
-};
-export type AdminUserStatus = 'enabled' | 'disabled';
-export type AdminUserWriteRequest = {
+export type AdminUserCreateRequest = {
     username: string;
     email?: string | null;
     password?: string | null;
@@ -559,6 +554,43 @@ export type AdminUserWriteRequest = {
     quota: number;
     rpm_limit?: number | null;
     concurrency?: number | null;
+};
+export type AdminUserListResponse = {
+    users: Array<AdminUser>;
+    next_cursor: number | null;
+};
+export type AdminUserStatus = 'enabled' | 'disabled';
+export type AdminUserUpdateRequest = {
+    username: string;
+    email?: string | null;
+    password?: string | null;
+    role: 'user' | 'admin';
+    status: AdminUserStatus;
+    default_group_id: number;
+    rpm_limit?: number | null;
+    concurrency?: number | null;
+};
+export type AdminWalletAdjustmentRequest = {
+    event_id: string;
+    quota_delta: number;
+    reason: string;
+};
+export type AdminWalletEntry = {
+    id: number;
+    event_id: string;
+    user_id: number;
+    actor_user_id: number | null;
+    entry_type: AdminWalletEntryType;
+    quota_delta: number;
+    balance_before: number;
+    balance_after: number;
+    reason: string | null;
+    created_at: number;
+};
+export type AdminWalletEntryType = 'opening_balance' | 'admin_adjustment';
+export type AdminWalletListResponse = {
+    entries: Array<AdminWalletEntry>;
+    next_cursor: number | null;
 };
 export type IssuedAdminToken = {
     api_key: string;
@@ -580,7 +612,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -1272,7 +1304,7 @@ export type ListAdminUsersResponses = {
 };
 export type ListAdminUsersResponse = ListAdminUsersResponses[keyof ListAdminUsersResponses];
 export type CreateAdminUserData = {
-    body: AdminUserWriteRequest;
+    body: AdminUserCreateRequest;
     path?: never;
     query?: never;
     url: '/api/admin/users';
@@ -1330,7 +1362,7 @@ export type GetAdminUserResponses = {
 };
 export type GetAdminUserResponse = GetAdminUserResponses[keyof GetAdminUserResponses];
 export type UpdateAdminUserData = {
-    body: AdminUserWriteRequest;
+    body: AdminUserUpdateRequest;
     path: {
         id: number;
     };
@@ -1350,6 +1382,52 @@ export type UpdateAdminUserResponses = {
     200: AdminUser;
 };
 export type UpdateAdminUserResponse = UpdateAdminUserResponses[keyof UpdateAdminUserResponses];
+export type ListAdminWalletEntriesData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/admin/users/{id}/wallet/entries';
+};
+export type ListAdminWalletEntriesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminWalletEntriesError = ListAdminWalletEntriesErrors[keyof ListAdminWalletEntriesErrors];
+export type ListAdminWalletEntriesResponses = {
+    200: AdminWalletListResponse;
+};
+export type ListAdminWalletEntriesResponse = ListAdminWalletEntriesResponses[keyof ListAdminWalletEntriesResponses];
+export type AdjustAdminWalletData = {
+    body: AdminWalletAdjustmentRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/users/{id}/wallet/adjustments';
+};
+export type AdjustAdminWalletErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type AdjustAdminWalletError = AdjustAdminWalletErrors[keyof AdjustAdminWalletErrors];
+export type AdjustAdminWalletResponses = {
+    200: AdminWalletEntry;
+    201: AdminWalletEntry;
+};
+export type AdjustAdminWalletResponse = AdjustAdminWalletResponses[keyof AdjustAdminWalletResponses];
 export type ListAdminGroupsData = {
     body?: never;
     path?: never;

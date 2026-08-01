@@ -150,7 +150,6 @@ async fn create_update_and_soft_delete_use_transactional_boundaries() -> Result<
                 1,
                 2,
                 group_id,
-                700,
                 None,
                 Some(2),
             ),
@@ -163,7 +162,7 @@ async fn create_update_and_soft_delete_use_transactional_boundaries() -> Result<
     assert_eq!(updated.email(), None);
     assert_eq!(updated.role(), 1);
     assert_eq!(updated.status(), 2);
-    assert_eq!(updated.quota(), 700);
+    assert_eq!(updated.quota(), 500);
     assert_eq!(updated.rpm_limit(), None);
     assert_eq!(updated.concurrency(), Some(2));
 

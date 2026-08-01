@@ -4,7 +4,7 @@ use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter,
     AdminModelPriceService, AdminModelReader, AdminModelSyncService, AdminModelWriter,
     AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter,
-    InitialSetup, SessionAuthenticator, TokenAuthentication,
+    AdminWalletService, InitialSetup, SessionAuthenticator, TokenAuthentication,
 };
 use af_analytics::AdminDashboardReader;
 use af_domain::{AfError, Protocol, TokenModelPolicy};
@@ -50,6 +50,7 @@ pub(crate) struct HttpState {
     pub(crate) admin_usage_log_reader: Option<Arc<dyn AdminUsageLogReader>>,
     pub(crate) admin_user_reader: Arc<dyn AdminUserReader>,
     pub(crate) admin_user_writer: Arc<dyn AdminUserWriter>,
+    pub(crate) admin_wallet_service: Option<Arc<dyn AdminWalletService>>,
     stream_delivery: StreamDeliveryPolicy,
 }
 
@@ -84,6 +85,7 @@ impl HttpState {
             admin_usage_log_reader: None,
             admin_user_reader,
             admin_user_writer,
+            admin_wallet_service: None,
             stream_delivery: StreamDeliveryPolicy::default(),
         }
     }
@@ -109,6 +111,15 @@ impl HttpState {
         reader: Arc<dyn AdminUsageLogReader>,
     ) -> Self {
         self.admin_usage_log_reader = Some(reader);
+        self
+    }
+
+    /// 为管理员增量调账与钱包账本路由注入真实服务。
+    pub(crate) fn with_admin_wallet_service(
+        mut self,
+        service: Option<Arc<dyn AdminWalletService>>,
+    ) -> Self {
+        self.admin_wallet_service = service;
         self
     }
 

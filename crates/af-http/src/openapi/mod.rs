@@ -22,6 +22,7 @@ mod usage_logs;
 mod user_profile;
 mod user_tokens;
 mod users;
+mod wallet;
 
 use utoipa::openapi::{
     Components, Info, OpenApi, Paths,
@@ -41,6 +42,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(site_settings::document());
     document.merge(dashboard::document());
     document.merge(users::document());
+    document.merge(wallet::document());
     document.merge(groups::document());
     document.merge(models::document());
     document.merge(model_metadata::document());
@@ -65,6 +67,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("首次安装"),
         Tag::new("管理看板"),
         Tag::new("用户管理"),
+        Tag::new("钱包账本"),
         Tag::new("分组管理"),
         Tag::new("模型目录"),
         Tag::new("模型管理"),
@@ -101,7 +104,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 45);
+        assert_eq!(document.paths.paths.len(), 47);
         let operation_count = document
             .paths
             .paths
@@ -122,7 +125,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 73);
+        assert_eq!(operation_count, 75);
         assert!(
             document
                 .components
@@ -216,6 +219,8 @@ mod tests {
             "updateAdminToken",
             "updateAdminUser",
             "updateUserToken",
+            "adjustAdminWallet",
+            "listAdminWalletEntries",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -223,10 +228,16 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 117);
+        assert_eq!(schemas.len(), 122);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
+        assert!(schemas.contains_key("AdminUserCreateRequest"));
+        assert!(schemas.contains_key("AdminUserUpdateRequest"));
+        assert!(schemas.contains_key("AdminWalletEntry"));
+        assert!(schemas.contains_key("AdminWalletEntryType"));
+        assert!(schemas.contains_key("AdminWalletListResponse"));
+        assert!(schemas.contains_key("AdminWalletAdjustmentRequest"));
         assert!(schemas.contains_key("SetupRequest"));
         assert!(schemas.contains_key("SetupStatusResponse"));
         assert!(schemas.contains_key("RegistrationStatusResponse"));

@@ -776,3 +776,31 @@ pub(in crate::migration) mod authentication_settings {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod wallet_ledger_entries {
+    use super::DeriveIden;
+
+    /// `wallet_ledger_entries` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "wallet_ledger_entries")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 钱包追加账本迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        EventKey,
+        UserId,
+        ActorUserId,
+        EntryType,
+        QuotaDelta,
+        BalanceBefore,
+        BalanceAfter,
+        Reason,
+        CreatedAt,
+    }
+}

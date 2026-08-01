@@ -283,7 +283,6 @@ async fn admin_user_list_and_detail_use_real_database_reader() {
         "role": "admin",
         "status": "enabled",
         "default_group_id": GROUP_ID,
-        "quota": 300,
         "rpm_limit": Value::Null,
         "concurrency": 2
     }))
@@ -309,7 +308,7 @@ async fn admin_user_list_and_detail_use_real_database_reader() {
             "role": "admin",
             "status": "enabled",
             "default_group_id": GROUP_ID,
-            "quota": 300,
+            "quota": 250,
             "used_quota": 0,
             "frozen_quota": 0,
             "request_count": 0,

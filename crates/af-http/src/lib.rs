@@ -32,6 +32,7 @@ mod management_token_writes;
 mod management_tokens;
 mod management_usage_logs;
 mod management_users;
+mod management_wallet;
 mod middleware;
 mod model_catalog;
 mod openai_responses;
@@ -85,6 +86,8 @@ mod management_session_tests;
 mod management_tokens_tests;
 #[cfg(test)]
 mod management_users_tests;
+#[cfg(test)]
+mod management_wallet_tests;
 #[cfg(test)]
 mod operations_tests;
 #[cfg(test)]

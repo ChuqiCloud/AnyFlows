@@ -1,4 +1,4 @@
-import { Pencil, Trash2, UsersRound } from 'lucide-react'
+import { Pencil, Trash2, UsersRound, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +15,7 @@ type UserTableProps = {
   onDelete: (user: AdminUser) => void
   onEdit: (user: AdminUser) => void
   onToggle: (user: AdminUser) => void
+  onWallet: (user: AdminUser) => void
 }
 
 const statusStyles = {
@@ -73,11 +74,16 @@ function RowActions(props: {
   onDelete: (user: AdminUser) => void
   onEdit: (user: AdminUser) => void
   onToggle: (user: AdminUser) => void
+  onWallet: (user: AdminUser) => void
 }) {
   const { t } = useTranslation()
   return (
     <div className="flex items-center justify-end gap-1">
       <Switch checked={props.user.status === 'enabled'} disabled={props.toggling} aria-label={t(props.user.status === 'enabled' ? 'users.actions.disable' : 'users.actions.enable')} onCheckedChange={() => props.onToggle(props.user)} />
+      <Tooltip>
+        <TooltipTrigger asChild><Button type="button" size="icon-sm" variant="ghost" className="size-10 md:size-8" aria-label={t('users.actions.wallet')} onClick={() => props.onWallet(props.user)}><WalletCards aria-hidden="true" /></Button></TooltipTrigger>
+        <TooltipContent>{t('users.actions.wallet')}</TooltipContent>
+      </Tooltip>
       <Tooltip>
         <TooltipTrigger asChild><Button type="button" size="icon-sm" variant="ghost" className="size-10 md:size-8" aria-label={t('users.actions.edit')} onClick={() => props.onEdit(props.user)}><Pencil aria-hidden="true" /></Button></TooltipTrigger>
         <TooltipContent>{t('users.actions.edit')}</TooltipContent>
@@ -109,7 +115,7 @@ export function UserTable(props: UserTableProps) {
       <div className="hidden overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1 md:block">
         <table className="w-full table-fixed text-left text-xs">
           <thead className="bg-surface-2/60 text-muted-foreground">
-            <tr><th className="w-[27%] px-3 py-2 font-medium">{t('users.columns.user')}</th><th className="w-[15%] px-3 py-2 font-medium">{t('users.columns.group')}</th><th className="w-[22%] px-3 py-2 font-medium">{t('users.columns.quota')}</th><th className="w-[24%] px-3 py-2 font-medium">{t('users.columns.traffic')}</th><th className="w-[12%] px-3 py-2"><span className="sr-only">{t('users.columns.actions')}</span></th></tr>
+            <tr><th className="w-[25%] px-3 py-2 font-medium">{t('users.columns.user')}</th><th className="w-[14%] px-3 py-2 font-medium">{t('users.columns.group')}</th><th className="w-[21%] px-3 py-2 font-medium">{t('users.columns.quota')}</th><th className="w-[22%] px-3 py-2 font-medium">{t('users.columns.traffic')}</th><th className="w-[18%] px-3 py-2"><span className="sr-only">{t('users.columns.actions')}</span></th></tr>
           </thead>
           <tbody className="divide-y divide-[var(--hairline)]">
             {props.users.map((user) => (
@@ -118,7 +124,7 @@ export function UserTable(props: UserTableProps) {
                 <td className="px-3 py-2.5"><GroupValue user={user} groupNames={props.groupNames} /></td>
                 <td className="px-3 py-2.5"><QuotaValue user={user} /></td>
                 <td className="px-3 py-2.5"><TrafficValue user={user} /></td>
-                <td className="px-2 py-2.5"><RowActions user={user} toggling={props.togglingId === user.id} onDelete={props.onDelete} onEdit={props.onEdit} onToggle={props.onToggle} /></td>
+                <td className="px-2 py-2.5"><RowActions user={user} toggling={props.togglingId === user.id} onDelete={props.onDelete} onEdit={props.onEdit} onToggle={props.onToggle} onWallet={props.onWallet} /></td>
               </tr>
             ))}
           </tbody>
@@ -128,7 +134,7 @@ export function UserTable(props: UserTableProps) {
       <div className="grid gap-2 md:hidden">
         {props.users.map((user) => (
           <article key={user.id} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
-            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="truncate text-sm font-semibold">{user.username}</h2><p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">{user.email ?? t('users.values.noEmail')} · #{user.id}</p><div className="mt-2"><IdentityBadges user={user} /></div></div><RowActions user={user} toggling={props.togglingId === user.id} onDelete={props.onDelete} onEdit={props.onEdit} onToggle={props.onToggle} /></div>
+            <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="truncate text-sm font-semibold">{user.username}</h2><p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">{user.email ?? t('users.values.noEmail')} · #{user.id}</p><div className="mt-2"><IdentityBadges user={user} /></div></div><RowActions user={user} toggling={props.togglingId === user.id} onDelete={props.onDelete} onEdit={props.onEdit} onToggle={props.onToggle} onWallet={props.onWallet} /></div>
             <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--hairline)] pt-3"><GroupValue user={user} groupNames={props.groupNames} /><QuotaValue user={user} /></div>
             <div className="mt-3"><TrafficValue user={user} /></div>
           </article>

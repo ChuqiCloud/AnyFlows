@@ -9,7 +9,7 @@
 use rust_decimal::Decimal;
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
-use af_domain::ChannelTimeout;
+use af_domain::{ChannelTimeout, Quota, QuotaDelta, WalletEventId};
 
 pub(crate) mod abilities;
 pub(crate) mod auth_challenge_rate_limits;
@@ -36,6 +36,7 @@ pub(crate) mod site_settings;
 pub(crate) mod tokens;
 pub(crate) mod usage_logs;
 pub(crate) mod users;
+pub(crate) mod wallet_ledger_entries;
 
 mod sensitive;
 
@@ -44,7 +45,7 @@ pub(crate) use sensitive::{
     ChannelBaseUrl, EncryptedJson, HeaderOverrides, MAX_TOKEN_IP_ALLOWLIST_SERIALIZED_BYTES,
     MAX_TOKEN_MODEL_ALLOWLIST_SERIALIZED_BYTES, PasswordHash, PlaygroundConversationKey,
     SensitiveDecimal, SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist,
-    TokenModelAllowlist,
+    TokenModelAllowlist, WalletLedgerKey,
 };
 
 macro_rules! impl_updated_at_behavior {
@@ -446,6 +447,86 @@ where
     Ok(())
 }
 
+async fn validate_wallet_ledger_entry<C>(
+    model: &wallet_ledger_entries::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 钱包账本只追加；MySQL 5.7 忽略 CHECK 时仍由 ORM 写入口闭合全部跨列不变量。
+    if !insert {
+        return Err(DbErr::Custom("钱包账本不允许更新".to_owned()));
+    }
+    let event_key = model
+        .event_key
+        .try_as_ref()
+        .ok_or_else(|| DbErr::Custom("钱包账本事件键无效".to_owned()))?;
+    let event_id = WalletEventId::from_persistence_key(event_key.as_str())
+        .map_err(|_| DbErr::Custom("钱包账本事件键无效".to_owned()))?;
+    let user_id = model
+        .user_id
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("钱包账本用户无效".to_owned()))?;
+    let actor_user_id = model.actor_user_id.try_as_ref().copied().flatten();
+    let entry_type = model
+        .entry_type
+        .try_as_ref()
+        .copied()
+        .ok_or_else(|| DbErr::Custom("钱包账本类型无效".to_owned()))?;
+    let delta = model
+        .quota_delta
+        .try_as_ref()
+        .copied()
+        .and_then(|value| QuotaDelta::new(value).ok())
+        .filter(|value| !value.is_zero())
+        .ok_or_else(|| DbErr::Custom("钱包账本增量无效".to_owned()))?;
+    let before = model
+        .balance_before
+        .try_as_ref()
+        .copied()
+        .and_then(|value| Quota::new(value).ok())
+        .ok_or_else(|| DbErr::Custom("钱包账本变更前余额无效".to_owned()))?;
+    let after = model
+        .balance_after
+        .try_as_ref()
+        .copied()
+        .and_then(|value| Quota::new(value).ok())
+        .ok_or_else(|| DbErr::Custom("钱包账本变更后余额无效".to_owned()))?;
+    let reason = model.reason.try_as_ref().and_then(Option::as_ref);
+    if user_id <= 0 || before.checked_apply(delta) != Ok(after) {
+        return Err(DbErr::Custom("钱包账本余额快照无效".to_owned()));
+    }
+
+    let valid_reason = reason.is_some_and(|reason| {
+        let reason = reason.as_str();
+        !reason.is_empty()
+            && reason.trim() == reason
+            && reason.len() <= 500
+            && !reason.chars().any(char::is_control)
+    });
+    let valid_shape = match entry_type {
+        1 => {
+            event_id.is_system_opening()
+                && actor_user_id.is_none()
+                && delta.is_positive()
+                && before.is_zero()
+                && reason.is_none()
+        }
+        2 => {
+            !event_id.is_system_opening()
+                && actor_user_id.is_some_and(|actor| actor > 0)
+                && valid_reason
+        }
+        _ => false,
+    };
+    valid_shape
+        .then_some(())
+        .ok_or_else(|| DbErr::Custom("钱包账本事件形态无效".to_owned()))
+}
+
 fn effective_price(
     active: &ActiveValue<SensitiveDecimal>,
     persisted: Option<SensitiveDecimal>,
@@ -530,6 +611,17 @@ impl ActiveModelBehavior for usage_logs::ActiveModel {
         C: ConnectionTrait,
     {
         validate_usage_log(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for wallet_ledger_entries::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_wallet_ledger_entry(&self, database, insert).await?;
         Ok(self)
     }
 }

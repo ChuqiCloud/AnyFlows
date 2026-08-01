@@ -1463,7 +1463,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AdminUserWriteRequest"
+                "$ref": "#/components/schemas/AdminUserCreateRequest"
               }
             }
           },
@@ -1649,7 +1649,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AdminUserWriteRequest"
+                "$ref": "#/components/schemas/AdminUserUpdateRequest"
               }
             }
           },
@@ -1798,6 +1798,247 @@
           },
           "500": {
             "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/{id}/wallet/entries": {
+      "get": {
+        "tags": [
+          "钱包账本"
+        ],
+        "summary": "读取用户钱包账本",
+        "operationId": "listAdminWalletEntries",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "用户 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页末尾的账本 ID",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 50",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "钱包账本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminWalletListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "用户 ID 或分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "用户不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/users/{id}/wallet/adjustments": {
+      "post": {
+        "tags": [
+          "钱包账本"
+        ],
+        "summary": "执行管理员增量调账",
+        "operationId": "adjustAdminWallet",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "用户 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminWalletAdjustmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "相同调账已存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminWalletEntry"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "新调账已提交",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminWalletEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "用户 ID、事件键、增量或原因无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "用户不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "事件冲突、余额不足或溢出",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "提交结果未知，必须复用同一事件键确认",
             "content": {
               "application/json": {
                 "schema": {
@@ -9363,41 +9604,9 @@
         },
         "additionalProperties": false
       },
-      "AdminUserListResponse": {
+      "AdminUserCreateRequest": {
         "type": "object",
-        "required": [
-          "users",
-          "next_cursor"
-        ],
-        "properties": {
-          "users": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AdminUser"
-            },
-            "maxItems": 100
-          },
-          "next_cursor": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "minimum": 1
-          }
-        },
-        "additionalProperties": false
-      },
-      "AdminUserStatus": {
-        "type": "string",
-        "enum": [
-          "enabled",
-          "disabled"
-        ]
-      },
-      "AdminUserWriteRequest": {
-        "type": "object",
-        "description": "管理端创建或完整更新用户时使用的写入正文。",
+        "description": "管理端创建用户时使用的写入正文；初始额度会同步写入 opening 账本。",
         "required": [
           "username",
           "role",
@@ -9463,6 +9672,235 @@
             ],
             "format": "int32",
             "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminUserListResponse": {
+        "type": "object",
+        "required": [
+          "users",
+          "next_cursor"
+        ],
+        "properties": {
+          "users": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminUser"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminUserStatus": {
+        "type": "string",
+        "enum": [
+          "enabled",
+          "disabled"
+        ]
+      },
+      "AdminUserUpdateRequest": {
+        "type": "object",
+        "description": "管理端更新用户资料时使用的写入正文；额度只能通过独立调账接口变更。",
+        "required": [
+          "username",
+          "role",
+          "status",
+          "default_group_id"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 320,
+            "minLength": 1
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "maxLength": 4096,
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "admin"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdminUserStatus"
+          },
+          "default_group_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "rpm_limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          },
+          "concurrency": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminWalletAdjustmentRequest": {
+        "type": "object",
+        "description": "管理员调账正文；请求结果不确定时必须原样复用 `event_id`。",
+        "required": [
+          "event_id",
+          "quota_delta",
+          "reason"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "quota_delta": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminWalletEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "event_id",
+          "user_id",
+          "actor_user_id",
+          "entry_type",
+          "quota_delta",
+          "balance_before",
+          "balance_after",
+          "reason",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "event_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "actor_user_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "entry_type": {
+            "$ref": "#/components/schemas/AdminWalletEntryType"
+          },
+          "quota_delta": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "balance_before": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "balance_after": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "minLength": 1
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminWalletEntryType": {
+        "type": "string",
+        "description": "管理端钱包账本事件类型响应。",
+        "enum": [
+          "opening_balance",
+          "admin_adjustment"
+        ]
+      },
+      "AdminWalletListResponse": {
+        "type": "object",
+        "required": [
+          "entries",
+          "next_cursor"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminWalletEntry"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
           }
         },
         "additionalProperties": false
@@ -9593,6 +10031,10 @@
               "playground_conversation_limit_reached",
               "playground_conversation_conflict",
               "user_conflict",
+              "wallet_event_conflict",
+              "wallet_insufficient_quota",
+              "wallet_overflow",
+              "wallet_outcome_unknown",
               "registration_disabled",
               "registration_rate_limited",
               "registration_rejected",
@@ -10800,6 +11242,9 @@
     },
     {
       "name": "用户管理"
+    },
+    {
+      "name": "钱包账本"
     },
     {
       "name": "分组管理"
