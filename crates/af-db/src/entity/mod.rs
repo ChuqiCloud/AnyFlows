@@ -531,7 +531,7 @@ where
                 && actor_user_id.is_some_and(|actor| actor > 0)
                 && valid_reason
         }
-        3 | 4 | 5 => {
+        3..=5 => {
             !event_id.is_system_opening()
                 && actor_user_id.is_none()
                 && delta.is_positive()
