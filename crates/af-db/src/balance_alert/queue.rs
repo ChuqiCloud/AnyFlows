@@ -295,7 +295,7 @@ impl BalanceAlertRepository {
         let default_threshold = settings.default_threshold().units();
         let effective_threshold = Func::coalesce([
             Expr::col(users::Column::BalanceAlertThreshold).into(),
-            Expr::value(default_threshold).into(),
+            Expr::value(default_threshold),
         ]);
         let limit = u64::try_from(limit).map_err(|_| BalanceAlertRepositoryError::Invariant)?;
         let transaction = begin_transaction(&self.pool).await?;
