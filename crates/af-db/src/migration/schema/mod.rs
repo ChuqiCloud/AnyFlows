@@ -10,6 +10,7 @@ mod identity;
 mod indexes;
 mod model;
 mod model_sync;
+mod payment;
 mod playground;
 mod playground_conversation;
 mod pricing;
@@ -93,6 +94,7 @@ pub(super) use billing::create_billing_reservations;
 pub(super) use billing_batch::create_billing_batch_checkpoints;
 pub(super) use model::create_models;
 pub(super) use model_sync::create_model_sync_audit;
+pub(super) use payment::create_topup_payment_audit;
 pub(super) use playground::{create_playground_shares, create_playground_shares_indexes};
 pub(super) use playground_conversation::{
     create_playground_conversation_indexes, create_playground_conversations,

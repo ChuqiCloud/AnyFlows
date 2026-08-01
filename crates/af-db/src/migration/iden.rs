@@ -804,3 +804,68 @@ pub(in crate::migration) mod wallet_ledger_entries {
         CreatedAt,
     }
 }
+
+pub(in crate::migration) mod topup_orders {
+    use super::DeriveIden;
+
+    /// `topup_orders` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "topup_orders")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 充值订单状态机迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrderKey,
+        UserId,
+        Provider,
+        ProviderOrderId,
+        TradeNo,
+        Status,
+        AmountMinor,
+        Currency,
+        QuotaAmount,
+        IdempotencyKey,
+        Version,
+        ExpiresAt,
+        PaidAt,
+        ClosedAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod topup_payment_events {
+    use super::DeriveIden;
+
+    /// `topup_payment_events` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "topup_payment_events")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 支付 webhook 事件审计迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        EventKey,
+        OrderId,
+        Provider,
+        ProviderEventId,
+        TradeNo,
+        EventType,
+        SignatureKeyFingerprint,
+        PayloadSha256,
+        ReceivedAt,
+        ProcessedAt,
+        CreatedAt,
+    }
+}

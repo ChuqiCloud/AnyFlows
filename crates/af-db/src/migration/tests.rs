@@ -27,7 +27,8 @@ use crate::entity::{
     billing_batch_checkpoints, billing_reservations, channel_groups, channel_models, channels,
     credentials, email_settings, group_model_ratios, groups, model_prices, model_sync_items,
     model_sync_runs, models, options, playground_conversations, playground_shares,
-    registration_rate_limits, site_settings, tokens, usage_logs, users, wallet_ledger_entries,
+    registration_rate_limits, site_settings, tokens, topup_orders, topup_payment_events,
+    usage_logs, users, wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -49,7 +50,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量；列变更不会增加核心表数量。
-const EXPECTED_MIGRATION_COUNT: usize = 27;
+const EXPECTED_MIGRATION_COUNT: usize = 28;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -63,7 +64,11 @@ const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
 const RESERVATION_KEY_D: &str = "44444444444444444444444444444444";
 const PLAYGROUND_CONVERSATION_KEY: &str = "55555555555555555555555555555555";
-const CORE_TABLES: [&str; 26] = [
+const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
+const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
+const CORE_TABLES: [&str; 28] = [
     "groups",
     "users",
     "channels",
@@ -90,6 +95,8 @@ const CORE_TABLES: [&str; 26] = [
     "model_sync_runs",
     "model_sync_items",
     "wallet_ledger_entries",
+    "topup_orders",
+    "topup_payment_events",
 ];
 
 struct SlowMigrator;
@@ -291,6 +298,36 @@ async fn generated_active_models_redact_sensitive_payloads() {
         .collect(),
     ))
     .unwrap());
+    let topup_order = topup_orders::ActiveModel {
+        order_key: Set(TOPUP_ORDER_KEY_A.to_owned()),
+        user_id: Set(1),
+        provider: Set("stripe".to_owned()),
+        provider_order_id: Set(Some(SensitiveString::from("provider-order-secret"))),
+        trade_no: Set(Some(SensitiveString::from("trade-no-secret"))),
+        status: Set(1),
+        amount_minor: Set(100),
+        currency: Set("USD".to_owned()),
+        quota_amount: Set(1_000),
+        idempotency_key: Set(TOPUP_IDEMPOTENCY_KEY_A.to_owned()),
+        created_at: Set(historical_audit_time()),
+        updated_at: Set(historical_audit_time()),
+        ..Default::default()
+    };
+    let signature_fingerprint_secret = "e".repeat(64);
+    let payload_hash_secret = "f".repeat(64);
+    let topup_event = topup_payment_events::ActiveModel {
+        event_key: Set(TOPUP_EVENT_KEY_A.to_owned()),
+        order_id: Set(1),
+        provider: Set("stripe".to_owned()),
+        provider_event_id: Set(SensitiveString::from(TOPUP_PROVIDER_EVENT_ID_A)),
+        trade_no: Set(Some(SensitiveString::from("event-trade-no-secret"))),
+        event_type: Set(1),
+        signature_key_fingerprint: Set(SensitiveString::from(signature_fingerprint_secret.clone())),
+        payload_sha256: Set(SensitiveString::from(payload_hash_secret.clone())),
+        received_at: Set(historical_audit_time()),
+        created_at: Set(historical_audit_time()),
+        ..Default::default()
+    };
 
     for (rendered, secret) in [
         (format!("{credential:?}"), "credential-ciphertext"),
@@ -321,6 +358,15 @@ async fn generated_active_models_redact_sensitive_payloads() {
             format!("{playground_conversation:?}"),
             "conversation-snapshot-secret",
         ),
+        (format!("{topup_order:?}"), "provider-order-secret"),
+        (format!("{topup_order:?}"), "trade-no-secret"),
+        (format!("{topup_event:?}"), TOPUP_PROVIDER_EVENT_ID_A),
+        (format!("{topup_event:?}"), "event-trade-no-secret"),
+        (
+            format!("{topup_event:?}"),
+            signature_fingerprint_secret.as_str(),
+        ),
+        (format!("{topup_event:?}"), payload_hash_secret.as_str()),
     ] {
         assert!(rendered.contains("<redacted>"));
         assert!(!rendered.contains(secret));
@@ -1431,6 +1477,8 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<model_sync_items::Column>(&manager, "model_sync_items").await?;
     assert_entity_columns::<wallet_ledger_entries::Column>(&manager, "wallet_ledger_entries")
         .await?;
+    assert_entity_columns::<topup_orders::Column>(&manager, "topup_orders").await?;
+    assert_entity_columns::<topup_payment_events::Column>(&manager, "topup_payment_events").await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -1479,6 +1527,20 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("model_sync_items", "idx_model_sync_items_run_relation"),
         ("wallet_ledger_entries", "uq_wallet_ledger_event_key"),
         ("wallet_ledger_entries", "idx_wallet_ledger_user_id"),
+        ("topup_orders", "uq_topup_orders_order_key"),
+        ("topup_orders", "uq_topup_orders_idempotency_key"),
+        ("topup_orders", "uq_topup_orders_provider_trade_no"),
+        ("topup_orders", "idx_topup_orders_user_created"),
+        ("topup_orders", "idx_topup_orders_status_expires"),
+        ("topup_payment_events", "uq_topup_payment_events_event_key"),
+        (
+            "topup_payment_events",
+            "uq_topup_payment_events_provider_event",
+        ),
+        (
+            "topup_payment_events",
+            "idx_topup_payment_events_order_created",
+        ),
     ] {
         assert!(
             manager.has_index(table, index).await?,
@@ -1650,6 +1712,29 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
     assert_eq!(reservation.finalized_at, None);
     assert_debug_redacted(&reservation, RESERVATION_KEY_A);
     assert_billing_reservation_constraints(connection, user.id, token.id, group.id).await?;
+
+    let topup_order = topup_order_active_model(user.id, TOPUP_ORDER_KEY_A, TOPUP_IDEMPOTENCY_KEY_A)
+        .insert(connection)
+        .await?;
+    assert_eq!(topup_order.status, 1);
+    let old_order_updated_at = historical_audit_time();
+    let mut updated_order = topup_order.into_active_model();
+    updated_order.provider_order_id = Set(Some(SensitiveString::from("provider-order-a")));
+    updated_order.updated_at = Set(old_order_updated_at);
+    let topup_order = updated_order.update(connection).await?;
+    assert!(topup_order.updated_at > old_order_updated_at);
+    assert_debug_redacted(&topup_order, "provider-order-a");
+
+    let topup_event = topup_payment_event_active_model(
+        topup_order.id,
+        TOPUP_EVENT_KEY_A,
+        TOPUP_PROVIDER_EVENT_ID_A,
+    )
+    .insert(connection)
+    .await?;
+    assert_eq!(topup_event.event_type, 1);
+    assert_debug_redacted(&topup_event, TOPUP_PROVIDER_EVENT_ID_A);
+    assert_topup_payment_constraints(connection, user.id, topup_order.id).await?;
 
     channel_models::ActiveModel {
         channel_id: Set(channel.id),
@@ -2095,6 +2180,148 @@ async fn assert_persistence_constraints(
     channel_models::Entity::delete_by_id((channel_id, "negative-weight-model".to_owned()))
         .exec(connection)
         .await?;
+
+    Ok(())
+}
+
+async fn assert_topup_payment_constraints(
+    connection: &DatabaseConnection,
+    user_id: i64,
+    order_id: i64,
+) -> Result<(), DbErr> {
+    for (order_key, idempotency_key) in [
+        (
+            "00000000000000000000000000000000",
+            "dddddddddddddddddddddddddddddddd",
+        ),
+        (
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        ),
+        (
+            "dddddddddddddddddddddddddddddddd",
+            "00000000000000000000000000000000",
+        ),
+    ] {
+        let invalid = topup_order_active_model(user_id, order_key, idempotency_key);
+        assert!(invalid.insert(connection).await.is_err());
+    }
+
+    let duplicate_order_key = topup_order_active_model(
+        user_id,
+        TOPUP_ORDER_KEY_A,
+        "ffffffffffffffffffffffffffffffff",
+    );
+    assert!(duplicate_order_key.insert(connection).await.is_err());
+    let duplicate_idempotency = topup_order_active_model(
+        user_id,
+        "11111111111111111111111111111111",
+        TOPUP_IDEMPOTENCY_KEY_A,
+    );
+    assert!(duplicate_idempotency.insert(connection).await.is_err());
+
+    let mut invalid_currency = topup_order_active_model(
+        user_id,
+        "12121212121212121212121212121212",
+        "13131313131313131313131313131313",
+    );
+    invalid_currency.currency = Set("usd".to_owned());
+    assert!(invalid_currency.insert(connection).await.is_err());
+
+    let mut invalid_amount = topup_order_active_model(
+        user_id,
+        "14141414141414141414141414141414",
+        "15151515151515151515151515151515",
+    );
+    invalid_amount.amount_minor = Set(0);
+    assert!(invalid_amount.insert(connection).await.is_err());
+
+    let mut paid_without_time = topup_order_active_model(
+        user_id,
+        "16161616161616161616161616161616",
+        "17171717171717171717171717171717",
+    );
+    paid_without_time.status = Set(3);
+    assert!(paid_without_time.insert(connection).await.is_err());
+
+    let mut paid_order = topup_order_active_model(
+        user_id,
+        "18181818181818181818181818181818",
+        "19191919191919191919191919191919",
+    );
+    paid_order.status = Set(3);
+    paid_order.paid_at = Set(Some(fixed_finalization_time()));
+    let paid_order = paid_order.insert(connection).await?;
+    assert_eq!(paid_order.closed_at, None);
+
+    let mut closed_without_time = topup_order_active_model(
+        user_id,
+        "20202020202020202020202020202020",
+        "21212121212121212121212121212121",
+    );
+    closed_without_time.status = Set(4);
+    assert!(closed_without_time.insert(connection).await.is_err());
+
+    let mut closed_order = topup_order_active_model(
+        user_id,
+        "22222222222222222222222222222222",
+        "23232323232323232323232323232323",
+    );
+    closed_order.status = Set(4);
+    closed_order.closed_at = Set(Some(fixed_finalization_time()));
+    let closed_order = closed_order.insert(connection).await?;
+    assert_eq!(closed_order.paid_at, None);
+
+    let mut trade_order = topup_order_active_model(
+        user_id,
+        "24242424242424242424242424242424",
+        "25252525252525252525252525252525",
+    );
+    trade_order.trade_no = Set(Some(SensitiveString::from("trade-duplicate")));
+    trade_order.insert(connection).await?;
+    let mut duplicate_trade_order = topup_order_active_model(
+        user_id,
+        "26262626262626262626262626262626",
+        "27272727272727272727272727272727",
+    );
+    duplicate_trade_order.trade_no = Set(Some(SensitiveString::from("trade-duplicate")));
+    assert!(duplicate_trade_order.insert(connection).await.is_err());
+
+    let duplicate_event_key =
+        topup_payment_event_active_model(order_id, TOPUP_EVENT_KEY_A, "evt_duplicate_event_key");
+    assert!(duplicate_event_key.insert(connection).await.is_err());
+    let duplicate_provider_event = topup_payment_event_active_model(
+        order_id,
+        "28282828282828282828282828282828",
+        TOPUP_PROVIDER_EVENT_ID_A,
+    );
+    assert!(duplicate_provider_event.insert(connection).await.is_err());
+
+    let mut invalid_fingerprint = topup_payment_event_active_model(
+        order_id,
+        "29292929292929292929292929292929",
+        "evt_invalid_fingerprint",
+    );
+    invalid_fingerprint.signature_key_fingerprint = Set(SensitiveString::from("A".repeat(64)));
+    assert!(invalid_fingerprint.insert(connection).await.is_err());
+
+    let missing_order = topup_payment_event_active_model(
+        i64::MAX,
+        "30303030303030303030303030303030",
+        "evt_missing_order",
+    );
+    assert!(missing_order.insert(connection).await.is_err());
+
+    let event = topup_payment_event_active_model(
+        order_id,
+        "31313131313131313131313131313131",
+        "evt_append_only",
+    )
+    .insert(connection)
+    .await?;
+    let mut event_update = event.into_active_model();
+    event_update.processed_at = Set(Some(fixed_finalization_time()));
+    assert!(event_update.update(connection).await.is_err());
 
     Ok(())
 }
@@ -2644,6 +2871,52 @@ fn reservation_active_model(
         reserved_quota: Set(reserved_quota),
         token_reserved_quota: Set(token_reserved_quota),
         expires_at: Set(future_expiration()),
+        ..Default::default()
+    }
+}
+
+fn topup_order_active_model(
+    user_id: i64,
+    order_key: &str,
+    idempotency_key: &str,
+) -> topup_orders::ActiveModel {
+    topup_orders::ActiveModel {
+        order_key: Set(order_key.to_owned()),
+        user_id: Set(user_id),
+        provider: Set("stripe".to_owned()),
+        provider_order_id: Set(None),
+        trade_no: Set(None),
+        status: Set(1),
+        amount_minor: Set(1_000),
+        currency: Set("USD".to_owned()),
+        quota_amount: Set(10_000),
+        idempotency_key: Set(idempotency_key.to_owned()),
+        expires_at: Set(Some(future_expiration())),
+        paid_at: Set(None),
+        closed_at: Set(None),
+        created_at: Set(historical_audit_time()),
+        updated_at: Set(historical_audit_time()),
+        ..Default::default()
+    }
+}
+
+fn topup_payment_event_active_model(
+    order_id: i64,
+    event_key: &str,
+    provider_event_id: &str,
+) -> topup_payment_events::ActiveModel {
+    topup_payment_events::ActiveModel {
+        event_key: Set(event_key.to_owned()),
+        order_id: Set(order_id),
+        provider: Set("stripe".to_owned()),
+        provider_event_id: Set(SensitiveString::from(provider_event_id)),
+        trade_no: Set(Some(SensitiveString::from("trade-event-a"))),
+        event_type: Set(1),
+        signature_key_fingerprint: Set(SensitiveString::from("e".repeat(64))),
+        payload_sha256: Set(SensitiveString::from("f".repeat(64))),
+        received_at: Set(historical_audit_time()),
+        processed_at: Set(None),
+        created_at: Set(historical_audit_time()),
         ..Default::default()
     }
 }
