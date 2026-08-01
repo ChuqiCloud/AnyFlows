@@ -200,18 +200,22 @@ async fn wallet_migration_backfills_existing_nonzero_balances() -> Result<(), Bo
         "invite-legacy-wallet",
     );
     user.quota = Set(250);
-    let user = user.insert(pool.connection()).await?;
+    // 历史 schema 尚无后续用户列，只取自增主键以避免 RETURNING 读取最新实体字段。
+    let user_id = users::Entity::insert(user)
+        .exec(pool.connection())
+        .await?
+        .last_insert_id;
 
     Migrator::up(pool.connection(), None).await?;
     let entries = wallet_ledger_entries::Entity::find()
-        .filter(wallet_ledger_entries::Column::UserId.eq(user.id))
+        .filter(wallet_ledger_entries::Column::UserId.eq(user_id))
         .all(pool.connection())
         .await?;
     assert_eq!(entries.len(), 1);
     let opening = &entries[0];
     assert_eq!(
         opening.event_key.as_str(),
-        format!("0000000000000001{:016x}", user.id)
+        format!("0000000000000001{user_id:016x}")
     );
     assert_eq!(opening.entry_type, 1);
     assert_eq!(opening.quota_delta, 250);
