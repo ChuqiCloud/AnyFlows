@@ -547,6 +547,406 @@
         ]
       }
     },
+    "/api/admin/redemption-batches": {
+      "get": {
+        "tags": [
+          "兑换码"
+        ],
+        "summary": "读取兑换码批次",
+        "operationId": "listAdminRedemptionBatches",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页末尾的批次游标",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 25",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "兑换码批次汇总",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRedemptionBatchListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "兑换码"
+        ],
+        "summary": "创建兑换码批次",
+        "operationId": "createAdminRedemptionBatch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRedemptionBatchCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "批次已创建，完整兑换码仅返回一次",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedAdminRedemptionBatch"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "批次名称、额度、数量或到期时间无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "批次事实发生冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "提交结果未知",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/redemption-batches/{batch_id}/disable": {
+      "post": {
+        "tags": [
+          "兑换码"
+        ],
+        "summary": "禁用兑换码批次",
+        "operationId": "disableAdminRedemptionBatch",
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "description": "批次标识",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "minLength": 32
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminRedemptionBatchDisableRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "批次已禁用或相同迁移已存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRedemptionBatchDisableResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "批次标识或版本无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "批次不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "批次版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "提交结果未知",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/account/wallet/redemptions": {
+      "post": {
+        "tags": [
+          "兑换码"
+        ],
+        "summary": "兑换当前用户额度",
+        "operationId": "redeemUserRedemptionCode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserRedemptionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "兑换成功或恢复本人已到账事实",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRedemptionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "兑换码格式无效或不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "批次停用、兑换码已使用或余额溢出",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "兑换码已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "提交结果未知，可重试同一兑换码确认",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/auth/password-reset/request": {
       "post": {
         "tags": [
@@ -9552,6 +9952,205 @@
         },
         "additionalProperties": false
       },
+      "AdminRedemptionBatch": {
+        "type": "object",
+        "description": "管理员可见的兑换码批次汇总，不包含明文或摘要。",
+        "required": [
+          "batch_id",
+          "name",
+          "created_by_user_id",
+          "status",
+          "quota_amount",
+          "code_count",
+          "redeemed_count",
+          "version",
+          "expires_at",
+          "disabled_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1
+          },
+          "created_by_user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdminRedemptionBatchStatus"
+          },
+          "quota_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "code_count": {
+            "type": "integer",
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "redeemed_count": {
+            "type": "integer",
+            "maximum": 1000,
+            "minimum": 0
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "disabled_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminRedemptionBatchCreateRequest": {
+        "type": "object",
+        "description": "管理员创建同面额兑换码批次的结构化请求。",
+        "required": [
+          "name",
+          "quota_amount",
+          "code_count",
+          "expires_at"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1
+          },
+          "quota_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "code_count": {
+            "type": "integer",
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix 秒时间戳；null 表示永不过期。",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminRedemptionBatchDisableRequest": {
+        "type": "object",
+        "description": "管理员以当前版本禁用批次的请求。",
+        "required": [
+          "expected_version"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminRedemptionBatchDisableResponse": {
+        "type": "object",
+        "description": "批次禁用后的状态迁移结果。",
+        "required": [
+          "batch_id",
+          "version",
+          "disabled_at"
+        ],
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 2
+          },
+          "disabled_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminRedemptionBatchListResponse": {
+        "type": "object",
+        "required": [
+          "batches",
+          "next_cursor"
+        ],
+        "properties": {
+          "batches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminRedemptionBatch"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminRedemptionBatchStatus": {
+        "type": "string",
+        "description": "管理 API 使用的闭合兑换码批次状态。",
+        "enum": [
+          "active",
+          "disabled"
+        ]
+      },
       "AdminRoutingStatus": {
         "type": "string",
         "enum": [
@@ -10521,6 +11120,29 @@
         },
         "additionalProperties": false
       },
+      "IssuedAdminRedemptionBatch": {
+        "type": "object",
+        "description": "批次创建响应；完整兑换码只在本次响应中出现。",
+        "required": [
+          "batch",
+          "codes"
+        ],
+        "properties": {
+          "batch": {
+            "$ref": "#/components/schemas/AdminRedemptionBatch"
+          },
+          "codes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^rc-af-[A-Za-z0-9_-]{43}$"
+            },
+            "maxItems": 1000,
+            "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "IssuedAdminToken": {
         "type": "object",
         "required": [
@@ -10651,6 +11273,13 @@
               "wallet_insufficient_quota",
               "wallet_overflow",
               "wallet_outcome_unknown",
+              "redemption_batch_not_found",
+              "redemption_batch_conflict",
+              "redemption_code_invalid",
+              "redemption_batch_disabled",
+              "redemption_code_expired",
+              "redemption_code_already_used",
+              "redemption_outcome_unknown",
               "registration_disabled",
               "registration_rate_limited",
               "registration_rejected",
@@ -11733,6 +12362,55 @@
         },
         "additionalProperties": false
       },
+      "UserRedemptionRequest": {
+        "type": "object",
+        "description": "当前用户提交的单个兑换码。",
+        "required": [
+          "code"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 49,
+            "minLength": 49,
+            "pattern": "^rc-af-[A-Za-z0-9_-]{43}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserRedemptionResult": {
+        "type": "object",
+        "description": "当前用户兑换成功后的余额结果。",
+        "required": [
+          "quota_amount",
+          "balance_after",
+          "redeemed_at",
+          "replayed"
+        ],
+        "properties": {
+          "quota_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "balance_after": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "redeemed_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "UserToken": {
         "type": "object",
         "description": "普通用户可读取的非敏感 API Key。",
@@ -12077,6 +12755,9 @@
     },
     {
       "name": "我的钱包"
+    },
+    {
+      "name": "兑换码"
     },
     {
       "name": "邀请中心"
