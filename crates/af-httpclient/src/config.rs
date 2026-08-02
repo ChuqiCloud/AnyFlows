@@ -1,4 +1,8 @@
-use std::{fmt, net::IpAddr, time::Duration};
+use std::{
+    fmt,
+    net::{IpAddr, Ipv6Addr},
+    time::Duration,
+};
 
 use reqwest::Url;
 
@@ -224,8 +228,9 @@ impl ProxyConfig {
         // URL 标准不允许部分特殊协议跨类别切换，因此用已校验协议直接创建无密钥占位端点。
         let mut endpoint = Url::parse(&format!("{scheme}://proxy.invalid"))
             .map_err(|_| HttpClientError::InvalidProxyUrl)?;
+        let bracketed_ipv6 = host.parse::<Ipv6Addr>().ok().map(|_| format!("[{host}]"));
         endpoint
-            .set_host(Some(host))
+            .set_host(Some(bracketed_ipv6.as_deref().unwrap_or(host)))
             .map_err(|_| HttpClientError::InvalidProxyUrl)?;
         endpoint
             .set_port(Some(port))
