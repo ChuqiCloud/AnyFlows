@@ -35,6 +35,7 @@ pub(crate) mod model_prices;
 pub(crate) mod model_sync_items;
 pub(crate) mod model_sync_runs;
 pub(crate) mod models;
+pub(crate) mod network_settings;
 pub(crate) mod options;
 pub(crate) mod playground_conversations;
 pub(crate) mod playground_shares;
@@ -1115,6 +1116,7 @@ impl_updated_at_behavior!(
     groups::ActiveModel => validate_group,
     model_prices::ActiveModel => validate_model_price,
     models::ActiveModel => validate_default,
+    network_settings::ActiveModel => validate_default,
     options::ActiveModel => validate_default,
     registration_rate_limits::ActiveModel => validate_default,
     site_settings::ActiveModel => validate_default,

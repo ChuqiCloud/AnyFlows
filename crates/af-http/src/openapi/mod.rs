@@ -11,6 +11,7 @@ mod model_metadata;
 mod model_prices;
 mod model_sync;
 mod models;
+mod network_settings;
 mod password_reset;
 mod playground_conversations;
 mod playground_shares;
@@ -44,6 +45,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(user_wallet::document());
     document.merge(invitations::document());
     document.merge(email_settings::document());
+    document.merge(network_settings::document());
     document.merge(balance_alert_settings::document());
     document.merge(site_settings::document());
     document.merge(dashboard::document());
@@ -71,6 +73,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("邀请中心"),
         Tag::new("站点设置"),
         Tag::new("邮件设置"),
+        Tag::new("网络与代理"),
         Tag::new("余额预警"),
         Tag::new("管理会话"),
         Tag::new("首次安装"),
@@ -113,7 +116,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 51);
+        assert_eq!(document.paths.paths.len(), 52);
         let operation_count = document
             .paths
             .paths
@@ -134,7 +137,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 80);
+        assert_eq!(operation_count, 82);
         assert!(
             document
                 .components
@@ -184,6 +187,7 @@ mod tests {
             "getAdminCredential",
             "getAdminDashboard",
             "getAdminEmailSettings",
+            "getAdminNetworkSettings",
             "getAdminGroup",
             "getAdminModel",
             "getAdminAuthenticationSettings",
@@ -228,6 +232,7 @@ mod tests {
             "updateAdminGroup",
             "updateAdminModel",
             "updateAdminEmailSettings",
+            "updateAdminNetworkSettings",
             "updateAdminAuthenticationSettings",
             "updateAdminSiteSettings",
             "updateAdminToken",
@@ -242,7 +247,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 131);
+        assert_eq!(schemas.len(), 134);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
@@ -284,6 +289,9 @@ mod tests {
         assert!(schemas.contains_key("AdminEmailSettingsRequest"));
         assert!(schemas.contains_key("AdminEmailTestRequest"));
         assert!(schemas.contains_key("AdminEmailTlsMode"));
+        assert!(schemas.contains_key("AdminNetworkSettings"));
+        assert!(schemas.contains_key("AdminNetworkSettingsRequest"));
+        assert!(schemas.contains_key("AdminNetworkSettingsMode"));
         assert!(schemas.contains_key("AdminBalanceAlertSettings"));
         assert!(schemas.contains_key("AdminBalanceAlertSettingsRequest"));
         assert!(schemas.contains_key("ModelCatalogListResponse"));

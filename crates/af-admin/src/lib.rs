@@ -21,6 +21,7 @@ mod model_metadata_read;
 mod model_metadata_write;
 mod model_price;
 mod model_sync;
+mod network_settings;
 mod password_reset;
 mod playground_conversation;
 mod playground_share;
@@ -44,6 +45,7 @@ mod user_wallet;
 mod user_write;
 mod wallet;
 
+pub use af_db::NetworkSettingsMode;
 pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,
     PresentedApiKey,
@@ -131,6 +133,12 @@ pub use model_sync::{
     ModelSyncApplyFuture, ModelSyncItemRecord, ModelSyncPreviewFuture, ModelSyncPreviewRecord,
     ModelSyncRelationRecord, UpstreamModelDiscoverer, UpstreamModelDiscovery,
     UpstreamModelDiscoveryError, UpstreamModelDiscoveryFuture,
+};
+pub use network_settings::{
+    AdminNetworkSettings, AdminNetworkSettingsCommand, AdminNetworkSettingsError,
+    AdminNetworkSettingsReadFuture, AdminNetworkSettingsService, AdminNetworkSettingsUpdateFuture,
+    DatabaseAdminNetworkSettingsService, NetworkSettingsApplyFuture, NetworkSettingsRuntimeApplier,
+    NetworkSettingsRuntimeError,
 };
 pub use password_reset::{
     DatabasePasswordResetService, MAX_PASSWORD_RESET_PASSWORD_BYTES,

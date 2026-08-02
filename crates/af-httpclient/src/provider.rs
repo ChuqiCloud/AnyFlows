@@ -1,4 +1,8 @@
-use std::{fmt, sync::Arc, time::Duration};
+use std::{
+    fmt,
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use crate::{HttpClientConfig, HttpClientError, HttpClientPool, HttpTimeouts, PooledClient};
 
@@ -6,7 +10,7 @@ use crate::{HttpClientConfig, HttpClientError, HttpClientPool, HttpTimeouts, Poo
 #[derive(Clone)]
 pub struct HttpClientProvider {
     pool: Arc<HttpClientPool>,
-    base_config: HttpClientConfig,
+    base_config: Arc<RwLock<HttpClientConfig>>,
 }
 
 impl HttpClientProvider {
@@ -17,21 +21,43 @@ impl HttpClientProvider {
     ) -> Result<Self, HttpClientError> {
         Ok(Self {
             pool: Arc::new(HttpClientPool::new(max_cached_clients)?),
-            base_config,
+            base_config: Arc::new(RwLock::new(base_config)),
         })
     }
 
     /// 返回继承全局配置或覆盖渠道读取/请求超时的受控 Client。
     pub fn get(&self, timeout: Option<Duration>) -> Result<PooledClient, HttpClientError> {
+        let base_config = self
+            .base_config
+            .read()
+            .map_err(|_| HttpClientError::PoolUnavailable)?
+            .clone();
         let config = match timeout {
-            None => self.base_config.clone(),
+            None => base_config,
             Some(timeout) => {
-                let base_timeouts = self.base_config.timeouts();
+                let base_timeouts = base_config.timeouts();
                 let timeouts = HttpTimeouts::new(base_timeouts.connect(), timeout, timeout)?;
-                self.base_config.clone().with_timeouts(timeouts)
+                base_config.with_timeouts(timeouts)
             }
         };
         self.pool.get(&config)
+    }
+
+    /// 返回当前共享基线快照，调用方只能据此构造下一份配置。
+    pub fn base_config(&self) -> Result<HttpClientConfig, HttpClientError> {
+        self.base_config
+            .read()
+            .map(|config| config.clone())
+            .map_err(|_| HttpClientError::PoolUnavailable)
+    }
+
+    /// 原子替换后续请求使用的基线，并丢弃旧配置的缓存 Client。
+    pub fn replace_base_config(&self, config: HttpClientConfig) -> Result<(), HttpClientError> {
+        *self
+            .base_config
+            .write()
+            .map_err(|_| HttpClientError::PoolUnavailable)? = config;
+        self.pool.clear()
     }
 }
 
@@ -40,7 +66,7 @@ impl fmt::Debug for HttpClientProvider {
         formatter
             .debug_struct("HttpClientProvider")
             .field("pool", &self.pool)
-            .field("base_config", &self.base_config)
+            .field("base_config", &self.base_config.read().ok())
             .finish()
     }
 }
@@ -79,5 +105,18 @@ mod tests {
         assert!(!debug.contains("user"));
         assert!(!debug.contains("secret"));
         assert!(!debug.contains("proxy.example"));
+    }
+
+    #[test]
+    fn replaces_shared_base_config_without_reusing_old_clients() {
+        let provider = HttpClientProvider::new(HttpClientConfig::default(), 4).unwrap();
+        provider.get(None).unwrap();
+        let proxy = ProxyConfig::parse("http://proxy.example:8080").unwrap();
+        provider
+            .replace_base_config(HttpClientConfig::default().with_proxy(proxy))
+            .unwrap();
+
+        assert_eq!(provider.pool.len().unwrap(), 0);
+        assert!(!provider.base_config().unwrap().proxy().is_direct());
     }
 }

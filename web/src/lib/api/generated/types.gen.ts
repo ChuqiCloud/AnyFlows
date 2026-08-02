@@ -456,6 +456,23 @@ export type AdminModelUpdateRequest = {
     lifecycle: AdminModelLifecycle;
 };
 export type AdminModelVisibility = 'public' | 'authenticated' | 'hidden';
+export type AdminNetworkSettings = {
+    mode: AdminNetworkSettingsMode;
+    proxy_host?: string | null;
+    proxy_port?: number | null;
+    username?: string | null;
+    password_configured: boolean;
+    trust_proxy_dns: boolean;
+    version: number;
+};
+export type AdminNetworkSettingsMode = 'inherit' | 'direct' | 'http' | 'https' | 'socks5' | 'socks5h';
+export type AdminNetworkSettingsRequest = {
+    mode: AdminNetworkSettingsMode;
+    proxy_host?: string | null;
+    proxy_port?: number | null;
+    username?: string | null;
+    trust_proxy_dns: boolean;
+};
 export type AdminRoutingStatus = 'enabled' | 'disabled' | 'auto_disabled';
 export type AdminRoutingWriteStatus = 'enabled' | 'disabled';
 export type AdminSiteSettings = {
@@ -965,6 +982,14 @@ export type AdminEmailSettingsRequestWritable = {
     reply_to?: string | null;
     timeout_seconds: number;
 };
+export type AdminNetworkSettingsRequestWritable = {
+    mode: AdminNetworkSettingsMode;
+    proxy_host?: string | null;
+    proxy_port?: number | null;
+    username?: string | null;
+    password?: string | null;
+    trust_proxy_dns: boolean;
+};
 export type RegistrationRequestWritable = {
     username: string;
     email?: string | null;
@@ -1321,6 +1346,39 @@ export type SendAdminEmailTestResponses = {
     204: void;
 };
 export type SendAdminEmailTestResponse = SendAdminEmailTestResponses[keyof SendAdminEmailTestResponses];
+export type GetAdminNetworkSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/network-settings';
+};
+export type GetAdminNetworkSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminNetworkSettingsError = GetAdminNetworkSettingsErrors[keyof GetAdminNetworkSettingsErrors];
+export type GetAdminNetworkSettingsResponses = {
+    200: AdminNetworkSettings;
+};
+export type GetAdminNetworkSettingsResponse = GetAdminNetworkSettingsResponses[keyof GetAdminNetworkSettingsResponses];
+export type UpdateAdminNetworkSettingsData = {
+    body: AdminNetworkSettingsRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/admin/network-settings';
+};
+export type UpdateAdminNetworkSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminNetworkSettingsError = UpdateAdminNetworkSettingsErrors[keyof UpdateAdminNetworkSettingsErrors];
+export type UpdateAdminNetworkSettingsResponses = {
+    200: AdminNetworkSettings;
+};
+export type UpdateAdminNetworkSettingsResponse = UpdateAdminNetworkSettingsResponses[keyof UpdateAdminNetworkSettingsResponses];
 export type GetAdminBalanceAlertSettingsData = {
     body?: never;
     path?: never;

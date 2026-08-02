@@ -1942,6 +1942,77 @@
       "description": "Management reads return only password status. Passwords, recipients, message bodies, and SMTP server responses stay out of page caches, URLs, and error details."
     }
   },
+  "networkSettings": {
+    "title": "Network and proxy",
+    "subtitle": "Configure the outbound path for all upstream requests. New requests use the saved baseline, and proxy failures never fall back to direct traffic.",
+    "loading": "Loading network and proxy settings",
+    "status": {
+      "title": "Outbound network",
+      "passwordConfigured": "Credentials configured",
+      "version": "Configuration version {{version}}"
+    },
+    "route": {
+      "title": "Route and proxy",
+      "description": "Choose a structured network mode. Inherit keeps the startup HTTP Client configuration."
+    },
+    "fields": {
+      "mode": "Network mode",
+      "modeHint": "Direct and proxy modes explicitly override the startup default.",
+      "host": "Proxy host",
+      "hostHint": "Enter a hostname, IPv4, or IPv6 address without a scheme, path, or credentials.",
+      "hostDisabledHint": "The current mode does not use a proxy address.",
+      "port": "Proxy port",
+      "username": "Proxy username",
+      "usernameHint": "Leave blank to disable proxy authentication and clear the saved password.",
+      "password": "Proxy password",
+      "passwordKeepHint": "Configured. Leave blank to keep the encrypted value, or enter a replacement.",
+      "passwordEmptyHint": "Not configured. A password is required when a proxy username is set.",
+      "trustProxyDns": "Trust proxy DNS",
+      "trustProxyDnsHint": "Enable only for proxy modes; the trusted proxy resolves the target hostname."
+    },
+    "modes": {
+      "inherit": "Inherit startup configuration",
+      "direct": "Explicit direct",
+      "http": "HTTP proxy",
+      "https": "HTTPS proxy",
+      "socks5": "SOCKS5 (local DNS)",
+      "socks5h": "SOCKS5H (proxy DNS)"
+    },
+    "validation": {
+      "host": "Enter a valid proxy host without a scheme, path, credentials, or whitespace.",
+      "port": "Port must be an integer from 1 to 65535.",
+      "username": "Username cannot have surrounding spaces or control characters and is limited to 320 bytes.",
+      "password": "Password must be 1 to 4096 bytes without control characters.",
+      "passwordRequired": "Set a password when adding a proxy username for the first time.",
+      "passwordWithoutUser": "Set a proxy username before entering a password."
+    },
+    "state": {
+      "saved": "Network settings saved",
+      "unsaved": "Unsaved changes",
+      "synced": "Settings are synced"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "save": "Save settings",
+      "saving": "Saving",
+      "showPassword": "Show proxy password",
+      "hidePassword": "Hide proxy password"
+    },
+    "errors": {
+      "title": "Network and proxy settings could not be loaded",
+      "load": "The service did not return reliable network settings. Try again shortly.",
+      "save": "Network settings could not be saved. Server state is unchanged."
+    },
+    "security": {
+      "title": "Security boundary",
+      "description": "Proxy credentials are encrypted with the startup master key. Management reads return status only and never echo passwords or the complete proxy URL."
+    },
+    "behavior": {
+      "title": "Runtime behavior",
+      "description": "New requests use the new Client baseline after saving; in-flight requests keep their original snapshot, and proxy failures never silently bypass the proxy."
+    }
+  },
   "passwordReset": {
     "actions": {
       "backToLogin": "Back to sign in",

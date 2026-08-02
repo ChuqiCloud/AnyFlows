@@ -9,6 +9,7 @@ export type AppView =
   | 'invitations'
   | 'models'
   | 'model-settings'
+  | 'network-settings'
   | 'playground'
   | 'profile'
   | 'public-models'
@@ -60,6 +61,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/system-settings/site')) return { view: 'site-settings' }
   if (hash.startsWith('#/console/system-settings/authentication')) return { view: 'authentication-settings' }
   if (hash.startsWith('#/console/system-settings/email')) return { view: 'email-settings' }
+  if (hash.startsWith('#/console/system-settings/network')) return { view: 'network-settings' }
   if (hash.startsWith('#/console/system-settings/billing')) return { view: 'billing-settings' }
   if (hash.startsWith('#/console/system-settings/groups')) return { view: 'group-settings' }
   if (hash.startsWith('#/console/system-settings/models')) return { view: 'model-settings' }

@@ -42,6 +42,7 @@ mod m20260801_000033_create_invite_rebate_events;
 mod m20260801_000034_extend_wallet_ledger_invite_rebate;
 mod m20260801_000035_add_invitation_rebate_quota;
 mod m20260801_000036_create_balance_alerts;
+mod m20260802_000037_create_network_settings;
 mod schema;
 
 #[cfg(test)]
@@ -121,6 +122,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260801_000034_extend_wallet_ledger_invite_rebate::Migration),
             Box::new(m20260801_000035_add_invitation_rebate_quota::Migration),
             Box::new(m20260801_000036_create_balance_alerts::Migration),
+            Box::new(m20260802_000037_create_network_settings::Migration),
         ]
     }
 }

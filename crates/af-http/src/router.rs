@@ -3,11 +3,12 @@ use std::sync::Arc;
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
     AdminEmailSettingsService, AdminGroupReader, AdminGroupWriter, AdminModelPriceService,
-    AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminTokenReader, AdminTokenWriter,
-    AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService, InitialSetup,
-    ModelCatalogReader, PasswordResetService, PlaygroundConversationService,
-    PlaygroundShareService, RegistrationService, SessionAuthenticator, SiteSettingsService,
-    TokenAuthenticator, UserInvitationService, UserWalletService,
+    AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsService,
+    AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter,
+    AdminWalletService, InitialSetup, ModelCatalogReader, PasswordResetService,
+    PlaygroundConversationService, PlaygroundShareService, RegistrationService,
+    SessionAuthenticator, SiteSettingsService, TokenAuthenticator, UserInvitationService,
+    UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -71,6 +72,7 @@ use crate::middleware::{
     request_id_header,
 };
 use crate::model_catalog::list_models;
+use crate::network_settings::build_network_settings_router;
 use crate::openai_responses::openai_responses;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::password_reset::build_password_reset_router;
@@ -130,6 +132,7 @@ pub fn build_router(
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
+    admin_network_settings_service: Arc<dyn AdminNetworkSettingsService>,
     admin_balance_alert_settings_service: Arc<dyn AdminBalanceAlertSettingsService>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
@@ -324,6 +327,10 @@ pub fn build_router(
         admin_email_settings_service,
         Arc::clone(&http_state.session_authenticator),
     );
+    let network_settings_routes = build_network_settings_router(
+        admin_network_settings_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
     let balance_alert_settings_routes = build_balance_alert_settings_router(
         admin_balance_alert_settings_service,
         Arc::clone(&http_state.session_authenticator),
@@ -506,6 +513,7 @@ pub fn build_router(
         .merge(user_invitation_routes)
         .merge(site_settings_routes)
         .merge(email_settings_routes)
+        .merge(network_settings_routes)
         .merge(balance_alert_settings_routes);
     HttpRouter::new(build_router_with_routes_and_frontend(
         public_routes.merge(management_routes),

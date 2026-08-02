@@ -1319,6 +1319,136 @@
         ]
       }
     },
+    "/api/admin/network-settings": {
+      "get": {
+        "tags": [
+          "网络与代理"
+        ],
+        "summary": "读取全局出站网络设置",
+        "operationId": "getAdminNetworkSettings",
+        "responses": {
+          "200": {
+            "description": "密码保持脱敏的网络设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNetworkSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "网络与代理"
+        ],
+        "summary": "更新全局出站网络设置",
+        "operationId": "updateAdminNetworkSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminNetworkSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新后的网络设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNetworkSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文或网络设置字段无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/balance-alert-settings": {
       "get": {
         "tags": [
@@ -9310,6 +9440,118 @@
           "hidden"
         ]
       },
+      "AdminNetworkSettings": {
+        "type": "object",
+        "description": "管理员读取的网络设置，密码只返回是否已配置。",
+        "required": [
+          "mode",
+          "password_configured",
+          "trust_proxy_dns",
+          "version"
+        ],
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/AdminNetworkSettingsMode"
+          },
+          "proxy_host": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "proxy_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "maximum": 65535,
+            "minimum": 1
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 320
+          },
+          "password_configured": {
+            "type": "boolean"
+          },
+          "trust_proxy_dns": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminNetworkSettingsMode": {
+        "type": "string",
+        "description": "管理 API 使用的闭合出站网络模式。",
+        "enum": [
+          "inherit",
+          "direct",
+          "http",
+          "https",
+          "socks5",
+          "socks5h"
+        ]
+      },
+      "AdminNetworkSettingsRequest": {
+        "type": "object",
+        "description": "管理员完整覆盖网络设置；密码为空时保留已保存密文。",
+        "required": [
+          "mode",
+          "trust_proxy_dns"
+        ],
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/AdminNetworkSettingsMode"
+          },
+          "proxy_host": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          },
+          "proxy_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "maximum": 65535,
+            "minimum": 1
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 320
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          },
+          "trust_proxy_dns": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminRoutingStatus": {
         "type": "string",
         "enum": [
@@ -11844,6 +12086,9 @@
     },
     {
       "name": "邮件设置"
+    },
+    {
+      "name": "网络与代理"
     },
     {
       "name": "余额预警"

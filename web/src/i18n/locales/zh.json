@@ -1941,6 +1941,77 @@
       "description": "管理读取只返回密码配置状态。密码、收件人、邮件正文和 SMTP 服务器响应不会进入页面缓存、URL 或错误详情。"
     }
   },
+  "networkSettings": {
+    "title": "网络与代理",
+    "subtitle": "配置所有上游请求使用的出站网络路径。保存后只影响新请求，代理故障不会回退直连。",
+    "loading": "正在加载网络与代理设置",
+    "status": {
+      "title": "出站网络",
+      "passwordConfigured": "凭据已配置",
+      "version": "配置版本 {{version}}"
+    },
+    "route": {
+      "title": "路由与代理",
+      "description": "选择结构化网络模式；继承模式沿用启动期 HTTP Client 配置。"
+    },
+    "fields": {
+      "mode": "网络模式",
+      "modeHint": "直连和代理模式都会显式覆盖启动期默认值。",
+      "host": "代理主机",
+      "hostHint": "只填写主机名、IPv4 或 IPv6，不包含协议、路径和凭据。",
+      "hostDisabledHint": "当前模式不使用代理地址。",
+      "port": "代理端口",
+      "username": "代理用户名",
+      "usernameHint": "留空表示不使用代理认证；已配置密码会随之清除。",
+      "password": "代理密码",
+      "passwordKeepHint": "已配置。留空保留现有密文，输入新值则替换。",
+      "passwordEmptyHint": "尚未配置。填写代理用户名时必须同时设置密码。",
+      "trustProxyDns": "信任代理端 DNS",
+      "trustProxyDnsHint": "仅在代理模式下启用；启用后由受信代理解析目标域名。"
+    },
+    "modes": {
+      "inherit": "继承启动配置",
+      "direct": "显式直连",
+      "http": "HTTP 代理",
+      "https": "HTTPS 代理",
+      "socks5": "SOCKS5（本地解析）",
+      "socks5h": "SOCKS5H（代理解析）"
+    },
+    "validation": {
+      "host": "请输入不含协议、路径、凭据或空格的有效代理主机。",
+      "port": "端口必须是 1 至 65535 的整数。",
+      "username": "代理用户名不能有首尾空格或控制字符，最多 320 字节。",
+      "password": "密码必须为 1 至 4096 字节，且不能包含控制字符。",
+      "passwordRequired": "首次配置代理用户名时必须同时填写密码。",
+      "passwordWithoutUser": "填写密码前请先配置代理用户名。"
+    },
+    "state": {
+      "saved": "网络设置已保存",
+      "unsaved": "有未保存的更改",
+      "synced": "当前设置已同步"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "save": "保存设置",
+      "saving": "正在保存",
+      "showPassword": "显示代理密码",
+      "hidePassword": "隐藏代理密码"
+    },
+    "errors": {
+      "title": "无法读取网络与代理设置",
+      "load": "服务没有返回可靠的网络设置，请稍后重试。",
+      "save": "网络设置保存失败，服务端状态未改变。"
+    },
+    "security": {
+      "title": "安全边界",
+      "description": "代理凭据使用启动期主密钥加密保存，管理读取只返回配置状态，不会回显密码或完整代理 URL。"
+    },
+    "behavior": {
+      "title": "运行时行为",
+      "description": "保存后新请求使用新的 Client 基线，在途请求继续使用原快照；代理连接失败时不会静默绕过代理。"
+    }
+  },
   "passwordReset": {
     "actions": {
       "backToLogin": "返回登录",
