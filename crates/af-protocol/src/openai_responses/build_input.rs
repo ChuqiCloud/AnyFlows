@@ -146,11 +146,11 @@ fn build_assistant_items(
                     state,
                 )?);
             }
+            ContentBlock::Thinking { .. } => return Err(BuildRequestError::InvalidValue),
             ContentBlock::Text(_)
             | ContentBlock::Image { .. }
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolResult { .. }
-            | ContentBlock::Thinking { .. }
             | ContentBlock::CacheControl(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
