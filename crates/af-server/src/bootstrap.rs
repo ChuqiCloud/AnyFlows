@@ -7,23 +7,25 @@ use af_account::{
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
     AdminEmailSettingsService, AdminGroupReader, AdminGroupWriter, AdminModelPriceService,
-    AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminTokenReader, AdminTokenWriter,
-    AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService, BalanceAlertTask,
-    DatabaseAdminBalanceAlertSettingsService, DatabaseAdminChannelReader,
-    DatabaseAdminChannelWriter, DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader,
-    DatabaseAdminGroupWriter, DatabaseAdminModelPriceService, DatabaseAdminModelReader,
-    DatabaseAdminModelSyncService, DatabaseAdminModelWriter, DatabaseAdminTokenReader,
-    DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader, DatabaseAdminUserReader,
-    DatabaseAdminUserWriter, DatabaseAdminWalletService, DatabaseInitialSetup,
-    DatabasePasswordResetService, DatabasePlaygroundConversationService,
-    DatabasePlaygroundShareService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
-    DatabaseSiteSettingsService, DatabaseTokenAuthenticator, DatabaseUserInvitationService,
-    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
-    InitialSetup, ModelCatalogReader, PasswordResetService, PasswordResetServiceConfigError,
-    PlaygroundConversationService, PlaygroundShareService, RegistrationService,
-    RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter, SessionAuthenticator,
-    SessionAuthenticatorConfigError, SiteSettingsService, TokenAuthenticator,
-    UserInvitationService, UserProfileService, UserTokenService, UserWalletService,
+    AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsError,
+    AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter,
+    AdminWalletService, BalanceAlertTask, DatabaseAdminBalanceAlertSettingsService,
+    DatabaseAdminChannelReader, DatabaseAdminChannelWriter, DatabaseAdminEmailSettingsService,
+    DatabaseAdminGroupReader, DatabaseAdminGroupWriter, DatabaseAdminModelPriceService,
+    DatabaseAdminModelReader, DatabaseAdminModelSyncService, DatabaseAdminModelWriter,
+    DatabaseAdminNetworkSettingsService, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
+    DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
+    DatabaseAdminWalletService, DatabaseInitialSetup, DatabasePasswordResetService,
+    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    DatabaseRegistrationService, DatabaseSessionAuthenticator, DatabaseSiteSettingsService,
+    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserProfileService,
+    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
+    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
+    PlaygroundShareService, RegistrationService, RegistrationServiceConfigError,
+    RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
+    SiteSettingsService, TokenAuthenticator, UserInvitationService, UserProfileService,
+    UserTokenService, UserWalletService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -46,8 +48,9 @@ use af_db::{
     ChannelStateRepository, CredentialStateRepository, DatabaseError, DatabaseOptions,
     DatabaseOptionsError, DatabasePool, EmailSettingsRepository,
     EmailSettingsRepositoryConfigError, InitialSetupRepository, InitialSetupRepositoryConfigError,
-    MigrationOptions, ModelPriceRepository, ModelSyncRepository, PasswordResetRepository,
-    PasswordResetRepositoryConfigError, PlaygroundConversationRepository,
+    MigrationOptions, ModelPriceRepository, ModelSyncRepository, NetworkSettingsMode,
+    NetworkSettingsRecord, NetworkSettingsRepository, NetworkSettingsRepositoryConfigError,
+    PasswordResetRepository, PasswordResetRepositoryConfigError, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RegistrationRepository,
     RegistrationRepositoryConfigError, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
@@ -125,6 +128,8 @@ pub struct AuthenticationReady {
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
+    network_settings_repository: NetworkSettingsRepository,
+    system_secret_cipher: SystemSecretCipher,
     admin_balance_alert_settings_service: Arc<dyn AdminBalanceAlertSettingsService>,
     balance_alert_task: BalanceAlertTask,
     playground_share_service: Arc<dyn PlaygroundShareService>,
@@ -150,6 +155,7 @@ pub struct AuthenticationReady {
 pub struct RelayReady {
     infrastructure: AuthenticationReady,
     upstream_clients: HttpClientProvider,
+    admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
 }
 
 /// 计费 WAL、定价缓存、额度仓储及内部可靠队列均已完成装配。
@@ -163,6 +169,7 @@ pub struct BillingReady {
     refund_signal_queue: RefundSignalQueue,
     refund_signal_consumer: RefundSignalConsumer,
     upstream_clients: HttpClientProvider,
+    admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
     channel_index: InMemoryChannelIndex,
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     admin_model_sync_service: Arc<dyn AdminModelSyncService>,
@@ -180,6 +187,7 @@ pub struct Supervised {
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     admin_model_sync_service: Arc<dyn AdminModelSyncService>,
     admin_model_price_service: Arc<dyn AdminModelPriceService>,
+    admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
     admin_channel_probe: Arc<dyn AdminChannelProbe>,
     supervisor: BackgroundTaskSupervisor,
 }
@@ -286,6 +294,9 @@ pub enum BootstrapError {
     /// SMTP 设置仓储的启动参数无效。
     #[error("SMTP 设置仓储启动参数无效")]
     EmailSettingsRepository(#[source] EmailSettingsRepositoryConfigError),
+    /// 全局网络设置仓储的启动参数无效。
+    #[error("网络设置仓储启动参数无效")]
+    NetworkSettingsRepository(#[source] NetworkSettingsRepositoryConfigError),
     /// 余额预警全局设置仓储的启动参数无效。
     #[error("余额预警设置仓储启动参数无效")]
     BalanceAlertSettingsRepository(#[source] BalanceAlertSettingsRepositoryConfigError),
@@ -340,6 +351,9 @@ pub enum BootstrapError {
     /// 受控上游 HTTP Client 配置或构造失败。
     #[error("初始化上游 HTTP Client 失败")]
     HttpClient(#[source] HttpClientError),
+    /// 数据库网络设置无法应用到当前 HTTP Client。
+    #[error("应用运行时网络设置失败")]
+    NetworkSettingsRuntime(#[source] AdminNetworkSettingsError),
     /// 生产渠道凭据解密器无法从启动配置安全装配。
     #[error("初始化凭据解密器失败")]
     CredentialDecryption(#[source] CredentialDecryptionError),
@@ -497,6 +511,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::EmailSettingsRepository)?;
+        let network_settings_repository = NetworkSettingsRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::NetworkSettingsRepository)?;
         let site_settings_repository = SiteSettingsRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -590,7 +609,7 @@ impl Bootstrap<DatabaseReady> {
         .map_err(BootstrapError::RegistrationService)?;
         let admin_email_settings_service = DatabaseAdminEmailSettingsService::new(
             email_settings_repository,
-            system_secret_cipher,
+            system_secret_cipher.clone(),
             smtp_delivery,
         );
         let admin_group_repository = AdminGroupRepository::new(
@@ -665,6 +684,8 @@ impl Bootstrap<DatabaseReady> {
                     site_settings_repository,
                 )),
                 admin_email_settings_service: Arc::new(admin_email_settings_service),
+                network_settings_repository,
+                system_secret_cipher,
                 admin_balance_alert_settings_service: Arc::new(
                     admin_balance_alert_settings_service,
                 ),
@@ -717,7 +738,18 @@ impl Bootstrap<DatabaseReady> {
 impl Bootstrap<AuthenticationReady> {
     /// 使用启动配置建立生产转发共用的受控 HTTP Client。
     pub fn init_relay(self) -> Result<Bootstrap<RelayReady>, BootstrapError> {
-        let upstream_clients = build_http_clients(&self.config)?;
+        let (startup_config, max_cached_clients) = build_http_client_parts(&self.config)?;
+        let upstream_clients = HttpClientProvider::new(startup_config.clone(), max_cached_clients)
+            .map_err(BootstrapError::HttpClient)?;
+        let runtime = Arc::new(HttpClientNetworkSettingsApplier::new(
+            upstream_clients.clone(),
+            startup_config,
+        ));
+        let admin_network_settings_service = Arc::new(DatabaseAdminNetworkSettingsService::new(
+            self.stage.network_settings_repository.clone(),
+            self.stage.system_secret_cipher.clone(),
+            runtime,
+        ));
         let Bootstrap {
             config,
             shutdown_timeout,
@@ -731,6 +763,7 @@ impl Bootstrap<AuthenticationReady> {
             stage: RelayReady {
                 infrastructure: stage,
                 upstream_clients,
+                admin_network_settings_service,
             },
         })
     }
@@ -739,6 +772,11 @@ impl Bootstrap<AuthenticationReady> {
 impl Bootstrap<RelayReady> {
     /// 打开计费 WAL、加载定价缓存并装配生产预扣、结算与内部补偿链路。
     pub async fn init_billing(self) -> Result<Bootstrap<BillingReady>, BootstrapError> {
+        self.stage
+            .admin_network_settings_service
+            .apply_current()
+            .await
+            .map_err(BootstrapError::NetworkSettingsRuntime)?;
         let decryptor = CredentialDecryptor::new(self.config.credential_encryption())
             .map_err(BootstrapError::CredentialDecryption)?;
         let model_sync_repository =
@@ -875,6 +913,7 @@ impl Bootstrap<RelayReady> {
                 refund_signal_queue,
                 refund_signal_consumer,
                 upstream_clients: stage.upstream_clients,
+                admin_network_settings_service: stage.admin_network_settings_service,
                 channel_index,
                 model_catalog_reader,
                 admin_model_sync_service,
@@ -905,6 +944,7 @@ impl Bootstrap<BillingReady> {
             refund_signal_queue,
             refund_signal_consumer,
             upstream_clients,
+            admin_network_settings_service,
             channel_index,
             model_catalog_reader,
             admin_model_sync_service,
@@ -991,6 +1031,7 @@ impl Bootstrap<BillingReady> {
                 model_catalog_reader,
                 admin_model_sync_service,
                 admin_model_price_service,
+                admin_network_settings_service,
                 admin_channel_probe,
                 supervisor,
             },
@@ -1074,6 +1115,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.user_invitation_service),
             Arc::clone(&self.stage.infrastructure.site_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_email_settings_service),
+            self.stage.admin_network_settings_service.clone(),
             Arc::clone(
                 &self
                     .stage
@@ -1189,6 +1231,7 @@ impl Bootstrap<ListenerReady> {
             model_catalog_reader: _,
             admin_model_sync_service: _,
             admin_model_price_service: _,
+            admin_network_settings_service: _,
             admin_channel_probe: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
@@ -1351,7 +1394,84 @@ fn migration_options(config: &AppConfig) -> Result<MigrationOptions, BootstrapEr
     )
 }
 
-fn build_http_clients(config: &AppConfig) -> Result<HttpClientProvider, BootstrapError> {
+/// 把数据库网络快照转换为共享 HTTP Client 基线的运行时适配器。
+struct HttpClientNetworkSettingsApplier {
+    provider: HttpClientProvider,
+    startup_config: HttpClientConfig,
+}
+
+impl HttpClientNetworkSettingsApplier {
+    fn new(provider: HttpClientProvider, startup_config: HttpClientConfig) -> Self {
+        Self {
+            provider,
+            startup_config,
+        }
+    }
+
+    fn apply_inner(
+        &self,
+        record: &NetworkSettingsRecord,
+        cipher: &SystemSecretCipher,
+    ) -> Result<(), NetworkSettingsRuntimeError> {
+        let config = match record.mode() {
+            NetworkSettingsMode::Inherit => self.startup_config.clone(),
+            NetworkSettingsMode::Direct => self
+                .startup_config
+                .clone()
+                .with_proxy(ProxyConfig::direct())
+                .with_remote_dns_policy(RemoteDnsPolicy::Deny),
+            mode if mode.is_proxy() => {
+                let password = record
+                    .password_secret()
+                    .map(|secret| {
+                        cipher.decrypt(af_account::SystemSecretKind::ProxyPassword, secret)
+                    })
+                    .transpose()
+                    .map_err(|_| NetworkSettingsRuntimeError::Failed)?;
+                let proxy = ProxyConfig::from_parts(
+                    mode.scheme().ok_or(NetworkSettingsRuntimeError::Failed)?,
+                    record
+                        .proxy_host()
+                        .ok_or(NetworkSettingsRuntimeError::Failed)?,
+                    record
+                        .proxy_port()
+                        .ok_or(NetworkSettingsRuntimeError::Failed)?,
+                    record.username(),
+                    password
+                        .as_ref()
+                        .map(af_account::DecryptedSystemSecret::expose_secret),
+                )
+                .map_err(|_| NetworkSettingsRuntimeError::Failed)?;
+                self.startup_config
+                    .clone()
+                    .with_proxy(proxy)
+                    .with_remote_dns_policy(if record.trust_proxy_dns() {
+                        RemoteDnsPolicy::TrustProxy
+                    } else {
+                        RemoteDnsPolicy::Deny
+                    })
+            }
+            _ => return Err(NetworkSettingsRuntimeError::Failed),
+        };
+        self.provider
+            .replace_base_config(config)
+            .map_err(|_| NetworkSettingsRuntimeError::Failed)
+    }
+}
+
+impl NetworkSettingsRuntimeApplier for HttpClientNetworkSettingsApplier {
+    fn apply<'a>(
+        &'a self,
+        record: &'a NetworkSettingsRecord,
+        cipher: &'a SystemSecretCipher,
+    ) -> af_admin::NetworkSettingsApplyFuture<'a> {
+        Box::pin(async move { self.apply_inner(record, cipher) })
+    }
+}
+
+fn build_http_client_parts(
+    config: &AppConfig,
+) -> Result<(HttpClientConfig, usize), BootstrapError> {
     let settings = config.http_client();
     let timeouts = HttpTimeouts::new(
         settings
@@ -1379,13 +1499,12 @@ fn build_http_clients(config: &AppConfig) -> Result<HttpClientProvider, Bootstra
     };
     let client_config =
         HttpClientConfig::new(proxy, timeouts).with_remote_dns_policy(remote_dns_policy);
-    HttpClientProvider::new(
+    Ok((
         client_config,
         settings
             .max_cached_clients()
             .unwrap_or(DEFAULT_MAX_CACHED_CLIENTS),
-    )
-    .map_err(BootstrapError::HttpClient)
+    ))
 }
 
 fn terminate_unconfirmed_shutdown(error_kind: &'static str) -> ! {

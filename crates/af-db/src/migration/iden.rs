@@ -722,6 +722,34 @@ pub(in crate::migration) mod email_settings {
     }
 }
 
+pub(in crate::migration) mod network_settings {
+    use super::DeriveIden;
+
+    /// `network_settings` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "network_settings")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 全局出站网络设置迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        Mode,
+        ProxyHost,
+        ProxyPort,
+        Username,
+        PasswordSecret,
+        TrustProxyDns,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod site_settings {
     use super::DeriveIden;
 

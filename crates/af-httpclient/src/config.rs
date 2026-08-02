@@ -210,6 +210,40 @@ impl ProxyConfig {
         })
     }
 
+    /// 使用结构化字段组装代理地址，避免上层通过字符串拼接泄露认证信息。
+    pub fn from_parts(
+        scheme: &str,
+        host: &str,
+        port: u16,
+        username: Option<&str>,
+        password: Option<&str>,
+    ) -> Result<Self, HttpClientError> {
+        let mut endpoint =
+            Url::parse("http://proxy.invalid").map_err(|_| HttpClientError::InvalidProxyUrl)?;
+        endpoint
+            .set_scheme(scheme)
+            .map_err(|_| HttpClientError::UnsupportedProxyScheme)?;
+        endpoint
+            .set_host(Some(host))
+            .map_err(|_| HttpClientError::InvalidProxyUrl)?;
+        endpoint
+            .set_port(Some(port))
+            .map_err(|_| HttpClientError::InvalidProxyUrl)?;
+        match (username, password) {
+            (Some(username), Some(password)) => {
+                endpoint
+                    .set_username(username)
+                    .map_err(|_| HttpClientError::InvalidProxyUrl)?;
+                endpoint
+                    .set_password(Some(password))
+                    .map_err(|_| HttpClientError::InvalidProxyUrl)?;
+            }
+            (None, None) => {}
+            _ => return Err(HttpClientError::InvalidProxyUrl),
+        }
+        Self::parse(endpoint)
+    }
+
     /// 返回是否为显式直连。
     #[must_use]
     pub const fn is_direct(&self) -> bool {
@@ -293,6 +327,13 @@ impl HttpClientConfig {
     #[must_use]
     pub const fn proxy(&self) -> &ProxyConfig {
         &self.proxy
+    }
+
+    /// 替换代理路由，同时保留现有超时与目标安全策略。
+    #[must_use]
+    pub fn with_proxy(mut self, proxy: ProxyConfig) -> Self {
+        self.proxy = proxy;
+        self
     }
 
     /// 返回三层超时配置。
@@ -402,6 +443,22 @@ mod tests {
                 assert_eq!(proxy.required_endpoint().unwrap().port(), Some(1080));
             }
         }
+    }
+
+    #[test]
+    fn builds_proxy_from_structured_parts_without_leaking_credentials() {
+        let proxy = ProxyConfig::from_parts(
+            "socks5h",
+            "proxy.example",
+            1080,
+            Some("proxy-user"),
+            Some("proxy-secret"),
+        )
+        .unwrap();
+        assert_eq!(proxy.scheme(), Some("socks5h"));
+        let rendered = format!("{proxy:?}");
+        assert!(!rendered.contains("proxy-user"));
+        assert!(!rendered.contains("proxy-secret"));
     }
 
     #[test]

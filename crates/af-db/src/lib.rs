@@ -87,6 +87,9 @@ mod model_price_tests;
 mod model_sync;
 #[cfg(test)]
 mod model_sync_tests;
+mod network_settings;
+#[cfg(test)]
+mod network_settings_tests;
 mod options;
 mod password_reset;
 mod playground_conversation;
@@ -280,6 +283,11 @@ pub use model_sync::{
     ModelDiscoveryTargetRecord, ModelSyncApplyItemRecord, ModelSyncItemRecord,
     ModelSyncPreviewRecord, ModelSyncPreviewWrite, ModelSyncRelationRecord, ModelSyncRepository,
     ModelSyncRepositoryConfigError, ModelSyncRepositoryError,
+};
+pub use network_settings::{
+    NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
+    NetworkSettingsRepositoryConfigError, NetworkSettingsRepositoryError,
+    NetworkSettingsWriteRecord, ProxyPasswordUpdate,
 };
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
 pub use password_reset::{

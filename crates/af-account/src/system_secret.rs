@@ -18,12 +18,15 @@ const MAX_SYSTEM_SECRET_BYTES: usize = 4 * 1_024;
 pub enum SystemSecretKind {
     /// 系统 SMTP 认证密码。
     SmtpPassword,
+    /// 系统出站代理认证密码。
+    ProxyPassword,
 }
 
 impl SystemSecretKind {
     const fn as_str(self) -> &'static str {
         match self {
             Self::SmtpPassword => "smtp_password",
+            Self::ProxyPassword => "proxy_password",
         }
     }
 }
@@ -248,6 +251,12 @@ mod tests {
                 .decrypt(SystemSecretKind::SmtpPassword, &envelope)
                 .unwrap_err(),
             SystemSecretError::KeyMismatch
+        );
+        assert_eq!(
+            cipher
+                .decrypt(SystemSecretKind::ProxyPassword, &envelope)
+                .unwrap_err(),
+            SystemSecretError::Decrypt
         );
     }
 
