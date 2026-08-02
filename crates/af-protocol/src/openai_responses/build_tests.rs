@@ -382,13 +382,6 @@ fn rejects_unrepresentable_content_and_media() {
             RequestCapability::AudioBase64,
         ),
         (
-            ContentBlock::Thinking {
-                text: "secret".to_owned(),
-                signature: None,
-            },
-            RequestCapability::Thinking,
-        ),
-        (
             ContentBlock::CacheControl(CacheHint::Ephemeral5Minutes),
             RequestCapability::CacheControl(CacheHint::Ephemeral5Minutes),
         ),
@@ -402,6 +395,60 @@ fn rejects_unrepresentable_content_and_media() {
         );
         assert_unsupported_capability(&request, capability);
     }
+
+    let missing_reasoning_signature = CanonicalRequest::new(
+        Operation::Responses,
+        "gpt-test".to_owned(),
+        vec![Message::new(
+            Role::Assistant,
+            vec![ContentBlock::Thinking {
+                text: "secret".to_owned(),
+                signature: None,
+            }],
+        )],
+        false,
+    );
+    assert_eq!(
+        build_request(&missing_reasoning_signature),
+        Err(BuildRequestError::UnsupportedFeature)
+    );
+
+    let misplaced_reasoning = CanonicalRequest::new(
+        Operation::Responses,
+        "gpt-test".to_owned(),
+        vec![Message::new(
+            Role::User,
+            vec![ContentBlock::Thinking {
+                text: "secret".to_owned(),
+                signature: Some("encrypted".to_owned()),
+            }],
+        )],
+        false,
+    );
+    assert_eq!(
+        build_request(&misplaced_reasoning),
+        Err(BuildRequestError::UnsupportedFeature)
+    );
+
+    let late_reasoning = CanonicalRequest::new(
+        Operation::Responses,
+        "gpt-test".to_owned(),
+        vec![Message::new(
+            Role::Assistant,
+            vec![
+                ContentBlock::Text("answer".to_owned()),
+                ContentBlock::Thinking {
+                    text: "secret".to_owned(),
+                    signature: Some("encrypted".to_owned()),
+                },
+            ],
+        )],
+        false,
+    );
+    assert_eq!(
+        build_request(&late_reasoning),
+        Err(BuildRequestError::InvalidValue)
+    );
 
     let missing_mime = CanonicalRequest::new(
         Operation::Responses,
