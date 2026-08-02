@@ -215,11 +215,15 @@ impl AdminRedemptionBatchCreateCommand {
         if quota_amount.is_zero() || expires_at.is_some_and(|value| value <= 0) {
             return Err(RedemptionServiceError::InvalidInput);
         }
+        let expires_at = expires_at
+            .map(u64::try_from)
+            .transpose()
+            .map_err(|_| RedemptionServiceError::InvalidInput)?;
         Ok(Self {
             name,
             quota_amount,
             code_count,
-            expires_at: expires_at.map(|value| value as u64),
+            expires_at,
         })
     }
 }
@@ -242,9 +246,9 @@ impl AdminRedemptionBatchDisableCommand {
         if expected_version <= 0 || expected_version == i64::MAX {
             return Err(RedemptionServiceError::InvalidInput);
         }
-        Ok(Self {
-            expected_version: expected_version as u64,
-        })
+        let expected_version =
+            u64::try_from(expected_version).map_err(|_| RedemptionServiceError::InvalidInput)?;
+        Ok(Self { expected_version })
     }
 }
 
