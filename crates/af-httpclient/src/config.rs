@@ -218,11 +218,12 @@ impl ProxyConfig {
         username: Option<&str>,
         password: Option<&str>,
     ) -> Result<Self, HttpClientError> {
-        let mut endpoint =
-            Url::parse("http://proxy.invalid").map_err(|_| HttpClientError::InvalidProxyUrl)?;
-        endpoint
-            .set_scheme(scheme)
-            .map_err(|_| HttpClientError::UnsupportedProxyScheme)?;
+        if !matches!(scheme, "http" | "https" | "socks5" | "socks5h") {
+            return Err(HttpClientError::UnsupportedProxyScheme);
+        }
+        // URL 标准不允许部分特殊协议跨类别切换，因此用已校验协议直接创建无密钥占位端点。
+        let mut endpoint = Url::parse(&format!("{scheme}://proxy.invalid"))
+            .map_err(|_| HttpClientError::InvalidProxyUrl)?;
         endpoint
             .set_host(Some(host))
             .map_err(|_| HttpClientError::InvalidProxyUrl)?;
@@ -459,6 +460,12 @@ mod tests {
         let rendered = format!("{proxy:?}");
         assert!(!rendered.contains("proxy-user"));
         assert!(!rendered.contains("proxy-secret"));
+
+        let ipv6 = ProxyConfig::from_parts("http", "2001:db8::1", 8080, None, None).unwrap();
+        assert!(matches!(
+            ipv6.required_endpoint().unwrap().host(),
+            Some(url::Host::Ipv6(_))
+        ));
     }
 
     #[test]
