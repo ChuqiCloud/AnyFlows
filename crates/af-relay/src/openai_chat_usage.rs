@@ -16,6 +16,7 @@ const MESSAGE_OVERHEAD_TOKENS: i64 = 3;
 const REPLY_PRIMING_TOKENS: i64 = 3;
 const NAMED_FIELD_OVERHEAD_TOKENS: i64 = 1;
 const TOOL_OVERHEAD_TOKENS: i64 = 8;
+const ENCRYPTED_REASONING_ITEM_OVERHEAD_TOKENS: i64 = 16;
 const MAX_ESTIMATED_OUTPUT_BYTES: usize = 12 * 1024 * 1024;
 
 /// OpenAI Chat usage 无法可靠得到时的闭合原因。
@@ -280,11 +281,12 @@ fn estimate_input_tokens(
     counter: TokenCounter,
 ) -> Result<TokenCount, UsageResolutionError> {
     let mut total = REPLY_PRIMING_TOKENS;
+    let allow_encrypted_reasoning = request.operation == af_domain::Operation::Responses;
     for message in &request.messages {
         checked_add(&mut total, MESSAGE_OVERHEAD_TOKENS)?;
         checked_add(&mut total, counter.count(message.role.as_str())?)?;
         for block in &message.content {
-            add_input_block(&mut total, block, counter)?;
+            add_input_block(&mut total, block, counter, allow_encrypted_reasoning)?;
         }
     }
     for tool in &request.tools {
@@ -307,6 +309,7 @@ fn add_input_block(
     total: &mut i64,
     block: &ContentBlock,
     counter: TokenCounter,
+    allow_encrypted_reasoning: bool,
 ) -> Result<(), UsageResolutionError> {
     match block {
         ContentBlock::Text(text) => checked_add(total, counter.count(text)?),
@@ -341,9 +344,20 @@ fn add_input_block(
             checked_add(total, NAMED_FIELD_OVERHEAD_TOKENS)?;
             checked_add(total, counter.count(tool_use_id)?)?;
             for nested in content {
-                add_input_block(total, nested, counter)?;
+                add_input_block(total, nested, counter, allow_encrypted_reasoning)?;
             }
             Ok(())
+        }
+        ContentBlock::Thinking {
+            text,
+            signature: Some(signature),
+        } if allow_encrypted_reasoning && !signature.is_empty() => {
+            // 加密推理内容是不透明字节串，按一字节一 Token 预扣可避免 tokenizer 低估。
+            let signature_tokens =
+                i64::try_from(signature.len()).map_err(|_| UsageResolutionError::Overflow)?;
+            checked_add(total, ENCRYPTED_REASONING_ITEM_OVERHEAD_TOKENS)?;
+            checked_add(total, signature_tokens)?;
+            checked_add(total, counter.count(text)?)
         }
         ContentBlock::Thinking { .. } | ContentBlock::CacheControl(_) => {
             Err(UsageResolutionError::UnsupportedContent)
@@ -577,7 +591,7 @@ fn checked_add(total: &mut i64, value: i64) -> Result<(), UsageResolutionError> 
 #[cfg(test)]
 mod tests {
     use af_domain::{Operation, Role};
-    use af_protocol::{FinishReason, MediaSource, ResponseChoice, StreamOptions};
+    use af_protocol::{FinishReason, MediaSource, ResponseChoice, StreamOptions, openai_responses};
     use serde_json::json;
 
     use super::*;
@@ -753,6 +767,59 @@ mod tests {
             estimate_openai_chat_request_upper_bound(&request),
             Err(UsageResolutionError::UnsupportedContent)
         );
+    }
+
+    #[test]
+    fn responses_encrypted_reasoning_uses_conservative_input_upper_bound() {
+        let signature = "encrypted-reasoning-canary";
+        let request = openai_responses::parse_request(
+            br#"{
+                "model":"gpt-5.5",
+                "input":[
+                    {
+                        "type":"reasoning",
+                        "encrypted_content":"encrypted-reasoning-canary",
+                        "summary":[{"type":"summary_text","text":"brief summary"}]
+                    },
+                    {"role":"user","content":[{"type":"input_text","text":"continue"}]}
+                ],
+                "include":["reasoning.encrypted_content"],
+                "store":false
+            }"#,
+        )
+        .unwrap();
+
+        let upper_bound = estimate_openai_request_upper_bound(&request).unwrap();
+        let encrypted_floor =
+            i64::try_from(signature.len()).unwrap() + ENCRYPTED_REASONING_ITEM_OVERHEAD_TOKENS;
+        assert!(upper_bound.input_tokens().get() > encrypted_floor);
+        assert_eq!(upper_bound.source(), UsageSource::Estimated);
+    }
+
+    #[test]
+    fn thinking_without_responses_encrypted_contract_remains_unsupported() {
+        for (operation, signature) in [
+            (Operation::Chat, Some("signed".to_owned())),
+            (Operation::Chat, None),
+            (Operation::Responses, None),
+        ] {
+            let request = CanonicalRequest::new(
+                operation,
+                "gpt-test".to_owned(),
+                vec![Message::new(
+                    Role::Assistant,
+                    vec![ContentBlock::Thinking {
+                        text: "reasoning".to_owned(),
+                        signature,
+                    }],
+                )],
+                false,
+            );
+            assert_eq!(
+                estimate_openai_request_upper_bound(&request),
+                Err(UsageResolutionError::UnsupportedContent)
+            );
+        }
     }
 
     #[test]

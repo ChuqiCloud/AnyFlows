@@ -33,6 +33,50 @@ fn parses_minimal_string_input() {
 }
 
 #[test]
+fn accepts_ai_sdk_stateless_reasoning_contract() {
+    let request = parse_json(json!({
+        "model": "gpt-5.5",
+        "input": [
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": "first"}]
+            },
+            {
+                "type": "reasoning",
+                "id": "rs_public",
+                "encrypted_content": "encrypted-reasoning-canary",
+                "summary": [{"type": "summary_text", "text": "summary"}],
+                "status": "completed"
+            },
+            {
+                "role": "assistant",
+                "content": [{"type": "input_text", "text": "answer"}]
+            },
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": "continue"}]
+            }
+        ],
+        "store": false,
+        "include": ["reasoning.encrypted_content"],
+        "stream": true
+    }))
+    .unwrap();
+
+    assert!(request.stream);
+    assert!(matches!(
+        &request.messages[1].content[0],
+        ContentBlock::Thinking { text, signature: Some(signature) }
+            if text == "summary" && signature == "encrypted-reasoning-canary"
+    ));
+    let raw = request.raw_passthrough().unwrap();
+    assert_eq!(
+        raw.fields_for_protocol(Protocol::OpenAiResponses).unwrap()["include"],
+        json!(["reasoning.encrypted_content"])
+    );
+}
+
+#[test]
 fn parses_messages_tools_sampling_reasoning_continuation_and_raw_fields() {
     let request = parse_json(json!({
         "model": "gpt-test",
@@ -340,7 +384,6 @@ fn rejects_unmodeled_or_unsafe_image_sources() {
 fn rejects_known_unmodeled_top_level_and_item_features() {
     let top_level = [
         json!({"model": "gpt-test", "background": true}),
-        json!({"model": "gpt-test", "include": ["reasoning.encrypted_content"]}),
         json!({"model": "gpt-test", "text": {"format": {"type": "json_object"}}}),
         json!({"model": "gpt-test", "stream_options": {"include_obfuscation": false}}),
         json!({"model": "gpt-test", "reasoning": {"summary": "auto"}}),
@@ -436,6 +479,7 @@ fn validates_sampling_model_and_stream_boundaries() {
 fn validates_same_source_raw_field_shapes() {
     let valid = parse_json(json!({
         "model": "gpt-test",
+        "include": ["reasoning.encrypted_content", "future.output.details"],
         "metadata": {"key": "value"},
         "parallel_tool_calls": true,
         "prompt_cache_options": {},
@@ -449,6 +493,9 @@ fn validates_same_source_raw_field_shapes() {
     assert!(valid.raw_passthrough().is_some());
 
     for invalid in [
+        json!({"model": "gpt-test", "include": "reasoning.encrypted_content"}),
+        json!({"model": "gpt-test", "include": [1]}),
+        json!({"model": "gpt-test", "include": [""]}),
         json!({"model": "gpt-test", "metadata": {"key": 1}}),
         json!({"model": "gpt-test", "parallel_tool_calls": "true"}),
         json!({"model": "gpt-test", "prompt_cache_options": {"ttl": "1h"}}),

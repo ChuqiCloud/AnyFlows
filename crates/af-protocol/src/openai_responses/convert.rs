@@ -31,6 +31,8 @@ pub(super) const MAX_TOTAL_ARGUMENT_BYTES: usize = 2 * 1024 * 1024;
 pub(super) const MAX_TOTAL_ARGUMENT_NODES: usize = 32_768;
 pub(super) const MAX_MEDIA_URL_BYTES: usize = 8 * 1024;
 pub(super) const MAX_MEDIA_BYTES: usize = 20 * 1024 * 1024;
+pub(super) const MAX_ENCRYPTED_REASONING_BYTES: usize = 8 * 1024 * 1024;
+pub(super) const MAX_REASONING_SUMMARIES: usize = 16;
 
 const MAX_SCHEMA_BYTES: usize = 64 * 1024;
 const MAX_TOTAL_SCHEMA_BYTES: usize = 512 * 1024;
@@ -46,8 +48,11 @@ const MAX_RAW_KEY_BYTES: usize = 128;
 const MAX_METADATA_FIELDS: usize = 16;
 const MAX_METADATA_KEY_BYTES: usize = 64;
 const MAX_METADATA_VALUE_BYTES: usize = 512;
+const MAX_INCLUDE_ITEMS: usize = 32;
+const MAX_INCLUDE_VALUE_BYTES: usize = 128;
 
 const RAW_FIELD_ALLOWLIST: &[&str] = &[
+    "include",
     "metadata",
     "parallel_tool_calls",
     "prompt_cache_options",
@@ -401,6 +406,7 @@ pub(super) fn validate_raw_fields(extra: &Map<String, Value>) -> Result<(), Pars
 fn validate_raw_semantics(extra: &Map<String, Value>) -> Result<(), ParseRequestError> {
     for (key, value) in extra {
         match key.as_str() {
+            "include" => validate_include(value)?,
             "metadata" => validate_raw_metadata(value)?,
             "parallel_tool_calls" | "store" => {
                 if !value.is_boolean() {
@@ -429,6 +435,17 @@ fn validate_raw_semantics(extra: &Map<String, Value>) -> Result<(), ParseRequest
             }
             _ => return Err(ParseRequestError::InvalidValue),
         }
+    }
+    Ok(())
+}
+
+fn validate_include(value: &Value) -> Result<(), ParseRequestError> {
+    let include = value.as_array().ok_or(ParseRequestError::InvalidValue)?;
+    if include.len() > MAX_INCLUDE_ITEMS {
+        return Err(ParseRequestError::StructureLimitExceeded);
+    }
+    for item in include {
+        validate_bounded_raw_string(item, MAX_INCLUDE_VALUE_BYTES)?;
     }
     Ok(())
 }

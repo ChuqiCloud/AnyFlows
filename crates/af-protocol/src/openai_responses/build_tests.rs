@@ -89,6 +89,39 @@ fn builds_minimal_request_in_both_response_modes() {
 }
 
 #[test]
+fn round_trips_stateless_encrypted_reasoning_and_include() {
+    let request = parsed_request(json!({
+        "model": "gpt-5.5",
+        "input": [{
+            "type": "reasoning",
+            "encrypted_content": "encrypted-reasoning-canary",
+            "summary": [{"type": "summary_text", "text": "summary"}]
+        }, {
+            "role": "user",
+            "content": [{"type": "input_text", "text": "continue"}]
+        }],
+        "include": ["reasoning.encrypted_content", "future.output.details"],
+        "store": false,
+        "stream": true
+    }));
+
+    let value = build_request(&request).unwrap();
+    assert_eq!(value["input"][0]["type"], "reasoning");
+    assert_eq!(
+        value["input"][0]["encrypted_content"],
+        "encrypted-reasoning-canary"
+    );
+    assert_eq!(
+        value["include"],
+        json!(["reasoning.encrypted_content", "future.output.details"])
+    );
+    assert_eq!(
+        parse_request(&serde_json::to_vec(&value).unwrap()).unwrap(),
+        request
+    );
+}
+
+#[test]
 fn round_trips_messages_tools_sampling_continuation_and_raw_fields() {
     let request = parsed_request(json!({
         "model": "gpt-test",

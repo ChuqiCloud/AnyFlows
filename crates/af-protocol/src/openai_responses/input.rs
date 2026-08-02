@@ -7,16 +7,17 @@ use url::Url;
 use super::{
     ParseRequestError,
     convert::{
-        MAX_ARGUMENT_BYTES, MAX_CONTENT_BLOCKS, MAX_MEDIA_BYTES, MAX_MEDIA_URL_BYTES, MAX_MESSAGES,
-        MAX_PARTS_PER_MESSAGE, MAX_TEXT_BYTES, MAX_TOOL_CALL_ID_BYTES, MAX_TOOL_CALLS,
-        MAX_TOTAL_ARGUMENT_BYTES, MAX_TOTAL_ARGUMENT_NODES, MAX_TOTAL_TEXT_BYTES,
-        validate_tool_name, validate_value_shape,
+        MAX_ARGUMENT_BYTES, MAX_CONTENT_BLOCKS, MAX_ENCRYPTED_REASONING_BYTES, MAX_MEDIA_BYTES,
+        MAX_MEDIA_URL_BYTES, MAX_MESSAGES, MAX_PARTS_PER_MESSAGE, MAX_REASONING_SUMMARIES,
+        MAX_TEXT_BYTES, MAX_TOOL_CALL_ID_BYTES, MAX_TOOL_CALLS, MAX_TOTAL_ARGUMENT_BYTES,
+        MAX_TOTAL_ARGUMENT_NODES, MAX_TOTAL_TEXT_BYTES, validate_tool_name, validate_value_shape,
     },
     wire::{
         Field, FunctionCallItemWire, FunctionCallOutputItemWire, FunctionCallOutputTypeWire,
         FunctionCallTypeWire, FunctionOutputWire, ImageDetailWire, InputContentWire, InputFileWire,
         InputImageWire, InputItemWire, InputMessageWire, InputTextWire, InputWire,
-        MessageContentWire, MessageRoleWire,
+        MessageContentWire, MessageRoleWire, ReasoningInputItemWire, ReasoningInputTypeWire,
+        ReasoningSummaryWire,
     },
 };
 use crate::{
@@ -69,6 +70,13 @@ pub(super) fn convert_input(
                         let message = convert_message(message, &mut state)?;
                         push_message(&mut messages, message)?;
                     }
+                    InputItemWire::Reasoning(reasoning) => {
+                        if !state.pending_tool_call_ids.is_empty() {
+                            return Err(ParseRequestError::InvalidValue);
+                        }
+                        let message = convert_reasoning_item(reasoning, &mut state)?;
+                        push_message(&mut messages, message)?;
+                    }
                     InputItemWire::FunctionCall(call) => {
                         let block = convert_function_call(call, &mut state)?;
                         append_function_call(&mut messages, block)?;
@@ -86,6 +94,56 @@ pub(super) fn convert_input(
         return Err(ParseRequestError::InvalidValue);
     }
     Ok(messages)
+}
+
+fn convert_reasoning_item(
+    reasoning: ReasoningInputItemWire,
+    state: &mut InputConvertState,
+) -> Result<Message, ParseRequestError> {
+    let ReasoningInputItemWire {
+        kind: ReasoningInputTypeWire::Reasoning,
+        id,
+        encrypted_content,
+        summary,
+        status,
+    } = reasoning;
+    if let Field::Value(id) = id {
+        validate_call_id(&id)?;
+    }
+    let _ = status;
+
+    let signature = match encrypted_content {
+        Field::Missing => return Err(ParseRequestError::UnsupportedFeature),
+        Field::Value(value)
+            if value.is_empty()
+                || value.len() > MAX_ENCRYPTED_REASONING_BYTES
+                || value.chars().any(char::is_control) =>
+        {
+            return Err(ParseRequestError::InvalidValue);
+        }
+        Field::Value(value) => value,
+    };
+    let summaries = match summary {
+        Field::Missing => Vec::new(),
+        Field::Value(values) if values.len() <= MAX_REASONING_SUMMARIES => values,
+        Field::Value(_) => return Err(ParseRequestError::StructureLimitExceeded),
+    };
+    let mut text = String::new();
+    for ReasoningSummaryWire {
+        kind: _,
+        text: summary,
+    } in summaries
+    {
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(&summary);
+        if text.len() > MAX_TEXT_BYTES {
+            return Err(ParseRequestError::StructureLimitExceeded);
+        }
+    }
+    let block = state.add_thinking(text, signature)?;
+    Ok(Message::new(Role::Assistant, vec![block]))
 }
 
 fn push_message(messages: &mut Vec<Message>, message: Message) -> Result<(), ParseRequestError> {
@@ -491,18 +549,34 @@ impl InputConvertState {
     }
 
     fn add_text(&mut self, text: String) -> Result<ContentBlock, ParseRequestError> {
-        if text.len() > MAX_TEXT_BYTES {
+        self.add_text_bytes(text.len())?;
+        Ok(ContentBlock::Text(text))
+    }
+
+    fn add_thinking(
+        &mut self,
+        text: String,
+        signature: String,
+    ) -> Result<ContentBlock, ParseRequestError> {
+        self.add_text_bytes(text.len())?;
+        Ok(ContentBlock::Thinking {
+            text,
+            signature: Some(signature),
+        })
+    }
+
+    fn add_text_bytes(&mut self, bytes: usize) -> Result<(), ParseRequestError> {
+        if bytes > MAX_TEXT_BYTES {
             return Err(ParseRequestError::StructureLimitExceeded);
         }
         self.text_bytes = self
             .text_bytes
-            .checked_add(text.len())
+            .checked_add(bytes)
             .ok_or(ParseRequestError::StructureLimitExceeded)?;
         if self.text_bytes > MAX_TOTAL_TEXT_BYTES {
             return Err(ParseRequestError::StructureLimitExceeded);
         }
-        self.add_block()?;
-        Ok(ContentBlock::Text(text))
+        self.add_block()
     }
 
     fn add_media_bytes(&mut self, bytes: usize) -> Result<(), ParseRequestError> {

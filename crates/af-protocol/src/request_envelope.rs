@@ -85,8 +85,9 @@ impl CanonicalRequestEnvelope {
 
     /// 仅当目标协议与已验证源协议相同时，交付不可变的原始正文。
     ///
-    /// 模型映射、参数覆盖或内部字段注入发生前，调用方必须改走 [`Self::into_canonical`]
-    /// 并由目标协议构造器重新编码，不能继续消费这里返回的正文。
+    /// 模型映射、参数覆盖或内部字段注入后不得再原字节直通。调用方通常应改走
+    /// [`Self::into_canonical`] 并由目标协议构造器重新编码；协议专属构造器只有在重新解析
+    /// 已验证正文、受控覆盖自有字段且保持其余字段语义时，才可把原文作为重构底稿。
     pub fn into_same_protocol(self, target_protocol: Protocol) -> SameProtocolDecision {
         if self
             .source

@@ -104,10 +104,60 @@ pub(super) enum InputWire {
 pub(super) enum InputItemWire {
     /// 系统、开发者、用户或助手消息。
     Message(InputMessageWire),
+    /// 无状态续传使用的加密推理 Item。
+    Reasoning(ReasoningInputItemWire),
     /// 先前的函数调用。
     FunctionCall(FunctionCallItemWire),
     /// 客户端提供的函数调用结果。
     FunctionCallOutput(FunctionCallOutputItemWire),
+}
+
+/// 客户端回传的加密推理 Item。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ReasoningInputItemWire {
+    /// 固定的推理 Item 类型。
+    #[serde(rename = "type")]
+    pub(super) kind: ReasoningInputTypeWire,
+    /// 上游或前一跳分配的可选 Item 标识。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) id: Field<String>,
+    /// 无状态续传所需的不透明加密推理内容。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) encrypted_content: Field<String>,
+    /// 可选的人类可读推理摘要。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) summary: Field<Vec<ReasoningSummaryWire>>,
+    /// 前一响应中的可选生命周期状态。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) status: Field<ItemStatusWire>,
+}
+
+/// 固定为 `reasoning` 的输入 Item 类型。
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum ReasoningInputTypeWire {
+    /// 加密推理 Item。
+    Reasoning,
+}
+
+/// 推理 Item 中的单段摘要。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ReasoningSummaryWire {
+    /// 固定的摘要类型。
+    #[serde(rename = "type")]
+    pub(super) kind: ReasoningSummaryTypeWire,
+    /// 摘要文本。
+    pub(super) text: String,
+}
+
+/// 固定为 `summary_text` 的摘要类型。
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum ReasoningSummaryTypeWire {
+    /// 推理摘要文本。
+    SummaryText,
 }
 
 /// 一条输入消息。

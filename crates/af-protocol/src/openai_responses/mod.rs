@@ -51,7 +51,6 @@ const REQUEST_JSON_LIMITS: bounded_json::JsonLimits = bounded_json::JsonLimits {
 const UNSUPPORTED_TOP_LEVEL_FIELDS: &[&str] = &[
     "background",
     "context_management",
-    "include",
     "max_tool_calls",
     "moderation",
     "prompt",
@@ -82,7 +81,6 @@ const UNSUPPORTED_INPUT_ITEM_TYPES: &[&str] = &[
     "mcp_list_tools",
     "program",
     "program_output",
-    "reasoning",
     "shell_call",
     "shell_call_output",
     "tool_search_call",

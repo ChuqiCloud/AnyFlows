@@ -493,6 +493,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stateless_encrypted_reasoning_reaches_precharge() {
+        let precharge = Arc::new(PrechargeStub::default());
+        let settlement = Arc::new(SettlementStub::default());
+        let service = BillingChatService::new(
+            Arc::new(FullStub {
+                target_group_id: GroupId::new(3).unwrap(),
+            }),
+            Arc::new(metered_snapshot_source().await),
+            Some(precharge.clone()),
+            Some(Arc::new(RefundStub)),
+            Some(settlement.clone()),
+            Arc::new(UsageStub::default()),
+        );
+
+        service
+            .chat_completions(
+                &principal(),
+                encrypted_reasoning_responses_request(),
+                Protocol::OpenAiResponses,
+                "request-encrypted-reasoning",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(precharge.calls.lock().unwrap().len(), 1);
+        assert_eq!(settlement.calls.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
     async fn pricing_capture_uses_the_group_pinned_by_the_route_plan() {
         let pricing = Arc::new(TrackingPricingSource {
             inner: metered_snapshot_source_with_target(GroupId::new(4).unwrap()).await,
@@ -589,6 +618,25 @@ mod tests {
     fn responses_request() -> CanonicalRequestEnvelope {
         openai_responses::parse_request_envelope(Bytes::from_static(
             br#"{"model":"gpt-test","input":"hello","store":false}"#,
+        ))
+        .unwrap()
+    }
+
+    fn encrypted_reasoning_responses_request() -> CanonicalRequestEnvelope {
+        openai_responses::parse_request_envelope(Bytes::from_static(
+            br#"{
+                "model":"gpt-test",
+                "input":[
+                    {
+                        "type":"reasoning",
+                        "encrypted_content":"encrypted-reasoning-canary",
+                        "summary":[{"type":"summary_text","text":"brief summary"}]
+                    },
+                    {"role":"user","content":[{"type":"input_text","text":"continue"}]}
+                ],
+                "include":["reasoning.encrypted_content"],
+                "store":false
+            }"#,
         ))
         .unwrap()
     }
