@@ -114,5 +114,12 @@ test('SDK 错误只映射稳定分类，不透出响应正文', () => {
   assert.equal(classifyPlaygroundError({ statusCode: 404 }), 'model_unavailable')
   assert.equal(classifyPlaygroundError({ statusCode: 413 }), 'invalid_request')
   assert.equal(classifyPlaygroundError({ statusCode: 503 }), 'upstream_unavailable')
+  assert.equal(classifyPlaygroundError({
+    type: 'error',
+    code: 'server_error',
+    message: 'Upstream request failed.',
+  }), 'upstream_unavailable')
+  assert.equal(classifyPlaygroundError({ code: 'rate_limit_exceeded' }), 'rate_limited')
+  assert.equal(classifyPlaygroundError({ code: 'model_not_found' }), 'model_unavailable')
   assert.equal(classifyPlaygroundError({ statusCode: 500, responseBody: 'private' }), 'unknown')
 })
