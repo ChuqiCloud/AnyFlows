@@ -89,7 +89,8 @@ async fn live_native_openai_responses_runtime() {
         address,
         "POST",
         "/v1/responses",
-        br#"{"model":"test-model","input":"Reply with exactly OK.","stream":true,"store":false,"max_output_tokens":128,"reasoning":{"effort":"low"}}"#,
+        // 精确复现 AI SDK 无状态请求：数组输入、加密推理回传和缺省输出上限必须同链路可用。
+        br#"{"model":"test-model","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"store":false,"include":["reasoning.encrypted_content"],"stream":true}"#,
         &[
             ("Content-Type", "application/json"),
             ("Authorization", &format!("Bearer {CLIENT_KEY}")),
