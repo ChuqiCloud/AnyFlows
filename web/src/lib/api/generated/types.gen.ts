@@ -473,6 +473,39 @@ export type AdminNetworkSettingsRequest = {
     username?: string | null;
     trust_proxy_dns: boolean;
 };
+export type AdminRedemptionBatch = {
+    batch_id: string;
+    name: string;
+    created_by_user_id: number;
+    status: AdminRedemptionBatchStatus;
+    quota_amount: number;
+    code_count: number;
+    redeemed_count: number;
+    version: number;
+    expires_at: number | null;
+    disabled_at: number | null;
+    created_at: number;
+    updated_at: number;
+};
+export type AdminRedemptionBatchCreateRequest = {
+    name: string;
+    quota_amount: number;
+    code_count: number;
+    expires_at: number | null;
+};
+export type AdminRedemptionBatchDisableRequest = {
+    expected_version: number;
+};
+export type AdminRedemptionBatchDisableResponse = {
+    batch_id: string;
+    version: number;
+    disabled_at: number;
+};
+export type AdminRedemptionBatchListResponse = {
+    batches: Array<AdminRedemptionBatch>;
+    next_cursor: number | null;
+};
+export type AdminRedemptionBatchStatus = 'active' | 'disabled';
 export type AdminRoutingStatus = 'enabled' | 'disabled' | 'auto_disabled';
 export type AdminRoutingWriteStatus = 'enabled' | 'disabled';
 export type AdminSiteSettings = {
@@ -622,6 +655,10 @@ export type AdminWalletListResponse = {
     entries: Array<AdminWalletEntry>;
     next_cursor: number | null;
 };
+export type IssuedAdminRedemptionBatch = {
+    batch: AdminRedemptionBatch;
+    codes: Array<string>;
+};
 export type IssuedAdminToken = {
     api_key: string;
     token: AdminToken;
@@ -642,7 +679,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -827,6 +864,15 @@ export type UserProfileResponse = {
 };
 export type UserProfileUpdateRequest = {
     username: string;
+};
+export type UserRedemptionRequest = {
+    code: string;
+};
+export type UserRedemptionResult = {
+    quota_amount: number;
+    balance_after: number;
+    redeemed_at: number;
+    replayed: boolean;
 };
 export type UserToken = {
     id: number;
@@ -1147,6 +1193,86 @@ export type UpdateAdminAuthenticationSettingsResponses = {
     200: AdminAuthenticationSettings;
 };
 export type UpdateAdminAuthenticationSettingsResponse = UpdateAdminAuthenticationSettingsResponses[keyof UpdateAdminAuthenticationSettingsResponses];
+export type ListAdminRedemptionBatchesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/admin/redemption-batches';
+};
+export type ListAdminRedemptionBatchesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminRedemptionBatchesError = ListAdminRedemptionBatchesErrors[keyof ListAdminRedemptionBatchesErrors];
+export type ListAdminRedemptionBatchesResponses = {
+    200: AdminRedemptionBatchListResponse;
+};
+export type ListAdminRedemptionBatchesResponse = ListAdminRedemptionBatchesResponses[keyof ListAdminRedemptionBatchesResponses];
+export type CreateAdminRedemptionBatchData = {
+    body: AdminRedemptionBatchCreateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/redemption-batches';
+};
+export type CreateAdminRedemptionBatchErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type CreateAdminRedemptionBatchError = CreateAdminRedemptionBatchErrors[keyof CreateAdminRedemptionBatchErrors];
+export type CreateAdminRedemptionBatchResponses = {
+    201: IssuedAdminRedemptionBatch;
+};
+export type CreateAdminRedemptionBatchResponse = CreateAdminRedemptionBatchResponses[keyof CreateAdminRedemptionBatchResponses];
+export type DisableAdminRedemptionBatchData = {
+    body: AdminRedemptionBatchDisableRequest;
+    path: {
+        batch_id: string;
+    };
+    query?: never;
+    url: '/api/admin/redemption-batches/{batch_id}/disable';
+};
+export type DisableAdminRedemptionBatchErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type DisableAdminRedemptionBatchError = DisableAdminRedemptionBatchErrors[keyof DisableAdminRedemptionBatchErrors];
+export type DisableAdminRedemptionBatchResponses = {
+    200: AdminRedemptionBatchDisableResponse;
+};
+export type DisableAdminRedemptionBatchResponse = DisableAdminRedemptionBatchResponses[keyof DisableAdminRedemptionBatchResponses];
+export type RedeemUserRedemptionCodeData = {
+    body: UserRedemptionRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/wallet/redemptions';
+};
+export type RedeemUserRedemptionCodeErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    410: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type RedeemUserRedemptionCodeError = RedeemUserRedemptionCodeErrors[keyof RedeemUserRedemptionCodeErrors];
+export type RedeemUserRedemptionCodeResponses = {
+    200: UserRedemptionResult;
+};
+export type RedeemUserRedemptionCodeResponse = RedeemUserRedemptionCodeResponses[keyof RedeemUserRedemptionCodeResponses];
 export type RequestPasswordResetData = {
     body: PasswordResetRequest;
     path?: never;

@@ -15,6 +15,7 @@ mod network_settings;
 mod password_reset;
 mod playground_conversations;
 mod playground_shares;
+mod redemptions;
 mod registration;
 pub(crate) mod schema;
 mod session;
@@ -40,6 +41,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(session::document());
     document.merge(setup::document());
     document.merge(registration::document());
+    document.merge(redemptions::document());
     document.merge(password_reset::document());
     document.merge(user_profile::document());
     document.merge(user_wallet::document());
@@ -70,6 +72,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("密码重置"),
         Tag::new("个人资料与安全"),
         Tag::new("我的钱包"),
+        Tag::new("兑换码"),
         Tag::new("邀请中心"),
         Tag::new("站点设置"),
         Tag::new("邮件设置"),
@@ -116,7 +119,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 52);
+        assert_eq!(document.paths.paths.len(), 55);
         let operation_count = document
             .paths
             .paths
@@ -137,7 +140,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 82);
+        assert_eq!(operation_count, 86);
         assert!(
             document
                 .components
@@ -163,6 +166,7 @@ mod tests {
             "createAdminGroup",
             "createAdminModel",
             "createAdminModelSyncPreview",
+            "createAdminRedemptionBatch",
             "createAdminToken",
             "createAdminUser",
             "confirmPasswordReset",
@@ -182,6 +186,7 @@ mod tests {
             "deleteAdminToken",
             "deleteAdminUser",
             "deleteUserToken",
+            "disableAdminRedemptionBatch",
             "getAdminChannel",
             "getAdminBalanceAlertSettings",
             "getAdminCredential",
@@ -209,6 +214,7 @@ mod tests {
             "listAdminGroups",
             "listAdminModels",
             "listAdminModelPrices",
+            "listAdminRedemptionBatches",
             "listMissingAdminModels",
             "listAdminTokens",
             "listAdminUsageLogs",
@@ -221,6 +227,7 @@ mod tests {
             "probeAdminChannel",
             "previewAdminModelPrices",
             "registerUser",
+            "redeemUserRedemptionCode",
             "revokePlaygroundShare",
             "savePlaygroundConversation",
             "sendAdminEmailTest",
@@ -247,7 +254,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 134);
+        assert_eq!(schemas.len(), 143);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
@@ -257,6 +264,15 @@ mod tests {
         assert!(schemas.contains_key("AdminWalletEntryType"));
         assert!(schemas.contains_key("AdminWalletListResponse"));
         assert!(schemas.contains_key("AdminWalletAdjustmentRequest"));
+        assert!(schemas.contains_key("AdminRedemptionBatch"));
+        assert!(schemas.contains_key("AdminRedemptionBatchStatus"));
+        assert!(schemas.contains_key("AdminRedemptionBatchListResponse"));
+        assert!(schemas.contains_key("AdminRedemptionBatchCreateRequest"));
+        assert!(schemas.contains_key("IssuedAdminRedemptionBatch"));
+        assert!(schemas.contains_key("AdminRedemptionBatchDisableRequest"));
+        assert!(schemas.contains_key("AdminRedemptionBatchDisableResponse"));
+        assert!(schemas.contains_key("UserRedemptionRequest"));
+        assert!(schemas.contains_key("UserRedemptionResult"));
         assert!(schemas.contains_key("SetupRequest"));
         assert!(schemas.contains_key("SetupStatusResponse"));
         assert!(schemas.contains_key("RegistrationStatusResponse"));

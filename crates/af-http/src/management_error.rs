@@ -33,6 +33,20 @@ pub(crate) enum ManagementError {
     WalletOverflow,
     /// 调账提交结果未知，调用方必须复用同一事件键确认。
     WalletOutcomeUnknown,
+    /// 兑换码批次不存在。
+    RedemptionBatchNotFound,
+    /// 兑换码批次版本或不可变事实发生冲突。
+    RedemptionBatchConflict,
+    /// 兑换码格式无效或不存在。
+    RedemptionCodeInvalid,
+    /// 兑换码所属批次已经整体停用。
+    RedemptionBatchDisabled,
+    /// 兑换码所属批次已经过期。
+    RedemptionCodeExpired,
+    /// 兑换码已经由其他用户消费。
+    RedemptionCodeAlreadyUsed,
+    /// 兑换操作提交结果未知，调用方可重试同一明文确认。
+    RedemptionOutcomeUnknown,
     /// 当前实例尚未启用公开注册。
     RegistrationDisabled,
     /// 当前客户端已耗尽公开注册固定窗口尝试次数。
@@ -218,6 +232,55 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "wallet_outcome_unknown",
                     message: "Wallet outcome unknown",
+                },
+            ),
+            Self::RedemptionBatchNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "redemption_batch_not_found",
+                    message: "Redemption batch not found",
+                },
+            ),
+            Self::RedemptionBatchConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "redemption_batch_conflict",
+                    message: "Redemption batch conflict",
+                },
+            ),
+            Self::RedemptionCodeInvalid => (
+                StatusCode::BAD_REQUEST,
+                ManagementErrorBody {
+                    code: "redemption_code_invalid",
+                    message: "Redemption code invalid",
+                },
+            ),
+            Self::RedemptionBatchDisabled => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "redemption_batch_disabled",
+                    message: "Redemption batch disabled",
+                },
+            ),
+            Self::RedemptionCodeExpired => (
+                StatusCode::GONE,
+                ManagementErrorBody {
+                    code: "redemption_code_expired",
+                    message: "Redemption code expired",
+                },
+            ),
+            Self::RedemptionCodeAlreadyUsed => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "redemption_code_already_used",
+                    message: "Redemption code already used",
+                },
+            ),
+            Self::RedemptionOutcomeUnknown => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "redemption_outcome_unknown",
+                    message: "Redemption outcome unknown",
                 },
             ),
             Self::RegistrationDisabled => (

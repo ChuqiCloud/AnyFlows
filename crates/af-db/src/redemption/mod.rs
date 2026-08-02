@@ -8,8 +8,9 @@ pub use material::{
 };
 pub use repository::RedemptionRepository;
 pub use types::{
-    MAX_REDEMPTION_BATCH_CODES, MAX_REDEMPTION_BATCH_NAME_BYTES, RedemptionAttempt,
-    RedemptionBatchCreateOutcome, RedemptionBatchDisable, RedemptionBatchDisableOutcome,
+    MAX_REDEMPTION_BATCH_CODES, MAX_REDEMPTION_BATCH_NAME_BYTES, MAX_REDEMPTION_BATCH_PAGE_SIZE,
+    RedemptionAttempt, RedemptionBatchCreateOutcome, RedemptionBatchDisable,
+    RedemptionBatchDisableOutcome, RedemptionBatchListRecord, RedemptionBatchPageRecord,
     RedemptionBatchRecord, RedemptionBatchWrite, RedemptionInputError, RedemptionOutcome,
     RedemptionRecord, RedemptionRejection, RedemptionRepositoryConfigError,
     RedemptionRepositoryError,

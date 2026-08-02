@@ -39,17 +39,18 @@ use af_admin::{
     PlaygroundConversationSaveCommand, PlaygroundConversationSaveFuture,
     PlaygroundConversationService, PlaygroundShareCreateCommand, PlaygroundShareCreateFuture,
     PlaygroundShareError, PlaygroundShareReadFuture, PlaygroundShareRevokeFuture,
-    PlaygroundShareService, PublicSiteSettingsFuture, RegistrationCommand,
-    RegistrationEmailVerificationCommand, RegistrationEmailVerificationFuture, RegistrationError,
-    RegistrationFuture, RegistrationPolicyCommand, RegistrationPolicyFuture,
-    RegistrationPolicyUpdateFuture, RegistrationService, RegistrationStatusFuture,
-    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
-    SessionLoginFuture, SessionPrincipal, SiteSettingsCommand, SiteSettingsError,
-    SiteSettingsService, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
-    UserInvitationError, UserInvitationReadFuture, UserInvitationService,
-    UserNotificationPreferencesCommand, UserNotificationUpdateFuture, UserPasswordChangeCommand,
-    UserPasswordChangeFuture, UserProfileError, UserProfileReadFuture, UserProfileService,
-    UserProfileUpdateCommand, UserProfileUpdateFuture, UserTokenCreateFuture,
+    PlaygroundShareService, PublicSiteSettingsFuture, RedemptionCreateFuture,
+    RedemptionDisableFuture, RedemptionListFuture, RedemptionRedeemFuture, RedemptionService,
+    RedemptionServiceError, RegistrationCommand, RegistrationEmailVerificationCommand,
+    RegistrationEmailVerificationFuture, RegistrationError, RegistrationFuture,
+    RegistrationPolicyCommand, RegistrationPolicyFuture, RegistrationPolicyUpdateFuture,
+    RegistrationService, RegistrationStatusFuture, SessionAuthenticationError,
+    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
+    SiteSettingsCommand, SiteSettingsError, SiteSettingsService, TokenAuthentication,
+    TokenAuthenticationFuture, TokenAuthenticator, UserInvitationError, UserInvitationReadFuture,
+    UserInvitationService, UserNotificationPreferencesCommand, UserNotificationUpdateFuture,
+    UserPasswordChangeCommand, UserPasswordChangeFuture, UserProfileError, UserProfileReadFuture,
+    UserProfileService, UserProfileUpdateCommand, UserProfileUpdateFuture, UserTokenCreateFuture,
     UserTokenDeleteFuture, UserTokenError, UserTokenGetFuture, UserTokenListFuture,
     UserTokenListQuery, UserTokenService, UserTokenUpdateFuture, UserTokenWriteCommand,
     UserWalletError, UserWalletListFuture, UserWalletListQuery, UserWalletService,
@@ -121,6 +122,7 @@ struct RejectRegistration;
 struct RejectPasswordReset;
 struct RejectUserProfile;
 struct RejectUserWallet;
+struct RejectRedemptions;
 struct RejectUserInvitations;
 struct RejectSiteSettings;
 struct RejectAdminEmailSettings;
@@ -197,6 +199,41 @@ impl UserWalletService for RejectUserWallet {
         _query: UserWalletListQuery,
     ) -> UserWalletListFuture<'a> {
         Box::pin(async { Err(UserWalletError::Internal) })
+    }
+}
+
+impl RedemptionService for RejectRedemptions {
+    fn list<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _query: af_admin::AdminRedemptionBatchListQuery,
+    ) -> RedemptionListFuture<'a> {
+        Box::pin(async { Err(RedemptionServiceError::Internal) })
+    }
+
+    fn create<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: af_admin::AdminRedemptionBatchCreateCommand,
+    ) -> RedemptionCreateFuture<'a> {
+        Box::pin(async { Err(RedemptionServiceError::Internal) })
+    }
+
+    fn disable<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _batch_id: af_domain::RedemptionBatchId,
+        _command: af_admin::AdminRedemptionBatchDisableCommand,
+    ) -> RedemptionDisableFuture<'a> {
+        Box::pin(async { Err(RedemptionServiceError::Internal) })
+    }
+
+    fn redeem<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: af_admin::UserRedemptionCommand,
+    ) -> RedemptionRedeemFuture<'a> {
+        Box::pin(async { Err(RedemptionServiceError::Internal) })
     }
 }
 
@@ -1594,6 +1631,7 @@ async fn start_server(
         Arc::new(RejectPasswordReset),
         Arc::new(RejectUserProfile),
         Arc::new(RejectUserWallet),
+        Arc::new(RejectRedemptions),
         Arc::new(RejectUserInvitations),
         Arc::new(RejectSiteSettings),
         Arc::new(RejectAdminEmailSettings),

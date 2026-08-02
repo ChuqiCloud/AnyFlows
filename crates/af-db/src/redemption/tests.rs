@@ -217,6 +217,74 @@ async fn batch_creation_is_idempotent_and_never_persists_plaintext() -> Result<(
 }
 
 #[tokio::test]
+async fn batch_list_is_newest_first_and_aggregates_redeemed_counts() -> Result<(), Box<dyn Error>> {
+    let fixture = setup_fixture(0).await?;
+    let first = issued_code(0x45);
+    let second = issued_code(0x46);
+    let third = issued_code(0x47);
+    fixture
+        .repository
+        .create_batch(&fixture.batch(0x25, "第一批", 10, [&first], Some(EXPIRES_AT))?)
+        .await?;
+    fixture
+        .repository
+        .create_batch(&fixture.batch(0x26, "第二批", 20, [&second], Some(EXPIRES_AT))?)
+        .await?;
+    fixture
+        .repository
+        .create_batch(&fixture.batch(0x27, "第三批", 30, [&third], Some(EXPIRES_AT))?)
+        .await?;
+    assert!(matches!(
+        fixture
+            .repository
+            .redeem(&fixture.attempt(
+                fixture.first_user_id,
+                second.code().expose_secret(),
+                REDEEMED_AT,
+            )?)
+            .await?,
+        RedemptionOutcome::Applied(_)
+    ));
+
+    let (first_page, next_cursor) = fixture.repository.list_batches(None, 2).await?.into_parts();
+    assert_eq!(
+        first_page
+            .iter()
+            .map(|record| record.batch().name())
+            .collect::<Vec<_>>(),
+        ["第三批", "第二批"]
+    );
+    assert_eq!(
+        first_page
+            .iter()
+            .map(|record| record.redeemed_count())
+            .collect::<Vec<_>>(),
+        [0, 1]
+    );
+    let next_cursor = next_cursor.expect("仍有更早批次时必须返回游标");
+    assert_eq!(
+        next_cursor,
+        first_page
+            .last()
+            .expect("第一页必须非空")
+            .batch()
+            .database_id()
+    );
+
+    let (second_page, final_cursor) = fixture
+        .repository
+        .list_batches(Some(next_cursor), 2)
+        .await?
+        .into_parts();
+    assert_eq!(second_page.len(), 1);
+    assert_eq!(second_page[0].batch().name(), "第一批");
+    assert_eq!(second_page[0].redeemed_count(), 0);
+    assert_eq!(final_cursor, None);
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn redemption_credits_once_and_unknown_outcome_replays() -> Result<(), Box<dyn Error>> {
     let fixture = setup_fixture(10).await?;
     let issued = issued_code(0x51);
