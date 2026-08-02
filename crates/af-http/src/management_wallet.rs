@@ -12,7 +12,10 @@ use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::{chat_completions::HttpState, management_error::ManagementError};
+use crate::{
+    chat_completions::HttpState, management_error::ManagementError,
+    wallet_query::parse_wallet_list_query,
+};
 
 /// 管理端钱包账本事件类型响应。
 #[derive(Clone, Copy, Serialize, ToSchema)]
@@ -174,30 +177,9 @@ impl AdminWalletEntryResponse {
 }
 
 fn parse_list_query(raw_query: Option<&str>) -> Result<AdminWalletListQuery, ManagementError> {
-    let Some(raw_query) = raw_query else {
-        return Ok(AdminWalletListQuery::default());
-    };
-    if raw_query.is_empty() {
-        return Ok(AdminWalletListQuery::default());
-    }
-    validate_percent_encoding(raw_query)?;
-    let mut before = None;
-    let mut limit = None;
-    for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
-        if key.contains('\u{fffd}') || value.contains('\u{fffd}') {
-            return Err(ManagementError::InvalidRequest);
-        }
-        match key.as_ref() {
-            "before" if before.is_none() => before = Some(parse_positive_i64(&value)?),
-            "limit" if limit.is_none() => limit = Some(parse_positive_usize(&value)?),
-            _ => return Err(ManagementError::InvalidRequest),
-        }
-    }
-    AdminWalletListQuery::new(
-        before,
-        limit.unwrap_or(af_admin::DEFAULT_ADMIN_WALLET_PAGE_SIZE),
-    )
-    .map_err(map_wallet_error)
+    let (before, limit) =
+        parse_wallet_list_query(raw_query, af_admin::DEFAULT_ADMIN_WALLET_PAGE_SIZE)?;
+    AdminWalletListQuery::new(before, limit).map_err(map_wallet_error)
 }
 
 fn parse_user_id(value: &str) -> Result<UserId, ManagementError> {
@@ -214,34 +196,6 @@ fn parse_positive_i64(value: &str) -> Result<i64, ManagementError> {
     (value > 0)
         .then_some(value)
         .ok_or(ManagementError::InvalidRequest)
-}
-
-fn parse_positive_usize(value: &str) -> Result<usize, ManagementError> {
-    if value.is_empty() || value.chars().any(|character| !character.is_ascii_digit()) {
-        return Err(ManagementError::InvalidRequest);
-    }
-    value
-        .parse::<usize>()
-        .map_err(|_| ManagementError::InvalidRequest)
-}
-
-fn validate_percent_encoding(raw_query: &str) -> Result<(), ManagementError> {
-    let bytes = raw_query.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%' {
-            if index + 2 >= bytes.len()
-                || !bytes[index + 1].is_ascii_hexdigit()
-                || !bytes[index + 2].is_ascii_hexdigit()
-            {
-                return Err(ManagementError::InvalidRequest);
-            }
-            index += 3;
-        } else {
-            index += 1;
-        }
-    }
-    Ok(())
 }
 
 fn map_wallet_error(error: AdminWalletError) -> ManagementError {

@@ -23,6 +23,7 @@ mod tokens;
 mod usage_logs;
 mod user_profile;
 mod user_tokens;
+mod user_wallet;
 mod users;
 mod wallet;
 
@@ -40,6 +41,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(registration::document());
     document.merge(password_reset::document());
     document.merge(user_profile::document());
+    document.merge(user_wallet::document());
     document.merge(invitations::document());
     document.merge(email_settings::document());
     document.merge(balance_alert_settings::document());
@@ -65,6 +67,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("认证设置"),
         Tag::new("密码重置"),
         Tag::new("个人资料与安全"),
+        Tag::new("我的钱包"),
         Tag::new("邀请中心"),
         Tag::new("站点设置"),
         Tag::new("邮件设置"),
@@ -110,7 +113,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 49);
+        assert_eq!(document.paths.paths.len(), 51);
         let operation_count = document
             .paths
             .paths
@@ -131,7 +134,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 78);
+        assert_eq!(operation_count, 80);
         assert!(
             document
                 .components
@@ -161,6 +164,7 @@ mod tests {
             "createAdminUser",
             "confirmPasswordReset",
             "getUserProfile",
+            "getUserWallet",
             "getUserInvitations",
             "updateUserProfile",
             "changeUserPassword",
@@ -208,6 +212,7 @@ mod tests {
             "listModels",
             "listPlaygroundConversations",
             "listUserTokens",
+            "listUserWalletEntries",
             "loginManagementSession",
             "probeAdminChannel",
             "previewAdminModelPrices",
@@ -237,7 +242,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 127);
+        assert_eq!(schemas.len(), 131);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
@@ -257,6 +262,10 @@ mod tests {
         assert!(schemas.contains_key("PasswordResetRequestResponse"));
         assert!(schemas.contains_key("PasswordResetConfirmRequest"));
         assert!(schemas.contains_key("UserProfileResponse"));
+        assert!(schemas.contains_key("UserWalletSummary"));
+        assert!(schemas.contains_key("UserWalletEntryType"));
+        assert!(schemas.contains_key("UserWalletEntry"));
+        assert!(schemas.contains_key("UserWalletListResponse"));
         assert!(schemas.contains_key("UserNotificationPreferencesResponse"));
         assert!(schemas.contains_key("UserProfileUpdateRequest"));
         assert!(schemas.contains_key("UserPasswordChangeRequest"));

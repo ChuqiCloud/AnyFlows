@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { CircleUserRound, LogOut, Search, ShieldCheck } from 'lucide-react'
+import { CircleUserRound, LogOut, Search, ShieldCheck, WalletCards } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AppNavigation } from '@/components/layout/app-navigation'
@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SiteBrandMark } from '@/features/site-settings/site-brand-mark'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
+import { useUserWalletSummary } from '@/features/wallet/wallet-api'
 import type { SessionUser } from '@/lib/api/generated/types.gen'
 
 type AppShellProps = {
@@ -40,12 +41,23 @@ function getDefaultOpen() {
 }
 
 export function AppShell({ title, children, currentUser, onLogout }: AppShellProps) {
-  const { t } = useTranslation()
+  const { i18n, t } = useTranslation()
   // 控制台与首页共用公开站点设置缓存，保存站点设置后可即时同步品牌展示。
   const siteQuery = usePublicSiteSettings()
+  const walletQuery = useUserWalletSummary()
   const site = siteQuery.data
   const siteName = site?.site_name ?? t('brand.name')
   const siteScope = site?.brand.tagline ?? t('brand.scope')
+  const compactQuota = new Intl.NumberFormat(i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  })
+  const fullQuota = new Intl.NumberFormat(i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US')
+  const balance = walletQuery.data?.balance
+  const balanceText = balance === undefined ? '—' : compactQuota.format(balance)
+  const balanceLabel = balance === undefined
+    ? t('shell.balanceUnavailable')
+    : t('shell.balanceValue', { value: fullQuota.format(balance) })
 
   return (
     <SidebarProvider defaultOpen={getDefaultOpen()}>
@@ -92,6 +104,21 @@ export function AppShell({ title, children, currentUser, onLogout }: AppShellPro
           </div>
 
           <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <a
+                  href="#/console/wallet"
+                  className="flex h-7 min-w-7 items-center justify-center gap-1.5 rounded-lg px-1.5 text-xs text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground sm:min-w-[4.75rem]"
+                  aria-label={balanceLabel}
+                >
+                  <WalletCards className="size-3.5 shrink-0 text-success" aria-hidden="true" />
+                  <span className="hidden max-w-16 truncate font-medium tabular-nums sm:inline">
+                    {balanceText}
+                  </span>
+                </a>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">{balanceLabel}</TooltipContent>
+            </Tooltip>
             <button
               type="button"
               className="hidden items-center gap-1.5 rounded-md border border-[var(--hairline)] px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground sm:flex"

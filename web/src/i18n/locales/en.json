@@ -14,6 +14,7 @@
     "models": "Models",
     "playground": "Playground",
     "apiKeys": "My API keys",
+    "wallet": "My wallet",
     "invitations": "Invitations",
     "profile": "Profile",
     "users": "Users",
@@ -34,7 +35,9 @@
     "version": "Development preview",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
-    "home": "Back to home"
+    "home": "Back to home",
+    "balanceUnavailable": "Balance unavailable",
+    "balanceValue": "Available balance: {{value}} quota"
   },
   "dashboard": {
     "title": "Operations overview",
@@ -2092,6 +2095,55 @@
       "loadTitle": "Invitation center is unavailable",
       "loadBody": "Invitation data could not be loaded. Try again shortly.",
       "copy": "Clipboard access was denied. Select and copy the value manually."
+    }
+  },
+  "wallet": {
+    "eyebrow": "Account quota",
+    "title": "Wallet and ledger",
+    "subtitle": "Review your available balance, settled usage, and confirmed quota changes.",
+    "summary": {
+      "label": "Wallet quota status",
+      "balance": "Available balance",
+      "balanceHint": "Quota available for new requests",
+      "used": "Lifetime usage",
+      "usedHint": "Quota already settled",
+      "frozen": "In flight",
+      "frozenHint": "Precharged quota awaiting final settlement"
+    },
+    "ledger": {
+      "title": "Balance ledger",
+      "subtitle": "Confirmed balance changes in reverse chronological order.",
+      "count": "{{count}} loaded",
+      "balanceAfter": "Balance {{value}}",
+      "emptyTitle": "No balance changes yet",
+      "emptyBody": "A zero opening balance does not create an empty ledger entry. Your first credit will appear here."
+    },
+    "entryType": {
+      "opening_balance": "Opening balance",
+      "admin_adjustment": "Adjustment",
+      "topup": "Top-up",
+      "redemption": "Redemption",
+      "invite_rebate": "Invitation rebate"
+    },
+    "entryReason": {
+      "opening_balance": "Account opening balance",
+      "admin_adjustment": "Administrator balance adjustment",
+      "topup": "Top-up quota credited",
+      "redemption": "Redemption quota credited",
+      "invite_rebate": "Invitation rebate credited"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "loadMore": "Load earlier entries",
+      "loadingMore": "Loading"
+    },
+    "errors": {
+      "summaryTitle": "Wallet balance could not be loaded",
+      "summaryBody": "The service did not return a reliable balance state. Try again shortly.",
+      "ledgerTitle": "Balance ledger could not be loaded",
+      "ledgerBody": "Balance history is temporarily unavailable. The displayed balance state is unaffected.",
+      "more": "Earlier balance entries could not be loaded."
     }
   },
   "setup": {

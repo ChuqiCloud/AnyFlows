@@ -28,6 +28,7 @@ import { SiteSettingsPage } from '@/features/site-settings/site-settings-page'
 import { TokenPage } from '@/features/tokens/token-page'
 import { UsageLogPage } from '@/features/usage-logs/usage-log-page'
 import { UserPage } from '@/features/users/user-page'
+import { WalletPage } from '@/features/wallet/wallet-page'
 import { SetupGateLoading, SetupGateUnavailable } from '@/features/setup/setup-gate-state'
 import { SetupPage } from '@/features/setup/setup-page'
 import { useInitialSetupStatus } from '@/features/setup/setup-query'
@@ -123,6 +124,8 @@ function ManagementEntry({
                 ? 'users.title'
             : view === 'api-keys'
               ? 'apiKeys.title'
+              : view === 'wallet'
+                ? 'wallet.title'
               : view === 'invitations'
                 ? 'invitations.title'
               : view === 'models'
@@ -154,6 +157,8 @@ function ManagementEntry({
                 ? <UserPage />
             : view === 'api-keys'
               ? <ApiKeyPage />
+              : view === 'wallet'
+                ? <WalletPage />
               : view === 'invitations'
                 ? <InvitationPage />
               : view === 'models'
@@ -169,6 +174,7 @@ function ManagementEntry({
                         : <DashboardPage />
 
   const requireAdmin = view !== 'api-keys'
+    && view !== 'wallet'
     && view !== 'invitations'
     && view !== 'models'
     && view !== 'playground'

@@ -213,6 +213,52 @@ impl fmt::Debug for WalletLedgerPageRecord {
     }
 }
 
+/// 当前钱包额度状态的同一行持久化快照。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WalletBalanceRecord {
+    balance: Quota,
+    used_quota: Quota,
+    frozen_quota: Quota,
+}
+
+impl WalletBalanceRecord {
+    /// 返回当前可用余额。
+    #[must_use]
+    pub const fn balance(self) -> Quota {
+        self.balance
+    }
+
+    /// 返回累计完成结算的消耗额度。
+    #[must_use]
+    pub const fn used_quota(self) -> Quota {
+        self.used_quota
+    }
+
+    /// 返回在途请求已经预扣但尚未终态结算的额度。
+    #[must_use]
+    pub const fn frozen_quota(self) -> Quota {
+        self.frozen_quota
+    }
+
+    fn try_from_user(model: users::Model) -> Result<Self, WalletLedgerError> {
+        Ok(Self {
+            balance: Quota::new(model.quota).map_err(|_| WalletLedgerError::Invariant)?,
+            used_quota: Quota::new(model.used_quota).map_err(|_| WalletLedgerError::Invariant)?,
+            frozen_quota: Quota::new(model.frozen_quota)
+                .map_err(|_| WalletLedgerError::Invariant)?,
+        })
+    }
+}
+
+/// 用户范围钱包余额快照读取结果。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WalletBalanceLookupOutcome {
+    /// 用户存在，并返回同一次行读取获得的三个额度字段。
+    Found(WalletBalanceRecord),
+    /// 用户不存在或已经软删除。
+    NotFound,
+}
+
 /// 用户范围账本读取结果；不存在和已软删除用户统一视为未找到。
 pub enum WalletLedgerListOutcome {
     /// 用户存在，并返回一页只追加账本。
@@ -364,6 +410,20 @@ impl WalletLedgerRepository {
         }
     }
 
+    /// 读取指定有效用户当前余额、累计消耗与在途冻结额度。
+    pub async fn balance(
+        &self,
+        user_id: UserId,
+    ) -> Result<WalletBalanceLookupOutcome, WalletLedgerError> {
+        let operation = self
+            .balance_inner(user_id)
+            .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal),
+            Err(_) => Err(internal(WalletLedgerError::Timeout)),
+        }
+    }
+
     /// 原子应用一次有符号管理员调账；相同事件和事实可安全重放。
     pub async fn adjust(
         &self,
@@ -436,6 +496,20 @@ impl WalletLedgerRepository {
             entries,
             next_cursor,
         }))
+    }
+
+    async fn balance_inner(
+        &self,
+        user_id: UserId,
+    ) -> Result<WalletBalanceLookupOutcome, WalletLedgerError> {
+        let model = users::Entity::find_by_id(user_id.get())
+            .filter(users::Column::DeletedAt.is_null())
+            .one(self.pool.connection())
+            .await
+            .map_err(|_| WalletLedgerError::Query)?;
+        model.map_or(Ok(WalletBalanceLookupOutcome::NotFound), |model| {
+            WalletBalanceRecord::try_from_user(model).map(WalletBalanceLookupOutcome::Found)
+        })
     }
 
     async fn adjust_inner(
@@ -737,6 +811,15 @@ mod tests {
             .await?;
         assert!(matches!(replay, WalletAdjustmentOutcome::Existing(_)));
         assert_eq!(fixture.balance().await?, 125);
+
+        let WalletBalanceLookupOutcome::Found(balance) =
+            fixture.repository.balance(fixture.target_user_id).await?
+        else {
+            panic!("有效用户必须返回钱包余额快照")
+        };
+        assert_eq!(balance.balance().units(), 125);
+        assert_eq!(balance.used_quota().units(), 0);
+        assert_eq!(balance.frozen_quota().units(), 0);
 
         let WalletLedgerListOutcome::Found(page) = fixture
             .repository

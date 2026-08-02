@@ -18,12 +18,12 @@ use af_admin::{
     DatabasePasswordResetService, DatabasePlaygroundConversationService,
     DatabasePlaygroundShareService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
     DatabaseSiteSettingsService, DatabaseTokenAuthenticator, DatabaseUserInvitationService,
-    DatabaseUserProfileService, DatabaseUserTokenService, EmailDelivery, InitialSetup,
-    ModelCatalogReader, PasswordResetService, PasswordResetServiceConfigError,
+    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
+    InitialSetup, ModelCatalogReader, PasswordResetService, PasswordResetServiceConfigError,
     PlaygroundConversationService, PlaygroundShareService, RegistrationService,
     RegistrationServiceConfigError, RuntimeRefreshingAdminGroupWriter, SessionAuthenticator,
     SessionAuthenticatorConfigError, SiteSettingsService, TokenAuthenticator,
-    UserInvitationService, UserProfileService, UserTokenService,
+    UserInvitationService, UserProfileService, UserTokenService, UserWalletService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -121,6 +121,7 @@ pub struct AuthenticationReady {
     registration_service: Arc<dyn RegistrationService>,
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn UserProfileService>,
+    user_wallet_service: Arc<dyn UserWalletService>,
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
@@ -654,6 +655,9 @@ impl Bootstrap<DatabaseReady> {
                     user_profile_repository,
                     balance_alert_settings_repository,
                 )),
+                user_wallet_service: Arc::new(DatabaseUserWalletService::new(
+                    wallet_ledger_repository.clone(),
+                )),
                 user_invitation_service: Arc::new(DatabaseUserInvitationService::new(
                     user_invitation_repository,
                 )),
@@ -1066,6 +1070,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.registration_service),
             Arc::clone(&self.stage.infrastructure.password_reset_service),
             Arc::clone(&self.stage.infrastructure.user_profile_service),
+            Arc::clone(&self.stage.infrastructure.user_wallet_service),
             Arc::clone(&self.stage.infrastructure.user_invitation_service),
             Arc::clone(&self.stage.infrastructure.site_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_email_settings_service),

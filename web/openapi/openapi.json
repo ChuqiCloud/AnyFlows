@@ -927,6 +927,133 @@
         ]
       }
     },
+    "/api/account/wallet": {
+      "get": {
+        "tags": [
+          "我的钱包"
+        ],
+        "summary": "读取当前用户钱包",
+        "operationId": "getUserWallet",
+        "responses": {
+          "200": {
+            "description": "当前余额与额度状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserWalletSummary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/account/wallet/entries": {
+      "get": {
+        "tags": [
+          "我的钱包"
+        ],
+        "summary": "读取当前用户钱包账本",
+        "operationId": "listUserWalletEntries",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页末尾的账本 ID",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 25",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前用户钱包账本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserWalletListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/account/invitations": {
       "get": {
         "tags": [
@@ -11571,6 +11698,117 @@
           }
         },
         "additionalProperties": false
+      },
+      "UserWalletEntry": {
+        "type": "object",
+        "required": [
+          "id",
+          "entry_type",
+          "quota_delta",
+          "balance_before",
+          "balance_after",
+          "reason",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "entry_type": {
+            "$ref": "#/components/schemas/UserWalletEntryType"
+          },
+          "quota_delta": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "balance_before": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "balance_after": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "minLength": 1
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserWalletEntryType": {
+        "type": "string",
+        "description": "当前用户钱包账本事件类型响应。",
+        "enum": [
+          "opening_balance",
+          "admin_adjustment",
+          "topup",
+          "redemption",
+          "invite_rebate"
+        ]
+      },
+      "UserWalletListResponse": {
+        "type": "object",
+        "required": [
+          "entries",
+          "next_cursor"
+        ],
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserWalletEntry"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserWalletSummary": {
+        "type": "object",
+        "required": [
+          "balance",
+          "used_quota",
+          "frozen_quota"
+        ],
+        "properties": {
+          "balance": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "used_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "frozen_quota": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
       }
     },
     "securitySchemes": {
@@ -11594,6 +11832,9 @@
     },
     {
       "name": "个人资料与安全"
+    },
+    {
+      "name": "我的钱包"
     },
     {
       "name": "邀请中心"
