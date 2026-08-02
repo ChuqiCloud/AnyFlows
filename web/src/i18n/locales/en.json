@@ -18,6 +18,7 @@
     "invitations": "Invitations",
     "profile": "Profile",
     "users": "Users",
+    "redemptionCodes": "Redemption codes",
     "siteSettings": "Site settings",
     "authenticationSettings": "Authentication",
     "emailSettings": "Email settings",
@@ -2168,6 +2169,99 @@
       "copy": "Clipboard access was denied. Select and copy the value manually."
     }
   },
+  "redemptions": {
+    "eyebrow": "Operations",
+    "title": "Redemption codes",
+    "subtitle": "Issue fixed-value codes in batches, track credited redemptions, and disable unused codes when needed.",
+    "summary": {
+      "loaded": "{{count}} batches loaded",
+      "active": "{{count}} active batches",
+      "redeemed": "{{count}} redeemed",
+      "available": "{{count}} not yet redeemed"
+    },
+    "columns": {
+      "batch": "Batch",
+      "value": "Value and quantity",
+      "progress": "Redemption progress",
+      "timing": "Validity",
+      "actions": "Actions"
+    },
+    "values": {
+      "creator": "Admin #{{id}}",
+      "codeCount": "{{count}} codes",
+      "redeemed": "{{count}} / {{total}} credited",
+      "neverExpires": "Never expires",
+      "createdAt": "Created {{value}}"
+    },
+    "status": {
+      "active": "Active",
+      "expired": "Expired",
+      "disabled": "Disabled"
+    },
+    "loading": "Loading redemption batches",
+    "empty": {
+      "title": "No redemption batches yet",
+      "body": "Create the first batch, then save the issued codes while they are visible."
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "create": "Create batch",
+      "creating": "Creating",
+      "disable": "Disable batch",
+      "disabling": "Disabling",
+      "cancel": "Cancel",
+      "retry": "Try again",
+      "loadMore": "Load earlier batches",
+      "loadingMore": "Loading"
+    },
+    "create": {
+      "title": "Create redemption batch",
+      "description": "Every code carries the same value. Full codes are shown once after creation.",
+      "totalQuota": "Maximum batch credit",
+      "totalPending": "Enter a value and quantity"
+    },
+    "fields": {
+      "name": "Batch name",
+      "nameHint": "Used for operations only and never shown to redeeming users.",
+      "quotaAmount": "Value per code",
+      "quotaAmountHint": "A positive integer quota value, exact up to the browser safe-integer limit.",
+      "codeCount": "Quantity",
+      "codeCountHint": "Generate 1 to 1,000 codes per batch.",
+      "expires": "Set an expiration",
+      "expiresHint": "Leave off for no expiration. The batch can still be disabled later.",
+      "expiresAt": "Expires at"
+    },
+    "validation": {
+      "name": "Use a non-empty name without surrounding spaces, up to 80 bytes.",
+      "quotaAmount": "Value per code must be a positive safe integer.",
+      "codeCount": "Quantity must be an integer from 1 to 1,000.",
+      "expiresAt": "Expiration must be later than the current time."
+    },
+    "issued": {
+      "title": "Redemption codes issued",
+      "description": "{{count}} codes were generated for “{{name}}”.",
+      "warning": "Full codes cannot be read from the service again. Copy or download them before closing, and handle them as sensitive credentials.",
+      "copy": "Copy all",
+      "copied": "Copied",
+      "copyFailed": "Clipboard access was denied. Select and copy the codes manually.",
+      "download": "Download TXT",
+      "done": "I saved them"
+    },
+    "disable": {
+      "title": "Disable redemption batch",
+      "description": "Unused codes in “{{name}}” will stop crediting immediately. Existing ledger facts are unchanged."
+    },
+    "errors": {
+      "listTitle": "Redemption batches could not be loaded",
+      "listBody": "Batch state is temporarily unavailable. Try again shortly.",
+      "more": "Earlier batches could not be loaded.",
+      "create": "The batch could not be created. Check the input and try again.",
+      "disable": "The batch could not be disabled. Try again shortly.",
+      "conflict": "The batch changed concurrently. Refresh before trying again.",
+      "notFound": "The batch no longer exists. Refresh the list.",
+      "outcomeUnknown": "The service cannot confirm the result yet. Keep this page open and retry the same action."
+    }
+  },
   "wallet": {
     "eyebrow": "Account quota",
     "title": "Wallet and ledger",
@@ -2188,6 +2282,26 @@
       "balanceAfter": "Balance {{value}}",
       "emptyTitle": "No balance changes yet",
       "emptyBody": "A zero opening balance does not create an empty ledger entry. Your first credit will appear here."
+    },
+    "redemption": {
+      "title": "Redeem quota",
+      "description": "Enter a one-time code issued by the platform. The balance and redemption ledger update in one transaction.",
+      "field": "Redemption code",
+      "validation": "Enter the complete rc-af- redemption code.",
+      "submit": "Redeem now",
+      "redeeming": "Redeeming",
+      "success": "{{amount}} quota was credited.",
+      "replayed": "This code already credited {{amount}} quota to this account.",
+      "balanceAfter": "Current balance {{balance}}",
+      "errors": {
+        "invalid": "The redemption code is invalid. Check the complete value.",
+        "disabled": "The batch for this code has been disabled.",
+        "expired": "This redemption code has expired.",
+        "used": "This redemption code was used by another account.",
+        "overflow": "The credit would exceed the account balance limit.",
+        "outcomeUnknown": "The result cannot be confirmed yet. Retry with the same code.",
+        "unknown": "Redemption is temporarily unavailable. Try again shortly."
+      }
     },
     "entryType": {
       "opening_balance": "Opening balance",

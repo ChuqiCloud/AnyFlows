@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { UserWalletEntry, UserWalletSummary } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 import { useUserWalletEntries, useUserWalletSummary } from './wallet-api'
+import { WalletRedemptionPanel } from './wallet-redemption-panel'
 
 const entryTone = {
   opening_balance: 'text-info',
@@ -82,6 +83,8 @@ export function WalletPage() {
       ) : (
         <WalletSummaryCards summary={summaryQuery.data} formatQuota={numberFormat.format} />
       )}
+
+      <WalletRedemptionPanel />
 
       <Card className="overflow-hidden">
         <CardHeader className="border-b border-[var(--hairline)] bg-surface-1/45">

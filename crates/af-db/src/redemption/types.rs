@@ -11,6 +11,8 @@ use super::{PresentedRedemptionCode, RedemptionCodeDefinition};
 pub const MAX_REDEMPTION_BATCH_NAME_BYTES: usize = 80;
 /// 单次批次创建允许写入的最大兑换码数量。
 pub const MAX_REDEMPTION_BATCH_CODES: usize = 1_000;
+/// 管理端单页允许读取的最大兑换码批次数量。
+pub const MAX_REDEMPTION_BATCH_PAGE_SIZE: usize = 100;
 
 /// 创建兑换码批次的不可变业务事实。
 pub struct RedemptionBatchWrite {
@@ -162,6 +164,12 @@ pub struct RedemptionBatchRecord {
 }
 
 impl RedemptionBatchRecord {
+    /// 返回数据库内部单调主键，仅用于稳定分页游标。
+    #[must_use]
+    pub const fn database_id(&self) -> i64 {
+        self.database_id
+    }
+
     /// 返回稳定批次标识。
     #[must_use]
     pub const fn batch_id(&self) -> RedemptionBatchId {
@@ -172,6 +180,12 @@ impl RedemptionBatchRecord {
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// 返回创建该批次的管理员用户。
+    #[must_use]
+    pub const fn created_by_user_id(&self) -> UserId {
+        self.created_by_user_id
     }
 
     /// 返回批次当前闭合状态。
@@ -210,6 +224,12 @@ impl RedemptionBatchRecord {
         self.disabled_at
     }
 
+    /// 返回批次创建时间 Unix 秒数。
+    #[must_use]
+    pub const fn created_at(&self) -> u64 {
+        self.created_at
+    }
+
     /// 返回保持单调的批次审计更新时间 Unix 秒数。
     #[must_use]
     pub const fn updated_at(&self) -> u64 {
@@ -230,6 +250,66 @@ impl RedemptionBatchRecord {
 impl fmt::Debug for RedemptionBatchRecord {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("RedemptionBatchRecord(<redacted>)")
+    }
+}
+
+/// 管理端批次列表中的非敏感汇总记录。
+pub struct RedemptionBatchListRecord {
+    batch: RedemptionBatchRecord,
+    redeemed_count: usize,
+}
+
+impl RedemptionBatchListRecord {
+    pub(super) const fn new(batch: RedemptionBatchRecord, redeemed_count: usize) -> Self {
+        Self {
+            batch,
+            redeemed_count,
+        }
+    }
+
+    /// 返回批次不可变事实与启停状态。
+    #[must_use]
+    pub const fn batch(&self) -> &RedemptionBatchRecord {
+        &self.batch
+    }
+
+    /// 返回已经原子到账的兑换码数量。
+    #[must_use]
+    pub const fn redeemed_count(&self) -> usize {
+        self.redeemed_count
+    }
+}
+
+impl fmt::Debug for RedemptionBatchListRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RedemptionBatchListRecord(<redacted>)")
+    }
+}
+
+/// 一页按数据库主键倒序排列的兑换码批次。
+pub struct RedemptionBatchPageRecord {
+    batches: Vec<RedemptionBatchListRecord>,
+    next_cursor: Option<i64>,
+}
+
+impl RedemptionBatchPageRecord {
+    pub(super) fn new(batches: Vec<RedemptionBatchListRecord>, next_cursor: Option<i64>) -> Self {
+        Self {
+            batches,
+            next_cursor,
+        }
+    }
+
+    /// 消费页面并返回批次汇总和下一页游标。
+    #[must_use]
+    pub fn into_parts(self) -> (Vec<RedemptionBatchListRecord>, Option<i64>) {
+        (self.batches, self.next_cursor)
+    }
+}
+
+impl fmt::Debug for RedemptionBatchPageRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("RedemptionBatchPageRecord(<redacted>)")
     }
 }
 

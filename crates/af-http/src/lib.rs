@@ -46,6 +46,7 @@ mod operations;
 mod password_reset;
 mod playground_conversations;
 mod playground_shares;
+mod redemption;
 mod registration;
 mod router;
 mod serve;

@@ -13,6 +13,7 @@ import {
   ScrollText,
   ShieldCheck,
   TicketCheck,
+  Ticket,
   UserRound,
   UsersRound,
   WalletCards,
@@ -39,7 +40,7 @@ type AppNavigationProps = {
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'wallet' | 'invitations' | 'profile' | 'users' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'keys' | 'usage'
+  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'wallet' | 'invitations' | 'profile' | 'users' | 'redemptionCodes' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'keys' | 'usage'
   icon: LucideIcon
   href: `#/console${string}`
 }
@@ -75,6 +76,7 @@ const navGroups: readonly NavGroup[] = [
     items: [
       { key: 'overview', icon: Gauge, href: '#/console' },
       { key: 'users', icon: UsersRound, href: '#/console/users' },
+      { key: 'redemptionCodes', icon: Ticket, href: '#/console/redemption-codes' },
       { key: 'siteSettings', icon: PanelsTopLeft, href: '#/console/system-settings/site' },
       { key: 'authenticationSettings', icon: Fingerprint, href: '#/console/system-settings/authentication' },
       { key: 'emailSettings', icon: Mail, href: '#/console/system-settings/email' },
@@ -98,6 +100,7 @@ const activeKeyByView: Partial<Record<AppView, NavItem['key']>> = {
   invitations: 'invitations',
   profile: 'profile',
   users: 'users',
+  'redemption-codes': 'redemptionCodes',
   'site-settings': 'siteSettings',
   'authentication-settings': 'authenticationSettings',
   'email-settings': 'emailSettings',

@@ -1,4 +1,4 @@
-use std::{fmt, time::Duration};
+use std::{collections::HashMap, fmt, time::Duration};
 
 #[cfg(test)]
 use std::sync::{
@@ -29,8 +29,9 @@ use crate::{
 
 use super::types::valid_name;
 use super::{
-    MAX_REDEMPTION_BATCH_CODES, RedemptionAttempt, RedemptionBatchCreateOutcome,
-    RedemptionBatchDisable, RedemptionBatchDisableOutcome, RedemptionBatchRecord,
+    MAX_REDEMPTION_BATCH_CODES, MAX_REDEMPTION_BATCH_PAGE_SIZE, RedemptionAttempt,
+    RedemptionBatchCreateOutcome, RedemptionBatchDisable, RedemptionBatchDisableOutcome,
+    RedemptionBatchListRecord, RedemptionBatchPageRecord, RedemptionBatchRecord,
     RedemptionBatchWrite, RedemptionCodeDefinition, RedemptionCodeDigest, RedemptionOutcome,
     RedemptionRecord, RedemptionRejection, RedemptionRepositoryConfigError,
     RedemptionRepositoryError,
@@ -60,6 +61,26 @@ impl RedemptionRepository {
             #[cfg(test)]
             outcome_unknown_after_commit: Arc::new(AtomicBool::new(false)),
         })
+    }
+
+    /// 按数据库主键倒序读取一页批次，并聚合已经到账的兑换码数量。
+    pub async fn list_batches(
+        &self,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<RedemptionBatchPageRecord, RedemptionRepositoryError> {
+        if before.is_some_and(|value| value <= 0)
+            || !(1..=MAX_REDEMPTION_BATCH_PAGE_SIZE).contains(&limit)
+        {
+            return Err(internal(RedemptionRepositoryError::Invariant));
+        }
+        let operation = self
+            .list_batches_inner(before, limit)
+            .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal),
+            Err(_) => Err(internal(RedemptionRepositoryError::Timeout)),
+        }
     }
 
     /// 幂等创建一个只保存摘要的兑换码批次。
@@ -129,6 +150,70 @@ impl RedemptionRepository {
             return Err(internal(RedemptionRepositoryError::OutcomeUnknown));
         }
         Ok(outcome)
+    }
+
+    async fn list_batches_inner(
+        &self,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<RedemptionBatchPageRecord, RedemptionRepositoryError> {
+        let query_limit = u64::try_from(limit)
+            .ok()
+            .and_then(|value| value.checked_add(1))
+            .ok_or(RedemptionRepositoryError::Invariant)?;
+        let mut query = redemption_batches::Entity::find()
+            .order_by_desc(redemption_batches::Column::Id)
+            .limit(query_limit);
+        if let Some(before) = before {
+            query = query.filter(redemption_batches::Column::Id.lt(before));
+        }
+        let mut models = query
+            .all(self.pool.connection())
+            .await
+            .map_err(|_| RedemptionRepositoryError::Query)?;
+        let has_more = models.len() > limit;
+        if has_more {
+            models.truncate(limit);
+        }
+        let batch_ids = models.iter().map(|model| model.id).collect::<Vec<_>>();
+        let counts = if batch_ids.is_empty() {
+            Vec::new()
+        } else {
+            redemption_codes::Entity::find()
+                .select_only()
+                .column(redemption_codes::Column::BatchId)
+                .column_as(redemption_codes::Column::Id.count(), "redeemed_count")
+                .filter(redemption_codes::Column::BatchId.is_in(batch_ids))
+                .filter(redemption_codes::Column::Status.eq(RedemptionCodeStatus::Redeemed.code()))
+                .group_by(redemption_codes::Column::BatchId)
+                .into_tuple::<(i64, i64)>()
+                .all(self.pool.connection())
+                .await
+                .map_err(|_| RedemptionRepositoryError::Query)?
+        };
+        let mut redeemed_counts = HashMap::with_capacity(counts.len());
+        for (batch_id, count) in counts {
+            let count = usize::try_from(count).map_err(|_| RedemptionRepositoryError::Invariant)?;
+            if redeemed_counts.insert(batch_id, count).is_some() {
+                return Err(RedemptionRepositoryError::Invariant);
+            }
+        }
+        let next_cursor = has_more
+            .then(|| models.last().map(|model| model.id))
+            .flatten();
+        let mut batches = Vec::with_capacity(models.len());
+        for model in models {
+            let redeemed_count = redeemed_counts.remove(&model.id).unwrap_or_default();
+            let record = batch_record(model)?;
+            if redeemed_count > record.code_count() {
+                return Err(RedemptionRepositoryError::Invariant);
+            }
+            batches.push(RedemptionBatchListRecord::new(record, redeemed_count));
+        }
+        if !redeemed_counts.is_empty() {
+            return Err(RedemptionRepositoryError::Invariant);
+        }
+        Ok(RedemptionBatchPageRecord::new(batches, next_cursor))
     }
 
     /// 仅供回归测试模拟事务已提交但调用方未收到确定结果。

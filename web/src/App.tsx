@@ -25,6 +25,7 @@ import { PlaygroundPage } from '@/features/playground/playground-page'
 import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
 import { ProfilePage } from '@/features/profile/profile-page'
 import { RegistrationPage } from '@/features/registration/registration-page'
+import { RedemptionPage } from '@/features/redemptions/redemption-page'
 import { SiteSettingsPage } from '@/features/site-settings/site-settings-page'
 import { TokenPage } from '@/features/tokens/token-page'
 import { UsageLogPage } from '@/features/usage-logs/usage-log-page'
@@ -113,6 +114,8 @@ function ManagementEntry({
       ? 'siteSettings.title'
       : view === 'authentication-settings'
         ? 'authenticationSettings.title'
+        : view === 'redemption-codes'
+          ? 'redemptions.title'
         : view === 'email-settings'
           ? 'emailSettings.title'
           : view === 'network-settings'
@@ -148,6 +151,8 @@ function ManagementEntry({
       ? <SiteSettingsPage />
       : view === 'authentication-settings'
         ? <AuthenticationSettingsPage />
+        : view === 'redemption-codes'
+          ? <RedemptionPage />
         : view === 'email-settings'
           ? <EmailSettingsPage />
           : view === 'network-settings'

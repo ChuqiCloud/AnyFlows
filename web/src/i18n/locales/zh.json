@@ -18,6 +18,7 @@
     "invitations": "邀请中心",
     "profile": "个人资料",
     "users": "用户管理",
+    "redemptionCodes": "兑换码管理",
     "siteSettings": "站点设置",
     "authenticationSettings": "认证设置",
     "emailSettings": "邮件设置",
@@ -2167,6 +2168,99 @@
       "copy": "浏览器未允许写入剪贴板，请手动选择内容复制。"
     }
   },
+  "redemptions": {
+    "eyebrow": "运营工具",
+    "title": "兑换码管理",
+    "subtitle": "按批次签发同面额兑换码，跟踪到账进度，并在需要时整体停用尚未消费的码。",
+    "summary": {
+      "loaded": "已加载 {{count}} 个批次",
+      "active": "{{count}} 个有效批次",
+      "redeemed": "{{count}} 个已兑换",
+      "available": "{{count}} 个尚未兑换"
+    },
+    "columns": {
+      "batch": "批次",
+      "value": "面额与数量",
+      "progress": "兑换进度",
+      "timing": "有效期",
+      "actions": "操作"
+    },
+    "values": {
+      "creator": "管理员 #{{id}}",
+      "codeCount": "共 {{count}} 个",
+      "redeemed": "{{count}} / {{total}} 已到账",
+      "neverExpires": "永不过期",
+      "createdAt": "创建于 {{value}}"
+    },
+    "status": {
+      "active": "有效",
+      "expired": "已过期",
+      "disabled": "已停用"
+    },
+    "loading": "正在加载兑换码批次",
+    "empty": {
+      "title": "还没有兑换码批次",
+      "body": "创建首个批次后，一次性保存签发的完整兑换码。"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "create": "创建批次",
+      "creating": "正在创建",
+      "disable": "停用批次",
+      "disabling": "正在停用",
+      "cancel": "取消",
+      "retry": "重试",
+      "loadMore": "加载更早批次",
+      "loadingMore": "正在加载"
+    },
+    "create": {
+      "title": "创建兑换码批次",
+      "description": "每个码使用相同面额；完整明文只会在创建成功后展示一次。",
+      "totalQuota": "批次最大到账额度",
+      "totalPending": "等待填写面额与数量"
+    },
+    "fields": {
+      "name": "批次名称",
+      "nameHint": "用于运营识别，不会展示给兑换用户。",
+      "quotaAmount": "单码面额",
+      "quotaAmountHint": "使用正整数额度，前端精确到安全整数上限。",
+      "codeCount": "生成数量",
+      "codeCountHint": "每批 1 至 1000 个。",
+      "expires": "设置到期时间",
+      "expiresHint": "关闭时永久有效；仍可随时整体停用批次。",
+      "expiresAt": "到期时间"
+    },
+    "validation": {
+      "name": "名称不能为空、不能带首尾空格，且最多 80 字节。",
+      "quotaAmount": "单码面额必须是正安全整数。",
+      "codeCount": "生成数量必须是 1 至 1000 的整数。",
+      "expiresAt": "到期时间必须晚于当前时间。"
+    },
+    "issued": {
+      "title": "兑换码已签发",
+      "description": "“{{name}}”已生成 {{count}} 个兑换码。",
+      "warning": "完整兑换码不会再次从服务端读取。关闭前请复制或下载，并按敏感凭据妥善保存。",
+      "copy": "复制全部",
+      "copied": "已复制",
+      "copyFailed": "浏览器未允许写入剪贴板，请手动选择内容复制。",
+      "download": "下载 TXT",
+      "done": "我已保存"
+    },
+    "disable": {
+      "title": "停用兑换码批次",
+      "description": "停用“{{name}}”后，尚未使用的兑换码将立即无法到账；已完成的账本事实不受影响。"
+    },
+    "errors": {
+      "listTitle": "无法加载兑换码批次",
+      "listBody": "批次状态暂时不可用，请稍后重试。",
+      "more": "更早的批次加载失败。",
+      "create": "批次创建失败，请检查输入后重试。",
+      "disable": "批次停用失败，请稍后重试。",
+      "conflict": "批次状态已经变化，请刷新后再操作。",
+      "notFound": "该批次已不存在，请刷新列表。",
+      "outcomeUnknown": "服务暂时无法确认提交结果，请保留当前页面并重试同一操作。"
+    }
+  },
   "wallet": {
     "eyebrow": "账户额度",
     "title": "钱包与账本",
@@ -2187,6 +2281,26 @@
       "balanceAfter": "变更后 {{value}}",
       "emptyTitle": "还没有余额变更记录",
       "emptyBody": "零初始余额不会生成空账本；首次额度到账后会显示在这里。"
+    },
+    "redemption": {
+      "title": "兑换额度",
+      "description": "输入平台签发的一次性兑换码，额度会与兑换账本在同一事务到账。",
+      "field": "兑换码",
+      "validation": "请输入完整的 rc-af- 兑换码。",
+      "submit": "立即兑换",
+      "redeeming": "正在兑换",
+      "success": "已到账 {{amount}} 额度。",
+      "replayed": "该兑换码已为本账户到账 {{amount}} 额度。",
+      "balanceAfter": "当前余额 {{balance}}",
+      "errors": {
+        "invalid": "兑换码无效，请核对完整内容。",
+        "disabled": "该兑换码所属批次已停用。",
+        "expired": "该兑换码已经过期。",
+        "used": "该兑换码已被其他账户使用。",
+        "overflow": "到账会超过账户余额上限。",
+        "outcomeUnknown": "暂时无法确认到账结果，请使用同一兑换码重试。",
+        "unknown": "兑换暂时失败，请稍后重试。"
+      }
     },
     "entryType": {
       "opening_balance": "初始余额",

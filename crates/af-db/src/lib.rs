@@ -311,8 +311,9 @@ pub use quota::{
 };
 pub use redemption::{
     IssuedRedemptionBatch, IssuedRedemptionCode, MAX_REDEMPTION_BATCH_CODES,
-    MAX_REDEMPTION_BATCH_NAME_BYTES, PresentedRedemptionCode, RedemptionAttempt,
-    RedemptionBatchCreateOutcome, RedemptionBatchDisable, RedemptionBatchDisableOutcome,
+    MAX_REDEMPTION_BATCH_NAME_BYTES, MAX_REDEMPTION_BATCH_PAGE_SIZE, PresentedRedemptionCode,
+    RedemptionAttempt, RedemptionBatchCreateOutcome, RedemptionBatchDisable,
+    RedemptionBatchDisableOutcome, RedemptionBatchListRecord, RedemptionBatchPageRecord,
     RedemptionBatchRecord, RedemptionBatchWrite, RedemptionCodeDefinition, RedemptionCodeDigest,
     RedemptionInputError, RedemptionMaterialError, RedemptionOutcome, RedemptionRecord,
     RedemptionRejection, RedemptionRepository, RedemptionRepositoryConfigError,

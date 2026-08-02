@@ -17,12 +17,12 @@ use af_admin::{
     DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
     DatabaseAdminWalletService, DatabaseInitialSetup, DatabasePasswordResetService,
     DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRegistrationService, DatabaseSessionAuthenticator, DatabaseSiteSettingsService,
-    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserProfileService,
-    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
-    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
+    DatabaseSiteSettingsService, DatabaseTokenAuthenticator, DatabaseUserInvitationService,
+    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
+    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
-    PlaygroundShareService, RegistrationService, RegistrationServiceConfigError,
+    PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
     RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
     SiteSettingsService, TokenAuthenticator, UserInvitationService, UserProfileService,
     UserTokenService, UserWalletService,
@@ -52,13 +52,14 @@ use af_db::{
     NetworkSettingsRecord, NetworkSettingsRepository, NetworkSettingsRepositoryConfigError,
     PasswordResetRepository, PasswordResetRepositoryConfigError, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
-    PlaygroundShareRepositoryConfigError, QuotaRepository, RegistrationRepository,
-    RegistrationRepositoryConfigError, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
-    TokenAuthRepository, TokenAuthRepositoryConfigError, UsageLogRepository,
-    UserInvitationRepository, UserInvitationRepositoryConfigError, UserProfileRepository,
-    UserProfileRepositoryConfigError, UserSessionRepository, UserSessionRepositoryConfigError,
-    UserTokenRepository, UserTokenRepositoryConfigError, WalletLedgerRepository,
-    WalletLedgerRepositoryConfigError, connect_and_migrate,
+    PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
+    RedemptionRepositoryConfigError, RegistrationRepository, RegistrationRepositoryConfigError,
+    SiteSettingsRepository, SiteSettingsRepositoryConfigError, TokenAuthRepository,
+    TokenAuthRepositoryConfigError, UsageLogRepository, UserInvitationRepository,
+    UserInvitationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
+    UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
+    UserTokenRepositoryConfigError, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
+    connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle,
@@ -125,6 +126,7 @@ pub struct AuthenticationReady {
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
+    redemption_service: Arc<dyn RedemptionService>,
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
@@ -321,6 +323,9 @@ pub enum BootstrapError {
     /// 钱包账本仓储的启动参数无效。
     #[error("钱包账本仓储启动参数无效")]
     WalletLedgerRepository(#[source] WalletLedgerRepositoryConfigError),
+    /// 兑换码仓储的启动参数无效。
+    #[error("兑换码仓储启动参数无效")]
+    RedemptionRepository(#[source] RedemptionRepositoryConfigError),
     /// 普通用户资料仓储的启动参数无效。
     #[error("用户资料仓储启动参数无效")]
     UserProfileRepository(#[source] UserProfileRepositoryConfigError),
@@ -561,6 +566,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::WalletLedgerRepository)?;
+        let redemption_repository = RedemptionRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::RedemptionRepository)?;
         let user_profile_repository = UserProfileRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -677,6 +687,7 @@ impl Bootstrap<DatabaseReady> {
                 user_wallet_service: Arc::new(DatabaseUserWalletService::new(
                     wallet_ledger_repository.clone(),
                 )),
+                redemption_service: Arc::new(DatabaseRedemptionService::new(redemption_repository)),
                 user_invitation_service: Arc::new(DatabaseUserInvitationService::new(
                     user_invitation_repository,
                 )),
@@ -1112,6 +1123,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.password_reset_service),
             Arc::clone(&self.stage.infrastructure.user_profile_service),
             Arc::clone(&self.stage.infrastructure.user_wallet_service),
+            Arc::clone(&self.stage.infrastructure.redemption_service),
             Arc::clone(&self.stage.infrastructure.user_invitation_service),
             Arc::clone(&self.stage.infrastructure.site_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_email_settings_service),

@@ -1,7 +1,12 @@
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { apiClient } from '@/lib/api'
-import { getUserWallet, listUserWalletEntries } from '@/lib/api/generated/sdk.gen'
+import {
+  getUserWallet,
+  listUserWalletEntries,
+  redeemUserRedemptionCode,
+} from '@/lib/api/generated/sdk.gen'
+import type { UserRedemptionRequest } from '@/lib/api/generated/types.gen'
 
 export const userWalletSummaryQueryKey = ['user-wallet', 'summary'] as const
 export const userWalletEntriesQueryKey = ['user-wallet', 'entries'] as const
@@ -32,5 +37,21 @@ export function useUserWalletEntries() {
       return data
     },
     getNextPageParam: (page) => page.next_cursor ?? undefined,
+  })
+}
+
+/** 兑换成功后同时校正钱包摘要、顶栏余额和追加式账本。 */
+export function useRedeemUserCode() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    gcTime: 0,
+    mutationFn: async (body: UserRedemptionRequest) => {
+      const { data } = await redeemUserRedemptionCode({ body, client: apiClient })
+      return data
+    },
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: userWalletSummaryQueryKey }),
+      queryClient.invalidateQueries({ queryKey: userWalletEntriesQueryKey }),
+    ]),
   })
 }

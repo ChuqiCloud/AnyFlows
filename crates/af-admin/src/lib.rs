@@ -27,6 +27,7 @@ mod playground_conversation;
 mod playground_share;
 mod playground_share_snapshot;
 mod playground_share_token;
+mod redemption;
 mod registration;
 #[cfg(test)]
 mod registration_tests;
@@ -167,6 +168,14 @@ pub use playground_share_snapshot::{
 pub use playground_share_token::{
     IssuedPlaygroundShareToken, PlaygroundShareTokenDigest, PlaygroundShareTokenError,
     PresentedPlaygroundShareToken,
+};
+pub use redemption::{
+    AdminRedemptionBatch, AdminRedemptionBatchCreateCommand, AdminRedemptionBatchDisableCommand,
+    AdminRedemptionBatchDisableResult, AdminRedemptionBatchListQuery, AdminRedemptionBatchPage,
+    DEFAULT_ADMIN_REDEMPTION_BATCH_PAGE_SIZE, DatabaseRedemptionService,
+    IssuedAdminRedemptionBatch, RedemptionCreateFuture, RedemptionDisableFuture,
+    RedemptionListFuture, RedemptionRedeemFuture, RedemptionService, RedemptionServiceError,
+    UserRedemptionCommand, UserRedemptionResult,
 };
 pub use registration::{
     DatabaseRegistrationService, MAX_REGISTRATION_PASSWORD_BYTES, MIN_REGISTRATION_PASSWORD_BYTES,
