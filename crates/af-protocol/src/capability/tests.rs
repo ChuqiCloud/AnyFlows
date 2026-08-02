@@ -60,6 +60,19 @@ fn matrix_exposes_protocol_specific_differences() {
         Protocol::Gemini,
         RequestCapability::MessageRole(Role::Developer)
     ));
+    for capability in [
+        RequestCapability::Thinking,
+        RequestCapability::ThinkingSignatures,
+    ] {
+        assert!(supports_request_capability(
+            Protocol::OpenAiResponses,
+            capability
+        ));
+        assert!(!supports_request_capability(
+            Protocol::OpenAiChat,
+            capability
+        ));
+    }
 
     assert!(supports_response_capability(
         Protocol::Anthropic,

@@ -1,4 +1,5 @@
 use af_domain::{Protocol, Role, UpstreamError};
+use serde_json::Value;
 
 use super::{CREATED_AT, MODEL, RESPONSE_ID, parse_encoded_events, usage};
 use crate::openai_responses::{
@@ -70,9 +71,12 @@ fn encodes_text_lifecycle_and_terminal_usage() {
             Some(u64::try_from(sequence).unwrap())
         );
     }
+    assert_eq!(events[2].1["item"]["phase"], Value::Null);
+    assert_eq!(events[8].1["item"]["phase"], "final_answer");
     let terminal = &events.last().unwrap().1["response"];
     assert_eq!(terminal["status"], "completed");
     assert_eq!(terminal["output"][0]["content"][0]["text"], "hello");
+    assert_eq!(terminal["output"][0]["phase"], "final_answer");
     assert_eq!(terminal["usage"]["total_tokens"], 11);
     assert!(!format!("{encoder:?}").contains(RESPONSE_ID));
 

@@ -14,8 +14,9 @@ use super::{
     response_raw::{ResponseRawError, validate_raw_fields},
     response_wire::{
         AssistantRoleWire, FunctionCallWire, IncompleteReasonWire, ItemStatusWire,
-        OutputContentWire, OutputMessageWire, ReasoningItemWire, ResponseObjectWire,
-        ResponseOutputItemWire, ResponseStatusWire, ResponseUsageWire, ResponsesResponseWire,
+        MessagePhaseWire, OutputContentWire, OutputMessageWire, ReasoningItemWire,
+        ResponseObjectWire, ResponseOutputItemWire, ResponseStatusWire, ResponseUsageWire,
+        ResponsesResponseWire,
     },
 };
 use crate::bounded_json::{BoundedJsonError, JsonLimits, parse_value};
@@ -113,6 +114,9 @@ fn convert_response(wire: ResponsesResponseWire) -> Result<CanonicalResponse, Pa
     for item in output {
         convert_output_item(item, status, &mut state, &mut content)?;
     }
+    if state.tool_calls != 0 && state.message_phase == Some(MessagePhaseWire::FinalAnswer) {
+        return Err(ParseResponseError::UnsupportedFeature);
+    }
     if status == ResponseStatusWire::Incomplete && state.tool_calls != 0 {
         return Err(ParseResponseError::UnsupportedFeature);
     }
@@ -182,6 +186,7 @@ enum OutputPhase {
 #[derive(Default)]
 struct ResponseConvertState {
     phase: OutputPhase,
+    message_phase: Option<MessagePhaseWire>,
     content_blocks: usize,
     text_bytes: usize,
     tool_calls: usize,
@@ -332,9 +337,13 @@ fn convert_message(
     if !matches!(message.role, AssistantRoleWire::Assistant) {
         return Err(ParseResponseError::InvalidValue);
     }
-    if message.phase.is_some() {
-        return Err(ParseResponseError::UnsupportedFeature);
+    match message.phase {
+        None | Some(MessagePhaseWire::FinalAnswer) => {}
+        Some(MessagePhaseWire::Commentary) => {
+            return Err(ParseResponseError::UnsupportedFeature);
+        }
     }
+    state.message_phase = message.phase;
     for content in message.content {
         match content {
             OutputContentWire::Text(text) => {

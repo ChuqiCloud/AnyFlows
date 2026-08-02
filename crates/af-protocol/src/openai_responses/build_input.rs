@@ -8,10 +8,10 @@ use url::Url;
 use super::{
     build::{BuildRequestError, map_request_validation_error},
     convert::{
-        MAX_ARGUMENT_BYTES, MAX_CONTENT_BLOCKS, MAX_MEDIA_BYTES, MAX_MEDIA_URL_BYTES, MAX_MESSAGES,
-        MAX_PARTS_PER_MESSAGE, MAX_TEXT_BYTES, MAX_TOOL_CALL_ID_BYTES, MAX_TOOL_CALLS,
-        MAX_TOTAL_ARGUMENT_BYTES, MAX_TOTAL_ARGUMENT_NODES, MAX_TOTAL_TEXT_BYTES,
-        validate_tool_name, validate_value_shape,
+        MAX_ARGUMENT_BYTES, MAX_CONTENT_BLOCKS, MAX_ENCRYPTED_REASONING_BYTES, MAX_MEDIA_BYTES,
+        MAX_MEDIA_URL_BYTES, MAX_MESSAGES, MAX_PARTS_PER_MESSAGE, MAX_TEXT_BYTES,
+        MAX_TOOL_CALL_ID_BYTES, MAX_TOOL_CALLS, MAX_TOTAL_ARGUMENT_BYTES, MAX_TOTAL_ARGUMENT_NODES,
+        MAX_TOTAL_TEXT_BYTES, validate_tool_name, validate_value_shape,
     },
     input::MAX_INPUT_ITEMS,
 };
@@ -115,12 +115,18 @@ fn build_assistant_items(
     state: &mut InputBuildState,
 ) -> Result<(), BuildRequestError> {
     validate_parts_len(blocks.len())?;
+    let mut reasoning_items = Vec::new();
     let mut text_parts = Vec::new();
     let mut calls = Vec::new();
+    let mut saw_non_reasoning = false;
     let mut saw_call = false;
     for block in blocks {
         match block {
+            ContentBlock::Thinking { text, signature } if !saw_non_reasoning => {
+                reasoning_items.push(build_reasoning_item(text, signature.as_deref(), state)?);
+            }
             ContentBlock::Text(text) if !saw_call => {
+                saw_non_reasoning = true;
                 state.add_text(text)?;
                 text_parts.push(text_part(text));
             }
@@ -130,6 +136,7 @@ fn build_assistant_items(
                 input,
                 signature,
             } => {
+                saw_non_reasoning = true;
                 saw_call = true;
                 calls.push(build_function_call(
                     id,
@@ -139,15 +146,18 @@ fn build_assistant_items(
                     state,
                 )?);
             }
+            ContentBlock::Thinking { .. } => return Err(BuildRequestError::InvalidValue),
             ContentBlock::Text(_)
             | ContentBlock::Image { .. }
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolResult { .. }
-            | ContentBlock::Thinking { .. }
             | ContentBlock::CacheControl(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }
+    }
+    for reasoning in reasoning_items {
+        push_item(items, reasoning)?;
     }
     if !text_parts.is_empty() {
         push_item(items, message_item("assistant", text_parts))?;
@@ -156,6 +166,37 @@ fn build_assistant_items(
         push_item(items, call)?;
     }
     Ok(())
+}
+
+fn build_reasoning_item(
+    text: &str,
+    signature: Option<&str>,
+    state: &mut InputBuildState,
+) -> Result<Value, BuildRequestError> {
+    let signature = signature.ok_or(BuildRequestError::UnsupportedFeature)?;
+    if signature.is_empty()
+        || signature.len() > MAX_ENCRYPTED_REASONING_BYTES
+        || signature.chars().any(char::is_control)
+    {
+        return Err(BuildRequestError::InvalidValue);
+    }
+    state.add_text(text)?;
+    let summary = if text.is_empty() {
+        Vec::new()
+    } else {
+        vec![Value::Object(Map::from_iter([
+            ("type".to_owned(), Value::String("summary_text".to_owned())),
+            ("text".to_owned(), Value::String(text.to_owned())),
+        ]))]
+    };
+    Ok(Value::Object(Map::from_iter([
+        ("type".to_owned(), Value::String("reasoning".to_owned())),
+        (
+            "encrypted_content".to_owned(),
+            Value::String(signature.to_owned()),
+        ),
+        ("summary".to_owned(), Value::Array(summary)),
+    ])))
 }
 
 fn build_tool_output_items(

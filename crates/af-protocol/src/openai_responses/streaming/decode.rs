@@ -435,7 +435,7 @@ impl OpenAiResponsesStreamDecoder {
             .transpose()
             .map_err(|_| ParseStreamError::InvalidSequence)?;
         let stable = stable_raw(raw.cloned().unwrap_or_default());
-        if stable != identity.stable_raw {
+        if !terminal_raw_matches(&identity.stable_raw, &stable) {
             return Err(ParseStreamError::InvalidSequence);
         }
         Ok(())
@@ -617,7 +617,7 @@ fn validate_failed_snapshot(
     if wire.id != expected.id
         || wire.model != expected.model
         || wire.created_at != expected.created_at
-        || stable_raw(wire.extra) != expected.stable_raw
+        || !terminal_raw_matches(&expected.stable_raw, &stable_raw(wire.extra))
     {
         return Err(ParseStreamError::InvalidSequence);
     }
@@ -669,6 +669,30 @@ fn validate_error_value(error: &Value) -> Result<Option<String>, ParseStreamErro
 fn stable_raw(mut fields: Map<String, Value>) -> Map<String, Value> {
     fields.remove("completed_at");
     fields
+}
+
+fn terminal_raw_matches(initial: &Map<String, Value>, terminal: &Map<String, Value>) -> bool {
+    let mut initial_without_tier = initial.clone();
+    let mut terminal_without_tier = terminal.clone();
+    let initial_tier = initial_without_tier.remove("service_tier");
+    let terminal_tier = terminal_without_tier.remove("service_tier");
+    if initial_without_tier != terminal_without_tier {
+        return false;
+    }
+    if initial_tier == terminal_tier {
+        return true;
+    }
+    // `auto` 是请求策略；终态按官方契约回显实际采用的处理层级。
+    matches!(
+        (
+            initial_tier.as_ref().and_then(Value::as_str),
+            terminal_tier.as_ref().and_then(Value::as_str)
+        ),
+        (
+            Some("auto"),
+            Some("default" | "flex" | "scale" | "priority")
+        )
+    )
 }
 
 fn is_done_sentinel(frame: &SseEvent) -> bool {

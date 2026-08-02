@@ -133,6 +133,48 @@ fn parses_minimal_completed_response() {
 }
 
 #[test]
+fn accepts_final_answer_phase_and_rejects_commentary() {
+    let mut final_answer = response(
+        vec![message("msg_final", "answer", "completed")],
+        "completed",
+    );
+    final_answer["output"][0]["phase"] = json!("final_answer");
+    let parsed = parse_json(final_answer).unwrap();
+    let rebuilt = build_response(&parsed).unwrap();
+    assert_eq!(rebuilt["output"][0]["phase"], "final_answer");
+
+    let mut commentary = response(
+        vec![message("msg_commentary", "working", "completed")],
+        "completed",
+    );
+    commentary["output"][0]["phase"] = json!("commentary");
+    assert_eq!(
+        parse_json(commentary),
+        Err(ParseResponseError::UnsupportedFeature)
+    );
+
+    let mut final_with_tool = response(
+        vec![
+            message("msg_final_with_tool", "answer", "completed"),
+            json!({
+                "id": "fc_after_final",
+                "type": "function_call",
+                "status": "completed",
+                "call_id": "call_after_final",
+                "name": "lookup",
+                "arguments": "{}",
+            }),
+        ],
+        "completed",
+    );
+    final_with_tool["output"][0]["phase"] = json!("final_answer");
+    assert_eq!(
+        parse_json(final_with_tool),
+        Err(ParseResponseError::UnsupportedFeature)
+    );
+}
+
+#[test]
 fn round_trips_reasoning_text_tools_usage_and_same_protocol_echoes() {
     let mut value = response(
         vec![
@@ -496,6 +538,7 @@ fn builds_deterministic_official_shape_and_round_trips_inclusive_usage() {
     assert_eq!(built["incomplete_details"], Value::Null);
     assert_eq!(built["output"][0]["id"], "rs_test_1_0");
     assert_eq!(built["output"][1]["id"], "msg_test_1_1");
+    assert_eq!(built["output"][1]["phase"], Value::Null);
     assert_eq!(built["output"][2]["id"], "fc_test_1_2");
     assert_eq!(built["output"][2]["call_id"], "call_test_1");
     assert_eq!(built["usage"]["input_tokens"], 20);

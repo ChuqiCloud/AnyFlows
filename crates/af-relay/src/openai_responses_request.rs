@@ -1,9 +1,9 @@
 use std::fmt;
 
 use af_adapter::Bytes;
-use af_domain::{AfError, MAX_MODEL_NAME_BYTES};
+use af_domain::{AfError, MAX_MODEL_NAME_BYTES, Protocol};
 use af_protocol::{
-    CanonicalRequest, CanonicalRequestEnvelope, Sampling, TokenCount,
+    CanonicalRequest, CanonicalRequestEnvelope, SameProtocolDecision, Sampling, TokenCount,
     openai_responses::{MAX_OUTPUT_TOKENS, build_request},
 };
 use thiserror::Error;
@@ -55,7 +55,7 @@ impl OpenAiResponsesRequestOverrides {
         &self,
         request: CanonicalRequestEnvelope,
     ) -> Result<RelayCandidateRequest, OpenAiResponsesRequestOverrideError> {
-        let mut canonical = request.into_canonical();
+        let (mut canonical, source_body) = into_openai_responses_parts(request);
         canonical.model.clone_from(&self.model);
         let current = &canonical.sampling;
         let max_output_tokens = match (current.max_output_tokens(), self.max_output_tokens) {
@@ -70,8 +70,8 @@ impl OpenAiResponsesRequestOverrides {
             current.stop_sequences().to_vec(),
         )
         .map_err(|_| OpenAiResponsesRequestOverrideError)?;
-        let body =
-            build_stateless_body(&canonical).map_err(|_| OpenAiResponsesRequestOverrideError)?;
+        let body = build_stateless_body(&canonical, source_body.as_ref())
+            .map_err(|_| OpenAiResponsesRequestOverrideError)?;
         RelayCandidateRequest::new(self.model.clone(), Some(body))
             .map_err(map_candidate_request_error)
     }
@@ -101,13 +101,15 @@ pub(crate) struct PreparedOpenAiResponsesRequest {
     pub(crate) client_model: String,
 }
 
-/// 重构 Responses 请求并固定 `store:false`，避免产生网关无法管理的上游状态。
+/// 从 Canonical 或已验证的同协议底稿重构 Responses 请求，并固定 `store:false`。
+///
+/// 该边界避免产生网关无法管理的上游状态，同时保留已校验的无状态 Agent 扩展。
 pub(crate) fn prepare_openai_responses_request(
     request: CanonicalRequestEnvelope,
 ) -> Result<PreparedOpenAiResponsesRequest, AfError> {
     let client_model = request.requested_model().to_owned();
-    let canonical = request.into_canonical();
-    let body = build_stateless_body(&canonical)?;
+    let (canonical, source_body) = into_openai_responses_parts(request);
+    let body = build_stateless_body(&canonical, source_body.as_ref())?;
     Ok(PreparedOpenAiResponsesRequest {
         canonical,
         body,
@@ -115,22 +117,75 @@ pub(crate) fn prepare_openai_responses_request(
     })
 }
 
-fn build_stateless_body(request: &CanonicalRequest) -> Result<Bytes, AfError> {
+fn into_openai_responses_parts(
+    request: CanonicalRequestEnvelope,
+) -> (CanonicalRequest, Option<Bytes>) {
+    match request.into_same_protocol(Protocol::OpenAiResponses) {
+        SameProtocolDecision::Passthrough(passthrough) => {
+            let (canonical, body) = passthrough.into_parts();
+            (canonical, Some(body))
+        }
+        SameProtocolDecision::Rebuild(request) => (request.into_canonical(), None),
+    }
+}
+
+fn build_stateless_body(
+    request: &CanonicalRequest,
+    source_body: Option<&Bytes>,
+) -> Result<Bytes, AfError> {
     if request.continuation.previous_response_id().is_some()
         || request.continuation.conversation_id().is_some()
     {
         // 续接需要公开 ID 到上游 ID 的持久映射；未实现前不能透传伪造标识。
         return Err(AfError::InvalidRequest);
     }
-    let mut value = build_request(request).map_err(|_| AfError::InvalidRequest)?;
+    // 同协议请求以已验证原文为底稿，只覆盖网关拥有的字段，避免 Agent 扩展被重编码丢失。
+    let mut value = match source_body {
+        Some(body) => serde_json::from_slice(body).map_err(|_| AfError::InvalidRequest)?,
+        None => build_request(request).map_err(|_| AfError::InvalidRequest)?,
+    };
     let object = value.as_object_mut().ok_or(AfError::Internal)?;
     if object.get("store").and_then(serde_json::Value::as_bool) == Some(true) {
         return Err(AfError::InvalidRequest);
+    }
+    object.insert(
+        "model".to_owned(),
+        serde_json::Value::String(request.model.clone()),
+    );
+    insert_optional_number(object, "temperature", request.sampling.temperature())?;
+    insert_optional_number(object, "top_p", request.sampling.top_p())?;
+    match request.sampling.max_output_tokens() {
+        Some(tokens) => {
+            object.insert(
+                "max_output_tokens".to_owned(),
+                serde_json::Value::Number(tokens.get().into()),
+            );
+        }
+        None => {
+            object.remove("max_output_tokens");
+        }
     }
     object.insert("store".to_owned(), serde_json::Value::Bool(false));
     serde_json::to_vec(&value)
         .map(Bytes::from)
         .map_err(|_| AfError::Internal)
+}
+
+fn insert_optional_number(
+    object: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    value: Option<f64>,
+) -> Result<(), AfError> {
+    match value {
+        Some(value) => {
+            let number = serde_json::Number::from_f64(value).ok_or(AfError::InvalidRequest)?;
+            object.insert(key.to_owned(), serde_json::Value::Number(number));
+        }
+        None => {
+            object.remove(key);
+        }
+    }
+    Ok(())
 }
 
 fn valid_model(model: &str) -> bool {
@@ -163,15 +218,50 @@ mod tests {
             let prepared = prepare_openai_responses_request(envelope(json!({
                 "model": "gpt-test",
                 "input": "hello",
+                "include": ["reasoning.encrypted_content"],
                 "stream": stream
             })))
             .unwrap();
             let value: Value = serde_json::from_slice(&prepared.body).unwrap();
             assert_eq!(value["store"], false);
+            assert_eq!(value["include"], json!(["reasoning.encrypted_content"]));
             assert_eq!(value["stream"], stream);
             assert_eq!(prepared.canonical.stream, stream);
             assert_eq!(prepared.client_model, "gpt-test");
         }
+    }
+
+    #[test]
+    fn candidate_overrides_preserve_stateless_agent_reasoning() {
+        let request = envelope(json!({
+            "model": "public-model",
+            "input": [{
+                "type": "reasoning",
+                "id": "rs_public",
+                "encrypted_content": "encrypted-reasoning-canary",
+                "summary": []
+            }, {
+                "role": "user",
+                "content": [{"type": "input_text", "text": "continue"}]
+            }],
+            "include": ["reasoning.encrypted_content"],
+            "store": false,
+            "stream": true
+        }));
+        let overrides =
+            OpenAiResponsesRequestOverrides::new("private-upstream-model", None, None, None)
+                .unwrap();
+
+        let (_, body) = overrides.prepare(request).unwrap().into_parts();
+        let value: Value = serde_json::from_slice(&body.unwrap()).unwrap();
+        assert_eq!(value["model"], "private-upstream-model");
+        assert_eq!(value["store"], false);
+        assert_eq!(value["include"], json!(["reasoning.encrypted_content"]));
+        assert_eq!(
+            value["input"][0]["encrypted_content"],
+            "encrypted-reasoning-canary"
+        );
+        assert_eq!(value["input"][0]["id"], "rs_public");
     }
 
     #[test]

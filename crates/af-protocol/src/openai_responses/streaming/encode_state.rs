@@ -44,7 +44,7 @@ impl OutputEncodeState {
             return Err(EncodeStreamError::InvalidSequence);
         }
         if matches!(self.active, Some(ActiveItem::Reasoning(_))) {
-            self.close_active("completed", events)?;
+            self.close_active("completed", None, events)?;
         }
         if self.active.is_none() {
             self.open_message(response_id, events)?;
@@ -197,7 +197,7 @@ impl OutputEncodeState {
         if matches!(self.active, Some(ActiveItem::Function(_))) {
             return Err(EncodeStreamError::InvalidSequence);
         }
-        self.close_active("completed", events)?;
+        self.close_active("completed", None, events)?;
         validate_call_id(&call_id).map_err(|_| EncodeStreamError::InvalidSequence)?;
         validate_tool_name(&name).map_err(|_| EncodeStreamError::InvalidSequence)?;
         if !self.seen_call_ids.insert(call_id.clone()) {
@@ -346,7 +346,8 @@ impl OutputEncodeState {
         } else {
             "completed"
         };
-        self.close_active(item_status, events)?;
+        let message_phase = (!has_tools).then_some("final_answer");
+        self.close_active(item_status, message_phase, events)?;
         self.finish_reason = Some(reason);
         Ok(())
     }
@@ -381,7 +382,7 @@ impl OutputEncodeState {
             "response.output_item.added",
             [
                 ("output_index", number(output_index)),
-                ("item", message_item(&id, "in_progress", &[])),
+                ("item", message_item(&id, "in_progress", &[], None)),
             ],
         ));
         self.phase = OutputPhase::AfterMessage;
@@ -467,6 +468,7 @@ impl OutputEncodeState {
     fn close_active(
         &mut self,
         status: &'static str,
+        message_phase: Option<&'static str>,
         events: &mut Vec<PendingEvent>,
     ) -> Result<(), EncodeStreamError> {
         match self.active.take() {
@@ -531,7 +533,10 @@ impl OutputEncodeState {
                     "response.output_item.done",
                     [
                         ("output_index", number(message.output_index)),
-                        ("item", message_item(&message.id, status, &message.parts)),
+                        (
+                            "item",
+                            message_item(&message.id, status, &message.parts, message_phase),
+                        ),
                     ],
                 ));
                 self.content
@@ -626,17 +631,21 @@ fn reasoning_item(
     Value::Object(item)
 }
 
-fn message_item(id: &str, status: &str, parts: &[String]) -> Value {
-    object_value([
-        ("id", Value::String(id.to_owned())),
-        ("type", Value::String("message".to_owned())),
-        ("status", Value::String(status.to_owned())),
-        ("role", Value::String("assistant".to_owned())),
+fn message_item(id: &str, status: &str, parts: &[String], phase: Option<&str>) -> Value {
+    let mut item = Map::from_iter([
+        ("id".to_owned(), Value::String(id.to_owned())),
+        ("type".to_owned(), Value::String("message".to_owned())),
+        ("status".to_owned(), Value::String(status.to_owned())),
+        ("role".to_owned(), Value::String("assistant".to_owned())),
         (
-            "content",
+            "content".to_owned(),
             Value::Array(parts.iter().map(|text| output_text_part(text)).collect()),
         ),
-    ])
+    ]);
+    if let Some(phase) = phase {
+        item.insert("phase".to_owned(), Value::String(phase.to_owned()));
+    }
+    Value::Object(item)
 }
 
 fn function_item(id: &str, status: &str, call_id: &str, name: &str, arguments: &str) -> Value {

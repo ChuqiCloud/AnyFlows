@@ -89,6 +89,39 @@ fn builds_minimal_request_in_both_response_modes() {
 }
 
 #[test]
+fn round_trips_stateless_encrypted_reasoning_and_include() {
+    let request = parsed_request(json!({
+        "model": "gpt-5.5",
+        "input": [{
+            "type": "reasoning",
+            "encrypted_content": "encrypted-reasoning-canary",
+            "summary": [{"type": "summary_text", "text": "summary"}]
+        }, {
+            "role": "user",
+            "content": [{"type": "input_text", "text": "continue"}]
+        }],
+        "include": ["reasoning.encrypted_content", "future.output.details"],
+        "store": false,
+        "stream": true
+    }));
+
+    let value = build_request(&request).unwrap();
+    assert_eq!(value["input"][0]["type"], "reasoning");
+    assert_eq!(
+        value["input"][0]["encrypted_content"],
+        "encrypted-reasoning-canary"
+    );
+    assert_eq!(
+        value["include"],
+        json!(["reasoning.encrypted_content", "future.output.details"])
+    );
+    assert_eq!(
+        parse_request(&serde_json::to_vec(&value).unwrap()).unwrap(),
+        request
+    );
+}
+
+#[test]
 fn round_trips_messages_tools_sampling_continuation_and_raw_fields() {
     let request = parsed_request(json!({
         "model": "gpt-test",
@@ -349,13 +382,6 @@ fn rejects_unrepresentable_content_and_media() {
             RequestCapability::AudioBase64,
         ),
         (
-            ContentBlock::Thinking {
-                text: "secret".to_owned(),
-                signature: None,
-            },
-            RequestCapability::Thinking,
-        ),
-        (
             ContentBlock::CacheControl(CacheHint::Ephemeral5Minutes),
             RequestCapability::CacheControl(CacheHint::Ephemeral5Minutes),
         ),
@@ -369,6 +395,60 @@ fn rejects_unrepresentable_content_and_media() {
         );
         assert_unsupported_capability(&request, capability);
     }
+
+    let missing_reasoning_signature = CanonicalRequest::new(
+        Operation::Responses,
+        "gpt-test".to_owned(),
+        vec![Message::new(
+            Role::Assistant,
+            vec![ContentBlock::Thinking {
+                text: "secret".to_owned(),
+                signature: None,
+            }],
+        )],
+        false,
+    );
+    assert_eq!(
+        build_request(&missing_reasoning_signature),
+        Err(BuildRequestError::UnsupportedFeature)
+    );
+
+    let misplaced_reasoning = CanonicalRequest::new(
+        Operation::Responses,
+        "gpt-test".to_owned(),
+        vec![Message::new(
+            Role::User,
+            vec![ContentBlock::Thinking {
+                text: "secret".to_owned(),
+                signature: Some("encrypted".to_owned()),
+            }],
+        )],
+        false,
+    );
+    assert_eq!(
+        build_request(&misplaced_reasoning),
+        Err(BuildRequestError::UnsupportedFeature)
+    );
+
+    let late_reasoning = CanonicalRequest::new(
+        Operation::Responses,
+        "gpt-test".to_owned(),
+        vec![Message::new(
+            Role::Assistant,
+            vec![
+                ContentBlock::Text("answer".to_owned()),
+                ContentBlock::Thinking {
+                    text: "secret".to_owned(),
+                    signature: Some("encrypted".to_owned()),
+                },
+            ],
+        )],
+        false,
+    );
+    assert_eq!(
+        build_request(&late_reasoning),
+        Err(BuildRequestError::InvalidValue)
+    );
 
     let missing_mime = CanonicalRequest::new(
         Operation::Responses,

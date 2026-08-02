@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { PlaygroundMessage } from './playground-types'
 import { PlaygroundMarkdown } from './playground-markdown'
+import { shouldShowEmptyAssistantResponse } from './playground-status'
 
 type PlaygroundMessageItemProps = {
   message: PlaygroundMessage
@@ -63,9 +64,9 @@ export function PlaygroundMessageItem({ message }: PlaygroundMessageItemProps) {
             <LoaderCircle className="size-3.5 animate-spin" aria-hidden="true" />
             {t('playground.message.generating')}
           </div>
-        ) : (
+        ) : shouldShowEmptyAssistantResponse(message.status) ? (
           <p className="text-xs text-muted-foreground">{t('playground.message.emptyResponse')}</p>
-        )
+        ) : null
       ) : (
         <p className="ml-auto max-w-[88%] break-words whitespace-pre-wrap rounded-xl bg-surface-2 px-3 py-2.5 text-sm leading-6">
           {message.content}
