@@ -62,7 +62,7 @@ export function RedemptionPage() {
         <div className="grid gap-2" aria-label={t('redemptions.loading')}>
           {[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-20 rounded-lg" />)}
         </div>
-      ) : batchesQuery.isError ? (
+      ) : batchesQuery.isError && batches.length === 0 ? (
         <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/8 p-4">
           <h2 className="text-sm font-semibold text-destructive">{t('redemptions.errors.listTitle')}</h2>
           <p className="mt-1 text-xs text-muted-foreground">{t('redemptions.errors.listBody')}</p>

@@ -70,7 +70,7 @@ export function toRedemptionBatchRequest(
     name: values.name,
     quota_amount: quotaAmount,
     code_count: codeCount,
-    expires_at: expiresAt,
+    expires_at: expiresAt ?? null,
   }
 }
 
