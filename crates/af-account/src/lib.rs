@@ -14,10 +14,12 @@ pub use credential_encryption::{
 };
 pub use oauth::{
     DEFAULT_MAX_PENDING_OAUTH_AUTHORIZATIONS, DEFAULT_OAUTH_AUTHORIZATION_SESSION_TTL,
-    MAX_OAUTH_AUTHORIZATION_SESSION_TTL, MAX_PENDING_OAUTH_AUTHORIZATIONS,
-    MIN_OAUTH_AUTHORIZATION_SESSION_TTL, OAuthAuthorizationCallback, OAuthAuthorizationContext,
-    OAuthAuthorizationError, OAuthAuthorizationGrant, OAuthAuthorizationRequest,
-    OAuthAuthorizationSessionStore, OAuthAuthorizationStart, UpstreamOAuthProvider,
+    MAX_OAUTH_AUTHORIZATION_SESSION_TTL, MAX_OAUTH_TOKEN_RESPONSE_BYTES,
+    MAX_PENDING_OAUTH_AUTHORIZATIONS, MIN_OAUTH_AUTHORIZATION_SESSION_TTL,
+    OAuthAuthorizationCallback, OAuthAuthorizationContext, OAuthAuthorizationError,
+    OAuthAuthorizationGrant, OAuthAuthorizationRequest, OAuthAuthorizationSessionStore,
+    OAuthAuthorizationStart, OAuthClientAuthenticationMethod, OAuthEndpointErrorCode,
+    OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenSet, UpstreamOAuthProvider,
 };
 pub use system_secret::{
     DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretError,

@@ -607,7 +607,7 @@ fn reject_reserved_query_parameters(url: &Url) -> Result<(), OAuthAuthorizationE
     Ok(())
 }
 
-fn validate_client_id(value: &str) -> Result<(), OAuthAuthorizationError> {
+pub(crate) fn validate_client_id(value: &str) -> Result<(), OAuthAuthorizationError> {
     if value.is_empty()
         || value.len() > MAX_CLIENT_ID_BYTES
         || !value.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
@@ -617,7 +617,7 @@ fn validate_client_id(value: &str) -> Result<(), OAuthAuthorizationError> {
     Ok(())
 }
 
-fn validate_scope(value: &str) -> Result<(), OAuthAuthorizationError> {
+pub(crate) fn validate_scope(value: &str) -> Result<(), OAuthAuthorizationError> {
     if value.is_empty()
         || value.len() > MAX_SCOPE_BYTES
         || value.trim() != value

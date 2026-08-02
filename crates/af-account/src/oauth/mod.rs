@@ -1,10 +1,15 @@
 mod authorization;
+mod exchange;
 mod store;
 
 pub use authorization::{
     OAuthAuthorizationCallback, OAuthAuthorizationContext, OAuthAuthorizationError,
     OAuthAuthorizationGrant, OAuthAuthorizationRequest, OAuthAuthorizationStart,
     UpstreamOAuthProvider,
+};
+pub use exchange::{
+    MAX_OAUTH_TOKEN_RESPONSE_BYTES, OAuthClientAuthenticationMethod, OAuthEndpointErrorCode,
+    OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenSet,
 };
 pub use store::{
     DEFAULT_MAX_PENDING_OAUTH_AUTHORIZATIONS, DEFAULT_OAUTH_AUTHORIZATION_SESSION_TTL,
