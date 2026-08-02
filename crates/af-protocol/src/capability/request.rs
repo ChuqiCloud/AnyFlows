@@ -239,6 +239,8 @@ pub(super) const OPENAI_RESPONSES: &[RequestCapability] = &[
     RequestCapability::ToolCalls,
     RequestCapability::ToolResults,
     RequestCapability::StructuredToolResults,
+    RequestCapability::Thinking,
+    RequestCapability::ThinkingSignatures,
     RequestCapability::ReasoningEffort(ReasoningEffort::None),
     RequestCapability::ReasoningEffort(ReasoningEffort::Minimal),
     RequestCapability::ReasoningEffort(ReasoningEffort::Low),
