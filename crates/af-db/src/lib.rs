@@ -369,9 +369,9 @@ pub use user_token::{
 };
 pub use wallet_ledger::{
     MAX_WALLET_ADJUSTMENT_REASON_BYTES, MAX_WALLET_LEDGER_PAGE_SIZE, WalletAdjustmentOutcome,
-    WalletAdjustmentWrite, WalletLedgerEntryRecord, WalletLedgerEntryType, WalletLedgerError,
-    WalletLedgerListOutcome, WalletLedgerPageRecord, WalletLedgerRepository,
-    WalletLedgerRepositoryConfigError,
+    WalletAdjustmentWrite, WalletBalanceLookupOutcome, WalletBalanceRecord,
+    WalletLedgerEntryRecord, WalletLedgerEntryType, WalletLedgerError, WalletLedgerListOutcome,
+    WalletLedgerPageRecord, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
 };
 
 /// 连接数据库并执行全部待处理迁移。

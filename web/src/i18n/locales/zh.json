@@ -14,6 +14,7 @@
     "models": "模型广场",
     "playground": "对话试炼场",
     "apiKeys": "我的 API Key",
+    "wallet": "我的钱包",
     "invitations": "邀请中心",
     "profile": "个人资料",
     "users": "用户管理",
@@ -34,7 +35,9 @@
     "version": "开发预览版",
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏",
-    "home": "返回首页"
+    "home": "返回首页",
+    "balanceUnavailable": "余额暂时不可用",
+    "balanceValue": "可用余额 {{value}} 额度"
   },
   "dashboard": {
     "title": "运行概览",
@@ -2091,6 +2094,55 @@
       "loadTitle": "无法加载邀请中心",
       "loadBody": "当前邀请数据暂时不可用，请稍后重试。",
       "copy": "浏览器未允许写入剪贴板，请手动选择内容复制。"
+    }
+  },
+  "wallet": {
+    "eyebrow": "账户额度",
+    "title": "钱包与账本",
+    "subtitle": "查看当前可用余额、累计消耗和已经确认的额度变更记录。",
+    "summary": {
+      "label": "钱包额度状态",
+      "balance": "可用余额",
+      "balanceHint": "可用于新请求的额度",
+      "used": "累计消耗",
+      "usedHint": "已经完成结算的额度",
+      "frozen": "在途冻结",
+      "frozenHint": "等待请求终态结算的预扣额度"
+    },
+    "ledger": {
+      "title": "余额账本",
+      "subtitle": "按时间倒序展示已经提交的余额变更事实。",
+      "count": "已加载 {{count}} 条",
+      "balanceAfter": "变更后 {{value}}",
+      "emptyTitle": "还没有余额变更记录",
+      "emptyBody": "零初始余额不会生成空账本；首次额度到账后会显示在这里。"
+    },
+    "entryType": {
+      "opening_balance": "初始余额",
+      "admin_adjustment": "人工调整",
+      "topup": "充值到账",
+      "redemption": "兑换到账",
+      "invite_rebate": "邀请返利"
+    },
+    "entryReason": {
+      "opening_balance": "账户初始余额",
+      "admin_adjustment": "管理员余额调整",
+      "topup": "充值额度到账",
+      "redemption": "兑换码额度到账",
+      "invite_rebate": "邀请返利到账"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "loadMore": "加载更早记录",
+      "loadingMore": "正在加载"
+    },
+    "errors": {
+      "summaryTitle": "无法读取钱包余额",
+      "summaryBody": "服务暂时没有返回可靠的余额状态，请稍后重试。",
+      "ledgerTitle": "无法读取余额账本",
+      "ledgerBody": "余额记录暂时不可用，已显示的余额状态不受影响。",
+      "more": "更早的余额记录加载失败。"
     }
   },
   "setup": {

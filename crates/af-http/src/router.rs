@@ -7,7 +7,7 @@ use af_admin::{
     AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService, InitialSetup,
     ModelCatalogReader, PasswordResetService, PlaygroundConversationService,
     PlaygroundShareService, RegistrationService, SessionAuthenticator, SiteSettingsService,
-    TokenAuthenticator, UserInvitationService,
+    TokenAuthenticator, UserInvitationService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -80,6 +80,7 @@ use crate::registration::build_registration_router;
 use crate::site_settings::build_site_settings_router;
 use crate::user_profile::build_user_profile_router;
 use crate::user_tokens::build_user_token_router;
+use crate::user_wallet::build_user_wallet_router;
 use crate::{
     ChatService, QueryApiKeyPolicy, chat_completions::HttpState, chat_completions::chat_completions,
 };
@@ -125,6 +126,7 @@ pub fn build_router(
     registration_service: Arc<dyn RegistrationService>,
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn af_admin::UserProfileService>,
+    user_wallet_service: Arc<dyn UserWalletService>,
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
@@ -303,6 +305,10 @@ pub fn build_router(
     let password_reset_routes = build_password_reset_router(password_reset_service, config);
     let user_profile_routes = build_user_profile_router(
         user_profile_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
+    let user_wallet_routes = build_user_wallet_router(
+        user_wallet_service,
         Arc::clone(&http_state.session_authenticator),
     );
     let user_invitation_routes = build_user_invitation_router(
@@ -496,6 +502,7 @@ pub fn build_router(
         .merge(registration_routes)
         .merge(password_reset_routes)
         .merge(user_profile_routes)
+        .merge(user_wallet_routes)
         .merge(user_invitation_routes)
         .merge(site_settings_routes)
         .merge(email_settings_routes)

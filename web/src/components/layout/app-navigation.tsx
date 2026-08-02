@@ -15,6 +15,7 @@ import {
   TicketCheck,
   UserRound,
   UsersRound,
+  WalletCards,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -38,7 +39,7 @@ type AppNavigationProps = {
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'invitations' | 'profile' | 'users' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'keys' | 'usage'
+  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'wallet' | 'invitations' | 'profile' | 'users' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'keys' | 'usage'
   icon: LucideIcon
   href: `#/console${string}`
 }
@@ -63,6 +64,7 @@ const navGroups: readonly NavGroup[] = [
     adminOnly: false,
     items: [
       { key: 'apiKeys', icon: KeyRound, href: '#/console/api-keys' },
+      { key: 'wallet', icon: WalletCards, href: '#/console/wallet' },
       { key: 'invitations', icon: TicketCheck, href: '#/console/invitations' },
       { key: 'profile', icon: UserRound, href: '#/console/profile' },
     ],
@@ -91,6 +93,7 @@ const activeKeyByView: Partial<Record<AppView, NavItem['key']>> = {
   models: 'models',
   playground: 'playground',
   'api-keys': 'apiKeys',
+  wallet: 'wallet',
   invitations: 'invitations',
   profile: 'profile',
   users: 'users',

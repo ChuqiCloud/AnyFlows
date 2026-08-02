@@ -840,6 +840,25 @@ export type UserTokenWriteRequest = {
     model_limits: Array<string> | null;
     allow_ips: Array<string> | null;
 };
+export type UserWalletEntry = {
+    id: number;
+    entry_type: UserWalletEntryType;
+    quota_delta: number;
+    balance_before: number;
+    balance_after: number;
+    reason: string | null;
+    created_at: number;
+};
+export type UserWalletEntryType = 'opening_balance' | 'admin_adjustment' | 'topup' | 'redemption' | 'invite_rebate';
+export type UserWalletListResponse = {
+    entries: Array<UserWalletEntry>;
+    next_cursor: number | null;
+};
+export type UserWalletSummary = {
+    balance: number;
+    used_quota: number;
+    frozen_quota: number;
+};
 export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini';
@@ -1201,6 +1220,40 @@ export type UpdateUserNotificationPreferencesResponses = {
     200: UserProfileResponse;
 };
 export type UpdateUserNotificationPreferencesResponse = UpdateUserNotificationPreferencesResponses[keyof UpdateUserNotificationPreferencesResponses];
+export type GetUserWalletData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/wallet';
+};
+export type GetUserWalletErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type GetUserWalletError = GetUserWalletErrors[keyof GetUserWalletErrors];
+export type GetUserWalletResponses = {
+    200: UserWalletSummary;
+};
+export type GetUserWalletResponse = GetUserWalletResponses[keyof GetUserWalletResponses];
+export type ListUserWalletEntriesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/account/wallet/entries';
+};
+export type ListUserWalletEntriesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListUserWalletEntriesError = ListUserWalletEntriesErrors[keyof ListUserWalletEntriesErrors];
+export type ListUserWalletEntriesResponses = {
+    200: UserWalletListResponse;
+};
+export type ListUserWalletEntriesResponse = ListUserWalletEntriesResponses[keyof ListUserWalletEntriesResponses];
 export type GetUserInvitationsData = {
     body?: never;
     path?: never;

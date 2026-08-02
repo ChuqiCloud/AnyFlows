@@ -52,6 +52,8 @@ mod site_settings;
 mod streaming;
 mod user_profile;
 mod user_tokens;
+mod user_wallet;
+mod wallet_query;
 
 pub use channel_probe::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 pub use chat_service::{ChatService, ChatServiceFuture};
@@ -108,3 +110,5 @@ mod site_settings_tests;
 mod tests;
 #[cfg(test)]
 mod user_tokens_tests;
+#[cfg(test)]
+mod user_wallet_tests;

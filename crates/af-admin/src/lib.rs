@@ -40,6 +40,7 @@ mod usage_log_read;
 mod user_profile;
 mod user_read;
 mod user_token;
+mod user_wallet;
 mod user_write;
 mod wallet;
 
@@ -220,6 +221,11 @@ pub use user_token::{
     MAX_USER_TOKENS_PER_USER, UserToken, UserTokenCreateFuture, UserTokenDeleteFuture,
     UserTokenError, UserTokenGetFuture, UserTokenListFuture, UserTokenListQuery, UserTokenPage,
     UserTokenService, UserTokenStatus, UserTokenUpdateFuture, UserTokenWriteCommand,
+};
+pub use user_wallet::{
+    DEFAULT_USER_WALLET_PAGE_SIZE, DatabaseUserWalletService, UserWalletEntry, UserWalletEntryType,
+    UserWalletError, UserWalletListFuture, UserWalletListQuery, UserWalletPage, UserWalletService,
+    UserWalletSummary, UserWalletSummaryFuture,
 };
 pub use user_write::{
     AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserUpdateCommand,

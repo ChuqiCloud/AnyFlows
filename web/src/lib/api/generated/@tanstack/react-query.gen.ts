@@ -2,8 +2,8 @@
 
 import { type InfiniteData, infiniteQueryOptions, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 import { client } from '../client.gen';
-import { adjustAdminWallet, applyAdminModelPrices, applyAdminModelSyncPreview, changeUserPassword, confirmPasswordReset, createAdminChannel, createAdminCredential, createAdminGroup, createAdminModel, createAdminModelSyncPreview, createAdminToken, createAdminUser, createPlaygroundShare, createUserToken, deleteAdminChannel, deleteAdminCredential, deleteAdminGroup, deleteAdminModel, deleteAdminToken, deleteAdminUser, deletePlaygroundConversation, deleteUserToken, getAdminAuthenticationSettings, getAdminBalanceAlertSettings, getAdminChannel, getAdminCredential, getAdminDashboard, getAdminEmailSettings, getAdminGroup, getAdminModel, getAdminSiteSettings, getAdminToken, getAdminUser, getInitialSetupStatus, getManagementSession, getPlaygroundConversation, getPlaygroundShare, getPublicSiteSettings, getRegistrationStatus, getUserInvitations, getUserProfile, getUserToken, initializeAdminSetup, listAdminChannels, listAdminCredentials, listAdminGroups, listAdminModelPrices, listAdminModels, listAdminTokens, listAdminUsageLogs, listAdminUsers, listAdminWalletEntries, listMissingAdminModels, listModels, listPlaygroundConversations, listUserTokens, loginManagementSession, type Options, previewAdminModelPrices, probeAdminChannel, registerUser, requestPasswordReset, revokePlaygroundShare, savePlaygroundConversation, sendAdminEmailTest, sendRegistrationEmailVerification, updateAdminAuthenticationSettings, updateAdminBalanceAlertSettings, updateAdminChannel, updateAdminCredential, updateAdminEmailSettings, updateAdminGroup, updateAdminModel, updateAdminSiteSettings, updateAdminToken, updateAdminUser, updateUserNotificationPreferences, updateUserProfile, updateUserToken } from '../sdk.gen';
-import type { AdjustAdminWalletData, AdjustAdminWalletError, AdjustAdminWalletResponse, ApplyAdminModelPricesData, ApplyAdminModelPricesError, ApplyAdminModelPricesResponse, ApplyAdminModelSyncPreviewData, ApplyAdminModelSyncPreviewError, ApplyAdminModelSyncPreviewResponse, ChangeUserPasswordData, ChangeUserPasswordError, ChangeUserPasswordResponse, ConfirmPasswordResetData, ConfirmPasswordResetError, ConfirmPasswordResetResponse, CreateAdminChannelData, CreateAdminChannelError, CreateAdminChannelResponse, CreateAdminCredentialData, CreateAdminCredentialError, CreateAdminCredentialResponse, CreateAdminGroupData, CreateAdminGroupError, CreateAdminGroupResponse, CreateAdminModelData, CreateAdminModelError, CreateAdminModelResponse, CreateAdminModelSyncPreviewData, CreateAdminModelSyncPreviewError, CreateAdminModelSyncPreviewResponse, CreateAdminTokenData, CreateAdminTokenError, CreateAdminTokenResponse, CreateAdminUserData, CreateAdminUserError, CreateAdminUserResponse, CreatePlaygroundShareData, CreatePlaygroundShareError, CreatePlaygroundShareResponse, CreateUserTokenData, CreateUserTokenError, CreateUserTokenResponse, DeleteAdminChannelData, DeleteAdminChannelError, DeleteAdminChannelResponse, DeleteAdminCredentialData, DeleteAdminCredentialError, DeleteAdminCredentialResponse, DeleteAdminGroupData, DeleteAdminGroupError, DeleteAdminGroupResponse, DeleteAdminModelData, DeleteAdminModelError, DeleteAdminModelResponse, DeleteAdminTokenData, DeleteAdminTokenError, DeleteAdminTokenResponse, DeleteAdminUserData, DeleteAdminUserError, DeleteAdminUserResponse, DeletePlaygroundConversationData, DeletePlaygroundConversationError, DeletePlaygroundConversationResponse, DeleteUserTokenData, DeleteUserTokenError, DeleteUserTokenResponse, GetAdminAuthenticationSettingsData, GetAdminAuthenticationSettingsError, GetAdminAuthenticationSettingsResponse, GetAdminBalanceAlertSettingsData, GetAdminBalanceAlertSettingsError, GetAdminBalanceAlertSettingsResponse, GetAdminChannelData, GetAdminChannelError, GetAdminChannelResponse, GetAdminCredentialData, GetAdminCredentialError, GetAdminCredentialResponse, GetAdminDashboardData, GetAdminDashboardError, GetAdminDashboardResponse, GetAdminEmailSettingsData, GetAdminEmailSettingsError, GetAdminEmailSettingsResponse, GetAdminGroupData, GetAdminGroupError, GetAdminGroupResponse, GetAdminModelData, GetAdminModelError, GetAdminModelResponse, GetAdminSiteSettingsData, GetAdminSiteSettingsError, GetAdminSiteSettingsResponse, GetAdminTokenData, GetAdminTokenError, GetAdminTokenResponse, GetAdminUserData, GetAdminUserError, GetAdminUserResponse, GetInitialSetupStatusData, GetInitialSetupStatusError, GetInitialSetupStatusResponse, GetManagementSessionData, GetManagementSessionError, GetManagementSessionResponse, GetPlaygroundConversationData, GetPlaygroundConversationError, GetPlaygroundConversationResponse, GetPlaygroundShareData, GetPlaygroundShareError, GetPlaygroundShareResponse, GetPublicSiteSettingsData, GetPublicSiteSettingsError, GetPublicSiteSettingsResponse, GetRegistrationStatusData, GetRegistrationStatusError, GetRegistrationStatusResponse, GetUserInvitationsData, GetUserInvitationsError, GetUserInvitationsResponse, GetUserProfileData, GetUserProfileError, GetUserProfileResponse, GetUserTokenData, GetUserTokenError, GetUserTokenResponse, InitializeAdminSetupData, InitializeAdminSetupError, InitializeAdminSetupResponse, ListAdminChannelsData, ListAdminChannelsError, ListAdminChannelsResponse, ListAdminCredentialsData, ListAdminCredentialsError, ListAdminCredentialsResponse, ListAdminGroupsData, ListAdminGroupsError, ListAdminGroupsResponse, ListAdminModelPricesData, ListAdminModelPricesError, ListAdminModelPricesResponse, ListAdminModelsData, ListAdminModelsError, ListAdminModelsResponse, ListAdminTokensData, ListAdminTokensError, ListAdminTokensResponse, ListAdminUsageLogsData, ListAdminUsageLogsError, ListAdminUsageLogsResponse, ListAdminUsersData, ListAdminUsersError, ListAdminUsersResponse, ListAdminWalletEntriesData, ListAdminWalletEntriesError, ListAdminWalletEntriesResponse, ListMissingAdminModelsData, ListMissingAdminModelsError, ListMissingAdminModelsResponse, ListModelsData, ListModelsError, ListModelsResponse, ListPlaygroundConversationsData, ListPlaygroundConversationsError, ListPlaygroundConversationsResponse, ListUserTokensData, ListUserTokensError, ListUserTokensResponse, LoginManagementSessionData, LoginManagementSessionError, LoginManagementSessionResponse, PreviewAdminModelPricesData, PreviewAdminModelPricesError, PreviewAdminModelPricesResponse, ProbeAdminChannelData, ProbeAdminChannelError, ProbeAdminChannelResponse, RegisterUserData, RegisterUserError, RegisterUserResponse, RequestPasswordResetData, RequestPasswordResetError, RequestPasswordResetResponse, RevokePlaygroundShareData, RevokePlaygroundShareError, RevokePlaygroundShareResponse, SavePlaygroundConversationData, SavePlaygroundConversationError, SavePlaygroundConversationResponse, SendAdminEmailTestData, SendAdminEmailTestError, SendAdminEmailTestResponse, SendRegistrationEmailVerificationData, SendRegistrationEmailVerificationError, SendRegistrationEmailVerificationResponse, UpdateAdminAuthenticationSettingsData, UpdateAdminAuthenticationSettingsError, UpdateAdminAuthenticationSettingsResponse, UpdateAdminBalanceAlertSettingsData, UpdateAdminBalanceAlertSettingsError, UpdateAdminBalanceAlertSettingsResponse, UpdateAdminChannelData, UpdateAdminChannelError, UpdateAdminChannelResponse, UpdateAdminCredentialData, UpdateAdminCredentialError, UpdateAdminCredentialResponse, UpdateAdminEmailSettingsData, UpdateAdminEmailSettingsError, UpdateAdminEmailSettingsResponse, UpdateAdminGroupData, UpdateAdminGroupError, UpdateAdminGroupResponse, UpdateAdminModelData, UpdateAdminModelError, UpdateAdminModelResponse, UpdateAdminSiteSettingsData, UpdateAdminSiteSettingsError, UpdateAdminSiteSettingsResponse, UpdateAdminTokenData, UpdateAdminTokenError, UpdateAdminTokenResponse, UpdateAdminUserData, UpdateAdminUserError, UpdateAdminUserResponse, UpdateUserNotificationPreferencesData, UpdateUserNotificationPreferencesError, UpdateUserNotificationPreferencesResponse, UpdateUserProfileData, UpdateUserProfileError, UpdateUserProfileResponse, UpdateUserTokenData, UpdateUserTokenError, UpdateUserTokenResponse } from '../types.gen';
+import { adjustAdminWallet, applyAdminModelPrices, applyAdminModelSyncPreview, changeUserPassword, confirmPasswordReset, createAdminChannel, createAdminCredential, createAdminGroup, createAdminModel, createAdminModelSyncPreview, createAdminToken, createAdminUser, createPlaygroundShare, createUserToken, deleteAdminChannel, deleteAdminCredential, deleteAdminGroup, deleteAdminModel, deleteAdminToken, deleteAdminUser, deletePlaygroundConversation, deleteUserToken, getAdminAuthenticationSettings, getAdminBalanceAlertSettings, getAdminChannel, getAdminCredential, getAdminDashboard, getAdminEmailSettings, getAdminGroup, getAdminModel, getAdminSiteSettings, getAdminToken, getAdminUser, getInitialSetupStatus, getManagementSession, getPlaygroundConversation, getPlaygroundShare, getPublicSiteSettings, getRegistrationStatus, getUserInvitations, getUserProfile, getUserToken, getUserWallet, initializeAdminSetup, listAdminChannels, listAdminCredentials, listAdminGroups, listAdminModelPrices, listAdminModels, listAdminTokens, listAdminUsageLogs, listAdminUsers, listAdminWalletEntries, listMissingAdminModels, listModels, listPlaygroundConversations, listUserTokens, listUserWalletEntries, loginManagementSession, type Options, previewAdminModelPrices, probeAdminChannel, registerUser, requestPasswordReset, revokePlaygroundShare, savePlaygroundConversation, sendAdminEmailTest, sendRegistrationEmailVerification, updateAdminAuthenticationSettings, updateAdminBalanceAlertSettings, updateAdminChannel, updateAdminCredential, updateAdminEmailSettings, updateAdminGroup, updateAdminModel, updateAdminSiteSettings, updateAdminToken, updateAdminUser, updateUserNotificationPreferences, updateUserProfile, updateUserToken } from '../sdk.gen';
+import type { AdjustAdminWalletData, AdjustAdminWalletError, AdjustAdminWalletResponse, ApplyAdminModelPricesData, ApplyAdminModelPricesError, ApplyAdminModelPricesResponse, ApplyAdminModelSyncPreviewData, ApplyAdminModelSyncPreviewError, ApplyAdminModelSyncPreviewResponse, ChangeUserPasswordData, ChangeUserPasswordError, ChangeUserPasswordResponse, ConfirmPasswordResetData, ConfirmPasswordResetError, ConfirmPasswordResetResponse, CreateAdminChannelData, CreateAdminChannelError, CreateAdminChannelResponse, CreateAdminCredentialData, CreateAdminCredentialError, CreateAdminCredentialResponse, CreateAdminGroupData, CreateAdminGroupError, CreateAdminGroupResponse, CreateAdminModelData, CreateAdminModelError, CreateAdminModelResponse, CreateAdminModelSyncPreviewData, CreateAdminModelSyncPreviewError, CreateAdminModelSyncPreviewResponse, CreateAdminTokenData, CreateAdminTokenError, CreateAdminTokenResponse, CreateAdminUserData, CreateAdminUserError, CreateAdminUserResponse, CreatePlaygroundShareData, CreatePlaygroundShareError, CreatePlaygroundShareResponse, CreateUserTokenData, CreateUserTokenError, CreateUserTokenResponse, DeleteAdminChannelData, DeleteAdminChannelError, DeleteAdminChannelResponse, DeleteAdminCredentialData, DeleteAdminCredentialError, DeleteAdminCredentialResponse, DeleteAdminGroupData, DeleteAdminGroupError, DeleteAdminGroupResponse, DeleteAdminModelData, DeleteAdminModelError, DeleteAdminModelResponse, DeleteAdminTokenData, DeleteAdminTokenError, DeleteAdminTokenResponse, DeleteAdminUserData, DeleteAdminUserError, DeleteAdminUserResponse, DeletePlaygroundConversationData, DeletePlaygroundConversationError, DeletePlaygroundConversationResponse, DeleteUserTokenData, DeleteUserTokenError, DeleteUserTokenResponse, GetAdminAuthenticationSettingsData, GetAdminAuthenticationSettingsError, GetAdminAuthenticationSettingsResponse, GetAdminBalanceAlertSettingsData, GetAdminBalanceAlertSettingsError, GetAdminBalanceAlertSettingsResponse, GetAdminChannelData, GetAdminChannelError, GetAdminChannelResponse, GetAdminCredentialData, GetAdminCredentialError, GetAdminCredentialResponse, GetAdminDashboardData, GetAdminDashboardError, GetAdminDashboardResponse, GetAdminEmailSettingsData, GetAdminEmailSettingsError, GetAdminEmailSettingsResponse, GetAdminGroupData, GetAdminGroupError, GetAdminGroupResponse, GetAdminModelData, GetAdminModelError, GetAdminModelResponse, GetAdminSiteSettingsData, GetAdminSiteSettingsError, GetAdminSiteSettingsResponse, GetAdminTokenData, GetAdminTokenError, GetAdminTokenResponse, GetAdminUserData, GetAdminUserError, GetAdminUserResponse, GetInitialSetupStatusData, GetInitialSetupStatusError, GetInitialSetupStatusResponse, GetManagementSessionData, GetManagementSessionError, GetManagementSessionResponse, GetPlaygroundConversationData, GetPlaygroundConversationError, GetPlaygroundConversationResponse, GetPlaygroundShareData, GetPlaygroundShareError, GetPlaygroundShareResponse, GetPublicSiteSettingsData, GetPublicSiteSettingsError, GetPublicSiteSettingsResponse, GetRegistrationStatusData, GetRegistrationStatusError, GetRegistrationStatusResponse, GetUserInvitationsData, GetUserInvitationsError, GetUserInvitationsResponse, GetUserProfileData, GetUserProfileError, GetUserProfileResponse, GetUserTokenData, GetUserTokenError, GetUserTokenResponse, GetUserWalletData, GetUserWalletError, GetUserWalletResponse, InitializeAdminSetupData, InitializeAdminSetupError, InitializeAdminSetupResponse, ListAdminChannelsData, ListAdminChannelsError, ListAdminChannelsResponse, ListAdminCredentialsData, ListAdminCredentialsError, ListAdminCredentialsResponse, ListAdminGroupsData, ListAdminGroupsError, ListAdminGroupsResponse, ListAdminModelPricesData, ListAdminModelPricesError, ListAdminModelPricesResponse, ListAdminModelsData, ListAdminModelsError, ListAdminModelsResponse, ListAdminTokensData, ListAdminTokensError, ListAdminTokensResponse, ListAdminUsageLogsData, ListAdminUsageLogsError, ListAdminUsageLogsResponse, ListAdminUsersData, ListAdminUsersError, ListAdminUsersResponse, ListAdminWalletEntriesData, ListAdminWalletEntriesError, ListAdminWalletEntriesResponse, ListMissingAdminModelsData, ListMissingAdminModelsError, ListMissingAdminModelsResponse, ListModelsData, ListModelsError, ListModelsResponse, ListPlaygroundConversationsData, ListPlaygroundConversationsError, ListPlaygroundConversationsResponse, ListUserTokensData, ListUserTokensError, ListUserTokensResponse, ListUserWalletEntriesData, ListUserWalletEntriesError, ListUserWalletEntriesResponse, LoginManagementSessionData, LoginManagementSessionError, LoginManagementSessionResponse, PreviewAdminModelPricesData, PreviewAdminModelPricesError, PreviewAdminModelPricesResponse, ProbeAdminChannelData, ProbeAdminChannelError, ProbeAdminChannelResponse, RegisterUserData, RegisterUserError, RegisterUserResponse, RequestPasswordResetData, RequestPasswordResetError, RequestPasswordResetResponse, RevokePlaygroundShareData, RevokePlaygroundShareError, RevokePlaygroundShareResponse, SavePlaygroundConversationData, SavePlaygroundConversationError, SavePlaygroundConversationResponse, SendAdminEmailTestData, SendAdminEmailTestError, SendAdminEmailTestResponse, SendRegistrationEmailVerificationData, SendRegistrationEmailVerificationError, SendRegistrationEmailVerificationResponse, UpdateAdminAuthenticationSettingsData, UpdateAdminAuthenticationSettingsError, UpdateAdminAuthenticationSettingsResponse, UpdateAdminBalanceAlertSettingsData, UpdateAdminBalanceAlertSettingsError, UpdateAdminBalanceAlertSettingsResponse, UpdateAdminChannelData, UpdateAdminChannelError, UpdateAdminChannelResponse, UpdateAdminCredentialData, UpdateAdminCredentialError, UpdateAdminCredentialResponse, UpdateAdminEmailSettingsData, UpdateAdminEmailSettingsError, UpdateAdminEmailSettingsResponse, UpdateAdminGroupData, UpdateAdminGroupError, UpdateAdminGroupResponse, UpdateAdminModelData, UpdateAdminModelError, UpdateAdminModelResponse, UpdateAdminSiteSettingsData, UpdateAdminSiteSettingsError, UpdateAdminSiteSettingsResponse, UpdateAdminTokenData, UpdateAdminTokenError, UpdateAdminTokenResponse, UpdateAdminUserData, UpdateAdminUserError, UpdateAdminUserResponse, UpdateUserNotificationPreferencesData, UpdateUserNotificationPreferencesError, UpdateUserNotificationPreferencesResponse, UpdateUserProfileData, UpdateUserProfileError, UpdateUserProfileResponse, UpdateUserTokenData, UpdateUserTokenError, UpdateUserTokenResponse } from '../types.gen';
 export const loginManagementSessionMutation = (options?: Partial<Options<LoginManagementSessionData>>): UseMutationOptions<LoginManagementSessionResponse, LoginManagementSessionError, Options<LoginManagementSessionData>> => {
     const mutationOptions: UseMutationOptions<LoginManagementSessionResponse, LoginManagementSessionError, Options<LoginManagementSessionData>> = {
         mutationFn: async (fnOptions) => {
@@ -230,6 +230,85 @@ export const updateUserNotificationPreferencesMutation = (options?: Partial<Opti
     };
     return mutationOptions;
 };
+export const getUserWalletQueryKey = (options?: Options<GetUserWalletData>) => createQueryKey('getUserWallet', options);
+export const getUserWalletOptions = (options?: Options<GetUserWalletData>) => queryOptions<GetUserWalletResponse, GetUserWalletError, GetUserWalletResponse, ReturnType<typeof getUserWalletQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await getUserWallet({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: getUserWalletQueryKey(options)
+});
+export const listUserWalletEntriesQueryKey = (options?: Options<ListUserWalletEntriesData>) => createQueryKey('listUserWalletEntries', options);
+export const listUserWalletEntriesOptions = (options?: Options<ListUserWalletEntriesData>) => queryOptions<ListUserWalletEntriesResponse, ListUserWalletEntriesError, ListUserWalletEntriesResponse, ReturnType<typeof listUserWalletEntriesQueryKey>>({
+    queryFn: async ({ queryKey, signal }) => {
+        const { data } = await listUserWalletEntries({
+            ...options,
+            ...queryKey[0],
+            signal,
+            throwOnError: true
+        });
+        return data;
+    },
+    queryKey: listUserWalletEntriesQueryKey(options)
+});
+const createInfiniteParams = <K extends Pick<QueryKey<Options>[0], 'body' | 'headers' | 'path' | 'query'>>(queryKey: QueryKey<Options>, page: K) => {
+    const params = { ...queryKey[0] };
+    if (page.body) {
+        params.body = {
+            ...queryKey[0].body as any,
+            ...page.body as any
+        };
+    }
+    if (page.headers) {
+        params.headers = {
+            ...queryKey[0].headers,
+            ...page.headers
+        };
+    }
+    if (page.path) {
+        params.path = {
+            ...queryKey[0].path as any,
+            ...page.path as any
+        };
+    }
+    if (page.query) {
+        params.query = {
+            ...queryKey[0].query as any,
+            ...page.query as any
+        };
+    }
+    return params as unknown as typeof page;
+};
+export const listUserWalletEntriesInfiniteQueryKey = (options?: Options<ListUserWalletEntriesData>): QueryKey<Options<ListUserWalletEntriesData>> => createQueryKey('listUserWalletEntries', options, true);
+export const listUserWalletEntriesInfiniteOptions = (options?: Options<ListUserWalletEntriesData>) => {
+    const opts = infiniteQueryOptions<ListUserWalletEntriesResponse, ListUserWalletEntriesError, InfiniteData<ListUserWalletEntriesResponse>, QueryKey<Options<ListUserWalletEntriesData>>, number | Pick<QueryKey<Options<ListUserWalletEntriesData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
+    // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+    {
+        queryFn: async ({ pageParam, queryKey, signal }) => {
+            // @ts-ignore 自动生成的无限查询泛型由调用方补充分页配置。
+            const page: Pick<QueryKey<Options<ListUserWalletEntriesData>>[0], 'body' | 'headers' | 'path' | 'query'> = typeof pageParam === 'object' ? pageParam : {
+                query: {
+                    before: pageParam
+                }
+            };
+            const params = createInfiniteParams(queryKey, page);
+            const { data } = await listUserWalletEntries({
+                ...options,
+                ...params,
+                signal,
+                throwOnError: true
+            });
+            return data;
+        },
+        queryKey: listUserWalletEntriesInfiniteQueryKey(options)
+    });
+    return opts as Omit<typeof opts, 'initialData'>;
+};
 export const getUserInvitationsQueryKey = (options?: Options<GetUserInvitationsData>) => createQueryKey('getUserInvitations', options);
 export const getUserInvitationsOptions = (options?: Options<GetUserInvitationsData>) => queryOptions<GetUserInvitationsResponse, GetUserInvitationsError, GetUserInvitationsResponse, ReturnType<typeof getUserInvitationsQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
@@ -373,34 +452,6 @@ export const listAdminUsersOptions = (options?: Options<ListAdminUsersData>) => 
     },
     queryKey: listAdminUsersQueryKey(options)
 });
-const createInfiniteParams = <K extends Pick<QueryKey<Options>[0], 'body' | 'headers' | 'path' | 'query'>>(queryKey: QueryKey<Options>, page: K) => {
-    const params = { ...queryKey[0] };
-    if (page.body) {
-        params.body = {
-            ...queryKey[0].body as any,
-            ...page.body as any
-        };
-    }
-    if (page.headers) {
-        params.headers = {
-            ...queryKey[0].headers,
-            ...page.headers
-        };
-    }
-    if (page.path) {
-        params.path = {
-            ...queryKey[0].path as any,
-            ...page.path as any
-        };
-    }
-    if (page.query) {
-        params.query = {
-            ...queryKey[0].query as any,
-            ...page.query as any
-        };
-    }
-    return params as unknown as typeof page;
-};
 export const listAdminUsersInfiniteQueryKey = (options?: Options<ListAdminUsersData>): QueryKey<Options<ListAdminUsersData>> => createQueryKey('listAdminUsers', options, true);
 export const listAdminUsersInfiniteOptions = (options?: Options<ListAdminUsersData>) => {
     const opts = infiniteQueryOptions<ListAdminUsersResponse, ListAdminUsersError, InfiniteData<ListAdminUsersResponse>, QueryKey<Options<ListAdminUsersData>>, number | Pick<QueryKey<Options<ListAdminUsersData>>[0], 'body' | 'headers' | 'path' | 'query'>>(
