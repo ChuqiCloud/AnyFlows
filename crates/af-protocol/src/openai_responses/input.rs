@@ -17,7 +17,7 @@ use super::{
         FunctionCallTypeWire, FunctionOutputWire, ImageDetailWire, InputContentWire, InputFileWire,
         InputImageWire, InputItemWire, InputMessageWire, InputTextWire, InputWire,
         MessageContentWire, MessageRoleWire, ReasoningInputItemWire, ReasoningInputTypeWire,
-        ReasoningSummaryWire,
+        ReasoningSummaryTypeWire, ReasoningSummaryWire,
     },
 };
 use crate::{
@@ -130,7 +130,7 @@ fn convert_reasoning_item(
     };
     let mut text = String::new();
     for ReasoningSummaryWire {
-        kind: _,
+        kind: ReasoningSummaryTypeWire::SummaryText,
         text: summary,
     } in summaries
     {
