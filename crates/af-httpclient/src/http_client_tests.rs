@@ -9,6 +9,7 @@ use std::{
 use crate::{
     HeaderMap, HttpClientConfig, HttpClientPool, HttpResponse, HttpTimeouts, HttpTransportError,
     Method, PooledClient, ProxyConfig, RemoteDnsPolicy, StatusCode, TargetAddressPolicy,
+    pool::DEFAULT_USER_AGENT,
 };
 
 const SERVER_TIMEOUT: Duration = Duration::from_secs(5);
@@ -22,6 +23,10 @@ async fn cached_client_reuses_the_same_http_connection() {
         for _ in 0..2 {
             let request = read_request_head(&mut stream);
             assert!(request.starts_with("GET /reuse HTTP/1.1"));
+            assert!(request.to_ascii_lowercase().contains(&format!(
+                "\r\nuser-agent: {}\r\n",
+                DEFAULT_USER_AGENT.to_ascii_lowercase()
+            )));
             write_response(
                 &mut stream,
                 "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: keep-alive\r\n\r\n",
