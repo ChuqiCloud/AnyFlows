@@ -69,7 +69,7 @@ use af_protocol::{
     UsageSemantics, UsageSource, openai_responses::OpenAiResponsesStreamEncoder,
 };
 use af_relay::RelayService;
-use serde_json::Value;
+use serde_json::{Value, json};
 use support::{
     CLIENT_KEY, GROUP_ID, IO_TIMEOUT, TOKEN_ID, UPSTREAM_BASE_URL, UPSTREAM_KEY, UPSTREAM_MODEL,
     USER_ID, send_request, spawn_abort_observing_proxy, spawn_proxy, spawn_streaming_proxy,
@@ -892,7 +892,7 @@ async fn verified_same_protocol_full_request_and_response_preserve_exact_bytes()
 }
 
 #[tokio::test]
-async fn responses_full_request_is_stateless_and_rebuilds_public_identity() {
+async fn responses_full_request_is_stateless_and_preserves_validated_source() {
     let upstream_body = br#"{
   "id": "resp_private_upstream",
   "object": "response",
@@ -908,6 +908,7 @@ async fn responses_full_request_is_stateless_and_rebuilds_public_identity() {
     let request_body = br#"{
   "model": "test-model",
   "input": "hello",
+  "include": ["reasoning.encrypted_content"],
   "max_output_tokens": 32
 }"#;
     let (proxy_address, captured, proxy) = spawn_proxy(
@@ -939,10 +940,14 @@ async fn responses_full_request_is_stateless_and_rebuilds_public_identity() {
     assert!(upstream_head.contains(&format!("authorization: bearer {UPSTREAM_KEY}")));
     let upstream_json: Value = serde_json::from_slice(&upstream.body).unwrap();
     assert_eq!(upstream_json["model"], "test-model");
-    assert_eq!(upstream_json["stream"], false);
+    assert!(upstream_json.get("stream").is_none());
     assert_eq!(upstream_json["store"], false);
     assert_eq!(upstream_json["max_output_tokens"], 32);
-    assert_eq!(upstream_json["input"][0]["content"][0]["text"], "hello");
+    assert_eq!(upstream_json["input"], "hello");
+    assert_eq!(
+        upstream_json["include"],
+        json!(["reasoning.encrypted_content"])
+    );
 
     assert_eq!(response.status, 200);
     let body: Value = serde_json::from_slice(&response.body).unwrap();
