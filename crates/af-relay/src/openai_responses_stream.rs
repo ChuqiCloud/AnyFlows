@@ -550,7 +550,7 @@ mod tests {
             content_index: 0,
             delta: ContentDelta::Text("answer".to_owned()),
         }));
-        assert!(events.contains(&CanonicalStreamEvent::Error(UpstreamError::Network)));
+        assert!(contains_public_server_error(&events));
         assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
         assert_eq!(
             usage_handle.resolve().await,
@@ -618,7 +618,7 @@ mod tests {
         let events = decoder.push(&output).unwrap();
         decoder.finish().unwrap();
         assert!(events.contains(&CanonicalStreamEvent::Ping));
-        assert!(events.contains(&CanonicalStreamEvent::Error(UpstreamError::ProtocolError)));
+        assert!(contains_public_server_error(&events));
         assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
         assert_eq!(
             usage_handle.resolve().await,
@@ -636,6 +636,16 @@ mod tests {
             )],
             true,
         )
+    }
+
+    fn contains_public_server_error(events: &[CanonicalStreamEvent]) -> bool {
+        events.iter().any(|event| {
+            matches!(
+                event,
+                CanonicalStreamEvent::Error(UpstreamError::ServerError { status })
+                    if status.get() == 500
+            )
+        })
     }
 
     fn usage(input: i64, output: i64) -> Usage {
