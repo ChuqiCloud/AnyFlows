@@ -21,6 +21,7 @@
     "siteSettings": "站点设置",
     "authenticationSettings": "认证设置",
     "emailSettings": "邮件设置",
+    "networkSettings": "网络与代理",
     "billingSettings": "计费设置",
     "groupSettings": "分组管理",
     "modelSettings": "模型管理",

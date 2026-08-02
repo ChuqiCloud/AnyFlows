@@ -21,6 +21,7 @@
     "siteSettings": "Site settings",
     "authenticationSettings": "Authentication",
     "emailSettings": "Email settings",
+    "networkSettings": "Network & proxy",
     "billingSettings": "Billing settings",
     "groupSettings": "Group management",
     "modelSettings": "Model management",

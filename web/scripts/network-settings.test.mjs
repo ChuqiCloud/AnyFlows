@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import { routeFromHash } from '../src/app-route.ts'
@@ -26,6 +27,14 @@ const persisted = {
   trust_proxy_dns: false,
   version: 1,
 }
+
+test('网络设置导航在中英文资源中都有可读文案', () => {
+  for (const locale of ['zh', 'en']) {
+    const messages = JSON.parse(readFileSync(new URL(`../src/i18n/locales/${locale}.json`, import.meta.url), 'utf8'))
+    assert.equal(typeof messages.nav.networkSettings, 'string')
+    assert.notEqual(messages.nav.networkSettings, 'nav.networkSettings')
+  }
+})
 
 test('网络设置路由指向管理员系统设置子域', () => {
   assert.deepEqual(routeFromHash('#/console/system-settings/network'), { view: 'network-settings' })
