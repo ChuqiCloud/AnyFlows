@@ -208,7 +208,7 @@ pub(crate) fn build_redemption_router(
 }
 
 /// 按新到旧返回兑换码批次汇总。
-pub(crate) async fn list_admin_redemption_batches(
+async fn list_admin_redemption_batches(
     State(state): State<RedemptionHttpState>,
     RawQuery(raw_query): RawQuery,
     Extension(authentication): Extension<SessionAuthentication>,
@@ -235,7 +235,7 @@ pub(crate) async fn list_admin_redemption_batches(
 }
 
 /// 创建批次并仅在本次响应返回完整兑换码。
-pub(crate) async fn create_admin_redemption_batch(
+async fn create_admin_redemption_batch(
     State(state): State<RedemptionHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
     request: Result<Json<AdminRedemptionBatchCreateRequest>, JsonRejection>,
@@ -258,7 +258,7 @@ pub(crate) async fn create_admin_redemption_batch(
 }
 
 /// 以当前版本整体禁用一个兑换码批次。
-pub(crate) async fn disable_admin_redemption_batch(
+async fn disable_admin_redemption_batch(
     State(state): State<RedemptionHttpState>,
     Path(batch_id): Path<String>,
     Extension(authentication): Extension<SessionAuthentication>,
@@ -281,7 +281,7 @@ pub(crate) async fn disable_admin_redemption_batch(
 }
 
 /// 仅为当前会话用户原子消费一个兑换码。
-pub(crate) async fn redeem_user_redemption_code(
+async fn redeem_user_redemption_code(
     State(state): State<RedemptionHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
     request: Result<Json<UserRedemptionRequest>, JsonRejection>,
