@@ -100,10 +100,15 @@ export function ChannelCredentialAddForm({ channel, open }: ChannelCredentialAdd
     const scheduleValid = priority.trim() !== ''
       && weight.trim() !== ''
       && isValidCredentialSchedule(schedule)
-    const providerValid = kind === 'api_key' || provider !== ''
     setInvalidSecret(!secretValid)
     setInvalidSchedule(!scheduleValid)
-    if (!channel || !secretValid || !scheduleValid || !providerValid) return
+    if (!channel || !secretValid || !scheduleValid) return
+    const body = kind === 'api_key'
+      ? createApiKeyRequest(secret, schedule)
+      : provider === ''
+        ? undefined
+        : createOAuthCredentialRequest(secret, provider, schedule)
+    if (body === undefined) return
     createAbortRef.current?.abort()
     const controller = new AbortController()
     createAbortRef.current = controller
@@ -112,9 +117,7 @@ export function ChannelCredentialAddForm({ channel, open }: ChannelCredentialAdd
     try {
       await createMutation.mutateAsync({
         channelId: channel.id,
-        body: kind === 'api_key'
-          ? createApiKeyRequest(secret, schedule)
-          : createOAuthCredentialRequest(secret, provider, schedule),
+        body,
         signal: controller.signal,
       })
       createMutation.reset()
