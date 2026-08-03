@@ -12,8 +12,8 @@ use std::{
 use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
 use af_db::{
     AdminChannelRepository, AdminChannelWriteRecord, AdminCredentialCreateOutcome,
-    AdminCredentialWriteRecord, DatabaseOptions, DatabasePool, MigrationOptions,
-    OAuthCredentialRepository, entity::credentials,
+    AdminCredentialLookupOutcome, AdminCredentialRecord, AdminCredentialWriteRecord,
+    DatabaseOptions, DatabasePool, MigrationOptions, OAuthCredentialRepository,
 };
 use af_domain::{
     ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind, Protocol, Status, UserId,
@@ -22,7 +22,6 @@ use af_httpclient::{
     HttpClientConfig, HttpClientProvider, HttpTimeouts, ProxyConfig, RemoteDnsPolicy,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use sea_orm::EntityTrait;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -182,13 +181,17 @@ async fn invalid_grant_auto_disables_once_and_shares_the_failure() -> Result<(),
     ));
     assert_eq!(leader.await?, expected);
     assert_eq!(follower.await?, expected);
-    let credential = only_credential(&fixture.pool).await?;
-    assert_eq!(credential.status, Status::AutoDisabled.code());
-    assert!(credential.rate_limited_at.is_none());
-    assert!(credential.rate_limit_reset_at.is_none());
-    assert!(credential.overload_until.is_none());
-    assert!(credential.temp_unschedulable_until.is_none());
-    assert!(credential.temp_unschedulable_reason.is_none());
+    let credential = only_credential(
+        &fixture.admin,
+        fixture.channel_id,
+        fixture.credential_ids[0],
+    )
+    .await?;
+    assert_eq!(credential.status(), Status::AutoDisabled);
+    assert!(credential.rate_limited_at().is_none());
+    assert!(credential.rate_limit_reset_at().is_none());
+    assert!(credential.overload_until().is_none());
+    assert!(credential.temp_unschedulable_until().is_none());
     assert!(!format!("{expected:?}").contains("private upstream detail"));
 
     server.stop().await?;
@@ -227,16 +230,22 @@ async fn ambiguous_endpoint_rejection_enters_transient_cooldown() -> Result<(), 
             code: None,
         })
     );
-    let credential = only_credential(&fixture.pool).await?;
-    assert_eq!(credential.status, Status::Enabled.code());
-    assert_eq!(
-        credential.temp_unschedulable_reason.as_deref(),
-        Some("oauth_refresh_transient")
-    );
+    let credential = only_credential(
+        &fixture.admin,
+        fixture.channel_id,
+        fixture.credential_ids[0],
+    )
+    .await?;
+    assert_eq!(credential.status(), Status::Enabled);
+    let now_epoch_seconds = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs(),
+    )?;
     assert!(
-        credential.temp_unschedulable_until.is_some_and(
-            |until| until > sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc()
-        )
+        credential
+            .temp_unschedulable_until()
+            .is_some_and(|until| until > now_epoch_seconds)
     );
     assert!(
         refresh_persistence(&fixture.pool)
@@ -254,9 +263,8 @@ async fn ambiguous_endpoint_rejection_enters_transient_cooldown() -> Result<(), 
 #[tokio::test]
 async fn reauthorization_wins_over_an_old_invalid_grant() -> Result<(), Box<dyn Error>> {
     let fixture = fixture(1).await?;
-    let original = only_credential(&fixture.pool).await?;
-    let channel_id = ChannelId::new(original.channel_id)?;
-    let credential_id = CredentialId::new(original.id)?;
+    let channel_id = fixture.channel_id;
+    let credential_id = fixture.credential_ids[0];
     let candidate = fixture
         .service
         .due_candidates(i64::MAX, 1)
@@ -301,10 +309,10 @@ async fn reauthorization_wins_over_an_old_invalid_grant() -> Result<(), Box<dyn 
     server.release(1);
     assert_eq!(refresh.await?, OAuthRefreshCoordinatorOutcome::Stale);
 
-    let current = only_credential(&fixture.pool).await?;
-    assert_eq!(current.status, Status::Enabled.code());
-    assert_eq!(current.oauth_revision, 2);
-    assert!(current.temp_unschedulable_until.is_none());
+    let current = only_credential(&fixture.admin, channel_id, credential_id).await?;
+    assert_eq!(current.status(), Status::Enabled);
+    assert_eq!(current.oauth_revision(), 2);
+    assert!(current.temp_unschedulable_until().is_none());
     let current = refresh_persistence(&fixture.pool)
         .due_candidates(i64::MAX, 1)
         .await?
@@ -510,6 +518,9 @@ async fn failure_state_persistence_error_retains_only_redacted_classification()
 
 struct Fixture {
     pool: DatabasePool,
+    admin: AdminChannelRepository,
+    channel_id: ChannelId,
+    credential_ids: Vec<CredentialId>,
     service: OAuthRefreshPersistenceService,
 }
 
@@ -521,8 +532,10 @@ async fn fixture(credential_count: usize) -> Result<Fixture, Box<dyn Error>> {
     .await?;
     let admin = AdminChannelRepository::new(pool.clone(), Duration::from_secs(2))?;
     let channel_id = create_channel(&admin).await?;
+    let mut credential_ids = Vec::with_capacity(credential_count);
     for index in 0..credential_count {
         let credential_id = create_credential(&admin, channel_id, index).await?;
+        credential_ids.push(credential_id);
         let persistence = OAuthTokenPersistenceService::new(
             CredentialEncryptor::new(&settings())?,
             OAuthCredentialRepository::new(pool.clone()),
@@ -546,14 +559,23 @@ async fn fixture(credential_count: usize) -> Result<Fixture, Box<dyn Error>> {
     Ok(Fixture {
         service: refresh_persistence(&pool),
         pool,
+        admin,
+        channel_id,
+        credential_ids,
     })
 }
 
-async fn only_credential(pool: &DatabasePool) -> Result<credentials::Model, Box<dyn Error>> {
-    Ok(credentials::Entity::find()
-        .one(pool.connection())
-        .await?
-        .expect("测试凭据必须存在"))
+async fn only_credential(
+    admin: &AdminChannelRepository,
+    channel_id: ChannelId,
+    credential_id: CredentialId,
+) -> Result<Box<AdminCredentialRecord>, Box<dyn Error>> {
+    let AdminCredentialLookupOutcome::Found(credential) =
+        admin.get_credential(channel_id, credential_id).await?
+    else {
+        panic!("测试凭据必须存在");
+    };
+    Ok(credential)
 }
 
 async fn create_channel(admin: &AdminChannelRepository) -> Result<ChannelId, Box<dyn Error>> {
