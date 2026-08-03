@@ -8,7 +8,7 @@ use std::{
 };
 
 use af_account::{
-    CredentialDecryptionError, CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
+    CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
     OAUTH_REFRESH_LEASE_NAMESPACE, OAuthAuthorizationCallback, OAuthAuthorizationContext,
     OAuthAuthorizationError, OAuthAuthorizationSessionStore, OAuthConnectionCoordinator,
     OAuthConnectionError, OAuthConnectionOutcome, OAuthProviderProfile, OAuthProviderProfileError,
@@ -50,9 +50,6 @@ pub enum OAuthRuntimeConfigError {
     /// 凭据加密密钥无法初始化。
     #[error("OAuth 凭据加密配置无效")]
     Encryption(#[source] CredentialEncryptionError),
-    /// 凭据解密密钥无法初始化。
-    #[error("OAuth 凭据解密配置无效")]
-    Decryption(#[source] CredentialDecryptionError),
     /// provider 集合或协调器装配失败。
     #[error("OAuth 协调器配置无效")]
     Coordinator(#[source] OAuthConnectionError),
