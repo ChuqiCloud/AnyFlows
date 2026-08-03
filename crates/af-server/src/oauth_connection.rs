@@ -268,17 +268,17 @@ pub(crate) fn initialize_oauth_runtime(
 
 fn build_profiles(
     config: &AppConfig,
-) -> Result<Vec<OAuthProviderProfile>, OAuthRuntimeConfigError> {
+) -> Result<Vec<Arc<OAuthProviderProfile>>, OAuthRuntimeConfigError> {
     let mut profiles = Vec::with_capacity(config.oauth().configured_provider_count());
     if let Some(client) = config.oauth().codex() {
-        profiles.push(
+        profiles.push(Arc::new(
             OAuthProviderProfile::new(
                 UpstreamOAuthProvider::Codex,
                 client.client_id().expose().to_owned(),
                 None,
             )
             .map_err(OAuthRuntimeConfigError::Profile)?,
-        );
+        ));
     }
     for (provider, client) in [
         (UpstreamOAuthProvider::Gemini, config.oauth().gemini()),
@@ -288,14 +288,14 @@ fn build_profiles(
         ),
     ] {
         if let Some(client) = client {
-            profiles.push(
+            profiles.push(Arc::new(
                 OAuthProviderProfile::new(
                     provider,
                     client.client_id().expose().to_owned(),
                     Some(client.client_secret().expose().to_owned()),
                 )
                 .map_err(OAuthRuntimeConfigError::Profile)?,
-            );
+            ));
         }
     }
     Ok(profiles)

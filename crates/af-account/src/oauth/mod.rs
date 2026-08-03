@@ -3,6 +3,7 @@ mod coordinator;
 mod exchange;
 mod persistence;
 mod profile;
+mod refresh_coordinator;
 mod refresh_persistence;
 mod store;
 
@@ -23,6 +24,10 @@ pub use persistence::{
     OAuthTokenPersistenceError, OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService,
 };
 pub use profile::{OAuthLoopbackRedirect, OAuthProviderProfile, OAuthProviderProfileError};
+pub use refresh_coordinator::{
+    DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS, DEFAULT_OAUTH_REFRESH_RESULT_RETENTION,
+    OAuthRefreshCoordinator, OAuthRefreshCoordinatorError, OAuthRefreshCoordinatorOutcome,
+};
 pub use refresh_persistence::{
     OAuthExpirationProjectionBackfillBatch, OAuthRefreshCandidate, OAuthRefreshPersistenceError,
     OAuthRefreshPersistenceOutcome, OAuthRefreshPersistenceService, OAuthRefreshWriteGuard,

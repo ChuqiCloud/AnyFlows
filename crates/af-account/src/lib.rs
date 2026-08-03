@@ -13,7 +13,8 @@ pub use credential_encryption::{
     CredentialEncryptionError, CredentialEncryptor, PlainCredentialSecret, PlainOAuthCredential,
 };
 pub use oauth::{
-    DEFAULT_MAX_PENDING_OAUTH_AUTHORIZATIONS, DEFAULT_OAUTH_AUTHORIZATION_SESSION_TTL,
+    DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS, DEFAULT_MAX_PENDING_OAUTH_AUTHORIZATIONS,
+    DEFAULT_OAUTH_AUTHORIZATION_SESSION_TTL, DEFAULT_OAUTH_REFRESH_RESULT_RETENTION,
     MAX_OAUTH_AUTHORIZATION_SESSION_TTL, MAX_OAUTH_TOKEN_RESPONSE_BYTES,
     MAX_PENDING_OAUTH_AUTHORIZATIONS, MIN_OAUTH_AUTHORIZATION_SESSION_TTL,
     OAuthAuthorizationCallback, OAuthAuthorizationContext, OAuthAuthorizationError,
@@ -21,7 +22,8 @@ pub use oauth::{
     OAuthAuthorizationStart, OAuthClientAuthenticationMethod, OAuthConnectionCoordinator,
     OAuthConnectionError, OAuthConnectionOutcome, OAuthEndpointErrorCode,
     OAuthExpirationProjectionBackfillBatch, OAuthLoopbackRedirect, OAuthProviderProfile,
-    OAuthProviderProfileError, OAuthRefreshCandidate, OAuthRefreshPersistenceError,
+    OAuthProviderProfileError, OAuthRefreshCandidate, OAuthRefreshCoordinator,
+    OAuthRefreshCoordinatorError, OAuthRefreshCoordinatorOutcome, OAuthRefreshPersistenceError,
     OAuthRefreshPersistenceOutcome, OAuthRefreshPersistenceService, OAuthRefreshWriteGuard,
     OAuthRefreshedTokenSet, OAuthTokenExchange, OAuthTokenExchangeError,
     OAuthTokenPersistenceError, OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService,

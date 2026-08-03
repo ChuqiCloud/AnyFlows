@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt};
+use std::{collections::HashMap, fmt, sync::Arc};
 
 use af_domain::UserId;
 use af_httpclient::HttpClientProvider;
@@ -24,7 +24,7 @@ pub enum OAuthConnectionOutcome {
 
 /// 不含 HTTP/UI 的 OAuth 应用层连接协调器。
 pub struct OAuthConnectionCoordinator {
-    profiles: HashMap<UpstreamOAuthProvider, OAuthProviderProfile>,
+    profiles: HashMap<UpstreamOAuthProvider, Arc<OAuthProviderProfile>>,
     sessions: OAuthAuthorizationSessionStore,
     http_clients: HttpClientProvider,
     persistence: OAuthTokenPersistenceService,
@@ -32,14 +32,18 @@ pub struct OAuthConnectionCoordinator {
 
 impl OAuthConnectionCoordinator {
     /// 组合闭合 provider 集合、一次性会话、受控 Client 与加密持久化服务。
-    pub fn new(
-        profiles: impl IntoIterator<Item = OAuthProviderProfile>,
+    pub fn new<P>(
+        profiles: impl IntoIterator<Item = P>,
         sessions: OAuthAuthorizationSessionStore,
         http_clients: HttpClientProvider,
         persistence: OAuthTokenPersistenceService,
-    ) -> Result<Self, OAuthConnectionError> {
+    ) -> Result<Self, OAuthConnectionError>
+    where
+        P: Into<Arc<OAuthProviderProfile>>,
+    {
         let mut indexed_profiles = HashMap::with_capacity(4);
         for profile in profiles {
+            let profile = profile.into();
             let provider = profile.provider();
             if indexed_profiles.insert(provider, profile).is_some() {
                 return Err(OAuthConnectionError::DuplicateProviderProfile { provider });
@@ -141,6 +145,7 @@ impl OAuthConnectionCoordinator {
     ) -> Result<&OAuthProviderProfile, OAuthConnectionError> {
         self.profiles
             .get(&provider)
+            .map(Arc::as_ref)
             .ok_or(OAuthConnectionError::ProviderProfileNotConfigured { provider })
     }
 }
