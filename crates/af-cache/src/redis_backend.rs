@@ -59,7 +59,11 @@ impl RedisBackend {
         Ok(backend)
     }
 
-    async fn query<T>(&self, operation: CacheOperation, command: &mut Cmd) -> Result<T, CacheError>
+    pub(crate) async fn query<T>(
+        &self,
+        operation: CacheOperation,
+        command: &mut Cmd,
+    ) -> Result<T, CacheError>
     where
         T: FromRedisValue,
     {

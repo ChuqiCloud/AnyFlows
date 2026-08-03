@@ -3,7 +3,7 @@ use std::{
     io,
     net::SocketAddr,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -40,6 +40,127 @@ use crate::{
 };
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(3);
+
+#[tokio::test]
+async fn held_distributed_lease_skips_upstream_and_is_shared_by_late_follower()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture(1).await?;
+    let first_candidate = fixture
+        .service
+        .due_candidates(i64::MAX, 1)
+        .await?
+        .pop()
+        .expect("完整 OAuth 凭据必须成为候选");
+    let second_candidate = fixture
+        .service
+        .due_candidates(i64::MAX, 1)
+        .await?
+        .pop()
+        .expect("相同事实必须可供 singleflight 合并");
+    let expected_key = oauth_refresh_lease_key(&first_candidate);
+    let server = ControlledTokenServer::start().await?;
+    let leases = Arc::new(RecordingHeldLeasePort::default());
+    let lease_port: Arc<dyn OAuthRefreshLeasePort> = leases.clone();
+    let request_timeout = Duration::from_secs(47);
+    let coordinator = OAuthRefreshCoordinator::new_with_lease_port(
+        [codex_profile()],
+        proxied_clients_with_request_timeout(server.address(), request_timeout),
+        fixture.service,
+        lease_port,
+    )?;
+
+    assert_eq!(
+        coordinator.refresh(first_candidate).await?,
+        OAuthRefreshCoordinatorOutcome::LeaseHeld
+    );
+    assert_eq!(
+        coordinator.refresh(second_candidate).await?,
+        OAuthRefreshCoordinatorOutcome::LeaseHeld
+    );
+    assert_eq!(server.request_count(), 0);
+    assert_eq!(
+        leases.acquisitions.lock().unwrap().as_slice(),
+        &[(
+            expected_key,
+            request_timeout + OAUTH_REFRESH_LEASE_WRITE_BUFFER
+        )]
+    );
+
+    server.stop().await?;
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn distributed_lease_failure_closes_without_falling_back_to_upstream()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture(1).await?;
+    let candidate = fixture
+        .service
+        .due_candidates(i64::MAX, 1)
+        .await?
+        .pop()
+        .expect("完整 OAuth 凭据必须成为候选");
+    let server = ControlledTokenServer::start().await?;
+    let coordinator = OAuthRefreshCoordinator::new_with_lease_port(
+        [codex_profile()],
+        proxied_clients(server.address()),
+        fixture.service,
+        Arc::new(FailingLeasePort),
+    )?;
+
+    let error = coordinator.refresh(candidate).await.unwrap_err();
+    assert_eq!(
+        error,
+        OAuthRefreshCoordinatorError::DistributedLease(CacheError::Redis {
+            operation: af_cache::CacheOperation::LeaseAcquire,
+            kind: af_cache::RedisFailureKind::Unavailable,
+        })
+    );
+    assert_eq!(server.request_count(), 0);
+    let rendered = format!("{error:?}{error}");
+    for private in [
+        "initial-refresh-private",
+        "token.example",
+        "redis://",
+        "channel:",
+        "credential:",
+    ] {
+        assert!(!rendered.contains(private));
+    }
+
+    server.stop().await?;
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[derive(Default)]
+struct RecordingHeldLeasePort {
+    acquisitions: Mutex<Vec<(String, Duration)>>,
+}
+
+#[async_trait::async_trait]
+impl OAuthRefreshLeasePort for RecordingHeldLeasePort {
+    async fn acquire(&self, key: &str, ttl: Duration) -> Result<LeaseAcquireOutcome, CacheError> {
+        self.acquisitions
+            .lock()
+            .unwrap()
+            .push((key.to_owned(), ttl));
+        Ok(LeaseAcquireOutcome::Held)
+    }
+}
+
+struct FailingLeasePort;
+
+#[async_trait::async_trait]
+impl OAuthRefreshLeasePort for FailingLeasePort {
+    async fn acquire(&self, _key: &str, _ttl: Duration) -> Result<LeaseAcquireOutcome, CacheError> {
+        Err(CacheError::Redis {
+            operation: af_cache::CacheOperation::LeaseAcquire,
+            kind: af_cache::RedisFailureKind::Unavailable,
+        })
+    }
+}
 
 #[tokio::test]
 async fn same_credential_shares_one_refresh_and_retains_completed_result()
@@ -669,9 +790,17 @@ fn codex_profile() -> OAuthProviderProfile {
 }
 
 fn proxied_clients(address: SocketAddr) -> HttpClientProvider {
+    proxied_clients_with_request_timeout(address, HttpTimeouts::default().request())
+}
+
+fn proxied_clients_with_request_timeout(
+    address: SocketAddr,
+    request_timeout: Duration,
+) -> HttpClientProvider {
+    let defaults = HttpTimeouts::default();
     let config = HttpClientConfig::new(
         ProxyConfig::parse(format!("http://{address}")).unwrap(),
-        HttpTimeouts::default(),
+        HttpTimeouts::new(defaults.connect(), defaults.read(), request_timeout).unwrap(),
     )
     .with_remote_dns_policy(RemoteDnsPolicy::TrustProxy);
     HttpClientProvider::new(config, 8).unwrap()

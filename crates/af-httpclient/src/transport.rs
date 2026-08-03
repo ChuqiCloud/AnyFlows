@@ -52,6 +52,12 @@ impl PooledClient {
         }
     }
 
+    /// 返回本 Client 覆盖完整响应体生命周期的总超时。
+    #[must_use]
+    pub const fn request_timeout(&self) -> Duration {
+        self.request_timeout
+    }
+
     /// 按池配置发送上游请求；建连前会执行字面量或域名目标安全策略。
     ///
     /// 原始传输错误会在本 crate 内立即分类并丢弃，避免 URL 或凭据进入错误日志。

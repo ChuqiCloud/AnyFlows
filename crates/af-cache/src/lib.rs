@@ -7,6 +7,7 @@
 mod config;
 mod error;
 mod hybrid;
+mod lease;
 mod local;
 mod redis_backend;
 mod remote;
@@ -19,6 +20,10 @@ pub use config::{
 };
 pub use error::{CacheError, CacheOperation, RedisFailureKind};
 pub use hybrid::{CacheMode, HybridCache};
+pub use lease::{
+    DistributedLease, DistributedLeaseConfig, DistributedLeaseManager, DistributedLeaseMode,
+    LeaseAcquireOutcome, LeaseReleaseOutcome,
+};
 
 /// 缓存统一存储字节，由调用方负责稳定的编码版本。
 pub type CacheValue = Arc<[u8]>;

@@ -81,7 +81,13 @@ mod tests {
         let provider = HttpClientProvider::new(HttpClientConfig::default(), 4).unwrap();
 
         provider.get(None).unwrap();
-        provider.get(Some(Duration::from_secs(60))).unwrap();
+        assert_eq!(
+            provider
+                .get(Some(Duration::from_secs(60)))
+                .unwrap()
+                .request_timeout(),
+            Duration::from_secs(60)
+        );
         provider.get(Some(Duration::from_secs(60))).unwrap();
 
         assert_eq!(provider.pool.len().unwrap(), 2);
