@@ -11,6 +11,8 @@ pub enum CacheOperation {
     Read,
     Write,
     Delete,
+    LeaseAcquire,
+    LeaseRelease,
 }
 
 impl fmt::Display for CacheOperation {
@@ -21,6 +23,8 @@ impl fmt::Display for CacheOperation {
             Self::Read => "读取",
             Self::Write => "写入",
             Self::Delete => "删除",
+            Self::LeaseAcquire => "获取租约",
+            Self::LeaseRelease => "释放租约",
         };
         formatter.write_str(name)
     }
@@ -55,7 +59,7 @@ impl fmt::Display for RedisFailureKind {
 }
 
 /// 缓存配置与运行期错误。
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 #[non_exhaustive]
 pub enum CacheError {
     #[error("缓存命名空间必须为 1 到 64 个 ASCII 字母、数字、点、短横线或下划线")]
@@ -72,6 +76,8 @@ pub enum CacheError {
     InvalidKey,
     #[error("缓存 TTL 必须为可表示的整毫秒正数")]
     InvalidTtl,
+    #[error("无法取得分布式租约所有者所需的安全随机数")]
+    EntropyUnavailable,
     #[error("缓存值超过当前配置允许的大小")]
     ValueTooLarge,
     #[error("本地缓存锁不可用")]

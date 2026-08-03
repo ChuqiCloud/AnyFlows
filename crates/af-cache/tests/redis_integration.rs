@@ -4,8 +4,9 @@ use std::{
 };
 
 use af_cache::{
-    CacheError, CacheMode, DEFAULT_REDIS_CONNECT_TIMEOUT, HybridCache, HybridCacheConfig,
-    RedisConfig,
+    CacheError, CacheMode, DEFAULT_REDIS_CONNECT_TIMEOUT, DistributedLease, DistributedLeaseConfig,
+    DistributedLeaseManager, DistributedLeaseMode, HybridCache, HybridCacheConfig,
+    LeaseAcquireOutcome, LeaseReleaseOutcome, RedisConfig,
 };
 
 const LIVE_REDIS_GATE: &str = "AF_REQUIRE_LIVE_REDIS";
@@ -76,6 +77,167 @@ async fn redis_hybrid_cache_smoke() {
         CacheError::ValueTooLarge
     );
     assert!(first.delete("oversized").await.unwrap());
+
+    verify_distributed_lease_contract(&redis_url, &format!("{namespace}.lease")).await;
+}
+
+async fn verify_distributed_lease_contract(redis_url: &str, namespace: &str) {
+    let config = || {
+        DistributedLeaseConfig::new(namespace).unwrap().with_redis(
+            RedisConfig::new(redis_url)
+                .with_timeouts(DEFAULT_REDIS_CONNECT_TIMEOUT, Duration::from_secs(2)),
+        )
+    };
+    let first = DistributedLeaseManager::new(config()).await.unwrap();
+    let second = DistributedLeaseManager::new(config()).await.unwrap();
+    assert_eq!(first.mode(), DistributedLeaseMode::Redis);
+
+    // 两个独立连接同时竞争同一事实，只能产生一个 owner。
+    let (first_result, second_result) = tokio::join!(
+        first.acquire(
+            "oauth:channel:7:credential:9:revision:1",
+            Duration::from_secs(2)
+        ),
+        second.acquire(
+            "oauth:channel:7:credential:9:revision:1",
+            Duration::from_secs(2)
+        ),
+    );
+    let (winner, held_count) = collect_competition(first_result.unwrap(), second_result.unwrap());
+    assert_eq!(held_count, 1);
+    let rendered = format!("{winner:?}");
+    assert!(!rendered.contains(namespace));
+    assert!(!rendered.contains("oauth:channel"));
+    assert!(rendered.contains("已脱敏"));
+    assert_eq!(
+        winner.release().await.unwrap(),
+        LeaseReleaseOutcome::Released
+    );
+
+    let released_key = expect_acquired(
+        second
+            .acquire(
+                "oauth:channel:7:credential:9:revision:1",
+                Duration::from_secs(2),
+            )
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        released_key.release().await.unwrap(),
+        LeaseReleaseOutcome::Released
+    );
+
+    // A 过期后由 B 接管，A 的迟到释放不得删除 B 的新租约。
+    let stale = expect_acquired(
+        first
+            .acquire(
+                "oauth:channel:8:credential:10:revision:3",
+                Duration::from_millis(80),
+            )
+            .await
+            .unwrap(),
+    );
+    tokio::time::sleep(Duration::from_millis(160)).await;
+    let current = expect_acquired(
+        second
+            .acquire(
+                "oauth:channel:8:credential:10:revision:3",
+                Duration::from_secs(2),
+            )
+            .await
+            .unwrap(),
+    );
+    assert_eq!(stale.release().await.unwrap(), LeaseReleaseOutcome::Lost);
+    assert!(matches!(
+        first
+            .acquire(
+                "oauth:channel:8:credential:10:revision:3",
+                Duration::from_secs(2)
+            )
+            .await
+            .unwrap(),
+        LeaseAcquireOutcome::Held
+    ));
+    assert_eq!(
+        current.release().await.unwrap(),
+        LeaseReleaseOutcome::Released
+    );
+
+    // 渠道、凭据和 OAuth 版本都进入键空间，彼此不同的刷新事实互不阻塞。
+    let base = expect_acquired(
+        first
+            .acquire(
+                "oauth:channel:11:credential:12:revision:4",
+                Duration::from_secs(2),
+            )
+            .await
+            .unwrap(),
+    );
+    let different_channel = expect_acquired(
+        second
+            .acquire(
+                "oauth:channel:12:credential:12:revision:4",
+                Duration::from_secs(2),
+            )
+            .await
+            .unwrap(),
+    );
+    let different_credential = expect_acquired(
+        first
+            .acquire(
+                "oauth:channel:11:credential:13:revision:4",
+                Duration::from_secs(2),
+            )
+            .await
+            .unwrap(),
+    );
+    let new_revision = expect_acquired(
+        second
+            .acquire(
+                "oauth:channel:11:credential:12:revision:5",
+                Duration::from_secs(2),
+            )
+            .await
+            .unwrap(),
+    );
+    assert_eq!(base.release().await.unwrap(), LeaseReleaseOutcome::Released);
+    assert_eq!(
+        different_channel.release().await.unwrap(),
+        LeaseReleaseOutcome::Released
+    );
+    assert_eq!(
+        different_credential.release().await.unwrap(),
+        LeaseReleaseOutcome::Released
+    );
+    assert_eq!(
+        new_revision.release().await.unwrap(),
+        LeaseReleaseOutcome::Released
+    );
+}
+
+fn collect_competition(
+    first: LeaseAcquireOutcome,
+    second: LeaseAcquireOutcome,
+) -> (DistributedLease, usize) {
+    let mut winner = None;
+    let mut held_count = 0;
+    for outcome in [first, second] {
+        match outcome {
+            LeaseAcquireOutcome::Acquired(lease) => {
+                assert!(winner.replace(lease).is_none(), "同一租约出现多个 owner");
+            }
+            LeaseAcquireOutcome::Held => held_count += 1,
+        }
+    }
+    (winner.expect("竞争必须产生一个 owner"), held_count)
+}
+
+fn expect_acquired(outcome: LeaseAcquireOutcome) -> DistributedLease {
+    let LeaseAcquireOutcome::Acquired(lease) = outcome else {
+        panic!("预期取得租约")
+    };
+    lease
 }
 
 fn unique_namespace() -> String {

@@ -201,7 +201,7 @@ pub(crate) fn validate_ttl(ttl: Duration) -> Result<i64, CacheError> {
     i64::try_from(milliseconds).map_err(|_| CacheError::InvalidTtl)
 }
 
-fn validate_namespace(namespace: &str) -> Result<(), CacheError> {
+pub(crate) fn validate_namespace(namespace: &str) -> Result<(), CacheError> {
     let valid = !namespace.is_empty()
         && namespace.len() <= MAX_NAMESPACE_BYTES
         && namespace

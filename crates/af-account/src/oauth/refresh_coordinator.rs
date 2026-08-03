@@ -1,6 +1,10 @@
 use std::{collections::HashMap, fmt, num::NonZeroUsize, sync::Arc, time::Duration};
 
-use af_httpclient::HttpClientProvider;
+use af_cache::{
+    CacheError, DistributedLease, DistributedLeaseManager, LeaseAcquireOutcome, LeaseReleaseOutcome,
+};
+use af_httpclient::{HttpClientProvider, PooledClient};
+use async_trait::async_trait;
 use thiserror::Error;
 
 use super::{
@@ -21,9 +25,13 @@ use singleflight::{
 pub const DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS: usize = 1_024;
 /// 已完成结果的默认短暂保留时间，用于吸收携带旧版本的迟到候选。
 pub const DEFAULT_OAUTH_REFRESH_RESULT_RETENTION: Duration = Duration::from_secs(1);
+/// token endpoint 总超时之外预留给加密与数据库条件写回的时间。
+pub const OAUTH_REFRESH_LEASE_WRITE_BUFFER: Duration = Duration::from_secs(30);
 
 const DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS_NON_ZERO: NonZeroUsize =
     NonZeroUsize::new(DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS).expect("默认 OAuth flight 容量必须非零");
+/// OAuth 刷新租约使用的稳定 Redis 键命名空间。
+pub const OAUTH_REFRESH_LEASE_NAMESPACE: &str = "oauth.refresh.v1";
 
 /// 一次 OAuth 刷新协调后的闭合业务结果。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -36,6 +44,8 @@ pub enum OAuthRefreshCoordinatorOutcome {
     TargetNotFound,
     /// 目标凭据已经切换到其他 Provider。
     ProviderMismatch,
+    /// 同一渠道、凭据与 OAuth 版本正由其他实例刷新。
+    LeaseHeld,
 }
 
 impl From<OAuthRefreshPersistenceOutcome> for OAuthRefreshCoordinatorOutcome {
@@ -71,6 +81,9 @@ pub enum OAuthRefreshCoordinatorError {
     /// leader 在发布结果前被取消或发生 panic。
     #[error("OAuth 刷新 leader 未完成")]
     LeaderAborted,
+    /// 分布式租约配置、连接或原子命令不可用。
+    #[error("OAuth 刷新分布式租约不可用")]
+    DistributedLease(#[source] CacheError),
     /// token endpoint 请求或响应失败。
     #[error("OAuth token 刷新失败")]
     TokenExchange(#[source] OAuthTokenExchangeError),
@@ -98,15 +111,34 @@ impl From<OAuthRefreshPersistenceError> for OAuthRefreshCoordinatorError {
     }
 }
 
+impl From<CacheError> for OAuthRefreshCoordinatorError {
+    fn from(error: CacheError) -> Self {
+        Self::DistributedLease(error)
+    }
+}
+
+#[async_trait]
+trait OAuthRefreshLeasePort: Send + Sync {
+    async fn acquire(&self, key: &str, ttl: Duration) -> Result<LeaseAcquireOutcome, CacheError>;
+}
+
+#[async_trait]
+impl OAuthRefreshLeasePort for DistributedLeaseManager {
+    async fn acquire(&self, key: &str, ttl: Duration) -> Result<LeaseAcquireOutcome, CacheError> {
+        DistributedLeaseManager::acquire(self, key, ttl).await
+    }
+}
+
 /// 按渠道、凭据与 OAuth 版本合并并发刷新的应用协调器。
 ///
-/// 本协调器只保证单进程 singleflight；多实例周期调度仍需后续分布式租约，数据库 CAS
-/// 始终作为最终一致性防线。
+/// 未配置 Redis 时保留单进程 singleflight；注入 Redis 租约后，不同实例在调用 token
+/// endpoint 前竞争同一凭据版本。数据库 CAS 始终作为最终一致性防线。
 pub struct OAuthRefreshCoordinator {
     profiles: HashMap<UpstreamOAuthProvider, Arc<OAuthProviderProfile>>,
     http_clients: HttpClientProvider,
     persistence: OAuthRefreshPersistenceService,
     singleflight: Arc<OAuthRefreshSingleflight>,
+    leases: Arc<dyn OAuthRefreshLeasePort>,
 }
 
 impl OAuthRefreshCoordinator {
@@ -119,10 +151,33 @@ impl OAuthRefreshCoordinator {
     where
         P: Into<Arc<OAuthProviderProfile>>,
     {
-        Self::new_with_singleflight_limits(
+        let leases = DistributedLeaseManager::local_only(OAUTH_REFRESH_LEASE_NAMESPACE)
+            .expect("固定 OAuth 刷新租约命名空间必须有效");
+        Self::new_with_components(
             profiles,
             http_clients,
             persistence,
+            Arc::new(leases),
+            DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS_NON_ZERO,
+            DEFAULT_OAUTH_REFRESH_RESULT_RETENTION,
+        )
+    }
+
+    /// 注入已经完成启动健康检查的租约协调器，启用多实例 OAuth 刷新互斥。
+    pub fn new_with_distributed_lease<P>(
+        profiles: impl IntoIterator<Item = P>,
+        http_clients: HttpClientProvider,
+        persistence: OAuthRefreshPersistenceService,
+        leases: DistributedLeaseManager,
+    ) -> Result<Self, OAuthRefreshCoordinatorError>
+    where
+        P: Into<Arc<OAuthProviderProfile>>,
+    {
+        Self::new_with_components(
+            profiles,
+            http_clients,
+            persistence,
+            Arc::new(leases),
             DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS_NON_ZERO,
             DEFAULT_OAUTH_REFRESH_RESULT_RETENTION,
         )
@@ -168,8 +223,34 @@ impl OAuthRefreshCoordinator {
             .http_clients
             .get(None)
             .map_err(|_| OAuthRefreshCoordinatorError::HttpClientUnavailable)?;
+        let lease_ttl = http_client
+            .request_timeout()
+            .checked_add(OAUTH_REFRESH_LEASE_WRITE_BUFFER)
+            .ok_or(CacheError::InvalidTtl)?;
+        let lease_key = oauth_refresh_lease_key(&candidate);
+        let lease = match self.leases.acquire(&lease_key, lease_ttl).await? {
+            LeaseAcquireOutcome::Acquired(lease) => lease,
+            LeaseAcquireOutcome::Held => {
+                // 未取得所有权的实例必须在触碰 token endpoint 前释放敏感候选。
+                drop(candidate);
+                return Ok(OAuthRefreshCoordinatorOutcome::LeaseHeld);
+            }
+        };
+        let result = self
+            .execute_with_lease(candidate, profile, &http_client)
+            .await;
+        release_lease(lease).await;
+        result
+    }
+
+    async fn execute_with_lease(
+        &self,
+        candidate: OAuthRefreshCandidate,
+        profile: &OAuthProviderProfile,
+        http_client: &PooledClient,
+    ) -> Result<OAuthRefreshCoordinatorOutcome, OAuthRefreshCoordinatorError> {
         let (guard, request) = candidate.into_parts();
-        match profile.refresh(&http_client, request).await {
+        match profile.refresh(http_client, request).await {
             Ok(token_set) => Ok(self.persistence.persist(guard, token_set).await?.into()),
             Err(exchange) => self.handle_exchange_failure(guard, exchange).await,
         }
@@ -209,10 +290,11 @@ impl OAuthRefreshCoordinator {
         }
     }
 
-    fn new_with_singleflight_limits<P>(
+    fn new_with_components<P>(
         profiles: impl IntoIterator<Item = P>,
         http_clients: HttpClientProvider,
         persistence: OAuthRefreshPersistenceService,
+        leases: Arc<dyn OAuthRefreshLeasePort>,
         max_entries: NonZeroUsize,
         completed_retention: Duration,
     ) -> Result<Self, OAuthRefreshCoordinatorError>
@@ -232,7 +314,28 @@ impl OAuthRefreshCoordinator {
             http_clients,
             persistence,
             singleflight: OAuthRefreshSingleflight::new(max_entries, completed_retention),
+            leases,
         })
+    }
+
+    #[cfg(test)]
+    fn new_with_lease_port<P>(
+        profiles: impl IntoIterator<Item = P>,
+        http_clients: HttpClientProvider,
+        persistence: OAuthRefreshPersistenceService,
+        leases: Arc<dyn OAuthRefreshLeasePort>,
+    ) -> Result<Self, OAuthRefreshCoordinatorError>
+    where
+        P: Into<Arc<OAuthProviderProfile>>,
+    {
+        Self::new_with_components(
+            profiles,
+            http_clients,
+            persistence,
+            leases,
+            DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS_NON_ZERO,
+            DEFAULT_OAUTH_REFRESH_RESULT_RETENTION,
+        )
     }
 
     /// 返回已配置 provider 数量，供启动检查和有界指标使用。
@@ -250,6 +353,7 @@ impl fmt::Debug for OAuthRefreshCoordinator {
             .field("http_clients", &"<已脱敏>")
             .field("persistence", &"<已脱敏>")
             .field("singleflight", &self.singleflight)
+            .field("leases", &"<已脱敏>")
             .finish()
     }
 }
@@ -264,6 +368,30 @@ const fn map_singleflight_error(
         OAuthRefreshSingleflightError::Unavailable => {
             OAuthRefreshCoordinatorError::SingleflightUnavailable
         }
+    }
+}
+
+fn oauth_refresh_lease_key(candidate: &OAuthRefreshCandidate) -> String {
+    format!(
+        "channel:{}:credential:{}:revision:{}",
+        candidate.channel_id().get(),
+        candidate.credential_id().get(),
+        candidate.expected_revision()
+    )
+}
+
+async fn release_lease(lease: DistributedLease) {
+    match lease.release().await {
+        Ok(LeaseReleaseOutcome::Released) => {}
+        Ok(LeaseReleaseOutcome::Lost) => tracing::warn!(
+            event_kind = "oauth_refresh_lease_release_lost",
+            "OAuth 刷新租约释放时已经失去所有权"
+        ),
+        Err(error) => tracing::warn!(
+            event_kind = "oauth_refresh_lease_release_failed",
+            error_kind = %error,
+            "OAuth 刷新租约释放失败"
+        ),
     }
 }
 

@@ -27,7 +27,8 @@ pub use persistence::{
 pub use profile::{OAuthLoopbackRedirect, OAuthProviderProfile, OAuthProviderProfileError};
 pub use refresh_coordinator::{
     DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS, DEFAULT_OAUTH_REFRESH_RESULT_RETENTION,
-    OAuthRefreshCoordinator, OAuthRefreshCoordinatorError, OAuthRefreshCoordinatorOutcome,
+    OAUTH_REFRESH_LEASE_NAMESPACE, OAUTH_REFRESH_LEASE_WRITE_BUFFER, OAuthRefreshCoordinator,
+    OAuthRefreshCoordinatorError, OAuthRefreshCoordinatorOutcome,
 };
 pub use refresh_failure::OAuthRefreshFailureKind;
 pub use refresh_persistence::{
