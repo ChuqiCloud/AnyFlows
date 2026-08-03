@@ -294,6 +294,7 @@ pub use network_settings::{
 };
 pub use oauth_credential::{
     MAX_OAUTH_REFRESH_CANDIDATES, OAuthCredentialExpirationProjectionUpdateOutcome,
+    OAuthCredentialRefreshFailureKind, OAuthCredentialRefreshFailureUpdateOutcome,
     OAuthCredentialRefreshUpdateOutcome, OAuthCredentialRepository, OAuthCredentialRepositoryError,
     OAuthCredentialTokenUpdateOutcome, OAuthExpirationProjectionCandidateRecord,
     OAuthRefreshCandidateRecord,

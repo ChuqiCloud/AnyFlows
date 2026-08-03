@@ -20,6 +20,7 @@ mod refresh;
 
 pub use refresh::{
     MAX_OAUTH_REFRESH_CANDIDATES, OAuthCredentialExpirationProjectionUpdateOutcome,
+    OAuthCredentialRefreshFailureKind, OAuthCredentialRefreshFailureUpdateOutcome,
     OAuthCredentialRefreshUpdateOutcome, OAuthExpirationProjectionCandidateRecord,
     OAuthRefreshCandidateRecord,
 };

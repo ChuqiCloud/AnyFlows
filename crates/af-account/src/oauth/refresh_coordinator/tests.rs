@@ -13,7 +13,7 @@ use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
 use af_db::{
     AdminChannelRepository, AdminChannelWriteRecord, AdminCredentialCreateOutcome,
     AdminCredentialWriteRecord, DatabaseOptions, DatabasePool, MigrationOptions,
-    OAuthCredentialRepository,
+    OAuthCredentialRepository, entity::credentials,
 };
 use af_domain::{
     ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind, Protocol, Status, UserId,
@@ -22,6 +22,7 @@ use af_httpclient::{
     HttpClientConfig, HttpClientProvider, HttpTimeouts, ProxyConfig, RemoteDnsPolicy,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use sea_orm::EntityTrait;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -33,7 +34,10 @@ use url::Url;
 use super::*;
 use crate::{
     CredentialDecryptor, CredentialEncryptor, PlainCredentialSecret,
-    oauth::{OAuthAuthorizationContext, OAuthTokenPersistenceService, OAuthTokenSet},
+    oauth::{
+        OAuthAuthorizationContext, OAuthEndpointErrorCode, OAuthTokenPersistenceService,
+        OAuthTokenSet,
+    },
 };
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(3);
@@ -128,6 +132,186 @@ async fn different_credentials_refresh_in_parallel() -> Result<(), Box<dyn Error
     while let Some(result) = tasks.join_next().await {
         assert_eq!(result??, OAuthRefreshCoordinatorOutcome::Stored);
     }
+
+    server.stop().await?;
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn invalid_grant_auto_disables_once_and_shares_the_failure() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(1).await?;
+    let leader_candidate = fixture
+        .service
+        .due_candidates(i64::MAX, 1)
+        .await?
+        .pop()
+        .unwrap();
+    let follower_candidate = fixture
+        .service
+        .due_candidates(i64::MAX, 1)
+        .await?
+        .pop()
+        .unwrap();
+    let server = ControlledTokenServer::start_with_response(
+        400,
+        br#"{"error":"invalid_grant","error_description":"private upstream detail"}"#,
+    )
+    .await?;
+    let coordinator = Arc::new(OAuthRefreshCoordinator::new(
+        [codex_profile()],
+        proxied_clients(server.address()),
+        fixture.service,
+    )?);
+
+    let leader_coordinator = Arc::clone(&coordinator);
+    let leader = tokio::spawn(async move { leader_coordinator.refresh(leader_candidate).await });
+    server.wait_for_requests(1).await?;
+    let follower_coordinator = Arc::clone(&coordinator);
+    let follower =
+        tokio::spawn(async move { follower_coordinator.refresh(follower_candidate).await });
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert_eq!(server.request_count(), 1);
+    server.release(1);
+
+    let expected = Err(OAuthRefreshCoordinatorError::TokenExchange(
+        OAuthTokenExchangeError::EndpointRejected {
+            status: 400,
+            code: Some(OAuthEndpointErrorCode::InvalidGrant),
+        },
+    ));
+    assert_eq!(leader.await?, expected);
+    assert_eq!(follower.await?, expected);
+    let credential = only_credential(&fixture.pool).await?;
+    assert_eq!(credential.status, Status::AutoDisabled.code());
+    assert!(credential.rate_limited_at.is_none());
+    assert!(credential.rate_limit_reset_at.is_none());
+    assert!(credential.overload_until.is_none());
+    assert!(credential.temp_unschedulable_until.is_none());
+    assert!(credential.temp_unschedulable_reason.is_none());
+    assert!(!format!("{expected:?}").contains("private upstream detail"));
+
+    server.stop().await?;
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn ambiguous_endpoint_rejection_enters_transient_cooldown() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(1).await?;
+    let candidate = fixture
+        .service
+        .due_candidates(i64::MAX, 1)
+        .await?
+        .pop()
+        .unwrap();
+    let server = ControlledTokenServer::start_with_response(401, b"not-json-private").await?;
+    let coordinator = OAuthRefreshCoordinator::new(
+        [codex_profile()],
+        proxied_clients(server.address()),
+        fixture.service,
+    )?;
+
+    let refresh = coordinator.refresh(candidate);
+    tokio::pin!(refresh);
+    tokio::select! {
+        result = &mut refresh => panic!("token server 未释放前不应完成：{result:?}"),
+        wait = server.wait_for_requests(1) => wait?,
+    }
+    server.release(1);
+    let error = refresh.await.unwrap_err();
+    assert_eq!(
+        error,
+        OAuthRefreshCoordinatorError::TokenExchange(OAuthTokenExchangeError::EndpointRejected {
+            status: 401,
+            code: None,
+        })
+    );
+    let credential = only_credential(&fixture.pool).await?;
+    assert_eq!(credential.status, Status::Enabled.code());
+    assert_eq!(
+        credential.temp_unschedulable_reason.as_deref(),
+        Some("oauth_refresh_transient")
+    );
+    assert!(
+        credential.temp_unschedulable_until.is_some_and(
+            |until| until > sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc()
+        )
+    );
+    assert!(
+        refresh_persistence(&fixture.pool)
+            .due_candidates(i64::MAX, 1)
+            .await?
+            .is_empty()
+    );
+    assert!(!format!("{error:?}{error}").contains("not-json-private"));
+
+    server.stop().await?;
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn reauthorization_wins_over_an_old_invalid_grant() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(1).await?;
+    let original = only_credential(&fixture.pool).await?;
+    let channel_id = ChannelId::new(original.channel_id)?;
+    let credential_id = CredentialId::new(original.id)?;
+    let candidate = fixture
+        .service
+        .due_candidates(i64::MAX, 1)
+        .await?
+        .pop()
+        .unwrap();
+    let server =
+        ControlledTokenServer::start_with_response(400, br#"{"error":"invalid_grant"}"#).await?;
+    let coordinator = OAuthRefreshCoordinator::new(
+        [codex_profile()],
+        proxied_clients(server.address()),
+        fixture.service,
+    )?;
+
+    let refresh = coordinator.refresh(candidate);
+    tokio::pin!(refresh);
+    tokio::select! {
+        result = &mut refresh => panic!("token server 未释放前不应完成：{result:?}"),
+        wait = server.wait_for_requests(1) => wait?,
+    }
+    let reauthorization = OAuthTokenPersistenceService::new(
+        CredentialEncryptor::new(&settings())?,
+        OAuthCredentialRepository::new(fixture.pool.clone()),
+    );
+    assert_eq!(
+        reauthorization
+            .persist(OAuthTokenSet::for_test(
+                UpstreamOAuthProvider::Codex,
+                OAuthAuthorizationContext::new(
+                    UserId::new(11)?,
+                    Some(channel_id),
+                    Some(credential_id),
+                )?,
+                "reauthorized-access-private".to_owned(),
+                Some("reauthorized-refresh-private".to_owned()),
+                Some(Duration::from_secs(180)),
+                Some("openid profile".to_owned()),
+            ))
+            .await?,
+        super::super::OAuthTokenPersistenceOutcome::Stored
+    );
+    server.release(1);
+    assert_eq!(refresh.await?, OAuthRefreshCoordinatorOutcome::Stale);
+
+    let current = only_credential(&fixture.pool).await?;
+    assert_eq!(current.status, Status::Enabled.code());
+    assert_eq!(current.oauth_revision, 2);
+    assert!(current.temp_unschedulable_until.is_none());
+    let current = refresh_persistence(&fixture.pool)
+        .due_candidates(i64::MAX, 1)
+        .await?
+        .pop()
+        .expect("重新授权后的新 token 必须保留");
+    let (_, request) = current.into_parts();
+    assert_eq!(request.refresh_token(), "reauthorized-refresh-private");
 
     server.stop().await?;
     fixture.pool.close().await?;
@@ -270,6 +454,60 @@ async fn persistence_failure_is_shared_without_exposing_database_details()
     Ok(())
 }
 
+#[tokio::test]
+async fn failure_state_persistence_error_retains_only_redacted_classification()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture(1).await?;
+    let candidate = fixture
+        .service
+        .due_candidates(i64::MAX, 1)
+        .await?
+        .pop()
+        .unwrap();
+    let server = ControlledTokenServer::start_with_response(
+        400,
+        br#"{"error":"invalid_grant","error_description":"refresh-private-database-private"}"#,
+    )
+    .await?;
+    let coordinator = OAuthRefreshCoordinator::new(
+        [codex_profile()],
+        proxied_clients(server.address()),
+        fixture.service,
+    )?;
+    fixture.pool.close().await?;
+
+    let refresh = coordinator.refresh(candidate);
+    tokio::pin!(refresh);
+    tokio::select! {
+        result = &mut refresh => panic!("token server 未释放前不应完成：{result:?}"),
+        wait = server.wait_for_requests(1) => wait?,
+    }
+    server.release(1);
+    let error = refresh.await.unwrap_err();
+    assert_eq!(
+        error,
+        OAuthRefreshCoordinatorError::FailureStatePersistence {
+            exchange: OAuthTokenExchangeError::EndpointRejected {
+                status: 400,
+                code: Some(OAuthEndpointErrorCode::InvalidGrant),
+            },
+            persistence: OAuthRefreshPersistenceError::RepositoryUnavailable,
+        }
+    );
+    let rendered = format!("{error:?}{error}");
+    for private in [
+        "refresh-private-database-private",
+        "initial-refresh-private",
+        "token.example",
+        "test-key",
+    ] {
+        assert!(!rendered.contains(private));
+    }
+
+    server.stop().await?;
+    Ok(())
+}
+
 struct Fixture {
     pool: DatabasePool,
     service: OAuthRefreshPersistenceService,
@@ -309,6 +547,13 @@ async fn fixture(credential_count: usize) -> Result<Fixture, Box<dyn Error>> {
         service: refresh_persistence(&pool),
         pool,
     })
+}
+
+async fn only_credential(pool: &DatabasePool) -> Result<credentials::Model, Box<dyn Error>> {
+    Ok(credentials::Entity::find()
+        .one(pool.connection())
+        .await?
+        .expect("测试凭据必须存在"))
 }
 
 async fn create_channel(admin: &AdminChannelRepository) -> Result<ChannelId, Box<dyn Error>> {
@@ -435,8 +680,21 @@ struct ControlledTokenServer {
     task: JoinHandle<io::Result<()>>,
 }
 
+struct TokenServerResponse {
+    status: u16,
+    body: Vec<u8>,
+}
+
 impl ControlledTokenServer {
     async fn start() -> io::Result<Self> {
+        Self::start_with_response(
+            200,
+            br#"{"access_token":"rotated-access-private","token_type":"Bearer","expires_in":120,"refresh_token":"rotated-refresh-private","scope":"openid email"}"#,
+        )
+        .await
+    }
+
+    async fn start_with_response(status: u16, body: &[u8]) -> io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let address = listener.local_addr()?;
         let requests = Arc::new(AtomicUsize::new(0));
@@ -446,6 +704,10 @@ impl ControlledTokenServer {
         let task_requests = Arc::clone(&requests);
         let task_notification = Arc::clone(&request_notification);
         let task_permits = Arc::clone(&response_permits);
+        let response = Arc::new(TokenServerResponse {
+            status,
+            body: body.to_vec(),
+        });
         let task = tokio::spawn(async move {
             let mut handlers = JoinSet::new();
             loop {
@@ -457,8 +719,16 @@ impl ControlledTokenServer {
                         let requests = Arc::clone(&task_requests);
                         let notification = Arc::clone(&task_notification);
                         let permits = Arc::clone(&task_permits);
+                        let response = Arc::clone(&response);
                         handlers.spawn(async move {
-                            handle_token_connection(stream, requests, notification, permits).await
+                            handle_token_connection(
+                                stream,
+                                requests,
+                                notification,
+                                permits,
+                                response,
+                            )
+                            .await
                         });
                     }
                 }
@@ -518,6 +788,7 @@ async fn handle_token_connection(
     requests: Arc<AtomicUsize>,
     notification: Arc<Notify>,
     response_permits: Arc<Semaphore>,
+    response: Arc<TokenServerResponse>,
 ) -> io::Result<()> {
     let request = read_request(&mut stream).await?;
     assert!(request.contains("grant_type=refresh_token"));
@@ -529,13 +800,13 @@ async fn handle_token_connection(
         .await
         .map_err(io::Error::other)?;
     permit.forget();
-    let body = br#"{"access_token":"rotated-access-private","token_type":"Bearer","expires_in":120,"refresh_token":"rotated-refresh-private","scope":"openid email"}"#;
     let headers = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        body.len()
+        "HTTP/1.1 {} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        response.status,
+        response.body.len()
     );
     if stream.write_all(headers.as_bytes()).await.is_ok() {
-        let _ = stream.write_all(body).await;
+        let _ = stream.write_all(&response.body).await;
     }
     Ok(())
 }

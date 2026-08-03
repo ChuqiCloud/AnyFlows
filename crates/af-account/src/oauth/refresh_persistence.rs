@@ -1,7 +1,8 @@
 use std::{fmt, time::SystemTime};
 
 use af_db::{
-    OAuthCredentialExpirationProjectionUpdateOutcome, OAuthCredentialRefreshUpdateOutcome,
+    OAuthCredentialExpirationProjectionUpdateOutcome, OAuthCredentialRefreshFailureKind,
+    OAuthCredentialRefreshFailureUpdateOutcome, OAuthCredentialRefreshUpdateOutcome,
     OAuthCredentialRepository, OAuthCredentialRepositoryError,
     OAuthExpirationProjectionCandidateRecord, OAuthRefreshCandidateRecord,
 };
@@ -9,8 +10,8 @@ use af_domain::{ChannelId, CredentialId};
 use thiserror::Error;
 
 use super::{
-    OAuthRefreshedTokenSet, OAuthTokenRefreshRequest, UpstreamOAuthProvider,
-    persistence::checked_expiration_epoch_seconds,
+    OAuthRefreshFailureKind, OAuthRefreshedTokenSet, OAuthTokenRefreshRequest,
+    UpstreamOAuthProvider, persistence::checked_expiration_epoch_seconds,
 };
 use crate::{CredentialDecryptor, CredentialEncryptor, PlainOAuthCredential};
 
@@ -110,7 +111,7 @@ impl fmt::Debug for OAuthRefreshCandidate {
     }
 }
 
-/// 上游刷新成功后的条件写回守卫；只能由数据库候选构造。
+/// 上游刷新完成后的条件写回守卫；成功结果与失败状态都必须消费同一候选事实。
 pub struct OAuthRefreshWriteGuard {
     record: OAuthRefreshCandidateRecord,
     provider: UpstreamOAuthProvider,
@@ -175,7 +176,20 @@ pub enum OAuthRefreshPersistenceOutcome {
     ProviderMismatch,
 }
 
-/// OAuth 刷新候选准备与结果持久化错误；不携带 token、scope、密文或底层诊断。
+/// OAuth 刷新失败状态的持久化结论。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OAuthRefreshFailurePersistenceOutcome {
+    /// 临时冷却或自动停用状态已经写入。
+    Recorded,
+    /// 上游调用期间凭据事实或运行状态已经变化，旧失败被安全丢弃。
+    Stale,
+    /// 目标不存在、已删除、不属于原渠道或不再是 OAuth 凭据。
+    TargetNotFound,
+    /// 目标凭据已经切换到其他 Provider。
+    ProviderMismatch,
+}
+
+/// OAuth 刷新候选准备与状态持久化错误；不携带 token、scope、密文或底层诊断。
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum OAuthRefreshPersistenceError {
@@ -211,7 +225,7 @@ pub enum OAuthRefreshPersistenceError {
     Invariant,
 }
 
-/// 组合候选解密、敏感所有权转移、结果加密与数据库 CAS 的应用边界。
+/// 组合候选解密、敏感所有权转移、成功结果加密与失败状态 CAS 的应用边界。
 pub struct OAuthRefreshPersistenceService {
     encryptor: CredentialEncryptor,
     decryptor: CredentialDecryptor,
@@ -298,6 +312,37 @@ impl OAuthRefreshPersistenceService {
         token_set: OAuthRefreshedTokenSet,
     ) -> Result<OAuthRefreshPersistenceOutcome, OAuthRefreshPersistenceError> {
         self.persist_at(guard, token_set, SystemTime::now()).await
+    }
+
+    /// 消费候选守卫，并以同一组 CAS 事实原子写入刷新失败状态。
+    pub async fn record_failure(
+        &self,
+        guard: OAuthRefreshWriteGuard,
+        failure_kind: OAuthRefreshFailureKind,
+    ) -> Result<OAuthRefreshFailurePersistenceOutcome, OAuthRefreshPersistenceError> {
+        let repository_kind = match failure_kind {
+            OAuthRefreshFailureKind::Transient => OAuthCredentialRefreshFailureKind::Transient,
+            OAuthRefreshFailureKind::Revoked => OAuthCredentialRefreshFailureKind::Revoked,
+        };
+        let outcome = self
+            .repository
+            .record_refresh_failure(guard.record, repository_kind)
+            .await
+            .map_err(map_repository_error)?;
+        Ok(match outcome {
+            OAuthCredentialRefreshFailureUpdateOutcome::Recorded => {
+                OAuthRefreshFailurePersistenceOutcome::Recorded
+            }
+            OAuthCredentialRefreshFailureUpdateOutcome::Stale => {
+                OAuthRefreshFailurePersistenceOutcome::Stale
+            }
+            OAuthCredentialRefreshFailureUpdateOutcome::TargetNotFound => {
+                OAuthRefreshFailurePersistenceOutcome::TargetNotFound
+            }
+            OAuthCredentialRefreshFailureUpdateOutcome::ProviderMismatch => {
+                OAuthRefreshFailurePersistenceOutcome::ProviderMismatch
+            }
+        })
     }
 
     fn prepare_candidate(
