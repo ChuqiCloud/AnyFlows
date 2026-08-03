@@ -72,6 +72,7 @@ impl OAuthConnectionCoordinator {
         let provider = callback.provider();
         // 缺少 profile 时先失败，避免错误接线消耗仍可由正确 provider 完成的会话。
         let profile = self.profile(provider)?;
+        // 完成侧不接受 user/channel/credential 覆盖，持久化目标只能来自一次性会话。
         let grant = self.sessions.consume(callback)?;
         let token_set = profile.exchange(&self.http_client, grant).await?;
         let outcome = self.persistence.persist(token_set).await?;

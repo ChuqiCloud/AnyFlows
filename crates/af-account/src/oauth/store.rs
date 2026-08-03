@@ -138,6 +138,8 @@ impl OAuthAuthorizationSessionStore {
         now: Instant,
     ) -> Result<OAuthAuthorizationGrant, OAuthAuthorizationError> {
         let digest = StateDigest::from_state(callback.state());
+        // 命中 state 后立即删除，使任何持有该 state 的回调尝试都只能发生一次；
+        // provider、redirect 或拒绝结果不恢复会话，避免同一授权事实被反复探测。
         let pending = self
             .lock_entries()?
             .remove(&digest)

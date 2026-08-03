@@ -37,6 +37,8 @@ pub struct OAuthProviderProfile {
     authorization_endpoint: &'static str,
     scope: &'static str,
     authorization_parameters: &'static [(&'static str, &'static str)],
+    requires_refresh_token: bool,
+    requires_expiration: bool,
     token_exchange: OAuthTokenExchange,
 }
 
@@ -77,6 +79,8 @@ impl OAuthProviderProfile {
             authorization_endpoint: specification.authorization_endpoint,
             scope: specification.scope,
             authorization_parameters: specification.authorization_parameters,
+            requires_refresh_token: specification.requires_refresh_token,
+            requires_expiration: specification.requires_expiration,
             token_exchange,
         })
     }
@@ -121,12 +125,31 @@ impl OAuthProviderProfile {
         http_client: &PooledClient,
         grant: OAuthAuthorizationGrant,
     ) -> Result<OAuthTokenSet, OAuthTokenExchangeError> {
-        self.token_exchange.exchange(http_client, grant).await
+        let token_set = self.token_exchange.exchange(http_client, grant).await?;
+        self.validate_initial_token_set(&token_set)?;
+        Ok(token_set)
+    }
+
+    fn validate_initial_token_set(
+        &self,
+        token_set: &OAuthTokenSet,
+    ) -> Result<(), OAuthTokenExchangeError> {
+        if (self.requires_refresh_token && token_set.refresh_token().is_none())
+            || (self.requires_expiration && token_set.expires_in().is_none())
+        {
+            return Err(OAuthTokenExchangeError::InvalidTokenResponse);
+        }
+        Ok(())
     }
 
     #[cfg(test)]
     pub(crate) fn set_token_endpoint_for_test(&mut self, endpoint: url::Url) {
         self.token_exchange.set_token_endpoint_for_test(endpoint);
+    }
+
+    #[cfg(test)]
+    fn token_endpoint_for_test(&self) -> &url::Url {
+        self.token_exchange.token_endpoint_for_test()
     }
 }
 
@@ -169,6 +192,8 @@ struct ProviderSpecification {
     authorization_parameters: &'static [(&'static str, &'static str)],
     authentication_method: OAuthClientAuthenticationMethod,
     request_encoding: OAuthTokenRequestEncoding,
+    requires_refresh_token: bool,
+    requires_expiration: bool,
 }
 
 impl ProviderSpecification {
@@ -188,6 +213,8 @@ impl ProviderSpecification {
                 authorization_parameters: CODEX_AUTHORIZATION_PARAMETERS,
                 authentication_method: OAuthClientAuthenticationMethod::Public,
                 request_encoding: OAuthTokenRequestEncoding::Form,
+                requires_refresh_token: true,
+                requires_expiration: true,
             }),
             UpstreamOAuthProvider::Gemini => Ok(Self {
                 authorization_endpoint: GOOGLE_AUTHORIZATION_ENDPOINT,
@@ -196,6 +223,8 @@ impl ProviderSpecification {
                 authorization_parameters: GOOGLE_AUTHORIZATION_PARAMETERS,
                 authentication_method: OAuthClientAuthenticationMethod::ClientSecretPost,
                 request_encoding: OAuthTokenRequestEncoding::Form,
+                requires_refresh_token: true,
+                requires_expiration: true,
             }),
             UpstreamOAuthProvider::Antigravity => Ok(Self {
                 authorization_endpoint: GOOGLE_AUTHORIZATION_ENDPOINT,
@@ -204,6 +233,8 @@ impl ProviderSpecification {
                 authorization_parameters: GOOGLE_AUTHORIZATION_PARAMETERS,
                 authentication_method: OAuthClientAuthenticationMethod::ClientSecretPost,
                 request_encoding: OAuthTokenRequestEncoding::Form,
+                requires_refresh_token: true,
+                requires_expiration: true,
             }),
         }
     }
@@ -211,7 +242,7 @@ impl ProviderSpecification {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, time::Duration};
 
     use af_domain::{ChannelId, CredentialId, UserId};
 
@@ -219,6 +250,16 @@ mod tests {
     use crate::oauth::OAuthAuthorizationSessionStore;
 
     const REDIRECT_URI: &str = "http://127.0.0.1:43123/oauth/callback";
+    const EXPECTED_CODEX_PARAMETERS: &[(&str, &str)] = &[
+        ("prompt", "login"),
+        ("id_token_add_organizations", "true"),
+        ("codex_cli_simplified_flow", "true"),
+    ];
+    const EXPECTED_GOOGLE_PARAMETERS: &[(&str, &str)] = &[
+        ("access_type", "offline"),
+        ("prompt", "consent"),
+        ("include_granted_scopes", "true"),
+    ];
 
     #[test]
     fn provider_profiles_emit_only_their_closed_authorization_contracts() {
@@ -240,6 +281,14 @@ mod tests {
             let url = start.authorization_url();
             assert_eq!(url.host_str(), Some(expectation.host));
             assert_eq!(url.path(), expectation.path);
+            assert_eq!(
+                profile.token_endpoint_for_test().host_str(),
+                Some(expectation.token_host)
+            );
+            assert_eq!(
+                profile.token_endpoint_for_test().path(),
+                expectation.token_path
+            );
             let pairs = url.query_pairs().into_owned().collect::<Vec<_>>();
             let values = pairs.iter().cloned().collect::<HashMap<_, _>>();
             assert_eq!(pairs.len(), values.len(), "授权参数不得重复");
@@ -324,6 +373,54 @@ mod tests {
         );
     }
 
+    #[test]
+    fn initial_offline_connections_require_refresh_token_and_expiration() {
+        for provider in [
+            UpstreamOAuthProvider::Codex,
+            UpstreamOAuthProvider::Gemini,
+            UpstreamOAuthProvider::Antigravity,
+        ] {
+            let profile = profile(provider);
+            let missing_refresh = OAuthTokenSet::for_test(
+                provider,
+                context(),
+                "access-token-marker".to_owned(),
+                None,
+                Some(Duration::from_secs(3_600)),
+                None,
+            );
+            assert_eq!(
+                profile
+                    .validate_initial_token_set(&missing_refresh)
+                    .unwrap_err(),
+                OAuthTokenExchangeError::InvalidTokenResponse
+            );
+            let missing_expiration = OAuthTokenSet::for_test(
+                provider,
+                context(),
+                "access-token-marker".to_owned(),
+                Some("refresh-token-marker".to_owned()),
+                None,
+                None,
+            );
+            assert_eq!(
+                profile
+                    .validate_initial_token_set(&missing_expiration)
+                    .unwrap_err(),
+                OAuthTokenExchangeError::InvalidTokenResponse
+            );
+            let complete = OAuthTokenSet::for_test(
+                provider,
+                context(),
+                "access-token-marker".to_owned(),
+                Some("refresh-token-marker".to_owned()),
+                Some(Duration::from_secs(3_600)),
+                None,
+            );
+            profile.validate_initial_token_set(&complete).unwrap();
+        }
+    }
+
     fn profile(provider: UpstreamOAuthProvider) -> OAuthProviderProfile {
         let secret = matches!(
             provider,
@@ -346,6 +443,8 @@ mod tests {
         provider: UpstreamOAuthProvider,
         host: &'static str,
         path: &'static str,
+        token_host: &'static str,
+        token_path: &'static str,
         scope: &'static str,
         additional_parameters: &'static [(&'static str, &'static str)],
         authentication_method: OAuthClientAuthenticationMethod,
@@ -358,8 +457,10 @@ mod tests {
                 provider: UpstreamOAuthProvider::Codex,
                 host: "auth.openai.com",
                 path: "/oauth/authorize",
-                scope: CODEX_SCOPE,
-                additional_parameters: CODEX_AUTHORIZATION_PARAMETERS,
+                token_host: "auth.openai.com",
+                token_path: "/oauth/token",
+                scope: "openid email profile offline_access",
+                additional_parameters: EXPECTED_CODEX_PARAMETERS,
                 authentication_method: OAuthClientAuthenticationMethod::Public,
                 encoding: OAuthTokenRequestEncoding::Form,
             },
@@ -367,8 +468,10 @@ mod tests {
                 provider: UpstreamOAuthProvider::Gemini,
                 host: "accounts.google.com",
                 path: "/o/oauth2/v2/auth",
-                scope: GEMINI_SCOPE,
-                additional_parameters: GOOGLE_AUTHORIZATION_PARAMETERS,
+                token_host: "oauth2.googleapis.com",
+                token_path: "/token",
+                scope: "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
+                additional_parameters: EXPECTED_GOOGLE_PARAMETERS,
                 authentication_method: OAuthClientAuthenticationMethod::ClientSecretPost,
                 encoding: OAuthTokenRequestEncoding::Form,
             },
@@ -376,8 +479,10 @@ mod tests {
                 provider: UpstreamOAuthProvider::Antigravity,
                 host: "accounts.google.com",
                 path: "/o/oauth2/v2/auth",
-                scope: ANTIGRAVITY_SCOPE,
-                additional_parameters: GOOGLE_AUTHORIZATION_PARAMETERS,
+                token_host: "oauth2.googleapis.com",
+                token_path: "/token",
+                scope: "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs",
+                additional_parameters: EXPECTED_GOOGLE_PARAMETERS,
                 authentication_method: OAuthClientAuthenticationMethod::ClientSecretPost,
                 encoding: OAuthTokenRequestEncoding::Form,
             },

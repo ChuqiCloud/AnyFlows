@@ -1,6 +1,6 @@
 use std::{fmt, mem, time::Duration};
 
-use af_httpclient::{Body, HeaderMap, HeaderName, HeaderValue, Method, PooledClient};
+use af_httpclient::{Body, Bytes, HeaderMap, HeaderName, HeaderValue, Method, PooledClient};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use thiserror::Error;
@@ -147,6 +147,11 @@ impl OAuthTokenExchange {
         self.token_endpoint = endpoint;
     }
 
+    #[cfg(test)]
+    pub(crate) fn token_endpoint_for_test(&self) -> &Url {
+        &self.token_endpoint
+    }
+
     /// 消费一次性授权 grant，并通过受控 Client 交换 Bearer token。
     pub async fn exchange(
         &self,
@@ -159,16 +164,17 @@ impl OAuthTokenExchange {
         let request_body = self.build_request_body(&grant)?;
         let headers = self.build_headers()?;
         let context = grant.context();
+        // Bytes 直接持有 Zeroizing owner，传输层的共享引用全部释放后才清零底层分配。
+        let request_body = Body::from(Bytes::from_owner(request_body.into_zeroizing_bytes()));
         let response = http_client
             .execute(
                 Method::POST,
                 self.token_endpoint.as_str(),
                 headers,
-                Some(Body::from(request_body.as_bytes().to_vec())),
+                Some(request_body),
             )
             .await;
-        // 网络请求完成后立即清零本地请求体、state、授权码与 verifier，不延长到响应解析结束。
-        drop(request_body);
+        // 网络请求完成后立即清零 grant 中的 state、授权码与 verifier，不延长到响应解析结束。
         drop(grant);
         let response = response.map_err(|_| OAuthTokenExchangeError::Transport)?;
         let status = response.status();
@@ -517,10 +523,10 @@ enum OAuthTokenRequestBody {
 }
 
 impl OAuthTokenRequestBody {
-    fn as_bytes(&self) -> &[u8] {
+    fn into_zeroizing_bytes(self) -> Zeroizing<Vec<u8>> {
         match self {
-            Self::Form(body) => body.as_bytes(),
-            Self::Json(body) => body.as_slice(),
+            Self::Form(body) => Zeroizing::new(body.as_bytes().to_vec()),
+            Self::Json(body) => body,
         }
     }
 }
