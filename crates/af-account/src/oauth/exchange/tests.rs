@@ -35,6 +35,7 @@ fn grant(provider: UpstreamOAuthProvider) -> OAuthAuthorizationGrant {
         provider,
         context(),
         Url::parse(CALLBACK_URI).unwrap(),
+        "state-marker".to_owned(),
         AUTHORIZATION_CODE.to_owned(),
         CODE_VERIFIER.to_owned(),
     )
@@ -249,6 +250,7 @@ fn encoded_token_request_has_a_hard_length_limit() {
         UpstreamOAuthProvider::ClaudeCode,
         context(),
         redirect_uri,
+        "state-marker".to_owned(),
         "c".repeat(4 * 1_024),
         CODE_VERIFIER.to_owned(),
     );
@@ -320,6 +322,63 @@ async fn public_client_exchange_sends_exact_pkce_form_and_returns_typed_tokens()
         "access-token-marker",
         "refresh-token-marker",
         "openid profile",
+    ] {
+        assert!(!debug.contains(private));
+    }
+}
+
+#[tokio::test]
+async fn json_exchange_preserves_state_and_rejects_field_injection() {
+    let mut exchange = OAuthTokenExchange::new_with_request_encoding(
+        UpstreamOAuthProvider::ClaudeCode,
+        "public-client".to_owned(),
+        "https://token.example/oauth/token".to_owned(),
+        OAuthClientAuthenticationMethod::Public,
+        None,
+        OAuthTokenRequestEncoding::Json,
+    )
+    .unwrap();
+    exchange.token_endpoint = Url::parse("http://token.example/oauth/token").unwrap();
+    let (address, server) = spawn_json_server(
+        200,
+        br#"{"access_token":"access-token-marker","token_type":"Bearer","refresh_token":"refresh-token-marker"}"#,
+        |request| {
+            assert_eq!(header_value(request, "content-type"), Some(JSON_CONTENT_TYPE));
+            assert_eq!(header_value(request, "accept"), Some(JSON_CONTENT_TYPE));
+            assert!(header_value(request, "authorization").is_none());
+            let (_, body) = request.split_once("\r\n\r\n").unwrap();
+            let values = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(body)
+                .unwrap();
+            assert_eq!(values.len(), 6, "JSON 请求不得出现 profile 之外的字段");
+            assert_eq!(values.get("grant_type").and_then(|value| value.as_str()), Some(AUTHORIZATION_CODE_GRANT_TYPE));
+            assert_eq!(values.get("code").and_then(|value| value.as_str()), Some(AUTHORIZATION_CODE));
+            assert_eq!(values.get("state").and_then(|value| value.as_str()), Some("state-marker"));
+            assert_eq!(values.get("client_id").and_then(|value| value.as_str()), Some("public-client"));
+            assert_eq!(values.get("redirect_uri").and_then(|value| value.as_str()), Some(CALLBACK_URI));
+            assert_eq!(values.get("code_verifier").and_then(|value| value.as_str()), Some(CODE_VERIFIER));
+            assert!(!values.contains_key("client_secret"));
+        },
+    );
+
+    let result = exchange
+        .exchange(
+            &proxied_client(address),
+            grant(UpstreamOAuthProvider::ClaudeCode),
+        )
+        .await
+        .unwrap();
+    server.join().unwrap();
+    assert_eq!(result.provider(), UpstreamOAuthProvider::ClaudeCode);
+    assert_eq!(result.access_token(), "access-token-marker");
+    assert_eq!(result.refresh_token(), Some("refresh-token-marker"));
+    assert_eq!(exchange.request_encoding(), OAuthTokenRequestEncoding::Json);
+    let debug = format!("{exchange:?}{result:?}");
+    for private in [
+        "state-marker",
+        AUTHORIZATION_CODE,
+        CODE_VERIFIER,
+        "access-token-marker",
+        "refresh-token-marker",
     ] {
         assert!(!debug.contains(private));
     }

@@ -1,6 +1,8 @@
 mod authorization;
+mod coordinator;
 mod exchange;
 mod persistence;
+mod profile;
 mod store;
 
 pub(crate) use authorization::validate_scope;
@@ -10,13 +12,15 @@ pub use authorization::{
     OAuthAuthorizationGrant, OAuthAuthorizationRequest, OAuthAuthorizationStart,
     UpstreamOAuthProvider,
 };
+pub use coordinator::{OAuthConnectionCoordinator, OAuthConnectionError, OAuthConnectionOutcome};
 pub use exchange::{
     MAX_OAUTH_TOKEN_RESPONSE_BYTES, OAuthClientAuthenticationMethod, OAuthEndpointErrorCode,
-    OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenSet,
+    OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenRequestEncoding, OAuthTokenSet,
 };
 pub use persistence::{
     OAuthTokenPersistenceError, OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService,
 };
+pub use profile::{OAuthProviderProfile, OAuthProviderProfileError};
 pub use store::{
     DEFAULT_MAX_PENDING_OAUTH_AUTHORIZATIONS, DEFAULT_OAUTH_AUTHORIZATION_SESSION_TTL,
     MAX_OAUTH_AUTHORIZATION_SESSION_TTL, MAX_PENDING_OAUTH_AUTHORIZATIONS,
