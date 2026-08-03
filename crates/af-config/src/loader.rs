@@ -87,6 +87,11 @@ struct HttpClientDefaults {
 struct OAuthDefaults {
     max_pending_authorizations: usize,
     session_ttl_secs: u64,
+    refresh_enabled: bool,
+    refresh_interval_secs: u64,
+    refresh_before_expiry_secs: u64,
+    refresh_batch_size: usize,
+    refresh_concurrency: usize,
 }
 
 impl Default for OAuthDefaults {
@@ -94,6 +99,11 @@ impl Default for OAuthDefaults {
         Self {
             max_pending_authorizations: crate::DEFAULT_OAUTH_MAX_PENDING_AUTHORIZATIONS,
             session_ttl_secs: crate::DEFAULT_OAUTH_SESSION_TTL_SECS,
+            refresh_enabled: crate::DEFAULT_OAUTH_REFRESH_ENABLED,
+            refresh_interval_secs: crate::DEFAULT_OAUTH_REFRESH_INTERVAL_SECS,
+            refresh_before_expiry_secs: crate::DEFAULT_OAUTH_REFRESH_BEFORE_EXPIRY_SECS,
+            refresh_batch_size: crate::DEFAULT_OAUTH_REFRESH_BATCH_SIZE,
+            refresh_concurrency: crate::DEFAULT_OAUTH_REFRESH_CONCURRENCY,
         }
     }
 }
@@ -223,6 +233,11 @@ fn known_field(path: &str) -> Option<&'static str> {
         "oauth" => "oauth",
         "oauth.max_pending_authorizations" => "oauth.max_pending_authorizations",
         "oauth.session_ttl_secs" => "oauth.session_ttl_secs",
+        "oauth.refresh_enabled" => "oauth.refresh_enabled",
+        "oauth.refresh_interval_secs" => "oauth.refresh_interval_secs",
+        "oauth.refresh_before_expiry_secs" => "oauth.refresh_before_expiry_secs",
+        "oauth.refresh_batch_size" => "oauth.refresh_batch_size",
+        "oauth.refresh_concurrency" => "oauth.refresh_concurrency",
         "oauth.codex" => "oauth.codex",
         "oauth.codex.client_id" => "oauth.codex.client_id",
         "oauth.gemini" => "oauth.gemini",
@@ -326,6 +341,11 @@ mod tests {
             assert_eq!(config.auth().session_ttl_secs(), 3_600);
             assert_eq!(config.oauth().max_pending_authorizations(), 256);
             assert_eq!(config.oauth().session_ttl_secs(), 600);
+            assert!(config.oauth().refresh_enabled());
+            assert_eq!(config.oauth().refresh_interval_secs(), 60);
+            assert_eq!(config.oauth().refresh_before_expiry_secs(), 300);
+            assert_eq!(config.oauth().refresh_batch_size(), 64);
+            assert_eq!(config.oauth().refresh_concurrency(), 8);
             assert_eq!(config.oauth().configured_provider_count(), 0);
             assert_eq!(
                 config.openai_upstream().unwrap().base_url(),
@@ -582,13 +602,18 @@ mod tests {
     fn oauth_clients_are_closed_validated_and_redacted() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[database]\nurl = 'sqlite::memory:'\n[oauth]\nmax_pending_authorizations = 32\nsession_ttl_secs = 120\n[oauth.codex]\nclient_id = 'codex-client-marker'\n[oauth.gemini]\nclient_id = 'gemini-client-marker'\nclient_secret = 'gemini-secret-marker'\n[oauth.antigravity]\nclient_id = 'antigravity-client-marker'\nclient_secret = 'antigravity-secret-marker'\n",
+                "[database]\nurl = 'sqlite::memory:'\n[oauth]\nmax_pending_authorizations = 32\nsession_ttl_secs = 120\nrefresh_enabled = false\nrefresh_interval_secs = 45\nrefresh_before_expiry_secs = 240\nrefresh_batch_size = 24\nrefresh_concurrency = 6\n[oauth.codex]\nclient_id = 'codex-client-marker'\n[oauth.gemini]\nclient_id = 'gemini-client-marker'\nclient_secret = 'gemini-secret-marker'\n[oauth.antigravity]\nclient_id = 'antigravity-client-marker'\nclient_secret = 'antigravity-secret-marker'\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
 
             assert_eq!(config.oauth().max_pending_authorizations(), 32);
             assert_eq!(config.oauth().session_ttl_secs(), 120);
+            assert!(!config.oauth().refresh_enabled());
+            assert_eq!(config.oauth().refresh_interval_secs(), 45);
+            assert_eq!(config.oauth().refresh_before_expiry_secs(), 240);
+            assert_eq!(config.oauth().refresh_batch_size(), 24);
+            assert_eq!(config.oauth().refresh_concurrency(), 6);
             assert_eq!(config.oauth().configured_provider_count(), 3);
             assert_eq!(
                 config.oauth().codex().unwrap().client_id().expose(),
@@ -625,6 +650,30 @@ mod tests {
                     "[database]\nurl = 'sqlite::memory:'\n[oauth]\nsession_ttl_secs = 59\n",
                     ConfigError::OutOfRange {
                         field: "oauth.session_ttl_secs",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth]\nrefresh_interval_secs = 0\n",
+                    ConfigError::NonPositive {
+                        field: "oauth.refresh_interval_secs",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth]\nrefresh_before_expiry_secs = 86401\n",
+                    ConfigError::OutOfRange {
+                        field: "oauth.refresh_before_expiry_secs",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth]\nrefresh_batch_size = 257\n",
+                    ConfigError::OutOfRange {
+                        field: "oauth.refresh_batch_size",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth]\nrefresh_batch_size = 8\nrefresh_concurrency = 9\n",
+                    ConfigError::OutOfRange {
+                        field: "oauth.refresh_concurrency",
                     },
                 ),
                 (
@@ -677,6 +726,11 @@ mod tests {
             assert_eq!(config.channel_probe().batch_size(), 8);
             assert_eq!(config.channel_probe().interval_secs(), 120);
             assert_eq!(config.channel_probe().probe_timeout_secs(), 15);
+            assert!(!config.oauth().refresh_enabled());
+            assert_eq!(config.oauth().refresh_interval_secs(), 90);
+            assert_eq!(config.oauth().refresh_before_expiry_secs(), 420);
+            assert_eq!(config.oauth().refresh_batch_size(), 12);
+            assert_eq!(config.oauth().refresh_concurrency(), 3);
             assert_eq!(config.credential_encryption().key_id(), Some("primary"));
             assert_eq!(
                 config.credential_encryption().key().unwrap().expose(),
@@ -736,6 +790,11 @@ mod tests {
                 .env("AF_CHANNEL_PROBE__BATCH_SIZE", "8")
                 .env("AF_CHANNEL_PROBE__INTERVAL_SECS", "120")
                 .env("AF_CHANNEL_PROBE__PROBE_TIMEOUT_SECS", "15")
+                .env("AF_OAUTH__REFRESH_ENABLED", "false")
+                .env("AF_OAUTH__REFRESH_INTERVAL_SECS", "90")
+                .env("AF_OAUTH__REFRESH_BEFORE_EXPIRY_SECS", "420")
+                .env("AF_OAUTH__REFRESH_BATCH_SIZE", "12")
+                .env("AF_OAUTH__REFRESH_CONCURRENCY", "3")
                 .env("AF_CREDENTIAL_ENCRYPTION__KEY_ID", "primary")
                 .env(
                     "AF_CREDENTIAL_ENCRYPTION__KEY",

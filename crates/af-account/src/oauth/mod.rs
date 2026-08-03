@@ -6,6 +6,7 @@ mod profile;
 mod refresh_coordinator;
 mod refresh_failure;
 mod refresh_persistence;
+mod refresh_supervisor;
 mod store;
 
 pub(crate) use authorization::validate_scope;
@@ -35,6 +36,10 @@ pub use refresh_persistence::{
     OAuthExpirationProjectionBackfillBatch, OAuthRefreshCandidate,
     OAuthRefreshFailurePersistenceOutcome, OAuthRefreshPersistenceError,
     OAuthRefreshPersistenceOutcome, OAuthRefreshPersistenceService, OAuthRefreshWriteGuard,
+};
+pub use refresh_supervisor::{
+    OAuthRefreshRunReport, OAuthRefreshSupervisor, OAuthRefreshSupervisorConfig,
+    OAuthRefreshSupervisorConfigError, OAuthRefreshSupervisorError,
 };
 pub use store::{
     DEFAULT_MAX_PENDING_OAUTH_AUTHORIZATIONS, DEFAULT_OAUTH_AUTHORIZATION_SESSION_TTL,

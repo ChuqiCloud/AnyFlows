@@ -85,6 +85,24 @@ pub const MAX_OAUTH_SESSION_TTL_SECS: u64 = 15 * 60;
 pub const MAX_OAUTH_CLIENT_ID_BYTES: usize = 256;
 /// OAuth 客户端密钥允许配置的最大 ASCII 字节数。
 pub const MAX_OAUTH_CLIENT_SECRET_BYTES: usize = 16 * 1_024;
+/// OAuth token 周期刷新默认开启。
+pub const DEFAULT_OAUTH_REFRESH_ENABLED: bool = true;
+/// OAuth 到期候选的默认扫描周期。
+pub const DEFAULT_OAUTH_REFRESH_INTERVAL_SECS: u64 = 60;
+/// OAuth access token 默认提前刷新秒数。
+pub const DEFAULT_OAUTH_REFRESH_BEFORE_EXPIRY_SECS: u64 = 5 * 60;
+/// OAuth 单轮默认读取的候选数量。
+pub const DEFAULT_OAUTH_REFRESH_BATCH_SIZE: usize = 64;
+/// OAuth 单实例默认并发刷新数量。
+pub const DEFAULT_OAUTH_REFRESH_CONCURRENCY: usize = 8;
+/// OAuth 到期候选扫描周期硬上限。
+pub const MAX_OAUTH_REFRESH_INTERVAL_SECS: u64 = 3_600;
+/// OAuth token 提前刷新时间硬上限。
+pub const MAX_OAUTH_REFRESH_BEFORE_EXPIRY_SECS: u64 = 24 * 60 * 60;
+/// OAuth 单轮候选数量硬上限，与数据库查询边界保持一致。
+pub const MAX_OAUTH_REFRESH_BATCH_SIZE: usize = 256;
+/// OAuth 单实例刷新并发硬上限。
+pub const MAX_OAUTH_REFRESH_CONCURRENCY: usize = 64;
 
 /// 经过规范化的 HTTP(S) CORS Origin，不包含路径、凭据或通配语义。
 #[derive(Clone, Eq, Hash, PartialEq, Serialize)]
@@ -599,6 +617,11 @@ impl OAuthConfidentialClientSettings {
 pub struct OAuthSettings {
     max_pending_authorizations: usize,
     session_ttl_secs: u64,
+    refresh_enabled: bool,
+    refresh_interval_secs: u64,
+    refresh_before_expiry_secs: u64,
+    refresh_batch_size: usize,
+    refresh_concurrency: usize,
     codex: Option<OAuthPublicClientSettings>,
     gemini: Option<OAuthConfidentialClientSettings>,
     antigravity: Option<OAuthConfidentialClientSettings>,
@@ -615,6 +638,36 @@ impl OAuthSettings {
     #[must_use]
     pub const fn session_ttl_secs(&self) -> u64 {
         self.session_ttl_secs
+    }
+
+    /// 返回是否启用 OAuth token 周期刷新任务。
+    #[must_use]
+    pub const fn refresh_enabled(&self) -> bool {
+        self.refresh_enabled
+    }
+
+    /// 返回两轮 OAuth 到期候选扫描之间的秒数。
+    #[must_use]
+    pub const fn refresh_interval_secs(&self) -> u64 {
+        self.refresh_interval_secs
+    }
+
+    /// 返回 access token 到期前进入刷新候选集的秒数。
+    #[must_use]
+    pub const fn refresh_before_expiry_secs(&self) -> u64 {
+        self.refresh_before_expiry_secs
+    }
+
+    /// 返回单轮最多读取的 OAuth 刷新候选数。
+    #[must_use]
+    pub const fn refresh_batch_size(&self) -> usize {
+        self.refresh_batch_size
+    }
+
+    /// 返回单实例同时执行的 OAuth 刷新上限。
+    #[must_use]
+    pub const fn refresh_concurrency(&self) -> usize {
+        self.refresh_concurrency
     }
 
     /// 返回可选 Codex 公共客户端配置。
@@ -654,6 +707,11 @@ impl Default for OAuthSettings {
         Self {
             max_pending_authorizations: DEFAULT_OAUTH_MAX_PENDING_AUTHORIZATIONS,
             session_ttl_secs: DEFAULT_OAUTH_SESSION_TTL_SECS,
+            refresh_enabled: DEFAULT_OAUTH_REFRESH_ENABLED,
+            refresh_interval_secs: DEFAULT_OAUTH_REFRESH_INTERVAL_SECS,
+            refresh_before_expiry_secs: DEFAULT_OAUTH_REFRESH_BEFORE_EXPIRY_SECS,
+            refresh_batch_size: DEFAULT_OAUTH_REFRESH_BATCH_SIZE,
+            refresh_concurrency: DEFAULT_OAUTH_REFRESH_CONCURRENCY,
             codex: None,
             gemini: None,
             antigravity: None,
@@ -1079,6 +1137,48 @@ fn validate_oauth_settings(settings: &OAuthSettings) -> Result<(), ConfigError> 
     {
         return Err(ConfigError::OutOfRange {
             field: "oauth.session_ttl_secs",
+        });
+    }
+    if settings.refresh_interval_secs == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "oauth.refresh_interval_secs",
+        });
+    }
+    if settings.refresh_interval_secs > MAX_OAUTH_REFRESH_INTERVAL_SECS {
+        return Err(ConfigError::OutOfRange {
+            field: "oauth.refresh_interval_secs",
+        });
+    }
+    if settings.refresh_before_expiry_secs == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "oauth.refresh_before_expiry_secs",
+        });
+    }
+    if settings.refresh_before_expiry_secs > MAX_OAUTH_REFRESH_BEFORE_EXPIRY_SECS {
+        return Err(ConfigError::OutOfRange {
+            field: "oauth.refresh_before_expiry_secs",
+        });
+    }
+    if settings.refresh_batch_size == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "oauth.refresh_batch_size",
+        });
+    }
+    if settings.refresh_batch_size > MAX_OAUTH_REFRESH_BATCH_SIZE {
+        return Err(ConfigError::OutOfRange {
+            field: "oauth.refresh_batch_size",
+        });
+    }
+    if settings.refresh_concurrency == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "oauth.refresh_concurrency",
+        });
+    }
+    if settings.refresh_concurrency > MAX_OAUTH_REFRESH_CONCURRENCY
+        || settings.refresh_concurrency > settings.refresh_batch_size
+    {
+        return Err(ConfigError::OutOfRange {
+            field: "oauth.refresh_concurrency",
         });
     }
     if let Some(client) = settings.codex() {

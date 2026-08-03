@@ -136,27 +136,28 @@ impl OAuthRefreshLeasePort for DistributedLeaseManager {
 pub struct OAuthRefreshCoordinator {
     profiles: HashMap<UpstreamOAuthProvider, Arc<OAuthProviderProfile>>,
     http_clients: HttpClientProvider,
-    persistence: OAuthRefreshPersistenceService,
+    persistence: Arc<OAuthRefreshPersistenceService>,
     singleflight: Arc<OAuthRefreshSingleflight>,
     leases: Arc<dyn OAuthRefreshLeasePort>,
 }
 
 impl OAuthRefreshCoordinator {
     /// 组合共享 Provider profile、受控 Client、刷新持久化服务和默认有界 registry。
-    pub fn new<P>(
+    pub fn new<P, S>(
         profiles: impl IntoIterator<Item = P>,
         http_clients: HttpClientProvider,
-        persistence: OAuthRefreshPersistenceService,
+        persistence: S,
     ) -> Result<Self, OAuthRefreshCoordinatorError>
     where
         P: Into<Arc<OAuthProviderProfile>>,
+        S: Into<Arc<OAuthRefreshPersistenceService>>,
     {
         let leases = DistributedLeaseManager::local_only(OAUTH_REFRESH_LEASE_NAMESPACE)
             .expect("固定 OAuth 刷新租约命名空间必须有效");
         Self::new_with_components(
             profiles,
             http_clients,
-            persistence,
+            persistence.into(),
             Arc::new(leases),
             DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS_NON_ZERO,
             DEFAULT_OAUTH_REFRESH_RESULT_RETENTION,
@@ -164,19 +165,20 @@ impl OAuthRefreshCoordinator {
     }
 
     /// 注入已经完成启动健康检查的租约协调器，启用多实例 OAuth 刷新互斥。
-    pub fn new_with_distributed_lease<P>(
+    pub fn new_with_distributed_lease<P, S>(
         profiles: impl IntoIterator<Item = P>,
         http_clients: HttpClientProvider,
-        persistence: OAuthRefreshPersistenceService,
+        persistence: S,
         leases: DistributedLeaseManager,
     ) -> Result<Self, OAuthRefreshCoordinatorError>
     where
         P: Into<Arc<OAuthProviderProfile>>,
+        S: Into<Arc<OAuthRefreshPersistenceService>>,
     {
         Self::new_with_components(
             profiles,
             http_clients,
-            persistence,
+            persistence.into(),
             Arc::new(leases),
             DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS_NON_ZERO,
             DEFAULT_OAUTH_REFRESH_RESULT_RETENTION,
@@ -293,7 +295,7 @@ impl OAuthRefreshCoordinator {
     fn new_with_components<P>(
         profiles: impl IntoIterator<Item = P>,
         http_clients: HttpClientProvider,
-        persistence: OAuthRefreshPersistenceService,
+        persistence: Arc<OAuthRefreshPersistenceService>,
         leases: Arc<dyn OAuthRefreshLeasePort>,
         max_entries: NonZeroUsize,
         completed_retention: Duration,
@@ -322,7 +324,7 @@ impl OAuthRefreshCoordinator {
     fn new_with_lease_port<P>(
         profiles: impl IntoIterator<Item = P>,
         http_clients: HttpClientProvider,
-        persistence: OAuthRefreshPersistenceService,
+        persistence: impl Into<Arc<OAuthRefreshPersistenceService>>,
         leases: Arc<dyn OAuthRefreshLeasePort>,
     ) -> Result<Self, OAuthRefreshCoordinatorError>
     where
@@ -331,7 +333,7 @@ impl OAuthRefreshCoordinator {
         Self::new_with_components(
             profiles,
             http_clients,
-            persistence,
+            persistence.into(),
             leases,
             DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS_NON_ZERO,
             DEFAULT_OAUTH_REFRESH_RESULT_RETENTION,
