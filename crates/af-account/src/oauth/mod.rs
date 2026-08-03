@@ -4,6 +4,7 @@ mod exchange;
 mod persistence;
 mod profile;
 mod refresh_coordinator;
+mod refresh_failure;
 mod refresh_persistence;
 mod store;
 
@@ -28,8 +29,10 @@ pub use refresh_coordinator::{
     DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS, DEFAULT_OAUTH_REFRESH_RESULT_RETENTION,
     OAuthRefreshCoordinator, OAuthRefreshCoordinatorError, OAuthRefreshCoordinatorOutcome,
 };
+pub use refresh_failure::OAuthRefreshFailureKind;
 pub use refresh_persistence::{
-    OAuthExpirationProjectionBackfillBatch, OAuthRefreshCandidate, OAuthRefreshPersistenceError,
+    OAuthExpirationProjectionBackfillBatch, OAuthRefreshCandidate,
+    OAuthRefreshFailurePersistenceOutcome, OAuthRefreshPersistenceError,
     OAuthRefreshPersistenceOutcome, OAuthRefreshPersistenceService, OAuthRefreshWriteGuard,
 };
 pub use store::{

@@ -8,7 +8,8 @@ use super::{
     AdminChannelRepository, AdminChannelWriteRecord, AdminCredentialCreateOutcome,
     AdminCredentialDeleteOutcome, AdminCredentialWriteRecord, DatabaseOptions,
     MAX_OAUTH_REFRESH_CANDIDATES, MigrationOptions,
-    OAuthCredentialExpirationProjectionUpdateOutcome, OAuthCredentialRefreshUpdateOutcome,
+    OAuthCredentialExpirationProjectionUpdateOutcome, OAuthCredentialRefreshFailureKind,
+    OAuthCredentialRefreshFailureUpdateOutcome, OAuthCredentialRefreshUpdateOutcome,
     OAuthCredentialRepository, OAuthCredentialRepositoryError, OAuthCredentialTokenUpdateOutcome,
     entity::{EncryptedJson, channels, credentials},
 };
@@ -242,24 +243,28 @@ async fn due_refresh_candidates_are_bounded_stable_and_fail_closed() -> Result<(
         create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x54).await?;
     let unschedulable =
         create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x55).await?;
+    let active_cooldown =
+        create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x56).await?;
+    let elapsed_cooldown =
+        create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x57).await?;
     let missing_projection = create_credential(
         &fixture,
         enabled_channel,
         CredentialKind::Oauth,
         Some("codex"),
-        0x56,
+        0x58,
     )
     .await?;
     let root =
-        create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x57).await?;
+        create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x59).await?;
     let child =
-        create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x58).await?;
+        create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x5a).await?;
     let channel_disabled = create_credential(
         &fixture,
         disabled_channel,
         CredentialKind::Oauth,
         None,
-        0x59,
+        0x5b,
     )
     .await?;
 
@@ -269,9 +274,11 @@ async fn due_refresh_candidates_are_bounded_stable_and_fail_closed() -> Result<(
         (future, 101, 0x63),
         (disabled, 80, 0x64),
         (unschedulable, 70, 0x65),
-        (root, 101, 0x66),
-        (child, 50, 0x67),
-        (channel_disabled, 40, 0x68),
+        (active_cooldown, 60, 0x66),
+        (elapsed_cooldown, 50, 0x67),
+        (root, 101, 0x68),
+        (child, 40, 0x69),
+        (channel_disabled, 30, 0x6a),
     ] {
         assert_eq!(
             fixture
@@ -304,6 +311,21 @@ async fn due_refresh_candidates_are_bounded_stable_and_fail_closed() -> Result<(
     unschedulable_model
         .update(fixture.pool.connection())
         .await?;
+    let now = sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc();
+    let mut active_cooldown_model = credential_model(&fixture, active_cooldown)
+        .await?
+        .into_active_model();
+    active_cooldown_model.temp_unschedulable_until = Set(Some(now + Duration::from_secs(300)));
+    active_cooldown_model
+        .update(fixture.pool.connection())
+        .await?;
+    let mut elapsed_cooldown_model = credential_model(&fixture, elapsed_cooldown)
+        .await?
+        .into_active_model();
+    elapsed_cooldown_model.temp_unschedulable_until = Set(Some(now - Duration::from_secs(1)));
+    elapsed_cooldown_model
+        .update(fixture.pool.connection())
+        .await?;
     let mut child_model = credential_model(&fixture, child).await?.into_active_model();
     child_model.parent_id = Set(Some(root.get()));
     child_model.update(fixture.pool.connection()).await?;
@@ -325,13 +347,21 @@ async fn due_refresh_candidates_are_bounded_stable_and_fail_closed() -> Result<(
         .iter()
         .map(|candidate| candidate.credential_id())
         .collect::<Vec<_>>();
-    assert_eq!(candidate_ids, vec![first_due, second_due]);
+    assert_eq!(candidate_ids, vec![elapsed_cooldown, first_due, second_due]);
+    assert!(!candidate_ids.contains(&active_cooldown));
     assert!(!candidate_ids.contains(&missing_projection));
     for candidate in &candidates {
         assert_eq!(candidate.channel_id(), enabled_channel);
         assert_eq!(candidate.provider(), "codex");
         assert_eq!(candidate.expected_revision(), 1);
-        assert_eq!(candidate.expires_at_epoch_seconds(), 90);
+        assert_eq!(
+            candidate.expires_at_epoch_seconds(),
+            if candidate.credential_id() == elapsed_cooldown {
+                50
+            } else {
+                90
+            }
+        );
         let rendered = format!("{candidate:?}");
         assert!(!rendered.contains("oauth-write-test-key"));
         assert!(!rendered.contains("ciphertext"));
@@ -517,6 +547,186 @@ async fn refresh_cas_preserves_runtime_changes_and_rejects_stale_secret()
     assert_eq!(after_stale.oauth_revision, 2);
     assert_eq!(after_stale.oauth_expires_at_epoch_seconds, Some(200));
     assert_eq!(after_stale.secret.envelope_parts()?.1, [0x74; 24]);
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn refresh_failure_write_is_guarded_and_closes_runtime_state() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let channel_id = create_channel(&fixture, "refresh-failure").await?;
+    let credential_id =
+        create_credential(&fixture, channel_id, CredentialKind::Oauth, None, 0x81).await?;
+    fixture
+        .oauth_repository
+        .replace_token_secret(
+            channel_id,
+            credential_id,
+            "codex",
+            Some(100),
+            envelope(0x82),
+        )
+        .await?;
+    let mut candidates = Vec::with_capacity(3);
+    for _ in 0..3 {
+        candidates.push(
+            fixture
+                .oauth_repository
+                .due_refresh_candidates(100, 1)
+                .await?
+                .pop()
+                .expect("同一 OAuth 事实必须允许并发读取"),
+        );
+    }
+    let stale_after_reauthorization = candidates.pop().unwrap();
+    let revoked_candidate = candidates.pop().unwrap();
+    let transient_candidate = candidates.pop().unwrap();
+
+    let runtime_now = sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc();
+    let mut runtime = credential_model(&fixture, credential_id)
+        .await?
+        .into_active_model();
+    runtime.rate_limited_at = Set(Some(runtime_now));
+    runtime.rate_limit_reset_at = Set(Some(runtime_now + Duration::from_secs(60)));
+    runtime.overload_until = Set(Some(runtime_now + Duration::from_secs(30)));
+    runtime.update(fixture.pool.connection()).await?;
+    let before = sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc();
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .record_refresh_failure(
+                transient_candidate,
+                OAuthCredentialRefreshFailureKind::Transient,
+            )
+            .await?,
+        OAuthCredentialRefreshFailureUpdateOutcome::Recorded
+    );
+    let after = sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc();
+    let cooled = credential_model(&fixture, credential_id).await?;
+    assert_eq!(cooled.status, Status::Enabled.code());
+    assert_eq!(
+        cooled.temp_unschedulable_reason.as_deref(),
+        Some("oauth_refresh_transient")
+    );
+    let cooldown_until = cooled
+        .temp_unschedulable_until
+        .expect("临时刷新失败必须建立冷却");
+    assert!(cooldown_until >= before + Duration::from_secs(5 * 60));
+    assert!(cooldown_until <= after + Duration::from_secs(5 * 60));
+    assert_eq!(cooled.rate_limited_at, Some(runtime_now));
+    assert_eq!(
+        cooled.rate_limit_reset_at,
+        Some(runtime_now + Duration::from_secs(60))
+    );
+    assert_eq!(
+        cooled.overload_until,
+        Some(runtime_now + Duration::from_secs(30))
+    );
+    assert_eq!(cooled.oauth_revision, 1);
+    assert!(
+        fixture
+            .oauth_repository
+            .due_refresh_candidates(100, 1)
+            .await?
+            .is_empty()
+    );
+
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .record_refresh_failure(
+                revoked_candidate,
+                OAuthCredentialRefreshFailureKind::Revoked,
+            )
+            .await?,
+        OAuthCredentialRefreshFailureUpdateOutcome::Recorded
+    );
+    let revoked = credential_model(&fixture, credential_id).await?;
+    assert_eq!(revoked.status, Status::AutoDisabled.code());
+    assert_eq!(revoked.oauth_revision, 1);
+    assert!(revoked.rate_limited_at.is_none());
+    assert!(revoked.rate_limit_reset_at.is_none());
+    assert!(revoked.overload_until.is_none());
+    assert!(revoked.temp_unschedulable_until.is_none());
+    assert!(revoked.temp_unschedulable_reason.is_none());
+
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .replace_token_secret(
+                channel_id,
+                credential_id,
+                "codex",
+                Some(200),
+                envelope(0x83),
+            )
+            .await?,
+        OAuthCredentialTokenUpdateOutcome::Updated
+    );
+    let mut reauthorized = credential_model(&fixture, credential_id)
+        .await?
+        .into_active_model();
+    reauthorized.status = Set(Status::Enabled.code());
+    reauthorized.update(fixture.pool.connection()).await?;
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .record_refresh_failure(
+                stale_after_reauthorization,
+                OAuthCredentialRefreshFailureKind::Revoked,
+            )
+            .await?,
+        OAuthCredentialRefreshFailureUpdateOutcome::Stale
+    );
+    let current = credential_model(&fixture, credential_id).await?;
+    assert_eq!(current.status, Status::Enabled.code());
+    assert_eq!(current.oauth_revision, 2);
+    assert_eq!(current.secret.envelope_parts()?.1, [0x83; 24]);
+
+    let provider_guard = fixture
+        .oauth_repository
+        .due_refresh_candidates(200, 1)
+        .await?
+        .pop()
+        .expect("重新授权后的凭据必须形成新候选");
+    let mut switched = current.into_active_model();
+    switched.oauth_provider = Set(Some("gemini".to_owned()));
+    switched.update(fixture.pool.connection()).await?;
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .record_refresh_failure(provider_guard, OAuthCredentialRefreshFailureKind::Revoked)
+            .await?,
+        OAuthCredentialRefreshFailureUpdateOutcome::ProviderMismatch
+    );
+
+    let mut restored = credential_model(&fixture, credential_id)
+        .await?
+        .into_active_model();
+    restored.oauth_provider = Set(Some("codex".to_owned()));
+    restored.update(fixture.pool.connection()).await?;
+    let disabled_guard = fixture
+        .oauth_repository
+        .due_refresh_candidates(200, 1)
+        .await?
+        .pop()
+        .expect("恢复 Provider 后必须重新成为候选");
+    let mut disabled = credential_model(&fixture, credential_id)
+        .await?
+        .into_active_model();
+    disabled.status = Set(Status::Disabled.code());
+    disabled.update(fixture.pool.connection()).await?;
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .record_refresh_failure(disabled_guard, OAuthCredentialRefreshFailureKind::Transient,)
+            .await?,
+        OAuthCredentialRefreshFailureUpdateOutcome::Stale
+    );
+    let disabled = credential_model(&fixture, credential_id).await?;
+    assert_eq!(disabled.status, Status::Disabled.code());
+    assert!(disabled.temp_unschedulable_until.is_none());
 
     fixture.pool.close().await?;
     Ok(())

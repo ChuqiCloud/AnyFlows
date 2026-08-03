@@ -4,9 +4,10 @@ use af_httpclient::HttpClientProvider;
 use thiserror::Error;
 
 use super::{
-    OAuthProviderProfile, OAuthRefreshCandidate, OAuthRefreshPersistenceError,
-    OAuthRefreshPersistenceOutcome, OAuthRefreshPersistenceService, OAuthTokenExchangeError,
-    UpstreamOAuthProvider,
+    OAuthProviderProfile, OAuthRefreshCandidate, OAuthRefreshFailurePersistenceOutcome,
+    OAuthRefreshPersistenceError, OAuthRefreshPersistenceOutcome, OAuthRefreshPersistenceService,
+    OAuthRefreshWriteGuard, OAuthTokenExchangeError, UpstreamOAuthProvider,
+    refresh_failure::classify_refresh_failure,
 };
 
 mod singleflight;
@@ -76,6 +77,13 @@ pub enum OAuthRefreshCoordinatorError {
     /// token 集合加密或数据库条件写回失败。
     #[error("OAuth 刷新结果持久化失败")]
     Persistence(#[source] OAuthRefreshPersistenceError),
+    /// 上游失败已经分类，但对应的凭据状态无法写入数据库。
+    #[error("OAuth 刷新失败状态持久化失败")]
+    FailureStatePersistence {
+        exchange: OAuthTokenExchangeError,
+        #[source]
+        persistence: OAuthRefreshPersistenceError,
+    },
 }
 
 impl From<OAuthTokenExchangeError> for OAuthRefreshCoordinatorError {
@@ -161,8 +169,44 @@ impl OAuthRefreshCoordinator {
             .get(None)
             .map_err(|_| OAuthRefreshCoordinatorError::HttpClientUnavailable)?;
         let (guard, request) = candidate.into_parts();
-        let token_set = profile.refresh(&http_client, request).await?;
-        Ok(self.persistence.persist(guard, token_set).await?.into())
+        match profile.refresh(&http_client, request).await {
+            Ok(token_set) => Ok(self.persistence.persist(guard, token_set).await?.into()),
+            Err(exchange) => self.handle_exchange_failure(guard, exchange).await,
+        }
+    }
+
+    async fn handle_exchange_failure(
+        &self,
+        guard: OAuthRefreshWriteGuard,
+        exchange: OAuthTokenExchangeError,
+    ) -> Result<OAuthRefreshCoordinatorOutcome, OAuthRefreshCoordinatorError> {
+        let Some(failure_kind) = classify_refresh_failure(exchange) else {
+            return Err(OAuthRefreshCoordinatorError::TokenExchange(exchange));
+        };
+        let outcome = self
+            .persistence
+            .record_failure(guard, failure_kind)
+            .await
+            .map_err(
+                |persistence| OAuthRefreshCoordinatorError::FailureStatePersistence {
+                    exchange,
+                    persistence,
+                },
+            )?;
+        match outcome {
+            OAuthRefreshFailurePersistenceOutcome::Recorded => {
+                Err(OAuthRefreshCoordinatorError::TokenExchange(exchange))
+            }
+            OAuthRefreshFailurePersistenceOutcome::Stale => {
+                Ok(OAuthRefreshCoordinatorOutcome::Stale)
+            }
+            OAuthRefreshFailurePersistenceOutcome::TargetNotFound => {
+                Ok(OAuthRefreshCoordinatorOutcome::TargetNotFound)
+            }
+            OAuthRefreshFailurePersistenceOutcome::ProviderMismatch => {
+                Ok(OAuthRefreshCoordinatorOutcome::ProviderMismatch)
+            }
+        }
     }
 
     fn new_with_singleflight_limits<P>(

@@ -1,7 +1,11 @@
-use std::fmt;
+use std::{fmt, time::Duration};
 
 use af_domain::{ChannelId, CredentialId, CredentialKind, Status};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, sea_query::Expr};
+use sea_orm::{
+    ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
+    entity::prelude::TimeDateTimeWithTimeZone,
+    sea_query::{Condition, Expr, Query},
+};
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
@@ -17,12 +21,37 @@ use crate::{
 /// 单次后台扫描允许返回的最大 OAuth 凭据数。
 pub const MAX_OAUTH_REFRESH_CANDIDATES: usize = 256;
 
+const OAUTH_REFRESH_TRANSIENT_COOLDOWN: Duration = Duration::from_secs(5 * 60);
+const OAUTH_REFRESH_TRANSIENT_REASON: &str = "oauth_refresh_transient";
+
 /// OAuth 刷新结果的条件写入结论。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OAuthCredentialRefreshUpdateOutcome {
     /// 新 token 密文、到期投影与版本已经原子提交。
     Updated,
     /// 上游调用期间凭据版本或密文已经变化，旧结果不得覆盖新事实。
+    Stale,
+    /// 目标不存在、已删除、不属于原渠道或不再是 OAuth 凭据。
+    TargetNotFound,
+    /// 目标已经切换到其他 OAuth provider。
+    ProviderMismatch,
+}
+
+/// OAuth 刷新失败允许写入数据库的闭合分类。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OAuthCredentialRefreshFailureKind {
+    /// 传输、限流、上游异常或响应损坏等可恢复失败。
+    Transient,
+    /// 上游结构化信号确认 refresh token 已经失效或撤销。
+    Revoked,
+}
+
+/// OAuth 刷新失败状态的条件写入结论。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OAuthCredentialRefreshFailureUpdateOutcome {
+    /// 冷却或自动停用状态已经原子写入。
+    Recorded,
+    /// 上游调用期间凭据事实或运行状态已经变化，旧失败被安全丢弃。
     Stale,
     /// 目标不存在、已删除、不属于原渠道或不再是 OAuth 凭据。
     TargetNotFound,
@@ -244,6 +273,7 @@ impl OAuthCredentialRepository {
         refresh_before_epoch_seconds: i64,
         limit: usize,
     ) -> Result<Vec<OAuthRefreshCandidateRecord>, OAuthCredentialRepositoryError> {
+        let now = TimeDateTimeWithTimeZone::now_utc();
         let rows = credentials::Entity::find()
             .find_also_related(channels::Entity)
             .filter(credentials::Column::Kind.eq(CredentialKind::Oauth.as_str()))
@@ -257,6 +287,7 @@ impl OAuthCredentialRepository {
             .filter(
                 credentials::Column::OauthExpiresAtEpochSeconds.lte(refresh_before_epoch_seconds),
             )
+            .filter(no_active_temp_cooldown(now))
             .filter(credentials::Column::DeletedAt.is_null())
             .filter(channels::Column::Status.eq(Status::Enabled.code()))
             .filter(channels::Column::DeletedAt.is_null())
@@ -440,6 +471,153 @@ impl OAuthCredentialRepository {
         }
         Err(OAuthCredentialRepositoryError::Invariant)
     }
+
+    /// 仅在候选事实和当前可调度状态仍未变化时写入刷新失败结论。
+    pub async fn record_refresh_failure(
+        &self,
+        candidate: OAuthRefreshCandidateRecord,
+        failure_kind: OAuthCredentialRefreshFailureKind,
+    ) -> Result<OAuthCredentialRefreshFailureUpdateOutcome, OAuthCredentialRepositoryError> {
+        let operation = self
+            .record_refresh_failure_inner(candidate, failure_kind)
+            .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(record_internal_error),
+            Err(_) => Err(record_internal_error(
+                OAuthCredentialRepositoryError::Timeout,
+            )),
+        }
+    }
+
+    async fn record_refresh_failure_inner(
+        &self,
+        candidate: OAuthRefreshCandidateRecord,
+        failure_kind: OAuthCredentialRefreshFailureKind,
+    ) -> Result<OAuthCredentialRefreshFailureUpdateOutcome, OAuthCredentialRepositoryError> {
+        let now = TimeDateTimeWithTimeZone::now_utc();
+        let active_channels = Query::select()
+            .column(channels::Column::Id)
+            .from(channels::Entity)
+            .and_where(Expr::col(channels::Column::Status).eq(Status::Enabled.code()))
+            .and_where(Expr::col(channels::Column::DeletedAt).is_null())
+            .to_owned();
+        let update = credentials::Entity::update_many()
+            .filter(credentials::Column::Id.eq(candidate.credential_id.get()))
+            .filter(credentials::Column::ChannelId.eq(candidate.channel_id.get()))
+            .filter(credentials::Column::Kind.eq(CredentialKind::Oauth.as_str()))
+            .filter(credentials::Column::Status.eq(Status::Enabled.code()))
+            .filter(credentials::Column::Schedulable.eq(true))
+            .filter(credentials::Column::ParentId.is_null())
+            .filter(credentials::Column::DeletedAt.is_null())
+            .filter(credentials::Column::OauthProvider.eq(candidate.provider.clone()))
+            .filter(credentials::Column::OauthRevision.eq(candidate.expected_revision))
+            .filter(credentials::Column::Secret.eq(candidate.expected_secret.clone()))
+            .filter(Expr::col(credentials::Column::ChannelId).in_subquery(active_channels))
+            .col_expr(credentials::Column::UpdatedAt, Expr::value(now));
+        let update = match failure_kind {
+            OAuthCredentialRefreshFailureKind::Transient => update
+                // 临时失败不能缩短或覆盖其他并发路径已经建立的冷却窗口。
+                .filter(no_active_temp_cooldown(now))
+                .col_expr(
+                    credentials::Column::TempUnschedulableUntil,
+                    Expr::value(Some(now + OAUTH_REFRESH_TRANSIENT_COOLDOWN)),
+                )
+                .col_expr(
+                    credentials::Column::TempUnschedulableReason,
+                    Expr::value(Some(OAUTH_REFRESH_TRANSIENT_REASON.to_owned())),
+                ),
+            OAuthCredentialRefreshFailureKind::Revoked => update
+                .col_expr(
+                    credentials::Column::Status,
+                    Expr::value(Status::AutoDisabled.code()),
+                )
+                .col_expr(
+                    credentials::Column::RateLimitedAt,
+                    Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
+                )
+                .col_expr(
+                    credentials::Column::RateLimitResetAt,
+                    Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
+                )
+                .col_expr(
+                    credentials::Column::OverloadUntil,
+                    Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
+                )
+                .col_expr(
+                    credentials::Column::TempUnschedulableUntil,
+                    Expr::value(Option::<TimeDateTimeWithTimeZone>::None),
+                )
+                .col_expr(
+                    credentials::Column::TempUnschedulableReason,
+                    Expr::value(Option::<String>::None),
+                ),
+        };
+        let result = update
+            .exec(self.pool.connection())
+            .await
+            .map_err(|_| query_error("oauth_refresh_failure_update"))?;
+        match result.rows_affected {
+            1 => Ok(OAuthCredentialRefreshFailureUpdateOutcome::Recorded),
+            0 => {
+                self.classify_refresh_failure_cas_miss(&candidate, failure_kind, now)
+                    .await
+            }
+            _ => Err(OAuthCredentialRepositoryError::Invariant),
+        }
+    }
+
+    async fn classify_refresh_failure_cas_miss(
+        &self,
+        candidate: &OAuthRefreshCandidateRecord,
+        failure_kind: OAuthCredentialRefreshFailureKind,
+        now: TimeDateTimeWithTimeZone,
+    ) -> Result<OAuthCredentialRefreshFailureUpdateOutcome, OAuthCredentialRepositoryError> {
+        let target = credentials::Entity::find_by_id(candidate.credential_id.get())
+            .find_also_related(channels::Entity)
+            .filter(credentials::Column::ChannelId.eq(candidate.channel_id.get()))
+            .filter(credentials::Column::DeletedAt.is_null())
+            .one(self.pool.connection())
+            .await
+            .map_err(|_| query_error("oauth_refresh_failure_classify"))?;
+        let Some((target, channel)) = target else {
+            return Ok(OAuthCredentialRefreshFailureUpdateOutcome::TargetNotFound);
+        };
+        if target.kind != CredentialKind::Oauth.as_str() {
+            return Ok(OAuthCredentialRefreshFailureUpdateOutcome::TargetNotFound);
+        }
+        if target.oauth_provider.as_deref() != Some(candidate.provider.as_str()) {
+            return Ok(OAuthCredentialRefreshFailureUpdateOutcome::ProviderMismatch);
+        }
+        if target.oauth_revision != candidate.expected_revision
+            || target.secret != candidate.expected_secret
+        {
+            return Ok(OAuthCredentialRefreshFailureUpdateOutcome::Stale);
+        }
+        let credential_status = Status::try_from(target.status)
+            .map_err(|_| OAuthCredentialRepositoryError::Invariant)?;
+        let channel = channel.ok_or(OAuthCredentialRepositoryError::Invariant)?;
+        let channel_status = Status::try_from(channel.status)
+            .map_err(|_| OAuthCredentialRepositoryError::Invariant)?;
+        if credential_status != Status::Enabled
+            || !target.schedulable
+            || target.parent_id.is_some()
+            || (failure_kind == OAuthCredentialRefreshFailureKind::Transient
+                && target
+                    .temp_unschedulable_until
+                    .is_some_and(|until| until > now))
+            || channel_status != Status::Enabled
+            || channel.deleted_at.is_some()
+        {
+            return Ok(OAuthCredentialRefreshFailureUpdateOutcome::Stale);
+        }
+        Err(OAuthCredentialRepositoryError::Invariant)
+    }
+}
+
+fn no_active_temp_cooldown(now: TimeDateTimeWithTimeZone) -> Condition {
+    Condition::any()
+        .add(credentials::Column::TempUnschedulableUntil.is_null())
+        .add(credentials::Column::TempUnschedulableUntil.lte(now))
 }
 
 fn candidate_from_models(
