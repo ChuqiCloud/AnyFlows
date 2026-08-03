@@ -19,6 +19,7 @@ const MAX_OAUTH_TOKEN_ENDPOINT_BYTES: usize = 4 * 1_024;
 const MAX_OAUTH_TOKEN_REQUEST_BYTES: usize = 32 * 1_024;
 const MAX_OAUTH_CLIENT_SECRET_BYTES: usize = 16 * 1_024;
 const AUTHORIZATION_CODE_GRANT_TYPE: &str = "authorization_code";
+const REFRESH_TOKEN_GRANT_TYPE: &str = "refresh_token";
 const FORM_CONTENT_TYPE: &str = "application/x-www-form-urlencoded";
 const JSON_CONTENT_TYPE: &str = "application/json";
 
@@ -50,11 +51,11 @@ pub enum OAuthEndpointErrorCode {
     InvalidRequest,
     /// 客户端认证失败。
     InvalidClient,
-    /// 授权码无效、过期、已消费或与 redirect URI 不匹配。
+    /// 授权码或 refresh token 无效、过期、已消费或与客户端不匹配。
     InvalidGrant,
-    /// 客户端不允许使用授权码流程。
+    /// 客户端不允许使用请求的 grant。
     UnauthorizedClient,
-    /// token endpoint 不支持授权码 grant。
+    /// token endpoint 不支持请求的 grant。
     UnsupportedGrantType,
     /// 请求的 scope 无效或超出授权范围。
     InvalidScope,
@@ -63,7 +64,7 @@ pub enum OAuthEndpointErrorCode {
     Other,
 }
 
-/// 受控 OAuth 授权码交换器；配置、请求和响应均不开放任意字段注入。
+/// 受控 OAuth token endpoint 客户端；配置、请求和响应均不开放任意字段注入。
 pub struct OAuthTokenExchange {
     provider: UpstreamOAuthProvider,
     client_id: String,
@@ -162,8 +163,37 @@ impl OAuthTokenExchange {
             return Err(OAuthTokenExchangeError::ProviderMismatch);
         }
         let request_body = self.build_request_body(&grant)?;
-        let headers = self.build_headers()?;
         let context = grant.context();
+        // 请求正文已经取得敏感字段的可清零所有权，不再延长一次性 grant 的生命周期。
+        drop(grant);
+        let wire = self
+            .execute_token_request(http_client, request_body)
+            .await?;
+        OAuthTokenSet::from_wire(self.provider, context, wire)
+    }
+
+    /// 消费旧 refresh token，并按 RFC 6749 refresh grant 获取新的 token 集合。
+    pub async fn refresh(
+        &self,
+        http_client: &PooledClient,
+        request: OAuthTokenRefreshRequest,
+    ) -> Result<OAuthRefreshedTokenSet, OAuthTokenExchangeError> {
+        if request.provider() != self.provider {
+            return Err(OAuthTokenExchangeError::ProviderMismatch);
+        }
+        let request_body = self.build_refresh_request_body(&request)?;
+        let wire = self
+            .execute_token_request(http_client, request_body)
+            .await?;
+        OAuthRefreshedTokenSet::from_wire(self.provider, request, wire)
+    }
+
+    async fn execute_token_request(
+        &self,
+        http_client: &PooledClient,
+        request_body: OAuthTokenRequestBody,
+    ) -> Result<TokenResponseWire, OAuthTokenExchangeError> {
+        let headers = self.build_headers()?;
         // Bytes 直接持有 Zeroizing owner，传输层的共享引用全部释放后才清零底层分配。
         let request_body = Body::from(Bytes::from_owner(request_body.into_zeroizing_bytes()));
         let response = http_client
@@ -173,10 +203,8 @@ impl OAuthTokenExchange {
                 headers,
                 Some(request_body),
             )
-            .await;
-        // 网络请求完成后立即清零 grant 中的 state、授权码与 verifier，不延长到响应解析结束。
-        drop(grant);
-        let response = response.map_err(|_| OAuthTokenExchangeError::Transport)?;
+            .await
+            .map_err(|_| OAuthTokenExchangeError::Transport)?;
         let status = response.status();
         let body = collect_token_response(response).await?;
         if !status.is_success() {
@@ -188,9 +216,8 @@ impl OAuthTokenExchange {
                 code,
             });
         }
-        let wire = serde_json::from_slice::<TokenResponseWire>(&body)
-            .map_err(|_| OAuthTokenExchangeError::MalformedResponse)?;
-        OAuthTokenSet::from_wire(self.provider, context, wire)
+        serde_json::from_slice::<TokenResponseWire>(&body)
+            .map_err(|_| OAuthTokenExchangeError::MalformedResponse)
     }
 
     fn build_form(
@@ -203,6 +230,39 @@ impl OAuthTokenExchange {
             .append_pair("code", grant.authorization_code())
             .append_pair("redirect_uri", grant.redirect_uri().as_str())
             .append_pair("code_verifier", grant.code_verifier());
+        match self.authentication_method {
+            OAuthClientAuthenticationMethod::Public => {
+                serializer.append_pair("client_id", &self.client_id);
+            }
+            OAuthClientAuthenticationMethod::ClientSecretBasic => {}
+            OAuthClientAuthenticationMethod::ClientSecretPost => {
+                serializer
+                    .append_pair("client_id", &self.client_id)
+                    .append_pair(
+                        "client_secret",
+                        self.client_secret
+                            .as_ref()
+                            .expect("客户端认证配置已完成闭合校验")
+                            .expose(),
+                    );
+            }
+        }
+        let form = Zeroizing::new(serializer.finish());
+        if form.len() > MAX_OAUTH_TOKEN_REQUEST_BYTES {
+            return Err(OAuthTokenExchangeError::RequestTooLarge);
+        }
+        Ok(form)
+    }
+
+    fn build_refresh_form(
+        &self,
+        request: &OAuthTokenRefreshRequest,
+    ) -> Result<Zeroizing<String>, OAuthTokenExchangeError> {
+        let mut serializer = form_urlencoded::Serializer::new(String::new());
+        serializer
+            .append_pair("grant_type", REFRESH_TOKEN_GRANT_TYPE)
+            .append_pair("refresh_token", request.refresh_token());
+        // RFC 6749 省略 scope 即沿用原授权范围；旧值只用于响应缺省后的本地保留。
         match self.authentication_method {
             OAuthClientAuthenticationMethod::Public => {
                 serializer.append_pair("client_id", &self.client_id);
@@ -259,6 +319,48 @@ impl OAuthTokenExchange {
                     client_secret,
                     redirect_uri: grant.redirect_uri().as_str(),
                     code_verifier: grant.code_verifier(),
+                };
+                let body = Zeroizing::new(
+                    serde_json::to_vec(&request)
+                        .map_err(|_| OAuthTokenExchangeError::RequestEncoding)?,
+                );
+                if body.len() > MAX_OAUTH_TOKEN_REQUEST_BYTES {
+                    return Err(OAuthTokenExchangeError::RequestTooLarge);
+                }
+                Ok(OAuthTokenRequestBody::Json(body))
+            }
+        }
+    }
+
+    fn build_refresh_request_body(
+        &self,
+        request: &OAuthTokenRefreshRequest,
+    ) -> Result<OAuthTokenRequestBody, OAuthTokenExchangeError> {
+        match self.request_encoding {
+            OAuthTokenRequestEncoding::Form => Ok(OAuthTokenRequestBody::Form(
+                self.build_refresh_form(request)?,
+            )),
+            OAuthTokenRequestEncoding::Json => {
+                let (client_id, client_secret) = match self.authentication_method {
+                    OAuthClientAuthenticationMethod::Public => {
+                        (Some(self.client_id.as_str()), None)
+                    }
+                    OAuthClientAuthenticationMethod::ClientSecretBasic => (None, None),
+                    OAuthClientAuthenticationMethod::ClientSecretPost => (
+                        Some(self.client_id.as_str()),
+                        Some(
+                            self.client_secret
+                                .as_ref()
+                                .expect("客户端认证配置已完成闭合校验")
+                                .expose(),
+                        ),
+                    ),
+                };
+                let request = JsonRefreshTokenRequest {
+                    grant_type: REFRESH_TOKEN_GRANT_TYPE,
+                    refresh_token: request.refresh_token(),
+                    client_id,
+                    client_secret,
                 };
                 let body = Zeroizing::new(
                     serde_json::to_vec(&request)
@@ -329,6 +431,160 @@ impl fmt::Debug for OAuthTokenExchange {
     }
 }
 
+/// 一次 refresh grant 所需的旧可续期材料；释放时清零且不绑定管理员授权上下文。
+pub struct OAuthTokenRefreshRequest {
+    provider: UpstreamOAuthProvider,
+    refresh_token: TokenSecret,
+    scope: Option<TokenSecret>,
+}
+
+impl OAuthTokenRefreshRequest {
+    /// 接管并校验旧 refresh token 与可选 scope，供后台刷新链路按所有权消费。
+    pub fn new(
+        provider: UpstreamOAuthProvider,
+        refresh_token: String,
+        scope: Option<String>,
+    ) -> Result<Self, OAuthTokenExchangeError> {
+        // 先由可清零类型接管输入，确保校验失败不会以普通 String 释放敏感文本。
+        let refresh_token = TokenSecret::new_unchecked(refresh_token);
+        let scope = scope.map(TokenSecret::new_unchecked);
+        if !is_valid_bearer_secret(refresh_token.expose())
+            || scope
+                .as_ref()
+                .is_some_and(|value| validate_scope(value.expose()).is_err())
+        {
+            return Err(OAuthTokenExchangeError::InvalidRefreshRequest);
+        }
+        Ok(Self {
+            provider,
+            refresh_token,
+            scope,
+        })
+    }
+
+    /// 返回旧 token 所属的 provider。
+    #[must_use]
+    pub const fn provider(&self) -> UpstreamOAuthProvider {
+        self.provider
+    }
+
+    /// 暴露旧 refresh token 给受控 token endpoint 请求构造边界。
+    #[must_use]
+    pub fn refresh_token(&self) -> &str {
+        self.refresh_token.expose()
+    }
+
+    /// 返回旧 scope；仅在上游响应省略 scope 时继承。
+    #[must_use]
+    pub fn scope(&self) -> Option<&str> {
+        self.scope.as_ref().map(TokenSecret::expose)
+    }
+}
+
+impl fmt::Debug for OAuthTokenRefreshRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OAuthTokenRefreshRequest")
+            .field("provider", &self.provider)
+            .field("refresh_token", &"<已脱敏>")
+            .field("scope", &self.scope.as_ref().map(|_| "<已脱敏>"))
+            .finish()
+    }
+}
+
+/// refresh grant 返回且已合并轮转/缺省语义的 OAuth Bearer token 集合。
+pub struct OAuthRefreshedTokenSet {
+    provider: UpstreamOAuthProvider,
+    access_token: TokenSecret,
+    refresh_token: TokenSecret,
+    expires_in: Option<Duration>,
+    scope: Option<TokenSecret>,
+}
+
+impl OAuthRefreshedTokenSet {
+    fn from_wire(
+        provider: UpstreamOAuthProvider,
+        request: OAuthTokenRefreshRequest,
+        wire: TokenResponseWire,
+    ) -> Result<Self, OAuthTokenExchangeError> {
+        if !is_valid_token_response(&wire) {
+            return Err(OAuthTokenExchangeError::InvalidTokenResponse);
+        }
+        let OAuthTokenRefreshRequest {
+            provider: _,
+            refresh_token: previous_refresh_token,
+            scope: previous_scope,
+        } = request;
+        Ok(Self {
+            provider,
+            access_token: wire.access_token,
+            refresh_token: wire.refresh_token.unwrap_or(previous_refresh_token),
+            expires_in: wire.expires_in.map(Duration::from_secs),
+            scope: wire.scope.or(previous_scope),
+        })
+    }
+
+    /// 返回刷新结果所属 provider。
+    #[must_use]
+    pub const fn provider(&self) -> UpstreamOAuthProvider {
+        self.provider
+    }
+
+    /// 暴露新 access token 给后续加密持久化边界；调用方不得记录或复制。
+    #[must_use]
+    pub fn access_token(&self) -> &str {
+        self.access_token.expose()
+    }
+
+    /// 返回轮转后的 refresh token；上游省略时已经保留旧值。
+    #[must_use]
+    pub fn refresh_token(&self) -> &str {
+        self.refresh_token.expose()
+    }
+
+    /// 返回新 access token 的相对有效期。
+    #[must_use]
+    pub const fn expires_in(&self) -> Option<Duration> {
+        self.expires_in
+    }
+
+    /// 返回上游确认的 scope；上游省略时已经保留旧值。
+    #[must_use]
+    pub fn scope(&self) -> Option<&str> {
+        self.scope.as_ref().map(TokenSecret::expose)
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(
+        provider: UpstreamOAuthProvider,
+        access_token: String,
+        refresh_token: String,
+        expires_in: Option<Duration>,
+        scope: Option<String>,
+    ) -> Self {
+        Self {
+            provider,
+            access_token: TokenSecret::new_unchecked(access_token),
+            refresh_token: TokenSecret::new_unchecked(refresh_token),
+            expires_in,
+            scope: scope.map(TokenSecret::new_unchecked),
+        }
+    }
+}
+
+impl fmt::Debug for OAuthRefreshedTokenSet {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OAuthRefreshedTokenSet")
+            .field("provider", &self.provider)
+            .field("access_token", &"<已脱敏>")
+            .field("refresh_token", &"<已脱敏>")
+            .field("expires_in", &self.expires_in)
+            .field("scope", &self.scope.as_ref().map(|_| "<已脱敏>"))
+            .finish()
+    }
+}
+
 /// 已校验且默认脱敏的 OAuth Bearer token 集合。
 pub struct OAuthTokenSet {
     provider: UpstreamOAuthProvider,
@@ -345,18 +601,7 @@ impl OAuthTokenSet {
         context: OAuthAuthorizationContext,
         wire: TokenResponseWire,
     ) -> Result<Self, OAuthTokenExchangeError> {
-        if !wire.token_type.eq_ignore_ascii_case("bearer")
-            || wire.expires_in.is_some_and(|seconds| seconds == 0)
-            || !is_valid_bearer_secret(wire.access_token.expose())
-            || wire
-                .refresh_token
-                .as_ref()
-                .is_some_and(|token| !is_valid_bearer_secret(token.expose()))
-            || wire
-                .scope
-                .as_ref()
-                .is_some_and(|scope| validate_scope(scope.expose()).is_err())
-        {
+        if !is_valid_token_response(&wire) {
             return Err(OAuthTokenExchangeError::InvalidTokenResponse);
         }
         Ok(Self {
@@ -468,7 +713,7 @@ impl fmt::Debug for OAuthTokenSet {
     }
 }
 
-/// OAuth 授权码交换错误；不包含端点、授权码、verifier、token 或供应商错误正文。
+/// OAuth token endpoint 错误；不包含端点、授权材料、token、scope 或供应商错误正文。
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum OAuthTokenExchangeError {
@@ -478,6 +723,8 @@ pub enum OAuthTokenExchangeError {
     InvalidTokenEndpoint,
     #[error("OAuth 客户端认证配置无效")]
     InvalidClientAuthentication,
+    #[error("OAuth token 刷新请求无效")]
+    InvalidRefreshRequest,
     #[error("OAuth 授权提供商不匹配")]
     ProviderMismatch,
     #[error("OAuth token 请求超过长度上限")]
@@ -515,6 +762,16 @@ struct JsonAuthorizationCodeRequest<'a> {
     client_secret: Option<&'a str>,
     redirect_uri: &'a str,
     code_verifier: &'a str,
+}
+
+#[derive(Serialize)]
+struct JsonRefreshTokenRequest<'a> {
+    grant_type: &'static str,
+    refresh_token: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_secret: Option<&'a str>,
 }
 
 enum OAuthTokenRequestBody {
@@ -642,6 +899,20 @@ fn is_valid_bearer_secret(value: &str) -> bool {
         && !value
             .bytes()
             .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
+}
+
+fn is_valid_token_response(wire: &TokenResponseWire) -> bool {
+    wire.token_type.eq_ignore_ascii_case("bearer")
+        && !wire.expires_in.is_some_and(|seconds| seconds == 0)
+        && is_valid_bearer_secret(wire.access_token.expose())
+        && !wire
+            .refresh_token
+            .as_ref()
+            .is_some_and(|token| !is_valid_bearer_secret(token.expose()))
+        && !wire
+            .scope
+            .as_ref()
+            .is_some_and(|scope| validate_scope(scope.expose()).is_err())
 }
 
 fn encode_form_component(value: &str) -> Zeroizing<String> {

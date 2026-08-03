@@ -15,7 +15,8 @@ pub use authorization::{
 pub use coordinator::{OAuthConnectionCoordinator, OAuthConnectionError, OAuthConnectionOutcome};
 pub use exchange::{
     MAX_OAUTH_TOKEN_RESPONSE_BYTES, OAuthClientAuthenticationMethod, OAuthEndpointErrorCode,
-    OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenRequestEncoding, OAuthTokenSet,
+    OAuthRefreshedTokenSet, OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenRefreshRequest,
+    OAuthTokenRequestEncoding, OAuthTokenSet,
 };
 pub use persistence::{
     OAuthTokenPersistenceError, OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService,

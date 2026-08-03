@@ -9,8 +9,9 @@ use zeroize::Zeroize as _;
 
 use super::{
     OAuthAuthorizationContext, OAuthAuthorizationError, OAuthAuthorizationGrant,
-    OAuthAuthorizationRequest, OAuthClientAuthenticationMethod, OAuthTokenExchange,
-    OAuthTokenExchangeError, OAuthTokenRequestEncoding, OAuthTokenSet, UpstreamOAuthProvider,
+    OAuthAuthorizationRequest, OAuthClientAuthenticationMethod, OAuthRefreshedTokenSet,
+    OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenRefreshRequest,
+    OAuthTokenRequestEncoding, OAuthTokenSet, UpstreamOAuthProvider,
     authorization::{parse_profile_loopback_redirect_uri, validate_authorization_profile},
 };
 
@@ -214,6 +215,17 @@ impl OAuthProviderProfile {
         Ok(token_set)
     }
 
+    /// 使用该 provider 的固定客户端认证与编码刷新 token，并校验生产到期语义。
+    pub async fn refresh(
+        &self,
+        http_client: &PooledClient,
+        request: OAuthTokenRefreshRequest,
+    ) -> Result<OAuthRefreshedTokenSet, OAuthTokenExchangeError> {
+        let token_set = self.token_exchange.refresh(http_client, request).await?;
+        self.validate_refreshed_token_set(&token_set)?;
+        Ok(token_set)
+    }
+
     fn validate_initial_token_set(
         &self,
         token_set: &OAuthTokenSet,
@@ -221,6 +233,16 @@ impl OAuthProviderProfile {
         if (self.requires_refresh_token && token_set.refresh_token().is_none())
             || (self.requires_expiration && token_set.expires_in().is_none())
         {
+            return Err(OAuthTokenExchangeError::InvalidTokenResponse);
+        }
+        Ok(())
+    }
+
+    fn validate_refreshed_token_set(
+        &self,
+        token_set: &OAuthRefreshedTokenSet,
+    ) -> Result<(), OAuthTokenExchangeError> {
+        if self.requires_expiration && token_set.expires_in().is_none() {
             return Err(OAuthTokenExchangeError::InvalidTokenResponse);
         }
         Ok(())
@@ -525,6 +547,38 @@ mod tests {
                 None,
             );
             profile.validate_initial_token_set(&complete).unwrap();
+        }
+    }
+
+    #[test]
+    fn refreshed_offline_connections_require_expiration() {
+        for provider in [
+            UpstreamOAuthProvider::Codex,
+            UpstreamOAuthProvider::Gemini,
+            UpstreamOAuthProvider::Antigravity,
+        ] {
+            let profile = profile(provider);
+            let missing_expiration = OAuthRefreshedTokenSet::for_test(
+                provider,
+                "access-token-marker".to_owned(),
+                "refresh-token-marker".to_owned(),
+                None,
+                Some("openid profile".to_owned()),
+            );
+            assert_eq!(
+                profile
+                    .validate_refreshed_token_set(&missing_expiration)
+                    .unwrap_err(),
+                OAuthTokenExchangeError::InvalidTokenResponse
+            );
+            let complete = OAuthRefreshedTokenSet::for_test(
+                provider,
+                "access-token-marker".to_owned(),
+                "refresh-token-marker".to_owned(),
+                Some(Duration::from_secs(3_600)),
+                Some("openid profile".to_owned()),
+            );
+            profile.validate_refreshed_token_set(&complete).unwrap();
         }
     }
 

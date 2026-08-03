@@ -19,6 +19,8 @@ use crate::oauth::authorization::{OAuthAuthorizationContext, OAuthAuthorizationG
 const CALLBACK_URI: &str = "http://127.0.0.1:43123/oauth/callback";
 const AUTHORIZATION_CODE: &str = "authorization-code-marker";
 const CODE_VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+const REFRESH_TOKEN: &str = "refresh-token-marker";
+const REFRESH_SCOPE: &str = "openid profile";
 const SERVER_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn context() -> OAuthAuthorizationContext {
@@ -39,6 +41,15 @@ fn grant(provider: UpstreamOAuthProvider) -> OAuthAuthorizationGrant {
         AUTHORIZATION_CODE.to_owned(),
         CODE_VERIFIER.to_owned(),
     )
+}
+
+fn refresh_request(provider: UpstreamOAuthProvider) -> OAuthTokenRefreshRequest {
+    OAuthTokenRefreshRequest::new(
+        provider,
+        REFRESH_TOKEN.to_owned(),
+        Some(REFRESH_SCOPE.to_owned()),
+    )
+    .unwrap()
 }
 
 fn exchange(
@@ -259,6 +270,43 @@ fn encoded_token_request_has_a_hard_length_limit() {
         exchange.build_form(&grant).unwrap_err(),
         OAuthTokenExchangeError::RequestTooLarge
     );
+
+    let refresh_request = OAuthTokenRefreshRequest::new(
+        UpstreamOAuthProvider::ClaudeCode,
+        "r".repeat(MAX_DECRYPTED_CREDENTIAL_SECRET_BYTES),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        exchange.build_refresh_form(&refresh_request).unwrap_err(),
+        OAuthTokenExchangeError::RequestTooLarge
+    );
+}
+
+#[test]
+fn refresh_request_validates_and_redacts_renewable_material() {
+    for (refresh_token, scope) in [
+        ("bad token", None),
+        ("refresh-token", Some("openid  profile")),
+    ] {
+        assert_eq!(
+            OAuthTokenRefreshRequest::new(
+                UpstreamOAuthProvider::Codex,
+                refresh_token.to_owned(),
+                scope.map(str::to_owned),
+            )
+            .unwrap_err(),
+            OAuthTokenExchangeError::InvalidRefreshRequest
+        );
+    }
+
+    let request = refresh_request(UpstreamOAuthProvider::Codex);
+    assert_eq!(request.provider(), UpstreamOAuthProvider::Codex);
+    assert_eq!(request.refresh_token(), REFRESH_TOKEN);
+    assert_eq!(request.scope(), Some(REFRESH_SCOPE));
+    let debug = format!("{request:?}");
+    assert!(!debug.contains(REFRESH_TOKEN));
+    assert!(!debug.contains(REFRESH_SCOPE));
 }
 
 #[tokio::test]
@@ -328,6 +376,69 @@ async fn public_client_exchange_sends_exact_pkce_form_and_returns_typed_tokens()
 }
 
 #[tokio::test]
+async fn public_client_refresh_sends_closed_form_and_rotates_tokens() {
+    let (address, server) = spawn_json_server(
+        200,
+        br#"{"access_token":"new-access-token","token_type":"Bearer","expires_in":1800,"refresh_token":"rotated-refresh-token","scope":"openid email"}"#,
+        |request| {
+            assert!(request.starts_with("POST http://token.example/oauth/token HTTP/1.1"));
+            assert_eq!(
+                header_value(request, "content-type"),
+                Some(FORM_CONTENT_TYPE)
+            );
+            assert_eq!(header_value(request, "accept"), Some(JSON_CONTENT_TYPE));
+            assert!(header_value(request, "authorization").is_none());
+            let values = form_values(request);
+            assert_eq!(values.len(), 3, "刷新表单不得出现协议白名单之外的字段");
+            assert_eq!(
+                values.get("grant_type").map(String::as_str),
+                Some(REFRESH_TOKEN_GRANT_TYPE)
+            );
+            assert_eq!(
+                values.get("refresh_token").map(String::as_str),
+                Some(REFRESH_TOKEN)
+            );
+            assert_eq!(
+                values.get("client_id").map(String::as_str),
+                Some("public-client")
+            );
+            for forbidden in [
+                "client_secret",
+                "scope",
+                "state",
+                "code",
+                "redirect_uri",
+                "code_verifier",
+            ] {
+                assert!(!values.contains_key(forbidden));
+            }
+        },
+    );
+    let result = exchange(
+        "public-client",
+        OAuthClientAuthenticationMethod::Public,
+        None,
+    )
+    .refresh(
+        &proxied_client(address),
+        refresh_request(UpstreamOAuthProvider::ClaudeCode),
+    )
+    .await
+    .unwrap();
+    server.join().unwrap();
+
+    assert_eq!(result.provider(), UpstreamOAuthProvider::ClaudeCode);
+    assert_eq!(result.access_token(), "new-access-token");
+    assert_eq!(result.refresh_token(), "rotated-refresh-token");
+    assert_eq!(result.expires_in(), Some(Duration::from_secs(1_800)));
+    assert_eq!(result.scope(), Some("openid email"));
+    let debug = format!("{result:?}");
+    for private in ["new-access-token", "rotated-refresh-token", "openid email"] {
+        assert!(!debug.contains(private));
+    }
+}
+
+#[tokio::test]
 async fn json_exchange_preserves_state_and_rejects_field_injection() {
     let mut exchange = OAuthTokenExchange::new_with_request_encoding(
         UpstreamOAuthProvider::ClaudeCode,
@@ -385,6 +496,64 @@ async fn json_exchange_preserves_state_and_rejects_field_injection() {
 }
 
 #[tokio::test]
+async fn json_refresh_preserves_omitted_refresh_token_and_scope() {
+    let mut exchange = OAuthTokenExchange::new_with_request_encoding(
+        UpstreamOAuthProvider::ClaudeCode,
+        "public-client".to_owned(),
+        "https://token.example/oauth/token".to_owned(),
+        OAuthClientAuthenticationMethod::Public,
+        None,
+        OAuthTokenRequestEncoding::Json,
+    )
+    .unwrap();
+    exchange.token_endpoint = Url::parse("http://token.example/oauth/token").unwrap();
+    let (address, server) = spawn_json_server(
+        200,
+        br#"{"access_token":"new-access-token","token_type":"bearer","expires_in":900}"#,
+        |request| {
+            assert_eq!(
+                header_value(request, "content-type"),
+                Some(JSON_CONTENT_TYPE)
+            );
+            assert_eq!(header_value(request, "accept"), Some(JSON_CONTENT_TYPE));
+            assert!(header_value(request, "authorization").is_none());
+            let (_, body) = request.split_once("\r\n\r\n").unwrap();
+            let values =
+                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(body).unwrap();
+            assert_eq!(values.len(), 3, "刷新 JSON 不得出现协议白名单之外的字段");
+            assert_eq!(
+                values.get("grant_type").and_then(|value| value.as_str()),
+                Some(REFRESH_TOKEN_GRANT_TYPE)
+            );
+            assert_eq!(
+                values.get("refresh_token").and_then(|value| value.as_str()),
+                Some(REFRESH_TOKEN)
+            );
+            assert_eq!(
+                values.get("client_id").and_then(|value| value.as_str()),
+                Some("public-client")
+            );
+            for forbidden in ["client_secret", "scope", "state", "code", "redirect_uri"] {
+                assert!(!values.contains_key(forbidden));
+            }
+        },
+    );
+
+    let result = exchange
+        .refresh(
+            &proxied_client(address),
+            refresh_request(UpstreamOAuthProvider::ClaudeCode),
+        )
+        .await
+        .unwrap();
+    server.join().unwrap();
+    assert_eq!(result.access_token(), "new-access-token");
+    assert_eq!(result.refresh_token(), REFRESH_TOKEN);
+    assert_eq!(result.expires_in(), Some(Duration::from_secs(900)));
+    assert_eq!(result.scope(), Some(REFRESH_SCOPE));
+}
+
+#[tokio::test]
 async fn confidential_client_authentication_is_closed_and_unambiguous() {
     for method in [
         OAuthClientAuthenticationMethod::ClientSecretBasic,
@@ -434,6 +603,66 @@ async fn confidential_client_authentication_is_closed_and_unambiguous() {
 }
 
 #[tokio::test]
+async fn confidential_refresh_authentication_is_closed_and_unambiguous() {
+    for method in [
+        OAuthClientAuthenticationMethod::ClientSecretBasic,
+        OAuthClientAuthenticationMethod::ClientSecretPost,
+    ] {
+        let (address, server) = spawn_json_server(
+            200,
+            br#"{"access_token":"new-access-token","token_type":"bearer","expires_in":3600}"#,
+            move |request| {
+                let values = form_values(request);
+                assert_eq!(
+                    values.get("grant_type").map(String::as_str),
+                    Some(REFRESH_TOKEN_GRANT_TYPE)
+                );
+                assert_eq!(
+                    values.get("refresh_token").map(String::as_str),
+                    Some(REFRESH_TOKEN)
+                );
+                match method {
+                    OAuthClientAuthenticationMethod::ClientSecretBasic => {
+                        assert_eq!(values.len(), 2);
+                        assert!(!values.contains_key("client_id"));
+                        assert!(!values.contains_key("client_secret"));
+                        let authorization = header_value(request, "authorization").unwrap();
+                        let encoded = authorization.strip_prefix("Basic ").unwrap();
+                        let decoded = STANDARD.decode(encoded).unwrap();
+                        assert_eq!(decoded, b"client%3Aid:secret%2Fvalue");
+                    }
+                    OAuthClientAuthenticationMethod::ClientSecretPost => {
+                        assert_eq!(values.len(), 4);
+                        assert!(header_value(request, "authorization").is_none());
+                        assert_eq!(
+                            values.get("client_id").map(String::as_str),
+                            Some("client:id")
+                        );
+                        assert_eq!(
+                            values.get("client_secret").map(String::as_str),
+                            Some("secret/value")
+                        );
+                    }
+                    OAuthClientAuthenticationMethod::Public => unreachable!(),
+                }
+                assert!(!values.contains_key("scope"));
+            },
+        );
+        let result = exchange("client:id", method, Some("secret/value"))
+            .refresh(
+                &proxied_client(address),
+                refresh_request(UpstreamOAuthProvider::ClaudeCode),
+            )
+            .await
+            .unwrap();
+        server.join().unwrap();
+        assert_eq!(result.access_token(), "new-access-token");
+        assert_eq!(result.refresh_token(), REFRESH_TOKEN);
+        assert_eq!(result.scope(), Some(REFRESH_SCOPE));
+    }
+}
+
+#[tokio::test]
 async fn provider_mismatch_fails_before_transport() {
     let client = HttpClientPool::default()
         .get(&HttpClientConfig::default())
@@ -447,6 +676,16 @@ async fn provider_mismatch_fails_before_transport() {
     .await
     .unwrap_err();
 
+    assert_eq!(error, OAuthTokenExchangeError::ProviderMismatch);
+
+    let error = exchange(
+        "public-client",
+        OAuthClientAuthenticationMethod::Public,
+        None,
+    )
+    .refresh(&client, refresh_request(UpstreamOAuthProvider::Codex))
+    .await
+    .unwrap_err();
     assert_eq!(error, OAuthTokenExchangeError::ProviderMismatch);
 }
 
