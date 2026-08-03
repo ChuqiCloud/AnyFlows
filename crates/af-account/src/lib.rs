@@ -19,8 +19,8 @@ pub use oauth::{
     OAuthAuthorizationCallback, OAuthAuthorizationContext, OAuthAuthorizationError,
     OAuthAuthorizationGrant, OAuthAuthorizationRequest, OAuthAuthorizationSessionStore,
     OAuthAuthorizationStart, OAuthClientAuthenticationMethod, OAuthConnectionCoordinator,
-    OAuthConnectionError, OAuthConnectionOutcome, OAuthEndpointErrorCode, OAuthProviderProfile,
-    OAuthProviderProfileError, OAuthTokenExchange, OAuthTokenExchangeError,
+    OAuthConnectionError, OAuthConnectionOutcome, OAuthEndpointErrorCode, OAuthLoopbackRedirect,
+    OAuthProviderProfile, OAuthProviderProfileError, OAuthTokenExchange, OAuthTokenExchangeError,
     OAuthTokenPersistenceError, OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService,
     OAuthTokenRequestEncoding, OAuthTokenSet, UpstreamOAuthProvider,
 };

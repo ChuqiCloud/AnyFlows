@@ -12,6 +12,7 @@ mod model_prices;
 mod model_sync;
 mod models;
 mod network_settings;
+mod oauth_connections;
 mod password_reset;
 mod playground_conversations;
 mod playground_shares;
@@ -48,6 +49,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(invitations::document());
     document.merge(email_settings::document());
     document.merge(network_settings::document());
+    document.merge(oauth_connections::document());
     document.merge(balance_alert_settings::document());
     document.merge(site_settings::document());
     document.merge(dashboard::document());
@@ -77,6 +79,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("站点设置"),
         Tag::new("邮件设置"),
         Tag::new("网络与代理"),
+        Tag::new("OAuth 连接"),
         Tag::new("余额预警"),
         Tag::new("管理会话"),
         Tag::new("首次安装"),
@@ -119,7 +122,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 55);
+        assert_eq!(document.paths.paths.len(), 58);
         let operation_count = document
             .paths
             .paths
@@ -140,7 +143,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 86);
+        assert_eq!(operation_count, 89);
         assert!(
             document
                 .components
@@ -169,7 +172,9 @@ mod tests {
             "createAdminRedemptionBatch",
             "createAdminToken",
             "createAdminUser",
+            "beginAdminOAuthAuthorization",
             "confirmPasswordReset",
+            "completeAdminOAuthManualCallback",
             "getUserProfile",
             "getUserWallet",
             "getUserInvitations",
@@ -213,6 +218,7 @@ mod tests {
             "listAdminCredentials",
             "listAdminGroups",
             "listAdminModels",
+            "listAdminOAuthProviders",
             "listAdminModelPrices",
             "listAdminRedemptionBatches",
             "listMissingAdminModels",
@@ -254,10 +260,18 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 143);
+        assert_eq!(schemas.len(), 151);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
+        assert!(schemas.contains_key("AdminOAuthProvider"));
+        assert!(schemas.contains_key("AdminOAuthProviderListResponse"));
+        assert!(schemas.contains_key("AdminOAuthProviderStatus"));
+        assert!(schemas.contains_key("AdminOAuthAuthorizationRequest"));
+        assert!(schemas.contains_key("AdminOAuthAuthorizationResponse"));
+        assert!(schemas.contains_key("AdminOAuthManualCallbackRequest"));
+        assert!(schemas.contains_key("AdminOAuthCompletionStatus"));
+        assert!(schemas.contains_key("AdminOAuthCompletionResponse"));
         assert!(schemas.contains_key("AdminUserCreateRequest"));
         assert!(schemas.contains_key("AdminUserUpdateRequest"));
         assert!(schemas.contains_key("AdminWalletEntry"));

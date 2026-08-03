@@ -71,6 +71,20 @@ pub const MAX_OPENAI_UPSTREAM_BASE_URL_BYTES: usize = 2_048;
 pub const MAX_OPENAI_UPSTREAM_MODEL_BYTES: usize = MAX_MODEL_NAME_BYTES;
 /// 静态单上游 API Key 的最大 UTF-8 字节数。
 pub const MAX_OPENAI_UPSTREAM_API_KEY_BYTES: usize = 16 * 1_024;
+/// 单实例默认允许保留的待完成 OAuth 授权数量。
+pub const DEFAULT_OAUTH_MAX_PENDING_AUTHORIZATIONS: usize = 256;
+/// 单实例允许保留的待完成 OAuth 授权硬上限。
+pub const MAX_OAUTH_PENDING_AUTHORIZATIONS: usize = 4_096;
+/// OAuth 授权会话默认有效期。
+pub const DEFAULT_OAUTH_SESSION_TTL_SECS: u64 = 10 * 60;
+/// OAuth 授权会话允许的最短有效期。
+pub const MIN_OAUTH_SESSION_TTL_SECS: u64 = 60;
+/// OAuth 授权会话允许的最长有效期。
+pub const MAX_OAUTH_SESSION_TTL_SECS: u64 = 15 * 60;
+/// OAuth 公共客户端标识允许配置的最大 ASCII 字节数。
+pub const MAX_OAUTH_CLIENT_ID_BYTES: usize = 256;
+/// OAuth 客户端密钥允许配置的最大 ASCII 字节数。
+pub const MAX_OAUTH_CLIENT_SECRET_BYTES: usize = 16 * 1_024;
 
 /// 经过规范化的 HTTP(S) CORS Origin，不包含路径、凭据或通配语义。
 #[derive(Clone, Eq, Hash, PartialEq, Serialize)]
@@ -542,6 +556,111 @@ impl Default for AuthSettings {
     }
 }
 
+/// 只使用公共客户端标识的 OAuth provider 配置。
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OAuthPublicClientSettings {
+    client_id: SecretString,
+}
+
+impl OAuthPublicClientSettings {
+    /// 返回只应交给闭合 provider profile 的客户端标识。
+    #[must_use]
+    pub const fn client_id(&self) -> &SecretString {
+        &self.client_id
+    }
+}
+
+/// 同时要求客户端标识与密钥的 OAuth provider 配置。
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OAuthConfidentialClientSettings {
+    client_id: SecretString,
+    client_secret: SecretString,
+}
+
+impl OAuthConfidentialClientSettings {
+    /// 返回只应交给闭合 provider profile 的客户端标识。
+    #[must_use]
+    pub const fn client_id(&self) -> &SecretString {
+        &self.client_id
+    }
+
+    /// 返回只应移动到受控 token 交换器的客户端密钥。
+    #[must_use]
+    pub const fn client_secret(&self) -> &SecretString {
+        &self.client_secret
+    }
+}
+
+/// 上游订阅账号 OAuth 的启动期闭合配置。
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct OAuthSettings {
+    max_pending_authorizations: usize,
+    session_ttl_secs: u64,
+    codex: Option<OAuthPublicClientSettings>,
+    gemini: Option<OAuthConfidentialClientSettings>,
+    antigravity: Option<OAuthConfidentialClientSettings>,
+}
+
+impl OAuthSettings {
+    /// 返回单实例待授权会话容量。
+    #[must_use]
+    pub const fn max_pending_authorizations(&self) -> usize {
+        self.max_pending_authorizations
+    }
+
+    /// 返回授权会话有效期秒数。
+    #[must_use]
+    pub const fn session_ttl_secs(&self) -> u64 {
+        self.session_ttl_secs
+    }
+
+    /// 返回可选 Codex 公共客户端配置。
+    #[must_use]
+    pub const fn codex(&self) -> Option<&OAuthPublicClientSettings> {
+        self.codex.as_ref()
+    }
+
+    /// 返回可选 Gemini CLI 客户端配置。
+    #[must_use]
+    pub const fn gemini(&self) -> Option<&OAuthConfidentialClientSettings> {
+        self.gemini.as_ref()
+    }
+
+    /// 返回可选 Antigravity 客户端配置。
+    #[must_use]
+    pub const fn antigravity(&self) -> Option<&OAuthConfidentialClientSettings> {
+        self.antigravity.as_ref()
+    }
+
+    /// 返回当前实际配置的 provider 数量。
+    #[must_use]
+    pub fn configured_provider_count(&self) -> usize {
+        [
+            self.codex.is_some(),
+            self.gemini.is_some(),
+            self.antigravity.is_some(),
+        ]
+        .into_iter()
+        .filter(|configured| *configured)
+        .count()
+    }
+}
+
+impl Default for OAuthSettings {
+    fn default() -> Self {
+        Self {
+            max_pending_authorizations: DEFAULT_OAUTH_MAX_PENDING_AUTHORIZATIONS,
+            session_ttl_secs: DEFAULT_OAUTH_SESSION_TTL_SECS,
+            codex: None,
+            gemini: None,
+            antigravity: None,
+        }
+    }
+}
+
 /// M0 静态 OpenAI-compatible 上游的兼容配置。
 ///
 /// M1 生产 Chat 已改用数据库运行时渠道目录，本配置不参与生产选路，仅暂时保留旧配置文件
@@ -655,6 +774,8 @@ pub struct AppConfig {
     #[serde(default)]
     auth: AuthSettings,
     #[serde(default)]
+    oauth: OAuthSettings,
+    #[serde(default)]
     openai_upstream: Option<OpenAiUpstreamConfig>,
     #[serde(default)]
     http_client: HttpClientSettings,
@@ -707,6 +828,12 @@ impl AppConfig {
     #[must_use]
     pub const fn auth(&self) -> &AuthSettings {
         &self.auth
+    }
+
+    /// 返回上游订阅账号 OAuth 启动配置。
+    #[must_use]
+    pub const fn oauth(&self) -> &OAuthSettings {
+        &self.oauth
     }
 
     /// 返回可选的 M0 静态上游兼容配置；生产转发不得使用该值作为回退。
@@ -904,6 +1031,7 @@ impl AppConfig {
                 });
             }
         }
+        validate_oauth_settings(&self.oauth)?;
         if let Some(openai_upstream) = &self.openai_upstream {
             validate_openai_upstream(openai_upstream)?;
         }
@@ -933,6 +1061,72 @@ impl AppConfig {
         validate_proxy_settings(&self.http_client)?;
         Ok(())
     }
+}
+
+fn validate_oauth_settings(settings: &OAuthSettings) -> Result<(), ConfigError> {
+    if settings.max_pending_authorizations == 0 {
+        return Err(ConfigError::NonPositive {
+            field: "oauth.max_pending_authorizations",
+        });
+    }
+    if settings.max_pending_authorizations > MAX_OAUTH_PENDING_AUTHORIZATIONS {
+        return Err(ConfigError::OutOfRange {
+            field: "oauth.max_pending_authorizations",
+        });
+    }
+    if settings.session_ttl_secs < MIN_OAUTH_SESSION_TTL_SECS
+        || settings.session_ttl_secs > MAX_OAUTH_SESSION_TTL_SECS
+    {
+        return Err(ConfigError::OutOfRange {
+            field: "oauth.session_ttl_secs",
+        });
+    }
+    if let Some(client) = settings.codex() {
+        validate_oauth_client_id(client.client_id(), "oauth.codex.client_id")?;
+    }
+    for (client, id_field, secret_field) in [
+        (
+            settings.gemini(),
+            "oauth.gemini.client_id",
+            "oauth.gemini.client_secret",
+        ),
+        (
+            settings.antigravity(),
+            "oauth.antigravity.client_id",
+            "oauth.antigravity.client_secret",
+        ),
+    ] {
+        if let Some(client) = client {
+            validate_oauth_client_id(client.client_id(), id_field)?;
+            validate_oauth_client_secret(client.client_secret(), secret_field)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_oauth_client_id(value: &SecretString, field: &'static str) -> Result<(), ConfigError> {
+    let value = value.expose();
+    if value.is_empty()
+        || value.len() > MAX_OAUTH_CLIENT_ID_BYTES
+        || !value.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
+    {
+        return Err(ConfigError::InvalidField { field });
+    }
+    Ok(())
+}
+
+fn validate_oauth_client_secret(
+    value: &SecretString,
+    field: &'static str,
+) -> Result<(), ConfigError> {
+    let value = value.expose();
+    if value.is_empty()
+        || value.len() > MAX_OAUTH_CLIENT_SECRET_BYTES
+        || !value.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
+    {
+        return Err(ConfigError::InvalidField { field });
+    }
+    Ok(())
 }
 
 fn validate_credential_encryption(

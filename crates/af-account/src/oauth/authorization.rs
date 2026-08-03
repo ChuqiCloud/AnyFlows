@@ -131,6 +131,7 @@ impl OAuthAuthorizationRequest {
         redirect_uri: String,
         scope: String,
     ) -> Result<Self, OAuthAuthorizationError> {
+        let redirect_uri = parse_loopback_redirect_uri(&redirect_uri)?;
         Self::new_with_authorization_parameters(
             provider,
             context,
@@ -148,7 +149,7 @@ impl OAuthAuthorizationRequest {
         context: OAuthAuthorizationContext,
         client_id: String,
         authorization_endpoint: String,
-        redirect_uri: String,
+        redirect_uri: Url,
         scope: String,
         additional_parameters: &'static [(&'static str, &'static str)],
     ) -> Result<Self, OAuthAuthorizationError> {
@@ -158,7 +159,6 @@ impl OAuthAuthorizationRequest {
             &scope,
             additional_parameters,
         )?;
-        let redirect_uri = parse_loopback_redirect_uri(&redirect_uri)?;
         Ok(Self {
             provider,
             context,
@@ -483,6 +483,8 @@ pub enum OAuthAuthorizationError {
     ProviderMismatch,
     #[error("OAuth 回调地址不匹配")]
     RedirectUriMismatch,
+    #[error("OAuth 回调用户与授权发起用户不匹配")]
+    PrincipalMismatch,
     #[error("OAuth 提供商拒绝了授权")]
     ProviderDenied,
     #[error("OAuth 安全随机数不可用")]
@@ -596,7 +598,7 @@ pub(crate) fn validate_callback_redirect_uri(url: &Url) -> Result<(), OAuthAutho
     if url.as_str().len() > MAX_CALLBACK_URL_BYTES {
         return Err(OAuthAuthorizationError::InvalidRedirectUri);
     }
-    validate_loopback_components(url, true)
+    validate_loopback_components(url, true, true)
 }
 
 fn parse_authorization_endpoint(value: &str) -> Result<Url, OAuthAuthorizationError> {
@@ -615,13 +617,22 @@ fn parse_authorization_endpoint(value: &str) -> Result<Url, OAuthAuthorizationEr
 
 fn parse_loopback_redirect_uri(value: &str) -> Result<Url, OAuthAuthorizationError> {
     let url = Url::parse(value).map_err(|_| OAuthAuthorizationError::InvalidRedirectUri)?;
-    validate_loopback_components(&url, false)?;
+    validate_loopback_components(&url, false, false)?;
+    Ok(url)
+}
+
+pub(crate) fn parse_profile_loopback_redirect_uri(
+    value: &str,
+) -> Result<Url, OAuthAuthorizationError> {
+    let url = Url::parse(value).map_err(|_| OAuthAuthorizationError::InvalidRedirectUri)?;
+    validate_loopback_components(&url, false, true)?;
     Ok(url)
 }
 
 fn validate_loopback_components(
     url: &Url,
     allow_query: bool,
+    allow_localhost: bool,
 ) -> Result<(), OAuthAuthorizationError> {
     let is_loopback = matches!(
         url.host(),
@@ -629,7 +640,8 @@ fn validate_loopback_components(
     ) || matches!(
         url.host(),
         Some(Host::Ipv6(address)) if address == Ipv6Addr::LOCALHOST
-    );
+    ) || (allow_localhost
+        && matches!(url.host(), Some(Host::Domain("localhost"))));
     if url.scheme() != "http"
         || !is_loopback
         || url.port().is_none()

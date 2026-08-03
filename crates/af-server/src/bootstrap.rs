@@ -62,8 +62,9 @@ use af_db::{
     connect_and_migrate,
 };
 use af_http::{
-    AdminChannelProbe, ChatService, HttpListener, HttpRouter, QueryApiKeyPolicy, ReadinessHandle,
-    ServeError, ServeOutcome, build_router, serve_with_graceful_shutdown,
+    AdminChannelProbe, AdminOAuthConnectionService, ChatService, HttpListener, HttpRouter,
+    QueryApiKeyPolicy, ReadinessHandle, ServeError, ServeOutcome, build_router,
+    serve_with_graceful_shutdown,
 };
 use af_httpclient::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
@@ -89,6 +90,10 @@ use crate::{
     model_catalog::RuntimeModelCatalogReader,
     model_discovery::DatabaseUpstreamModelDiscoverer,
     model_price_source::{ModelsDevPriceDiscoverer, RuntimeModelPriceRefresher},
+    oauth_connection::{
+        OAuthRuntimeConfigError, PreparedOAuthLoopbackServer, initialize_oauth_runtime,
+        register_oauth_loopback_servers,
+    },
     scheduled_chat::ScheduledChatService,
     smtp_delivery::SmtpEmailDelivery,
     system_shutdown_signal,
@@ -158,6 +163,8 @@ pub struct RelayReady {
     infrastructure: AuthenticationReady,
     upstream_clients: HttpClientProvider,
     admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
+    admin_oauth_connection_service: Arc<dyn AdminOAuthConnectionService>,
+    oauth_loopback_servers: Vec<PreparedOAuthLoopbackServer>,
 }
 
 /// 计费 WAL、定价缓存、额度仓储及内部可靠队列均已完成装配。
@@ -172,6 +179,8 @@ pub struct BillingReady {
     refund_signal_consumer: RefundSignalConsumer,
     upstream_clients: HttpClientProvider,
     admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
+    admin_oauth_connection_service: Arc<dyn AdminOAuthConnectionService>,
+    oauth_loopback_servers: Vec<PreparedOAuthLoopbackServer>,
     channel_index: InMemoryChannelIndex,
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     admin_model_sync_service: Arc<dyn AdminModelSyncService>,
@@ -190,6 +199,7 @@ pub struct Supervised {
     admin_model_sync_service: Arc<dyn AdminModelSyncService>,
     admin_model_price_service: Arc<dyn AdminModelPriceService>,
     admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
+    admin_oauth_connection_service: Arc<dyn AdminOAuthConnectionService>,
     admin_channel_probe: Arc<dyn AdminChannelProbe>,
     supervisor: BackgroundTaskSupervisor,
 }
@@ -359,6 +369,9 @@ pub enum BootstrapError {
     /// 数据库网络设置无法应用到当前 HTTP Client。
     #[error("应用运行时网络设置失败")]
     NetworkSettingsRuntime(#[source] AdminNetworkSettingsError),
+    /// 上游账号 OAuth profile、会话或 loopback 合约无法安全装配。
+    #[error("初始化上游账号 OAuth 运行时失败")]
+    OAuthRuntime(#[source] OAuthRuntimeConfigError),
     /// 生产渠道凭据解密器无法从启动配置安全装配。
     #[error("初始化凭据解密器失败")]
     CredentialDecryption(#[source] CredentialDecryptionError),
@@ -761,6 +774,13 @@ impl Bootstrap<AuthenticationReady> {
             self.stage.system_secret_cipher.clone(),
             runtime,
         ));
+        let (admin_oauth_connection_service, oauth_loopback_servers) = initialize_oauth_runtime(
+            &self.config,
+            self.stage.infrastructure.database.clone(),
+            Arc::clone(&self.stage.admin_channel_reader),
+            upstream_clients.clone(),
+        )
+        .map_err(BootstrapError::OAuthRuntime)?;
         let Bootstrap {
             config,
             shutdown_timeout,
@@ -775,6 +795,8 @@ impl Bootstrap<AuthenticationReady> {
                 infrastructure: stage,
                 upstream_clients,
                 admin_network_settings_service,
+                admin_oauth_connection_service,
+                oauth_loopback_servers,
             },
         })
     }
@@ -925,6 +947,8 @@ impl Bootstrap<RelayReady> {
                 refund_signal_consumer,
                 upstream_clients: stage.upstream_clients,
                 admin_network_settings_service: stage.admin_network_settings_service,
+                admin_oauth_connection_service: stage.admin_oauth_connection_service,
+                oauth_loopback_servers: stage.oauth_loopback_servers,
                 channel_index,
                 model_catalog_reader,
                 admin_model_sync_service,
@@ -956,6 +980,8 @@ impl Bootstrap<BillingReady> {
             refund_signal_consumer,
             upstream_clients,
             admin_network_settings_service,
+            admin_oauth_connection_service,
+            oauth_loopback_servers,
             channel_index,
             model_catalog_reader,
             admin_model_sync_service,
@@ -966,6 +992,7 @@ impl Bootstrap<BillingReady> {
             channel_index.clone(),
             ChannelIndexRefreshConfig::default(),
         );
+        register_oauth_loopback_servers(&mut supervisor, oauth_loopback_servers);
         supervisor.spawn("balance-alert", {
             let runtime = BalanceAlertRuntime::new(infrastructure.balance_alert_task.clone());
             move |task_shutdown| {
@@ -1043,6 +1070,7 @@ impl Bootstrap<BillingReady> {
                 admin_model_sync_service,
                 admin_model_price_service,
                 admin_network_settings_service,
+                admin_oauth_connection_service,
                 admin_channel_probe,
                 supervisor,
             },
@@ -1128,6 +1156,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.site_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_email_settings_service),
             self.stage.admin_network_settings_service.clone(),
+            Some(Arc::clone(&self.stage.admin_oauth_connection_service)),
             Arc::clone(
                 &self
                     .stage
@@ -1244,6 +1273,7 @@ impl Bootstrap<ListenerReady> {
             admin_model_sync_service: _,
             admin_model_price_service: _,
             admin_network_settings_service: _,
+            admin_oauth_connection_service: _,
             admin_channel_probe: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
@@ -1594,6 +1624,7 @@ mod tests {
         },
     };
 
+    use af_admin::{SessionPrincipal, SessionRole};
     use af_billing::{
         BillingBatch, BillingBatchApplyOutcome, BillingBatchEvent, BillingBatchSink,
         BillingBatchSinkFuture, BillingRequestPlan, BillingUsageRecord, FileBillingBatcher,
@@ -1778,6 +1809,51 @@ mod tests {
         assert_eq!(report.http, ServeOutcome::Drained);
         assert_eq!(report.background, SupervisorShutdown::Drained);
         assert_eq!(report.billing, BillingFlushReport::default());
+        let _ = fs::remove_dir_all(wal_directory);
+    }
+
+    #[tokio::test]
+    async fn oauth_main_port_conflict_keeps_manual_completion_available() {
+        let path = config_file("sqlite::memory:");
+        let contents = fs::read_to_string(&path)
+            .unwrap()
+            .replace("bind = '127.0.0.1:0'", "bind = '127.0.0.1:1455'");
+        fs::write(
+            &path,
+            format!("{contents}[oauth.codex]\nclient_id = 'bootstrap-codex-client'\n"),
+        )
+        .unwrap();
+        let config = af_config::load_from(&path).unwrap();
+        let wal_directory = billing_wal_directory(&path);
+        let _ = fs::remove_file(path);
+
+        let relay = Bootstrap::new(config)
+            .unwrap()
+            .init_telemetry()
+            .unwrap()
+            .connect_database()
+            .await
+            .unwrap()
+            .init_authentication()
+            .unwrap()
+            .init_relay()
+            .unwrap();
+        assert!(relay.stage.oauth_loopback_servers.is_empty());
+        let statuses = relay
+            .stage
+            .admin_oauth_connection_service
+            .provider_statuses(SessionPrincipal::new(
+                UserId::new(1).unwrap(),
+                SessionRole::Admin,
+            ))
+            .unwrap();
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].provider(), af_http::AdminOAuthProvider::Codex);
+        assert!(!statuses[0].loopback_listener_ready());
+        assert_eq!(
+            statuses[0].redirect_uri(),
+            "http://localhost:1455/auth/callback"
+        );
         let _ = fs::remove_dir_all(wal_directory);
     }
 

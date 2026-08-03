@@ -59,6 +59,15 @@ impl HttpListener {
     pub const fn local_addr(&self) -> SocketAddr {
         self.local_addr
     }
+
+    /// 克隆已绑定监听句柄，供受监督服务循环在异常退出后原址重建。
+    pub fn try_clone(&self) -> Result<Self, ServeError> {
+        let inner = self.inner.try_clone().map_err(ServeError::Io)?;
+        Ok(Self {
+            inner,
+            local_addr: self.local_addr,
+        })
+    }
 }
 
 /// 绑定并运行 HTTP 服务；收到信号后停止接收新连接并在硬截止时间内排空。

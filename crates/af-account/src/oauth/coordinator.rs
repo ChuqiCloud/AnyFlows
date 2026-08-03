@@ -1,13 +1,14 @@
 use std::{collections::HashMap, fmt};
 
-use af_httpclient::PooledClient;
+use af_domain::UserId;
+use af_httpclient::HttpClientProvider;
 use thiserror::Error;
 
 use super::{
     OAuthAuthorizationCallback, OAuthAuthorizationContext, OAuthAuthorizationError,
-    OAuthAuthorizationSessionStore, OAuthAuthorizationStart, OAuthProviderProfile,
-    OAuthTokenExchangeError, OAuthTokenPersistenceError, OAuthTokenPersistenceOutcome,
-    OAuthTokenPersistenceService, UpstreamOAuthProvider,
+    OAuthAuthorizationSessionStore, OAuthAuthorizationStart, OAuthLoopbackRedirect,
+    OAuthProviderProfile, OAuthTokenExchangeError, OAuthTokenPersistenceError,
+    OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService, UpstreamOAuthProvider,
 };
 
 /// OAuth 连接流程的业务结果。
@@ -25,7 +26,7 @@ pub enum OAuthConnectionOutcome {
 pub struct OAuthConnectionCoordinator {
     profiles: HashMap<UpstreamOAuthProvider, OAuthProviderProfile>,
     sessions: OAuthAuthorizationSessionStore,
-    http_client: PooledClient,
+    http_clients: HttpClientProvider,
     persistence: OAuthTokenPersistenceService,
 }
 
@@ -34,7 +35,7 @@ impl OAuthConnectionCoordinator {
     pub fn new(
         profiles: impl IntoIterator<Item = OAuthProviderProfile>,
         sessions: OAuthAuthorizationSessionStore,
-        http_client: PooledClient,
+        http_clients: HttpClientProvider,
         persistence: OAuthTokenPersistenceService,
     ) -> Result<Self, OAuthConnectionError> {
         let mut indexed_profiles = HashMap::with_capacity(4);
@@ -47,7 +48,7 @@ impl OAuthConnectionCoordinator {
         Ok(Self {
             profiles: indexed_profiles,
             sessions,
-            http_client,
+            http_clients,
             persistence,
         })
     }
@@ -57,10 +58,9 @@ impl OAuthConnectionCoordinator {
         &self,
         provider: UpstreamOAuthProvider,
         context: OAuthAuthorizationContext,
-        redirect_uri: String,
     ) -> Result<OAuthAuthorizationStart, OAuthConnectionError> {
         let profile = self.profile(provider)?;
-        let request = profile.authorization_request(context, redirect_uri)?;
+        let request = profile.authorization_request(context)?;
         self.sessions.begin(&request).map_err(Into::into)
     }
 
@@ -74,7 +74,31 @@ impl OAuthConnectionCoordinator {
         let profile = self.profile(provider)?;
         // 完成侧不接受 user/channel/credential 覆盖，持久化目标只能来自一次性会话。
         let grant = self.sessions.consume(callback)?;
-        let token_set = profile.exchange(&self.http_client, grant).await?;
+        self.exchange_and_persist(profile, grant).await
+    }
+
+    /// 仅允许发起授权的同一管理用户完成手动回调。
+    pub async fn complete_for(
+        &self,
+        user_id: UserId,
+        callback: OAuthAuthorizationCallback,
+    ) -> Result<OAuthConnectionOutcome, OAuthConnectionError> {
+        let provider = callback.provider();
+        let profile = self.profile(provider)?;
+        let grant = self.sessions.consume_for(callback, user_id)?;
+        self.exchange_and_persist(profile, grant).await
+    }
+
+    async fn exchange_and_persist(
+        &self,
+        profile: &OAuthProviderProfile,
+        grant: super::OAuthAuthorizationGrant,
+    ) -> Result<OAuthConnectionOutcome, OAuthConnectionError> {
+        let http_client = self
+            .http_clients
+            .get(None)
+            .map_err(|_| OAuthConnectionError::HttpClientUnavailable)?;
+        let token_set = profile.exchange(&http_client, grant).await?;
         let outcome = self.persistence.persist(token_set).await?;
         Ok(match outcome {
             OAuthTokenPersistenceOutcome::Stored => OAuthConnectionOutcome::Connected,
@@ -96,6 +120,21 @@ impl OAuthConnectionCoordinator {
         self.sessions.pending_count().map_err(Into::into)
     }
 
+    /// 返回所有已配置 provider 的固定 loopback 合约。
+    #[must_use]
+    pub fn configured_loopback_redirects(&self) -> Vec<OAuthLoopbackRedirect> {
+        [
+            UpstreamOAuthProvider::Codex,
+            UpstreamOAuthProvider::Gemini,
+            UpstreamOAuthProvider::Antigravity,
+            UpstreamOAuthProvider::ClaudeCode,
+        ]
+        .into_iter()
+        .filter_map(|provider| self.profiles.get(&provider))
+        .map(|profile| profile.loopback_redirect().clone())
+        .collect()
+    }
+
     fn profile(
         &self,
         provider: UpstreamOAuthProvider,
@@ -112,7 +151,7 @@ impl fmt::Debug for OAuthConnectionCoordinator {
             .debug_struct("OAuthConnectionCoordinator")
             .field("profile_count", &self.profiles.len())
             .field("sessions", &self.sessions)
-            .field("http_client", &"<已脱敏>")
+            .field("http_clients", &"<已脱敏>")
             .field("persistence", &"<已脱敏>")
             .finish()
     }
@@ -128,6 +167,9 @@ pub enum OAuthConnectionError {
     /// 回调 provider 必须在消费一次性会话前存在。
     #[error("OAuth provider profile 未配置：{provider}")]
     ProviderProfileNotConfigured { provider: UpstreamOAuthProvider },
+    /// 当前全局网络配置无法取得受控 HTTP Client。
+    #[error("OAuth HTTP Client 当前不可用")]
+    HttpClientUnavailable,
     /// 授权请求、回调或会话校验失败。
     #[error("OAuth 授权流程失败")]
     Authorization(#[from] OAuthAuthorizationError),
