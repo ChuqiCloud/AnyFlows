@@ -2,7 +2,7 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{
     CredentialDecryptionError, CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
-    SystemSecretCipher, SystemSecretError,
+    OAuthProviderProfile, OAuthRefreshSupervisor, SystemSecretCipher, SystemSecretError,
 };
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
@@ -91,8 +91,8 @@ use crate::{
     model_discovery::DatabaseUpstreamModelDiscoverer,
     model_price_source::{ModelsDevPriceDiscoverer, RuntimeModelPriceRefresher},
     oauth_connection::{
-        OAuthRuntimeConfigError, PreparedOAuthLoopbackServer, initialize_oauth_runtime,
-        register_oauth_loopback_servers,
+        OAuthRuntimeConfigError, PreparedOAuthLoopbackServer, initialize_oauth_refresh_supervisor,
+        initialize_oauth_runtime, register_oauth_loopback_servers,
     },
     scheduled_chat::ScheduledChatService,
     smtp_delivery::SmtpEmailDelivery,
@@ -165,6 +165,7 @@ pub struct RelayReady {
     admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
     admin_oauth_connection_service: Arc<dyn AdminOAuthConnectionService>,
     oauth_loopback_servers: Vec<PreparedOAuthLoopbackServer>,
+    oauth_profiles: Vec<Arc<OAuthProviderProfile>>,
 }
 
 /// 计费 WAL、定价缓存、额度仓储及内部可靠队列均已完成装配。
@@ -181,6 +182,7 @@ pub struct BillingReady {
     admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
     admin_oauth_connection_service: Arc<dyn AdminOAuthConnectionService>,
     oauth_loopback_servers: Vec<PreparedOAuthLoopbackServer>,
+    oauth_refresh_supervisor: Option<OAuthRefreshSupervisor>,
     channel_index: InMemoryChannelIndex,
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     admin_model_sync_service: Arc<dyn AdminModelSyncService>,
@@ -774,7 +776,7 @@ impl Bootstrap<AuthenticationReady> {
             self.stage.system_secret_cipher.clone(),
             runtime,
         ));
-        let (admin_oauth_connection_service, oauth_loopback_servers) = initialize_oauth_runtime(
+        let oauth_runtime = initialize_oauth_runtime(
             &self.config,
             self.stage.infrastructure.database.clone(),
             Arc::clone(&self.stage.admin_channel_reader),
@@ -795,8 +797,9 @@ impl Bootstrap<AuthenticationReady> {
                 infrastructure: stage,
                 upstream_clients,
                 admin_network_settings_service,
-                admin_oauth_connection_service,
-                oauth_loopback_servers,
+                admin_oauth_connection_service: oauth_runtime.admin_connection_service,
+                oauth_loopback_servers: oauth_runtime.loopback_servers,
+                oauth_profiles: oauth_runtime.profiles,
             },
         })
     }
@@ -812,6 +815,15 @@ impl Bootstrap<RelayReady> {
             .map_err(BootstrapError::NetworkSettingsRuntime)?;
         let decryptor = CredentialDecryptor::new(self.config.credential_encryption())
             .map_err(BootstrapError::CredentialDecryption)?;
+        let oauth_refresh_supervisor = initialize_oauth_refresh_supervisor(
+            &self.config,
+            self.stage.infrastructure.infrastructure.database.clone(),
+            self.stage.oauth_profiles.clone(),
+            self.stage.upstream_clients.clone(),
+            decryptor.clone(),
+        )
+        .await
+        .map_err(BootstrapError::OAuthRuntime)?;
         let model_sync_repository =
             ModelSyncRepository::new(self.stage.infrastructure.infrastructure.database.clone());
         let model_discoverer = Arc::new(DatabaseUpstreamModelDiscoverer::new(
@@ -949,6 +961,7 @@ impl Bootstrap<RelayReady> {
                 admin_network_settings_service: stage.admin_network_settings_service,
                 admin_oauth_connection_service: stage.admin_oauth_connection_service,
                 oauth_loopback_servers: stage.oauth_loopback_servers,
+                oauth_refresh_supervisor,
                 channel_index,
                 model_catalog_reader,
                 admin_model_sync_service,
@@ -982,6 +995,7 @@ impl Bootstrap<BillingReady> {
             admin_network_settings_service,
             admin_oauth_connection_service,
             oauth_loopback_servers,
+            oauth_refresh_supervisor,
             channel_index,
             model_catalog_reader,
             admin_model_sync_service,
@@ -993,6 +1007,9 @@ impl Bootstrap<BillingReady> {
             ChannelIndexRefreshConfig::default(),
         );
         register_oauth_loopback_servers(&mut supervisor, oauth_loopback_servers);
+        if let Some(runtime) = oauth_refresh_supervisor {
+            spawn_oauth_refresh_task(&mut supervisor, runtime);
+        }
         supervisor.spawn("balance-alert", {
             let runtime = BalanceAlertRuntime::new(infrastructure.balance_alert_task.clone());
             move |task_shutdown| {
@@ -1088,6 +1105,19 @@ fn spawn_channel_index_refresh_task(
         let runner = ChannelIndexRefreshSupervisor::new(index.clone(), refresh_config);
         async move {
             runner.run_periodic_until(task_shutdown.cancelled()).await;
+        }
+    });
+}
+
+/// 注册启动即扫描、可重建且响应统一关闭信号的 OAuth 刷新任务。
+fn spawn_oauth_refresh_task(
+    supervisor: &mut BackgroundTaskSupervisor,
+    runtime: OAuthRefreshSupervisor,
+) {
+    supervisor.spawn("oauth-refresh", move |task_shutdown| {
+        let runtime = runtime.clone();
+        async move {
+            runtime.run_periodic_until(task_shutdown.cancelled()).await;
         }
     });
 }
@@ -1785,7 +1815,7 @@ mod tests {
         let wal_directory = billing_wal_directory(&path);
         let _ = fs::remove_file(path);
 
-        let report = Bootstrap::new(config)
+        let supervised = Bootstrap::new(config)
             .unwrap()
             .init_telemetry()
             .unwrap()
@@ -1799,7 +1829,9 @@ mod tests {
             .init_billing()
             .await
             .unwrap()
-            .start_supervisor()
+            .start_supervisor();
+        assert_eq!(supervised.stage.supervisor.task_count(), 5);
+        let report = supervised
             .build_router()
             .bind()
             .unwrap()
@@ -1809,6 +1841,42 @@ mod tests {
         assert_eq!(report.http, ServeOutcome::Drained);
         assert_eq!(report.background, SupervisorShutdown::Drained);
         assert_eq!(report.billing, BillingFlushReport::default());
+        let _ = fs::remove_dir_all(wal_directory);
+    }
+
+    #[tokio::test]
+    async fn configured_redis_failure_rejects_oauth_refresh_startup() {
+        let path = config_file("sqlite::memory:");
+        let contents = fs::read_to_string(&path).unwrap();
+        fs::write(
+            &path,
+            format!("{contents}[redis]\nurl = 'not-a-redis-url'\n"),
+        )
+        .unwrap();
+        let config = af_config::load_from(&path).unwrap();
+        let wal_directory = billing_wal_directory(&path);
+        let _ = fs::remove_file(path);
+
+        let relay = Bootstrap::new(config)
+            .unwrap()
+            .init_telemetry()
+            .unwrap()
+            .connect_database()
+            .await
+            .unwrap()
+            .init_authentication()
+            .unwrap()
+            .init_relay()
+            .unwrap();
+        let Err(error) = relay.init_billing().await else {
+            panic!("已配置但不可用的 Redis 必须阻止 OAuth 刷新任务启动");
+        };
+        assert!(matches!(
+            &error,
+            BootstrapError::OAuthRuntime(OAuthRuntimeConfigError::RefreshLease(_))
+        ));
+        let rendered = format!("{error:?}{error}");
+        assert!(!rendered.contains("not-a-redis-url"));
         let _ = fs::remove_dir_all(wal_directory);
     }
 

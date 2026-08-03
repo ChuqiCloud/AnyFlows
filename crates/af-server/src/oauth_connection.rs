@@ -8,13 +8,17 @@ use std::{
 };
 
 use af_account::{
-    CredentialEncryptionError, CredentialEncryptor, OAuthAuthorizationCallback,
-    OAuthAuthorizationContext, OAuthAuthorizationError, OAuthAuthorizationSessionStore,
-    OAuthConnectionCoordinator, OAuthConnectionError, OAuthConnectionOutcome, OAuthProviderProfile,
-    OAuthProviderProfileError, OAuthTokenExchangeError, OAuthTokenPersistenceError,
-    OAuthTokenPersistenceService, UpstreamOAuthProvider,
+    CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
+    OAUTH_REFRESH_LEASE_NAMESPACE, OAuthAuthorizationCallback, OAuthAuthorizationContext,
+    OAuthAuthorizationError, OAuthAuthorizationSessionStore, OAuthConnectionCoordinator,
+    OAuthConnectionError, OAuthConnectionOutcome, OAuthProviderProfile, OAuthProviderProfileError,
+    OAuthRefreshCoordinator, OAuthRefreshCoordinatorError, OAuthRefreshPersistenceService,
+    OAuthRefreshSupervisor, OAuthRefreshSupervisorConfig, OAuthRefreshSupervisorConfigError,
+    OAuthTokenExchangeError, OAuthTokenPersistenceError, OAuthTokenPersistenceService,
+    UpstreamOAuthProvider,
 };
 use af_admin::{AdminChannelReadError, AdminChannelReader, SessionPrincipal, SessionRole};
+use af_cache::{CacheError, DistributedLeaseConfig, DistributedLeaseManager, RedisConfig};
 use af_config::AppConfig;
 use af_db::{DatabasePool, OAuthCredentialRepository};
 use af_domain::CredentialKind;
@@ -52,6 +56,15 @@ pub enum OAuthRuntimeConfigError {
     /// account 与 HTTP 层的 loopback 合约不一致。
     #[error("OAuth loopback 合约无效")]
     Loopback(#[source] OAuthLoopbackBindingError),
+    /// token 刷新周期、批次或并发配置无法形成有界任务。
+    #[error("OAuth 刷新任务配置无效")]
+    RefreshSupervisor(#[source] OAuthRefreshSupervisorConfigError),
+    /// 刷新协调器无法使用共享 Provider profile 完成装配。
+    #[error("OAuth 刷新协调器配置无效")]
+    RefreshCoordinator(#[source] OAuthRefreshCoordinatorError),
+    /// Redis 或本地刷新租约管理器无法在启动期完成装配。
+    #[error("OAuth 刷新租约配置不可用")]
+    RefreshLease(#[source] CacheError),
 }
 
 /// 已经预绑定端口、等待注册到后台监督域的回调服务。
@@ -59,6 +72,13 @@ pub(crate) struct PreparedOAuthLoopbackServer {
     provider: AdminOAuthProvider,
     listener: HttpListener,
     router: HttpRouter,
+}
+
+/// 已装配的连接向导运行时，以及供刷新任务复用的同一批 Provider profile。
+pub(crate) struct PreparedOAuthRuntime {
+    pub(crate) admin_connection_service: Arc<dyn AdminOAuthConnectionService>,
+    pub(crate) loopback_servers: Vec<PreparedOAuthLoopbackServer>,
+    pub(crate) profiles: Vec<Arc<OAuthProviderProfile>>,
 }
 
 /// 生产管理 OAuth 服务；目标预检和管理员边界在创建授权会话前完成。
@@ -223,13 +243,7 @@ pub(crate) fn initialize_oauth_runtime(
     database: DatabasePool,
     channel_reader: Arc<dyn AdminChannelReader>,
     http_clients: HttpClientProvider,
-) -> Result<
-    (
-        Arc<dyn AdminOAuthConnectionService>,
-        Vec<PreparedOAuthLoopbackServer>,
-    ),
-    OAuthRuntimeConfigError,
-> {
+) -> Result<PreparedOAuthRuntime, OAuthRuntimeConfigError> {
     let profiles = build_profiles(config)?;
     let sessions = OAuthAuthorizationSessionStore::new(
         config.oauth().max_pending_authorizations(),
@@ -241,9 +255,13 @@ pub(crate) fn initialize_oauth_runtime(
             .map_err(OAuthRuntimeConfigError::Encryption)?,
         OAuthCredentialRepository::new(database),
     );
-    let coordinator =
-        OAuthConnectionCoordinator::new(profiles, sessions, http_clients, persistence)
-            .map_err(OAuthRuntimeConfigError::Coordinator)?;
+    let coordinator = OAuthConnectionCoordinator::new(
+        profiles.iter().cloned(),
+        sessions,
+        http_clients,
+        persistence,
+    )
+    .map_err(OAuthRuntimeConfigError::Coordinator)?;
     let bindings = coordinator
         .configured_loopback_redirects()
         .into_iter()
@@ -263,7 +281,60 @@ pub(crate) fn initialize_oauth_runtime(
     ));
     let servers = prepare_loopback_servers(config.server().bind(), Arc::clone(&service));
     let service: Arc<dyn AdminOAuthConnectionService> = service;
-    Ok((service, servers))
+    Ok(PreparedOAuthRuntime {
+        admin_connection_service: service,
+        loopback_servers: servers,
+        profiles,
+    })
+}
+
+/// 使用共享 Provider profile 装配 OAuth 周期刷新、持久化与分布式租约。
+pub(crate) async fn initialize_oauth_refresh_supervisor(
+    config: &AppConfig,
+    database: DatabasePool,
+    profiles: Vec<Arc<OAuthProviderProfile>>,
+    http_clients: HttpClientProvider,
+    decryptor: CredentialDecryptor,
+) -> Result<Option<OAuthRefreshSupervisor>, OAuthRuntimeConfigError> {
+    if !config.oauth().refresh_enabled() {
+        return Ok(None);
+    }
+    let settings = config.oauth();
+    let supervisor_config = OAuthRefreshSupervisorConfig::new(
+        settings.refresh_batch_size(),
+        settings.refresh_concurrency(),
+        Duration::from_secs(settings.refresh_interval_secs()),
+        Duration::from_secs(settings.refresh_before_expiry_secs()),
+    )
+    .map_err(OAuthRuntimeConfigError::RefreshSupervisor)?;
+    let persistence = Arc::new(OAuthRefreshPersistenceService::new(
+        CredentialEncryptor::new(config.credential_encryption())
+            .map_err(OAuthRuntimeConfigError::Encryption)?,
+        decryptor,
+        OAuthCredentialRepository::new(database),
+    ));
+    let mut lease_config = DistributedLeaseConfig::new(OAUTH_REFRESH_LEASE_NAMESPACE)
+        .expect("固定 OAuth 刷新租约命名空间必须有效");
+    if let Some(redis_url) = config.redis().url() {
+        lease_config = lease_config.with_redis(RedisConfig::new(redis_url.expose().to_owned()));
+    }
+    let leases = DistributedLeaseManager::new(lease_config)
+        .await
+        .map_err(OAuthRuntimeConfigError::RefreshLease)?;
+    let coordinator = Arc::new(
+        OAuthRefreshCoordinator::new_with_distributed_lease(
+            profiles,
+            http_clients,
+            Arc::clone(&persistence),
+            leases,
+        )
+        .map_err(OAuthRuntimeConfigError::RefreshCoordinator)?,
+    );
+    Ok(Some(OAuthRefreshSupervisor::new(
+        persistence,
+        coordinator,
+        supervisor_config,
+    )))
 }
 
 fn build_profiles(
