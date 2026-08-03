@@ -1,14 +1,12 @@
 use std::fmt;
 
-use af_account::{CredentialDecryptor, DecryptedCredential};
+use af_account::CredentialDecryptor;
 use af_adapter::{
-    AdaptorSettings, AnthropicAdaptorSettings, Credential, GeminiAdaptorSettings, HeaderMap,
-    HeaderName, HeaderValue, OpenAiAdaptorSettings, RelayContext, get_adaptor,
+    AdaptorSettings, AnthropicAdaptorSettings, GeminiAdaptorSettings, HeaderMap, HeaderName,
+    HeaderValue, OpenAiAdaptorSettings, RelayContext, get_adaptor,
 };
 use af_db::CredentialStateRepository;
-use af_domain::{
-    AfError, ChannelType, CredentialKind, GatewayPrincipal, GroupId, Operation, Protocol,
-};
+use af_domain::{AfError, ChannelType, GatewayPrincipal, GroupId, Operation, Protocol};
 use af_httpclient::HttpClientProvider;
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::{
@@ -21,6 +19,7 @@ use af_scheduler::{IndexedRoutePlan, IndexedWeightedScheduler, IndexedWeightedSc
 
 use crate::{
     ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture,
+    adaptor_credential::build_adaptor_credential,
     credential_feedback::{CredentialAttemptTarget, persist_credential_feedback},
     credential_order::order_credentials,
 };
@@ -121,7 +120,8 @@ impl ScheduledChatService {
                         runtime_credential.envelope(),
                     )
                     .map_err(|_| AfError::Internal)?;
-                let credential = adaptor_credential(&decrypted)?;
+                let credential =
+                    build_adaptor_credential(&decrypted).map_err(|_| AfError::Internal)?;
                 let mut relay_candidate =
                     RelayCandidate::new(adaptor.clone(), context.clone(), credential)
                         .with_header_overrides(headers.clone())
@@ -244,18 +244,6 @@ impl PlannedChatExecution for ScheduledChatExecution {
             result
         })
     }
-}
-
-fn adaptor_credential(credential: &DecryptedCredential) -> Result<Credential, AfError> {
-    match credential.kind() {
-        CredentialKind::ApiKey => Credential::api_key(credential.expose_secret()),
-        CredentialKind::Oauth => Credential::oauth(credential.expose_secret()),
-        CredentialKind::SetupToken
-        | CredentialKind::Bedrock
-        | CredentialKind::ServiceAccount
-        | CredentialKind::Upstream => return Err(AfError::Internal),
-    }
-    .map_err(|_| AfError::Internal)
 }
 
 fn header_overrides(target: &af_db::SchedulerRuntimeTargetRecord) -> Result<HeaderMap, AfError> {
@@ -420,7 +408,7 @@ mod tests {
         DatabaseOptions, EncryptedCredentialEnvelope, MigrationOptions,
         SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord, connect_and_migrate,
     };
-    use af_domain::{ChannelId, Operation, UpstreamError};
+    use af_domain::{ChannelId, CredentialKind, Operation, UpstreamError};
     use af_httpclient::{HttpClientConfig, HttpClientProvider};
     use af_protocol::{CanonicalRequest, openai_chat};
     use af_scheduler::{

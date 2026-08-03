@@ -155,7 +155,8 @@ export type AdminCredential = {
     updated_at: number;
 };
 export type AdminCredentialCreateRequest = {
-    kind: 'api_key' | 'oauth';
+    kind: 'api_key' | 'oauth' | 'bedrock' | 'service_account';
+    secret: AdminCredentialSecret;
     status: AdminRoutingWriteStatus;
     multi_key_mode: null | AdminCredentialMultiKeyMode;
     priority: number;
@@ -178,8 +179,18 @@ export type AdminCredentialListResponse = {
 };
 export type AdminCredentialMultiKeyMode = 'random' | 'round_robin';
 export type AdminCredentialQuotaDimension = 'global' | 'spark';
+export type AdminCredentialSecret = {
+    kind: 'api_key';
+} | {
+    kind: 'oauth';
+} | {
+    kind: 'bedrock';
+} | {
+    kind: 'service_account';
+};
 export type AdminCredentialUpdateRequest = {
-    kind: 'api_key' | 'oauth';
+    kind: 'api_key' | 'oauth' | 'bedrock' | 'service_account';
+    secret: null | AdminCredentialSecret;
     status: AdminRoutingWriteStatus;
     multi_key_mode: null | AdminCredentialMultiKeyMode;
     priority: number;
@@ -196,7 +207,7 @@ export type AdminCredentialUpdateRequest = {
     oauth_project_id: string | null;
 };
 export type AdminCredentialWriteFields = {
-    kind: 'api_key' | 'oauth';
+    kind: 'api_key' | 'oauth' | 'bedrock' | 'service_account';
     status: AdminRoutingWriteStatus;
     multi_key_mode: null | AdminCredentialMultiKeyMode;
     priority: number;
@@ -1012,8 +1023,8 @@ export type AdminChannelUpdateRequestWritable = {
     tag: string | null;
 };
 export type AdminCredentialCreateRequestWritable = {
-    kind: 'api_key' | 'oauth';
-    secret: string;
+    kind: 'api_key' | 'oauth' | 'bedrock' | 'service_account';
+    secret: AdminCredentialSecretWritable;
     status: AdminRoutingWriteStatus;
     multi_key_mode: null | AdminCredentialMultiKeyMode;
     priority: number;
@@ -1029,9 +1040,26 @@ export type AdminCredentialCreateRequestWritable = {
     oauth_account_key: string | null;
     oauth_project_id: string | null;
 };
+export type AdminCredentialSecretWritable = {
+    api_key: string;
+    kind: 'api_key';
+} | {
+    access_token: string;
+    kind: 'oauth';
+} | {
+    access_key_id: string;
+    secret_access_key: string;
+    session_token: string | null;
+    kind: 'bedrock';
+} | {
+    client_email: string;
+    private_key_id: string | null;
+    private_key: string;
+    kind: 'service_account';
+};
 export type AdminCredentialUpdateRequestWritable = {
-    kind: 'api_key' | 'oauth';
-    secret: string | null;
+    kind: 'api_key' | 'oauth' | 'bedrock' | 'service_account';
+    secret: null | AdminCredentialSecretWritable;
     status: AdminRoutingWriteStatus;
     multi_key_mode: null | AdminCredentialMultiKeyMode;
     priority: number;

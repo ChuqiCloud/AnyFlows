@@ -18,7 +18,7 @@ use crate::{
 #[derive(Serialize, ToSchema)]
 #[schema(as = AdminCredentialWriteFields)]
 struct AdminCredentialWriteFieldsSchema {
-    /// 当前写链路仅支持 API Key 与 OAuth access token。
+    /// 当前写链路支持的闭合凭据类型。
     #[schema(value_type = AdminCredentialWriteKindSchema, inline)]
     kind: String,
     #[schema(value_type = AdminRoutingWriteStatusSchema)]
@@ -53,15 +53,49 @@ struct AdminCredentialWriteFieldsSchema {
 }
 
 #[derive(Serialize, ToSchema)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[schema(as = AdminCredentialSecret)]
+enum AdminCredentialSecretSchema {
+    /// 通用 API Key。
+    ApiKey {
+        #[schema(min_length = 1, max_length = 16384, write_only)]
+        api_key: String,
+    },
+    /// 仅含现有 access token 的 OAuth 凭据；完整授权材料由 OAuth 连接向导写入。
+    Oauth {
+        #[schema(min_length = 1, max_length = 16384, write_only)]
+        access_token: String,
+    },
+    /// AWS Bedrock SigV4 长期或 STS 临时凭据。
+    Bedrock {
+        #[schema(min_length = 1, max_length = 128, write_only)]
+        access_key_id: String,
+        #[schema(min_length = 1, max_length = 4096, write_only)]
+        secret_access_key: String,
+        #[schema(min_length = 1, max_length = 16384, required = true, write_only)]
+        session_token: Option<String>,
+    },
+    /// Google Service Account JWT 凭据；不接受可覆盖的 token URI。
+    ServiceAccount {
+        #[schema(min_length = 1, max_length = 320, write_only)]
+        client_email: String,
+        #[schema(min_length = 1, max_length = 128, required = true, write_only)]
+        private_key_id: Option<String>,
+        #[schema(min_length = 1, max_length = 16384, write_only)]
+        private_key: String,
+    },
+}
+
+#[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 #[schema(as = AdminCredentialCreateRequest)]
 struct AdminCredentialCreateRequestSchema {
-    /// 当前写链路仅支持 API Key 与 OAuth access token。
+    /// 凭据类型必须与 secret 对象的 kind 完全一致。
     #[schema(value_type = AdminCredentialWriteKindSchema, inline)]
     kind: String,
-    /// API Key 或 OAuth access token 明文；只用于本次加密，永不随响应返回。
-    #[schema(min_length = 1, max_length = 16384, write_only)]
-    secret: String,
+    /// 类型化明文；只用于本次加密，永不随响应返回。
+    #[schema(write_only)]
+    secret: AdminCredentialSecretSchema,
     #[schema(value_type = AdminRoutingWriteStatusSchema)]
     status: String,
     #[schema(value_type = Option<AdminCredentialMultiKeyModeSchema>, required = true)]
@@ -97,12 +131,12 @@ struct AdminCredentialCreateRequestSchema {
 #[serde(deny_unknown_fields)]
 #[schema(as = AdminCredentialUpdateRequest)]
 struct AdminCredentialUpdateRequestSchema {
-    /// 当前写链路仅支持 API Key 与 OAuth access token。
+    /// 凭据类型必须与非空 secret 对象的 kind 完全一致。
     #[schema(value_type = AdminCredentialWriteKindSchema, inline)]
     kind: String,
     /// 新明文用于轮换；null 表示保留已有密文。
-    #[schema(min_length = 1, max_length = 16384, required = true, write_only)]
-    secret: Option<String>,
+    #[schema(required = true, write_only)]
+    secret: Option<AdminCredentialSecretSchema>,
     #[schema(value_type = AdminRoutingWriteStatusSchema)]
     status: String,
     #[schema(value_type = Option<AdminCredentialMultiKeyModeSchema>, required = true)]
@@ -260,6 +294,7 @@ fn delete_admin_credential() {}
         AdminRoutingStatusSchema,
         AdminRoutingWriteStatusSchema,
         AdminCredentialWriteFieldsSchema,
+        AdminCredentialSecretSchema,
         AdminCredentialCreateRequestSchema,
         AdminCredentialUpdateRequestSchema,
         AdminCredentialResponse,

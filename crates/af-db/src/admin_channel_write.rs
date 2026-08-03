@@ -964,8 +964,13 @@ fn validate_credential_fields(
     let oauth_fields_present = record.oauth_provider.is_some()
         || record.oauth_account_key.is_some()
         || record.oauth_project_id.is_some();
-    if !matches!(record.kind, CredentialKind::ApiKey | CredentialKind::Oauth)
-        || !matches!(record.status, Status::Enabled | Status::Disabled)
+    if !matches!(
+        record.kind,
+        CredentialKind::ApiKey
+            | CredentialKind::Oauth
+            | CredentialKind::Bedrock
+            | CredentialKind::ServiceAccount
+    ) || !matches!(record.status, Status::Enabled | Status::Disabled)
         || record
             .multi_key_mode
             .is_some_and(|value| !matches!(value, 1 | 2))
@@ -978,7 +983,7 @@ fn validate_credential_fields(
         || !valid_optional_text(record.oauth_provider.as_deref(), 64)
         || !valid_optional_text(record.oauth_account_key.as_deref(), 255)
         || !valid_optional_text(record.oauth_project_id.as_deref(), 255)
-        || (record.kind == CredentialKind::ApiKey && oauth_fields_present)
+        || (record.kind != CredentialKind::Oauth && oauth_fields_present)
     {
         return Err(AdminChannelWriteRepositoryError::InvalidInput);
     }

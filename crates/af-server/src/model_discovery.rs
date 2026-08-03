@@ -1,10 +1,10 @@
 use std::{collections::BTreeMap, fmt};
 
-use af_account::{CredentialDecryptor, DecryptedCredential};
+use af_account::CredentialDecryptor;
 use af_adapter::{
     Adaptor, AdaptorError, AdaptorSendExt as _, AdaptorSettings, AdaptorTransportError,
-    AnthropicAdaptor, AnthropicAdaptorSettings, Credential, GeminiAdaptor, GeminiAdaptorSettings,
-    HeaderMap, HeaderName, HeaderValue, Method, OpenAiAdaptor, OpenAiAdaptorSettings, RelayContext,
+    AnthropicAdaptor, AnthropicAdaptorSettings, GeminiAdaptor, GeminiAdaptorSettings, HeaderMap,
+    HeaderName, HeaderValue, Method, OpenAiAdaptor, OpenAiAdaptorSettings, RelayContext,
     UpstreamRequest, get_adaptor,
 };
 use af_admin::{
@@ -15,10 +15,12 @@ use af_db::{
     DiscoveredModelRecord, MAX_MODEL_SYNC_CANDIDATES, ModelDiscoveryTargetLookup,
     ModelDiscoveryTargetRecord, ModelSyncRepository,
 };
-use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol};
+use af_domain::{ChannelId, ChannelType, Protocol};
 use af_httpclient::HttpClientProvider;
 use serde::Deserialize;
 use url::Url;
+
+use crate::adaptor_credential::build_adaptor_credential;
 
 const MAX_DISCOVERY_PAGES: usize = 100;
 const DISCOVERY_PAGE_SIZE: &str = "1000";
@@ -79,7 +81,8 @@ impl DatabaseUpstreamModelDiscoverer {
                 target.envelope(),
             )
             .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
-        let credential = adaptor_credential(&decrypted)?;
+        let credential = build_adaptor_credential(&decrypted)
+            .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)?;
         let adaptor = get_adaptor(
             target.channel_type(),
             adaptor_settings(target.channel_type(), target.protocol())?,
@@ -386,22 +389,6 @@ fn apply_header_overrides(
         headers.insert(name, value);
     }
     Ok(())
-}
-
-fn adaptor_credential(
-    credential: &DecryptedCredential,
-) -> Result<Credential, UpstreamModelDiscoveryError> {
-    match credential.kind() {
-        CredentialKind::ApiKey => Credential::api_key(credential.expose_secret()),
-        CredentialKind::Oauth => Credential::oauth(credential.expose_secret()),
-        CredentialKind::SetupToken
-        | CredentialKind::Bedrock
-        | CredentialKind::ServiceAccount
-        | CredentialKind::Upstream => {
-            return Err(UpstreamModelDiscoveryError::ChannelUnavailable);
-        }
-    }
-    .map_err(|_| UpstreamModelDiscoveryError::ChannelUnavailable)
 }
 
 fn adaptor_settings(
