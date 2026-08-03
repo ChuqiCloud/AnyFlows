@@ -144,7 +144,7 @@ impl PlainCredentialSecret {
             } => PlainCredentialSecretRef::Bedrock {
                 access_key_id,
                 secret_access_key,
-                session_token: session_token.as_deref(),
+                session_token: session_token.as_ref().map(|value| value.as_str()),
             },
             PlainCredentialValue::ServiceAccount {
                 client_email,
@@ -152,7 +152,7 @@ impl PlainCredentialSecret {
                 private_key,
             } => PlainCredentialSecretRef::ServiceAccount {
                 client_email,
-                private_key_id: private_key_id.as_deref(),
+                private_key_id: private_key_id.as_ref().map(|value| value.as_str()),
                 private_key,
             },
         }

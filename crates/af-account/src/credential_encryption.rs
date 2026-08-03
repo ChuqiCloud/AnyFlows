@@ -79,10 +79,10 @@ impl PlainOAuthCredential {
         expires_at_epoch_seconds: Option<i64>,
         scope: Option<Zeroizing<String>>,
     ) -> Result<Self, CredentialEncryptionError> {
-        if !is_valid_oauth_token(access_token.as_str())
+        if !valid_oauth_token(access_token.as_str())
             || refresh_token
                 .as_ref()
-                .is_some_and(|value| !is_valid_oauth_token(value.as_str()))
+                .is_some_and(|value| !valid_oauth_token(value.as_str()))
             || expires_at_epoch_seconds.is_some_and(|value| value < 0)
             || scope
                 .as_ref()
