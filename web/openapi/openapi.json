@@ -8246,18 +8246,17 @@
                 "type": "string",
                 "enum": [
                   "api_key",
-                  "oauth"
+                  "oauth",
+                  "bedrock",
+                  "service_account"
                 ]
               }
             ],
-            "description": "当前写链路仅支持 API Key 与 OAuth access token。"
+            "description": "凭据类型必须与 secret 对象的 kind 完全一致。"
           },
           "secret": {
-            "type": "string",
-            "description": "API Key 或 OAuth access token 明文；只用于本次加密，永不随响应返回。",
-            "writeOnly": true,
-            "maxLength": 16384,
-            "minLength": 1
+            "$ref": "#/components/schemas/AdminCredentialSecret",
+            "description": "类型化明文；只用于本次加密，永不随响应返回。"
           },
           "status": {
             "$ref": "#/components/schemas/AdminRoutingWriteStatus"
@@ -8407,6 +8406,132 @@
           "spark"
         ]
       },
+      "AdminCredentialSecret": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "通用 API Key。",
+            "required": [
+              "api_key",
+              "kind"
+            ],
+            "properties": {
+              "api_key": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 16384,
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "api_key"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "仅含现有 access token 的 OAuth 凭据；完整授权材料由 OAuth 连接向导写入。",
+            "required": [
+              "access_token",
+              "kind"
+            ],
+            "properties": {
+              "access_token": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 16384,
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "oauth"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "AWS Bedrock SigV4 长期或 STS 临时凭据。",
+            "required": [
+              "access_key_id",
+              "secret_access_key",
+              "session_token",
+              "kind"
+            ],
+            "properties": {
+              "access_key_id": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 128,
+                "minLength": 1
+              },
+              "secret_access_key": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              "session_token": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "writeOnly": true,
+                "maxLength": 16384,
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "bedrock"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Google Service Account JWT 凭据；不接受可覆盖的 token URI。",
+            "required": [
+              "client_email",
+              "private_key_id",
+              "private_key",
+              "kind"
+            ],
+            "properties": {
+              "client_email": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 320,
+                "minLength": 1
+              },
+              "private_key_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "writeOnly": true,
+                "maxLength": 128,
+                "minLength": 1
+              },
+              "private_key": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 16384,
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "service_account"
+                ]
+              }
+            }
+          }
+        ]
+      },
       "AdminCredentialUpdateRequest": {
         "type": "object",
         "required": [
@@ -8434,21 +8559,24 @@
                 "type": "string",
                 "enum": [
                   "api_key",
-                  "oauth"
+                  "oauth",
+                  "bedrock",
+                  "service_account"
                 ]
               }
             ],
-            "description": "当前写链路仅支持 API Key 与 OAuth access token。"
+            "description": "凭据类型必须与非空 secret 对象的 kind 完全一致。"
           },
           "secret": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "新明文用于轮换；null 表示保留已有密文。",
-            "writeOnly": true,
-            "maxLength": 16384,
-            "minLength": 1
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminCredentialSecret",
+                "description": "新明文用于轮换；null 表示保留已有密文。"
+              }
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/AdminRoutingWriteStatus"
@@ -8574,11 +8702,13 @@
                 "type": "string",
                 "enum": [
                   "api_key",
-                  "oauth"
+                  "oauth",
+                  "bedrock",
+                  "service_account"
                 ]
               }
             ],
-            "description": "当前写链路仅支持 API Key 与 OAuth access token。"
+            "description": "当前写链路支持的闭合凭据类型。"
           },
           "status": {
             "$ref": "#/components/schemas/AdminRoutingWriteStatus"
