@@ -303,7 +303,10 @@ async fn admin_channel_and_credential_reads_use_real_database_services() {
         &authorization,
         json!({
             "kind": "api_key",
-            "secret": WRITE_CREDENTIAL_CANARY,
+            "secret": {
+                "kind": "api_key",
+                "api_key": WRITE_CREDENTIAL_CANARY
+            },
             "status": "disabled",
             "multi_key_mode": "random",
             "priority": 5,
