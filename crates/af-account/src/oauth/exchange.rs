@@ -2,7 +2,7 @@ use std::{fmt, mem, time::Duration};
 
 use af_httpclient::{Body, HeaderMap, HeaderName, HeaderValue, Method, PooledClient};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use serde::{Deserialize, Deserializer, de::Error as _};
+use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use thiserror::Error;
 use url::{Url, form_urlencoded};
 use zeroize::{Zeroize as _, Zeroizing};
@@ -33,6 +33,15 @@ pub enum OAuthClientAuthenticationMethod {
     ClientSecretPost,
 }
 
+/// OAuth token endpoint 请求体的闭合编码方式。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OAuthTokenRequestEncoding {
+    /// RFC 6749 常用的表单编码。
+    Form,
+    /// 明确要求 JSON 与原始 state 的供应商扩展。
+    Json,
+}
+
 /// OAuth token endpoint 返回的稳定错误码；未知扩展不会保留原始文本。
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -60,6 +69,7 @@ pub struct OAuthTokenExchange {
     client_id: String,
     token_endpoint: Url,
     authentication_method: OAuthClientAuthenticationMethod,
+    request_encoding: OAuthTokenRequestEncoding,
     client_secret: Option<TokenSecret>,
 }
 
@@ -71,6 +81,25 @@ impl OAuthTokenExchange {
         token_endpoint: String,
         authentication_method: OAuthClientAuthenticationMethod,
         client_secret: Option<String>,
+    ) -> Result<Self, OAuthTokenExchangeError> {
+        Self::new_with_request_encoding(
+            provider,
+            client_id,
+            token_endpoint,
+            authentication_method,
+            client_secret,
+            OAuthTokenRequestEncoding::Form,
+        )
+    }
+
+    /// 仅供闭合 provider profile 选择表单或 JSON 请求编码。
+    pub(crate) fn new_with_request_encoding(
+        provider: UpstreamOAuthProvider,
+        client_id: String,
+        token_endpoint: String,
+        authentication_method: OAuthClientAuthenticationMethod,
+        client_secret: Option<String>,
+        request_encoding: OAuthTokenRequestEncoding,
     ) -> Result<Self, OAuthTokenExchangeError> {
         // 先接管客户端密钥，确保任何后续配置错误都走清零 Drop。
         let client_secret = client_secret.map(TokenSecret::new_unchecked);
@@ -89,6 +118,7 @@ impl OAuthTokenExchange {
             client_id,
             token_endpoint,
             authentication_method,
+            request_encoding,
             client_secret,
         })
     }
@@ -105,6 +135,18 @@ impl OAuthTokenExchange {
         self.authentication_method
     }
 
+    /// 返回 provider profile 固化的 token 请求编码。
+    #[must_use]
+    pub const fn request_encoding(&self) -> OAuthTokenRequestEncoding {
+        self.request_encoding
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_token_endpoint_for_test(&mut self, endpoint: Url) {
+        // 测试只替换传输目标，生产构造器仍强制 HTTPS。
+        self.token_endpoint = endpoint;
+    }
+
     /// 消费一次性授权 grant，并通过受控 Client 交换 Bearer token。
     pub async fn exchange(
         &self,
@@ -114,7 +156,7 @@ impl OAuthTokenExchange {
         if grant.provider() != self.provider {
             return Err(OAuthTokenExchangeError::ProviderMismatch);
         }
-        let form = self.build_form(&grant)?;
+        let request_body = self.build_request_body(&grant)?;
         let headers = self.build_headers()?;
         let context = grant.context();
         let response = http_client
@@ -122,11 +164,11 @@ impl OAuthTokenExchange {
                 Method::POST,
                 self.token_endpoint.as_str(),
                 headers,
-                Some(Body::from(form.as_bytes().to_vec())),
+                Some(Body::from(request_body.as_bytes().to_vec())),
             )
             .await;
-        // 网络请求完成后立即清零本地表单、授权码与 verifier，不延长到响应解析结束。
-        drop(form);
+        // 网络请求完成后立即清零本地请求体、state、授权码与 verifier，不延长到响应解析结束。
+        drop(request_body);
         drop(grant);
         let response = response.map_err(|_| OAuthTokenExchangeError::Transport)?;
         let status = response.status();
@@ -179,11 +221,59 @@ impl OAuthTokenExchange {
         Ok(form)
     }
 
+    fn build_request_body(
+        &self,
+        grant: &OAuthAuthorizationGrant,
+    ) -> Result<OAuthTokenRequestBody, OAuthTokenExchangeError> {
+        match self.request_encoding {
+            OAuthTokenRequestEncoding::Form => {
+                Ok(OAuthTokenRequestBody::Form(self.build_form(grant)?))
+            }
+            OAuthTokenRequestEncoding::Json => {
+                let (client_id, client_secret) = match self.authentication_method {
+                    OAuthClientAuthenticationMethod::Public => {
+                        (Some(self.client_id.as_str()), None)
+                    }
+                    OAuthClientAuthenticationMethod::ClientSecretBasic => (None, None),
+                    OAuthClientAuthenticationMethod::ClientSecretPost => (
+                        Some(self.client_id.as_str()),
+                        Some(
+                            self.client_secret
+                                .as_ref()
+                                .expect("客户端认证配置已完成闭合校验")
+                                .expose(),
+                        ),
+                    ),
+                };
+                let request = JsonAuthorizationCodeRequest {
+                    grant_type: AUTHORIZATION_CODE_GRANT_TYPE,
+                    code: grant.authorization_code(),
+                    state: grant.state(),
+                    client_id,
+                    client_secret,
+                    redirect_uri: grant.redirect_uri().as_str(),
+                    code_verifier: grant.code_verifier(),
+                };
+                let body = Zeroizing::new(
+                    serde_json::to_vec(&request)
+                        .map_err(|_| OAuthTokenExchangeError::RequestEncoding)?,
+                );
+                if body.len() > MAX_OAUTH_TOKEN_REQUEST_BYTES {
+                    return Err(OAuthTokenExchangeError::RequestTooLarge);
+                }
+                Ok(OAuthTokenRequestBody::Json(body))
+            }
+        }
+    }
+
     fn build_headers(&self) -> Result<HeaderMap, OAuthTokenExchangeError> {
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_static("content-type"),
-            HeaderValue::from_static(FORM_CONTENT_TYPE),
+            HeaderValue::from_static(match self.request_encoding {
+                OAuthTokenRequestEncoding::Form => FORM_CONTENT_TYPE,
+                OAuthTokenRequestEncoding::Json => JSON_CONTENT_TYPE,
+            }),
         );
         headers.insert(
             HeaderName::from_static("accept"),
@@ -224,6 +314,7 @@ impl fmt::Debug for OAuthTokenExchange {
             .field("client_id", &"<已脱敏>")
             .field("token_endpoint", &"<已脱敏>")
             .field("authentication_method", &self.authentication_method)
+            .field("request_encoding", &self.request_encoding)
             .field(
                 "client_secret",
                 &self.client_secret.as_ref().map(|_| "<已脱敏>"),
@@ -385,6 +476,8 @@ pub enum OAuthTokenExchangeError {
     ProviderMismatch,
     #[error("OAuth token 请求超过长度上限")]
     RequestTooLarge,
+    #[error("OAuth token 请求编码失败")]
+    RequestEncoding,
     #[error("OAuth token endpoint 传输失败")]
     Transport,
     #[error("OAuth token endpoint 拒绝请求（HTTP {status}）")]
@@ -403,6 +496,33 @@ pub enum OAuthTokenExchangeError {
 #[derive(Deserialize)]
 struct OAuthErrorWire {
     error: OAuthEndpointErrorCode,
+}
+
+#[derive(Serialize)]
+struct JsonAuthorizationCodeRequest<'a> {
+    grant_type: &'static str,
+    code: &'a str,
+    state: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_id: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    client_secret: Option<&'a str>,
+    redirect_uri: &'a str,
+    code_verifier: &'a str,
+}
+
+enum OAuthTokenRequestBody {
+    Form(Zeroizing<String>),
+    Json(Zeroizing<Vec<u8>>),
+}
+
+impl OAuthTokenRequestBody {
+    fn as_bytes(&self) -> &[u8] {
+        match self {
+            Self::Form(body) => body.as_bytes(),
+            Self::Json(body) => body.as_slice(),
+        }
+    }
 }
 
 #[derive(Deserialize)]

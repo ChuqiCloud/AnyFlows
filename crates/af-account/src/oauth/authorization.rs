@@ -15,11 +15,23 @@ use zeroize::Zeroize as _;
 const RANDOM_MATERIAL_BYTES: usize = 32;
 const MAX_CLIENT_ID_BYTES: usize = 256;
 const MAX_SCOPE_BYTES: usize = 2 * 1_024;
+const MAX_AUTHORIZATION_PARAMETERS: usize = 16;
+const MAX_AUTHORIZATION_PARAMETER_NAME_BYTES: usize = 128;
+const MAX_AUTHORIZATION_PARAMETER_VALUE_BYTES: usize = 1_024;
 const MAX_CALLBACK_COMPONENT_BYTES: usize = 4 * 1_024;
 const MAX_AUTHORIZATION_URL_BYTES: usize = 8 * 1_024;
 const MAX_CALLBACK_URL_BYTES: usize = 16 * 1_024;
 const OAUTH_AUTHORIZATION_RESPONSE_TYPE: &str = "code";
 const OAUTH_PKCE_METHOD: &str = "S256";
+const RESERVED_AUTHORIZATION_PARAMETERS: [&str; 7] = [
+    "response_type",
+    "client_id",
+    "redirect_uri",
+    "scope",
+    "state",
+    "code_challenge",
+    "code_challenge_method",
+];
 
 /// 支持的上游 OAuth 身份提供商；供应商端点和字段由后续适配器配置。
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -106,6 +118,7 @@ pub struct OAuthAuthorizationRequest {
     authorization_endpoint: Url,
     redirect_uri: Url,
     scope: String,
+    additional_parameters: &'static [(&'static str, &'static str)],
 }
 
 impl OAuthAuthorizationRequest {
@@ -118,11 +131,34 @@ impl OAuthAuthorizationRequest {
         redirect_uri: String,
         scope: String,
     ) -> Result<Self, OAuthAuthorizationError> {
-        validate_client_id(&client_id)?;
-        let authorization_endpoint = parse_authorization_endpoint(&authorization_endpoint)?;
+        Self::new_with_authorization_parameters(
+            provider,
+            context,
+            client_id,
+            authorization_endpoint,
+            redirect_uri,
+            scope,
+            &[],
+        )
+    }
+
+    /// 仅供闭合 provider profile 附加代码内静态白名单参数。
+    pub(crate) fn new_with_authorization_parameters(
+        provider: UpstreamOAuthProvider,
+        context: OAuthAuthorizationContext,
+        client_id: String,
+        authorization_endpoint: String,
+        redirect_uri: String,
+        scope: String,
+        additional_parameters: &'static [(&'static str, &'static str)],
+    ) -> Result<Self, OAuthAuthorizationError> {
+        let authorization_endpoint = validate_authorization_profile(
+            &client_id,
+            &authorization_endpoint,
+            &scope,
+            additional_parameters,
+        )?;
         let redirect_uri = parse_loopback_redirect_uri(&redirect_uri)?;
-        validate_scope(&scope)?;
-        reject_reserved_query_parameters(&authorization_endpoint)?;
         Ok(Self {
             provider,
             context,
@@ -130,6 +166,7 @@ impl OAuthAuthorizationRequest {
             authorization_endpoint,
             redirect_uri,
             scope,
+            additional_parameters,
         })
     }
 
@@ -228,7 +265,7 @@ impl fmt::Debug for OAuthAuthorizationStart {
             .field("provider", &self.provider)
             .field("context", &self.context)
             .field("authorization_url", &"<已脱敏>")
-            .field("redirect_uri", &self.redirect_uri)
+            .field("redirect_uri", &"<已脱敏>")
             .field("expires_at", &self.expires_at)
             .finish()
     }
@@ -303,6 +340,10 @@ impl OAuthAuthorizationCallback {
         self.state.expose()
     }
 
+    pub(crate) fn take_state(&mut self) -> String {
+        std::mem::take(&mut self.state.0)
+    }
+
     pub(crate) fn take_authorization_code(&mut self) -> Option<String> {
         self.code.take().map(SecretText::into_inner)
     }
@@ -333,6 +374,7 @@ pub struct OAuthAuthorizationGrant {
     provider: UpstreamOAuthProvider,
     context: OAuthAuthorizationContext,
     redirect_uri: Url,
+    state: SecretText,
     authorization_code: SecretText,
     code_verifier: SecretText,
 }
@@ -342,6 +384,7 @@ impl OAuthAuthorizationGrant {
         provider: UpstreamOAuthProvider,
         context: OAuthAuthorizationContext,
         redirect_uri: Url,
+        state: String,
         authorization_code: String,
         code_verifier: String,
     ) -> Self {
@@ -349,6 +392,7 @@ impl OAuthAuthorizationGrant {
             provider,
             context,
             redirect_uri,
+            state: SecretText::new(state),
             authorization_code: SecretText::new(authorization_code),
             code_verifier: SecretText::new(code_verifier),
         }
@@ -372,6 +416,12 @@ impl OAuthAuthorizationGrant {
         &self.redirect_uri
     }
 
+    /// 暴露原始 state 给明确要求该字段的受控 token 交换器；调用方不得记录或复制。
+    #[must_use]
+    pub fn state(&self) -> &str {
+        self.state.expose()
+    }
+
     /// 暴露授权码给受控 token 交换器；调用方不得复制或记录。
     #[must_use]
     pub fn authorization_code(&self) -> &str {
@@ -391,7 +441,8 @@ impl fmt::Debug for OAuthAuthorizationGrant {
             .debug_struct("OAuthAuthorizationGrant")
             .field("provider", &self.provider)
             .field("context", &self.context)
-            .field("redirect_uri", &self.redirect_uri)
+            .field("redirect_uri", &"<已脱敏>")
+            .field("state", &"<已脱敏>")
             .field("authorization_code", &"<已脱敏>")
             .field("code_verifier", &"<已脱敏>")
             .finish()
@@ -416,6 +467,8 @@ pub enum OAuthAuthorizationError {
     InvalidScope,
     #[error("OAuth 授权参数已被预置覆盖")]
     ReservedParameter,
+    #[error("OAuth 授权附加参数无效")]
+    InvalidAuthorizationParameter,
     #[error("OAuth state 无效")]
     InvalidState,
     #[error("OAuth 回调参数无效")]
@@ -525,6 +578,9 @@ pub(crate) fn build_authorization_url(
             .append_pair("state", state)
             .append_pair("code_challenge", code_challenge)
             .append_pair("code_challenge_method", OAUTH_PKCE_METHOD);
+        for (name, value) in request.additional_parameters {
+            query.append_pair(name, value);
+        }
     }
     if url.as_str().len() > MAX_AUTHORIZATION_URL_BYTES {
         return Err(OAuthAuthorizationError::AuthorizationUrlTooLong);
@@ -588,21 +644,60 @@ fn validate_loopback_components(
     Ok(())
 }
 
+pub(crate) fn validate_authorization_profile(
+    client_id: &str,
+    authorization_endpoint: &str,
+    scope: &str,
+    additional_parameters: &[(&str, &str)],
+) -> Result<Url, OAuthAuthorizationError> {
+    validate_client_id(client_id)?;
+    let endpoint = parse_authorization_endpoint(authorization_endpoint)?;
+    validate_scope(scope)?;
+    reject_reserved_query_parameters(&endpoint)?;
+    validate_authorization_parameters(&endpoint, additional_parameters)?;
+    Ok(endpoint)
+}
+
 fn reject_reserved_query_parameters(url: &Url) -> Result<(), OAuthAuthorizationError> {
-    const RESERVED: [&str; 7] = [
-        "response_type",
-        "client_id",
-        "redirect_uri",
-        "scope",
-        "state",
-        "code_challenge",
-        "code_challenge_method",
-    ];
     if url
         .query_pairs()
-        .any(|(key, _)| RESERVED.contains(&key.as_ref()))
+        .any(|(key, _)| RESERVED_AUTHORIZATION_PARAMETERS.contains(&key.as_ref()))
     {
         return Err(OAuthAuthorizationError::ReservedParameter);
+    }
+    Ok(())
+}
+
+fn validate_authorization_parameters(
+    endpoint: &Url,
+    parameters: &[(&str, &str)],
+) -> Result<(), OAuthAuthorizationError> {
+    if parameters.len() > MAX_AUTHORIZATION_PARAMETERS {
+        return Err(OAuthAuthorizationError::InvalidAuthorizationParameter);
+    }
+    for (index, (name, value)) in parameters.iter().enumerate() {
+        let valid_name = !name.is_empty()
+            && name.len() <= MAX_AUTHORIZATION_PARAMETER_NAME_BYTES
+            && name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'));
+        let valid_value = !value.is_empty()
+            && value.len() <= MAX_AUTHORIZATION_PARAMETER_VALUE_BYTES
+            && value.is_ascii()
+            && !value.bytes().any(|byte| byte.is_ascii_control());
+        if !valid_name || !valid_value {
+            return Err(OAuthAuthorizationError::InvalidAuthorizationParameter);
+        }
+        if RESERVED_AUTHORIZATION_PARAMETERS.contains(name)
+            || parameters[..index]
+                .iter()
+                .any(|(existing, _)| existing == name)
+            || endpoint
+                .query_pairs()
+                .any(|(existing, _)| existing == *name)
+        {
+            return Err(OAuthAuthorizationError::ReservedParameter);
+        }
     }
     Ok(())
 }

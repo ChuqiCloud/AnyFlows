@@ -18,10 +18,11 @@ pub use oauth::{
     MAX_PENDING_OAUTH_AUTHORIZATIONS, MIN_OAUTH_AUTHORIZATION_SESSION_TTL,
     OAuthAuthorizationCallback, OAuthAuthorizationContext, OAuthAuthorizationError,
     OAuthAuthorizationGrant, OAuthAuthorizationRequest, OAuthAuthorizationSessionStore,
-    OAuthAuthorizationStart, OAuthClientAuthenticationMethod, OAuthEndpointErrorCode,
-    OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenPersistenceError,
-    OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService, OAuthTokenSet,
-    UpstreamOAuthProvider,
+    OAuthAuthorizationStart, OAuthClientAuthenticationMethod, OAuthConnectionCoordinator,
+    OAuthConnectionError, OAuthConnectionOutcome, OAuthEndpointErrorCode, OAuthProviderProfile,
+    OAuthProviderProfileError, OAuthTokenExchange, OAuthTokenExchangeError,
+    OAuthTokenPersistenceError, OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService,
+    OAuthTokenRequestEncoding, OAuthTokenSet, UpstreamOAuthProvider,
 };
 pub use system_secret::{
     DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretError,

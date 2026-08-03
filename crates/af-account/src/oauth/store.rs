@@ -154,6 +154,7 @@ impl OAuthAuthorizationSessionStore {
         if callback.is_denied() {
             return Err(OAuthAuthorizationError::ProviderDenied);
         }
+        let state = callback.take_state();
         let authorization_code = callback
             .take_authorization_code()
             .ok_or(OAuthAuthorizationError::InvalidAuthorizationCode)?;
@@ -161,6 +162,7 @@ impl OAuthAuthorizationSessionStore {
             pending.provider,
             pending.context,
             pending.redirect_uri,
+            state,
             authorization_code,
             pending.code_verifier.into_inner(),
         ))

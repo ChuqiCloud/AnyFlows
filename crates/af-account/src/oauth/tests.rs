@@ -276,6 +276,7 @@ fn successful_callback_returns_code_and_verifier_once() {
     assert_eq!(grant.provider(), UpstreamOAuthProvider::ClaudeCode);
     assert_eq!(grant.context(), authorization_context());
     assert_eq!(grant.redirect_uri().as_str(), CALLBACK_URI);
+    assert_eq!(grant.state(), state);
     assert_eq!(grant.authorization_code(), AUTHORIZATION_CODE);
     assert_eq!(grant.code_verifier().len(), 43);
     assert_eq!(code_challenge(grant.code_verifier()), challenge);
@@ -485,6 +486,7 @@ fn debug_outputs_never_expose_oauth_material() {
     let state = query_value(&start, "state");
     let start_debug = format!("{start:?}");
     assert!(!start_debug.contains(&state));
+    assert!(!start_debug.contains(CALLBACK_URI));
 
     let callback = callback_with_code(
         UpstreamOAuthProvider::ClaudeCode,
@@ -500,6 +502,8 @@ fn debug_outputs_never_expose_oauth_material() {
     let grant = store.consume(callback).unwrap();
     let verifier = grant.code_verifier().to_owned();
     let grant_debug = format!("{grant:?}");
+    assert!(!grant_debug.contains(&state));
+    assert!(!grant_debug.contains(CALLBACK_URI));
     assert!(!grant_debug.contains(AUTHORIZATION_CODE));
     assert!(!grant_debug.contains(&verifier));
     assert!(!format!("{store:?}").contains(&state));
