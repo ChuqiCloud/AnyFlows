@@ -8031,6 +8031,7 @@
           "oauth_provider",
           "oauth_account_key",
           "oauth_project_id",
+          "oauth_revision",
           "last_used_at",
           "created_at",
           "updated_at"
@@ -8190,6 +8191,12 @@
             ],
             "maxLength": 255,
             "minLength": 1
+          },
+          "oauth_revision": {
+            "type": "integer",
+            "format": "int64",
+            "description": "仅在 OAuth token 集合成功持久化后单调递增。",
+            "minimum": 0
           },
           "last_used_at": {
             "type": [

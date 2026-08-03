@@ -122,10 +122,16 @@ impl OAuthCredentialRepository {
             .filter(credentials::Column::Kind.eq(CredentialKind::Oauth.as_str()))
             .filter(credentials::Column::DeletedAt.is_null())
             .filter(provider_filter)
+            .filter(credentials::Column::OauthRevision.gte(0_i64))
+            .filter(credentials::Column::OauthRevision.lt(i64::MAX))
             .col_expr(credentials::Column::Secret, Expr::value(encrypted))
             .col_expr(
                 credentials::Column::OauthProvider,
                 Expr::value(Some(provider.to_owned())),
+            )
+            .col_expr(
+                credentials::Column::OauthRevision,
+                Expr::col(credentials::Column::OauthRevision).add(1_i64),
             )
             .col_expr(credentials::Column::UpdatedAt, Expr::value(now))
             .exec(self.pool.connection())

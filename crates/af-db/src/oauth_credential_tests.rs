@@ -44,15 +44,18 @@ async fn oauth_token_update_preserves_scheduler_and_runtime_fields() -> Result<(
     let after = credential_model(&fixture, credential_id).await?;
     assert_ne!(after.secret, before.secret);
     assert_eq!(after.oauth_provider.as_deref(), Some("codex"));
+    assert_eq!(before.oauth_revision, 0);
+    assert_eq!(after.oauth_revision, 1);
     let (key_id, nonce, ciphertext) = after.secret.envelope_parts()?;
     assert_eq!(key_id, "oauth-write-test-key");
     assert_eq!(nonce, [0x22; 24]);
     assert_eq!(ciphertext, vec![0x22; 32]);
 
-    // 除密文、provider 与审计更新时间外，OAuth 回调不得重写任何业务或运行字段。
+    // 除密文、provider、OAuth 版本与审计更新时间外，回调不得重写业务或运行字段。
     let mut normalized = after;
     normalized.secret = before.secret.clone();
     normalized.oauth_provider = before.oauth_provider.clone();
+    normalized.oauth_revision = before.oauth_revision;
     normalized.updated_at = before.updated_at;
     assert_eq!(normalized, before);
 

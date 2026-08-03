@@ -2,6 +2,7 @@ import type {
   AdminCredential,
   AdminCredentialCreateRequestWritable,
   AdminCredentialUpdateRequestWritable,
+  AdminOAuthProvider,
   AdminRoutingWriteStatus,
 } from '@/lib/api/generated/types.gen'
 
@@ -18,8 +19,8 @@ export type CredentialSchedule = {
   weight: number
 }
 
-/** 校验服务端允许的 API Key 明文边界，不在错误中保留原始输入。 */
-export function isValidApiKey(value: string) {
+/** 校验服务端允许的 API Key 或 OAuth access token 明文边界。 */
+export function isValidCredentialSecret(value: string) {
   return value.length > 0
     && value.length <= 16 * 1024
     && value.trim() === value
@@ -53,6 +54,32 @@ export function createApiKeyRequest(
     quota_dimension: 'global',
     proxy_id: null,
     oauth_provider: null,
+    oauth_account_key: null,
+    oauth_project_id: null,
+  }
+}
+
+/** 使用已有 access token 创建可继续执行官方授权的 OAuth 凭据。 */
+export function createOAuthCredentialRequest(
+  secret: string,
+  provider: AdminOAuthProvider,
+  schedule: CredentialSchedule = { priority: 0, weight: 10 },
+): AdminCredentialCreateRequestWritable {
+  return {
+    kind: 'oauth',
+    secret,
+    status: 'enabled',
+    multi_key_mode: null,
+    priority: schedule.priority,
+    weight: schedule.weight,
+    concurrency: null,
+    load_factor_micros: null,
+    rate_multiplier_micros: null,
+    schedulable: true,
+    parent_id: null,
+    quota_dimension: 'global',
+    proxy_id: null,
+    oauth_provider: provider,
     oauth_account_key: null,
     oauth_project_id: null,
   }

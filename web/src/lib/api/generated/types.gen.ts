@@ -149,6 +149,7 @@ export type AdminCredential = {
     oauth_provider: string | null;
     oauth_account_key: string | null;
     oauth_project_id: string | null;
+    oauth_revision: number;
     last_used_at: number | null;
     created_at: number;
     updated_at: number;
