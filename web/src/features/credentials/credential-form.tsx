@@ -36,7 +36,7 @@ export function CredentialForm({ channel, credential, credentials, active, onSav
   const creating = credential === undefined
   const allowedKinds = credentialKindsForChannel(channel.type)
   const initialKind = allowedKinds[0] ?? 'api_key'
-  const controllerRef = useRef<AbortController>()
+  const controllerRef = useRef<AbortController | undefined>(undefined)
   const createMutation = useCreateAdminCredential()
   const updateMutation = useUpdateAdminCredential()
   const { reset: resetCreateMutation } = createMutation

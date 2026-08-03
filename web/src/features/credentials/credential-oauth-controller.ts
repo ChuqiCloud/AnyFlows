@@ -39,8 +39,8 @@ export function useCredentialOAuthController(options: CredentialOAuthControllerO
   const manualMutation = useCompleteAdminOAuthManualCallback()
   const { reset: resetBeginMutation } = beginMutation
   const { reset: resetManualMutation } = manualMutation
-  const beginAbortRef = useRef<AbortController>()
-  const manualAbortRef = useRef<AbortController>()
+  const beginAbortRef = useRef<AbortController | undefined>(undefined)
+  const manualAbortRef = useRef<AbortController | undefined>(undefined)
   const boundProvider = asAdminOAuthProvider(options.credential.oauth_provider)
   const unsupportedBoundProvider = options.credential.oauth_provider !== null && boundProvider === undefined
   const providers = useMemo(() => providersQuery.data?.providers ?? [], [providersQuery.data])
