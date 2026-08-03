@@ -6,9 +6,7 @@ use af_adapter::{
     HeaderValue, OpenAiAdaptorSettings, RelayContext, get_adaptor,
 };
 use af_db::CredentialStateRepository;
-use af_domain::{
-    AfError, ChannelType, CredentialKind, GatewayPrincipal, GroupId, Operation, Protocol,
-};
+use af_domain::{AfError, ChannelType, GatewayPrincipal, GroupId, Operation, Protocol};
 use af_httpclient::HttpClientProvider;
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::{
@@ -410,7 +408,7 @@ mod tests {
         DatabaseOptions, EncryptedCredentialEnvelope, MigrationOptions,
         SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord, connect_and_migrate,
     };
-    use af_domain::{ChannelId, Operation, UpstreamError};
+    use af_domain::{ChannelId, CredentialKind, Operation, UpstreamError};
     use af_httpclient::{HttpClientConfig, HttpClientProvider};
     use af_protocol::{CanonicalRequest, openai_chat};
     use af_scheduler::{
