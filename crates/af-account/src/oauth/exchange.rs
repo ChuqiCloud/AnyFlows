@@ -445,9 +445,22 @@ impl OAuthTokenRefreshRequest {
         refresh_token: String,
         scope: Option<String>,
     ) -> Result<Self, OAuthTokenExchangeError> {
+        Self::from_zeroizing(
+            provider,
+            Zeroizing::new(refresh_token),
+            scope.map(Zeroizing::new),
+        )
+    }
+
+    /// 直接接管可清零的 refresh token 与 scope，校验失败时也不产生普通字符串副本。
+    pub(super) fn from_zeroizing(
+        provider: UpstreamOAuthProvider,
+        refresh_token: Zeroizing<String>,
+        scope: Option<Zeroizing<String>>,
+    ) -> Result<Self, OAuthTokenExchangeError> {
         // 先由可清零类型接管输入，确保校验失败不会以普通 String 释放敏感文本。
-        let refresh_token = TokenSecret::new_unchecked(refresh_token);
-        let scope = scope.map(TokenSecret::new_unchecked);
+        let refresh_token = TokenSecret::from_zeroizing(refresh_token);
+        let scope = scope.map(TokenSecret::from_zeroizing);
         if !is_valid_bearer_secret(refresh_token.expose())
             || scope
                 .as_ref()
@@ -554,6 +567,24 @@ impl OAuthRefreshedTokenSet {
         self.scope.as_ref().map(TokenSecret::expose)
     }
 
+    /// 按所有权拆分刷新结果，供加密持久化边界消费。
+    pub(super) fn into_parts(self) -> OAuthRefreshedTokenSetParts {
+        let Self {
+            provider,
+            access_token,
+            refresh_token,
+            expires_in,
+            scope,
+        } = self;
+        OAuthRefreshedTokenSetParts {
+            provider,
+            access_token: access_token.into_zeroizing(),
+            refresh_token: refresh_token.into_zeroizing(),
+            expires_in,
+            scope: scope.map(TokenSecret::into_zeroizing),
+        }
+    }
+
     #[cfg(test)]
     pub(super) fn for_test(
         provider: UpstreamOAuthProvider,
@@ -570,6 +601,15 @@ impl OAuthRefreshedTokenSet {
             scope: scope.map(TokenSecret::new_unchecked),
         }
     }
+}
+
+/// 刷新结果的内部所有权分解；所有敏感字符串释放时都会清零。
+pub(super) struct OAuthRefreshedTokenSetParts {
+    pub(super) provider: UpstreamOAuthProvider,
+    pub(super) access_token: Zeroizing<String>,
+    pub(super) refresh_token: Zeroizing<String>,
+    pub(super) expires_in: Option<Duration>,
+    pub(super) scope: Option<Zeroizing<String>>,
 }
 
 impl fmt::Debug for OAuthRefreshedTokenSet {
@@ -805,6 +845,11 @@ struct TokenSecret(String);
 impl TokenSecret {
     fn new_unchecked(value: String) -> Self {
         Self(value)
+    }
+
+    /// 从可清零所有者移动文本，不复制敏感内容。
+    fn from_zeroizing(mut value: Zeroizing<String>) -> Self {
+        Self(mem::take(&mut *value))
     }
 
     fn expose(&self) -> &str {

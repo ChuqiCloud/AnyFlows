@@ -19,11 +19,13 @@ pub use oauth::{
     OAuthAuthorizationCallback, OAuthAuthorizationContext, OAuthAuthorizationError,
     OAuthAuthorizationGrant, OAuthAuthorizationRequest, OAuthAuthorizationSessionStore,
     OAuthAuthorizationStart, OAuthClientAuthenticationMethod, OAuthConnectionCoordinator,
-    OAuthConnectionError, OAuthConnectionOutcome, OAuthEndpointErrorCode, OAuthLoopbackRedirect,
-    OAuthProviderProfile, OAuthProviderProfileError, OAuthRefreshedTokenSet, OAuthTokenExchange,
-    OAuthTokenExchangeError, OAuthTokenPersistenceError, OAuthTokenPersistenceOutcome,
-    OAuthTokenPersistenceService, OAuthTokenRefreshRequest, OAuthTokenRequestEncoding,
-    OAuthTokenSet, UpstreamOAuthProvider,
+    OAuthConnectionError, OAuthConnectionOutcome, OAuthEndpointErrorCode,
+    OAuthExpirationProjectionBackfillBatch, OAuthLoopbackRedirect, OAuthProviderProfile,
+    OAuthProviderProfileError, OAuthRefreshCandidate, OAuthRefreshPersistenceError,
+    OAuthRefreshPersistenceOutcome, OAuthRefreshPersistenceService, OAuthRefreshWriteGuard,
+    OAuthRefreshedTokenSet, OAuthTokenExchange, OAuthTokenExchangeError,
+    OAuthTokenPersistenceError, OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService,
+    OAuthTokenRefreshRequest, OAuthTokenRequestEncoding, OAuthTokenSet, UpstreamOAuthProvider,
 };
 pub use system_secret::{
     DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretError,

@@ -293,7 +293,10 @@ pub use network_settings::{
     NetworkSettingsWriteRecord, ProxyPasswordUpdate,
 };
 pub use oauth_credential::{
-    OAuthCredentialRepository, OAuthCredentialRepositoryError, OAuthCredentialTokenUpdateOutcome,
+    MAX_OAUTH_REFRESH_CANDIDATES, OAuthCredentialExpirationProjectionUpdateOutcome,
+    OAuthCredentialRefreshUpdateOutcome, OAuthCredentialRepository, OAuthCredentialRepositoryError,
+    OAuthCredentialTokenUpdateOutcome, OAuthExpirationProjectionCandidateRecord,
+    OAuthRefreshCandidateRecord,
 };
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
 pub use password_reset::{

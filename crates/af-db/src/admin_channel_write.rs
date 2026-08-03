@@ -712,6 +712,14 @@ impl AdminChannelRepository {
         if current_kind != fields.kind {
             return Err(AdminChannelWriteRepositoryError::InvalidInput);
         }
+        let oauth_contract_changed = current_kind == CredentialKind::Oauth
+            && (replacement_secret.is_some()
+                || current.oauth_provider.as_deref() != fields.oauth_provider.as_deref());
+        if oauth_contract_changed
+            && (current.oauth_revision < 0 || current.oauth_revision == i64::MAX)
+        {
+            return Err(internal_error(AdminChannelWriteRepositoryError::Invariant));
+        }
         validate_parent(&transaction, channel_id, Some(credential_id), &fields).await?;
 
         let now = TimeDateTimeWithTimeZone::now_utc();
@@ -769,6 +777,20 @@ impl AdminChannelRepository {
             .col_expr(credentials::Column::UpdatedAt, Expr::value(now));
         if let Some(secret) = replacement_secret {
             update = update.col_expr(credentials::Column::Secret, Expr::value(secret));
+        }
+        if oauth_contract_changed {
+            // 手工换 token 或切换 Provider 必须使并发后台刷新失效，并清除旧到期投影。
+            update = update
+                .filter(credentials::Column::OauthRevision.eq(current.oauth_revision))
+                .filter(credentials::Column::Secret.eq(current.secret))
+                .col_expr(
+                    credentials::Column::OauthRevision,
+                    Expr::col(credentials::Column::OauthRevision).add(1_i64),
+                )
+                .col_expr(
+                    credentials::Column::OauthExpiresAtEpochSeconds,
+                    Expr::value(Option::<i64>::None),
+                );
         }
         let result = update
             .exec(&transaction)

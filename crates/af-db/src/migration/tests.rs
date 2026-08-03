@@ -4,8 +4,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use af_domain::{
-    BillingReservationId, ChannelId, GatewayPrincipal, GroupId, Quota, QuotaDelta, TokenId,
-    TrustedClientIp, UserId,
+    BillingReservationId, ChannelId, CredentialKind, GatewayPrincipal, GroupId, Quota, QuotaDelta,
+    TokenId, TrustedClientIp, UserId,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rust_decimal::Decimal;
@@ -160,6 +160,48 @@ async fn credential_oauth_revision_migration_backfills_existing_rows() -> Result
         .await?
         .expect("迁移后的凭据必须保留");
     assert_eq!(credential.oauth_revision, 0);
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn credential_oauth_expiration_migration_preserves_existing_rows()
+-> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), Some(38)).await?;
+    let channel = channel_active_model("oauth-expiration-backfill")
+        .insert(pool.connection())
+        .await?;
+    let credential_id = 90_039_i64;
+    let mut credential = credential_active_model(channel.id, "oauth-expiration-ciphertext");
+    credential.id = Set(credential_id);
+    credential.kind = Set(CredentialKind::Oauth.as_str().to_owned());
+    credential.oauth_provider = Set(Some("codex".to_owned()));
+    credentials::Entity::insert(credential)
+        .exec_without_returning(pool.connection())
+        .await?;
+
+    Migrator::up(pool.connection(), None).await?;
+    let manager = SchemaManager::new(pool.connection());
+    assert!(
+        manager
+            .has_index("credentials", "idx_credentials_oauth_refresh_due")
+            .await?
+    );
+    let credential = credentials::Entity::find_by_id(credential_id)
+        .one(pool.connection())
+        .await?
+        .expect("迁移后的凭据必须保留");
+    assert_eq!(credential.oauth_expires_at_epoch_seconds, None);
+
+    let mut valid = credential.into_active_model();
+    valid.oauth_expires_at_epoch_seconds = Set(Some(1_800_000_000));
+    let valid = valid.update(pool.connection()).await?;
+    assert_eq!(valid.oauth_expires_at_epoch_seconds, Some(1_800_000_000));
+    let mut invalid = valid.into_active_model();
+    invalid.oauth_expires_at_epoch_seconds = Set(Some(-1));
+    assert!(invalid.update(pool.connection()).await.is_err());
 
     pool.close().await?;
     Ok(())

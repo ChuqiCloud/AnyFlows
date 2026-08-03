@@ -16,6 +16,14 @@ use crate::{
     entity::{EncryptedJson, credentials},
 };
 
+mod refresh;
+
+pub use refresh::{
+    MAX_OAUTH_REFRESH_CANDIDATES, OAuthCredentialExpirationProjectionUpdateOutcome,
+    OAuthCredentialRefreshUpdateOutcome, OAuthExpirationProjectionCandidateRecord,
+    OAuthRefreshCandidateRecord,
+};
+
 const DEFAULT_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_OAUTH_PROVIDER_BYTES: usize = 64;
 
@@ -40,6 +48,12 @@ pub enum OAuthCredentialRepositoryError {
     /// provider 不是规范化的内部标识。
     #[error("OAuth provider 标识无效")]
     InvalidProvider,
+    /// token 绝对到期时间不能为负数。
+    #[error("OAuth token 到期时间无效")]
+    InvalidExpiration,
+    /// 到期阈值或批量上限违反候选查询边界。
+    #[error("OAuth 刷新候选查询参数无效")]
+    InvalidCandidateQuery,
     /// 获取连接或执行查询失败。
     #[error("OAuth 凭据数据库操作失败")]
     Query,
@@ -88,14 +102,24 @@ impl OAuthCredentialRepository {
         channel_id: ChannelId,
         credential_id: CredentialId,
         provider: &str,
+        expires_at_epoch_seconds: Option<i64>,
         envelope: EncryptedCredentialEnvelope,
     ) -> Result<OAuthCredentialTokenUpdateOutcome, OAuthCredentialRepositoryError> {
         if !is_valid_provider(provider) {
             return Err(OAuthCredentialRepositoryError::InvalidProvider);
         }
+        if expires_at_epoch_seconds.is_some_and(|value| value < 0) {
+            return Err(OAuthCredentialRepositoryError::InvalidExpiration);
+        }
         let encrypted = encrypted_json(envelope)?;
         let operation = self
-            .replace_token_secret_inner(channel_id, credential_id, provider, encrypted)
+            .replace_token_secret_inner(
+                channel_id,
+                credential_id,
+                provider,
+                expires_at_epoch_seconds,
+                encrypted,
+            )
             .with_subscriber(NoSubscriber::default());
         match timeout(self.operation_timeout, operation).await {
             Ok(result) => result.map_err(record_internal_error),
@@ -110,6 +134,7 @@ impl OAuthCredentialRepository {
         channel_id: ChannelId,
         credential_id: CredentialId,
         provider: &str,
+        expires_at_epoch_seconds: Option<i64>,
         encrypted: EncryptedJson,
     ) -> Result<OAuthCredentialTokenUpdateOutcome, OAuthCredentialRepositoryError> {
         let now = TimeDateTimeWithTimeZone::now_utc();
@@ -132,6 +157,10 @@ impl OAuthCredentialRepository {
             .col_expr(
                 credentials::Column::OauthRevision,
                 Expr::col(credentials::Column::OauthRevision).add(1_i64),
+            )
+            .col_expr(
+                credentials::Column::OauthExpiresAtEpochSeconds,
+                Expr::value(expires_at_epoch_seconds),
             )
             .col_expr(credentials::Column::UpdatedAt, Expr::value(now))
             .exec(self.pool.connection())
@@ -223,7 +252,9 @@ fn query_error(operation: &'static str) -> OAuthCredentialRepositoryError {
 fn record_internal_error(error: OAuthCredentialRepositoryError) -> OAuthCredentialRepositoryError {
     let error_kind = match error {
         OAuthCredentialRepositoryError::InvalidConfiguration
-        | OAuthCredentialRepositoryError::InvalidProvider => return error,
+        | OAuthCredentialRepositoryError::InvalidProvider
+        | OAuthCredentialRepositoryError::InvalidExpiration
+        | OAuthCredentialRepositoryError::InvalidCandidateQuery => return error,
         OAuthCredentialRepositoryError::Query => "oauth_credential_query",
         OAuthCredentialRepositoryError::Timeout => "oauth_credential_timeout",
         OAuthCredentialRepositoryError::Invariant => "oauth_credential_invariant",

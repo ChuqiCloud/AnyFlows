@@ -211,6 +211,79 @@ async fn credential_update_preserves_secret_and_runtime_state() -> Result<(), Bo
 }
 
 #[tokio::test]
+async fn oauth_credential_update_invalidates_concurrent_refresh_guards()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let channel_id = create_channel(&fixture).await?;
+    let AdminCredentialCreateOutcome::Created(created) = fixture
+        .repository
+        .create_credential(channel_id, oauth_credential_record("codex", None), |_| {
+            Ok(envelope(0x64))
+        })
+        .await?
+    else {
+        panic!("有效渠道必须创建 OAuth 凭据");
+    };
+    let credential_id = created.credential_id();
+    execute(
+        &fixture,
+        "UPDATE credentials SET oauth_revision = ?, oauth_expires_at_epoch_seconds = ? WHERE id = ?",
+        [
+            4_i64.into(),
+            1_800_000_000_i64.into(),
+            credential_id.get().into(),
+        ],
+    )
+    .await?;
+
+    let AdminCredentialMutationOutcome::Mutated(_) = fixture
+        .repository
+        .update_credential(
+            channel_id,
+            credential_id,
+            oauth_credential_record("codex", None),
+            Some(envelope(0x65)),
+        )
+        .await?
+    else {
+        panic!("手工换密钥必须完成更新");
+    };
+    let (revision, expiration, provider, replaced_secret) =
+        oauth_credential_state(&fixture, credential_id).await?;
+    assert_eq!(revision, 5);
+    assert_eq!(expiration, None);
+    assert_eq!(provider.as_deref(), Some("codex"));
+
+    execute(
+        &fixture,
+        "UPDATE credentials SET oauth_expires_at_epoch_seconds = ? WHERE id = ?",
+        [1_900_000_000_i64.into(), credential_id.get().into()],
+    )
+    .await?;
+    let AdminCredentialMutationOutcome::Mutated(_) = fixture
+        .repository
+        .update_credential(
+            channel_id,
+            credential_id,
+            oauth_credential_record("gemini", None),
+            None,
+        )
+        .await?
+    else {
+        panic!("切换 Provider 必须完成更新");
+    };
+    let (revision, expiration, provider, current_secret) =
+        oauth_credential_state(&fixture, credential_id).await?;
+    assert_eq!(revision, 6);
+    assert_eq!(expiration, None);
+    assert_eq!(provider.as_deref(), Some("gemini"));
+    assert_eq!(current_secret, replaced_secret);
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn deletes_cascade_shadow_credentials_and_clear_channel_relations()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
@@ -343,7 +416,9 @@ fn credential_record(
     kind: CredentialKind,
     parent_id: Option<CredentialId>,
 ) -> AdminCredentialWriteRecord {
-    let oauth = kind == CredentialKind::Oauth;
+    if kind == CredentialKind::Oauth {
+        return oauth_credential_record("example", parent_id);
+    }
     AdminCredentialWriteRecord::new(
         kind,
         Status::Enabled,
@@ -357,9 +432,32 @@ fn credential_record(
         parent_id,
         "global",
         None,
-        oauth.then(|| "example".to_owned()),
-        oauth.then(|| "account".to_owned()),
-        oauth.then(|| "project".to_owned()),
+        None,
+        None,
+        None,
+    )
+}
+
+fn oauth_credential_record(
+    provider: &str,
+    parent_id: Option<CredentialId>,
+) -> AdminCredentialWriteRecord {
+    AdminCredentialWriteRecord::new(
+        CredentialKind::Oauth,
+        Status::Enabled,
+        Some(1),
+        10,
+        20,
+        Some(2),
+        Some(1_000_000),
+        Some(900_000),
+        true,
+        parent_id,
+        "global",
+        None,
+        Some(provider.to_owned()),
+        Some("account".to_owned()),
+        Some("project".to_owned()),
     )
 }
 
@@ -395,6 +493,24 @@ async fn credential_secret(
     )
     .await?;
     row.try_get("", "secret")
+}
+
+async fn oauth_credential_state(
+    fixture: &Fixture,
+    credential_id: CredentialId,
+) -> Result<(i64, Option<i64>, Option<String>, String), sea_orm::DbErr> {
+    let row = query_one(
+        fixture,
+        "SELECT oauth_revision, oauth_expires_at_epoch_seconds, oauth_provider, secret FROM credentials WHERE id = ?",
+        [credential_id.get().into()],
+    )
+    .await?;
+    Ok((
+        row.try_get("", "oauth_revision")?,
+        row.try_get("", "oauth_expires_at_epoch_seconds")?,
+        row.try_get("", "oauth_provider")?,
+        row.try_get("", "secret")?,
+    ))
 }
 
 async fn channel_sensitive_fields(

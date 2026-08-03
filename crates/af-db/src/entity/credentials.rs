@@ -44,6 +44,8 @@ pub struct Model {
     pub oauth_project_id: Option<String>,
     /// 仅在 OAuth token 集合成功持久化后单调递增。
     pub oauth_revision: i64,
+    /// OAuth access token 的可索引绝对到期时间；token 本体仍只保存在密文中。
+    pub oauth_expires_at_epoch_seconds: Option<i64>,
     pub last_used_at: Option<TimeDateTimeWithTimeZone>,
     pub created_at: TimeDateTimeWithTimeZone,
     pub updated_at: TimeDateTimeWithTimeZone,

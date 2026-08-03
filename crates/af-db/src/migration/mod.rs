@@ -44,6 +44,7 @@ mod m20260801_000035_add_invitation_rebate_quota;
 mod m20260801_000036_create_balance_alerts;
 mod m20260802_000037_create_network_settings;
 mod m20260803_000038_add_credential_oauth_revision;
+mod m20260803_000039_add_credential_oauth_expiration;
 mod schema;
 
 #[cfg(test)]
@@ -125,6 +126,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260801_000036_create_balance_alerts::Migration),
             Box::new(m20260802_000037_create_network_settings::Migration),
             Box::new(m20260803_000038_add_credential_oauth_revision::Migration),
+            Box::new(m20260803_000039_add_credential_oauth_expiration::Migration),
         ]
     }
 }
