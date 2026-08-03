@@ -82,6 +82,7 @@ impl OAuthTokenPersistenceService {
                 prepared.channel_id,
                 prepared.credential_id,
                 prepared.provider.as_str(),
+                prepared.expires_at_epoch_seconds,
                 prepared.envelope,
             )
             .await
@@ -113,6 +114,7 @@ struct PreparedOAuthCredential {
     channel_id: ChannelId,
     credential_id: CredentialId,
     provider: UpstreamOAuthProvider,
+    expires_at_epoch_seconds: Option<i64>,
     envelope: EncryptedCredentialEnvelope,
 }
 
@@ -127,7 +129,11 @@ fn prepare_token_set(
         return Err(OAuthTokenPersistenceError::InvalidContext);
     };
     let parts = token_set.into_parts();
-    let expires_at_epoch_seconds = checked_expiration(now, parts.expires_in)?;
+    let expires_at_epoch_seconds = parts
+        .expires_in
+        .map(|expires_in| checked_expiration_epoch_seconds(now, expires_in))
+        .transpose()
+        .map_err(|()| OAuthTokenPersistenceError::InvalidExpiration)?;
     let provider = parts.provider;
     let secret = PlainOAuthCredential::from_zeroizing(
         parts.access_token,
@@ -145,26 +151,18 @@ fn prepare_token_set(
         channel_id,
         credential_id,
         provider,
+        expires_at_epoch_seconds,
         envelope,
     })
 }
 
-fn checked_expiration(
+pub(super) fn checked_expiration_epoch_seconds(
     now: SystemTime,
-    expires_in: Option<std::time::Duration>,
-) -> Result<Option<i64>, OAuthTokenPersistenceError> {
-    let Some(expires_in) = expires_in else {
-        return Ok(None);
-    };
-    let expires_at = now
-        .checked_add(expires_in)
-        .ok_or(OAuthTokenPersistenceError::InvalidExpiration)?;
-    let since_epoch = expires_at
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| OAuthTokenPersistenceError::InvalidExpiration)?;
-    let epoch_seconds = i64::try_from(since_epoch.as_secs())
-        .map_err(|_| OAuthTokenPersistenceError::InvalidExpiration)?;
-    Ok(Some(epoch_seconds))
+    expires_in: std::time::Duration,
+) -> Result<i64, ()> {
+    let expires_at = now.checked_add(expires_in).ok_or(())?;
+    let since_epoch = expires_at.duration_since(UNIX_EPOCH).map_err(|_| ())?;
+    i64::try_from(since_epoch.as_secs()).map_err(|_| ())
 }
 
 const fn map_repository_error(error: OAuthCredentialRepositoryError) -> OAuthTokenPersistenceError {
@@ -173,6 +171,7 @@ const fn map_repository_error(error: OAuthCredentialRepositoryError) -> OAuthTok
         OAuthCredentialRepositoryError::Timeout => OAuthTokenPersistenceError::RepositoryTimeout,
         OAuthCredentialRepositoryError::InvalidConfiguration
         | OAuthCredentialRepositoryError::InvalidProvider
+        | OAuthCredentialRepositoryError::InvalidExpiration
         | OAuthCredentialRepositoryError::Invariant => OAuthTokenPersistenceError::Invariant,
         _ => OAuthTokenPersistenceError::Invariant,
     }
@@ -267,13 +266,12 @@ mod tests {
             .unwrap_err(),
             OAuthTokenPersistenceError::InvalidExpiration
         );
-        assert_eq!(
-            checked_expiration(
+        assert!(
+            checked_expiration_epoch_seconds(
                 UNIX_EPOCH - Duration::from_secs(2),
-                Some(Duration::from_secs(1)),
+                Duration::from_secs(1),
             )
-            .unwrap_err(),
-            OAuthTokenPersistenceError::InvalidExpiration
+            .is_err()
         );
     }
 

@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, mem};
 
 use af_config::{
     CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings,
@@ -13,7 +13,7 @@ use chacha20poly1305::{
 };
 use serde::{Deserialize, Deserializer, de::Error as _};
 use thiserror::Error;
-use zeroize::Zeroize as _;
+use zeroize::{Zeroize as _, Zeroizing};
 
 use crate::oauth::validate_scope;
 
@@ -320,6 +320,29 @@ impl DecryptedOAuthCredential {
     pub fn scope(&self) -> Option<&str> {
         self.scope.as_ref().map(OAuthScopeText::expose)
     }
+
+    /// 按所有权移出续期材料，并先清零后台刷新不再需要的 access token。
+    pub(crate) fn into_refresh_material(
+        self,
+    ) -> (
+        Option<Zeroizing<String>>,
+        Option<Zeroizing<String>>,
+        Option<i64>,
+    ) {
+        let Self {
+            access_token,
+            refresh_token,
+            expires_at_epoch_seconds,
+            scope,
+        } = self;
+        // 后台刷新不再需要旧 access token，先释放并清零它，再移动可续期材料。
+        drop(access_token);
+        (
+            refresh_token.map(SecretText::into_zeroizing),
+            scope.map(OAuthScopeText::into_zeroizing),
+            expires_at_epoch_seconds,
+        )
+    }
 }
 
 impl fmt::Debug for DecryptedOAuthCredential {
@@ -356,6 +379,10 @@ impl SecretText {
 
     fn expose(&self) -> &str {
         &self.0
+    }
+
+    fn into_zeroizing(mut self) -> Zeroizing<String> {
+        Zeroizing::new(mem::take(&mut self.0))
     }
 }
 
@@ -395,6 +422,10 @@ impl OAuthScopeText {
 
     fn expose(&self) -> &str {
         &self.0
+    }
+
+    fn into_zeroizing(mut self) -> Zeroizing<String> {
+        Zeroizing::new(mem::take(&mut self.0))
     }
 }
 

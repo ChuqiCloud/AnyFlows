@@ -1,13 +1,16 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, Protocol, Status};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
 
 use super::{
     AdminChannelRepository, AdminChannelWriteRecord, AdminCredentialCreateOutcome,
-    AdminCredentialDeleteOutcome, AdminCredentialWriteRecord, DatabaseOptions, MigrationOptions,
+    AdminCredentialDeleteOutcome, AdminCredentialWriteRecord, DatabaseOptions,
+    MAX_OAUTH_REFRESH_CANDIDATES, MigrationOptions,
+    OAuthCredentialExpirationProjectionUpdateOutcome, OAuthCredentialRefreshUpdateOutcome,
     OAuthCredentialRepository, OAuthCredentialRepositoryError, OAuthCredentialTokenUpdateOutcome,
-    entity::credentials,
+    entity::{EncryptedJson, channels, credentials},
 };
 use crate::EncryptedCredentialEnvelope;
 
@@ -37,13 +40,20 @@ async fn oauth_token_update_preserves_scheduler_and_runtime_fields() -> Result<(
     assert_eq!(
         fixture
             .oauth_repository
-            .replace_token_secret(channel_id, credential_id, "codex", envelope(0x22))
+            .replace_token_secret(
+                channel_id,
+                credential_id,
+                "codex",
+                Some(1_800_000_000),
+                envelope(0x22),
+            )
             .await?,
         OAuthCredentialTokenUpdateOutcome::Updated
     );
     let after = credential_model(&fixture, credential_id).await?;
     assert_ne!(after.secret, before.secret);
     assert_eq!(after.oauth_provider.as_deref(), Some("codex"));
+    assert_eq!(after.oauth_expires_at_epoch_seconds, Some(1_800_000_000));
     assert_eq!(before.oauth_revision, 0);
     assert_eq!(after.oauth_revision, 1);
     let (key_id, nonce, ciphertext) = after.secret.envelope_parts()?;
@@ -56,6 +66,7 @@ async fn oauth_token_update_preserves_scheduler_and_runtime_fields() -> Result<(
     normalized.secret = before.secret.clone();
     normalized.oauth_provider = before.oauth_provider.clone();
     normalized.oauth_revision = before.oauth_revision;
+    normalized.oauth_expires_at_epoch_seconds = before.oauth_expires_at_epoch_seconds;
     normalized.updated_at = before.updated_at;
     assert_eq!(normalized, before);
 
@@ -95,7 +106,13 @@ async fn oauth_token_update_rejects_wrong_targets_without_changing_secrets()
     assert_eq!(
         fixture
             .oauth_repository
-            .replace_token_secret(second_channel, oauth_id, "codex", envelope(0x41))
+            .replace_token_secret(
+                second_channel,
+                oauth_id,
+                "codex",
+                Some(1_800_000_000),
+                envelope(0x41),
+            )
             .await?,
         OAuthCredentialTokenUpdateOutcome::TargetNotFound
     );
@@ -108,7 +125,13 @@ async fn oauth_token_update_rejects_wrong_targets_without_changing_secrets()
     assert_eq!(
         fixture
             .oauth_repository
-            .replace_token_secret(first_channel, api_key_id, "codex", envelope(0x42))
+            .replace_token_secret(
+                first_channel,
+                api_key_id,
+                "codex",
+                Some(1_800_000_000),
+                envelope(0x42),
+            )
             .await?,
         OAuthCredentialTokenUpdateOutcome::TargetNotFound
     );
@@ -121,7 +144,13 @@ async fn oauth_token_update_rejects_wrong_targets_without_changing_secrets()
     assert_eq!(
         fixture
             .oauth_repository
-            .replace_token_secret(first_channel, deleted_id, "codex", envelope(0x43))
+            .replace_token_secret(
+                first_channel,
+                deleted_id,
+                "codex",
+                Some(1_800_000_000),
+                envelope(0x43),
+            )
             .await?,
         OAuthCredentialTokenUpdateOutcome::TargetNotFound
     );
@@ -134,7 +163,13 @@ async fn oauth_token_update_rejects_wrong_targets_without_changing_secrets()
     assert_eq!(
         fixture
             .oauth_repository
-            .replace_token_secret(first_channel, provider_id, "codex", envelope(0x44))
+            .replace_token_secret(
+                first_channel,
+                provider_id,
+                "codex",
+                Some(1_800_000_000),
+                envelope(0x44),
+            )
             .await?,
         OAuthCredentialTokenUpdateOutcome::ProviderMismatch
     );
@@ -150,6 +185,7 @@ async fn oauth_token_update_rejects_wrong_targets_without_changing_secrets()
                 first_channel,
                 CredentialId::new(i64::MAX)?,
                 "codex",
+                Some(1_800_000_000),
                 envelope(0x45),
             )
             .await?,
@@ -158,10 +194,24 @@ async fn oauth_token_update_rejects_wrong_targets_without_changing_secrets()
     assert_eq!(
         fixture
             .oauth_repository
-            .replace_token_secret(first_channel, oauth_id, "Codex", envelope(0x46))
+            .replace_token_secret(
+                first_channel,
+                oauth_id,
+                "Codex",
+                Some(1_800_000_000),
+                envelope(0x46),
+            )
             .await
             .unwrap_err(),
         OAuthCredentialRepositoryError::InvalidProvider
+    );
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .replace_token_secret(first_channel, oauth_id, "codex", Some(-1), envelope(0x47),)
+            .await
+            .unwrap_err(),
+        OAuthCredentialRepositoryError::InvalidExpiration
     );
     assert_eq!(
         credential_model(&fixture, oauth_id).await?.secret,
@@ -172,6 +222,301 @@ async fn oauth_token_update_rejects_wrong_targets_without_changing_secrets()
             .unwrap_err(),
         OAuthCredentialRepositoryError::InvalidConfiguration
     );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn due_refresh_candidates_are_bounded_stable_and_fail_closed() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let enabled_channel = create_channel(&fixture, "enabled").await?;
+    let disabled_channel = create_channel(&fixture, "disabled").await?;
+    let first_due =
+        create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x51).await?;
+    let second_due =
+        create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x52).await?;
+    let future =
+        create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x53).await?;
+    let disabled =
+        create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x54).await?;
+    let unschedulable =
+        create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x55).await?;
+    let missing_projection = create_credential(
+        &fixture,
+        enabled_channel,
+        CredentialKind::Oauth,
+        Some("codex"),
+        0x56,
+    )
+    .await?;
+    let root =
+        create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x57).await?;
+    let child =
+        create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x58).await?;
+    let channel_disabled = create_credential(
+        &fixture,
+        disabled_channel,
+        CredentialKind::Oauth,
+        None,
+        0x59,
+    )
+    .await?;
+
+    for (credential_id, expires_at, marker) in [
+        (first_due, 90_i64, 0x61_u8),
+        (second_due, 90, 0x62),
+        (future, 101, 0x63),
+        (disabled, 80, 0x64),
+        (unschedulable, 70, 0x65),
+        (root, 101, 0x66),
+        (child, 50, 0x67),
+        (channel_disabled, 40, 0x68),
+    ] {
+        assert_eq!(
+            fixture
+                .oauth_repository
+                .replace_token_secret(
+                    if credential_id == channel_disabled {
+                        disabled_channel
+                    } else {
+                        enabled_channel
+                    },
+                    credential_id,
+                    "codex",
+                    Some(expires_at),
+                    envelope(marker),
+                )
+                .await?,
+            OAuthCredentialTokenUpdateOutcome::Updated
+        );
+    }
+
+    let mut disabled_model = credential_model(&fixture, disabled)
+        .await?
+        .into_active_model();
+    disabled_model.status = Set(Status::Disabled.code());
+    disabled_model.update(fixture.pool.connection()).await?;
+    let mut unschedulable_model = credential_model(&fixture, unschedulable)
+        .await?
+        .into_active_model();
+    unschedulable_model.schedulable = Set(false);
+    unschedulable_model
+        .update(fixture.pool.connection())
+        .await?;
+    let mut child_model = credential_model(&fixture, child).await?.into_active_model();
+    child_model.parent_id = Set(Some(root.get()));
+    child_model.update(fixture.pool.connection()).await?;
+    let mut disabled_channel_model = channels::Entity::find_by_id(disabled_channel.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("测试渠道必须存在")
+        .into_active_model();
+    disabled_channel_model.status = Set(Status::Disabled.code());
+    disabled_channel_model
+        .update(fixture.pool.connection())
+        .await?;
+
+    let candidates = fixture
+        .oauth_repository
+        .due_refresh_candidates(100, MAX_OAUTH_REFRESH_CANDIDATES)
+        .await?;
+    let candidate_ids = candidates
+        .iter()
+        .map(|candidate| candidate.credential_id())
+        .collect::<Vec<_>>();
+    assert_eq!(candidate_ids, vec![first_due, second_due]);
+    assert!(!candidate_ids.contains(&missing_projection));
+    for candidate in &candidates {
+        assert_eq!(candidate.channel_id(), enabled_channel);
+        assert_eq!(candidate.provider(), "codex");
+        assert_eq!(candidate.expected_revision(), 1);
+        assert_eq!(candidate.expires_at_epoch_seconds(), 90);
+        let rendered = format!("{candidate:?}");
+        assert!(!rendered.contains("oauth-write-test-key"));
+        assert!(!rendered.contains("ciphertext"));
+    }
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .due_refresh_candidates(-1, 1)
+            .await
+            .unwrap_err(),
+        OAuthCredentialRepositoryError::InvalidCandidateQuery
+    );
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .due_refresh_candidates(100, 0)
+            .await
+            .unwrap_err(),
+        OAuthCredentialRepositoryError::InvalidCandidateQuery
+    );
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .due_refresh_candidates(100, MAX_OAUTH_REFRESH_CANDIDATES + 1)
+            .await
+            .unwrap_err(),
+        OAuthCredentialRepositoryError::InvalidCandidateQuery
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn expiration_projection_backfill_uses_stable_cursor_and_secret_cas()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let channel_id = create_channel(&fixture, "projection-backfill").await?;
+    let first = create_credential(
+        &fixture,
+        channel_id,
+        CredentialKind::Oauth,
+        Some("codex"),
+        0x69,
+    )
+    .await?;
+    let second = create_credential(
+        &fixture,
+        channel_id,
+        CredentialKind::Oauth,
+        Some("codex"),
+        0x6a,
+    )
+    .await?;
+
+    let mut first_page = fixture
+        .oauth_repository
+        .missing_expiration_projection_candidates(None, 1)
+        .await?;
+    let duplicate = fixture
+        .oauth_repository
+        .missing_expiration_projection_candidates(None, 1)
+        .await?
+        .pop()
+        .expect("并发读取必须观察同一空投影事实");
+    let first_candidate = first_page.pop().expect("首个旧凭据必须进入回填");
+    assert_eq!(first_candidate.credential_id(), first);
+    assert_eq!(first_candidate.expected_revision(), 0);
+    let rendered = format!("{first_candidate:?}");
+    assert!(!rendered.contains("oauth-write-test-key"));
+    assert!(!rendered.contains("ciphertext"));
+
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .backfill_expiration_projection(first_candidate, 1_800_000_000)
+            .await?,
+        OAuthCredentialExpirationProjectionUpdateOutcome::Updated
+    );
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .backfill_expiration_projection(duplicate, 1_900_000_000)
+            .await?,
+        OAuthCredentialExpirationProjectionUpdateOutcome::Stale
+    );
+    let first_model = credential_model(&fixture, first).await?;
+    assert_eq!(first_model.oauth_revision, 0);
+    assert_eq!(
+        first_model.oauth_expires_at_epoch_seconds,
+        Some(1_800_000_000)
+    );
+
+    let second_page = fixture
+        .oauth_repository
+        .missing_expiration_projection_candidates(Some(first), 1)
+        .await?;
+    assert_eq!(second_page.len(), 1);
+    assert_eq!(second_page[0].credential_id(), second);
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .missing_expiration_projection_candidates(None, 0)
+            .await
+            .unwrap_err(),
+        OAuthCredentialRepositoryError::InvalidCandidateQuery
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn refresh_cas_preserves_runtime_changes_and_rejects_stale_secret()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let channel_id = create_channel(&fixture, "refresh-cas").await?;
+    let credential_id =
+        create_credential(&fixture, channel_id, CredentialKind::Oauth, None, 0x71).await?;
+    fixture
+        .oauth_repository
+        .replace_token_secret(
+            channel_id,
+            credential_id,
+            "codex",
+            Some(100),
+            envelope(0x72),
+        )
+        .await?;
+    let candidate = fixture
+        .oauth_repository
+        .due_refresh_candidates(100, 1)
+        .await?
+        .pop()
+        .expect("到期凭据必须成为候选");
+
+    let mut runtime_change = credential_model(&fixture, credential_id)
+        .await?
+        .into_active_model();
+    runtime_change.status = Set(Status::AutoDisabled.code());
+    runtime_change.temp_unschedulable_reason = Set(Some("并发状态变化".to_owned()));
+    runtime_change.update(fixture.pool.connection()).await?;
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .replace_refreshed_token_secret(candidate, 200, envelope(0x73))
+            .await?,
+        OAuthCredentialRefreshUpdateOutcome::Updated
+    );
+    let refreshed = credential_model(&fixture, credential_id).await?;
+    assert_eq!(refreshed.status, Status::AutoDisabled.code());
+    assert_eq!(
+        refreshed.temp_unschedulable_reason.as_deref(),
+        Some("并发状态变化")
+    );
+    assert_eq!(refreshed.oauth_revision, 2);
+    assert_eq!(refreshed.oauth_expires_at_epoch_seconds, Some(200));
+    assert_eq!(refreshed.secret.envelope_parts()?.1, [0x73; 24]);
+
+    let mut restore = refreshed.into_active_model();
+    restore.status = Set(Status::Enabled.code());
+    restore.schedulable = Set(true);
+    restore.update(fixture.pool.connection()).await?;
+    let stale_candidate = fixture
+        .oauth_repository
+        .due_refresh_candidates(200, 1)
+        .await?
+        .pop()
+        .expect("刷新后的旧到期投影必须可复现候选");
+    let mut concurrent_secret = credential_model(&fixture, credential_id)
+        .await?
+        .into_active_model();
+    concurrent_secret.secret = Set(encrypted_json(0x74));
+    concurrent_secret.update(fixture.pool.connection()).await?;
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .replace_refreshed_token_secret(stale_candidate, 300, envelope(0x75))
+            .await?,
+        OAuthCredentialRefreshUpdateOutcome::Stale
+    );
+    let after_stale = credential_model(&fixture, credential_id).await?;
+    assert_eq!(after_stale.oauth_revision, 2);
+    assert_eq!(after_stale.oauth_expires_at_epoch_seconds, Some(200));
+    assert_eq!(after_stale.secret.envelope_parts()?.1, [0x74; 24]);
 
     fixture.pool.close().await?;
     Ok(())
@@ -271,4 +616,15 @@ async fn credential_model(
 fn envelope(marker: u8) -> EncryptedCredentialEnvelope {
     EncryptedCredentialEnvelope::new("oauth-write-test-key", [marker; 24], vec![marker; 32])
         .unwrap()
+}
+
+fn encrypted_json(marker: u8) -> EncryptedJson {
+    EncryptedJson::from_envelope(serde_json::json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": "oauth-write-test-key",
+        "nonce": URL_SAFE_NO_PAD.encode([marker; 24]),
+        "ciphertext": URL_SAFE_NO_PAD.encode([marker; 32]),
+    }))
+    .unwrap()
 }

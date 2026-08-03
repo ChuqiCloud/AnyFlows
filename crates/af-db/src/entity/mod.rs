@@ -240,6 +240,17 @@ async fn validate_credential<C>(
 where
     C: ConnectionTrait,
 {
+    if model
+        .oauth_revision
+        .try_as_ref()
+        .is_some_and(|revision| *revision < 0)
+        || model
+            .oauth_expires_at_epoch_seconds
+            .try_as_ref()
+            .is_some_and(|expires_at| expires_at.is_some_and(|value| value < 0))
+    {
+        return Err(DbErr::Custom("OAuth 凭据版本或到期时间无效".to_owned()));
+    }
     let Some(reference_id) = changed_reference(&model.parent_id, insert) else {
         return Ok(());
     };
