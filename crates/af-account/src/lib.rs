@@ -6,11 +6,11 @@ mod oauth;
 mod system_secret;
 
 pub use credential_decryption::{
-    CredentialDecryptionError, CredentialDecryptor, DecryptedCredential,
+    CredentialDecryptionError, CredentialDecryptor, DecryptedCredential, DecryptedOAuthCredential,
     MAX_DECRYPTED_CREDENTIAL_SECRET_BYTES, credential_plaintext_aad,
 };
 pub use credential_encryption::{
-    CredentialEncryptionError, CredentialEncryptor, PlainCredentialSecret,
+    CredentialEncryptionError, CredentialEncryptor, PlainCredentialSecret, PlainOAuthCredential,
 };
 pub use oauth::{
     DEFAULT_MAX_PENDING_OAUTH_AUTHORIZATIONS, DEFAULT_OAUTH_AUTHORIZATION_SESSION_TTL,
@@ -19,7 +19,9 @@ pub use oauth::{
     OAuthAuthorizationCallback, OAuthAuthorizationContext, OAuthAuthorizationError,
     OAuthAuthorizationGrant, OAuthAuthorizationRequest, OAuthAuthorizationSessionStore,
     OAuthAuthorizationStart, OAuthClientAuthenticationMethod, OAuthEndpointErrorCode,
-    OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenSet, UpstreamOAuthProvider,
+    OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenPersistenceError,
+    OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService, OAuthTokenSet,
+    UpstreamOAuthProvider,
 };
 pub use system_secret::{
     DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretError,

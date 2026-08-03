@@ -90,6 +90,9 @@ mod model_sync_tests;
 mod network_settings;
 #[cfg(test)]
 mod network_settings_tests;
+mod oauth_credential;
+#[cfg(test)]
+mod oauth_credential_tests;
 mod options;
 mod password_reset;
 mod playground_conversation;
@@ -288,6 +291,9 @@ pub use network_settings::{
     NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
     NetworkSettingsRepositoryConfigError, NetworkSettingsRepositoryError,
     NetworkSettingsWriteRecord, ProxyPasswordUpdate,
+};
+pub use oauth_credential::{
+    OAuthCredentialRepository, OAuthCredentialRepositoryError, OAuthCredentialTokenUpdateOutcome,
 };
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
 pub use password_reset::{

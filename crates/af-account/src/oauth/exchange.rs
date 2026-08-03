@@ -1,4 +1,4 @@
-use std::{fmt, time::Duration};
+use std::{fmt, mem, time::Duration};
 
 use af_httpclient::{Body, HeaderMap, HeaderName, HeaderValue, Method, PooledClient};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -239,7 +239,7 @@ pub struct OAuthTokenSet {
     access_token: TokenSecret,
     refresh_token: Option<TokenSecret>,
     expires_in: Option<Duration>,
-    scope: Option<String>,
+    scope: Option<TokenSecret>,
 }
 
 impl OAuthTokenSet {
@@ -257,8 +257,8 @@ impl OAuthTokenSet {
                 .is_some_and(|token| !is_valid_bearer_secret(token.expose()))
             || wire
                 .scope
-                .as_deref()
-                .is_some_and(|scope| validate_scope(scope).is_err())
+                .as_ref()
+                .is_some_and(|scope| validate_scope(scope.expose()).is_err())
         {
             return Err(OAuthTokenExchangeError::InvalidTokenResponse);
         }
@@ -305,8 +305,53 @@ impl OAuthTokenSet {
     /// 返回供应商确认的 scope；响应省略时保持未知。
     #[must_use]
     pub fn scope(&self) -> Option<&str> {
-        self.scope.as_deref()
+        self.scope.as_ref().map(TokenSecret::expose)
     }
+
+    pub(super) fn into_parts(self) -> OAuthTokenSetParts {
+        let Self {
+            provider,
+            context: _,
+            access_token,
+            refresh_token,
+            expires_in,
+            scope,
+        } = self;
+        OAuthTokenSetParts {
+            provider,
+            access_token: access_token.into_zeroizing(),
+            refresh_token: refresh_token.map(TokenSecret::into_zeroizing),
+            expires_in,
+            scope: scope.map(TokenSecret::into_zeroizing),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(
+        provider: UpstreamOAuthProvider,
+        context: OAuthAuthorizationContext,
+        access_token: String,
+        refresh_token: Option<String>,
+        expires_in: Option<Duration>,
+        scope: Option<String>,
+    ) -> Self {
+        Self {
+            provider,
+            context,
+            access_token: TokenSecret::new_unchecked(access_token),
+            refresh_token: refresh_token.map(TokenSecret::new_unchecked),
+            expires_in,
+            scope: scope.map(TokenSecret::new_unchecked),
+        }
+    }
+}
+
+pub(super) struct OAuthTokenSetParts {
+    pub(super) provider: UpstreamOAuthProvider,
+    pub(super) access_token: Zeroizing<String>,
+    pub(super) refresh_token: Option<Zeroizing<String>>,
+    pub(super) expires_in: Option<Duration>,
+    pub(super) scope: Option<Zeroizing<String>>,
 }
 
 impl fmt::Debug for OAuthTokenSet {
@@ -369,7 +414,7 @@ struct TokenResponseWire {
     #[serde(default)]
     refresh_token: Option<TokenSecret>,
     #[serde(default)]
-    scope: Option<String>,
+    scope: Option<TokenSecret>,
 }
 
 struct TokenSecret(String);
@@ -381,6 +426,10 @@ impl TokenSecret {
 
     fn expose(&self) -> &str {
         &self.0
+    }
+
+    fn into_zeroizing(mut self) -> Zeroizing<String> {
+        Zeroizing::new(mem::take(&mut self.0))
     }
 }
 

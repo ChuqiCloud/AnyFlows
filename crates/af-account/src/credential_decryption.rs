@@ -15,6 +15,8 @@ use serde::{Deserialize, Deserializer, de::Error as _};
 use thiserror::Error;
 use zeroize::Zeroize as _;
 
+use crate::oauth::validate_scope;
+
 /// 解密后单个 API Key 或 access token 允许占用的最大字节数。
 pub const MAX_DECRYPTED_CREDENTIAL_SECRET_BYTES: usize = 16 * 1_024;
 
@@ -95,6 +97,57 @@ impl CredentialDecryptor {
         credential_kind: CredentialKind,
         envelope: &EncryptedCredentialEnvelope,
     ) -> Result<DecryptedCredential, CredentialDecryptionError> {
+        let wire = self.decrypt_wire(channel_id, credential_id, credential_kind, envelope)?;
+        let (plaintext_kind, secret) = match wire {
+            PlainCredentialWire::ApiKey { api_key } => (CredentialKind::ApiKey, api_key),
+            PlainCredentialWire::Oauth { access_token, .. } => {
+                (CredentialKind::Oauth, access_token)
+            }
+        };
+        if plaintext_kind != credential_kind {
+            return Err(CredentialDecryptionError::KindMismatch);
+        }
+        Ok(DecryptedCredential {
+            kind: plaintext_kind,
+            secret,
+        })
+    }
+
+    /// 解密完整 OAuth token 集合，供后续刷新协调器使用。
+    pub fn decrypt_oauth_envelope(
+        &self,
+        channel_id: ChannelId,
+        credential_id: i64,
+        envelope: &EncryptedCredentialEnvelope,
+    ) -> Result<DecryptedOAuthCredential, CredentialDecryptionError> {
+        let wire = self.decrypt_wire(channel_id, credential_id, CredentialKind::Oauth, envelope)?;
+        let PlainCredentialWire::Oauth {
+            access_token,
+            refresh_token,
+            expires_at_epoch_seconds,
+            scope,
+        } = wire
+        else {
+            return Err(CredentialDecryptionError::KindMismatch);
+        };
+        if expires_at_epoch_seconds.is_some_and(|value| value < 0) {
+            return Err(CredentialDecryptionError::InvalidPlaintext);
+        }
+        Ok(DecryptedOAuthCredential {
+            access_token,
+            refresh_token,
+            expires_at_epoch_seconds,
+            scope,
+        })
+    }
+
+    fn decrypt_wire(
+        &self,
+        channel_id: ChannelId,
+        credential_id: i64,
+        credential_kind: CredentialKind,
+        envelope: &EncryptedCredentialEnvelope,
+    ) -> Result<PlainCredentialWire, CredentialDecryptionError> {
         if !matches!(
             credential_kind,
             CredentialKind::ApiKey | CredentialKind::Oauth
@@ -123,18 +176,7 @@ impl CredentialDecryptor {
         let wire = serde_json::from_slice::<PlainCredentialWire>(&plaintext)
             .map_err(|_| CredentialDecryptionError::InvalidPlaintext);
         plaintext.zeroize();
-
-        let (plaintext_kind, secret) = match wire? {
-            PlainCredentialWire::ApiKey { api_key } => (CredentialKind::ApiKey, api_key),
-            PlainCredentialWire::Oauth { access_token } => (CredentialKind::Oauth, access_token),
-        };
-        if plaintext_kind != credential_kind {
-            return Err(CredentialDecryptionError::KindMismatch);
-        }
-        Ok(DecryptedCredential {
-            kind: plaintext_kind,
-            secret,
-        })
+        wire
     }
 }
 
@@ -205,7 +247,15 @@ enum PlainCredentialWire {
     #[serde(rename = "api_key")]
     ApiKey { api_key: SecretText },
     #[serde(rename = "oauth")]
-    Oauth { access_token: SecretText },
+    Oauth {
+        access_token: SecretText,
+        #[serde(default)]
+        refresh_token: Option<SecretText>,
+        #[serde(default)]
+        expires_at_epoch_seconds: Option<i64>,
+        #[serde(default)]
+        scope: Option<OAuthScopeText>,
+    },
 }
 
 /// 已解密但默认脱敏并在释放时清零的凭据。
@@ -234,6 +284,55 @@ impl fmt::Debug for DecryptedCredential {
             .debug_struct("DecryptedCredential")
             .field("kind", &self.kind())
             .field("secret", &"<已脱敏>")
+            .finish()
+    }
+}
+
+/// 已解密的完整 OAuth token 集合；普通转发链路不使用该类型。
+pub struct DecryptedOAuthCredential {
+    access_token: SecretText,
+    refresh_token: Option<SecretText>,
+    expires_at_epoch_seconds: Option<i64>,
+    scope: Option<OAuthScopeText>,
+}
+
+impl DecryptedOAuthCredential {
+    /// 返回 access token；调用方不得记录或复制。
+    #[must_use]
+    pub fn access_token(&self) -> &str {
+        self.access_token.expose()
+    }
+
+    /// 返回可选 refresh token；调用方不得记录或复制。
+    #[must_use]
+    pub fn refresh_token(&self) -> Option<&str> {
+        self.refresh_token.as_ref().map(SecretText::expose)
+    }
+
+    /// 返回 Unix epoch 秒表示的绝对过期时间。
+    #[must_use]
+    pub const fn expires_at_epoch_seconds(&self) -> Option<i64> {
+        self.expires_at_epoch_seconds
+    }
+
+    /// 返回供应商确认的可选 scope；调用方不得记录或复制。
+    #[must_use]
+    pub fn scope(&self) -> Option<&str> {
+        self.scope.as_ref().map(OAuthScopeText::expose)
+    }
+}
+
+impl fmt::Debug for DecryptedOAuthCredential {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DecryptedOAuthCredential")
+            .field("access_token", &"<已脱敏>")
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_ref().map(|_| "<已脱敏>"),
+            )
+            .field("expires_at_epoch_seconds", &self.expires_at_epoch_seconds)
+            .field("scope", &self.scope.as_ref().map(|_| "<已脱敏>"))
             .finish()
     }
 }
@@ -277,6 +376,45 @@ impl Drop for SecretText {
 }
 
 impl fmt::Debug for SecretText {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("<已脱敏>")
+    }
+}
+
+/// OAuth scope 允许单个 ASCII 空格分隔，不能复用禁止空白的 token 校验器。
+struct OAuthScopeText(String);
+
+impl OAuthScopeText {
+    fn new(mut value: String) -> Result<Self, CredentialDecryptionError> {
+        if validate_scope(&value).is_err() {
+            value.zeroize();
+            return Err(CredentialDecryptionError::InvalidPlaintext);
+        }
+        Ok(Self(value))
+    }
+
+    fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for OAuthScopeText {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::new(value).map_err(D::Error::custom)
+    }
+}
+
+impl Drop for OAuthScopeText {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl fmt::Debug for OAuthScopeText {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("<已脱敏>")
     }
@@ -341,6 +479,14 @@ mod tests {
 
         assert_eq!(credential.kind(), CredentialKind::Oauth);
         assert_eq!(credential.expose_secret(), "ya29.test-token");
+
+        let complete = decryptor
+            .decrypt_oauth_envelope(channel_id(), CREDENTIAL_ID, &envelope)
+            .unwrap();
+        assert_eq!(complete.access_token(), "ya29.test-token");
+        assert_eq!(complete.refresh_token(), None);
+        assert_eq!(complete.expires_at_epoch_seconds(), None);
+        assert_eq!(complete.scope(), None);
     }
 
     #[test]
@@ -383,6 +529,28 @@ mod tests {
                     channel_id(),
                     CREDENTIAL_ID + 1,
                     CredentialKind::ApiKey,
+                    &envelope,
+                )
+                .unwrap_err(),
+            CredentialDecryptionError::Decrypt
+        );
+        assert_eq!(
+            decryptor
+                .decrypt_envelope(
+                    ChannelId::new(CHANNEL_ID + 1).unwrap(),
+                    CREDENTIAL_ID,
+                    CredentialKind::ApiKey,
+                    &envelope,
+                )
+                .unwrap_err(),
+            CredentialDecryptionError::Decrypt
+        );
+        assert_eq!(
+            decryptor
+                .decrypt_envelope(
+                    channel_id(),
+                    CREDENTIAL_ID,
+                    CredentialKind::Oauth,
                     &envelope,
                 )
                 .unwrap_err(),
@@ -440,6 +608,25 @@ mod tests {
                         CredentialKind::ApiKey,
                         &envelope,
                     )
+                    .unwrap_err(),
+                CredentialDecryptionError::InvalidPlaintext
+            );
+        }
+
+        for invalid_plaintext in [
+            br#"{"kind":"oauth","access_token":"access","extra":true}"#.as_slice(),
+            br#"{"kind":"oauth","access_token":"access","expires_at_epoch_seconds":-1}"#.as_slice(),
+            br#"{"kind":"oauth","access_token":"access","scope":"openid  profile"}"#.as_slice(),
+        ] {
+            let envelope = encrypted_envelope(
+                &key,
+                "primary-key",
+                CredentialKind::Oauth,
+                invalid_plaintext,
+            );
+            assert_eq!(
+                decryptor
+                    .decrypt_oauth_envelope(channel_id(), CREDENTIAL_ID, &envelope)
                     .unwrap_err(),
                 CredentialDecryptionError::InvalidPlaintext
             );
