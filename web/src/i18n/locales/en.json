@@ -27,6 +27,7 @@
     "groupSettings": "Group management",
     "modelSettings": "Model management",
     "channels": "Channels",
+    "credentials": "Credentials & accounts",
     "keys": "Global keys",
     "usage": "Global usage",
     "billing": "Billing",
@@ -374,6 +375,217 @@
           "unknown": "The OAuth request failed. Try again shortly."
         }
       }
+    }
+  },
+  "credentials": {
+    "title": "Credentials and account pool",
+    "subtitle": "Manage upstream credentials, account relationships, and scheduling state within each channel. Secret reads remain redacted.",
+    "channel": {
+      "label": "Channel",
+      "loadMore": "Load more channels",
+      "loadFailed": "Channel catalog could not be loaded",
+      "loadFailedDescription": "The channel catalog is temporarily unavailable. Refresh and try again.",
+      "empty": "No channels are available",
+      "emptyDescription": "Create a channel before configuring its account pool.",
+      "openChannels": "Open channel management"
+    },
+    "summary": {
+      "total": "Total credentials",
+      "available": "Available now",
+      "cooling": "Cooling down",
+      "unavailable": "Unschedulable"
+    },
+    "list": {
+      "title": "Account pool",
+      "loaded": "{{count}} credentials loaded",
+      "loading": "Loading credentials"
+    },
+    "kind": {
+      "api_key": "API key",
+      "oauth": "OAuth account",
+      "bedrock": "Bedrock access key",
+      "service_account": "Service account"
+    },
+    "runtime": {
+      "available": "Available",
+      "autoDisabled": "Auto-disabled",
+      "cooling": "Cooling down",
+      "disabled": "Disabled",
+      "paused": "Scheduling paused",
+      "pending": "Awaiting first use"
+    },
+    "status": {
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "autoDisabled": "Auto-disabled"
+    },
+    "values": { "unlimited": "Unlimited" },
+    "item": {
+      "priorityWeight": "Priority {{priority}}, weight {{weight}}",
+      "concurrency": "Concurrency {{value}}",
+      "parent": "Parent account #{{id}}",
+      "proxy": "Proxy #{{id}}",
+      "coolingUntil": "Cooling until {{value}}",
+      "neverUsed": "Not used yet",
+      "lastUsed": "Last used {{value}}"
+    },
+    "empty": {
+      "title": "No credentials in this channel",
+      "description": "Add an upstream credential before this channel can serve requests."
+    },
+    "editor": {
+      "createTitle": "Add credential",
+      "createDescription": "Add one structured upstream credential to “{{name}}”.",
+      "editTitle": "Edit credential",
+      "editDescription": "Update credential #{{id}} in “{{name}}”. Existing secrets are preserved by default."
+    },
+    "form": {
+      "kind": "Credential type",
+      "identityTitle": "Identity material",
+      "identityDescription": "Sensitive material is sent only with this request and is never echoed after storage.",
+      "rotateSecret": "Rotate secret",
+      "rotateSecretHint": "Replace the complete secret set with the fields below.",
+      "secretPreserved": "This save will preserve the existing server-side secret."
+    },
+    "secret": {
+      "apiKey": "Upstream API key",
+      "accessToken": "Existing access token",
+      "accessTokenHint": "Save an existing token first, then complete official OAuth authorization from the account pool.",
+      "accessKeyId": "Access key ID",
+      "secretAccessKey": "Secret access key",
+      "sessionToken": "Session token",
+      "clientEmail": "Service account email",
+      "privateKeyId": "Private key ID",
+      "privateKey": "PEM private key",
+      "privateKeyHint": "PKCS#1 and PKCS#8 PEM private keys are supported.",
+      "optional": "Optional"
+    },
+    "oauth": {
+      "title": "OAuth identity",
+      "description": "Choose a server-enabled provider and retain its account and project projections.",
+      "provider": "OAuth provider",
+      "providerBound": "This credential is bound to this provider",
+      "unbound": "Provider not connected",
+      "providerNotConfigured": "The provider bound to this credential is not enabled on the server.",
+      "providerUnsupported": "This client does not support the bound provider: {{provider}}.",
+      "providersLoading": "Loading OAuth providers",
+      "providersFailed": "OAuth provider configuration could not be loaded.",
+      "providersEmpty": "No OAuth provider is configured on the server.",
+      "loading": "Loading OAuth providers",
+      "loadFailed": "OAuth provider configuration could not be loaded.",
+      "empty": "No OAuth provider is configured on the server.",
+      "providers": {
+        "codex": "Codex",
+        "gemini": "Gemini CLI",
+        "antigravity": "Antigravity"
+      },
+      "accountKey": "Account key",
+      "projectId": "Project ID",
+      "optional": "Optional",
+      "automaticCallback": "Automatic callback available",
+      "manualCallback": "Manual callback required",
+      "callbackPort": "Callback port {{port}}",
+      "connectionTitle": "Official OAuth connection",
+      "connectionHint": "Authorization securely updates the access token and refresh token.",
+      "preparing": "Preparing OAuth authorization…",
+      "popupBlocked": "The browser blocked the authorization window. Open it manually.",
+      "waiting": "Waiting for authorization. This session expires in about {{seconds}} seconds.",
+      "openAuthorization": "Open authorization page",
+      "useManual": "Use manual callback",
+      "hideManual": "Hide manual callback",
+      "callbackUrl": "Complete callback URL",
+      "callbackHint": "Paste the complete localhost callback address from the browser after authorization.",
+      "callbackInvalid": "Enter the fixed callback address with state and either code or error.",
+      "submitCallback": "Complete connection",
+      "connected": "The OAuth credential was updated.",
+      "connect": "Connect provider",
+      "reauthorize": "Reauthorize",
+      "expired": "This authorization session has expired.",
+      "restart": "Restart authorization",
+      "errors": {
+        "invalid_request": "The OAuth request is invalid. Check the credential type and callback URL.",
+        "forbidden": "This session cannot connect OAuth credentials.",
+        "credential_not_found": "The credential no longer exists. Refresh the account pool.",
+        "oauth_provider_not_configured": "This OAuth provider is not configured on the server.",
+        "oauth_credential_provider_mismatch": "The credential is bound to another provider and cannot be overwritten.",
+        "oauth_authorization_capacity_exceeded": "The pending authorization limit was reached. Try again later.",
+        "oauth_authorization_not_found": "The authorization session does not exist or was already consumed.",
+        "oauth_authorization_expired": "The authorization session expired. Start again.",
+        "oauth_authorization_denied": "The upstream provider denied authorization.",
+        "oauth_upstream_timeout": "The upstream OAuth request timed out. Try again later.",
+        "oauth_upstream_rejected": "The upstream provider rejected the token exchange. Check account access.",
+        "oauth_upstream_invalid_response": "The upstream provider returned an unrecognized OAuth response.",
+        "oauth_unavailable": "OAuth is temporarily unavailable. Try again later.",
+        "internal_error": "OAuth state is inconsistent. Start authorization again.",
+        "unknown": "The OAuth request failed. Try again later."
+      }
+    },
+    "schedule": {
+      "title": "Scheduling policy",
+      "description": "Maintain credential priority, capacity, account relationships, and exact multipliers.",
+      "status": "Status",
+      "schedulable": "Participate in scheduling",
+      "schedulableHint": "Keep the credential but stop selecting it for new requests.",
+      "multiKeyMode": "Multi-key mode",
+      "modeNone": "Off",
+      "modeRandom": "Random",
+      "modeRoundRobin": "Round robin",
+      "priority": "Priority",
+      "weight": "Weight",
+      "concurrency": "Concurrency limit",
+      "loadFactor": "Load factor",
+      "rateMultiplier": "Cost multiplier",
+      "multiplierHint": "Up to six decimal places, stored exactly as millionths.",
+      "quotaDimension": "Quota dimension",
+      "quotaGlobal": "Global quota",
+      "quotaSpark": "Spark quota",
+      "parent": "Parent account",
+      "parentHint": "Only root accounts of the same type and channel are available.",
+      "noParent": "Independent account",
+      "proxyBound": "Dedicated proxy attached",
+      "optional": "Leave empty for unlimited"
+    },
+    "state": { "unsaved": "Unsaved changes", "synced": "Synced with server" },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "add": "Add credential",
+      "create": "Create credential",
+      "save": "Save changes",
+      "edit": "Edit credential",
+      "delete": "Delete credential",
+      "cancel": "Cancel",
+      "enable": "Enable credential",
+      "disable": "Disable credential",
+      "connect": "Connect OAuth",
+      "reauthorize": "Reauthorize",
+      "loadMore": "Load more",
+      "showSecret": "Show secret",
+      "hideSecret": "Hide secret"
+    },
+    "delete": {
+      "title": "Delete credential",
+      "description": "Credential #{{id}} will be permanently removed. This action cannot be undone."
+    },
+    "validation": {
+      "incompatibleKind": "This channel type does not support that credential.",
+      "secret": "Enter a complete secret that satisfies the server boundary.",
+      "oauthProvider": "Select a valid OAuth provider.",
+      "serviceAccountEmail": "Enter a valid gserviceaccount.com email address.",
+      "privateKey": "Enter a valid PKCS#1 or PKCS#8 PEM private key.",
+      "status": "Auto-disabled state cannot be written directly. Select enabled or disabled.",
+      "integer": "Enter a valid integer.",
+      "nonNegativeInteger": "Enter a non-negative integer.",
+      "multiplier": "Enter a non-negative decimal with at most six decimal places.",
+      "parent": "Select a valid parent account other than this credential.",
+      "optionalText": "Optional text has surrounding whitespace, control characters, or excessive length."
+    },
+    "errors": {
+      "load": "Credentials for this channel could not be loaded.",
+      "refresh": "Refresh failed. The current list was preserved.",
+      "save": "The credential could not be saved. Check the input and try again.",
+      "update": "The credential status could not be updated.",
+      "delete": "The credential could not be deleted."
     }
   },
   "apiKeys": {

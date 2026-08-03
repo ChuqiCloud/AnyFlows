@@ -3,6 +3,7 @@ export type AppView =
   | 'authentication-settings'
   | 'billing-settings'
   | 'channels'
+  | 'credentials'
   | 'email-settings'
   | 'forgot-password'
   | 'group-settings'
@@ -29,6 +30,7 @@ export type AppView =
 
 export type AppRoute = {
   view: AppView
+  channelId?: number
   shareToken?: string
   resetToken?: string
   inviteCode?: string
@@ -39,6 +41,16 @@ const shareTokenPattern = /^sh-af-[A-Za-z0-9_-]{43}$/
 const resetRoutePrefix = '#/reset-password'
 const resetTokenPattern = /^[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/
 const invitationCodePattern = /^af-[A-Za-z0-9_-]{22}$/
+
+/** 只接受单个十进制正整数查询参数，避免宽松转换产生错误渠道深链。 */
+function positiveIntegerQuery(hash: string, key: string) {
+  const queryStart = hash.indexOf('?')
+  if (queryStart < 0) return undefined
+  const values = new URLSearchParams(hash.slice(queryStart + 1)).getAll(key)
+  if (values.length !== 1 || !/^[1-9]\d*$/.test(values[0])) return undefined
+  const value = Number(values[0])
+  return Number.isSafeInteger(value) ? value : undefined
+}
 
 /** 解析临时 hash 路由，并严格限制公开分享令牌的可接受格式。 */
 export function routeFromHash(hash: string): AppRoute {
@@ -57,6 +69,9 @@ export function routeFromHash(hash: string): AppRoute {
       view: 'reset-password',
       resetToken: token && resetTokenPattern.test(token) ? token : undefined,
     }
+  }
+  if (hash === '#/console/credentials' || hash.startsWith('#/console/credentials?')) {
+    return { view: 'credentials', channelId: positiveIntegerQuery(hash, 'channel') }
   }
   if (hash.startsWith('#/console/channels')) return { view: 'channels' }
   if (hash.startsWith('#/console/redemption-codes')) return { view: 'redemption-codes' }

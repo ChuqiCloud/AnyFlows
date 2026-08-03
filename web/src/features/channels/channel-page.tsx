@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminChannel } from '@/lib/api/generated/types.gen'
 import { useAdminChannels, useProbeAdminChannel } from './channel-api'
-import { ChannelCredentialsSheet } from './channel-credentials-sheet'
 import { ChannelEditorSheet } from './channel-editor-sheet'
 import { ChannelTable, type ProbeDisplay } from './channel-table'
 
@@ -17,7 +16,6 @@ export function ChannelPage() {
   const channelsQuery = useAdminChannels()
   const probeMutation = useProbeAdminChannel()
   const [editor, setEditor] = useState<EditorState>()
-  const [credentialsChannel, setCredentialsChannel] = useState<AdminChannel>()
   const [probingId, setProbingId] = useState<number>()
   const [probeResults, setProbeResults] = useState<Record<number, ProbeDisplay>>({})
   const channels = useMemo(
@@ -35,6 +33,10 @@ export function ChannelPage() {
     } finally {
       setProbingId(undefined)
     }
+  }
+
+  const openCredentials = (channel: AdminChannel) => {
+    window.location.hash = `#/console/credentials?channel=${channel.id}`
   }
 
   return (
@@ -69,7 +71,7 @@ export function ChannelPage() {
           <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => channelsQuery.refetch()}>{t('channels.actions.retry')}</Button>
         </div>
       ) : (
-        <ChannelTable channels={channels} probeResults={probeResults} probingId={probingId} onCredentials={setCredentialsChannel} onEdit={setEditor} onProbe={probe} />
+        <ChannelTable channels={channels} probeResults={probeResults} probingId={probingId} onCredentials={openCredentials} onEdit={setEditor} onProbe={probe} />
       )}
 
       {channelsQuery.hasNextPage ? (
@@ -83,14 +85,8 @@ export function ChannelPage() {
         channel={editor === 'create' ? undefined : editor}
         onOpenChange={(open) => !open && setEditor(undefined)}
         onSaved={(channel, mode) => {
-          if (mode === 'create') setCredentialsChannel(channel)
+          if (mode === 'create') openCredentials(channel)
         }}
-      />
-      <ChannelCredentialsSheet
-        key={credentialsChannel?.id ?? 'no-channel-credentials'}
-        open={credentialsChannel !== undefined}
-        channel={credentialsChannel}
-        onOpenChange={(open) => !open && setCredentialsChannel(undefined)}
       />
     </div>
   )

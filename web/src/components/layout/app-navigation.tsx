@@ -40,7 +40,7 @@ type AppNavigationProps = {
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'wallet' | 'invitations' | 'profile' | 'users' | 'redemptionCodes' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'keys' | 'usage'
+  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'wallet' | 'invitations' | 'profile' | 'users' | 'redemptionCodes' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'credentials' | 'keys' | 'usage'
   icon: LucideIcon
   href: `#/console${string}`
 }
@@ -85,6 +85,7 @@ const navGroups: readonly NavGroup[] = [
       { key: 'groupSettings', icon: Layers3, href: '#/console/system-settings/groups' },
       { key: 'modelSettings', icon: PackageSearch, href: '#/console/system-settings/models' },
       { key: 'channels', icon: Network, href: '#/console/channels' },
+      { key: 'credentials', icon: KeyRound, href: '#/console/credentials' },
       { key: 'keys', icon: ShieldCheck, href: '#/console/tokens' },
       { key: 'usage', icon: ScrollText, href: '#/console/usage-logs' },
     ],
@@ -109,6 +110,7 @@ const activeKeyByView: Partial<Record<AppView, NavItem['key']>> = {
   'group-settings': 'groupSettings',
   'model-settings': 'modelSettings',
   channels: 'channels',
+  credentials: 'credentials',
   tokens: 'keys',
   'usage-logs': 'usage',
 }

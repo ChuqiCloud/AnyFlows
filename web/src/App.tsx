@@ -12,6 +12,7 @@ import { endManagementSession } from '@/features/auth/session-query'
 import { ApiKeyPage } from '@/features/api-keys/api-key-page'
 import { BillingSettingsPage } from '@/features/billing-settings/billing-settings-page'
 import { ChannelPage } from '@/features/channels/channel-page'
+import { CredentialPage } from '@/features/credentials/credential-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
 import { EmailSettingsPage } from '@/features/email-settings/email-settings-page'
 import { GroupPage } from '@/features/groups/group-page'
@@ -58,6 +59,7 @@ function useHashRoute(): [AppRoute, (hash: string) => void] {
 
 type ManagementEntryProps = {
   view: Exclude<AppView, 'landing' | 'public-models' | 'register' | 'share' | 'forgot-password' | 'reset-password'>
+  credentialChannelId?: number
   loginNotice?: LoginNotice
   onAuthenticated: () => void
   onLoginRequired: (reason: 'required' | 'sessionExpired' | 'setupComplete') => void
@@ -69,6 +71,7 @@ type ManagementEntryProps = {
 /** 在登录或控制台挂载前完成首次安装状态判定。 */
 function ManagementEntry({
   view,
+  credentialChannelId,
   loginNotice,
   onAuthenticated,
   onLoginRequired,
@@ -110,6 +113,8 @@ function ManagementEntry({
 
   const titleKey = view === 'channels'
     ? 'channels.title'
+    : view === 'credentials'
+      ? 'credentials.title'
     : view === 'site-settings'
       ? 'siteSettings.title'
       : view === 'authentication-settings'
@@ -147,6 +152,8 @@ function ManagementEntry({
                         : 'dashboard.title'
   const content = view === 'channels'
     ? <ChannelPage />
+    : view === 'credentials'
+      ? <CredentialPage initialChannelId={credentialChannelId} />
     : view === 'site-settings'
       ? <SiteSettingsPage />
       : view === 'authentication-settings'
@@ -265,6 +272,7 @@ export default function App() {
   return (
     <ManagementEntry
       view={view}
+      credentialChannelId={route.channelId}
       loginNotice={loginNotice}
       onAuthenticated={openConsole}
       onLoginRequired={openLogin}
