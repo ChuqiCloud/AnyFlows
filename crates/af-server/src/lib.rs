@@ -1,5 +1,6 @@
 //! AnyFlows 进程启动编排、后台任务监督与优雅关闭。
 
+mod adaptor_credential;
 mod balance_alert_runtime;
 mod billing_chat;
 mod billing_runtime;

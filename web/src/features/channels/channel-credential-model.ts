@@ -41,7 +41,10 @@ export function createApiKeyRequest(
 ): AdminCredentialCreateRequestWritable {
   return {
     kind: 'api_key',
-    secret,
+    secret: {
+      kind: 'api_key',
+      api_key: secret,
+    },
     status: 'enabled',
     multi_key_mode: null,
     priority: schedule.priority,
@@ -67,7 +70,10 @@ export function createOAuthCredentialRequest(
 ): AdminCredentialCreateRequestWritable {
   return {
     kind: 'oauth',
-    secret,
+    secret: {
+      kind: 'oauth',
+      access_token: secret,
+    },
     status: 'enabled',
     multi_key_mode: null,
     priority: schedule.priority,

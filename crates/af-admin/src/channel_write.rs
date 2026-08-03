@@ -304,7 +304,7 @@ impl AdminCredentialCreateCommand {
     )]
     pub fn new(
         kind: CredentialKind,
-        secret: String,
+        secret: PlainCredentialSecret,
         status: AdminRoutingWriteStatus,
         multi_key_mode: Option<AdminCredentialMultiKeyMode>,
         priority: i32,
@@ -337,8 +337,9 @@ impl AdminCredentialCreateCommand {
             oauth_account_key,
             oauth_project_id,
         )?;
-        let secret = PlainCredentialSecret::new(kind, secret)
-            .map_err(|_| AdminChannelWriteError::InvalidInput)?;
+        if secret.kind() != kind {
+            return Err(AdminChannelWriteError::InvalidInput);
+        }
         Ok(Self { fields, secret })
     }
 
@@ -367,7 +368,7 @@ impl AdminCredentialUpdateCommand {
     )]
     pub fn new(
         kind: CredentialKind,
-        secret: Option<String>,
+        secret: Option<PlainCredentialSecret>,
         status: AdminRoutingWriteStatus,
         multi_key_mode: Option<AdminCredentialMultiKeyMode>,
         priority: i32,
@@ -400,10 +401,9 @@ impl AdminCredentialUpdateCommand {
             oauth_account_key,
             oauth_project_id,
         )?;
-        let secret = secret
-            .map(|secret| PlainCredentialSecret::new(kind, secret))
-            .transpose()
-            .map_err(|_| AdminChannelWriteError::InvalidInput)?;
+        if secret.as_ref().is_some_and(|secret| secret.kind() != kind) {
+            return Err(AdminChannelWriteError::InvalidInput);
+        }
         Ok(Self { fields, secret })
     }
 
@@ -460,8 +460,13 @@ impl AdminCredentialWriteFields {
     ) -> Result<Self, AdminChannelWriteError> {
         let oauth_fields_present =
             oauth_provider.is_some() || oauth_account_key.is_some() || oauth_project_id.is_some();
-        if !matches!(kind, CredentialKind::ApiKey | CredentialKind::Oauth)
-            || weight < 0
+        if !matches!(
+            kind,
+            CredentialKind::ApiKey
+                | CredentialKind::Oauth
+                | CredentialKind::Bedrock
+                | CredentialKind::ServiceAccount
+        ) || weight < 0
             || concurrency.is_some_and(|value| value < 0)
             || load_factor_micros.is_some_and(|value| value < 0)
             || rate_multiplier_micros.is_some_and(|value| value < 0)
@@ -469,7 +474,7 @@ impl AdminCredentialWriteFields {
             || !valid_optional_text(oauth_provider.as_deref(), 64)
             || !valid_optional_text(oauth_account_key.as_deref(), 255)
             || !valid_optional_text(oauth_project_id.as_deref(), 255)
-            || (kind == CredentialKind::ApiKey && oauth_fields_present)
+            || (kind != CredentialKind::Oauth && oauth_fields_present)
         {
             return Err(AdminChannelWriteError::InvalidInput);
         }
@@ -892,7 +897,7 @@ mod tests {
         .unwrap();
         let credential = AdminCredentialCreateCommand::new(
             CredentialKind::ApiKey,
-            "sk-private".to_owned(),
+            PlainCredentialSecret::api_key("sk-private".to_owned()).unwrap(),
             AdminRoutingWriteStatus::Disabled,
             None,
             0,
@@ -985,7 +990,7 @@ mod tests {
         assert!(
             AdminCredentialCreateCommand::new(
                 CredentialKind::Bedrock,
-                "private".to_owned(),
+                PlainCredentialSecret::api_key("private".to_owned()).unwrap(),
                 AdminRoutingWriteStatus::Disabled,
                 None,
                 0,

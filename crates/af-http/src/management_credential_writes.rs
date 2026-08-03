@@ -1,6 +1,6 @@
 use af_admin::{
     AdminCredentialCreateCommand, AdminCredentialMultiKeyMode, AdminCredentialQuotaDimension,
-    AdminCredentialUpdateCommand, AdminRoutingWriteStatus,
+    AdminCredentialSecret, AdminCredentialUpdateCommand, AdminRoutingWriteStatus,
 };
 use af_domain::{CredentialId, CredentialKind};
 use axum::{
@@ -49,7 +49,7 @@ pub(crate) struct AdminCredentialWriteRequest {
 enum AdminCredentialSecretInput {
     #[default]
     Missing,
-    Present(Option<String>),
+    Present(Option<AdminCredentialSecretValue>),
 }
 
 impl<'de> Deserialize<'de> for AdminCredentialSecretInput {
@@ -57,7 +57,51 @@ impl<'de> Deserialize<'de> for AdminCredentialSecretInput {
     where
         D: Deserializer<'de>,
     {
-        Option::<String>::deserialize(deserializer).map(Self::Present)
+        Option::<AdminCredentialSecretValue>::deserialize(deserializer).map(Self::Present)
+    }
+}
+
+/// 管理端允许写入的闭合凭据明文对象；未知字段由 Serde 直接拒绝。
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum AdminCredentialSecretValue {
+    ApiKey {
+        api_key: String,
+    },
+    Oauth {
+        access_token: String,
+    },
+    Bedrock {
+        access_key_id: String,
+        secret_access_key: String,
+        #[serde(default)]
+        session_token: Option<String>,
+    },
+    ServiceAccount {
+        client_email: String,
+        #[serde(default)]
+        private_key_id: Option<String>,
+        private_key: String,
+    },
+}
+
+impl AdminCredentialSecretValue {
+    fn into_secret(self) -> Result<AdminCredentialSecret, ManagementError> {
+        let result = match self {
+            Self::ApiKey { api_key } => AdminCredentialSecret::api_key(api_key),
+            Self::Oauth { access_token } => AdminCredentialSecret::oauth_access_token(access_token),
+            Self::Bedrock {
+                access_key_id,
+                secret_access_key,
+                session_token,
+            } => AdminCredentialSecret::bedrock(access_key_id, secret_access_key, session_token),
+            Self::ServiceAccount {
+                client_email,
+                private_key_id,
+                private_key,
+            } => AdminCredentialSecret::service_account(client_email, private_key_id, private_key),
+        };
+        result.map_err(|_| ManagementError::InvalidRequest)
     }
 }
 
@@ -138,7 +182,7 @@ pub(crate) async fn delete_admin_credential(
 impl AdminCredentialWriteRequest {
     fn into_create_command(self) -> Result<AdminCredentialCreateCommand, ManagementError> {
         let secret = match self.secret {
-            AdminCredentialSecretInput::Present(Some(secret)) => secret,
+            AdminCredentialSecretInput::Present(Some(secret)) => secret.into_secret()?,
             AdminCredentialSecretInput::Missing | AdminCredentialSecretInput::Present(None) => {
                 return Err(ManagementError::InvalidRequest);
             }
@@ -167,7 +211,9 @@ impl AdminCredentialWriteRequest {
     fn into_update_command(self) -> Result<AdminCredentialUpdateCommand, ManagementError> {
         let secret = match self.secret {
             AdminCredentialSecretInput::Missing => return Err(ManagementError::InvalidRequest),
-            AdminCredentialSecretInput::Present(secret) => secret,
+            AdminCredentialSecretInput::Present(secret) => secret
+                .map(AdminCredentialSecretValue::into_secret)
+                .transpose()?,
         };
         AdminCredentialUpdateCommand::new(
             self.kind,
@@ -195,4 +241,104 @@ fn parse_parent_id(value: Option<i64>) -> Result<Option<CredentialId>, Managemen
     value
         .map(|value| CredentialId::new(value).map_err(|_| ManagementError::InvalidRequest))
         .transpose()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+
+    use super::*;
+
+    const SERVICE_ACCOUNT_PRIVATE_KEY: &str =
+        include_str!("../../af-adapter/src/vertex/fixtures/service_account_private.pem");
+
+    #[test]
+    fn typed_secret_requests_accept_all_supported_shapes() {
+        for (kind, secret) in [
+            (
+                "api_key",
+                json!({"kind": "api_key", "api_key": "sk-private"}),
+            ),
+            (
+                "oauth",
+                json!({"kind": "oauth", "access_token": "oauth-private"}),
+            ),
+            (
+                "bedrock",
+                json!({
+                    "kind": "bedrock",
+                    "access_key_id": "AKIDEXAMPLE00000001",
+                    "secret_access_key": "aws-secret-access-key",
+                    "session_token": "aws-session-token"
+                }),
+            ),
+            (
+                "service_account",
+                json!({
+                    "kind": "service_account",
+                    "client_email": "runtime@example.iam.gserviceaccount.com",
+                    "private_key_id": "private-key-id",
+                    "private_key": SERVICE_ACCOUNT_PRIVATE_KEY
+                }),
+            ),
+        ] {
+            let request =
+                serde_json::from_value::<AdminCredentialWriteRequest>(request(kind, secret))
+                    .expect("类型化凭据请求应可解析");
+            assert!(request.into_create_command().is_ok());
+        }
+    }
+
+    #[test]
+    fn typed_secret_requests_reject_kind_mismatch_unknown_fields_and_missing_updates() {
+        let mismatch = serde_json::from_value::<AdminCredentialWriteRequest>(request(
+            "bedrock",
+            json!({"kind": "api_key", "api_key": "sk-private"}),
+        ))
+        .unwrap();
+        assert!(mismatch.into_create_command().is_err());
+
+        let service_account_with_token_uri = request(
+            "service_account",
+            json!({
+                "kind": "service_account",
+                "client_email": "runtime@example.iam.gserviceaccount.com",
+                "private_key": SERVICE_ACCOUNT_PRIVATE_KEY,
+                "token_uri": "https://untrusted.example/token"
+            }),
+        );
+        assert!(
+            serde_json::from_value::<AdminCredentialWriteRequest>(service_account_with_token_uri)
+                .is_err()
+        );
+
+        let mut missing = request(
+            "api_key",
+            json!({"kind": "api_key", "api_key": "sk-private"}),
+        );
+        missing.as_object_mut().unwrap().remove("secret");
+        let missing = serde_json::from_value::<AdminCredentialWriteRequest>(missing).unwrap();
+        assert!(missing.into_update_command().is_err());
+    }
+
+    fn request(kind: &str, secret: Value) -> Value {
+        json!({
+            "kind": kind,
+            "secret": secret,
+            "status": "enabled",
+            "multi_key_mode": null,
+            "priority": 0,
+            "weight": 10,
+            "concurrency": null,
+            "load_factor_micros": null,
+            "rate_multiplier_micros": null,
+            "schedulable": true,
+            "parent_id": null,
+            "quota_dimension": "global",
+            "proxy_id": null,
+            "oauth_provider": if kind == "oauth" { Value::String("codex".to_owned()) } else { Value::Null },
+            "oauth_account_key": null,
+            "oauth_project_id": null
+        })
+    }
 }

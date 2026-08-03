@@ -11,11 +11,13 @@ use serde::Serialize;
 use thiserror::Error;
 use zeroize::{Zeroize as _, Zeroizing};
 
-use crate::credential_decryption::{
-    CredentialDecryptionError, CredentialKey, MAX_DECRYPTED_CREDENTIAL_SECRET_BYTES,
-    credential_plaintext_aad, is_valid_key_id,
-};
 use crate::oauth::validate_scope;
+use crate::{
+    credential_decryption::{
+        CredentialDecryptionError, CredentialKey, credential_plaintext_aad, is_valid_key_id,
+    },
+    credential_secret::{PlainCredentialSecret, PlainCredentialSecretRef, valid_oauth_token},
+};
 
 /// 凭据加密失败；错误不包含密钥、nonce、密文或明文。
 #[non_exhaustive]
@@ -45,58 +47,6 @@ pub enum CredentialEncryptionError {
     /// 加密结果无法形成有效密文封套。
     #[error("凭据密文封套无效")]
     InvalidEnvelope,
-}
-
-/// 待加密的 API Key 或 OAuth access token；默认脱敏并在释放时清零。
-pub struct PlainCredentialSecret {
-    kind: CredentialKind,
-    value: String,
-}
-
-impl PlainCredentialSecret {
-    /// 校验当前运行时已支持的凭据类型和明文边界。
-    pub fn new(kind: CredentialKind, mut value: String) -> Result<Self, CredentialEncryptionError> {
-        if !matches!(kind, CredentialKind::ApiKey | CredentialKind::Oauth) {
-            value.zeroize();
-            return Err(CredentialEncryptionError::UnsupportedKind);
-        }
-        if value.is_empty()
-            || value.len() > MAX_DECRYPTED_CREDENTIAL_SECRET_BYTES
-            || value.trim() != value
-            || !value.is_ascii()
-            || value.bytes().any(|byte| byte.is_ascii_control())
-        {
-            value.zeroize();
-            return Err(CredentialEncryptionError::InvalidPlaintext);
-        }
-        Ok(Self { kind, value })
-    }
-
-    /// 返回凭据声明类型，不暴露明文。
-    #[must_use]
-    pub const fn kind(&self) -> CredentialKind {
-        self.kind
-    }
-
-    fn expose(&self) -> &str {
-        &self.value
-    }
-}
-
-impl Drop for PlainCredentialSecret {
-    fn drop(&mut self) {
-        self.value.zeroize();
-    }
-}
-
-impl fmt::Debug for PlainCredentialSecret {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("PlainCredentialSecret")
-            .field("kind", &self.kind)
-            .field("value", &"<已脱敏>")
-            .finish()
-    }
 }
 
 /// 待加密的完整 OAuth token 集合；敏感文本默认脱敏并在释放时清零。
@@ -199,17 +149,32 @@ impl CredentialEncryptor {
         if credential_id <= 0 {
             return Err(CredentialEncryptionError::InvalidBinding);
         }
-        let wire = match secret.kind() {
-            CredentialKind::ApiKey => PlainCredentialWire::ApiKey {
-                api_key: secret.expose(),
-            },
-            CredentialKind::Oauth => PlainCredentialWire::Oauth {
-                access_token: secret.expose(),
+        let wire = match secret.as_ref() {
+            PlainCredentialSecretRef::ApiKey(api_key) => PlainCredentialWire::ApiKey { api_key },
+            PlainCredentialSecretRef::Oauth(access_token) => PlainCredentialWire::Oauth {
+                access_token,
                 refresh_token: None,
                 expires_at_epoch_seconds: None,
                 scope: None,
             },
-            _ => return Err(CredentialEncryptionError::UnsupportedKind),
+            PlainCredentialSecretRef::Bedrock {
+                access_key_id,
+                secret_access_key,
+                session_token,
+            } => PlainCredentialWire::Bedrock {
+                access_key_id,
+                secret_access_key,
+                session_token,
+            },
+            PlainCredentialSecretRef::ServiceAccount {
+                client_email,
+                private_key_id,
+                private_key,
+            } => PlainCredentialWire::ServiceAccount {
+                client_email,
+                private_key_id,
+                private_key,
+            },
         };
         self.encrypt_wire(channel_id, credential_id, secret.kind(), &wire)
     }
@@ -289,15 +254,20 @@ enum PlainCredentialWire<'a> {
         #[serde(skip_serializing_if = "Option::is_none")]
         scope: Option<&'a str>,
     },
-}
-
-fn is_valid_oauth_token(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= MAX_DECRYPTED_CREDENTIAL_SECRET_BYTES
-        && value.is_ascii()
-        && !value
-            .bytes()
-            .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
+    #[serde(rename = "bedrock")]
+    Bedrock {
+        access_key_id: &'a str,
+        secret_access_key: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        session_token: Option<&'a str>,
+    },
+    #[serde(rename = "service_account")]
+    ServiceAccount {
+        client_email: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        private_key_id: Option<&'a str>,
+        private_key: &'a str,
+    },
 }
 
 fn map_key_error(error: CredentialDecryptionError) -> CredentialEncryptionError {
@@ -318,6 +288,8 @@ mod tests {
 
     const CHANNEL_ID: i64 = 7;
     const CREDENTIAL_ID: i64 = 11;
+    const SERVICE_ACCOUNT_PRIVATE_KEY: &str =
+        include_str!("../../af-adapter/src/vertex/fixtures/service_account_private.pem");
 
     #[test]
     fn encrypts_supported_secrets_for_the_production_decryptor() {
@@ -414,6 +386,79 @@ mod tests {
             "refresh-private",
             "openid profile",
             "primary-key",
+        ] {
+            assert!(!rendered.contains(private));
+        }
+    }
+
+    #[test]
+    fn encrypts_structured_provider_secrets_for_the_runtime_decryptor() {
+        let settings = settings();
+        let encryptor = CredentialEncryptor::new(&settings).unwrap();
+        let decryptor = CredentialDecryptor::new(&settings).unwrap();
+
+        let bedrock = PlainCredentialSecret::bedrock(
+            "AKIDEXAMPLE00000001".to_owned(),
+            "aws-secret-access-key".to_owned(),
+            Some("aws-session-token".to_owned()),
+        )
+        .unwrap();
+        let bedrock_envelope = encryptor
+            .encrypt(channel_id(), CREDENTIAL_ID, &bedrock)
+            .unwrap();
+        let decrypted_bedrock = decryptor
+            .decrypt_envelope(
+                channel_id(),
+                CREDENTIAL_ID,
+                CredentialKind::Bedrock,
+                &bedrock_envelope,
+            )
+            .unwrap();
+        assert_eq!(
+            decrypted_bedrock.bedrock_parts(),
+            Some((
+                "AKIDEXAMPLE00000001",
+                "aws-secret-access-key",
+                Some("aws-session-token")
+            ))
+        );
+
+        let service_account = PlainCredentialSecret::service_account(
+            "runtime@example.iam.gserviceaccount.com".to_owned(),
+            Some("private-key-id".to_owned()),
+            SERVICE_ACCOUNT_PRIVATE_KEY.to_owned(),
+        )
+        .unwrap();
+        let service_account_envelope = encryptor
+            .encrypt(channel_id(), CREDENTIAL_ID, &service_account)
+            .unwrap();
+        let decrypted_service_account = decryptor
+            .decrypt_envelope(
+                channel_id(),
+                CREDENTIAL_ID,
+                CredentialKind::ServiceAccount,
+                &service_account_envelope,
+            )
+            .unwrap();
+        assert_eq!(
+            decrypted_service_account.service_account_parts(),
+            Some((
+                "runtime@example.iam.gserviceaccount.com",
+                Some("private-key-id"),
+                SERVICE_ACCOUNT_PRIVATE_KEY,
+            ))
+        );
+
+        let rendered = format!(
+            "{bedrock:?}{bedrock_envelope:?}{decrypted_bedrock:?}{service_account:?}{service_account_envelope:?}{decrypted_service_account:?}"
+        );
+        for private in [
+            "AKIDEXAMPLE00000001",
+            "aws-secret-access-key",
+            "aws-session-token",
+            "runtime@example.iam.gserviceaccount.com",
+            "private-key-id",
+            "BEGIN PRIVATE KEY",
         ] {
             assert!(!rendered.contains(private));
         }

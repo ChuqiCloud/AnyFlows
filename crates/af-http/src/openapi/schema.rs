@@ -397,6 +397,8 @@ pub(crate) enum AdminCredentialKindSchema {
 pub(crate) enum AdminCredentialWriteKindSchema {
     ApiKey,
     Oauth,
+    Bedrock,
+    ServiceAccount,
 }
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]

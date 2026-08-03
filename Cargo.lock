@@ -26,6 +26,7 @@ dependencies = [
  "chacha20poly1305",
  "futures-util",
  "getrandom 0.4.3",
+ "jsonwebtoken",
  "serde",
  "serde_json",
  "sha2 0.10.9",

@@ -2,6 +2,7 @@
 
 mod credential_decryption;
 mod credential_encryption;
+mod credential_secret;
 mod oauth;
 mod system_secret;
 
@@ -10,7 +11,12 @@ pub use credential_decryption::{
     MAX_DECRYPTED_CREDENTIAL_SECRET_BYTES, credential_plaintext_aad,
 };
 pub use credential_encryption::{
-    CredentialEncryptionError, CredentialEncryptor, PlainCredentialSecret, PlainOAuthCredential,
+    CredentialEncryptionError, CredentialEncryptor, PlainOAuthCredential,
+};
+pub use credential_secret::{
+    MAX_AWS_ACCESS_KEY_ID_BYTES, MAX_AWS_SECRET_ACCESS_KEY_BYTES, MAX_AWS_SESSION_TOKEN_BYTES,
+    MAX_GOOGLE_PRIVATE_KEY_BYTES, MAX_GOOGLE_PRIVATE_KEY_ID_BYTES,
+    MAX_GOOGLE_SERVICE_ACCOUNT_EMAIL_BYTES, PlainCredentialSecret,
 };
 pub use oauth::{
     DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS, DEFAULT_MAX_PENDING_OAUTH_AUTHORIZATIONS,

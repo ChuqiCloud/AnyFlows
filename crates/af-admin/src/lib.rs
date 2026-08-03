@@ -46,6 +46,7 @@ mod user_wallet;
 mod user_write;
 mod wallet;
 
+pub use af_account::PlainCredentialSecret as AdminCredentialSecret;
 pub use af_db::NetworkSettingsMode;
 pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,

@@ -1,14 +1,14 @@
 use std::{fmt, time::Duration};
 
-use af_account::{CredentialDecryptor, DecryptedCredential};
+use af_account::CredentialDecryptor;
 use af_adapter::{
     AdaptorError, AdaptorSendExt as _, AdaptorSettings, AdaptorTarget, AdaptorTransportError,
-    AnthropicAdaptorSettings, Bytes, Credential, GeminiAdaptorSettings, HeaderMap, HeaderName,
-    HeaderValue, Method, OpenAiAdaptorSettings, Operation, RelayContext, ResponseMode,
-    UpstreamRequest, get_adaptor,
+    AnthropicAdaptorSettings, Bytes, GeminiAdaptorSettings, HeaderMap, HeaderName, HeaderValue,
+    Method, OpenAiAdaptorSettings, Operation, RelayContext, ResponseMode, UpstreamRequest,
+    get_adaptor,
 };
 use af_db::{ChannelProbeTargetRecord, ChannelProbeTargetRepository, DatabasePool};
-use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Role};
+use af_domain::{ChannelId, ChannelType, Protocol, Role};
 use af_http::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 use af_httpclient::HttpClientProvider;
 use af_protocol::{
@@ -17,6 +17,8 @@ use af_protocol::{
 };
 use af_scheduler::{ChannelProbe, ChannelProbeStatus};
 use tokio::time::timeout;
+
+use crate::adaptor_credential::build_adaptor_credential;
 
 /// 从数据库装配目标并执行最小原生协议请求的真实渠道探活器。
 #[derive(Clone)]
@@ -64,7 +66,8 @@ impl DatabaseChannelProbe {
             .decryptor
             .decrypt_target(&target)
             .map_err(|_| ProbeFailure::CredentialDecrypt)?;
-        let credential = adaptor_credential(&decrypted)?;
+        let credential =
+            build_adaptor_credential(&decrypted).map_err(|_| ProbeFailure::CredentialBuild)?;
         let adaptor = get_adaptor(target.channel_type(), adaptor_settings(&target)?)
             .map_err(|_| ProbeFailure::AdapterBuild)?;
         if adaptor.default_protocol() != target.protocol() {
@@ -200,18 +203,6 @@ impl fmt::Debug for DatabaseChannelProbe {
             .field("default_timeout", &self.default_timeout)
             .finish()
     }
-}
-
-fn adaptor_credential(credential: &DecryptedCredential) -> Result<Credential, ProbeFailure> {
-    match credential.kind() {
-        CredentialKind::ApiKey => Credential::api_key(credential.expose_secret()),
-        CredentialKind::Oauth => Credential::oauth(credential.expose_secret()),
-        CredentialKind::SetupToken
-        | CredentialKind::Bedrock
-        | CredentialKind::ServiceAccount
-        | CredentialKind::Upstream => return Err(ProbeFailure::UnsupportedTarget),
-    }
-    .map_err(|_| ProbeFailure::CredentialBuild)
 }
 
 fn apply_header_overrides(

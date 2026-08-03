@@ -716,7 +716,10 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
 
     let credential_body = json!({
         "kind": "api_key",
-        "secret": "credential-secret-canary",
+        "secret": {
+            "kind": "api_key",
+            "api_key": "credential-secret-canary"
+        },
         "status": "disabled",
         "multi_key_mode": "random",
         "priority": 10,
