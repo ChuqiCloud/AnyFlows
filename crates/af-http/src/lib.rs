@@ -40,6 +40,7 @@ mod management_wallet;
 mod middleware;
 mod model_catalog;
 mod network_settings;
+mod oauth_connections;
 mod openai_responses;
 mod openapi;
 mod operations;
@@ -63,6 +64,14 @@ pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presente
 pub use error_response::OpenAiHttpError;
 pub use frontend_assets::{FrontendAsset, FrontendAssetSource};
 pub use middleware::REQUEST_ID_HEADER_NAME;
+pub use oauth_connections::{
+    AdminOAuthAuthorizationStart, AdminOAuthBeginFuture, AdminOAuthCompleteFuture,
+    AdminOAuthCompletionOutcome, AdminOAuthConnectionError, AdminOAuthConnectionService,
+    AdminOAuthProvider, AdminOAuthProviderStatus, MAX_ADMIN_OAUTH_CALLBACK_BODY_BYTES,
+    MAX_OAUTH_LOOPBACK_QUERY_BYTES, OAUTH_CALLBACK_COMPLETION_TIMEOUT, OAuthLoopbackBinding,
+    OAuthLoopbackBindingError, build_admin_oauth_connection_router,
+    build_oauth_loopback_callback_router,
+};
 pub use openapi::openapi_document;
 pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
@@ -98,6 +107,8 @@ mod management_users_tests;
 mod management_wallet_tests;
 #[cfg(test)]
 mod network_settings_tests;
+#[cfg(test)]
+mod oauth_connections_tests;
 #[cfg(test)]
 mod operations_tests;
 #[cfg(test)]

@@ -73,6 +73,7 @@ use crate::middleware::{
 };
 use crate::model_catalog::list_models;
 use crate::network_settings::build_network_settings_router;
+use crate::oauth_connections::{AdminOAuthConnectionService, build_admin_oauth_connection_router};
 use crate::openai_responses::openai_responses;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::password_reset::build_password_reset_router;
@@ -95,6 +96,7 @@ pub const DEFAULT_REQUEST_BODY_LIMIT_BYTES: usize = MAX_BODY_BYTES;
 ///
 /// Axum 类型只在 `af-http` 内部流转，服务编排层通过本 crate 提供的监听入口使用它，
 /// 避免框架依赖向 `af-server` 泄漏。
+#[derive(Clone)]
 pub struct HttpRouter(Router);
 
 impl HttpRouter {
@@ -135,6 +137,7 @@ pub fn build_router(
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     admin_network_settings_service: Arc<dyn AdminNetworkSettingsService>,
+    admin_oauth_connection_service: Option<Arc<dyn AdminOAuthConnectionService>>,
     admin_balance_alert_settings_service: Arc<dyn AdminBalanceAlertSettingsService>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
@@ -341,6 +344,9 @@ pub fn build_router(
         admin_balance_alert_settings_service,
         Arc::clone(&http_state.session_authenticator),
     );
+    let oauth_connection_routes = admin_oauth_connection_service.map(|service| {
+        build_admin_oauth_connection_router(service, Arc::clone(&http_state.session_authenticator))
+    });
     let management_routes = Router::new()
         .route("/api/setup/status", get(setup_status))
         .route("/api/setup", post(initialize_setup))
@@ -522,6 +528,10 @@ pub fn build_router(
         .merge(email_settings_routes)
         .merge(network_settings_routes)
         .merge(balance_alert_settings_routes);
+    let management_routes = match oauth_connection_routes {
+        Some(routes) => management_routes.merge(routes),
+        None => management_routes,
+    };
     HttpRouter::new(build_router_with_routes_and_frontend(
         public_routes.merge(management_routes),
         operations_router(readiness),

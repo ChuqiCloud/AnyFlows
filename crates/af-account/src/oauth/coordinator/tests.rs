@@ -17,7 +17,7 @@ use af_domain::{
     ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind, Protocol, Status, UserId,
 };
 use af_httpclient::{
-    HttpClientConfig, HttpClientPool, HttpTimeouts, PooledClient, ProxyConfig, RemoteDnsPolicy,
+    HttpClientConfig, HttpClientProvider, HttpTimeouts, ProxyConfig, RemoteDnsPolicy,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use url::{Url, form_urlencoded};
@@ -25,7 +25,6 @@ use url::{Url, form_urlencoded};
 use super::*;
 use crate::CredentialEncryptor;
 
-const REDIRECT_URI: &str = "http://127.0.0.1:43123/oauth/callback";
 const AUTHORIZATION_CODE: &str = "authorization-code-marker";
 const SERVER_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -41,7 +40,7 @@ async fn coordinator_closes_profile_lookup_one_time_exchange_and_persistence_map
     let duplicate = OAuthConnectionCoordinator::new(
         [codex_profile(), codex_profile()],
         OAuthAuthorizationSessionStore::with_defaults(),
-        direct_client(),
+        direct_clients(),
         persistence(&fixture.pool),
     )
     .unwrap_err();
@@ -74,7 +73,6 @@ async fn coordinator_closes_profile_lookup_one_time_exchange_and_persistence_map
     let start = coordinator.begin(
         UpstreamOAuthProvider::Codex,
         context(channel_id, credential_id),
-        REDIRECT_URI.to_owned(),
     )?;
     let (state, callback_url) = callback_url(&start);
     assert_eq!(coordinator.pending_count()?, 1);
@@ -96,7 +94,19 @@ async fn coordinator_closes_profile_lookup_one_time_exchange_and_persistence_map
         callback_url.clone(),
     )?;
     assert_eq!(
-        coordinator.complete(callback).await?,
+        coordinator
+            .complete_for(UserId::new(12)?, callback)
+            .await
+            .unwrap_err(),
+        OAuthConnectionError::Authorization(OAuthAuthorizationError::PrincipalMismatch)
+    );
+    assert_eq!(coordinator.pending_count()?, 1);
+    let callback = OAuthAuthorizationCallback::from_redirect_url(
+        UpstreamOAuthProvider::Codex,
+        callback_url.clone(),
+    )?;
+    assert_eq!(
+        coordinator.complete_for(UserId::new(11)?, callback).await?,
         OAuthConnectionOutcome::Connected
     );
     server.join().unwrap();
@@ -151,7 +161,6 @@ async fn exchange_failure_still_consumes_the_authorization_session() -> Result<(
     let start = coordinator.begin(
         UpstreamOAuthProvider::Codex,
         context(channel_id, credential_id),
-        REDIRECT_URI.to_owned(),
     )?;
     let (_, callback_url) = callback_url(&start);
     let callback = OAuthAuthorizationCallback::from_redirect_url(
@@ -186,11 +195,7 @@ async fn complete_once(
 ) -> Result<OAuthConnectionOutcome, Box<dyn Error>> {
     let (address, server) = spawn_token_server(200, successful_token_response(), |_| {});
     let coordinator = coordinator(pool, address);
-    let start = coordinator.begin(
-        UpstreamOAuthProvider::Codex,
-        context,
-        REDIRECT_URI.to_owned(),
-    )?;
+    let start = coordinator.begin(UpstreamOAuthProvider::Codex, context)?;
     let (_, callback_url) = callback_url(&start);
     let callback =
         OAuthAuthorizationCallback::from_redirect_url(UpstreamOAuthProvider::Codex, callback_url)?;
@@ -205,7 +210,7 @@ fn coordinator(pool: &DatabasePool, address: SocketAddr) -> OAuthConnectionCoord
     OAuthConnectionCoordinator::new(
         [profile],
         OAuthAuthorizationSessionStore::with_defaults(),
-        proxied_client(address),
+        proxied_clients(address),
         persistence(pool),
     )
     .unwrap()
@@ -227,22 +232,21 @@ fn persistence(pool: &DatabasePool) -> OAuthTokenPersistenceService {
     )
 }
 
-fn proxied_client(address: SocketAddr) -> PooledClient {
+fn proxied_clients(address: SocketAddr) -> HttpClientProvider {
     let config = HttpClientConfig::new(
         ProxyConfig::parse(format!("http://{address}")).unwrap(),
         HttpTimeouts::default(),
     )
     .with_remote_dns_policy(RemoteDnsPolicy::TrustProxy);
-    HttpClientPool::default().get(&config).unwrap()
+    HttpClientProvider::new(config, 8).unwrap()
 }
 
-fn direct_client() -> PooledClient {
-    HttpClientPool::default()
-        .get(&HttpClientConfig::new(
-            ProxyConfig::direct(),
-            HttpTimeouts::default(),
-        ))
-        .unwrap()
+fn direct_clients() -> HttpClientProvider {
+    HttpClientProvider::new(
+        HttpClientConfig::new(ProxyConfig::direct(), HttpTimeouts::default()),
+        8,
+    )
+    .unwrap()
 }
 
 fn context(channel_id: ChannelId, credential_id: CredentialId) -> OAuthAuthorizationContext {

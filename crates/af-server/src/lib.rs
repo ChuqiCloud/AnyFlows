@@ -14,6 +14,7 @@ mod group_pricing_refresh;
 mod model_catalog;
 mod model_discovery;
 mod model_price_source;
+mod oauth_connection;
 mod readiness;
 mod scheduled_chat;
 mod shutdown;
@@ -29,6 +30,7 @@ pub use bootstrap::{
     AuthenticationReady, BillingReady, Bootstrap, BootstrapError, Configured, DatabaseReady,
     ListenerReady, RelayReady, RouterReady, ShutdownReport, Supervised, TelemetryReady, run,
 };
+pub use oauth_connection::OAuthRuntimeConfigError;
 pub use shutdown::{ShutdownController, system_shutdown_signal};
 pub use smtp_delivery::SmtpEmailDelivery;
 pub use supervisor::{BackgroundTaskSupervisor, SupervisorError, SupervisorShutdown};

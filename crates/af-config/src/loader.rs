@@ -34,6 +34,7 @@ struct ConfigDefaults {
     credential_encryption: CredentialEncryptionDefaults,
     redis: RedisDefaults,
     auth: AuthDefaults,
+    oauth: OAuthDefaults,
     http_client: HttpClientDefaults,
 }
 
@@ -80,6 +81,21 @@ struct HttpClientDefaults {
     request_timeout_secs: Option<u64>,
     proxy_url: Option<String>,
     trust_proxy_dns: bool,
+}
+
+#[derive(Serialize)]
+struct OAuthDefaults {
+    max_pending_authorizations: usize,
+    session_ttl_secs: u64,
+}
+
+impl Default for OAuthDefaults {
+    fn default() -> Self {
+        Self {
+            max_pending_authorizations: crate::DEFAULT_OAUTH_MAX_PENDING_AUTHORIZATIONS,
+            session_ttl_secs: crate::DEFAULT_OAUTH_SESSION_TTL_SECS,
+        }
+    }
 }
 
 /// 加载默认文件与环境变量覆盖后的应用配置。
@@ -204,6 +220,17 @@ fn known_field(path: &str) -> Option<&'static str> {
         "auth.lookup_timeout_secs" => "auth.lookup_timeout_secs",
         "auth.session_signing_key" => "auth.session_signing_key",
         "auth.session_ttl_secs" => "auth.session_ttl_secs",
+        "oauth" => "oauth",
+        "oauth.max_pending_authorizations" => "oauth.max_pending_authorizations",
+        "oauth.session_ttl_secs" => "oauth.session_ttl_secs",
+        "oauth.codex" => "oauth.codex",
+        "oauth.codex.client_id" => "oauth.codex.client_id",
+        "oauth.gemini" => "oauth.gemini",
+        "oauth.gemini.client_id" => "oauth.gemini.client_id",
+        "oauth.gemini.client_secret" => "oauth.gemini.client_secret",
+        "oauth.antigravity" => "oauth.antigravity",
+        "oauth.antigravity.client_id" => "oauth.antigravity.client_id",
+        "oauth.antigravity.client_secret" => "oauth.antigravity.client_secret",
         "openai_upstream" => "openai_upstream",
         "openai_upstream.base_url" => "openai_upstream.base_url",
         "openai_upstream.model" => "openai_upstream.model",
@@ -297,6 +324,9 @@ mod tests {
             assert_eq!(config.auth().lookup_timeout_secs(), 2);
             assert!(config.auth().session_signing_key().is_none());
             assert_eq!(config.auth().session_ttl_secs(), 3_600);
+            assert_eq!(config.oauth().max_pending_authorizations(), 256);
+            assert_eq!(config.oauth().session_ttl_secs(), 600);
+            assert_eq!(config.oauth().configured_provider_count(), 0);
             assert_eq!(
                 config.openai_upstream().unwrap().base_url(),
                 "https://upstream.example"
@@ -545,6 +575,76 @@ mod tests {
                 config.http_client().proxy_url().unwrap().expose(),
                 "socks5://127.0.0.1:10808"
             );
+        });
+    }
+
+    #[test]
+    fn oauth_clients_are_closed_validated_and_redacted() {
+        with_clean_env(|_| {
+            let path = temp_file(
+                "[database]\nurl = 'sqlite::memory:'\n[oauth]\nmax_pending_authorizations = 32\nsession_ttl_secs = 120\n[oauth.codex]\nclient_id = 'codex-client-marker'\n[oauth.gemini]\nclient_id = 'gemini-client-marker'\nclient_secret = 'gemini-secret-marker'\n[oauth.antigravity]\nclient_id = 'antigravity-client-marker'\nclient_secret = 'antigravity-secret-marker'\n",
+            );
+            let config = load_from(&path).unwrap();
+            let _ = fs::remove_file(path);
+
+            assert_eq!(config.oauth().max_pending_authorizations(), 32);
+            assert_eq!(config.oauth().session_ttl_secs(), 120);
+            assert_eq!(config.oauth().configured_provider_count(), 3);
+            assert_eq!(
+                config.oauth().codex().unwrap().client_id().expose(),
+                "codex-client-marker"
+            );
+            assert_eq!(
+                config.oauth().gemini().unwrap().client_secret().expose(),
+                "gemini-secret-marker"
+            );
+            let debug = format!("{:?}", config.oauth());
+            for private in [
+                "codex-client-marker",
+                "gemini-client-marker",
+                "gemini-secret-marker",
+                "antigravity-client-marker",
+                "antigravity-secret-marker",
+            ] {
+                assert!(!debug.contains(private));
+            }
+        });
+    }
+
+    #[test]
+    fn oauth_configuration_rejects_incomplete_or_unbounded_values() {
+        with_clean_env(|_| {
+            for (body, expected) in [
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth]\nmax_pending_authorizations = 0\n",
+                    ConfigError::NonPositive {
+                        field: "oauth.max_pending_authorizations",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth]\nsession_ttl_secs = 59\n",
+                    ConfigError::OutOfRange {
+                        field: "oauth.session_ttl_secs",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth.codex]\nclient_id = ''\n",
+                    ConfigError::InvalidField {
+                        field: "oauth.codex.client_id",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth.gemini]\nclient_id = 'client'\n",
+                    ConfigError::InvalidField {
+                        field: "oauth.gemini.client_secret",
+                    },
+                ),
+            ] {
+                let path = raw_temp_file(body);
+                let error = load_from(&path).unwrap_err();
+                let _ = fs::remove_file(path);
+                assert_eq!(error, expected);
+            }
         });
     }
 

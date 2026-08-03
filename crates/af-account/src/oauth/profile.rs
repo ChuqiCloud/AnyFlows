@@ -1,4 +1,7 @@
-use std::fmt;
+use std::{
+    fmt,
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+};
 
 use af_httpclient::PooledClient;
 use thiserror::Error;
@@ -8,7 +11,7 @@ use super::{
     OAuthAuthorizationContext, OAuthAuthorizationError, OAuthAuthorizationGrant,
     OAuthAuthorizationRequest, OAuthClientAuthenticationMethod, OAuthTokenExchange,
     OAuthTokenExchangeError, OAuthTokenRequestEncoding, OAuthTokenSet, UpstreamOAuthProvider,
-    authorization::validate_authorization_profile,
+    authorization::{parse_profile_loopback_redirect_uri, validate_authorization_profile},
 };
 
 const CODEX_AUTHORIZATION_ENDPOINT: &str = "https://auth.openai.com/oauth/authorize";
@@ -19,6 +22,7 @@ const CODEX_AUTHORIZATION_PARAMETERS: &[(&str, &str)] = &[
     ("id_token_add_organizations", "true"),
     ("codex_cli_simplified_flow", "true"),
 ];
+const CODEX_LOOPBACK_REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
 
 const GOOGLE_AUTHORIZATION_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
@@ -27,8 +31,76 @@ const GOOGLE_AUTHORIZATION_PARAMETERS: &[(&str, &str)] = &[
     ("prompt", "consent"),
     ("include_granted_scopes", "true"),
 ];
+const GEMINI_LOOPBACK_REDIRECT_URI: &str = "http://localhost:8085/oauth2callback";
+const ANTIGRAVITY_LOOPBACK_REDIRECT_URI: &str = "http://localhost:51121/oauth-callback";
 const GEMINI_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
 const ANTIGRAVITY_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs";
+
+/// provider 注册回调地址与本机监听地址的不可变配对。
+#[derive(Clone, Eq, PartialEq)]
+pub struct OAuthLoopbackRedirect {
+    provider: UpstreamOAuthProvider,
+    bind_address: SocketAddr,
+    redirect_uri: url::Url,
+}
+
+impl OAuthLoopbackRedirect {
+    fn new(
+        provider: UpstreamOAuthProvider,
+        bind_address: SocketAddr,
+        redirect_uri: &'static str,
+    ) -> Result<Self, OAuthAuthorizationError> {
+        let redirect_uri = parse_profile_loopback_redirect_uri(redirect_uri)?;
+        if bind_address.ip() != std::net::IpAddr::V4(Ipv4Addr::LOCALHOST)
+            || redirect_uri.host_str() != Some("localhost")
+            || redirect_uri.port() != Some(bind_address.port())
+            || redirect_uri.path().is_empty()
+            || !redirect_uri.path().starts_with('/')
+        {
+            return Err(OAuthAuthorizationError::InvalidRedirectUri);
+        }
+        Ok(Self {
+            provider,
+            bind_address,
+            redirect_uri,
+        })
+    }
+
+    /// 返回该回调所属 provider。
+    #[must_use]
+    pub const fn provider(&self) -> UpstreamOAuthProvider {
+        self.provider
+    }
+
+    /// 返回只能由专用回调服务器绑定的 IPv4 loopback 地址。
+    #[must_use]
+    pub const fn bind_address(&self) -> SocketAddr {
+        self.bind_address
+    }
+
+    /// 返回 provider 客户端注册的精确 redirect URI。
+    #[must_use]
+    pub fn redirect_uri(&self) -> &url::Url {
+        &self.redirect_uri
+    }
+
+    /// 返回专用监听器唯一允许的回调路径。
+    #[must_use]
+    pub fn callback_path(&self) -> &str {
+        self.redirect_uri.path()
+    }
+}
+
+impl fmt::Debug for OAuthLoopbackRedirect {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OAuthLoopbackRedirect")
+            .field("provider", &self.provider)
+            .field("bind_address", &self.bind_address)
+            .field("callback_path", &self.callback_path())
+            .finish()
+    }
+}
 
 /// 单个上游 OAuth provider 的不可变协议配置。
 pub struct OAuthProviderProfile {
@@ -37,6 +109,7 @@ pub struct OAuthProviderProfile {
     authorization_endpoint: &'static str,
     scope: &'static str,
     authorization_parameters: &'static [(&'static str, &'static str)],
+    loopback_redirect: OAuthLoopbackRedirect,
     requires_refresh_token: bool,
     requires_expiration: bool,
     token_exchange: OAuthTokenExchange,
@@ -66,6 +139,11 @@ impl OAuthProviderProfile {
             client_secret,
             specification.request_encoding,
         )?;
+        let loopback_redirect = OAuthLoopbackRedirect::new(
+            provider,
+            specification.loopback_bind_address,
+            specification.loopback_redirect_uri,
+        )?;
         // token 交换器接管密钥后再验证授权侧，后续错误会由交换器 Drop 清零密钥。
         validate_authorization_profile(
             &client_id,
@@ -79,6 +157,7 @@ impl OAuthProviderProfile {
             authorization_endpoint: specification.authorization_endpoint,
             scope: specification.scope,
             authorization_parameters: specification.authorization_parameters,
+            loopback_redirect,
             requires_refresh_token: specification.requires_refresh_token,
             requires_expiration: specification.requires_expiration,
             token_exchange,
@@ -103,18 +182,23 @@ impl OAuthProviderProfile {
         self.token_exchange.request_encoding()
     }
 
+    /// 返回该 provider 固定的回调注册与监听合约。
+    #[must_use]
+    pub const fn loopback_redirect(&self) -> &OAuthLoopbackRedirect {
+        &self.loopback_redirect
+    }
+
     /// 为一次业务授权创建只含 profile 白名单参数的请求。
     pub fn authorization_request(
         &self,
         context: OAuthAuthorizationContext,
-        redirect_uri: String,
     ) -> Result<OAuthAuthorizationRequest, OAuthAuthorizationError> {
         OAuthAuthorizationRequest::new_with_authorization_parameters(
             self.provider,
             context,
             self.client_id.clone(),
             self.authorization_endpoint.to_owned(),
-            redirect_uri,
+            self.loopback_redirect.redirect_uri.clone(),
             self.scope.to_owned(),
             self.authorization_parameters,
         )
@@ -165,6 +249,7 @@ impl fmt::Debug for OAuthProviderProfile {
                 "authorization_parameter_count",
                 &self.authorization_parameters.len(),
             )
+            .field("loopback_redirect", &self.loopback_redirect)
             .field("token_exchange", &self.token_exchange)
             .finish()
     }
@@ -192,6 +277,8 @@ struct ProviderSpecification {
     authorization_parameters: &'static [(&'static str, &'static str)],
     authentication_method: OAuthClientAuthenticationMethod,
     request_encoding: OAuthTokenRequestEncoding,
+    loopback_bind_address: SocketAddr,
+    loopback_redirect_uri: &'static str,
     requires_refresh_token: bool,
     requires_expiration: bool,
 }
@@ -213,6 +300,11 @@ impl ProviderSpecification {
                 authorization_parameters: CODEX_AUTHORIZATION_PARAMETERS,
                 authentication_method: OAuthClientAuthenticationMethod::Public,
                 request_encoding: OAuthTokenRequestEncoding::Form,
+                loopback_bind_address: SocketAddr::V4(SocketAddrV4::new(
+                    Ipv4Addr::LOCALHOST,
+                    1_455,
+                )),
+                loopback_redirect_uri: CODEX_LOOPBACK_REDIRECT_URI,
                 requires_refresh_token: true,
                 requires_expiration: true,
             }),
@@ -223,6 +315,11 @@ impl ProviderSpecification {
                 authorization_parameters: GOOGLE_AUTHORIZATION_PARAMETERS,
                 authentication_method: OAuthClientAuthenticationMethod::ClientSecretPost,
                 request_encoding: OAuthTokenRequestEncoding::Form,
+                loopback_bind_address: SocketAddr::V4(SocketAddrV4::new(
+                    Ipv4Addr::LOCALHOST,
+                    8_085,
+                )),
+                loopback_redirect_uri: GEMINI_LOOPBACK_REDIRECT_URI,
                 requires_refresh_token: true,
                 requires_expiration: true,
             }),
@@ -233,6 +330,11 @@ impl ProviderSpecification {
                 authorization_parameters: GOOGLE_AUTHORIZATION_PARAMETERS,
                 authentication_method: OAuthClientAuthenticationMethod::ClientSecretPost,
                 request_encoding: OAuthTokenRequestEncoding::Form,
+                loopback_bind_address: SocketAddr::V4(SocketAddrV4::new(
+                    Ipv4Addr::LOCALHOST,
+                    51_121,
+                )),
+                loopback_redirect_uri: ANTIGRAVITY_LOOPBACK_REDIRECT_URI,
                 requires_refresh_token: true,
                 requires_expiration: true,
             }),
@@ -249,7 +351,6 @@ mod tests {
     use super::*;
     use crate::oauth::OAuthAuthorizationSessionStore;
 
-    const REDIRECT_URI: &str = "http://127.0.0.1:43123/oauth/callback";
     const EXPECTED_CODEX_PARAMETERS: &[(&str, &str)] = &[
         ("prompt", "login"),
         ("id_token_add_organizations", "true"),
@@ -272,9 +373,7 @@ mod tests {
             );
             assert_eq!(profile.token_request_encoding(), expectation.encoding);
 
-            let request = profile
-                .authorization_request(context(), REDIRECT_URI.to_owned())
-                .unwrap();
+            let request = profile.authorization_request(context()).unwrap();
             let start = OAuthAuthorizationSessionStore::with_defaults()
                 .begin(&request)
                 .unwrap();
@@ -298,7 +397,7 @@ mod tests {
             );
             assert_eq!(
                 values.get("redirect_uri").map(String::as_str),
-                Some(REDIRECT_URI)
+                Some(expectation.redirect_uri)
             );
             assert_eq!(
                 values.get("scope").map(String::as_str),
@@ -330,6 +429,14 @@ mod tests {
                 values.len(),
                 7 + expectation.additional_parameters.len(),
                 "授权 URL 不得出现 profile 之外的参数"
+            );
+            assert_eq!(
+                profile.loopback_redirect().bind_address(),
+                expectation.bind_address
+            );
+            assert_eq!(
+                profile.loopback_redirect().callback_path(),
+                expectation.callback_path
             );
 
             let debug = format!("{profile:?}{request:?}");
@@ -449,6 +556,9 @@ mod tests {
         additional_parameters: &'static [(&'static str, &'static str)],
         authentication_method: OAuthClientAuthenticationMethod,
         encoding: OAuthTokenRequestEncoding,
+        bind_address: SocketAddr,
+        callback_path: &'static str,
+        redirect_uri: &'static str,
     }
 
     fn expectations() -> [ProfileExpectation; 3] {
@@ -463,6 +573,9 @@ mod tests {
                 additional_parameters: EXPECTED_CODEX_PARAMETERS,
                 authentication_method: OAuthClientAuthenticationMethod::Public,
                 encoding: OAuthTokenRequestEncoding::Form,
+                bind_address: "127.0.0.1:1455".parse().unwrap(),
+                callback_path: "/auth/callback",
+                redirect_uri: "http://localhost:1455/auth/callback",
             },
             ProfileExpectation {
                 provider: UpstreamOAuthProvider::Gemini,
@@ -474,6 +587,9 @@ mod tests {
                 additional_parameters: EXPECTED_GOOGLE_PARAMETERS,
                 authentication_method: OAuthClientAuthenticationMethod::ClientSecretPost,
                 encoding: OAuthTokenRequestEncoding::Form,
+                bind_address: "127.0.0.1:8085".parse().unwrap(),
+                callback_path: "/oauth2callback",
+                redirect_uri: "http://localhost:8085/oauth2callback",
             },
             ProfileExpectation {
                 provider: UpstreamOAuthProvider::Antigravity,
@@ -485,6 +601,9 @@ mod tests {
                 additional_parameters: EXPECTED_GOOGLE_PARAMETERS,
                 authentication_method: OAuthClientAuthenticationMethod::ClientSecretPost,
                 encoding: OAuthTokenRequestEncoding::Form,
+                bind_address: "127.0.0.1:51121".parse().unwrap(),
+                callback_path: "/oauth-callback",
+                redirect_uri: "http://localhost:51121/oauth-callback",
             },
         ]
     }

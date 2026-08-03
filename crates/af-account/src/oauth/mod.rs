@@ -20,7 +20,7 @@ pub use exchange::{
 pub use persistence::{
     OAuthTokenPersistenceError, OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService,
 };
-pub use profile::{OAuthProviderProfile, OAuthProviderProfileError};
+pub use profile::{OAuthLoopbackRedirect, OAuthProviderProfile, OAuthProviderProfileError};
 pub use store::{
     DEFAULT_MAX_PENDING_OAUTH_AUTHORIZATIONS, DEFAULT_OAUTH_AUTHORIZATION_SESSION_TTL,
     MAX_OAUTH_AUTHORIZATION_SESSION_TTL, MAX_PENDING_OAUTH_AUTHORIZATIONS,

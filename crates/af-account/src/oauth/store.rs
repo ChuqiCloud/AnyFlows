@@ -10,6 +10,7 @@ use super::authorization::{
     OAuthAuthorizationRequest, OAuthAuthorizationStart, PendingAuthorization, SecretText,
     StateDigest, build_authorization_url, code_challenge, generate_random_token,
 };
+use af_domain::UserId;
 
 /// 默认最多保留的待完成 OAuth 授权会话数。
 pub const DEFAULT_MAX_PENDING_OAUTH_AUTHORIZATIONS: usize = 256;
@@ -75,6 +76,15 @@ impl OAuthAuthorizationSessionStore {
         self.consume_at(callback, Instant::now())
     }
 
+    /// 仅允许发起该授权的同一用户一次性消费手动回调。
+    pub fn consume_for(
+        &self,
+        callback: OAuthAuthorizationCallback,
+        expected_user_id: UserId,
+    ) -> Result<OAuthAuthorizationGrant, OAuthAuthorizationError> {
+        self.consume_inner(callback, Some(expected_user_id), Instant::now())
+    }
+
     /// 清理所有已过期条目，返回实际删除数。
     pub fn cleanup_expired(&self) -> Result<usize, OAuthAuthorizationError> {
         self.cleanup_expired_at(Instant::now())
@@ -134,17 +144,25 @@ impl OAuthAuthorizationSessionStore {
 
     pub(crate) fn consume_at(
         &self,
+        callback: OAuthAuthorizationCallback,
+        now: Instant,
+    ) -> Result<OAuthAuthorizationGrant, OAuthAuthorizationError> {
+        self.consume_inner(callback, None, now)
+    }
+
+    fn consume_inner(
+        &self,
         mut callback: OAuthAuthorizationCallback,
+        expected_user_id: Option<UserId>,
         now: Instant,
     ) -> Result<OAuthAuthorizationGrant, OAuthAuthorizationError> {
         let digest = StateDigest::from_state(callback.state());
-        // 命中 state 后立即删除，使任何持有该 state 的回调尝试都只能发生一次；
-        // provider、redirect 或拒绝结果不恢复会话，避免同一授权事实被反复探测。
-        let pending = self
-            .lock_entries()?
-            .remove(&digest)
+        let mut entries = self.lock_entries()?;
+        let pending = entries
+            .get(&digest)
             .ok_or(OAuthAuthorizationError::SessionNotFound)?;
         if pending.is_expired(now) {
+            entries.remove(&digest);
             return Err(OAuthAuthorizationError::SessionExpired);
         }
         if pending.provider != callback.provider() {
@@ -153,6 +171,14 @@ impl OAuthAuthorizationSessionStore {
         if &pending.redirect_uri != callback.redirect_uri() {
             return Err(OAuthAuthorizationError::RedirectUriMismatch);
         }
+        if expected_user_id.is_some_and(|expected| pending.context.user_id() != expected) {
+            return Err(OAuthAuthorizationError::PrincipalMismatch);
+        }
+        // 所有绑定条件通过后才消费，错误 provider、地址或管理员不能销毁合法会话。
+        let pending = entries
+            .remove(&digest)
+            .ok_or(OAuthAuthorizationError::SessionNotFound)?;
+        drop(entries);
         if callback.is_denied() {
             return Err(OAuthAuthorizationError::ProviderDenied);
         }

@@ -335,7 +335,7 @@ fn concurrent_callback_consumption_has_exactly_one_winner() {
 }
 
 #[test]
-fn denied_or_mismatched_callbacks_destroy_the_session() {
+fn denied_callbacks_consume_but_mismatched_bindings_preserve_the_session() {
     let request = authorization_request();
 
     let store = OAuthAuthorizationSessionStore::with_defaults();
@@ -361,6 +361,13 @@ fn denied_or_mismatched_callbacks_destroy_the_session() {
         store.consume(wrong_provider).unwrap_err(),
         OAuthAuthorizationError::ProviderMismatch
     );
+    assert_eq!(store.pending_count().unwrap(), 1);
+    let correct = callback_with_code(
+        UpstreamOAuthProvider::ClaudeCode,
+        start.redirect_uri(),
+        &state,
+    );
+    store.consume(correct).unwrap();
     assert_eq!(store.pending_count().unwrap(), 0);
 
     let store = OAuthAuthorizationSessionStore::with_defaults();
@@ -375,6 +382,42 @@ fn denied_or_mismatched_callbacks_destroy_the_session() {
         store.consume(wrong_redirect).unwrap_err(),
         OAuthAuthorizationError::RedirectUriMismatch
     );
+    assert_eq!(store.pending_count().unwrap(), 1);
+    let correct = callback_with_code(
+        UpstreamOAuthProvider::ClaudeCode,
+        start.redirect_uri(),
+        &state,
+    );
+    store.consume(correct).unwrap();
+    assert_eq!(store.pending_count().unwrap(), 0);
+}
+
+#[test]
+fn manual_callback_requires_the_authorization_owner() {
+    let store = OAuthAuthorizationSessionStore::with_defaults();
+    let start = store.begin(&authorization_request()).unwrap();
+    let state = query_value(&start, "state");
+    let callback = callback_with_code(
+        UpstreamOAuthProvider::ClaudeCode,
+        start.redirect_uri(),
+        &state,
+    );
+    assert_eq!(
+        store
+            .consume_for(callback, UserId::new(12).unwrap())
+            .unwrap_err(),
+        OAuthAuthorizationError::PrincipalMismatch
+    );
+    assert_eq!(store.pending_count().unwrap(), 1);
+
+    let callback = callback_with_code(
+        UpstreamOAuthProvider::ClaudeCode,
+        start.redirect_uri(),
+        &state,
+    );
+    store
+        .consume_for(callback, authorization_context().user_id())
+        .unwrap();
     assert_eq!(store.pending_count().unwrap(), 0);
 }
 

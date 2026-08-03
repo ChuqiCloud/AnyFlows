@@ -115,6 +115,26 @@ pub(crate) enum ManagementError {
     CredentialNotFound,
     /// 渠道测活服务未在当前实例注入。
     ProbeUnavailable,
+    /// 请求的上游 OAuth provider 未在启动配置中启用。
+    OauthProviderNotConfigured,
+    /// 目标 OAuth 凭据已经绑定其他 provider。
+    OauthCredentialProviderMismatch,
+    /// 单实例待完成 OAuth 授权已达到容量上限。
+    OauthAuthorizationCapacityExceeded,
+    /// OAuth 授权会话不存在或不属于当前管理员。
+    OauthAuthorizationNotFound,
+    /// OAuth 授权会话已经过期。
+    OauthAuthorizationExpired,
+    /// 上游 provider 拒绝本次 OAuth 授权。
+    OauthAuthorizationDenied,
+    /// OAuth token 交换超过硬截止时间。
+    OauthUpstreamTimeout,
+    /// OAuth token endpoint 拒绝请求。
+    OauthUpstreamRejected,
+    /// OAuth token endpoint 返回无法接受的响应。
+    OauthUpstreamInvalidResponse,
+    /// OAuth 依赖或受控网络路径当前不可用。
+    OauthUnavailable,
     /// 分享令牌未知、已失效、已撤销或不属于当前用户。
     PlaygroundShareNotFound,
     /// 当前用户的有效分享数量已经达到上限。
@@ -519,6 +539,76 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "probe_unavailable",
                     message: "Channel probe unavailable",
+                },
+            ),
+            Self::OauthProviderNotConfigured => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "oauth_provider_not_configured",
+                    message: "OAuth provider not configured",
+                },
+            ),
+            Self::OauthCredentialProviderMismatch => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "oauth_credential_provider_mismatch",
+                    message: "OAuth credential provider mismatch",
+                },
+            ),
+            Self::OauthAuthorizationCapacityExceeded => (
+                StatusCode::TOO_MANY_REQUESTS,
+                ManagementErrorBody {
+                    code: "oauth_authorization_capacity_exceeded",
+                    message: "OAuth authorization capacity exceeded",
+                },
+            ),
+            Self::OauthAuthorizationNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "oauth_authorization_not_found",
+                    message: "OAuth authorization not found",
+                },
+            ),
+            Self::OauthAuthorizationExpired => (
+                StatusCode::GONE,
+                ManagementErrorBody {
+                    code: "oauth_authorization_expired",
+                    message: "OAuth authorization expired",
+                },
+            ),
+            Self::OauthAuthorizationDenied => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "oauth_authorization_denied",
+                    message: "OAuth authorization denied",
+                },
+            ),
+            Self::OauthUpstreamTimeout => (
+                StatusCode::GATEWAY_TIMEOUT,
+                ManagementErrorBody {
+                    code: "oauth_upstream_timeout",
+                    message: "OAuth upstream timeout",
+                },
+            ),
+            Self::OauthUpstreamRejected => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "oauth_upstream_rejected",
+                    message: "OAuth upstream rejected",
+                },
+            ),
+            Self::OauthUpstreamInvalidResponse => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "oauth_upstream_invalid_response",
+                    message: "OAuth upstream invalid response",
+                },
+            ),
+            Self::OauthUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "oauth_unavailable",
+                    message: "OAuth service unavailable",
                 },
             ),
             Self::PlaygroundShareNotFound => (

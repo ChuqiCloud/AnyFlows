@@ -1636,6 +1636,7 @@ async fn start_server(
         Arc::new(RejectSiteSettings),
         Arc::new(RejectAdminEmailSettings),
         Arc::new(RejectAdminNetworkSettings),
+        None,
         Arc::new(RejectAdminBalanceAlertSettings),
         Arc::new(RejectAdminChannels),
         Arc::new(RejectAdminChannels),

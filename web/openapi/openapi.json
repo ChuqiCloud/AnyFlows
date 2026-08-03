@@ -1849,6 +1849,328 @@
         ]
       }
     },
+    "/api/admin/oauth/providers": {
+      "get": {
+        "tags": [
+          "OAuth 连接"
+        ],
+        "summary": "读取已配置的上游 OAuth Provider",
+        "operationId": "listAdminOAuthProviders",
+        "responses": {
+          "200": {
+            "description": "Provider 与回调能力列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOAuthProviderListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/channels/{channel_id}/credentials/{credential_id}/oauth-authorizations": {
+      "post": {
+        "tags": [
+          "OAuth 连接"
+        ],
+        "summary": "为已有 OAuth 凭据发起授权",
+        "operationId": "beginAdminOAuthAuthorization",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "description": "渠道 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "credential_id",
+            "in": "path",
+            "description": "OAuth 凭据 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminOAuthAuthorizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "一次性授权地址与固定回调说明",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOAuthAuthorizationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "路径、正文或凭据类型无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "渠道或凭据不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Provider 未配置或凭据已绑定其他 Provider",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "待完成授权已达到单实例容量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/oauth/authorizations/manual-callback": {
+      "post": {
+        "tags": [
+          "OAuth 连接"
+        ],
+        "summary": "提交完整回调地址完成授权",
+        "operationId": "completeAdminOAuthManualCallback",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminOAuthManualCallbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OAuth token 已写入绑定凭据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOAuthCompletionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "回调地址或授权响应无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "授权会话、授权发起人或目标凭据不匹配",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "上游拒绝授权或凭据 Provider 冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "授权会话已过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "上游拒绝 token 交换或响应无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "OAuth 网络或存储依赖不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "OAuth token 交换超时",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/balance-alert-settings": {
       "get": {
         "tags": [
@@ -9952,6 +10274,163 @@
         },
         "additionalProperties": false
       },
+      "AdminOAuthAuthorizationRequest": {
+        "type": "object",
+        "description": "管理端发起一次已有凭据 OAuth 连接。",
+        "required": [
+          "provider"
+        ],
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/AdminOAuthProvider"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminOAuthAuthorizationResponse": {
+        "type": "object",
+        "description": "发起 OAuth 后返回的浏览器地址与固定回调说明。",
+        "required": [
+          "provider",
+          "authorization_url",
+          "redirect_uri",
+          "expires_in_seconds",
+          "loopback_listener_ready",
+          "manual_callback_supported"
+        ],
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/AdminOAuthProvider"
+          },
+          "authorization_url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 8192
+          },
+          "redirect_uri": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "expires_in_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 900,
+            "minimum": 1
+          },
+          "loopback_listener_ready": {
+            "type": "boolean"
+          },
+          "manual_callback_supported": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminOAuthCompletionResponse": {
+        "type": "object",
+        "description": "OAuth 凭据连接成功响应。",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/AdminOAuthCompletionStatus"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminOAuthCompletionStatus": {
+        "type": "string",
+        "description": "OAuth 凭据连接终态。",
+        "enum": [
+          "connected"
+        ]
+      },
+      "AdminOAuthManualCallbackRequest": {
+        "type": "object",
+        "description": "远程管理场景提交的完整 loopback callback URL。",
+        "required": [
+          "provider",
+          "callback_url"
+        ],
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/AdminOAuthProvider"
+          },
+          "callback_url": {
+            "type": "string",
+            "format": "uri",
+            "writeOnly": true,
+            "maxLength": 16384,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminOAuthProvider": {
+        "type": "string",
+        "description": "管理 API 支持的上游 OAuth provider。",
+        "enum": [
+          "codex",
+          "gemini",
+          "antigravity"
+        ]
+      },
+      "AdminOAuthProviderListResponse": {
+        "type": "object",
+        "description": "管理员查询已配置 OAuth provider 的响应。",
+        "required": [
+          "providers"
+        ],
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminOAuthProviderStatus"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminOAuthProviderStatus": {
+        "type": "object",
+        "description": "单个已配置 OAuth provider 的回调能力。",
+        "required": [
+          "provider",
+          "redirect_uri",
+          "callback_port",
+          "callback_path",
+          "loopback_listener_ready",
+          "manual_callback_supported"
+        ],
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/AdminOAuthProvider"
+          },
+          "redirect_uri": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "callback_port": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "callback_path": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "loopback_listener_ready": {
+            "type": "boolean"
+          },
+          "manual_callback_supported": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminRedemptionBatch": {
         "type": "object",
         "description": "管理员可见的兑换码批次汇总，不包含明文或摘要。",
@@ -11263,6 +11742,16 @@
               "channel_not_found",
               "credential_not_found",
               "probe_unavailable",
+              "oauth_provider_not_configured",
+              "oauth_credential_provider_mismatch",
+              "oauth_authorization_capacity_exceeded",
+              "oauth_authorization_not_found",
+              "oauth_authorization_expired",
+              "oauth_authorization_denied",
+              "oauth_upstream_timeout",
+              "oauth_upstream_rejected",
+              "oauth_upstream_invalid_response",
+              "oauth_unavailable",
               "playground_share_not_found",
               "playground_share_limit_reached",
               "playground_conversation_not_found",
@@ -12770,6 +13259,9 @@
     },
     {
       "name": "网络与代理"
+    },
+    {
+      "name": "OAuth 连接"
     },
     {
       "name": "余额预警"
