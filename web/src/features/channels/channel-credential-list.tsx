@@ -1,5 +1,5 @@
 import type { MouseEvent } from 'react'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { KeyRound, LoaderCircle, RefreshCw, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -30,10 +30,11 @@ import {
 
 type ChannelCredentialListProps = {
   channel?: AdminChannel
+  open: boolean
 }
 
 /** 管理凭据列表的加载、状态更新、调度编辑与安全删除流程。 */
-export function ChannelCredentialList({ channel }: ChannelCredentialListProps) {
+export function ChannelCredentialList({ channel, open }: ChannelCredentialListProps) {
   const { i18n, t } = useTranslation()
   const credentialsQuery = useAdminChannelCredentials(channel?.id)
   const updateMutation = useUpdateAdminCredential()
@@ -43,6 +44,10 @@ export function ChannelCredentialList({ channel }: ChannelCredentialListProps) {
     () => credentialsQuery.data?.pages.flatMap((page) => page.credentials) ?? [],
     [credentialsQuery.data],
   )
+  const { refetch: refetchCredentials } = credentialsQuery
+  const refreshCredentials = useCallback(async () => {
+    await refetchCredentials()
+  }, [refetchCredentials])
 
   const updateCredential = async (credential: AdminCredential, body: ReturnType<typeof updateCredentialStatusRequest>) => {
     if (!channel || !body) return false
@@ -85,7 +90,7 @@ export function ChannelCredentialList({ channel }: ChannelCredentialListProps) {
 
         {credentialsQuery.isPending ? (
           <div className="mt-3 grid gap-2" aria-label={t('channels.credentials.loading')}>{[0, 1, 2].map((item) => <Skeleton key={item} className="h-24 rounded-lg" />)}</div>
-        ) : credentialsQuery.isError ? (
+        ) : credentialsQuery.isError && !credentialsQuery.data ? (
           <div role="alert" className="mt-3 rounded-lg border border-destructive/25 bg-destructive/8 p-3"><p className="text-xs text-destructive">{t('channels.credentials.loadFailed')}</p><Button type="button" size="sm" variant="secondary" className="mt-2" onClick={() => credentialsQuery.refetch()}>{t('channels.actions.retry')}</Button></div>
         ) : credentials.length === 0 ? (
           <div className="mt-3 grid min-h-32 place-items-center border-y border-[var(--hairline)] text-center"><div><KeyRound className="mx-auto size-4 text-muted-foreground" aria-hidden="true" /><p className="mt-2 text-xs font-medium">{t('channels.credentials.emptyTitle')}</p><p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('channels.credentials.emptyBody')}</p></div></div>
@@ -94,17 +99,21 @@ export function ChannelCredentialList({ channel }: ChannelCredentialListProps) {
             {credentials.map((credential) => (
               <ChannelCredentialItem
                 key={credential.id}
+                channelId={channel?.id ?? credential.channel_id}
                 credential={credential}
                 language={i18n.language}
                 pending={updateMutation.isPending && updateMutation.variables?.credentialId === credential.id}
+                sheetOpen={open}
                 onToggle={(item) => { void toggleCredential(item) }}
                 onSchedule={updateSchedule}
                 onDelete={setDeleting}
+                onRefresh={refreshCredentials}
               />
             ))}
           </div>
         )}
 
+        {credentialsQuery.isRefetchError ? <p role="alert" className="mt-3 text-xs text-destructive">{t('channels.credentials.refreshFailed')}</p> : null}
         {updateMutation.isError ? <p role="alert" className="mt-3 text-xs text-destructive">{t('channels.credentials.updateFailed')}</p> : null}
         {credentialsQuery.hasNextPage ? <Button type="button" variant="secondary" className="mt-3 w-full" disabled={credentialsQuery.isFetchingNextPage} onClick={() => credentialsQuery.fetchNextPage()}>{credentialsQuery.isFetchingNextPage ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : null}{t('channels.actions.loadMore')}</Button> : null}
       </section>

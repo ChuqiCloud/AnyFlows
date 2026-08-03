@@ -60,6 +60,7 @@ async fn repository_writes_closed_runtime_states_and_success_clears_cooling()
         Some("auth_expired")
     );
     let limited = credential(&pool, limited.id).await;
+    assert_eq!(limited.oauth_revision, 0);
     assert!(limited.rate_limited_at.is_some());
     assert!(
         limited
@@ -95,6 +96,7 @@ async fn repository_writes_closed_runtime_states_and_success_clears_cooling()
         )])
         .await?;
     let recovered = credential(&pool, limited.id).await;
+    assert_eq!(recovered.oauth_revision, 0);
     assert!(recovered.last_used_at.is_some());
     assert!(recovered.rate_limited_at.is_none());
     assert!(recovered.rate_limit_reset_at.is_none());

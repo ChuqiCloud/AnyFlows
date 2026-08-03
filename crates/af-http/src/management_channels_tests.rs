@@ -839,6 +839,7 @@ async fn admin_can_read_channel_and_credential_snapshots() {
     let credentials = response_json(credentials).await;
     assert_eq!(credentials["credentials"][0]["kind"], "api_key");
     assert_eq!(credentials["credentials"][0]["multi_key_mode"], "random");
+    assert_eq!(credentials["credentials"][0]["oauth_revision"], 0);
     assert!(!credentials.to_string().contains("secret"));
 
     let credential = app
@@ -951,6 +952,7 @@ fn sample_credential(channel_id: ChannelId, id: i64) -> AdminCredential {
         Some("example-oauth".to_owned()),
         Some("account-public-id".to_owned()),
         Some("project-public-id".to_owned()),
+        0,
         None,
         1_000,
         2_000,

@@ -69,6 +69,9 @@ pub(crate) struct AdminCredentialResponse {
     oauth_account_key: Option<String>,
     #[schema(min_length = 1, max_length = 255, required = true)]
     oauth_project_id: Option<String>,
+    /// 仅在 OAuth token 集合成功持久化后单调递增。
+    #[schema(minimum = 0)]
+    oauth_revision: i64,
     #[schema(minimum = 0, required = true)]
     last_used_at: Option<i64>,
     #[schema(minimum = 0)]
@@ -172,6 +175,7 @@ impl AdminCredentialResponse {
             oauth_provider: credential.oauth_provider().map(str::to_owned),
             oauth_account_key: credential.oauth_account_key().map(str::to_owned),
             oauth_project_id: credential.oauth_project_id().map(str::to_owned),
+            oauth_revision: credential.oauth_revision(),
             last_used_at: credential.last_used_at(),
             created_at: credential.created_at(),
             updated_at: credential.updated_at(),

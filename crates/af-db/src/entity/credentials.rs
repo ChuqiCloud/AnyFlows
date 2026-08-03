@@ -42,6 +42,8 @@ pub struct Model {
     pub oauth_account_key: Option<String>,
     #[sea_orm(column_type = "String(StringLen::N(255))", nullable)]
     pub oauth_project_id: Option<String>,
+    /// 仅在 OAuth token 集合成功持久化后单调递增。
+    pub oauth_revision: i64,
     pub last_used_at: Option<TimeDateTimeWithTimeZone>,
     pub created_at: TimeDateTimeWithTimeZone,
     pub updated_at: TimeDateTimeWithTimeZone,

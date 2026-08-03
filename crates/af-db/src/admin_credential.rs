@@ -38,6 +38,7 @@ pub struct AdminCredentialRecord {
     oauth_provider: Option<String>,
     oauth_account_key: Option<String>,
     oauth_project_id: Option<String>,
+    oauth_revision: i64,
     last_used_at: Option<i64>,
     created_at: i64,
     updated_at: i64,
@@ -71,6 +72,7 @@ impl AdminCredentialRecord {
             oauth_provider: model.oauth_provider,
             oauth_account_key: model.oauth_account_key,
             oauth_project_id: model.oauth_project_id,
+            oauth_revision: model.oauth_revision,
             last_used_at: model.last_used_at,
             created_at: model.created_at,
             updated_at: model.updated_at,
@@ -214,6 +216,12 @@ impl AdminCredentialRecord {
     #[must_use]
     pub fn oauth_project_id(&self) -> Option<&str> {
         self.oauth_project_id.as_deref()
+    }
+
+    /// 返回仅由 OAuth token 持久化推进的非敏感版本号。
+    #[must_use]
+    pub const fn oauth_revision(&self) -> i64 {
+        self.oauth_revision
     }
 
     /// 返回最近一次调度时间的 Unix 秒数。
@@ -412,6 +420,7 @@ struct AdminCredentialRow {
     oauth_provider: Option<String>,
     oauth_account_key: Option<String>,
     oauth_project_id: Option<String>,
+    oauth_revision: i64,
     last_used_at: Option<TimeDateTimeWithTimeZone>,
     created_at: TimeDateTimeWithTimeZone,
     updated_at: TimeDateTimeWithTimeZone,
@@ -443,6 +452,7 @@ impl AdminCredentialRow {
             oauth_provider: result.try_get("", "oauth_provider")?,
             oauth_account_key: result.try_get("", "oauth_account_key")?,
             oauth_project_id: result.try_get("", "oauth_project_id")?,
+            oauth_revision: result.try_get("", "oauth_revision")?,
             last_used_at: result.try_get("", "last_used_at")?,
             created_at: result.try_get("", "created_at")?,
             updated_at: result.try_get("", "updated_at")?,
@@ -482,6 +492,7 @@ impl AdminCredentialRow {
             || !valid_optional_text(self.oauth_provider.as_deref(), 64)
             || !valid_optional_text(self.oauth_account_key.as_deref(), 255)
             || !valid_optional_text(self.oauth_project_id.as_deref(), 255)
+            || self.oauth_revision < 0
             || created_at < 0
             || updated_at < created_at
             || session_window_start.is_some() != session_window_end.is_some()
@@ -512,6 +523,7 @@ impl AdminCredentialRow {
             oauth_provider: self.oauth_provider,
             oauth_account_key: self.oauth_account_key,
             oauth_project_id: self.oauth_project_id,
+            oauth_revision: self.oauth_revision,
             last_used_at,
             created_at,
             updated_at,
@@ -665,6 +677,10 @@ pub(crate) fn credential_base_query() -> SelectStatement {
         .expr_as(
             Expr::col((credentials::Entity, credentials::Column::OauthProjectId)),
             Alias::new("oauth_project_id"),
+        )
+        .expr_as(
+            Expr::col((credentials::Entity, credentials::Column::OauthRevision)),
+            Alias::new("oauth_revision"),
         )
         .expr_as(
             Expr::col((credentials::Entity, credentials::Column::LastUsedAt)),

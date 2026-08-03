@@ -109,6 +109,7 @@ pub struct AdminCredential {
     oauth_provider: Option<String>,
     oauth_account_key: Option<String>,
     oauth_project_id: Option<String>,
+    oauth_revision: i64,
     last_used_at: Option<i64>,
     created_at: i64,
     updated_at: i64,
@@ -142,6 +143,7 @@ impl AdminCredential {
         oauth_provider: Option<String>,
         oauth_account_key: Option<String>,
         oauth_project_id: Option<String>,
+        oauth_revision: i64,
         last_used_at: Option<i64>,
         created_at: i64,
         updated_at: i64,
@@ -170,6 +172,7 @@ impl AdminCredential {
             oauth_provider,
             oauth_account_key,
             oauth_project_id,
+            oauth_revision,
             last_used_at,
             created_at,
             updated_at,
@@ -291,6 +294,11 @@ impl AdminCredential {
     pub fn oauth_project_id(&self) -> Option<&str> {
         self.oauth_project_id.as_deref()
     }
+    /// 返回仅由 OAuth token 持久化推进的非敏感版本号。
+    #[must_use]
+    pub const fn oauth_revision(&self) -> i64 {
+        self.oauth_revision
+    }
     /// 返回最近调度时间。
     #[must_use]
     pub const fn last_used_at(&self) -> Option<i64> {
@@ -337,6 +345,7 @@ impl AdminCredential {
             record.oauth_provider().map(str::to_owned),
             record.oauth_account_key().map(str::to_owned),
             record.oauth_project_id().map(str::to_owned),
+            record.oauth_revision(),
             record.last_used_at(),
             record.created_at(),
             record.updated_at(),

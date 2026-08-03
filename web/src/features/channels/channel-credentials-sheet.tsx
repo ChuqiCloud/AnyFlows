@@ -33,7 +33,7 @@ export function ChannelCredentialsSheet({ channel, open, onOpenChange }: Channel
         </SheetHeader>
         <div className="flex-1 overflow-y-auto">
           <ChannelCredentialAddForm channel={channel} open={open} />
-          <ChannelCredentialList channel={channel} />
+          <ChannelCredentialList channel={channel} open={open} />
         </div>
       </SheetContent>
     </Sheet>
