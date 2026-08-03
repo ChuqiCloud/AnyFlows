@@ -145,6 +145,7 @@ impl OAuthConnectionCoordinator {
     ) -> Result<&OAuthProviderProfile, OAuthConnectionError> {
         self.profiles
             .get(&provider)
+            .map(Arc::as_ref)
             .ok_or(OAuthConnectionError::ProviderProfileNotConfigured { provider })
     }
 }
