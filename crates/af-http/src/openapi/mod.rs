@@ -260,10 +260,11 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 151);
+        assert_eq!(schemas.len(), 152);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
+        assert!(schemas.contains_key("AdminCredentialSecret"));
         assert!(schemas.contains_key("AdminOAuthProvider"));
         assert!(schemas.contains_key("AdminOAuthProviderListResponse"));
         assert!(schemas.contains_key("AdminOAuthProviderStatus"));
@@ -387,17 +388,50 @@ mod tests {
                 .iter()
                 .any(|field| field == "secret")
         );
-        assert_eq!(create["properties"]["secret"]["writeOnly"], true);
-        assert_eq!(create["properties"]["secret"]["type"], "string");
+        assert_eq!(
+            create["properties"]["secret"]["$ref"],
+            "#/components/schemas/AdminCredentialSecret"
+        );
+
+        let secret_variants = schemas["AdminCredentialSecret"]["oneOf"]
+            .as_array()
+            .unwrap();
+        let expected_variants = [
+            ("api_key", &["api_key"][..]),
+            ("oauth", &["access_token"][..]),
+            (
+                "bedrock",
+                &["access_key_id", "secret_access_key", "session_token"][..],
+            ),
+            (
+                "service_account",
+                &["client_email", "private_key_id", "private_key"][..],
+            ),
+        ];
+        assert_eq!(secret_variants.len(), expected_variants.len());
+        for (variant, (kind, sensitive_fields)) in secret_variants.iter().zip(expected_variants) {
+            let properties = variant["properties"].as_object().unwrap();
+            assert_eq!(properties["kind"]["enum"], serde_json::json!([kind]));
+            assert_eq!(properties.len(), sensitive_fields.len() + 1);
+            for &field in sensitive_fields {
+                assert_eq!(properties[field]["writeOnly"], true);
+            }
+        }
 
         let update_secret = &schemas["AdminCredentialUpdateRequest"]["properties"]["secret"];
-        assert_eq!(update_secret["writeOnly"], true);
         assert!(
-            update_secret["type"]
+            update_secret["oneOf"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .any(|value| value == "null")
+                .any(|value| value["type"] == "null")
+        );
+        assert!(
+            update_secret["oneOf"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| { value["$ref"] == "#/components/schemas/AdminCredentialSecret" })
         );
         assert_eq!(
             schemas["AdminGroup"]["properties"]["flags"]["additionalProperties"],
