@@ -276,31 +276,25 @@ trait OAuthRefreshCandidateSource {
 impl OAuthRefreshCandidateSource for Arc<OAuthRefreshPersistenceService> {
     type Candidate = OAuthRefreshCandidate;
 
-    fn backfill_missing_expiration_projections(
+    async fn backfill_missing_expiration_projections(
         &self,
         after_credential_id: Option<CredentialId>,
         limit: usize,
-    ) -> impl Future<Output = Result<OAuthRefreshBackfillPage, OAuthRefreshPersistenceError>> + Send
-    {
-        async move {
-            self.as_ref()
-                .backfill_missing_expiration_projections(after_credential_id, limit)
-                .await
-                .map(OAuthRefreshBackfillPage::from)
-        }
+    ) -> Result<OAuthRefreshBackfillPage, OAuthRefreshPersistenceError> {
+        self.as_ref()
+            .backfill_missing_expiration_projections(after_credential_id, limit)
+            .await
+            .map(OAuthRefreshBackfillPage::from)
     }
 
-    fn due_candidates(
+    async fn due_candidates(
         &self,
         refresh_before_epoch_seconds: i64,
         limit: usize,
-    ) -> impl Future<Output = Result<Vec<Self::Candidate>, OAuthRefreshPersistenceError>> + Send
-    {
-        async move {
-            self.as_ref()
-                .due_candidates(refresh_before_epoch_seconds, limit)
-                .await
-        }
+    ) -> Result<Vec<Self::Candidate>, OAuthRefreshPersistenceError> {
+        self.as_ref()
+            .due_candidates(refresh_before_epoch_seconds, limit)
+            .await
     }
 }
 
@@ -312,12 +306,11 @@ trait OAuthRefreshCandidateRunner<C> {
 }
 
 impl OAuthRefreshCandidateRunner<OAuthRefreshCandidate> for Arc<OAuthRefreshCoordinator> {
-    fn refresh(
+    async fn refresh(
         &self,
         candidate: OAuthRefreshCandidate,
-    ) -> impl Future<Output = Result<OAuthRefreshCoordinatorOutcome, OAuthRefreshCoordinatorError>> + Send
-    {
-        async move { self.as_ref().refresh(candidate).await }
+    ) -> Result<OAuthRefreshCoordinatorOutcome, OAuthRefreshCoordinatorError> {
+        self.as_ref().refresh(candidate).await
     }
 }
 

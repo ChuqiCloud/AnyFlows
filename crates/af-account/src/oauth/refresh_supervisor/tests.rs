@@ -278,40 +278,31 @@ impl FakeSource {
 impl OAuthRefreshCandidateSource for FakeSource {
     type Candidate = usize;
 
-    fn backfill_missing_expiration_projections(
+    async fn backfill_missing_expiration_projections(
         &self,
         after_credential_id: Option<CredentialId>,
         limit: usize,
-    ) -> impl Future<Output = Result<OAuthRefreshBackfillPage, OAuthRefreshPersistenceError>> + Send
-    {
-        let state = Arc::clone(&self.state);
-        async move {
-            let mut state = state.lock().unwrap();
-            state.backfill_calls.push((after_credential_id, limit));
-            state
-                .backfills
-                .pop_front()
-                .unwrap_or(Ok(OAuthRefreshBackfillPage::default()))
-        }
+    ) -> Result<OAuthRefreshBackfillPage, OAuthRefreshPersistenceError> {
+        let mut state = self.state.lock().unwrap();
+        state.backfill_calls.push((after_credential_id, limit));
+        state
+            .backfills
+            .pop_front()
+            .unwrap_or(Ok(OAuthRefreshBackfillPage::default()))
     }
 
-    fn due_candidates(
+    async fn due_candidates(
         &self,
         refresh_before_epoch_seconds: i64,
         limit: usize,
-    ) -> impl Future<Output = Result<Vec<Self::Candidate>, OAuthRefreshPersistenceError>> + Send
-    {
-        let state = Arc::clone(&self.state);
-        let due_changed = Arc::clone(&self.due_changed);
-        async move {
-            let result = {
-                let mut state = state.lock().unwrap();
-                state.due_calls.push((refresh_before_epoch_seconds, limit));
-                state.candidates.pop_front().unwrap_or(Ok(Vec::new()))
-            };
-            due_changed.notify_one();
-            result
-        }
+    ) -> Result<Vec<Self::Candidate>, OAuthRefreshPersistenceError> {
+        let result = {
+            let mut state = self.state.lock().unwrap();
+            state.due_calls.push((refresh_before_epoch_seconds, limit));
+            state.candidates.pop_front().unwrap_or(Ok(Vec::new()))
+        };
+        self.due_changed.notify_one();
+        result
     }
 }
 
@@ -342,22 +333,16 @@ impl FakeRunner {
 }
 
 impl OAuthRefreshCandidateRunner<usize> for FakeRunner {
-    fn refresh(
+    async fn refresh(
         &self,
         candidate: usize,
-    ) -> impl Future<Output = Result<OAuthRefreshCoordinatorOutcome, OAuthRefreshCoordinatorError>> + Send
-    {
+    ) -> Result<OAuthRefreshCoordinatorOutcome, OAuthRefreshCoordinatorError> {
         let result = self.results[candidate];
-        let active = Arc::clone(&self.active);
-        let max_active = Arc::clone(&self.max_active);
-        let barrier = Arc::clone(&self.barrier);
-        async move {
-            let current = active.fetch_add(1, Ordering::AcqRel) + 1;
-            max_active.fetch_max(current, Ordering::AcqRel);
-            barrier.wait().await;
-            active.fetch_sub(1, Ordering::AcqRel);
-            result
-        }
+        let current = self.active.fetch_add(1, Ordering::AcqRel) + 1;
+        self.max_active.fetch_max(current, Ordering::AcqRel);
+        self.barrier.wait().await;
+        self.active.fetch_sub(1, Ordering::AcqRel);
+        result
     }
 }
 
@@ -368,18 +353,14 @@ struct BlockingRunner {
 }
 
 impl OAuthRefreshCandidateRunner<usize> for BlockingRunner {
-    fn refresh(
+    async fn refresh(
         &self,
         _candidate: usize,
-    ) -> impl Future<Output = Result<OAuthRefreshCoordinatorOutcome, OAuthRefreshCoordinatorError>> + Send
-    {
-        let started = Arc::clone(&self.started);
+    ) -> Result<OAuthRefreshCoordinatorOutcome, OAuthRefreshCoordinatorError> {
         let guard = DropCounter(Arc::clone(&self.dropped));
-        async move {
-            let _guard = guard;
-            started.notify_one();
-            future::pending().await
-        }
+        let _guard = guard;
+        self.started.notify_one();
+        future::pending().await
     }
 }
 
