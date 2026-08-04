@@ -23,6 +23,10 @@ const RETRY_DELAY: Duration = Duration::from_millis(20);
 pub type PlannedChatExecutionFuture =
     Pin<Box<dyn Future<Output = Result<ChatResponse, AfError>> + Send + 'static>>;
 
+/// 路由计划生成的异步返回类型；Redis 粘性查找必须在计费预扣前完成。
+pub type ChatRoutePlanFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Box<dyn PlannedChatExecution>, AfError>> + Send + 'a>>;
+
 /// 在计费前完成候选、目标分组与运行时目标装配的请求级计划。
 pub trait PlannedChatExecution: Send {
     /// 返回本计划全部候选共同的实际计费分组。
@@ -35,13 +39,13 @@ pub trait PlannedChatExecution: Send {
 /// 为已认证 Chat 请求信封生成不可变路由计划的对象安全端口。
 pub trait ChatRoutePlanner: Send + Sync {
     /// 从当前运行时快照固定候选并完成所有安全装配；本方法不得发送上游请求。
-    fn plan(
-        &self,
-        principal: &GatewayPrincipal,
+    fn plan<'a>(
+        &'a self,
+        principal: &'a GatewayPrincipal,
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
-        request_id: &str,
-    ) -> Result<Box<dyn PlannedChatExecution>, AfError>;
+        request_id: &'a str,
+    ) -> ChatRoutePlanFuture<'a>;
 }
 
 /// 已装配计费依赖的 Chat 服务装饰器。
@@ -91,7 +95,8 @@ impl BillingChatService {
         let model = request.canonical().model.clone();
         let planned = self
             .inner
-            .plan(principal, request, response_protocol, request_id)?;
+            .plan(principal, request, response_protocol, request_id)
+            .await?;
         let source_group_id = principal.group_id();
         let target_group_id = planned.target_group_id();
         let snapshot = self
@@ -317,16 +322,18 @@ mod tests {
     }
 
     impl ChatRoutePlanner for FullStub {
-        fn plan(
-            &self,
-            _principal: &GatewayPrincipal,
+        fn plan<'a>(
+            &'a self,
+            _principal: &'a GatewayPrincipal,
             _request: CanonicalRequestEnvelope,
             _response_protocol: Protocol,
-            _request_id: &str,
-        ) -> Result<Box<dyn PlannedChatExecution>, AfError> {
-            Ok(Box::new(FullExecution {
-                target_group_id: self.target_group_id,
-            }))
+            _request_id: &'a str,
+        ) -> ChatRoutePlanFuture<'a> {
+            Box::pin(async move {
+                Ok(Box::new(FullExecution {
+                    target_group_id: self.target_group_id,
+                }) as Box<dyn PlannedChatExecution>)
+            })
         }
     }
 
@@ -340,17 +347,19 @@ mod tests {
     }
 
     impl ChatRoutePlanner for ProtocolTrackingStub {
-        fn plan(
-            &self,
-            _principal: &GatewayPrincipal,
+        fn plan<'a>(
+            &'a self,
+            _principal: &'a GatewayPrincipal,
             _request: CanonicalRequestEnvelope,
             response_protocol: Protocol,
-            _request_id: &str,
-        ) -> Result<Box<dyn PlannedChatExecution>, AfError> {
+            _request_id: &'a str,
+        ) -> ChatRoutePlanFuture<'a> {
             self.protocols.lock().unwrap().push(response_protocol);
-            Ok(Box::new(FullExecution {
-                target_group_id: self.target_group_id,
-            }))
+            Box::pin(async move {
+                Ok(Box::new(FullExecution {
+                    target_group_id: self.target_group_id,
+                }) as Box<dyn PlannedChatExecution>)
+            })
         }
     }
 
@@ -752,17 +761,21 @@ mod tests {
     }
 
     impl ChatRoutePlanner for SimulatedFailoverStub {
-        fn plan(
-            &self,
-            principal: &GatewayPrincipal,
+        fn plan<'a>(
+            &'a self,
+            principal: &'a GatewayPrincipal,
             _request: CanonicalRequestEnvelope,
             _response_protocol: Protocol,
-            _request_id: &str,
-        ) -> Result<Box<dyn PlannedChatExecution>, AfError> {
-            Ok(Box::new(SimulatedFailoverExecution {
-                target_group_id: principal.group_id(),
-                attempts: self.attempts.clone(),
-            }))
+            _request_id: &'a str,
+        ) -> ChatRoutePlanFuture<'a> {
+            let target_group_id = principal.group_id();
+            let attempts = self.attempts.clone();
+            Box::pin(async move {
+                Ok(Box::new(SimulatedFailoverExecution {
+                    target_group_id,
+                    attempts,
+                }) as Box<dyn PlannedChatExecution>)
+            })
         }
     }
 

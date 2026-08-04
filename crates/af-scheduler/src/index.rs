@@ -1128,6 +1128,63 @@ mod tests {
         assert!(!format!("{route:?}").contains("gpt-route"));
     }
 
+    #[test]
+    fn sticky_channel_moves_first_and_exposes_short_then_fallback_waits() {
+        let snapshot = ChannelIndexSnapshot::from_records(
+            vec![
+                record(7, "gpt-sticky", 1, 10, 1),
+                record(7, "gpt-sticky", 2, 0, 1),
+            ],
+            12,
+        )
+        .unwrap();
+        let index = InMemoryChannelIndex {
+            inner: Arc::new(InMemoryChannelIndexInner {
+                source: Arc::new(SequenceSource::new(Vec::new())),
+                snapshot: RwLock::new(Arc::new(snapshot)),
+                refresh_gate: tokio::sync::Mutex::new(()),
+            }),
+        };
+        let mut route = IndexedWeightedScheduler::new(index)
+            .route_plan(GroupId::new(7).unwrap(), "gpt-sticky")
+            .unwrap()
+            .unwrap();
+        let policy = StickyWaitPolicy::new(
+            std::time::Duration::from_secs(1),
+            std::time::Duration::from_secs(10),
+        )
+        .unwrap();
+
+        assert_eq!(
+            route.prefer_sticky_channel(ChannelId::new(2).unwrap(), policy),
+            StickyRouteOutcome::Applied
+        );
+        assert_eq!(
+            route.candidates()[0].channel_id(),
+            ChannelId::new(2).unwrap()
+        );
+        assert_eq!(
+            route.candidates()[0].wait_plan().kind(),
+            RouteWaitKind::Sticky
+        );
+        assert_eq!(
+            route.candidates()[0].wait_plan().timeout(),
+            std::time::Duration::from_secs(1)
+        );
+        assert_eq!(
+            route.candidates()[1].wait_plan().kind(),
+            RouteWaitKind::Fallback
+        );
+        assert_eq!(
+            route.candidates()[1].wait_plan().timeout(),
+            std::time::Duration::from_secs(10)
+        );
+        assert_eq!(
+            route.prefer_sticky_channel(ChannelId::new(99).unwrap(), policy),
+            StickyRouteOutcome::Unavailable
+        );
+    }
+
     fn record(
         group_id: i64,
         model: &str,

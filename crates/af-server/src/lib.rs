@@ -22,11 +22,13 @@ mod scheduled_chat;
 mod scheduler_invalidation;
 mod shutdown;
 mod smtp_delivery;
+mod sticky_session;
 mod supervisor;
 mod utc_time;
 
 pub use billing_chat::{
-    BillingChatService, ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture,
+    BillingChatService, ChatRoutePlanFuture, ChatRoutePlanner, PlannedChatExecution,
+    PlannedChatExecutionFuture,
 };
 pub use billing_runtime::{BillingFlushReport, BillingRuntime, BillingRuntimeError};
 pub use bootstrap::{
