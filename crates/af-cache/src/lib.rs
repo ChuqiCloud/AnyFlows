@@ -13,6 +13,7 @@ mod local;
 mod projection;
 mod redis_backend;
 mod remote;
+mod sticky;
 
 use std::sync::Arc;
 
@@ -34,6 +35,7 @@ pub use projection::{
     ProjectionWriteOutcome, RedisProjectionConfig, RedisProjectionEntry,
     RedisVersionedProjectionStore,
 };
+pub use sticky::{DEFAULT_STICKY_SESSION_TTL, RedisStickySessionConfig, RedisStickySessionStore};
 
 /// 缓存统一存储字节，由调用方负责稳定的编码版本。
 pub type CacheValue = Arc<[u8]>;

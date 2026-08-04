@@ -33,6 +33,11 @@ impl RetrySelection {
     pub const fn priority_rank(self) -> usize {
         self.priority_rank
     }
+
+    /// 按路由重排后的实际候选位置更新尝试序号；优先级层仍保留 weighted 基线。
+    pub(crate) const fn with_attempt(self, attempt: NonZeroUsize) -> Self {
+        Self { attempt, ..self }
+    }
 }
 
 /// 构造或推进 weighted 失败重试计划时的安全错误。

@@ -1,5 +1,15 @@
-use std::{fmt, fmt::Write as _};
+use std::{fmt, sync::Arc};
 
+use crate::{
+    ChatRoutePlanFuture, ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture,
+    adaptor_credential::build_adaptor_credential,
+    credential_feedback::{CredentialAttemptTarget, persist_credential_feedback},
+    credential_order::order_credentials,
+    responses_websocket_runtime::ResponsesWebSocketRuntime,
+    sticky_session::{
+        StableSessionScope, StickySessionStore, stable_session_scope, sticky_cache_error_kind,
+    },
+};
 use af_account::CredentialDecryptor;
 use af_adapter::{
     AdaptorSettings, AnthropicAdaptorSettings, GeminiAdaptorSettings, HeaderMap, HeaderName,
@@ -18,15 +28,9 @@ use af_relay::{
     relay_anthropic_with_report, relay_gemini_with_report, relay_openai_chat_with_report,
     relay_openai_responses_with_report,
 };
-use af_scheduler::{IndexedRoutePlan, IndexedWeightedScheduler, IndexedWeightedSchedulerError};
-use sha2::{Digest, Sha256};
-
-use crate::{
-    ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture,
-    adaptor_credential::build_adaptor_credential,
-    credential_feedback::{CredentialAttemptTarget, persist_credential_feedback},
-    credential_order::order_credentials,
-    responses_websocket_runtime::ResponsesWebSocketRuntime,
+use af_scheduler::{
+    IndexedRoutePlan, IndexedWeightedScheduler, IndexedWeightedSchedulerError, StickyRouteOutcome,
+    StickyWaitPolicy,
 };
 
 /// 基于内存运行时快照装配生产原生协议候选的服务。
@@ -37,6 +41,8 @@ pub(crate) struct ScheduledChatService {
     clients: HttpClientProvider,
     credential_states: CredentialStateRepository,
     responses_websocket: std::sync::Arc<ResponsesWebSocketRuntime>,
+    sticky_sessions: Option<Arc<dyn StickySessionStore>>,
+    sticky_wait_policy: StickyWaitPolicy,
 }
 
 impl ScheduledChatService {
@@ -54,7 +60,20 @@ impl ScheduledChatService {
             clients,
             credential_states,
             responses_websocket: std::sync::Arc::new(ResponsesWebSocketRuntime::default()),
+            sticky_sessions: None,
+            sticky_wait_policy: StickyWaitPolicy::default(),
         }
+    }
+
+    /// 注入可选 Redis 粘性存储；未配置时继续使用非粘性路由。
+    pub(crate) fn with_sticky_sessions(
+        mut self,
+        store: Arc<dyn StickySessionStore>,
+        policy: StickyWaitPolicy,
+    ) -> Self {
+        self.sticky_sessions = Some(store);
+        self.sticky_wait_policy = policy;
+        self
     }
 
     fn build_plan(
@@ -63,12 +82,11 @@ impl ScheduledChatService {
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &str,
-        principal: GatewayPrincipal,
+        upstream_protocol: Protocol,
+        session_scope: Option<StableSessionScope>,
     ) -> Result<ScheduledChatExecution, AfError> {
         let model = request.canonical().model.clone();
-        let upstream_protocol = select_upstream_protocol(&route, &request, response_protocol)?;
-        let responses_websocket_session =
-            responses_websocket_session_scope(principal, request.canonical());
+        let responses_websocket_session = session_scope.as_ref().map(StableSessionScope::as_str);
         let target_group_id = route.target_group_id();
         let mut relay_candidates = Vec::with_capacity(
             route
@@ -125,9 +143,13 @@ impl ScheduledChatService {
                 .with_request_id(request_id.to_owned())
                 .map_err(|_| AfError::Internal)?;
             let headers = header_overrides(target)?;
-            for runtime_credential in
-                order_credentials(request_id, target.channel_id(), target.credentials())
-            {
+            for runtime_credential in order_credentials(
+                session_scope
+                    .as_ref()
+                    .map_or(request_id, StableSessionScope::as_str),
+                target.channel_id(),
+                target.credentials(),
+            ) {
                 if relay_candidates.len() == RelayStateMachine::MAX_CANDIDATES {
                     break 'channels;
                 }
@@ -187,25 +209,103 @@ impl ScheduledChatService {
             response_protocol,
             upstream_protocol,
             request_id: request_id.to_owned(),
+            sticky_sessions: self.sticky_sessions.clone(),
+            session_scope,
         })
+    }
+
+    /// 读取粘性绑定并只在当前协议候选中应用；Redis 故障降级为普通路由。
+    async fn apply_sticky_binding(
+        &self,
+        route: &mut IndexedRoutePlan,
+        upstream_protocol: Protocol,
+        session_scope: Option<&StableSessionScope>,
+    ) {
+        let (Some(store), Some(scope)) = (self.sticky_sessions.as_ref(), session_scope) else {
+            return;
+        };
+        let binding = match store.get_and_refresh(scope.as_str()).await {
+            Ok(binding) => binding,
+            Err(error) => {
+                tracing::warn!(
+                    target: "af_server::sticky_session",
+                    error_kind = sticky_cache_error_kind(&error),
+                    "读取粘性会话失败，当前请求降级为普通路由"
+                );
+                return;
+            }
+        };
+        let Some(channel_id) = binding.and_then(|value| af_domain::ChannelId::new(value).ok())
+        else {
+            return;
+        };
+        let available = route.candidates().iter().any(|candidate| {
+            candidate.channel_id() == channel_id
+                && target_matches_protocol(candidate.runtime_target(), upstream_protocol)
+        });
+        if !available {
+            if self.sticky_wait_policy.clear_unavailable_binding()
+                && let Err(error) = store
+                    .delete_if_channel(scope.as_str(), channel_id.get())
+                    .await
+            {
+                tracing::warn!(
+                    target: "af_server::sticky_session",
+                    error_kind = sticky_cache_error_kind(&error),
+                    "清理失效粘性会话失败，当前请求继续使用普通路由"
+                );
+            }
+            return;
+        }
+        if matches!(
+            route.prefer_sticky_channel(channel_id, self.sticky_wait_policy),
+            StickyRouteOutcome::Unavailable
+        ) {
+            // 当前快照在检查与重排之间只能被本地值修改；失败时保持普通候选顺序。
+            if self.sticky_wait_policy.clear_unavailable_binding()
+                && let Err(error) = store
+                    .delete_if_channel(scope.as_str(), channel_id.get())
+                    .await
+            {
+                tracing::warn!(
+                    target: "af_server::sticky_session",
+                    error_kind = sticky_cache_error_kind(&error),
+                    "条件删除失效粘性会话失败"
+                );
+            }
+        }
     }
 }
 
 impl ChatRoutePlanner for ScheduledChatService {
-    fn plan(
-        &self,
-        principal: &GatewayPrincipal,
+    fn plan<'a>(
+        &'a self,
+        principal: &'a GatewayPrincipal,
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
-        request_id: &str,
-    ) -> Result<Box<dyn PlannedChatExecution>, AfError> {
-        let route = self
-            .scheduler
-            .route_plan(principal.group_id(), &request.canonical().model)
-            .map_err(map_scheduler_error)?
-            .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?;
-        self.build_plan(route, request, response_protocol, request_id, *principal)
+        request_id: &'a str,
+    ) -> ChatRoutePlanFuture<'a> {
+        Box::pin(async move {
+            let mut route = self
+                .scheduler
+                .route_plan(principal.group_id(), &request.canonical().model)
+                .map_err(map_scheduler_error)?
+                .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?;
+            let upstream_protocol = select_upstream_protocol(&route, &request, response_protocol)?;
+            route.configure_wait_policy(self.sticky_wait_policy);
+            let session_scope = stable_session_scope(*principal, request.canonical());
+            self.apply_sticky_binding(&mut route, upstream_protocol, session_scope.as_ref())
+                .await;
+            self.build_plan(
+                route,
+                request,
+                response_protocol,
+                request_id,
+                upstream_protocol,
+                session_scope,
+            )
             .map(|plan| Box::new(plan) as Box<dyn PlannedChatExecution>)
+        })
     }
 }
 
@@ -218,6 +318,8 @@ impl fmt::Debug for ScheduledChatService {
             .field("clients", &"<受控>")
             .field("credential_states", &self.credential_states)
             .field("responses_websocket", &self.responses_websocket)
+            .field("sticky_sessions", &self.sticky_sessions.is_some())
+            .field("sticky_wait_policy", &self.sticky_wait_policy)
             .finish()
     }
 }
@@ -232,6 +334,8 @@ struct ScheduledChatExecution {
     response_protocol: Protocol,
     upstream_protocol: Protocol,
     request_id: String,
+    sticky_sessions: Option<Arc<dyn StickySessionStore>>,
+    session_scope: Option<StableSessionScope>,
 }
 
 impl PlannedChatExecution for ScheduledChatExecution {
@@ -250,6 +354,8 @@ impl PlannedChatExecution for ScheduledChatExecution {
             response_protocol,
             upstream_protocol,
             request_id,
+            sticky_sessions,
+            session_scope,
         } = *self;
         Box::pin(async move {
             let operation = request.canonical().operation;
@@ -276,8 +382,28 @@ impl PlannedChatExecution for ScheduledChatExecution {
                 }
                 _ => return Err(AfError::InvalidRequest),
             };
+            let successful_channel_id = report
+                .successful_candidate_index()
+                .and_then(|index| attempt_targets.get(index))
+                .map(CredentialAttemptTarget::channel_id)
+                .map(af_domain::ChannelId::get);
             persist_credential_feedback(&credential_states, &scheduler, &attempt_targets, &report)
                 .await;
+            if result.is_ok() {
+                if let (Some(store), Some(scope), Some(channel_id)) = (
+                    sticky_sessions.as_ref(),
+                    session_scope.as_ref(),
+                    successful_channel_id,
+                ) {
+                    if let Err(error) = store.bind(scope.as_str(), channel_id).await {
+                        tracing::warn!(
+                            target: "af_server::sticky_session",
+                            error_kind = sticky_cache_error_kind(&error),
+                            "写入粘性会话绑定失败，当前响应继续返回"
+                        );
+                    }
+                }
+            }
             result
         })
     }
@@ -437,45 +563,7 @@ fn responses_websocket_session_scope(
     principal: GatewayPrincipal,
     request: &af_protocol::CanonicalRequest,
 ) -> Option<String> {
-    let (kind, value) = request
-        .metadata
-        .session_id()
-        .filter(|value| !value.is_empty())
-        .map(|value| (b's', value))
-        .or_else(|| {
-            request
-                .continuation
-                .conversation_id()
-                .filter(|value| !value.is_empty())
-                .map(|value| (b'c', value))
-        })
-        .or_else(|| {
-            request
-                .continuation
-                .prompt_cache_key()
-                .filter(|value| !value.is_empty())
-                .map(|value| (b'p', value))
-        })
-        .or_else(|| {
-            request
-                .metadata
-                .user_id()
-                .filter(|value| !value.is_empty())
-                .map(|value| (b'u', value))
-        })?;
-
-    let mut digest = Sha256::new();
-    digest.update(b"AnyFlows:responses-websocket-scope:v1\0");
-    digest.update(principal.token_id().get().to_be_bytes());
-    digest.update([kind]);
-    digest.update(u32::try_from(value.len()).unwrap_or(u32::MAX).to_be_bytes());
-    digest.update(value.as_bytes());
-    let digest = digest.finalize();
-    let mut encoded = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        write!(&mut encoded, "{byte:02x}").expect("写入 String 不会失败");
-    }
-    Some(encoded)
+    stable_session_scope(principal, request).map(|scope| scope.as_str().to_owned())
 }
 
 #[cfg(test)]
@@ -558,6 +646,7 @@ mod tests {
 
         let plan = service
             .plan(&principal, request(), Protocol::OpenAiChat, "request-plan")
+            .await
             .unwrap();
 
         assert_eq!(plan.target_group_id(), GroupId::new(7).unwrap());
@@ -598,7 +687,8 @@ mod tests {
                 request(),
                 Protocol::OpenAiChat,
                 "request-key-pool",
-                principal(7),
+                Protocol::OpenAiChat,
+                None,
             )
             .unwrap();
 
@@ -620,7 +710,8 @@ mod tests {
                 request(),
                 Protocol::Anthropic,
                 "request-anthropic",
-                principal(7),
+                Protocol::Anthropic,
+                None,
             )
             .unwrap();
 
@@ -644,7 +735,8 @@ mod tests {
                 request(),
                 Protocol::Anthropic,
                 "request-anthropic-fallback",
-                principal(7),
+                Protocol::OpenAiChat,
+                None,
             )
             .unwrap();
 
@@ -671,7 +763,8 @@ mod tests {
                 request(),
                 Protocol::Gemini,
                 "request-gemini-native",
-                principal(7),
+                Protocol::Gemini,
+                None,
             )
             .unwrap();
         assert_eq!(execution.response_protocol, Protocol::Gemini);
@@ -690,7 +783,8 @@ mod tests {
                 request(),
                 Protocol::Gemini,
                 "request-gemini-fallback",
-                principal(7),
+                Protocol::OpenAiChat,
+                None,
             )
             .unwrap();
         assert_eq!(execution.response_protocol, Protocol::Gemini);
@@ -710,6 +804,7 @@ mod tests {
                     Protocol::OpenAiChat,
                     "request-openai-client",
                 )
+                .await
                 .err(),
             Some(AfError::Upstream(UpstreamError::ModelUnsupported))
         );
@@ -727,6 +822,7 @@ mod tests {
                     Protocol::OpenAiChat,
                     "request-openai-gemini-upstream",
                 )
+                .await
                 .err(),
             Some(AfError::Upstream(UpstreamError::ModelUnsupported))
         );
@@ -757,7 +853,8 @@ mod tests {
                 responses_request(),
                 Protocol::OpenAiResponses,
                 "request-responses",
-                principal(7),
+                Protocol::OpenAiResponses,
+                None,
             )
             .unwrap();
         assert_eq!(execution.response_protocol, Protocol::OpenAiResponses);
@@ -772,6 +869,7 @@ mod tests {
                     Protocol::OpenAiResponses,
                     "request-wrong-protocol",
                 )
+                .await
                 .err(),
             Some(AfError::Upstream(UpstreamError::ModelUnsupported))
         );
@@ -784,6 +882,7 @@ mod tests {
         assert_eq!(
             empty
                 .plan(&principal, request(), Protocol::OpenAiChat, "request-empty",)
+                .await
                 .err(),
             Some(AfError::Upstream(UpstreamError::ModelUnsupported))
         );
@@ -792,6 +891,7 @@ mod tests {
         assert_eq!(
             proxy_required
                 .plan(&principal, request(), Protocol::OpenAiChat, "request-proxy",)
+                .await
                 .err(),
             Some(AfError::Internal)
         );
@@ -806,6 +906,7 @@ mod tests {
                     Protocol::OpenAiChat,
                     "request-decrypt",
                 )
+                .await
                 .err(),
             Some(AfError::Internal)
         );

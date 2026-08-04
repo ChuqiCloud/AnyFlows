@@ -8,6 +8,7 @@ mod failure;
 mod index;
 mod probe;
 mod retry;
+mod sticky;
 mod weighted;
 
 pub use auto_ban::{
@@ -40,6 +41,9 @@ pub use probe::{
     DEFAULT_CHANNEL_PROBE_TIMEOUT,
 };
 pub use retry::{RetrySelection, WeightedRetryPlan, WeightedRetryPlanError};
+pub use sticky::{
+    RouteWaitKind, RouteWaitPlan, StickyRouteOutcome, StickyWaitPolicy, StickyWaitPolicyError,
+};
 pub use weighted::{
     MAX_SCHEDULER_CANDIDATES, WEIGHT_BASE, WeightedSelection, WeightedSelectionError,
     WeightedStrategy,
