@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt, future::Future, pin::Pin, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, fmt, future::Future, sync::Arc, time::Duration};
 
 use af_cache::{
     CacheError, ConcurrencyAcquireOutcome, ConcurrencyLeaseOutcome, ConcurrencyWaitOutcome,
@@ -119,7 +119,7 @@ impl ConcurrencyRuntime {
         let Some(limit) = target.limit() else {
             return Err(ConcurrencyRuntimeError::Internal);
         };
-        let mut waiting = self
+        let waiting = self
             .enter_wait(target, concurrency_wait_queue_limit(limit))
             .await?;
         let deadline = Instant::now() + timeout;

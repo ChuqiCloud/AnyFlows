@@ -28,7 +28,7 @@ use af_domain::{
 use af_httpclient::HttpClientProvider;
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::{
-    AnthropicRequestOverrides, GeminiRequestOverrides, OpenAiChatRequestOverrides,
+    AnthropicRequestOverrides, ChatResponse, GeminiRequestOverrides, OpenAiChatRequestOverrides,
     OpenAiResponsesRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayStateMachine,
     relay_anthropic_with_report, relay_gemini_with_report, relay_openai_chat_with_report,
     relay_openai_responses_with_report,
