@@ -276,9 +276,13 @@ mod tests {
 
     #[test]
     fn health_feedback_is_dual_level_and_skips_bad_request() {
-        let target =
-            CredentialAttemptTarget::new(ChannelId::new(7).unwrap(), 9, CredentialKind::ApiKey)
-                .unwrap();
+        let target = CredentialAttemptTarget::new(
+            ChannelId::new(7).unwrap(),
+            9,
+            CredentialKind::ApiKey,
+            false,
+        )
+        .unwrap();
         assert_eq!(health_failure(UpstreamError::BadRequest), None);
         assert_eq!(
             health_failure(UpstreamError::ServerError {

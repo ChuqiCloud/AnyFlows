@@ -5,8 +5,8 @@ use af_db::{
 use af_domain::{AfError, ChannelId, CredentialId, CredentialKind, UpstreamError};
 use af_relay::RelayAttemptReport;
 use af_scheduler::{
-    CredentialFailureDisposition, IndexedWeightedScheduler, PermanentCredentialFailure,
-    TemporaryCredentialFailure, credential_failure_disposition,
+    CredentialFailureContext, CredentialFailureDisposition, IndexedWeightedScheduler,
+    PermanentCredentialFailure, TemporaryCredentialFailure, credential_failure_disposition,
 };
 
 /// 与 Relay 候选索引一一对应的脱敏凭据身份。
@@ -15,19 +15,23 @@ pub(crate) struct CredentialAttemptTarget {
     channel_id: ChannelId,
     credential_id: CredentialId,
     credential_kind: CredentialKind,
+    oauth_has_refresh_token: bool,
 }
 
 impl CredentialAttemptTarget {
-    /// 校验凭据标识后构造候选反馈目标。
+    /// 校验凭据标识并收敛非敏感 OAuth 恢复能力后构造候选反馈目标。
     pub(crate) fn new(
         channel_id: ChannelId,
         credential_id: i64,
         credential_kind: CredentialKind,
+        oauth_has_refresh_token: bool,
     ) -> Result<Self, AfError> {
         Ok(Self {
             channel_id,
             credential_id: CredentialId::new(credential_id).map_err(|_| AfError::Internal)?,
             credential_kind,
+            oauth_has_refresh_token: matches!(credential_kind, CredentialKind::Oauth)
+                && oauth_has_refresh_token,
         })
     }
 
@@ -39,6 +43,11 @@ impl CredentialAttemptTarget {
     /// 返回与 Relay 候选对应的凭据标识，供健康反馈与调权使用。
     pub(crate) const fn credential_id(&self) -> CredentialId {
         self.credential_id
+    }
+
+    /// 返回凭据状态策略所需的非敏感恢复上下文。
+    pub(crate) const fn failure_context(&self) -> CredentialFailureContext {
+        CredentialFailureContext::new(self.credential_kind, self.oauth_has_refresh_token)
     }
 }
 
@@ -85,13 +94,11 @@ fn feedback_events(
     );
     let mut refresh_required = false;
     for failure in report.failures() {
-        let Some(change) = change_for_error(failure.error()) else {
+        let target = *targets.get(failure.candidate_index())?;
+        let Some(change) = change_for_error(target, failure.error()) else {
             continue;
         };
-        events.push(state_event(
-            *targets.get(failure.candidate_index())?,
-            change,
-        )?);
+        events.push(state_event(target, change)?);
         refresh_required = true;
     }
     if let Some(index) = report.successful_candidate_index() {
@@ -116,8 +123,11 @@ fn state_event(
     .ok()
 }
 
-const fn change_for_error(error: UpstreamError) -> Option<CredentialStateChange> {
-    match credential_failure_disposition(error) {
+const fn change_for_error(
+    target: CredentialAttemptTarget,
+    error: UpstreamError,
+) -> Option<CredentialStateChange> {
+    match credential_failure_disposition(error, target.failure_context()) {
         CredentialFailureDisposition::NoChange => None,
         CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::AuthExpired) => {
             Some(CredentialStateChange::AuthExpired)
@@ -136,6 +146,9 @@ const fn change_for_error(error: UpstreamError) -> Option<CredentialStateChange>
         CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::Overloaded {
             retry_after,
         }) => Some(CredentialStateChange::Overloaded { retry_after }),
+        CredentialFailureDisposition::Permanent(
+            PermanentCredentialFailure::MissingRefreshToken,
+        ) => Some(CredentialStateChange::MissingRefreshToken),
         CredentialFailureDisposition::Permanent(PermanentCredentialFailure::AuthRevoked) => {
             Some(CredentialStateChange::AuthRevoked)
         }
@@ -172,6 +185,7 @@ mod tests {
 
     #[test]
     fn only_credential_health_errors_produce_state_changes() {
+        let target = target(CredentialKind::ApiKey, false);
         let cases = [
             (
                 UpstreamError::AuthExpired,
@@ -217,7 +231,45 @@ mod tests {
             ),
         ];
         for (error, expected) in cases {
-            assert_eq!(change_for_error(error), expected);
+            assert_eq!(change_for_error(target, error), expected);
         }
+    }
+
+    #[test]
+    fn oauth_auth_expiry_uses_only_the_refresh_capability_bit() {
+        assert_eq!(
+            change_for_error(
+                target(CredentialKind::Oauth, false),
+                UpstreamError::AuthExpired,
+            ),
+            Some(CredentialStateChange::MissingRefreshToken)
+        );
+        assert_eq!(
+            change_for_error(
+                target(CredentialKind::Oauth, true),
+                UpstreamError::AuthExpired,
+            ),
+            Some(CredentialStateChange::AuthExpired)
+        );
+        assert_eq!(
+            change_for_error(
+                target(CredentialKind::ApiKey, false),
+                UpstreamError::AuthExpired,
+            ),
+            Some(CredentialStateChange::AuthExpired)
+        );
+    }
+
+    fn target(
+        credential_kind: CredentialKind,
+        oauth_has_refresh_token: bool,
+    ) -> CredentialAttemptTarget {
+        CredentialAttemptTarget::new(
+            ChannelId::new(7).unwrap(),
+            9,
+            credential_kind,
+            oauth_has_refresh_token,
+        )
+        .unwrap()
     }
 }

@@ -380,6 +380,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(runtime.expose_secret(), "access-private");
+        assert!(runtime.oauth_has_refresh_token());
         let rendered = format!("{secret:?}{oauth:?}{runtime:?}{envelope:?}");
         for private in [
             "access-private",

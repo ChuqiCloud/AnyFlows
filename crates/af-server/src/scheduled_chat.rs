@@ -244,6 +244,7 @@ impl ScheduledChatService {
                         runtime_credential.envelope(),
                     )
                     .map_err(|_| AfError::Internal)?;
+                let oauth_has_refresh_token = decrypted.oauth_has_refresh_token();
                 let credential =
                     build_adaptor_credential(&decrypted).map_err(|_| AfError::Internal)?;
                 let mut relay_candidate =
@@ -280,6 +281,7 @@ impl ScheduledChatService {
                     target.channel_id(),
                     runtime_credential.credential_id(),
                     runtime_credential.credential_kind(),
+                    oauth_has_refresh_token,
                 )?);
             }
         }
@@ -996,6 +998,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn plan_carries_only_oauth_refresh_capability_into_feedback() {
+        for (oauth_has_refresh_token, marker) in [(false, 0x26), (true, 0x27)] {
+            let credential = SchedulerRuntimeCredentialRecord::new(
+                CREDENTIAL_ID,
+                CredentialKind::Oauth,
+                valid_oauth_envelope(oauth_has_refresh_token, marker),
+                false,
+            )
+            .unwrap();
+            let service = service(vec![record_pool(vec![credential])]).await;
+            let route = service
+                .scheduler
+                .route_plan(GroupId::new(7).unwrap(), "gpt-scheduled")
+                .unwrap()
+                .unwrap();
+
+            let execution = service
+                .build_plan(
+                    route,
+                    request(),
+                    Protocol::OpenAiChat,
+                    "request-oauth-refresh-capability",
+                    Protocol::OpenAiChat,
+                    None,
+                    PreparedConcurrencyPlan::disabled(),
+                )
+                .unwrap();
+
+            assert_eq!(execution.attempt_targets.len(), 1);
+            let context = execution.attempt_targets[0].failure_context();
+            assert_eq!(context.credential_kind(), CredentialKind::Oauth);
+            assert_eq!(context.oauth_has_refresh_token(), oauth_has_refresh_token);
+            let rendered = format!("{:?}", execution.attempt_targets);
+            assert!(!rendered.contains("access-private"));
+            assert!(!rendered.contains("refresh-private"));
+        }
+    }
+
+    #[tokio::test]
     async fn plan_pins_the_client_response_protocol_for_execution() {
         let service = service(vec![anthropic_record(valid_envelope())]).await;
         let route = service
@@ -1429,6 +1470,32 @@ mod tests {
     }
 
     fn valid_envelope_for(credential_id: i64, marker: u8) -> EncryptedCredentialEnvelope {
+        encrypted_envelope_for(
+            credential_id,
+            marker,
+            CredentialKind::ApiKey,
+            br#"{"kind":"api_key","api_key":"scheduled-secret"}"#,
+        )
+    }
+
+    fn valid_oauth_envelope(
+        oauth_has_refresh_token: bool,
+        marker: u8,
+    ) -> EncryptedCredentialEnvelope {
+        let plaintext: &[u8] = if oauth_has_refresh_token {
+            br#"{"kind":"oauth","access_token":"access-private","refresh_token":"refresh-private"}"#
+        } else {
+            br#"{"kind":"oauth","access_token":"access-private"}"#
+        };
+        encrypted_envelope_for(CREDENTIAL_ID, marker, CredentialKind::Oauth, plaintext)
+    }
+
+    fn encrypted_envelope_for(
+        credential_id: i64,
+        marker: u8,
+        credential_kind: CredentialKind,
+        plaintext: &[u8],
+    ) -> EncryptedCredentialEnvelope {
         let key = [0x42; CREDENTIAL_ENCRYPTION_KEY_BYTES];
         let nonce = [marker; 24];
         let cipher = XChaCha20Poly1305::new_from_slice(&key).unwrap();
@@ -1436,11 +1503,11 @@ mod tests {
             .encrypt(
                 XNonce::from_slice(&nonce),
                 Payload {
-                    msg: br#"{"kind":"api_key","api_key":"scheduled-secret"}"#,
+                    msg: plaintext,
                     aad: &credential_plaintext_aad(
                         ChannelId::new(CHANNEL_ID).unwrap(),
                         credential_id,
-                        CredentialKind::ApiKey,
+                        credential_kind,
                     ),
                 },
             )

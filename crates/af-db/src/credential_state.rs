@@ -27,6 +27,8 @@ pub enum CredentialStateChange {
     Succeeded,
     /// 未能确认永久失效的认证错误，进入有限冷却。
     AuthExpired,
+    /// OAuth 认证已失效且没有 refresh token，无法自动恢复。
+    MissingRefreshToken,
     /// 上游结构化信号确认凭据已经吊销。
     AuthRevoked,
     /// 上游结构化信号确认账号、组织或工作区已经停用。
@@ -62,10 +64,13 @@ impl CredentialStateEvent {
         credential_kind: CredentialKind,
         change: CredentialStateChange,
     ) -> Result<Self, CredentialStateRepositoryError> {
-        if !matches!(
+        let supported_kind = matches!(
             credential_kind,
             CredentialKind::ApiKey | CredentialKind::Oauth
-        ) {
+        );
+        let invalid_missing_refresh = matches!(change, CredentialStateChange::MissingRefreshToken)
+            && !matches!(credential_kind, CredentialKind::Oauth);
+        if !supported_kind || invalid_missing_refresh {
             return Err(CredentialStateRepositoryError::InvalidEvent);
         }
         Ok(Self {
@@ -241,7 +246,9 @@ async fn apply_event(
         Status::try_from(model.status).map_err(|_| CredentialStateRepositoryError::Invariant)?;
     if matches!(
         event.change,
-        CredentialStateChange::AuthRevoked | CredentialStateChange::AccountDisabled
+        CredentialStateChange::MissingRefreshToken
+            | CredentialStateChange::AuthRevoked
+            | CredentialStateChange::AccountDisabled
     ) && status != Status::Enabled
     {
         // 并发人工停用优先于运行时自动停用，已自动停用也无需重复写入。
@@ -262,7 +269,9 @@ async fn apply_event(
             active.temp_unschedulable_until = Set(Some(now + AUTH_EXPIRED_COOLDOWN));
             active.temp_unschedulable_reason = Set(Some("auth_expired".to_owned()));
         }
-        CredentialStateChange::AuthRevoked | CredentialStateChange::AccountDisabled => {
+        CredentialStateChange::MissingRefreshToken
+        | CredentialStateChange::AuthRevoked
+        | CredentialStateChange::AccountDisabled => {
             active.status = Set(Status::AutoDisabled.code());
             active.rate_limited_at = Set(None);
             active.rate_limit_reset_at = Set(None);
