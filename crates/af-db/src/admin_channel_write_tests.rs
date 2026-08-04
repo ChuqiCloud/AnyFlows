@@ -81,6 +81,94 @@ async fn channel_create_and_update_preserve_runtime_totals() -> Result<(), Box<d
 }
 
 #[tokio::test]
+async fn responses_websocket_toggle_preserves_unknown_sensitive_settings()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let create = AdminChannelWriteRecord::new(
+        "responses".to_owned(),
+        ChannelType::OpenAi,
+        Protocol::OpenAiResponses,
+        Some("https://api.example.com/v1".to_owned()),
+        Some(af_domain::ChannelTimeout::new(60).unwrap()),
+        Status::Enabled,
+        10,
+        20,
+        true,
+        Vec::new(),
+        Vec::new(),
+        serde_json::json!({}),
+        serde_json::json!({}),
+        serde_json::json!({}),
+        serde_json::json!({"private_setting": "private-setting-value"}),
+        None,
+    )
+    .with_responses_websocket_enabled(true);
+    let created = fixture.repository.create_channel(create).await?;
+    assert!(created.responses_websocket_enabled());
+
+    // 显式结构化开关必须能够修复旧版本留下的非法受控值，同时保留未知设置。
+    execute(
+        &fixture,
+        "UPDATE channels SET settings = ? WHERE id = ?",
+        [
+            serde_json::json!({
+                "responses_websocket_enabled": "invalid",
+                "private_setting": "private-setting-value"
+            })
+            .into(),
+            created.channel_id().get().into(),
+        ],
+    )
+    .await?;
+
+    let update = AdminChannelWriteRecord::new_update(
+        "responses".to_owned(),
+        ChannelType::OpenAi,
+        Protocol::OpenAiResponses,
+        Some("https://api.example.com/v1".to_owned()),
+        Some(af_domain::ChannelTimeout::new(60).unwrap()),
+        Status::Enabled,
+        10,
+        20,
+        true,
+        Vec::new(),
+        Vec::new(),
+        serde_json::json!({}),
+        serde_json::json!({}),
+        None,
+        None,
+        None,
+    )
+    .with_responses_websocket_enabled(false);
+    let AdminChannelMutationOutcome::Mutated(updated) = fixture
+        .repository
+        .update_channel(created.channel_id(), update)
+        .await?
+    else {
+        panic!("有效 Responses 渠道必须完成更新");
+    };
+    assert!(!updated.responses_websocket_enabled());
+    let (_, settings) = channel_sensitive_fields(&fixture, created.channel_id()).await?;
+    let settings: serde_json::Value = serde_json::from_str(&settings)?;
+    assert_eq!(settings["private_setting"], "private-setting-value");
+    assert!(settings.get("responses_websocket_enabled").is_none());
+
+    let invalid =
+        channel_record("chat", "https://api.example.com/v1").with_responses_websocket_enabled(true);
+    assert_eq!(
+        fixture
+            .repository
+            .create_channel(invalid)
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidInput
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn credential_create_uses_real_id_and_failure_rolls_back() -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
     let channel_id = create_channel(&fixture).await?;

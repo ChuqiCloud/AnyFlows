@@ -1,11 +1,12 @@
 use std::fmt;
 
 use af_domain::{ChannelType, Operation, Protocol};
-use af_httpclient::{Body, HeaderMap};
+use af_httpclient::HeaderMap;
 use async_trait::async_trait;
 
 use crate::{
-    AdaptorResult, Credential, RelayContext, ResponseMode, UpstreamRequest, UpstreamResponse,
+    AdaptorResult, Credential, RelayContext, ResponseMode, TransportDispatcher, UpstreamRequest,
+    UpstreamResponse,
 };
 
 /// 适配器构造上游 URL 所需的最小请求目标投影。
@@ -105,10 +106,10 @@ pub trait Adaptor: Send + Sync {
     }
 }
 
-/// 为所有适配器统一提供不可覆盖的受控 HTTP 发送能力。
+/// 为所有适配器统一提供不可覆盖的默认 HTTP 发送能力。
 ///
-/// WebSocket 等非 HTTP 传输必须在后续切片通过受限 transport hook 接入统一
-/// dispatcher，不得在适配器实现中自建绕过超时与取消传播的发送路径。
+/// 生产 Relay 可显式装配 [`TransportDispatcher`] 选择受控特殊传输；直接调用本扩展
+/// 始终保持 HTTP，避免适配器根据正文或供应商名称隐式改变传输语义。
 #[async_trait]
 pub trait AdaptorSendExt: Adaptor {
     /// 发起上游请求；默认完整收集响应，显式流模式才保留背压与取消传播。
@@ -129,15 +130,7 @@ where
         request: UpstreamRequest,
         context: &RelayContext,
     ) -> AdaptorResult<UpstreamResponse> {
-        let (method, target, headers, body, response_mode) = request.into_parts();
-        let response = context
-            .http_client()
-            .execute(method, &target, headers, body.map(Body::from))
-            .await?;
-        match response_mode {
-            ResponseMode::Full => UpstreamResponse::from_http_full(response).await,
-            ResponseMode::Stream => UpstreamResponse::from_http_stream(response),
-        }
+        TransportDispatcher::http().send(request, context).await
     }
 }
 

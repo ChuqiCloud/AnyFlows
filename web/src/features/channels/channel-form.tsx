@@ -28,7 +28,7 @@ import { ChannelGroupSelector } from './channel-group-selector'
 import { ChannelKeyValueEditor } from './channel-key-value-editor'
 import { ChannelModelEditor } from './channel-model-editor'
 import { ChannelParameterEditor } from './channel-parameter-editor'
-import { ChannelAdvancedSettings, ChannelHeaderOverrideField } from './channel-sensitive-fields'
+import { ChannelHeaderOverrideField } from './channel-sensitive-fields'
 
 type ChannelFormProps = {
   mode: ChannelEditorMode
@@ -46,7 +46,6 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
     invalidEntries: t('channels.validation.entries'),
     invalidField: t('channels.validation.field'),
     invalidHeader: t('channels.validation.header'),
-    invalidJson: t('channels.validation.json'),
     invalidParameter: t('channels.validation.parameter'),
     invalidRouting: t('channels.validation.routing'),
     invalidTimeout: t('channels.validation.timeout'),
@@ -135,6 +134,9 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                       shouldDirty: true,
                       shouldValidate: true,
                     })
+                    if (nextType !== 'openai' || nextProtocol !== 'openai_responses') {
+                      form.setValue('responsesWebsocketEnabled', false, { shouldDirty: true })
+                    }
                     removeUnsupportedParameters(nextProtocol)
                   }}
                 >
@@ -156,6 +158,9 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                     const nextProtocol = event.target.value as ChannelFormValues['protocol']
                     field.onChange(nextProtocol)
                     removeUnsupportedParameters(nextProtocol)
+                    if (nextProtocol !== 'openai_responses') {
+                      form.setValue('responsesWebsocketEnabled', false, { shouldDirty: true })
+                    }
                   }}
                 >
                   {channelType === 'anthropic' ? (
@@ -190,6 +195,17 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
             <div><Label htmlFor="channel-auto-ban">{t('channels.fields.autoBan')}</Label><p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('channels.form.autoBanHint')}</p></div>
             <Controller control={form.control} name="autoBan" render={({ field }) => <Switch id="channel-auto-ban" checked={field.value} onCheckedChange={field.onChange} />} />
           </div>
+          {channelType === 'openai' && protocol === 'openai_responses' ? (
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--hairline)] px-3 py-2.5">
+              <div>
+                <Label htmlFor="channel-responses-websocket">{t('channels.fields.responsesWebsocket')}</Label>
+                <p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('channels.form.responsesWebsocketHint')}</p>
+              </div>
+              <Controller control={form.control} name="responsesWebsocketEnabled" render={({ field }) => (
+                <Switch id="channel-responses-websocket" checked={field.value} onCheckedChange={field.onChange} />
+              )} />
+            </div>
+          ) : null}
           <ChannelFormField id="channel-tag" label={t('channels.fields.tag')} hint={t('channels.form.tagHint')}>
             <Input id="channel-tag" {...form.register('tag')} />
           </ChannelFormField>
@@ -217,8 +233,6 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
           </ChannelFormField>
           <ChannelHeaderOverrideField mode={mode} form={form} />
         </section>
-
-        <ChannelAdvancedSettings mode={mode} form={form} />
 
         {submitError ? <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{t('channels.form.submitError')}</p> : null}
       </div>

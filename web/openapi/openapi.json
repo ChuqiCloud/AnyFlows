@@ -7431,6 +7431,7 @@
           "weight",
           "priority",
           "auto_ban",
+          "responses_websocket_enabled",
           "models",
           "group_ids",
           "model_mapping",
@@ -7491,6 +7492,10 @@
           },
           "auto_ban": {
             "type": "boolean"
+          },
+          "responses_websocket_enabled": {
+            "type": "boolean",
+            "description": "是否显式允许该原生 Responses 渠道使用 WebSocket。"
           },
           "models": {
             "type": "array",
@@ -7677,6 +7682,10 @@
           },
           "auto_ban": {
             "type": "boolean"
+          },
+          "responses_websocket_enabled": {
+            "type": "boolean",
+            "description": "仅 `OpenAI + openai_responses` 可开启；省略时默认关闭。"
           },
           "models": {
             "type": "array",
@@ -7910,6 +7919,13 @@
           },
           "auto_ban": {
             "type": "boolean"
+          },
+          "responses_websocket_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "省略或 null 表示保留原值。"
           },
           "models": {
             "type": "array",

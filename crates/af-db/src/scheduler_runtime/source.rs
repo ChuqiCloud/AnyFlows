@@ -2,6 +2,7 @@ use af_domain::{ChannelId, ChannelTimeout, ChannelType, CredentialKind, Protocol
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 
 use crate::{
+    channel_settings::{responses_websocket_enabled, validate_responses_websocket_capability},
     credential_probe::EncryptedCredentialEnvelope,
     entity::{channels, credentials},
 };
@@ -24,6 +25,7 @@ pub(super) struct SchedulerRuntimeChannelSource {
     model_mappings: ChannelModelMappings,
     parameter_overrides: ChannelParameterOverrides,
     headers: Vec<(String, String)>,
+    responses_websocket_enabled: bool,
 }
 
 impl SchedulerRuntimeChannelSource {
@@ -67,6 +69,15 @@ impl SchedulerRuntimeChannelSource {
             .header_override
             .pairs()
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let responses_websocket_enabled =
+            responses_websocket_enabled(&channel.settings.into_inner())
+                .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        validate_responses_websocket_capability(
+            channel_type,
+            protocol,
+            responses_websocket_enabled,
+        )
+        .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         Ok(Some(Self {
             channel_id,
             channel_type,
@@ -76,6 +87,7 @@ impl SchedulerRuntimeChannelSource {
             model_mappings,
             parameter_overrides,
             headers,
+            responses_websocket_enabled,
         }))
     }
 
@@ -117,6 +129,11 @@ impl SchedulerRuntimeChannelSource {
     /// 返回已校验的非认证 Header 覆盖。
     pub(super) fn headers(&self) -> &[(String, String)] {
         &self.headers
+    }
+
+    /// 返回渠道显式开启的 Responses WebSocket 能力。
+    pub(super) const fn responses_websocket_enabled(&self) -> bool {
+        self.responses_websocket_enabled
     }
 }
 

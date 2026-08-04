@@ -2,6 +2,7 @@ use std::{collections::BTreeSet, fmt};
 
 use af_domain::{ChannelId, ChannelTimeout, ChannelType, CredentialKind, Protocol};
 use sea_orm::entity::prelude::Json;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
@@ -71,6 +72,7 @@ pub struct SchedulerRuntimeCredentialRecord {
     credential_id: i64,
     credential_kind: CredentialKind,
     envelope: EncryptedCredentialEnvelope,
+    credential_revision: u64,
     proxy_required: bool,
     priority: i32,
     weight: u32,
@@ -111,10 +113,12 @@ impl SchedulerRuntimeCredentialRecord {
         {
             return Err(SchedulerRuntimeTargetRecordError);
         }
+        let credential_revision = derive_credential_revision(&envelope);
         Ok(Self {
             credential_id,
             credential_kind,
             envelope,
+            credential_revision,
             proxy_required,
             priority,
             weight,
@@ -137,6 +141,12 @@ impl SchedulerRuntimeCredentialRecord {
     #[must_use]
     pub fn envelope(&self) -> &EncryptedCredentialEnvelope {
         &self.envelope
+    }
+
+    /// 返回由完整密文封套派生的连接复用版本。
+    #[must_use]
+    pub const fn credential_revision(&self) -> u64 {
+        self.credential_revision
     }
 
     /// 返回该凭据是否绑定专属代理。
@@ -165,6 +175,7 @@ impl fmt::Debug for SchedulerRuntimeCredentialRecord {
             .field("credential_id", &self.credential_id)
             .field("credential_kind", &self.credential_kind)
             .field("envelope", &self.envelope)
+            .field("credential_revision", &"<已脱敏>")
             .field("proxy_required", &self.proxy_required)
             .field("priority", &self.priority)
             .field("weight", &self.weight)
@@ -184,6 +195,7 @@ pub struct SchedulerRuntimeTargetRecord {
     model_mappings: ChannelModelMappings,
     parameter_overrides: ChannelParameterOverrides,
     headers: Vec<SchedulerRuntimeHeader>,
+    responses_websocket_enabled: bool,
 }
 
 impl SchedulerRuntimeTargetRecord {
@@ -290,6 +302,7 @@ impl SchedulerRuntimeTargetRecord {
             model_mappings,
             parameter_overrides,
             headers,
+            responses_websocket_enabled: false,
         })
     }
 
@@ -330,10 +343,31 @@ impl SchedulerRuntimeTargetRecord {
         self
     }
 
+    /// 显式设置原生 Responses WebSocket 能力。
+    pub fn with_responses_websocket_enabled(
+        mut self,
+        enabled: bool,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if enabled
+            && (self.channel_type != ChannelType::OpenAi
+                || self.protocol != Protocol::OpenAiResponses)
+        {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        self.responses_websocket_enabled = enabled;
+        Ok(self)
+    }
+
     /// 返回渠道级读取与完整请求超时；空值表示继承全局配置。
     #[must_use]
     pub const fn timeout(&self) -> Option<ChannelTimeout> {
         self.timeout
+    }
+
+    /// 返回渠道是否显式允许使用原生 Responses WebSocket。
+    #[must_use]
+    pub const fn responses_websocket_enabled(&self) -> bool {
+        self.responses_websocket_enabled
     }
 
     /// 返回数据库声明的凭据类型。
@@ -392,6 +426,34 @@ impl fmt::Debug for SchedulerRuntimeTargetRecord {
             .field("model_mapping_count", &self.model_mappings.len())
             .field("parameter_overrides", &self.parameter_overrides)
             .field("header_count", &self.headers.len())
+            .field(
+                "responses_websocket_enabled",
+                &self.responses_websocket_enabled,
+            )
             .finish()
     }
+}
+
+fn derive_credential_revision(envelope: &EncryptedCredentialEnvelope) -> u64 {
+    let mut digest = Sha256::new();
+    digest.update(b"AnyFlows:credential-revision:v1\0");
+    digest.update(
+        u32::try_from(envelope.key_id().len())
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
+    digest.update(envelope.key_id().as_bytes());
+    digest.update(envelope.nonce());
+    digest.update(
+        u64::try_from(envelope.ciphertext().len())
+            .unwrap_or(u64::MAX)
+            .to_be_bytes(),
+    );
+    digest.update(envelope.ciphertext());
+    let output = digest.finalize();
+    u64::from_be_bytes(
+        output[..8]
+            .try_into()
+            .expect("SHA-256 截断长度固定为 8 字节"),
+    )
 }

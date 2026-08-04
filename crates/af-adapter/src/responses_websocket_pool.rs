@@ -334,7 +334,7 @@ impl fmt::Debug for ResponsesWebSocketPoolKey {
             .debug_struct("ResponsesWebSocketPoolKey")
             .field("channel_id", &self.channel_id)
             .field("credential_id", &self.credential_id)
-            .field("credential_revision", &self.credential_revision)
+            .field("credential_revision", &"<已脱敏>")
             .field("session_digest", &"<已脱敏>")
             .finish()
     }
@@ -545,7 +545,7 @@ impl ResponsesWebSocketPool {
     pub async fn execute(
         &self,
         key: ResponsesWebSocketPoolKey,
-        request: UpstreamRequest,
+        request: &UpstreamRequest,
     ) -> Result<UpstreamResponse, ResponsesWebSocketPoolError> {
         let event = build_responses_websocket_event(
             request
@@ -553,7 +553,7 @@ impl ResponsesWebSocketPool {
                 .ok_or(ResponsesWebSocketPoolError::InvalidRequest)?,
         )?;
         let response_mode = request.response_mode();
-        let handshake = ResponsesWebSocketHandshake::from_request(&request)?;
+        let handshake = ResponsesWebSocketHandshake::from_request(request)?;
         let entry = self.entry_for(key).await?;
         let guard = timeout(
             self.inner.config.queue_timeout,
@@ -1493,14 +1493,14 @@ mod tests {
         let first = pool
             .execute(
                 key("session-a", 1),
-                request(json!({"model":"gpt-test"}), ResponseMode::Full),
+                &request(json!({"model":"gpt-test"}), ResponseMode::Full),
             )
             .await
             .unwrap();
         let second = pool
             .execute(
                 key("session-a", 1),
-                request(
+                &request(
                     json!({"model":"gpt-test","previous_response_id":"resp-1"}),
                     ResponseMode::Full,
                 ),
@@ -1510,7 +1510,7 @@ mod tests {
         let third = pool
             .execute(
                 key("session-a", 2),
-                request(json!({"model":"gpt-test"}), ResponseMode::Full),
+                &request(json!({"model":"gpt-test"}), ResponseMode::Full),
             )
             .await
             .unwrap();
@@ -1554,14 +1554,14 @@ mod tests {
         let first = pool
             .execute(
                 key_with_revision("revision", 1, 1),
-                request(json!({"model":"gpt-test"}), ResponseMode::Full),
+                &request(json!({"model":"gpt-test"}), ResponseMode::Full),
             )
             .await
             .unwrap();
         let second = pool
             .execute(
                 key_with_revision("revision", 1, 2),
-                request(json!({"model":"gpt-test"}), ResponseMode::Full),
+                &request(json!({"model":"gpt-test"}), ResponseMode::Full),
             )
             .await
             .unwrap();
@@ -1595,7 +1595,7 @@ mod tests {
             first_pool
                 .execute(
                     key("cancelled", 1),
-                    request(json!({"model":"gpt-test"}), ResponseMode::Full),
+                    &request(json!({"model":"gpt-test"}), ResponseMode::Full),
                 )
                 .await
         });
@@ -1608,7 +1608,7 @@ mod tests {
         let fresh = pool
             .execute(
                 key("cancelled", 1),
-                request(json!({"model":"gpt-test"}), ResponseMode::Full),
+                &request(json!({"model":"gpt-test"}), ResponseMode::Full),
             )
             .await
             .unwrap();
@@ -1631,7 +1631,7 @@ mod tests {
         let first = pool
             .execute(
                 key("eof", 1),
-                request(json!({"model":"gpt-test"}), ResponseMode::Full),
+                &request(json!({"model":"gpt-test"}), ResponseMode::Full),
             )
             .await;
         assert!(matches!(
@@ -1641,7 +1641,7 @@ mod tests {
         let second = pool
             .execute(
                 key("eof", 1),
-                request(json!({"model":"gpt-test"}), ResponseMode::Full),
+                &request(json!({"model":"gpt-test"}), ResponseMode::Full),
             )
             .await
             .unwrap();
@@ -1669,7 +1669,7 @@ mod tests {
         let response = pool
             .execute(
                 key("stream", 1),
-                request(
+                &request(
                     json!({"model":"gpt-test","stream":true}),
                     ResponseMode::Stream,
                 ),
@@ -1711,7 +1711,7 @@ mod tests {
         let _held_response = pool
             .execute(
                 key("backpressure", 1),
-                request(json!({"model":"gpt-test"}), ResponseMode::Stream),
+                &request(json!({"model":"gpt-test"}), ResponseMode::Stream),
             )
             .await
             .unwrap();
@@ -1719,7 +1719,7 @@ mod tests {
         let second = pool
             .execute(
                 key("backpressure", 1),
-                request(json!({"model":"gpt-test"}), ResponseMode::Full),
+                &request(json!({"model":"gpt-test"}), ResponseMode::Full),
             )
             .await
             .unwrap();
@@ -1752,7 +1752,7 @@ mod tests {
             first_pool
                 .execute(
                     key("queue", 1),
-                    request(json!({"model":"gpt-test"}), ResponseMode::Full),
+                    &request(json!({"model":"gpt-test"}), ResponseMode::Full),
                 )
                 .await
         });
@@ -1763,7 +1763,7 @@ mod tests {
         let second = pool
             .execute(
                 key("queue", 1),
-                request(json!({"model":"gpt-test"}), ResponseMode::Full),
+                &request(json!({"model":"gpt-test"}), ResponseMode::Full),
             )
             .await;
         assert!(matches!(

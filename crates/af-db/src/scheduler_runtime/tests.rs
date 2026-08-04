@@ -6,6 +6,7 @@ use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Status};
 use sea_orm::{ActiveModelTrait, Set};
 
 use crate::EncryptedCredentialEnvelope;
+use crate::entity::SensitiveJson;
 
 use super::{
     ChannelModelMappings, ChannelParameterOverrides, MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL,
@@ -164,11 +165,50 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     .insert(pool.connection())
     .await?;
 
+    let mut responses_channel = runtime_channel(
+        "responses-channel",
+        Status::Enabled,
+        ChannelType::OpenAi.as_str(),
+        Protocol::OpenAiResponses.as_str(),
+        "https://responses-channel-canary.example.com",
+        [],
+    );
+    responses_channel.settings = Set(SensitiveJson::from(serde_json::json!({
+        "responses_websocket_enabled": true,
+        "private_extension": "private-settings-canary"
+    })));
+    let responses_channel = responses_channel.insert(pool.connection()).await?;
+    attach(responses_channel.id, group.id, "gpt-runtime-canary")
+        .insert(pool.connection())
+        .await?;
+    ability(
+        group.id,
+        "gpt-runtime-canary",
+        responses_channel.id,
+        true,
+        6,
+        0,
+    )
+    .insert(pool.connection())
+    .await?;
+    runtime_credential(
+        responses_channel.id,
+        CredentialKind::ApiKey,
+        10,
+        true,
+        None,
+        "responses-channel-key",
+        0x66,
+        false,
+    )
+    .insert(pool.connection())
+    .await?;
+
     let records = SchedulerRuntimeRepository::new(pool.clone())
         .load_all()
         .await?;
 
-    assert_eq!(records.len(), 2);
+    assert_eq!(records.len(), 3);
     let record = records
         .iter()
         .find(|record| record.target().channel_id().get() == supported.id)
@@ -227,6 +267,12 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         CredentialKind::ApiKey
     );
 
+    let responses_record = records
+        .iter()
+        .find(|record| record.target().channel_id().get() == responses_channel.id)
+        .unwrap();
+    assert!(responses_record.target().responses_websocket_enabled());
+
     let rendered = format!("{records:?}");
     for secret in [
         "gpt-runtime-canary",
@@ -234,6 +280,7 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         "runtime-header-value-canary",
         "gpt-upstream-canary",
         "runtime-stop-canary",
+        "private-settings-canary",
         "selected-key-id-canary",
         "anthropic-channel-canary",
         "anthropic-channel-key",
@@ -363,6 +410,63 @@ fn gemini_runtime_target_accepts_native_pair_and_rejects_mismatch() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn credential_revision_changes_with_every_envelope_component() {
+    let baseline = runtime_credential_record(1);
+    let changed_nonce = SchedulerRuntimeCredentialRecord::new(
+        1,
+        CredentialKind::ApiKey,
+        EncryptedCredentialEnvelope::new("runtime-test-key", [0x43; 24], vec![0x24; 16]).unwrap(),
+        false,
+    )
+    .unwrap();
+    let changed_ciphertext = SchedulerRuntimeCredentialRecord::new(
+        1,
+        CredentialKind::ApiKey,
+        EncryptedCredentialEnvelope::new("runtime-test-key", [0x42; 24], vec![0x25; 16]).unwrap(),
+        false,
+    )
+    .unwrap();
+
+    assert_ne!(
+        baseline.credential_revision(),
+        changed_nonce.credential_revision()
+    );
+    assert_ne!(
+        baseline.credential_revision(),
+        changed_ciphertext.credential_revision()
+    );
+    let debug = format!("{baseline:?}");
+    assert!(!debug.contains(&baseline.credential_revision().to_string()));
+}
+
+#[test]
+fn responses_websocket_capability_only_accepts_native_responses_target() {
+    let responses = SchedulerRuntimeTargetRecord::new_pool(
+        ChannelId::new(1).unwrap(),
+        ChannelType::OpenAi,
+        Protocol::OpenAiResponses,
+        None,
+        vec![runtime_credential_record(1)],
+        Vec::new(),
+    )
+    .unwrap()
+    .with_responses_websocket_enabled(true)
+    .unwrap();
+    assert!(responses.responses_websocket_enabled());
+
+    let chat = SchedulerRuntimeTargetRecord::new_pool(
+        ChannelId::new(1).unwrap(),
+        ChannelType::OpenAi,
+        Protocol::OpenAiChat,
+        None,
+        vec![runtime_credential_record(1)],
+        Vec::new(),
+    )
+    .unwrap();
+    assert!(chat.with_responses_websocket_enabled(true).is_err());
 }
 
 fn runtime_credential_record(credential_id: i64) -> SchedulerRuntimeCredentialRecord {

@@ -24,6 +24,7 @@ af-telemetry = { path = "../af-telemetry", version = "0.1.0" }
 futures-util.workspace = true
 include_dir.workspace = true
 lettre.workspace = true
+lru.workspace = true
 rust_decimal.workspace = true
 serde.workspace = true
 serde_json.workspace = true

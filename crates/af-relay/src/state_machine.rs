@@ -1,8 +1,8 @@
 use std::{collections::BTreeSet, fmt, num::NonZeroUsize, sync::Arc};
 
 use af_adapter::{
-    Adaptor, AdaptorSendExt, AdaptorTarget, Bytes, Credential, HeaderMap, Method, Operation,
-    RelayContext, ResponseMode, UpstreamRequest, UpstreamResponse,
+    Adaptor, AdaptorTarget, Bytes, Credential, HeaderMap, Method, Operation, RelayContext,
+    ResponseMode, TransportDispatcher, UpstreamRequest, UpstreamResponse,
 };
 use af_domain::{ChannelId, MAX_MODEL_NAME_BYTES, UpstreamError};
 use thiserror::Error;
@@ -20,6 +20,7 @@ pub struct RelayCandidate {
     request: Option<RelayCandidateRequest>,
     header_overrides: HeaderMap,
     channel_group: Option<ChannelId>,
+    transport: TransportDispatcher,
 }
 
 impl RelayCandidate {
@@ -33,6 +34,7 @@ impl RelayCandidate {
             request: None,
             header_overrides: HeaderMap::new(),
             channel_group: None,
+            transport: TransportDispatcher::http(),
         }
     }
 
@@ -56,6 +58,13 @@ impl RelayCandidate {
         self.channel_group = Some(channel_id);
         self
     }
+
+    /// 显式覆盖当前候选使用的受控传输分派器。
+    #[must_use]
+    pub fn with_transport_dispatcher(mut self, transport: TransportDispatcher) -> Self {
+        self.transport = transport;
+        self
+    }
 }
 
 impl fmt::Debug for RelayCandidate {
@@ -68,6 +77,7 @@ impl fmt::Debug for RelayCandidate {
             .field("has_candidate_request", &self.request.is_some())
             .field("header_override_count", &self.header_overrides.len())
             .field("has_channel_group", &self.channel_group.is_some())
+            .field("transport", &self.transport)
             .finish()
     }
 }
@@ -467,7 +477,7 @@ impl RelayStateMachine {
                 }
             };
             let response = match candidate
-                .adaptor
+                .transport
                 .send(upstream_request, &candidate.context)
                 .await
             {

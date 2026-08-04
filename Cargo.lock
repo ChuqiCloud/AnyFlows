@@ -55,6 +55,7 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror",
  "tokio",
+ "tracing",
  "url",
  "zeroize",
 ]
@@ -281,6 +282,7 @@ dependencies = [
  "futures-util",
  "include_dir",
  "lettre",
+ "lru",
  "rust_decimal",
  "sea-orm",
  "serde",

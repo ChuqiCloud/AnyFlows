@@ -1,12 +1,15 @@
-use std::fmt;
+use std::{fmt, fmt::Write as _};
 
 use af_account::CredentialDecryptor;
 use af_adapter::{
     AdaptorSettings, AnthropicAdaptorSettings, GeminiAdaptorSettings, HeaderMap, HeaderName,
-    HeaderValue, OpenAiAdaptorSettings, RelayContext, get_adaptor,
+    HeaderValue, OpenAiAdaptorSettings, RelayContext, ResponsesWebSocketPoolKey,
+    TransportDispatcher, get_adaptor,
 };
 use af_db::CredentialStateRepository;
-use af_domain::{AfError, ChannelType, GatewayPrincipal, GroupId, Operation, Protocol};
+use af_domain::{
+    AfError, ChannelType, CredentialId, GatewayPrincipal, GroupId, Operation, Protocol,
+};
 use af_httpclient::HttpClientProvider;
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::{
@@ -16,12 +19,14 @@ use af_relay::{
     relay_openai_responses_with_report,
 };
 use af_scheduler::{IndexedRoutePlan, IndexedWeightedScheduler, IndexedWeightedSchedulerError};
+use sha2::{Digest, Sha256};
 
 use crate::{
     ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture,
     adaptor_credential::build_adaptor_credential,
     credential_feedback::{CredentialAttemptTarget, persist_credential_feedback},
     credential_order::order_credentials,
+    responses_websocket_runtime::ResponsesWebSocketRuntime,
 };
 
 /// 基于内存运行时快照装配生产原生协议候选的服务。
@@ -31,12 +36,13 @@ pub(crate) struct ScheduledChatService {
     decryptor: CredentialDecryptor,
     clients: HttpClientProvider,
     credential_states: CredentialStateRepository,
+    responses_websocket: std::sync::Arc<ResponsesWebSocketRuntime>,
 }
 
 impl ScheduledChatService {
     /// 使用已加载渠道索引、凭据解密器和受控 HTTP Client 创建生产路由器。
     #[must_use]
-    pub(crate) const fn new(
+    pub(crate) fn new(
         scheduler: IndexedWeightedScheduler,
         decryptor: CredentialDecryptor,
         clients: HttpClientProvider,
@@ -47,6 +53,7 @@ impl ScheduledChatService {
             decryptor,
             clients,
             credential_states,
+            responses_websocket: std::sync::Arc::new(ResponsesWebSocketRuntime::default()),
         }
     }
 
@@ -56,9 +63,12 @@ impl ScheduledChatService {
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &str,
+        principal: GatewayPrincipal,
     ) -> Result<ScheduledChatExecution, AfError> {
         let model = request.canonical().model.clone();
         let upstream_protocol = select_upstream_protocol(&route, &request, response_protocol)?;
+        let responses_websocket_session =
+            responses_websocket_session_scope(principal, request.canonical());
         let target_group_id = route.target_group_id();
         let mut relay_candidates = Vec::with_capacity(
             route
@@ -95,6 +105,16 @@ impl ScheduledChatService {
                 .clients
                 .get(target.timeout().map(af_domain::ChannelTimeout::duration))
                 .map_err(|_| AfError::Internal)?;
+            let responses_websocket_pool =
+                if target.responses_websocket_enabled() && responses_websocket_session.is_some() {
+                    Some(
+                        self.responses_websocket
+                            .pool_for(&client)
+                            .map_err(|_| AfError::Internal)?,
+                    )
+                } else {
+                    None
+                };
             let mut context = RelayContext::new(client);
             if let Some(base_url) = target.base_url() {
                 context = context
@@ -126,6 +146,22 @@ impl ScheduledChatService {
                     RelayCandidate::new(adaptor.clone(), context.clone(), credential)
                         .with_header_overrides(headers.clone())
                         .with_channel_group(target.channel_id());
+                if let (Some(pool), Some(session_scope)) = (
+                    responses_websocket_pool.as_ref(),
+                    responses_websocket_session.as_deref(),
+                ) {
+                    let key = ResponsesWebSocketPoolKey::new(
+                        target.channel_id(),
+                        CredentialId::new(runtime_credential.credential_id())
+                            .map_err(|_| AfError::Internal)?,
+                        runtime_credential.credential_revision(),
+                        session_scope,
+                    )
+                    .map_err(|_| AfError::Internal)?;
+                    relay_candidate = relay_candidate.with_transport_dispatcher(
+                        TransportDispatcher::responses_websocket(pool.clone(), key),
+                    );
+                }
                 if let Some(candidate_request) = &candidate_request {
                     relay_candidate = relay_candidate.with_request(candidate_request.clone());
                 }
@@ -168,7 +204,7 @@ impl ChatRoutePlanner for ScheduledChatService {
             .route_plan(principal.group_id(), &request.canonical().model)
             .map_err(map_scheduler_error)?
             .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?;
-        self.build_plan(route, request, response_protocol, request_id)
+        self.build_plan(route, request, response_protocol, request_id, *principal)
             .map(|plan| Box::new(plan) as Box<dyn PlannedChatExecution>)
     }
 }
@@ -181,6 +217,7 @@ impl fmt::Debug for ScheduledChatService {
             .field("decryptor", &"<受控>")
             .field("clients", &"<受控>")
             .field("credential_states", &self.credential_states)
+            .field("responses_websocket", &self.responses_websocket)
             .finish()
     }
 }
@@ -396,6 +433,51 @@ fn map_scheduler_error(error: IndexedWeightedSchedulerError) -> AfError {
     }
 }
 
+fn responses_websocket_session_scope(
+    principal: GatewayPrincipal,
+    request: &af_protocol::CanonicalRequest,
+) -> Option<String> {
+    let (kind, value) = request
+        .metadata
+        .session_id()
+        .filter(|value| !value.is_empty())
+        .map(|value| (b's', value))
+        .or_else(|| {
+            request
+                .continuation
+                .conversation_id()
+                .filter(|value| !value.is_empty())
+                .map(|value| (b'c', value))
+        })
+        .or_else(|| {
+            request
+                .continuation
+                .prompt_cache_key()
+                .filter(|value| !value.is_empty())
+                .map(|value| (b'p', value))
+        })
+        .or_else(|| {
+            request
+                .metadata
+                .user_id()
+                .filter(|value| !value.is_empty())
+                .map(|value| (b'u', value))
+        })?;
+
+    let mut digest = Sha256::new();
+    digest.update(b"AnyFlows:responses-websocket-scope:v1\0");
+    digest.update(principal.token_id().get().to_be_bytes());
+    digest.update([kind]);
+    digest.update(u32::try_from(value.len()).unwrap_or(u32::MAX).to_be_bytes());
+    digest.update(value.as_bytes());
+    let digest = digest.finalize();
+    let mut encoded = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        write!(&mut encoded, "{byte:02x}").expect("写入 String 不会失败");
+    }
+    Some(encoded)
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -410,7 +492,7 @@ mod tests {
     };
     use af_domain::{ChannelId, CredentialKind, Operation, UpstreamError};
     use af_httpclient::{HttpClientConfig, HttpClientProvider};
-    use af_protocol::{CanonicalRequest, openai_chat};
+    use af_protocol::{CanonicalRequest, RequestContinuation, RequestMetadata, openai_chat};
     use af_scheduler::{
         ChannelIndexSource, ChannelIndexSourceFuture, ChannelIndexSourceRecord,
         InMemoryChannelIndex,
@@ -427,6 +509,47 @@ mod tests {
     const CHANNEL_ID: i64 = 41;
     const CREDENTIAL_ID: i64 = 51;
     const KEY_ID: &str = "scheduled-chat-test";
+
+    #[test]
+    fn websocket_session_scope_requires_stable_metadata_and_isolates_tokens() {
+        let empty = CanonicalRequest::new(
+            Operation::Responses,
+            "gpt-scheduled".to_owned(),
+            Vec::new(),
+            true,
+        );
+        assert!(responses_websocket_session_scope(principal(7), &empty).is_none());
+
+        let mut request = empty;
+        request.metadata = RequestMetadata::new(
+            Some("private-user-canary".to_owned()),
+            Some("private-session-canary".to_owned()),
+        );
+        request.continuation = RequestContinuation::new(
+            None,
+            Some("private-conversation-canary".to_owned()),
+            Some("private-cache-canary".to_owned()),
+        );
+        let first = responses_websocket_session_scope(principal(7), &request).unwrap();
+        let second_principal = GatewayPrincipal::new(
+            af_domain::TokenId::new(2).unwrap(),
+            af_domain::UserId::new(2).unwrap(),
+            GroupId::new(7).unwrap(),
+        );
+        let second = responses_websocket_session_scope(second_principal, &request).unwrap();
+
+        assert_eq!(first.len(), 64);
+        assert!(first.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_ne!(first, second);
+        for canary in [
+            "private-user-canary",
+            "private-session-canary",
+            "private-conversation-canary",
+            "private-cache-canary",
+        ] {
+            assert!(!first.contains(canary));
+        }
+    }
 
     #[tokio::test]
     async fn plan_pins_the_runtime_target_group_before_execution() {
@@ -470,7 +593,13 @@ mod tests {
             .unwrap();
 
         let execution = service
-            .build_plan(route, request(), Protocol::OpenAiChat, "request-key-pool")
+            .build_plan(
+                route,
+                request(),
+                Protocol::OpenAiChat,
+                "request-key-pool",
+                principal(7),
+            )
             .unwrap();
 
         assert_eq!(execution.attempt_targets.len(), 2);
@@ -486,7 +615,13 @@ mod tests {
             .unwrap();
 
         let execution = service
-            .build_plan(route, request(), Protocol::Anthropic, "request-anthropic")
+            .build_plan(
+                route,
+                request(),
+                Protocol::Anthropic,
+                "request-anthropic",
+                principal(7),
+            )
             .unwrap();
 
         assert_eq!(execution.response_protocol, Protocol::Anthropic);
@@ -509,6 +644,7 @@ mod tests {
                 request(),
                 Protocol::Anthropic,
                 "request-anthropic-fallback",
+                principal(7),
             )
             .unwrap();
 
@@ -530,7 +666,13 @@ mod tests {
             .unwrap()
             .unwrap();
         let execution = native
-            .build_plan(route, request(), Protocol::Gemini, "request-gemini-native")
+            .build_plan(
+                route,
+                request(),
+                Protocol::Gemini,
+                "request-gemini-native",
+                principal(7),
+            )
             .unwrap();
         assert_eq!(execution.response_protocol, Protocol::Gemini);
         assert_eq!(execution.upstream_protocol, Protocol::Gemini);
@@ -548,6 +690,7 @@ mod tests {
                 request(),
                 Protocol::Gemini,
                 "request-gemini-fallback",
+                principal(7),
             )
             .unwrap();
         assert_eq!(execution.response_protocol, Protocol::Gemini);
@@ -614,6 +757,7 @@ mod tests {
                 responses_request(),
                 Protocol::OpenAiResponses,
                 "request-responses",
+                principal(7),
             )
             .unwrap();
         assert_eq!(execution.response_protocol, Protocol::OpenAiResponses);

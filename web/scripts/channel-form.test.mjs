@@ -12,7 +12,6 @@ const messages = {
   invalidEntries: 'entries',
   invalidField: 'field',
   invalidHeader: 'header',
-  invalidJson: 'json',
   invalidParameter: 'parameter',
   invalidRouting: 'routing',
   invalidTimeout: 'timeout',
@@ -31,6 +30,7 @@ test('Anthropic 渠道默认值保留类型和 Messages 协议', () => {
     weight: 10,
     priority: 0,
     auto_ban: true,
+    responses_websocket_enabled: false,
     models: ['claude-test'],
     group_ids: [1],
     model_mapping: {},
@@ -45,6 +45,20 @@ test('Anthropic 渠道默认值保留类型和 Messages 协议', () => {
   assert.equal(values.channelType, 'anthropic')
   assert.equal(values.protocol, 'anthropic')
   assert.equal(values.timeoutSeconds, '60')
+})
+
+test('Responses WebSocket 仅允许原生 Responses 渠道开启', () => {
+  const schema = buildChannelFormSchema('create', messages)
+  const valid = {
+    ...defaultChannelValues(),
+    name: 'Responses WS',
+    channelType: 'openai',
+    protocol: 'openai_responses',
+    responsesWebsocketEnabled: true,
+  }
+  assert.equal(schema.safeParse(valid).success, true)
+  assert.equal(toCreateRequest(valid).responses_websocket_enabled, true)
+  assert.equal(schema.safeParse({ ...valid, protocol: 'openai_chat' }).success, false)
 })
 
 test('渠道类型和协议错配必须失败关闭', () => {

@@ -15,6 +15,7 @@ mod openai;
 mod request;
 mod responses_websocket_pool;
 mod responses_websocket_transport;
+mod transport_dispatcher;
 mod vertex;
 
 pub use adaptor::{Adaptor, AdaptorSendExt, AdaptorTarget};
@@ -55,6 +56,7 @@ pub use responses_websocket_pool::{
     ResponsesWebSocketPoolKey, ResponsesWebSocketTransportError, build_responses_websocket_event,
 };
 pub use responses_websocket_transport::PooledResponsesWebSocketConnector;
+pub use transport_dispatcher::TransportDispatcher;
 pub use vertex::{
     MAX_VERTEX_LOCATION_BYTES, MAX_VERTEX_PROJECT_ID_BYTES, MAX_VERTEX_TOKEN_RESPONSE_BYTES,
     VertexAdaptor,
@@ -62,5 +64,6 @@ pub use vertex::{
 
 pub use af_domain::{ChannelType, CredentialKind, Operation, Protocol};
 pub use af_httpclient::{
-    Bytes, HeaderMap, HeaderName, HeaderValue, Method, PooledClient, StatusCode,
+    Bytes, HeaderMap, HeaderName, HeaderValue, Method, PooledClient, PooledClientIdentity,
+    StatusCode,
 };

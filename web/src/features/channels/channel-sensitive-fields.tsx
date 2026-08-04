@@ -1,11 +1,7 @@
-import { Braces, ChevronDown } from 'lucide-react'
 import { Controller, type UseFormReturn } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
-import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
-import { ChannelFormField } from './channel-form-field'
 import {
   createKeyValueRow,
   type ChannelEditorMode,
@@ -66,53 +62,6 @@ export function ChannelHeaderOverrideField({ mode, form }: SensitiveFieldProps) 
         <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t('channels.form.headersHint')}</p>
       )}
     </div>
-  )
-}
-
-/** 适配器专有 JSON 默认折叠，避免干扰常用渠道配置。 */
-export function ChannelAdvancedSettings({ mode, form }: SensitiveFieldProps) {
-  const { t } = useTranslation()
-  const settingsMode = form.watch('settingsMode')
-  return (
-    <details className="group rounded-xl border border-[var(--hairline)] bg-surface-1 [&_summary::-webkit-details-marker]:hidden">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-3 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
-        <Braces className="size-3.5 text-muted-foreground" aria-hidden="true" />
-        <span className="flex-1">{t('channels.form.advanced')}</span>
-        <Badge className="border-transparent text-muted-foreground">JSON</Badge>
-        <ChevronDown className="size-3.5 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden="true" />
-      </summary>
-      <div className="grid gap-3 border-t border-[var(--hairline)] p-3">
-        {mode === 'update' ? (
-          <Controller
-            control={form.control}
-            name="settingsMode"
-            render={({ field }) => (
-              <ChannelSensitiveMode
-                id="channel-settings-mode"
-                value={field.value}
-                allowPreserve
-                onChange={field.onChange}
-              />
-            )}
-          />
-        ) : null}
-        {settingsMode === 'replace' ? (
-          <ChannelFormField
-            id="channel-settings"
-            label={t('channels.fields.settings')}
-            error={form.formState.errors.settings?.message}
-            hint={t('channels.form.settingsHint')}
-          >
-            <Textarea
-              id="channel-settings"
-              className="min-h-28 font-mono text-xs"
-              aria-invalid={!!form.formState.errors.settings}
-              {...form.register('settings')}
-            />
-          </ChannelFormField>
-        ) : <SensitiveModeHint mode={settingsMode} />}
-      </div>
-    </details>
   )
 }
 
