@@ -55,7 +55,6 @@ dependencies = [
  "sha2 0.10.9",
  "thiserror",
  "tokio",
- "tracing",
  "url",
  "zeroize",
 ]
@@ -240,6 +239,7 @@ dependencies = [
  "thiserror",
  "tiktoken-rs",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

@@ -23,6 +23,105 @@ struct ResponsesWebSocketDispatch {
     key: ResponsesWebSocketPoolKey,
 }
 
+/// WebSocket 在任何下游事件可见前转回 HTTP 的固定脱敏原因。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransportFallbackKind {
+    /// 会话池键不满足安全边界。
+    InvalidSession,
+    /// WebSocket 握手目标无效。
+    InvalidHandshakeTarget,
+    /// WebSocket 握手 Header 无效。
+    InvalidHandshakeHeader,
+    /// 请求无法构造成 Responses WebSocket 事件。
+    InvalidRequest,
+    /// 连接池没有可用会话容量。
+    PoolSaturated,
+    /// 等待同一会话在途请求超时。
+    QueueTimeout,
+    /// 建立 WebSocket 连接超时。
+    ConnectTimeout,
+    /// 单轮 Responses 请求超时。
+    TurnTimeout,
+    /// 上游事件违反 Responses 协议。
+    Protocol,
+    /// 上游在终态前关闭连接。
+    ConnectionClosed,
+    /// 连接池内部状态不可用。
+    PoolUnavailable,
+    /// 受控 WebSocket 传输失败。
+    Transport,
+    /// 首个流事件返回传输错误。
+    FirstEventError,
+    /// 首个流事件前连接结束。
+    EarlyEof,
+    /// 连接池返回了与请求不一致的响应模式。
+    UnexpectedResponseMode,
+}
+
+impl TransportFallbackKind {
+    /// 返回日志与指标使用的稳定低基数字面量。
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidSession => "invalid_session",
+            Self::InvalidHandshakeTarget => "invalid_handshake_target",
+            Self::InvalidHandshakeHeader => "invalid_handshake_header",
+            Self::InvalidRequest => "invalid_request",
+            Self::PoolSaturated => "pool_saturated",
+            Self::QueueTimeout => "queue_timeout",
+            Self::ConnectTimeout => "connect_timeout",
+            Self::TurnTimeout => "turn_timeout",
+            Self::Protocol => "protocol",
+            Self::ConnectionClosed => "connection_closed",
+            Self::PoolUnavailable => "pool_unavailable",
+            Self::Transport => "transport",
+            Self::FirstEventError => "first_event_error",
+            Self::EarlyEof => "early_eof",
+            Self::UnexpectedResponseMode => "unexpected_response_mode",
+        }
+    }
+}
+
+/// 一次传输分派的响应及可选内部 HTTP 回退事实。
+pub struct TransportDispatchOutcome {
+    response: UpstreamResponse,
+    fallback: Option<TransportFallbackKind>,
+}
+
+impl TransportDispatchOutcome {
+    fn direct(response: UpstreamResponse) -> Self {
+        Self {
+            response,
+            fallback: None,
+        }
+    }
+
+    fn fallback(response: UpstreamResponse, kind: TransportFallbackKind) -> Self {
+        Self {
+            response,
+            fallback: Some(kind),
+        }
+    }
+
+    /// 返回本次分派是否在首事件前转回 HTTP。
+    #[must_use]
+    pub const fn fallback_kind(&self) -> Option<TransportFallbackKind> {
+        self.fallback
+    }
+
+    /// 消费结果并返回传输无关上游响应。
+    #[must_use]
+    pub fn into_response(self) -> UpstreamResponse {
+        self.response
+    }
+
+    /// 消费结果并返回响应与固定回退分类。
+    #[must_use]
+    pub fn into_parts(self) -> (UpstreamResponse, Option<TransportFallbackKind>) {
+        (self.response, self.fallback)
+    }
+}
+
 impl TransportDispatcher {
     /// 创建固定使用受控 HTTP Client 的默认分派器。
     #[must_use]
@@ -49,19 +148,34 @@ impl TransportDispatcher {
         request: UpstreamRequest,
         context: &RelayContext,
     ) -> AdaptorResult<UpstreamResponse> {
+        self.send_with_report(request, context)
+            .await
+            .map(TransportDispatchOutcome::into_response)
+    }
+
+    /// 执行一次最终化请求，并返回首事件前 HTTP 回退的固定脱敏分类。
+    pub async fn send_with_report(
+        &self,
+        request: UpstreamRequest,
+        context: &RelayContext,
+    ) -> AdaptorResult<TransportDispatchOutcome> {
         let Some(dispatch) = &self.responses_websocket else {
-            return send_http(request, context).await;
+            return send_http(request, context)
+                .await
+                .map(TransportDispatchOutcome::direct);
         };
 
         let response = match dispatch.pool.execute(dispatch.key, &request).await {
             Ok(response) => response,
             Err(error) => {
-                record_http_fallback(pool_error_kind(error));
-                return send_http(request, context).await;
+                let kind = pool_error_kind(error);
+                return send_http(request, context)
+                    .await
+                    .map(|response| TransportDispatchOutcome::fallback(response, kind));
             }
         };
         if request.response_mode() != ResponseMode::Stream {
-            return Ok(response);
+            return Ok(TransportDispatchOutcome::direct(response));
         }
 
         let status = response.status();
@@ -72,20 +186,24 @@ impl TransportDispatcher {
                     // 取得首个事件后请求已经可能被下游观察，禁止再通过 HTTP 重放。
                     let body = stream::once(async move { Ok(first) }).chain(body);
                     UpstreamResponse::stream(status, headers, body)
+                        .map(TransportDispatchOutcome::direct)
                 }
-                Some(Err(_)) => {
-                    record_http_fallback("first_event_error");
-                    send_http(request, context).await
-                }
-                None => {
-                    record_http_fallback("early_eof");
-                    send_http(request, context).await
-                }
+                Some(Err(_)) => send_http(request, context).await.map(|response| {
+                    TransportDispatchOutcome::fallback(
+                        response,
+                        TransportFallbackKind::FirstEventError,
+                    )
+                }),
+                None => send_http(request, context).await.map(|response| {
+                    TransportDispatchOutcome::fallback(response, TransportFallbackKind::EarlyEof)
+                }),
             },
-            UpstreamBody::Full(_) => {
-                record_http_fallback("unexpected_response_mode");
-                send_http(request, context).await
-            }
+            UpstreamBody::Full(_) => send_http(request, context).await.map(|response| {
+                TransportDispatchOutcome::fallback(
+                    response,
+                    TransportFallbackKind::UnexpectedResponseMode,
+                )
+            }),
         }
     }
 }
@@ -121,31 +239,25 @@ async fn send_http(
     }
 }
 
-fn pool_error_kind(error: ResponsesWebSocketPoolError) -> &'static str {
+const fn pool_error_kind(error: ResponsesWebSocketPoolError) -> TransportFallbackKind {
     match error {
-        ResponsesWebSocketPoolError::InvalidSession => "invalid_session",
-        ResponsesWebSocketPoolError::InvalidHandshakeTarget => "invalid_handshake_target",
-        ResponsesWebSocketPoolError::InvalidHandshakeHeader => "invalid_handshake_header",
-        ResponsesWebSocketPoolError::InvalidRequest => "invalid_request",
-        ResponsesWebSocketPoolError::PoolSaturated => "pool_saturated",
-        ResponsesWebSocketPoolError::QueueTimeout => "queue_timeout",
-        ResponsesWebSocketPoolError::ConnectTimeout => "connect_timeout",
-        ResponsesWebSocketPoolError::TurnTimeout => "turn_timeout",
-        ResponsesWebSocketPoolError::Protocol => "protocol",
-        ResponsesWebSocketPoolError::ConnectionClosed => "connection_closed",
-        ResponsesWebSocketPoolError::PoolUnavailable => "pool_unavailable",
-        ResponsesWebSocketPoolError::Transport(_) => "transport",
+        ResponsesWebSocketPoolError::InvalidSession => TransportFallbackKind::InvalidSession,
+        ResponsesWebSocketPoolError::InvalidHandshakeTarget => {
+            TransportFallbackKind::InvalidHandshakeTarget
+        }
+        ResponsesWebSocketPoolError::InvalidHandshakeHeader => {
+            TransportFallbackKind::InvalidHandshakeHeader
+        }
+        ResponsesWebSocketPoolError::InvalidRequest => TransportFallbackKind::InvalidRequest,
+        ResponsesWebSocketPoolError::PoolSaturated => TransportFallbackKind::PoolSaturated,
+        ResponsesWebSocketPoolError::QueueTimeout => TransportFallbackKind::QueueTimeout,
+        ResponsesWebSocketPoolError::ConnectTimeout => TransportFallbackKind::ConnectTimeout,
+        ResponsesWebSocketPoolError::TurnTimeout => TransportFallbackKind::TurnTimeout,
+        ResponsesWebSocketPoolError::Protocol => TransportFallbackKind::Protocol,
+        ResponsesWebSocketPoolError::ConnectionClosed => TransportFallbackKind::ConnectionClosed,
+        ResponsesWebSocketPoolError::PoolUnavailable => TransportFallbackKind::PoolUnavailable,
+        ResponsesWebSocketPoolError::Transport(_) => TransportFallbackKind::Transport,
     }
-}
-
-fn record_http_fallback(error_kind: &'static str) {
-    tracing::warn!(
-        target: "af_adapter::transport_dispatcher",
-        transport = "responses_websocket",
-        fallback_transport = "http",
-        error_kind,
-        "Responses WebSocket 在首事件前失败，执行一次 HTTP 回退"
-    );
 }
 
 #[cfg(test)]
@@ -165,6 +277,8 @@ mod tests {
         io::{AsyncReadExt as _, AsyncWriteExt as _},
         net::TcpListener,
     };
+
+    use super::*;
 
     use crate::{
         Bytes, HeaderMap, HeaderName, HeaderValue, Method, ResponsesWebSocketConnection,
@@ -216,12 +330,21 @@ mod tests {
     async fn stream_early_eof_falls_back_to_http_once() {
         let (context, server) = fallback_http_context().await;
         let dispatcher = websocket_dispatcher(VecDeque::new());
-        let response = dispatcher
-            .send(request(ResponseMode::Stream), &context)
+        let outcome = dispatcher
+            .send_with_report(request(ResponseMode::Stream), &context)
             .await
             .unwrap();
         assert_eq!(
-            response.into_body().into_bytes().await.unwrap(),
+            outcome.fallback_kind(),
+            Some(TransportFallbackKind::EarlyEof)
+        );
+        assert_eq!(
+            outcome
+                .into_response()
+                .into_body()
+                .into_bytes()
+                .await
+                .unwrap(),
             Bytes::from_static(b"fallback-ok")
         );
         server.await.unwrap();
@@ -245,11 +368,19 @@ mod tests {
             .unwrap(),
         ));
         let dispatcher = websocket_dispatcher(VecDeque::from([event]));
-        let response = dispatcher
-            .send(request(ResponseMode::Stream), &context)
+        let outcome = dispatcher
+            .send_with_report(request(ResponseMode::Stream), &context)
             .await
             .unwrap();
-        assert!(response.into_body().into_bytes().await.is_err());
+        assert_eq!(outcome.fallback_kind(), None);
+        assert!(
+            outcome
+                .into_response()
+                .into_body()
+                .into_bytes()
+                .await
+                .is_err()
+        );
     }
 
     fn websocket_dispatcher(frames: VecDeque<ResponsesWebSocketFrame>) -> TransportDispatcher {

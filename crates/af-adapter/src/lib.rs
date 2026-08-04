@@ -56,7 +56,9 @@ pub use responses_websocket_pool::{
     ResponsesWebSocketPoolKey, ResponsesWebSocketTransportError, build_responses_websocket_event,
 };
 pub use responses_websocket_transport::PooledResponsesWebSocketConnector;
-pub use transport_dispatcher::TransportDispatcher;
+pub use transport_dispatcher::{
+    TransportDispatchOutcome, TransportDispatcher, TransportFallbackKind,
+};
 pub use vertex::{
     MAX_VERTEX_LOCATION_BYTES, MAX_VERTEX_PROJECT_ID_BYTES, MAX_VERTEX_TOKEN_RESPONSE_BYTES,
     VertexAdaptor,

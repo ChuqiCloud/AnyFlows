@@ -476,12 +476,12 @@ impl RelayStateMachine {
                     continue;
                 }
             };
-            let response = match candidate
+            let outcome = match candidate
                 .transport
-                .send(upstream_request, &candidate.context)
+                .send_with_report(upstream_request, &candidate.context)
                 .await
             {
-                Ok(response) => response,
+                Ok(outcome) => outcome,
                 Err(error) => {
                     let mapped = map_adaptor_error(error);
                     failures.push(RelayAttemptFailure::new(index, mapped));
@@ -496,6 +496,17 @@ impl RelayStateMachine {
                     ));
                 }
             };
+            let (response, transport_fallback) = outcome.into_parts();
+            if let Some(error_kind) = transport_fallback {
+                tracing::warn!(
+                    target: "af_relay::transport_dispatcher",
+                    transport = "responses_websocket",
+                    fallback_transport = "http",
+                    error_kind = error_kind.as_str(),
+                    candidate_index = index,
+                    "Responses WebSocket 在首事件前失败，执行一次 HTTP 回退"
+                );
+            }
 
             if response.status().is_success() {
                 let state = if request.response_mode == ResponseMode::Stream {
