@@ -51,6 +51,7 @@ export type AdminChannel = {
     weight: number;
     priority: number;
     auto_ban: boolean;
+    responses_websocket_enabled: boolean;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -78,6 +79,7 @@ export type AdminChannelCreateRequest = {
     weight: number;
     priority: number;
     auto_ban: boolean;
+    responses_websocket_enabled?: boolean;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -112,6 +114,7 @@ export type AdminChannelUpdateRequest = {
     weight: number;
     priority: number;
     auto_ban: boolean;
+    responses_websocket_enabled?: boolean | null;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -974,6 +977,7 @@ export type AdminChannelCreateRequestWritable = {
     weight: number;
     priority: number;
     auto_ban: boolean;
+    responses_websocket_enabled?: boolean;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -1003,6 +1007,7 @@ export type AdminChannelUpdateRequestWritable = {
     weight: number;
     priority: number;
     auto_ban: boolean;
+    responses_websocket_enabled?: boolean | null;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {

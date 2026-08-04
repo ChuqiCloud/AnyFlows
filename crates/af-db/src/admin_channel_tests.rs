@@ -3,7 +3,7 @@ use std::{error::Error, time::Duration};
 use af_domain::{ChannelId, CredentialId, GroupId, Status};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::sea_query::{MysqlQueryBuilder, PostgresQueryBuilder, SqliteQueryBuilder};
-use sea_orm::{ActiveModelTrait, JsonValue, Set};
+use sea_orm::{ActiveModelTrait, EntityTrait, JsonValue, Set};
 
 use super::{
     AdminChannelLookupOutcome, AdminChannelRepository, AdminChannelRepositoryConfigError,
@@ -124,8 +124,33 @@ async fn detail_exposes_only_validated_non_sensitive_metadata() -> Result<(), Bo
     Ok(())
 }
 
+#[tokio::test]
+async fn non_object_sensitive_settings_fail_closed_in_database_projection()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let model = channels::Entity::find_by_id(fixture.primary_channel_id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("测试渠道必须存在");
+    let mut active = channels::ActiveModel::from(model);
+    active.settings = Set(SensitiveJson::from(serde_json::json!("invalid-settings")));
+    active.update(fixture.pool.connection()).await?;
+
+    assert_eq!(
+        fixture
+            .repository
+            .get(fixture.primary_channel_id)
+            .await
+            .unwrap_err(),
+        AdminChannelRepositoryError::Invariant
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
 #[test]
-fn read_queries_never_select_sensitive_columns() {
+fn read_queries_only_project_non_sensitive_channel_capabilities() {
     let channel_queries = [
         channel_base_query(sea_orm::DbBackend::Postgres).to_string(PostgresQueryBuilder),
         channel_base_query(sea_orm::DbBackend::MySql).to_string(MysqlQueryBuilder),
@@ -134,7 +159,9 @@ fn read_queries_never_select_sensitive_columns() {
     for sql in channel_queries {
         let sql = sql.to_ascii_lowercase();
         assert!(!sql.contains("header_override"));
-        assert!(!sql.contains("settings"));
+        assert!(sql.contains("responses_websocket_enabled"));
+        assert!(!sql.contains("as \"settings\""));
+        assert!(!sql.contains("as `settings`"));
     }
 
     let credential_queries = [

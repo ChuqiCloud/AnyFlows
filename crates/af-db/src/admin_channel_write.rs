@@ -27,6 +27,10 @@ use crate::{
         synchronize_channel_routing,
     },
     admin_channel::valid_text,
+    channel_settings::{
+        responses_websocket_enabled, set_responses_websocket_enabled,
+        validate_responses_websocket_capability,
+    },
     entity::{
         ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, abilities, channel_groups,
         channel_models, channels, credentials,
@@ -55,6 +59,7 @@ pub struct AdminChannelWriteRecord {
     param_override: serde_json::Value,
     header_override: Option<serde_json::Value>,
     settings: Option<serde_json::Value>,
+    responses_websocket_enabled: Option<bool>,
     tag: Option<String>,
 }
 
@@ -99,6 +104,7 @@ impl AdminChannelWriteRecord {
             param_override,
             header_override: Some(header_override),
             settings: Some(settings),
+            responses_websocket_enabled: Some(false),
             tag,
         }
     }
@@ -143,8 +149,16 @@ impl AdminChannelWriteRecord {
             param_override,
             header_override,
             settings,
+            responses_websocket_enabled: None,
             tag,
         }
+    }
+
+    /// 覆盖受控 Responses WebSocket 能力；调用方必须先完成渠道类型校验。
+    #[must_use]
+    pub fn with_responses_websocket_enabled(mut self, enabled: bool) -> Self {
+        self.responses_websocket_enabled = Some(enabled);
+        self
     }
 }
 
@@ -452,9 +466,15 @@ impl AdminChannelRepository {
         let header_override = fields
             .header_override
             .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
-        let settings = fields
+        let mut settings = fields
             .settings
             .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        let responses_websocket_enabled = fields
+            .responses_websocket_enabled
+            .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        set_responses_websocket_enabled(&mut settings, responses_websocket_enabled)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        let settings = SensitiveJson::from(settings);
         let inserted = channels::ActiveModel {
             name: Set(fields.name),
             r#type: Set(fields.channel_type.as_str().to_owned()),
@@ -503,9 +523,24 @@ impl AdminChannelRepository {
     ) -> Result<AdminChannelMutationOutcome, AdminChannelWriteRepositoryError> {
         let fields = validate_channel_fields(record, false)?;
         let transaction = begin_transaction(self).await?;
-        if !active_channel_exists(&transaction, channel_id).await? {
+        let Some(current) = find_active_channel(&transaction, channel_id).await? else {
             return Ok(AdminChannelMutationOutcome::NotFound);
-        }
+        };
+        let current_settings = current.settings.into_inner();
+        let effective_responses_websocket_enabled = match fields.responses_websocket_enabled {
+            Some(enabled) => enabled,
+            None => responses_websocket_enabled(&current_settings)
+                .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?,
+        };
+        validate_responses_websocket_capability(
+            fields.channel_type,
+            fields.protocol,
+            effective_responses_websocket_enabled,
+        )
+        .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        let mut settings = fields.settings.unwrap_or(current_settings);
+        set_responses_websocket_enabled(&mut settings, effective_responses_websocket_enabled)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         let now = TimeDateTimeWithTimeZone::now_utc();
         let ability_tag = fields.tag.clone();
         let ability_metadata = ChannelAbilityMetadata {
@@ -550,9 +585,10 @@ impl AdminChannelRepository {
                 Expr::value(header_override),
             );
         }
-        if let Some(settings) = fields.settings {
-            update = update.col_expr(channels::Column::Settings, Expr::value(settings));
-        }
+        update = update.col_expr(
+            channels::Column::Settings,
+            Expr::value(SensitiveJson::from(settings)),
+        );
         let result = update
             .col_expr(channels::Column::UpdatedAt, Expr::value(now))
             .exec(&transaction)
@@ -856,7 +892,8 @@ struct ValidatedChannelFields {
     model_mapping: serde_json::Value,
     param_override: serde_json::Value,
     header_override: Option<HeaderOverrides>,
-    settings: Option<SensitiveJson>,
+    settings: Option<serde_json::Value>,
+    responses_websocket_enabled: Option<bool>,
     tag: Option<String>,
 }
 
@@ -901,6 +938,10 @@ fn validate_channel_fields(
     if let Some(settings) = &record.settings {
         validate_json_object(settings, false)?;
     }
+    if let Some(enabled) = record.responses_websocket_enabled {
+        validate_responses_websocket_capability(record.channel_type, record.protocol, enabled)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+    }
     let base_url = record
         .base_url
         .as_deref()
@@ -935,7 +976,8 @@ fn validate_channel_fields(
         model_mapping: record.model_mapping,
         param_override: record.param_override,
         header_override,
-        settings: record.settings.map(SensitiveJson::from),
+        settings: record.settings,
+        responses_websocket_enabled: record.responses_websocket_enabled,
         tag: record.tag,
     })
 }
@@ -1067,6 +1109,18 @@ async fn active_channel_exists(
         .await
         .map_err(map_db_error)?;
     Ok(result.is_some())
+}
+
+async fn find_active_channel(
+    transaction: &DatabaseTransaction,
+    channel_id: ChannelId,
+) -> Result<Option<channels::Model>, AdminChannelWriteRepositoryError> {
+    channels::Entity::find_by_id(channel_id.get())
+        .filter(channels::Column::DeletedAt.is_null())
+        .one(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_db_error)
 }
 
 async fn find_active_credential(

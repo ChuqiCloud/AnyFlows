@@ -45,14 +45,13 @@ export type ChannelFormValues = {
   weight: number
   priority: number
   autoBan: boolean
+  responsesWebsocketEnabled: boolean
   models: string[]
   groupIds: number[]
   modelMapping: KeyValueRow[]
   paramOverride: ParameterRow[]
   headerOverrideMode: SensitiveEditMode
   headerOverride: KeyValueRow[]
-  settingsMode: SensitiveEditMode
-  settings: string
 }
 
 type ValidationMessages = {
@@ -60,7 +59,6 @@ type ValidationMessages = {
   invalidEntries: string
   invalidField: string
   invalidHeader: string
-  invalidJson: string
   invalidParameter: string
   invalidRouting: string
   invalidTimeout: string
@@ -93,14 +91,13 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
     weight: z.number().int(messages.invalidField).min(0, messages.invalidField),
     priority: z.number().int(messages.invalidField),
     autoBan: z.boolean(),
+    responsesWebsocketEnabled: z.boolean(),
     models: z.array(z.string()),
     groupIds: z.array(z.number()),
     modelMapping: z.array(keyValueRowSchema),
     paramOverride: z.array(parameterRowSchema),
     headerOverrideMode: z.enum(['preserve', 'replace', 'clear']),
     headerOverride: z.array(keyValueRowSchema),
-    settingsMode: z.enum(['preserve', 'replace', 'clear']),
-    settings: z.string(),
   }).superRefine((values, context) => {
     const protocolMatchesType = values.channelType === 'anthropic'
       ? values.protocol === 'anthropic'
@@ -108,6 +105,10 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
         ? values.protocol === 'gemini'
         : values.protocol === 'openai_chat' || values.protocol === 'openai_responses'
     if (!protocolMatchesType) addIssue(context, 'protocol', messages.invalidField)
+    if (values.responsesWebsocketEnabled
+      && (values.channelType !== 'openai' || values.protocol !== 'openai_responses')) {
+      addIssue(context, 'responsesWebsocketEnabled', messages.invalidField)
+    }
 
     if (values.baseUrl && !isSafeBaseUrl(values.baseUrl)) {
       addIssue(context, 'baseUrl', messages.invalidUrl)
@@ -133,9 +134,6 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
     if (mode === 'create' || values.headerOverrideMode === 'replace') {
       validateHeaderRows(values.headerOverride, messages, context)
     }
-    if (values.settingsMode === 'replace' && !isJsonObject(values.settings)) {
-      addIssue(context, 'settings', messages.invalidJson)
-    }
   })
 }
 
@@ -157,14 +155,13 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
     weight: channel?.weight ?? 10,
     priority: channel?.priority ?? 0,
     autoBan: channel?.auto_ban ?? true,
+    responsesWebsocketEnabled: channel?.responses_websocket_enabled ?? false,
     models: [...(channel?.models ?? [])],
     groupIds: [...(channel?.group_ids ?? [])],
     modelMapping: stringMapRows(channel?.model_mapping ?? {}, 'mapping'),
     paramOverride: parameterRows(channel?.param_override ?? {}),
     headerOverrideMode: channel ? 'preserve' : 'replace',
     headerOverride: [],
-    settingsMode: channel ? 'preserve' : 'replace',
-    settings: '{}',
   }
 }
 
@@ -172,7 +169,7 @@ export function toCreateRequest(values: ChannelFormValues): AdminChannelCreateRe
   return {
     ...commonRequest(values),
     header_override: stringRowsObject(values.headerOverride),
-    settings: values.settingsMode === 'replace' ? parseJsonObject(values.settings) : {},
+    settings: {},
   }
 }
 
@@ -181,14 +178,9 @@ export function toUpdateRequest(values: ChannelFormValues): AdminChannelUpdateRe
     values.headerOverrideMode,
     stringRowsObject(values.headerOverride),
   )
-  const settings = sensitiveValue(
-    values.settingsMode,
-    values.settingsMode === 'replace' ? parseJsonObject(values.settings) : {},
-  )
   return {
     ...commonRequest(values),
     ...(headerOverride !== undefined && { header_override: headerOverride }),
-    ...(settings !== undefined && { settings }),
   }
 }
 
@@ -216,6 +208,7 @@ function commonRequest(values: ChannelFormValues) {
     weight: values.weight,
     priority: values.priority,
     auto_ban: values.autoBan,
+    responses_websocket_enabled: values.responsesWebsocketEnabled,
     models: values.models,
     group_ids: values.groupIds,
     model_mapping: stringRowsObject(values.modelMapping),
@@ -353,19 +346,6 @@ function uniqueStrings(values: string[]) {
 
 function isBoundedText(value: string, maxBytes: number) {
   return value.trim() === value && value.length > 0 && new TextEncoder().encode(value).length <= maxBytes
-}
-
-function isJsonObject(value: string) {
-  try {
-    const parsed: unknown = JSON.parse(value)
-    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
-  } catch {
-    return false
-  }
-}
-
-function parseJsonObject(value: string): Record<string, unknown> {
-  return JSON.parse(value) as Record<string, unknown>
 }
 
 function isSafeBaseUrl(value: string) {

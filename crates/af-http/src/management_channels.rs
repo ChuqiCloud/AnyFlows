@@ -36,6 +36,8 @@ pub(crate) struct AdminChannelResponse {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    /// 是否显式允许该原生 Responses 渠道使用 WebSocket。
+    responses_websocket_enabled: bool,
     #[schema(schema_with = crate::openapi::schema::channel_models_schema)]
     models: Vec<String>,
     #[schema(schema_with = crate::openapi::schema::channel_group_ids_schema)]
@@ -131,6 +133,7 @@ impl AdminChannelResponse {
             weight: channel.weight(),
             priority: channel.priority(),
             auto_ban: channel.auto_ban(),
+            responses_websocket_enabled: channel.responses_websocket_enabled(),
             models: channel.models().to_vec(),
             group_ids: channel
                 .group_ids()

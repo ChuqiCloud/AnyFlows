@@ -50,6 +50,7 @@ mod balance_alert;
 mod billing_batch;
 #[cfg(test)]
 mod billing_batch_tests;
+mod channel_settings;
 mod channel_state;
 #[cfg(test)]
 mod channel_state_tests;

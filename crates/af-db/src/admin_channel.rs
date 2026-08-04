@@ -13,6 +13,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     ChannelModelMappings, ChannelParameterOverrides, DatabasePool,
     ability_write::{AbilityWriteError, ChannelRoutingSnapshot, load_channel_routing_snapshots},
+    channel_settings::{responses_websocket_enabled, validate_responses_websocket_capability},
     entity::{ChannelBaseUrl, channels},
 };
 
@@ -33,6 +34,7 @@ pub struct AdminChannelRecord {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    responses_websocket_enabled: bool,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
     model_mapping: JsonValue,
@@ -56,6 +58,11 @@ impl AdminChannelRecord {
             Ok(encoded) => encoded.len() > MAX_ADMIN_CHANNEL_JSON_BYTES as usize,
             Err(_) => true,
         };
+        let settings = model.settings.into_inner();
+        let settings_oversized = match serde_json::to_vec(&settings) {
+            Ok(encoded) => encoded.len() > MAX_ADMIN_CHANNEL_JSON_BYTES as usize,
+            Err(_) => true,
+        };
         AdminChannelRow {
             channel_id: model.id,
             name: model.name,
@@ -73,6 +80,13 @@ impl AdminChannelRecord {
             model_mapping_oversized,
             param_override: Some(model.param_override),
             param_override_oversized,
+            responses_websocket_state: if settings_oversized {
+                -1
+            } else {
+                responses_websocket_enabled(&settings)
+                    .map(i64::from)
+                    .unwrap_or(-1)
+            },
             balance: model.balance,
             used_quota: model.used_quota,
             tag: model.tag,
@@ -140,6 +154,12 @@ impl AdminChannelRecord {
     #[must_use]
     pub const fn auto_ban(&self) -> bool {
         self.auto_ban
+    }
+
+    /// 返回渠道是否显式开启原生 Responses WebSocket。
+    #[must_use]
+    pub const fn responses_websocket_enabled(&self) -> bool {
+        self.responses_websocket_enabled
     }
 
     /// 返回按 Canonical 原文排序的渠道模型集合。
@@ -429,6 +449,7 @@ struct AdminChannelRow {
     model_mapping_oversized: bool,
     param_override: Option<JsonValue>,
     param_override_oversized: bool,
+    responses_websocket_state: i64,
     balance: Option<i64>,
     used_quota: i64,
     tag: Option<String>,
@@ -455,6 +476,7 @@ impl AdminChannelRow {
             model_mapping_oversized: result.try_get("", "model_mapping_oversized")?,
             param_override: result.try_get("", "param_override")?,
             param_override_oversized: result.try_get("", "param_override_oversized")?,
+            responses_websocket_state: result.try_get("", "responses_websocket_enabled")?,
             balance: result.try_get("", "balance")?,
             used_quota: result.try_get("", "used_quota")?,
             tag: result.try_get("", "tag")?,
@@ -492,6 +514,17 @@ impl AdminChannelRow {
         let param_override =
             validated_json_object(self.param_override, self.param_override_oversized, false)?;
         ChannelParameterOverrides::parse(&param_override).map_err(|_| internal_invariant())?;
+        let responses_websocket_enabled = match self.responses_websocket_state {
+            0 => false,
+            1 => true,
+            _ => return Err(internal_invariant()),
+        };
+        validate_responses_websocket_capability(
+            channel_type,
+            protocol,
+            responses_websocket_enabled,
+        )
+        .map_err(|_| internal_invariant())?;
         let created_at = self.created_at.unix_timestamp();
         let updated_at = self.updated_at.unix_timestamp();
         if !valid_text(&self.name, 128)
@@ -517,6 +550,7 @@ impl AdminChannelRow {
             weight: self.weight,
             priority: self.priority,
             auto_ban: self.auto_ban,
+            responses_websocket_enabled,
             models: self.models,
             group_ids: self.group_ids,
             model_mapping,
@@ -632,6 +666,10 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
             Alias::new("param_override_oversized"),
         )
         .expr_as(
+            channel_responses_websocket_projection(database_backend),
+            Alias::new("responses_websocket_enabled"),
+        )
+        .expr_as(
             Expr::col((channels::Entity, channels::Column::Balance)),
             Alias::new("balance"),
         )
@@ -665,6 +703,20 @@ fn channel_json_length(database_backend: DbBackend, column: channels::Column) ->
             .arg(value.cast_as(Alias::new("CHAR")))
             .into(),
         DbBackend::Sqlite => Func::char_length(value.cast_as(Alias::new("BLOB"))).into(),
+    }
+}
+
+fn channel_responses_websocket_projection(database_backend: DbBackend) -> SimpleExpr {
+    match database_backend {
+        DbBackend::Postgres => Expr::cust(
+            r#"CASE WHEN jsonb_typeof("channels"."settings") <> 'object' THEN -1 WHEN NOT ("channels"."settings" ? 'responses_websocket_enabled') THEN 0 WHEN jsonb_typeof("channels"."settings" -> 'responses_websocket_enabled') <> 'boolean' THEN -1 WHEN ("channels"."settings" ->> 'responses_websocket_enabled')::boolean THEN 1 ELSE 0 END"#,
+        ),
+        DbBackend::MySql => Expr::cust(
+            "CASE WHEN JSON_TYPE(`channels`.`settings`) <> 'OBJECT' THEN -1 WHEN JSON_CONTAINS_PATH(`channels`.`settings`, 'one', '$.responses_websocket_enabled') = 0 THEN 0 WHEN JSON_TYPE(JSON_EXTRACT(`channels`.`settings`, '$.responses_websocket_enabled')) <> 'BOOLEAN' THEN -1 WHEN JSON_UNQUOTE(JSON_EXTRACT(`channels`.`settings`, '$.responses_websocket_enabled')) = 'true' THEN 1 ELSE 0 END",
+        ),
+        DbBackend::Sqlite => Expr::cust(
+            r#"CASE WHEN json_type("channels"."settings") <> 'object' THEN -1 WHEN json_type("channels"."settings", '$.responses_websocket_enabled') IS NULL THEN 0 WHEN json_type("channels"."settings", '$.responses_websocket_enabled') NOT IN ('true', 'false') THEN -1 WHEN json_extract("channels"."settings", '$.responses_websocket_enabled') = 1 THEN 1 ELSE 0 END"#,
+        ),
     }
 }
 

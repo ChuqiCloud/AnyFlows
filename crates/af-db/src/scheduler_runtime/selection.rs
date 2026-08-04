@@ -90,6 +90,9 @@ fn try_runtime_target(
         channel.headers().to_vec(),
     )
     .map(|target| target.with_timeout(channel.timeout()))
+    .and_then(|target| {
+        target.with_responses_websocket_enabled(channel.responses_websocket_enabled())
+    })
     .map(Some)
     .map_err(|_| SchedulerRuntimeSelectionError::Invariant)
 }

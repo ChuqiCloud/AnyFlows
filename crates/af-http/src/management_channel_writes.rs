@@ -51,6 +51,9 @@ pub(crate) struct AdminChannelCreateRequest {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    /// 仅 `OpenAI + openai_responses` 可开启；省略时默认关闭。
+    #[serde(default)]
+    responses_websocket_enabled: bool,
     #[schema(schema_with = crate::openapi::schema::channel_write_models_schema)]
     models: Vec<String>,
     #[schema(schema_with = crate::openapi::schema::channel_write_group_ids_schema)]
@@ -99,6 +102,8 @@ pub(crate) struct AdminChannelUpdateRequest {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    /// 省略或 null 表示保留原值。
+    responses_websocket_enabled: Option<bool>,
     #[schema(schema_with = crate::openapi::schema::channel_write_models_schema)]
     models: Vec<String>,
     #[schema(schema_with = crate::openapi::schema::channel_write_group_ids_schema)]
@@ -201,6 +206,9 @@ impl AdminChannelCreateRequest {
             self.settings,
             self.tag,
         )
+        .and_then(|command| {
+            command.with_responses_websocket_enabled(self.responses_websocket_enabled)
+        })
         .map_err(map_write_error)
     }
 }
@@ -208,7 +216,7 @@ impl AdminChannelCreateRequest {
 impl AdminChannelUpdateRequest {
     fn into_update_command(self) -> Result<AdminChannelUpdateCommand, ManagementError> {
         let group_ids = parse_group_ids(self.group_ids)?;
-        AdminChannelUpdateCommand::new(
+        let command = AdminChannelUpdateCommand::new(
             self.name,
             self.channel_type,
             self.protocol,
@@ -226,7 +234,13 @@ impl AdminChannelUpdateRequest {
             self.settings,
             self.tag,
         )
-        .map_err(map_write_error)
+        .map_err(map_write_error)?;
+        match self.responses_websocket_enabled {
+            Some(enabled) => command
+                .with_responses_websocket_enabled(enabled)
+                .map_err(map_write_error),
+            None => Ok(command),
+        }
     }
 }
 

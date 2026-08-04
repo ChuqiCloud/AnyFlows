@@ -94,6 +94,15 @@ impl AdminChannelCreateCommand {
     fn into_record(self) -> AdminChannelWriteRecord {
         self.fields.into_record()
     }
+
+    /// 显式设置原生 Responses WebSocket 能力。
+    pub fn with_responses_websocket_enabled(
+        mut self,
+        enabled: bool,
+    ) -> Result<Self, AdminChannelWriteError> {
+        self.fields = self.fields.with_responses_websocket_enabled(enabled)?;
+        Ok(self)
+    }
 }
 
 impl fmt::Debug for AdminChannelCreateCommand {
@@ -157,6 +166,15 @@ impl AdminChannelUpdateCommand {
     fn into_record(self) -> AdminChannelWriteRecord {
         self.fields.into_record()
     }
+
+    /// 更新受控 Responses WebSocket 能力；未调用时由仓储保留原值。
+    pub fn with_responses_websocket_enabled(
+        mut self,
+        enabled: bool,
+    ) -> Result<Self, AdminChannelWriteError> {
+        self.fields = self.fields.with_responses_websocket_enabled(enabled)?;
+        Ok(self)
+    }
 }
 
 impl fmt::Debug for AdminChannelUpdateCommand {
@@ -181,6 +199,7 @@ struct AdminChannelWriteFields {
     param_override: serde_json::Value,
     header_override: Option<serde_json::Value>,
     settings: Option<serde_json::Value>,
+    responses_websocket_enabled: Option<bool>,
     tag: Option<String>,
 }
 
@@ -264,12 +283,28 @@ impl AdminChannelWriteFields {
             param_override,
             header_override,
             settings,
+            responses_websocket_enabled: require_sensitive_fields.then_some(false),
             tag,
         })
     }
 
+    fn with_responses_websocket_enabled(
+        mut self,
+        enabled: bool,
+    ) -> Result<Self, AdminChannelWriteError> {
+        if enabled
+            && (self.channel_type != ChannelType::OpenAi
+                || self.protocol != Protocol::OpenAiResponses)
+        {
+            return Err(AdminChannelWriteError::InvalidInput);
+        }
+        self.responses_websocket_enabled = Some(enabled);
+        Ok(self)
+    }
+
     fn into_record(self) -> AdminChannelWriteRecord {
-        AdminChannelWriteRecord::new_update(
+        let responses_websocket_enabled = self.responses_websocket_enabled;
+        let record = AdminChannelWriteRecord::new_update(
             self.name,
             self.channel_type,
             self.protocol,
@@ -286,7 +321,11 @@ impl AdminChannelWriteFields {
             self.header_override,
             self.settings,
             self.tag,
-        )
+        );
+        match responses_websocket_enabled {
+            Some(enabled) => record.with_responses_websocket_enabled(enabled),
+            None => record,
+        }
     }
 }
 

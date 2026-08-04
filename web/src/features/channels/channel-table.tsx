@@ -60,6 +60,9 @@ function RoutingBadges({ channel }: { channel: AdminChannel }) {
     <div className="flex flex-wrap gap-1">
       <Badge className="border-transparent bg-info/10 text-info">{t('channels.values.models', { count: channel.models.length })}</Badge>
       <Badge className="border-transparent bg-success/10 text-success">{t('channels.values.groups', { count: channel.group_ids.length })}</Badge>
+      {channel.responses_websocket_enabled ? (
+        <Badge className="border-transparent bg-brand/10 text-brand">{t('channels.values.responsesWebsocket')}</Badge>
+      ) : null}
     </div>
   )
 }

@@ -132,7 +132,8 @@
       "priority": "Priority {{value}}",
       "weight": "Weight {{value}}",
       "timeout": "Timeout {{value}}s",
-      "inheritTimeout": "Service default"
+      "inheritTimeout": "Service default",
+      "responsesWebsocket": "WebSocket"
     },
     "probe": {
       "notTested": "Not tested",
@@ -175,8 +176,8 @@
       "basic": "Basic settings",
       "routing": "Routing scope",
       "overrides": "Request transformation",
-      "advanced": "Advanced adapter settings",
       "autoBanHint": "Allow the runtime to disable this channel after a deterministic failure.",
+      "responsesWebsocketHint": "Reuses a connection only when the request has a stable session identifier. Failures before the first event fall back to HTTP once.",
       "tagHint": "Optional label for filtering and recognition.",
       "timeoutHint": "Controls read stalls and the full request deadline for forwarding and probes. Connection timeout remains global; blank uses each service default.",
       "timeoutPlaceholder": "Use service default",
@@ -189,7 +190,6 @@
       "mappingHint": "Map the client model name on the left to the upstream model name on the right.",
       "parametersHint": "Supports temperature, Top P, maximum output tokens, and stop sequences. Responses does not support stop sequences.",
       "headersHint": "Authentication, protocol version, Cookie, Host, Content-Type, Accept, request ID, and connection-level headers cannot be overridden.",
-      "settingsHint": "Reserved for adapter-specific capabilities. Most channels should keep an empty object.",
       "submitError": "The channel could not be saved. Check the fields and try again."
     },
     "fields": {
@@ -202,6 +202,7 @@
       "weight": "Weight",
       "priority": "Priority",
       "autoBan": "Allow automatic disabling",
+      "responsesWebsocket": "Enable Responses WebSocket",
       "tag": "Tag",
       "models": "Models",
       "groupIds": "Available groups",

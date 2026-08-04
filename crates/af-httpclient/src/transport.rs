@@ -1,8 +1,10 @@
 use std::{
     fmt,
     future::{Future, poll_fn},
+    hash::{Hash, Hasher},
     net::IpAddr,
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
     time::Duration,
 };
@@ -22,9 +24,47 @@ use crate::{
 type ReqwestBodyStream =
     Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send + 'static>>;
 
+struct PooledClientIdentityMarker {
+    _opaque: u8,
+}
+
+/// 受控 Client 的不透明传输身份。
+///
+/// 同一 Client 的克隆共享身份；代理、DNS 或超时配置变化后新建的 Client 使用新身份。
+/// 调用方只能用它做相等比较和哈希分桶，不能据此恢复配置或底层连接信息。
+#[derive(Clone)]
+pub struct PooledClientIdentity(Arc<PooledClientIdentityMarker>);
+
+impl PooledClientIdentity {
+    fn new() -> Self {
+        Self(Arc::new(PooledClientIdentityMarker { _opaque: 0 }))
+    }
+}
+
+impl PartialEq for PooledClientIdentity {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for PooledClientIdentity {}
+
+impl Hash for PooledClientIdentity {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.0).hash(state);
+    }
+}
+
+impl fmt::Debug for PooledClientIdentity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("PooledClientIdentity(<受控>)")
+    }
+}
+
 /// 只能通过连接池取得的受控 HTTP Client。
 #[derive(Clone)]
 pub struct PooledClient {
+    identity: PooledClientIdentity,
     inner: Client,
     read_timeout: Duration,
     request_timeout: Duration,
@@ -45,6 +85,7 @@ impl PooledClient {
         proxy_host: Option<String>,
     ) -> Self {
         Self {
+            identity: PooledClientIdentity::new(),
             inner,
             read_timeout,
             request_timeout,
@@ -65,6 +106,12 @@ impl PooledClient {
     #[must_use]
     pub const fn read_timeout(&self) -> Duration {
         self.read_timeout
+    }
+
+    /// 返回仅供传输资源分桶使用的不透明 Client 身份。
+    #[must_use]
+    pub fn identity(&self) -> PooledClientIdentity {
+        self.identity.clone()
     }
 
     /// 按池配置发送上游请求；建连前会执行字面量或域名目标安全策略。

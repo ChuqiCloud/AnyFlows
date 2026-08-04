@@ -614,6 +614,7 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
         "weight": 10,
         "priority": 20,
         "auto_ban": true,
+        "responses_websocket_enabled": false,
         "models": ["public"],
         "group_ids": [1],
         "model_mapping": {"public": "upstream"},
@@ -641,6 +642,7 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
     let created = response_json(created).await;
     assert_eq!(created["id"], 90);
     assert_eq!(created["timeout_secs"], 60);
+    assert_eq!(created["responses_websocket_enabled"], false);
     for secret in ["header-secret-canary", "settings-secret-canary"] {
         assert!(!created.to_string().contains(secret));
     }
@@ -671,6 +673,7 @@ async fn admin_can_create_update_and_delete_channels_and_credentials() {
         ("timeout_secs", json!(901)),
         ("header_override", json!({"content-type": "text/plain"})),
         ("header_override", json!({"x-request-id": "untrusted"})),
+        ("responses_websocket_enabled", json!(true)),
     ] {
         let mut invalid_body = channel_body.clone();
         invalid_body

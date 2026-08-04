@@ -80,6 +80,7 @@ pub struct AdminChannel {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    responses_websocket_enabled: bool,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
     model_mapping: serde_json::Value,
@@ -127,6 +128,7 @@ impl AdminChannel {
             weight,
             priority,
             auto_ban,
+            responses_websocket_enabled: false,
             models,
             group_ids,
             model_mapping,
@@ -188,6 +190,11 @@ impl AdminChannel {
     #[must_use]
     pub const fn auto_ban(&self) -> bool {
         self.auto_ban
+    }
+    /// 返回是否显式开启原生 Responses WebSocket。
+    #[must_use]
+    pub const fn responses_websocket_enabled(&self) -> bool {
+        self.responses_websocket_enabled
     }
     /// 返回渠道声明的 Canonical 模型集合。
     #[must_use]
@@ -257,6 +264,12 @@ impl AdminChannel {
             record.created_at(),
             record.updated_at(),
         )
+        .with_responses_websocket_enabled(record.responses_websocket_enabled())
+    }
+
+    fn with_responses_websocket_enabled(mut self, enabled: bool) -> Self {
+        self.responses_websocket_enabled = enabled;
+        self
     }
 }
 
