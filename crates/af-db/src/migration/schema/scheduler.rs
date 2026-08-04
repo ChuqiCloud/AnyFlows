@@ -8,7 +8,9 @@ const DUE_INDEX: &str = "idx_scheduler_outbox_events_due";
 const SUBJECT_INDEX: &str = "idx_scheduler_outbox_events_subject";
 
 /// 创建可靠调度目录变更 outbox；表不使用主体外键，确保删除后的事件仍可投递。
-pub(super) async fn create_scheduler_outbox(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+pub(in crate::migration) async fn create_scheduler_outbox(
+    manager: &SchemaManager<'_>,
+) -> Result<(), DbErr> {
     manager
         .create_table(
             table(manager, scheduler_outbox_events::Entity)
