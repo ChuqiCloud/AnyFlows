@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, time::Duration};
 
 use thiserror::Error;
 
@@ -40,6 +40,72 @@ impl fmt::Display for UpstreamServerStatus {
     }
 }
 
+/// 上游建议的相对重试等待时间。
+///
+/// 只接受整秒且最多七天，避免恶意或损坏的响应头制造不可恢复的远期冷却。
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct UpstreamRetryAfter(u32);
+
+impl UpstreamRetryAfter {
+    /// 支持的最大重试等待秒数，覆盖供应商最长七天额度窗口。
+    pub const MAX_SECONDS: u64 = 7 * 24 * 60 * 60;
+
+    /// 校验并构造非零相对等待时间。
+    #[must_use]
+    pub const fn from_seconds(seconds: u64) -> Option<Self> {
+        if seconds == 0 || seconds > Self::MAX_SECONDS {
+            return None;
+        }
+        Some(Self(seconds as u32))
+    }
+
+    /// 返回已校验的相对等待秒数。
+    #[must_use]
+    pub const fn seconds(self) -> u32 {
+        self.0
+    }
+
+    /// 返回可直接用于截止时间计算的标准时长。
+    #[must_use]
+    pub const fn duration(self) -> Duration {
+        Duration::from_secs(self.0 as u64)
+    }
+}
+
+/// 限流影响的最小可确认范围。
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RateLimitScope {
+    /// 当前凭据或上游账号整体受限。
+    Credential,
+    /// 只有当前模型受限，账号上的其他模型仍可能可用。
+    Model,
+    /// 请求数、令牌数或供应商配额窗口受限。
+    Window,
+    /// 结构化信号不足，不能安全推断更小范围。
+    Unknown,
+}
+
+/// 上游网络失败发生的稳定阶段。
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum NetworkFailureKind {
+    /// 目标解析失败。
+    Resolution,
+    /// 建立连接失败。
+    Connect,
+    /// 建连阶段超过截止时间。
+    ConnectTimeout,
+    /// 读取响应阶段超过截止时间。
+    ReadTimeout,
+    /// 完整请求超过总截止时间。
+    RequestTimeout,
+    /// 请求发送失败。
+    Request,
+    /// 响应体传输中断或损坏。
+    ResponseBody,
+    /// 本地安全策略拒绝了目标或代理 DNS 行为。
+    Policy,
+}
+
 /// 上游故障的闭合领域分类。
 ///
 /// 该类型不得保存上游响应正文、错误文本、URL、Header、凭据或底层错误链；
@@ -48,16 +114,27 @@ impl fmt::Display for UpstreamServerStatus {
 pub enum UpstreamError {
     /// 上游对当前请求实施限流。
     #[error("上游请求受到限流")]
-    RateLimited,
+    RateLimited {
+        /// 由结构化信号确认的最小限流范围。
+        scope: RateLimitScope,
+        /// 由受限响应头解析的可选相对等待时间。
+        retry_after: Option<UpstreamRetryAfter>,
+    },
     /// 上游当前过载。
     #[error("上游服务过载")]
-    Overloaded,
+    Overloaded {
+        /// 由受限响应头解析的可选相对等待时间。
+        retry_after: Option<UpstreamRetryAfter>,
+    },
     /// 上游认证已过期，可能需要刷新凭据。
     #[error("上游认证已过期")]
     AuthExpired,
     /// 上游认证已被永久撤销。
     #[error("上游认证已被撤销")]
     AuthRevoked,
+    /// 上游账号、组织或工作区被明确停用。
+    #[error("上游账号或组织已被停用")]
+    AccountDisabled,
     /// 上游账号或组织额度已耗尽。
     #[error("上游额度已耗尽")]
     QuotaExhausted,
@@ -78,7 +155,53 @@ pub enum UpstreamError {
     BadRequest,
     /// 上游网络传输失败。
     #[error("上游网络传输失败")]
-    Network,
+    Network {
+        /// 不含底层错误文本的稳定失败阶段。
+        kind: NetworkFailureKind,
+    },
+}
+
+impl UpstreamError {
+    /// 构造不携带等待提示的限流错误。
+    #[must_use]
+    pub const fn rate_limited(scope: RateLimitScope) -> Self {
+        Self::RateLimited {
+            scope,
+            retry_after: None,
+        }
+    }
+
+    /// 构造带受控等待提示的限流错误。
+    #[must_use]
+    pub const fn rate_limited_after(
+        scope: RateLimitScope,
+        retry_after: UpstreamRetryAfter,
+    ) -> Self {
+        Self::RateLimited {
+            scope,
+            retry_after: Some(retry_after),
+        }
+    }
+
+    /// 构造不携带等待提示的过载错误。
+    #[must_use]
+    pub const fn overloaded() -> Self {
+        Self::Overloaded { retry_after: None }
+    }
+
+    /// 构造带受控等待提示的过载错误。
+    #[must_use]
+    pub const fn overloaded_after(retry_after: UpstreamRetryAfter) -> Self {
+        Self::Overloaded {
+            retry_after: Some(retry_after),
+        }
+    }
+
+    /// 构造不携带底层错误文本的网络错误。
+    #[must_use]
+    pub const fn network(kind: NetworkFailureKind) -> Self {
+        Self::Network { kind }
+    }
 }
 
 /// AnyFlows 业务层统一错误骨架。

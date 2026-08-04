@@ -26,6 +26,8 @@ pub enum AutoBanRule {
     AuthExpired,
     /// 上游凭据已撤销。
     AuthRevoked,
+    /// 上游账号、组织或工作区已停用。
+    AccountDisabled,
     /// 上游额度耗尽。
     QuotaExhausted,
     /// 上游不支持当前模型。
@@ -309,16 +311,17 @@ impl<S> fmt::Debug for ChannelFailureCoordinator<S> {
 
 const fn structured_rule(error: UpstreamError) -> Option<AutoBanRule> {
     match error {
-        UpstreamError::RateLimited => Some(AutoBanRule::RateLimited),
-        UpstreamError::Overloaded => Some(AutoBanRule::Overloaded),
+        UpstreamError::RateLimited { .. } => Some(AutoBanRule::RateLimited),
+        UpstreamError::Overloaded { .. } => Some(AutoBanRule::Overloaded),
         UpstreamError::AuthExpired => Some(AutoBanRule::AuthExpired),
         UpstreamError::AuthRevoked => Some(AutoBanRule::AuthRevoked),
+        UpstreamError::AccountDisabled => Some(AutoBanRule::AccountDisabled),
         UpstreamError::QuotaExhausted => Some(AutoBanRule::QuotaExhausted),
         UpstreamError::ModelUnsupported => Some(AutoBanRule::ModelUnsupported),
         UpstreamError::ProtocolError => Some(AutoBanRule::ProtocolError),
         UpstreamError::ServerError { status } => Some(AutoBanRule::ServerStatus(status)),
         UpstreamError::BadRequest => None,
-        UpstreamError::Network => Some(AutoBanRule::Network),
+        UpstreamError::Network { .. } => Some(AutoBanRule::Network),
     }
 }
 

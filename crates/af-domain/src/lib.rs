@@ -18,7 +18,10 @@ pub use concurrency::{ConcurrencyLimit, ConcurrencyLimitError};
 pub use enums::{
     ChannelType, CredentialKind, Operation, ParseEnumError, Protocol, PublicErrorCode, Role, Status,
 };
-pub use error::{AfError, UpstreamError, UpstreamServerStatus};
+pub use error::{
+    AfError, NetworkFailureKind, RateLimitScope, UpstreamError, UpstreamRetryAfter,
+    UpstreamServerStatus,
+};
 pub use network::{IpCidr, IpCidrParseError, TrustedClientIp};
 pub use payment::{
     TopupIdentifierError, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,

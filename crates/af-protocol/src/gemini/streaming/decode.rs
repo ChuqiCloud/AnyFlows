@@ -838,10 +838,12 @@ fn map_upstream_error(code: u16, status: &str) -> Result<UpstreamError, ParseStr
     let mapped = match (code, status) {
         (400, "INVALID_ARGUMENT") => UpstreamError::BadRequest,
         (401, "UNAUTHENTICATED") => UpstreamError::AuthExpired,
-        (403, "PERMISSION_DENIED") => UpstreamError::AuthRevoked,
+        (403, "PERMISSION_DENIED") => UpstreamError::ProtocolError,
         (404, "NOT_FOUND") => UpstreamError::ModelUnsupported,
-        (429, "RESOURCE_EXHAUSTED") => UpstreamError::RateLimited,
-        (503, "UNAVAILABLE") => UpstreamError::Overloaded,
+        (429, "RESOURCE_EXHAUSTED") => {
+            UpstreamError::rate_limited(af_domain::RateLimitScope::Unknown)
+        }
+        (503, "UNAVAILABLE") => UpstreamError::overloaded(),
         (500..=599, _) => UpstreamError::ServerError {
             status: UpstreamServerStatus::new(code).ok_or(ParseStreamError::InvalidValue)?,
         },

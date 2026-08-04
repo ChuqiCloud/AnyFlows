@@ -373,11 +373,33 @@ fn decoder_maps_bounded_error_without_leaking_message() {
     let mut decoder = GeminiGenerateContentStreamDecoder::new();
     assert_eq!(
         decoder.push(&sse(&frame)).unwrap(),
-        vec![CanonicalStreamEvent::Error(UpstreamError::Overloaded)]
+        vec![CanonicalStreamEvent::Error(UpstreamError::overloaded())]
     );
     assert!(decoder.finish().unwrap().is_empty());
     let rendered = format!("{decoder:?}");
     assert!(!rendered.contains("private upstream failure"));
+}
+
+#[test]
+fn decoder_does_not_treat_generic_permission_denial_as_revocation() {
+    for (code, status, expected) in [
+        (403, "PERMISSION_DENIED", UpstreamError::ProtocolError),
+        (
+            429,
+            "RESOURCE_EXHAUSTED",
+            UpstreamError::rate_limited(af_domain::RateLimitScope::Unknown),
+        ),
+    ] {
+        let frame = json!({
+            "error": { "code": code, "status": status, "message": "private" }
+        });
+        let mut decoder = GeminiGenerateContentStreamDecoder::new();
+        assert_eq!(
+            decoder.push(&sse(&frame)).unwrap(),
+            vec![CanonicalStreamEvent::Error(expected)]
+        );
+        assert!(decoder.finish().unwrap().is_empty());
+    }
 }
 
 #[test]

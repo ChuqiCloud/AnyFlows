@@ -75,7 +75,7 @@ impl AnthropicMessagesStream {
     ) -> Result<Self, UpstreamError> {
         let first = tokio::time::timeout(first_event_timeout, self.next_chunk())
             .await
-            .map_err(|_| UpstreamError::Network)?
+            .map_err(|_| UpstreamError::network(af_domain::NetworkFailureKind::ResponseBody))?
             .ok_or(UpstreamError::ProtocolError)??;
         self.prefetched.push_front(first);
         Ok(self)

@@ -4,7 +4,10 @@ use af_db::{
 };
 use af_domain::{AfError, ChannelId, CredentialId, CredentialKind, UpstreamError};
 use af_relay::RelayAttemptReport;
-use af_scheduler::IndexedWeightedScheduler;
+use af_scheduler::{
+    CredentialFailureDisposition, IndexedWeightedScheduler, PermanentCredentialFailure,
+    TemporaryCredentialFailure, credential_failure_disposition,
+};
 
 /// 与 Relay 候选索引一一对应的脱敏凭据身份。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -114,17 +117,31 @@ fn state_event(
 }
 
 const fn change_for_error(error: UpstreamError) -> Option<CredentialStateChange> {
-    match error {
-        UpstreamError::AuthExpired => Some(CredentialStateChange::AuthExpired),
-        UpstreamError::AuthRevoked => Some(CredentialStateChange::AuthRevoked),
-        UpstreamError::RateLimited => Some(CredentialStateChange::RateLimited),
-        UpstreamError::QuotaExhausted => Some(CredentialStateChange::QuotaExhausted),
-        UpstreamError::Overloaded => Some(CredentialStateChange::Overloaded),
-        UpstreamError::BadRequest
-        | UpstreamError::ModelUnsupported
-        | UpstreamError::ProtocolError
-        | UpstreamError::Network
-        | UpstreamError::ServerError { .. } => None,
+    match credential_failure_disposition(error) {
+        CredentialFailureDisposition::NoChange => None,
+        CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::AuthExpired) => {
+            Some(CredentialStateChange::AuthExpired)
+        }
+        CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::RateLimited {
+            scope: af_domain::RateLimitScope::Model,
+            ..
+        }) => None,
+        CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::RateLimited {
+            retry_after,
+            ..
+        }) => Some(CredentialStateChange::RateLimited { retry_after }),
+        CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::QuotaExhausted) => {
+            Some(CredentialStateChange::QuotaExhausted)
+        }
+        CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::Overloaded {
+            retry_after,
+        }) => Some(CredentialStateChange::Overloaded { retry_after }),
+        CredentialFailureDisposition::Permanent(PermanentCredentialFailure::AuthRevoked) => {
+            Some(CredentialStateChange::AuthRevoked)
+        }
+        CredentialFailureDisposition::Permanent(PermanentCredentialFailure::AccountDisabled) => {
+            Some(CredentialStateChange::AccountDisabled)
+        }
     }
 }
 
@@ -149,7 +166,7 @@ fn record_repository_error(error: CredentialStateRepositoryError) {
 
 #[cfg(test)]
 mod tests {
-    use af_domain::UpstreamServerStatus;
+    use af_domain::{NetworkFailureKind, RateLimitScope, UpstreamRetryAfter, UpstreamServerStatus};
 
     use super::*;
 
@@ -165,19 +182,33 @@ mod tests {
                 Some(CredentialStateChange::AuthRevoked),
             ),
             (
-                UpstreamError::RateLimited,
-                Some(CredentialStateChange::RateLimited),
+                UpstreamError::AccountDisabled,
+                Some(CredentialStateChange::AccountDisabled),
+            ),
+            (
+                UpstreamError::rate_limited(RateLimitScope::Window),
+                Some(CredentialStateChange::RateLimited { retry_after: None }),
+            ),
+            (UpstreamError::rate_limited(RateLimitScope::Model), None),
+            (
+                UpstreamError::rate_limited_after(
+                    RateLimitScope::Credential,
+                    UpstreamRetryAfter::from_seconds(90).unwrap(),
+                ),
+                Some(CredentialStateChange::RateLimited {
+                    retry_after: UpstreamRetryAfter::from_seconds(90),
+                }),
             ),
             (
                 UpstreamError::QuotaExhausted,
                 Some(CredentialStateChange::QuotaExhausted),
             ),
             (
-                UpstreamError::Overloaded,
-                Some(CredentialStateChange::Overloaded),
+                UpstreamError::overloaded(),
+                Some(CredentialStateChange::Overloaded { retry_after: None }),
             ),
             (UpstreamError::BadRequest, None),
-            (UpstreamError::Network, None),
+            (UpstreamError::network(NetworkFailureKind::Connect), None),
             (
                 UpstreamError::ServerError {
                     status: UpstreamServerStatus::new(503).unwrap(),

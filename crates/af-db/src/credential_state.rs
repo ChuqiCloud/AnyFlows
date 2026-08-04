@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, fmt, time::Duration};
 
-use af_domain::{ChannelId, CredentialId, CredentialKind, Status};
+use af_domain::{ChannelId, CredentialId, CredentialKind, Status, UpstreamRetryAfter};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set,
     TransactionTrait, entity::prelude::TimeDateTimeWithTimeZone,
@@ -29,12 +29,20 @@ pub enum CredentialStateChange {
     AuthExpired,
     /// 上游结构化信号确认凭据已经吊销。
     AuthRevoked,
+    /// 上游结构化信号确认账号、组织或工作区已经停用。
+    AccountDisabled,
     /// 凭据级限流，记录限流时间和短重置窗口。
-    RateLimited,
+    RateLimited {
+        /// 上游提供且经过领域上限校验的相对等待时间。
+        retry_after: Option<UpstreamRetryAfter>,
+    },
     /// 凭据额度暂时耗尽，进入较长冷却等待额度恢复。
     QuotaExhausted,
     /// 上游过载，进入短冷却。
-    Overloaded,
+    Overloaded {
+        /// 上游提供且经过领域上限校验的相对等待时间。
+        retry_after: Option<UpstreamRetryAfter>,
+    },
 }
 
 /// 一条不含密钥、URL、Header 或上游正文的凭据状态事件。
@@ -231,7 +239,11 @@ async fn apply_event(
         .ok_or(CredentialStateRepositoryError::Invariant)?;
     let status =
         Status::try_from(model.status).map_err(|_| CredentialStateRepositoryError::Invariant)?;
-    if event.change == CredentialStateChange::AuthRevoked && status != Status::Enabled {
+    if matches!(
+        event.change,
+        CredentialStateChange::AuthRevoked | CredentialStateChange::AccountDisabled
+    ) && status != Status::Enabled
+    {
         // 并发人工停用优先于运行时自动停用，已自动停用也无需重复写入。
         return Ok(false);
     }
@@ -250,7 +262,7 @@ async fn apply_event(
             active.temp_unschedulable_until = Set(Some(now + AUTH_EXPIRED_COOLDOWN));
             active.temp_unschedulable_reason = Set(Some("auth_expired".to_owned()));
         }
-        CredentialStateChange::AuthRevoked => {
+        CredentialStateChange::AuthRevoked | CredentialStateChange::AccountDisabled => {
             active.status = Set(Status::AutoDisabled.code());
             active.rate_limited_at = Set(None);
             active.rate_limit_reset_at = Set(None);
@@ -258,16 +270,17 @@ async fn apply_event(
             active.temp_unschedulable_until = Set(None);
             active.temp_unschedulable_reason = Set(None);
         }
-        CredentialStateChange::RateLimited => {
+        CredentialStateChange::RateLimited { retry_after } => {
             active.rate_limited_at = Set(Some(now));
-            active.rate_limit_reset_at = Set(Some(now + RATE_LIMIT_COOLDOWN));
+            active.rate_limit_reset_at =
+                Set(Some(now + cooldown(RATE_LIMIT_COOLDOWN, retry_after)));
         }
         CredentialStateChange::QuotaExhausted => {
             active.temp_unschedulable_until = Set(Some(now + QUOTA_EXHAUSTED_COOLDOWN));
             active.temp_unschedulable_reason = Set(Some("quota_exhausted".to_owned()));
         }
-        CredentialStateChange::Overloaded => {
-            active.overload_until = Set(Some(now + OVERLOAD_COOLDOWN));
+        CredentialStateChange::Overloaded { retry_after } => {
+            active.overload_until = Set(Some(now + cooldown(OVERLOAD_COOLDOWN, retry_after)));
         }
     }
     active.updated_at = Set(now);
@@ -276,6 +289,13 @@ async fn apply_event(
         .await
         .map_err(|_| CredentialStateRepositoryError::Query)?;
     Ok(true)
+}
+
+const fn cooldown(fallback: Duration, retry_after: Option<UpstreamRetryAfter>) -> Duration {
+    match retry_after {
+        Some(retry_after) => retry_after.duration(),
+        None => fallback,
+    }
 }
 
 fn record_internal_error(error: CredentialStateRepositoryError) -> CredentialStateRepositoryError {

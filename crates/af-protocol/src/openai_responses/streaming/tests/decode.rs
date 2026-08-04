@@ -555,11 +555,37 @@ fn maps_structured_error_without_preserving_message() {
     assert_eq!(
         events,
         vec![
-            CanonicalStreamEvent::Error(UpstreamError::RateLimited),
+            CanonicalStreamEvent::Error(UpstreamError::rate_limited(
+                af_domain::RateLimitScope::Window,
+            )),
             CanonicalStreamEvent::StreamEnd,
         ]
     );
     assert!(!format!("{events:?}").contains("secret upstream detail"));
+}
+
+#[test]
+fn maps_only_deterministic_auth_and_account_death_as_permanent() {
+    for (code, expected) in [
+        ("invalid_api_key", UpstreamError::AuthRevoked),
+        ("permission_error", UpstreamError::ProtocolError),
+        ("deactivated_workspace", UpstreamError::AccountDisabled),
+    ] {
+        let bytes = frame(
+            "error",
+            0,
+            json!({"code": code, "message": "private", "param": null}),
+        );
+        let mut decoder = OpenAiResponsesStreamDecoder::new();
+        assert_eq!(
+            decoder.push(&bytes).unwrap(),
+            vec![
+                CanonicalStreamEvent::Error(expected),
+                CanonicalStreamEvent::StreamEnd,
+            ]
+        );
+        decoder.finish().unwrap();
+    }
 }
 
 #[test]

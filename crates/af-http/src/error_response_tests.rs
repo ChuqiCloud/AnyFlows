@@ -1,5 +1,8 @@
 use af_config::{CorsOrigin, ServerConfig};
-use af_domain::{AfError, PublicErrorCode, UpstreamError, UpstreamServerStatus};
+use af_domain::{
+    AfError, NetworkFailureKind, PublicErrorCode, RateLimitScope, UpstreamError,
+    UpstreamServerStatus,
+};
 use af_telemetry::RequestId;
 use axum::{
     Router,
@@ -69,15 +72,16 @@ fn error_cases() -> Vec<ErrorCase> {
             message: "Rate limit exceeded. Please retry later.",
         },
         upstream_case(
-            UpstreamError::RateLimited,
+            UpstreamError::rate_limited(RateLimitScope::Window),
             StatusCode::TOO_MANY_REQUESTS,
             PublicErrorCode::RateLimited,
             "rate_limit_error",
             "Rate limit exceeded. Please retry later.",
         ),
-        upstream_unavailable_case(UpstreamError::Overloaded),
+        upstream_unavailable_case(UpstreamError::overloaded()),
         upstream_unavailable_case(UpstreamError::AuthExpired),
         upstream_unavailable_case(UpstreamError::AuthRevoked),
+        upstream_unavailable_case(UpstreamError::AccountDisabled),
         upstream_unavailable_case(UpstreamError::QuotaExhausted),
         ErrorCase {
             error: AfError::from(UpstreamError::ModelUnsupported),
@@ -97,7 +101,7 @@ fn error_cases() -> Vec<ErrorCase> {
             "invalid_request_error",
             "Invalid request.",
         ),
-        upstream_unavailable_case(UpstreamError::Network),
+        upstream_unavailable_case(UpstreamError::network(NetworkFailureKind::Connect)),
         ErrorCase {
             error: AfError::Internal,
             status: StatusCode::INTERNAL_SERVER_ERROR,

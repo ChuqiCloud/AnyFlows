@@ -1,4 +1,4 @@
-use af_domain::{UpstreamError, UpstreamServerStatus};
+use af_domain::{RateLimitScope, UpstreamError, UpstreamRetryAfter, UpstreamServerStatus};
 
 /// M1 默认只允许一次同渠道 5xx 短重试，避免上游持续故障时放大延迟。
 pub const DEFAULT_TRANSIENT_SERVER_RETRY_LIMIT: u8 = 1;
@@ -15,6 +15,82 @@ pub enum FailureAction {
     RetrySameChannel,
     /// 刷新当前 OAuth 凭据后再重试当前渠道。
     RefreshAuthAndRetry,
+}
+
+/// 上游故障对凭据持久状态的闭合影响。
+///
+/// 本类型只表达业务语义，不执行数据库写入；OAuth 是否具备 refresh token 属于凭据
+/// 上下文，由下一层在后续独立切片中收紧。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CredentialFailureDisposition {
+    /// 当前错误不应改变凭据持久状态。
+    NoChange,
+    /// 凭据仍可能自行恢复，只进入有界冷却。
+    Temporary(TemporaryCredentialFailure),
+    /// 结构化信号已经确认凭据或账号无法继续使用。
+    Permanent(PermanentCredentialFailure),
+}
+
+/// 可恢复凭据故障的稳定原因和受控等待提示。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TemporaryCredentialFailure {
+    /// 认证可能只是 access token 过期。
+    AuthExpired,
+    /// 上游限流；模型级信号不得扩大成整凭据冷却。
+    RateLimited {
+        scope: RateLimitScope,
+        retry_after: Option<UpstreamRetryAfter>,
+    },
+    /// 余额或额度可能在充值、重置后恢复。
+    QuotaExhausted,
+    /// 上游过载，按短窗口冷却。
+    Overloaded {
+        retry_after: Option<UpstreamRetryAfter>,
+    },
+}
+
+/// 只有确定性死亡信号才能进入的永久凭据状态。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PermanentCredentialFailure {
+    /// API Key 或 token 已被明确吊销。
+    AuthRevoked,
+    /// 上游账号、组织或工作区已被明确停用。
+    AccountDisabled,
+}
+
+/// 将闭合上游错误映射为凭据持久状态语义。
+#[must_use]
+pub const fn credential_failure_disposition(error: UpstreamError) -> CredentialFailureDisposition {
+    match error {
+        UpstreamError::AuthExpired => {
+            CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::AuthExpired)
+        }
+        UpstreamError::RateLimited { scope, retry_after } => {
+            CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::RateLimited {
+                scope,
+                retry_after,
+            })
+        }
+        UpstreamError::QuotaExhausted => {
+            CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::QuotaExhausted)
+        }
+        UpstreamError::Overloaded { retry_after } => {
+            CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::Overloaded {
+                retry_after,
+            })
+        }
+        UpstreamError::AuthRevoked => {
+            CredentialFailureDisposition::Permanent(PermanentCredentialFailure::AuthRevoked)
+        }
+        UpstreamError::AccountDisabled => {
+            CredentialFailureDisposition::Permanent(PermanentCredentialFailure::AccountDisabled)
+        }
+        UpstreamError::BadRequest
+        | UpstreamError::ModelUnsupported
+        | UpstreamError::ProtocolError
+        | UpstreamError::Network { .. }
+        | UpstreamError::ServerError { .. } => CredentialFailureDisposition::NoChange,
+    }
 }
 
 /// 计算故障动作所需的请求级上下文。
@@ -88,13 +164,14 @@ impl FailurePolicy {
             {
                 FailureAction::RetrySameChannel
             }
-            UpstreamError::RateLimited
-            | UpstreamError::Overloaded
+            UpstreamError::RateLimited { .. }
+            | UpstreamError::Overloaded { .. }
             | UpstreamError::AuthExpired
             | UpstreamError::AuthRevoked
+            | UpstreamError::AccountDisabled
             | UpstreamError::QuotaExhausted
             | UpstreamError::ModelUnsupported
-            | UpstreamError::Network
+            | UpstreamError::Network { .. }
             | UpstreamError::ServerError { .. } => FailureAction::Failover,
         }
     }
@@ -131,12 +208,13 @@ mod tests {
         let policy = FailurePolicy::default();
 
         for error in [
-            UpstreamError::RateLimited,
-            UpstreamError::Overloaded,
+            UpstreamError::rate_limited(RateLimitScope::Unknown),
+            UpstreamError::overloaded(),
             UpstreamError::AuthRevoked,
+            UpstreamError::AccountDisabled,
             UpstreamError::QuotaExhausted,
             UpstreamError::ModelUnsupported,
-            UpstreamError::Network,
+            UpstreamError::network(af_domain::NetworkFailureKind::Connect),
         ] {
             assert_eq!(
                 policy.action_for(error, FailureContext::default()),
@@ -225,6 +303,37 @@ mod tests {
         assert_eq!(
             format!("{context:?}"),
             "FailureContext { same_channel_retries_started: 7, auth_refresh_retry_available: true }"
+        );
+    }
+
+    #[test]
+    fn credential_disposition_separates_recovery_from_permanent_death() {
+        let retry_after = UpstreamRetryAfter::from_seconds(90).unwrap();
+        assert_eq!(
+            credential_failure_disposition(UpstreamError::rate_limited_after(
+                RateLimitScope::Window,
+                retry_after,
+            )),
+            CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::RateLimited {
+                scope: RateLimitScope::Window,
+                retry_after: Some(retry_after),
+            })
+        );
+        assert_eq!(
+            credential_failure_disposition(UpstreamError::AuthExpired),
+            CredentialFailureDisposition::Temporary(TemporaryCredentialFailure::AuthExpired)
+        );
+        assert_eq!(
+            credential_failure_disposition(UpstreamError::AuthRevoked),
+            CredentialFailureDisposition::Permanent(PermanentCredentialFailure::AuthRevoked)
+        );
+        assert_eq!(
+            credential_failure_disposition(UpstreamError::AccountDisabled),
+            CredentialFailureDisposition::Permanent(PermanentCredentialFailure::AccountDisabled)
+        );
+        assert_eq!(
+            credential_failure_disposition(UpstreamError::BadRequest),
+            CredentialFailureDisposition::NoChange
         );
     }
 

@@ -376,16 +376,17 @@ fn validate_usage(usage: &Usage) -> Result<(), EncodeStreamError> {
 
 const fn encoded_error(error: UpstreamError) -> (&'static str, &'static str) {
     match error {
-        UpstreamError::RateLimited => ("rate_limit_exceeded", "Request was rate limited."),
+        UpstreamError::RateLimited { .. } => ("rate_limit_exceeded", "Request was rate limited."),
         UpstreamError::QuotaExhausted => ("insufficient_quota", "Quota is exhausted."),
         UpstreamError::ModelUnsupported => ("model_not_found", "Model is not available."),
         UpstreamError::BadRequest => ("invalid_prompt", "Request was rejected."),
-        UpstreamError::Overloaded
+        UpstreamError::Overloaded { .. }
         | UpstreamError::AuthExpired
         | UpstreamError::AuthRevoked
+        | UpstreamError::AccountDisabled
         | UpstreamError::ProtocolError
         | UpstreamError::ServerError { .. }
-        | UpstreamError::Network => ("server_error", "Upstream request failed."),
+        | UpstreamError::Network { .. } => ("server_error", "Upstream request failed."),
     }
 }
 

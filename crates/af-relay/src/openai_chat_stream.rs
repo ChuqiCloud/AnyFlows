@@ -82,7 +82,7 @@ impl OpenAiChatStream {
     ) -> Result<Self, UpstreamError> {
         let first = tokio::time::timeout(first_event_timeout, self.next_chunk())
             .await
-            .map_err(|_| UpstreamError::Network)?
+            .map_err(|_| UpstreamError::network(af_domain::NetworkFailureKind::ResponseBody))?
             .ok_or(UpstreamError::ProtocolError)??;
         self.prefetched.push_front(first);
         Ok(self)
@@ -589,7 +589,10 @@ mod tests {
             .prefetch_first(Duration::from_millis(20))
             .await
             .unwrap_err();
-        assert_eq!(error, UpstreamError::Network);
+        assert_eq!(
+            error,
+            UpstreamError::network(af_domain::NetworkFailureKind::ResponseBody)
+        );
         assert_eq!(
             usage.resolve().await,
             Err(UsageResolutionError::Interrupted)

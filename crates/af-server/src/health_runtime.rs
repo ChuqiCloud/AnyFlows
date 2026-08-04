@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, fmt, future::Future, pin::Pin, sync::Arc};
 use af_cache::{
     RedisHealthEvent, RedisHealthFailure, RedisHealthSnapshot, RedisHealthStore, RedisHealthTarget,
 };
-use af_domain::{ChannelId, CredentialId, UpstreamError};
+use af_domain::{ChannelId, CredentialId, RateLimitScope, UpstreamError};
 use af_relay::RelayAttemptReport;
 use af_scheduler::ChannelRoutingHealth;
 use thiserror::Error;
@@ -222,10 +222,17 @@ const fn health_failure(error: UpstreamError) -> Option<RedisHealthFailure> {
         UpstreamError::AuthExpired | UpstreamError::AuthRevoked => {
             Some(RedisHealthFailure::Authentication)
         }
-        UpstreamError::QuotaExhausted => Some(RedisHealthFailure::Quota),
-        UpstreamError::RateLimited => Some(RedisHealthFailure::RateLimited),
-        UpstreamError::Overloaded => Some(RedisHealthFailure::Overloaded),
-        UpstreamError::Network => Some(RedisHealthFailure::Network),
+        UpstreamError::AccountDisabled | UpstreamError::QuotaExhausted => {
+            Some(RedisHealthFailure::Quota)
+        }
+        // 当前健康存储只有渠道/凭据粒度，模型级限流不能扩大到整个账号。
+        UpstreamError::RateLimited {
+            scope: RateLimitScope::Model,
+            ..
+        } => None,
+        UpstreamError::RateLimited { .. } => Some(RedisHealthFailure::RateLimited),
+        UpstreamError::Overloaded { .. } => Some(RedisHealthFailure::Overloaded),
+        UpstreamError::Network { .. } => Some(RedisHealthFailure::Network),
         UpstreamError::ServerError { .. } => Some(RedisHealthFailure::Server),
     }
 }

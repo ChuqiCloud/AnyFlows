@@ -752,10 +752,12 @@ fn map_stream_error(kind: StreamErrorTypeWire) -> UpstreamError {
         }
         StreamErrorTypeWire::AuthenticationError => UpstreamError::AuthExpired,
         StreamErrorTypeWire::BillingError => UpstreamError::QuotaExhausted,
-        StreamErrorTypeWire::PermissionError => UpstreamError::AuthRevoked,
+        StreamErrorTypeWire::PermissionError => UpstreamError::ProtocolError,
         StreamErrorTypeWire::NotFoundError => UpstreamError::ModelUnsupported,
-        StreamErrorTypeWire::RateLimitError => UpstreamError::RateLimited,
-        StreamErrorTypeWire::OverloadedError => UpstreamError::Overloaded,
+        StreamErrorTypeWire::RateLimitError => {
+            UpstreamError::rate_limited(af_domain::RateLimitScope::Window)
+        }
+        StreamErrorTypeWire::OverloadedError => UpstreamError::overloaded(),
         StreamErrorTypeWire::GatewayTimeout => UpstreamError::ServerError {
             status: UpstreamServerStatus::new(504).expect("504 必须是有效上游服务器状态"),
         },

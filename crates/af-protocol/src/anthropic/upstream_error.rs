@@ -18,12 +18,20 @@ const ERROR_JSON_LIMITS: JsonLimits = JsonLimits {
 /// 原始 `message` 和未知错误类型不会离开协议边界，也不会进入 Debug 输出。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AnthropicUpstreamErrorKind {
-    /// API Key 或 OAuth 凭据已经失效。
+    /// API Key 或 OAuth 凭据未通过认证，但不能据此确认永久吊销。
     Authentication,
     /// 账户计费或余额硬限制阻止调用。
     Billing,
     /// 请求或令牌速率达到上游限制。
     RateLimited,
+    /// 上游明确返回标准过载错误。
+    Overloaded,
+    /// 请求参数或正文大小不符合 Anthropic 协议。
+    InvalidRequest,
+    /// 请求资源或模型不存在。
+    NotFound,
+    /// 凭据没有当前资源权限，但不能据此确认永久吊销。
+    Permission,
     /// 正文无效、超限或没有命中已审定信号。
     Unknown,
 }
@@ -51,6 +59,10 @@ pub fn classify_error_response(body: &[u8]) -> AnthropicUpstreamErrorKind {
         "authentication_error" => AnthropicUpstreamErrorKind::Authentication,
         "billing_error" => AnthropicUpstreamErrorKind::Billing,
         "rate_limit_error" => AnthropicUpstreamErrorKind::RateLimited,
+        "overloaded_error" => AnthropicUpstreamErrorKind::Overloaded,
+        "invalid_request_error" | "request_too_large" => AnthropicUpstreamErrorKind::InvalidRequest,
+        "not_found_error" => AnthropicUpstreamErrorKind::NotFound,
+        "permission_error" => AnthropicUpstreamErrorKind::Permission,
         _ => AnthropicUpstreamErrorKind::Unknown,
     }
 }
@@ -76,7 +88,17 @@ mod tests {
             ),
             ("billing_error", AnthropicUpstreamErrorKind::Billing),
             ("rate_limit_error", AnthropicUpstreamErrorKind::RateLimited),
-            ("overloaded_error", AnthropicUpstreamErrorKind::Unknown),
+            ("overloaded_error", AnthropicUpstreamErrorKind::Overloaded),
+            (
+                "invalid_request_error",
+                AnthropicUpstreamErrorKind::InvalidRequest,
+            ),
+            (
+                "request_too_large",
+                AnthropicUpstreamErrorKind::InvalidRequest,
+            ),
+            ("not_found_error", AnthropicUpstreamErrorKind::NotFound),
+            ("permission_error", AnthropicUpstreamErrorKind::Permission),
         ] {
             let body =
                 format!(r#"{{"type":"error","error":{{"type":"{kind}","message":"private"}}}}"#);

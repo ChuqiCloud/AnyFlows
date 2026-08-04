@@ -285,7 +285,7 @@ impl ScheduledChatService {
         }
         if relay_candidates.is_empty() {
             return Err(if health_filtered {
-                af_domain::UpstreamError::Overloaded.into()
+                af_domain::UpstreamError::overloaded().into()
             } else {
                 af_domain::UpstreamError::ModelUnsupported.into()
             });
@@ -470,7 +470,7 @@ impl ChatRoutePlanner for ScheduledChatService {
                         AfError::from(if channel_ids.is_empty() {
                             af_domain::UpstreamError::ModelUnsupported
                         } else {
-                            af_domain::UpstreamError::Overloaded
+                            af_domain::UpstreamError::overloaded()
                         })
                     })?
             } else {
