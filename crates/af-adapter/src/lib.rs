@@ -14,6 +14,7 @@ mod gemini;
 mod openai;
 mod request;
 mod responses_websocket_pool;
+mod responses_websocket_transport;
 mod vertex;
 
 pub use adaptor::{Adaptor, AdaptorSendExt, AdaptorTarget};
@@ -53,6 +54,7 @@ pub use responses_websocket_pool::{
     ResponsesWebSocketPool, ResponsesWebSocketPoolConfig, ResponsesWebSocketPoolError,
     ResponsesWebSocketPoolKey, ResponsesWebSocketTransportError, build_responses_websocket_event,
 };
+pub use responses_websocket_transport::PooledResponsesWebSocketConnector;
 pub use vertex::{
     MAX_VERTEX_LOCATION_BYTES, MAX_VERTEX_PROJECT_ID_BYTES, MAX_VERTEX_TOKEN_RESPONSE_BYTES,
     VertexAdaptor,

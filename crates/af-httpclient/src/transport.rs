@@ -26,6 +26,7 @@ type ReqwestBodyStream =
 #[derive(Clone)]
 pub struct PooledClient {
     inner: Client,
+    read_timeout: Duration,
     request_timeout: Duration,
     target_address_policy: TargetAddressPolicy,
     target_dns_strategy: TargetDnsStrategy,
@@ -36,6 +37,7 @@ pub struct PooledClient {
 impl PooledClient {
     pub(crate) fn new(
         inner: Client,
+        read_timeout: Duration,
         request_timeout: Duration,
         target_address_policy: TargetAddressPolicy,
         target_dns_strategy: TargetDnsStrategy,
@@ -44,6 +46,7 @@ impl PooledClient {
     ) -> Self {
         Self {
             inner,
+            read_timeout,
             request_timeout,
             target_address_policy,
             target_dns_strategy,
@@ -56,6 +59,12 @@ impl PooledClient {
     #[must_use]
     pub const fn request_timeout(&self) -> Duration {
         self.request_timeout
+    }
+
+    /// 返回升级后 WebSocket 单次读写停顿所使用的超时。
+    #[must_use]
+    pub const fn read_timeout(&self) -> Duration {
+        self.read_timeout
     }
 
     /// 按池配置发送上游请求；建连前会执行字面量或域名目标安全策略。
@@ -78,6 +87,25 @@ impl PooledClient {
         *request.body_mut() = body;
 
         // 总时限贯穿完整响应体；同时就绪时优先判定硬 deadline。
+        let (response, request_timeout) = self.execute_managed_request(request).await?;
+        Ok(HttpResponse::new(response, request_timeout))
+    }
+
+    /// 使用当前 Client 的强制代理、DNS、SSRF、TLS 与超时策略建立 WebSocket 连接。
+    ///
+    /// 调用方只提供业务 Header；协议升级与代理 Header 由本层独占生成，避免覆盖受控路由。
+    pub async fn connect_websocket(
+        &self,
+        target: &str,
+        headers: HeaderMap,
+    ) -> Result<crate::WebSocketConnection, crate::WebSocketTransportError> {
+        crate::websocket::connect(self, target, headers).await
+    }
+
+    pub(crate) async fn execute_managed_request(
+        &self,
+        request: Request,
+    ) -> Result<(Response, Pin<Box<Sleep>>), HttpTransportError> {
         let mut request_timeout = Box::pin(sleep(self.request_timeout));
         let response = tokio::select! {
             biased;
@@ -86,10 +114,10 @@ impl PooledClient {
                 result.map_err(|error| HttpTransportError::from_send(&error))?
             }
         };
-        Ok(HttpResponse::new(response, request_timeout))
+        Ok((response, request_timeout))
     }
 
-    fn validate_target(&self, target: &Url) -> Result<(), HttpTransportError> {
+    pub(crate) fn validate_target(&self, target: &Url) -> Result<(), HttpTransportError> {
         match target.host() {
             Some(Host::Ipv4(address)) => self.validate_literal_address(IpAddr::V4(address)),
             Some(Host::Ipv6(address)) => self.validate_literal_address(IpAddr::V6(address)),

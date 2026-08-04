@@ -13,6 +13,7 @@ mod pool;
 mod provider;
 mod resolver;
 mod transport;
+mod websocket;
 
 pub use bytes::Bytes;
 pub(crate) use config::TargetAddressPolicy;
@@ -29,3 +30,7 @@ pub use pool::{
 pub use provider::HttpClientProvider;
 pub use reqwest::Body;
 pub use transport::{HttpBodyStream, HttpResponse, PooledClient};
+pub use websocket::{
+    MAX_MANAGED_WEBSOCKET_MESSAGE_BYTES, WebSocketConnection, WebSocketFrame,
+    WebSocketTransportError,
+};

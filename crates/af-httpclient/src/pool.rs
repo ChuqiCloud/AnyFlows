@@ -147,6 +147,7 @@ fn build_client_with_resolver(
     let client = builder.build().map_err(|_| HttpClientError::ClientBuild)?;
     Ok(PooledClient::new(
         client,
+        timeouts.read(),
         timeouts.request(),
         config.target_address_policy().clone(),
         target_dns_strategy,

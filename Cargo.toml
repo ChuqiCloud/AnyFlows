@@ -125,6 +125,9 @@ tower-http = { version = "0.7.0", default-features = false, features = [
     "limit",
     "trace",
 ] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = [
+    "handshake",
+] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"
 utoipa = { version = "5.5.0", features = ["preserve_order", "preserve_path_order"] }
