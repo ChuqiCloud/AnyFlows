@@ -38,6 +38,22 @@ use af_scheduler::{
     StickyRouteOutcome, StickyWaitPolicy,
 };
 
+/// 路由计划在同一次 Redis 快照中取得的账号负载与用户许可。
+struct PreparedConcurrencyPlan<'a> {
+    account_loads: Option<&'a BTreeMap<i64, CredentialLoad>>,
+    user_permit: Option<RuntimeConcurrencyPermit>,
+}
+
+impl PreparedConcurrencyPlan<'_> {
+    #[cfg(test)]
+    const fn disabled() -> Self {
+        Self {
+            account_loads: None,
+            user_permit: None,
+        }
+    }
+}
+
 /// 基于内存运行时快照装配生产原生协议候选的服务。
 #[derive(Clone)]
 pub(crate) struct ScheduledChatService {
@@ -97,9 +113,12 @@ impl ScheduledChatService {
         request_id: &str,
         upstream_protocol: Protocol,
         session_scope: Option<StableSessionScope>,
-        account_loads: Option<&BTreeMap<i64, CredentialLoad>>,
-        user_permit: Option<RuntimeConcurrencyPermit>,
+        concurrency: PreparedConcurrencyPlan<'_>,
     ) -> Result<ScheduledChatExecution, AfError> {
+        let PreparedConcurrencyPlan {
+            account_loads,
+            user_permit,
+        } = concurrency;
         let model = request.canonical().model.clone();
         let responses_websocket_session = session_scope.as_ref().map(StableSessionScope::as_str);
         let target_group_id = route.target_group_id();
@@ -376,8 +395,10 @@ impl ChatRoutePlanner for ScheduledChatService {
                 request_id,
                 upstream_protocol,
                 session_scope,
-                account_loads.as_ref(),
-                user_permit,
+                PreparedConcurrencyPlan {
+                    account_loads: account_loads.as_ref(),
+                    user_permit,
+                },
             )
             .map(|plan| Box::new(plan) as Box<dyn PlannedChatExecution>)
         })
@@ -825,8 +846,7 @@ mod tests {
                 "request-key-pool",
                 Protocol::OpenAiChat,
                 None,
-                None,
-                None,
+                PreparedConcurrencyPlan::disabled(),
             )
             .unwrap();
 
@@ -850,8 +870,7 @@ mod tests {
                 "request-anthropic",
                 Protocol::Anthropic,
                 None,
-                None,
-                None,
+                PreparedConcurrencyPlan::disabled(),
             )
             .unwrap();
 
@@ -877,8 +896,7 @@ mod tests {
                 "request-anthropic-fallback",
                 Protocol::OpenAiChat,
                 None,
-                None,
-                None,
+                PreparedConcurrencyPlan::disabled(),
             )
             .unwrap();
 
@@ -907,8 +925,7 @@ mod tests {
                 "request-gemini-native",
                 Protocol::Gemini,
                 None,
-                None,
-                None,
+                PreparedConcurrencyPlan::disabled(),
             )
             .unwrap();
         assert_eq!(execution.response_protocol, Protocol::Gemini);
@@ -929,8 +946,7 @@ mod tests {
                 "request-gemini-fallback",
                 Protocol::OpenAiChat,
                 None,
-                None,
-                None,
+                PreparedConcurrencyPlan::disabled(),
             )
             .unwrap();
         assert_eq!(execution.response_protocol, Protocol::Gemini);
@@ -1003,8 +1019,7 @@ mod tests {
                 "request-responses",
                 Protocol::OpenAiResponses,
                 None,
-                None,
-                None,
+                PreparedConcurrencyPlan::disabled(),
             )
             .unwrap();
         assert_eq!(execution.response_protocol, Protocol::OpenAiResponses);
