@@ -283,7 +283,7 @@ mod tests {
     use crate::{
         Bytes, HeaderMap, HeaderName, HeaderValue, Method, ResponsesWebSocketConnection,
         ResponsesWebSocketConnector, ResponsesWebSocketFrame, ResponsesWebSocketHandshake,
-        ResponsesWebSocketTransportError,
+        ResponsesWebSocketPoolConfig, ResponsesWebSocketTransportError,
     };
 
     #[derive(Clone)]
