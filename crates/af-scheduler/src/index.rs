@@ -9,6 +9,7 @@ use std::{
 
 use af_db::{
     DatabasePool, MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES, SchedulerAbilityRepositoryError,
+    SchedulerCatalogSubject, SchedulerOutboxRepository, SchedulerOutboxRepositoryError,
     SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
 };
 use af_domain::{ChannelId, GroupId, MAX_MODEL_NAME_BYTES};
@@ -20,17 +21,56 @@ use crate::{
     WeightedSelectionError, WeightedStrategy,
 };
 
+mod projection;
 mod route;
 
+pub use projection::ChannelIndexProjectionApplyReport;
 pub use route::{IndexedRouteCandidate, IndexedRoutePlan};
 
 /// 默认渠道索引全量重建周期；后续 M3 会改为事件驱动增量并保留周期校正。
 pub const DEFAULT_CHANNEL_INDEX_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+const CHANNEL_INDEX_OUTBOX_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// 渠道索引数据源的一次全量读取结果。
 pub type ChannelIndexSourceFuture<'a> = Pin<
     Box<
         dyn Future<Output = Result<Vec<ChannelIndexSourceRecord>, ChannelIndexSourceError>>
+            + Send
+            + 'a,
+    >,
+>;
+
+/// 带数据库目录高水位的一次全量来源读取结果。
+pub struct ChannelIndexSourceSnapshot {
+    records: Vec<ChannelIndexSourceRecord>,
+    catalog_version: u64,
+}
+
+impl ChannelIndexSourceSnapshot {
+    /// 使用完整记录和读取前取得的 outbox 高水位构造来源快照。
+    #[must_use]
+    pub const fn new(records: Vec<ChannelIndexSourceRecord>, catalog_version: u64) -> Self {
+        Self {
+            records,
+            catalog_version,
+        }
+    }
+}
+
+impl fmt::Debug for ChannelIndexSourceSnapshot {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ChannelIndexSourceSnapshot")
+            .field("record_count", &self.records.len())
+            .field("catalog_version", &self.catalog_version)
+            .finish()
+    }
+}
+
+/// 可替换来源的一次带目录高水位读取结果。
+pub type ChannelIndexVersionedSourceFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<ChannelIndexSourceSnapshot, ChannelIndexSourceError>>
             + Send
             + 'a,
     >,
@@ -43,6 +83,11 @@ pub type ChannelIndexSourceFuture<'a> = Pin<
 pub trait ChannelIndexSource: Send + Sync + 'static {
     /// 读取一个完整且内部一致的渠道能力与运行时目标目录。
     fn load<'a>(&'a self) -> ChannelIndexSourceFuture<'a>;
+
+    /// 先取得目录事件高水位，再读取完整目录；普通测试来源默认使用零高水位。
+    fn load_versioned<'a>(&'a self) -> ChannelIndexVersionedSourceFuture<'a> {
+        Box::pin(async move { Ok(ChannelIndexSourceSnapshot::new(self.load().await?, 0)) })
+    }
 }
 
 /// 来源读取错误；不携带模型、渠道或底层数据库诊断。
@@ -145,6 +190,9 @@ pub enum ChannelIndexSnapshotError {
 /// 可由请求侧无锁持有的不可变渠道索引快照。
 pub struct ChannelIndexSnapshot {
     generation: u64,
+    catalog_version: u64,
+    subject_versions: BTreeMap<SchedulerCatalogSubject, u64>,
+    runtime_target_versions: BTreeMap<ChannelId, u64>,
     entries: BTreeMap<GroupId, BTreeMap<String, Arc<[SchedulerCandidate]>>>,
     runtime_targets: BTreeMap<ChannelId, Arc<SchedulerRuntimeTargetRecord>>,
     key_count: usize,
@@ -156,6 +204,14 @@ impl ChannelIndexSnapshot {
     pub fn from_records(
         records: Vec<ChannelIndexSourceRecord>,
         generation: u64,
+    ) -> Result<Self, ChannelIndexSnapshotError> {
+        Self::from_versioned_records(records, generation, 0)
+    }
+
+    fn from_versioned_records(
+        records: Vec<ChannelIndexSourceRecord>,
+        generation: u64,
+        catalog_version: u64,
     ) -> Result<Self, ChannelIndexSnapshotError> {
         if generation == 0 {
             return Err(ChannelIndexSnapshotError::Invariant);
@@ -218,6 +274,9 @@ impl ChannelIndexSnapshot {
 
         Ok(Self {
             generation,
+            catalog_version,
+            subject_versions: BTreeMap::new(),
+            runtime_target_versions: BTreeMap::new(),
             entries,
             runtime_targets,
             key_count,
@@ -229,6 +288,12 @@ impl ChannelIndexSnapshot {
     #[must_use]
     pub const fn generation(&self) -> u64 {
         self.generation
+    }
+
+    /// 返回最近一次全量数据库读取前取得的 outbox 高水位。
+    #[must_use]
+    pub const fn catalog_version(&self) -> u64 {
+        self.catalog_version
     }
 
     /// 返回当前包含的 `(group_id, model)` 键数量。
@@ -287,6 +352,12 @@ impl fmt::Debug for ChannelIndexSnapshot {
         formatter
             .debug_struct("ChannelIndexSnapshot")
             .field("generation", &self.generation)
+            .field("catalog_version", &self.catalog_version)
+            .field("subject_version_count", &self.subject_versions.len())
+            .field(
+                "runtime_target_version_count",
+                &self.runtime_target_versions.len(),
+            )
             .field("key_count", &self.key_count)
             .field("candidate_count", &self.candidate_count)
             .field("runtime_target_count", &self.runtime_targets.len())
@@ -327,7 +398,12 @@ pub struct InMemoryChannelIndex {
 impl InMemoryChannelIndex {
     /// 从来源完整加载首个快照；失败时不得发布空索引冒充成功。
     pub async fn load(source: Arc<dyn ChannelIndexSource>) -> Result<Self, ChannelIndexCacheError> {
-        let snapshot = Arc::new(ChannelIndexSnapshot::from_records(source.load().await?, 1)?);
+        let loaded = source.load_versioned().await?;
+        let snapshot = Arc::new(ChannelIndexSnapshot::from_versioned_records(
+            loaded.records,
+            1,
+            loaded.catalog_version,
+        )?);
         Ok(Self {
             inner: Arc::new(InMemoryChannelIndexInner {
                 source,
@@ -361,9 +437,11 @@ impl InMemoryChannelIndex {
             .generation()
             .checked_add(1)
             .ok_or(ChannelIndexCacheError::GenerationExhausted)?;
-        let next = Arc::new(ChannelIndexSnapshot::from_records(
-            self.inner.source.load().await?,
+        let loaded = self.inner.source.load_versioned().await?;
+        let next = Arc::new(ChannelIndexSnapshot::from_versioned_records(
+            loaded.records,
             generation,
+            loaded.catalog_version,
         )?);
         let mut current = self
             .inner
@@ -651,12 +729,15 @@ impl fmt::Debug for ChannelIndexRefreshSupervisor {
 #[derive(Clone)]
 struct DatabaseChannelIndexSource {
     repository: SchedulerRuntimeRepository,
+    outbox: SchedulerOutboxRepository,
 }
 
 impl DatabaseChannelIndexSource {
     fn new(database: DatabasePool) -> Self {
         Self {
-            repository: SchedulerRuntimeRepository::new(database),
+            repository: SchedulerRuntimeRepository::new(database.clone()),
+            outbox: SchedulerOutboxRepository::new(database, CHANNEL_INDEX_OUTBOX_TIMEOUT)
+                .expect("固定调度 outbox 查询超时必须有效"),
         }
     }
 }
@@ -670,17 +751,24 @@ impl ChannelIndexSource for DatabaseChannelIndexSource {
                 .map_err(map_repository_error)?
                 .into_iter()
                 .map(|record| {
-                    let (ability, target) = record.into_parts();
-                    ChannelIndexSourceRecord::with_runtime_target(
-                        ability.group_id(),
-                        ability.model().to_owned(),
-                        ability.priority(),
-                        ability.weight(),
-                        target,
-                    )
-                    .map_err(|_| ChannelIndexSourceError::Invariant)
+                    runtime_record_to_source(record).map_err(|_| ChannelIndexSourceError::Invariant)
                 })
                 .collect()
+        })
+    }
+
+    fn load_versioned<'a>(&'a self) -> ChannelIndexVersionedSourceFuture<'a> {
+        Box::pin(async move {
+            // 高水位必须先于目录读取，避免把读取后的并发事件错误标记为已包含。
+            let catalog_version = self
+                .outbox
+                .latest_event_id()
+                .await
+                .map_err(map_outbox_repository_error)?;
+            Ok(ChannelIndexSourceSnapshot::new(
+                self.load().await?,
+                catalog_version,
+            ))
         })
     }
 }
@@ -725,6 +813,14 @@ fn map_repository_error(error: SchedulerRuntimeRepositoryError) -> ChannelIndexS
     }
 }
 
+fn map_outbox_repository_error(error: SchedulerOutboxRepositoryError) -> ChannelIndexSourceError {
+    match error {
+        SchedulerOutboxRepositoryError::Query => ChannelIndexSourceError::Unavailable,
+        SchedulerOutboxRepositoryError::Timeout => ChannelIndexSourceError::Timeout,
+        SchedulerOutboxRepositoryError::Invariant => ChannelIndexSourceError::Invariant,
+    }
+}
+
 fn channel_index_cache_error_kind(error: ChannelIndexCacheError) -> &'static str {
     match error {
         ChannelIndexCacheError::Source(ChannelIndexSourceError::Unavailable) => {
@@ -750,7 +846,8 @@ mod tests {
     use std::{collections::VecDeque, sync::Mutex};
 
     use af_db::{
-        EncryptedCredentialEnvelope, SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord,
+        EncryptedCredentialEnvelope, SchedulerRuntimeCredentialRecord, SchedulerRuntimeProjection,
+        SchedulerRuntimeTargetRecord,
     };
     use af_domain::{ChannelType, CredentialKind, Protocol};
 
@@ -869,6 +966,92 @@ mod tests {
             ChannelIndexCacheError::Source(ChannelIndexSourceError::Unavailable)
         );
         assert_eq!(index.snapshot().unwrap().generation(), 2);
+    }
+
+    #[tokio::test]
+    async fn subject_projection_replaces_only_its_scope_and_ignores_stale_versions() {
+        let index = InMemoryChannelIndex::load(Arc::new(SequenceSource::new(vec![Ok(vec![
+            record(1, "gpt-5", 1, 9, 0),
+            record(1, "gpt-5", 2, 8, 0),
+            record(2, "claude", 1, 7, 0),
+        ])])))
+        .await
+        .unwrap();
+        let channel_subject = SchedulerCatalogSubject::Channel(ChannelId::new(1).unwrap());
+
+        let report = index
+            .apply_projections(vec![
+                SchedulerRuntimeProjection::new(5, channel_subject, Vec::new()).unwrap(),
+            ])
+            .await
+            .unwrap();
+        assert_eq!(report.applied_subject_count(), 1);
+        assert_eq!(report.generation(), 2);
+        let snapshot = index.snapshot().unwrap();
+        assert_eq!(snapshot.candidate_count(), 1);
+        assert_eq!(
+            snapshot
+                .candidates(GroupId::new(1).unwrap(), "gpt-5")
+                .unwrap()[0]
+                .channel_id(),
+            ChannelId::new(2).unwrap()
+        );
+        assert!(
+            snapshot
+                .candidates(GroupId::new(2).unwrap(), "claude")
+                .unwrap()
+                .is_empty()
+        );
+
+        let stale = index
+            .apply_projections(vec![
+                SchedulerRuntimeProjection::new(4, channel_subject, Vec::new()).unwrap(),
+            ])
+            .await
+            .unwrap();
+        assert_eq!(stale.applied_subject_count(), 0);
+        assert_eq!(stale.generation(), 2);
+
+        let group_subject = SchedulerCatalogSubject::Group(GroupId::new(1).unwrap());
+        let deduplicated = index
+            .apply_projections(vec![
+                SchedulerRuntimeProjection::new(6, group_subject, Vec::new()).unwrap(),
+                SchedulerRuntimeProjection::new(7, group_subject, Vec::new()).unwrap(),
+            ])
+            .await
+            .unwrap();
+        assert_eq!(deduplicated.applied_subject_count(), 1);
+        assert_eq!(deduplicated.generation(), 3);
+        assert_eq!(index.snapshot().unwrap().candidate_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn full_snapshot_high_watermark_blocks_late_projection() {
+        let snapshot =
+            ChannelIndexSnapshot::from_versioned_records(vec![record(1, "gpt-5", 1, 1, 0)], 3, 10)
+                .unwrap();
+        let index = InMemoryChannelIndex {
+            inner: Arc::new(InMemoryChannelIndexInner {
+                source: Arc::new(SequenceSource::new(Vec::new())),
+                snapshot: RwLock::new(Arc::new(snapshot)),
+                refresh_gate: tokio::sync::Mutex::new(()),
+            }),
+        };
+        let report = index
+            .apply_projections(vec![
+                SchedulerRuntimeProjection::new(
+                    10,
+                    SchedulerCatalogSubject::Channel(ChannelId::new(1).unwrap()),
+                    Vec::new(),
+                )
+                .unwrap(),
+            ])
+            .await
+            .unwrap();
+
+        assert_eq!(report.applied_subject_count(), 0);
+        assert_eq!(report.generation(), 3);
+        assert_eq!(index.snapshot().unwrap().candidate_count(), 1);
     }
 
     #[test]

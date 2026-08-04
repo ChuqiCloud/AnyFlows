@@ -25,10 +25,11 @@ pub use failure::{
     DEFAULT_TRANSIENT_SERVER_RETRY_LIMIT, FailureAction, FailureContext, FailurePolicy,
 };
 pub use index::{
-    ChannelIndexCacheError, ChannelIndexRefreshConfig, ChannelIndexRefreshConfigError,
-    ChannelIndexRefreshReport, ChannelIndexRefreshSupervisor, ChannelIndexSnapshot,
-    ChannelIndexSnapshotError, ChannelIndexSource, ChannelIndexSourceError,
-    ChannelIndexSourceFuture, ChannelIndexSourceRecord, DEFAULT_CHANNEL_INDEX_REFRESH_INTERVAL,
+    ChannelIndexCacheError, ChannelIndexProjectionApplyReport, ChannelIndexRefreshConfig,
+    ChannelIndexRefreshConfigError, ChannelIndexRefreshReport, ChannelIndexRefreshSupervisor,
+    ChannelIndexSnapshot, ChannelIndexSnapshotError, ChannelIndexSource, ChannelIndexSourceError,
+    ChannelIndexSourceFuture, ChannelIndexSourceRecord, ChannelIndexSourceSnapshot,
+    ChannelIndexVersionedSourceFuture, DEFAULT_CHANNEL_INDEX_REFRESH_INTERVAL,
     InMemoryChannelIndex, IndexedRouteCandidate, IndexedRoutePlan, IndexedWeightedScheduler,
     IndexedWeightedSchedulerError,
 };

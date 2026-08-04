@@ -6,8 +6,9 @@ use std::{
 use af_cache::{
     CacheError, CacheMode, DEFAULT_REDIS_CONNECT_TIMEOUT, DistributedLease, DistributedLeaseConfig,
     DistributedLeaseManager, DistributedLeaseMode, HybridCache, HybridCacheConfig,
-    LeaseAcquireOutcome, LeaseReleaseOutcome, RedisBroadcastConfig, RedisBroadcastPublisher,
-    RedisBroadcastSubscriber, RedisConfig,
+    LeaseAcquireOutcome, LeaseReleaseOutcome, ProjectionWriteOutcome, RedisBroadcastConfig,
+    RedisBroadcastPublisher, RedisBroadcastSubscriber, RedisConfig, RedisProjectionConfig,
+    RedisVersionedProjectionStore,
 };
 
 const LIVE_REDIS_GATE: &str = "AF_REQUIRE_LIVE_REDIS";
@@ -81,6 +82,47 @@ async fn redis_hybrid_cache_smoke() {
 
     verify_distributed_lease_contract(&redis_url, &format!("{namespace}.lease")).await;
     verify_broadcast_contract(&redis_url, &format!("{namespace}.broadcast")).await;
+    verify_projection_contract(&redis_url, &format!("{namespace}.projection")).await;
+}
+
+async fn verify_projection_contract(redis_url: &str, namespace: &str) {
+    let config = || {
+        RedisProjectionConfig::new(
+            RedisConfig::new(redis_url)
+                .with_timeouts(DEFAULT_REDIS_CONNECT_TIMEOUT, Duration::from_secs(2)),
+            namespace,
+        )
+        .unwrap()
+        .with_max_payload_bytes(128)
+        .unwrap()
+    };
+    let first = RedisVersionedProjectionStore::connect(config())
+        .await
+        .unwrap();
+    let second = RedisVersionedProjectionStore::connect(config())
+        .await
+        .unwrap();
+    let old_version = (1_u64 << 53) + 1;
+    let new_version = old_version + 1;
+
+    assert_eq!(
+        first
+            .put_if_newer("channel:7", new_version, b"new-projection")
+            .await
+            .unwrap(),
+        ProjectionWriteOutcome::Applied
+    );
+    assert_eq!(
+        second
+            .put_if_newer("channel:7", old_version, b"stale-projection")
+            .await
+            .unwrap(),
+        ProjectionWriteOutcome::Stale
+    );
+    let entry = second.get("channel:7").await.unwrap().unwrap();
+    assert_eq!(entry.version(), new_version);
+    assert_eq!(entry.payload(), b"new-projection");
+    assert!(!format!("{entry:?}").contains("new-projection"));
 }
 
 async fn verify_broadcast_contract(redis_url: &str, channel: &str) {

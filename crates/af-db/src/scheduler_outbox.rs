@@ -23,7 +23,7 @@ const INITIAL_VERSION: i64 = 1;
 ///
 /// 事件只携带稳定数据库标识。发布器按主体重新读取数据库真相，从而让重复投递、删除和
 /// 多次变更合并都保持幂等，且不会把模型名或敏感运行时配置写入 outbox。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum SchedulerCatalogSubject {
     /// 渠道配置、路由能力或所属凭据发生变化。
     Channel(ChannelId),

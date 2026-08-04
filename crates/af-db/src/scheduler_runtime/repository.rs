@@ -16,7 +16,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     DatabasePool, SchedulerAbilityRecord, SchedulerAbilityRepository,
-    SchedulerAbilityRepositoryError,
+    SchedulerAbilityRepositoryError, SchedulerCatalogSubject,
     entity::{channels, credentials},
 };
 
@@ -118,6 +118,38 @@ impl SchedulerRuntimeRepository {
             .load_all()
             .await
             .map_err(SchedulerRuntimeRepositoryError::Ability)?;
+        self.load_records(abilities).await
+    }
+
+    /// 按闭合渠道或分组主体读取当前运行时投影；删除后的主体返回空集合。
+    pub async fn load_subject(
+        &self,
+        subject: SchedulerCatalogSubject,
+    ) -> Result<Vec<SchedulerRuntimeRecord>, SchedulerRuntimeRepositoryError> {
+        let abilities = self
+            .abilities
+            .load_subject(subject)
+            .await
+            .map_err(SchedulerRuntimeRepositoryError::Ability)?;
+        let records = self.load_records(abilities).await?;
+        if records.iter().any(|record| {
+            let ability = record.ability();
+            match subject {
+                SchedulerCatalogSubject::Channel(channel_id) => ability.channel_id() != channel_id,
+                SchedulerCatalogSubject::Group(group_id) => ability.group_id() != group_id,
+            }
+        }) {
+            return Err(record_internal_error(
+                SchedulerRuntimeRepositoryError::Invariant,
+            ));
+        }
+        Ok(records)
+    }
+
+    async fn load_records(
+        &self,
+        abilities: Vec<SchedulerAbilityRecord>,
+    ) -> Result<Vec<SchedulerRuntimeRecord>, SchedulerRuntimeRepositoryError> {
         if abilities.is_empty() {
             return Ok(Vec::new());
         }

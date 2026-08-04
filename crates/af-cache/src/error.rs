@@ -14,6 +14,8 @@ pub enum CacheOperation {
     Publish,
     Subscribe,
     Receive,
+    ProjectionRead,
+    ProjectionWrite,
     LeaseAcquire,
     LeaseRelease,
 }
@@ -29,6 +31,8 @@ impl fmt::Display for CacheOperation {
             Self::Publish => "发布",
             Self::Subscribe => "订阅",
             Self::Receive => "接收",
+            Self::ProjectionRead => "读取投影",
+            Self::ProjectionWrite => "写入投影",
             Self::LeaseAcquire => "获取租约",
             Self::LeaseRelease => "释放租约",
         };
@@ -84,6 +88,10 @@ pub enum CacheError {
     InvalidBroadcastChannel,
     #[error("Redis 广播消息必须非空且不得超过配置的字节上限")]
     InvalidBroadcastPayload,
+    #[error("Redis 投影版本必须大于零")]
+    InvalidProjectionVersion,
+    #[error("Redis 投影正文必须非空")]
+    InvalidProjectionPayload,
     #[error("Redis 广播订阅连接已关闭")]
     BroadcastClosed,
     #[error("缓存 TTL 必须为可表示的整毫秒正数")]

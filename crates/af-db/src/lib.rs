@@ -354,9 +354,11 @@ pub use scheduler_runtime::{
     MAX_CHANNEL_MODEL_MAPPINGS, MAX_CHANNEL_OUTPUT_TOKENS, MAX_CHANNEL_PARAMETER_OVERRIDES,
     MAX_CHANNEL_REQUEST_POLICY_BYTES, MAX_CHANNEL_STOP_SEQUENCE_BYTES, MAX_CHANNEL_STOP_SEQUENCES,
     MAX_SCHEDULER_RUNTIME_CREDENTIAL_ENTRIES, MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL,
-    SchedulerRuntimeCredentialRecord, SchedulerRuntimeHeader, SchedulerRuntimeRecord,
-    SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
-    SchedulerRuntimeTargetRecordError, validate_channel_header_overrides,
+    MAX_SCHEDULER_RUNTIME_PROJECTION_BYTES, SchedulerRuntimeCredentialRecord,
+    SchedulerRuntimeHeader, SchedulerRuntimeProjection, SchedulerRuntimeProjectionError,
+    SchedulerRuntimeRecord, SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError,
+    SchedulerRuntimeTargetRecord, SchedulerRuntimeTargetRecordError,
+    validate_channel_header_overrides,
 };
 pub use site_settings::{
     SiteSettingsRecord, SiteSettingsRepository, SiteSettingsRepositoryConfigError,

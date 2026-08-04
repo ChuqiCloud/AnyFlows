@@ -64,6 +64,12 @@ async fn outbox_insert_is_transactional_and_uses_a_closed_pending_shape()
     assert_eq!(rows.len(), 2);
     assert_eq!((rows[0].subject_kind, rows[0].subject_id), (1, 7));
     assert_eq!((rows[1].subject_kind, rows[1].subject_id), (2, 11));
+    assert_eq!(
+        SchedulerOutboxRepository::new(pool.clone(), Duration::from_secs(5))?
+            .latest_event_id()
+            .await?,
+        u64::try_from(rows[1].id)?
+    );
     assert!(rows.iter().all(|row| {
         row.status == 1
             && row.attempt_count == 0
