@@ -745,6 +745,10 @@ async fn exercise_scheduler_outbox_repository(pool: &DatabasePool) -> Result<(),
             .await?,
         2
     );
+    assert!(
+        second.latest_event_id().await?
+            >= <u64 as std::convert::TryFrom<i64>>::try_from(retried.event_id())?
+    );
     Ok(())
 }
 

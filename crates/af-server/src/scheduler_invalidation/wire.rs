@@ -23,7 +23,7 @@ pub(super) enum SchedulerInvalidationWireError {
 #[serde(deny_unknown_fields)]
 struct SchedulerInvalidationWire {
     version: u8,
-    event_id: i64,
+    event_id: u64,
     subject: SchedulerInvalidationSubjectWire,
 }
 
@@ -34,12 +34,31 @@ enum SchedulerInvalidationSubjectWire {
     Group { id: i64 },
 }
 
+/// 已验证且不含投影正文的调度失效信号。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct SchedulerInvalidationSignal {
+    event_id: u64,
+    subject: SchedulerCatalogSubject,
+}
+
+impl SchedulerInvalidationSignal {
+    /// 返回广播对应的 outbox 事件版本。
+    pub(super) const fn event_id(self) -> u64 {
+        self.event_id
+    }
+
+    /// 返回需要读取物化投影的闭合主体。
+    pub(super) const fn subject(self) -> SchedulerCatalogSubject {
+        self.subject
+    }
+}
+
 /// 把闭合主体编码为不含模型、URL、Header 或凭据的版本化消息。
 pub(super) fn encode_scheduler_invalidation(
-    event_id: i64,
+    event_id: u64,
     subject: SchedulerCatalogSubject,
 ) -> Result<Vec<u8>, SchedulerInvalidationWireError> {
-    if event_id <= 0 {
+    if event_id == 0 || event_id > i64::MAX as u64 {
         return Err(SchedulerInvalidationWireError::Invariant);
     }
     let subject = match subject {
@@ -61,10 +80,10 @@ pub(super) fn encode_scheduler_invalidation(
 /// 解析并验证来自共享 Redis 通道的闭合消息。
 pub(super) fn decode_scheduler_invalidation(
     payload: &[u8],
-) -> Result<(), SchedulerInvalidationWireError> {
+) -> Result<SchedulerInvalidationSignal, SchedulerInvalidationWireError> {
     let wire: SchedulerInvalidationWire =
         serde_json::from_slice(payload).map_err(|_| SchedulerInvalidationWireError::Decode)?;
-    if wire.version != WIRE_VERSION || wire.event_id <= 0 {
+    if wire.version != WIRE_VERSION || wire.event_id == 0 || wire.event_id > i64::MAX as u64 {
         return Err(SchedulerInvalidationWireError::Invariant);
     }
     let subject = match wire.subject {
@@ -75,8 +94,10 @@ pub(super) fn decode_scheduler_invalidation(
             .map(SchedulerCatalogSubject::Group)
             .map_err(|_| SchedulerInvalidationWireError::Invariant)?,
     };
-    let _ = subject;
-    Ok(())
+    Ok(SchedulerInvalidationSignal {
+        event_id: wire.event_id,
+        subject,
+    })
 }
 
 #[cfg(test)]
@@ -93,7 +114,9 @@ mod tests {
             (8, SchedulerCatalogSubject::Group(GroupId::new(12).unwrap())),
         ] {
             let payload = encode_scheduler_invalidation(event_id, subject).unwrap();
-            decode_scheduler_invalidation(&payload).unwrap();
+            let signal = decode_scheduler_invalidation(&payload).unwrap();
+            assert_eq!(signal.event_id(), event_id);
+            assert_eq!(signal.subject(), subject);
             let rendered = String::from_utf8(payload).unwrap();
             assert!(!rendered.contains("model"));
             assert!(!rendered.contains("url"));

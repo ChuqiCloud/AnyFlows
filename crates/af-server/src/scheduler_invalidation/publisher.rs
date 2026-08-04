@@ -1,34 +1,55 @@
 use std::{future::Future, time::Duration};
 
-use af_cache::RedisBroadcastPublisher;
+use af_cache::{RedisBroadcastPublisher, RedisVersionedProjectionStore};
 use af_db::{
     DatabaseTimestamp, SchedulerOutboxClaimOutcome, SchedulerOutboxCompletionOutcome,
-    SchedulerOutboxLease, SchedulerOutboxRepository,
+    SchedulerOutboxRepository, SchedulerRuntimeProjection, SchedulerRuntimeRepository,
 };
 use af_scheduler::InMemoryChannelIndex;
 use tokio::time::sleep;
 
-use super::{SchedulerInvalidationRuntimeError, wire::encode_scheduler_invalidation};
+use super::{
+    SchedulerInvalidationRuntimeError,
+    projection::{load_database_projection, scheduler_projection_key},
+    wire::encode_scheduler_invalidation,
+};
 
-/// 单实例模式直接校正本地索引；Redis 模式先广播，再由各实例订阅器校正。
+/// 单实例模式直接应用主体投影；Redis 模式先原子写投影，再由广播驱动各实例应用。
 #[derive(Clone)]
 pub(super) enum SchedulerInvalidationDelivery {
     Local(InMemoryChannelIndex),
-    Redis(RedisBroadcastPublisher),
+    Redis {
+        publisher: RedisBroadcastPublisher,
+        projection_store: RedisVersionedProjectionStore,
+    },
 }
 
 impl SchedulerInvalidationDelivery {
     async fn deliver(
         &self,
-        lease: &SchedulerOutboxLease,
+        projection: SchedulerRuntimeProjection,
     ) -> Result<Option<u64>, SchedulerInvalidationRuntimeError> {
         match self {
             Self::Local(index) => {
-                index.refresh().await?;
+                index.apply_projections(vec![projection]).await?;
                 Ok(None)
             }
-            Self::Redis(publisher) => {
-                let payload = encode_scheduler_invalidation(lease.event_id(), lease.subject())?;
+            Self::Redis {
+                publisher,
+                projection_store,
+            } => {
+                let version = projection.version();
+                let subject = projection.subject();
+                let projection_payload = projection.encode()?;
+                projection_store
+                    .put_if_newer(
+                        &scheduler_projection_key(subject),
+                        version,
+                        &projection_payload,
+                    )
+                    .await?;
+                // 只有投影原子可读后才广播轻量信号，订阅端永远不接收正文。
+                let payload = encode_scheduler_invalidation(version, subject)?;
                 publisher
                     .publish(&payload)
                     .await
@@ -51,6 +72,7 @@ enum SchedulerOutboxPublishOutcome {
 #[derive(Clone)]
 pub(super) struct SchedulerOutboxPublisher {
     repository: SchedulerOutboxRepository,
+    runtime_repository: SchedulerRuntimeRepository,
     delivery: SchedulerInvalidationDelivery,
     idle_poll_interval: Duration,
 }
@@ -58,11 +80,13 @@ pub(super) struct SchedulerOutboxPublisher {
 impl SchedulerOutboxPublisher {
     pub(super) const fn new(
         repository: SchedulerOutboxRepository,
+        runtime_repository: SchedulerRuntimeRepository,
         delivery: SchedulerInvalidationDelivery,
         idle_poll_interval: Duration,
     ) -> Self {
         Self {
             repository,
+            runtime_repository,
             delivery,
             idle_poll_interval,
         }
@@ -115,7 +139,17 @@ impl SchedulerOutboxPublisher {
         else {
             return Ok(SchedulerOutboxPublishOutcome::Empty);
         };
-        let subscriber_count = match self.delivery.deliver(&lease).await {
+        let delivery = async {
+            let projection = load_database_projection(
+                &self.runtime_repository,
+                lease.event_id(),
+                lease.subject(),
+            )
+            .await?;
+            self.delivery.deliver(projection).await
+        }
+        .await;
+        let subscriber_count = match delivery {
             Ok(subscriber_count) => subscriber_count,
             Err(delivery_error) => {
                 return match self

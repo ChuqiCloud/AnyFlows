@@ -9,7 +9,7 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    DatabasePool,
+    DatabasePool, SchedulerCatalogSubject,
     entity::{abilities, channels, groups},
     model_price::is_valid_model_name,
 };
@@ -209,15 +209,40 @@ impl SchedulerAbilityRepository {
     pub async fn load_all(
         &self,
     ) -> Result<Vec<SchedulerAbilityRecord>, SchedulerAbilityRepositoryError> {
+        self.load_snapshot(None).await
+    }
+
+    /// 按渠道或分组主体读取当前全部有效能力，供事件驱动投影做局部重建。
+    pub async fn load_subject(
+        &self,
+        subject: SchedulerCatalogSubject,
+    ) -> Result<Vec<SchedulerAbilityRecord>, SchedulerAbilityRepositoryError> {
+        self.load_snapshot(Some(subject)).await
+    }
+
+    async fn load_snapshot(
+        &self,
+        subject: Option<SchedulerCatalogSubject>,
+    ) -> Result<Vec<SchedulerAbilityRecord>, SchedulerAbilityRepositoryError> {
         let operation = async {
             let limit = snapshot_query_limit()?;
-            let rows = abilities::Entity::find()
+            let mut query = abilities::Entity::find()
                 .find_also_related(channels::Entity)
                 .join(JoinType::InnerJoin, abilities::Relation::Group.def())
                 .filter(abilities::Column::Enabled.eq(true))
                 .filter(channels::Column::Status.eq(Status::Enabled.code()))
                 .filter(channels::Column::DeletedAt.is_null())
-                .filter(groups::Column::DeletedAt.is_null())
+                .filter(groups::Column::DeletedAt.is_null());
+            query = match subject {
+                Some(SchedulerCatalogSubject::Channel(channel_id)) => {
+                    query.filter(abilities::Column::ChannelId.eq(channel_id.get()))
+                }
+                Some(SchedulerCatalogSubject::Group(group_id)) => {
+                    query.filter(abilities::Column::GroupId.eq(group_id.get()))
+                }
+                None => query,
+            };
+            let rows = query
                 .order_by_asc(abilities::Column::GroupId)
                 .order_by_asc(abilities::Column::Model)
                 .order_by_desc(abilities::Column::Priority)
@@ -237,6 +262,9 @@ impl SchedulerAbilityRepository {
             for (ability, channel) in rows {
                 let channel = channel.ok_or(SchedulerAbilityRepositoryError::Invariant)?;
                 let record = SchedulerAbilityRecord::try_from_models(ability, channel)?;
+                if subject.is_some_and(|subject| !record.matches_subject(subject)) {
+                    return Err(SchedulerAbilityRepositoryError::Invariant);
+                }
                 if current_group_id == Some(record.group_id())
                     && current_model.as_deref() == Some(record.model())
                 {
@@ -262,6 +290,34 @@ impl SchedulerAbilityRepository {
             Err(_) => Err(record_internal_error(
                 SchedulerAbilityRepositoryError::Timeout,
             )),
+        }
+    }
+}
+
+impl SchedulerAbilityRecord {
+    pub(crate) fn from_projection_parts(
+        group_id: GroupId,
+        model: String,
+        channel_id: ChannelId,
+        priority: i32,
+        weight: u32,
+    ) -> Result<Self, SchedulerAbilityRepositoryError> {
+        if !is_valid_model_name(&model) {
+            return Err(SchedulerAbilityRepositoryError::Invariant);
+        }
+        Ok(Self {
+            group_id,
+            model,
+            channel_id,
+            priority,
+            weight,
+        })
+    }
+
+    fn matches_subject(&self, subject: SchedulerCatalogSubject) -> bool {
+        match subject {
+            SchedulerCatalogSubject::Channel(channel_id) => self.channel_id == channel_id,
+            SchedulerCatalogSubject::Group(group_id) => self.group_id == group_id,
         }
     }
 }

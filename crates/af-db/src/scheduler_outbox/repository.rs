@@ -134,6 +134,19 @@ impl SchedulerOutboxRepository {
         }
     }
 
+    /// 读取当前已经提交的最大事件标识；空表返回零。
+    ///
+    /// 全量快照必须先读取该高水位再读取业务目录。这样高水位以内的事务一定已经提交，
+    /// 随后的目录查询至少能看到这些变更，迟到投影便不能覆盖更新的全量事实。
+    pub async fn latest_event_id(&self) -> Result<u64, SchedulerOutboxRepositoryError> {
+        match timeout(self.operation_timeout, self.latest_event_id_inner()).await {
+            Ok(result) => result.map_err(record_internal_error),
+            Err(_) => Err(record_internal_error(
+                SchedulerOutboxRepositoryError::Timeout,
+            )),
+        }
+    }
+
     /// 仅在租约版本仍为当前事实时，把已经广播的事件闭合为已发布。
     pub async fn mark_published(
         &self,
@@ -245,6 +258,18 @@ impl SchedulerOutboxRepository {
             }));
         }
         Ok(SchedulerOutboxClaimOutcome::Empty)
+    }
+
+    async fn latest_event_id_inner(&self) -> Result<u64, SchedulerOutboxRepositoryError> {
+        let event = scheduler_outbox_events::Entity::find()
+            .order_by_desc(scheduler_outbox_events::Column::Id)
+            .one(self.pool.connection())
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(|_| SchedulerOutboxRepositoryError::Query)?;
+        event.map_or(Ok(0), |event| {
+            u64::try_from(event.id).map_err(|_| SchedulerOutboxRepositoryError::Invariant)
+        })
     }
 
     async fn mark_published_inner(

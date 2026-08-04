@@ -394,6 +394,11 @@ impl SchedulerRuntimeTargetRecord {
         self.model_mappings.resolve(requested_model)
     }
 
+    /// 返回受控投影编解码使用的已验证模型映射。
+    pub(super) const fn model_mappings(&self) -> &ChannelModelMappings {
+        &self.model_mappings
+    }
+
     /// 返回已验证的 Canonical 参数覆盖。
     #[must_use]
     pub const fn parameter_overrides(&self) -> &ChannelParameterOverrides {

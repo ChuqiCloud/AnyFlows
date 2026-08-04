@@ -10,6 +10,7 @@ mod error;
 mod hybrid;
 mod lease;
 mod local;
+mod projection;
 mod redis_backend;
 mod remote;
 
@@ -28,6 +29,10 @@ pub use hybrid::{CacheMode, HybridCache};
 pub use lease::{
     DistributedLease, DistributedLeaseConfig, DistributedLeaseManager, DistributedLeaseMode,
     LeaseAcquireOutcome, LeaseReleaseOutcome,
+};
+pub use projection::{
+    ProjectionWriteOutcome, RedisProjectionConfig, RedisProjectionEntry,
+    RedisVersionedProjectionStore,
 };
 
 /// 缓存统一存储字节，由调用方负责稳定的编码版本。

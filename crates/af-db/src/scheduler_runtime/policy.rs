@@ -78,6 +78,16 @@ impl ChannelModelMappings {
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
+
+    /// 为受控 Redis 投影还原已验证的持久化 JSON 形状。
+    pub(super) fn to_projection_json(&self) -> Json {
+        Json::Object(
+            self.entries
+                .iter()
+                .map(|(source, target)| (source.clone(), Json::String(target.clone())))
+                .collect(),
+        )
+    }
 }
 
 impl fmt::Debug for ChannelModelMappings {
@@ -186,6 +196,27 @@ impl ChannelParameterOverrides {
             && self.top_p.is_none()
             && self.max_output_tokens.is_none()
             && self.stop_sequences.is_none()
+    }
+
+    /// 为受控 Redis 投影还原已验证的持久化 JSON 形状。
+    pub(super) fn to_projection_json(&self) -> Json {
+        let mut object = serde_json::Map::new();
+        if let Some(value) = &self.temperature {
+            object.insert("temperature".to_owned(), Json::Number(value.clone()));
+        }
+        if let Some(value) = &self.top_p {
+            object.insert("top_p".to_owned(), Json::Number(value.clone()));
+        }
+        if let Some(value) = self.max_output_tokens {
+            object.insert("max_output_tokens".to_owned(), Json::Number(value.into()));
+        }
+        if let Some(values) = &self.stop_sequences {
+            object.insert(
+                "stop_sequences".to_owned(),
+                Json::Array(values.iter().cloned().map(Json::String).collect()),
+            );
+        }
+        Json::Object(object)
     }
 }
 

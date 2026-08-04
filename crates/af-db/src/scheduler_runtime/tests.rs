@@ -2,7 +2,7 @@ mod support;
 
 use std::{error::Error, time::Duration};
 
-use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Status};
+use af_domain::{ChannelId, ChannelType, CredentialKind, GroupId, Protocol, Status};
 use sea_orm::{ActiveModelTrait, Set};
 
 use crate::EncryptedCredentialEnvelope;
@@ -13,6 +13,7 @@ use super::{
     SchedulerRuntimeCredentialRecord, SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError,
     SchedulerRuntimeTargetRecord,
 };
+use crate::SchedulerCatalogSubject;
 
 use self::support::{ability, attach, group, runtime_channel, runtime_credential};
 
@@ -209,6 +210,27 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         .await?;
 
     assert_eq!(records.len(), 3);
+    let repository = SchedulerRuntimeRepository::new(pool.clone());
+    let channel_projection = repository
+        .load_subject(SchedulerCatalogSubject::Channel(ChannelId::new(
+            supported.id,
+        )?))
+        .await?;
+    assert_eq!(channel_projection.len(), 1);
+    assert_eq!(
+        channel_projection[0].target().channel_id().get(),
+        supported.id
+    );
+    let group_projection = repository
+        .load_subject(SchedulerCatalogSubject::Group(GroupId::new(group.id)?))
+        .await?;
+    assert_eq!(group_projection.len(), records.len());
+    assert!(
+        repository
+            .load_subject(SchedulerCatalogSubject::Channel(ChannelId::new(i64::MAX)?))
+            .await?
+            .is_empty()
+    );
     let record = records
         .iter()
         .find(|record| record.target().channel_id().get() == supported.id)
