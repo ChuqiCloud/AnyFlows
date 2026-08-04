@@ -404,6 +404,10 @@ impl ResponsesWebSocketHandshake {
         &self.headers
     }
 
+    pub(crate) fn into_parts(self) -> (String, HeaderMap) {
+        (self.target, self.headers)
+    }
+
     fn fingerprint(&self) -> [u8; 32] {
         self.fingerprint
     }
