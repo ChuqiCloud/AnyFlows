@@ -11,6 +11,7 @@ use af_adapter::{
 use af_domain::{AfError, GatewayPrincipal, MAX_MODEL_NAME_BYTES, Protocol, UpstreamError};
 use af_protocol::{CanonicalRequestEnvelope, openai_chat::parse_response};
 
+use crate::attempt_gate::permit_completion_hook;
 use crate::{
     ChatResponse, OpenAiChatStream, RelayAttemptReport, RelayBuildError, RelayCandidate,
     RelayError, RelayRequest, RelayStateMachine,
@@ -184,8 +185,8 @@ pub async fn relay_openai_chat_with_report(
         Ok(request) => request,
         Err(error) => return RelayOpenAiChatOutcome::failed(map_relay_error(error)),
     };
-    let (response, mut report) = match machine.execute_with_report(request).await {
-        Ok(response) => response.into_parts(),
+    let (response, mut report, mut permit) = match machine.execute_with_report(request).await {
+        Ok(response) => response.into_parts_with_permit(),
         Err(error) => {
             let (error, report) = error.into_parts();
             return RelayOpenAiChatOutcome::new(Err(map_relay_error(error)), report);
@@ -210,13 +211,13 @@ pub async fn relay_openai_chat_with_report(
         let encoder = stream_encoder.expect("流式请求必须已经创建下游编码器");
         let (stream, usage) = OpenAiChatStream::new(response.into_body(), encoder, usage_estimator);
         return match stream.prefetch_first(STREAM_FIRST_EVENT_TIMEOUT).await {
-            Ok(stream) => RelayOpenAiChatOutcome::new(
-                Ok(ChatResponse::Stream {
-                    body: Box::new(stream),
-                    usage,
-                }),
-                report,
-            ),
+            Ok(stream) => {
+                let mut body: Box<dyn crate::GenerationStream> = Box::new(stream);
+                if let Some(permit) = permit.take() {
+                    body = body.with_completion_hook(permit_completion_hook(permit));
+                }
+                RelayOpenAiChatOutcome::new(Ok(ChatResponse::Stream { body, usage }), report)
+            }
             Err(error) => {
                 report.reject_success(error);
                 RelayOpenAiChatOutcome::new(Err(error.into()), report)
@@ -351,7 +352,10 @@ pub(crate) fn unix_timestamp() -> Result<i64, AfError> {
 fn map_relay_error(error: RelayError) -> AfError {
     match error {
         RelayError::InvalidModel => AfError::InvalidRequest,
-        RelayError::Request(_) | RelayError::Adaptor(_) => AfError::Internal,
+        RelayError::Request(_) | RelayError::Adaptor(_) | RelayError::AttemptGateFailed => {
+            AfError::Internal
+        }
+        RelayError::ConcurrencyUnavailable => AfError::ConcurrencyLimited,
         RelayError::Upstream(error) => error.into(),
     }
 }

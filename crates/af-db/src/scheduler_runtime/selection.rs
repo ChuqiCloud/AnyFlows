@@ -56,8 +56,15 @@ fn try_runtime_target(
     }
     let mut records = Vec::with_capacity(credentials.len());
     for credential in credentials {
-        let (credential_id, credential_kind, envelope, proxy_required, priority, weight) =
-            credential.into_runtime_parts();
+        let (
+            credential_id,
+            credential_kind,
+            envelope,
+            proxy_required,
+            priority,
+            weight,
+            concurrency,
+        ) = credential.into_runtime_parts();
         if !matches!(
             credential_kind,
             CredentialKind::ApiKey | CredentialKind::Oauth
@@ -65,13 +72,14 @@ fn try_runtime_target(
             continue;
         }
         records.push(
-            SchedulerRuntimeCredentialRecord::with_scheduling(
+            SchedulerRuntimeCredentialRecord::with_scheduling_and_concurrency(
                 credential_id,
                 credential_kind,
                 envelope,
                 proxy_required,
                 priority,
                 weight,
+                concurrency,
             )
             .map_err(|_| SchedulerRuntimeSelectionError::Invariant)?,
         );

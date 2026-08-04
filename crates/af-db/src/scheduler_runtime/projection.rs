@@ -184,6 +184,8 @@ struct ProjectionCredentialWire {
     proxy_required: bool,
     priority: i32,
     weight: u32,
+    #[serde(default)]
+    concurrency: Option<u32>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -394,6 +396,9 @@ impl ProjectionCredentialWire {
             proxy_required: credential.proxy_required(),
             priority: credential.priority(),
             weight: credential.weight(),
+            concurrency: credential
+                .concurrency()
+                .map(af_domain::ConcurrencyLimit::get),
         }
     }
 
@@ -414,13 +419,19 @@ impl ProjectionCredentialWire {
             .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
         let envelope = EncryptedCredentialEnvelope::new(self.key_id, nonce, ciphertext)
             .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
-        SchedulerRuntimeCredentialRecord::with_scheduling(
+        let concurrency = self
+            .concurrency
+            .map(af_domain::ConcurrencyLimit::new)
+            .transpose()
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        SchedulerRuntimeCredentialRecord::with_scheduling_and_concurrency(
             self.credential_id,
             credential_kind,
             envelope,
             self.proxy_required,
             self.priority,
             self.weight,
+            concurrency,
         )
         .map_err(|_| SchedulerRuntimeProjectionError::Invariant)
     }
@@ -486,6 +497,20 @@ mod tests {
         assert_eq!(decoded.version(), 11);
         assert_eq!(decoded.subject(), projection.subject());
         assert_eq!(decoded.records(), projection.records());
+
+        // 旧版 wire 没有账号并发字段，serde default 必须继续解码为不限并发。
+        let mut old_wire: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        for target in old_wire["targets"].as_array_mut().unwrap() {
+            for credential in target["credentials"].as_array_mut().unwrap() {
+                credential.as_object_mut().unwrap().remove("concurrency");
+            }
+        }
+        let old_payload = serde_json::to_vec(&old_wire).unwrap();
+        let old_decoded = SchedulerRuntimeProjection::decode(&old_payload).unwrap();
+        assert_eq!(
+            old_decoded.records()[0].target().credentials()[0].concurrency(),
+            None
+        );
 
         let rendered = format!("{decoded:?}");
         for forbidden in [

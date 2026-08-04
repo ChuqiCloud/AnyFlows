@@ -4,6 +4,7 @@ use af_adapter::{Method, Operation, ResponseMode, StatusCode};
 use af_domain::{AfError, UpstreamError};
 use af_protocol::{CanonicalRequestEnvelope, CanonicalResponse, openai_responses};
 
+use crate::attempt_gate::permit_completion_hook;
 use crate::error::{classify_upstream_status, map_adaptor_error};
 use crate::openai_chat::unix_timestamp;
 use crate::openai_chat_usage::OpenAiChatUsageEstimator;
@@ -11,8 +12,8 @@ use crate::openai_responses_request::{
     PreparedOpenAiResponsesRequest, prepare_openai_responses_request,
 };
 use crate::{
-    ChatResponse, OpenAiResponsesStream, RelayAttemptReport, RelayError, RelayRequest,
-    RelayStateMachine,
+    ChatResponse, GenerationStream, OpenAiResponsesStream, RelayAttemptReport, RelayError,
+    RelayRequest, RelayStateMachine,
 };
 
 const STREAM_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -59,8 +60,8 @@ pub async fn relay_openai_responses_with_report(
         Ok(request) => request,
         Err(error) => return RelayOpenAiResponsesOutcome::failed(map_relay_error(error)),
     };
-    let (response, mut report) = match machine.execute_with_report(request).await {
-        Ok(response) => response.into_parts(),
+    let (response, mut report, mut permit) = match machine.execute_with_report(request).await {
+        Ok(response) => response.into_parts_with_permit(),
         Err(error) => {
             let (error, report) = error.into_parts();
             return RelayOpenAiResponsesOutcome::new(Err(map_relay_error(error)), report);
@@ -98,13 +99,13 @@ pub async fn relay_openai_responses_with_report(
             Err(error) => return RelayOpenAiResponsesOutcome::new(Err(error), report),
         };
         return match stream.prefetch_first(STREAM_FIRST_EVENT_TIMEOUT).await {
-            Ok(stream) => RelayOpenAiResponsesOutcome::new(
-                Ok(ChatResponse::Stream {
-                    body: Box::new(stream),
-                    usage,
-                }),
-                report,
-            ),
+            Ok(stream) => {
+                let mut body: Box<dyn GenerationStream> = Box::new(stream);
+                if let Some(permit) = permit.take() {
+                    body = body.with_completion_hook(permit_completion_hook(permit));
+                }
+                RelayOpenAiResponsesOutcome::new(Ok(ChatResponse::Stream { body, usage }), report)
+            }
             Err(error) => {
                 report.reject_success(error);
                 RelayOpenAiResponsesOutcome::new(Err(error.into()), report)
@@ -203,7 +204,10 @@ impl fmt::Debug for RelayOpenAiResponsesOutcome {
 fn map_relay_error(error: RelayError) -> AfError {
     match error {
         RelayError::InvalidModel => AfError::InvalidRequest,
-        RelayError::Request(_) | RelayError::Adaptor(_) => AfError::Internal,
+        RelayError::Request(_) | RelayError::Adaptor(_) | RelayError::AttemptGateFailed => {
+            AfError::Internal
+        }
+        RelayError::ConcurrencyUnavailable => AfError::ConcurrencyLimited,
         RelayError::Upstream(error) => error.into(),
     }
 }

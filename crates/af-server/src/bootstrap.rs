@@ -35,7 +35,10 @@ use af_billing::{
     RefundSignalQueue, RefundSignalQueueError, RefundSignalSink, UsageRecordConsumer,
     UsageRecordConsumerError, UsageRecordPort, UsageRecordQueue, UsageRecordQueueError,
 };
-use af_cache::{CacheError, RedisConfig, RedisStickySessionConfig, RedisStickySessionStore};
+use af_cache::{
+    CacheError, RedisConcurrencyConfig, RedisConcurrencyStore, RedisConfig,
+    RedisStickySessionConfig, RedisStickySessionStore,
+};
 use af_config::{AppConfig, ConfigError};
 use af_db::{
     AdminChannelRepository, AdminChannelRepositoryConfigError, AdminDashboardRepository,
@@ -86,6 +89,7 @@ use crate::{
     BillingRuntimeError, ChatRoutePlanner, ShutdownController, SupervisorError, SupervisorShutdown,
     balance_alert_runtime::BalanceAlertRuntime,
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
+    concurrency_runtime::{ConcurrencyCleanupWorker, ConcurrencyReleaseWorker, ConcurrencyRuntime},
     frontend::EmbeddedFrontendAssets,
     group_pricing_refresh::RuntimeGroupPricingRefresher,
     model_catalog::RuntimeModelCatalogReader,
@@ -193,6 +197,8 @@ pub struct BillingReady {
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     admin_model_sync_service: Arc<dyn AdminModelSyncService>,
     admin_model_price_service: Arc<dyn AdminModelPriceService>,
+    concurrency_release_worker: Option<ConcurrencyReleaseWorker>,
+    concurrency_cleanup_worker: Option<ConcurrencyCleanupWorker>,
 }
 
 /// 后台任务监督域已经建立，周期 flush、渠道索引、渠道探活与可靠队列 worker 已注册。
@@ -416,6 +422,9 @@ pub enum BootstrapError {
     /// Redis 粘性会话存储无法安全装配。
     #[error("初始化调度粘性会话失败")]
     StickySession(#[source] CacheError),
+    /// Redis 并发槽位存储无法安全装配。
+    #[error("初始化调度并发槽位失败")]
+    Concurrency(#[source] CacheError),
     /// 内部退款信号队列容量配置无效。
     #[error("初始化退款信号队列失败")]
     RefundSignalQueue(#[source] RefundSignalQueueError),
@@ -918,6 +927,26 @@ impl Bootstrap<RelayReady> {
         } else {
             None
         };
+        let concurrency = if let Some(redis_url) = self.config.redis().url() {
+            let config = RedisConcurrencyConfig::new(
+                RedisConfig::new(redis_url.expose().to_owned()),
+                "anyflows.scheduler.concurrency.v1",
+            )
+            .map_err(BootstrapError::Concurrency)?;
+            let store = RedisConcurrencyStore::connect(config)
+                .await
+                .map_err(BootstrapError::Concurrency)?;
+            Some(ConcurrencyRuntime::new(store))
+        } else {
+            None
+        };
+        let (concurrency_runtime, concurrency_release_worker, concurrency_cleanup_worker) =
+            match concurrency {
+                Some((runtime, release_worker, cleanup_worker)) => {
+                    (Some(runtime), Some(release_worker), Some(cleanup_worker))
+                }
+                None => (None, None, None),
+            };
         let route_service = ScheduledChatService::new(
             IndexedWeightedScheduler::new(channel_index.clone()),
             decryptor,
@@ -928,6 +957,10 @@ impl Bootstrap<RelayReady> {
         );
         let route_service = match sticky_store {
             Some(store) => route_service.with_sticky_sessions(store, StickyWaitPolicy::default()),
+            None => route_service,
+        };
+        let route_service = match concurrency_runtime {
+            Some(runtime) => route_service.with_concurrency(runtime),
             None => route_service,
         };
         let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(route_service);
@@ -1004,6 +1037,8 @@ impl Bootstrap<RelayReady> {
                 model_catalog_reader,
                 admin_model_sync_service,
                 admin_model_price_service,
+                concurrency_release_worker,
+                concurrency_cleanup_worker,
             },
         })
     }
@@ -1039,6 +1074,8 @@ impl Bootstrap<BillingReady> {
             model_catalog_reader,
             admin_model_sync_service,
             admin_model_price_service,
+            concurrency_release_worker,
+            concurrency_cleanup_worker,
         } = stage;
         spawn_channel_index_refresh_task(
             &mut supervisor,
@@ -1049,6 +1086,22 @@ impl Bootstrap<BillingReady> {
         register_oauth_loopback_servers(&mut supervisor, oauth_loopback_servers);
         if let Some(runtime) = oauth_refresh_supervisor {
             spawn_oauth_refresh_task(&mut supervisor, runtime);
+        }
+        if let Some(worker) = concurrency_release_worker {
+            supervisor.spawn_drainable("concurrency-release", move |task_shutdown| {
+                let worker = worker.clone();
+                async move {
+                    worker.run_until(task_shutdown.cancelled()).await;
+                }
+            });
+        }
+        if let Some(worker) = concurrency_cleanup_worker {
+            supervisor.spawn("concurrency-cleanup", move |task_shutdown| {
+                let worker = worker.clone();
+                async move {
+                    worker.run_until(task_shutdown.cancelled()).await;
+                }
+            });
         }
         supervisor.spawn("balance-alert", {
             let runtime = BalanceAlertRuntime::new(infrastructure.balance_alert_task.clone());

@@ -98,6 +98,9 @@ pub enum AfError {
     /// 用户钱包或下游令牌额度不足，无法继续发送请求。
     #[error("下游可用额度不足")]
     InsufficientQuota,
+    /// 用户级或上游账号级并发槽位在等待期限内不可用。
+    #[error("并发请求已达上限")]
+    ConcurrencyLimited,
     /// 已归一化且不含原始上游内容的故障。
     #[error("{0}")]
     Upstream(#[from] UpstreamError),

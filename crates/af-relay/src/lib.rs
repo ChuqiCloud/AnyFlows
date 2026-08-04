@@ -3,6 +3,7 @@
 mod anthropic;
 mod anthropic_request;
 mod anthropic_stream;
+mod attempt_gate;
 mod chat_response;
 mod chat_stream_encoder;
 mod error;
@@ -22,6 +23,10 @@ mod state_machine;
 pub use anthropic::{RelayAnthropicOutcome, relay_anthropic, relay_anthropic_with_report};
 pub use anthropic_request::{AnthropicRequestOverrideError, AnthropicRequestOverrides};
 pub use anthropic_stream::AnthropicMessagesStream;
+pub use attempt_gate::{
+    RelayAttemptGate, RelayAttemptGateError, RelayAttemptGateFuture, RelayAttemptPermit,
+    RelayAttemptReleaseFuture,
+};
 pub use chat_response::ChatResponse;
 pub use error::{RelayBuildError, RelayError};
 pub use gemini::{RelayGeminiOutcome, relay_gemini, relay_gemini_with_report};

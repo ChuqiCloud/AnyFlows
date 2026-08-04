@@ -5,6 +5,7 @@
 //! 原子操作实现，不属于本 crate 的 HybridCache 语义。
 
 mod broadcast;
+mod concurrency;
 mod config;
 mod error;
 mod hybrid;
@@ -20,6 +21,13 @@ use std::sync::Arc;
 pub use broadcast::{
     DEFAULT_BROADCAST_MAX_MESSAGE_BYTES, RedisBroadcastConfig, RedisBroadcastPublisher,
     RedisBroadcastSubscriber,
+};
+pub use concurrency::{
+    ConcurrencyAccountLoad, ConcurrencyAcquireOutcome, ConcurrencyCleanupReport,
+    ConcurrencyLeaseOutcome, ConcurrencyWaitOutcome, DEFAULT_CONCURRENCY_SLOT_TTL,
+    DEFAULT_CONCURRENCY_WAIT_TTL, MAX_CONCURRENCY_CLEANUP_BATCH_SIZE,
+    MAX_CONCURRENCY_LOAD_BATCH_SIZE, RedisConcurrencyConfig, RedisConcurrencyLease,
+    RedisConcurrencyStore, RedisConcurrencyWait,
 };
 pub use config::{
     DEFAULT_LOCAL_TTL_CAP, DEFAULT_MAX_VALUE_BYTES, DEFAULT_REDIS_CONNECT_TIMEOUT,

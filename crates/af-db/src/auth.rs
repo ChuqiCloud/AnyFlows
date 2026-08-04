@@ -1,6 +1,8 @@
 use std::{fmt, time::Duration};
 
-use af_domain::{GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId};
+use af_domain::{
+    ConcurrencyLimit, GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId,
+};
 use sea_orm::{
     ConnectionTrait, DbBackend, DbErr, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -56,6 +58,8 @@ pub enum TokenAuthLookupOutcome {
         principal: GatewayPrincipal,
         /// 已完整解码的不可变令牌模型策略。
         model_policy: TokenModelPolicy,
+        /// 与用户状态同一次查询取得的并发限制快照；空值表示不限并发。
+        user_concurrency: Option<ConcurrencyLimit>,
     },
     /// Key 不存在，或状态、软删除、过期、客户端 IP 不允许继续访问。
     Rejected,
@@ -232,6 +236,10 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
             Alias::new("user_deleted_at"),
         )
         .expr_as(
+            Expr::col((users::Entity, users::Column::Concurrency)),
+            Alias::new("user_concurrency"),
+        )
+        .expr_as(
             Expr::col((groups::Entity, groups::Column::Id)),
             Alias::new("group_id"),
         )
@@ -289,6 +297,7 @@ struct TokenAuthRow {
     user_id: Option<i64>,
     user_status: Option<i16>,
     user_deleted_at: Option<TimeDateTimeWithTimeZone>,
+    user_concurrency: Option<i32>,
     group_id: Option<i64>,
     group_deleted_at: Option<TimeDateTimeWithTimeZone>,
 }
@@ -307,6 +316,7 @@ impl TokenAuthRow {
             user_id: result.try_get("", "user_id")?,
             user_status: result.try_get("", "user_status")?,
             user_deleted_at: result.try_get("", "user_deleted_at")?,
+            user_concurrency: result.try_get("", "user_concurrency")?,
             group_id: result.try_get("", "group_id")?,
             group_deleted_at: result.try_get("", "group_deleted_at")?,
         })
@@ -335,6 +345,7 @@ impl TokenAuthRow {
             return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
         };
         let user_enabled = enabled_or_rejected(user_status)?;
+        let user_concurrency = normalize_concurrency(self.user_concurrency)?;
         let Some(group_id) = self.group_id else {
             return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
         };
@@ -362,7 +373,23 @@ impl TokenAuthRow {
         Ok(TokenAuthLookupOutcome::Authenticated {
             principal,
             model_policy,
+            user_concurrency,
         })
+    }
+}
+
+/// 数据库空值和零值都表示不限并发，负数或无法表示的值视为持久化损坏。
+fn normalize_concurrency(
+    value: Option<i32>,
+) -> Result<Option<ConcurrencyLimit>, TokenAuthRepositoryError> {
+    match value {
+        None | Some(0) => Ok(None),
+        Some(value) if value > 0 => u32::try_from(value)
+            .ok()
+            .and_then(|value| ConcurrencyLimit::new(value).ok())
+            .map(Some)
+            .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant)),
+        Some(_) => Err(record_internal_error(TokenAuthRepositoryError::Invariant)),
     }
 }
 

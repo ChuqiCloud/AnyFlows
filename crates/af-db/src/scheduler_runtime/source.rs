@@ -1,4 +1,6 @@
-use af_domain::{ChannelId, ChannelTimeout, ChannelType, CredentialKind, Protocol, Status};
+use af_domain::{
+    ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind, Protocol, Status,
+};
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 
 use crate::{
@@ -146,6 +148,7 @@ pub(super) struct SchedulerRuntimeCredentialSource {
     proxy_required: bool,
     priority: i32,
     weight: u32,
+    concurrency: Option<ConcurrencyLimit>,
     rate_limit_reset_at: Option<TimeDateTimeWithTimeZone>,
     overload_until: Option<TimeDateTimeWithTimeZone>,
     temp_unschedulable_until: Option<TimeDateTimeWithTimeZone>,
@@ -179,6 +182,16 @@ impl SchedulerRuntimeCredentialSource {
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let weight =
             u32::try_from(credential.weight).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let concurrency = match credential.concurrency {
+            None | Some(0) => None,
+            Some(value) if value > 0 => Some(
+                u32::try_from(value)
+                    .ok()
+                    .and_then(|value| ConcurrencyLimit::new(value).ok())
+                    .ok_or(SchedulerRuntimeSourceError::Invariant)?,
+            ),
+            Some(_) => return Err(SchedulerRuntimeSourceError::Invariant),
+        };
         Ok(Some(Self {
             credential_id: credential.id,
             channel_id,
@@ -187,6 +200,7 @@ impl SchedulerRuntimeCredentialSource {
             proxy_required: credential.proxy_id.is_some(),
             priority: credential.priority,
             weight,
+            concurrency,
             rate_limit_reset_at: credential.rate_limit_reset_at,
             overload_until: credential.overload_until,
             temp_unschedulable_until: credential.temp_unschedulable_until,
@@ -220,6 +234,7 @@ impl SchedulerRuntimeCredentialSource {
         bool,
         i32,
         u32,
+        Option<ConcurrencyLimit>,
     ) {
         (
             self.credential_id,
@@ -228,6 +243,7 @@ impl SchedulerRuntimeCredentialSource {
             self.proxy_required,
             self.priority,
             self.weight,
+            self.concurrency,
         )
     }
 }

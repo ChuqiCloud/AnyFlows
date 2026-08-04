@@ -29,6 +29,7 @@ pub(crate) async fn anthropic_messages(
         .chat_service()
         .chat_completions(
             &principal,
+            authentication.user_concurrency(),
             request,
             Protocol::Anthropic,
             request_id.as_str(),

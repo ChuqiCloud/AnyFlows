@@ -5,7 +5,9 @@ use af_billing::{
     BillingRequestPlan, BillingSettlementPort, RefundSignalPort, RequestPricingSnapshotError,
     RequestPricingSnapshotSource, UsageRecordPort,
 };
-use af_domain::{AfError, BillingReservationId, GatewayPrincipal, GroupId, Protocol};
+use af_domain::{
+    AfError, BillingReservationId, ConcurrencyLimit, GatewayPrincipal, GroupId, Protocol,
+};
 use af_http::{ChatService, ChatServiceFuture};
 use af_protocol::{CanonicalRequestEnvelope, Usage};
 use af_relay::{
@@ -42,6 +44,7 @@ pub trait ChatRoutePlanner: Send + Sync {
     fn plan<'a>(
         &'a self,
         principal: &'a GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &'a str,
@@ -86,6 +89,7 @@ impl BillingChatService {
     async fn call(
         &self,
         principal: &GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &str,
@@ -95,7 +99,13 @@ impl BillingChatService {
         let model = request.canonical().model.clone();
         let planned = self
             .inner
-            .plan(principal, request, response_protocol, request_id)
+            .plan(
+                principal,
+                user_concurrency,
+                request,
+                response_protocol,
+                request_id,
+            )
             .await?;
         let source_group_id = principal.group_id();
         let target_group_id = planned.target_group_id();
@@ -163,11 +173,18 @@ impl ChatService for BillingChatService {
     fn chat_completions<'a>(
         &'a self,
         principal: &'a GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &'a str,
     ) -> ChatServiceFuture<'a> {
-        Box::pin(self.call(principal, request, response_protocol, request_id))
+        Box::pin(self.call(
+            principal,
+            user_concurrency,
+            request,
+            response_protocol,
+            request_id,
+        ))
     }
 }
 
@@ -325,6 +342,7 @@ mod tests {
         fn plan<'a>(
             &'a self,
             _principal: &'a GatewayPrincipal,
+            _user_concurrency: Option<ConcurrencyLimit>,
             _request: CanonicalRequestEnvelope,
             _response_protocol: Protocol,
             _request_id: &'a str,
@@ -350,6 +368,7 @@ mod tests {
         fn plan<'a>(
             &'a self,
             _principal: &'a GatewayPrincipal,
+            _user_concurrency: Option<ConcurrencyLimit>,
             _request: CanonicalRequestEnvelope,
             response_protocol: Protocol,
             _request_id: &'a str,
@@ -450,7 +469,13 @@ mod tests {
             usage_port.clone(),
         );
         let response = service
-            .chat_completions(&principal(), request(), Protocol::OpenAiChat, "request-1")
+            .chat_completions(
+                &principal(),
+                None,
+                request(),
+                Protocol::OpenAiChat,
+                "request-1",
+            )
             .await
             .unwrap();
         assert!(matches!(response, ChatResponse::Full { .. }));
@@ -478,6 +503,7 @@ mod tests {
         service
             .chat_completions(
                 &principal(),
+                None,
                 request(),
                 Protocol::Anthropic,
                 "request-anthropic",
@@ -487,6 +513,7 @@ mod tests {
         service
             .chat_completions(
                 &principal(),
+                None,
                 responses_request(),
                 Protocol::OpenAiResponses,
                 "request-responses",
@@ -519,6 +546,7 @@ mod tests {
         service
             .chat_completions(
                 &principal(),
+                None,
                 encrypted_reasoning_responses_request(),
                 Protocol::OpenAiResponses,
                 "request-encrypted-reasoning",
@@ -550,6 +578,7 @@ mod tests {
         service
             .chat_completions(
                 &principal(),
+                None,
                 request(),
                 Protocol::OpenAiChat,
                 "request-target-group",
@@ -582,6 +611,7 @@ mod tests {
         service
             .chat_completions(
                 &principal(),
+                None,
                 request(),
                 Protocol::OpenAiChat,
                 "request-failover",
@@ -764,6 +794,7 @@ mod tests {
         fn plan<'a>(
             &'a self,
             principal: &'a GatewayPrincipal,
+            _user_concurrency: Option<ConcurrencyLimit>,
             _request: CanonicalRequestEnvelope,
             _response_protocol: Protocol,
             _request_id: &'a str,

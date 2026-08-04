@@ -213,6 +213,7 @@ pub(crate) async fn chat_completions(
         .chat
         .chat_completions(
             &principal,
+            authentication.user_concurrency(),
             request,
             Protocol::OpenAiChat,
             request_id.as_str(),

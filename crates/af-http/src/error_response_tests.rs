@@ -61,6 +61,13 @@ fn error_cases() -> Vec<ErrorCase> {
             kind: "insufficient_quota",
             message: "Insufficient quota.",
         },
+        ErrorCase {
+            error: AfError::ConcurrencyLimited,
+            status: StatusCode::TOO_MANY_REQUESTS,
+            code: PublicErrorCode::RateLimited,
+            kind: "rate_limit_error",
+            message: "Rate limit exceeded. Please retry later.",
+        },
         upstream_case(
             UpstreamError::RateLimited,
             StatusCode::TOO_MANY_REQUESTS,

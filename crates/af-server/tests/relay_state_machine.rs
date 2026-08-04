@@ -1,7 +1,10 @@
 use std::{
     io::{Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     thread,
     time::Duration,
 };
@@ -14,8 +17,9 @@ use af_adapter::{
 use af_domain::{ChannelId, UpstreamError, UpstreamServerStatus};
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
 use af_relay::{
-    RelayBuildError, RelayCandidate, RelayCandidateRequest, RelayError, RelayRequest, RelayState,
-    RelayStateMachine,
+    RelayAttemptGate, RelayAttemptGateError, RelayAttemptGateFuture, RelayAttemptPermit,
+    RelayAttemptReleaseFuture, RelayBuildError, RelayCandidate, RelayCandidateRequest, RelayError,
+    RelayRequest, RelayState, RelayStateMachine,
 };
 
 const TEST_MODEL: &str = "test-model";
@@ -36,6 +40,63 @@ enum RejectionStage {
 
 struct RejectingAdaptor {
     stage: RejectionStage,
+}
+
+#[derive(Clone, Copy)]
+enum GateMode {
+    Permit,
+    Limited,
+    Internal,
+}
+
+struct FixedAttemptGate {
+    mode: GateMode,
+    acquired: Arc<AtomicUsize>,
+    released: Arc<AtomicUsize>,
+}
+
+impl RelayAttemptGate for FixedAttemptGate {
+    fn acquire(&self) -> RelayAttemptGateFuture<'_> {
+        self.acquired.fetch_add(1, Ordering::AcqRel);
+        let mode = self.mode;
+        let released = Arc::clone(&self.released);
+        Box::pin(async move {
+            match mode {
+                GateMode::Permit => {
+                    Ok(Box::new(RecordingAttemptPermit { released })
+                        as Box<dyn RelayAttemptPermit>)
+                }
+                GateMode::Limited => Err(RelayAttemptGateError::Limited),
+                GateMode::Internal => Err(RelayAttemptGateError::Internal),
+            }
+        })
+    }
+}
+
+struct RecordingAttemptPermit {
+    released: Arc<AtomicUsize>,
+}
+
+impl RelayAttemptPermit for RecordingAttemptPermit {
+    fn release(self: Box<Self>) -> RelayAttemptReleaseFuture {
+        Box::pin(async move {
+            self.released.fetch_add(1, Ordering::AcqRel);
+        })
+    }
+}
+
+fn attempt_gate(mode: GateMode) -> (Arc<FixedAttemptGate>, Arc<AtomicUsize>, Arc<AtomicUsize>) {
+    let acquired = Arc::new(AtomicUsize::new(0));
+    let released = Arc::new(AtomicUsize::new(0));
+    (
+        Arc::new(FixedAttemptGate {
+            mode,
+            acquired: Arc::clone(&acquired),
+            released: Arc::clone(&released),
+        }),
+        acquired,
+        released,
+    )
 }
 
 #[async_trait::async_trait]
@@ -274,6 +335,81 @@ async fn unsupported_candidate_is_skipped_before_sending() {
             .unwrap(),
         Bytes::from_static(br#"{"ok":"second"}"#)
     );
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn limited_candidate_gate_skips_to_the_next_candidate_before_network_io() {
+    let (address, server) = spawn_proxy(vec![ProxyResponse {
+        status_line: "200 OK",
+        body: br#"{"ok":"fallback"}"#,
+    }]);
+    let client = proxy_client(address);
+    let (gate, acquired, released) = attempt_gate(GateMode::Limited);
+    let machine = RelayStateMachine::new(vec![
+        candidate(&client, "http://limited.invalid", &[TEST_MODEL]).with_attempt_gate(gate),
+        candidate(&client, "http://fallback.invalid", &[TEST_MODEL]),
+    ])
+    .unwrap();
+
+    let response = machine.execute_with_report(request()).await.unwrap();
+    assert_eq!(response.report().successful_candidate_index(), Some(1));
+    assert_eq!(acquired.load(Ordering::Acquire), 1);
+    assert_eq!(released.load(Ordering::Acquire), 0);
+    server.join().unwrap();
+}
+
+#[tokio::test]
+async fn gate_failures_keep_limited_and_internal_results_distinct() {
+    let client = direct_client();
+    let (limited, _, _) = attempt_gate(GateMode::Limited);
+    let limited_machine = RelayStateMachine::new(vec![
+        candidate(&client, "https://limited.invalid", &[TEST_MODEL]).with_attempt_gate(limited),
+    ])
+    .unwrap();
+    assert_eq!(
+        limited_machine.execute(request()).await.unwrap_err(),
+        RelayError::ConcurrencyUnavailable
+    );
+
+    let (internal, _, _) = attempt_gate(GateMode::Internal);
+    let internal_machine = RelayStateMachine::new(vec![
+        candidate(&client, "https://internal.invalid", &[TEST_MODEL]).with_attempt_gate(internal),
+    ])
+    .unwrap();
+    assert_eq!(
+        internal_machine.execute(request()).await.unwrap_err(),
+        RelayError::AttemptGateFailed
+    );
+}
+
+#[tokio::test]
+async fn attempt_permit_is_released_on_retry_and_returned_on_success() {
+    let (address, server) = spawn_proxy(vec![
+        ProxyResponse {
+            status_line: "503 Service Unavailable",
+            body: b"{}",
+        },
+        ProxyResponse {
+            status_line: "200 OK",
+            body: br#"{"ok":true}"#,
+        },
+    ]);
+    let client = proxy_client(address);
+    let (failed_gate, _, failed_released) = attempt_gate(GateMode::Permit);
+    let (success_gate, _, success_released) = attempt_gate(GateMode::Permit);
+    let machine = RelayStateMachine::new(vec![
+        candidate(&client, "http://failed.invalid", &[TEST_MODEL]).with_attempt_gate(failed_gate),
+        candidate(&client, "http://success.invalid", &[TEST_MODEL]).with_attempt_gate(success_gate),
+    ])
+    .unwrap();
+
+    let response = machine.execute_with_report(request()).await.unwrap();
+    assert_eq!(failed_released.load(Ordering::Acquire), 1);
+    assert_eq!(success_released.load(Ordering::Acquire), 0);
+    let (_, _, permit) = response.into_parts_with_permit();
+    permit.expect("成功候选必须返回许可").release().await;
+    assert_eq!(success_released.load(Ordering::Acquire), 1);
     server.join().unwrap();
 }
 

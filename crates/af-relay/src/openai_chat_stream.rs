@@ -15,6 +15,7 @@ use futures_core::Stream;
 use crate::chat_stream_encoder::ChatStreamEncoder;
 use crate::error::map_adaptor_error;
 use crate::generation_stream::StreamSource;
+use crate::generation_stream::{append_completion_future, append_completion_hook};
 use crate::openai_chat_usage::{
     OpenAiChatUsageEstimator, OpenAiChatUsageHandle, UsageResolutionError, UsageSender,
     usage_channel,
@@ -66,10 +67,10 @@ impl OpenAiChatStream {
 
     /// 为流结束时的计费或审计收尾安装一次性回调。
     pub fn with_completion_hook(mut self, hook: Box<dyn GenerationCompletionHook>) -> Self {
-        if let Some(usage) = self.deferred_completion.take() {
-            self.completion_future = Some(hook.on_complete(usage));
+        if let Some(usage) = self.deferred_completion {
+            append_completion_future(&mut self.completion_future, hook.on_complete(usage));
         } else {
-            self.completion_hook = Some(hook);
+            append_completion_hook(&mut self.completion_hook, hook);
         }
         self
     }
@@ -158,11 +159,9 @@ impl OpenAiChatStream {
         if let Some(sender) = self.usage_sender.take() {
             let _ = sender.send(usage);
         }
+        self.deferred_completion = Some(usage);
         if let Some(hook) = self.completion_hook.take() {
-            self.completion_future = Some(hook.on_complete(usage));
-        } else {
-            // 预取首块可能已经包含完整流；延迟到计费层安装回调后再执行终态收尾。
-            self.deferred_completion = Some(usage);
+            append_completion_future(&mut self.completion_future, hook.on_complete(usage));
         }
     }
 
@@ -495,6 +494,34 @@ mod tests {
         let from_handle = usage.resolve().await.unwrap();
         let from_hook = completed.await.unwrap().unwrap();
         assert_eq!(from_hook, from_handle);
+    }
+
+    #[tokio::test]
+    async fn multiple_completion_hooks_survive_prefetch_and_run_once_each() {
+        let body = Bytes::from_static(
+            b"data: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"answer\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"upstream-id\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+        );
+        let response = UpstreamResponse::full(StatusCode::OK, HeaderMap::new(), body).unwrap();
+        let (stream, usage) =
+            OpenAiChatStream::new(response.into_body(), encoder(false), estimator());
+        let stream = stream.prefetch_first(Duration::from_secs(1)).await.unwrap();
+        let (first_sender, first_completed) = oneshot::channel();
+        let (second_sender, second_completed) = oneshot::channel();
+        let mut stream = stream
+            .with_completion_hook(Box::new(RecordingHook {
+                sender: first_sender,
+            }))
+            .with_completion_hook(Box::new(RecordingHook {
+                sender: second_sender,
+            }));
+
+        while let Some(chunk) = stream.next_chunk().await {
+            chunk.unwrap();
+        }
+
+        let from_handle = usage.resolve().await.unwrap();
+        assert_eq!(first_completed.await.unwrap().unwrap(), from_handle);
+        assert_eq!(second_completed.await.unwrap().unwrap(), from_handle);
     }
 
     #[tokio::test]

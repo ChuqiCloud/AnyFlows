@@ -189,6 +189,49 @@ async fn valid_lookup_uses_token_override_and_user_default_group() -> Result<(),
 }
 
 #[tokio::test]
+async fn valid_lookup_carries_the_user_concurrency_snapshot() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    set_user_column(
+        &fixture,
+        users::Column::Concurrency,
+        Expr::value(Some(3_i32)),
+    )
+    .await?;
+
+    let outcome = fixture
+        .repository
+        .lookup(&fixture.lookup, test_client_ip())
+        .await?;
+    let TokenAuthLookupOutcome::Authenticated {
+        user_concurrency, ..
+    } = outcome
+    else {
+        return Err("有效令牌必须返回用户并发快照".into());
+    };
+    assert_eq!(user_concurrency.map(|value| value.get()), Some(3));
+
+    set_user_column(
+        &fixture,
+        users::Column::Concurrency,
+        Expr::value(Some(0_i32)),
+    )
+    .await?;
+    let outcome = fixture
+        .repository
+        .lookup(&fixture.lookup, test_client_ip())
+        .await?;
+    let TokenAuthLookupOutcome::Authenticated {
+        user_concurrency, ..
+    } = outcome
+    else {
+        return Err("零并发配置不应拒绝有效令牌".into());
+    };
+    assert_eq!(user_concurrency, None);
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn model_policy_null_is_unrestricted_and_allowlist_matches_exactly()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture(Duration::from_secs(1)).await?;
@@ -862,6 +905,7 @@ fn assert_authenticated_group(
     let TokenAuthLookupOutcome::Authenticated {
         principal,
         model_policy,
+        ..
     } = outcome
     else {
         panic!("有效令牌必须返回已认证主体");

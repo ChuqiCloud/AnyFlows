@@ -1,7 +1,7 @@
 use std::{fmt, future::Future, pin::Pin};
 
 use af_db::{TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository};
-use af_domain::{GatewayPrincipal, TokenModelPolicy, TrustedClientIp};
+use af_domain::{ConcurrencyLimit, GatewayPrincipal, TokenModelPolicy, TrustedClientIp};
 use thiserror::Error;
 
 use crate::ApiKeyDigest;
@@ -16,6 +16,7 @@ pub type TokenAuthenticationFuture<'a> = Pin<
 pub struct TokenAuthentication {
     principal: GatewayPrincipal,
     model_policy: TokenModelPolicy,
+    user_concurrency: Option<ConcurrencyLimit>,
 }
 
 impl TokenAuthentication {
@@ -25,7 +26,18 @@ impl TokenAuthentication {
         Self {
             principal,
             model_policy,
+            user_concurrency: None,
         }
+    }
+
+    /// 绑定与主体同一次数据库鉴权取得的用户并发限制快照。
+    #[must_use]
+    pub const fn with_user_concurrency(
+        mut self,
+        user_concurrency: Option<ConcurrencyLimit>,
+    ) -> Self {
+        self.user_concurrency = user_concurrency;
+        self
     }
 
     /// 返回只携带稳定标识的网关主体。
@@ -38,6 +50,12 @@ impl TokenAuthentication {
     #[must_use]
     pub const fn model_policy(&self) -> &TokenModelPolicy {
         &self.model_policy
+    }
+
+    /// 返回用户级并发限制；空值表示不限并发。
+    #[must_use]
+    pub const fn user_concurrency(&self) -> Option<ConcurrencyLimit> {
+        self.user_concurrency
     }
 }
 
@@ -94,7 +112,9 @@ impl TokenAuthenticator for DatabaseTokenAuthenticator {
                 Ok(TokenAuthLookupOutcome::Authenticated {
                     principal,
                     model_policy,
-                }) => Ok(TokenAuthentication::new(principal, model_policy)),
+                    user_concurrency,
+                }) => Ok(TokenAuthentication::new(principal, model_policy)
+                    .with_user_concurrency(user_concurrency)),
                 Ok(TokenAuthLookupOutcome::Rejected) => {
                     Err(TokenAuthenticationError::InvalidApiKey)
                 }

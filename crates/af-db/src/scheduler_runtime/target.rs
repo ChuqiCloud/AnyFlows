@@ -1,6 +1,8 @@
 use std::{collections::BTreeSet, fmt};
 
-use af_domain::{ChannelId, ChannelTimeout, ChannelType, CredentialKind, Protocol};
+use af_domain::{
+    ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind, Protocol,
+};
 use sea_orm::entity::prelude::Json;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -76,6 +78,7 @@ pub struct SchedulerRuntimeCredentialRecord {
     proxy_required: bool,
     priority: i32,
     weight: u32,
+    concurrency: Option<ConcurrencyLimit>,
 }
 
 impl SchedulerRuntimeCredentialRecord {
@@ -105,6 +108,28 @@ impl SchedulerRuntimeCredentialRecord {
         priority: i32,
         weight: u32,
     ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        Self::with_scheduling_and_concurrency(
+            credential_id,
+            credential_kind,
+            envelope,
+            proxy_required,
+            priority,
+            weight,
+            None,
+        )
+    }
+
+    /// 连同账号级并发限制构造运行时记录；空值表示仅追踪负载、不限制槽位。
+    #[allow(clippy::too_many_arguments, reason = "字段与凭据运行时投影一一对应")]
+    pub fn with_scheduling_and_concurrency(
+        credential_id: i64,
+        credential_kind: CredentialKind,
+        envelope: EncryptedCredentialEnvelope,
+        proxy_required: bool,
+        priority: i32,
+        weight: u32,
+        concurrency: Option<ConcurrencyLimit>,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
         if credential_id <= 0
             || !matches!(
                 credential_kind,
@@ -122,6 +147,7 @@ impl SchedulerRuntimeCredentialRecord {
             proxy_required,
             priority,
             weight,
+            concurrency,
         })
     }
 
@@ -166,6 +192,12 @@ impl SchedulerRuntimeCredentialRecord {
     pub const fn weight(&self) -> u32 {
         self.weight
     }
+
+    /// 返回账号级并发限制；空值表示不限并发但仍可追踪实时负载。
+    #[must_use]
+    pub const fn concurrency(&self) -> Option<ConcurrencyLimit> {
+        self.concurrency
+    }
 }
 
 impl fmt::Debug for SchedulerRuntimeCredentialRecord {
@@ -179,6 +211,7 @@ impl fmt::Debug for SchedulerRuntimeCredentialRecord {
             .field("proxy_required", &self.proxy_required)
             .field("priority", &self.priority)
             .field("weight", &self.weight)
+            .field("concurrency", &self.concurrency)
             .finish()
     }
 }

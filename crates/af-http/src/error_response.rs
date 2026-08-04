@@ -150,6 +150,9 @@ fn classify_error(error: AfError) -> MappedError {
         AfError::InsufficientQuota => {
             MappedError::new(PublicErrorCode::InsufficientQuota, "insufficient_quota")
         }
+        AfError::ConcurrencyLimited => {
+            MappedError::new(PublicErrorCode::RateLimited, "concurrency_limited")
+        }
         AfError::Upstream(error) => classify_upstream_error(error),
         AfError::Internal => MappedError::new(PublicErrorCode::InternalError, "internal"),
     }

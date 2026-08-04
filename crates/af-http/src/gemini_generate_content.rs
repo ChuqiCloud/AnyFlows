@@ -40,7 +40,13 @@ pub(crate) async fn gemini_generate_content(
     let principal = authentication.principal();
     let response = state
         .chat_service()
-        .chat_completions(&principal, request, Protocol::Gemini, request_id.as_str())
+        .chat_completions(
+            &principal,
+            authentication.user_concurrency(),
+            request,
+            Protocol::Gemini,
+            request_id.as_str(),
+        )
         .await
         .map_err(GeminiHttpError::from)?;
     Ok(render_chat_response(response, state.stream_delivery()))

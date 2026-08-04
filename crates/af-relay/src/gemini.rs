@@ -4,14 +4,15 @@ use af_adapter::{Method, Operation, ResponseMode, StatusCode};
 use af_domain::{AfError, Protocol, UpstreamError};
 use af_protocol::{CanonicalRequestEnvelope, CanonicalResponse, Usage, gemini};
 
+use crate::attempt_gate::permit_completion_hook;
 use crate::chat_stream_encoder::ChatStreamEncoder;
 use crate::error::{classify_upstream_status, map_adaptor_error};
 use crate::gemini_request::{PreparedGeminiRequest, prepare_gemini_request};
 use crate::openai_chat::unix_timestamp;
 use crate::openai_chat_usage::OpenAiChatUsageEstimator;
 use crate::{
-    ChatResponse, GeminiGenerateContentStream, RelayAttemptReport, RelayError, RelayRequest,
-    RelayStateMachine,
+    ChatResponse, GeminiGenerateContentStream, GenerationStream, RelayAttemptReport, RelayError,
+    RelayRequest, RelayStateMachine,
 };
 
 const STREAM_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -77,8 +78,8 @@ pub async fn relay_gemini_with_report(
         Ok(request) => request,
         Err(error) => return RelayGeminiOutcome::failed(map_relay_error(error)),
     };
-    let (response, mut report) = match machine.execute_with_report(request).await {
-        Ok(response) => response.into_parts(),
+    let (response, mut report, mut permit) = match machine.execute_with_report(request).await {
+        Ok(response) => response.into_parts_with_permit(),
         Err(error) => {
             let (error, report) = error.into_parts();
             return RelayGeminiOutcome::new(Err(map_relay_error(error)), report);
@@ -104,13 +105,13 @@ pub async fn relay_gemini_with_report(
         let (stream, usage) =
             GeminiGenerateContentStream::new(response.into_body(), encoder, usage_estimator);
         return match stream.prefetch_first(STREAM_FIRST_EVENT_TIMEOUT).await {
-            Ok(stream) => RelayGeminiOutcome::new(
-                Ok(ChatResponse::Stream {
-                    body: Box::new(stream),
-                    usage,
-                }),
-                report,
-            ),
+            Ok(stream) => {
+                let mut body: Box<dyn GenerationStream> = Box::new(stream);
+                if let Some(permit) = permit.take() {
+                    body = body.with_completion_hook(permit_completion_hook(permit));
+                }
+                RelayGeminiOutcome::new(Ok(ChatResponse::Stream { body, usage }), report)
+            }
             Err(error) => {
                 report.reject_success(error);
                 RelayGeminiOutcome::new(Err(error.into()), report)
@@ -200,7 +201,10 @@ impl fmt::Debug for RelayGeminiOutcome {
 fn map_relay_error(error: RelayError) -> AfError {
     match error {
         RelayError::InvalidModel => AfError::InvalidRequest,
-        RelayError::Request(_) | RelayError::Adaptor(_) => AfError::Internal,
+        RelayError::Request(_) | RelayError::Adaptor(_) | RelayError::AttemptGateFailed => {
+            AfError::Internal
+        }
+        RelayError::ConcurrencyUnavailable => AfError::ConcurrencyLimited,
         RelayError::Upstream(error) => error.into(),
     }
 }

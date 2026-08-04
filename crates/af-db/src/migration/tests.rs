@@ -1454,6 +1454,7 @@ async fn exercise_token_auth_repository(pool: &DatabasePool) -> Result<(), Box<d
     let TokenAuthLookupOutcome::Authenticated {
         principal,
         model_policy,
+        ..
     } = outcome
     else {
         return Err("三方言令牌鉴权冒烟未返回已认证主体".into());
