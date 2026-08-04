@@ -458,10 +458,7 @@ mod tests {
         io::{AsyncReadExt, AsyncWriteExt},
         net::{TcpListener, TcpStream},
     };
-    use tokio_tungstenite::{
-        accept_hdr_async,
-        tungstenite::handshake::server::{Request as ServerRequest, Response as ServerResponse},
-    };
+    use tokio_tungstenite::accept_async;
 
     use super::*;
     use crate::{
@@ -475,19 +472,7 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.unwrap();
-            let mut websocket = accept_hdr_async(
-                stream,
-                |request: &ServerRequest, response: ServerResponse| {
-                    assert_eq!(request.uri().path(), "/responses");
-                    assert_eq!(
-                        request.headers().get("authorization"),
-                        Some(&HeaderValue::from_static("Bearer test-secret"))
-                    );
-                    Ok(response)
-                },
-            )
-            .await
-            .unwrap();
+            let mut websocket = accept_async(stream).await.unwrap();
             assert_eq!(
                 websocket.next().await.unwrap().unwrap(),
                 Message::Text(Utf8Bytes::from("request"))
@@ -560,6 +545,10 @@ mod tests {
             assert!(
                 request.starts_with("GET http://public.example/responses?mode=proxy HTTP/1.1\r\n")
             );
+            assert_eq!(
+                request_header(&request, "authorization"),
+                Some("Bearer proxy-secret")
+            );
             let key = request_header(&request, "sec-websocket-key").unwrap();
             let accept = derive_accept_key(key.as_bytes());
             stream
@@ -589,8 +578,13 @@ mod tests {
         )
         .with_remote_dns_policy(RemoteDnsPolicy::TrustProxy);
         let client = HttpClientPool::default().get(&config).unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HeaderName::from_static("authorization"),
+            HeaderValue::from_static("Bearer proxy-secret"),
+        );
         let mut connection = client
-            .connect_websocket("ws://public.example/responses?mode=proxy", HeaderMap::new())
+            .connect_websocket("ws://public.example/responses?mode=proxy", headers)
             .await
             .unwrap();
         connection
