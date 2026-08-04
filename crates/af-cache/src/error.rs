@@ -22,6 +22,11 @@ pub enum CacheOperation {
     StickyWrite,
     StickyRefresh,
     StickyDelete,
+    ConcurrencyAcquire,
+    ConcurrencyRenew,
+    ConcurrencyRelease,
+    ConcurrencyLoad,
+    ConcurrencyCleanup,
 }
 
 impl fmt::Display for CacheOperation {
@@ -43,6 +48,11 @@ impl fmt::Display for CacheOperation {
             Self::StickyWrite => "写入粘性会话",
             Self::StickyRefresh => "续期粘性会话",
             Self::StickyDelete => "删除粘性会话",
+            Self::ConcurrencyAcquire => "获取并发槽位",
+            Self::ConcurrencyRenew => "续期并发槽位",
+            Self::ConcurrencyRelease => "释放并发槽位",
+            Self::ConcurrencyLoad => "读取并发负载",
+            Self::ConcurrencyCleanup => "清理并发槽位",
         };
         formatter.write_str(name)
     }
@@ -112,6 +122,10 @@ pub enum CacheError {
     InvalidStickyDigest,
     #[error("粘性会话渠道标识必须为正数")]
     InvalidStickyChannelId,
+    #[error("并发槽位标识必须为正数")]
+    InvalidConcurrencyIdentifier,
+    #[error("并发槽位批次为空间无效、重复或超过容量上限")]
+    InvalidConcurrencyBatch,
     #[error("本地缓存锁不可用")]
     LocalUnavailable,
     #[error("缓存同实例写入排序等待超时")]

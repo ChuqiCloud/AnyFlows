@@ -55,6 +55,7 @@ impl ChatService for UnusedChatService {
     fn chat_completions<'a>(
         &'a self,
         _principal: &'a GatewayPrincipal,
+        _user_concurrency: Option<af_domain::ConcurrencyLimit>,
         _request: CanonicalRequestEnvelope,
         _response_protocol: af_domain::Protocol,
         _request_id: &'a str,

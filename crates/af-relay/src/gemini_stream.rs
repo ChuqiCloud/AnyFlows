@@ -15,6 +15,7 @@ use futures_core::Stream;
 use crate::chat_stream_encoder::ChatStreamEncoder;
 use crate::error::map_adaptor_error;
 use crate::generation_stream::StreamSource;
+use crate::generation_stream::{append_completion_future, append_completion_hook};
 use crate::openai_chat_usage::{
     OpenAiChatUsageEstimator, OpenAiChatUsageHandle, UsageResolutionError, UsageSender,
     usage_channel,
@@ -154,11 +155,9 @@ impl GeminiGenerateContentStream {
         if let Some(sender) = self.usage_sender.take() {
             let _ = sender.send(usage);
         }
+        self.deferred_completion = Some(usage);
         if let Some(hook) = self.completion_hook.take() {
-            self.completion_future = Some(hook.on_complete(usage));
-        } else {
-            // 预取首块可能包含兼容终点；延迟到计费层安装回调后再执行收尾。
-            self.deferred_completion = Some(usage);
+            append_completion_future(&mut self.completion_future, hook.on_complete(usage));
         }
     }
 
@@ -238,10 +237,10 @@ impl GenerationStream for GeminiGenerateContentStream {
         mut self: Box<Self>,
         hook: Box<dyn GenerationCompletionHook>,
     ) -> Box<dyn GenerationStream> {
-        if let Some(usage) = self.deferred_completion.take() {
-            self.completion_future = Some(hook.on_complete(usage));
+        if let Some(usage) = self.deferred_completion {
+            append_completion_future(&mut self.completion_future, hook.on_complete(usage));
         } else {
-            self.completion_hook = Some(hook);
+            append_completion_hook(&mut self.completion_hook, hook);
         }
         self
     }

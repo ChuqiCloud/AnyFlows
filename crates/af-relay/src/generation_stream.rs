@@ -36,6 +36,52 @@ pub trait GenerationStream:
     ) -> Box<dyn GenerationStream>;
 }
 
+/// 把后续安装的多个完成回调合并为同一终态 Future，避免计费与槽位收尾互相覆盖。
+pub(crate) fn append_completion_hook(
+    slot: &mut Option<Box<dyn GenerationCompletionHook>>,
+    hook: Box<dyn GenerationCompletionHook>,
+) {
+    *slot = Some(match slot.take() {
+        Some(existing) => Box::new(ChainedCompletionHook {
+            first: existing,
+            second: hook,
+        }),
+        None => hook,
+    });
+}
+
+/// 在流已于预取阶段完成时合并随后安装的收尾 Future。
+pub(crate) fn append_completion_future(
+    slot: &mut Option<GenerationCompletionFuture>,
+    future: GenerationCompletionFuture,
+) {
+    *slot = Some(match slot.take() {
+        Some(existing) => Box::pin(async move {
+            let ((), ()) = tokio::join!(existing, future);
+        }),
+        None => future,
+    });
+}
+
+struct ChainedCompletionHook {
+    first: Box<dyn GenerationCompletionHook>,
+    second: Box<dyn GenerationCompletionHook>,
+}
+
+impl GenerationCompletionHook for ChainedCompletionHook {
+    fn on_complete(
+        self: Box<Self>,
+        usage: Result<Usage, UsageResolutionError>,
+    ) -> GenerationCompletionFuture {
+        let Self { first, second } = *self;
+        let first = first.on_complete(usage);
+        let second = second.on_complete(usage);
+        Box::pin(async move {
+            let ((), ()) = tokio::join!(first, second);
+        })
+    }
+}
+
 /// 把完整响应体和异步传输流收敛为同一个轮询边界。
 pub(crate) enum StreamSource {
     Full(Option<Bytes>),

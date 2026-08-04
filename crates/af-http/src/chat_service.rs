@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use af_domain::{AfError, GatewayPrincipal, Protocol};
+use af_domain::{AfError, ConcurrencyLimit, GatewayPrincipal, Protocol};
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::{ChatResponse, RelayService};
 
@@ -16,6 +16,7 @@ pub trait ChatService: Send + Sync {
     fn chat_completions<'a>(
         &'a self,
         principal: &'a GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &'a str,
@@ -26,6 +27,7 @@ impl ChatService for RelayService {
     fn chat_completions<'a>(
         &'a self,
         principal: &'a GatewayPrincipal,
+        _user_concurrency: Option<ConcurrencyLimit>,
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &'a str,
@@ -52,6 +54,7 @@ mod tests {
         fn chat_completions<'a>(
             &'a self,
             _principal: &'a GatewayPrincipal,
+            _user_concurrency: Option<ConcurrencyLimit>,
             _request: CanonicalRequestEnvelope,
             _response_protocol: Protocol,
             _request_id: &'a str,
@@ -82,7 +85,13 @@ mod tests {
         .into();
 
         let response = service
-            .chat_completions(&principal, request, Protocol::OpenAiChat, "request-id")
+            .chat_completions(
+                &principal,
+                None,
+                request,
+                Protocol::OpenAiChat,
+                "request-id",
+            )
             .await
             .unwrap();
         assert!(matches!(response, ChatResponse::Full { .. }));

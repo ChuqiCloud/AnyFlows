@@ -5,10 +5,11 @@ use af_domain::{AfError, UpstreamError};
 use af_protocol::{CanonicalRequestEnvelope, CanonicalResponse, Usage, anthropic};
 
 use crate::anthropic_request::{PreparedAnthropicRequest, prepare_anthropic_request};
+use crate::attempt_gate::permit_completion_hook;
 use crate::error::{classify_upstream_status, map_adaptor_error};
 use crate::{
-    AnthropicMessagesStream, ChatResponse, RelayAttemptReport, RelayError, RelayRequest,
-    RelayStateMachine,
+    AnthropicMessagesStream, ChatResponse, GenerationStream, RelayAttemptReport, RelayError,
+    RelayRequest, RelayStateMachine,
 };
 
 const STREAM_FIRST_EVENT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -54,8 +55,8 @@ pub async fn relay_anthropic_with_report(
         Ok(request) => request,
         Err(error) => return RelayAnthropicOutcome::failed(map_relay_error(error)),
     };
-    let (response, mut report) = match machine.execute_with_report(request).await {
-        Ok(response) => response.into_parts(),
+    let (response, mut report, mut permit) = match machine.execute_with_report(request).await {
+        Ok(response) => response.into_parts_with_permit(),
         Err(error) => {
             let (error, report) = error.into_parts();
             return RelayAnthropicOutcome::new(Err(map_relay_error(error)), report);
@@ -81,13 +82,13 @@ pub async fn relay_anthropic_with_report(
         let (stream, usage) =
             AnthropicMessagesStream::new(response.into_body(), public_response_id, client_model);
         return match stream.prefetch_first(STREAM_FIRST_EVENT_TIMEOUT).await {
-            Ok(stream) => RelayAnthropicOutcome::new(
-                Ok(ChatResponse::Stream {
-                    body: Box::new(stream),
-                    usage,
-                }),
-                report,
-            ),
+            Ok(stream) => {
+                let mut body: Box<dyn GenerationStream> = Box::new(stream);
+                if let Some(permit) = permit.take() {
+                    body = body.with_completion_hook(permit_completion_hook(permit));
+                }
+                RelayAnthropicOutcome::new(Ok(ChatResponse::Stream { body, usage }), report)
+            }
             Err(error) => {
                 report.reject_success(error);
                 RelayAnthropicOutcome::new(Err(error.into()), report)
@@ -174,7 +175,10 @@ impl fmt::Debug for RelayAnthropicOutcome {
 fn map_relay_error(error: RelayError) -> AfError {
     match error {
         RelayError::InvalidModel => AfError::InvalidRequest,
-        RelayError::Request(_) | RelayError::Adaptor(_) => AfError::Internal,
+        RelayError::Request(_) | RelayError::Adaptor(_) | RelayError::AttemptGateFailed => {
+            AfError::Internal
+        }
+        RelayError::ConcurrencyUnavailable => AfError::ConcurrencyLimited,
         RelayError::Upstream(error) => error.into(),
     }
 }

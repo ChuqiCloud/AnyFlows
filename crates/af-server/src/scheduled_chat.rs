@@ -1,10 +1,14 @@
-use std::{fmt, sync::Arc};
+use std::{collections::BTreeMap, fmt, sync::Arc};
 
 use crate::{
     ChatRoutePlanFuture, ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture,
     adaptor_credential::build_adaptor_credential,
+    concurrency_runtime::{
+        ConcurrencyRuntime, ConcurrencyRuntimeError, RuntimeConcurrencyPermit,
+        user_permit_completion_hook,
+    },
     credential_feedback::{CredentialAttemptTarget, persist_credential_feedback},
-    credential_order::order_credentials,
+    credential_order::{CredentialLoad, order_credentials, order_credentials_by_load},
     responses_websocket_runtime::ResponsesWebSocketRuntime,
     sticky_session::{
         StableSessionScope, StickySessionStore, stable_session_scope, sticky_cache_error_kind,
@@ -18,20 +22,37 @@ use af_adapter::{
 };
 use af_db::CredentialStateRepository;
 use af_domain::{
-    AfError, ChannelType, CredentialId, GatewayPrincipal, GroupId, Operation, Protocol,
+    AfError, ChannelType, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, Operation,
+    Protocol,
 };
 use af_httpclient::HttpClientProvider;
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::{
-    AnthropicRequestOverrides, GeminiRequestOverrides, OpenAiChatRequestOverrides,
+    AnthropicRequestOverrides, ChatResponse, GeminiRequestOverrides, OpenAiChatRequestOverrides,
     OpenAiResponsesRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayStateMachine,
     relay_anthropic_with_report, relay_gemini_with_report, relay_openai_chat_with_report,
     relay_openai_responses_with_report,
 };
 use af_scheduler::{
-    IndexedRoutePlan, IndexedWeightedScheduler, IndexedWeightedSchedulerError, StickyRouteOutcome,
-    StickyWaitPolicy,
+    IndexedRoutePlan, IndexedWeightedScheduler, IndexedWeightedSchedulerError, RouteWaitKind,
+    StickyRouteOutcome, StickyWaitPolicy,
 };
+
+/// 路由计划在同一次 Redis 快照中取得的账号负载与用户许可。
+struct PreparedConcurrencyPlan<'a> {
+    account_loads: Option<&'a BTreeMap<i64, CredentialLoad>>,
+    user_permit: Option<RuntimeConcurrencyPermit>,
+}
+
+impl PreparedConcurrencyPlan<'_> {
+    #[cfg(test)]
+    const fn disabled() -> Self {
+        Self {
+            account_loads: None,
+            user_permit: None,
+        }
+    }
+}
 
 /// 基于内存运行时快照装配生产原生协议候选的服务。
 #[derive(Clone)]
@@ -43,6 +64,7 @@ pub(crate) struct ScheduledChatService {
     responses_websocket: std::sync::Arc<ResponsesWebSocketRuntime>,
     sticky_sessions: Option<Arc<dyn StickySessionStore>>,
     sticky_wait_policy: StickyWaitPolicy,
+    concurrency: Option<ConcurrencyRuntime>,
 }
 
 impl ScheduledChatService {
@@ -62,6 +84,7 @@ impl ScheduledChatService {
             responses_websocket: std::sync::Arc::new(ResponsesWebSocketRuntime::default()),
             sticky_sessions: None,
             sticky_wait_policy: StickyWaitPolicy::default(),
+            concurrency: None,
         }
     }
 
@@ -76,6 +99,12 @@ impl ScheduledChatService {
         self
     }
 
+    /// 注入已通过启动健康检查的三级 Redis 并发运行时。
+    pub(crate) fn with_concurrency(mut self, concurrency: ConcurrencyRuntime) -> Self {
+        self.concurrency = Some(concurrency);
+        self
+    }
+
     fn build_plan(
         &self,
         route: IndexedRoutePlan,
@@ -84,7 +113,12 @@ impl ScheduledChatService {
         request_id: &str,
         upstream_protocol: Protocol,
         session_scope: Option<StableSessionScope>,
+        concurrency: PreparedConcurrencyPlan<'_>,
     ) -> Result<ScheduledChatExecution, AfError> {
+        let PreparedConcurrencyPlan {
+            account_loads,
+            user_permit,
+        } = concurrency;
         let model = request.canonical().model.clone();
         let responses_websocket_session = session_scope.as_ref().map(StableSessionScope::as_str);
         let target_group_id = route.target_group_id();
@@ -97,6 +131,7 @@ impl ScheduledChatService {
         let mut attempt_targets = Vec::with_capacity(relay_candidates.capacity());
         'channels: for candidate in route.candidates() {
             let target = candidate.runtime_target();
+            let wait_plan = candidate.wait_plan();
             if !target_matches_protocol(target, upstream_protocol) {
                 continue;
             }
@@ -143,16 +178,24 @@ impl ScheduledChatService {
                 .with_request_id(request_id.to_owned())
                 .map_err(|_| AfError::Internal)?;
             let headers = header_overrides(target)?;
-            for runtime_credential in order_credentials(
-                session_scope
-                    .as_ref()
-                    .map_or(request_id, StableSessionScope::as_str),
-                target.channel_id(),
-                target.credentials(),
-            ) {
+            let order_scope = session_scope
+                .as_ref()
+                .map_or(request_id, StableSessionScope::as_str);
+            let ordered_credentials = match (wait_plan.kind(), account_loads) {
+                (RouteWaitKind::Fallback, Some(loads)) => order_credentials_by_load(
+                    order_scope,
+                    target.channel_id(),
+                    target.credentials(),
+                    loads,
+                ),
+                _ => order_credentials(order_scope, target.channel_id(), target.credentials()),
+            };
+            for runtime_credential in ordered_credentials {
                 if relay_candidates.len() == RelayStateMachine::MAX_CANDIDATES {
                     break 'channels;
                 }
+                let credential_id = CredentialId::new(runtime_credential.credential_id())
+                    .map_err(|_| AfError::Internal)?;
                 let decrypted = self
                     .decryptor
                     .decrypt_envelope(
@@ -168,14 +211,20 @@ impl ScheduledChatService {
                     RelayCandidate::new(adaptor.clone(), context.clone(), credential)
                         .with_header_overrides(headers.clone())
                         .with_channel_group(target.channel_id());
+                if let Some(concurrency) = &self.concurrency {
+                    relay_candidate = relay_candidate.with_attempt_gate(concurrency.account_gate(
+                        credential_id,
+                        runtime_credential.concurrency(),
+                        wait_plan.timeout(),
+                    ));
+                }
                 if let (Some(pool), Some(session_scope)) = (
                     responses_websocket_pool.as_ref(),
                     responses_websocket_session,
                 ) {
                     let key = ResponsesWebSocketPoolKey::new(
                         target.channel_id(),
-                        CredentialId::new(runtime_credential.credential_id())
-                            .map_err(|_| AfError::Internal)?,
+                        credential_id,
                         runtime_credential.credential_revision(),
                         session_scope,
                     )
@@ -211,6 +260,7 @@ impl ScheduledChatService {
             request_id: request_id.to_owned(),
             sticky_sessions: self.sticky_sessions.clone(),
             session_scope,
+            user_permit,
         })
     }
 
@@ -275,12 +325,48 @@ impl ScheduledChatService {
             }
         }
     }
+
+    async fn acquire_user_permit(
+        &self,
+        principal: GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
+    ) -> Result<Option<RuntimeConcurrencyPermit>, AfError> {
+        let Some(concurrency) = &self.concurrency else {
+            return Ok(None);
+        };
+        concurrency
+            .acquire_user(
+                principal,
+                user_concurrency,
+                self.sticky_wait_policy.fallback_wait_timeout(),
+            )
+            .await
+            .map(Some)
+            .map_err(map_concurrency_runtime_error)
+    }
+
+    async fn load_account_concurrency(
+        &self,
+        route: &IndexedRoutePlan,
+        upstream_protocol: Protocol,
+    ) -> Result<Option<BTreeMap<i64, CredentialLoad>>, AfError> {
+        let Some(concurrency) = &self.concurrency else {
+            return Ok(None);
+        };
+        let accounts = collect_route_accounts(route, upstream_protocol)?;
+        concurrency
+            .account_loads(&accounts)
+            .await
+            .map(Some)
+            .map_err(|_| AfError::Internal)
+    }
 }
 
 impl ChatRoutePlanner for ScheduledChatService {
     fn plan<'a>(
         &'a self,
         principal: &'a GatewayPrincipal,
+        user_concurrency: Option<ConcurrencyLimit>,
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &'a str,
@@ -296,6 +382,12 @@ impl ChatRoutePlanner for ScheduledChatService {
             let session_scope = stable_session_scope(*principal, request.canonical());
             self.apply_sticky_binding(&mut route, upstream_protocol, session_scope.as_ref())
                 .await;
+            let user_permit = self
+                .acquire_user_permit(*principal, user_concurrency)
+                .await?;
+            let account_loads = self
+                .load_account_concurrency(&route, upstream_protocol)
+                .await?;
             self.build_plan(
                 route,
                 request,
@@ -303,6 +395,10 @@ impl ChatRoutePlanner for ScheduledChatService {
                 request_id,
                 upstream_protocol,
                 session_scope,
+                PreparedConcurrencyPlan {
+                    account_loads: account_loads.as_ref(),
+                    user_permit,
+                },
             )
             .map(|plan| Box::new(plan) as Box<dyn PlannedChatExecution>)
         })
@@ -320,6 +416,7 @@ impl fmt::Debug for ScheduledChatService {
             .field("responses_websocket", &self.responses_websocket)
             .field("sticky_sessions", &self.sticky_sessions.is_some())
             .field("sticky_wait_policy", &self.sticky_wait_policy)
+            .field("concurrency", &self.concurrency.is_some())
             .finish()
     }
 }
@@ -336,6 +433,7 @@ struct ScheduledChatExecution {
     request_id: String,
     sticky_sessions: Option<Arc<dyn StickySessionStore>>,
     session_scope: Option<StableSessionScope>,
+    user_permit: Option<RuntimeConcurrencyPermit>,
 }
 
 impl PlannedChatExecution for ScheduledChatExecution {
@@ -356,6 +454,7 @@ impl PlannedChatExecution for ScheduledChatExecution {
             request_id,
             sticky_sessions,
             session_scope,
+            user_permit,
         } = *self;
         Box::pin(async move {
             let operation = request.canonical().operation;
@@ -403,8 +502,60 @@ impl PlannedChatExecution for ScheduledChatExecution {
                     "写入粘性会话绑定失败，当前响应继续返回"
                 );
             }
-            result
+            match result {
+                Ok(ChatResponse::Full { body, usage }) => {
+                    if let Some(permit) = user_permit {
+                        permit.release().await;
+                    }
+                    Ok(ChatResponse::Full { body, usage })
+                }
+                Ok(ChatResponse::Stream { body, usage }) => {
+                    let body = match user_permit {
+                        Some(permit) => {
+                            body.with_completion_hook(user_permit_completion_hook(permit))
+                        }
+                        None => body,
+                    };
+                    Ok(ChatResponse::Stream { body, usage })
+                }
+                Err(error) => {
+                    if let Some(permit) = user_permit {
+                        permit.release().await;
+                    }
+                    Err(error)
+                }
+            }
         })
+    }
+}
+
+fn collect_route_accounts(
+    route: &IndexedRoutePlan,
+    upstream_protocol: Protocol,
+) -> Result<Vec<(CredentialId, Option<ConcurrencyLimit>)>, AfError> {
+    let mut accounts = Vec::with_capacity(RelayStateMachine::MAX_CANDIDATES);
+    'channels: for candidate in route.candidates() {
+        let target = candidate.runtime_target();
+        if !target_matches_protocol(target, upstream_protocol) {
+            continue;
+        }
+        for credential in target.credentials() {
+            if accounts.len() == RelayStateMachine::MAX_CANDIDATES {
+                break 'channels;
+            }
+            accounts.push((
+                CredentialId::new(credential.credential_id()).map_err(|_| AfError::Internal)?,
+                credential.concurrency(),
+            ));
+        }
+    }
+    Ok(accounts)
+}
+
+const fn map_concurrency_runtime_error(error: ConcurrencyRuntimeError) -> AfError {
+    match error {
+        ConcurrencyRuntimeError::Limited => AfError::ConcurrencyLimited,
+        ConcurrencyRuntimeError::Internal => AfError::Internal,
     }
 }
 
@@ -645,7 +796,13 @@ mod tests {
         let principal = principal(7);
 
         let plan = service
-            .plan(&principal, request(), Protocol::OpenAiChat, "request-plan")
+            .plan(
+                &principal,
+                None,
+                request(),
+                Protocol::OpenAiChat,
+                "request-plan",
+            )
             .await
             .unwrap();
 
@@ -689,6 +846,7 @@ mod tests {
                 "request-key-pool",
                 Protocol::OpenAiChat,
                 None,
+                PreparedConcurrencyPlan::disabled(),
             )
             .unwrap();
 
@@ -712,6 +870,7 @@ mod tests {
                 "request-anthropic",
                 Protocol::Anthropic,
                 None,
+                PreparedConcurrencyPlan::disabled(),
             )
             .unwrap();
 
@@ -737,6 +896,7 @@ mod tests {
                 "request-anthropic-fallback",
                 Protocol::OpenAiChat,
                 None,
+                PreparedConcurrencyPlan::disabled(),
             )
             .unwrap();
 
@@ -765,6 +925,7 @@ mod tests {
                 "request-gemini-native",
                 Protocol::Gemini,
                 None,
+                PreparedConcurrencyPlan::disabled(),
             )
             .unwrap();
         assert_eq!(execution.response_protocol, Protocol::Gemini);
@@ -785,6 +946,7 @@ mod tests {
                 "request-gemini-fallback",
                 Protocol::OpenAiChat,
                 None,
+                PreparedConcurrencyPlan::disabled(),
             )
             .unwrap();
         assert_eq!(execution.response_protocol, Protocol::Gemini);
@@ -800,6 +962,7 @@ mod tests {
             service
                 .plan(
                     &principal(7),
+                    None,
                     request(),
                     Protocol::OpenAiChat,
                     "request-openai-client",
@@ -818,6 +981,7 @@ mod tests {
             service
                 .plan(
                     &principal(7),
+                    None,
                     request(),
                     Protocol::OpenAiChat,
                     "request-openai-gemini-upstream",
@@ -855,6 +1019,7 @@ mod tests {
                 "request-responses",
                 Protocol::OpenAiResponses,
                 None,
+                PreparedConcurrencyPlan::disabled(),
             )
             .unwrap();
         assert_eq!(execution.response_protocol, Protocol::OpenAiResponses);
@@ -865,6 +1030,7 @@ mod tests {
             chat_only
                 .plan(
                     &principal(7),
+                    None,
                     responses_request(),
                     Protocol::OpenAiResponses,
                     "request-wrong-protocol",
@@ -881,7 +1047,13 @@ mod tests {
         let empty = service(Vec::new()).await;
         assert_eq!(
             empty
-                .plan(&principal, request(), Protocol::OpenAiChat, "request-empty",)
+                .plan(
+                    &principal,
+                    None,
+                    request(),
+                    Protocol::OpenAiChat,
+                    "request-empty",
+                )
                 .await
                 .err(),
             Some(AfError::Upstream(UpstreamError::ModelUnsupported))
@@ -890,7 +1062,13 @@ mod tests {
         let proxy_required = service(vec![record(true, valid_envelope())]).await;
         assert_eq!(
             proxy_required
-                .plan(&principal, request(), Protocol::OpenAiChat, "request-proxy",)
+                .plan(
+                    &principal,
+                    None,
+                    request(),
+                    Protocol::OpenAiChat,
+                    "request-proxy",
+                )
                 .await
                 .err(),
             Some(AfError::Internal)
@@ -902,6 +1080,7 @@ mod tests {
             decrypt_failure
                 .plan(
                     &principal,
+                    None,
                     request(),
                     Protocol::OpenAiChat,
                     "request-decrypt",

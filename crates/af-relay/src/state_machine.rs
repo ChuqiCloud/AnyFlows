@@ -8,7 +8,7 @@ use af_domain::{ChannelId, MAX_MODEL_NAME_BYTES, UpstreamError};
 use thiserror::Error;
 
 use crate::{
-    RelayBuildError, RelayError,
+    RelayAttemptGate, RelayAttemptGateError, RelayAttemptPermit, RelayBuildError, RelayError,
     error::{classify_upstream_status, is_retryable, map_adaptor_error},
 };
 
@@ -21,6 +21,7 @@ pub struct RelayCandidate {
     header_overrides: HeaderMap,
     channel_group: Option<ChannelId>,
     transport: TransportDispatcher,
+    attempt_gate: Option<Arc<dyn RelayAttemptGate>>,
 }
 
 impl RelayCandidate {
@@ -35,6 +36,7 @@ impl RelayCandidate {
             header_overrides: HeaderMap::new(),
             channel_group: None,
             transport: TransportDispatcher::http(),
+            attempt_gate: None,
         }
     }
 
@@ -65,6 +67,13 @@ impl RelayCandidate {
         self.transport = transport;
         self
     }
+
+    /// 绑定发送前的候选并发许可；等待策略由调度装配层提前固定。
+    #[must_use]
+    pub fn with_attempt_gate(mut self, attempt_gate: Arc<dyn RelayAttemptGate>) -> Self {
+        self.attempt_gate = Some(attempt_gate);
+        self
+    }
 }
 
 impl fmt::Debug for RelayCandidate {
@@ -78,6 +87,7 @@ impl fmt::Debug for RelayCandidate {
             .field("header_override_count", &self.header_overrides.len())
             .field("has_channel_group", &self.channel_group.is_some())
             .field("transport", &self.transport)
+            .field("has_attempt_gate", &self.attempt_gate.is_some())
             .finish()
     }
 }
@@ -276,6 +286,7 @@ pub struct RelayResponse {
     attempts: NonZeroUsize,
     state: RelayState,
     report: RelayAttemptReport,
+    permit: Option<Box<dyn RelayAttemptPermit>>,
 }
 
 impl RelayResponse {
@@ -308,6 +319,18 @@ impl RelayResponse {
     pub fn into_parts(self) -> (UpstreamResponse, RelayAttemptReport) {
         (self.response, self.report)
     }
+
+    /// 消费响应并同时返回成功候选许可，供协议层覆盖完整/流式生命周期。
+    #[must_use]
+    pub fn into_parts_with_permit(
+        self,
+    ) -> (
+        UpstreamResponse,
+        RelayAttemptReport,
+        Option<Box<dyn RelayAttemptPermit>>,
+    ) {
+        (self.response, self.report, self.permit)
+    }
 }
 
 impl fmt::Debug for RelayResponse {
@@ -318,6 +341,7 @@ impl fmt::Debug for RelayResponse {
             .field("state", &self.state)
             .field("report", &self.report)
             .field("response", &self.response)
+            .field("has_attempt_permit", &self.permit.is_some())
             .finish()
     }
 }
@@ -476,6 +500,23 @@ impl RelayStateMachine {
                     continue;
                 }
             };
+            let permit = match candidate.attempt_gate.as_ref() {
+                Some(gate) => match gate.acquire().await {
+                    Ok(permit) => Some(permit),
+                    Err(RelayAttemptGateError::Limited) => {
+                        last_error = Some(RelayError::ConcurrencyUnavailable);
+                        index += 1;
+                        continue;
+                    }
+                    Err(RelayAttemptGateError::Internal) => {
+                        return Err(RelayExecutionError::new(
+                            RelayError::AttemptGateFailed,
+                            failures,
+                        ));
+                    }
+                },
+                None => None,
+            };
             let outcome = match candidate
                 .transport
                 .send_with_report(upstream_request, &candidate.context)
@@ -483,6 +524,7 @@ impl RelayStateMachine {
             {
                 Ok(outcome) => outcome,
                 Err(error) => {
+                    release_attempt_permit(permit).await;
                     let mapped = map_adaptor_error(error);
                     failures.push(RelayAttemptFailure::new(index, mapped));
                     last_error = Some(RelayError::Upstream(mapped));
@@ -520,6 +562,7 @@ impl RelayStateMachine {
                         .expect("候选索引从零开始时尝试次数必须为正"),
                     state,
                     report: RelayAttemptReport::succeeded(index, failures),
+                    permit,
                 });
             }
 
@@ -527,6 +570,7 @@ impl RelayStateMachine {
             let body = match response.into_body().into_bytes().await {
                 Ok(body) => body,
                 Err(error) => {
+                    release_attempt_permit(permit).await;
                     let mapped = map_adaptor_error(error);
                     failures.push(RelayAttemptFailure::new(index, mapped));
                     last_error = Some(RelayError::Upstream(mapped));
@@ -541,6 +585,7 @@ impl RelayStateMachine {
                 }
             };
             let classified = classify_upstream_status(status, &body);
+            release_attempt_permit(permit).await;
             failures.push(RelayAttemptFailure::new(index, classified));
             last_error = Some(RelayError::Upstream(classified));
             if is_retryable(classified) {
@@ -580,6 +625,12 @@ impl RelayStateMachine {
             next += 1;
         }
         next
+    }
+}
+
+async fn release_attempt_permit(permit: Option<Box<dyn RelayAttemptPermit>>) {
+    if let Some(permit) = permit {
+        permit.release().await;
     }
 }
 

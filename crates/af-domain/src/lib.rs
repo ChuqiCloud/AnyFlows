@@ -2,6 +2,7 @@
 
 mod billing;
 mod channel;
+mod concurrency;
 mod enums;
 mod error;
 mod network;
@@ -13,6 +14,7 @@ mod subscription;
 mod token_policy;
 mod wallet;
 
+pub use concurrency::{ConcurrencyLimit, ConcurrencyLimitError};
 pub use enums::{
     ChannelType, CredentialKind, Operation, ParseEnumError, Protocol, PublicErrorCode, Role, Status,
 };

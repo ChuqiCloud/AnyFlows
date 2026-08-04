@@ -4,12 +4,15 @@ use std::{
 };
 
 use af_cache::{
-    CacheError, CacheMode, DEFAULT_REDIS_CONNECT_TIMEOUT, DistributedLease, DistributedLeaseConfig,
+    CacheError, CacheMode, ConcurrencyAcquireOutcome, ConcurrencyLeaseOutcome,
+    DEFAULT_REDIS_CONNECT_TIMEOUT, DistributedLease, DistributedLeaseConfig,
     DistributedLeaseManager, DistributedLeaseMode, HybridCache, HybridCacheConfig,
     LeaseAcquireOutcome, LeaseReleaseOutcome, ProjectionWriteOutcome, RedisBroadcastConfig,
-    RedisBroadcastPublisher, RedisBroadcastSubscriber, RedisConfig, RedisProjectionConfig,
-    RedisStickySessionConfig, RedisStickySessionStore, RedisVersionedProjectionStore,
+    RedisBroadcastPublisher, RedisBroadcastSubscriber, RedisConcurrencyConfig,
+    RedisConcurrencyStore, RedisConfig, RedisProjectionConfig, RedisStickySessionConfig,
+    RedisStickySessionStore, RedisVersionedProjectionStore,
 };
+use af_domain::{ConcurrencyLimit, CredentialId, TokenId, UserId};
 
 const LIVE_REDIS_GATE: &str = "AF_REQUIRE_LIVE_REDIS";
 const LIVE_REDIS_URL: &str = "AF_TEST_REDIS_URL";
@@ -84,6 +87,7 @@ async fn redis_hybrid_cache_smoke() {
     verify_broadcast_contract(&redis_url, &format!("{namespace}.broadcast")).await;
     verify_projection_contract(&redis_url, &format!("{namespace}.projection")).await;
     verify_sticky_session_contract(&redis_url, &format!("{namespace}.sticky")).await;
+    verify_concurrency_contract(&redis_url, &format!("{namespace}.concurrency")).await;
 }
 
 async fn verify_sticky_session_contract(redis_url: &str, namespace: &str) {
@@ -109,6 +113,166 @@ async fn verify_sticky_session_contract(redis_url: &str, namespace: &str) {
     assert!(second.refresh_if_channel(&digest, 43).await.unwrap());
     assert!(first.delete_if_channel(&digest, 43).await.unwrap());
     assert_eq!(second.get_and_refresh(&digest).await.unwrap(), None);
+}
+
+async fn verify_concurrency_contract(redis_url: &str, namespace: &str) {
+    let config = || {
+        RedisConcurrencyConfig::new(
+            RedisConfig::new(redis_url)
+                .with_timeouts(DEFAULT_REDIS_CONNECT_TIMEOUT, Duration::from_secs(2)),
+            namespace,
+        )
+        .unwrap()
+        .with_ttls(Duration::from_millis(220), Duration::from_millis(180))
+        .unwrap()
+    };
+    let first = RedisConcurrencyStore::connect(config()).await.unwrap();
+    let second = RedisConcurrencyStore::connect(config()).await.unwrap();
+    let account = CredentialId::new(71).unwrap();
+    let account_limit = ConcurrencyLimit::new(1).unwrap();
+
+    // 同一账号的竞争必须由 Lua 一次判定，第二个实例不能越过上限。
+    let held = expect_concurrency_acquired(
+        first
+            .acquire_account(account, Some(account_limit))
+            .await
+            .unwrap(),
+    );
+    assert!(matches!(
+        second
+            .acquire_account(account, Some(account_limit))
+            .await
+            .unwrap(),
+        ConcurrencyAcquireOutcome::Limited
+    ));
+    let loads = second
+        .account_loads(&[(account, Some(account_limit))])
+        .await
+        .unwrap();
+    assert_eq!(loads[0].active(), 1);
+
+    // 活跃租约和等待登记都能在短 TTL 内续期，续期不会重新创建迟到成员。
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(
+        held.renew().await.unwrap(),
+        ConcurrencyLeaseOutcome::Applied
+    );
+    let waiting = match second
+        .enter_account_wait(account, ConcurrencyLimit::new(2).unwrap())
+        .await
+        .unwrap()
+    {
+        af_cache::ConcurrencyWaitOutcome::Entered(waiting) => waiting,
+        af_cache::ConcurrencyWaitOutcome::Full => panic!("等待队列不应在首个成员时饱和"),
+    };
+    tokio::time::sleep(Duration::from_millis(90)).await;
+    assert_eq!(
+        waiting.renew().await.unwrap(),
+        ConcurrencyLeaseOutcome::Applied
+    );
+    assert_eq!(
+        waiting.leave().await.unwrap(),
+        ConcurrencyLeaseOutcome::Applied
+    );
+
+    assert_eq!(
+        held.release().await.unwrap(),
+        ConcurrencyLeaseOutcome::Applied
+    );
+    let replacement = expect_concurrency_acquired(
+        second
+            .acquire_account(account, Some(account_limit))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        replacement.release().await.unwrap(),
+        ConcurrencyLeaseOutcome::Applied
+    );
+
+    // 用户槽位与令牌追踪在同一脚本内竞争，令牌层本身不设置独立上限。
+    let user = UserId::new(81).unwrap();
+    let token_a = TokenId::new(91).unwrap();
+    let token_b = TokenId::new(92).unwrap();
+    let user_held = expect_concurrency_acquired(
+        first
+            .acquire_user_token(user, Some(account_limit), token_a)
+            .await
+            .unwrap(),
+    );
+    assert!(matches!(
+        second
+            .acquire_user_token(user, Some(account_limit), token_b)
+            .await
+            .unwrap(),
+        ConcurrencyAcquireOutcome::Limited
+    ));
+    assert_eq!(
+        user_held.release().await.unwrap(),
+        ConcurrencyLeaseOutcome::Applied
+    );
+
+    // 批量负载同时返回账号活跃数和等待数，且不接受重复标识。
+    let batch_a = CredentialId::new(72).unwrap();
+    let batch_b = CredentialId::new(73).unwrap();
+    let batch_held =
+        expect_concurrency_acquired(first.acquire_account(batch_a, None).await.unwrap());
+    let batch_loads = second
+        .account_loads(&[(batch_a, None), (batch_b, Some(account_limit))])
+        .await
+        .unwrap();
+    assert_eq!(batch_loads.len(), 2);
+    assert_eq!(batch_loads[0].active(), 1);
+    assert_eq!(batch_loads[1].active(), 0);
+    assert_eq!(
+        batch_held.release().await.unwrap(),
+        ConcurrencyLeaseOutcome::Applied
+    );
+
+    // 过期索引清理后，迟到释放只能得到 Lost，不能删除新接管者。
+    let stale_account = CredentialId::new(74).unwrap();
+    let stale = expect_concurrency_acquired(
+        first
+            .acquire_account(stale_account, Some(account_limit))
+            .await
+            .unwrap(),
+    );
+    tokio::time::sleep(Duration::from_millis(260)).await;
+    let report = second
+        .cleanup_expired(af_cache::MAX_CONCURRENCY_CLEANUP_BATCH_SIZE)
+        .await
+        .unwrap();
+    assert!(report.inspected_keys() > 0 || report.removed_members() > 0);
+    let current = expect_concurrency_acquired(
+        second
+            .acquire_account(stale_account, Some(account_limit))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        stale.release().await.unwrap(),
+        ConcurrencyLeaseOutcome::Lost
+    );
+    assert!(matches!(
+        first
+            .acquire_account(stale_account, Some(account_limit))
+            .await
+            .unwrap(),
+        ConcurrencyAcquireOutcome::Limited
+    ));
+    assert_eq!(
+        current.release().await.unwrap(),
+        ConcurrencyLeaseOutcome::Applied
+    );
+}
+
+fn expect_concurrency_acquired(
+    outcome: ConcurrencyAcquireOutcome,
+) -> af_cache::RedisConcurrencyLease {
+    let ConcurrencyAcquireOutcome::Acquired(lease) = outcome else {
+        panic!("预期取得并发槽位")
+    };
+    lease
 }
 
 async fn verify_projection_contract(redis_url: &str, namespace: &str) {

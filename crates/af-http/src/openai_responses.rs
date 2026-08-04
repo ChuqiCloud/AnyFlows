@@ -29,6 +29,7 @@ pub(crate) async fn openai_responses(
         .chat_service()
         .chat_completions(
             &principal,
+            authentication.user_concurrency(),
             request,
             Protocol::OpenAiResponses,
             request_id.as_str(),

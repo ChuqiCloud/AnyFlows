@@ -1,11 +1,45 @@
-use std::{cmp::Reverse, collections::BTreeMap};
+use std::{
+    cmp::{Ordering, Reverse},
+    collections::BTreeMap,
+};
 
 use af_db::SchedulerRuntimeCredentialRecord;
-use af_domain::ChannelId;
+use af_domain::{ChannelId, ConcurrencyLimit};
 use sha2::{Digest, Sha256};
 
 const ORDER_DOMAIN: &[u8] = b"anyflows-credential-order-v1";
 const ZERO_WEIGHT_DOMAIN: &[u8] = b"anyflows-credential-zero-weight-v1";
+
+/// 单个凭据在本次 Redis 批量读取中固定的活跃与等待负载。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct CredentialLoad {
+    active: u32,
+    waiting: u32,
+    limit: Option<ConcurrencyLimit>,
+}
+
+impl CredentialLoad {
+    /// 组合 Redis 返回的计数与同代运行时并发上限。
+    #[must_use]
+    pub(crate) const fn new(active: u32, waiting: u32, limit: Option<ConcurrencyLimit>) -> Self {
+        Self {
+            active,
+            waiting,
+            limit,
+        }
+    }
+
+    fn compare_utilization(self, other: Self) -> Ordering {
+        let left_total = u128::from(self.active) + u128::from(self.waiting);
+        let right_total = u128::from(other.active) + u128::from(other.waiting);
+        let left_capacity = u128::from(self.limit.map_or(1, ConcurrencyLimit::get));
+        let right_capacity = u128::from(other.limit.map_or(1, ConcurrencyLimit::get));
+        (left_total * right_capacity)
+            .cmp(&(right_total * left_capacity))
+            .then_with(|| self.waiting.cmp(&other.waiting))
+            .then_with(|| self.active.cmp(&other.active))
+    }
+}
 
 /// 按优先级和权重生成请求内稳定、无放回的凭据顺序。
 pub(crate) fn order_credentials<'a>(
@@ -26,6 +60,34 @@ pub(crate) fn order_credentials<'a>(
         ordered.extend(order_tier(request_id, channel_id, priority, tier));
     }
     ordered
+}
+
+/// 在优先级不变的前提下，把普通回退凭据按实时负载稳定重排。
+///
+/// 相同负载保持请求级加权抽签顺序，使配置权重仍能决定同负载账号的首选概率。
+pub(crate) fn order_credentials_by_load<'a>(
+    request_id: &str,
+    channel_id: ChannelId,
+    credentials: &'a [SchedulerRuntimeCredentialRecord],
+    loads: &BTreeMap<i64, CredentialLoad>,
+) -> Vec<&'a SchedulerRuntimeCredentialRecord> {
+    let mut ordered = order_credentials(request_id, channel_id, credentials);
+    ordered.sort_by(|left, right| {
+        right.priority().cmp(&left.priority()).then_with(|| {
+            credential_load(left, loads).compare_utilization(credential_load(right, loads))
+        })
+    });
+    ordered
+}
+
+fn credential_load(
+    credential: &SchedulerRuntimeCredentialRecord,
+    loads: &BTreeMap<i64, CredentialLoad>,
+) -> CredentialLoad {
+    loads
+        .get(&credential.credential_id())
+        .copied()
+        .unwrap_or(CredentialLoad::new(0, 0, credential.concurrency()))
 }
 
 fn order_tier<'a>(
@@ -201,6 +263,54 @@ mod tests {
         assert!((2_850..=3_300).contains(&heavier_first));
     }
 
+    #[test]
+    fn fallback_order_prefers_lower_utilization_and_waiting_count() {
+        let credentials = vec![
+            credential_with_limit(31, 0, 1, Some(10)),
+            credential_with_limit(32, 0, 1, Some(2)),
+            credential_with_limit(33, 0, 1, None),
+        ];
+        let loads = BTreeMap::from([
+            (31, load(2, 0, Some(10))),
+            (32, load(0, 1, Some(2))),
+            (33, load(1, 0, None)),
+        ]);
+
+        assert_eq!(
+            credential_ids(order_credentials_by_load(
+                "load-aware",
+                channel_id(),
+                &credentials,
+                &loads,
+            )),
+            vec![31, 32, 33]
+        );
+    }
+
+    #[test]
+    fn fallback_order_never_crosses_priority_and_preserves_weighted_ties() {
+        let credentials = vec![
+            credential_with_limit(41, 0, 1, Some(1)),
+            credential_with_limit(42, 0, 3, Some(1)),
+            credential_with_limit(43, 1, 1, Some(1)),
+        ];
+        let loads = BTreeMap::from([
+            (41, load(0, 0, Some(1))),
+            (42, load(0, 0, Some(1))),
+            (43, load(1, 20, Some(1))),
+        ]);
+        let weighted = credential_ids(order_credentials("load-tie", channel_id(), &credentials));
+        let load_aware = credential_ids(order_credentials_by_load(
+            "load-tie",
+            channel_id(),
+            &credentials,
+            &loads,
+        ));
+
+        assert_eq!(load_aware[0], 43);
+        assert_eq!(&load_aware[1..], &weighted[1..]);
+    }
+
     fn credential_ids(credentials: Vec<&SchedulerRuntimeCredentialRecord>) -> Vec<i64> {
         credentials
             .into_iter()
@@ -222,6 +332,32 @@ mod tests {
             weight,
         )
         .unwrap()
+    }
+
+    fn credential_with_limit(
+        credential_id: i64,
+        priority: i32,
+        weight: u32,
+        limit: Option<u32>,
+    ) -> SchedulerRuntimeCredentialRecord {
+        SchedulerRuntimeCredentialRecord::with_scheduling_and_concurrency(
+            credential_id,
+            CredentialKind::ApiKey,
+            EncryptedCredentialEnvelope::new("order-test", [0x42; 24], vec![0x24; 16]).unwrap(),
+            false,
+            priority,
+            weight,
+            limit.map(|value| ConcurrencyLimit::new(value).unwrap()),
+        )
+        .unwrap()
+    }
+
+    fn load(active: u32, waiting: u32, limit: Option<u32>) -> CredentialLoad {
+        CredentialLoad::new(
+            active,
+            waiting,
+            limit.map(|value| ConcurrencyLimit::new(value).unwrap()),
+        )
     }
 
     fn channel_id() -> ChannelId {

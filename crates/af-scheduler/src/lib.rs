@@ -3,6 +3,7 @@
 mod auto_ban;
 mod auto_ban_keyword;
 mod candidate;
+mod concurrency;
 mod database;
 mod failure;
 mod index;
@@ -21,6 +22,10 @@ pub use auto_ban_keyword::{
     MAX_AUTO_BAN_KEYWORD_TOTAL_BYTES,
 };
 pub use candidate::SchedulerCandidate;
+pub use concurrency::{
+    CONCURRENCY_EXTRA_WAIT_SLOTS, ConcurrencyWaitBackoff, INITIAL_CONCURRENCY_WAIT_BACKOFF,
+    MAX_CONCURRENCY_WAIT_BACKOFF, concurrency_wait_queue_limit,
+};
 pub use database::{DatabaseWeightedScheduler, DatabaseWeightedSchedulerError};
 pub use failure::{
     DEFAULT_TRANSIENT_SERVER_RETRY_LIMIT, FailureAction, FailureContext, FailurePolicy,

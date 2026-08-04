@@ -45,6 +45,12 @@ pub enum RelayError {
     /// 单个候选的适配器构造或凭据阶段失败。
     #[error("转发适配器失败")]
     Adaptor(#[source] AdaptorError),
+    /// 所有候选都在各自等待期限内达到账号并发上限。
+    #[error("转发候选并发槽位均不可用")]
+    ConcurrencyUnavailable,
+    /// 候选并发协调依赖发生内部故障。
+    #[error("转发候选并发协调失败")]
+    AttemptGateFailed,
     /// 所有候选都未能完成请求。
     #[error("转发候选均不可用")]
     Upstream(#[from] UpstreamError),
