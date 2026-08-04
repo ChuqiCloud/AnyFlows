@@ -29,7 +29,9 @@ pub use concurrency::{
 };
 pub use database::{DatabaseWeightedScheduler, DatabaseWeightedSchedulerError};
 pub use failure::{
-    DEFAULT_TRANSIENT_SERVER_RETRY_LIMIT, FailureAction, FailureContext, FailurePolicy,
+    CredentialFailureDisposition, DEFAULT_TRANSIENT_SERVER_RETRY_LIMIT, FailureAction,
+    FailureContext, FailurePolicy, PermanentCredentialFailure, TemporaryCredentialFailure,
+    credential_failure_disposition,
 };
 pub use health::{ChannelRoutingHealth, ROUTING_HEALTH_PENALTY_SCALE};
 pub use index::{

@@ -462,7 +462,7 @@ async fn retries_rate_limit_on_the_next_candidate() {
     assert_eq!(response.report().failures()[0].candidate_index(), 0);
     assert_eq!(
         response.report().failures()[0].error(),
-        UpstreamError::RateLimited
+        UpstreamError::rate_limited(af_domain::RateLimitScope::Window)
     );
     assert_eq!(
         response

@@ -17,7 +17,7 @@ use crate::{
     RelayError, RelayRequest, RelayStateMachine,
     chat_response::encode_full_response,
     chat_stream_encoder::ChatStreamEncoder,
-    error::{classify_upstream_status, map_adaptor_error},
+    error::{classify_upstream_status, map_adaptor_error, parse_retry_after},
     openai_chat_request::{PreparedOpenAiChatRequest, prepare_openai_chat_request},
     openai_chat_usage::OpenAiChatUsageEstimator,
 };
@@ -194,6 +194,7 @@ pub async fn relay_openai_chat_with_report(
     };
     let status = response.status();
     if status != StatusCode::OK {
+        let retry_after = parse_retry_after(response.headers());
         let body = match response.into_body().into_bytes().await {
             Ok(body) => body,
             Err(error) => {
@@ -202,7 +203,7 @@ pub async fn relay_openai_chat_with_report(
                 return RelayOpenAiChatOutcome::new(Err(error.into()), report);
             }
         };
-        let error = classify_upstream_status(status, &body);
+        let error = classify_upstream_status(status, retry_after, &body);
         report.reject_success(error);
         return RelayOpenAiChatOutcome::new(Err(error.into()), report);
     }
@@ -363,7 +364,7 @@ fn map_relay_error(error: RelayError) -> AfError {
 #[cfg(test)]
 mod tests {
     use af_adapter::Bytes;
-    use af_domain::UpstreamServerStatus;
+    use af_domain::{RateLimitScope, UpstreamRetryAfter, UpstreamServerStatus};
 
     use super::*;
     use crate::UsageResolutionError;
@@ -416,7 +417,12 @@ mod tests {
                 StatusCode::UNAUTHORIZED,
                 br#"{"type":"error","error":{"type":"authentication_error","message":"private"}}"#
                     .as_slice(),
-                UpstreamError::AuthRevoked,
+                UpstreamError::AuthExpired,
+            ),
+            (
+                StatusCode::PAYMENT_REQUIRED,
+                br#"{"detail":{"code":"deactivated_workspace","message":"private"}}"#.as_slice(),
+                UpstreamError::AccountDisabled,
             ),
             (
                 StatusCode::FORBIDDEN,
@@ -447,13 +453,18 @@ mod tests {
             (
                 StatusCode::TOO_MANY_REQUESTS,
                 br#"{"error":{"code":"rate_limit_exceeded"}}"#.as_slice(),
-                UpstreamError::RateLimited,
+                UpstreamError::rate_limited(RateLimitScope::Window),
             ),
             (
                 StatusCode::TOO_MANY_REQUESTS,
                 br#"{"type":"error","error":{"type":"rate_limit_error","message":"private"}}"#
                     .as_slice(),
-                UpstreamError::RateLimited,
+                UpstreamError::rate_limited(RateLimitScope::Window),
+            ),
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                br#"{"error":{"code":"model_rate_limit_exceeded"}}"#.as_slice(),
+                UpstreamError::rate_limited(RateLimitScope::Model),
             ),
             (
                 StatusCode::TOO_MANY_REQUESTS,
@@ -463,7 +474,7 @@ mod tests {
             (
                 StatusCode::TOO_MANY_REQUESTS,
                 b"{}".as_slice(),
-                UpstreamError::Overloaded,
+                UpstreamError::rate_limited(RateLimitScope::Unknown),
             ),
             (
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -486,8 +497,25 @@ mod tests {
             ),
         ];
         for (status, body, expected) in cases {
-            assert_eq!(classify_upstream_status(status, body), expected);
+            assert_eq!(classify_upstream_status(status, None, body), expected);
         }
+    }
+
+    #[test]
+    fn retry_after_hint_is_attached_only_as_a_bounded_value() {
+        let retry_after = UpstreamRetryAfter::from_seconds(90).unwrap();
+        assert_eq!(
+            classify_upstream_status(
+                StatusCode::TOO_MANY_REQUESTS,
+                Some(retry_after),
+                br#"{"error":{"code":"rate_limit_exceeded"}}"#,
+            ),
+            UpstreamError::rate_limited_after(RateLimitScope::Window, retry_after)
+        );
+        assert_eq!(
+            classify_upstream_status(StatusCode::from_u16(529).unwrap(), Some(retry_after), b"{}",),
+            UpstreamError::overloaded_after(retry_after)
+        );
     }
 
     #[test]

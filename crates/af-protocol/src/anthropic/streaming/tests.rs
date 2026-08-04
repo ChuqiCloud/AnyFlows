@@ -307,10 +307,36 @@ fn decoder_maps_stream_errors_without_retaining_the_message() {
     let mut decoder = AnthropicMessagesStreamDecoder::new();
     assert_eq!(
         decoder.push(&bytes).unwrap(),
-        vec![CanonicalStreamEvent::Error(UpstreamError::Overloaded)]
+        vec![CanonicalStreamEvent::Error(UpstreamError::overloaded())]
     );
     decoder.finish().unwrap();
     assert!(!format!("{decoder:?}").contains(secret));
+}
+
+#[test]
+fn decoder_distinguishes_recoverable_auth_and_permission_errors() {
+    for (kind, expected) in [
+        ("authentication_error", UpstreamError::AuthExpired),
+        ("permission_error", UpstreamError::ProtocolError),
+        (
+            "rate_limit_error",
+            UpstreamError::rate_limited(af_domain::RateLimitScope::Window),
+        ),
+    ] {
+        let bytes = event(
+            "error",
+            json!({
+                "type": "error",
+                "error": { "type": kind, "message": "private" }
+            }),
+        );
+        let mut decoder = AnthropicMessagesStreamDecoder::new();
+        assert_eq!(
+            decoder.push(&bytes).unwrap(),
+            vec![CanonicalStreamEvent::Error(expected)]
+        );
+        decoder.finish().unwrap();
+    }
 }
 
 #[test]

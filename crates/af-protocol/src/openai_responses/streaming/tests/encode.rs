@@ -199,7 +199,9 @@ fn encodes_incomplete_terminal_with_matching_item_status() {
 fn encodes_normalized_error_and_requires_stream_end() {
     let mut encoder = OpenAiResponsesStreamEncoder::new(RESPONSE_ID, MODEL, CREATED_AT).unwrap();
     let bytes = encoder
-        .encode(CanonicalStreamEvent::Error(UpstreamError::RateLimited))
+        .encode(CanonicalStreamEvent::Error(UpstreamError::rate_limited(
+            af_domain::RateLimitScope::Window,
+        )))
         .unwrap();
     assert!(
         encoder
@@ -216,7 +218,9 @@ fn encodes_normalized_error_and_requires_stream_end() {
     assert_eq!(
         decoder.push(&bytes).unwrap(),
         vec![
-            CanonicalStreamEvent::Error(UpstreamError::RateLimited),
+            CanonicalStreamEvent::Error(UpstreamError::rate_limited(
+                af_domain::RateLimitScope::Window,
+            )),
             CanonicalStreamEvent::StreamEnd,
         ]
     );

@@ -70,7 +70,7 @@ impl GeminiGenerateContentStream {
     ) -> Result<Self, UpstreamError> {
         let first = tokio::time::timeout(first_event_timeout, self.next_chunk())
             .await
-            .map_err(|_| UpstreamError::Network)?
+            .map_err(|_| UpstreamError::network(af_domain::NetworkFailureKind::ResponseBody))?
             .ok_or(UpstreamError::ProtocolError)??;
         self.prefetched.push_front(first);
         Ok(self)
@@ -393,7 +393,9 @@ mod tests {
 
         assert_eq!(
             stream.next_chunk().await,
-            Some(Err(UpstreamError::RateLimited))
+            Some(Err(UpstreamError::rate_limited(
+                af_domain::RateLimitScope::Unknown,
+            )))
         );
         assert_eq!(
             usage_handle.resolve().await,

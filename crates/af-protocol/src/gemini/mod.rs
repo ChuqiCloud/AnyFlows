@@ -18,6 +18,7 @@ mod error;
 mod parse_response;
 mod response_wire;
 mod streaming;
+mod upstream_error;
 mod wire;
 
 pub use build::{BuildRequestError, build_request};
@@ -28,6 +29,7 @@ pub use streaming::{
     DEFAULT_MAX_SSE_EVENT_BYTES, EncodeStreamError, GeminiGenerateContentStreamDecoder,
     GeminiGenerateContentStreamEncoder, MAX_SSE_EVENT_BYTES, ParseStreamError, SseParseError,
 };
+pub use upstream_error::{GeminiUpstreamErrorKind, classify_error_response};
 
 #[cfg(test)]
 mod build_tests;

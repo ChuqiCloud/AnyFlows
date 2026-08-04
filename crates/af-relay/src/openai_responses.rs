@@ -5,7 +5,7 @@ use af_domain::{AfError, UpstreamError};
 use af_protocol::{CanonicalRequestEnvelope, CanonicalResponse, openai_responses};
 
 use crate::attempt_gate::permit_completion_hook;
-use crate::error::{classify_upstream_status, map_adaptor_error};
+use crate::error::{classify_upstream_status, map_adaptor_error, parse_retry_after};
 use crate::openai_chat::unix_timestamp;
 use crate::openai_chat_usage::OpenAiChatUsageEstimator;
 use crate::openai_responses_request::{
@@ -69,6 +69,7 @@ pub async fn relay_openai_responses_with_report(
     };
     let status = response.status();
     if status != StatusCode::OK {
+        let retry_after = parse_retry_after(response.headers());
         let body = match response.into_body().into_bytes().await {
             Ok(body) => body,
             Err(error) => {
@@ -77,7 +78,7 @@ pub async fn relay_openai_responses_with_report(
                 return RelayOpenAiResponsesOutcome::new(Err(error.into()), report);
             }
         };
-        let error = classify_upstream_status(status, &body);
+        let error = classify_upstream_status(status, retry_after, &body);
         report.reject_success(error);
         return RelayOpenAiResponsesOutcome::new(Err(error.into()), report);
     }

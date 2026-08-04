@@ -173,16 +173,17 @@ fn error_event_carries_only_the_closed_upstream_error() {
 
 fn upstream_error_kind(error: UpstreamError) -> &'static str {
     match error {
-        UpstreamError::RateLimited => "rate_limited",
-        UpstreamError::Overloaded => "overloaded",
+        UpstreamError::RateLimited { .. } => "rate_limited",
+        UpstreamError::Overloaded { .. } => "overloaded",
         UpstreamError::AuthExpired => "auth_expired",
         UpstreamError::AuthRevoked => "auth_revoked",
+        UpstreamError::AccountDisabled => "account_disabled",
         UpstreamError::QuotaExhausted => "quota_exhausted",
         UpstreamError::ModelUnsupported => "model_unsupported",
         UpstreamError::ProtocolError => "protocol_error",
         UpstreamError::ServerError { status: _ } => "server_error",
         UpstreamError::BadRequest => "bad_request",
-        UpstreamError::Network => "network",
+        UpstreamError::Network { .. } => "network",
     }
 }
 

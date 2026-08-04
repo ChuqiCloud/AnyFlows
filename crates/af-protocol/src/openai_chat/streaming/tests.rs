@@ -518,7 +518,9 @@ fn encoder_rejects_unsupported_events_invalid_sequences_and_reuse() {
                 mime_type: "image/png".to_owned(),
             },
         },
-        CanonicalStreamEvent::Error(UpstreamError::Network),
+        CanonicalStreamEvent::Error(UpstreamError::network(
+            af_domain::NetworkFailureKind::ResponseBody,
+        )),
     ] {
         let mut encoder =
             OpenAiChatStreamEncoder::new("chatcmpl-unsupported", "gpt-unsupported", 0).unwrap();

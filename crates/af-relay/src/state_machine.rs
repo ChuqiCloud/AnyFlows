@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::{
     RelayAttemptGate, RelayAttemptGateError, RelayAttemptPermit, RelayBuildError, RelayError,
-    error::{classify_upstream_status, is_retryable, map_adaptor_error},
+    error::{classify_upstream_status, is_retryable, map_adaptor_error, parse_retry_after},
 };
 
 /// 单次转发候选的安全装配结果；调度器只负责按顺序提供候选，不在本类型内读库。
@@ -567,6 +567,7 @@ impl RelayStateMachine {
             }
 
             let status = response.status();
+            let retry_after = parse_retry_after(response.headers());
             let body = match response.into_body().into_bytes().await {
                 Ok(body) => body,
                 Err(error) => {
@@ -584,7 +585,7 @@ impl RelayStateMachine {
                     ));
                 }
             };
-            let classified = classify_upstream_status(status, &body);
+            let classified = classify_upstream_status(status, retry_after, &body);
             release_attempt_permit(permit).await;
             failures.push(RelayAttemptFailure::new(index, classified));
             last_error = Some(RelayError::Upstream(classified));
@@ -676,7 +677,13 @@ const fn is_credential_scoped(error: UpstreamError) -> bool {
         error,
         UpstreamError::AuthExpired
             | UpstreamError::AuthRevoked
-            | UpstreamError::RateLimited
+            | UpstreamError::AccountDisabled
+            | UpstreamError::RateLimited {
+                scope: af_domain::RateLimitScope::Credential
+                    | af_domain::RateLimitScope::Window
+                    | af_domain::RateLimitScope::Unknown,
+                ..
+            }
             | UpstreamError::QuotaExhausted
     )
 }

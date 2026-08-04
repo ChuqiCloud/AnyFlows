@@ -1,6 +1,9 @@
 use std::error::Error as _;
 
-use crate::{AfError, UpstreamError, UpstreamServerStatus};
+use crate::{
+    AfError, NetworkFailureKind, RateLimitScope, UpstreamError, UpstreamRetryAfter,
+    UpstreamServerStatus,
+};
 
 #[test]
 fn upstream_server_status_accepts_only_5xx_codes() {
@@ -16,19 +19,49 @@ fn upstream_server_status_accepts_only_5xx_codes() {
 }
 
 #[test]
+fn upstream_retry_after_accepts_only_bounded_nonzero_seconds() {
+    assert_eq!(UpstreamRetryAfter::from_seconds(0), None);
+    assert_eq!(
+        UpstreamRetryAfter::from_seconds(UpstreamRetryAfter::MAX_SECONDS + 1),
+        None
+    );
+
+    let retry_after = UpstreamRetryAfter::from_seconds(90).unwrap();
+    assert_eq!(retry_after.seconds(), 90);
+    assert_eq!(retry_after.duration(), std::time::Duration::from_secs(90));
+}
+
+#[test]
 fn upstream_errors_have_fixed_chinese_diagnostics_without_sources() {
     for (error, display, debug) in [
         (
-            UpstreamError::RateLimited,
+            UpstreamError::rate_limited(RateLimitScope::Window),
             "上游请求受到限流",
-            "RateLimited",
+            "RateLimited { scope: Window, retry_after: None }",
         ),
-        (UpstreamError::Overloaded, "上游服务过载", "Overloaded"),
+        (
+            UpstreamError::rate_limited_after(
+                RateLimitScope::Credential,
+                UpstreamRetryAfter::from_seconds(30).unwrap(),
+            ),
+            "上游请求受到限流",
+            "RateLimited { scope: Credential, retry_after: Some(UpstreamRetryAfter(30)) }",
+        ),
+        (
+            UpstreamError::overloaded(),
+            "上游服务过载",
+            "Overloaded { retry_after: None }",
+        ),
         (UpstreamError::AuthExpired, "上游认证已过期", "AuthExpired"),
         (
             UpstreamError::AuthRevoked,
             "上游认证已被撤销",
             "AuthRevoked",
+        ),
+        (
+            UpstreamError::AccountDisabled,
+            "上游账号或组织已被停用",
+            "AccountDisabled",
         ),
         (
             UpstreamError::QuotaExhausted,
@@ -57,7 +90,11 @@ fn upstream_errors_have_fixed_chinese_diagnostics_without_sources() {
             "上游拒绝了无效请求",
             "BadRequest",
         ),
-        (UpstreamError::Network, "上游网络传输失败", "Network"),
+        (
+            UpstreamError::network(NetworkFailureKind::ReadTimeout),
+            "上游网络传输失败",
+            "Network { kind: ReadTimeout }",
+        ),
     ] {
         assert_eq!(error.to_string(), display);
         assert_eq!(format!("{error:?}"), debug);

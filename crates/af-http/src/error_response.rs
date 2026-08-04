@@ -161,10 +161,10 @@ fn classify_error(error: AfError) -> MappedError {
 /// 上游认证和额度属于供应侧状态，绝不能伪装成客户端 API Key 或用户额度错误。
 fn classify_upstream_error(error: UpstreamError) -> MappedError {
     match error {
-        UpstreamError::RateLimited => {
+        UpstreamError::RateLimited { .. } => {
             MappedError::new(PublicErrorCode::RateLimited, "upstream_rate_limited")
         }
-        UpstreamError::Overloaded => {
+        UpstreamError::Overloaded { .. } => {
             MappedError::new(PublicErrorCode::UpstreamUnavailable, "upstream_overloaded")
         }
         UpstreamError::AuthExpired => MappedError::new(
@@ -174,6 +174,10 @@ fn classify_upstream_error(error: UpstreamError) -> MappedError {
         UpstreamError::AuthRevoked => MappedError::new(
             PublicErrorCode::UpstreamUnavailable,
             "upstream_auth_revoked",
+        ),
+        UpstreamError::AccountDisabled => MappedError::new(
+            PublicErrorCode::UpstreamUnavailable,
+            "upstream_account_disabled",
         ),
         UpstreamError::QuotaExhausted => MappedError::new(
             PublicErrorCode::UpstreamUnavailable,
@@ -193,7 +197,7 @@ fn classify_upstream_error(error: UpstreamError) -> MappedError {
         UpstreamError::BadRequest => {
             MappedError::new(PublicErrorCode::InvalidRequest, "upstream_bad_request")
         }
-        UpstreamError::Network => {
+        UpstreamError::Network { .. } => {
             MappedError::new(PublicErrorCode::UpstreamUnavailable, "upstream_network")
         }
     }

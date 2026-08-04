@@ -1,7 +1,8 @@
-use af_adapter::{AdaptorError, StatusCode};
-use af_domain::UpstreamError;
+use af_adapter::{AdaptorError, AdaptorTransportError, HeaderMap, StatusCode};
+use af_domain::{NetworkFailureKind, RateLimitScope, UpstreamError, UpstreamRetryAfter};
 use af_protocol::{
     anthropic::{AnthropicUpstreamErrorKind, classify_error_response as classify_anthropic_error},
+    gemini::{GeminiUpstreamErrorKind, classify_error_response as classify_gemini_error},
     openai_chat::{OpenAiUpstreamErrorKind, classify_error_response as classify_openai_error},
 };
 use thiserror::Error;
@@ -59,7 +60,20 @@ pub enum RelayError {
 /// 将发送和响应边界错误收敛到可供候选切换使用的脱敏分类。
 pub(crate) fn map_adaptor_error(error: AdaptorError) -> UpstreamError {
     match error {
-        AdaptorError::Transport(_) => UpstreamError::Network,
+        AdaptorError::Transport(error) => UpstreamError::network(match error {
+            AdaptorTransportError::TargetResolution => NetworkFailureKind::Resolution,
+            AdaptorTransportError::Connect => NetworkFailureKind::Connect,
+            AdaptorTransportError::ConnectTimeout => NetworkFailureKind::ConnectTimeout,
+            AdaptorTransportError::ReadTimeout => NetworkFailureKind::ReadTimeout,
+            AdaptorTransportError::RequestTimeout => NetworkFailureKind::RequestTimeout,
+            AdaptorTransportError::Request => NetworkFailureKind::Request,
+            AdaptorTransportError::ResponseBody => NetworkFailureKind::ResponseBody,
+            AdaptorTransportError::InvalidRequestTarget
+            | AdaptorTransportError::UnsupportedRequestMethod
+            | AdaptorTransportError::TargetAddressBlocked
+            | AdaptorTransportError::RemoteDnsDenied => NetworkFailureKind::Policy,
+            _ => NetworkFailureKind::Request,
+        }),
         AdaptorError::InvalidResponseHeader | AdaptorError::ResponseBodyTooLarge => {
             UpstreamError::ProtocolError
         }
@@ -67,10 +81,42 @@ pub(crate) fn map_adaptor_error(error: AdaptorError) -> UpstreamError {
     }
 }
 
+/// 从标准 `Retry-After` 的整数秒形式提取受上限保护的重试提示。
+///
+/// HTTP-date 和供应商私有 Header 暂不猜测；无法无歧义解析时返回 `None`，由状态仓储
+/// 使用自身的保守默认冷却。
+pub(crate) fn parse_retry_after(headers: &HeaderMap) -> Option<UpstreamRetryAfter> {
+    let value = headers.get("retry-after")?.to_str().ok()?;
+    if value.is_empty() || value.trim() != value {
+        return None;
+    }
+    UpstreamRetryAfter::from_seconds(value.parse().ok()?)
+}
+
 /// 按状态码和已审定的上游结构化错误信号得出脱敏领域分类。
-pub(crate) fn classify_upstream_status(status: StatusCode, body: &[u8]) -> UpstreamError {
-    if let Some(error) = classify_gemini_error(status, body) {
-        return error;
+pub(crate) fn classify_upstream_status(
+    status: StatusCode,
+    retry_after: Option<UpstreamRetryAfter>,
+    body: &[u8],
+) -> UpstreamError {
+    match classify_gemini_error(status.as_u16(), body) {
+        GeminiUpstreamErrorKind::InvalidRequest => return UpstreamError::BadRequest,
+        GeminiUpstreamErrorKind::Authentication => return UpstreamError::AuthExpired,
+        GeminiUpstreamErrorKind::Permission => return UpstreamError::ProtocolError,
+        GeminiUpstreamErrorKind::ModelUnsupported => {
+            return UpstreamError::ModelUnsupported;
+        }
+        GeminiUpstreamErrorKind::RateLimited => {
+            return rate_limited(RateLimitScope::Unknown, retry_after);
+        }
+        GeminiUpstreamErrorKind::Overloaded => return overloaded(retry_after),
+        GeminiUpstreamErrorKind::Server => {
+            return UpstreamError::ServerError {
+                status: af_domain::UpstreamServerStatus::new(status.as_u16())
+                    .expect("Gemini Server 分类必须携带 5xx 状态"),
+            };
+        }
+        GeminiUpstreamErrorKind::Unknown => {}
     }
 
     let anthropic_signal = classify_anthropic_error(body);
@@ -78,13 +124,27 @@ pub(crate) fn classify_upstream_status(status: StatusCode, body: &[u8]) -> Upstr
         (
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN,
             AnthropicUpstreamErrorKind::Authentication,
-        ) => return UpstreamError::AuthRevoked,
+        ) => return UpstreamError::AuthExpired,
         (
             StatusCode::BAD_REQUEST | StatusCode::PAYMENT_REQUIRED | StatusCode::TOO_MANY_REQUESTS,
             AnthropicUpstreamErrorKind::Billing,
         ) => return UpstreamError::QuotaExhausted,
         (StatusCode::TOO_MANY_REQUESTS, AnthropicUpstreamErrorKind::RateLimited) => {
-            return UpstreamError::RateLimited;
+            return rate_limited(RateLimitScope::Window, retry_after);
+        }
+        (status, AnthropicUpstreamErrorKind::Overloaded)
+            if matches!(status.as_u16(), 500..=599) =>
+        {
+            return overloaded(retry_after);
+        }
+        (
+            StatusCode::BAD_REQUEST
+            | StatusCode::PAYLOAD_TOO_LARGE
+            | StatusCode::UNPROCESSABLE_ENTITY,
+            AnthropicUpstreamErrorKind::InvalidRequest,
+        ) => return UpstreamError::BadRequest,
+        (StatusCode::NOT_FOUND, AnthropicUpstreamErrorKind::NotFound) => {
+            return UpstreamError::ModelUnsupported;
         }
         _ => {}
     }
@@ -95,11 +155,18 @@ pub(crate) fn classify_upstream_status(status: StatusCode, body: &[u8]) -> Upstr
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN,
             OpenAiUpstreamErrorKind::AuthRevoked,
         ) => return UpstreamError::AuthRevoked,
+        (
+            StatusCode::BAD_REQUEST
+            | StatusCode::UNAUTHORIZED
+            | StatusCode::PAYMENT_REQUIRED
+            | StatusCode::FORBIDDEN,
+            OpenAiUpstreamErrorKind::AccountDisabled,
+        ) => return UpstreamError::AccountDisabled,
         (StatusCode::TOO_MANY_REQUESTS, OpenAiUpstreamErrorKind::QuotaExhausted) => {
             return UpstreamError::QuotaExhausted;
         }
-        (StatusCode::TOO_MANY_REQUESTS, OpenAiUpstreamErrorKind::RateLimited) => {
-            return UpstreamError::RateLimited;
+        (StatusCode::TOO_MANY_REQUESTS, OpenAiUpstreamErrorKind::RateLimited { scope }) => {
+            return rate_limited(scope, retry_after);
         }
         (StatusCode::NOT_FOUND, OpenAiUpstreamErrorKind::ModelUnsupported) => {
             return UpstreamError::ModelUnsupported;
@@ -108,16 +175,16 @@ pub(crate) fn classify_upstream_status(status: StatusCode, body: &[u8]) -> Upstr
     }
 
     match status.as_u16() {
-        400 | 422 => UpstreamError::BadRequest,
+        400 | 413 | 422 => UpstreamError::BadRequest,
         // 未知 401/403 可能来自 IP 或区域策略，不能据此永久禁用凭据。
         401 => UpstreamError::AuthExpired,
         403 => UpstreamError::ProtocolError,
         402 => UpstreamError::QuotaExhausted,
-        408 => UpstreamError::Network,
-        // 未知 404 更可能是路径配置错误；未知 429 才按临时过载处理。
+        408 => UpstreamError::network(NetworkFailureKind::RequestTimeout),
+        // 未知 404 更可能是路径配置错误；未知 429 只按可恢复限流处理。
         404 => UpstreamError::ProtocolError,
-        429 => UpstreamError::Overloaded,
-        529 => UpstreamError::Overloaded,
+        429 => rate_limited(RateLimitScope::Unknown, retry_after),
+        529 => overloaded(retry_after),
         value @ 500..=599 => UpstreamError::ServerError {
             status: af_domain::UpstreamServerStatus::new(value)
                 .expect("500..=599 必须始终满足上游服务器状态约束"),
@@ -126,42 +193,29 @@ pub(crate) fn classify_upstream_status(status: StatusCode, body: &[u8]) -> Upstr
     }
 }
 
-/// 只读取 Google JSON API 的状态码与稳定状态名，不保留 message 或 details。
-fn classify_gemini_error(status: StatusCode, body: &[u8]) -> Option<UpstreamError> {
-    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
-    let error = value.as_object()?.get("error")?.as_object()?;
-    let code = error.get("code")?.as_u64()?;
-    let code = u16::try_from(code).ok()?;
-    if code != status.as_u16() {
-        return None;
-    }
-    let upstream_status = error.get("status")?.as_str()?;
-    match (code, upstream_status) {
-        (400, "INVALID_ARGUMENT") => Some(UpstreamError::BadRequest),
-        (401, "UNAUTHENTICATED") => Some(UpstreamError::AuthExpired),
-        (403, "PERMISSION_DENIED") => Some(UpstreamError::AuthRevoked),
-        (404, "NOT_FOUND") => Some(UpstreamError::ModelUnsupported),
-        (429, "RESOURCE_EXHAUSTED") => Some(UpstreamError::RateLimited),
-        (503, "UNAVAILABLE") => Some(UpstreamError::Overloaded),
-        (500..=599, _) => Some(UpstreamError::ServerError {
-            status: af_domain::UpstreamServerStatus::new(code)
-                .expect("500..=599 必须始终满足上游服务器状态约束"),
-        }),
-        _ => None,
-    }
+const fn rate_limited(
+    scope: RateLimitScope,
+    retry_after: Option<UpstreamRetryAfter>,
+) -> UpstreamError {
+    UpstreamError::RateLimited { scope, retry_after }
+}
+
+const fn overloaded(retry_after: Option<UpstreamRetryAfter>) -> UpstreamError {
+    UpstreamError::Overloaded { retry_after }
 }
 
 /// 判定当前候选失败后能否继续选路；健康惩罚、刷新和禁用由调度层处理。
 pub(crate) const fn is_retryable(error: UpstreamError) -> bool {
     matches!(
         error,
-        UpstreamError::RateLimited
-            | UpstreamError::Overloaded
+        UpstreamError::RateLimited { .. }
+            | UpstreamError::Overloaded { .. }
             | UpstreamError::AuthExpired
             | UpstreamError::AuthRevoked
+            | UpstreamError::AccountDisabled
             | UpstreamError::QuotaExhausted
             | UpstreamError::ModelUnsupported
-            | UpstreamError::Network
+            | UpstreamError::Network { .. }
             | UpstreamError::ServerError { .. }
     )
 }
@@ -171,14 +225,53 @@ mod tests {
     use super::*;
 
     #[test]
+    fn adaptor_transport_errors_keep_only_the_stable_failure_stage() {
+        for (transport, expected) in [
+            (
+                AdaptorTransportError::TargetResolution,
+                NetworkFailureKind::Resolution,
+            ),
+            (
+                AdaptorTransportError::ConnectTimeout,
+                NetworkFailureKind::ConnectTimeout,
+            ),
+            (
+                AdaptorTransportError::ReadTimeout,
+                NetworkFailureKind::ReadTimeout,
+            ),
+            (
+                AdaptorTransportError::RequestTimeout,
+                NetworkFailureKind::RequestTimeout,
+            ),
+            (
+                AdaptorTransportError::TargetAddressBlocked,
+                NetworkFailureKind::Policy,
+            ),
+            (
+                AdaptorTransportError::ResponseBody,
+                NetworkFailureKind::ResponseBody,
+            ),
+        ] {
+            assert_eq!(
+                map_adaptor_error(AdaptorError::Transport(transport)),
+                UpstreamError::network(expected)
+            );
+        }
+    }
+
+    #[test]
     fn gemini_error_classifier_uses_only_structured_code_and_status() {
         for (status, signal, expected) in [
             (400, "INVALID_ARGUMENT", UpstreamError::BadRequest),
             (401, "UNAUTHENTICATED", UpstreamError::AuthExpired),
-            (403, "PERMISSION_DENIED", UpstreamError::AuthRevoked),
+            (403, "PERMISSION_DENIED", UpstreamError::ProtocolError),
             (404, "NOT_FOUND", UpstreamError::ModelUnsupported),
-            (429, "RESOURCE_EXHAUSTED", UpstreamError::RateLimited),
-            (503, "UNAVAILABLE", UpstreamError::Overloaded),
+            (
+                429,
+                "RESOURCE_EXHAUSTED",
+                UpstreamError::rate_limited(RateLimitScope::Unknown),
+            ),
+            (503, "UNAVAILABLE", UpstreamError::overloaded()),
         ] {
             let status = StatusCode::from_u16(status).unwrap();
             let body = format!(
@@ -186,8 +279,8 @@ mod tests {
                 status.as_u16()
             );
             assert_eq!(
-                classify_gemini_error(status, body.as_bytes()),
-                Some(expected)
+                classify_upstream_status(status, None, body.as_bytes()),
+                expected
             );
         }
     }
@@ -196,17 +289,37 @@ mod tests {
     fn gemini_error_classifier_rejects_mismatched_or_unstructured_signals() {
         assert_eq!(
             classify_gemini_error(
-                StatusCode::TOO_MANY_REQUESTS,
+                StatusCode::TOO_MANY_REQUESTS.as_u16(),
                 br#"{"error":{"code":503,"status":"UNAVAILABLE"}}"#,
             ),
-            None
+            GeminiUpstreamErrorKind::Unknown
         );
         assert_eq!(
             classify_gemini_error(
-                StatusCode::TOO_MANY_REQUESTS,
+                StatusCode::TOO_MANY_REQUESTS.as_u16(),
                 br#"{"error":{"code":429,"message":"RESOURCE_EXHAUSTED"}}"#,
             ),
-            None
+            GeminiUpstreamErrorKind::Unknown
         );
+        assert_eq!(
+            classify_upstream_status(
+                StatusCode::TOO_MANY_REQUESTS,
+                None,
+                br#"{"error":{"code":503,"status":"UNAVAILABLE"}}"#,
+            ),
+            UpstreamError::rate_limited(RateLimitScope::Unknown)
+        );
+    }
+
+    #[test]
+    fn retry_after_accepts_only_bounded_integer_seconds() {
+        let mut headers = HeaderMap::new();
+        headers.insert("retry-after", "90".parse().unwrap());
+        assert_eq!(parse_retry_after(&headers).unwrap().seconds(), 90);
+
+        for invalid in ["0", " 90", "Wed, 21 Oct 2015 07:28:00 GMT", "604801"] {
+            headers.insert("retry-after", invalid.parse().unwrap());
+            assert_eq!(parse_retry_after(&headers), None, "未拒绝 {invalid}");
+        }
     }
 }

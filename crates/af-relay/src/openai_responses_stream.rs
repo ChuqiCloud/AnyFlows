@@ -80,7 +80,7 @@ impl OpenAiResponsesStream {
     ) -> Result<Self, UpstreamError> {
         let first = tokio::time::timeout(first_event_timeout, self.next_chunk())
             .await
-            .map_err(|_| UpstreamError::Network)?
+            .map_err(|_| UpstreamError::network(af_domain::NetworkFailureKind::ResponseBody))?
             .ok_or(UpstreamError::ProtocolError)??;
         self.prefetched.push_front(first);
         Ok(self)
@@ -448,7 +448,9 @@ mod tests {
         )
         .unwrap();
         let mut upstream = upstream_encoder
-            .encode(CanonicalStreamEvent::Error(UpstreamError::RateLimited))
+            .encode(CanonicalStreamEvent::Error(UpstreamError::rate_limited(
+                af_domain::RateLimitScope::Window,
+            )))
             .unwrap();
         upstream.extend(
             upstream_encoder
@@ -478,7 +480,9 @@ mod tests {
         assert_eq!(
             events,
             vec![
-                CanonicalStreamEvent::Error(UpstreamError::RateLimited),
+                CanonicalStreamEvent::Error(UpstreamError::rate_limited(
+                    af_domain::RateLimitScope::Window,
+                )),
                 CanonicalStreamEvent::StreamEnd,
             ]
         );
@@ -584,7 +588,10 @@ mod tests {
             .prefetch_first(Duration::from_secs(1))
             .await
             .unwrap_err();
-        assert_eq!(error, UpstreamError::Network);
+        assert_eq!(
+            error,
+            UpstreamError::network(af_domain::NetworkFailureKind::ResponseBody)
+        );
         assert_eq!(
             usage_handle.resolve().await,
             Err(UsageResolutionError::Interrupted)

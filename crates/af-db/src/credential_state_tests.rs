@@ -1,6 +1,8 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, Protocol, Status};
+use af_domain::{
+    ChannelId, ChannelType, CredentialId, CredentialKind, Protocol, Status, UpstreamRetryAfter,
+};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{
     ActiveModelTrait, EntityTrait, Set,
@@ -35,20 +37,40 @@ async fn repository_writes_closed_runtime_states_and_success_clears_cooling()
     let revoked = test_credential(channel.id, 0x55)
         .insert(pool.connection())
         .await?;
+    let disabled = test_credential(channel.id, 0x56)
+        .insert(pool.connection())
+        .await?;
     let repository = CredentialStateRepository::new(pool.clone());
     let before = TimeDateTimeWithTimeZone::now_utc();
 
     let report = repository
         .apply(&[
             event(channel.id, auth.id, CredentialStateChange::AuthExpired),
-            event(channel.id, limited.id, CredentialStateChange::RateLimited),
+            event(
+                channel.id,
+                limited.id,
+                CredentialStateChange::RateLimited {
+                    retry_after: Some(UpstreamRetryAfter::from_seconds(90).unwrap()),
+                },
+            ),
             event(channel.id, quota.id, CredentialStateChange::QuotaExhausted),
-            event(channel.id, overloaded.id, CredentialStateChange::Overloaded),
+            event(
+                channel.id,
+                overloaded.id,
+                CredentialStateChange::Overloaded {
+                    retry_after: Some(UpstreamRetryAfter::from_seconds(45).unwrap()),
+                },
+            ),
             event(channel.id, revoked.id, CredentialStateChange::AuthRevoked),
+            event(
+                channel.id,
+                disabled.id,
+                CredentialStateChange::AccountDisabled,
+            ),
         ])
         .await?;
-    assert_eq!(report.event_count(), 5);
-    assert_eq!(report.changed_count(), 5);
+    assert_eq!(report.event_count(), 6);
+    assert_eq!(report.changed_count(), 6);
 
     let auth = credential(&pool, auth.id).await;
     assert!(
@@ -65,7 +87,7 @@ async fn repository_writes_closed_runtime_states_and_success_clears_cooling()
     assert!(
         limited
             .rate_limit_reset_at
-            .is_some_and(|until| until > before)
+            .is_some_and(|until| until >= before + Duration::from_secs(90))
     );
     let quota = credential(&pool, quota.id).await;
     assert!(
@@ -81,10 +103,14 @@ async fn repository_writes_closed_runtime_states_and_success_clears_cooling()
     assert!(
         overloaded
             .overload_until
-            .is_some_and(|until| until > before)
+            .is_some_and(|until| until >= before + Duration::from_secs(45))
     );
     assert_eq!(
         credential(&pool, revoked.id).await.status,
+        Status::AutoDisabled.code()
+    );
+    assert_eq!(
+        credential(&pool, disabled.id).await.status,
         Status::AutoDisabled.code()
     );
 
@@ -137,7 +163,7 @@ async fn repository_rejects_duplicate_events_and_rolls_back_invalid_membership()
         invalid_channel,
         CredentialId::new(second.id).unwrap(),
         CredentialKind::ApiKey,
-        CredentialStateChange::RateLimited,
+        CredentialStateChange::RateLimited { retry_after: None },
     )?;
     assert_eq!(
         repository.apply(&[duplicate, invalid]).await,

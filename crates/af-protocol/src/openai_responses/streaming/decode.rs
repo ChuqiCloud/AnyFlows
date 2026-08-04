@@ -701,16 +701,27 @@ fn is_done_sentinel(frame: &SseEvent) -> bool {
 
 fn map_upstream_error(code: Option<&str>) -> UpstreamError {
     match code {
-        Some("rate_limit_exceeded" | "rate_limit_error") => UpstreamError::RateLimited,
+        Some("rate_limit_exceeded" | "rate_limit_error") => {
+            UpstreamError::rate_limited(af_domain::RateLimitScope::Window)
+        }
         Some("insufficient_quota" | "billing_error") => UpstreamError::QuotaExhausted,
-        Some("invalid_api_key" | "authentication_error") => UpstreamError::AuthExpired,
-        Some("permission_denied" | "permission_error") => UpstreamError::AuthRevoked,
+        Some("invalid_api_key" | "token_invalidated" | "token_revoked") => {
+            UpstreamError::AuthRevoked
+        }
+        Some("authentication_error") => UpstreamError::AuthExpired,
+        Some(
+            "account_deactivated"
+            | "deactivated_workspace"
+            | "organization_deactivated"
+            | "organization_disabled",
+        ) => UpstreamError::AccountDisabled,
+        Some("permission_denied" | "permission_error") => UpstreamError::ProtocolError,
         Some("model_not_found" | "model_unsupported") => UpstreamError::ModelUnsupported,
         Some("invalid_prompt" | "invalid_request_error") => UpstreamError::BadRequest,
         Some("server_error" | "vector_store_timeout") => UpstreamError::ServerError {
             status: UpstreamServerStatus::new(500).expect("500 必须是合法服务器状态码"),
         },
-        Some("overloaded_error") => UpstreamError::Overloaded,
+        Some("overloaded_error") => UpstreamError::overloaded(),
         _ => UpstreamError::ProtocolError,
     }
 }
