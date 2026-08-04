@@ -4,6 +4,7 @@
 //! 类型化错误，不会静默切换为本地权威状态。分布式协调能力应使用独立的 Redis
 //! 原子操作实现，不属于本 crate 的 HybridCache 语义。
 
+mod broadcast;
 mod config;
 mod error;
 mod hybrid;
@@ -14,6 +15,10 @@ mod remote;
 
 use std::sync::Arc;
 
+pub use broadcast::{
+    DEFAULT_BROADCAST_MAX_MESSAGE_BYTES, RedisBroadcastConfig, RedisBroadcastPublisher,
+    RedisBroadcastSubscriber,
+};
 pub use config::{
     DEFAULT_LOCAL_TTL_CAP, DEFAULT_MAX_VALUE_BYTES, DEFAULT_REDIS_CONNECT_TIMEOUT,
     DEFAULT_REDIS_OPERATION_TIMEOUT, HybridCacheConfig, RedisConfig,

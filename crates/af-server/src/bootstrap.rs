@@ -95,6 +95,10 @@ use crate::{
         initialize_oauth_runtime, register_oauth_loopback_servers,
     },
     scheduled_chat::ScheduledChatService,
+    scheduler_invalidation::{
+        PreparedSchedulerInvalidationRuntime, SchedulerInvalidationRuntimeError,
+        prepare_scheduler_invalidation_runtime, register_scheduler_invalidation_tasks,
+    },
     smtp_delivery::SmtpEmailDelivery,
     system_shutdown_signal,
 };
@@ -184,6 +188,7 @@ pub struct BillingReady {
     oauth_loopback_servers: Vec<PreparedOAuthLoopbackServer>,
     oauth_refresh_supervisor: Option<OAuthRefreshSupervisor>,
     channel_index: InMemoryChannelIndex,
+    scheduler_invalidation: PreparedSchedulerInvalidationRuntime,
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     admin_model_sync_service: Arc<dyn AdminModelSyncService>,
     admin_model_price_service: Arc<dyn AdminModelPriceService>,
@@ -404,6 +409,9 @@ pub enum BootstrapError {
     /// 渠道索引首轮全量加载失败。
     #[error("初始化渠道索引失败")]
     ChannelIndex(#[source] ChannelIndexCacheError),
+    /// 调度 outbox 或 Redis 失效广播无法安全装配。
+    #[error("初始化调度快照失效广播失败")]
+    SchedulerInvalidation(#[source] SchedulerInvalidationRuntimeError),
     /// 内部退款信号队列容量配置无效。
     #[error("初始化退款信号队列失败")]
     RefundSignalQueue(#[source] RefundSignalQueueError),
@@ -886,6 +894,13 @@ impl Bootstrap<RelayReady> {
         )
         .await
         .map_err(BootstrapError::ChannelIndex)?;
+        let scheduler_invalidation = prepare_scheduler_invalidation_runtime(
+            &self.config,
+            self.stage.infrastructure.infrastructure.database.clone(),
+            channel_index.clone(),
+        )
+        .await
+        .map_err(BootstrapError::SchedulerInvalidation)?;
         let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(ScheduledChatService::new(
             IndexedWeightedScheduler::new(channel_index.clone()),
             decryptor,
@@ -963,6 +978,7 @@ impl Bootstrap<RelayReady> {
                 oauth_loopback_servers: stage.oauth_loopback_servers,
                 oauth_refresh_supervisor,
                 channel_index,
+                scheduler_invalidation,
                 model_catalog_reader,
                 admin_model_sync_service,
                 admin_model_price_service,
@@ -997,6 +1013,7 @@ impl Bootstrap<BillingReady> {
             oauth_loopback_servers,
             oauth_refresh_supervisor,
             channel_index,
+            scheduler_invalidation,
             model_catalog_reader,
             admin_model_sync_service,
             admin_model_price_service,
@@ -1006,6 +1023,7 @@ impl Bootstrap<BillingReady> {
             channel_index.clone(),
             ChannelIndexRefreshConfig::default(),
         );
+        register_scheduler_invalidation_tasks(&mut supervisor, scheduler_invalidation);
         register_oauth_loopback_servers(&mut supervisor, oauth_loopback_servers);
         if let Some(runtime) = oauth_refresh_supervisor {
             spawn_oauth_refresh_task(&mut supervisor, runtime);
@@ -1830,7 +1848,7 @@ mod tests {
             .await
             .unwrap()
             .start_supervisor();
-        assert_eq!(supervised.stage.supervisor.task_count(), 5);
+        assert_eq!(supervised.stage.supervisor.task_count(), 6);
         let report = supervised
             .build_router()
             .bind()
@@ -1874,6 +1892,44 @@ mod tests {
         assert!(matches!(
             &error,
             BootstrapError::OAuthRuntime(OAuthRuntimeConfigError::RefreshLease(_))
+        ));
+        let rendered = format!("{error:?}{error}");
+        assert!(!rendered.contains("not-a-redis-url"));
+        let _ = fs::remove_dir_all(wal_directory);
+    }
+
+    #[tokio::test]
+    async fn configured_redis_failure_rejects_snapshot_broadcast_when_oauth_refresh_is_disabled() {
+        let path = config_file("sqlite::memory:");
+        let contents = fs::read_to_string(&path).unwrap();
+        fs::write(
+            &path,
+            format!(
+                "{contents}[oauth]\nrefresh_enabled = false\n[redis]\nurl = 'not-a-redis-url'\n"
+            ),
+        )
+        .unwrap();
+        let config = af_config::load_from(&path).unwrap();
+        let wal_directory = billing_wal_directory(&path);
+        let _ = fs::remove_file(path);
+
+        let relay = Bootstrap::new(config)
+            .unwrap()
+            .init_telemetry()
+            .unwrap()
+            .connect_database()
+            .await
+            .unwrap()
+            .init_authentication()
+            .unwrap()
+            .init_relay()
+            .unwrap();
+        let Err(error) = relay.init_billing().await else {
+            panic!("已配置但不可用的 Redis 必须阻止快照广播启动");
+        };
+        assert!(matches!(
+            &error,
+            BootstrapError::SchedulerInvalidation(SchedulerInvalidationRuntimeError::Cache(_))
         ));
         let rendered = format!("{error:?}{error}");
         assert!(!rendered.contains("not-a-redis-url"));

@@ -19,6 +19,7 @@ mod oauth_connection;
 mod readiness;
 mod responses_websocket_runtime;
 mod scheduled_chat;
+mod scheduler_invalidation;
 mod shutdown;
 mod smtp_delivery;
 mod supervisor;
@@ -33,6 +34,7 @@ pub use bootstrap::{
     ListenerReady, RelayReady, RouterReady, ShutdownReport, Supervised, TelemetryReady, run,
 };
 pub use oauth_connection::OAuthRuntimeConfigError;
+pub use scheduler_invalidation::SchedulerInvalidationRuntimeError;
 pub use shutdown::{ShutdownController, system_shutdown_signal};
 pub use smtp_delivery::SmtpEmailDelivery;
 pub use supervisor::{BackgroundTaskSupervisor, SupervisorError, SupervisorShutdown};

@@ -157,7 +157,7 @@ impl RemoteCache for RedisBackend {
     }
 }
 
-fn redis_error(operation: CacheOperation, error: &redis::RedisError) -> CacheError {
+pub(crate) fn redis_error(operation: CacheOperation, error: &redis::RedisError) -> CacheError {
     let kind = if error.is_timeout() {
         RedisFailureKind::Timeout
     } else {
