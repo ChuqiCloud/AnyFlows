@@ -27,6 +27,8 @@ pub enum CacheOperation {
     ConcurrencyRelease,
     ConcurrencyLoad,
     ConcurrencyCleanup,
+    HealthRead,
+    HealthWrite,
 }
 
 impl fmt::Display for CacheOperation {
@@ -53,6 +55,8 @@ impl fmt::Display for CacheOperation {
             Self::ConcurrencyRelease => "释放并发槽位",
             Self::ConcurrencyLoad => "读取并发负载",
             Self::ConcurrencyCleanup => "清理并发槽位",
+            Self::HealthRead => "读取调度健康状态",
+            Self::HealthWrite => "写入调度健康状态",
         };
         formatter.write_str(name)
     }
@@ -126,6 +130,10 @@ pub enum CacheError {
     InvalidConcurrencyIdentifier,
     #[error("并发槽位批次为空间无效、重复或超过容量上限")]
     InvalidConcurrencyBatch,
+    #[error("调度健康状态批次为空、超过容量上限或包含重复读取目标")]
+    InvalidHealthBatch,
+    #[error("调度健康状态策略参数无效")]
+    InvalidHealthPolicy,
     #[error("本地缓存锁不可用")]
     LocalUnavailable,
     #[error("缓存同实例写入排序等待超时")]

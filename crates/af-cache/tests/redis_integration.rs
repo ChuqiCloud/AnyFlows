@@ -9,7 +9,8 @@ use af_cache::{
     DistributedLeaseManager, DistributedLeaseMode, HybridCache, HybridCacheConfig,
     LeaseAcquireOutcome, LeaseReleaseOutcome, ProjectionWriteOutcome, RedisBroadcastConfig,
     RedisBroadcastPublisher, RedisBroadcastSubscriber, RedisConcurrencyConfig,
-    RedisConcurrencyStore, RedisConfig, RedisProjectionConfig, RedisStickySessionConfig,
+    RedisConcurrencyStore, RedisConfig, RedisHealthConfig, RedisHealthEvent, RedisHealthFailure,
+    RedisHealthStore, RedisHealthTarget, RedisProjectionConfig, RedisStickySessionConfig,
     RedisStickySessionStore, RedisVersionedProjectionStore,
 };
 use af_domain::{ConcurrencyLimit, CredentialId, TokenId, UserId};
@@ -88,6 +89,94 @@ async fn redis_hybrid_cache_smoke() {
     verify_projection_contract(&redis_url, &format!("{namespace}.projection")).await;
     verify_sticky_session_contract(&redis_url, &format!("{namespace}.sticky")).await;
     verify_concurrency_contract(&redis_url, &format!("{namespace}.concurrency")).await;
+    verify_health_contract(&redis_url, &format!("{namespace}.health")).await;
+}
+
+async fn verify_health_contract(redis_url: &str, namespace: &str) {
+    let config = || {
+        RedisHealthConfig::new(
+            RedisConfig::new(redis_url)
+                .with_timeouts(DEFAULT_REDIS_CONNECT_TIMEOUT, Duration::from_secs(2)),
+            namespace,
+        )
+        .unwrap()
+        .with_policy(
+            Duration::from_millis(100),
+            Duration::from_millis(500),
+            3,
+            [
+                Duration::from_millis(120),
+                Duration::from_millis(250),
+                Duration::from_millis(450),
+            ],
+            Duration::from_secs(3),
+        )
+        .unwrap()
+    };
+    let first = RedisHealthStore::connect(config()).await.unwrap();
+    let second = RedisHealthStore::connect(config()).await.unwrap();
+    let channel = RedisHealthTarget::Channel(af_domain::ChannelId::new(81).unwrap());
+    let credential = RedisHealthTarget::Credential(CredentialId::new(82).unwrap());
+    let targets = [channel, credential];
+
+    let initial = first.states(&targets).await.unwrap();
+    assert!(initial.iter().all(|state| state.penalty_micros() == 0));
+    for _ in 0..3 {
+        first
+            .apply(&[
+                RedisHealthEvent::failed(channel, RedisHealthFailure::Server),
+                RedisHealthEvent::failed(credential, RedisHealthFailure::Server),
+            ])
+            .await
+            .unwrap();
+    }
+    let opened = second.states(&targets).await.unwrap();
+    assert!(opened.iter().all(|state| state.is_cooling()));
+    assert!(opened.iter().all(|state| state.breaker_level() == 1));
+
+    tokio::time::sleep(Duration::from_millis(160)).await;
+    let expired = second.states(&targets).await.unwrap();
+    assert!(expired.iter().all(|state| !state.is_cooling()));
+    assert!(
+        expired
+            .iter()
+            .all(|state| state.penalty_micros() < 7_500_000)
+    );
+    for _ in 0..3 {
+        second
+            .apply(&[
+                RedisHealthEvent::failed(channel, RedisHealthFailure::Network),
+                RedisHealthEvent::failed(credential, RedisHealthFailure::Network),
+            ])
+            .await
+            .unwrap();
+    }
+    let escalated = first.states(&targets).await.unwrap();
+    assert!(escalated.iter().all(|state| state.is_cooling()));
+    assert!(escalated.iter().all(|state| state.breaker_level() == 2));
+
+    first
+        .apply(&[
+            RedisHealthEvent::succeeded(channel),
+            RedisHealthEvent::succeeded(credential),
+        ])
+        .await
+        .unwrap();
+    let recovered = second.states(&targets).await.unwrap();
+    assert!(recovered.iter().all(|state| !state.is_cooling()));
+    assert!(recovered.iter().all(|state| state.breaker_level() == 0));
+
+    let decaying = RedisHealthTarget::Credential(CredentialId::new(83).unwrap());
+    first
+        .apply(&[RedisHealthEvent::failed(
+            decaying,
+            RedisHealthFailure::ModelUnsupported,
+        )])
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let decayed = second.states(&[decaying]).await.unwrap()[0].penalty_micros();
+    assert!((350_000..=550_000).contains(&decayed));
 }
 
 async fn verify_sticky_session_contract(redis_url: &str, namespace: &str) {

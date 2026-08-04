@@ -32,6 +32,11 @@ impl CredentialAttemptTarget {
     pub(crate) const fn channel_id(&self) -> ChannelId {
         self.channel_id
     }
+
+    /// 返回与 Relay 候选对应的凭据标识，供健康反馈与调权使用。
+    pub(crate) const fn credential_id(&self) -> CredentialId {
+        self.credential_id
+    }
 }
 
 /// 最佳努力持久化凭据反馈；失败不得覆盖已经确定的业务结果。

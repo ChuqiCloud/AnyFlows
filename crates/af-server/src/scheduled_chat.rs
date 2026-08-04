@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, fmt, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+    sync::Arc,
+};
 
 use crate::{
     ChatRoutePlanFuture, ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture,
@@ -8,7 +12,14 @@ use crate::{
         user_permit_completion_hook,
     },
     credential_feedback::{CredentialAttemptTarget, persist_credential_feedback},
-    credential_order::{CredentialLoad, order_credentials, order_credentials_by_load},
+    credential_order::{
+        CredentialLoad, order_credentials, order_credentials_by_load,
+        order_credentials_by_load_and_health, order_credentials_with_health,
+    },
+    health_runtime::{
+        RuntimeHealthState, SchedulerHealthStore, load_channel_health, load_credential_health,
+        persist_scheduler_health_feedback,
+    },
     responses_websocket_runtime::ResponsesWebSocketRuntime,
     sticky_session::{
         StableSessionScope, StickySessionStore, stable_session_scope, sticky_cache_error_kind,
@@ -34,13 +45,14 @@ use af_relay::{
     relay_openai_responses_with_report,
 };
 use af_scheduler::{
-    IndexedRoutePlan, IndexedWeightedScheduler, IndexedWeightedSchedulerError, RouteWaitKind,
-    StickyRouteOutcome, StickyWaitPolicy,
+    ChannelRoutingHealth, IndexedRoutePlan, IndexedWeightedScheduler,
+    IndexedWeightedSchedulerError, RouteWaitKind, StickyRouteOutcome, StickyWaitPolicy,
 };
 
 /// 路由计划在同一次 Redis 快照中取得的账号负载与用户许可。
 struct PreparedConcurrencyPlan<'a> {
     account_loads: Option<&'a BTreeMap<i64, CredentialLoad>>,
+    credential_health: Option<&'a BTreeMap<i64, RuntimeHealthState>>,
     user_permit: Option<RuntimeConcurrencyPermit>,
 }
 
@@ -49,6 +61,7 @@ impl PreparedConcurrencyPlan<'_> {
     const fn disabled() -> Self {
         Self {
             account_loads: None,
+            credential_health: None,
             user_permit: None,
         }
     }
@@ -65,6 +78,7 @@ pub(crate) struct ScheduledChatService {
     sticky_sessions: Option<Arc<dyn StickySessionStore>>,
     sticky_wait_policy: StickyWaitPolicy,
     concurrency: Option<ConcurrencyRuntime>,
+    health: Option<Arc<dyn SchedulerHealthStore>>,
 }
 
 impl ScheduledChatService {
@@ -85,6 +99,7 @@ impl ScheduledChatService {
             sticky_sessions: None,
             sticky_wait_policy: StickyWaitPolicy::default(),
             concurrency: None,
+            health: None,
         }
     }
 
@@ -105,6 +120,12 @@ impl ScheduledChatService {
         self
     }
 
+    /// 注入已通过启动健康检查的 Redis 熔断存储。
+    pub(crate) fn with_scheduler_health(mut self, health: Arc<dyn SchedulerHealthStore>) -> Self {
+        self.health = Some(health);
+        self
+    }
+
     fn build_plan(
         &self,
         route: IndexedRoutePlan,
@@ -117,6 +138,7 @@ impl ScheduledChatService {
     ) -> Result<ScheduledChatExecution, AfError> {
         let PreparedConcurrencyPlan {
             account_loads,
+            credential_health,
             user_permit,
         } = concurrency;
         let model = request.canonical().model.clone();
@@ -129,6 +151,7 @@ impl ScheduledChatService {
                 .min(RelayStateMachine::MAX_CANDIDATES),
         );
         let mut attempt_targets = Vec::with_capacity(relay_candidates.capacity());
+        let mut health_filtered = false;
         'channels: for candidate in route.candidates() {
             let target = candidate.runtime_target();
             let wait_plan = candidate.wait_plan();
@@ -181,15 +204,31 @@ impl ScheduledChatService {
             let order_scope = session_scope
                 .as_ref()
                 .map_or(request_id, StableSessionScope::as_str);
-            let ordered_credentials = match (wait_plan.kind(), account_loads) {
-                (RouteWaitKind::Fallback, Some(loads)) => order_credentials_by_load(
+            let ordered_credentials = match (wait_plan.kind(), account_loads, credential_health) {
+                (RouteWaitKind::Fallback, Some(loads), Some(health)) => {
+                    order_credentials_by_load_and_health(
+                        order_scope,
+                        target.channel_id(),
+                        target.credentials(),
+                        loads,
+                        health,
+                    )
+                }
+                (RouteWaitKind::Fallback, Some(loads), None) => order_credentials_by_load(
                     order_scope,
                     target.channel_id(),
                     target.credentials(),
                     loads,
                 ),
+                (_, _, Some(health)) => order_credentials_with_health(
+                    order_scope,
+                    target.channel_id(),
+                    target.credentials(),
+                    health,
+                ),
                 _ => order_credentials(order_scope, target.channel_id(), target.credentials()),
             };
+            health_filtered |= !target.credentials().is_empty() && ordered_credentials.is_empty();
             for runtime_credential in ordered_credentials {
                 if relay_candidates.len() == RelayStateMachine::MAX_CANDIDATES {
                     break 'channels;
@@ -245,7 +284,11 @@ impl ScheduledChatService {
             }
         }
         if relay_candidates.is_empty() {
-            return Err(af_domain::UpstreamError::ModelUnsupported.into());
+            return Err(if health_filtered {
+                af_domain::UpstreamError::Overloaded.into()
+            } else {
+                af_domain::UpstreamError::ModelUnsupported.into()
+            });
         }
         let machine = RelayStateMachine::new(relay_candidates).map_err(|_| AfError::Internal)?;
         Ok(ScheduledChatExecution {
@@ -261,6 +304,7 @@ impl ScheduledChatService {
             sticky_sessions: self.sticky_sessions.clone(),
             session_scope,
             user_permit,
+            health: self.health.clone(),
         })
     }
 
@@ -360,6 +404,45 @@ impl ScheduledChatService {
             .map(Some)
             .map_err(|_| AfError::Internal)
     }
+
+    async fn load_channel_health(
+        &self,
+        group_id: GroupId,
+        model: &str,
+    ) -> Result<
+        (
+            Vec<af_domain::ChannelId>,
+            BTreeMap<af_domain::ChannelId, ChannelRoutingHealth>,
+        ),
+        AfError,
+    > {
+        let channel_ids = self
+            .scheduler
+            .route_channel_ids(group_id, model)
+            .map_err(map_scheduler_error)?;
+        let Some(store) = &self.health else {
+            return Ok((channel_ids, BTreeMap::new()));
+        };
+        let health = load_channel_health(store, &channel_ids)
+            .await
+            .map_err(|_| AfError::Internal)?;
+        Ok((channel_ids, health))
+    }
+
+    async fn load_credential_health(
+        &self,
+        route: &IndexedRoutePlan,
+        upstream_protocol: Protocol,
+    ) -> Result<Option<BTreeMap<i64, RuntimeHealthState>>, AfError> {
+        let Some(store) = &self.health else {
+            return Ok(None);
+        };
+        let credential_ids = collect_route_credentials(route, upstream_protocol)?;
+        load_credential_health(store, &credential_ids)
+            .await
+            .map(Some)
+            .map_err(|_| AfError::Internal)
+    }
 }
 
 impl ChatRoutePlanner for ScheduledChatService {
@@ -372,16 +455,38 @@ impl ChatRoutePlanner for ScheduledChatService {
         request_id: &'a str,
     ) -> ChatRoutePlanFuture<'a> {
         Box::pin(async move {
-            let mut route = self
-                .scheduler
-                .route_plan(principal.group_id(), &request.canonical().model)
-                .map_err(map_scheduler_error)?
-                .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?;
+            let mut route = if self.health.is_some() {
+                let (channel_ids, channel_health) = self
+                    .load_channel_health(principal.group_id(), &request.canonical().model)
+                    .await?;
+                self.scheduler
+                    .route_plan_with_health(
+                        principal.group_id(),
+                        &request.canonical().model,
+                        &channel_health,
+                    )
+                    .map_err(map_scheduler_error)?
+                    .ok_or_else(|| {
+                        AfError::from(if channel_ids.is_empty() {
+                            af_domain::UpstreamError::ModelUnsupported
+                        } else {
+                            af_domain::UpstreamError::Overloaded
+                        })
+                    })?
+            } else {
+                self.scheduler
+                    .route_plan(principal.group_id(), &request.canonical().model)
+                    .map_err(map_scheduler_error)?
+                    .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?
+            };
             let upstream_protocol = select_upstream_protocol(&route, &request, response_protocol)?;
             route.configure_wait_policy(self.sticky_wait_policy);
             let session_scope = stable_session_scope(*principal, request.canonical());
             self.apply_sticky_binding(&mut route, upstream_protocol, session_scope.as_ref())
                 .await;
+            let credential_health = self
+                .load_credential_health(&route, upstream_protocol)
+                .await?;
             let user_permit = self
                 .acquire_user_permit(*principal, user_concurrency)
                 .await?;
@@ -397,6 +502,7 @@ impl ChatRoutePlanner for ScheduledChatService {
                 session_scope,
                 PreparedConcurrencyPlan {
                     account_loads: account_loads.as_ref(),
+                    credential_health: credential_health.as_ref(),
                     user_permit,
                 },
             )
@@ -417,6 +523,7 @@ impl fmt::Debug for ScheduledChatService {
             .field("sticky_sessions", &self.sticky_sessions.is_some())
             .field("sticky_wait_policy", &self.sticky_wait_policy)
             .field("concurrency", &self.concurrency.is_some())
+            .field("health", &self.health.is_some())
             .finish()
     }
 }
@@ -434,6 +541,7 @@ struct ScheduledChatExecution {
     sticky_sessions: Option<Arc<dyn StickySessionStore>>,
     session_scope: Option<StableSessionScope>,
     user_permit: Option<RuntimeConcurrencyPermit>,
+    health: Option<Arc<dyn SchedulerHealthStore>>,
 }
 
 impl PlannedChatExecution for ScheduledChatExecution {
@@ -455,6 +563,7 @@ impl PlannedChatExecution for ScheduledChatExecution {
             sticky_sessions,
             session_scope,
             user_permit,
+            health,
         } = *self;
         Box::pin(async move {
             let operation = request.canonical().operation;
@@ -486,8 +595,15 @@ impl PlannedChatExecution for ScheduledChatExecution {
                 .and_then(|index| attempt_targets.get(index))
                 .map(CredentialAttemptTarget::channel_id)
                 .map(af_domain::ChannelId::get);
-            persist_credential_feedback(&credential_states, &scheduler, &attempt_targets, &report)
-                .await;
+            let ((), ()) = tokio::join!(
+                persist_credential_feedback(
+                    &credential_states,
+                    &scheduler,
+                    &attempt_targets,
+                    &report,
+                ),
+                persist_scheduler_health_feedback(health.as_ref(), &attempt_targets, &report),
+            );
             if result.is_ok()
                 && let (Some(store), Some(scope), Some(channel_id)) = (
                     sticky_sessions.as_ref(),
@@ -550,6 +666,32 @@ fn collect_route_accounts(
         }
     }
     Ok(accounts)
+}
+
+fn collect_route_credentials(
+    route: &IndexedRoutePlan,
+    upstream_protocol: Protocol,
+) -> Result<Vec<CredentialId>, AfError> {
+    let mut credential_ids = Vec::with_capacity(RelayStateMachine::MAX_CANDIDATES);
+    let mut unique = BTreeSet::new();
+    'channels: for candidate in route.candidates() {
+        let target = candidate.runtime_target();
+        if !target_matches_protocol(target, upstream_protocol) {
+            continue;
+        }
+        for credential in target.credentials() {
+            if credential_ids.len() == RelayStateMachine::MAX_CANDIDATES {
+                break 'channels;
+            }
+            let credential_id =
+                CredentialId::new(credential.credential_id()).map_err(|_| AfError::Internal)?;
+            if !unique.insert(credential_id) {
+                return Err(AfError::Internal);
+            }
+            credential_ids.push(credential_id);
+        }
+    }
+    Ok(credential_ids)
 }
 
 const fn map_concurrency_runtime_error(error: ConcurrencyRuntimeError) -> AfError {
