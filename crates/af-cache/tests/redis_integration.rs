@@ -6,7 +6,8 @@ use std::{
 use af_cache::{
     CacheError, CacheMode, DEFAULT_REDIS_CONNECT_TIMEOUT, DistributedLease, DistributedLeaseConfig,
     DistributedLeaseManager, DistributedLeaseMode, HybridCache, HybridCacheConfig,
-    LeaseAcquireOutcome, LeaseReleaseOutcome, RedisConfig,
+    LeaseAcquireOutcome, LeaseReleaseOutcome, RedisBroadcastConfig, RedisBroadcastPublisher,
+    RedisBroadcastSubscriber, RedisConfig,
 };
 
 const LIVE_REDIS_GATE: &str = "AF_REQUIRE_LIVE_REDIS";
@@ -79,6 +80,27 @@ async fn redis_hybrid_cache_smoke() {
     assert!(first.delete("oversized").await.unwrap());
 
     verify_distributed_lease_contract(&redis_url, &format!("{namespace}.lease")).await;
+    verify_broadcast_contract(&redis_url, &format!("{namespace}.broadcast")).await;
+}
+
+async fn verify_broadcast_contract(redis_url: &str, channel: &str) {
+    let config = RedisBroadcastConfig::new(
+        RedisConfig::new(redis_url)
+            .with_timeouts(DEFAULT_REDIS_CONNECT_TIMEOUT, Duration::from_secs(2)),
+        channel,
+    )
+    .unwrap();
+    // 先等待订阅确认，再发布消息，验证启动顺序不会主动制造丢信号窗口。
+    let mut subscriber = RedisBroadcastSubscriber::connect(config.clone())
+        .await
+        .unwrap();
+    let publisher = RedisBroadcastPublisher::connect(config).await.unwrap();
+    assert!(publisher.publish(b"scheduler-event-v1").await.unwrap() >= 1);
+    let received = tokio::time::timeout(Duration::from_secs(2), subscriber.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(received, b"scheduler-event-v1");
 }
 
 async fn verify_distributed_lease_contract(redis_url: &str, namespace: &str) {

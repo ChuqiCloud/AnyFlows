@@ -11,6 +11,9 @@ pub enum CacheOperation {
     Read,
     Write,
     Delete,
+    Publish,
+    Subscribe,
+    Receive,
     LeaseAcquire,
     LeaseRelease,
 }
@@ -23,6 +26,9 @@ impl fmt::Display for CacheOperation {
             Self::Read => "读取",
             Self::Write => "写入",
             Self::Delete => "删除",
+            Self::Publish => "发布",
+            Self::Subscribe => "订阅",
+            Self::Receive => "接收",
             Self::LeaseAcquire => "获取租约",
             Self::LeaseRelease => "释放租约",
         };
@@ -74,6 +80,12 @@ pub enum CacheError {
     InvalidTimeout,
     #[error("缓存键必须非空、不得包含控制字符且长度不超过 1024 字节")]
     InvalidKey,
+    #[error("Redis 广播通道必须为 1 到 64 个 ASCII 字母、数字、点、短横线或下划线")]
+    InvalidBroadcastChannel,
+    #[error("Redis 广播消息必须非空且不得超过配置的字节上限")]
+    InvalidBroadcastPayload,
+    #[error("Redis 广播订阅连接已关闭")]
+    BroadcastClosed,
     #[error("缓存 TTL 必须为可表示的整毫秒正数")]
     InvalidTtl,
     #[error("无法取得分布式租约所有者所需的安全随机数")]

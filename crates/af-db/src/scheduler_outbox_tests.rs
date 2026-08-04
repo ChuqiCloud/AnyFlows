@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, time::Duration};
 
 use af_domain::{ChannelId, GroupId};
 use sea_orm::{
@@ -7,7 +7,9 @@ use sea_orm::{
 };
 
 use crate::{
-    DatabaseOptions, MigrationOptions, SchedulerCatalogSubject, entity::scheduler_outbox_events,
+    DatabaseOptions, MigrationOptions, SchedulerCatalogSubject, SchedulerOutboxClaimOutcome,
+    SchedulerOutboxCompletionOutcome, SchedulerOutboxRepository,
+    SchedulerOutboxRepositoryConfigError, entity::scheduler_outbox_events,
     scheduler_outbox::enqueue_scheduler_catalog_change,
 };
 
@@ -85,6 +87,135 @@ async fn outbox_insert_is_transactional_and_uses_a_closed_pending_shape()
     };
     assert!(invalid.insert(pool.connection()).await.is_err());
 
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn outbox_repository_rejects_a_zero_database_deadline() -> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    assert_eq!(
+        SchedulerOutboxRepository::new(pool.clone(), Duration::ZERO).unwrap_err(),
+        SchedulerOutboxRepositoryConfigError::ZeroOperationTimeout
+    );
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn concurrent_claims_publish_one_event_once_by_version_cas() -> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    enqueue_scheduler_catalog_change(
+        pool.connection(),
+        SchedulerCatalogSubject::Channel(ChannelId::new(999)?),
+        now,
+    )
+    .await?;
+    let first = SchedulerOutboxRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let second = SchedulerOutboxRepository::new(pool.clone(), Duration::from_secs(5))?;
+
+    let (first_result, second_result) = tokio::join!(first.claim_next(now), second.claim_next(now));
+    let mut lease = None;
+    let mut empty = 0;
+    for outcome in [first_result?, second_result?] {
+        match outcome {
+            SchedulerOutboxClaimOutcome::Claimed(claimed) => {
+                assert!(lease.replace(claimed).is_none());
+            }
+            SchedulerOutboxClaimOutcome::Empty => empty += 1,
+        }
+    }
+    assert_eq!(empty, 1);
+    let lease = lease.expect("并发竞争必须产生一个租约 owner");
+    assert_eq!(lease.attempt_count(), 1);
+    assert_eq!(
+        lease.subject(),
+        SchedulerCatalogSubject::Channel(ChannelId::new(999)?)
+    );
+    assert!(!format!("{lease:?}").contains("999"));
+    assert_eq!(
+        first.mark_published(&lease, now).await?,
+        SchedulerOutboxCompletionOutcome::Completed
+    );
+    assert_eq!(
+        first.mark_published(&lease, now).await?,
+        SchedulerOutboxCompletionOutcome::Stale
+    );
+    let row = scheduler_outbox_events::Entity::find()
+        .one(pool.connection())
+        .await?
+        .expect("事件必须存在");
+    assert_eq!(row.status, 3);
+    assert_eq!(row.attempt_count, 1);
+    assert!(row.lease_expires_at.is_none());
+    assert!(row.published_at.is_some());
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_and_expired_leases_retry_without_overwriting_new_owner()
+-> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    enqueue_scheduler_catalog_change(
+        pool.connection(),
+        SchedulerCatalogSubject::Group(GroupId::new(7)?),
+        now,
+    )
+    .await?;
+    let first = SchedulerOutboxRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let second = SchedulerOutboxRepository::new(pool.clone(), Duration::from_secs(5))?;
+
+    let SchedulerOutboxClaimOutcome::Claimed(initial) = first.claim_next(now).await? else {
+        panic!("初始事件必须可领取");
+    };
+    assert_eq!(
+        first.record_failure(&initial, now).await?,
+        SchedulerOutboxCompletionOutcome::Completed
+    );
+    assert_eq!(
+        first.claim_next(now).await?,
+        SchedulerOutboxClaimOutcome::Empty
+    );
+
+    let retry_at = now + Duration::from_secs(1);
+    let SchedulerOutboxClaimOutcome::Claimed(retried) = first.claim_next(retry_at).await? else {
+        panic!("退避结束后必须重新领取");
+    };
+    assert_eq!(retried.attempt_count(), 2);
+    let takeover_at = retry_at + Duration::from_secs(120);
+    let SchedulerOutboxClaimOutcome::Claimed(takeover) = second.claim_next(takeover_at).await?
+    else {
+        panic!("租约到期后必须允许其他实例接管");
+    };
+    assert_eq!(takeover.attempt_count(), 3);
+    assert_eq!(
+        first.mark_published(&retried, takeover_at).await?,
+        SchedulerOutboxCompletionOutcome::Stale
+    );
+    assert_eq!(
+        second.mark_published(&takeover, takeover_at).await?,
+        SchedulerOutboxCompletionOutcome::Completed
+    );
+    let row = scheduler_outbox_events::Entity::find()
+        .one(pool.connection())
+        .await?
+        .expect("事件必须存在");
+    assert_eq!((row.status, row.attempt_count), (3, 3));
     pool.close().await?;
     Ok(())
 }

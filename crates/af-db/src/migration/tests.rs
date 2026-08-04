@@ -28,8 +28,9 @@ use crate::entity::{
     channel_models, channels, credentials, email_settings, group_model_ratios, groups,
     invite_rebate_events, model_prices, model_sync_items, model_sync_runs, models, options,
     playground_conversations, playground_shares, redemption_batches, redemption_codes,
-    registration_rate_limits, site_settings, subscription_plans, tokens, topup_orders,
-    topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
+    registration_rate_limits, scheduler_outbox_events, site_settings, subscription_plans, tokens,
+    topup_orders, topup_payment_events, usage_logs, user_subscriptions, users,
+    wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -40,11 +41,12 @@ use crate::{
     ModelPriceRepository, PlaygroundConversationRepository, PlaygroundConversationWrite,
     PlaygroundShareRepository, PlaygroundShareWrite, PoolOptions, QuotaMutationOutcome,
     QuotaRepository, QuotaReservationStatus, RegistrationAttemptOutcome,
-    RegistrationPolicyWriteRecord, RegistrationRepository, SiteSettingsRepository,
-    SiteSettingsWriteRecord, TokenAuthLookup, TokenAuthLookupOutcome, TokenAuthRepository,
-    TokenBillingWrite, UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError,
-    UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogWrite, UsageLogWriteOutcome,
-    UserBillingWrite, connect,
+    RegistrationPolicyWriteRecord, RegistrationRepository, SchedulerCatalogSubject,
+    SchedulerOutboxClaimOutcome, SchedulerOutboxCompletionOutcome, SchedulerOutboxRepository,
+    SiteSettingsRepository, SiteSettingsWriteRecord, TokenAuthLookup, TokenAuthLookupOutcome,
+    TokenAuthRepository, TokenBillingWrite, UsageLogBillingMode, UsageLogRepository,
+    UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogWrite,
+    UsageLogWriteOutcome, UserBillingWrite, connect,
 };
 
 const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
@@ -654,6 +656,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
 
     assert_updated_at_behaviors(pool.connection()).await?;
     exercise_balance_alert_migration(pool.connection()).await?;
+    exercise_scheduler_outbox_repository(&pool).await?;
     exercise_token_auth_repository(&pool).await?;
     exercise_quota_repository(&pool).await?;
     exercise_billing_batch_repository(&pool).await?;
@@ -678,6 +681,70 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_core_tables_absent(pool.connection()).await?;
 
     pool.close().await?;
+    Ok(())
+}
+
+/// 在三方言真实连接上覆盖 outbox 领取 CAS、失败退避和发布确认，而不只验证建表。
+async fn exercise_scheduler_outbox_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    crate::scheduler_outbox::enqueue_scheduler_catalog_change(
+        pool.connection(),
+        SchedulerCatalogSubject::Channel(ChannelId::new(7_001)?),
+        now,
+    )
+    .await?;
+    let first = SchedulerOutboxRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let second = SchedulerOutboxRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let (first_claim, second_claim) = tokio::join!(first.claim_next(now), second.claim_next(now));
+    let mut owner = None;
+    let mut empty_count = 0;
+    for outcome in [first_claim?, second_claim?] {
+        match outcome {
+            SchedulerOutboxClaimOutcome::Claimed(lease) => {
+                assert!(owner.replace(lease).is_none());
+            }
+            SchedulerOutboxClaimOutcome::Empty => empty_count += 1,
+        }
+    }
+    assert_eq!(empty_count, 1);
+    let owner = owner.expect("跨方言 CAS 竞争必须产生唯一 owner");
+    assert_eq!(
+        first.mark_published(&owner, now).await?,
+        SchedulerOutboxCompletionOutcome::Completed
+    );
+
+    crate::scheduler_outbox::enqueue_scheduler_catalog_change(
+        pool.connection(),
+        SchedulerCatalogSubject::Group(GroupId::new(8_001)?),
+        now,
+    )
+    .await?;
+    let SchedulerOutboxClaimOutcome::Claimed(failed) = first.claim_next(now).await? else {
+        panic!("第二条 outbox 事件必须可领取");
+    };
+    assert_eq!(
+        first.record_failure(&failed, now).await?,
+        SchedulerOutboxCompletionOutcome::Completed
+    );
+    assert_eq!(
+        first.claim_next(now).await?,
+        SchedulerOutboxClaimOutcome::Empty
+    );
+    let retry_at = now + Duration::from_secs(1);
+    let SchedulerOutboxClaimOutcome::Claimed(retried) = second.claim_next(retry_at).await? else {
+        panic!("失败退避结束后必须允许重新领取");
+    };
+    assert_eq!(
+        second.mark_published(&retried, retry_at).await?,
+        SchedulerOutboxCompletionOutcome::Completed
+    );
+    assert_eq!(
+        scheduler_outbox_events::Entity::find()
+            .filter(scheduler_outbox_events::Column::Status.eq(3))
+            .count(pool.connection())
+            .await?,
+        2
+    );
     Ok(())
 }
 

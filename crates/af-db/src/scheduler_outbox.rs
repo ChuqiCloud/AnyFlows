@@ -4,9 +4,19 @@ use thiserror::Error;
 
 use crate::{DatabaseTimestamp, entity::scheduler_outbox_events};
 
+mod repository;
+
+pub use repository::{
+    SchedulerOutboxClaimOutcome, SchedulerOutboxCompletionOutcome, SchedulerOutboxLease,
+    SchedulerOutboxRepository, SchedulerOutboxRepositoryConfigError,
+    SchedulerOutboxRepositoryError,
+};
+
 const SUBJECT_CHANNEL: i16 = 1;
 const SUBJECT_GROUP: i16 = 2;
 const STATUS_PENDING: i16 = 1;
+const STATUS_LEASED: i16 = 2;
+const STATUS_PUBLISHED: i16 = 3;
 const INITIAL_VERSION: i64 = 1;
 
 /// 调度目录变更事件的闭合主体。

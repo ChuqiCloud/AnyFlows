@@ -344,7 +344,11 @@ pub use scheduler_ability::{
     MAX_SCHEDULER_ABILITY_ENTRIES, MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES, SchedulerAbilityRecord,
     SchedulerAbilityRepository, SchedulerAbilityRepositoryError,
 };
-pub use scheduler_outbox::{SchedulerCatalogSubject, SchedulerCatalogSubjectError};
+pub use scheduler_outbox::{
+    SchedulerCatalogSubject, SchedulerCatalogSubjectError, SchedulerOutboxClaimOutcome,
+    SchedulerOutboxCompletionOutcome, SchedulerOutboxLease, SchedulerOutboxRepository,
+    SchedulerOutboxRepositoryConfigError, SchedulerOutboxRepositoryError,
+};
 pub use scheduler_runtime::{
     ChannelModelMappings, ChannelParameterOverrides, ChannelRequestPolicyError,
     MAX_CHANNEL_MODEL_MAPPINGS, MAX_CHANNEL_OUTPUT_TOKENS, MAX_CHANNEL_PARAMETER_OVERRIDES,
