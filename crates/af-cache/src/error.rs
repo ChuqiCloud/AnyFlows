@@ -18,6 +18,10 @@ pub enum CacheOperation {
     ProjectionWrite,
     LeaseAcquire,
     LeaseRelease,
+    StickyRead,
+    StickyWrite,
+    StickyRefresh,
+    StickyDelete,
 }
 
 impl fmt::Display for CacheOperation {
@@ -35,6 +39,10 @@ impl fmt::Display for CacheOperation {
             Self::ProjectionWrite => "写入投影",
             Self::LeaseAcquire => "获取租约",
             Self::LeaseRelease => "释放租约",
+            Self::StickyRead => "读取粘性会话",
+            Self::StickyWrite => "写入粘性会话",
+            Self::StickyRefresh => "续期粘性会话",
+            Self::StickyDelete => "删除粘性会话",
         };
         formatter.write_str(name)
     }
@@ -100,6 +108,10 @@ pub enum CacheError {
     EntropyUnavailable,
     #[error("缓存值超过当前配置允许的大小")]
     ValueTooLarge,
+    #[error("粘性会话摘要必须为 64 个十六进制字符")]
+    InvalidStickyDigest,
+    #[error("粘性会话渠道标识必须为正数")]
+    InvalidStickyChannelId,
     #[error("本地缓存锁不可用")]
     LocalUnavailable,
     #[error("缓存同实例写入排序等待超时")]

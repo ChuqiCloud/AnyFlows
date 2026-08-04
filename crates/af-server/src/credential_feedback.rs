@@ -27,6 +27,11 @@ impl CredentialAttemptTarget {
             credential_kind,
         })
     }
+
+    /// 返回与 Relay 候选对应的渠道标识，供成功粘性绑定使用。
+    pub(crate) const fn channel_id(&self) -> ChannelId {
+        self.channel_id
+    }
 }
 
 /// 最佳努力持久化凭据反馈；失败不得覆盖已经确定的业务结果。

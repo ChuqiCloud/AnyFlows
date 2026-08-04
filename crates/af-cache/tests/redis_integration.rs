@@ -8,7 +8,7 @@ use af_cache::{
     DistributedLeaseManager, DistributedLeaseMode, HybridCache, HybridCacheConfig,
     LeaseAcquireOutcome, LeaseReleaseOutcome, ProjectionWriteOutcome, RedisBroadcastConfig,
     RedisBroadcastPublisher, RedisBroadcastSubscriber, RedisConfig, RedisProjectionConfig,
-    RedisVersionedProjectionStore,
+    RedisStickySessionConfig, RedisStickySessionStore, RedisVersionedProjectionStore,
 };
 
 const LIVE_REDIS_GATE: &str = "AF_REQUIRE_LIVE_REDIS";
@@ -83,6 +83,32 @@ async fn redis_hybrid_cache_smoke() {
     verify_distributed_lease_contract(&redis_url, &format!("{namespace}.lease")).await;
     verify_broadcast_contract(&redis_url, &format!("{namespace}.broadcast")).await;
     verify_projection_contract(&redis_url, &format!("{namespace}.projection")).await;
+    verify_sticky_session_contract(&redis_url, &format!("{namespace}.sticky")).await;
+}
+
+async fn verify_sticky_session_contract(redis_url: &str, namespace: &str) {
+    let digest = "a".repeat(64);
+    let config = || {
+        RedisStickySessionConfig::new(RedisConfig::new(redis_url), namespace)
+            .unwrap()
+            .with_ttl(Duration::from_millis(500))
+            .unwrap()
+    };
+    let first = RedisStickySessionStore::connect(config()).await.unwrap();
+    let second = RedisStickySessionStore::connect(config()).await.unwrap();
+
+    assert_eq!(first.get_and_refresh(&digest).await.unwrap(), None);
+    first.bind(&digest, 41).await.unwrap();
+    assert_eq!(second.get_and_refresh(&digest).await.unwrap(), Some(41));
+    assert!(!second.delete_if_channel(&digest, 42).await.unwrap());
+    assert_eq!(first.get_and_refresh(&digest).await.unwrap(), Some(41));
+
+    // 先改绑再执行迟到清理时，条件删除不能误删新渠道。
+    first.bind(&digest, 43).await.unwrap();
+    assert!(!second.delete_if_channel(&digest, 41).await.unwrap());
+    assert!(second.refresh_if_channel(&digest, 43).await.unwrap());
+    assert!(first.delete_if_channel(&digest, 43).await.unwrap());
+    assert_eq!(second.get_and_refresh(&digest).await.unwrap(), None);
 }
 
 async fn verify_projection_contract(redis_url: &str, namespace: &str) {

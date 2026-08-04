@@ -35,6 +35,7 @@ use af_billing::{
     RefundSignalQueue, RefundSignalQueueError, RefundSignalSink, UsageRecordConsumer,
     UsageRecordConsumerError, UsageRecordPort, UsageRecordQueue, UsageRecordQueueError,
 };
+use af_cache::{CacheError, RedisConfig, RedisStickySessionConfig, RedisStickySessionStore};
 use af_config::{AppConfig, ConfigError};
 use af_db::{
     AdminChannelRepository, AdminChannelRepositoryConfigError, AdminDashboardRepository,
@@ -74,7 +75,7 @@ use af_httpclient::{
 use af_scheduler::{
     ChannelIndexCacheError, ChannelIndexRefreshConfig, ChannelIndexRefreshSupervisor, ChannelProbe,
     ChannelProbeSupervisor, ChannelProbeSupervisorConfig, InMemoryChannelIndex,
-    IndexedWeightedScheduler,
+    IndexedWeightedScheduler, StickyWaitPolicy,
 };
 use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
 use thiserror::Error;
@@ -412,6 +413,9 @@ pub enum BootstrapError {
     /// 调度 outbox 或 Redis 失效广播无法安全装配。
     #[error("初始化调度快照失效广播失败")]
     SchedulerInvalidation(#[source] SchedulerInvalidationRuntimeError),
+    /// Redis 粘性会话存储无法安全装配。
+    #[error("初始化调度粘性会话失败")]
+    StickySession(#[source] CacheError),
     /// 内部退款信号队列容量配置无效。
     #[error("初始化退款信号队列失败")]
     RefundSignalQueue(#[source] RefundSignalQueueError),
@@ -901,14 +905,32 @@ impl Bootstrap<RelayReady> {
         )
         .await
         .map_err(BootstrapError::SchedulerInvalidation)?;
-        let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(ScheduledChatService::new(
+        let sticky_store = if let Some(redis_url) = self.config.redis().url() {
+            let config = RedisStickySessionConfig::new(
+                RedisConfig::new(redis_url.expose().to_owned()),
+                "anyflows.scheduler.sticky.v1",
+            )
+            .map_err(BootstrapError::StickySession)?;
+            let store = RedisStickySessionStore::connect(config)
+                .await
+                .map_err(BootstrapError::StickySession)?;
+            Some(Arc::new(store) as Arc<dyn crate::sticky_session::StickySessionStore>)
+        } else {
+            None
+        };
+        let route_service = ScheduledChatService::new(
             IndexedWeightedScheduler::new(channel_index.clone()),
             decryptor,
             self.stage.upstream_clients.clone(),
             CredentialStateRepository::new(
                 self.stage.infrastructure.infrastructure.database.clone(),
             ),
-        ));
+        );
+        let route_service = match sticky_store {
+            Some(store) => route_service.with_sticky_sessions(store, StickyWaitPolicy::default()),
+            None => route_service,
+        };
+        let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(route_service);
         let pricing_source = Arc::new(CachedRequestPricingSnapshotSource::new(
             model_prices.clone(),
             group_pricing,
