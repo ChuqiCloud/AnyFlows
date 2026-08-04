@@ -111,6 +111,7 @@ dependencies = [
 name = "af-cache"
 version = "0.1.0"
 dependencies = [
+ "af-domain",
  "async-trait",
  "futures-util",
  "getrandom 0.4.3",
