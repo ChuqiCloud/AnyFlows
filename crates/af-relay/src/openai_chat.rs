@@ -8,10 +8,7 @@ use af_adapter::{
     Adaptor, AdaptorSettings, ChannelType, Credential, Method, OpenAiAdaptorSettings, Operation,
     PooledClient, RelayContext, ResponseMode, StatusCode, get_adaptor,
 };
-use af_domain::{
-    AfError, GatewayPrincipal, MAX_MODEL_NAME_BYTES, Protocol, RateLimitScope, UpstreamError,
-    UpstreamRetryAfter,
-};
+use af_domain::{AfError, GatewayPrincipal, MAX_MODEL_NAME_BYTES, Protocol, UpstreamError};
 use af_protocol::{CanonicalRequestEnvelope, openai_chat::parse_response};
 
 use crate::attempt_gate::permit_completion_hook;
@@ -367,7 +364,7 @@ fn map_relay_error(error: RelayError) -> AfError {
 #[cfg(test)]
 mod tests {
     use af_adapter::Bytes;
-    use af_domain::UpstreamServerStatus;
+    use af_domain::{RateLimitScope, UpstreamRetryAfter, UpstreamServerStatus};
 
     use super::*;
     use crate::UsageResolutionError;
