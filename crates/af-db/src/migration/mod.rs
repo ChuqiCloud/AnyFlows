@@ -45,6 +45,7 @@ mod m20260801_000036_create_balance_alerts;
 mod m20260802_000037_create_network_settings;
 mod m20260803_000038_add_credential_oauth_revision;
 mod m20260803_000039_add_credential_oauth_expiration;
+mod m20260804_000040_create_scheduler_outbox;
 mod schema;
 
 #[cfg(test)]
@@ -127,6 +128,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260802_000037_create_network_settings::Migration),
             Box::new(m20260803_000038_add_credential_oauth_revision::Migration),
             Box::new(m20260803_000039_add_credential_oauth_expiration::Migration),
+            Box::new(m20260804_000040_create_scheduler_outbox::Migration),
         ]
     }
 }

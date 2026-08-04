@@ -20,6 +20,7 @@ mod pricing;
 mod redemption;
 mod registration;
 mod routing;
+mod scheduler;
 mod site;
 mod subscription;
 mod usage;
@@ -40,6 +41,7 @@ pub(super) use routing::{
     create_abilities, create_channel_groups, create_channel_models, create_channels,
     create_credentials,
 };
+pub(super) use scheduler::create_scheduler_outbox;
 
 pub(super) fn auto_id<T>(column: T) -> ColumnDef
 where

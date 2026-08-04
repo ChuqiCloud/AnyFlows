@@ -9,7 +9,11 @@ use sea_orm::{
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use super::{AbilityWriteError, ChannelAbilityMetadata, validation::ValidatedChannelRouting};
-use crate::entity::{abilities, channel_groups, channel_models};
+use crate::{
+    SchedulerCatalogSubject,
+    entity::{abilities, channel_groups, channel_models},
+    scheduler_outbox::enqueue_scheduler_catalog_change,
+};
 
 const INSERT_BATCH_SIZE: usize = 100;
 
@@ -23,7 +27,7 @@ pub(crate) async fn set_channel_abilities_enabled<C>(
 where
     C: ConnectionTrait,
 {
-    abilities::Entity::update_many()
+    let result = abilities::Entity::update_many()
         .filter(abilities::Column::ChannelId.eq(channel_id.get()))
         .filter(abilities::Column::Enabled.ne(enabled))
         .col_expr(abilities::Column::Enabled, Expr::value(enabled))
@@ -31,14 +35,50 @@ where
         .exec(connection)
         .with_subscriber(NoSubscriber::default())
         .await
-        .map(|_| ())
-        .map_err(|_| AbilityWriteError::Query)
+        .map_err(|_| AbilityWriteError::Query)?;
+    if result.rows_affected > 0 {
+        enqueue_scheduler_catalog_change(
+            connection,
+            SchedulerCatalogSubject::Channel(channel_id),
+            now,
+        )
+        .await
+        .map_err(|_| AbilityWriteError::Query)?;
+    }
+    Ok(())
+}
+
+/// 删除指定渠道的全部派生能力，并在同一事务内追加渠道失效事件。
+pub(crate) async fn delete_channel_abilities<C>(
+    connection: &C,
+    channel_id: ChannelId,
+    now: TimeDateTimeWithTimeZone,
+) -> Result<(), AbilityWriteError>
+where
+    C: ConnectionTrait,
+{
+    abilities::Entity::delete_many()
+        .filter(abilities::Column::ChannelId.eq(channel_id.get()))
+        .exec(connection)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(|_| AbilityWriteError::Query)?;
+    // 删除事件同时承担失效职责；即使 DB 已无能力行，也要清理可能滞后的共享投影。
+    enqueue_scheduler_catalog_change(
+        connection,
+        SchedulerCatalogSubject::Channel(channel_id),
+        now,
+    )
+    .await
+    .map_err(|_| AbilityWriteError::Query)?;
+    Ok(())
 }
 
 /// 显式删除分组对应的派生能力，避免依赖不同方言的级联时序。
 pub(crate) async fn delete_group_abilities<C>(
     connection: &C,
     group_id: GroupId,
+    now: TimeDateTimeWithTimeZone,
 ) -> Result<(), AbilityWriteError>
 where
     C: ConnectionTrait,
@@ -48,8 +88,12 @@ where
         .exec(connection)
         .with_subscriber(NoSubscriber::default())
         .await
-        .map(|_| ())
-        .map_err(|_| AbilityWriteError::Query)
+        .map_err(|_| AbilityWriteError::Query)?;
+    // 分组墓碑必须广播，即使派生能力已提前清空，也不能把旧分组键留在共享投影中。
+    enqueue_scheduler_catalog_change(connection, SchedulerCatalogSubject::Group(group_id), now)
+        .await
+        .map_err(|_| AbilityWriteError::Query)?;
+    Ok(())
 }
 
 pub(super) async fn delete_extra_abilities(

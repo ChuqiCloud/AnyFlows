@@ -1102,3 +1102,32 @@ pub(in crate::migration) mod balance_alert_events {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod scheduler_outbox_events {
+    use super::DeriveIden;
+
+    /// `scheduler_outbox_events` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "scheduler_outbox_events")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 调度目录变更 outbox 迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        SubjectKind,
+        SubjectId,
+        Status,
+        AttemptCount,
+        NextAttemptAt,
+        LeaseExpiresAt,
+        PublishedAt,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}

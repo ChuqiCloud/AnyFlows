@@ -19,7 +19,11 @@ use super::{
         ValidatedChannelRouting, query_limit, valid_model,
     },
 };
-use crate::entity::{abilities, channel_groups, channel_models};
+use crate::{
+    SchedulerCatalogSubject,
+    entity::{abilities, channel_groups, channel_models},
+    scheduler_outbox::enqueue_scheduler_catalog_change,
+};
 
 /// 在现有渠道事务内差量维护关联表和能力笛卡尔积。
 pub(crate) async fn synchronize_channel_routing(
@@ -74,7 +78,14 @@ pub(crate) async fn synchronize_channel_routing(
         now,
     )
     .await?;
-    update_channel_ability_metadata(transaction, channel_id, metadata, now).await
+    update_channel_ability_metadata(transaction, channel_id, metadata, now).await?;
+    enqueue_scheduler_catalog_change(
+        transaction,
+        SchedulerCatalogSubject::Channel(channel_id),
+        now,
+    )
+    .await
+    .map_err(|_| AbilityWriteError::Query)
 }
 
 async fn load_channel_models(

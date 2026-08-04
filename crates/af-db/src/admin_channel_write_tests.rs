@@ -378,6 +378,7 @@ async fn deletes_cascade_shadow_credentials_and_clear_channel_relations()
     let channel_id = create_channel(&fixture).await?;
     let parent_id = create_credential(&fixture, channel_id, None, 0x71).await?;
     let child_id = create_credential(&fixture, channel_id, Some(parent_id), 0x72).await?;
+    assert_eq!(channel_outbox_count(&fixture, channel_id).await?, 3);
     seed_relations(&fixture, channel_id).await?;
 
     assert_eq!(
@@ -390,6 +391,7 @@ async fn deletes_cascade_shadow_credentials_and_clear_channel_relations()
     for id in [parent_id, child_id] {
         assert!(credential_deleted(&fixture, id).await?);
     }
+    assert_eq!(channel_outbox_count(&fixture, channel_id).await?, 4);
 
     let second_id = create_credential(&fixture, channel_id, None, 0x73).await?;
     assert_eq!(
@@ -397,6 +399,7 @@ async fn deletes_cascade_shadow_credentials_and_clear_channel_relations()
         AdminChannelDeleteOutcome::Deleted
     );
     assert!(credential_deleted(&fixture, second_id).await?);
+    assert_eq!(channel_outbox_count(&fixture, channel_id).await?, 6);
     for table in ["abilities", "channel_models", "channel_groups"] {
         assert_eq!(
             relation_count(&fixture, table, channel_id).await?,
@@ -408,6 +411,7 @@ async fn deletes_cascade_shadow_credentials_and_clear_channel_relations()
         fixture.repository.delete_channel(channel_id).await?,
         AdminChannelDeleteOutcome::NotFound
     );
+    assert_eq!(channel_outbox_count(&fixture, channel_id).await?, 6);
 
     fixture.pool.close().await?;
     Ok(())
@@ -621,6 +625,19 @@ async fn credential_count(fixture: &Fixture) -> Result<i64, sea_orm::DbErr> {
     query_one(fixture, "SELECT COUNT(*) AS count FROM credentials", [])
         .await?
         .try_get("", "count")
+}
+
+async fn channel_outbox_count(
+    fixture: &Fixture,
+    channel_id: ChannelId,
+) -> Result<i64, sea_orm::DbErr> {
+    query_one(
+        fixture,
+        "SELECT COUNT(*) AS count FROM scheduler_outbox_events WHERE subject_kind = ? AND subject_id = ?",
+        [1_i16.into(), channel_id.get().into()],
+    )
+    .await?
+    .try_get("", "count")
 }
 
 async fn credential_deleted(

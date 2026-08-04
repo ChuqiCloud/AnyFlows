@@ -429,7 +429,7 @@ async fn clear_safe_references(
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(map_write_db_error)?;
-    delete_group_abilities(transaction, group_id)
+    delete_group_abilities(transaction, group_id, now)
         .await
         .map_err(map_ability_write_error)?;
     channel_groups::Entity::delete_many()
