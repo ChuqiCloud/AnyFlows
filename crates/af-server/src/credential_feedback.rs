@@ -29,7 +29,7 @@ impl CredentialAttemptTarget {
     }
 
     /// 返回与 Relay 候选对应的渠道标识，供成功粘性绑定使用。
-    pub(crate) const fn channel_id(self) -> ChannelId {
+    pub(crate) const fn channel_id(&self) -> ChannelId {
         self.channel_id
     }
 }
