@@ -336,7 +336,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             outcome.fallback_kind(),
-            Some(TransportFallbackKind::EarlyEof)
+            Some(TransportFallbackKind::FirstEventError)
         );
         assert_eq!(
             outcome
