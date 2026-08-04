@@ -4,7 +4,8 @@ use af_domain::ChannelId;
 use thiserror::Error;
 
 use crate::{
-    MAX_SCHEDULER_CANDIDATES, SchedulerCandidate, WeightedSelectionError, WeightedStrategy,
+    ChannelRoutingHealth, MAX_SCHEDULER_CANDIDATES, SchedulerCandidate, WeightedSelectionError,
+    WeightedStrategy, health::healthy_channel,
 };
 
 /// 失败重试计划返回的一次候选选择。
@@ -72,16 +73,35 @@ pub struct WeightedRetryPlan {
     excluded_channels: BTreeSet<ChannelId>,
     attempts_started: usize,
     strategy: WeightedStrategy,
+    health: std::collections::BTreeMap<ChannelId, ChannelRoutingHealth>,
 }
 
 impl WeightedRetryPlan {
     /// 校验候选容量、分组一致性和渠道唯一性后创建重试计划。
     pub fn new(candidates: Vec<SchedulerCandidate>) -> Result<Self, WeightedRetryPlanError> {
+        Self::new_with_health(candidates, &std::collections::BTreeMap::new())
+    }
+
+    /// 创建应用共享健康惩罚的重试计划；冷却渠道在优先级分层前移除。
+    pub fn new_with_health(
+        mut candidates: Vec<SchedulerCandidate>,
+        health: &std::collections::BTreeMap<ChannelId, ChannelRoutingHealth>,
+    ) -> Result<Self, WeightedRetryPlanError> {
         if candidates.len() > MAX_SCHEDULER_CANDIDATES {
             return Err(WeightedRetryPlanError::TooManyCandidates);
         }
+        candidates.retain(|candidate| healthy_channel(candidate.channel_id(), health));
         validate_single_group(&candidates)?;
         validate_unique_channels(&candidates)?;
+        let bounded_health = candidates
+            .iter()
+            .filter_map(|candidate| {
+                health
+                    .get(&candidate.channel_id())
+                    .copied()
+                    .map(|state| (candidate.channel_id(), state))
+            })
+            .collect();
 
         let mut priorities = candidates
             .iter()
@@ -96,6 +116,7 @@ impl WeightedRetryPlan {
             excluded_channels: BTreeSet::new(),
             attempts_started: 0,
             strategy: WeightedStrategy,
+            health: bounded_health,
         })
     }
 
@@ -125,7 +146,7 @@ impl WeightedRetryPlan {
             .ok_or(WeightedRetryPlanError::Invariant)?;
         let selected = self
             .strategy
-            .select(&eligible)?
+            .select_with_health(&eligible, &self.health)?
             .ok_or(WeightedRetryPlanError::Invariant)?
             .candidate();
         if !self.excluded_channels.insert(selected.channel_id()) {
@@ -166,6 +187,7 @@ impl fmt::Debug for WeightedRetryPlan {
             .field("priority_count", &self.priorities.len())
             .field("excluded_count", &self.excluded_channels.len())
             .field("attempts_started", &self.attempts_started)
+            .field("health_count", &self.health.len())
             .finish()
     }
 }
@@ -284,6 +306,27 @@ mod tests {
         assert_eq!(plan.select_next(), Ok(None));
         assert_eq!(plan.attempts_started(), 0);
         assert!(plan.into_retry_order().unwrap().is_empty());
+    }
+
+    #[test]
+    fn cooling_channel_is_removed_before_priority_selection() {
+        let first = candidate(1, 1, 10);
+        let second = candidate(1, 2, 10);
+        let health = std::collections::BTreeMap::from([
+            (first.channel_id(), ChannelRoutingHealth::new(0, true)),
+            (
+                second.channel_id(),
+                ChannelRoutingHealth::new(2_500_000, false),
+            ),
+        ]);
+
+        let order = WeightedRetryPlan::new_with_health(vec![first, second], &health)
+            .unwrap()
+            .into_retry_order()
+            .unwrap();
+
+        assert_eq!(order.len(), 1);
+        assert_eq!(order[0].candidate().channel_id(), second.channel_id());
     }
 
     #[test]

@@ -1,7 +1,10 @@
 use getrandom::fill;
 use thiserror::Error;
 
-use crate::SchedulerCandidate;
+use af_domain::ChannelId;
+use std::collections::BTreeMap;
+
+use crate::{ChannelRoutingHealth, SchedulerCandidate, health::effective_candidate_weight};
 
 /// 单次交给 relay 的候选上限，与当前有界重试状态机保持一致。
 pub const MAX_SCHEDULER_CANDIDATES: usize = 64;
@@ -68,9 +71,24 @@ impl WeightedStrategy {
             return Ok(None);
         };
         let tier = sorted_tier(candidates, priority);
-        let total_weight = total_effective_weight(&tier)?;
+        let total_weight = total_effective_weight(&tier, None)?;
         let draw = random_below(total_weight)?;
-        Ok(select_for_draw(&tier, priority_rank, draw))
+        Ok(select_for_draw(&tier, priority_rank, draw, None))
+    }
+
+    pub(crate) fn select_with_health(
+        self,
+        candidates: &[SchedulerCandidate],
+        health: &BTreeMap<ChannelId, ChannelRoutingHealth>,
+    ) -> Result<Option<WeightedSelection>, WeightedSelectionError> {
+        validate_candidate_count(candidates)?;
+        let Some(priority) = priority_at_rank(candidates, 0) else {
+            return Ok(None);
+        };
+        let tier = sorted_tier(candidates, priority);
+        let total_weight = total_effective_weight(&tier, Some(health))?;
+        let draw = random_below(total_weight)?;
+        Ok(select_for_draw(&tier, 0, draw, Some(health)))
     }
 }
 
@@ -106,16 +124,23 @@ fn sorted_tier(candidates: &[SchedulerCandidate], priority: i32) -> Vec<Schedule
 
 fn total_effective_weight(
     candidates: &[SchedulerCandidate],
+    health: Option<&BTreeMap<ChannelId, ChannelRoutingHealth>>,
 ) -> Result<u64, WeightedSelectionError> {
     candidates.iter().try_fold(0_u64, |total, candidate| {
         total
-            .checked_add(effective_weight(*candidate))
+            .checked_add(effective_weight(*candidate, health))
             .ok_or(WeightedSelectionError::WeightOverflow)
     })
 }
 
-fn effective_weight(candidate: SchedulerCandidate) -> u64 {
-    u64::from(candidate.weight()) + WEIGHT_BASE
+fn effective_weight(
+    candidate: SchedulerCandidate,
+    health: Option<&BTreeMap<ChannelId, ChannelRoutingHealth>>,
+) -> u64 {
+    effective_candidate_weight(
+        candidate,
+        health.and_then(|states| states.get(&candidate.channel_id()).copied()),
+    )
 }
 
 fn random_below(upper_bound: u64) -> Result<u64, WeightedSelectionError> {
@@ -136,10 +161,11 @@ fn select_for_draw(
     candidates: &[SchedulerCandidate],
     priority_rank: usize,
     draw: u64,
+    health: Option<&BTreeMap<ChannelId, ChannelRoutingHealth>>,
 ) -> Option<WeightedSelection> {
     let mut cursor = draw;
     for candidate in candidates {
-        let weight = effective_weight(*candidate);
+        let weight = effective_weight(*candidate, health);
         if cursor < weight {
             return Some(WeightedSelection {
                 candidate: *candidate,
@@ -164,7 +190,10 @@ mod tests {
         let tier = sorted_tier(&candidates, priority);
 
         assert_eq!(tier, vec![candidate(1, 10, 0)]);
-        assert_eq!(select_for_draw(&tier, 0, 0).unwrap().candidate(), tier[0]);
+        assert_eq!(
+            select_for_draw(&tier, 0, 0, None).unwrap().candidate(),
+            tier[0]
+        );
     }
 
     #[test]
@@ -172,16 +201,16 @@ mod tests {
         let candidates = [candidate(2, 5, 0), candidate(1, 5, 0)];
         let tier = sorted_tier(&candidates, 5);
 
-        assert_eq!(total_effective_weight(&tier), Ok(20));
+        assert_eq!(total_effective_weight(&tier, None), Ok(20));
         assert_eq!(
-            select_for_draw(&tier, 0, 0)
+            select_for_draw(&tier, 0, 0, None)
                 .unwrap()
                 .candidate()
                 .channel_id(),
             ChannelId::new(1).unwrap()
         );
         assert_eq!(
-            select_for_draw(&tier, 0, WEIGHT_BASE)
+            select_for_draw(&tier, 0, WEIGHT_BASE, None)
                 .unwrap()
                 .candidate()
                 .channel_id(),
@@ -194,16 +223,42 @@ mod tests {
         let candidates = [candidate(1, 5, 0), candidate(2, 5, 90)];
         let tier = sorted_tier(&candidates, 5);
 
-        assert_eq!(total_effective_weight(&tier), Ok(110));
+        assert_eq!(total_effective_weight(&tier, None), Ok(110));
         assert_eq!(
-            select_for_draw(&tier, 0, 9)
+            select_for_draw(&tier, 0, 9, None)
                 .unwrap()
                 .candidate()
                 .channel_id(),
             ChannelId::new(1).unwrap()
         );
         assert_eq!(
-            select_for_draw(&tier, 0, 10)
+            select_for_draw(&tier, 0, 10, None)
+                .unwrap()
+                .candidate()
+                .channel_id(),
+            ChannelId::new(2).unwrap()
+        );
+    }
+
+    #[test]
+    fn health_penalty_reduces_draw_range_without_removing_candidate() {
+        let candidates = [candidate(1, 5, 90), candidate(2, 5, 90)];
+        let tier = sorted_tier(&candidates, 5);
+        let health = BTreeMap::from([(
+            ChannelId::new(2).unwrap(),
+            ChannelRoutingHealth::new(crate::ROUTING_HEALTH_PENALTY_SCALE, false),
+        )]);
+
+        assert_eq!(total_effective_weight(&tier, Some(&health)), Ok(150));
+        assert_eq!(
+            select_for_draw(&tier, 0, 99, Some(&health))
+                .unwrap()
+                .candidate()
+                .channel_id(),
+            ChannelId::new(1).unwrap()
+        );
+        assert_eq!(
+            select_for_draw(&tier, 0, 100, Some(&health))
                 .unwrap()
                 .candidate()
                 .channel_id(),

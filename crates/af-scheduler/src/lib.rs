@@ -6,6 +6,7 @@ mod candidate;
 mod concurrency;
 mod database;
 mod failure;
+mod health;
 mod index;
 mod probe;
 mod retry;
@@ -30,6 +31,7 @@ pub use database::{DatabaseWeightedScheduler, DatabaseWeightedSchedulerError};
 pub use failure::{
     DEFAULT_TRANSIENT_SERVER_RETRY_LIMIT, FailureAction, FailureContext, FailurePolicy,
 };
+pub use health::{ChannelRoutingHealth, ROUTING_HEALTH_PENALTY_SCALE};
 pub use index::{
     ChannelIndexCacheError, ChannelIndexProjectionApplyReport, ChannelIndexRefreshConfig,
     ChannelIndexRefreshConfigError, ChannelIndexRefreshReport, ChannelIndexRefreshSupervisor,

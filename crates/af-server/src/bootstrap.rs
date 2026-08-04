@@ -36,8 +36,8 @@ use af_billing::{
     UsageRecordConsumerError, UsageRecordPort, UsageRecordQueue, UsageRecordQueueError,
 };
 use af_cache::{
-    CacheError, RedisConcurrencyConfig, RedisConcurrencyStore, RedisConfig,
-    RedisStickySessionConfig, RedisStickySessionStore,
+    CacheError, RedisConcurrencyConfig, RedisConcurrencyStore, RedisConfig, RedisHealthConfig,
+    RedisHealthStore, RedisStickySessionConfig, RedisStickySessionStore,
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
@@ -422,6 +422,9 @@ pub enum BootstrapError {
     /// Redis 粘性会话存储无法安全装配。
     #[error("初始化调度粘性会话失败")]
     StickySession(#[source] CacheError),
+    /// Redis 调度健康状态无法安全装配。
+    #[error("初始化调度熔断健康状态失败")]
+    SchedulerHealth(#[source] CacheError),
     /// Redis 并发槽位存储无法安全装配。
     #[error("初始化调度并发槽位失败")]
     Concurrency(#[source] CacheError),
@@ -940,6 +943,19 @@ impl Bootstrap<RelayReady> {
         } else {
             None
         };
+        let scheduler_health = if let Some(redis_url) = self.config.redis().url() {
+            let config = RedisHealthConfig::new(
+                RedisConfig::new(redis_url.expose().to_owned()),
+                "anyflows.scheduler.health.v1",
+            )
+            .map_err(BootstrapError::SchedulerHealth)?;
+            let store = RedisHealthStore::connect(config)
+                .await
+                .map_err(BootstrapError::SchedulerHealth)?;
+            Some(Arc::new(store) as Arc<dyn crate::health_runtime::SchedulerHealthStore>)
+        } else {
+            None
+        };
         let (concurrency_runtime, concurrency_release_worker, concurrency_cleanup_worker) =
             match concurrency {
                 Some((runtime, release_worker, cleanup_worker)) => {
@@ -961,6 +977,10 @@ impl Bootstrap<RelayReady> {
         };
         let route_service = match concurrency_runtime {
             Some(runtime) => route_service.with_concurrency(runtime),
+            None => route_service,
+        };
+        let route_service = match scheduler_health {
+            Some(store) => route_service.with_scheduler_health(store),
             None => route_service,
         };
         let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(route_service);

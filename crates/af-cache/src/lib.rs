@@ -8,6 +8,7 @@ mod broadcast;
 mod concurrency;
 mod config;
 mod error;
+mod health;
 mod hybrid;
 mod lease;
 mod local;
@@ -34,6 +35,10 @@ pub use config::{
     DEFAULT_REDIS_OPERATION_TIMEOUT, HybridCacheConfig, RedisConfig,
 };
 pub use error::{CacheError, CacheOperation, RedisFailureKind};
+pub use health::{
+    HEALTH_PENALTY_SCALE, MAX_HEALTH_BATCH_SIZE, RedisHealthConfig, RedisHealthEvent,
+    RedisHealthFailure, RedisHealthSnapshot, RedisHealthStore, RedisHealthTarget,
+};
 pub use hybrid::{CacheMode, HybridCache};
 pub use lease::{
     DistributedLease, DistributedLeaseConfig, DistributedLeaseManager, DistributedLeaseMode,

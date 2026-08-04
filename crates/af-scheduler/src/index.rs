@@ -18,8 +18,8 @@ use thiserror::Error;
 use tokio::time::sleep;
 
 use crate::{
-    SchedulerCandidate, WeightedRetryPlan, WeightedRetryPlanError, WeightedSelection,
-    WeightedSelectionError, WeightedStrategy,
+    ChannelRoutingHealth, SchedulerCandidate, WeightedRetryPlan, WeightedRetryPlanError,
+    WeightedSelection, WeightedSelectionError, WeightedStrategy,
 };
 
 mod projection;
@@ -537,9 +537,36 @@ impl IndexedWeightedScheduler {
         group_id: GroupId,
         model: &str,
     ) -> Result<Option<IndexedRoutePlan>, IndexedWeightedSchedulerError> {
+        self.route_plan_with_health(group_id, model, &BTreeMap::new())
+    }
+
+    /// 返回当前快照下最多 64 个候选渠道标识，供一次 Redis 健康批量读取使用。
+    pub fn route_channel_ids(
+        &self,
+        group_id: GroupId,
+        model: &str,
+    ) -> Result<Vec<ChannelId>, IndexedWeightedSchedulerError> {
         let snapshot = self.index.snapshot()?;
-        let retry_order = WeightedRetryPlan::new(snapshot.candidates(group_id, model)?.to_vec())?
-            .into_retry_order()?;
+        Ok(snapshot
+            .candidates(group_id, model)?
+            .iter()
+            .map(|candidate| candidate.channel_id())
+            .collect())
+    }
+
+    /// 在同一代快照中先过滤熔断渠道，再以衰减惩罚修正 weighted 抽样票数。
+    pub fn route_plan_with_health(
+        &self,
+        group_id: GroupId,
+        model: &str,
+        health: &BTreeMap<ChannelId, ChannelRoutingHealth>,
+    ) -> Result<Option<IndexedRoutePlan>, IndexedWeightedSchedulerError> {
+        let snapshot = self.index.snapshot()?;
+        let retry_order = WeightedRetryPlan::new_with_health(
+            snapshot.candidates(group_id, model)?.to_vec(),
+            health,
+        )?
+        .into_retry_order()?;
         let Some(first) = retry_order.first() else {
             return Ok(None);
         };

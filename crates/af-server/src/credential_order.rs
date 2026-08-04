@@ -7,8 +7,18 @@ use af_db::SchedulerRuntimeCredentialRecord;
 use af_domain::{ChannelId, ConcurrencyLimit};
 use sha2::{Digest, Sha256};
 
+use crate::health_runtime::RuntimeHealthState;
+use af_cache::HEALTH_PENALTY_SCALE;
+
 const ORDER_DOMAIN: &[u8] = b"anyflows-credential-order-v1";
 const ZERO_WEIGHT_DOMAIN: &[u8] = b"anyflows-credential-zero-weight-v1";
+const MIN_HEALTH_MULTIPLIER_MICROS: u64 = 80_000;
+
+#[derive(Clone, Copy)]
+struct WeightedCredential<'a> {
+    credential: &'a SchedulerRuntimeCredentialRecord,
+    effective_weight: u64,
+}
 
 /// 单个凭据在本次 Redis 批量读取中固定的活跃与等待负载。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -47,8 +57,32 @@ pub(crate) fn order_credentials<'a>(
     channel_id: ChannelId,
     credentials: &'a [SchedulerRuntimeCredentialRecord],
 ) -> Vec<&'a SchedulerRuntimeCredentialRecord> {
+    order_credentials_with_optional_health(request_id, channel_id, credentials, None)
+}
+
+/// 在原优先级与稳定抽签语义内过滤冷却凭据，并按半衰期惩罚修正正权重。
+pub(crate) fn order_credentials_with_health<'a>(
+    request_id: &str,
+    channel_id: ChannelId,
+    credentials: &'a [SchedulerRuntimeCredentialRecord],
+    health: &BTreeMap<i64, RuntimeHealthState>,
+) -> Vec<&'a SchedulerRuntimeCredentialRecord> {
+    order_credentials_with_optional_health(request_id, channel_id, credentials, Some(health))
+}
+
+fn order_credentials_with_optional_health<'a>(
+    request_id: &str,
+    channel_id: ChannelId,
+    credentials: &'a [SchedulerRuntimeCredentialRecord],
+    health: Option<&BTreeMap<i64, RuntimeHealthState>>,
+) -> Vec<&'a SchedulerRuntimeCredentialRecord> {
     let mut tiers = BTreeMap::<Reverse<i32>, Vec<&SchedulerRuntimeCredentialRecord>>::new();
-    for credential in credentials {
+    for credential in credentials.iter().filter(|credential| {
+        !health
+            .and_then(|states| states.get(&credential.credential_id()))
+            .copied()
+            .is_some_and(RuntimeHealthState::is_cooling)
+    }) {
         tiers
             .entry(Reverse(credential.priority()))
             .or_default()
@@ -57,7 +91,7 @@ pub(crate) fn order_credentials<'a>(
 
     let mut ordered = Vec::with_capacity(credentials.len());
     for (Reverse(priority), tier) in tiers {
-        ordered.extend(order_tier(request_id, channel_id, priority, tier));
+        ordered.extend(order_tier(request_id, channel_id, priority, tier, health));
     }
     ordered
 }
@@ -71,7 +105,35 @@ pub(crate) fn order_credentials_by_load<'a>(
     credentials: &'a [SchedulerRuntimeCredentialRecord],
     loads: &BTreeMap<i64, CredentialLoad>,
 ) -> Vec<&'a SchedulerRuntimeCredentialRecord> {
-    let mut ordered = order_credentials(request_id, channel_id, credentials);
+    order_credentials_by_load_with_optional_health(request_id, channel_id, credentials, loads, None)
+}
+
+/// 在普通回退负载排序中应用凭据冷却与健康调权；同负载继续保持健康加权顺序。
+pub(crate) fn order_credentials_by_load_and_health<'a>(
+    request_id: &str,
+    channel_id: ChannelId,
+    credentials: &'a [SchedulerRuntimeCredentialRecord],
+    loads: &BTreeMap<i64, CredentialLoad>,
+    health: &BTreeMap<i64, RuntimeHealthState>,
+) -> Vec<&'a SchedulerRuntimeCredentialRecord> {
+    order_credentials_by_load_with_optional_health(
+        request_id,
+        channel_id,
+        credentials,
+        loads,
+        Some(health),
+    )
+}
+
+fn order_credentials_by_load_with_optional_health<'a>(
+    request_id: &str,
+    channel_id: ChannelId,
+    credentials: &'a [SchedulerRuntimeCredentialRecord],
+    loads: &BTreeMap<i64, CredentialLoad>,
+    health: Option<&BTreeMap<i64, RuntimeHealthState>>,
+) -> Vec<&'a SchedulerRuntimeCredentialRecord> {
+    let mut ordered =
+        order_credentials_with_optional_health(request_id, channel_id, credentials, health);
     ordered.sort_by(|left, right| {
         right.priority().cmp(&left.priority()).then_with(|| {
             credential_load(left, loads).compare_utilization(credential_load(right, loads))
@@ -95,18 +157,26 @@ fn order_tier<'a>(
     channel_id: ChannelId,
     priority: i32,
     mut tier: Vec<&'a SchedulerRuntimeCredentialRecord>,
+    health: Option<&BTreeMap<i64, RuntimeHealthState>>,
 ) -> Vec<&'a SchedulerRuntimeCredentialRecord> {
     tier.sort_unstable_by_key(|credential| credential.credential_id());
-    let (mut weighted, mut zero_weight): (Vec<_>, Vec<_>) = tier
+    let (weighted, mut zero_weight): (Vec<_>, Vec<_>) = tier
         .into_iter()
         .partition(|credential| credential.weight() > 0);
+    let mut weighted = weighted
+        .into_iter()
+        .map(|credential| WeightedCredential {
+            credential,
+            effective_weight: effective_credential_weight(credential, health),
+        })
+        .collect::<Vec<_>>();
     let mut ordered = Vec::with_capacity(weighted.len() + zero_weight.len());
     let mut draw = 0_u32;
 
     while !weighted.is_empty() {
         let total_weight = weighted
             .iter()
-            .map(|credential| u64::from(credential.weight()))
+            .map(|credential| credential.effective_weight)
             .sum::<u64>();
         let ticket = unbiased_ticket(
             request_id,
@@ -120,11 +190,11 @@ fn order_tier<'a>(
         let selected = weighted
             .iter()
             .position(|credential| {
-                cumulative += u64::from(credential.weight());
+                cumulative += credential.effective_weight;
                 ticket < cumulative
             })
             .expect("正权重凭据总和必须覆盖抽签区间");
-        ordered.push(weighted.remove(selected));
+        ordered.push(weighted.remove(selected).credential);
         draw = draw.checked_add(1).expect("单渠道凭据数量受 64 条上限保护");
     }
 
@@ -149,7 +219,7 @@ fn unbiased_ticket(
     priority: i32,
     draw: u32,
     upper_bound: u64,
-    candidates: &[&SchedulerRuntimeCredentialRecord],
+    candidates: &[WeightedCredential<'_>],
 ) -> u64 {
     debug_assert!(upper_bound > 0);
     let rejection_threshold = upper_bound.wrapping_neg() % upper_bound;
@@ -161,8 +231,8 @@ fn unbiased_ticket(
         hasher.update(draw.to_be_bytes());
         hasher.update(nonce.to_be_bytes());
         for credential in candidates {
-            hasher.update(credential.credential_id().to_be_bytes());
-            hasher.update(credential.weight().to_be_bytes());
+            hasher.update(credential.credential.credential_id().to_be_bytes());
+            hasher.update(credential.effective_weight.to_be_bytes());
         }
         let digest = hasher.finalize();
         let sample = u64::from_be_bytes(digest[..8].try_into().expect("SHA-256 前缀固定为 8 字节"));
@@ -173,6 +243,28 @@ fn unbiased_ticket(
             .checked_add(1)
             .expect("SHA-256 拒绝采样重试次数不可耗尽");
     }
+}
+
+fn effective_credential_weight(
+    credential: &SchedulerRuntimeCredentialRecord,
+    health: Option<&BTreeMap<i64, RuntimeHealthState>>,
+) -> u64 {
+    let configured = u64::from(credential.weight());
+    let Some(state) = health.and_then(|states| states.get(&credential.credential_id()).copied())
+    else {
+        return configured;
+    };
+    let penalty = state.penalty_micros().min(64 * HEALTH_PENALTY_SCALE);
+    let raw_multiplier = HEALTH_PENALTY_SCALE
+        .checked_mul(HEALTH_PENALTY_SCALE)
+        .expect("健康固定精度平方必须可表示")
+        / (HEALTH_PENALTY_SCALE + penalty);
+    let multiplier = raw_multiplier.max(MIN_HEALTH_MULTIPLIER_MICROS);
+    configured
+        .checked_mul(multiplier)
+        .expect("凭据权重与健康乘数乘积必须可表示")
+        .div_ceil(HEALTH_PENALTY_SCALE)
+        .max(1)
 }
 
 fn zero_weight_key(
@@ -201,8 +293,9 @@ fn hash_request_scope(hasher: &mut Sha256, request_id: &str, channel_id: Channel
 
 #[cfg(test)]
 mod tests {
+    use af_cache::RedisHealthTarget;
     use af_db::EncryptedCredentialEnvelope;
-    use af_domain::CredentialKind;
+    use af_domain::{CredentialId, CredentialKind};
 
     use super::*;
 
@@ -309,6 +402,37 @@ mod tests {
 
         assert_eq!(load_aware[0], 43);
         assert_eq!(&load_aware[1..], &weighted[1..]);
+    }
+
+    #[test]
+    fn health_filters_cooling_credential_and_reduces_positive_weight() {
+        let credentials = vec![credential(51, 0, 100), credential(52, 0, 100)];
+        let health = BTreeMap::from([
+            (
+                51,
+                RuntimeHealthState::new(
+                    RedisHealthTarget::Credential(CredentialId::new(51).unwrap()),
+                    0,
+                    true,
+                ),
+            ),
+            (
+                52,
+                RuntimeHealthState::new(
+                    RedisHealthTarget::Credential(CredentialId::new(52).unwrap()),
+                    HEALTH_PENALTY_SCALE,
+                    false,
+                ),
+            ),
+        ]);
+
+        let ordered =
+            order_credentials_with_health("health-filter", channel_id(), &credentials, &health);
+        assert_eq!(credential_ids(ordered), vec![52]);
+        assert_eq!(
+            effective_credential_weight(&credentials[1], Some(&health)),
+            50
+        );
     }
 
     fn credential_ids(credentials: Vec<&SchedulerRuntimeCredentialRecord>) -> Vec<i64> {
