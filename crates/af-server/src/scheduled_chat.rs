@@ -170,7 +170,7 @@ impl ScheduledChatService {
                         .with_channel_group(target.channel_id());
                 if let (Some(pool), Some(session_scope)) = (
                     responses_websocket_pool.as_ref(),
-                    responses_websocket_session.as_deref(),
+                    responses_websocket_session,
                 ) {
                     let key = ResponsesWebSocketPoolKey::new(
                         target.channel_id(),
@@ -389,20 +389,19 @@ impl PlannedChatExecution for ScheduledChatExecution {
                 .map(af_domain::ChannelId::get);
             persist_credential_feedback(&credential_states, &scheduler, &attempt_targets, &report)
                 .await;
-            if result.is_ok() {
-                if let (Some(store), Some(scope), Some(channel_id)) = (
+            if result.is_ok()
+                && let (Some(store), Some(scope), Some(channel_id)) = (
                     sticky_sessions.as_ref(),
                     session_scope.as_ref(),
                     successful_channel_id,
-                ) {
-                    if let Err(error) = store.bind(scope.as_str(), channel_id).await {
-                        tracing::warn!(
-                            target: "af_server::sticky_session",
-                            error_kind = sticky_cache_error_kind(&error),
-                            "写入粘性会话绑定失败，当前响应继续返回"
-                        );
-                    }
-                }
+                )
+                && let Err(error) = store.bind(scope.as_str(), channel_id).await
+            {
+                tracing::warn!(
+                    target: "af_server::sticky_session",
+                    error_kind = sticky_cache_error_kind(&error),
+                    "写入粘性会话绑定失败，当前响应继续返回"
+                );
             }
             result
         })
@@ -559,6 +558,7 @@ fn map_scheduler_error(error: IndexedWeightedSchedulerError) -> AfError {
     }
 }
 
+#[cfg(test)]
 fn responses_websocket_session_scope(
     principal: GatewayPrincipal,
     request: &af_protocol::CanonicalRequest,
