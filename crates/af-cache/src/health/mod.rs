@@ -109,7 +109,7 @@ impl RedisHealthStore {
             .await?;
         let targets = events
             .iter()
-            .map(RedisHealthEvent::target)
+            .map(|event| event.target())
             .collect::<Vec<_>>();
         decode_snapshots(CacheOperation::HealthWrite, &targets, &values)
     }
