@@ -112,6 +112,7 @@ name = "af-cache"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "futures-util",
  "getrandom 0.4.3",
  "lru",
  "redis",
