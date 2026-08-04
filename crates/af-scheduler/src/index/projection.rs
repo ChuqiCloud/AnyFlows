@@ -1,13 +1,13 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use af_db::{SchedulerCatalogSubject, SchedulerRuntimeProjection, SchedulerRuntimeRecord};
+use af_db::{SchedulerCatalogSubject, SchedulerRuntimeProjection};
 use af_domain::{ChannelId, GroupId};
 
 use crate::SchedulerCandidate;
 
 use super::{
-    ChannelIndexCacheError, ChannelIndexSnapshot, ChannelIndexSnapshotError,
-    ChannelIndexSourceRecord, InMemoryChannelIndex, validate_candidates, validate_total_capacity,
+    ChannelIndexCacheError, ChannelIndexSnapshot, ChannelIndexSnapshotError, InMemoryChannelIndex,
+    runtime_record_to_source, validate_candidates, validate_total_capacity,
 };
 
 /// 一批主体投影原子应用后的聚合结果。
@@ -292,7 +292,7 @@ impl ChannelIndexSnapshot {
             .entries
             .values()
             .flat_map(|models| models.values())
-            .flat_map(|candidates| candidates.iter().map(SchedulerCandidate::channel_id))
+            .flat_map(|candidates| candidates.iter().map(|candidate| candidate.channel_id()))
             .collect::<std::collections::BTreeSet<_>>();
         self.runtime_targets
             .retain(|channel_id, _| referenced.contains(channel_id));
@@ -370,19 +370,6 @@ fn retain_other_channels(
     });
 }
 
-fn runtime_record_to_source(
-    record: SchedulerRuntimeRecord,
-) -> Result<ChannelIndexSourceRecord, ChannelIndexSnapshotError> {
-    let (ability, target) = record.into_parts();
-    ChannelIndexSourceRecord::with_runtime_target(
-        ability.group_id(),
-        ability.model().to_owned(),
-        ability.priority(),
-        ability.weight(),
-        target,
-    )
-}
-
 fn projection_report(
     snapshot: &ChannelIndexSnapshot,
     applied_subject_count: usize,
@@ -397,6 +384,7 @@ fn projection_report(
 
 #[cfg(test)]
 mod tests {
+    use crate::ChannelIndexSourceRecord;
     use af_db::{
         EncryptedCredentialEnvelope, SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord,
     };

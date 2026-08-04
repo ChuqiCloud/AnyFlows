@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    SchedulerAbilityRecord, SchedulerCatalogSubject,
-    credential_probe::{CREDENTIAL_ENVELOPE_NONCE_BYTES, EncryptedCredentialEnvelope},
+    SchedulerAbilityRecord, SchedulerCatalogSubject, credential_probe::EncryptedCredentialEnvelope,
 };
 
 use super::{

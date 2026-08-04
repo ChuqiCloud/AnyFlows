@@ -10,7 +10,8 @@ use std::{
 use af_db::{
     DatabasePool, MAX_SCHEDULER_ABILITY_SNAPSHOT_ENTRIES, SchedulerAbilityRepositoryError,
     SchedulerCatalogSubject, SchedulerOutboxRepository, SchedulerOutboxRepositoryError,
-    SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
+    SchedulerRuntimeRecord, SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError,
+    SchedulerRuntimeTargetRecord,
 };
 use af_domain::{ChannelId, GroupId, MAX_MODEL_NAME_BYTES};
 use thiserror::Error;
@@ -771,6 +772,19 @@ impl ChannelIndexSource for DatabaseChannelIndexSource {
             ))
         })
     }
+}
+
+fn runtime_record_to_source(
+    record: SchedulerRuntimeRecord,
+) -> Result<ChannelIndexSourceRecord, ChannelIndexSnapshotError> {
+    let (ability, target) = record.into_parts();
+    ChannelIndexSourceRecord::with_runtime_target(
+        ability.group_id(),
+        ability.model().to_owned(),
+        ability.priority(),
+        ability.weight(),
+        target,
+    )
 }
 
 fn validate_candidates(candidates: &[SchedulerCandidate]) -> Result<(), ChannelIndexSnapshotError> {
