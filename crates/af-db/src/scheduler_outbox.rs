@@ -1,5 +1,5 @@
 use af_domain::{ChannelId, GroupId};
-use sea_orm::{ActiveModelTrait, ConnectionTrait, DbErr, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, DbErr, Set};
 use thiserror::Error;
 
 use crate::{DatabaseTimestamp, entity::scheduler_outbox_events};
