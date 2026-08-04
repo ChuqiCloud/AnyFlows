@@ -7,7 +7,9 @@ mod read;
 mod sync;
 mod validation;
 
-pub(super) use mutation::{delete_group_abilities, set_channel_abilities_enabled};
+pub(super) use mutation::{
+    delete_channel_abilities, delete_group_abilities, set_channel_abilities_enabled,
+};
 pub(super) use read::load_channel_routing_snapshots;
 pub(super) use sync::synchronize_channel_routing;
 pub(super) use validation::ValidatedChannelRouting;

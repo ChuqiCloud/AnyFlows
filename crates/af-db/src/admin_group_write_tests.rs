@@ -10,7 +10,9 @@ use super::{
     AdminGroupRepository, AdminGroupRepositoryError, AdminGroupWriteRecord, DatabaseOptions,
     MigrationOptions,
 };
-use crate::entity::{abilities, channel_groups, group_model_ratios, groups};
+use crate::entity::{
+    abilities, channel_groups, group_model_ratios, groups, scheduler_outbox_events,
+};
 
 #[tokio::test]
 async fn create_and_update_enforce_name_fallback_and_complete_fields() -> Result<(), Box<dyn Error>>
@@ -183,6 +185,15 @@ async fn delete_clears_safe_runtime_relationships_atomically() -> Result<(), Box
     assert_eq!(
         fixture.repository.delete(target.group_id()).await?,
         AdminGroupDeleteOutcome::NotFound
+    );
+    assert_eq!(
+        scheduler_outbox_events::Entity::find()
+            .filter(scheduler_outbox_events::Column::SubjectKind.eq(2_i16))
+            .filter(scheduler_outbox_events::Column::SubjectId.eq(target.group_id().get()),)
+            .count(fixture.pool.connection())
+            .await?,
+        1,
+        "重复删除不得追加调度 outbox 事件"
     );
     let dependent_model = groups::Entity::find_by_id(dependent.group_id().get())
         .one(fixture.pool.connection())

@@ -10,7 +10,7 @@ use crate::{
     AdminChannelLookupOutcome, AdminChannelMutationOutcome, AdminChannelRepository,
     AdminChannelWriteRecord, AdminChannelWriteRepositoryError, DatabaseOptions,
     MAX_SCHEDULER_ABILITY_ENTRIES, MigrationOptions,
-    entity::{abilities, channels, groups},
+    entity::{abilities, channels, groups, scheduler_outbox_events},
 };
 
 #[tokio::test]
@@ -33,6 +33,7 @@ async fn channel_routing_diff_preserves_unchanged_abilities_and_rolls_back_inval
         ))
         .await?;
     let channel_id = created.channel_id();
+    assert_eq!(channel_outbox_count(&fixture, channel_id.get()).await?, 1);
     assert_eq!(created.models(), &["model-a", "model-b"]);
     assert_eq!(created.group_ids(), &[first_group, second_group]);
 
@@ -64,6 +65,7 @@ async fn channel_routing_diff_preserves_unchanged_abilities_and_rolls_back_inval
     };
     assert_eq!(updated.models(), &["model-a", "model-c"]);
     assert_eq!(updated.group_ids(), &[first_group, third_group]);
+    assert_eq!(channel_outbox_count(&fixture, channel_id.get()).await?, 2);
 
     let after = ability_rows(&fixture, channel_id.get()).await?;
     assert_eq!(after.len(), 4);
@@ -122,6 +124,11 @@ async fn channel_routing_diff_preserves_unchanged_abilities_and_rolls_back_inval
     assert_eq!(rolled_back.name(), "routing-updated");
     assert_eq!(rolled_back.models(), &["model-a", "model-c"]);
     assert_eq!(rolled_back.group_ids(), &[first_group, third_group]);
+    assert_eq!(
+        channel_outbox_count(&fixture, channel_id.get()).await?,
+        2,
+        "失败的路由事务不得提交 outbox 事件"
+    );
 
     assert_eq!(
         fixture
@@ -224,6 +231,14 @@ async fn create_group(fixture: &Fixture, name: &str) -> Result<GroupId, Box<dyn 
     .insert(fixture.pool.connection())
     .await?;
     Ok(GroupId::new(model.id)?)
+}
+
+async fn channel_outbox_count(fixture: &Fixture, channel_id: i64) -> Result<u64, sea_orm::DbErr> {
+    scheduler_outbox_events::Entity::find()
+        .filter(scheduler_outbox_events::Column::SubjectKind.eq(1_i16))
+        .filter(scheduler_outbox_events::Column::SubjectId.eq(channel_id))
+        .count(fixture.pool.connection())
+        .await
 }
 
 fn channel_record(

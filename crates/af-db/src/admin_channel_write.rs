@@ -21,10 +21,10 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     AdminChannelRecord, AdminChannelRepository, AdminChannelRepositoryError, AdminCredentialRecord,
     ChannelModelMappings, ChannelParameterOverrides, EncryptedCredentialEnvelope,
-    MAX_ADMIN_CHANNEL_JSON_BYTES,
+    MAX_ADMIN_CHANNEL_JSON_BYTES, SchedulerCatalogSubject,
     ability_write::{
         AbilityWriteError, ChannelAbilityMetadata, ValidatedChannelRouting,
-        synchronize_channel_routing,
+        delete_channel_abilities, synchronize_channel_routing,
     },
     admin_channel::valid_text,
     channel_settings::{
@@ -32,9 +32,10 @@ use crate::{
         validate_responses_websocket_capability,
     },
     entity::{
-        ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, abilities, channel_groups,
+        ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channel_groups,
         channel_models, channels, credentials,
     },
+    scheduler_outbox::enqueue_scheduler_catalog_change,
     validate_channel_header_overrides,
 };
 
@@ -624,12 +625,9 @@ impl AdminChannelRepository {
         let now = TimeDateTimeWithTimeZone::now_utc();
 
         // 能力项同时引用模型和分组关系，必须先于两张关系表删除。
-        abilities::Entity::delete_many()
-            .filter(abilities::Column::ChannelId.eq(channel_id.get()))
-            .exec(&transaction)
-            .with_subscriber(NoSubscriber::default())
+        delete_channel_abilities(&transaction, channel_id, now)
             .await
-            .map_err(map_db_error)?;
+            .map_err(map_ability_write_error)?;
         channel_models::Entity::delete_many()
             .filter(channel_models::Column::ChannelId.eq(channel_id.get()))
             .exec(&transaction)
@@ -722,6 +720,13 @@ impl AdminChannelRepository {
         require_rows(result.rows_affected, 1)?;
         let model = fetch_credential_model(&transaction, channel_id, credential_id).await?;
         let snapshot = AdminCredentialRecord::try_from_model(model).map_err(map_read_error)?;
+        enqueue_scheduler_catalog_change(
+            &transaction,
+            SchedulerCatalogSubject::Channel(channel_id),
+            TimeDateTimeWithTimeZone::now_utc(),
+        )
+        .await
+        .map_err(map_db_error)?;
         commit_transaction(transaction).await?;
         Ok(AdminCredentialCreateOutcome::Created(Box::new(snapshot)))
     }
@@ -836,6 +841,13 @@ impl AdminChannelRepository {
         require_rows(result.rows_affected, 1)?;
         let model = fetch_credential_model(&transaction, channel_id, credential_id).await?;
         let snapshot = AdminCredentialRecord::try_from_model(model).map_err(map_read_error)?;
+        enqueue_scheduler_catalog_change(
+            &transaction,
+            SchedulerCatalogSubject::Channel(channel_id),
+            now,
+        )
+        .await
+        .map_err(map_db_error)?;
         commit_transaction(transaction).await?;
         Ok(AdminCredentialMutationOutcome::Mutated(Box::new(snapshot)))
     }
@@ -873,6 +885,13 @@ impl AdminChannelRepository {
                 .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
         }
         require_rows(affected_rows, affected_ids.len() as u64)?;
+        enqueue_scheduler_catalog_change(
+            &transaction,
+            SchedulerCatalogSubject::Channel(channel_id),
+            now,
+        )
+        .await
+        .map_err(map_db_error)?;
         commit_transaction(transaction).await?;
         Ok(AdminCredentialDeleteOutcome::Deleted)
     }
