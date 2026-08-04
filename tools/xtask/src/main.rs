@@ -391,14 +391,16 @@ fn allowed_restricted_external_dependency(dependency: &DeclaredDependency) -> bo
             | ("af-adapter", "aws-credential-types", "normal")
             | ("af-adapter", "aws-sigv4", "normal")
             | ("af-adapter", "futures-core", "normal")
+            | ("af-adapter", "futures-util", "normal")
             | ("af-adapter", "jsonwebtoken", "normal")
             | ("af-adapter", "percent-encoding", "normal")
             | ("af-adapter", "serde", "normal")
             | ("af-adapter", "serde_json", "normal")
+            | ("af-adapter", "sha2", "normal")
             | ("af-adapter", "thiserror", "normal")
+            | ("af-adapter", "tokio", "normal")
             | ("af-adapter", "url", "normal")
             | ("af-adapter", "zeroize", "normal")
-            | ("af-adapter", "tokio", "dev")
             | ("af-protocol", "base64", "normal")
             | ("af-protocol", "bytes", "normal")
             | ("af-protocol", "insta", "dev")
@@ -590,21 +592,21 @@ mod tests {
 
     #[test]
     fn accepts_reviewed_adapter_dependencies() {
-        let mut tokio = dependency("af-adapter", "tokio", false);
-        tokio.kind = "dev".to_owned();
         let dependencies = [
             dependency("af-adapter", "async-trait", false),
             dependency("af-adapter", "aws-credential-types", false),
             dependency("af-adapter", "aws-sigv4", false),
             dependency("af-adapter", "futures-core", false),
+            dependency("af-adapter", "futures-util", false),
             dependency("af-adapter", "jsonwebtoken", false),
             dependency("af-adapter", "percent-encoding", false),
             dependency("af-adapter", "serde", false),
             dependency("af-adapter", "serde_json", false),
+            dependency("af-adapter", "sha2", false),
             dependency("af-adapter", "thiserror", false),
+            dependency("af-adapter", "tokio", false),
             dependency("af-adapter", "url", false),
             dependency("af-adapter", "zeroize", false),
-            tokio,
         ];
 
         let violations = validate_workspace(&baseline_workspace(), &dependencies);

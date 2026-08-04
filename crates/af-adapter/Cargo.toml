@@ -23,8 +23,5 @@ tokio.workspace = true
 url.workspace = true
 zeroize.workspace = true
 
-[dev-dependencies]
-tokio.workspace = true
-
 [lints]
 workspace = true
