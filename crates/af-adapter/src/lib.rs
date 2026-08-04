@@ -13,6 +13,7 @@ mod factory;
 mod gemini;
 mod openai;
 mod request;
+mod responses_websocket_pool;
 mod vertex;
 
 pub use adaptor::{Adaptor, AdaptorSendExt, AdaptorTarget};
@@ -44,6 +45,13 @@ pub use request::{
     MAX_UPSTREAM_RESPONSE_CHUNK_BYTES, MAX_UPSTREAM_RESPONSE_HEADER_COUNT,
     MAX_UPSTREAM_RESPONSE_HEADER_VALUE_BYTES, MAX_UPSTREAM_RESPONSE_HEADERS_BYTES, ResponseMode,
     UpstreamBody, UpstreamBodyStream, UpstreamRequest, UpstreamResponse,
+};
+pub use responses_websocket_pool::{
+    MAX_RESPONSES_WEBSOCKET_CONNECTION_AGE, MAX_RESPONSES_WEBSOCKET_EVENTS_PER_TURN,
+    MAX_RESPONSES_WEBSOCKET_SESSION_ID_BYTES, ResponsesWebSocketConnection,
+    ResponsesWebSocketConnector, ResponsesWebSocketFrame, ResponsesWebSocketHandshake,
+    ResponsesWebSocketPool, ResponsesWebSocketPoolConfig, ResponsesWebSocketPoolError,
+    ResponsesWebSocketPoolKey, ResponsesWebSocketTransportError, build_responses_websocket_event,
 };
 pub use vertex::{
     MAX_VERTEX_LOCATION_BYTES, MAX_VERTEX_PROJECT_ID_BYTES, MAX_VERTEX_TOKEN_RESPONSE_BYTES,
