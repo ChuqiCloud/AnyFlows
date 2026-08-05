@@ -32,6 +32,8 @@ mod registration;
 #[cfg(test)]
 mod registration_tests;
 mod registration_verification;
+mod route_read;
+mod route_write;
 mod routing_read;
 mod session;
 mod site_settings;
@@ -185,6 +187,16 @@ pub use registration::{
     RegistrationPolicyCommand, RegistrationPolicyFuture, RegistrationPolicyUpdateFuture,
     RegistrationResult, RegistrationService, RegistrationServiceConfigError, RegistrationStatus,
     RegistrationStatusFuture,
+};
+pub use route_read::{
+    AdminRoute, AdminRouteChannel, AdminRouteGetFuture, AdminRouteListFuture, AdminRouteListQuery,
+    AdminRoutePage, AdminRouteReadError, AdminRouteReader, DEFAULT_ADMIN_ROUTE_PAGE_SIZE,
+    DatabaseAdminRouteReader,
+};
+pub use route_write::{
+    AdminRouteChannelCommand, AdminRouteCreateCommand, AdminRouteCreateFuture,
+    AdminRouteDeleteFuture, AdminRouteUpdateCommand, AdminRouteUpdateFuture, AdminRouteWriteError,
+    AdminRouteWriter, DatabaseAdminRouteWriter,
 };
 pub use routing_read::{
     AdminChannelGetFuture, AdminChannelListFuture, AdminChannelReadError, AdminChannelReader,

@@ -9,9 +9,9 @@ use af_domain::{
     validate_route_model_pattern,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
-    QueryOrder, QuerySelect, Set, TransactionTrait, entity::prelude::TimeDateTimeWithTimeZone,
-    sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityOrSelect,
+    EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
+    entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
 };
 use thiserror::Error;
 use tokio::time::timeout;
@@ -32,6 +32,7 @@ pub const MAX_ADMIN_ROUTE_NAME_BYTES: usize = 128;
 pub const MAX_ADMIN_ROUTE_MAPPING_BYTES: usize = 16 * 1024;
 
 /// 已校验的路由候选配置及运行时统计。
+#[derive(Clone)]
 pub struct AdminRouteChannelRecord {
     id: RouteChannelId,
     channel_id: ChannelId,
@@ -591,14 +592,14 @@ impl AdminRouteRepository {
 
     async fn load_channels<C: ConnectionTrait + Send + Sync>(
         &self,
-        database: C,
+        database: &C,
         route_id: RouteId,
     ) -> Result<Vec<route_channels::Model>, AdminRouteRepositoryError> {
         route_channels::Entity::find()
             .filter(route_channels::Column::RouteId.eq(route_id.get()))
             .order_by_asc(route_channels::Column::Priority)
             .order_by_asc(route_channels::Column::Id)
-            .all(&database)
+            .all(database)
             .with_subscriber(NoSubscriber::default())
             .await
             .map_err(|_| record_internal_error(AdminRouteRepositoryError::Query))
