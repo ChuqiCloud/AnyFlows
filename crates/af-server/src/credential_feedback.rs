@@ -16,6 +16,7 @@ pub(crate) struct CredentialAttemptTarget {
     credential_id: CredentialId,
     credential_kind: CredentialKind,
     oauth_has_refresh_token: bool,
+    pool_mode: bool,
 }
 
 impl CredentialAttemptTarget {
@@ -25,6 +26,7 @@ impl CredentialAttemptTarget {
         credential_id: i64,
         credential_kind: CredentialKind,
         oauth_has_refresh_token: bool,
+        pool_mode: bool,
     ) -> Result<Self, AfError> {
         Ok(Self {
             channel_id,
@@ -32,6 +34,7 @@ impl CredentialAttemptTarget {
             credential_kind,
             oauth_has_refresh_token: matches!(credential_kind, CredentialKind::Oauth)
                 && oauth_has_refresh_token,
+            pool_mode,
         })
     }
 
@@ -43,6 +46,11 @@ impl CredentialAttemptTarget {
     /// 返回与 Relay 候选对应的凭据标识，供健康反馈与调权使用。
     pub(crate) const fn credential_id(&self) -> CredentialId {
         self.credential_id
+    }
+
+    /// 返回渠道是否把渠道级健康交由外部账号池管理。
+    pub(crate) const fn pool_mode(&self) -> bool {
+        self.pool_mode
     }
 
     /// 返回凭据状态策略所需的非敏感恢复上下文。
@@ -269,6 +277,7 @@ mod tests {
             9,
             credential_kind,
             oauth_has_refresh_token,
+            false,
         )
         .unwrap()
     }

@@ -6,7 +6,8 @@ use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 
 use crate::{
     channel_settings::{
-        auto_ban_rules, responses_websocket_enabled, validate_responses_websocket_capability,
+        auto_ban_rules, pool_mode, responses_websocket_enabled,
+        validate_responses_websocket_capability,
     },
     credential_probe::EncryptedCredentialEnvelope,
     entity::{channels, credentials},
@@ -31,6 +32,7 @@ pub(super) struct SchedulerRuntimeChannelSource {
     parameter_overrides: ChannelParameterOverrides,
     headers: Vec<(String, String)>,
     auto_ban_rules: ChannelAutoBanRules,
+    pool_mode: bool,
     responses_websocket_enabled: bool,
 }
 
@@ -78,6 +80,7 @@ impl SchedulerRuntimeChannelSource {
         let settings = channel.settings.into_inner();
         let auto_ban_rules =
             auto_ban_rules(&settings).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let pool_mode = pool_mode(&settings).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let responses_websocket_enabled = responses_websocket_enabled(&settings)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         validate_responses_websocket_capability(
@@ -96,6 +99,7 @@ impl SchedulerRuntimeChannelSource {
             parameter_overrides,
             headers,
             auto_ban_rules,
+            pool_mode,
             responses_websocket_enabled,
         }))
     }
@@ -143,6 +147,11 @@ impl SchedulerRuntimeChannelSource {
     /// 返回已校验的渠道自动禁用规则。
     pub(super) const fn auto_ban_rules(&self) -> &ChannelAutoBanRules {
         &self.auto_ban_rules
+    }
+
+    /// 返回渠道是否跳过渠道级本地故障状态。
+    pub(super) const fn pool_mode(&self) -> bool {
+        self.pool_mode
     }
 
     /// 返回渠道显式开启的 Responses WebSocket 能力。

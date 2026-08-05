@@ -52,6 +52,7 @@ export type AdminChannel = {
     priority: number;
     auto_ban: boolean;
     auto_ban_rules: AdminChannelAutoBanRules;
+    pool_mode: boolean;
     responses_websocket_enabled: boolean;
     models: Array<string>;
     group_ids: Array<number>;
@@ -85,6 +86,7 @@ export type AdminChannelCreateRequest = {
     priority: number;
     auto_ban: boolean;
     auto_ban_rules?: AdminChannelAutoBanRules;
+    pool_mode?: boolean;
     responses_websocket_enabled?: boolean;
     models: Array<string>;
     group_ids: Array<number>;
@@ -121,6 +123,7 @@ export type AdminChannelUpdateRequest = {
     priority: number;
     auto_ban: boolean;
     auto_ban_rules?: null | AdminChannelAutoBanRules;
+    pool_mode?: boolean | null;
     responses_websocket_enabled?: boolean | null;
     models: Array<string>;
     group_ids: Array<number>;
@@ -985,6 +988,7 @@ export type AdminChannelCreateRequestWritable = {
     priority: number;
     auto_ban: boolean;
     auto_ban_rules?: AdminChannelAutoBanRules;
+    pool_mode?: boolean;
     responses_websocket_enabled?: boolean;
     models: Array<string>;
     group_ids: Array<number>;
@@ -1016,6 +1020,7 @@ export type AdminChannelUpdateRequestWritable = {
     priority: number;
     auto_ban: boolean;
     auto_ban_rules?: null | AdminChannelAutoBanRules;
+    pool_mode?: boolean | null;
     responses_websocket_enabled?: boolean | null;
     models: Array<string>;
     group_ids: Array<number>;

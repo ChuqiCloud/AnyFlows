@@ -73,6 +73,9 @@ function ScheduleBadges({ channel }: { channel: AdminChannel }) {
     <div className="flex flex-wrap gap-1 tabular-nums">
       <Badge>{t('channels.values.priority', { value: channel.priority })}</Badge>
       <Badge>{t('channels.values.weight', { value: channel.weight })}</Badge>
+      {channel.pool_mode ? (
+        <Badge className="border-transparent bg-warning/10 text-warning">{t('channels.values.poolMode')}</Badge>
+      ) : null}
       <Badge className="text-muted-foreground">
         {channel.timeout_secs == null
           ? t('channels.values.inheritTimeout')

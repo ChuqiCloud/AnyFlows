@@ -5,6 +5,8 @@ use serde_json::{Map, Value, json};
 pub(crate) const RESPONSES_WEBSOCKET_ENABLED_KEY: &str = "responses_websocket_enabled";
 /// 渠道 settings 中由管理与运行时共同维护的自动禁用规则键。
 pub(crate) const AUTO_BAN_RULES_KEY: &str = "auto_ban_rules";
+/// 渠道 settings 中由管理与运行时共同维护的外部账号池模式键。
+pub(crate) const POOL_MODE_KEY: &str = "pool_mode";
 
 const AUTO_BAN_STATUS_CODES_KEY: &str = "status_codes";
 const AUTO_BAN_KEYWORDS_KEY: &str = "keywords";
@@ -16,6 +18,16 @@ pub(crate) struct ChannelSettingsError;
 pub(crate) fn responses_websocket_enabled(settings: &Value) -> Result<bool, ChannelSettingsError> {
     let object = settings.as_object().ok_or(ChannelSettingsError)?;
     match object.get(RESPONSES_WEBSOCKET_ENABLED_KEY) {
+        None => Ok(false),
+        Some(Value::Bool(enabled)) => Ok(*enabled),
+        Some(_) => Err(ChannelSettingsError),
+    }
+}
+
+/// 从敏感 settings 中读取池模式；缺失表示继续维护渠道级本地健康状态。
+pub(crate) fn pool_mode(settings: &Value) -> Result<bool, ChannelSettingsError> {
+    let object = settings.as_object().ok_or(ChannelSettingsError)?;
+    match object.get(POOL_MODE_KEY) {
         None => Ok(false),
         Some(Value::Bool(enabled)) => Ok(*enabled),
         Some(_) => Err(ChannelSettingsError),
@@ -76,6 +88,20 @@ pub(crate) fn set_responses_websocket_enabled(
         );
     } else {
         object.remove(RESPONSES_WEBSOCKET_ENABLED_KEY);
+    }
+    Ok(())
+}
+
+/// 在保留未知敏感设置的前提下写入池模式；关闭时移除默认值。
+pub(crate) fn set_pool_mode(
+    settings: &mut Value,
+    enabled: bool,
+) -> Result<(), ChannelSettingsError> {
+    let object = settings.as_object_mut().ok_or(ChannelSettingsError)?;
+    if enabled {
+        object.insert(POOL_MODE_KEY.to_owned(), Value::Bool(true));
+    } else {
+        object.remove(POOL_MODE_KEY);
     }
     Ok(())
 }
@@ -162,10 +188,21 @@ mod tests {
         let mut settings = json!({"private_extension": {"secret": true}});
         set_responses_websocket_enabled(&mut settings, true).unwrap();
         assert!(responses_websocket_enabled(&settings).unwrap());
+        set_pool_mode(&mut settings, true).unwrap();
+        assert!(pool_mode(&settings).unwrap());
         assert_eq!(settings["private_extension"]["secret"], true);
         set_responses_websocket_enabled(&mut settings, false).unwrap();
+        set_pool_mode(&mut settings, false).unwrap();
         assert!(!responses_websocket_enabled(&settings).unwrap());
+        assert!(!pool_mode(&settings).unwrap());
         assert_eq!(settings["private_extension"]["secret"], true);
+    }
+
+    #[test]
+    fn pool_mode_defaults_off_and_rejects_non_boolean_values() {
+        assert!(!pool_mode(&json!({})).unwrap());
+        assert!(pool_mode(&json!({"pool_mode": true})).unwrap());
+        assert!(pool_mode(&json!({"pool_mode": "true"})).is_err());
     }
 
     #[test]

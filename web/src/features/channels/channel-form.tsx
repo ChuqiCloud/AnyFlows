@@ -67,6 +67,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
   const channelType = form.watch('channelType')
   const protocol = form.watch('protocol')
   const autoBan = form.watch('autoBan')
+  const poolMode = form.watch('poolMode')
   const removeUnsupportedParameters = (nextProtocol: ChannelProtocol) => {
     if (nextProtocol !== 'openai_responses') return
     form.setValue(
@@ -194,11 +195,17 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
               <Input id="channel-priority" type="number" step={1} aria-invalid={!!form.formState.errors.priority} {...form.register('priority', { valueAsNumber: true })} />
             </ChannelFormField>
           </div>
-          <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--hairline)] px-3 py-2.5">
-            <div><Label htmlFor="channel-auto-ban">{t('channels.fields.autoBan')}</Label><p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('channels.form.autoBanHint')}</p></div>
-            <Controller control={form.control} name="autoBan" render={({ field }) => <Switch id="channel-auto-ban" checked={field.value} onCheckedChange={field.onChange} />} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--hairline)] px-3 py-2.5">
+              <div><Label htmlFor="channel-pool-mode">{t('channels.fields.poolMode')}</Label><p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('channels.form.poolModeHint')}</p></div>
+              <Controller control={form.control} name="poolMode" render={({ field }) => <Switch id="channel-pool-mode" checked={field.value} onCheckedChange={field.onChange} />} />
+            </div>
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--hairline)] px-3 py-2.5">
+              <div><Label htmlFor="channel-auto-ban">{t('channels.fields.autoBan')}</Label><p className="mt-1 text-[0.6875rem] text-muted-foreground">{t(poolMode ? 'channels.form.autoBanPoolModeHint' : 'channels.form.autoBanHint')}</p></div>
+              <Controller control={form.control} name="autoBan" render={({ field }) => <Switch id="channel-auto-ban" checked={field.value} disabled={poolMode} onCheckedChange={field.onChange} />} />
+            </div>
           </div>
-          {autoBan ? (
+          {autoBan && !poolMode ? (
             <ChannelFormField
               id="channel-auto-ban-rules"
               htmlFor={false}

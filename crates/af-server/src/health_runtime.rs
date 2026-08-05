@@ -195,10 +195,13 @@ fn append_failure(
     target: CredentialAttemptTarget,
     failure: RedisHealthFailure,
 ) {
-    events.push(RedisHealthEvent::failed(
-        RedisHealthTarget::Channel(target.channel_id()),
-        failure,
-    ));
+    // 池模式由外部账号池负责渠道级熔断，平台仍记录凭据级健康反馈。
+    if !target.pool_mode() {
+        events.push(RedisHealthEvent::failed(
+            RedisHealthTarget::Channel(target.channel_id()),
+            failure,
+        ));
+    }
     events.push(RedisHealthEvent::failed(
         RedisHealthTarget::Credential(target.credential_id()),
         failure,
@@ -206,9 +209,11 @@ fn append_failure(
 }
 
 fn append_success(events: &mut Vec<RedisHealthEvent>, target: CredentialAttemptTarget) {
-    events.push(RedisHealthEvent::succeeded(RedisHealthTarget::Channel(
-        target.channel_id(),
-    )));
+    if !target.pool_mode() {
+        events.push(RedisHealthEvent::succeeded(RedisHealthTarget::Channel(
+            target.channel_id(),
+        )));
+    }
     events.push(RedisHealthEvent::succeeded(RedisHealthTarget::Credential(
         target.credential_id(),
     )));
@@ -281,6 +286,7 @@ mod tests {
             9,
             CredentialKind::ApiKey,
             false,
+            false,
         )
         .unwrap();
         assert_eq!(health_failure(UpstreamError::BadRequest), None);
@@ -301,6 +307,27 @@ mod tests {
         assert_eq!(
             events[1].target(),
             RedisHealthTarget::Credential(CredentialId::new(9).unwrap())
+        );
+    }
+
+    #[test]
+    fn pool_mode_keeps_credential_feedback_but_skips_channel_feedback() {
+        let target = CredentialAttemptTarget::new(
+            ChannelId::new(7).unwrap(),
+            9,
+            CredentialKind::ApiKey,
+            false,
+            true,
+        )
+        .unwrap();
+        let mut events = Vec::new();
+        append_failure(&mut events, target, RedisHealthFailure::Network);
+        append_success(&mut events, target);
+        assert_eq!(events.len(), 2);
+        assert!(
+            events
+                .iter()
+                .all(|event| matches!(event.target(), RedisHealthTarget::Credential(_)))
         );
     }
 }

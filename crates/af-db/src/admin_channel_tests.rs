@@ -81,6 +81,7 @@ async fn detail_exposes_only_validated_non_sensitive_metadata() -> Result<(), Bo
     assert_eq!(channel.model_mapping()["public-model"], "upstream-model");
     assert_eq!(channel.param_override()["temperature"], 0);
     assert!(channel.auto_ban_rules().is_empty());
+    assert!(!channel.pool_mode());
     assert_eq!(format!("{channel:?}"), "AdminChannelRecord(<redacted>)");
     assert!(matches!(
         fixture.repository.get(fixture.deleted_channel_id).await?,
@@ -196,6 +197,43 @@ async fn auto_ban_rule_projection_distinguishes_missing_valid_and_null_values()
     Ok(())
 }
 
+#[tokio::test]
+async fn pool_mode_projection_accepts_boolean_and_rejects_other_values()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let model = channels::Entity::find_by_id(fixture.primary_channel_id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("测试渠道必须存在");
+    let mut active = channels::ActiveModel::from(model);
+    active.settings = Set(SensitiveJson::from(serde_json::json!({"pool_mode": true})));
+    let model = active.update(fixture.pool.connection()).await?;
+
+    let AdminChannelLookupOutcome::Found(channel) =
+        fixture.repository.get(fixture.primary_channel_id).await?
+    else {
+        panic!("有效渠道详情必须存在");
+    };
+    assert!(channel.pool_mode());
+
+    let mut active = channels::ActiveModel::from(model);
+    active.settings = Set(SensitiveJson::from(
+        serde_json::json!({"pool_mode": "true"}),
+    ));
+    active.update(fixture.pool.connection()).await?;
+    assert_eq!(
+        fixture
+            .repository
+            .get(fixture.primary_channel_id)
+            .await
+            .unwrap_err(),
+        AdminChannelRepositoryError::Invariant
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
 #[test]
 fn read_queries_only_project_non_sensitive_channel_capabilities() {
     let channel_queries = [
@@ -208,6 +246,7 @@ fn read_queries_only_project_non_sensitive_channel_capabilities() {
         assert!(!sql.contains("header_override"));
         assert!(sql.contains("responses_websocket_enabled"));
         assert!(sql.contains("auto_ban_rules"));
+        assert!(sql.contains("pool_mode"));
         assert!(!sql.contains("as \"settings\""));
         assert!(!sql.contains("as `settings`"));
     }

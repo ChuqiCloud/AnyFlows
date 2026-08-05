@@ -295,10 +295,12 @@ impl ScheduledChatService {
                     runtime_credential.credential_id(),
                     runtime_credential.credential_kind(),
                     oauth_has_refresh_token,
+                    target.pool_mode(),
                 )?);
                 auto_ban_targets.push(ChannelAutoBanAttemptTarget::new(
                     target.channel_id(),
                     target.auto_ban_rules(),
+                    target.pool_mode(),
                 )?);
             }
         }
