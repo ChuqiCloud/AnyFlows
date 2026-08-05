@@ -408,7 +408,7 @@ async fn create_credential(
                 true,
                 None,
                 "global",
-                Some(99),
+                None,
                 oauth_provider.map(str::to_owned),
                 Some("account-key".to_owned()),
                 Some("project-id".to_owned()),
