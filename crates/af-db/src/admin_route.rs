@@ -9,9 +9,9 @@ use af_domain::{
     validate_route_model_pattern,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityOrSelect,
-    EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
-    entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, Set, TransactionTrait, entity::prelude::TimeDateTimeWithTimeZone,
+    sea_query::Expr,
 };
 use thiserror::Error;
 use tokio::time::timeout;
@@ -764,7 +764,7 @@ async fn ensure_name_available(
     }
     if query
         .select_only()
-        .select(routes::Column::Id)
+        .column(routes::Column::Id)
         .one(transaction)
         .with_subscriber(NoSubscriber::default())
         .await
@@ -784,7 +784,7 @@ async fn active_route_exists(
     Ok(routes::Entity::find_by_id(route_id.get())
         .filter(routes::Column::DeletedAt.is_null())
         .select_only()
-        .select(routes::Column::Id)
+        .column(routes::Column::Id)
         .one(transaction)
         .with_subscriber(NoSubscriber::default())
         .await
