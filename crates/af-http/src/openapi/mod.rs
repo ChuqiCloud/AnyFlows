@@ -260,8 +260,9 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 152);
+        assert_eq!(schemas.len(), 153);
         assert!(schemas.keys().is_sorted());
+        assert!(schemas.contains_key("AdminChannelAutoBanRules"));
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
         assert!(schemas.contains_key("AdminCredentialSecret"));
