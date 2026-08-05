@@ -247,3 +247,37 @@ fn no_store_empty(status: StatusCode) -> Response {
         .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn route_mode_and_strategy_accept_only_persisted_values() {
+        assert_eq!(parse_mode("pattern"), Ok(RouteMode::Pattern));
+        assert_eq!(parse_mode("explicit_group"), Ok(RouteMode::ExplicitGroup));
+        assert_eq!(parse_strategy("weighted"), Ok(RouteStrategy::Weighted));
+        assert_eq!(parse_strategy("round_robin"), Ok(RouteStrategy::RoundRobin));
+        assert_eq!(
+            parse_strategy("stable_first"),
+            Ok(RouteStrategy::StableFirst)
+        );
+        assert_eq!(parse_mode("regex"), Err(ManagementError::InvalidRequest));
+        assert_eq!(
+            parse_strategy("random"),
+            Err(ManagementError::InvalidRequest)
+        );
+    }
+
+    #[test]
+    fn channel_command_rejects_negative_order_values() {
+        let request = AdminRouteChannelWriteRequest {
+            channel_id: 1,
+            credential_id: 2,
+            priority: -1,
+            weight: 1,
+            enabled: true,
+        };
+        assert_eq!(request.into_command(), Err(ManagementError::InvalidRequest));
+    }
+}

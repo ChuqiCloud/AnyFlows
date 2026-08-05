@@ -271,3 +271,34 @@ fn no_store_json(value: impl Serialize) -> Response {
         .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn route_id_parser_requires_positive_decimal_text() {
+        assert_eq!(parse_route_id("42").unwrap().get(), 42);
+        for value in ["", "0", "+1", "-1", "1.0", "abc"] {
+            assert_eq!(
+                parse_route_id(value),
+                Err(ManagementError::InvalidRequest),
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn list_query_parser_rejects_duplicates_and_unknown_keys() {
+        let query = parse_list_query(Some("after=3&limit=7")).unwrap();
+        assert_eq!(query.after().unwrap().get(), 3);
+        assert_eq!(query.limit(), 7);
+        for raw_query in ["limit=1&limit=2", "after=1&unknown=x", "limit=%ZZ"] {
+            assert_eq!(
+                parse_list_query(Some(raw_query)),
+                Err(ManagementError::InvalidRequest),
+                "{raw_query}"
+            );
+        }
+    }
+}
