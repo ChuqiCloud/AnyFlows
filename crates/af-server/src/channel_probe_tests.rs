@@ -291,6 +291,16 @@ async fn seed_probe_target(
     };
     let envelope = encrypted_envelope(key, aad_credential_id);
     let proxy_id = if proxy_required { "91" } else { "NULL" };
+    if proxy_required {
+        database
+            .execute_unprepared(
+                "INSERT INTO proxies \
+                 (id, name, active_name, scheme, host, port, trust_proxy_dns, enabled, version, created_at, updated_at) \
+                 VALUES (91, 'probe-proxy', 'probe-proxy', 'http', 'proxy.example', 8080, 0, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            )
+            .await
+            .unwrap();
+    }
     let credential_sql = format!(
         "INSERT INTO credentials (id, channel_id, kind, secret, status, priority, schedulable, proxy_id) VALUES ({TEST_CREDENTIAL_ID}, {TEST_CHANNEL_ID}, 'api_key', {}, {}, 10, 1, {proxy_id})",
         sql_text(&envelope.to_string()),

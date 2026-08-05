@@ -7,9 +7,10 @@ use sea_orm::{
     entity::prelude::{Json, TimeDateTimeWithTimeZone},
 };
 
+use crate::SensitiveString;
 use crate::entity::{
     ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, abilities, channel_groups,
-    channel_models, channels, credentials, groups,
+    channel_models, channels, credentials, groups, proxies,
 };
 
 pub(super) fn group(name: &str) -> groups::ActiveModel {
@@ -71,6 +72,19 @@ pub(super) fn runtime_credential(
         rate_limit_reset_at: Set(
             rate_limited.then(|| TimeDateTimeWithTimeZone::now_utc() + Duration::from_secs(3_600))
         ),
+        ..Default::default()
+    }
+}
+
+pub(super) fn runtime_proxy(id: i64) -> proxies::ActiveModel {
+    let name = format!("runtime-proxy-{id}");
+    proxies::ActiveModel {
+        id: Set(id),
+        active_name: Set(Some(name.clone())),
+        name: Set(name),
+        scheme: Set("http".to_owned()),
+        host: Set(SensitiveString::from("proxy.example".to_owned())),
+        port: Set(8080),
         ..Default::default()
     }
 }
