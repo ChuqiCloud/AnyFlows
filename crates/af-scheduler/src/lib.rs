@@ -10,6 +10,7 @@ mod health;
 mod index;
 mod probe;
 mod retry;
+mod stable_first;
 mod sticky;
 mod weighted;
 
@@ -50,6 +51,10 @@ pub use probe::{
     DEFAULT_CHANNEL_PROBE_TIMEOUT,
 };
 pub use retry::{RetrySelection, WeightedRetryPlan, WeightedRetryPlanError};
+pub use stable_first::{
+    DEFAULT_PRIMARY_SCORE_RATIO_MICROS, StableFirstPlan, StableFirstPlanError, StableFirstPool,
+    StableFirstStrategy,
+};
 pub use sticky::{
     RouteWaitKind, RouteWaitPlan, StickyRouteOutcome, StickyWaitPolicy, StickyWaitPolicyError,
 };

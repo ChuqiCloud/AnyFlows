@@ -34,15 +34,20 @@ impl ChannelRoutingHealth {
         self.cooling
     }
 
-    /// 将 `weight + 10` 乘以 `max(1 / (1 + penalty), 0.08)`，并保留最小抽样票。
-    #[must_use]
-    pub(crate) fn effective_weight(self, candidate: SchedulerCandidate) -> u64 {
+    /// 返回不含候选配置权重的健康乘数，使用与加权选路相同的定点精度。
+    pub(crate) fn multiplier_micros(self) -> u64 {
         let denominator = ROUTING_HEALTH_PENALTY_SCALE + self.penalty_micros;
         let raw_multiplier = ROUTING_HEALTH_PENALTY_SCALE
             .checked_mul(ROUTING_HEALTH_PENALTY_SCALE)
             .expect("健康固定精度平方必须可表示")
             / denominator;
-        let multiplier = raw_multiplier.max(MIN_HEALTH_MULTIPLIER_MICROS);
+        raw_multiplier.max(MIN_HEALTH_MULTIPLIER_MICROS)
+    }
+
+    /// 将 `weight + 10` 乘以健康乘数，并保留最小抽样票。
+    #[must_use]
+    pub(crate) fn effective_weight(self, candidate: SchedulerCandidate) -> u64 {
+        let multiplier = self.multiplier_micros();
         let base = u64::from(candidate.weight()) + WEIGHT_BASE;
         base.checked_mul(multiplier)
             .expect("配置权重与健康乘数乘积必须可表示")
