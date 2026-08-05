@@ -338,6 +338,23 @@ pub(crate) enum AdminRoutingWriteStatusSchema {
     Disabled,
 }
 
+#[allow(dead_code, reason = "仅用于生成智能路由 OpenAPI schema")]
+#[derive(ToSchema)]
+#[schema(as = AdminRouteMode, rename_all = "snake_case")]
+pub(crate) enum AdminRouteModeSchema {
+    Pattern,
+    ExplicitGroup,
+}
+
+#[allow(dead_code, reason = "仅用于生成智能路由 OpenAPI schema")]
+#[derive(ToSchema)]
+#[schema(as = AdminRouteStrategy, rename_all = "snake_case")]
+pub(crate) enum AdminRouteStrategySchema {
+    Weighted,
+    RoundRobin,
+    StableFirst,
+}
+
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
 #[derive(ToSchema)]
 #[schema(as = AdminChannelType, rename_all = "snake_case")]
@@ -518,6 +535,9 @@ pub(crate) enum ManagementErrorCodeSchema {
     EmailDeliveryFailed,
     GroupConflict,
     GroupInUse,
+    RouteNotFound,
+    RouteConflict,
+    RouteInvalidReference,
     ModelNotFound,
     ModelConflict,
     ModelSyncChannelUnavailable,

@@ -8,21 +8,23 @@ use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
     AdminEmailSettingsService, AdminGroupReader, AdminGroupWriter, AdminModelPriceService,
     AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsError,
-    AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter,
-    AdminWalletService, BalanceAlertTask, DatabaseAdminBalanceAlertSettingsService,
-    DatabaseAdminChannelReader, DatabaseAdminChannelWriter, DatabaseAdminEmailSettingsService,
-    DatabaseAdminGroupReader, DatabaseAdminGroupWriter, DatabaseAdminModelPriceService,
-    DatabaseAdminModelReader, DatabaseAdminModelSyncService, DatabaseAdminModelWriter,
-    DatabaseAdminNetworkSettingsService, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
-    DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
-    DatabaseAdminWalletService, DatabaseInitialSetup, DatabasePasswordResetService,
-    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
-    DatabaseSiteSettingsService, DatabaseTokenAuthenticator, DatabaseUserInvitationService,
-    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
-    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
-    PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
-    PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
+    AdminRouteReader, AdminRouteWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader,
+    AdminUserReader, AdminUserWriter, AdminWalletService, BalanceAlertTask,
+    DatabaseAdminBalanceAlertSettingsService, DatabaseAdminChannelReader,
+    DatabaseAdminChannelWriter, DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader,
+    DatabaseAdminGroupWriter, DatabaseAdminModelPriceService, DatabaseAdminModelReader,
+    DatabaseAdminModelSyncService, DatabaseAdminModelWriter, DatabaseAdminNetworkSettingsService,
+    DatabaseAdminRouteReader, DatabaseAdminRouteWriter, DatabaseAdminTokenReader,
+    DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader, DatabaseAdminUserReader,
+    DatabaseAdminUserWriter, DatabaseAdminWalletService, DatabaseInitialSetup,
+    DatabasePasswordResetService, DatabasePlaygroundConversationService,
+    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
+    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseTokenAuthenticator,
+    DatabaseUserInvitationService, DatabaseUserProfileService, DatabaseUserTokenService,
+    DatabaseUserWalletService, EmailDelivery, InitialSetup, ModelCatalogReader,
+    NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError, PasswordResetService,
+    PasswordResetServiceConfigError, PlaygroundConversationService, PlaygroundShareService,
+    RedemptionService, RegistrationService, RegistrationServiceConfigError,
     RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
     SiteSettingsService, TokenAuthenticator, UserInvitationService, UserProfileService,
     UserTokenService, UserWalletService,
@@ -43,9 +45,10 @@ use af_config::{AppConfig, ConfigError};
 use af_db::{
     AdminChannelRepository, AdminChannelRepositoryConfigError, AdminDashboardRepository,
     AdminDashboardRepositoryConfigError, AdminGroupRepository, AdminGroupRepositoryConfigError,
-    AdminModelRepository, AdminModelRepositoryConfigError, AdminTokenRepository,
-    AdminTokenRepositoryConfigError, AdminUsageLogRepository, AdminUsageLogRepositoryConfigError,
-    AdminUserRepository, AdminUserRepositoryConfigError, AuthChallengeRateLimitRepository,
+    AdminModelRepository, AdminModelRepositoryConfigError, AdminRouteRepository,
+    AdminRouteRepositoryConfigError, AdminTokenRepository, AdminTokenRepositoryConfigError,
+    AdminUsageLogRepository, AdminUsageLogRepositoryConfigError, AdminUserRepository,
+    AdminUserRepositoryConfigError, AuthChallengeRateLimitRepository,
     AuthChallengeRateLimitRepositoryConfigError, AuthChallengeRepository,
     AuthChallengeRepositoryConfigError, BalanceAlertRepository, BalanceAlertRepositoryConfigError,
     BalanceAlertSettingsRepository, BalanceAlertSettingsRepositoryConfigError,
@@ -156,6 +159,8 @@ pub struct AuthenticationReady {
     admin_dashboard_reader: Arc<dyn AdminDashboardReader>,
     admin_group_reader: Arc<dyn AdminGroupReader>,
     admin_group_writer: Arc<dyn AdminGroupWriter>,
+    admin_route_reader: Arc<dyn AdminRouteReader>,
+    admin_route_writer: Arc<dyn AdminRouteWriter>,
     admin_model_reader: Arc<dyn AdminModelReader>,
     admin_model_writer: Arc<dyn AdminModelWriter>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
@@ -359,6 +364,9 @@ pub enum BootstrapError {
     /// 管理员分组仓储的启动参数无效。
     #[error("管理员分组仓储启动参数无效")]
     AdminGroupRepository(#[source] AdminGroupRepositoryConfigError),
+    /// 管理员智能路由仓储的启动参数无效。
+    #[error("管理员智能路由仓储启动参数无效")]
+    AdminRouteRepository(#[source] AdminRouteRepositoryConfigError),
     /// 管理员模型元数据仓储的启动参数无效。
     #[error("管理员模型元数据仓储启动参数无效")]
     AdminModelRepository(#[source] AdminModelRepositoryConfigError),
@@ -666,6 +674,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::AdminGroupRepository)?;
+        let admin_route_repository = AdminRouteRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::AdminRouteRepository)?;
         let admin_model_repository = AdminModelRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -761,6 +774,10 @@ impl Bootstrap<DatabaseReady> {
                     admin_group_repository.clone(),
                 )),
                 admin_group_writer: Arc::new(DatabaseAdminGroupWriter::new(admin_group_repository)),
+                admin_route_reader: Arc::new(DatabaseAdminRouteReader::new(
+                    admin_route_repository.clone(),
+                )),
+                admin_route_writer: Arc::new(DatabaseAdminRouteWriter::new(admin_route_repository)),
                 admin_model_reader: Arc::new(DatabaseAdminModelReader::new(
                     admin_model_repository.clone(),
                 )),
@@ -1318,6 +1335,8 @@ impl Bootstrap<Supervised> {
             Some(Arc::clone(&self.stage.infrastructure.admin_model_writer)),
             Some(Arc::clone(&self.stage.admin_model_sync_service)),
             Some(Arc::clone(&self.stage.admin_model_price_service)),
+            Some(Arc::clone(&self.stage.infrastructure.admin_route_reader)),
+            Some(Arc::clone(&self.stage.infrastructure.admin_route_writer)),
             Arc::clone(&self.stage.infrastructure.admin_token_reader),
             Arc::clone(&self.stage.infrastructure.admin_token_writer),
             Arc::clone(&self.stage.infrastructure.admin_dashboard_reader),
