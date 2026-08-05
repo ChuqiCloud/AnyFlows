@@ -2031,7 +2031,7 @@ mod tests {
             .await
             .unwrap()
             .start_supervisor();
-        assert_eq!(supervised.stage.supervisor.task_count(), 6);
+        assert_eq!(supervised.stage.supervisor.task_count(), 7);
         let report = supervised
             .build_router()
             .bind()
