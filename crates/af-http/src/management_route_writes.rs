@@ -1,8 +1,8 @@
 use af_admin::{
-    AdminRoute, AdminRouteChannelCommand, AdminRouteCreateCommand, AdminRouteUpdateCommand,
-    AdminRouteWriteError, AdminRouteWriter,
+    AdminRouteChannelCommand, AdminRouteCreateCommand, AdminRouteUpdateCommand,
+    AdminRouteWriteError,
 };
-use af_domain::{ChannelId, CredentialId, RouteId, RouteMode, RouteStrategy};
+use af_domain::{ChannelId, CredentialId, RouteMode, RouteStrategy};
 use axum::{
     Json,
     extract::{Extension, Path, State, rejection::JsonRejection},

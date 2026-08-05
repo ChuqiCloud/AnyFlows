@@ -1,8 +1,7 @@
 use af_admin::{
     AdminRoute, AdminRouteChannel, AdminRouteListQuery, AdminRoutePage, AdminRouteReadError,
-    AdminRouteReader,
 };
-use af_domain::{ChannelId, CredentialId, RouteId};
+use af_domain::RouteId;
 use axum::{
     Json,
     extract::{Extension, Path, RawQuery, State},
