@@ -32,6 +32,7 @@
     "routes": "Smart routing",
     "keys": "Global keys",
     "usage": "Global usage",
+    "debugTraces": "Debug traces",
     "billing": "Billing",
     "settings": "Settings"
   },
@@ -1700,6 +1701,107 @@
     "error": {
       "title": "Unable to load usage logs",
       "body": "The service did not return confirmed usage. Try again shortly."
+    }
+  },
+  "debugTraces": {
+    "title": "Debug traces",
+    "subtitle": "Inspect sanitized routing decisions and candidate attempts without storing or replaying request bodies or credentials.",
+    "count": "{{count}} traces on this page",
+    "page": "Page {{page}}",
+    "loading": "Loading debug traces",
+    "pagination": "Debug trace pagination",
+    "listLabel": "Debug trace list",
+    "detailLabel": "Debug trace details",
+    "actions": {
+      "refresh": "Refresh",
+      "settings": "Trace settings",
+      "filter": "Filter",
+      "retry": "Try again",
+      "previous": "Previous",
+      "next": "Next",
+      "save": "Save settings",
+      "saving": "Saving"
+    },
+    "filters": {
+      "outcome": "Request outcome",
+      "all": "All outcomes",
+      "model": "Model name",
+      "modelPlaceholder": "Filter by exact model name"
+    },
+    "outcome": {
+      "succeeded": "Succeeded",
+      "failed": "Failed"
+    },
+    "values": {
+      "attempts": "{{count}} candidate attempts",
+      "elapsed": "{{value}} ms",
+      "principal": "User #{{user}} / Token #{{token}}"
+    },
+    "empty": {
+      "title": "No debug traces yet",
+      "body": "Enable tracing and new sampled model requests will appear here as sanitized summaries."
+    },
+    "error": {
+      "title": "Unable to load debug traces",
+      "body": "The service did not return a reliable trace list. Try again shortly."
+    },
+    "detail": {
+      "loading": "Loading trace details",
+      "errorTitle": "Unable to load trace details",
+      "errorBody": "This trace may have expired. Refresh the list and try again.",
+      "selectTitle": "Select a debug trace",
+      "selectBody": "Candidate channels, credentials, classified failures, and retry decisions will appear here.",
+      "convertedTo": "Converted to {{protocol}}",
+      "createdAt": "Request time",
+      "operation": "Operation",
+      "routingElapsed": "Routing time",
+      "group": "Billing group",
+      "timeline": "Candidate decision timeline",
+      "noAttempts": "No candidate attempts were persisted for this trace.",
+      "candidate": "Candidate {{index}}",
+      "retried": "Retried",
+      "channelCredential": "Channel #{{channel}} / Credential #{{credential}}"
+    },
+    "protocol": {
+      "openai_chat": "OpenAI Chat",
+      "openai_responses": "OpenAI Responses",
+      "anthropic": "Anthropic Messages",
+      "gemini": "Gemini"
+    },
+    "operation": {
+      "chat": "Chat generation",
+      "responses": "Responses generation"
+    },
+    "failure": {
+      "auth_expired": "Authentication expired",
+      "auth_revoked": "Authentication revoked",
+      "account_disabled": "Account disabled",
+      "rate_limited": "Upstream rate limited",
+      "overloaded": "Upstream overloaded",
+      "quota_exhausted": "Upstream quota exhausted",
+      "model_unsupported": "Model unsupported",
+      "protocol_error": "Invalid protocol response",
+      "server_error": "Upstream server error",
+      "bad_request": "Request rejected upstream",
+      "network": "Network or timeout error"
+    },
+    "settings": {
+      "title": "Debug trace settings",
+      "version": "Version {{version}}",
+      "description": "Saved settings apply to this instance immediately; other instances converge through periodic reads.",
+      "loading": "Loading debug trace settings",
+      "loadError": "Unable to load the current trace settings.",
+      "enabled": "Enable debug tracing",
+      "enabledDescription": "Only controls new sanitized trace records and never changes production request execution.",
+      "sample": "Deterministic sample rate",
+      "sampleHint": "The same request ID always produces the same sampling decision, with 0.01% precision.",
+      "sampleInvalid": "Enter a percentage from 0 to 100 with at most two decimal places.",
+      "retention": "Retention period",
+      "retentionValue": "{{hours}} hours",
+      "security": "Traces never store headers, bodies, prompts, raw errors, keys, proxy credentials, session keys, or upstream URLs.",
+      "saveError": "Settings could not be saved. The active runtime configuration is unchanged.",
+      "saved": "Settings saved",
+      "unsaved": "Unsaved changes"
     }
   },
   "models": {

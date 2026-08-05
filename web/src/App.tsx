@@ -15,6 +15,7 @@ import { ChannelPage } from '@/features/channels/channel-page'
 import { CredentialPage } from '@/features/credentials/credential-page'
 import { CredentialProxyPage } from '@/features/credential-proxies/credential-proxy-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
+import { DebugTracePage } from '@/features/debug-traces/debug-trace-page'
 import { EmailSettingsPage } from '@/features/email-settings/email-settings-page'
 import { GroupPage } from '@/features/groups/group-page'
 import { InvitationPage } from '@/features/invitations/invitation-page'
@@ -155,6 +156,8 @@ function ManagementEntry({
                       ? 'tokens.title'
                       : view === 'usage-logs'
                         ? 'usageLogs.title'
+                        : view === 'debug-traces'
+                          ? 'debugTraces.title'
                         : 'dashboard.title'
   const content = view === 'channels'
     ? <ChannelPage />
@@ -198,6 +201,8 @@ function ManagementEntry({
                       ? <TokenPage />
                       : view === 'usage-logs'
                         ? <UsageLogPage />
+                        : view === 'debug-traces'
+                          ? <DebugTracePage />
                         : <DashboardPage />
 
   const requireAdmin = view !== 'api-keys'

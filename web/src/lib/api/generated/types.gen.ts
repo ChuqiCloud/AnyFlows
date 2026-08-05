@@ -277,6 +277,52 @@ export type AdminDashboardResponse = {
     disabled_channel_count: number;
     auto_disabled_channel_count: number;
 };
+export type AdminDebugTrace = {
+    id: number;
+    request_id: string;
+    user_id: number;
+    token_id: number;
+    group_id: number;
+    requested_model: string;
+    downstream_protocol: string;
+    upstream_protocol: string;
+    operation: string;
+    outcome: string;
+    selected_channel_id?: number | null;
+    selected_credential_id?: number | null;
+    routing_elapsed_ms: number;
+    attempt_count: number;
+    created_at: number;
+};
+export type AdminDebugTraceAttempt = {
+    candidate_index: number;
+    channel_id: number;
+    credential_id: number;
+    outcome: string;
+    failure_kind?: string | null;
+    upstream_status?: number | null;
+    retry_decision: boolean;
+    elapsed_ms: number;
+};
+export type AdminDebugTraceDetailResponse = {
+    trace: AdminDebugTrace;
+    attempts: Array<AdminDebugTraceAttempt>;
+};
+export type AdminDebugTraceListResponse = {
+    traces: Array<AdminDebugTrace>;
+    next_cursor: number | null;
+};
+export type AdminDebugTraceSettings = {
+    enabled: boolean;
+    sample_per_million: number;
+    retention_hours: number;
+    version: number;
+};
+export type AdminDebugTraceSettingsRequest = {
+    enabled: boolean;
+    sample_per_million: number;
+    retention_hours: number;
+};
 export type AdminEmailSettings = {
     enabled: boolean;
     host: string;
@@ -813,7 +859,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -3074,3 +3120,78 @@ export type UpdateAdminCredentialProxyResponses = {
     200: AdminCredentialProxy;
 };
 export type UpdateAdminCredentialProxyResponse = UpdateAdminCredentialProxyResponses[keyof UpdateAdminCredentialProxyResponses];
+export type GetAdminDebugTraceSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/debug-trace-settings';
+};
+export type GetAdminDebugTraceSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminDebugTraceSettingsError = GetAdminDebugTraceSettingsErrors[keyof GetAdminDebugTraceSettingsErrors];
+export type GetAdminDebugTraceSettingsResponses = {
+    200: AdminDebugTraceSettings;
+};
+export type GetAdminDebugTraceSettingsResponse = GetAdminDebugTraceSettingsResponses[keyof GetAdminDebugTraceSettingsResponses];
+export type UpdateAdminDebugTraceSettingsData = {
+    body: AdminDebugTraceSettingsRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/debug-trace-settings';
+};
+export type UpdateAdminDebugTraceSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminDebugTraceSettingsError = UpdateAdminDebugTraceSettingsErrors[keyof UpdateAdminDebugTraceSettingsErrors];
+export type UpdateAdminDebugTraceSettingsResponses = {
+    200: AdminDebugTraceSettings;
+};
+export type UpdateAdminDebugTraceSettingsResponse = UpdateAdminDebugTraceSettingsResponses[keyof UpdateAdminDebugTraceSettingsResponses];
+export type ListAdminDebugTracesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+        outcome?: string;
+        model?: string;
+    };
+    url: '/api/admin/debug-traces';
+};
+export type ListAdminDebugTracesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminDebugTracesError = ListAdminDebugTracesErrors[keyof ListAdminDebugTracesErrors];
+export type ListAdminDebugTracesResponses = {
+    200: AdminDebugTraceListResponse;
+};
+export type ListAdminDebugTracesResponse = ListAdminDebugTracesResponses[keyof ListAdminDebugTracesResponses];
+export type GetAdminDebugTraceData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/debug-traces/{id}';
+};
+export type GetAdminDebugTraceErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminDebugTraceError = GetAdminDebugTraceErrors[keyof GetAdminDebugTraceErrors];
+export type GetAdminDebugTraceResponses = {
+    200: AdminDebugTraceDetailResponse;
+};
+export type GetAdminDebugTraceResponse = GetAdminDebugTraceResponses[keyof GetAdminDebugTraceResponses];
