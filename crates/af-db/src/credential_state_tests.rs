@@ -40,6 +40,9 @@ async fn repository_writes_closed_runtime_states_and_success_clears_cooling()
     let disabled = test_credential(channel.id, 0x56)
         .insert(pool.connection())
         .await?;
+    let missing_refresh = test_credential_for_kind(channel.id, 0x57, CredentialKind::Oauth)
+        .insert(pool.connection())
+        .await?;
     let repository = CredentialStateRepository::new(pool.clone());
     let before = TimeDateTimeWithTimeZone::now_utc();
 
@@ -67,10 +70,16 @@ async fn repository_writes_closed_runtime_states_and_success_clears_cooling()
                 disabled.id,
                 CredentialStateChange::AccountDisabled,
             ),
+            event_for_kind(
+                channel.id,
+                missing_refresh.id,
+                CredentialKind::Oauth,
+                CredentialStateChange::MissingRefreshToken,
+            ),
         ])
         .await?;
-    assert_eq!(report.event_count(), 6);
-    assert_eq!(report.changed_count(), 6);
+    assert_eq!(report.event_count(), 7);
+    assert_eq!(report.changed_count(), 7);
 
     let auth = credential(&pool, auth.id).await;
     assert!(
@@ -113,6 +122,10 @@ async fn repository_writes_closed_runtime_states_and_success_clears_cooling()
         credential(&pool, disabled.id).await.status,
         Status::AutoDisabled.code()
     );
+    let missing_refresh = credential(&pool, missing_refresh.id).await;
+    assert_eq!(missing_refresh.status, Status::AutoDisabled.code());
+    assert!(missing_refresh.temp_unschedulable_until.is_none());
+    assert!(missing_refresh.temp_unschedulable_reason.is_none());
 
     repository
         .apply(&[event(
@@ -154,6 +167,15 @@ async fn repository_rejects_duplicate_events_and_rolls_back_invalid_membership()
     let repository = CredentialStateRepository::new(pool.clone());
     let duplicate = event(channel.id, first.id, CredentialStateChange::Succeeded);
     assert_eq!(
+        CredentialStateEvent::new(
+            ChannelId::new(channel.id).unwrap(),
+            CredentialId::new(first.id).unwrap(),
+            CredentialKind::ApiKey,
+            CredentialStateChange::MissingRefreshToken,
+        ),
+        Err(CredentialStateRepositoryError::InvalidEvent)
+    );
+    assert_eq!(
         repository.apply(&[duplicate, duplicate]).await,
         Err(CredentialStateRepositoryError::InvalidBatch)
     );
@@ -188,10 +210,19 @@ fn event(
     credential_id: i64,
     change: CredentialStateChange,
 ) -> CredentialStateEvent {
+    event_for_kind(channel_id, credential_id, CredentialKind::ApiKey, change)
+}
+
+fn event_for_kind(
+    channel_id: i64,
+    credential_id: i64,
+    credential_kind: CredentialKind,
+    change: CredentialStateChange,
+) -> CredentialStateEvent {
     CredentialStateEvent::new(
         ChannelId::new(channel_id).unwrap(),
         CredentialId::new(credential_id).unwrap(),
-        CredentialKind::ApiKey,
+        credential_kind,
         change,
     )
     .unwrap()
@@ -220,6 +251,14 @@ fn test_channel(name: &str) -> channels::ActiveModel {
 }
 
 fn test_credential(channel_id: i64, marker: u8) -> credentials::ActiveModel {
+    test_credential_for_kind(channel_id, marker, CredentialKind::ApiKey)
+}
+
+fn test_credential_for_kind(
+    channel_id: i64,
+    marker: u8,
+    credential_kind: CredentialKind,
+) -> credentials::ActiveModel {
     let envelope = Json::Object(
         [
             ("version".to_owned(), Json::from(1)),
@@ -242,7 +281,7 @@ fn test_credential(channel_id: i64, marker: u8) -> credentials::ActiveModel {
     );
     credentials::ActiveModel {
         channel_id: Set(channel_id),
-        kind: Set(CredentialKind::ApiKey.as_str().to_owned()),
+        kind: Set(credential_kind.as_str().to_owned()),
         secret: Set(EncryptedJson::from_envelope(envelope).unwrap()),
         status: Set(Status::Enabled.code()),
         priority: Set(0),

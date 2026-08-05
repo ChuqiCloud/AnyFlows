@@ -107,8 +107,18 @@ impl CredentialDecryptor {
         let wire = self.decrypt_wire(channel_id, credential_id, credential_kind, envelope)?;
         let value = match wire {
             PlainCredentialWire::ApiKey { api_key } => DecryptedCredentialValue::ApiKey(api_key),
-            PlainCredentialWire::Oauth { access_token, .. } => {
-                DecryptedCredentialValue::Oauth(access_token)
+            PlainCredentialWire::Oauth {
+                access_token,
+                refresh_token,
+                ..
+            } => {
+                let has_refresh_token = refresh_token.is_some();
+                // 普通转发只保留可恢复能力这一位事实，refresh token 本体立即释放并清零。
+                drop(refresh_token);
+                DecryptedCredentialValue::Oauth {
+                    access_token,
+                    has_refresh_token,
+                }
             }
             PlainCredentialWire::Bedrock {
                 access_key_id,
@@ -304,7 +314,10 @@ pub struct DecryptedCredential {
 
 enum DecryptedCredentialValue {
     ApiKey(SecretText),
-    Oauth(OAuthTokenText),
+    Oauth {
+        access_token: OAuthTokenText,
+        has_refresh_token: bool,
+    },
     Bedrock {
         access_key_id: AsciiComponentText<MAX_AWS_ACCESS_KEY_ID_BYTES>,
         secret_access_key: AsciiComponentText<MAX_AWS_SECRET_ACCESS_KEY_BYTES>,
@@ -321,7 +334,7 @@ impl DecryptedCredentialValue {
     const fn kind(&self) -> CredentialKind {
         match self {
             Self::ApiKey(_) => CredentialKind::ApiKey,
-            Self::Oauth(_) => CredentialKind::Oauth,
+            Self::Oauth { .. } => CredentialKind::Oauth,
             Self::Bedrock { .. } => CredentialKind::Bedrock,
             Self::ServiceAccount { .. } => CredentialKind::ServiceAccount,
         }
@@ -335,6 +348,20 @@ impl DecryptedCredential {
         self.value.kind()
     }
 
+    /// 返回 OAuth 凭据是否具备 refresh token；非 OAuth 凭据始终返回假。
+    ///
+    /// 本方法只暴露调度恢复能力，不返回、复制或记录 refresh token 本体。
+    #[must_use]
+    pub const fn oauth_has_refresh_token(&self) -> bool {
+        matches!(
+            &self.value,
+            DecryptedCredentialValue::Oauth {
+                has_refresh_token: true,
+                ..
+            }
+        )
+    }
+
     /// 返回简单凭据或复杂凭据的主秘密字段。
     ///
     /// Bedrock 与 Service Account 调用方必须改用结构化访问器，不能重新拼接字段。
@@ -342,7 +369,7 @@ impl DecryptedCredential {
     pub fn expose_secret(&self) -> &str {
         match &self.value {
             DecryptedCredentialValue::ApiKey(value) => value.expose(),
-            DecryptedCredentialValue::Oauth(value) => value.expose(),
+            DecryptedCredentialValue::Oauth { access_token, .. } => access_token.expose(),
             DecryptedCredentialValue::Bedrock {
                 secret_access_key, ..
             } => secret_access_key.expose(),
@@ -740,6 +767,7 @@ mod tests {
 
         assert_eq!(credential.kind(), CredentialKind::ApiKey);
         assert_eq!(credential.expose_secret(), "sk-test-secret");
+        assert!(!credential.oauth_has_refresh_token());
         for rendered in [format!("{decryptor:?}"), format!("{credential:?}")] {
             assert!(!rendered.contains("primary-key"));
             assert!(!rendered.contains("sk-test-secret"));
@@ -768,6 +796,7 @@ mod tests {
 
         assert_eq!(credential.kind(), CredentialKind::Oauth);
         assert_eq!(credential.expose_secret(), "ya29.test-token");
+        assert!(!credential.oauth_has_refresh_token());
 
         let complete = decryptor
             .decrypt_oauth_envelope(channel_id(), CREDENTIAL_ID, &envelope)
