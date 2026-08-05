@@ -34,6 +34,7 @@ export function credentialFormValues(
     loadFactor: formatMicros(credential?.load_factor_micros),
     rateMultiplier: formatMicros(credential?.rate_multiplier_micros),
     parentId: optionalNumber(credential?.parent_id),
+    proxyId: optionalNumber(credential?.proxy_id),
     quotaDimension: credential?.quota_dimension ?? 'global',
     oauthProvider: credential?.oauth_provider ?? '',
     oauthAccountKey: credential?.oauth_account_key ?? '',
@@ -47,9 +48,9 @@ export function createCredentialRequest(values: CredentialFormValues): AdminCred
 
 export function updateCredentialRequest(
   values: CredentialFormValues,
-  credential: AdminCredential,
+  _credential: AdminCredential,
 ): AdminCredentialUpdateRequestWritable {
-  return { ...writeFields(values, credential), secret: values.rotateSecret ? credentialSecret(values) : null }
+  return { ...writeFields(values), secret: values.rotateSecret ? credentialSecret(values) : null }
 }
 
 /** 快捷启停同样完整保留所有调度字段与原密文。 */
@@ -77,7 +78,7 @@ export function updateCredentialStatusRequest(
   }
 }
 
-function writeFields(values: CredentialFormValues, credential?: AdminCredential) {
+function writeFields(values: CredentialFormValues) {
   if (values.status === 'auto_disabled') throw new Error('自动停用凭据必须显式选择写入状态')
   return {
     kind: values.kind,
@@ -91,7 +92,7 @@ function writeFields(values: CredentialFormValues, credential?: AdminCredential)
     schedulable: values.schedulable,
     parent_id: optionalInteger(values.parentId),
     quota_dimension: values.quotaDimension,
-    proxy_id: credential?.proxy_id ?? null,
+    proxy_id: optionalInteger(values.proxyId),
     oauth_provider: values.kind === 'oauth' ? optionalText(values.oauthProvider) : null,
     oauth_account_key: values.kind === 'oauth' ? optionalText(values.oauthAccountKey) : null,
     oauth_project_id: values.kind === 'oauth' ? optionalText(values.oauthProjectId) : null,

@@ -8,8 +8,8 @@ use crate::{
     ChannelProbeTargetRepository, ChannelProbeTargetRepositoryError, DatabaseOptions,
     MigrationOptions,
     entity::{
-        ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channel_models, channels,
-        credentials,
+        ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, SensitiveString,
+        channel_models, channels, credentials, proxies,
     },
 };
 
@@ -43,6 +43,7 @@ async fn load_selects_stable_model_and_highest_priority_credential() -> Result<(
     )
     .insert(pool.connection())
     .await?;
+    proxy(91).insert(pool.connection()).await?;
     let selected = credential(
         channel.id,
         CredentialKind::Oauth,
@@ -239,6 +240,19 @@ fn channel_model(channel_id: i64, model: &str) -> channel_models::ActiveModel {
     channel_models::ActiveModel {
         channel_id: Set(channel_id),
         model: Set(model.to_owned()),
+        ..Default::default()
+    }
+}
+
+fn proxy(id: i64) -> proxies::ActiveModel {
+    let name = format!("probe-proxy-{id}");
+    proxies::ActiveModel {
+        id: Set(id),
+        active_name: Set(Some(name.clone())),
+        name: Set(name),
+        scheme: Set("http".to_owned()),
+        host: Set(SensitiveString::from("proxy.example".to_owned())),
+        port: Set(8080),
         ..Default::default()
     }
 }

@@ -28,6 +28,7 @@
     "modelSettings": "模型管理",
     "channels": "渠道管理",
     "credentials": "凭据与账号池",
+    "credentialProxies": "专属代理",
     "routes": "智能路由",
     "keys": "全局令牌",
     "usage": "全局用量",
@@ -692,7 +693,10 @@
       "parent": "父账号",
       "parentHint": "仅可选择同渠道、同类型的根账号。",
       "noParent": "独立账号",
-      "proxyBound": "已绑定专属代理",
+      "proxy": "专属出口代理",
+      "proxyHint": "绑定后该账号只通过所选代理出站，代理故障时不会回退直连。",
+      "noProxy": "使用全局网络出口",
+      "proxyLoadFailed": "专属代理目录读取失败，请稍后重试。",
       "optional": "留空表示不限"
     },
     "state": { "unsaved": "有未保存修改", "synced": "已与服务端同步" },
@@ -2362,6 +2366,70 @@
     "security": {
       "title": "凭据与内容边界",
       "description": "管理读取只返回密码配置状态。密码、收件人、邮件正文和 SMTP 服务器响应不会进入页面缓存、URL 或错误详情。"
+    }
+  },
+  "credentialProxies": {
+    "title": "专属代理",
+    "subtitle": "集中管理账号级出口，每条凭据可绑定一个强制代理，故障时绝不回退全局出口或直连。",
+    "loading": "正在加载专属代理目录",
+    "summary": {
+      "total": "共 {{count}} 个代理",
+      "enabled": "{{count}} 个启用",
+      "authenticated": "{{count}} 个带认证"
+    },
+    "columns": {
+      "proxy": "代理",
+      "endpoint": "出口端点",
+      "security": "安全策略",
+      "actions": "操作"
+    },
+    "status": { "enabled": "已启用", "disabled": "已停用" },
+    "security": { "auth": "账号认证", "noAuth": "无认证", "proxyDns": "代理 DNS" },
+    "fields": {
+      "name": "代理名称",
+      "scheme": "协议",
+      "host": "主机",
+      "port": "端口",
+      "username": "用户名",
+      "password": "密码",
+      "enabled": "允许绑定与调度",
+      "enabledHint": "停用前必须先解除所有凭据绑定。",
+      "trustProxyDns": "信任代理端 DNS",
+      "trustProxyDnsHint": "HTTP(S) 与 SOCKS5H 由代理解析上游域名；仅对受信代理开启。"
+    },
+    "editor": {
+      "createTitle": "添加专属代理",
+      "createDescription": "创建可由凭据选择的独立出口。",
+      "editTitle": "编辑专属代理",
+      "editDescription": "更新后所有绑定渠道会刷新运行时快照。",
+      "routeTitle": "出口路由",
+      "routeDescription": "使用结构化协议、主机和端口，认证信息不会拼进可见 URL。",
+      "authTitle": "代理认证",
+      "authDescription": "无认证代理可留空用户名和密码。",
+      "authKeepHint": "密码留空会保留现有密文；清空用户名会同时清除认证。"
+    },
+    "empty": { "title": "尚无专属代理", "body": "添加代理后即可在凭据编辑器中直接选择。" },
+    "delete": { "title": "删除专属代理", "description": "确认删除“{{name}}”？仍被凭据引用时服务端会拒绝。" },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "create": "添加代理",
+      "save": "保存修改",
+      "edit": "编辑",
+      "delete": "删除",
+      "cancel": "取消",
+      "enable": "启用",
+      "disable": "停用",
+      "showPassword": "显示密码",
+      "hidePassword": "隐藏密码"
+    },
+    "errors": {
+      "title": "专属代理目录不可用",
+      "load": "暂时无法读取代理目录。",
+      "invalid": "请检查名称、端点和认证字段。",
+      "save": "代理保存失败，请检查名称冲突或字段格式。",
+      "toggle": "状态更新失败；仍被凭据引用的代理不能停用。",
+      "referenced": "该代理仍被凭据引用，请先在账号池中解除绑定。"
     }
   },
   "networkSettings": {

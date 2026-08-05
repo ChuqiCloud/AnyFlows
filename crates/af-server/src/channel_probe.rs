@@ -55,7 +55,7 @@ impl DatabaseChannelProbe {
             .map_err(|_| ProbeFailure::TargetRead)?
             .ok_or(ProbeFailure::TargetUnavailable)?;
         if target.proxy_required() {
-            // 专属代理仓储尚未落地，绑定代理的凭据绝不能回退直连。
+            // 探活链尚未装配专属代理快照，绑定代理的凭据必须保持失败关闭。
             return Err(ProbeFailure::RequiredProxyUnavailable);
         }
         if !supported_target(&target) {

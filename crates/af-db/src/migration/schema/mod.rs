@@ -17,6 +17,7 @@ mod payment;
 mod playground;
 mod playground_conversation;
 mod pricing;
+mod proxy;
 mod redemption;
 mod registration;
 mod routes;
@@ -112,6 +113,9 @@ pub(super) use playground_conversation::{
     create_playground_conversation_indexes, create_playground_conversations,
 };
 pub(super) use pricing::{create_group_model_ratios, create_model_prices};
+pub(super) use proxy::{
+    CREDENTIAL_PROXY_FOREIGN_KEY, create_credential_proxy_reference, create_proxies,
+};
 pub(super) use redemption::create_redemption_storage;
 pub(super) use registration::create_registration_rate_limits;
 pub(super) use site::{create_authentication_settings, create_site_settings};

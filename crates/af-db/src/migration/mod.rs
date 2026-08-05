@@ -47,6 +47,7 @@ mod m20260803_000038_add_credential_oauth_revision;
 mod m20260803_000039_add_credential_oauth_expiration;
 mod m20260804_000040_create_scheduler_outbox;
 mod m20260805_000041_create_routes;
+mod m20260805_000042_create_proxies;
 mod schema;
 
 #[cfg(test)]
@@ -131,6 +132,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260803_000039_add_credential_oauth_expiration::Migration),
             Box::new(m20260804_000040_create_scheduler_outbox::Migration),
             Box::new(m20260805_000041_create_routes::Migration),
+            Box::new(m20260805_000042_create_proxies::Migration),
         ]
     }
 }

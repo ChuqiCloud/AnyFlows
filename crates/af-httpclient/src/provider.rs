@@ -4,7 +4,10 @@ use std::{
     time::Duration,
 };
 
-use crate::{HttpClientConfig, HttpClientError, HttpClientPool, HttpTimeouts, PooledClient};
+use crate::{
+    HttpClientConfig, HttpClientError, HttpClientPool, HttpTimeouts, PooledClient, ProxyConfig,
+    RemoteDnsPolicy,
+};
 
 /// 共享全局安全基线并按渠道超时身份复用受控 Client 的提供器。
 #[derive(Clone)]
@@ -32,14 +35,25 @@ impl HttpClientProvider {
             .read()
             .map_err(|_| HttpClientError::PoolUnavailable)?
             .clone();
-        let config = match timeout {
-            None => base_config,
-            Some(timeout) => {
-                let base_timeouts = base_config.timeouts();
-                let timeouts = HttpTimeouts::new(base_timeouts.connect(), timeout, timeout)?;
-                base_config.with_timeouts(timeouts)
-            }
-        };
+        let config = with_timeout(base_config, timeout)?;
+        self.pool.get(&config)
+    }
+
+    /// 返回强制使用专属代理的受控 Client；代理或构建失败绝不回退全局出口。
+    pub fn get_with_proxy(
+        &self,
+        proxy: ProxyConfig,
+        remote_dns_policy: RemoteDnsPolicy,
+        timeout: Option<Duration>,
+    ) -> Result<PooledClient, HttpClientError> {
+        let base_config = self
+            .base_config
+            .read()
+            .map_err(|_| HttpClientError::PoolUnavailable)?
+            .clone()
+            .with_proxy(proxy)
+            .with_remote_dns_policy(remote_dns_policy);
+        let config = with_timeout(base_config, timeout)?;
         self.pool.get(&config)
     }
 
@@ -59,6 +73,18 @@ impl HttpClientProvider {
             .map_err(|_| HttpClientError::PoolUnavailable)? = config;
         self.pool.clear()
     }
+}
+
+fn with_timeout(
+    config: HttpClientConfig,
+    timeout: Option<Duration>,
+) -> Result<HttpClientConfig, HttpClientError> {
+    let Some(timeout) = timeout else {
+        return Ok(config);
+    };
+    let base_timeouts = config.timeouts();
+    let timeouts = HttpTimeouts::new(base_timeouts.connect(), timeout, timeout)?;
+    Ok(config.with_timeouts(timeouts))
 }
 
 impl fmt::Debug for HttpClientProvider {
@@ -124,5 +150,19 @@ mod tests {
 
         assert_eq!(provider.pool.len().unwrap(), 0);
         assert!(!provider.base_config().unwrap().proxy().is_direct());
+    }
+
+    #[test]
+    fn dedicated_proxy_overrides_global_route_and_uses_a_distinct_cache_key() {
+        let global = ProxyConfig::parse("http://global.example:8080").unwrap();
+        let provider =
+            HttpClientProvider::new(HttpClientConfig::default().with_proxy(global), 4).unwrap();
+        provider.get(None).unwrap();
+        let dedicated = ProxyConfig::parse("socks5h://account.example:1080").unwrap();
+        provider
+            .get_with_proxy(dedicated, RemoteDnsPolicy::TrustProxy, None)
+            .unwrap();
+
+        assert_eq!(provider.pool.len().unwrap(), 2);
     }
 }

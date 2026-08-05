@@ -56,7 +56,16 @@ fn try_runtime_target(
     }
     let mut records = Vec::with_capacity(credentials.len());
     for credential in credentials {
-        let (
+        let (credential_id, credential_kind, envelope, proxy, priority, weight, concurrency) =
+            credential.into_runtime_parts();
+        if !matches!(
+            credential_kind,
+            CredentialKind::ApiKey | CredentialKind::Oauth
+        ) {
+            continue;
+        }
+        let proxy_required = proxy.is_some();
+        let mut record = SchedulerRuntimeCredentialRecord::with_scheduling_and_concurrency(
             credential_id,
             credential_kind,
             envelope,
@@ -64,25 +73,14 @@ fn try_runtime_target(
             priority,
             weight,
             concurrency,
-        ) = credential.into_runtime_parts();
-        if !matches!(
-            credential_kind,
-            CredentialKind::ApiKey | CredentialKind::Oauth
-        ) {
-            continue;
+        )
+        .map_err(|_| SchedulerRuntimeSelectionError::Invariant)?;
+        if let Some(proxy) = proxy {
+            record = record
+                .with_proxy(proxy)
+                .map_err(|_| SchedulerRuntimeSelectionError::Invariant)?;
         }
-        records.push(
-            SchedulerRuntimeCredentialRecord::with_scheduling_and_concurrency(
-                credential_id,
-                credential_kind,
-                envelope,
-                proxy_required,
-                priority,
-                weight,
-                concurrency,
-            )
-            .map_err(|_| SchedulerRuntimeSelectionError::Invariant)?,
-        );
+        records.push(record);
     }
     if records.is_empty() {
         return Ok(None);

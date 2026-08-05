@@ -31,7 +31,7 @@ const credentialFormShape = z.object({
   schedulable: z.boolean(),
   multiKeyMode: z.enum(['none', 'random', 'round_robin']),
   priority: z.string(), weight: z.string(), concurrency: z.string(),
-  loadFactor: z.string(), rateMultiplier: z.string(), parentId: z.string(),
+  loadFactor: z.string(), rateMultiplier: z.string(), parentId: z.string(), proxyId: z.string(),
   quotaDimension: z.enum(['global', 'spark']),
   oauthProvider: z.string(), oauthAccountKey: z.string(), oauthProjectId: z.string(),
 })
@@ -54,6 +54,9 @@ export function buildCredentialFormSchema(options: CredentialSchemaOptions) {
     }
     if (values.parentId !== '' && (!validInteger(values.parentId, 1, Number.MAX_SAFE_INTEGER)
       || Number(values.parentId) === options.currentId)) issue(context, 'parentId', message.parent)
+    if (values.proxyId !== '' && !validInteger(values.proxyId, 1, Number.MAX_SAFE_INTEGER)) {
+      issue(context, 'proxyId', message.parent)
+    }
     for (const field of ['oauthAccountKey', 'oauthProjectId'] as const) {
       if (!validOptionalText(values[field], 255)) issue(context, field, message.optionalText)
     }

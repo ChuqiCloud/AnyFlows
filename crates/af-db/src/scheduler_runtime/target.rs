@@ -2,13 +2,14 @@ use std::{collections::BTreeSet, fmt};
 
 use af_domain::{
     ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind,
-    Protocol,
+    Protocol, ProxyId,
 };
 use sea_orm::entity::prelude::Json;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
+    CredentialProxyScheme,
     credential_probe::EncryptedCredentialEnvelope,
     entity::{ChannelBaseUrl, HeaderOverrides},
 };
@@ -69,6 +70,107 @@ impl fmt::Debug for SchedulerRuntimeHeader {
 #[error("渠道运行时目标无效")]
 pub struct SchedulerRuntimeTargetRecordError;
 
+/// 已校验且仍保持密码密文形态的凭据专属代理运行时快照。
+#[derive(Clone, Eq, PartialEq)]
+pub struct SchedulerRuntimeProxyRecord {
+    proxy_id: ProxyId,
+    scheme: CredentialProxyScheme,
+    host: String,
+    port: u16,
+    username: Option<String>,
+    password_secret: Option<EncryptedCredentialEnvelope>,
+    trust_proxy_dns: bool,
+    version: i64,
+}
+
+impl SchedulerRuntimeProxyRecord {
+    /// 构造专属代理快照；认证用户名与密码必须同时存在或同时为空。
+    #[allow(clippy::too_many_arguments, reason = "字段与代理运行时投影一一对应")]
+    pub fn new(
+        proxy_id: ProxyId,
+        scheme: CredentialProxyScheme,
+        host: String,
+        port: u16,
+        username: Option<String>,
+        password_secret: Option<EncryptedCredentialEnvelope>,
+        trust_proxy_dns: bool,
+        version: i64,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if port == 0
+            || version < 1
+            || !valid_proxy_host(&host)
+            || username.is_some() != password_secret.is_some()
+            || username.as_deref().is_some_and(|value| {
+                value.is_empty()
+                    || value.len() > crate::MAX_CREDENTIAL_PROXY_USERNAME_BYTES
+                    || value.trim() != value
+                    || value.chars().any(char::is_control)
+            })
+        {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        Ok(Self {
+            proxy_id,
+            scheme,
+            host,
+            port,
+            username,
+            password_secret,
+            trust_proxy_dns,
+            version,
+        })
+    }
+
+    #[must_use]
+    pub const fn proxy_id(&self) -> ProxyId {
+        self.proxy_id
+    }
+    #[must_use]
+    pub const fn scheme(&self) -> CredentialProxyScheme {
+        self.scheme
+    }
+    #[must_use]
+    pub fn host(&self) -> &str {
+        &self.host
+    }
+    #[must_use]
+    pub const fn port(&self) -> u16 {
+        self.port
+    }
+    #[must_use]
+    pub fn username(&self) -> Option<&str> {
+        self.username.as_deref()
+    }
+    #[must_use]
+    pub fn password_secret(&self) -> Option<&EncryptedCredentialEnvelope> {
+        self.password_secret.as_ref()
+    }
+    #[must_use]
+    pub const fn trust_proxy_dns(&self) -> bool {
+        self.trust_proxy_dns
+    }
+    #[must_use]
+    pub const fn version(&self) -> i64 {
+        self.version
+    }
+}
+
+impl fmt::Debug for SchedulerRuntimeProxyRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SchedulerRuntimeProxyRecord")
+            .field("proxy_id", &self.proxy_id)
+            .field("scheme", &self.scheme)
+            .field("host", &"<已脱敏>")
+            .field("port", &self.port)
+            .field("username", &self.username.as_ref().map(|_| "<已脱敏>"))
+            .field("password_configured", &self.password_secret.is_some())
+            .field("trust_proxy_dns", &self.trust_proxy_dns)
+            .field("version", &self.version)
+            .finish()
+    }
+}
+
 /// 已校验且仍保持密文形态的运行时凭据。
 #[derive(Clone, Eq, PartialEq)]
 pub struct SchedulerRuntimeCredentialRecord {
@@ -77,6 +179,7 @@ pub struct SchedulerRuntimeCredentialRecord {
     envelope: EncryptedCredentialEnvelope,
     credential_revision: u64,
     proxy_required: bool,
+    proxy: Option<SchedulerRuntimeProxyRecord>,
     priority: i32,
     weight: u32,
     concurrency: Option<ConcurrencyLimit>,
@@ -146,6 +249,7 @@ impl SchedulerRuntimeCredentialRecord {
             envelope,
             credential_revision,
             proxy_required,
+            proxy: None,
             priority,
             weight,
             concurrency,
@@ -182,6 +286,24 @@ impl SchedulerRuntimeCredentialRecord {
         self.proxy_required
     }
 
+    /// 绑定已解析的专属代理快照；只有完整快照才能进入生产转发。
+    pub fn with_proxy(
+        mut self,
+        proxy: SchedulerRuntimeProxyRecord,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if !self.proxy_required {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        self.proxy = Some(proxy);
+        Ok(self)
+    }
+
+    /// 返回专属代理快照；`proxy_required=true` 但为空表示旧投影或损坏状态，必须失败关闭。
+    #[must_use]
+    pub const fn proxy(&self) -> Option<&SchedulerRuntimeProxyRecord> {
+        self.proxy.as_ref()
+    }
+
     /// 返回凭据池内部调度优先级。
     #[must_use]
     pub const fn priority(&self) -> i32 {
@@ -210,6 +332,7 @@ impl fmt::Debug for SchedulerRuntimeCredentialRecord {
             .field("envelope", &self.envelope)
             .field("credential_revision", &"<已脱敏>")
             .field("proxy_required", &self.proxy_required)
+            .field("proxy", &self.proxy)
             .field("priority", &self.priority)
             .field("weight", &self.weight)
             .field("concurrency", &self.concurrency)
@@ -527,4 +650,16 @@ fn derive_credential_revision(envelope: &EncryptedCredentialEnvelope) -> u64 {
             .try_into()
             .expect("SHA-256 截断长度固定为 8 字节"),
     )
+}
+
+fn valid_proxy_host(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= crate::MAX_CREDENTIAL_PROXY_HOST_BYTES
+        && value.trim() == value
+        && value.is_ascii()
+        && !value
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
+        && !value.contains("://")
+        && !value.contains(['/', '\\', '@'])
 }

@@ -75,6 +75,11 @@ principal_id! {
 }
 
 principal_id! {
+    /// 凭据绑定的专属出口代理标识。
+    ProxyId
+}
+
+principal_id! {
     /// 独立模型商品元数据记录标识。
     ModelId
 }

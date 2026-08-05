@@ -13,6 +13,7 @@ import { ApiKeyPage } from '@/features/api-keys/api-key-page'
 import { BillingSettingsPage } from '@/features/billing-settings/billing-settings-page'
 import { ChannelPage } from '@/features/channels/channel-page'
 import { CredentialPage } from '@/features/credentials/credential-page'
+import { CredentialProxyPage } from '@/features/credential-proxies/credential-proxy-page'
 import { DashboardPage } from '@/features/dashboard/dashboard-page'
 import { EmailSettingsPage } from '@/features/email-settings/email-settings-page'
 import { GroupPage } from '@/features/groups/group-page'
@@ -116,6 +117,8 @@ function ManagementEntry({
     ? 'channels.title'
     : view === 'credentials'
       ? 'credentials.title'
+    : view === 'credential-proxies'
+      ? 'credentialProxies.title'
     : view === 'site-settings'
       ? 'siteSettings.title'
       : view === 'authentication-settings'
@@ -157,6 +160,8 @@ function ManagementEntry({
     ? <ChannelPage />
     : view === 'credentials'
       ? <CredentialPage initialChannelId={credentialChannelId} />
+    : view === 'credential-proxies'
+      ? <CredentialProxyPage />
     : view === 'site-settings'
       ? <SiteSettingsPage />
       : view === 'authentication-settings'

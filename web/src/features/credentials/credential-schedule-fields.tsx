@@ -1,13 +1,13 @@
 import { Controller, type UseFormReturn } from 'react-hook-form'
-import { Network } from 'lucide-react'
+import { LoaderCircle, Network } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import type { AdminCredential } from '@/lib/api/generated/types.gen'
+import { useAdminCredentialProxies } from '@/features/credential-proxies/credential-proxy-api'
 import { CredentialField } from './credential-form-field'
 import type { CredentialFormValues } from './credential-form-model'
 import { credentialParentCandidates } from './credential-model'
@@ -26,6 +26,8 @@ export function CredentialScheduleFields({ form, credentials, credential, disabl
     ? undefined
     : credentials.find((item) => item.id === credential.parent_id)
   const errors = form.formState.errors
+  const proxiesQuery = useAdminCredentialProxies()
+  const proxies = (proxiesQuery.data ?? []).filter((proxy) => proxy.enabled || proxy.id === credential?.proxy_id)
 
   return (
     <div className="grid gap-3">
@@ -88,12 +90,18 @@ export function CredentialScheduleFields({ form, credentials, credential, disabl
         </CredentialField>
       </div>
 
-      {credential?.proxy_id ? (
-        <div className="flex items-center justify-between gap-3 rounded-lg bg-surface-2/55 px-3 py-2.5">
-          <div className="flex items-center gap-2 text-xs"><Network className="size-4 text-muted-foreground" aria-hidden="true" />{t('credentials.schedule.proxyBound')}</div>
-          <Badge>#{credential.proxy_id}</Badge>
+      <CredentialField id="credential-proxy" label={t('credentials.schedule.proxy')} hint={t('credentials.schedule.proxyHint')} error={errors.proxyId?.message}>
+        <div className="relative">
+          <Network className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Select id="credential-proxy" className="pl-8" disabled={disabled || proxiesQuery.isPending || proxiesQuery.isError} aria-invalid={Boolean(errors.proxyId)} {...form.register('proxyId')}>
+            <option value="">{t('credentials.schedule.noProxy')}</option>
+            {credential?.proxy_id && !proxies.some((proxy) => proxy.id === credential.proxy_id) ? <option value={credential.proxy_id}>#{credential.proxy_id}</option> : null}
+            {proxies.map((proxy) => <option key={proxy.id} value={proxy.id}>{proxy.name} · {proxy.scheme.toUpperCase()} · {proxy.host}:{proxy.port}</option>)}
+          </Select>
+          {proxiesQuery.isPending ? <LoaderCircle className="pointer-events-none absolute right-8 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" aria-hidden="true" /> : null}
         </div>
-      ) : null}
+        {proxiesQuery.isError ? <p className="mt-1 text-[0.6875rem] text-destructive">{t('credentials.schedule.proxyLoadFailed')}</p> : null}
+      </CredentialField>
     </div>
   )
 }

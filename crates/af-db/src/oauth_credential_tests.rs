@@ -799,7 +799,7 @@ async fn create_credential(
                 true,
                 None,
                 "global",
-                Some(99),
+                None,
                 oauth_provider.map(str::to_owned),
                 (kind == CredentialKind::Oauth).then(|| "account-key".to_owned()),
                 (kind == CredentialKind::Oauth).then(|| "project-id".to_owned()),

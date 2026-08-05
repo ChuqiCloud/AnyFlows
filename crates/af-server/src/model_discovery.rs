@@ -66,7 +66,7 @@ impl DatabaseUpstreamModelDiscoverer {
             ModelDiscoveryTargetLookup::Found(target) => target,
         };
         if target.proxy_required() {
-            // 专属代理运行时尚未落地，禁止为同步请求回退直连。
+            // 模型同步链尚未装配专属代理快照，禁止为同步请求回退直连。
             return Err(UpstreamModelDiscoveryError::ChannelUnavailable);
         }
         if !supported_target(&target) {

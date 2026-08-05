@@ -15,7 +15,7 @@ use super::{
 };
 use crate::SchedulerCatalogSubject;
 
-use self::support::{ability, attach, group, runtime_channel, runtime_credential};
+use self::support::{ability, attach, group, runtime_channel, runtime_credential, runtime_proxy};
 
 #[tokio::test]
 async fn repository_selects_supported_target_and_filters_incomplete_channels()
@@ -81,6 +81,7 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     )
     .insert(pool.connection())
     .await?;
+    runtime_proxy(91).insert(pool.connection()).await?;
     let selected = runtime_credential(
         supported.id,
         CredentialKind::Oauth,
@@ -266,6 +267,14 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         "selected-key-id-canary"
     );
     assert!(record.target().proxy_required());
+    assert_eq!(
+        record.target().credentials()[0]
+            .proxy()
+            .unwrap()
+            .proxy_id()
+            .get(),
+        91
+    );
     assert_eq!(record.target().credentials()[0].priority(), 30);
     assert_eq!(record.target().credentials()[1].priority(), 20);
     assert_eq!(

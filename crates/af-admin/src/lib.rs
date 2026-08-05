@@ -8,6 +8,7 @@ mod balance_alert_task;
 mod balance_alert_tests;
 mod channel_read;
 mod channel_write;
+mod credential_proxy;
 mod credential_read;
 mod email_settings;
 #[cfg(test)]
@@ -49,7 +50,7 @@ mod user_write;
 mod wallet;
 
 pub use af_account::PlainCredentialSecret as AdminCredentialSecret;
-pub use af_db::NetworkSettingsMode;
+pub use af_db::{CredentialProxyScheme, NetworkSettingsMode};
 pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,
     PresentedApiKey,
@@ -70,6 +71,12 @@ pub use channel_write::{
     AdminChannelWriter, AdminCredentialCreateCommand, AdminCredentialCreateFuture,
     AdminCredentialDeleteFuture, AdminCredentialUpdateCommand, AdminCredentialUpdateFuture,
     AdminRoutingWriteStatus, DatabaseAdminChannelWriter,
+};
+pub use credential_proxy::{
+    AdminCredentialProxy, AdminCredentialProxyCreateCommand, AdminCredentialProxyDeleteFuture,
+    AdminCredentialProxyError, AdminCredentialProxyFuture, AdminCredentialProxyListQuery,
+    AdminCredentialProxyPage, AdminCredentialProxyPageFuture, AdminCredentialProxyService,
+    AdminCredentialProxyUpdateCommand, DatabaseAdminCredentialProxyService,
 };
 pub use credential_read::{
     AdminCredential, AdminCredentialListQuery, AdminCredentialMultiKeyMode, AdminCredentialPage,

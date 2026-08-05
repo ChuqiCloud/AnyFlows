@@ -1,19 +1,20 @@
 use af_domain::{
     ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind,
-    Protocol, Status,
+    Protocol, ProxyId, Status,
 };
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 
 use crate::{
+    CredentialProxyScheme,
     channel_settings::{
         auto_ban_rules, pool_mode, responses_websocket_enabled,
         validate_responses_websocket_capability,
     },
     credential_probe::EncryptedCredentialEnvelope,
-    entity::{channels, credentials},
+    entity::{channels, credentials, proxies},
 };
 
-use super::{ChannelModelMappings, ChannelParameterOverrides};
+use super::{ChannelModelMappings, ChannelParameterOverrides, SchedulerRuntimeProxyRecord};
 
 /// 将持久化实体转换为运行时选择策略可理解的内部来源对象时发生的不变量错误。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -166,7 +167,7 @@ pub(super) struct SchedulerRuntimeCredentialSource {
     channel_id: ChannelId,
     credential_kind: CredentialKind,
     envelope: EncryptedCredentialEnvelope,
-    proxy_required: bool,
+    proxy: Option<SchedulerRuntimeProxyRecord>,
     priority: i32,
     weight: u32,
     concurrency: Option<ConcurrencyLimit>,
@@ -179,6 +180,7 @@ impl SchedulerRuntimeCredentialSource {
     /// 从 SeaORM 凭据实体提取运行时所需字段；禁用、删除或不可调度凭据直接 fail-closed 跳过。
     pub(super) fn from_entity(
         credential: credentials::Model,
+        proxy: Option<SchedulerRuntimeProxyRecord>,
     ) -> Result<Option<Self>, SchedulerRuntimeSourceError> {
         if credential.id <= 0 {
             return Err(SchedulerRuntimeSourceError::Invariant);
@@ -213,12 +215,17 @@ impl SchedulerRuntimeCredentialSource {
             ),
             Some(_) => return Err(SchedulerRuntimeSourceError::Invariant),
         };
+        if credential.proxy_id.is_some() != proxy.is_some()
+            || credential.proxy_id != proxy.as_ref().map(|proxy| proxy.proxy_id().get())
+        {
+            return Err(SchedulerRuntimeSourceError::Invariant);
+        }
         Ok(Some(Self {
             credential_id: credential.id,
             channel_id,
             credential_kind,
             envelope,
-            proxy_required: credential.proxy_id.is_some(),
+            proxy,
             priority: credential.priority,
             weight,
             concurrency,
@@ -252,7 +259,7 @@ impl SchedulerRuntimeCredentialSource {
         i64,
         CredentialKind,
         EncryptedCredentialEnvelope,
-        bool,
+        Option<SchedulerRuntimeProxyRecord>,
         i32,
         u32,
         Option<ConcurrencyLimit>,
@@ -261,10 +268,43 @@ impl SchedulerRuntimeCredentialSource {
             self.credential_id,
             self.credential_kind,
             self.envelope,
-            self.proxy_required,
+            self.proxy,
             self.priority,
             self.weight,
             self.concurrency,
         )
     }
+}
+
+/// 把启用且未删除的代理实体转换为密文运行时快照。
+pub(super) fn proxy_from_entity(
+    proxy: proxies::Model,
+) -> Result<SchedulerRuntimeProxyRecord, SchedulerRuntimeSourceError> {
+    if !proxy.enabled || proxy.deleted_at.is_some() {
+        return Err(SchedulerRuntimeSourceError::Invariant);
+    }
+    let proxy_id = ProxyId::new(proxy.id).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+    let scheme = CredentialProxyScheme::parse(&proxy.scheme)
+        .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+    let password_secret = proxy
+        .password_secret
+        .map(|secret| {
+            let (key_id, nonce, ciphertext) = secret
+                .envelope_parts()
+                .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+            EncryptedCredentialEnvelope::new(key_id, nonce, ciphertext)
+                .map_err(|_| SchedulerRuntimeSourceError::Invariant)
+        })
+        .transpose()?;
+    SchedulerRuntimeProxyRecord::new(
+        proxy_id,
+        scheme,
+        proxy.host.as_str().to_owned(),
+        u16::try_from(proxy.port).map_err(|_| SchedulerRuntimeSourceError::Invariant)?,
+        proxy.username.map(|value| value.as_str().to_owned()),
+        password_secret,
+        proxy.trust_proxy_dns,
+        proxy.version,
+    )
+    .map_err(|_| SchedulerRuntimeSourceError::Invariant)
 }

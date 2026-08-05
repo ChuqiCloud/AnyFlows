@@ -26,7 +26,7 @@ use crate::{
         StableSessionScope, StickySessionStore, stable_session_scope, sticky_cache_error_kind,
     },
 };
-use af_account::CredentialDecryptor;
+use af_account::{CredentialDecryptor, SystemSecretCipher, SystemSecretKind};
 use af_adapter::{
     AdaptorSettings, AnthropicAdaptorSettings, GeminiAdaptorSettings, HeaderMap, HeaderName,
     HeaderValue, OpenAiAdaptorSettings, RelayContext, ResponsesWebSocketPoolKey,
@@ -37,7 +37,7 @@ use af_domain::{
     AfError, ChannelType, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, Operation,
     Protocol,
 };
-use af_httpclient::HttpClientProvider;
+use af_httpclient::{HttpClientProvider, ProxyConfig, RemoteDnsPolicy};
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::{
     AnthropicRequestOverrides, ChatResponse, GeminiRequestOverrides, OpenAiChatRequestOverrides,
@@ -74,6 +74,7 @@ pub(crate) struct ScheduledChatService {
     scheduler: IndexedWeightedScheduler,
     decryptor: CredentialDecryptor,
     clients: HttpClientProvider,
+    proxy_cipher: Option<SystemSecretCipher>,
     credential_states: CredentialStateRepository,
     responses_websocket: std::sync::Arc<ResponsesWebSocketRuntime>,
     sticky_sessions: Option<Arc<dyn StickySessionStore>>,
@@ -96,6 +97,7 @@ impl ScheduledChatService {
             scheduler,
             decryptor,
             clients,
+            proxy_cipher: None,
             credential_states,
             responses_websocket: std::sync::Arc::new(ResponsesWebSocketRuntime::default()),
             sticky_sessions: None,
@@ -104,6 +106,12 @@ impl ScheduledChatService {
             health: None,
             channel_states: None,
         }
+    }
+
+    /// 注入专属代理密码解密器；未注入时任何代理绑定都失败关闭。
+    pub(crate) fn with_proxy_cipher(mut self, cipher: SystemSecretCipher) -> Self {
+        self.proxy_cipher = Some(cipher);
+        self
     }
 
     /// 注入可选 Redis 粘性存储；未配置时继续使用非粘性路由。
@@ -171,14 +179,6 @@ impl ScheduledChatService {
             if !target_matches_protocol(target, upstream_protocol) {
                 continue;
             }
-            if target
-                .credentials()
-                .iter()
-                .any(af_db::SchedulerRuntimeCredentialRecord::proxy_required)
-            {
-                // 专属代理仓储尚未落地，绑定代理的凭据绝不能回退共享 Client 或直连。
-                return Err(AfError::Internal);
-            }
             let upstream_model = target.mapped_model(&model).unwrap_or(&model).to_owned();
             let candidate_request = candidate_request(target, &request, &model, &upstream_model)?;
             let adaptor = get_adaptor(
@@ -190,29 +190,6 @@ impl ScheduledChatService {
                 return Err(AfError::Internal);
             }
 
-            let client = self
-                .clients
-                .get(target.timeout().map(af_domain::ChannelTimeout::duration))
-                .map_err(|_| AfError::Internal)?;
-            let responses_websocket_pool =
-                if target.responses_websocket_enabled() && responses_websocket_session.is_some() {
-                    Some(
-                        self.responses_websocket
-                            .pool_for(&client)
-                            .map_err(|_| AfError::Internal)?,
-                    )
-                } else {
-                    None
-                };
-            let mut context = RelayContext::new(client);
-            if let Some(base_url) = target.base_url() {
-                context = context
-                    .with_base_url(base_url)
-                    .map_err(|_| AfError::Internal)?;
-            }
-            context = context
-                .with_request_id(request_id.to_owned())
-                .map_err(|_| AfError::Internal)?;
             let headers = header_overrides(target)?;
             let order_scope = session_scope
                 .as_ref()
@@ -247,6 +224,27 @@ impl ScheduledChatService {
                     break 'channels;
                 }
                 let credential_id = CredentialId::new(runtime_credential.credential_id())
+                    .map_err(|_| AfError::Internal)?;
+                let client = self.client_for_credential(target, runtime_credential)?;
+                let responses_websocket_pool = if target.responses_websocket_enabled()
+                    && responses_websocket_session.is_some()
+                {
+                    Some(
+                        self.responses_websocket
+                            .pool_for(&client)
+                            .map_err(|_| AfError::Internal)?,
+                    )
+                } else {
+                    None
+                };
+                let mut context = RelayContext::new(client);
+                if let Some(base_url) = target.base_url() {
+                    context = context
+                        .with_base_url(base_url)
+                        .map_err(|_| AfError::Internal)?;
+                }
+                context = context
+                    .with_request_id(request_id.to_owned())
                     .map_err(|_| AfError::Internal)?;
                 let decrypted = self
                     .decryptor
@@ -329,6 +327,51 @@ impl ScheduledChatService {
             health: self.health.clone(),
             channel_states: self.channel_states.clone(),
         })
+    }
+
+    /// 为单条凭据选择全局出口或强制专属代理，任何专属代理异常都不允许回退。
+    fn client_for_credential(
+        &self,
+        target: &af_db::SchedulerRuntimeTargetRecord,
+        credential: &af_db::SchedulerRuntimeCredentialRecord,
+    ) -> Result<af_httpclient::PooledClient, AfError> {
+        let timeout = target.timeout().map(af_domain::ChannelTimeout::duration);
+        if !credential.proxy_required() {
+            return self.clients.get(timeout).map_err(|_| AfError::Internal);
+        }
+        let proxy = credential.proxy().ok_or(AfError::Internal)?;
+        let cipher = self.proxy_cipher.as_ref().ok_or(AfError::Internal)?;
+        let password = proxy
+            .password_secret()
+            .map(|secret| {
+                cipher.decrypt(
+                    SystemSecretKind::CredentialProxyPassword(proxy.proxy_id()),
+                    secret,
+                )
+            })
+            .transpose()
+            .map_err(|_| AfError::Internal)?;
+        let proxy_config = ProxyConfig::from_parts(
+            proxy.scheme().as_str(),
+            proxy.host(),
+            proxy.port(),
+            proxy.username(),
+            password
+                .as_ref()
+                .map(af_account::DecryptedSystemSecret::expose_secret),
+        )
+        .map_err(|_| AfError::Internal)?;
+        self.clients
+            .get_with_proxy(
+                proxy_config,
+                if proxy.trust_proxy_dns() {
+                    RemoteDnsPolicy::TrustProxy
+                } else {
+                    RemoteDnsPolicy::Deny
+                },
+                timeout,
+            )
+            .map_err(|_| AfError::Internal)
     }
 
     /// 读取粘性绑定并只在当前协议候选中应用；Redis 故障降级为普通路由。

@@ -2,6 +2,7 @@
 
 mod balance_alert_settings;
 mod channels;
+mod credential_proxies;
 mod credentials;
 mod dashboard;
 mod email_settings;
@@ -69,6 +70,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(usage_logs::document());
     document.merge(channels::document());
     document.merge(credentials::document());
+    document.merge(credential_proxies::document());
 
     document.tags = Some(vec![
         Tag::new("公开注册"),
@@ -99,6 +101,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("用量日志"),
         Tag::new("渠道管理"),
         Tag::new("凭据管理"),
+        Tag::new("专属代理"),
     ]);
     document
         .components
@@ -125,7 +128,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 60);
+        assert_eq!(document.paths.paths.len(), 62);
         let operation_count = document
             .paths
             .paths
@@ -146,7 +149,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 94);
+        assert_eq!(operation_count, 99);
         assert!(
             document
                 .components
@@ -169,6 +172,7 @@ mod tests {
         let expected = [
             "createAdminChannel",
             "createAdminCredential",
+            "createAdminCredentialProxy",
             "createAdminGroup",
             "createAdminRoute",
             "createAdminModel",
@@ -190,6 +194,7 @@ mod tests {
             "deletePlaygroundConversation",
             "deleteAdminChannel",
             "deleteAdminCredential",
+            "deleteAdminCredentialProxy",
             "deleteAdminGroup",
             "deleteAdminRoute",
             "deleteAdminModel",
@@ -200,6 +205,7 @@ mod tests {
             "getAdminChannel",
             "getAdminBalanceAlertSettings",
             "getAdminCredential",
+            "getAdminCredentialProxy",
             "getAdminDashboard",
             "getAdminEmailSettings",
             "getAdminNetworkSettings",
@@ -222,6 +228,7 @@ mod tests {
             "applyAdminModelPrices",
             "listAdminChannels",
             "listAdminCredentials",
+            "listAdminCredentialProxies",
             "listAdminGroups",
             "listAdminRoutes",
             "listAdminModels",
@@ -249,6 +256,7 @@ mod tests {
             "updateAdminChannel",
             "updateAdminBalanceAlertSettings",
             "updateAdminCredential",
+            "updateAdminCredentialProxy",
             "updateAdminGroup",
             "updateAdminRoute",
             "updateAdminModel",
@@ -268,12 +276,16 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 160);
+        assert_eq!(schemas.len(), 164);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminChannelAutoBanRules"));
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
         assert!(schemas.contains_key("AdminCredentialSecret"));
+        assert!(schemas.contains_key("AdminCredentialProxy"));
+        assert!(schemas.contains_key("AdminCredentialProxyListResponse"));
+        assert!(schemas.contains_key("AdminCredentialProxyWriteRequest"));
+        assert!(schemas.contains_key("AdminCredentialProxyScheme"));
         assert!(schemas.contains_key("AdminOAuthProvider"));
         assert!(schemas.contains_key("AdminOAuthProviderListResponse"));
         assert!(schemas.contains_key("AdminOAuthProviderStatus"));
@@ -485,6 +497,15 @@ mod tests {
         assert_eq!(
             schemas["AdminEmailSettingsRequest"]["properties"]["password"]["writeOnly"],
             true
+        );
+        assert_eq!(
+            schemas["AdminCredentialProxyWriteRequest"]["properties"]["password"]["writeOnly"],
+            true
+        );
+        assert!(
+            schemas["AdminCredentialProxy"]["properties"]
+                .as_object()
+                .is_some_and(|properties| !properties.contains_key("password"))
         );
         assert!(
             schemas["AdminEmailSettings"]["properties"]
