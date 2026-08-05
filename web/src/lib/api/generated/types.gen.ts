@@ -558,6 +558,57 @@ export type AdminRedemptionBatchListResponse = {
     next_cursor: number | null;
 };
 export type AdminRedemptionBatchStatus = 'active' | 'disabled';
+export type AdminRoute = {
+    id: number;
+    name: string;
+    model_pattern: string;
+    mode: AdminRouteMode;
+    strategy: AdminRouteStrategy;
+    model_mapping: {
+        [key: string]: unknown;
+    };
+    enabled: boolean;
+    channels: Array<AdminRouteChannelResponse>;
+};
+export type AdminRouteChannelResponse = {
+    id: number;
+    channel_id: number;
+    credential_id: number;
+    priority: number;
+    weight: number;
+    enabled: boolean;
+    success_count: number;
+    fail_count: number;
+    total_latency_ms: number;
+    cooldown_level: number;
+    cooldown_until?: number | null;
+    last_selected_at?: number | null;
+    last_failure_at?: number | null;
+};
+export type AdminRouteChannelWriteRequest = {
+    channel_id: number;
+    credential_id: number;
+    priority: number;
+    weight: number;
+    enabled: boolean;
+};
+export type AdminRouteListResponse = {
+    routes: Array<AdminRoute>;
+    next_cursor: number | null;
+};
+export type AdminRouteMode = 'pattern' | 'explicit_group';
+export type AdminRouteStrategy = 'weighted' | 'round_robin' | 'stable_first';
+export type AdminRouteWriteRequest = {
+    name: string;
+    model_pattern: string;
+    mode: AdminRouteMode;
+    strategy: AdminRouteStrategy;
+    model_mapping: {
+        [key: string]: unknown;
+    };
+    enabled: boolean;
+    channels: Array<AdminRouteChannelWriteRequest>;
+};
 export type AdminRoutingStatus = 'enabled' | 'disabled' | 'auto_disabled';
 export type AdminRoutingWriteStatus = 'enabled' | 'disabled';
 export type AdminSiteSettings = {
@@ -731,7 +782,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -1985,6 +2036,105 @@ export type UpdateAdminGroupResponses = {
     200: AdminGroup;
 };
 export type UpdateAdminGroupResponse = UpdateAdminGroupResponses[keyof UpdateAdminGroupResponses];
+export type ListAdminRoutesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/admin/routes';
+};
+export type ListAdminRoutesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminRoutesError = ListAdminRoutesErrors[keyof ListAdminRoutesErrors];
+export type ListAdminRoutesResponses = {
+    200: AdminRouteListResponse;
+};
+export type ListAdminRoutesResponse = ListAdminRoutesResponses[keyof ListAdminRoutesResponses];
+export type CreateAdminRouteData = {
+    body: AdminRouteWriteRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/routes';
+};
+export type CreateAdminRouteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateAdminRouteError = CreateAdminRouteErrors[keyof CreateAdminRouteErrors];
+export type CreateAdminRouteResponses = {
+    201: AdminRoute;
+};
+export type CreateAdminRouteResponse = CreateAdminRouteResponses[keyof CreateAdminRouteResponses];
+export type DeleteAdminRouteData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/routes/{id}';
+};
+export type DeleteAdminRouteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type DeleteAdminRouteError = DeleteAdminRouteErrors[keyof DeleteAdminRouteErrors];
+export type DeleteAdminRouteResponses = {
+    204: void;
+};
+export type DeleteAdminRouteResponse = DeleteAdminRouteResponses[keyof DeleteAdminRouteResponses];
+export type GetAdminRouteData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/routes/{id}';
+};
+export type GetAdminRouteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminRouteError = GetAdminRouteErrors[keyof GetAdminRouteErrors];
+export type GetAdminRouteResponses = {
+    200: AdminRoute;
+};
+export type GetAdminRouteResponse = GetAdminRouteResponses[keyof GetAdminRouteResponses];
+export type UpdateAdminRouteData = {
+    body: AdminRouteWriteRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/routes/{id}';
+};
+export type UpdateAdminRouteErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminRouteError = UpdateAdminRouteErrors[keyof UpdateAdminRouteErrors];
+export type UpdateAdminRouteResponses = {
+    200: AdminRoute;
+};
+export type UpdateAdminRouteResponse = UpdateAdminRouteResponses[keyof UpdateAdminRouteResponses];
 export type ListModelsData = {
     body?: never;
     path?: never;
