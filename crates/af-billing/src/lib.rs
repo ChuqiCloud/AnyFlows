@@ -3,6 +3,7 @@
 mod batch;
 mod billing_session;
 mod database_sink;
+mod expression_pricing;
 mod group_pricing_cache;
 mod lifecycle;
 mod model_price_cache;
@@ -27,6 +28,10 @@ pub use billing_session::{
     RefundSignalPort, SettlementRequest,
 };
 pub use database_sink::DatabaseBillingBatchSink;
+pub use expression_pricing::{
+    BillingExpression, BillingExpressionError, BillingExpressionResult, ExpressionVariable,
+    ExpressionVariableUsage, ExpressionVersion, MAX_BILLING_EXPRESSION_BYTES,
+};
 pub use group_pricing_cache::{
     GroupModelRatioSourceRecord, GroupPeakPricing, GroupPricingCache, GroupPricingCacheError,
     GroupPricingLookupError, GroupPricingSnapshot, GroupPricingSource, GroupPricingSourceCatalog,
@@ -80,6 +85,8 @@ mod batch_tests;
 mod billing_invariants_tests;
 #[cfg(test)]
 mod billing_session_tests;
+#[cfg(test)]
+mod expression_pricing_tests;
 #[cfg(test)]
 mod group_pricing_cache_tests;
 #[cfg(test)]

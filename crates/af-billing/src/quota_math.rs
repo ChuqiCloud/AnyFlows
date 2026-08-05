@@ -171,6 +171,29 @@ pub(crate) struct TokenPricingResult {
     pub(crate) total_usd: Decimal,
 }
 
+/// 表达式定价完成倍率换算后的内部结果。
+pub(crate) struct ExpressionPricingResult {
+    pub(crate) quota: Quota,
+    pub(crate) total_usd: Decimal,
+}
+
+/// 把表达式返回的 token 加权美元单价换算为最终额度。
+///
+/// 表达式系数单位为美元/百万 token，因此先应用请求倍率，再统一除以一百万；最终额度
+/// 仍只在 [`quota_from_usd_for`] 中舍入一次。
+pub(crate) fn quota_from_expression_cost(
+    weighted_cost: Decimal,
+    ratio_micros: [i64; 3],
+) -> Result<ExpressionPricingResult, QuotaMathError> {
+    if weighted_cost < Decimal::ZERO || ratio_micros.into_iter().any(|ratio| ratio < 0) {
+        return Err(QuotaError::Negative.into());
+    }
+
+    let total_usd = apply_pricing_ratios(weighted_cost, ratio_micros)?;
+    let quota = quota_from_usd_for(total_usd, QuotaMathOperation::PricingResolution)?;
+    Ok(ExpressionPricingResult { quota, total_usd })
+}
+
 /// 按真实美元单价和百万分比倍率计算五类 token 的最终额度。
 ///
 /// 分项 Decimal 成本全部完成 checked 运算后才汇总，并且只在最终总金额处执行一次
