@@ -186,6 +186,7 @@ pub enum CredentialProxyLookupOutcome {
 }
 
 /// 单条代理更新结果。
+#[derive(Debug)]
 pub enum CredentialProxyMutationOutcome {
     Mutated(CredentialProxyRecord),
     NotFound,
