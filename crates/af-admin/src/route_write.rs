@@ -277,7 +277,7 @@ impl AdminRouteWriter for DatabaseAdminRouteWriter {
             self.repository
                 .create(command.into_record())
                 .await
-                .map(map_error)
+                .map_err(map_error)
                 .map(crate::route_read::AdminRoute::from_record)
         })
     }

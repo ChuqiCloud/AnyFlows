@@ -1,7 +1,7 @@
 use std::{fmt, future::Future, pin::Pin};
 
 use af_db::{
-    AdminRouteLookupOutcome, AdminRoutePageRecord, AdminRouteRecord, AdminRouteRepository,
+    AdminRouteChannelRecord, AdminRouteLookupOutcome, AdminRouteRecord, AdminRouteRepository,
     AdminRouteRepositoryError, MAX_ADMIN_ROUTE_PAGE_SIZE,
 };
 use af_domain::{ChannelId, CredentialId, RouteChannelId, RouteId, RouteMode, RouteStrategy};
