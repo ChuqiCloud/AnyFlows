@@ -133,6 +133,7 @@
       "weight": "Weight {{value}}",
       "timeout": "Timeout {{value}}s",
       "inheritTimeout": "Service default",
+      "poolMode": "External pool",
       "responsesWebsocket": "WebSocket"
     },
     "probe": {
@@ -181,8 +182,10 @@
       "routing": "Routing scope",
       "overrides": "Request transformation",
       "autoBanHint": "Allow the runtime to disable this channel after a deterministic failure.",
+      "autoBanPoolModeHint": "This setting is preserved in external pool mode, but the channel is not automatically disabled.",
       "autoBanRulesHint": "Matches exact 5xx statuses and structured upstream type, code, or status fields. Empty rules never disable a channel.",
       "autoBanKeywordPlaceholder": "Enter a structured error keyword",
+      "poolModeHint": "Delegates channel-level failures to the upstream account pool while still isolating unusable local credentials.",
       "responsesWebsocketHint": "Reuses a connection only when the request has a stable session identifier. Failures before the first event fall back to HTTP once.",
       "tagHint": "Optional label for filtering and recognition.",
       "timeoutHint": "Controls read stalls and the full request deadline for forwarding and probes. Connection timeout remains global; blank uses each service default.",
@@ -211,6 +214,7 @@
       "autoBanRules": "Automatic-disable rules",
       "autoBanStatusCodes": "HTTP status codes",
       "autoBanKeywords": "Structured error keywords",
+      "poolMode": "External account pool mode",
       "responsesWebsocket": "Enable Responses WebSocket",
       "tag": "Tag",
       "models": "Models",

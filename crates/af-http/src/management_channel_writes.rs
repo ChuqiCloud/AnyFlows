@@ -55,6 +55,9 @@ pub(crate) struct AdminChannelCreateRequest {
     /// 精确 5xx 状态码与已脱敏关键词规则；省略时使用空规则集。
     #[serde(default)]
     auto_ban_rules: AdminChannelAutoBanRulesDto,
+    /// 外部账号池模式；省略时默认关闭。
+    #[serde(default)]
+    pool_mode: bool,
     /// 仅 `OpenAI + openai_responses` 可开启；省略时默认关闭。
     #[serde(default)]
     responses_websocket_enabled: bool,
@@ -108,6 +111,8 @@ pub(crate) struct AdminChannelUpdateRequest {
     auto_ban: bool,
     /// 省略或 null 表示保留原规则。
     auto_ban_rules: Option<AdminChannelAutoBanRulesDto>,
+    /// 省略或 null 表示保留原值。
+    pool_mode: Option<bool>,
     /// 省略或 null 表示保留原值。
     responses_websocket_enabled: Option<bool>,
     #[schema(schema_with = crate::openapi::schema::channel_write_models_schema)]
@@ -216,6 +221,7 @@ impl AdminChannelCreateRequest {
         .map_err(map_write_error)?
         .with_auto_ban_rules(auto_ban_rules)
         .map_err(map_write_error)?
+        .with_pool_mode(self.pool_mode)
         .with_responses_websocket_enabled(self.responses_websocket_enabled)
         .map_err(map_write_error)
     }
@@ -247,6 +253,10 @@ impl AdminChannelUpdateRequest {
             Some(rules) => command
                 .with_auto_ban_rules(rules.into_domain()?)
                 .map_err(map_write_error)?,
+            None => command,
+        };
+        let command = match self.pool_mode {
+            Some(enabled) => command.with_pool_mode(enabled),
             None => command,
         };
         match self.responses_websocket_enabled {

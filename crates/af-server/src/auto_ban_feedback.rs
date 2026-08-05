@@ -10,6 +10,7 @@ use af_scheduler::{AutoBanEvidence, AutoBanPolicy, FailureAction};
 pub(crate) struct ChannelAutoBanAttemptTarget {
     channel_id: ChannelId,
     policy: AutoBanPolicy,
+    pool_mode: bool,
 }
 
 impl ChannelAutoBanAttemptTarget {
@@ -17,10 +18,15 @@ impl ChannelAutoBanAttemptTarget {
     pub(crate) fn new(
         channel_id: ChannelId,
         rules: &ChannelAutoBanRules,
+        pool_mode: bool,
     ) -> Result<Self, af_domain::AfError> {
         let policy =
             AutoBanPolicy::from_channel_rules(rules).map_err(|_| af_domain::AfError::Internal)?;
-        Ok(Self { channel_id, policy })
+        Ok(Self {
+            channel_id,
+            policy,
+            pool_mode,
+        })
     }
 
     /// 返回候选所属渠道。
@@ -34,6 +40,9 @@ impl ChannelAutoBanAttemptTarget {
         server_status: Option<UpstreamServerStatus>,
         evidence: Option<&str>,
     ) -> bool {
+        if self.pool_mode {
+            return false;
+        }
         let evidence = evidence.and_then(|value| AutoBanEvidence::from_redacted_text(value).ok());
         self.policy
             .should_auto_disable_with_server_status_and_evidence(
@@ -129,7 +138,8 @@ mod tests {
     fn target_matches_exact_status_and_keyword_without_exposing_rule_content() {
         const CANARY: &str = "workspace-disabled-canary";
         let rules = ChannelAutoBanRules::new(vec![503], vec![CANARY.to_owned()]).unwrap();
-        let target = ChannelAutoBanAttemptTarget::new(ChannelId::new(7).unwrap(), &rules).unwrap();
+        let target =
+            ChannelAutoBanAttemptTarget::new(ChannelId::new(7).unwrap(), &rules, false).unwrap();
 
         assert!(target.should_disable(server_error(503), None, None));
         assert!(!target.should_disable(server_error(502), None, None));
@@ -141,6 +151,14 @@ mod tests {
         assert!(target.should_disable(UpstreamError::ProtocolError, None, Some(CANARY)));
         assert!(!target.should_disable(UpstreamError::BadRequest, None, Some(CANARY)));
         assert!(!format!("{target:?}").contains(CANARY));
+    }
+
+    #[test]
+    fn pool_mode_skips_channel_auto_disable() {
+        let rules = ChannelAutoBanRules::new(vec![503], Vec::new()).unwrap();
+        let target =
+            ChannelAutoBanAttemptTarget::new(ChannelId::new(7).unwrap(), &rules, true).unwrap();
+        assert!(!target.should_disable(server_error(503), None, None));
     }
 
     fn server_error(status: u16) -> UpstreamError {

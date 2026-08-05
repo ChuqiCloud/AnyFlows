@@ -47,6 +47,7 @@ export type ChannelFormValues = {
   autoBan: boolean
   autoBanStatusCodes: number[]
   autoBanKeywords: string[]
+  poolMode: boolean
   responsesWebsocketEnabled: boolean
   models: string[]
   groupIds: number[]
@@ -96,6 +97,7 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
     autoBan: z.boolean(),
     autoBanStatusCodes: z.array(z.number()),
     autoBanKeywords: z.array(z.string()),
+    poolMode: z.boolean(),
     responsesWebsocketEnabled: z.boolean(),
     models: z.array(z.string()),
     groupIds: z.array(z.number()),
@@ -165,6 +167,7 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
     autoBan: channel?.auto_ban ?? true,
     autoBanStatusCodes: [...(channel?.auto_ban_rules?.status_codes ?? [])],
     autoBanKeywords: [...(channel?.auto_ban_rules?.keywords ?? [])],
+    poolMode: channel?.pool_mode ?? false,
     responsesWebsocketEnabled: channel?.responses_websocket_enabled ?? false,
     models: [...(channel?.models ?? [])],
     groupIds: [...(channel?.group_ids ?? [])],
@@ -222,6 +225,7 @@ function commonRequest(values: ChannelFormValues) {
       status_codes: values.autoBanStatusCodes,
       keywords: values.autoBanKeywords,
     },
+    pool_mode: values.poolMode,
     responses_websocket_enabled: values.responsesWebsocketEnabled,
     models: values.models,
     group_ids: values.groupIds,

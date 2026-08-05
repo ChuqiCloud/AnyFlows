@@ -68,6 +68,8 @@ pub(crate) struct AdminChannelResponse {
     priority: i32,
     auto_ban: bool,
     auto_ban_rules: AdminChannelAutoBanRulesDto,
+    /// 外部账号池模式开启时不维护渠道级本地故障状态。
+    pool_mode: bool,
     /// 是否显式允许该原生 Responses 渠道使用 WebSocket。
     responses_websocket_enabled: bool,
     #[schema(schema_with = crate::openapi::schema::channel_models_schema)]
@@ -166,6 +168,7 @@ impl AdminChannelResponse {
             priority: channel.priority(),
             auto_ban: channel.auto_ban(),
             auto_ban_rules: AdminChannelAutoBanRulesDto::from(channel.auto_ban_rules()),
+            pool_mode: channel.pool_mode(),
             responses_websocket_enabled: channel.responses_websocket_enabled(),
             models: channel.models().to_vec(),
             group_ids: channel

@@ -29,7 +29,7 @@ use crate::{
     },
     admin_channel::valid_text,
     channel_settings::{
-        auto_ban_rules, responses_websocket_enabled, set_auto_ban_rules,
+        auto_ban_rules, pool_mode, responses_websocket_enabled, set_auto_ban_rules, set_pool_mode,
         set_responses_websocket_enabled, validate_responses_websocket_capability,
     },
     entity::{
@@ -62,6 +62,7 @@ pub struct AdminChannelWriteRecord {
     param_override: serde_json::Value,
     header_override: Option<serde_json::Value>,
     settings: Option<serde_json::Value>,
+    pool_mode: Option<bool>,
     responses_websocket_enabled: Option<bool>,
     tag: Option<String>,
 }
@@ -107,6 +108,7 @@ impl AdminChannelWriteRecord {
             param_override,
             header_override: Some(header_override),
             settings: Some(settings),
+            pool_mode: Some(false),
             responses_websocket_enabled: Some(false),
             auto_ban_rules: Some(ChannelAutoBanRules::default()),
             tag,
@@ -153,6 +155,7 @@ impl AdminChannelWriteRecord {
             param_override,
             header_override,
             settings,
+            pool_mode: None,
             responses_websocket_enabled: None,
             auto_ban_rules: None,
             tag,
@@ -163,6 +166,13 @@ impl AdminChannelWriteRecord {
     #[must_use]
     pub fn with_responses_websocket_enabled(mut self, enabled: bool) -> Self {
         self.responses_websocket_enabled = Some(enabled);
+        self
+    }
+
+    /// 覆盖外部账号池模式；省略时更新接口保留原值。
+    #[must_use]
+    pub fn with_pool_mode(mut self, enabled: bool) -> Self {
+        self.pool_mode = Some(enabled);
         self
     }
 
@@ -481,6 +491,11 @@ impl AdminChannelRepository {
         let mut settings = fields
             .settings
             .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        let pool_mode = fields
+            .pool_mode
+            .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        set_pool_mode(&mut settings, pool_mode)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         let responses_websocket_enabled = fields
             .responses_websocket_enabled
             .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
@@ -545,6 +560,11 @@ impl AdminChannelRepository {
             return Ok(AdminChannelMutationOutcome::NotFound);
         };
         let current_settings = current.settings.into_inner();
+        let effective_pool_mode = match fields.pool_mode {
+            Some(enabled) => enabled,
+            None => pool_mode(&current_settings)
+                .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?,
+        };
         let effective_responses_websocket_enabled = match fields.responses_websocket_enabled {
             Some(enabled) => enabled,
             None => responses_websocket_enabled(&current_settings)
@@ -562,6 +582,8 @@ impl AdminChannelRepository {
                 .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?,
         };
         let mut settings = fields.settings.unwrap_or(current_settings);
+        set_pool_mode(&mut settings, effective_pool_mode)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_responses_websocket_enabled(&mut settings, effective_responses_websocket_enabled)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_auto_ban_rules(&mut settings, &effective_auto_ban_rules)
@@ -937,6 +959,7 @@ struct ValidatedChannelFields {
     param_override: serde_json::Value,
     header_override: Option<HeaderOverrides>,
     settings: Option<serde_json::Value>,
+    pool_mode: Option<bool>,
     responses_websocket_enabled: Option<bool>,
     tag: Option<String>,
 }
@@ -1022,6 +1045,7 @@ fn validate_channel_fields(
         param_override: record.param_override,
         header_override,
         settings: record.settings,
+        pool_mode: record.pool_mode,
         responses_websocket_enabled: record.responses_websocket_enabled,
         tag: record.tag,
     })

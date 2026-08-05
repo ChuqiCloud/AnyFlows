@@ -562,11 +562,21 @@ impl IndexedWeightedScheduler {
         health: &BTreeMap<ChannelId, ChannelRoutingHealth>,
     ) -> Result<Option<IndexedRoutePlan>, IndexedWeightedSchedulerError> {
         let snapshot = self.index.snapshot()?;
-        let retry_order = WeightedRetryPlan::new_with_health(
-            snapshot.candidates(group_id, model)?.to_vec(),
-            health,
-        )?
-        .into_retry_order()?;
+        let candidates = snapshot.candidates(group_id, model)?;
+        // 池模式把上游账号健康交给外部池管理，历史渠道惩罚也不能继续影响选路。
+        let effective_health = health
+            .iter()
+            .filter(|(channel_id, _)| {
+                !snapshot
+                    .runtime_targets
+                    .get(channel_id)
+                    .is_some_and(|target| target.pool_mode())
+            })
+            .map(|(channel_id, state)| (*channel_id, *state))
+            .collect();
+        let retry_order =
+            WeightedRetryPlan::new_with_health(candidates.to_vec(), &effective_health)?
+                .into_retry_order()?;
         let Some(first) = retry_order.first() else {
             return Ok(None);
         };
@@ -1158,6 +1168,45 @@ mod tests {
     }
 
     #[test]
+    fn pool_mode_ignores_channel_cooling_but_keeps_other_channels_filtered() {
+        let snapshot = ChannelIndexSnapshot::from_records(
+            vec![
+                record(7, "gpt-pool", 1, 0, 1),
+                pool_record(7, "gpt-pool", 2, 0, 1),
+            ],
+            11,
+        )
+        .unwrap();
+        let index = InMemoryChannelIndex {
+            inner: Arc::new(InMemoryChannelIndexInner {
+                source: Arc::new(SequenceSource::new(Vec::new())),
+                snapshot: RwLock::new(Arc::new(snapshot)),
+                refresh_gate: tokio::sync::Mutex::new(()),
+            }),
+        };
+        let health = BTreeMap::from([
+            (
+                ChannelId::new(1).unwrap(),
+                ChannelRoutingHealth::new(0, true),
+            ),
+            (
+                ChannelId::new(2).unwrap(),
+                ChannelRoutingHealth::new(0, true),
+            ),
+        ]);
+
+        let route = IndexedWeightedScheduler::new(index)
+            .route_plan_with_health(GroupId::new(7).unwrap(), "gpt-pool", &health)
+            .unwrap()
+            .unwrap();
+        assert_eq!(route.candidates().len(), 1);
+        assert_eq!(
+            route.candidates()[0].channel_id(),
+            ChannelId::new(2).unwrap()
+        );
+    }
+
+    #[test]
     fn sticky_channel_moves_first_and_exposes_short_then_fallback_waits() {
         let snapshot = ChannelIndexSnapshot::from_records(
             vec![
@@ -1227,6 +1276,23 @@ mod tests {
             priority,
             weight,
             Arc::new(runtime_target(channel_id)),
+        )
+        .unwrap()
+    }
+
+    fn pool_record(
+        group_id: i64,
+        model: &str,
+        channel_id: i64,
+        priority: i32,
+        weight: u32,
+    ) -> ChannelIndexSourceRecord {
+        ChannelIndexSourceRecord::with_runtime_target(
+            GroupId::new(group_id).unwrap(),
+            model,
+            priority,
+            weight,
+            Arc::new(runtime_target(channel_id).with_pool_mode(true)),
         )
         .unwrap()
     }

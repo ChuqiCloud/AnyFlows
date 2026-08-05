@@ -83,6 +83,7 @@ pub struct AdminChannel {
     priority: i32,
     auto_ban: bool,
     auto_ban_rules: ChannelAutoBanRules,
+    pool_mode: bool,
     responses_websocket_enabled: bool,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
@@ -132,6 +133,7 @@ impl AdminChannel {
             priority,
             auto_ban,
             auto_ban_rules: ChannelAutoBanRules::default(),
+            pool_mode: false,
             responses_websocket_enabled: false,
             models,
             group_ids,
@@ -200,6 +202,11 @@ impl AdminChannel {
     #[must_use]
     pub const fn auto_ban_rules(&self) -> &ChannelAutoBanRules {
         &self.auto_ban_rules
+    }
+    /// 返回是否启用外部账号池模式。
+    #[must_use]
+    pub const fn pool_mode(&self) -> bool {
+        self.pool_mode
     }
     /// 返回是否显式开启原生 Responses WebSocket。
     #[must_use]
@@ -275,6 +282,7 @@ impl AdminChannel {
             record.updated_at(),
         )
         .with_auto_ban_rules(record.auto_ban_rules().clone())
+        .with_pool_mode(record.pool_mode())
         .with_responses_websocket_enabled(record.responses_websocket_enabled())
     }
 
@@ -285,6 +293,11 @@ impl AdminChannel {
 
     fn with_auto_ban_rules(mut self, rules: ChannelAutoBanRules) -> Self {
         self.auto_ban_rules = rules;
+        self
+    }
+
+    fn with_pool_mode(mut self, enabled: bool) -> Self {
+        self.pool_mode = enabled;
         self
     }
 }

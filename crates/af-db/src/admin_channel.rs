@@ -16,7 +16,7 @@ use crate::{
     ChannelModelMappings, ChannelParameterOverrides, DatabasePool,
     ability_write::{AbilityWriteError, ChannelRoutingSnapshot, load_channel_routing_snapshots},
     channel_settings::{
-        AUTO_BAN_RULES_KEY, parse_auto_ban_rules_value, responses_websocket_enabled,
+        AUTO_BAN_RULES_KEY, parse_auto_ban_rules_value, pool_mode, responses_websocket_enabled,
         validate_responses_websocket_capability,
     },
     entity::{ChannelBaseUrl, channels},
@@ -40,6 +40,7 @@ pub struct AdminChannelRecord {
     priority: i32,
     auto_ban: bool,
     auto_ban_rules: ChannelAutoBanRules,
+    pool_mode: bool,
     responses_websocket_enabled: bool,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
@@ -91,6 +92,11 @@ impl AdminChannelRecord {
             priority: model.priority,
             auto_ban: model.auto_ban,
             auto_ban_rules: auto_ban_rules_value,
+            pool_mode_state: if settings_oversized {
+                -1
+            } else {
+                pool_mode(&settings).map(i64::from).unwrap_or(-1)
+            },
             models: Vec::new(),
             group_ids: Vec::new(),
             model_mapping: Some(model.model_mapping),
@@ -177,6 +183,12 @@ impl AdminChannelRecord {
     #[must_use]
     pub const fn auto_ban_rules(&self) -> &ChannelAutoBanRules {
         &self.auto_ban_rules
+    }
+
+    /// 返回渠道是否把上游账号健康交由外部池管理。
+    #[must_use]
+    pub const fn pool_mode(&self) -> bool {
+        self.pool_mode
     }
 
     /// 返回渠道是否显式开启原生 Responses WebSocket。
@@ -467,6 +479,7 @@ struct AdminChannelRow {
     priority: i32,
     auto_ban: bool,
     auto_ban_rules: Option<JsonValue>,
+    pool_mode_state: i64,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
     model_mapping: Option<JsonValue>,
@@ -495,6 +508,7 @@ impl AdminChannelRow {
             priority: result.try_get("", "priority")?,
             auto_ban: result.try_get("", "auto_ban")?,
             auto_ban_rules: result.try_get("", "auto_ban_rules")?,
+            pool_mode_state: result.try_get("", "pool_mode")?,
             models: Vec::new(),
             group_ids: Vec::new(),
             model_mapping: result.try_get("", "model_mapping")?,
@@ -550,6 +564,11 @@ impl AdminChannelRow {
             .ok_or_else(internal_invariant)?;
         let auto_ban_rules = parse_auto_ban_rules_value(Some(auto_ban_rules_value))
             .map_err(|_| internal_invariant())?;
+        let pool_mode = match self.pool_mode_state {
+            0 => false,
+            1 => true,
+            _ => return Err(internal_invariant()),
+        };
         validate_responses_websocket_capability(
             channel_type,
             protocol,
@@ -582,6 +601,7 @@ impl AdminChannelRow {
             priority: self.priority,
             auto_ban: self.auto_ban,
             auto_ban_rules,
+            pool_mode,
             responses_websocket_enabled,
             models: self.models,
             group_ids: self.group_ids,
@@ -706,6 +726,10 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
             Alias::new("auto_ban_rules"),
         )
         .expr_as(
+            channel_pool_mode_projection(database_backend),
+            Alias::new("pool_mode"),
+        )
+        .expr_as(
             Expr::col((channels::Entity, channels::Column::Balance)),
             Alias::new("balance"),
         )
@@ -752,6 +776,20 @@ fn channel_responses_websocket_projection(database_backend: DbBackend) -> Simple
         ),
         DbBackend::Sqlite => Expr::cust(
             r#"CASE WHEN json_type("channels"."settings") <> 'object' THEN -1 WHEN json_type("channels"."settings", '$.responses_websocket_enabled') IS NULL THEN 0 WHEN json_type("channels"."settings", '$.responses_websocket_enabled') NOT IN ('true', 'false') THEN -1 WHEN json_extract("channels"."settings", '$.responses_websocket_enabled') = 1 THEN 1 ELSE 0 END"#,
+        ),
+    }
+}
+
+fn channel_pool_mode_projection(database_backend: DbBackend) -> SimpleExpr {
+    match database_backend {
+        DbBackend::Postgres => Expr::cust(
+            r#"CASE WHEN jsonb_typeof("channels"."settings") <> 'object' THEN -1 WHEN NOT ("channels"."settings" ? 'pool_mode') THEN 0 WHEN jsonb_typeof("channels"."settings" -> 'pool_mode') <> 'boolean' THEN -1 WHEN ("channels"."settings" ->> 'pool_mode')::boolean THEN 1 ELSE 0 END"#,
+        ),
+        DbBackend::MySql => Expr::cust(
+            "CASE WHEN JSON_TYPE(`channels`.`settings`) <> 'OBJECT' THEN -1 WHEN JSON_CONTAINS_PATH(`channels`.`settings`, 'one', '$.pool_mode') = 0 THEN 0 WHEN JSON_TYPE(JSON_EXTRACT(`channels`.`settings`, '$.pool_mode')) <> 'BOOLEAN' THEN -1 WHEN JSON_UNQUOTE(JSON_EXTRACT(`channels`.`settings`, '$.pool_mode')) = 'true' THEN 1 ELSE 0 END",
+        ),
+        DbBackend::Sqlite => Expr::cust(
+            r#"CASE WHEN json_type("channels"."settings") <> 'object' THEN -1 WHEN json_type("channels"."settings", '$.pool_mode') IS NULL THEN 0 WHEN json_type("channels"."settings", '$.pool_mode') NOT IN ('true', 'false') THEN -1 WHEN json_extract("channels"."settings", '$.pool_mode') = 1 THEN 1 ELSE 0 END"#,
         ),
     }
 }

@@ -7432,6 +7432,7 @@
           "priority",
           "auto_ban",
           "auto_ban_rules",
+          "pool_mode",
           "responses_websocket_enabled",
           "models",
           "group_ids",
@@ -7496,6 +7497,10 @@
           },
           "auto_ban_rules": {
             "$ref": "#/components/schemas/AdminChannelAutoBanRules"
+          },
+          "pool_mode": {
+            "type": "boolean",
+            "description": "外部账号池模式开启时不维护渠道级本地故障状态。"
           },
           "responses_websocket_enabled": {
             "type": "boolean",
@@ -7719,6 +7724,10 @@
           "auto_ban_rules": {
             "$ref": "#/components/schemas/AdminChannelAutoBanRules",
             "description": "精确 5xx 状态码与已脱敏关键词规则；省略时使用空规则集。"
+          },
+          "pool_mode": {
+            "type": "boolean",
+            "description": "外部账号池模式；省略时默认关闭。"
           },
           "responses_websocket_enabled": {
             "type": "boolean",
@@ -7967,6 +7976,13 @@
                 "description": "省略或 null 表示保留原规则。"
               }
             ]
+          },
+          "pool_mode": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "省略或 null 表示保留原值。"
           },
           "responses_websocket_enabled": {
             "type": [

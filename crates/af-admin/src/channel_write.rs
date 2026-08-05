@@ -105,6 +105,13 @@ impl AdminChannelCreateCommand {
         Ok(self)
     }
 
+    /// 设置创建渠道时是否启用外部账号池模式。
+    #[must_use]
+    pub fn with_pool_mode(mut self, enabled: bool) -> Self {
+        self.fields.pool_mode = Some(enabled);
+        self
+    }
+
     /// 设置创建渠道时使用的自动禁用规则。
     pub fn with_auto_ban_rules(
         mut self,
@@ -186,6 +193,13 @@ impl AdminChannelUpdateCommand {
         Ok(self)
     }
 
+    /// 更新外部账号池模式；未调用时由仓储保留原值。
+    #[must_use]
+    pub fn with_pool_mode(mut self, enabled: bool) -> Self {
+        self.fields.pool_mode = Some(enabled);
+        self
+    }
+
     /// 设置更新渠道时使用的自动禁用规则。
     pub fn with_auto_ban_rules(
         mut self,
@@ -218,6 +232,7 @@ struct AdminChannelWriteFields {
     param_override: serde_json::Value,
     header_override: Option<serde_json::Value>,
     settings: Option<serde_json::Value>,
+    pool_mode: Option<bool>,
     responses_websocket_enabled: Option<bool>,
     auto_ban_rules: Option<ChannelAutoBanRules>,
     tag: Option<String>,
@@ -303,6 +318,7 @@ impl AdminChannelWriteFields {
             param_override,
             header_override,
             settings,
+            pool_mode: require_sensitive_fields.then_some(false),
             responses_websocket_enabled: require_sensitive_fields.then_some(false),
             auto_ban_rules: require_sensitive_fields.then_some(ChannelAutoBanRules::default()),
             tag,
@@ -324,6 +340,7 @@ impl AdminChannelWriteFields {
     }
 
     fn into_record(self) -> AdminChannelWriteRecord {
+        let pool_mode = self.pool_mode;
         let responses_websocket_enabled = self.responses_websocket_enabled;
         let auto_ban_rules = self.auto_ban_rules;
         let record = AdminChannelWriteRecord::new_update(
@@ -344,6 +361,10 @@ impl AdminChannelWriteFields {
             self.settings,
             self.tag,
         );
+        let record = match pool_mode {
+            Some(enabled) => record.with_pool_mode(enabled),
+            None => record,
+        };
         let record = match responses_websocket_enabled {
             Some(enabled) => record.with_responses_websocket_enabled(enabled),
             None => record,

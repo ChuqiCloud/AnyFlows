@@ -230,6 +230,7 @@ pub struct SchedulerRuntimeTargetRecord {
     parameter_overrides: ChannelParameterOverrides,
     headers: Vec<SchedulerRuntimeHeader>,
     auto_ban_rules: ChannelAutoBanRules,
+    pool_mode: bool,
     responses_websocket_enabled: bool,
 }
 
@@ -338,6 +339,7 @@ impl SchedulerRuntimeTargetRecord {
             parameter_overrides,
             headers,
             auto_ban_rules: ChannelAutoBanRules::default(),
+            pool_mode: false,
             responses_websocket_enabled: false,
         })
     }
@@ -386,6 +388,13 @@ impl SchedulerRuntimeTargetRecord {
         self
     }
 
+    /// 显式设置渠道是否跳过渠道级本地故障状态。
+    #[must_use]
+    pub fn with_pool_mode(mut self, enabled: bool) -> Self {
+        self.pool_mode = enabled;
+        self
+    }
+
     /// 显式设置原生 Responses WebSocket 能力。
     pub fn with_responses_websocket_enabled(
         mut self,
@@ -411,6 +420,12 @@ impl SchedulerRuntimeTargetRecord {
     #[must_use]
     pub const fn auto_ban_rules(&self) -> &ChannelAutoBanRules {
         &self.auto_ban_rules
+    }
+
+    /// 返回渠道是否把账号健康交由外部池管理。
+    #[must_use]
+    pub const fn pool_mode(&self) -> bool {
+        self.pool_mode
     }
 
     /// 返回渠道是否显式允许使用原生 Responses WebSocket。
@@ -481,6 +496,7 @@ impl fmt::Debug for SchedulerRuntimeTargetRecord {
             .field("parameter_overrides", &self.parameter_overrides)
             .field("header_count", &self.headers.len())
             .field("auto_ban_rules", &self.auto_ban_rules)
+            .field("pool_mode", &self.pool_mode)
             .field(
                 "responses_websocket_enabled",
                 &self.responses_websocket_enabled,

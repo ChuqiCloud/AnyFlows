@@ -176,6 +176,7 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     );
     responses_channel.settings = Set(SensitiveJson::from(serde_json::json!({
         "responses_websocket_enabled": true,
+        "pool_mode": true,
         "auto_ban_rules": {
             "status_codes": [503],
             "keywords": ["workspace disabled"]
@@ -298,6 +299,7 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         .find(|record| record.target().channel_id().get() == responses_channel.id)
         .unwrap();
     assert!(responses_record.target().responses_websocket_enabled());
+    assert!(responses_record.target().pool_mode());
     assert_eq!(
         responses_record.target().auto_ban_rules().server_statuses()[0].get(),
         503

@@ -32,6 +32,7 @@ test('Anthropic 渠道默认值保留类型和 Messages 协议', () => {
     priority: 0,
     auto_ban: true,
     auto_ban_rules: { status_codes: [503], keywords: ['workspace disabled'] },
+    pool_mode: true,
     responses_websocket_enabled: false,
     models: ['claude-test'],
     group_ids: [1],
@@ -49,6 +50,13 @@ test('Anthropic 渠道默认值保留类型和 Messages 协议', () => {
   assert.equal(values.timeoutSeconds, '60')
   assert.deepEqual(values.autoBanStatusCodes, [503])
   assert.deepEqual(values.autoBanKeywords, ['workspace disabled'])
+  assert.equal(values.poolMode, true)
+})
+
+test('外部账号池模式按结构化字段提交且默认关闭', () => {
+  const defaults = defaultChannelValues()
+  assert.equal(defaults.poolMode, false)
+  assert.equal(toCreateRequest({ ...defaults, name: 'Pool channel', poolMode: true }).pool_mode, true)
 })
 
 test('自动停用规则只接受有界精确 5xx 状态码和关键词', () => {

@@ -171,6 +171,49 @@ async fn responses_websocket_toggle_preserves_unknown_sensitive_settings()
 }
 
 #[tokio::test]
+async fn pool_mode_round_trip_preserves_unknown_sensitive_settings() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let created = fixture
+        .repository
+        .create_channel(
+            channel_record("pool-mode", "https://api.example.com/v1").with_pool_mode(true),
+        )
+        .await?;
+    assert!(created.pool_mode());
+
+    let AdminChannelMutationOutcome::Mutated(preserved) = fixture
+        .repository
+        .update_channel(
+            created.channel_id(),
+            channel_update_record("pool-mode", "https://api.example.com/v1"),
+        )
+        .await?
+    else {
+        panic!("有效池模式渠道必须完成更新");
+    };
+    assert!(preserved.pool_mode());
+
+    let AdminChannelMutationOutcome::Mutated(disabled) = fixture
+        .repository
+        .update_channel(
+            created.channel_id(),
+            channel_update_record("pool-mode", "https://api.example.com/v1").with_pool_mode(false),
+        )
+        .await?
+    else {
+        panic!("有效池模式渠道必须完成更新");
+    };
+    assert!(!disabled.pool_mode());
+    let (_, settings) = channel_sensitive_fields(&fixture, created.channel_id()).await?;
+    let settings: serde_json::Value = serde_json::from_str(&settings)?;
+    assert_eq!(settings["private_setting"], "private-setting-value");
+    assert!(settings.get("pool_mode").is_none());
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn auto_ban_rules_round_trip_preserve_and_clear_controlled_settings()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
