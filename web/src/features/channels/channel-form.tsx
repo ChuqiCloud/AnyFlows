@@ -11,6 +11,7 @@ import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import type { AdminChannel } from '@/lib/api/generated/types.gen'
 import { useCreateAdminChannel, useUpdateAdminChannel } from './channel-api'
+import { ChannelAutoBanRuleEditor } from './channel-auto-ban-rule-editor'
 import { ChannelFormField } from './channel-form-field'
 import {
   buildChannelFormSchema,
@@ -47,6 +48,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
     invalidField: t('channels.validation.field'),
     invalidHeader: t('channels.validation.header'),
     invalidParameter: t('channels.validation.parameter'),
+    invalidAutoBanRules: t('channels.validation.autoBanRules'),
     invalidRouting: t('channels.validation.routing'),
     invalidTimeout: t('channels.validation.timeout'),
     invalidUrl: t('channels.validation.url'),
@@ -64,6 +66,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
   const submitError = createMutation.isError || updateMutation.isError
   const channelType = form.watch('channelType')
   const protocol = form.watch('protocol')
+  const autoBan = form.watch('autoBan')
   const removeUnsupportedParameters = (nextProtocol: ChannelProtocol) => {
     if (nextProtocol !== 'openai_responses') return
     form.setValue(
@@ -195,6 +198,29 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
             <div><Label htmlFor="channel-auto-ban">{t('channels.fields.autoBan')}</Label><p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('channels.form.autoBanHint')}</p></div>
             <Controller control={form.control} name="autoBan" render={({ field }) => <Switch id="channel-auto-ban" checked={field.value} onCheckedChange={field.onChange} />} />
           </div>
+          {autoBan ? (
+            <ChannelFormField
+              id="channel-auto-ban-rules"
+              htmlFor={false}
+              label={t('channels.fields.autoBanRules')}
+              hint={t('channels.form.autoBanRulesHint')}
+              error={form.formState.errors.autoBanKeywords?.message || form.formState.errors.autoBanStatusCodes?.message}
+            >
+              <ChannelAutoBanRuleEditor
+                statusCodes={form.watch('autoBanStatusCodes')}
+                keywords={form.watch('autoBanKeywords')}
+                invalid={!!form.formState.errors.autoBanKeywords || !!form.formState.errors.autoBanStatusCodes}
+                onStatusCodesChange={(statusCodes) => form.setValue('autoBanStatusCodes', statusCodes, {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })}
+                onKeywordsChange={(keywords) => form.setValue('autoBanKeywords', keywords, {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })}
+              />
+            </ChannelFormField>
+          ) : null}
           {channelType === 'openai' && protocol === 'openai_responses' ? (
             <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--hairline)] px-3 py-2.5">
               <div>

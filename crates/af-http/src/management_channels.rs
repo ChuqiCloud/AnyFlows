@@ -1,15 +1,46 @@
 use af_admin::{AdminChannel, AdminChannelListQuery, AdminChannelPage, AdminChannelReadError};
-use af_domain::{ChannelId, CredentialId};
+use af_domain::{ChannelAutoBanRules, ChannelId, CredentialId};
 use axum::{
     Json,
     extract::{Extension, Path, RawQuery, State},
     response::{IntoResponse, Response},
 };
 use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{chat_completions::HttpState, management_error::ManagementError};
+
+/// 管理端可配置的精确 5xx 状态码与关键词规则。
+#[derive(Clone, Default, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminChannelAutoBanRules)]
+pub(crate) struct AdminChannelAutoBanRulesDto {
+    #[schema(min_items = 0, max_items = 64)]
+    pub(crate) status_codes: Vec<u16>,
+    #[schema(min_items = 0, max_items = 64)]
+    pub(crate) keywords: Vec<String>,
+}
+
+impl AdminChannelAutoBanRulesDto {
+    pub(crate) fn into_domain(self) -> Result<ChannelAutoBanRules, ManagementError> {
+        ChannelAutoBanRules::new(self.status_codes, self.keywords)
+            .map_err(|_| ManagementError::InvalidRequest)
+    }
+}
+
+impl From<&ChannelAutoBanRules> for AdminChannelAutoBanRulesDto {
+    fn from(rules: &ChannelAutoBanRules) -> Self {
+        Self {
+            status_codes: rules
+                .server_statuses()
+                .iter()
+                .map(|status| status.get())
+                .collect(),
+            keywords: rules.keywords().to_vec(),
+        }
+    }
+}
 
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -36,6 +67,7 @@ pub(crate) struct AdminChannelResponse {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    auto_ban_rules: AdminChannelAutoBanRulesDto,
     /// 是否显式允许该原生 Responses 渠道使用 WebSocket。
     responses_websocket_enabled: bool,
     #[schema(schema_with = crate::openapi::schema::channel_models_schema)]
@@ -133,6 +165,7 @@ impl AdminChannelResponse {
             weight: channel.weight(),
             priority: channel.priority(),
             auto_ban: channel.auto_ban(),
+            auto_ban_rules: AdminChannelAutoBanRulesDto::from(channel.auto_ban_rules()),
             responses_websocket_enabled: channel.responses_websocket_enabled(),
             models: channel.models().to_vec(),
             group_ids: channel

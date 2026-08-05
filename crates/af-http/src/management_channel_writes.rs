@@ -14,7 +14,8 @@ use utoipa::ToSchema;
 use crate::{
     chat_completions::HttpState,
     management_channels::{
-        AdminChannelResponse, no_store_empty, no_store_json, parse_channel_id, status_json,
+        AdminChannelAutoBanRulesDto, AdminChannelResponse, no_store_empty, no_store_json,
+        parse_channel_id, status_json,
     },
     management_error::ManagementError,
 };
@@ -51,6 +52,9 @@ pub(crate) struct AdminChannelCreateRequest {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    /// 精确 5xx 状态码与已脱敏关键词规则；省略时使用空规则集。
+    #[serde(default)]
+    auto_ban_rules: AdminChannelAutoBanRulesDto,
     /// 仅 `OpenAI + openai_responses` 可开启；省略时默认关闭。
     #[serde(default)]
     responses_websocket_enabled: bool,
@@ -102,6 +106,8 @@ pub(crate) struct AdminChannelUpdateRequest {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    /// 省略或 null 表示保留原规则。
+    auto_ban_rules: Option<AdminChannelAutoBanRulesDto>,
     /// 省略或 null 表示保留原值。
     responses_websocket_enabled: Option<bool>,
     #[schema(schema_with = crate::openapi::schema::channel_write_models_schema)]
@@ -188,6 +194,7 @@ pub(crate) async fn delete_admin_channel(
 impl AdminChannelCreateRequest {
     fn into_create_command(self) -> Result<AdminChannelCreateCommand, ManagementError> {
         let group_ids = parse_group_ids(self.group_ids)?;
+        let auto_ban_rules = self.auto_ban_rules.into_domain()?;
         AdminChannelCreateCommand::new(
             self.name,
             self.channel_type,
@@ -206,9 +213,10 @@ impl AdminChannelCreateRequest {
             self.settings,
             self.tag,
         )
-        .and_then(|command| {
-            command.with_responses_websocket_enabled(self.responses_websocket_enabled)
-        })
+        .map_err(map_write_error)?
+        .with_auto_ban_rules(auto_ban_rules)
+        .map_err(map_write_error)?
+        .with_responses_websocket_enabled(self.responses_websocket_enabled)
         .map_err(map_write_error)
     }
 }
@@ -235,6 +243,12 @@ impl AdminChannelUpdateRequest {
             self.tag,
         )
         .map_err(map_write_error)?;
+        let command = match self.auto_ban_rules {
+            Some(rules) => command
+                .with_auto_ban_rules(rules.into_domain()?)
+                .map_err(map_write_error)?,
+            None => command,
+        };
         match self.responses_websocket_enabled {
             Some(enabled) => command
                 .with_responses_websocket_enabled(enabled)

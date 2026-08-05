@@ -156,7 +156,11 @@
       "credentials": "Manage credentials",
       "refreshCredentials": "Refresh credentials",
       "removeModel": "Remove model {{model}}",
-      "removeGroup": "Remove group {{group}}"
+      "removeGroup": "Remove group {{group}}",
+      "addAutoBanStatus": "Add automatic-disable status",
+      "removeAutoBanStatus": "Remove status {{status}}",
+      "addAutoBanKeyword": "Add automatic-disable keyword",
+      "removeAutoBanKeyword": "Remove keyword {{keyword}}"
     },
     "empty": {
       "title": "No channels yet",
@@ -177,6 +181,8 @@
       "routing": "Routing scope",
       "overrides": "Request transformation",
       "autoBanHint": "Allow the runtime to disable this channel after a deterministic failure.",
+      "autoBanRulesHint": "Matches exact 5xx statuses and structured upstream type, code, or status fields. Empty rules never disable a channel.",
+      "autoBanKeywordPlaceholder": "Enter a structured error keyword",
       "responsesWebsocketHint": "Reuses a connection only when the request has a stable session identifier. Failures before the first event fall back to HTTP once.",
       "tagHint": "Optional label for filtering and recognition.",
       "timeoutHint": "Controls read stalls and the full request deadline for forwarding and probes. Connection timeout remains global; blank uses each service default.",
@@ -202,6 +208,9 @@
       "weight": "Weight",
       "priority": "Priority",
       "autoBan": "Allow automatic disabling",
+      "autoBanRules": "Automatic-disable rules",
+      "autoBanStatusCodes": "HTTP status codes",
+      "autoBanKeywords": "Structured error keywords",
       "responsesWebsocket": "Enable Responses WebSocket",
       "tag": "Tag",
       "models": "Models",
@@ -223,7 +232,8 @@
       "schedule": "Priority must be an integer and weight must be a non-negative integer.",
       "timeout": "Enter an integer from 1 to 900 seconds, or leave it blank to use the service default.",
       "url": "Enter an HTTP(S) URL without credentials, a query string, or a fragment.",
-      "routing": "Models and groups must both be set or both be empty, with no duplicates or capacity overflow."
+      "routing": "Models and groups must both be set or both be empty, with no duplicates or capacity overflow.",
+      "autoBanRules": "Rules must use unique statuses from 500 to 599 and bounded keywords, with no more than 64 entries in total."
     },
     "mapping": {
       "source": "Client model",

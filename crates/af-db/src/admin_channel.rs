@@ -1,6 +1,8 @@
 use std::{fmt, str::FromStr as _, time::Duration};
 
-use af_domain::{ChannelId, ChannelTimeout, ChannelType, GroupId, Protocol, Status};
+use af_domain::{
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, GroupId, Protocol, Status,
+};
 use sea_orm::{
     ConnectionTrait, DbBackend, DbErr, JsonValue, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -13,7 +15,10 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     ChannelModelMappings, ChannelParameterOverrides, DatabasePool,
     ability_write::{AbilityWriteError, ChannelRoutingSnapshot, load_channel_routing_snapshots},
-    channel_settings::{responses_websocket_enabled, validate_responses_websocket_capability},
+    channel_settings::{
+        AUTO_BAN_RULES_KEY, parse_auto_ban_rules_value, responses_websocket_enabled,
+        validate_responses_websocket_capability,
+    },
     entity::{ChannelBaseUrl, channels},
 };
 
@@ -34,6 +39,7 @@ pub struct AdminChannelRecord {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    auto_ban_rules: ChannelAutoBanRules,
     responses_websocket_enabled: bool,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
@@ -63,6 +69,16 @@ impl AdminChannelRecord {
             Ok(encoded) => encoded.len() > MAX_ADMIN_CHANNEL_JSON_BYTES as usize,
             Err(_) => true,
         };
+        let auto_ban_rules_value = if settings_oversized {
+            None
+        } else {
+            settings.as_object().map(|object| {
+                object
+                    .get(AUTO_BAN_RULES_KEY)
+                    .cloned()
+                    .unwrap_or_else(|| JsonValue::Object(Default::default()))
+            })
+        };
         AdminChannelRow {
             channel_id: model.id,
             name: model.name,
@@ -74,6 +90,7 @@ impl AdminChannelRecord {
             weight: model.weight,
             priority: model.priority,
             auto_ban: model.auto_ban,
+            auto_ban_rules: auto_ban_rules_value,
             models: Vec::new(),
             group_ids: Vec::new(),
             model_mapping: Some(model.model_mapping),
@@ -154,6 +171,12 @@ impl AdminChannelRecord {
     #[must_use]
     pub const fn auto_ban(&self) -> bool {
         self.auto_ban
+    }
+
+    /// 返回已校验的渠道自动禁用状态码与关键词规则。
+    #[must_use]
+    pub const fn auto_ban_rules(&self) -> &ChannelAutoBanRules {
+        &self.auto_ban_rules
     }
 
     /// 返回渠道是否显式开启原生 Responses WebSocket。
@@ -443,6 +466,7 @@ struct AdminChannelRow {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    auto_ban_rules: Option<JsonValue>,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
     model_mapping: Option<JsonValue>,
@@ -470,6 +494,7 @@ impl AdminChannelRow {
             weight: result.try_get("", "weight")?,
             priority: result.try_get("", "priority")?,
             auto_ban: result.try_get("", "auto_ban")?,
+            auto_ban_rules: result.try_get("", "auto_ban_rules")?,
             models: Vec::new(),
             group_ids: Vec::new(),
             model_mapping: result.try_get("", "model_mapping")?,
@@ -519,6 +544,12 @@ impl AdminChannelRow {
             1 => true,
             _ => return Err(internal_invariant()),
         };
+        let auto_ban_rules_value = self
+            .auto_ban_rules
+            .as_ref()
+            .ok_or_else(internal_invariant)?;
+        let auto_ban_rules = parse_auto_ban_rules_value(Some(auto_ban_rules_value))
+            .map_err(|_| internal_invariant())?;
         validate_responses_websocket_capability(
             channel_type,
             protocol,
@@ -550,6 +581,7 @@ impl AdminChannelRow {
             weight: self.weight,
             priority: self.priority,
             auto_ban: self.auto_ban,
+            auto_ban_rules,
             responses_websocket_enabled,
             models: self.models,
             group_ids: self.group_ids,
@@ -670,6 +702,10 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
             Alias::new("responses_websocket_enabled"),
         )
         .expr_as(
+            channel_auto_ban_rules_projection(database_backend),
+            Alias::new("auto_ban_rules"),
+        )
+        .expr_as(
             Expr::col((channels::Entity, channels::Column::Balance)),
             Alias::new("balance"),
         )
@@ -716,6 +752,20 @@ fn channel_responses_websocket_projection(database_backend: DbBackend) -> Simple
         ),
         DbBackend::Sqlite => Expr::cust(
             r#"CASE WHEN json_type("channels"."settings") <> 'object' THEN -1 WHEN json_type("channels"."settings", '$.responses_websocket_enabled') IS NULL THEN 0 WHEN json_type("channels"."settings", '$.responses_websocket_enabled') NOT IN ('true', 'false') THEN -1 WHEN json_extract("channels"."settings", '$.responses_websocket_enabled') = 1 THEN 1 ELSE 0 END"#,
+        ),
+    }
+}
+
+fn channel_auto_ban_rules_projection(database_backend: DbBackend) -> SimpleExpr {
+    match database_backend {
+        DbBackend::Postgres => Expr::cust(
+            r#"CASE WHEN jsonb_typeof("channels"."settings") <> 'object' THEN NULL WHEN NOT ("channels"."settings" ? 'auto_ban_rules') THEN '{}'::jsonb ELSE "channels"."settings" -> 'auto_ban_rules' END"#,
+        ),
+        DbBackend::MySql => Expr::cust(
+            "CASE WHEN JSON_TYPE(`channels`.`settings`) <> 'OBJECT' THEN NULL WHEN JSON_CONTAINS_PATH(`channels`.`settings`, 'one', '$.auto_ban_rules') = 0 THEN JSON_OBJECT() ELSE JSON_EXTRACT(`channels`.`settings`, '$.auto_ban_rules') END",
+        ),
+        DbBackend::Sqlite => Expr::cust(
+            r#"CASE WHEN json_type("channels"."settings") <> 'object' THEN NULL WHEN json_type("channels"."settings", '$.auto_ban_rules') IS NULL THEN json('{}') ELSE json_quote(json_extract("channels"."settings", '$.auto_ban_rules')) END"#,
         ),
     }
 }

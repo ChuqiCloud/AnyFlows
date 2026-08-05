@@ -1,10 +1,13 @@
 use af_domain::{
-    ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind, Protocol, Status,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind,
+    Protocol, Status,
 };
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 
 use crate::{
-    channel_settings::{responses_websocket_enabled, validate_responses_websocket_capability},
+    channel_settings::{
+        auto_ban_rules, responses_websocket_enabled, validate_responses_websocket_capability,
+    },
     credential_probe::EncryptedCredentialEnvelope,
     entity::{channels, credentials},
 };
@@ -27,6 +30,7 @@ pub(super) struct SchedulerRuntimeChannelSource {
     model_mappings: ChannelModelMappings,
     parameter_overrides: ChannelParameterOverrides,
     headers: Vec<(String, String)>,
+    auto_ban_rules: ChannelAutoBanRules,
     responses_websocket_enabled: bool,
 }
 
@@ -71,9 +75,11 @@ impl SchedulerRuntimeChannelSource {
             .header_override
             .pairs()
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
-        let responses_websocket_enabled =
-            responses_websocket_enabled(&channel.settings.into_inner())
-                .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let settings = channel.settings.into_inner();
+        let auto_ban_rules =
+            auto_ban_rules(&settings).map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let responses_websocket_enabled = responses_websocket_enabled(&settings)
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         validate_responses_websocket_capability(
             channel_type,
             protocol,
@@ -89,6 +95,7 @@ impl SchedulerRuntimeChannelSource {
             model_mappings,
             parameter_overrides,
             headers,
+            auto_ban_rules,
             responses_websocket_enabled,
         }))
     }
@@ -131,6 +138,11 @@ impl SchedulerRuntimeChannelSource {
     /// 返回已校验的非认证 Header 覆盖。
     pub(super) fn headers(&self) -> &[(String, String)] {
         &self.headers
+    }
+
+    /// 返回已校验的渠道自动禁用规则。
+    pub(super) const fn auto_ban_rules(&self) -> &ChannelAutoBanRules {
+        &self.auto_ban_rules
     }
 
     /// 返回渠道显式开启的 Responses WebSocket 能力。

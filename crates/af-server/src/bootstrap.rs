@@ -970,7 +970,10 @@ impl Bootstrap<RelayReady> {
             CredentialStateRepository::new(
                 self.stage.infrastructure.infrastructure.database.clone(),
             ),
-        );
+        )
+        .with_channel_state_repository(ChannelStateRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+        ));
         let route_service = match sticky_store {
             Some(store) => route_service.with_sticky_sessions(store, StickyWaitPolicy::default()),
             None => route_service,

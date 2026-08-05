@@ -80,6 +80,7 @@ async fn detail_exposes_only_validated_non_sensitive_metadata() -> Result<(), Bo
     assert_eq!(channel.group_ids(), &[fixture.primary_group_id]);
     assert_eq!(channel.model_mapping()["public-model"], "upstream-model");
     assert_eq!(channel.param_override()["temperature"], 0);
+    assert!(channel.auto_ban_rules().is_empty());
     assert_eq!(format!("{channel:?}"), "AdminChannelRecord(<redacted>)");
     assert!(matches!(
         fixture.repository.get(fixture.deleted_channel_id).await?,
@@ -149,6 +150,52 @@ async fn non_object_sensitive_settings_fail_closed_in_database_projection()
     Ok(())
 }
 
+#[tokio::test]
+async fn auto_ban_rule_projection_distinguishes_missing_valid_and_null_values()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let model = channels::Entity::find_by_id(fixture.primary_channel_id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("测试渠道必须存在");
+    let mut active = channels::ActiveModel::from(model);
+    active.settings = Set(SensitiveJson::from(serde_json::json!({
+        "auto_ban_rules": {
+            "status_codes": [503],
+            "keywords": ["workspace disabled"]
+        }
+    })));
+    let model = active.update(fixture.pool.connection()).await?;
+
+    let AdminChannelLookupOutcome::Found(channel) =
+        fixture.repository.get(fixture.primary_channel_id).await?
+    else {
+        panic!("有效渠道详情必须存在");
+    };
+    assert_eq!(channel.auto_ban_rules().server_statuses()[0].get(), 503);
+    assert_eq!(
+        channel.auto_ban_rules().keywords(),
+        &["workspace disabled".to_owned()]
+    );
+
+    let mut active = channels::ActiveModel::from(model);
+    active.settings = Set(SensitiveJson::from(serde_json::json!({
+        "auto_ban_rules": null
+    })));
+    active.update(fixture.pool.connection()).await?;
+    assert_eq!(
+        fixture
+            .repository
+            .get(fixture.primary_channel_id)
+            .await
+            .unwrap_err(),
+        AdminChannelRepositoryError::Invariant
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
 #[test]
 fn read_queries_only_project_non_sensitive_channel_capabilities() {
     let channel_queries = [
@@ -160,6 +207,7 @@ fn read_queries_only_project_non_sensitive_channel_capabilities() {
         let sql = sql.to_ascii_lowercase();
         assert!(!sql.contains("header_override"));
         assert!(sql.contains("responses_websocket_enabled"));
+        assert!(sql.contains("auto_ban_rules"));
         assert!(!sql.contains("as \"settings\""));
         assert!(!sql.contains("as `settings`"));
     }

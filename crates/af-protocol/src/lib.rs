@@ -4,6 +4,7 @@ pub mod anthropic;
 mod bounded_json;
 mod canonical;
 mod capability;
+mod error_evidence;
 pub mod gemini;
 pub mod openai_chat;
 pub mod openai_responses;
@@ -25,6 +26,7 @@ pub use capability::{
     supports_response_capability, supports_stream_capability, validate_request_capabilities,
     validate_response_capabilities, validate_stream_event_capabilities,
 };
+pub use error_evidence::{StructuredErrorEvidence, extract_structured_error_evidence};
 pub use reasoning_suffix::{ReasoningModelSuffixError, apply_reasoning_model_suffix};
 pub use request::{
     Attachment, ReasoningConfig, ReasoningConfigError, ReasoningEffort, RequestContinuation,

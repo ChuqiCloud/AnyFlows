@@ -1,5 +1,6 @@
 //! 无 IO 的领域类型、值对象与错误。
 
+mod auto_ban;
 mod billing;
 mod channel;
 mod concurrency;
@@ -14,6 +15,10 @@ mod subscription;
 mod token_policy;
 mod wallet;
 
+pub use auto_ban::{
+    ChannelAutoBanRules, ChannelAutoBanRulesError, MAX_CHANNEL_AUTO_BAN_KEYWORD_BYTES,
+    MAX_CHANNEL_AUTO_BAN_KEYWORD_TOTAL_BYTES, MAX_CHANNEL_AUTO_BAN_RULES,
+};
 pub use concurrency::{ConcurrencyLimit, ConcurrencyLimitError};
 pub use enums::{
     ChannelType, CredentialKind, Operation, ParseEnumError, Protocol, PublicErrorCode, Role, Status,

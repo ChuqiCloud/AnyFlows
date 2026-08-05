@@ -10,7 +10,8 @@ use af_db::{
     MAX_ADMIN_CHANNEL_MODELS, validate_channel_header_overrides,
 };
 use af_domain::{
-    ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind, GroupId, Protocol, Status,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind,
+    GroupId, Protocol, Status,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -103,6 +104,15 @@ impl AdminChannelCreateCommand {
         self.fields = self.fields.with_responses_websocket_enabled(enabled)?;
         Ok(self)
     }
+
+    /// 设置创建渠道时使用的自动禁用规则。
+    pub fn with_auto_ban_rules(
+        mut self,
+        rules: ChannelAutoBanRules,
+    ) -> Result<Self, AdminChannelWriteError> {
+        self.fields.auto_ban_rules = Some(rules);
+        Ok(self)
+    }
 }
 
 impl fmt::Debug for AdminChannelCreateCommand {
@@ -175,6 +185,15 @@ impl AdminChannelUpdateCommand {
         self.fields = self.fields.with_responses_websocket_enabled(enabled)?;
         Ok(self)
     }
+
+    /// 设置更新渠道时使用的自动禁用规则。
+    pub fn with_auto_ban_rules(
+        mut self,
+        rules: ChannelAutoBanRules,
+    ) -> Result<Self, AdminChannelWriteError> {
+        self.fields.auto_ban_rules = Some(rules);
+        Ok(self)
+    }
 }
 
 impl fmt::Debug for AdminChannelUpdateCommand {
@@ -200,6 +219,7 @@ struct AdminChannelWriteFields {
     header_override: Option<serde_json::Value>,
     settings: Option<serde_json::Value>,
     responses_websocket_enabled: Option<bool>,
+    auto_ban_rules: Option<ChannelAutoBanRules>,
     tag: Option<String>,
 }
 
@@ -284,6 +304,7 @@ impl AdminChannelWriteFields {
             header_override,
             settings,
             responses_websocket_enabled: require_sensitive_fields.then_some(false),
+            auto_ban_rules: require_sensitive_fields.then_some(ChannelAutoBanRules::default()),
             tag,
         })
     }
@@ -304,6 +325,7 @@ impl AdminChannelWriteFields {
 
     fn into_record(self) -> AdminChannelWriteRecord {
         let responses_websocket_enabled = self.responses_websocket_enabled;
+        let auto_ban_rules = self.auto_ban_rules;
         let record = AdminChannelWriteRecord::new_update(
             self.name,
             self.channel_type,
@@ -322,8 +344,12 @@ impl AdminChannelWriteFields {
             self.settings,
             self.tag,
         );
-        match responses_websocket_enabled {
+        let record = match responses_websocket_enabled {
             Some(enabled) => record.with_responses_websocket_enabled(enabled),
+            None => record,
+        };
+        match auto_ban_rules {
+            Some(rules) => record.with_auto_ban_rules(rules),
             None => record,
         }
     }

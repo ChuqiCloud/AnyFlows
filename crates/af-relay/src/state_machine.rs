@@ -4,7 +4,8 @@ use af_adapter::{
     Adaptor, AdaptorTarget, Bytes, Credential, HeaderMap, Method, Operation, RelayContext,
     ResponseMode, TransportDispatcher, UpstreamRequest, UpstreamResponse,
 };
-use af_domain::{ChannelId, MAX_MODEL_NAME_BYTES, UpstreamError};
+use af_domain::{ChannelId, MAX_MODEL_NAME_BYTES, UpstreamError, UpstreamServerStatus};
+use af_protocol::{StructuredErrorEvidence, extract_structured_error_evidence};
 use thiserror::Error;
 
 use crate::{
@@ -137,10 +138,12 @@ impl fmt::Debug for RelayCandidateRequest {
 }
 
 /// 单个候选失败后的脱敏尝试记录。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RelayAttemptFailure {
     candidate_index: usize,
     error: UpstreamError,
+    server_status: Option<UpstreamServerStatus>,
+    evidence: Option<StructuredErrorEvidence>,
 }
 
 impl RelayAttemptFailure {
@@ -148,19 +151,47 @@ impl RelayAttemptFailure {
         Self {
             candidate_index,
             error,
+            server_status: None,
+            evidence: None,
+        }
+    }
+
+    fn with_evidence(
+        candidate_index: usize,
+        error: UpstreamError,
+        server_status: Option<UpstreamServerStatus>,
+        evidence: Option<StructuredErrorEvidence>,
+    ) -> Self {
+        Self {
+            candidate_index,
+            error,
+            server_status,
+            evidence,
         }
     }
 
     /// 返回失败候选在固定计划中的零基索引。
     #[must_use]
-    pub const fn candidate_index(self) -> usize {
+    pub const fn candidate_index(&self) -> usize {
         self.candidate_index
     }
 
     /// 返回不含上游正文的闭合错误分类。
     #[must_use]
-    pub const fn error(self) -> UpstreamError {
+    pub const fn error(&self) -> UpstreamError {
         self.error
+    }
+
+    /// 返回原始 HTTP 响应携带的已校验 5xx 状态；非 HTTP 或非 5xx 故障为空。
+    #[must_use]
+    pub const fn server_status(&self) -> Option<UpstreamServerStatus> {
+        self.server_status
+    }
+
+    /// 返回只含标准错误标识字段的内存匹配证据；内容不得记录或持久化。
+    #[must_use]
+    pub const fn evidence(&self) -> Option<&StructuredErrorEvidence> {
+        self.evidence.as_ref()
     }
 }
 
@@ -586,8 +617,15 @@ impl RelayStateMachine {
                 }
             };
             let classified = classify_upstream_status(status, retry_after, &body);
+            let server_status = UpstreamServerStatus::new(status.as_u16());
+            let evidence = extract_structured_error_evidence(&body);
             release_attempt_permit(permit).await;
-            failures.push(RelayAttemptFailure::new(index, classified));
+            failures.push(RelayAttemptFailure::with_evidence(
+                index,
+                classified,
+                server_status,
+                evidence,
+            ));
             last_error = Some(RelayError::Upstream(classified));
             if is_retryable(classified) {
                 index = self.next_candidate_index(index, classified);

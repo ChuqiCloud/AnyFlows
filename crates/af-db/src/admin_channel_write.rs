@@ -5,7 +5,8 @@ use std::{
 };
 
 use af_domain::{
-    ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind, GroupId, Protocol, Status,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind,
+    GroupId, Protocol, Status,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{
@@ -28,8 +29,8 @@ use crate::{
     },
     admin_channel::valid_text,
     channel_settings::{
-        responses_websocket_enabled, set_responses_websocket_enabled,
-        validate_responses_websocket_capability,
+        auto_ban_rules, responses_websocket_enabled, set_auto_ban_rules,
+        set_responses_websocket_enabled, validate_responses_websocket_capability,
     },
     entity::{
         ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channel_groups,
@@ -54,6 +55,7 @@ pub struct AdminChannelWriteRecord {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    auto_ban_rules: Option<ChannelAutoBanRules>,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
     model_mapping: serde_json::Value,
@@ -106,6 +108,7 @@ impl AdminChannelWriteRecord {
             header_override: Some(header_override),
             settings: Some(settings),
             responses_websocket_enabled: Some(false),
+            auto_ban_rules: Some(ChannelAutoBanRules::default()),
             tag,
         }
     }
@@ -151,6 +154,7 @@ impl AdminChannelWriteRecord {
             header_override,
             settings,
             responses_websocket_enabled: None,
+            auto_ban_rules: None,
             tag,
         }
     }
@@ -159,6 +163,13 @@ impl AdminChannelWriteRecord {
     #[must_use]
     pub fn with_responses_websocket_enabled(mut self, enabled: bool) -> Self {
         self.responses_websocket_enabled = Some(enabled);
+        self
+    }
+
+    /// 覆盖渠道自动禁用状态码与关键词规则；省略时更新接口保留原值。
+    #[must_use]
+    pub fn with_auto_ban_rules(mut self, rules: ChannelAutoBanRules) -> Self {
+        self.auto_ban_rules = Some(rules);
         self
     }
 }
@@ -475,6 +486,12 @@ impl AdminChannelRepository {
             .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
         set_responses_websocket_enabled(&mut settings, responses_websocket_enabled)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        let auto_ban_rules = fields
+            .auto_ban_rules
+            .as_ref()
+            .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        set_auto_ban_rules(&mut settings, auto_ban_rules)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         let settings = SensitiveJson::from(settings);
         let inserted = channels::ActiveModel {
             name: Set(fields.name),
@@ -539,8 +556,15 @@ impl AdminChannelRepository {
             effective_responses_websocket_enabled,
         )
         .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        let effective_auto_ban_rules = match fields.auto_ban_rules {
+            Some(rules) => rules,
+            None => auto_ban_rules(&current_settings)
+                .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?,
+        };
         let mut settings = fields.settings.unwrap_or(current_settings);
         set_responses_websocket_enabled(&mut settings, effective_responses_websocket_enabled)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        set_auto_ban_rules(&mut settings, &effective_auto_ban_rules)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         let now = TimeDateTimeWithTimeZone::now_utc();
         let ability_tag = fields.tag.clone();
@@ -907,6 +931,7 @@ struct ValidatedChannelFields {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    auto_ban_rules: Option<ChannelAutoBanRules>,
     routing: ValidatedChannelRouting,
     model_mapping: serde_json::Value,
     param_override: serde_json::Value,
@@ -991,6 +1016,7 @@ fn validate_channel_fields(
         weight: record.weight,
         priority: record.priority,
         auto_ban: record.auto_ban,
+        auto_ban_rules: record.auto_ban_rules,
         routing,
         model_mapping: record.model_mapping,
         param_override: record.param_override,
