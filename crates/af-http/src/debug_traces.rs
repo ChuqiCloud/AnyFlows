@@ -8,7 +8,7 @@ use axum::{
     Json, Router,
     extract::{Extension, Path, RawQuery, State, rejection::JsonRejection},
     middleware,
-    response::{IntoResponse, Response},
+    response::Response,
     routing::get,
 };
 use serde::{Deserialize, Serialize};

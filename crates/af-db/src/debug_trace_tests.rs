@@ -9,9 +9,7 @@ use crate::{
     DatabaseOptions, DebugTraceAttemptWrite, DebugTraceFailureKind, DebugTraceListQuery,
     DebugTraceOperation, DebugTraceOutcome, DebugTraceProtocol, DebugTraceRepository,
     DebugTraceRepositoryError, DebugTraceSettingsWrite, DebugTraceWrite, MigrationOptions,
-    entity::{
-        TokenHash, debug_trace_attempts, debug_trace_settings, debug_traces, groups, tokens, users,
-    },
+    entity::{TokenHash, debug_trace_attempts, debug_traces, groups, tokens, users},
 };
 
 #[tokio::test]
