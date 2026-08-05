@@ -6,25 +6,25 @@ use af_account::{
 };
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
-    AdminEmailSettingsService, AdminGroupReader, AdminGroupWriter, AdminModelPriceService,
-    AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsError,
-    AdminRouteReader, AdminRouteWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader,
-    AdminUserReader, AdminUserWriter, AdminWalletService, BalanceAlertTask,
-    DatabaseAdminBalanceAlertSettingsService, DatabaseAdminChannelReader,
-    DatabaseAdminChannelWriter, DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader,
-    DatabaseAdminGroupWriter, DatabaseAdminModelPriceService, DatabaseAdminModelReader,
-    DatabaseAdminModelSyncService, DatabaseAdminModelWriter, DatabaseAdminNetworkSettingsService,
-    DatabaseAdminRouteReader, DatabaseAdminRouteWriter, DatabaseAdminTokenReader,
-    DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader, DatabaseAdminUserReader,
-    DatabaseAdminUserWriter, DatabaseAdminWalletService, DatabaseInitialSetup,
-    DatabasePasswordResetService, DatabasePlaygroundConversationService,
-    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
-    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseTokenAuthenticator,
-    DatabaseUserInvitationService, DatabaseUserProfileService, DatabaseUserTokenService,
-    DatabaseUserWalletService, EmailDelivery, InitialSetup, ModelCatalogReader,
-    NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError, PasswordResetService,
-    PasswordResetServiceConfigError, PlaygroundConversationService, PlaygroundShareService,
-    RedemptionService, RegistrationService, RegistrationServiceConfigError,
+    AdminCredentialProxyService, AdminEmailSettingsService, AdminGroupReader, AdminGroupWriter,
+    AdminModelPriceService, AdminModelReader, AdminModelSyncService, AdminModelWriter,
+    AdminNetworkSettingsError, AdminRouteReader, AdminRouteWriter, AdminTokenReader,
+    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
+    BalanceAlertTask, DatabaseAdminBalanceAlertSettingsService, DatabaseAdminChannelReader,
+    DatabaseAdminChannelWriter, DatabaseAdminCredentialProxyService,
+    DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader, DatabaseAdminGroupWriter,
+    DatabaseAdminModelPriceService, DatabaseAdminModelReader, DatabaseAdminModelSyncService,
+    DatabaseAdminModelWriter, DatabaseAdminNetworkSettingsService, DatabaseAdminRouteReader,
+    DatabaseAdminRouteWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
+    DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
+    DatabaseAdminWalletService, DatabaseInitialSetup, DatabasePasswordResetService,
+    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
+    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
+    DatabaseSiteSettingsService, DatabaseTokenAuthenticator, DatabaseUserInvitationService,
+    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
+    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
+    PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
     RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
     SiteSettingsService, TokenAuthenticator, UserInvitationService, UserProfileService,
     UserTokenService, UserWalletService,
@@ -52,12 +52,13 @@ use af_db::{
     AuthChallengeRateLimitRepositoryConfigError, AuthChallengeRepository,
     AuthChallengeRepositoryConfigError, BalanceAlertRepository, BalanceAlertRepositoryConfigError,
     BalanceAlertSettingsRepository, BalanceAlertSettingsRepositoryConfigError,
-    ChannelStateRepository, CredentialStateRepository, DatabaseError, DatabaseOptions,
-    DatabaseOptionsError, DatabasePool, EmailSettingsRepository,
-    EmailSettingsRepositoryConfigError, InitialSetupRepository, InitialSetupRepositoryConfigError,
-    MigrationOptions, ModelPriceRepository, ModelSyncRepository, NetworkSettingsMode,
-    NetworkSettingsRecord, NetworkSettingsRepository, NetworkSettingsRepositoryConfigError,
-    PasswordResetRepository, PasswordResetRepositoryConfigError, PlaygroundConversationRepository,
+    ChannelStateRepository, CredentialProxyRepository, CredentialProxyRepositoryConfigError,
+    CredentialStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
+    EmailSettingsRepository, EmailSettingsRepositoryConfigError, InitialSetupRepository,
+    InitialSetupRepositoryConfigError, MigrationOptions, ModelPriceRepository, ModelSyncRepository,
+    NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
+    NetworkSettingsRepositoryConfigError, PasswordResetRepository,
+    PasswordResetRepositoryConfigError, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RegistrationRepository, RegistrationRepositoryConfigError,
@@ -147,6 +148,7 @@ pub struct AuthenticationReady {
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
+    admin_credential_proxy_service: Arc<dyn AdminCredentialProxyService>,
     network_settings_repository: NetworkSettingsRepository,
     system_secret_cipher: SystemSecretCipher,
     admin_balance_alert_settings_service: Arc<dyn AdminBalanceAlertSettingsService>,
@@ -328,6 +330,9 @@ pub enum BootstrapError {
     /// 全局网络设置仓储的启动参数无效。
     #[error("网络设置仓储启动参数无效")]
     NetworkSettingsRepository(#[source] NetworkSettingsRepositoryConfigError),
+    /// 凭据专属代理目录仓储的启动参数无效。
+    #[error("专属代理目录仓储启动参数无效")]
+    CredentialProxyRepository(#[source] CredentialProxyRepositoryConfigError),
     /// 余额预警全局设置仓储的启动参数无效。
     #[error("余额预警设置仓储启动参数无效")]
     BalanceAlertSettingsRepository(#[source] BalanceAlertSettingsRepositoryConfigError),
@@ -568,6 +573,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::NetworkSettingsRepository)?;
+        let credential_proxy_repository = CredentialProxyRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::CredentialProxyRepository)?;
         let site_settings_repository = SiteSettingsRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -630,6 +640,10 @@ impl Bootstrap<DatabaseReady> {
         .map_err(BootstrapError::UserInvitationRepository)?;
         let system_secret_cipher = SystemSecretCipher::new(self.config.credential_encryption())
             .map_err(BootstrapError::SystemSecret)?;
+        let admin_credential_proxy_service = Arc::new(DatabaseAdminCredentialProxyService::new(
+            credential_proxy_repository,
+            system_secret_cipher.clone(),
+        ));
         let smtp_delivery: Arc<dyn EmailDelivery> = Arc::new(SmtpEmailDelivery);
         let balance_alert_task = BalanceAlertTask::new(
             balance_alert_settings_repository.clone(),
@@ -747,6 +761,7 @@ impl Bootstrap<DatabaseReady> {
                     site_settings_repository,
                 )),
                 admin_email_settings_service: Arc::new(admin_email_settings_service),
+                admin_credential_proxy_service,
                 network_settings_repository,
                 system_secret_cipher,
                 admin_balance_alert_settings_service: Arc::new(
@@ -988,6 +1003,7 @@ impl Bootstrap<RelayReady> {
                 self.stage.infrastructure.infrastructure.database.clone(),
             ),
         )
+        .with_proxy_cipher(self.stage.infrastructure.system_secret_cipher.clone())
         .with_channel_state_repository(ChannelStateRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),
         ));
@@ -1319,6 +1335,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.site_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_email_settings_service),
             self.stage.admin_network_settings_service.clone(),
+            Arc::clone(&self.stage.infrastructure.admin_credential_proxy_service),
             Some(Arc::clone(&self.stage.admin_oauth_connection_service)),
             Arc::clone(
                 &self

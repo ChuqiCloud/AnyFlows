@@ -16,7 +16,7 @@ use crate::{
 
 use super::{
     ChannelModelMappings, ChannelParameterOverrides, SchedulerRuntimeCredentialRecord,
-    SchedulerRuntimeRecord, SchedulerRuntimeTargetRecord,
+    SchedulerRuntimeProxyRecord, SchedulerRuntimeRecord, SchedulerRuntimeTargetRecord,
 };
 
 const PROJECTION_WIRE_VERSION: u8 = 1;
@@ -188,10 +188,33 @@ struct ProjectionCredentialWire {
     nonce_base64: String,
     ciphertext_base64: String,
     proxy_required: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    proxy: Option<ProjectionProxyWire>,
     priority: i32,
     weight: u32,
     #[serde(default)]
     concurrency: Option<u32>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ProjectionProxyWire {
+    proxy_id: i64,
+    scheme: String,
+    host: String,
+    port: u16,
+    username: Option<String>,
+    password: Option<ProjectionSecretWire>,
+    trust_proxy_dns: bool,
+    version: i64,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ProjectionSecretWire {
+    key_id: String,
+    nonce_base64: String,
+    ciphertext_base64: String,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -413,6 +436,7 @@ impl ProjectionCredentialWire {
             nonce_base64: BASE64_STANDARD.encode(credential.envelope().nonce()),
             ciphertext_base64: BASE64_STANDARD.encode(credential.envelope().ciphertext()),
             proxy_required: credential.proxy_required(),
+            proxy: credential.proxy().map(ProjectionProxyWire::from_proxy),
             priority: credential.priority(),
             weight: credential.weight(),
             concurrency: credential
@@ -443,7 +467,7 @@ impl ProjectionCredentialWire {
             .map(af_domain::ConcurrencyLimit::new)
             .transpose()
             .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
-        SchedulerRuntimeCredentialRecord::with_scheduling_and_concurrency(
+        let mut credential = SchedulerRuntimeCredentialRecord::with_scheduling_and_concurrency(
             self.credential_id,
             credential_kind,
             envelope,
@@ -452,7 +476,74 @@ impl ProjectionCredentialWire {
             self.weight,
             concurrency,
         )
+        .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        if let Some(proxy) = self.proxy {
+            credential = credential
+                .with_proxy(proxy.try_into_proxy()?)
+                .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        }
+        Ok(credential)
+    }
+}
+
+impl ProjectionProxyWire {
+    fn from_proxy(proxy: &SchedulerRuntimeProxyRecord) -> Self {
+        let password = proxy.password_secret().map(|secret| ProjectionSecretWire {
+            key_id: secret.key_id().to_owned(),
+            nonce_base64: BASE64_STANDARD.encode(secret.nonce()),
+            ciphertext_base64: BASE64_STANDARD.encode(secret.ciphertext()),
+        });
+        Self {
+            proxy_id: proxy.proxy_id().get(),
+            scheme: proxy.scheme().as_str().to_owned(),
+            host: proxy.host().to_owned(),
+            port: proxy.port(),
+            username: proxy.username().map(str::to_owned),
+            password,
+            trust_proxy_dns: proxy.trust_proxy_dns(),
+            version: proxy.version(),
+        }
+    }
+
+    fn try_into_proxy(
+        self,
+    ) -> Result<SchedulerRuntimeProxyRecord, SchedulerRuntimeProjectionError> {
+        let proxy_id = af_domain::ProxyId::new(self.proxy_id)
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        let scheme = crate::CredentialProxyScheme::parse(&self.scheme)
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        let password = self
+            .password
+            .map(ProjectionSecretWire::try_into_envelope)
+            .transpose()?;
+        SchedulerRuntimeProxyRecord::new(
+            proxy_id,
+            scheme,
+            self.host,
+            self.port,
+            self.username,
+            password,
+            self.trust_proxy_dns,
+            self.version,
+        )
         .map_err(|_| SchedulerRuntimeProjectionError::Invariant)
+    }
+}
+
+impl ProjectionSecretWire {
+    fn try_into_envelope(
+        self,
+    ) -> Result<EncryptedCredentialEnvelope, SchedulerRuntimeProjectionError> {
+        let nonce = BASE64_STANDARD
+            .decode(self.nonce_base64)
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?
+            .try_into()
+            .map_err(|_: Vec<u8>| SchedulerRuntimeProjectionError::Invariant)?;
+        let ciphertext = BASE64_STANDARD
+            .decode(self.ciphertext_base64)
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        EncryptedCredentialEnvelope::new(self.key_id, nonce, ciphertext)
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)
     }
 }
 
@@ -526,8 +617,13 @@ mod tests {
         assert_eq!(decoded.records(), projection.records());
         assert!(decoded.records()[0].target().pool_mode());
 
-        // 旧版 wire 没有账号并发字段，serde default 必须继续解码为不限并发。
+        // 普通账号保持旧 wire 形态；旧投影缺少并发字段时继续解码为不限并发。
         let mut old_wire: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+        assert!(
+            old_wire["targets"][0]["credentials"][0]
+                .get("proxy")
+                .is_none()
+        );
         for target in old_wire["targets"].as_array_mut().unwrap() {
             target.as_object_mut().unwrap().remove("pool_mode");
             for credential in target["credentials"].as_array_mut().unwrap() {
@@ -601,5 +697,65 @@ mod tests {
             .unwrap_err(),
             SchedulerRuntimeProjectionError::Invariant
         );
+    }
+
+    #[test]
+    fn projection_round_trips_scoped_proxy_ciphertext() {
+        let channel_id = ChannelId::new(17).unwrap();
+        let proxy = SchedulerRuntimeProxyRecord::new(
+            af_domain::ProxyId::new(23).unwrap(),
+            crate::CredentialProxyScheme::Socks5h,
+            "proxy.example".to_owned(),
+            1080,
+            Some("proxy-user".to_owned()),
+            Some(EncryptedCredentialEnvelope::new("proxy-key", [7; 24], vec![8; 32]).unwrap()),
+            true,
+            4,
+        )
+        .unwrap();
+        let credential = SchedulerRuntimeCredentialRecord::new(
+            19,
+            CredentialKind::ApiKey,
+            EncryptedCredentialEnvelope::new("credential-key", [5; 24], vec![6; 32]).unwrap(),
+            true,
+        )
+        .unwrap()
+        .with_proxy(proxy)
+        .unwrap();
+        let target = Arc::new(
+            SchedulerRuntimeTargetRecord::new(
+                channel_id,
+                ChannelType::OpenAi,
+                Protocol::OpenAiChat,
+                None,
+                credential,
+                Vec::new(),
+            )
+            .unwrap(),
+        );
+        let projection = SchedulerRuntimeProjection::new(
+            29,
+            SchedulerCatalogSubject::Channel(channel_id),
+            vec![SchedulerRuntimeRecord::new(
+                SchedulerAbilityRecord::from_projection_parts(
+                    GroupId::new(31).unwrap(),
+                    "proxy-model".to_owned(),
+                    channel_id,
+                    0,
+                    1,
+                )
+                .unwrap(),
+                target,
+            )],
+        )
+        .unwrap();
+
+        let decoded = SchedulerRuntimeProjection::decode(&projection.encode().unwrap()).unwrap();
+        let proxy = decoded.records()[0].target().credentials()[0]
+            .proxy()
+            .unwrap();
+        assert_eq!(proxy.proxy_id().get(), 23);
+        assert_eq!(proxy.scheme(), crate::CredentialProxyScheme::Socks5h);
+        assert!(proxy.trust_proxy_dns());
     }
 }

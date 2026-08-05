@@ -20,6 +20,8 @@ pub enum SystemSecretKind {
     SmtpPassword,
     /// 系统出站代理认证密码。
     ProxyPassword,
+    /// 凭据专属代理认证密码；记录标识参与 AAD，禁止密文跨代理搬用。
+    CredentialProxyPassword(af_domain::ProxyId),
 }
 
 impl SystemSecretKind {
@@ -27,6 +29,7 @@ impl SystemSecretKind {
         match self {
             Self::SmtpPassword => "smtp_password",
             Self::ProxyPassword => "proxy_password",
+            Self::CredentialProxyPassword(_) => "credential_proxy_password",
         }
     }
 }
@@ -200,11 +203,19 @@ impl fmt::Debug for SystemSecretCipher {
 }
 
 fn system_secret_aad(kind: SystemSecretKind) -> Vec<u8> {
-    format!(
-        "anyflows:system-secret:v1:record=email_settings:1:kind={}",
-        kind.as_str()
-    )
-    .into_bytes()
+    match kind {
+        SystemSecretKind::CredentialProxyPassword(proxy_id) => format!(
+            "anyflows:system-secret:v1:record=proxies:{}:kind={}",
+            proxy_id.get(),
+            kind.as_str()
+        )
+        .into_bytes(),
+        _ => format!(
+            "anyflows:system-secret:v1:record=email_settings:1:kind={}",
+            kind.as_str()
+        )
+        .into_bytes(),
+    }
 }
 
 fn valid_plaintext(value: &str) -> bool {
@@ -255,6 +266,31 @@ mod tests {
         assert_eq!(
             cipher
                 .decrypt(SystemSecretKind::ProxyPassword, &envelope)
+                .unwrap_err(),
+            SystemSecretError::Decrypt
+        );
+    }
+
+    #[test]
+    fn credential_proxy_password_is_bound_to_the_proxy_record() {
+        let cipher = SystemSecretCipher::new(&settings()).unwrap();
+        let secret = PlainSystemSecret::new("proxy-password".to_owned()).unwrap();
+        let first = af_domain::ProxyId::new(7).unwrap();
+        let second = af_domain::ProxyId::new(8).unwrap();
+        let envelope = cipher
+            .encrypt(SystemSecretKind::CredentialProxyPassword(first), &secret)
+            .unwrap();
+
+        assert_eq!(
+            cipher
+                .decrypt(SystemSecretKind::CredentialProxyPassword(first), &envelope)
+                .unwrap()
+                .expose_secret(),
+            "proxy-password"
+        );
+        assert_eq!(
+            cipher
+                .decrypt(SystemSecretKind::CredentialProxyPassword(second), &envelope)
                 .unwrap_err(),
             SystemSecretError::Decrypt
         );

@@ -162,6 +162,38 @@ pub(in crate::migration) mod credentials {
     }
 }
 
+pub(in crate::migration) mod proxies {
+    use super::DeriveIden;
+
+    /// `proxies` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "proxies")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 凭据专属出口代理目录的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        Name,
+        ActiveName,
+        Scheme,
+        Host,
+        Port,
+        Username,
+        PasswordSecret,
+        TrustProxyDns,
+        Enabled,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+        DeletedAt,
+    }
+}
+
 pub(in crate::migration) mod tokens {
     use super::DeriveIden;
 

@@ -7,6 +7,7 @@ mod channel_probe;
 mod chat_completions;
 mod chat_service;
 mod client_ip;
+mod credential_proxies;
 mod credentials;
 mod email_settings;
 mod error_response;

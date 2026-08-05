@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use af_domain::{ChannelId, Status};
+use af_domain::{ChannelId, ProxyId, Status};
 use sea_orm::{
     ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -17,7 +17,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::{
     DatabasePool, SchedulerAbilityRecord, SchedulerAbilityRepository,
     SchedulerAbilityRepositoryError, SchedulerCatalogSubject,
-    entity::{channels, credentials},
+    entity::{channels, credentials, proxies},
 };
 
 use super::{
@@ -25,7 +25,7 @@ use super::{
     selection::{SchedulerRuntimeSelectionError, select_supported_targets},
     source::{
         SchedulerRuntimeChannelSource, SchedulerRuntimeCredentialSource,
-        SchedulerRuntimeSourceError,
+        SchedulerRuntimeSourceError, proxy_from_entity,
     },
 };
 
@@ -186,12 +186,48 @@ impl SchedulerRuntimeRepository {
             if credentials.len() > MAX_SCHEDULER_RUNTIME_CREDENTIAL_ENTRIES {
                 return Err(SchedulerRuntimeRepositoryError::Invariant);
             }
+            let proxy_ids = credentials
+                .iter()
+                .filter_map(|credential| credential.proxy_id)
+                .collect::<BTreeSet<_>>();
+            let proxy_records = if proxy_ids.is_empty() {
+                BTreeMap::new()
+            } else {
+                proxies::Entity::find()
+                    .filter(proxies::Column::Id.is_in(proxy_ids.iter().copied()))
+                    .filter(proxies::Column::Enabled.eq(true))
+                    .filter(proxies::Column::DeletedAt.is_null())
+                    .all(self.pool.connection())
+                    .await
+                    .map_err(|_| SchedulerRuntimeRepositoryError::Query)?
+                    .into_iter()
+                    .try_fold(BTreeMap::new(), |mut records, proxy| {
+                        let record = proxy_from_entity(proxy)?;
+                        if records.insert(record.proxy_id(), record).is_some() {
+                            return Err(SchedulerRuntimeRepositoryError::Invariant);
+                        }
+                        Ok(records)
+                    })?
+            };
+            if proxy_records.len() != proxy_ids.len() {
+                return Err(SchedulerRuntimeRepositoryError::Invariant);
+            }
             let now = TimeDateTimeWithTimeZone::now_utc();
-            let credentials = credentials
-                .into_iter()
-                .try_fold(Vec::new(), |sources, credential| {
-                    collect_credential_source(sources, credential, &now)
-                })?;
+            let credentials =
+                credentials
+                    .into_iter()
+                    .try_fold(Vec::new(), |sources, credential| {
+                        let proxy = credential
+                            .proxy_id
+                            .map(|proxy_id| {
+                                ProxyId::new(proxy_id)
+                                    .ok()
+                                    .and_then(|proxy_id| proxy_records.get(&proxy_id).cloned())
+                                    .ok_or(SchedulerRuntimeRepositoryError::Invariant)
+                            })
+                            .transpose()?;
+                        collect_credential_source(sources, credential, proxy, &now)
+                    })?;
             let targets = select_supported_targets(&channels, credentials)?;
             Ok(abilities
                 .into_iter()
@@ -245,10 +281,11 @@ fn collect_channel_source(
 fn collect_credential_source(
     mut sources: Vec<SchedulerRuntimeCredentialSource>,
     credential: credentials::Model,
+    proxy: Option<super::SchedulerRuntimeProxyRecord>,
     now: &TimeDateTimeWithTimeZone,
 ) -> Result<Vec<SchedulerRuntimeCredentialSource>, SchedulerRuntimeRepositoryError> {
     if let Some(source) =
-        SchedulerRuntimeCredentialSource::from_entity(credential)?.filter(|source| {
+        SchedulerRuntimeCredentialSource::from_entity(credential, proxy)?.filter(|source| {
             // 冷却窗口属于持久化调度元数据，进入纯选择策略前先按当前快照时间排除。
             !source.is_cooling_down(now)
         })

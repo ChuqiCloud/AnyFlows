@@ -75,6 +75,12 @@ pub(crate) enum ManagementError {
     RouteConflict,
     /// 智能路由候选引用的渠道或凭据无效。
     RouteInvalidReference,
+    /// 凭据专属代理不存在或已经被软删除。
+    CredentialProxyNotFound,
+    /// 凭据专属代理名称与当前有效目录冲突。
+    CredentialProxyConflict,
+    /// 凭据专属代理仍被有效凭据引用。
+    CredentialProxyReferenced,
     /// 模型商品元数据不存在或已经被软删除。
     ModelNotFound,
     /// Canonical 模型标识与当前有效元数据冲突。
@@ -405,6 +411,27 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "route_invalid_reference",
                     message: "Route channel reference is invalid",
+                },
+            ),
+            Self::CredentialProxyNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "credential_proxy_not_found",
+                    message: "Credential proxy not found",
+                },
+            ),
+            Self::CredentialProxyConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "credential_proxy_conflict",
+                    message: "Credential proxy conflict",
+                },
+            ),
+            Self::CredentialProxyReferenced => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "credential_proxy_referenced",
+                    message: "Credential proxy is still referenced",
                 },
             ),
             Self::ModelNotFound => (

@@ -34,8 +34,8 @@ pub use payment::{
     TopupPaymentEventType, TopupRequestId, TopupStateCodeError,
 };
 pub use principal::{
-    ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, PrincipalIdError, RouteChannelId,
-    RouteId, TokenId, UserId,
+    ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, PrincipalIdError, ProxyId,
+    RouteChannelId, RouteId, TokenId, UserId,
 };
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{

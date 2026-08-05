@@ -40,6 +40,7 @@ pub(crate) mod network_settings;
 pub(crate) mod options;
 pub(crate) mod playground_conversations;
 pub(crate) mod playground_shares;
+pub(crate) mod proxies;
 pub(crate) mod redemption_batches;
 pub(crate) mod redemption_codes;
 pub(crate) mod registration_rate_limits;

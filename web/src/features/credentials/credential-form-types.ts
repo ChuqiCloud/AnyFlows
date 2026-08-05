@@ -27,6 +27,7 @@ export type CredentialFormValues = {
   loadFactor: string
   rateMultiplier: string
   parentId: string
+  proxyId: string
   quotaDimension: AdminCredentialQuotaDimension
   oauthProvider: string
   oauthAccountKey: string

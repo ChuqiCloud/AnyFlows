@@ -59,6 +59,9 @@ mod connection;
 mod credential_probe;
 #[cfg(test)]
 mod credential_probe_tests;
+mod credential_proxy;
+#[cfg(test)]
+mod credential_proxy_tests;
 mod credential_state;
 #[cfg(test)]
 mod credential_state_tests;
@@ -249,6 +252,14 @@ pub use credential_probe::{
     ChannelProbeTargetRecord, ChannelProbeTargetRepository, ChannelProbeTargetRepositoryError,
     EncryptedCredentialEnvelope, EncryptedCredentialEnvelopeError,
     MAX_CREDENTIAL_ENVELOPE_CIPHERTEXT_BYTES, MAX_CREDENTIAL_ENVELOPE_KEY_ID_BYTES,
+};
+pub use credential_proxy::{
+    CredentialProxyCreateRecord, CredentialProxyDeleteOutcome, CredentialProxyLookupOutcome,
+    CredentialProxyMutationOutcome, CredentialProxyPageRecord, CredentialProxyPasswordUpdate,
+    CredentialProxyRecord, CredentialProxyRepository, CredentialProxyRepositoryConfigError,
+    CredentialProxyRepositoryError, CredentialProxyScheme, CredentialProxyUpdateRecord,
+    MAX_CREDENTIAL_PROXY_HOST_BYTES, MAX_CREDENTIAL_PROXY_NAME_BYTES,
+    MAX_CREDENTIAL_PROXY_PAGE_SIZE, MAX_CREDENTIAL_PROXY_USERNAME_BYTES,
 };
 pub use credential_state::{
     CredentialStateChange, CredentialStateEvent, CredentialStateRepository,

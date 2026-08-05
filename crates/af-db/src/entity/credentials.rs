@@ -70,10 +70,24 @@ pub enum Relation {
         on_delete = "Cascade"
     )]
     Parent,
+    #[sea_orm(
+        belongs_to = "super::proxies::Entity",
+        from = "Column::ProxyId",
+        to = "super::proxies::Column::Id",
+        on_update = "Cascade",
+        on_delete = "Restrict"
+    )]
+    Proxy,
 }
 
 impl Related<super::channels::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Channel.def()
+    }
+}
+
+impl Related<super::proxies::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Proxy.def()
     }
 }

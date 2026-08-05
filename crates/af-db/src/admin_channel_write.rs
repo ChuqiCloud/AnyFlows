@@ -34,7 +34,7 @@ use crate::{
     },
     entity::{
         ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channel_groups,
-        channel_models, channels, credentials,
+        channel_models, channels, credentials, proxies,
     },
     scheduler_outbox::enqueue_scheduler_catalog_change,
     validate_channel_header_overrides,
@@ -724,6 +724,7 @@ impl AdminChannelRepository {
             return Ok(AdminCredentialCreateOutcome::ChannelNotFound);
         }
         validate_parent(&transaction, channel_id, None, &fields).await?;
+        validate_proxy_binding(&transaction, fields.proxy_id).await?;
         let placeholder = pending_encrypted_json()?;
         let inserted = credentials::ActiveModel {
             channel_id: Set(channel_id.get()),
@@ -808,6 +809,7 @@ impl AdminChannelRepository {
             return Err(internal_error(AdminChannelWriteRepositoryError::Invariant));
         }
         validate_parent(&transaction, channel_id, Some(credential_id), &fields).await?;
+        validate_proxy_binding(&transaction, fields.proxy_id).await?;
 
         let now = TimeDateTimeWithTimeZone::now_utc();
         let mut update = credentials::Entity::update_many()
@@ -1138,6 +1140,32 @@ async fn validate_parent(
     if let Some(credential_id) = credential_id
         && active_child_exists(transaction, channel_id, credential_id).await?
     {
+        return Err(AdminChannelWriteRepositoryError::InvalidReference);
+    }
+    Ok(())
+}
+
+/// 凭据只能绑定当前启用且未软删除的真实代理目录项。
+async fn validate_proxy_binding(
+    transaction: &DatabaseTransaction,
+    proxy_id: Option<i64>,
+) -> Result<(), AdminChannelWriteRepositoryError> {
+    let Some(proxy_id) = proxy_id else {
+        return Ok(());
+    };
+    let exists = proxies::Entity::find_by_id(proxy_id)
+        .select_only()
+        .column(proxies::Column::Id)
+        .filter(proxies::Column::Enabled.eq(true))
+        .filter(proxies::Column::DeletedAt.is_null())
+        .limit(1)
+        .into_tuple::<i64>()
+        .one(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_db_error)?
+        .is_some();
+    if !exists {
         return Err(AdminChannelWriteRepositoryError::InvalidReference);
     }
     Ok(())

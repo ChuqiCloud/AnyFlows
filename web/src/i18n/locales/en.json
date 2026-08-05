@@ -28,6 +28,7 @@
     "modelSettings": "Model management",
     "channels": "Channels",
     "credentials": "Credentials & accounts",
+    "credentialProxies": "Dedicated proxies",
     "routes": "Smart routing",
     "keys": "Global keys",
     "usage": "Global usage",
@@ -692,7 +693,10 @@
       "parent": "Parent account",
       "parentHint": "Only root accounts of the same type and channel are available.",
       "noParent": "Independent account",
-      "proxyBound": "Dedicated proxy attached",
+      "proxy": "Dedicated egress proxy",
+      "proxyHint": "When attached, this account only uses the selected proxy and never falls back to a direct route.",
+      "noProxy": "Use global network egress",
+      "proxyLoadFailed": "The dedicated proxy catalog could not be loaded.",
       "optional": "Leave empty for unlimited"
     },
     "state": { "unsaved": "Unsaved changes", "synced": "Synced with server" },
@@ -2363,6 +2367,70 @@
     "security": {
       "title": "Credential and content boundary",
       "description": "Management reads return only password status. Passwords, recipients, message bodies, and SMTP server responses stay out of page caches, URLs, and error details."
+    }
+  },
+  "credentialProxies": {
+    "title": "Dedicated proxies",
+    "subtitle": "Manage account-level egress. Each credential can require one proxy with no fallback to global or direct networking.",
+    "loading": "Loading dedicated proxies",
+    "summary": {
+      "total": "{{count}} proxies",
+      "enabled": "{{count}} enabled",
+      "authenticated": "{{count}} authenticated"
+    },
+    "columns": {
+      "proxy": "Proxy",
+      "endpoint": "Endpoint",
+      "security": "Security",
+      "actions": "Actions"
+    },
+    "status": { "enabled": "Enabled", "disabled": "Disabled" },
+    "security": { "auth": "Authenticated", "noAuth": "No auth", "proxyDns": "Proxy DNS" },
+    "fields": {
+      "name": "Proxy name",
+      "scheme": "Protocol",
+      "host": "Host",
+      "port": "Port",
+      "username": "Username",
+      "password": "Password",
+      "enabled": "Available for binding",
+      "enabledHint": "Detach all credentials before disabling this proxy.",
+      "trustProxyDns": "Trust proxy-side DNS",
+      "trustProxyDnsHint": "HTTP(S) and SOCKS5H resolve upstream domains at the proxy. Enable only for trusted proxies."
+    },
+    "editor": {
+      "createTitle": "Add dedicated proxy",
+      "createDescription": "Create an isolated egress option for credentials.",
+      "editTitle": "Edit dedicated proxy",
+      "editDescription": "Bound channels refresh their runtime snapshot after an update.",
+      "routeTitle": "Egress route",
+      "routeDescription": "Protocol, host, and port stay structured; credentials are never embedded in a visible URL.",
+      "authTitle": "Proxy authentication",
+      "authDescription": "Leave username and password empty for an unauthenticated proxy.",
+      "authKeepHint": "An empty password preserves the encrypted value. Clearing the username removes authentication."
+    },
+    "empty": { "title": "No dedicated proxies", "body": "Add a proxy to make it selectable from the credential editor." },
+    "delete": { "title": "Delete dedicated proxy", "description": "Delete “{{name}}”? The server refuses while credentials still reference it." },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "create": "Add proxy",
+      "save": "Save changes",
+      "edit": "Edit",
+      "delete": "Delete",
+      "cancel": "Cancel",
+      "enable": "Enable",
+      "disable": "Disable",
+      "showPassword": "Show password",
+      "hidePassword": "Hide password"
+    },
+    "errors": {
+      "title": "Dedicated proxies unavailable",
+      "load": "The proxy catalog could not be loaded.",
+      "invalid": "Check the name, endpoint, and authentication fields.",
+      "save": "The proxy could not be saved. Check for a name conflict or invalid fields.",
+      "toggle": "The status could not be changed. Referenced proxies cannot be disabled.",
+      "referenced": "This proxy is still referenced. Detach it from the account pool first."
     }
   },
   "networkSettings": {

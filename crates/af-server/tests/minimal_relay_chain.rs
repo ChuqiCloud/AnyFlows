@@ -14,13 +14,16 @@ use af_admin::{
     AdminChannelReadError, AdminChannelReader, AdminChannelUpdateCommand, AdminChannelUpdateFuture,
     AdminChannelWriteError, AdminChannelWriter, AdminCredentialCreateCommand,
     AdminCredentialCreateFuture, AdminCredentialDeleteFuture, AdminCredentialGetFuture,
-    AdminCredentialListFuture, AdminCredentialListQuery, AdminCredentialUpdateCommand,
-    AdminCredentialUpdateFuture, AdminEmailSettingsCommand, AdminEmailSettingsError,
-    AdminEmailSettingsReadFuture, AdminEmailSettingsService, AdminEmailSettingsUpdateFuture,
-    AdminEmailTestCommand, AdminEmailTestFuture, AdminGroupCreateCommand, AdminGroupCreateFuture,
-    AdminGroupDeleteFuture, AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery,
-    AdminGroupReadError, AdminGroupReader, AdminGroupUpdateCommand, AdminGroupUpdateFuture,
-    AdminGroupWriteError, AdminGroupWriter, AdminNetworkSettingsCommand, AdminNetworkSettingsError,
+    AdminCredentialListFuture, AdminCredentialListQuery, AdminCredentialProxyCreateCommand,
+    AdminCredentialProxyDeleteFuture, AdminCredentialProxyError, AdminCredentialProxyFuture,
+    AdminCredentialProxyListQuery, AdminCredentialProxyPageFuture, AdminCredentialProxyService,
+    AdminCredentialProxyUpdateCommand, AdminCredentialUpdateCommand, AdminCredentialUpdateFuture,
+    AdminEmailSettingsCommand, AdminEmailSettingsError, AdminEmailSettingsReadFuture,
+    AdminEmailSettingsService, AdminEmailSettingsUpdateFuture, AdminEmailTestCommand,
+    AdminEmailTestFuture, AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture,
+    AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError,
+    AdminGroupReader, AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError,
+    AdminGroupWriter, AdminNetworkSettingsCommand, AdminNetworkSettingsError,
     AdminNetworkSettingsReadFuture, AdminNetworkSettingsService, AdminNetworkSettingsUpdateFuture,
     AdminSiteSettingsReadFuture, AdminSiteSettingsUpdateFuture, AdminTokenCreateCommand,
     AdminTokenCreateFuture, AdminTokenDeleteFuture, AdminTokenGetFuture, AdminTokenListFuture,
@@ -61,7 +64,7 @@ use af_analytics::{
 };
 use af_config::ServerConfig;
 use af_domain::{
-    ChannelId, CredentialId, GatewayPrincipal, GroupId, Role, TokenId, TokenModelPolicy,
+    ChannelId, CredentialId, GatewayPrincipal, GroupId, ProxyId, Role, TokenId, TokenModelPolicy,
     TrustedClientIp, UserId,
 };
 use af_http::{
@@ -89,6 +92,51 @@ use tokio::{
 struct AlwaysReadyProbe;
 
 struct RejectAdminNetworkSettings;
+
+struct RejectAdminCredentialProxies;
+
+impl AdminCredentialProxyService for RejectAdminCredentialProxies {
+    fn list<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _query: AdminCredentialProxyListQuery,
+    ) -> AdminCredentialProxyPageFuture<'a> {
+        Box::pin(async { Err(AdminCredentialProxyError::Internal) })
+    }
+
+    fn get<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _proxy_id: ProxyId,
+    ) -> AdminCredentialProxyFuture<'a> {
+        Box::pin(async { Err(AdminCredentialProxyError::Internal) })
+    }
+
+    fn create<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: AdminCredentialProxyCreateCommand,
+    ) -> AdminCredentialProxyFuture<'a> {
+        Box::pin(async { Err(AdminCredentialProxyError::Internal) })
+    }
+
+    fn update<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _proxy_id: ProxyId,
+        _command: AdminCredentialProxyUpdateCommand,
+    ) -> AdminCredentialProxyFuture<'a> {
+        Box::pin(async { Err(AdminCredentialProxyError::Internal) })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _proxy_id: ProxyId,
+    ) -> AdminCredentialProxyDeleteFuture<'a> {
+        Box::pin(async { Err(AdminCredentialProxyError::Internal) })
+    }
+}
 
 impl AdminNetworkSettingsService for RejectAdminNetworkSettings {
     fn settings<'a>(&'a self, _principal: SessionPrincipal) -> AdminNetworkSettingsReadFuture<'a> {
@@ -1636,6 +1684,7 @@ async fn start_server(
         Arc::new(RejectSiteSettings),
         Arc::new(RejectAdminEmailSettings),
         Arc::new(RejectAdminNetworkSettings),
+        Arc::new(RejectAdminCredentialProxies),
         None,
         Arc::new(RejectAdminBalanceAlertSettings),
         Arc::new(RejectAdminChannels),

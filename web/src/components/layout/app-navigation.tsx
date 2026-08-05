@@ -12,6 +12,7 @@ import {
   PanelsTopLeft,
   PackageSearch,
   ScrollText,
+  ServerCog,
   ShieldCheck,
   TicketCheck,
   Ticket,
@@ -41,7 +42,7 @@ type AppNavigationProps = {
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'wallet' | 'invitations' | 'profile' | 'users' | 'redemptionCodes' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'credentials' | 'routes' | 'keys' | 'usage'
+  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'wallet' | 'invitations' | 'profile' | 'users' | 'redemptionCodes' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'credentials' | 'credentialProxies' | 'routes' | 'keys' | 'usage'
   icon: LucideIcon
   href: `#/console${string}`
 }
@@ -87,6 +88,7 @@ const navGroups: readonly NavGroup[] = [
       { key: 'modelSettings', icon: PackageSearch, href: '#/console/system-settings/models' },
       { key: 'channels', icon: Network, href: '#/console/channels' },
       { key: 'credentials', icon: KeyRound, href: '#/console/credentials' },
+      { key: 'credentialProxies', icon: ServerCog, href: '#/console/proxies' },
       { key: 'routes', icon: GitBranch, href: '#/console/routes' },
       { key: 'keys', icon: ShieldCheck, href: '#/console/tokens' },
       { key: 'usage', icon: ScrollText, href: '#/console/usage-logs' },
@@ -113,6 +115,7 @@ const activeKeyByView: Partial<Record<AppView, NavItem['key']>> = {
   'model-settings': 'modelSettings',
   channels: 'channels',
   credentials: 'credentials',
+  'credential-proxies': 'credentialProxies',
   routes: 'routes',
   tokens: 'keys',
   'usage-logs': 'usage',

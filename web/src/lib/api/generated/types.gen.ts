@@ -191,6 +191,34 @@ export type AdminCredentialListResponse = {
     next_cursor: number | null;
 };
 export type AdminCredentialMultiKeyMode = 'random' | 'round_robin';
+export type AdminCredentialProxy = {
+    id: number;
+    name: string;
+    scheme: AdminCredentialProxyScheme;
+    host: string;
+    port: number;
+    username?: string | null;
+    password_configured: boolean;
+    trust_proxy_dns: boolean;
+    enabled: boolean;
+    version: number;
+    created_at: number;
+    updated_at: number;
+};
+export type AdminCredentialProxyListResponse = {
+    proxies: Array<AdminCredentialProxy>;
+    next_cursor: number | null;
+};
+export type AdminCredentialProxyScheme = 'http' | 'https' | 'socks5' | 'socks5h';
+export type AdminCredentialProxyWriteRequest = {
+    name: string;
+    scheme: AdminCredentialProxyScheme;
+    host: string;
+    port: number;
+    username?: string | null;
+    trust_proxy_dns: boolean;
+    enabled: boolean;
+};
 export type AdminCredentialQuotaDimension = 'global' | 'spark';
 export type AdminCredentialSecret = {
     kind: 'api_key';
@@ -1109,6 +1137,16 @@ export type AdminCredentialCreateRequestWritable = {
     oauth_provider: string | null;
     oauth_account_key: string | null;
     oauth_project_id: string | null;
+};
+export type AdminCredentialProxyWriteRequestWritable = {
+    name: string;
+    scheme: AdminCredentialProxyScheme;
+    host: string;
+    port: number;
+    username?: string | null;
+    password?: string | null;
+    trust_proxy_dns: boolean;
+    enabled: boolean;
 };
 export type AdminCredentialSecretWritable = {
     api_key: string;
@@ -2936,3 +2974,103 @@ export type UpdateAdminCredentialResponses = {
     200: AdminCredential;
 };
 export type UpdateAdminCredentialResponse = UpdateAdminCredentialResponses[keyof UpdateAdminCredentialResponses];
+export type ListAdminCredentialProxiesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/admin/proxies';
+};
+export type ListAdminCredentialProxiesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminCredentialProxiesError = ListAdminCredentialProxiesErrors[keyof ListAdminCredentialProxiesErrors];
+export type ListAdminCredentialProxiesResponses = {
+    200: AdminCredentialProxyListResponse;
+};
+export type ListAdminCredentialProxiesResponse = ListAdminCredentialProxiesResponses[keyof ListAdminCredentialProxiesResponses];
+export type CreateAdminCredentialProxyData = {
+    body: AdminCredentialProxyWriteRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/admin/proxies';
+};
+export type CreateAdminCredentialProxyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateAdminCredentialProxyError = CreateAdminCredentialProxyErrors[keyof CreateAdminCredentialProxyErrors];
+export type CreateAdminCredentialProxyResponses = {
+    201: AdminCredentialProxy;
+};
+export type CreateAdminCredentialProxyResponse = CreateAdminCredentialProxyResponses[keyof CreateAdminCredentialProxyResponses];
+export type DeleteAdminCredentialProxyData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/proxies/{id}';
+};
+export type DeleteAdminCredentialProxyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type DeleteAdminCredentialProxyError = DeleteAdminCredentialProxyErrors[keyof DeleteAdminCredentialProxyErrors];
+export type DeleteAdminCredentialProxyResponses = {
+    204: void;
+};
+export type DeleteAdminCredentialProxyResponse = DeleteAdminCredentialProxyResponses[keyof DeleteAdminCredentialProxyResponses];
+export type GetAdminCredentialProxyData = {
+    body?: never;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/proxies/{id}';
+};
+export type GetAdminCredentialProxyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminCredentialProxyError = GetAdminCredentialProxyErrors[keyof GetAdminCredentialProxyErrors];
+export type GetAdminCredentialProxyResponses = {
+    200: AdminCredentialProxy;
+};
+export type GetAdminCredentialProxyResponse = GetAdminCredentialProxyResponses[keyof GetAdminCredentialProxyResponses];
+export type UpdateAdminCredentialProxyData = {
+    body: AdminCredentialProxyWriteRequestWritable;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/proxies/{id}';
+};
+export type UpdateAdminCredentialProxyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminCredentialProxyError = UpdateAdminCredentialProxyErrors[keyof UpdateAdminCredentialProxyErrors];
+export type UpdateAdminCredentialProxyResponses = {
+    200: AdminCredentialProxy;
+};
+export type UpdateAdminCredentialProxyResponse = UpdateAdminCredentialProxyResponses[keyof UpdateAdminCredentialProxyResponses];
