@@ -28,6 +28,7 @@
     "modelSettings": "模型管理",
     "channels": "渠道管理",
     "credentials": "凭据与账号池",
+    "routes": "智能路由",
     "keys": "全局令牌",
     "usage": "全局用量",
     "billing": "计费",
@@ -386,6 +387,140 @@
           "unknown": "OAuth 请求失败，请稍后重试。"
         }
       }
+    }
+  },
+  "routes": {
+    "title": "智能路由",
+    "subtitle": "按模型匹配规则编排渠道与账号池，使用权重、轮询或稳定优先策略，并持续查看候选运行统计。",
+    "loading": "正在加载智能路由",
+    "summary": {
+      "loaded": "共 {{count}} 条规则",
+      "enabled": "已启用 {{count}} 条",
+      "candidates": "{{count}} 个候选"
+    },
+    "columns": {
+      "route": "规则",
+      "strategy": "策略",
+      "candidates": "候选",
+      "health": "运行统计",
+      "actions": "操作"
+    },
+    "status": { "enabled": "已启用", "disabled": "已停用" },
+    "mode": {
+      "pattern": "模型匹配",
+      "explicit_group": "显式分组",
+      "patternShort": "{{mode}}"
+    },
+    "strategy": {
+      "weighted": "加权选择",
+      "round_robin": "顺序轮询",
+      "stable_first": "稳定优先"
+    },
+    "strategyHint": {
+      "weighted": "按优先级、权重和实时健康度综合选择候选。",
+      "round_robin": "在同优先级候选之间按稳定顺序轮换。",
+      "stable_first": "优先使用健康度接近最佳值的主池候选。"
+    },
+    "values": {
+      "candidates": "{{count}} 个候选",
+      "enabledCandidates": "{{count}} 个启用"
+    },
+    "health": {
+      "noData": "尚无请求统计",
+      "noLatency": "尚无延迟样本",
+      "successRate": "成功率 {{value}}%",
+      "latency": "平均延迟 {{value}} ms"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "create": "新建路由",
+      "save": "保存路由",
+      "cancel": "取消",
+      "edit": "编辑路由",
+      "delete": "删除路由",
+      "enable": "启用路由",
+      "disable": "停用路由"
+    },
+    "empty": {
+      "title": "还没有智能路由",
+      "body": "创建第一条模型匹配规则，再从真实渠道凭据中选择候选。"
+    },
+    "error": {
+      "title": "无法读取智能路由",
+      "body": "服务暂时没有返回路由目录，请稍后重试。"
+    },
+    "editor": {
+      "createTitle": "新建智能路由",
+      "createDescription": "配置匹配规则、选择策略，并编排真实渠道与凭据候选。",
+      "editTitle": "编辑智能路由",
+      "editDescription": "完整更新规则和候选顺序；已保存的密文凭据只显示脱敏元数据。"
+    },
+    "form": {
+      "identity": "基本信息",
+      "name": "规则名称",
+      "enabled": "启用规则",
+      "enabledHint": "停用后不会参与新的请求选择。",
+      "matching": "匹配与策略",
+      "modelPattern": "匹配模型或分组",
+      "modelPatternPlaceholder": "例如 gpt-5.5 或 re:^gpt-5\\.",
+      "modelPatternHint": "模型匹配支持以 re: 开头的正则；显式分组使用分组名，不使用正则。",
+      "mode": "匹配模式",
+      "strategy": "选择策略",
+      "mapping": "模型映射",
+      "mappingHint": "可选。把对外模型名映射到候选渠道的上游模型名。",
+      "mappingSource": "对外模型名",
+      "mappingTarget": "上游模型名",
+      "mappingSourcePlaceholder": "例如 gpt-5.5",
+      "mappingTargetPlaceholder": "例如 gpt-5.5-pro",
+      "mappingEmpty": "暂不配置模型映射",
+      "addMapping": "添加映射",
+      "removeMapping": "移除映射",
+      "candidates": "候选渠道与账号",
+      "candidatesHint": "拖动候选调整优先级；权重只影响支持加权的策略。每个渠道与凭据组合只能添加一次。",
+      "channel": "渠道",
+      "selectChannel": "选择渠道",
+      "credential": "凭据",
+      "selectCredential": "选择凭据",
+      "addCandidate": "添加候选",
+      "candidatesLoading": "正在加载渠道与凭据目录…",
+      "candidatesLoadFailed": "渠道或凭据目录加载失败，请刷新后重试。",
+      "retryCandidates": "重试加载",
+      "noCredentialCandidates": "当前没有带可用凭据的渠道。请先在渠道管理中添加凭据。",
+      "candidatesEmpty": "还没有候选，请先选择渠道和凭据。",
+      "candidatePosition": "第 {{position}} 个候选",
+      "reorderCandidate": "拖动调整第 {{position}} 个候选",
+      "unknownChannel": "未知渠道 #{{id}}",
+      "unknownCredential": "未知凭据 #{{id}}",
+      "weight": "权重",
+      "candidateEnabled": "启用候选",
+      "removeCandidate": "移除候选",
+      "stats": "成功 {{success}} · 失败 {{failed}}",
+      "statsNoLatency": "暂无延迟",
+      "statsLatency": "平均 {{value}} ms",
+      "cooldown": "冷却级别 {{level}}"
+    },
+    "validation": {
+      "invalidName": "请输入 1-128 字节的规则名称。",
+      "invalidPattern": "请输入有效的模型或分组匹配值；正则需包含 re: 后的表达式。",
+      "invalidMapping": "映射键和值不能为空，键不能重复。",
+      "mappingTooLarge": "模型映射过大，请减少条目。",
+      "tooManyCandidates": "候选最多支持 64 个。",
+      "invalidCandidates": "候选 ID、权重必须是有效的非负整数，且组合不能重复。"
+    },
+    "errors": {
+      "route_conflict": "规则名称已存在，请更换名称。",
+      "route_not_found": "规则已不存在，请刷新列表。",
+      "route_invalid_reference": "渠道或凭据引用无效，请刷新候选目录。",
+      "invalid_request": "路由参数无效，请检查表单内容。",
+      "forbidden": "当前会话没有管理智能路由的权限。",
+      "updateFailed": "路由状态更新失败，请稍后重试。",
+      "internal_error": "智能路由服务暂不可用，请稍后重试。",
+      "unknown": "智能路由操作失败，请稍后重试。"
+    },
+    "delete": {
+      "title": "删除智能路由",
+      "description": "将永久删除“{{name}}”及其候选配置，此操作无法撤销。"
     }
   },
   "credentials": {

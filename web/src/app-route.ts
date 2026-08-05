@@ -16,6 +16,7 @@ export type AppView =
   | 'public-models'
   | 'register'
   | 'redemption-codes'
+  | 'routes'
   | 'reset-password'
   | 'site-settings'
   | 'share'
@@ -75,6 +76,7 @@ export function routeFromHash(hash: string): AppRoute {
   }
   if (hash.startsWith('#/console/channels')) return { view: 'channels' }
   if (hash.startsWith('#/console/redemption-codes')) return { view: 'redemption-codes' }
+  if (hash.startsWith('#/console/routes')) return { view: 'routes' }
   if (hash.startsWith('#/console/system-settings/site')) return { view: 'site-settings' }
   if (hash.startsWith('#/console/system-settings/authentication')) return { view: 'authentication-settings' }
   if (hash.startsWith('#/console/system-settings/email')) return { view: 'email-settings' }
