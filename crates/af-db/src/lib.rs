@@ -26,6 +26,7 @@ mod admin_model;
 #[cfg(test)]
 mod admin_model_tests;
 mod admin_model_write;
+mod admin_route;
 mod admin_token;
 #[cfg(test)]
 mod admin_token_tests;
@@ -176,6 +177,13 @@ pub use admin_model::{
 pub use admin_model_write::{
     AdminModelCreateRecord, AdminModelDeleteOutcome, AdminModelMutationOutcome,
     AdminModelWriteRecord,
+};
+pub use admin_route::{
+    AdminRouteChannelRecord, AdminRouteChannelWriteRecord, AdminRouteDeleteOutcome,
+    AdminRouteLookupOutcome, AdminRouteMutationOutcome, AdminRoutePageRecord, AdminRouteRecord,
+    AdminRouteRepository, AdminRouteRepositoryConfigError, AdminRouteRepositoryError,
+    AdminRouteWriteRecord, MAX_ADMIN_ROUTE_CHANNELS, MAX_ADMIN_ROUTE_MAPPING_BYTES,
+    MAX_ADMIN_ROUTE_NAME_BYTES, MAX_ADMIN_ROUTE_PAGE_SIZE,
 };
 pub use admin_token::{
     AdminTokenLookupOutcome, AdminTokenPageRecord, AdminTokenRecord, AdminTokenRepository,

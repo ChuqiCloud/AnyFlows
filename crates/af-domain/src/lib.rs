@@ -11,6 +11,7 @@ mod payment;
 mod principal;
 mod quota;
 mod redemption;
+mod routing;
 mod subscription;
 mod token_policy;
 mod wallet;
@@ -33,12 +34,17 @@ pub use payment::{
     TopupPaymentEventType, TopupRequestId, TopupStateCodeError,
 };
 pub use principal::{
-    ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, PrincipalIdError, TokenId, UserId,
+    ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, PrincipalIdError, RouteChannelId,
+    RouteId, TokenId, UserId,
 };
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{
     RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus,
     RedemptionIdentifierError, RedemptionStateCodeError,
+};
+pub use routing::{
+    MAX_ROUTE_MODEL_PATTERN_BYTES, RouteMode, RoutePatternError, RouteStrategy,
+    validate_route_model_pattern,
 };
 pub use subscription::{
     SubscriptionCycle, SubscriptionIdentifierError, SubscriptionPlanId, SubscriptionPlanStatus,
