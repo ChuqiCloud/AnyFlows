@@ -28,6 +28,9 @@ pub(crate) mod channel_groups;
 pub(crate) mod channel_models;
 pub(crate) mod channels;
 pub(crate) mod credentials;
+pub(crate) mod debug_trace_attempts;
+pub(crate) mod debug_trace_settings;
+pub(crate) mod debug_traces;
 pub(crate) mod email_settings;
 pub(crate) mod group_model_ratios;
 pub(crate) mod groups;
@@ -1213,6 +1216,7 @@ impl_updated_at_behavior!(
     channel_models::ActiveModel => validate_default,
     channels::ActiveModel => validate_channel,
     credentials::ActiveModel => validate_credential,
+    debug_trace_settings::ActiveModel => validate_default,
     email_settings::ActiveModel => validate_default,
     group_model_ratios::ActiveModel => validate_group_model_ratio,
     groups::ActiveModel => validate_group,
@@ -1228,6 +1232,12 @@ impl_updated_at_behavior!(
     topup_orders::ActiveModel => validate_topup_order,
     users::ActiveModel => validate_user,
 );
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for debug_traces::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for debug_trace_attempts::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for balance_alert_events::ActiveModel {

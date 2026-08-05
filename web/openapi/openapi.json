@@ -8132,6 +8132,334 @@
           }
         ]
       }
+    },
+    "/api/admin/debug-trace-settings": {
+      "get": {
+        "tags": [
+          "调试追踪"
+        ],
+        "summary": "读取调试追踪设置",
+        "operationId": "getAdminDebugTraceSettings",
+        "responses": {
+          "200": {
+            "description": "当前实例使用的调试追踪设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDebugTraceSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "管理会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "调试追踪"
+        ],
+        "summary": "更新调试追踪设置",
+        "operationId": "updateAdminDebugTraceSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminDebugTraceSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "已保存并应用到当前实例的设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDebugTraceSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "设置参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "管理会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/debug-traces": {
+      "get": {
+        "tags": [
+          "调试追踪"
+        ],
+        "summary": "读取脱敏调试追踪列表",
+        "operationId": "listAdminDebugTraces",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页末尾的追踪 ID",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页数量，默认 50",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "description": "succeeded 或 failed",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "description": "按请求模型精确筛选",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "从新到旧排列的脱敏追踪摘要",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDebugTraceListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "查询参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "管理会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/debug-traces/{id}": {
+      "get": {
+        "tags": [
+          "调试追踪"
+        ],
+        "summary": "读取调试追踪候选时间线",
+        "operationId": "getAdminDebugTrace",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "追踪记录 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "脱敏请求摘要和候选时间线",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDebugTraceDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "追踪 ID 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "管理会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "追踪记录不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -10038,6 +10366,238 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminDebugTrace": {
+        "type": "object",
+        "required": [
+          "id",
+          "request_id",
+          "user_id",
+          "token_id",
+          "group_id",
+          "requested_model",
+          "downstream_protocol",
+          "upstream_protocol",
+          "operation",
+          "outcome",
+          "routing_elapsed_ms",
+          "attempt_count",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "token_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "group_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "requested_model": {
+            "type": "string"
+          },
+          "downstream_protocol": {
+            "type": "string"
+          },
+          "upstream_protocol": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "selected_channel_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "selected_credential_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "routing_elapsed_ms": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "attempt_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminDebugTraceAttempt": {
+        "type": "object",
+        "required": [
+          "candidate_index",
+          "channel_id",
+          "credential_id",
+          "outcome",
+          "retry_decision",
+          "elapsed_ms"
+        ],
+        "properties": {
+          "candidate_index": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "channel_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "credential_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "failure_kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "upstream_status": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "retry_decision": {
+            "type": "boolean"
+          },
+          "elapsed_ms": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminDebugTraceDetailResponse": {
+        "type": "object",
+        "required": [
+          "trace",
+          "attempts"
+        ],
+        "properties": {
+          "trace": {
+            "$ref": "#/components/schemas/AdminDebugTrace"
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminDebugTraceAttempt"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminDebugTraceListResponse": {
+        "type": "object",
+        "required": [
+          "traces",
+          "next_cursor"
+        ],
+        "properties": {
+          "traces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminDebugTrace"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminDebugTraceSettings": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "sample_per_million",
+          "retention_hours",
+          "version"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "sample_per_million": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 1000000,
+            "minimum": 0
+          },
+          "retention_hours": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 720,
+            "minimum": 1
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminDebugTraceSettingsRequest": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "sample_per_million",
+          "retention_hours"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "sample_per_million": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 1000000,
+            "minimum": 0
+          },
+          "retention_hours": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 720,
+            "minimum": 1
           }
         },
         "additionalProperties": false
@@ -13345,6 +13905,7 @@
               "route_not_found",
               "route_conflict",
               "route_invalid_reference",
+              "debug_trace_not_found",
               "model_not_found",
               "model_conflict",
               "model_sync_channel_unavailable",
@@ -14882,6 +15443,9 @@
     },
     {
       "name": "专属代理"
+    },
+    {
+      "name": "调试追踪"
     }
   ]
 }

@@ -125,6 +125,8 @@ pub(crate) enum ManagementError {
     ChannelNotFound,
     /// 凭据不存在、已经软删除或不属于指定渠道。
     CredentialNotFound,
+    /// 调试追踪记录不存在。
+    DebugTraceNotFound,
     /// 渠道测活服务未在当前实例注入。
     ProbeUnavailable,
     /// 请求的上游 OAuth provider 未在启动配置中启用。
@@ -586,6 +588,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "credential_not_found",
                     message: "Credential not found",
+                },
+            ),
+            Self::DebugTraceNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "debug_trace_not_found",
+                    message: "Debug trace not found",
                 },
             ),
             Self::ProbeUnavailable => (

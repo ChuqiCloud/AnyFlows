@@ -32,6 +32,7 @@
     "routes": "智能路由",
     "keys": "全局令牌",
     "usage": "全局用量",
+    "debugTraces": "调试追踪",
     "billing": "计费",
     "settings": "设置"
   },
@@ -1700,6 +1701,107 @@
     "error": {
       "title": "无法读取用量日志",
       "body": "服务暂时没有返回已确认用量，请稍后重试。"
+    }
+  },
+  "debugTraces": {
+    "title": "调试追踪",
+    "subtitle": "按请求查看脱敏路由决策与候选尝试，不保存或重放请求正文和凭据。",
+    "count": "本页 {{count}} 条追踪",
+    "page": "第 {{page}} 页",
+    "loading": "正在加载调试追踪",
+    "pagination": "调试追踪分页",
+    "listLabel": "调试追踪列表",
+    "detailLabel": "调试追踪详情",
+    "actions": {
+      "refresh": "刷新",
+      "settings": "追踪设置",
+      "filter": "筛选",
+      "retry": "重试",
+      "previous": "上一页",
+      "next": "下一页",
+      "save": "保存设置",
+      "saving": "正在保存"
+    },
+    "filters": {
+      "outcome": "请求结果",
+      "all": "全部结果",
+      "model": "模型名称",
+      "modelPlaceholder": "按完整模型名称筛选"
+    },
+    "outcome": {
+      "succeeded": "成功",
+      "failed": "失败"
+    },
+    "values": {
+      "attempts": "{{count}} 次候选尝试",
+      "elapsed": "{{value}} ms",
+      "principal": "用户 #{{user}} / 令牌 #{{token}}"
+    },
+    "empty": {
+      "title": "还没有调试追踪",
+      "body": "启用追踪并命中采样后，新的模型请求会以脱敏摘要出现在这里。"
+    },
+    "error": {
+      "title": "无法读取调试追踪",
+      "body": "服务暂时没有返回可靠的追踪列表，请稍后重试。"
+    },
+    "detail": {
+      "loading": "正在加载追踪详情",
+      "errorTitle": "无法读取追踪详情",
+      "errorBody": "这条追踪可能已过期清理，请刷新列表后重试。",
+      "selectTitle": "选择一条调试追踪",
+      "selectBody": "候选渠道、凭据、闭合失败分类和重试决策会显示在这里。",
+      "convertedTo": "转换为 {{protocol}}",
+      "createdAt": "请求时间",
+      "operation": "操作",
+      "routingElapsed": "路由耗时",
+      "group": "计费分组",
+      "timeline": "候选决策时间线",
+      "noAttempts": "这条追踪没有持久化候选尝试。",
+      "candidate": "候选 {{index}}",
+      "retried": "继续重试",
+      "channelCredential": "渠道 #{{channel}} / 凭据 #{{credential}}"
+    },
+    "protocol": {
+      "openai_chat": "OpenAI Chat",
+      "openai_responses": "OpenAI Responses",
+      "anthropic": "Anthropic Messages",
+      "gemini": "Gemini"
+    },
+    "operation": {
+      "chat": "对话生成",
+      "responses": "Responses 生成"
+    },
+    "failure": {
+      "auth_expired": "认证已过期",
+      "auth_revoked": "认证已撤销",
+      "account_disabled": "账号已停用",
+      "rate_limited": "上游限流",
+      "overloaded": "上游过载",
+      "quota_exhausted": "上游额度耗尽",
+      "model_unsupported": "模型不受支持",
+      "protocol_error": "协议响应无效",
+      "server_error": "上游服务错误",
+      "bad_request": "请求被上游拒绝",
+      "network": "网络或超时错误"
+    },
+    "settings": {
+      "title": "调试追踪设置",
+      "version": "版本 {{version}}",
+      "description": "设置保存后立即应用于当前实例；其他实例通过周期回读收敛。",
+      "loading": "正在加载调试追踪设置",
+      "loadError": "无法读取当前追踪设置。",
+      "enabled": "启用调试追踪",
+      "enabledDescription": "仅影响保存新的脱敏追踪，不影响生产请求执行。",
+      "sample": "确定性采样率",
+      "sampleHint": "同一请求 ID 会稳定得到相同采样结果，支持 0.01% 精度。",
+      "sampleInvalid": "请输入 0 至 100 之间、最多两位小数的百分比。",
+      "retention": "保留时间",
+      "retentionValue": "{{hours}} 小时",
+      "security": "追踪永不保存 Header、Body、prompt、原始错误、密钥、代理凭据、会话键或上游 URL。",
+      "saveError": "设置保存失败，当前运行配置没有改变。",
+      "saved": "设置已保存",
+      "unsaved": "有尚未保存的更改"
     }
   },
   "models": {

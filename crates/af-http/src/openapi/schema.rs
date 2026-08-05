@@ -538,6 +538,7 @@ pub(crate) enum ManagementErrorCodeSchema {
     RouteNotFound,
     RouteConflict,
     RouteInvalidReference,
+    DebugTraceNotFound,
     ModelNotFound,
     ModelConflict,
     ModelSyncChannelUnavailable,

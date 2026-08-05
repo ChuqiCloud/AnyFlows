@@ -1,4 +1,5 @@
 import {
+  Activity,
   Boxes,
   CircleDollarSign,
   Gauge,
@@ -42,7 +43,7 @@ type AppNavigationProps = {
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'wallet' | 'invitations' | 'profile' | 'users' | 'redemptionCodes' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'credentials' | 'credentialProxies' | 'routes' | 'keys' | 'usage'
+  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'wallet' | 'invitations' | 'profile' | 'users' | 'redemptionCodes' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'credentials' | 'credentialProxies' | 'routes' | 'keys' | 'usage' | 'debugTraces'
   icon: LucideIcon
   href: `#/console${string}`
 }
@@ -92,6 +93,7 @@ const navGroups: readonly NavGroup[] = [
       { key: 'routes', icon: GitBranch, href: '#/console/routes' },
       { key: 'keys', icon: ShieldCheck, href: '#/console/tokens' },
       { key: 'usage', icon: ScrollText, href: '#/console/usage-logs' },
+      { key: 'debugTraces', icon: Activity, href: '#/console/debug-traces' },
     ],
   },
 ]
@@ -119,6 +121,7 @@ const activeKeyByView: Partial<Record<AppView, NavItem['key']>> = {
   routes: 'routes',
   tokens: 'keys',
   'usage-logs': 'usage',
+  'debug-traces': 'debugTraces',
 }
 
 function useActiveKey() {

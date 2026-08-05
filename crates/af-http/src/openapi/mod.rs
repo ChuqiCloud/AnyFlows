@@ -5,6 +5,7 @@ mod channels;
 mod credential_proxies;
 mod credentials;
 mod dashboard;
+mod debug_traces;
 mod email_settings;
 mod groups;
 mod invitations;
@@ -71,6 +72,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(channels::document());
     document.merge(credentials::document());
     document.merge(credential_proxies::document());
+    document.merge(debug_traces::document());
 
     document.tags = Some(vec![
         Tag::new("公开注册"),
@@ -102,6 +104,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("渠道管理"),
         Tag::new("凭据管理"),
         Tag::new("专属代理"),
+        Tag::new("调试追踪"),
     ]);
     document
         .components
@@ -128,7 +131,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 62);
+        assert_eq!(document.paths.paths.len(), 65);
         let operation_count = document
             .paths
             .paths
@@ -149,7 +152,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 99);
+        assert_eq!(operation_count, 103);
         assert!(
             document
                 .components
@@ -207,6 +210,8 @@ mod tests {
             "getAdminCredential",
             "getAdminCredentialProxy",
             "getAdminDashboard",
+            "getAdminDebugTrace",
+            "getAdminDebugTraceSettings",
             "getAdminEmailSettings",
             "getAdminNetworkSettings",
             "getAdminGroup",
@@ -229,6 +234,7 @@ mod tests {
             "listAdminChannels",
             "listAdminCredentials",
             "listAdminCredentialProxies",
+            "listAdminDebugTraces",
             "listAdminGroups",
             "listAdminRoutes",
             "listAdminModels",
@@ -257,6 +263,7 @@ mod tests {
             "updateAdminBalanceAlertSettings",
             "updateAdminCredential",
             "updateAdminCredentialProxy",
+            "updateAdminDebugTraceSettings",
             "updateAdminGroup",
             "updateAdminRoute",
             "updateAdminModel",
@@ -276,7 +283,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 164);
+        assert_eq!(schemas.len(), 170);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminChannelAutoBanRules"));
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
@@ -286,6 +293,12 @@ mod tests {
         assert!(schemas.contains_key("AdminCredentialProxyListResponse"));
         assert!(schemas.contains_key("AdminCredentialProxyWriteRequest"));
         assert!(schemas.contains_key("AdminCredentialProxyScheme"));
+        assert!(schemas.contains_key("AdminDebugTrace"));
+        assert!(schemas.contains_key("AdminDebugTraceAttempt"));
+        assert!(schemas.contains_key("AdminDebugTraceDetailResponse"));
+        assert!(schemas.contains_key("AdminDebugTraceListResponse"));
+        assert!(schemas.contains_key("AdminDebugTraceSettings"));
+        assert!(schemas.contains_key("AdminDebugTraceSettingsRequest"));
         assert!(schemas.contains_key("AdminOAuthProvider"));
         assert!(schemas.contains_key("AdminOAuthProviderListResponse"));
         assert!(schemas.contains_key("AdminOAuthProviderStatus"));

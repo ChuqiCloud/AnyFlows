@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,
     sync::Arc,
+    time::Instant,
 };
 
 use crate::{
@@ -17,6 +18,7 @@ use crate::{
         CredentialLoad, order_credentials, order_credentials_by_load,
         order_credentials_by_load_and_health, order_credentials_with_health,
     },
+    debug_trace_runtime::{DebugTraceCapture, DebugTraceRuntime},
     health_runtime::{
         RuntimeHealthState, SchedulerHealthStore, load_channel_health, load_credential_health,
         persist_scheduler_health_feedback,
@@ -82,6 +84,7 @@ pub(crate) struct ScheduledChatService {
     concurrency: Option<ConcurrencyRuntime>,
     health: Option<Arc<dyn SchedulerHealthStore>>,
     channel_states: Option<ChannelStateRepository>,
+    debug_trace: Option<DebugTraceRuntime>,
 }
 
 impl ScheduledChatService {
@@ -105,6 +108,7 @@ impl ScheduledChatService {
             concurrency: None,
             health: None,
             channel_states: None,
+            debug_trace: None,
         }
     }
 
@@ -143,6 +147,12 @@ impl ScheduledChatService {
         repository: ChannelStateRepository,
     ) -> Self {
         self.channel_states = Some(repository);
+        self
+    }
+
+    /// 注入脱敏调试追踪运行时；未注入时不执行采样或分配追踪上下文。
+    pub(crate) fn with_debug_trace_runtime(mut self, runtime: DebugTraceRuntime) -> Self {
+        self.debug_trace = Some(runtime);
         self
     }
 
@@ -326,6 +336,7 @@ impl ScheduledChatService {
             user_permit,
             health: self.health.clone(),
             channel_states: self.channel_states.clone(),
+            debug_trace: None,
         })
     }
 
@@ -546,6 +557,16 @@ impl ChatRoutePlanner for ScheduledChatService {
                     .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?
             };
             let upstream_protocol = select_upstream_protocol(&route, &request, response_protocol)?;
+            let debug_trace = self.debug_trace.as_ref().and_then(|runtime| {
+                runtime.capture(
+                    request_id,
+                    *principal,
+                    &request.canonical().model,
+                    response_protocol,
+                    upstream_protocol,
+                    request.canonical().operation,
+                )
+            });
             route.configure_wait_policy(self.sticky_wait_policy);
             let session_scope = stable_session_scope(*principal, request.canonical());
             self.apply_sticky_binding(&mut route, upstream_protocol, session_scope.as_ref())
@@ -559,7 +580,7 @@ impl ChatRoutePlanner for ScheduledChatService {
             let account_loads = self
                 .load_account_concurrency(&route, upstream_protocol)
                 .await?;
-            self.build_plan(
+            let mut plan = self.build_plan(
                 route,
                 request,
                 response_protocol,
@@ -571,8 +592,9 @@ impl ChatRoutePlanner for ScheduledChatService {
                     credential_health: credential_health.as_ref(),
                     user_permit,
                 },
-            )
-            .map(|plan| Box::new(plan) as Box<dyn PlannedChatExecution>)
+            )?;
+            plan.debug_trace = debug_trace;
+            Ok(Box::new(plan) as Box<dyn PlannedChatExecution>)
         })
     }
 }
@@ -590,6 +612,7 @@ impl fmt::Debug for ScheduledChatService {
             .field("sticky_wait_policy", &self.sticky_wait_policy)
             .field("concurrency", &self.concurrency.is_some())
             .field("health", &self.health.is_some())
+            .field("debug_trace", &self.debug_trace.is_some())
             .finish()
     }
 }
@@ -610,6 +633,7 @@ struct ScheduledChatExecution {
     user_permit: Option<RuntimeConcurrencyPermit>,
     health: Option<Arc<dyn SchedulerHealthStore>>,
     channel_states: Option<ChannelStateRepository>,
+    debug_trace: Option<DebugTraceCapture>,
 }
 
 impl PlannedChatExecution for ScheduledChatExecution {
@@ -634,9 +658,11 @@ impl PlannedChatExecution for ScheduledChatExecution {
             user_permit,
             health,
             channel_states,
+            debug_trace,
         } = *self;
         Box::pin(async move {
             let operation = request.canonical().operation;
+            let routing_started_at = Instant::now();
             let (result, report) = match (operation, upstream_protocol) {
                 (Operation::Chat, Protocol::OpenAiChat) => {
                     relay_openai_chat_with_report(&machine, request, response_protocol, &request_id)
@@ -660,6 +686,14 @@ impl PlannedChatExecution for ScheduledChatExecution {
                 }
                 _ => return Err(AfError::InvalidRequest),
             };
+            if let Some(capture) = debug_trace {
+                capture.submit(
+                    &report,
+                    &attempt_targets,
+                    result.is_ok(),
+                    routing_started_at.elapsed(),
+                );
+            }
             let successful_channel_id = report
                 .successful_candidate_index()
                 .and_then(|index| attempt_targets.get(index))

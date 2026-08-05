@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
-    AdminCredentialProxyService, AdminEmailSettingsService, AdminGroupReader, AdminGroupWriter,
-    AdminModelPriceService, AdminModelReader, AdminModelSyncService, AdminModelWriter,
-    AdminNetworkSettingsService, AdminRouteReader, AdminRouteWriter, AdminTokenReader,
-    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
-    InitialSetup, ModelCatalogReader, PasswordResetService, PlaygroundConversationService,
-    PlaygroundShareService, RedemptionService, RegistrationService, SessionAuthenticator,
-    SiteSettingsService, TokenAuthenticator, UserInvitationService, UserWalletService,
+    AdminCredentialProxyService, AdminDebugTraceService, AdminEmailSettingsService,
+    AdminGroupReader, AdminGroupWriter, AdminModelPriceService, AdminModelReader,
+    AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsService, AdminRouteReader,
+    AdminRouteWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
+    AdminUserWriter, AdminWalletService, InitialSetup, ModelCatalogReader, PasswordResetService,
+    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
+    SessionAuthenticator, SiteSettingsService, TokenAuthenticator, UserInvitationService,
+    UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -30,6 +31,7 @@ use crate::anthropic_messages::anthropic_messages;
 use crate::authentication::{AuthenticationState, authenticate_api_key};
 use crate::balance_alert_settings::build_balance_alert_settings_router;
 use crate::credential_proxies::build_credential_proxy_router;
+use crate::debug_traces::build_debug_trace_router;
 use crate::email_settings::build_email_settings_router;
 use crate::frontend_assets::{FrontendAssetSource, frontend_fallback};
 use crate::gemini_generate_content::gemini_generate_content;
@@ -143,6 +145,7 @@ pub fn build_router(
     admin_credential_proxy_service: Arc<dyn AdminCredentialProxyService>,
     admin_oauth_connection_service: Option<Arc<dyn AdminOAuthConnectionService>>,
     admin_balance_alert_settings_service: Arc<dyn AdminBalanceAlertSettingsService>,
+    admin_debug_trace_service: Arc<dyn AdminDebugTraceService>,
     admin_channel_reader: Arc<dyn AdminChannelReader>,
     admin_channel_writer: Arc<dyn AdminChannelWriter>,
     admin_channel_probe: Option<Arc<dyn crate::AdminChannelProbe>>,
@@ -364,6 +367,10 @@ pub fn build_router(
         admin_balance_alert_settings_service,
         Arc::clone(&http_state.session_authenticator),
     );
+    let debug_trace_routes = build_debug_trace_router(
+        admin_debug_trace_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
     let oauth_connection_routes = admin_oauth_connection_service.map(|service| {
         build_admin_oauth_connection_router(service, Arc::clone(&http_state.session_authenticator))
     });
@@ -564,6 +571,7 @@ pub fn build_router(
         .merge(network_settings_routes)
         .merge(credential_proxy_routes)
         .merge(balance_alert_settings_routes);
+    let management_routes = management_routes.merge(debug_trace_routes);
     let management_routes = match oauth_connection_routes {
         Some(routes) => management_routes.merge(routes),
         None => management_routes,
