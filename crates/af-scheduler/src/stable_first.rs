@@ -175,27 +175,6 @@ impl StableFirstStrategy {
             }
         }
 
-        // 健康分数比较存在整数舍入时，仍确保最佳候选不会全部落入观察池。
-        if main_pool.is_empty() && !observation_pool.is_empty() {
-            let best_channel = observation_pool
-                .iter()
-                .max_by_key(|candidate| {
-                    health.get(&candidate.channel_id()).copied().map_or(
-                        ROUTING_HEALTH_PENALTY_SCALE,
-                        ChannelRoutingHealth::multiplier_micros,
-                    )
-                })
-                .map(|candidate| candidate.channel_id());
-            if let Some(best_channel) = best_channel {
-                if let Some(index) = observation_pool
-                    .iter()
-                    .position(|candidate| candidate.channel_id() == best_channel)
-                {
-                    main_pool.push(observation_pool.remove(index));
-                }
-            }
-        }
-
         Ok(StableFirstPlan {
             main_pool,
             observation_pool,
@@ -319,7 +298,7 @@ mod tests {
             StableFirstPlanError::DuplicateChannel
         );
         let oversized = (1_i64..=65)
-            .map(|id| candidate(1, id, 0))
+            .map(|id| candidate(id, 0, 0))
             .collect::<Vec<_>>();
         assert_eq!(
             StableFirstStrategy::default()
