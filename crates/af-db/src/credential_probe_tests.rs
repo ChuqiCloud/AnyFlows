@@ -6,10 +6,10 @@ use sea_orm::{ActiveModelTrait, Set, entity::prelude::Json};
 
 use crate::{
     ChannelProbeTargetRepository, ChannelProbeTargetRepositoryError, DatabaseOptions,
-    MigrationOptions, SensitiveString,
+    MigrationOptions,
     entity::{
-        ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channel_models, channels,
-        credentials, proxies,
+        ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, SensitiveString,
+        channel_models, channels, credentials, proxies,
     },
 };
 

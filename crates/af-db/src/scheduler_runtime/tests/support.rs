@@ -7,10 +7,9 @@ use sea_orm::{
     entity::prelude::{Json, TimeDateTimeWithTimeZone},
 };
 
-use crate::SensitiveString;
 use crate::entity::{
-    ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, abilities, channel_groups,
-    channel_models, channels, credentials, groups, proxies,
+    ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, SensitiveString, abilities,
+    channel_groups, channel_models, channels, credentials, groups, proxies,
 };
 
 pub(super) fn group(name: &str) -> groups::ActiveModel {
