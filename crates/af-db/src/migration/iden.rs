@@ -1131,3 +1131,65 @@ pub(in crate::migration) mod scheduler_outbox_events {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod routes {
+    use super::DeriveIden;
+
+    /// `routes` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "routes")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 智能路由规则迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        Name,
+        ModelPattern,
+        RouteMode,
+        Strategy,
+        ModelMapping,
+        Enabled,
+        CreatedAt,
+        UpdatedAt,
+        DeletedAt,
+    }
+}
+
+pub(in crate::migration) mod route_channels {
+    use super::DeriveIden;
+
+    /// `route_channels` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "route_channels")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 智能路由候选与运行时统计的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        RouteId,
+        ChannelId,
+        CredentialId,
+        Priority,
+        Weight,
+        Enabled,
+        SuccessCount,
+        FailCount,
+        TotalLatency,
+        CooldownLevel,
+        CooldownUntil,
+        LastSelectedAt,
+        LastFailureAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}

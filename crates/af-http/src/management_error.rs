@@ -69,6 +69,12 @@ pub(crate) enum ManagementError {
     GroupConflict,
     /// 分组仍被有效用户或有效令牌引用。
     GroupInUse,
+    /// 智能路由不存在或已经被软删除。
+    RouteNotFound,
+    /// 智能路由名称与当前有效路由冲突。
+    RouteConflict,
+    /// 智能路由候选引用的渠道或凭据无效。
+    RouteInvalidReference,
     /// 模型商品元数据不存在或已经被软删除。
     ModelNotFound,
     /// Canonical 模型标识与当前有效元数据冲突。
@@ -378,6 +384,27 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "group_in_use",
                     message: "Group in use",
+                },
+            ),
+            Self::RouteNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "route_not_found",
+                    message: "Route not found",
+                },
+            ),
+            Self::RouteConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "route_conflict",
+                    message: "Route conflict",
+                },
+            ),
+            Self::RouteInvalidReference => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "route_invalid_reference",
+                    message: "Route channel reference is invalid",
                 },
             ),
             Self::ModelNotFound => (

@@ -4,11 +4,11 @@ use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
     AdminEmailSettingsService, AdminGroupReader, AdminGroupWriter, AdminModelPriceService,
     AdminModelReader, AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsService,
-    AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter,
-    AdminWalletService, InitialSetup, ModelCatalogReader, PasswordResetService,
-    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
-    SessionAuthenticator, SiteSettingsService, TokenAuthenticator, UserInvitationService,
-    UserWalletService,
+    AdminRouteReader, AdminRouteWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader,
+    AdminUserReader, AdminUserWriter, AdminWalletService, InitialSetup, ModelCatalogReader,
+    PasswordResetService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
+    RegistrationService, SessionAuthenticator, SiteSettingsService, TokenAuthenticator,
+    UserInvitationService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -58,6 +58,8 @@ use crate::management_model_sync::{
 };
 use crate::management_model_writes::{create_admin_model, delete_admin_model, update_admin_model};
 use crate::management_models::{get_admin_model, list_admin_models};
+use crate::management_route_writes::{create_admin_route, delete_admin_route, update_admin_route};
+use crate::management_routes::{get_admin_route, list_admin_routes};
 use crate::management_session::current_session;
 use crate::management_setup::{initialize_setup, setup_status};
 use crate::management_token_writes::{create_admin_token, delete_admin_token, update_admin_token};
@@ -148,6 +150,8 @@ pub fn build_router(
     admin_model_writer: Option<Arc<dyn AdminModelWriter>>,
     admin_model_sync_service: Option<Arc<dyn AdminModelSyncService>>,
     admin_model_price_service: Option<Arc<dyn AdminModelPriceService>>,
+    admin_route_reader: Option<Arc<dyn AdminRouteReader>>,
+    admin_route_writer: Option<Arc<dyn AdminRouteWriter>>,
     admin_token_reader: Arc<dyn AdminTokenReader>,
     admin_token_writer: Arc<dyn AdminTokenWriter>,
     admin_dashboard_reader: Arc<dyn AdminDashboardReader>,
@@ -193,6 +197,8 @@ pub fn build_router(
     .with_admin_model_writer(admin_model_writer)
     .with_admin_model_sync_service(admin_model_sync_service)
     .with_admin_model_price_service(admin_model_price_service)
+    .with_admin_route_reader(admin_route_reader)
+    .with_admin_route_writer(admin_route_writer)
     .with_admin_channel_reader(admin_channel_reader)
     .with_admin_channel_writer(admin_channel_writer)
     .with_admin_channel_probe(admin_channel_probe)
@@ -250,6 +256,14 @@ pub fn build_router(
         authenticate_management_session,
     );
     let group_item_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let route_collection_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
+    let route_item_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
         authenticate_management_session,
     );
@@ -399,6 +413,21 @@ pub fn build_router(
                 .delete(delete_admin_group)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(group_item_authentication),
+        )
+        .route(
+            "/api/admin/routes",
+            get(list_admin_routes)
+                .post(create_admin_route)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(route_collection_authentication),
+        )
+        .route(
+            "/api/admin/routes/{id}",
+            get(get_admin_route)
+                .put(update_admin_route)
+                .delete(delete_admin_route)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(route_item_authentication),
         )
         .route(
             "/api/admin/models",

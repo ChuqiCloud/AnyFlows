@@ -10,9 +10,10 @@ use rust_decimal::Decimal;
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 use af_domain::{
-    ChannelTimeout, Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId,
-    RedemptionCodeStatus, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
-    UserSubscriptionId, UserSubscriptionStatus, WalletEventId,
+    ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, Quota, QuotaDelta, RedemptionBatchId,
+    RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus, RouteMode, RouteStrategy,
+    SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus, UserSubscriptionId,
+    UserSubscriptionStatus, WalletEventId, validate_route_model_pattern,
 };
 
 pub(crate) mod abilities;
@@ -42,6 +43,8 @@ pub(crate) mod playground_shares;
 pub(crate) mod redemption_batches;
 pub(crate) mod redemption_codes;
 pub(crate) mod registration_rate_limits;
+pub(crate) mod route_channels;
+pub(crate) mod routes;
 pub(crate) mod scheduler_outbox_events;
 pub(crate) mod site_settings;
 pub(crate) mod subscription_plans;
@@ -92,6 +95,92 @@ async fn validate_default<T, C>(_model: &T, _database: &C, _insert: bool) -> Res
 where
     C: ConnectionTrait,
 {
+    Ok(())
+}
+
+async fn validate_route<C>(
+    model: &routes::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let name = model.name.try_as_ref().map(String::as_str);
+    let pattern = model.model_pattern.try_as_ref().map(String::as_str);
+    if insert && (name.is_none() || pattern.is_none()) {
+        return Err(DbErr::Custom("智能路由字段缺失".to_owned()));
+    }
+    if name.is_some_and(|value| {
+        value.is_empty() || value.len() > 128 || value.chars().any(char::is_control)
+    }) || pattern.is_some_and(|value| {
+        value.len() > MAX_ROUTE_MODEL_PATTERN_BYTES || validate_route_model_pattern(value).is_err()
+    }) {
+        return Err(DbErr::Custom("智能路由字段无效".to_owned()));
+    }
+    if model
+        .route_mode
+        .try_as_ref()
+        .is_some_and(|value| RouteMode::try_from(*value).is_err())
+        || model
+            .strategy
+            .try_as_ref()
+            .is_some_and(|value| RouteStrategy::try_from(*value).is_err())
+    {
+        return Err(DbErr::Custom("智能路由模式或策略无效".to_owned()));
+    }
+    if model.model_mapping.try_as_ref().is_some_and(|value| {
+        !value.is_object()
+            || serde_json::to_vec(value)
+                .map(|encoded| encoded.len() > 16 * 1024)
+                .unwrap_or(true)
+    }) {
+        return Err(DbErr::Custom("智能路由模型映射无效".to_owned()));
+    }
+    if insert && model.model_mapping.try_as_ref().is_none() {
+        return Err(DbErr::Custom("智能路由模型映射缺失".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_route_channel<C>(
+    model: &route_channels::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let required_positive = [
+        model.route_id.try_as_ref().copied(),
+        model.channel_id.try_as_ref().copied(),
+        model.credential_id.try_as_ref().copied(),
+    ];
+    if insert && required_positive.iter().any(Option::is_none) {
+        return Err(DbErr::Custom("智能路由候选引用缺失".to_owned()));
+    }
+    if required_positive.iter().flatten().any(|value| *value <= 0)
+        || model.priority.try_as_ref().is_some_and(|value| *value < 0)
+        || model.weight.try_as_ref().is_some_and(|value| *value < 0)
+        || model
+            .success_count
+            .try_as_ref()
+            .is_some_and(|value| *value < 0)
+        || model
+            .fail_count
+            .try_as_ref()
+            .is_some_and(|value| *value < 0)
+        || model
+            .total_latency
+            .try_as_ref()
+            .is_some_and(|value| *value < 0)
+        || model
+            .cooldown_level
+            .try_as_ref()
+            .is_some_and(|value| !(0..=3).contains(value))
+    {
+        return Err(DbErr::Custom("智能路由候选字段无效".to_owned()));
+    }
     Ok(())
 }
 
@@ -1131,6 +1220,8 @@ impl_updated_at_behavior!(
     network_settings::ActiveModel => validate_default,
     options::ActiveModel => validate_default,
     registration_rate_limits::ActiveModel => validate_default,
+    route_channels::ActiveModel => validate_route_channel,
+    routes::ActiveModel => validate_route,
     site_settings::ActiveModel => validate_default,
     tokens::ActiveModel => validate_default,
     topup_orders::ActiveModel => validate_topup_order,

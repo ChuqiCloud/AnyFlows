@@ -30,6 +30,8 @@ mod management_model_prices;
 mod management_model_sync;
 mod management_model_writes;
 mod management_models;
+mod management_route_writes;
+mod management_routes;
 mod management_session;
 mod management_setup;
 mod management_token_writes;

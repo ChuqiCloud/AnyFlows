@@ -19,6 +19,7 @@ mod playground_conversation;
 mod pricing;
 mod redemption;
 mod registration;
+mod routes;
 mod routing;
 mod scheduler;
 mod site;
@@ -37,6 +38,7 @@ pub(super) use indexes::{
     create_groups_indexes, create_tokens_indexes, create_users_indexes,
 };
 pub(super) use invite_rebate::create_invite_rebate_events;
+pub(super) use routes::{create_route_channels, create_routes};
 pub(super) use routing::{
     create_abilities, create_channel_groups, create_channel_models, create_channels,
     create_credentials,

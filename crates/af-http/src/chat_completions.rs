@@ -3,8 +3,9 @@ use std::sync::Arc;
 use af_admin::{
     AdminChannelReader, AdminChannelWriter, AdminGroupReader, AdminGroupWriter,
     AdminModelPriceService, AdminModelReader, AdminModelSyncService, AdminModelWriter,
-    AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter,
-    AdminWalletService, InitialSetup, SessionAuthenticator, TokenAuthentication,
+    AdminRouteReader, AdminRouteWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader,
+    AdminUserReader, AdminUserWriter, AdminWalletService, InitialSetup, SessionAuthenticator,
+    TokenAuthentication,
 };
 use af_analytics::AdminDashboardReader;
 use af_domain::{AfError, Protocol, TokenModelPolicy};
@@ -47,6 +48,8 @@ pub(crate) struct HttpState {
     pub(crate) admin_model_sync_service: Option<Arc<dyn AdminModelSyncService>>,
     pub(crate) admin_token_reader: Arc<dyn AdminTokenReader>,
     pub(crate) admin_token_writer: Arc<dyn AdminTokenWriter>,
+    pub(crate) admin_route_reader: Option<Arc<dyn AdminRouteReader>>,
+    pub(crate) admin_route_writer: Option<Arc<dyn AdminRouteWriter>>,
     pub(crate) admin_usage_log_reader: Option<Arc<dyn AdminUsageLogReader>>,
     pub(crate) admin_user_reader: Arc<dyn AdminUserReader>,
     pub(crate) admin_user_writer: Arc<dyn AdminUserWriter>,
@@ -82,6 +85,8 @@ impl HttpState {
             admin_model_sync_service: None,
             admin_token_reader,
             admin_token_writer,
+            admin_route_reader: None,
+            admin_route_writer: None,
             admin_usage_log_reader: None,
             admin_user_reader,
             admin_user_writer,
@@ -156,6 +161,24 @@ impl HttpState {
         service: Option<Arc<dyn AdminModelSyncService>>,
     ) -> Self {
         self.admin_model_sync_service = service;
+        self
+    }
+
+    /// 注入智能路由管理只读服务；未注入时对应端点以内部错误拒绝。
+    pub(crate) fn with_admin_route_reader(
+        mut self,
+        reader: Option<Arc<dyn AdminRouteReader>>,
+    ) -> Self {
+        self.admin_route_reader = reader;
+        self
+    }
+
+    /// 注入智能路由管理写入服务；未注入时对应端点以内部错误拒绝。
+    pub(crate) fn with_admin_route_writer(
+        mut self,
+        writer: Option<Arc<dyn AdminRouteWriter>>,
+    ) -> Self {
+        self.admin_route_writer = writer;
         self
     }
 

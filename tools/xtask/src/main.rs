@@ -386,6 +386,7 @@ fn allowed_restricted_external_dependency(dependency: &DeclaredDependency) -> bo
         ),
         ("af-domain", "serde", "normal")
             | ("af-domain", "serde_json", "dev")
+            | ("af-domain", "regex", "normal")
             | ("af-domain", "thiserror", "normal")
             | ("af-adapter", "async-trait", "normal")
             | ("af-adapter", "aws-credential-types", "normal")
@@ -583,9 +584,13 @@ mod tests {
         let serde = dependency("af-domain", "serde", false);
         let mut serde_json = dependency("af-domain", "serde_json", false);
         serde_json.kind = "dev".to_owned();
+        let regex = dependency("af-domain", "regex", false);
         let thiserror = dependency("af-domain", "thiserror", false);
 
-        let violations = validate_workspace(&baseline_workspace(), &[serde, serde_json, thiserror]);
+        let violations = validate_workspace(
+            &baseline_workspace(),
+            &[serde, serde_json, regex, thiserror],
+        );
 
         assert!(violations.is_empty());
     }

@@ -28,6 +28,7 @@
     "modelSettings": "Model management",
     "channels": "Channels",
     "credentials": "Credentials & accounts",
+    "routes": "Smart routing",
     "keys": "Global keys",
     "usage": "Global usage",
     "billing": "Billing",
@@ -390,6 +391,140 @@
           "unknown": "The OAuth request failed. Try again shortly."
         }
       }
+    }
+  },
+  "routes": {
+    "title": "Smart routing",
+    "subtitle": "Compose channel and account candidates by model rule, then choose weighted, round-robin, or stable-first selection with live statistics.",
+    "loading": "Loading smart routes",
+    "summary": {
+      "loaded": "{{count}} rules",
+      "enabled": "{{count}} enabled",
+      "candidates": "{{count}} candidates"
+    },
+    "columns": {
+      "route": "Rule",
+      "strategy": "Strategy",
+      "candidates": "Candidates",
+      "health": "Runtime",
+      "actions": "Actions"
+    },
+    "status": { "enabled": "Enabled", "disabled": "Disabled" },
+    "mode": {
+      "pattern": "Model pattern",
+      "explicit_group": "Explicit group",
+      "patternShort": "{{mode}}"
+    },
+    "strategy": {
+      "weighted": "Weighted",
+      "round_robin": "Round robin",
+      "stable_first": "Stable first"
+    },
+    "strategyHint": {
+      "weighted": "Combines priority, weight, and live health when selecting a candidate.",
+      "round_robin": "Rotates through candidates with the same priority in a stable order.",
+      "stable_first": "Keeps candidates close to the healthiest score in the primary pool."
+    },
+    "values": {
+      "candidates": "{{count}} candidates",
+      "enabledCandidates": "{{count}} enabled"
+    },
+    "health": {
+      "noData": "No request data",
+      "noLatency": "No latency sample",
+      "successRate": "{{value}}% success",
+      "latency": "{{value}} ms average"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "create": "New route",
+      "save": "Save route",
+      "cancel": "Cancel",
+      "edit": "Edit route",
+      "delete": "Delete route",
+      "enable": "Enable route",
+      "disable": "Disable route"
+    },
+    "empty": {
+      "title": "No smart routes yet",
+      "body": "Create the first model rule, then choose candidates from real channel credentials."
+    },
+    "error": {
+      "title": "Smart routes could not be loaded",
+      "body": "The service did not return the route catalog. Try again shortly."
+    },
+    "editor": {
+      "createTitle": "New smart route",
+      "createDescription": "Configure a matching rule, choose a strategy, and compose real channel credentials.",
+      "editTitle": "Edit smart route",
+      "editDescription": "Update the rule and candidate order. Stored secrets remain represented by redacted metadata."
+    },
+    "form": {
+      "identity": "Identity",
+      "name": "Rule name",
+      "enabled": "Enable rule",
+      "enabledHint": "Disabled rules are skipped for new requests.",
+      "matching": "Matching and strategy",
+      "modelPattern": "Model or group match",
+      "modelPatternPlaceholder": "For example gpt-5.5 or re:^gpt-5\\.",
+      "modelPatternHint": "Model matching accepts a re: prefix for regex. Explicit groups use a group name, not regex.",
+      "mode": "Match mode",
+      "strategy": "Selection strategy",
+      "mapping": "Model mapping",
+      "mappingHint": "Optional. Map a public model name to the upstream model name used by candidates.",
+      "mappingSource": "Public model",
+      "mappingTarget": "Upstream model",
+      "mappingSourcePlaceholder": "For example gpt-5.5",
+      "mappingTargetPlaceholder": "For example gpt-5.5-pro",
+      "mappingEmpty": "No model mapping configured",
+      "addMapping": "Add mapping",
+      "removeMapping": "Remove mapping",
+      "candidates": "Channel and account candidates",
+      "candidatesHint": "Drag to change priority. Weight affects weighted strategies. Each channel and credential pair can be added once.",
+      "channel": "Channel",
+      "selectChannel": "Select channel",
+      "credential": "Credential",
+      "selectCredential": "Select credential",
+      "addCandidate": "Add candidate",
+      "candidatesLoading": "Loading channels and credential metadata…",
+      "candidatesLoadFailed": "The channel or credential catalog could not be loaded. Refresh and try again.",
+      "retryCandidates": "Retry loading",
+      "noCredentialCandidates": "No channel has an available credential. Add credentials from channel management first.",
+      "candidatesEmpty": "No candidates yet. Select a channel and credential first.",
+      "candidatePosition": "Candidate {{position}}",
+      "reorderCandidate": "Drag to reorder candidate {{position}}",
+      "unknownChannel": "Unknown channel #{{id}}",
+      "unknownCredential": "Unknown credential #{{id}}",
+      "weight": "Weight",
+      "candidateEnabled": "Enable candidate",
+      "removeCandidate": "Remove candidate",
+      "stats": "{{success}} success · {{failed}} failed",
+      "statsNoLatency": "No latency",
+      "statsLatency": "{{value}} ms average",
+      "cooldown": "Cooldown level {{level}}"
+    },
+    "validation": {
+      "invalidName": "Enter a rule name between 1 and 128 bytes.",
+      "invalidPattern": "Enter a valid model or group match. A regex must include an expression after re:.",
+      "invalidMapping": "Mapping keys and values are required, and keys must be unique.",
+      "mappingTooLarge": "The model mapping is too large. Remove some entries.",
+      "tooManyCandidates": "A route can contain at most 64 candidates.",
+      "invalidCandidates": "Candidate IDs and weights must be valid non-negative integers, without duplicates."
+    },
+    "errors": {
+      "route_conflict": "That route name already exists. Choose another name.",
+      "route_not_found": "The route no longer exists. Refresh the list.",
+      "route_invalid_reference": "A channel or credential reference is invalid. Refresh the candidate catalog.",
+      "invalid_request": "The route parameters are invalid. Check the form.",
+      "forbidden": "This session cannot manage smart routes.",
+      "updateFailed": "The route status could not be updated. Try again shortly.",
+      "internal_error": "Smart routing is temporarily unavailable. Try again shortly.",
+      "unknown": "The smart route operation failed. Try again shortly."
+    },
+    "delete": {
+      "title": "Delete smart route",
+      "description": "“{{name}}” and its candidate configuration will be permanently deleted. This cannot be undone."
     }
   },
   "credentials": {

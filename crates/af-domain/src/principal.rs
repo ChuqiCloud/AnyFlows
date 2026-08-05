@@ -79,6 +79,16 @@ principal_id! {
     ModelId
 }
 
+principal_id! {
+    /// 管理端智能路由规则标识。
+    RouteId
+}
+
+principal_id! {
+    /// 智能路由中的单个渠道凭据候选标识。
+    RouteChannelId
+}
+
 /// 已完成令牌、用户与有效分组校验的网关请求主体。
 ///
 /// 该值只携带稳定标识，不包含 API Key、摘要、展示前缀或可变授权策略，且不实现

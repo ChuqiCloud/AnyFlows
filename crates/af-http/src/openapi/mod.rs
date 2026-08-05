@@ -18,6 +18,7 @@ mod playground_conversations;
 mod playground_shares;
 mod redemptions;
 mod registration;
+mod routes;
 pub(crate) mod schema;
 mod session;
 mod setup;
@@ -56,6 +57,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(users::document());
     document.merge(wallet::document());
     document.merge(groups::document());
+    document.merge(routes::document());
     document.merge(models::document());
     document.merge(model_metadata::document());
     document.merge(model_sync::document());
@@ -87,6 +89,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("用户管理"),
         Tag::new("钱包账本"),
         Tag::new("分组管理"),
+        Tag::new("智能路由"),
         Tag::new("模型目录"),
         Tag::new("模型管理"),
         Tag::new("Playground 分享"),
@@ -122,7 +125,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 58);
+        assert_eq!(document.paths.paths.len(), 60);
         let operation_count = document
             .paths
             .paths
@@ -143,7 +146,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 89);
+        assert_eq!(operation_count, 94);
         assert!(
             document
                 .components
@@ -167,6 +170,7 @@ mod tests {
             "createAdminChannel",
             "createAdminCredential",
             "createAdminGroup",
+            "createAdminRoute",
             "createAdminModel",
             "createAdminModelSyncPreview",
             "createAdminRedemptionBatch",
@@ -187,6 +191,7 @@ mod tests {
             "deleteAdminChannel",
             "deleteAdminCredential",
             "deleteAdminGroup",
+            "deleteAdminRoute",
             "deleteAdminModel",
             "deleteAdminToken",
             "deleteAdminUser",
@@ -199,6 +204,7 @@ mod tests {
             "getAdminEmailSettings",
             "getAdminNetworkSettings",
             "getAdminGroup",
+            "getAdminRoute",
             "getAdminModel",
             "getAdminAuthenticationSettings",
             "getAdminSiteSettings",
@@ -217,6 +223,7 @@ mod tests {
             "listAdminChannels",
             "listAdminCredentials",
             "listAdminGroups",
+            "listAdminRoutes",
             "listAdminModels",
             "listAdminOAuthProviders",
             "listAdminModelPrices",
@@ -243,6 +250,7 @@ mod tests {
             "updateAdminBalanceAlertSettings",
             "updateAdminCredential",
             "updateAdminGroup",
+            "updateAdminRoute",
             "updateAdminModel",
             "updateAdminEmailSettings",
             "updateAdminNetworkSettings",
@@ -260,7 +268,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 153);
+        assert_eq!(schemas.len(), 160);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminChannelAutoBanRules"));
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
@@ -326,6 +334,13 @@ mod tests {
         assert!(schemas.contains_key("AdminNetworkSettingsMode"));
         assert!(schemas.contains_key("AdminBalanceAlertSettings"));
         assert!(schemas.contains_key("AdminBalanceAlertSettingsRequest"));
+        assert!(schemas.contains_key("AdminRoute"));
+        assert!(schemas.contains_key("AdminRouteChannelResponse"));
+        assert!(schemas.contains_key("AdminRouteListResponse"));
+        assert!(schemas.contains_key("AdminRouteWriteRequest"));
+        assert!(schemas.contains_key("AdminRouteChannelWriteRequest"));
+        assert!(schemas.contains_key("AdminRouteMode"));
+        assert!(schemas.contains_key("AdminRouteStrategy"));
         assert!(schemas.contains_key("ModelCatalogListResponse"));
         assert!(schemas.contains_key("ModelCatalogPricingScope"));
         assert!(schemas.contains_key("ModelCatalogLifecycle"));
