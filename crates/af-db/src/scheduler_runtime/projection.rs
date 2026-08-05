@@ -170,6 +170,10 @@ struct ProjectionTargetWire {
     model_mappings: Json,
     parameter_overrides: Json,
     headers: Vec<ProjectionHeaderWire>,
+    #[serde(default)]
+    auto_ban_status_codes: Vec<u16>,
+    #[serde(default)]
+    auto_ban_keywords: Vec<String>,
     responses_websocket_enabled: bool,
 }
 
@@ -331,6 +335,13 @@ impl ProjectionTargetWire {
                     value: header.value().to_owned(),
                 })
                 .collect(),
+            auto_ban_status_codes: target
+                .auto_ban_rules()
+                .server_statuses()
+                .iter()
+                .map(|status| status.get())
+                .collect(),
+            auto_ban_keywords: target.auto_ban_rules().keywords().to_vec(),
             responses_websocket_enabled: target.responses_websocket_enabled(),
         }
     }
@@ -368,6 +379,9 @@ impl ProjectionTargetWire {
             .into_iter()
             .map(|header| (header.name, header.value))
             .collect();
+        let auto_ban_rules =
+            af_domain::ChannelAutoBanRules::new(self.auto_ban_status_codes, self.auto_ban_keywords)
+                .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
         SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
             channel_id,
             channel_type,
@@ -380,6 +394,7 @@ impl ProjectionTargetWire {
         )
         .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?
         .with_timeout(timeout)
+        .with_auto_ban_rules(auto_ban_rules)
         .with_responses_websocket_enabled(self.responses_websocket_enabled)
         .map_err(|_| SchedulerRuntimeProjectionError::Invariant)
     }
@@ -472,7 +487,14 @@ mod tests {
                 ],
                 vec![("x-private-header".to_owned(), "private-value".to_owned())],
             )
-            .unwrap(),
+            .unwrap()
+            .with_auto_ban_rules(
+                af_domain::ChannelAutoBanRules::new(
+                    vec![503],
+                    vec!["private-rule-canary".to_owned()],
+                )
+                .unwrap(),
+            ),
         );
         let record = SchedulerRuntimeRecord::new(
             SchedulerAbilityRecord::from_projection_parts(
@@ -518,6 +540,7 @@ mod tests {
             "private.example",
             "private-key-id",
             "private-value",
+            "private-rule-canary",
         ] {
             assert!(!rendered.contains(forbidden));
         }

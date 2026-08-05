@@ -1,12 +1,13 @@
 use std::{collections::BTreeSet, fmt, sync::Arc};
 
+use af_domain::{MAX_CHANNEL_AUTO_BAN_KEYWORD_BYTES, MAX_CHANNEL_AUTO_BAN_KEYWORD_TOTAL_BYTES};
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
 use thiserror::Error;
 
 /// 单条自动禁用关键词允许的最大 UTF-8 字节数。
-pub const MAX_AUTO_BAN_KEYWORD_BYTES: usize = 256;
+pub const MAX_AUTO_BAN_KEYWORD_BYTES: usize = MAX_CHANNEL_AUTO_BAN_KEYWORD_BYTES;
 /// 单份策略全部关键词允许占用的最大 UTF-8 字节数。
-pub const MAX_AUTO_BAN_KEYWORD_TOTAL_BYTES: usize = 8 * 1_024;
+pub const MAX_AUTO_BAN_KEYWORD_TOTAL_BYTES: usize = MAX_CHANNEL_AUTO_BAN_KEYWORD_TOTAL_BYTES;
 /// 单次自动禁用证据允许的最大 UTF-8 字节数。
 pub const MAX_AUTO_BAN_EVIDENCE_BYTES: usize = 2 * 1_024;
 

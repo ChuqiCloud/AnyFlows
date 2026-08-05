@@ -7,6 +7,7 @@ use std::{
 use crate::{
     ChatRoutePlanFuture, ChatRoutePlanner, PlannedChatExecution, PlannedChatExecutionFuture,
     adaptor_credential::build_adaptor_credential,
+    auto_ban_feedback::{ChannelAutoBanAttemptTarget, persist_channel_auto_ban_feedback},
     concurrency_runtime::{
         ConcurrencyRuntime, ConcurrencyRuntimeError, RuntimeConcurrencyPermit,
         user_permit_completion_hook,
@@ -31,7 +32,7 @@ use af_adapter::{
     HeaderValue, OpenAiAdaptorSettings, RelayContext, ResponsesWebSocketPoolKey,
     TransportDispatcher, get_adaptor,
 };
-use af_db::CredentialStateRepository;
+use af_db::{ChannelStateRepository, CredentialStateRepository};
 use af_domain::{
     AfError, ChannelType, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, Operation,
     Protocol,
@@ -79,6 +80,7 @@ pub(crate) struct ScheduledChatService {
     sticky_wait_policy: StickyWaitPolicy,
     concurrency: Option<ConcurrencyRuntime>,
     health: Option<Arc<dyn SchedulerHealthStore>>,
+    channel_states: Option<ChannelStateRepository>,
 }
 
 impl ScheduledChatService {
@@ -100,6 +102,7 @@ impl ScheduledChatService {
             sticky_wait_policy: StickyWaitPolicy::default(),
             concurrency: None,
             health: None,
+            channel_states: None,
         }
     }
 
@@ -123,6 +126,15 @@ impl ScheduledChatService {
     /// 注入已通过启动健康检查的 Redis 熔断存储。
     pub(crate) fn with_scheduler_health(mut self, health: Arc<dyn SchedulerHealthStore>) -> Self {
         self.health = Some(health);
+        self
+    }
+
+    /// 注入渠道自动禁用状态仓储；未注入时保持纯路由测试模式。
+    pub(crate) fn with_channel_state_repository(
+        mut self,
+        repository: ChannelStateRepository,
+    ) -> Self {
+        self.channel_states = Some(repository);
         self
     }
 
@@ -151,6 +163,7 @@ impl ScheduledChatService {
                 .min(RelayStateMachine::MAX_CANDIDATES),
         );
         let mut attempt_targets = Vec::with_capacity(relay_candidates.capacity());
+        let mut auto_ban_targets = Vec::with_capacity(relay_candidates.capacity());
         let mut health_filtered = false;
         'channels: for candidate in route.candidates() {
             let target = candidate.runtime_target();
@@ -283,6 +296,10 @@ impl ScheduledChatService {
                     runtime_credential.credential_kind(),
                     oauth_has_refresh_token,
                 )?);
+                auto_ban_targets.push(ChannelAutoBanAttemptTarget::new(
+                    target.channel_id(),
+                    target.auto_ban_rules(),
+                )?);
             }
         }
         if relay_candidates.is_empty() {
@@ -297,6 +314,7 @@ impl ScheduledChatService {
             target_group_id,
             machine,
             attempt_targets,
+            auto_ban_targets,
             credential_states: self.credential_states.clone(),
             scheduler: self.scheduler.clone(),
             request,
@@ -307,6 +325,7 @@ impl ScheduledChatService {
             session_scope,
             user_permit,
             health: self.health.clone(),
+            channel_states: self.channel_states.clone(),
         })
     }
 
@@ -534,6 +553,7 @@ struct ScheduledChatExecution {
     target_group_id: GroupId,
     machine: RelayStateMachine,
     attempt_targets: Vec<CredentialAttemptTarget>,
+    auto_ban_targets: Vec<ChannelAutoBanAttemptTarget>,
     credential_states: CredentialStateRepository,
     scheduler: IndexedWeightedScheduler,
     request: CanonicalRequestEnvelope,
@@ -544,6 +564,7 @@ struct ScheduledChatExecution {
     session_scope: Option<StableSessionScope>,
     user_permit: Option<RuntimeConcurrencyPermit>,
     health: Option<Arc<dyn SchedulerHealthStore>>,
+    channel_states: Option<ChannelStateRepository>,
 }
 
 impl PlannedChatExecution for ScheduledChatExecution {
@@ -556,6 +577,7 @@ impl PlannedChatExecution for ScheduledChatExecution {
             target_group_id: _,
             machine,
             attempt_targets,
+            auto_ban_targets,
             credential_states,
             scheduler,
             request,
@@ -566,6 +588,7 @@ impl PlannedChatExecution for ScheduledChatExecution {
             session_scope,
             user_permit,
             health,
+            channel_states,
         } = *self;
         Box::pin(async move {
             let operation = request.canonical().operation;
@@ -597,7 +620,7 @@ impl PlannedChatExecution for ScheduledChatExecution {
                 .and_then(|index| attempt_targets.get(index))
                 .map(CredentialAttemptTarget::channel_id)
                 .map(af_domain::ChannelId::get);
-            let ((), ()) = tokio::join!(
+            let ((), (), ()) = tokio::join!(
                 persist_credential_feedback(
                     &credential_states,
                     &scheduler,
@@ -605,6 +628,12 @@ impl PlannedChatExecution for ScheduledChatExecution {
                     &report,
                 ),
                 persist_scheduler_health_feedback(health.as_ref(), &attempt_targets, &report),
+                persist_channel_auto_ban_feedback(
+                    channel_states.as_ref(),
+                    &scheduler,
+                    &auto_ban_targets,
+                    &report,
+                ),
             );
             if result.is_ok()
                 && let (Some(store), Some(scope), Some(channel_id)) = (

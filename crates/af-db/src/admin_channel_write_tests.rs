@@ -1,6 +1,8 @@
 use std::{error::Error, sync::Mutex, time::Duration};
 
-use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, Protocol, Status};
+use af_domain::{
+    ChannelAutoBanRules, ChannelId, ChannelType, CredentialId, CredentialKind, Protocol, Status,
+};
 use sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
 
 use super::{
@@ -163,6 +165,53 @@ async fn responses_websocket_toggle_preserves_unknown_sensitive_settings()
             .unwrap_err(),
         AdminChannelWriteRepositoryError::InvalidInput
     );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn auto_ban_rules_round_trip_preserve_and_clear_controlled_settings()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let rules = ChannelAutoBanRules::new(vec![500, 503], vec!["Workspace Disabled".to_owned()])?;
+    let created = fixture
+        .repository
+        .create_channel(
+            channel_record("auto-ban", "https://api.example.com/v1")
+                .with_auto_ban_rules(rules.clone()),
+        )
+        .await?;
+    assert_eq!(created.auto_ban_rules(), &rules);
+
+    let AdminChannelMutationOutcome::Mutated(preserved) = fixture
+        .repository
+        .update_channel(
+            created.channel_id(),
+            channel_update_record("auto-ban", "https://api.example.com/v1"),
+        )
+        .await?
+    else {
+        panic!("有效渠道必须完成更新");
+    };
+    assert_eq!(preserved.auto_ban_rules(), &rules);
+
+    let AdminChannelMutationOutcome::Mutated(cleared) = fixture
+        .repository
+        .update_channel(
+            created.channel_id(),
+            channel_update_record("auto-ban", "https://api.example.com/v1")
+                .with_auto_ban_rules(ChannelAutoBanRules::default()),
+        )
+        .await?
+    else {
+        panic!("有效渠道必须完成更新");
+    };
+    assert!(cleared.auto_ban_rules().is_empty());
+    let (_, settings) = channel_sensitive_fields(&fixture, created.channel_id()).await?;
+    let settings: serde_json::Value = serde_json::from_str(&settings)?;
+    assert_eq!(settings["private_setting"], "private-setting-value");
+    assert!(settings.get("auto_ban_rules").is_none());
 
     fixture.pool.close().await?;
     Ok(())

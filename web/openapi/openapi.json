@@ -7431,6 +7431,7 @@
           "weight",
           "priority",
           "auto_ban",
+          "auto_ban_rules",
           "responses_websocket_enabled",
           "models",
           "group_ids",
@@ -7492,6 +7493,9 @@
           },
           "auto_ban": {
             "type": "boolean"
+          },
+          "auto_ban_rules": {
+            "$ref": "#/components/schemas/AdminChannelAutoBanRules"
           },
           "responses_websocket_enabled": {
             "type": "boolean",
@@ -7596,6 +7600,35 @@
         },
         "additionalProperties": false
       },
+      "AdminChannelAutoBanRules": {
+        "type": "object",
+        "description": "管理端可配置的精确 5xx 状态码与关键词规则。",
+        "required": [
+          "status_codes",
+          "keywords"
+        ],
+        "properties": {
+          "status_codes": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            },
+            "maxItems": 64,
+            "minItems": 0
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminChannelCreateRequest": {
         "type": "object",
         "description": "管理端创建渠道时使用的完整配置正文。",
@@ -7682,6 +7715,10 @@
           },
           "auto_ban": {
             "type": "boolean"
+          },
+          "auto_ban_rules": {
+            "$ref": "#/components/schemas/AdminChannelAutoBanRules",
+            "description": "精确 5xx 状态码与已脱敏关键词规则；省略时使用空规则集。"
           },
           "responses_websocket_enabled": {
             "type": "boolean",
@@ -7919,6 +7956,17 @@
           },
           "auto_ban": {
             "type": "boolean"
+          },
+          "auto_ban_rules": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminChannelAutoBanRules",
+                "description": "省略或 null 表示保留原规则。"
+              }
+            ]
           },
           "responses_websocket_enabled": {
             "type": [

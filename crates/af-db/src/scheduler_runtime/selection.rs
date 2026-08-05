@@ -98,6 +98,7 @@ fn try_runtime_target(
         channel.headers().to_vec(),
     )
     .map(|target| target.with_timeout(channel.timeout()))
+    .map(|target| target.with_auto_ban_rules(channel.auto_ban_rules().clone()))
     .and_then(|target| {
         target.with_responses_websocket_enabled(channel.responses_websocket_enabled())
     })

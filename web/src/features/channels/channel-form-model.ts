@@ -45,6 +45,8 @@ export type ChannelFormValues = {
   weight: number
   priority: number
   autoBan: boolean
+  autoBanStatusCodes: number[]
+  autoBanKeywords: string[]
   responsesWebsocketEnabled: boolean
   models: string[]
   groupIds: number[]
@@ -60,6 +62,7 @@ type ValidationMessages = {
   invalidField: string
   invalidHeader: string
   invalidParameter: string
+  invalidAutoBanRules: string
   invalidRouting: string
   invalidTimeout: string
   invalidUrl: string
@@ -91,6 +94,8 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
     weight: z.number().int(messages.invalidField).min(0, messages.invalidField),
     priority: z.number().int(messages.invalidField),
     autoBan: z.boolean(),
+    autoBanStatusCodes: z.array(z.number()),
+    autoBanKeywords: z.array(z.string()),
     responsesWebsocketEnabled: z.boolean(),
     models: z.array(z.string()),
     groupIds: z.array(z.number()),
@@ -108,6 +113,9 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
     if (values.responsesWebsocketEnabled
       && (values.channelType !== 'openai' || values.protocol !== 'openai_responses')) {
       addIssue(context, 'responsesWebsocketEnabled', messages.invalidField)
+    }
+    if (!validAutoBanRules(values.autoBanStatusCodes, values.autoBanKeywords)) {
+      addIssue(context, 'autoBanKeywords', messages.invalidAutoBanRules)
     }
 
     if (values.baseUrl && !isSafeBaseUrl(values.baseUrl)) {
@@ -155,6 +163,8 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
     weight: channel?.weight ?? 10,
     priority: channel?.priority ?? 0,
     autoBan: channel?.auto_ban ?? true,
+    autoBanStatusCodes: [...(channel?.auto_ban_rules?.status_codes ?? [])],
+    autoBanKeywords: [...(channel?.auto_ban_rules?.keywords ?? [])],
     responsesWebsocketEnabled: channel?.responses_websocket_enabled ?? false,
     models: [...(channel?.models ?? [])],
     groupIds: [...(channel?.group_ids ?? [])],
@@ -208,6 +218,10 @@ function commonRequest(values: ChannelFormValues) {
     weight: values.weight,
     priority: values.priority,
     auto_ban: values.autoBan,
+    auto_ban_rules: {
+      status_codes: values.autoBanStatusCodes,
+      keywords: values.autoBanKeywords,
+    },
     responses_websocket_enabled: values.responsesWebsocketEnabled,
     models: values.models,
     group_ids: values.groupIds,
@@ -362,6 +376,30 @@ function isValidOptionalTimeout(value: string) {
   if (value.trim() === '') return true
   const seconds = Number(value)
   return Number.isSafeInteger(seconds) && seconds >= 1 && seconds <= MAX_CHANNEL_TIMEOUT_SECONDS
+}
+
+function validAutoBanRules(statusCodes: number[], keywords: string[]) {
+  const encoder = new TextEncoder()
+  const totalRules = statusCodes.length + keywords.length
+  const uniqueStatuses = new Set(statusCodes).size === statusCodes.length
+  const normalizedKeywords = keywords.map((keyword) => keyword.toLowerCase())
+  const uniqueKeywords = new Set(normalizedKeywords).size === keywords.length
+  const validStatuses = statusCodes.every(
+    (status) => Number.isSafeInteger(status) && status >= 500 && status <= 599,
+  )
+  const validKeywords = keywords.every((keyword) => (
+    keyword.trim() === keyword
+    && keyword.length > 0
+    && encoder.encode(keyword).length <= 256
+    && !/[\p{Cc}\p{Cf}]/u.test(keyword)
+  ))
+  const keywordBytes = keywords.reduce((total, keyword) => total + encoder.encode(keyword.toLowerCase()).length, 0)
+  return totalRules <= 64
+    && uniqueStatuses
+    && uniqueKeywords
+    && validStatuses
+    && validKeywords
+    && keywordBytes <= 8 * 1024
 }
 
 function createRowId(prefix: string) {

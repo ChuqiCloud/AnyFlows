@@ -1,7 +1,8 @@
 use std::{collections::BTreeSet, fmt};
 
 use af_domain::{
-    ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind, Protocol,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind,
+    Protocol,
 };
 use sea_orm::entity::prelude::Json;
 use sha2::{Digest, Sha256};
@@ -228,6 +229,7 @@ pub struct SchedulerRuntimeTargetRecord {
     model_mappings: ChannelModelMappings,
     parameter_overrides: ChannelParameterOverrides,
     headers: Vec<SchedulerRuntimeHeader>,
+    auto_ban_rules: ChannelAutoBanRules,
     responses_websocket_enabled: bool,
 }
 
@@ -335,6 +337,7 @@ impl SchedulerRuntimeTargetRecord {
             model_mappings,
             parameter_overrides,
             headers,
+            auto_ban_rules: ChannelAutoBanRules::default(),
             responses_websocket_enabled: false,
         })
     }
@@ -376,6 +379,13 @@ impl SchedulerRuntimeTargetRecord {
         self
     }
 
+    /// 显式设置已验证的渠道自动禁用规则。
+    #[must_use]
+    pub fn with_auto_ban_rules(mut self, rules: ChannelAutoBanRules) -> Self {
+        self.auto_ban_rules = rules;
+        self
+    }
+
     /// 显式设置原生 Responses WebSocket 能力。
     pub fn with_responses_websocket_enabled(
         mut self,
@@ -395,6 +405,12 @@ impl SchedulerRuntimeTargetRecord {
     #[must_use]
     pub const fn timeout(&self) -> Option<ChannelTimeout> {
         self.timeout
+    }
+
+    /// 返回当前不可变快照携带的渠道自动禁用规则。
+    #[must_use]
+    pub const fn auto_ban_rules(&self) -> &ChannelAutoBanRules {
+        &self.auto_ban_rules
     }
 
     /// 返回渠道是否显式允许使用原生 Responses WebSocket。
@@ -464,6 +480,7 @@ impl fmt::Debug for SchedulerRuntimeTargetRecord {
             .field("model_mapping_count", &self.model_mappings.len())
             .field("parameter_overrides", &self.parameter_overrides)
             .field("header_count", &self.headers.len())
+            .field("auto_ban_rules", &self.auto_ban_rules)
             .field(
                 "responses_websocket_enabled",
                 &self.responses_websocket_enabled,

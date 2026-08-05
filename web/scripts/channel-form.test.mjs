@@ -13,6 +13,7 @@ const messages = {
   invalidField: 'field',
   invalidHeader: 'header',
   invalidParameter: 'parameter',
+  invalidAutoBanRules: 'auto-ban-rules',
   invalidRouting: 'routing',
   invalidTimeout: 'timeout',
   invalidUrl: 'url',
@@ -30,6 +31,7 @@ test('Anthropic 渠道默认值保留类型和 Messages 协议', () => {
     weight: 10,
     priority: 0,
     auto_ban: true,
+    auto_ban_rules: { status_codes: [503], keywords: ['workspace disabled'] },
     responses_websocket_enabled: false,
     models: ['claude-test'],
     group_ids: [1],
@@ -45,6 +47,30 @@ test('Anthropic 渠道默认值保留类型和 Messages 协议', () => {
   assert.equal(values.channelType, 'anthropic')
   assert.equal(values.protocol, 'anthropic')
   assert.equal(values.timeoutSeconds, '60')
+  assert.deepEqual(values.autoBanStatusCodes, [503])
+  assert.deepEqual(values.autoBanKeywords, ['workspace disabled'])
+})
+
+test('自动停用规则只接受有界精确 5xx 状态码和关键词', () => {
+  const schema = buildChannelFormSchema('create', messages)
+  const valid = {
+    ...defaultChannelValues(),
+    name: 'Auto ban rules',
+    autoBanStatusCodes: [500, 503],
+    autoBanKeywords: ['workspace disabled'],
+  }
+
+  assert.equal(schema.safeParse(valid).success, true)
+  assert.deepEqual(toCreateRequest(valid).auto_ban_rules, {
+    status_codes: [500, 503],
+    keywords: ['workspace disabled'],
+  })
+  assert.equal(schema.safeParse({ ...valid, autoBanStatusCodes: [499] }).success, false)
+  assert.equal(schema.safeParse({ ...valid, autoBanKeywords: ['line\nbreak'] }).success, false)
+  assert.equal(schema.safeParse({
+    ...valid,
+    autoBanStatusCodes: Array.from({ length: 65 }, (_, index) => 500 + (index % 100)),
+  }).success, false)
 })
 
 test('Responses WebSocket 仅允许原生 Responses 渠道开启', () => {

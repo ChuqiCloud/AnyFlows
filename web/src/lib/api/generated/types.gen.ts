@@ -51,6 +51,7 @@ export type AdminChannel = {
     weight: number;
     priority: number;
     auto_ban: boolean;
+    auto_ban_rules: AdminChannelAutoBanRules;
     responses_websocket_enabled: boolean;
     models: Array<string>;
     group_ids: Array<number>;
@@ -69,6 +70,10 @@ export type AdminChannel = {
     created_at: number;
     updated_at: number;
 };
+export type AdminChannelAutoBanRules = {
+    status_codes: Array<number>;
+    keywords: Array<string>;
+};
 export type AdminChannelCreateRequest = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini';
@@ -79,6 +84,7 @@ export type AdminChannelCreateRequest = {
     weight: number;
     priority: number;
     auto_ban: boolean;
+    auto_ban_rules?: AdminChannelAutoBanRules;
     responses_websocket_enabled?: boolean;
     models: Array<string>;
     group_ids: Array<number>;
@@ -114,6 +120,7 @@ export type AdminChannelUpdateRequest = {
     weight: number;
     priority: number;
     auto_ban: boolean;
+    auto_ban_rules?: null | AdminChannelAutoBanRules;
     responses_websocket_enabled?: boolean | null;
     models: Array<string>;
     group_ids: Array<number>;
@@ -977,6 +984,7 @@ export type AdminChannelCreateRequestWritable = {
     weight: number;
     priority: number;
     auto_ban: boolean;
+    auto_ban_rules?: AdminChannelAutoBanRules;
     responses_websocket_enabled?: boolean;
     models: Array<string>;
     group_ids: Array<number>;
@@ -1007,6 +1015,7 @@ export type AdminChannelUpdateRequestWritable = {
     weight: number;
     priority: number;
     auto_ban: boolean;
+    auto_ban_rules?: null | AdminChannelAutoBanRules;
     responses_websocket_enabled?: boolean | null;
     models: Array<string>;
     group_ids: Array<number>;

@@ -1,7 +1,9 @@
 use std::fmt;
 
 use af_db::AdminChannelRecord;
-use af_domain::{ChannelId, ChannelTimeout, ChannelType, GroupId, Protocol, Status};
+use af_domain::{
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, GroupId, Protocol, Status,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::AdminChannelReadError;
@@ -80,6 +82,7 @@ pub struct AdminChannel {
     weight: i32,
     priority: i32,
     auto_ban: bool,
+    auto_ban_rules: ChannelAutoBanRules,
     responses_websocket_enabled: bool,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
@@ -128,6 +131,7 @@ impl AdminChannel {
             weight,
             priority,
             auto_ban,
+            auto_ban_rules: ChannelAutoBanRules::default(),
             responses_websocket_enabled: false,
             models,
             group_ids,
@@ -190,6 +194,12 @@ impl AdminChannel {
     #[must_use]
     pub const fn auto_ban(&self) -> bool {
         self.auto_ban
+    }
+
+    /// 返回已校验的自动禁用状态码与关键词规则。
+    #[must_use]
+    pub const fn auto_ban_rules(&self) -> &ChannelAutoBanRules {
+        &self.auto_ban_rules
     }
     /// 返回是否显式开启原生 Responses WebSocket。
     #[must_use]
@@ -264,11 +274,17 @@ impl AdminChannel {
             record.created_at(),
             record.updated_at(),
         )
+        .with_auto_ban_rules(record.auto_ban_rules().clone())
         .with_responses_websocket_enabled(record.responses_websocket_enabled())
     }
 
     fn with_responses_websocket_enabled(mut self, enabled: bool) -> Self {
         self.responses_websocket_enabled = enabled;
+        self
+    }
+
+    fn with_auto_ban_rules(mut self, rules: ChannelAutoBanRules) -> Self {
+        self.auto_ban_rules = rules;
         self
     }
 }
