@@ -65,6 +65,9 @@ mod credential_proxy_tests;
 mod credential_state;
 #[cfg(test)]
 mod credential_state_tests;
+mod debug_trace;
+#[cfg(test)]
+mod debug_trace_tests;
 mod email_settings;
 #[cfg(test)]
 mod email_settings_tests;
@@ -264,6 +267,14 @@ pub use credential_proxy::{
 pub use credential_state::{
     CredentialStateChange, CredentialStateEvent, CredentialStateRepository,
     CredentialStateRepositoryError, CredentialStateWriteReport, MAX_CREDENTIAL_STATE_BATCH,
+};
+pub use debug_trace::{
+    DebugTraceAttemptOutcome, DebugTraceAttemptRecord, DebugTraceAttemptWrite,
+    DebugTraceDetailRecord, DebugTraceFailureKind, DebugTraceListQuery, DebugTraceOperation,
+    DebugTraceOutcome, DebugTracePageRecord, DebugTraceProtocol, DebugTraceRepository,
+    DebugTraceRepositoryConfigError, DebugTraceRepositoryError, DebugTraceSettingsRecord,
+    DebugTraceSettingsWrite, DebugTraceSummaryRecord, DebugTraceWrite, DebugTraceWriteError,
+    MAX_DEBUG_TRACE_PAGE_SIZE, MAX_DEBUG_TRACE_RETENTION_HOURS, MAX_DEBUG_TRACE_SAMPLE_PER_MILLION,
 };
 pub use email_settings::{
     EmailPasswordUpdate, EmailSettingsRecord, EmailSettingsRepository,

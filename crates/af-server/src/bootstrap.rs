@@ -54,6 +54,7 @@ use af_db::{
     BalanceAlertSettingsRepository, BalanceAlertSettingsRepositoryConfigError,
     ChannelStateRepository, CredentialProxyRepository, CredentialProxyRepositoryConfigError,
     CredentialStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
+    DebugTraceRepository, DebugTraceRepositoryConfigError, DebugTraceRepositoryError,
     EmailSettingsRepository, EmailSettingsRepositoryConfigError, InitialSetupRepository,
     InitialSetupRepositoryConfigError, MigrationOptions, ModelPriceRepository, ModelSyncRepository,
     NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
@@ -94,6 +95,7 @@ use crate::{
     balance_alert_runtime::BalanceAlertRuntime,
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     concurrency_runtime::{ConcurrencyCleanupWorker, ConcurrencyReleaseWorker, ConcurrencyRuntime},
+    debug_trace_runtime::{AdminDebugTraceRuntimeApplier, DebugTraceRuntime, DebugTraceWorker},
     frontend::EmbeddedFrontendAssets,
     group_pricing_refresh::RuntimeGroupPricingRefresher,
     model_catalog::RuntimeModelCatalogReader,
@@ -206,6 +208,9 @@ pub struct BillingReady {
     admin_model_price_service: Arc<dyn AdminModelPriceService>,
     concurrency_release_worker: Option<ConcurrencyReleaseWorker>,
     concurrency_cleanup_worker: Option<ConcurrencyCleanupWorker>,
+    debug_trace_repository: DebugTraceRepository,
+    debug_trace_runtime: DebugTraceRuntime,
+    debug_trace_worker: DebugTraceWorker,
 }
 
 /// 后台任务监督域已经建立，周期 flush、渠道索引、渠道探活与可靠队列 worker 已注册。
@@ -222,6 +227,8 @@ pub struct Supervised {
     admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
     admin_oauth_connection_service: Arc<dyn AdminOAuthConnectionService>,
     admin_channel_probe: Arc<dyn AdminChannelProbe>,
+    debug_trace_repository: DebugTraceRepository,
+    debug_trace_runtime: DebugTraceRuntime,
     supervisor: BackgroundTaskSupervisor,
 }
 
@@ -387,6 +394,12 @@ pub enum BootstrapError {
     /// 管理员渠道仓储的启动参数无效。
     #[error("管理员渠道仓储启动参数无效")]
     AdminChannelRepository(#[source] AdminChannelRepositoryConfigError),
+    /// 调试追踪仓储的启动参数无效。
+    #[error("调试追踪仓储启动参数无效")]
+    DebugTraceRepository(#[source] DebugTraceRepositoryConfigError),
+    /// 调试追踪初始设置无法读取或状态损坏。
+    #[error("加载调试追踪初始设置失败")]
+    DebugTraceSettings(#[source] DebugTraceRepositoryError),
     /// HTTP 监听、服务或强制关闭失败。
     #[error("HTTP 服务生命周期操作失败")]
     Http(#[source] ServeError),
@@ -942,6 +955,17 @@ impl Bootstrap<RelayReady> {
         )
         .await
         .map_err(BootstrapError::ChannelIndex)?;
+        let debug_trace_repository = DebugTraceRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::DebugTraceRepository)?;
+        let debug_trace_settings = debug_trace_repository
+            .settings()
+            .await
+            .map_err(BootstrapError::DebugTraceSettings)?;
+        let (debug_trace_runtime, debug_trace_worker) =
+            DebugTraceRuntime::new(debug_trace_repository.clone(), debug_trace_settings);
         let scheduler_invalidation = prepare_scheduler_invalidation_runtime(
             &self.config,
             self.stage.infrastructure.infrastructure.database.clone(),
@@ -1006,7 +1030,8 @@ impl Bootstrap<RelayReady> {
         .with_proxy_cipher(self.stage.infrastructure.system_secret_cipher.clone())
         .with_channel_state_repository(ChannelStateRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),
-        ));
+        ))
+        .with_debug_trace_runtime(debug_trace_runtime.clone());
         let route_service = match sticky_store {
             Some(store) => route_service.with_sticky_sessions(store, StickyWaitPolicy::default()),
             None => route_service,
@@ -1095,6 +1120,9 @@ impl Bootstrap<RelayReady> {
                 admin_model_price_service,
                 concurrency_release_worker,
                 concurrency_cleanup_worker,
+                debug_trace_repository,
+                debug_trace_runtime,
+                debug_trace_worker,
             },
         })
     }
@@ -1132,6 +1160,9 @@ impl Bootstrap<BillingReady> {
             admin_model_price_service,
             concurrency_release_worker,
             concurrency_cleanup_worker,
+            debug_trace_repository,
+            debug_trace_runtime,
+            debug_trace_worker,
         } = stage;
         spawn_channel_index_refresh_task(
             &mut supervisor,
@@ -1159,6 +1190,12 @@ impl Bootstrap<BillingReady> {
                 }
             });
         }
+        supervisor.spawn_drainable("debug-trace-persist", move |task_shutdown| {
+            let worker = debug_trace_worker.clone();
+            async move {
+                worker.run(task_shutdown).await;
+            }
+        });
         supervisor.spawn("balance-alert", {
             let runtime = BalanceAlertRuntime::new(infrastructure.balance_alert_task.clone());
             move |task_shutdown| {
@@ -1238,6 +1275,8 @@ impl Bootstrap<BillingReady> {
                 admin_network_settings_service,
                 admin_oauth_connection_service,
                 admin_channel_probe,
+                debug_trace_repository,
+                debug_trace_runtime,
                 supervisor,
             },
         }
@@ -1315,6 +1354,13 @@ impl Bootstrap<Supervised> {
         let probe =
             DatabaseReadinessProbe::new(self.stage.infrastructure.infrastructure.database.clone());
         let readiness = ReadinessHandle::new(probe);
+        let debug_trace_service: Arc<dyn af_admin::AdminDebugTraceService> =
+            Arc::new(af_admin::DatabaseAdminDebugTraceService::new(
+                self.stage.debug_trace_repository.clone(),
+                Arc::new(AdminDebugTraceRuntimeApplier::new(
+                    self.stage.debug_trace_runtime.clone(),
+                )),
+            ));
         let router = build_router(
             self.config.server(),
             self.stage.chat.clone(),
@@ -1343,6 +1389,7 @@ impl Bootstrap<Supervised> {
                     .infrastructure
                     .admin_balance_alert_settings_service,
             ),
+            debug_trace_service,
             Arc::clone(&self.stage.infrastructure.admin_channel_reader),
             Arc::clone(&self.stage.infrastructure.admin_channel_writer),
             Some(Arc::clone(&self.stage.admin_channel_probe)),
@@ -1457,6 +1504,8 @@ impl Bootstrap<ListenerReady> {
             admin_network_settings_service: _,
             admin_oauth_connection_service: _,
             admin_channel_probe: _,
+            debug_trace_repository: _,
+            debug_trace_runtime: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
         let http =

@@ -9,6 +9,7 @@ mod chat_service;
 mod client_ip;
 mod credential_proxies;
 mod credentials;
+mod debug_traces;
 mod email_settings;
 mod error_response;
 mod frontend_assets;

@@ -1225,3 +1225,90 @@ pub(in crate::migration) mod route_channels {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod debug_trace_settings {
+    use super::DeriveIden;
+
+    /// `debug_trace_settings` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "debug_trace_settings")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 调试追踪全局设置迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        Enabled,
+        SamplePerMillion,
+        RetentionHours,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod debug_traces {
+    use super::DeriveIden;
+
+    /// `debug_traces` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "debug_traces")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 脱敏请求级调试追踪迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        RequestId,
+        UserId,
+        TokenId,
+        GroupId,
+        RequestedModel,
+        DownstreamProtocol,
+        UpstreamProtocol,
+        Operation,
+        Outcome,
+        SelectedChannelId,
+        SelectedCredentialId,
+        RoutingElapsedMs,
+        AttemptCount,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod debug_trace_attempts {
+    use super::DeriveIden;
+
+    /// `debug_trace_attempts` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "debug_trace_attempts")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 候选尝试调试明细迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        TraceId,
+        CandidateIndex,
+        ChannelId,
+        CredentialId,
+        Outcome,
+        FailureKind,
+        UpstreamStatus,
+        RetryDecision,
+        ElapsedMs,
+        CreatedAt,
+    }
+}

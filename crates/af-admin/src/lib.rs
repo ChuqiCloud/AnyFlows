@@ -10,6 +10,7 @@ mod channel_read;
 mod channel_write;
 mod credential_proxy;
 mod credential_read;
+mod debug_trace;
 mod email_settings;
 #[cfg(test)]
 mod email_settings_tests;
@@ -81,6 +82,16 @@ pub use credential_proxy::{
 pub use credential_read::{
     AdminCredential, AdminCredentialListQuery, AdminCredentialMultiKeyMode, AdminCredentialPage,
     AdminCredentialQuotaDimension,
+};
+pub use debug_trace::{
+    AdminDebugTrace, AdminDebugTraceAttempt, AdminDebugTraceAttemptOutcome, AdminDebugTraceDetail,
+    AdminDebugTraceDetailFuture, AdminDebugTraceError, AdminDebugTraceFailureKind,
+    AdminDebugTraceGetFuture, AdminDebugTraceListFuture, AdminDebugTraceListQuery,
+    AdminDebugTraceOperation, AdminDebugTraceOutcome, AdminDebugTracePage, AdminDebugTraceProtocol,
+    AdminDebugTraceService, AdminDebugTraceSettings, AdminDebugTraceSettingsCommand,
+    AdminDebugTraceSettingsFuture, AdminDebugTraceSettingsRuntimeApplier,
+    AdminDebugTraceUpdateFuture, DEFAULT_ADMIN_DEBUG_TRACE_PAGE_SIZE,
+    DatabaseAdminDebugTraceService,
 };
 pub use email_settings::{
     AdminEmailSettings, AdminEmailSettingsCommand, AdminEmailSettingsError,

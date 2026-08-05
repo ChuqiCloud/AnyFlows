@@ -1,4 +1,10 @@
-use std::{collections::BTreeSet, fmt, num::NonZeroUsize, sync::Arc};
+use std::{
+    collections::BTreeSet,
+    fmt,
+    num::NonZeroUsize,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use af_adapter::{
     Adaptor, AdaptorTarget, Bytes, Credential, HeaderMap, Method, Operation, RelayContext,
@@ -144,15 +150,17 @@ pub struct RelayAttemptFailure {
     error: UpstreamError,
     server_status: Option<UpstreamServerStatus>,
     evidence: Option<StructuredErrorEvidence>,
+    elapsed: Duration,
 }
 
 impl RelayAttemptFailure {
-    fn new(candidate_index: usize, error: UpstreamError) -> Self {
+    fn new(candidate_index: usize, error: UpstreamError, elapsed: Duration) -> Self {
         Self {
             candidate_index,
             error,
             server_status: None,
             evidence: None,
+            elapsed,
         }
     }
 
@@ -161,12 +169,14 @@ impl RelayAttemptFailure {
         error: UpstreamError,
         server_status: Option<UpstreamServerStatus>,
         evidence: Option<StructuredErrorEvidence>,
+        elapsed: Duration,
     ) -> Self {
         Self {
             candidate_index,
             error,
             server_status,
             evidence,
+            elapsed,
         }
     }
 
@@ -193,19 +203,31 @@ impl RelayAttemptFailure {
     pub const fn evidence(&self) -> Option<&StructuredErrorEvidence> {
         self.evidence.as_ref()
     }
+
+    /// 返回当前候选从开始判定到取得闭合结果的耗时。
+    #[must_use]
+    pub const fn elapsed(&self) -> Duration {
+        self.elapsed
+    }
 }
 
 /// 一次转发执行产生的脱敏候选报告。
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RelayAttemptReport {
     successful_candidate_index: Option<usize>,
+    successful_elapsed: Option<Duration>,
     failures: Vec<RelayAttemptFailure>,
 }
 
 impl RelayAttemptReport {
-    fn succeeded(successful_candidate_index: usize, failures: Vec<RelayAttemptFailure>) -> Self {
+    fn succeeded(
+        successful_candidate_index: usize,
+        successful_elapsed: Duration,
+        failures: Vec<RelayAttemptFailure>,
+    ) -> Self {
         Self {
             successful_candidate_index: Some(successful_candidate_index),
+            successful_elapsed: Some(successful_elapsed),
             failures,
         }
     }
@@ -213,6 +235,7 @@ impl RelayAttemptReport {
     fn failed(failures: Vec<RelayAttemptFailure>) -> Self {
         Self {
             successful_candidate_index: None,
+            successful_elapsed: None,
             failures,
         }
     }
@@ -221,6 +244,12 @@ impl RelayAttemptReport {
     #[must_use]
     pub const fn successful_candidate_index(&self) -> Option<usize> {
         self.successful_candidate_index
+    }
+
+    /// 返回最终成功候选的耗时；执行失败时为空。
+    #[must_use]
+    pub const fn successful_elapsed(&self) -> Option<Duration> {
+        self.successful_elapsed
     }
 
     /// 返回按尝试顺序排列的失败分类。
@@ -232,8 +261,12 @@ impl RelayAttemptReport {
     /// 把已经取得 HTTP 成功、但未通过协议验证的候选改记为失败。
     pub(crate) fn reject_success(&mut self, error: UpstreamError) {
         if let Some(candidate_index) = self.successful_candidate_index.take() {
+            let elapsed = self
+                .successful_elapsed
+                .take()
+                .expect("成功候选索引与耗时必须同时存在");
             self.failures
-                .push(RelayAttemptFailure::new(candidate_index, error));
+                .push(RelayAttemptFailure::new(candidate_index, error, elapsed));
         }
     }
 }
@@ -460,6 +493,7 @@ impl RelayStateMachine {
         let mut failures = Vec::new();
         let mut index = 0;
         while let Some(candidate) = self.candidates.get(index) {
+            let attempt_started_at = Instant::now();
             let candidate_model = candidate
                 .request
                 .as_ref()
@@ -471,7 +505,11 @@ impl RelayStateMachine {
                     .any(|model| model == candidate_model)
             {
                 let error = UpstreamError::ModelUnsupported;
-                failures.push(RelayAttemptFailure::new(index, error));
+                failures.push(RelayAttemptFailure::new(
+                    index,
+                    error,
+                    attempt_started_at.elapsed(),
+                ));
                 last_error = Some(RelayError::Upstream(error));
                 index = self.next_candidate_index(index, error);
                 continue;
@@ -557,7 +595,11 @@ impl RelayStateMachine {
                 Err(error) => {
                     release_attempt_permit(permit).await;
                     let mapped = map_adaptor_error(error);
-                    failures.push(RelayAttemptFailure::new(index, mapped));
+                    failures.push(RelayAttemptFailure::new(
+                        index,
+                        mapped,
+                        attempt_started_at.elapsed(),
+                    ));
                     last_error = Some(RelayError::Upstream(mapped));
                     if is_retryable(mapped) {
                         index = self.next_candidate_index(index, mapped);
@@ -592,7 +634,11 @@ impl RelayStateMachine {
                     attempts: NonZeroUsize::new(index + 1)
                         .expect("候选索引从零开始时尝试次数必须为正"),
                     state,
-                    report: RelayAttemptReport::succeeded(index, failures),
+                    report: RelayAttemptReport::succeeded(
+                        index,
+                        attempt_started_at.elapsed(),
+                        failures,
+                    ),
                     permit,
                 });
             }
@@ -604,7 +650,11 @@ impl RelayStateMachine {
                 Err(error) => {
                     release_attempt_permit(permit).await;
                     let mapped = map_adaptor_error(error);
-                    failures.push(RelayAttemptFailure::new(index, mapped));
+                    failures.push(RelayAttemptFailure::new(
+                        index,
+                        mapped,
+                        attempt_started_at.elapsed(),
+                    ));
                     last_error = Some(RelayError::Upstream(mapped));
                     if is_retryable(mapped) {
                         index = self.next_candidate_index(index, mapped);
@@ -625,6 +675,7 @@ impl RelayStateMachine {
                 classified,
                 server_status,
                 evidence,
+                attempt_started_at.elapsed(),
             ));
             last_error = Some(RelayError::Upstream(classified));
             if is_retryable(classified) {

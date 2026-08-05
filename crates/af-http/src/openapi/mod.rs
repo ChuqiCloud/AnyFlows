@@ -5,6 +5,7 @@ mod channels;
 mod credential_proxies;
 mod credentials;
 mod dashboard;
+mod debug_traces;
 mod email_settings;
 mod groups;
 mod invitations;
@@ -71,6 +72,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(channels::document());
     document.merge(credentials::document());
     document.merge(credential_proxies::document());
+    document.merge(debug_traces::document());
 
     document.tags = Some(vec![
         Tag::new("公开注册"),
@@ -102,6 +104,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("渠道管理"),
         Tag::new("凭据管理"),
         Tag::new("专属代理"),
+        Tag::new("调试追踪"),
     ]);
     document
         .components

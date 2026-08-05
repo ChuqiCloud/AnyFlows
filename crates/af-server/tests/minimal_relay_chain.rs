@@ -18,42 +18,45 @@ use af_admin::{
     AdminCredentialProxyDeleteFuture, AdminCredentialProxyError, AdminCredentialProxyFuture,
     AdminCredentialProxyListQuery, AdminCredentialProxyPageFuture, AdminCredentialProxyService,
     AdminCredentialProxyUpdateCommand, AdminCredentialUpdateCommand, AdminCredentialUpdateFuture,
-    AdminEmailSettingsCommand, AdminEmailSettingsError, AdminEmailSettingsReadFuture,
-    AdminEmailSettingsService, AdminEmailSettingsUpdateFuture, AdminEmailTestCommand,
-    AdminEmailTestFuture, AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture,
-    AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError,
-    AdminGroupReader, AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError,
-    AdminGroupWriter, AdminNetworkSettingsCommand, AdminNetworkSettingsError,
-    AdminNetworkSettingsReadFuture, AdminNetworkSettingsService, AdminNetworkSettingsUpdateFuture,
-    AdminSiteSettingsReadFuture, AdminSiteSettingsUpdateFuture, AdminTokenCreateCommand,
-    AdminTokenCreateFuture, AdminTokenDeleteFuture, AdminTokenGetFuture, AdminTokenListFuture,
-    AdminTokenListQuery, AdminTokenReadError, AdminTokenReader, AdminTokenUpdateCommand,
-    AdminTokenUpdateFuture, AdminTokenWriteError, AdminTokenWriter, AdminUsageLogListFuture,
-    AdminUsageLogListQuery, AdminUsageLogReadError, AdminUsageLogReader, AdminUserCreateCommand,
-    AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture, AdminUserListFuture,
-    AdminUserListQuery, AdminUserReadError, AdminUserReader, AdminUserUpdateCommand,
-    AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter, ApiKeyDigest, InitialSetup,
-    InitialSetupCommand, InitialSetupError, InitialSetupFuture, InitialSetupStatusFuture,
-    LoginCredentials, ModelCatalogQuery, ModelCatalogReadError, ModelCatalogReader,
-    PasswordResetConfirmCommand, PasswordResetConfirmFuture, PasswordResetError,
-    PasswordResetRequestCommand, PasswordResetRequestFuture, PasswordResetService,
-    PlaygroundConversationDeleteFuture, PlaygroundConversationError,
-    PlaygroundConversationListFuture, PlaygroundConversationReadFuture,
-    PlaygroundConversationSaveCommand, PlaygroundConversationSaveFuture,
-    PlaygroundConversationService, PlaygroundShareCreateCommand, PlaygroundShareCreateFuture,
-    PlaygroundShareError, PlaygroundShareReadFuture, PlaygroundShareRevokeFuture,
-    PlaygroundShareService, PublicSiteSettingsFuture, RedemptionCreateFuture,
-    RedemptionDisableFuture, RedemptionListFuture, RedemptionRedeemFuture, RedemptionService,
-    RedemptionServiceError, RegistrationCommand, RegistrationEmailVerificationCommand,
-    RegistrationEmailVerificationFuture, RegistrationError, RegistrationFuture,
-    RegistrationPolicyCommand, RegistrationPolicyFuture, RegistrationPolicyUpdateFuture,
-    RegistrationService, RegistrationStatusFuture, SessionAuthenticationError,
-    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
-    SiteSettingsCommand, SiteSettingsError, SiteSettingsService, TokenAuthentication,
-    TokenAuthenticationFuture, TokenAuthenticator, UserInvitationError, UserInvitationReadFuture,
-    UserInvitationService, UserNotificationPreferencesCommand, UserNotificationUpdateFuture,
-    UserPasswordChangeCommand, UserPasswordChangeFuture, UserProfileError, UserProfileReadFuture,
-    UserProfileService, UserProfileUpdateCommand, UserProfileUpdateFuture, UserTokenCreateFuture,
+    AdminDebugTraceError, AdminDebugTraceGetFuture, AdminDebugTraceListFuture,
+    AdminDebugTraceListQuery, AdminDebugTraceService, AdminDebugTraceSettingsCommand,
+    AdminDebugTraceSettingsFuture, AdminDebugTraceUpdateFuture, AdminEmailSettingsCommand,
+    AdminEmailSettingsError, AdminEmailSettingsReadFuture, AdminEmailSettingsService,
+    AdminEmailSettingsUpdateFuture, AdminEmailTestCommand, AdminEmailTestFuture,
+    AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture, AdminGroupGetFuture,
+    AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError, AdminGroupReader,
+    AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
+    AdminNetworkSettingsCommand, AdminNetworkSettingsError, AdminNetworkSettingsReadFuture,
+    AdminNetworkSettingsService, AdminNetworkSettingsUpdateFuture, AdminSiteSettingsReadFuture,
+    AdminSiteSettingsUpdateFuture, AdminTokenCreateCommand, AdminTokenCreateFuture,
+    AdminTokenDeleteFuture, AdminTokenGetFuture, AdminTokenListFuture, AdminTokenListQuery,
+    AdminTokenReadError, AdminTokenReader, AdminTokenUpdateCommand, AdminTokenUpdateFuture,
+    AdminTokenWriteError, AdminTokenWriter, AdminUsageLogListFuture, AdminUsageLogListQuery,
+    AdminUsageLogReadError, AdminUsageLogReader, AdminUserCreateCommand, AdminUserCreateFuture,
+    AdminUserDeleteFuture, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery,
+    AdminUserReadError, AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture,
+    AdminUserWriteError, AdminUserWriter, ApiKeyDigest, InitialSetup, InitialSetupCommand,
+    InitialSetupError, InitialSetupFuture, InitialSetupStatusFuture, LoginCredentials,
+    ModelCatalogQuery, ModelCatalogReadError, ModelCatalogReader, PasswordResetConfirmCommand,
+    PasswordResetConfirmFuture, PasswordResetError, PasswordResetRequestCommand,
+    PasswordResetRequestFuture, PasswordResetService, PlaygroundConversationDeleteFuture,
+    PlaygroundConversationError, PlaygroundConversationListFuture,
+    PlaygroundConversationReadFuture, PlaygroundConversationSaveCommand,
+    PlaygroundConversationSaveFuture, PlaygroundConversationService, PlaygroundShareCreateCommand,
+    PlaygroundShareCreateFuture, PlaygroundShareError, PlaygroundShareReadFuture,
+    PlaygroundShareRevokeFuture, PlaygroundShareService, PublicSiteSettingsFuture,
+    RedemptionCreateFuture, RedemptionDisableFuture, RedemptionListFuture, RedemptionRedeemFuture,
+    RedemptionService, RedemptionServiceError, RegistrationCommand,
+    RegistrationEmailVerificationCommand, RegistrationEmailVerificationFuture, RegistrationError,
+    RegistrationFuture, RegistrationPolicyCommand, RegistrationPolicyFuture,
+    RegistrationPolicyUpdateFuture, RegistrationService, RegistrationStatusFuture,
+    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
+    SessionLoginFuture, SessionPrincipal, SiteSettingsCommand, SiteSettingsError,
+    SiteSettingsService, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
+    UserInvitationError, UserInvitationReadFuture, UserInvitationService,
+    UserNotificationPreferencesCommand, UserNotificationUpdateFuture, UserPasswordChangeCommand,
+    UserPasswordChangeFuture, UserProfileError, UserProfileReadFuture, UserProfileService,
+    UserProfileUpdateCommand, UserProfileUpdateFuture, UserTokenCreateFuture,
     UserTokenDeleteFuture, UserTokenError, UserTokenGetFuture, UserTokenListFuture,
     UserTokenListQuery, UserTokenService, UserTokenUpdateFuture, UserTokenWriteCommand,
     UserWalletError, UserWalletListFuture, UserWalletListQuery, UserWalletService,
@@ -175,12 +178,43 @@ struct RejectUserInvitations;
 struct RejectSiteSettings;
 struct RejectAdminEmailSettings;
 struct RejectAdminBalanceAlertSettings;
+struct RejectAdminDebugTraces;
 struct RejectAdminChannels;
 struct RejectAdminGroups;
 struct RejectAdminTokens;
 struct RejectAdminDashboard;
 struct RejectAdminUsageLogs;
 struct RejectAdminUsers;
+
+impl AdminDebugTraceService for RejectAdminDebugTraces {
+    fn settings<'a>(&'a self, _principal: SessionPrincipal) -> AdminDebugTraceSettingsFuture<'a> {
+        Box::pin(async { Err(AdminDebugTraceError::Internal) })
+    }
+
+    fn update<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: AdminDebugTraceSettingsCommand,
+    ) -> AdminDebugTraceUpdateFuture<'a> {
+        Box::pin(async { Err(AdminDebugTraceError::Internal) })
+    }
+
+    fn list<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _query: AdminDebugTraceListQuery,
+    ) -> AdminDebugTraceListFuture<'a> {
+        Box::pin(async { Err(AdminDebugTraceError::Internal) })
+    }
+
+    fn detail<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _id: i64,
+    ) -> AdminDebugTraceGetFuture<'a> {
+        Box::pin(async { Err(AdminDebugTraceError::Internal) })
+    }
+}
 
 impl SessionAuthenticator for RejectSessions {
     fn login<'a>(&'a self, _credentials: &'a LoginCredentials) -> SessionLoginFuture<'a> {
@@ -1687,6 +1721,7 @@ async fn start_server(
         Arc::new(RejectAdminCredentialProxies),
         None,
         Arc::new(RejectAdminBalanceAlertSettings),
+        Arc::new(RejectAdminDebugTraces),
         Arc::new(RejectAdminChannels),
         Arc::new(RejectAdminChannels),
         None,
