@@ -739,7 +739,7 @@ async fn fetch_route_snapshot(
         .with_subscriber(NoSubscriber::default())
         .await
         .map_err(|_| record_internal_error(AdminRouteRepositoryError::Query))?
-        .ok_or_else(|| internal_invariant())?;
+        .ok_or_else(internal_invariant)?;
     let channels = route_channels::Entity::find()
         .filter(route_channels::Column::RouteId.eq(route_id.get()))
         .order_by_asc(route_channels::Column::Priority)
