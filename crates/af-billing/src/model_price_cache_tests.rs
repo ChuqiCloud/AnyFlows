@@ -188,6 +188,13 @@ async fn expression_definition_is_retained_without_leaking_source() {
     assert_eq!(price.mode(), ModelPriceMode::Expression);
     assert_eq!(price.billing_mode(), None);
     assert!(price.resolver(unit_ratios()).is_none());
+    let resolved = price
+        .request_resolver(unit_ratios())
+        .unwrap()
+        .resolve(&PricingContext::new(&million_input_usage()))
+        .unwrap();
+    assert_eq!(resolved.quota(), Quota::new(1_250_000).unwrap());
+    assert!(!resolved.is_free());
     assert!(!format!("{price:?}").contains("expression-model"));
 }
 

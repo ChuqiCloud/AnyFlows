@@ -118,7 +118,7 @@ impl BillingChatService {
                 crate::utc_time::current_utc_day_second().ok_or(AfError::Internal)?,
             )
             .map_err(map_snapshot_error)?;
-        let plan = BillingRequestPlan::prepare(Arc::new(snapshot.resolver()), &upper_bound)
+        let plan = BillingRequestPlan::prepare(snapshot.resolver(), &upper_bound)
             .map_err(map_lifecycle_error)?;
         let reservation_id = new_reservation_id()?;
         let mut lifecycle = match plan.precharge_quota() {
@@ -485,6 +485,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn expression_pricing_uses_the_same_precharge_settlement_and_usage_chain() {
+        let usage_port = Arc::new(UsageStub::default());
+        let precharge = Arc::new(PrechargeStub::default());
+        let settlement = Arc::new(SettlementStub::default());
+        let service = BillingChatService::new(
+            Arc::new(FullStub {
+                target_group_id: GroupId::new(3).unwrap(),
+            }),
+            Arc::new(expression_snapshot_source().await),
+            Some(precharge.clone()),
+            Some(Arc::new(RefundStub)),
+            Some(settlement.clone()),
+            usage_port.clone(),
+        );
+
+        service
+            .chat_completions(
+                &principal(),
+                None,
+                request(),
+                Protocol::OpenAiChat,
+                "request-expression",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(precharge.calls.lock().unwrap().len(), 1);
+        assert_eq!(settlement.calls.lock().unwrap().len(), 1);
+        assert_eq!(usage_port.records.lock().unwrap().len(), 1);
+        assert_eq!(
+            usage_port.records.lock().unwrap()[0].billing_mode(),
+            BillingMode::PerToken
+        );
+    }
+
+    #[tokio::test]
     async fn response_protocol_reaches_the_route_plan_without_changing_billing() {
         let protocols = Arc::new(Mutex::new(Vec::new()));
         let settlement = Arc::new(SettlementStub::default());
@@ -724,6 +760,38 @@ mod tests {
 
     async fn metered_snapshot_source() -> CachedRequestPricingSnapshotSource {
         metered_snapshot_source_with_target(GroupId::new(3).unwrap()).await
+    }
+
+    async fn expression_snapshot_source() -> CachedRequestPricingSnapshotSource {
+        let model_prices = ModelPriceCache::load(Arc::new(StaticModelPriceSource {
+            records: vec![
+                ModelPriceSourceRecord::expression(
+                    "gpt-test".to_owned(),
+                    af_billing::BillingExpressionDefinition::new(
+                        r#"tier("base", p * 2 + c * 3)"#.to_owned(),
+                    )
+                    .unwrap(),
+                    2,
+                )
+                .unwrap(),
+            ],
+        }))
+        .await
+        .unwrap();
+        let group_id = GroupId::new(3).unwrap();
+        let group_pricing = GroupPricingCache::load(Arc::new(StaticGroupPricingSource {
+            catalog: GroupPricingSourceCatalog::new(
+                vec![GroupPricingSourceRecord::new(
+                    group_id,
+                    PricingRatio::ONE,
+                    None,
+                )],
+                Vec::new(),
+            ),
+        }))
+        .await
+        .unwrap();
+        CachedRequestPricingSnapshotSource::new(model_prices, group_pricing)
     }
 
     async fn metered_snapshot_source_with_target(

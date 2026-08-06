@@ -5,7 +5,10 @@ use af_protocol::{Usage, UsageError, UsageSemantics};
 use rust_decimal::Decimal;
 use thiserror::Error;
 
-use crate::quota_math::{self, QuotaMathError};
+use crate::{
+    BillingExpressionError,
+    quota_math::{self, QuotaMathError},
+};
 
 /// 定价解析器的最小只读上下文。
 ///
@@ -313,6 +316,14 @@ impl CostBreakdown {
         }
     }
 
+    /// 表达式只能可靠提供聚合成本，不能伪造五类固定单价分解。
+    const fn from_expression_total(total_usd: Decimal) -> Self {
+        Self {
+            total_usd,
+            ..Self::ZERO
+        }
+    }
+
     /// 返回应用倍率后的普通输入美元成本。
     #[must_use]
     pub const fn input_usd(&self) -> Decimal {
@@ -379,6 +390,15 @@ impl PriceData {
             quota,
             billing_mode: BillingMode::PerToken,
             breakdown,
+        }
+    }
+
+    /// 构造表达式解析得到的按量结果；生命周期仍执行预扣和结算。
+    pub(crate) const fn expression(quota: Quota, total_usd: Decimal) -> Self {
+        Self {
+            quota,
+            billing_mode: BillingMode::PerToken,
+            breakdown: CostBreakdown::from_expression_total(total_usd),
         }
     }
 
@@ -543,4 +563,7 @@ pub enum PricingError {
     /// Decimal 中间运算或最终 quota 换算越界。
     #[error(transparent)]
     Math(#[from] QuotaMathError),
+    /// 表达式在受限执行环境中无法生成合法价格。
+    #[error(transparent)]
+    Expression(#[from] BillingExpressionError),
 }

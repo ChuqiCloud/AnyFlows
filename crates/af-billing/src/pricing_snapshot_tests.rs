@@ -7,9 +7,9 @@ use rust_decimal::Decimal;
 use crate::{
     BillingExpressionDefinition, BillingMode, CachedRequestPricingSnapshotSource,
     GroupModelRatioSourceRecord, GroupPricingCache, GroupPricingSource, GroupPricingSourceCatalog,
-    GroupPricingSourceFuture, GroupPricingSourceRecord, ModelPriceCache, ModelPriceSource,
-    ModelPriceSourceFuture, ModelPriceSourceRecord, PricingContext, PricingRatio, PricingResolver,
-    RequestPricingSnapshotError, RequestPricingSnapshotSource, TokenPrices,
+    GroupPricingSourceFuture, GroupPricingSourceRecord, ModelPriceCache, ModelPriceMode,
+    ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord, PricingContext, PricingRatio,
+    PricingResolver, RequestPricingSnapshotError, RequestPricingSnapshotSource, TokenPrices,
 };
 
 struct ModelSource;
@@ -103,7 +103,7 @@ async fn stale_catalog_and_unknown_model_never_become_free() {
         .await
         .unwrap();
     let source = CachedRequestPricingSnapshotSource::new(model_cache, group_cache);
-    assert_eq!(
+    assert!(matches!(
         source.capture(
             "unknown-model",
             GroupId::new(1).unwrap(),
@@ -111,9 +111,9 @@ async fn stale_catalog_and_unknown_model_never_become_free() {
             0
         ),
         Err(RequestPricingSnapshotError::ModelNotFound)
-    );
+    ));
     source.group_pricing().invalidate().unwrap();
-    assert_eq!(
+    assert!(matches!(
         source.capture(
             "snapshot-model",
             GroupId::new(1).unwrap(),
@@ -121,26 +121,35 @@ async fn stale_catalog_and_unknown_model_never_become_free() {
             0
         ),
         Err(RequestPricingSnapshotError::GroupPricingStale)
-    );
+    ));
 }
 
 #[tokio::test]
-async fn expression_snapshot_fails_closed_before_request_execution_is_connected() {
+async fn expression_snapshot_freezes_ratios_and_executes_through_the_unified_resolver() {
     let model_cache = ModelPriceCache::load(Arc::new(ModelSource)).await.unwrap();
     let group_cache = GroupPricingCache::load(Arc::new(GroupSource))
         .await
         .unwrap();
     let source = CachedRequestPricingSnapshotSource::new(model_cache, group_cache);
 
-    assert_eq!(
-        source.capture(
+    let snapshot = source
+        .capture(
             "expression-model",
             GroupId::new(1).unwrap(),
             GroupId::new(2).unwrap(),
             0,
-        ),
-        Err(RequestPricingSnapshotError::ExpressionPricingUnavailable)
-    );
+        )
+        .unwrap();
+
+    assert_eq!(snapshot.model_mode(), ModelPriceMode::Expression);
+    assert_eq!(snapshot.billing_mode(), BillingMode::PerToken);
+    assert!(snapshot.ratio_resolver().is_none());
+    let price = snapshot
+        .resolver()
+        .resolve(&PricingContext::new(&million_input_usage()))
+        .unwrap();
+    assert_eq!(price.quota(), Quota::new(450_000).unwrap());
+    assert!(!price.is_free());
 }
 
 fn million_input_usage() -> Usage {

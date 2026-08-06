@@ -17,7 +17,7 @@ use rust_decimal::Decimal;
 use thiserror::Error;
 
 use crate::{
-    PricingRatio, PricingRatios,
+    PriceData, PricingContext, PricingError, PricingRatio, PricingRatios, PricingResolver,
     quota_math::{self, QuotaMathError},
 };
 
@@ -269,6 +269,38 @@ impl fmt::Debug for BillingExpression {
             .debug_struct("BillingExpression")
             .field("version", &self.version)
             .field("variables", &self.variables)
+            .finish_non_exhaustive()
+    }
+}
+
+/// 把请求级已编译表达式接入统一定价生命周期的纯计算解析器。
+#[derive(Clone)]
+pub(crate) struct ExpressionPricingResolver {
+    expression: BillingExpression,
+}
+
+impl ExpressionPricingResolver {
+    /// 包装已经固定语义版本和请求倍率的表达式快照。
+    #[must_use]
+    pub(crate) const fn new(expression: BillingExpression) -> Self {
+        Self { expression }
+    }
+}
+
+impl PricingResolver for ExpressionPricingResolver {
+    fn resolve(&self, context: &PricingContext<'_>) -> Result<PriceData, PricingError> {
+        let resolved = self.expression.evaluate(context.usage())?;
+        Ok(PriceData::expression(
+            resolved.quota(),
+            resolved.total_usd(),
+        ))
+    }
+}
+
+impl fmt::Debug for ExpressionPricingResolver {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ExpressionPricingResolver")
             .finish_non_exhaustive()
     }
 }
