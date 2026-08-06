@@ -1,6 +1,8 @@
 use af_admin::{
     AdminModelPrice, AdminModelPriceApplyCommand, AdminModelPriceBillingMode, AdminModelPriceError,
-    AdminModelPriceListQuery, AdminModelPricePage, AdminModelPriceWriteCommand,
+    AdminModelPriceExpressionPreview, AdminModelPriceExpressionPreviewCommand,
+    AdminModelPriceExpressionRatios, AdminModelPriceExpressionUsage, AdminModelPriceListQuery,
+    AdminModelPricePage, AdminModelPriceUsageSemantics, AdminModelPriceWriteCommand,
     ModelPriceSourceCandidate, ModelPriceSourcePreview,
 };
 use axum::{
@@ -201,6 +203,95 @@ pub(crate) struct AdminModelPriceBatchResponse {
     prices: Vec<AdminModelPriceResponse>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = AdminModelPriceExpressionUsageSemantics)]
+pub(crate) enum AdminModelPriceExpressionUsageSemanticsValue {
+    Inclusive,
+    CacheSeparated,
+}
+
+impl From<AdminModelPriceExpressionUsageSemanticsValue> for AdminModelPriceUsageSemantics {
+    fn from(value: AdminModelPriceExpressionUsageSemanticsValue) -> Self {
+        match value {
+            AdminModelPriceExpressionUsageSemanticsValue::Inclusive => Self::Inclusive,
+            AdminModelPriceExpressionUsageSemanticsValue::CacheSeparated => Self::CacheSeparated,
+        }
+    }
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminModelPriceExpressionUsage)]
+pub(crate) struct AdminModelPriceExpressionUsageRequest {
+    #[schema(minimum = 0, maximum = 9007199254740991_i64)]
+    input_tokens: i64,
+    #[schema(minimum = 0, maximum = 9007199254740991_i64)]
+    output_tokens: i64,
+    #[schema(minimum = 0, maximum = 9007199254740991_i64)]
+    cache_read_tokens: i64,
+    #[schema(minimum = 0, maximum = 9007199254740991_i64)]
+    cache_creation_5m_tokens: i64,
+    #[schema(minimum = 0, maximum = 9007199254740991_i64)]
+    cache_creation_1h_tokens: i64,
+    semantics: AdminModelPriceExpressionUsageSemanticsValue,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminModelPriceExpressionRatios)]
+pub(crate) struct AdminModelPriceExpressionRatiosRequest {
+    #[schema(minimum = 0, maximum = 9007199254740991_i64)]
+    group_micros: i64,
+    #[schema(minimum = 0, maximum = 9007199254740991_i64)]
+    group_model_micros: i64,
+    #[schema(minimum = 0, maximum = 9007199254740991_i64)]
+    peak_micros: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminModelPriceExpressionPreviewRequest)]
+pub(crate) struct AdminModelPriceExpressionPreviewRequest {
+    #[schema(min_length = 1, max_length = 8192)]
+    billing_expression: String,
+    usage: AdminModelPriceExpressionUsageRequest,
+    ratios: AdminModelPriceExpressionRatiosRequest,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminModelPriceExpressionVariables)]
+pub(crate) struct AdminModelPriceExpressionVariablesResponse {
+    #[schema(minimum = 0, maximum = 9007199254740991_i64)]
+    input_tokens: i64,
+    #[schema(minimum = 0, maximum = 9007199254740991_i64)]
+    output_tokens: i64,
+    #[schema(minimum = 0, maximum = 9007199254740991_i64)]
+    cache_read_tokens: i64,
+    #[schema(minimum = 0, maximum = 9007199254740991_i64)]
+    cache_creation_5m_tokens: i64,
+    #[schema(minimum = 0, maximum = 9007199254740991_i64)]
+    cache_creation_1h_tokens: i64,
+    #[schema(minimum = 0, maximum = 9007199254740991_i64)]
+    context_length_tokens: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminModelPriceExpressionPreviewResponse)]
+pub(crate) struct AdminModelPriceExpressionPreviewResponse {
+    #[schema(min_length = 1, max_length = 64)]
+    matched_tier: String,
+    variables: AdminModelPriceExpressionVariablesResponse,
+    #[schema(value_type = String, min_length = 1, max_length = 64, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]+)?$")]
+    base_usd: String,
+    #[schema(value_type = String, min_length = 1, max_length = 64, pattern = r"^(0|[1-9][0-9]*)(\.[0-9]+)?$")]
+    total_usd: String,
+    #[schema(value_type = String, min_length = 1, max_length = 19, pattern = r"^[0-9]+$")]
+    quota: String,
+}
+
 /// 按 Canonical 稳定游标返回正式模型价格。
 pub(crate) async fn list_admin_model_prices(
     State(state): State<HttpState>,
@@ -236,6 +327,29 @@ pub(crate) async fn preview_admin_model_prices(
         .map_err(map_price_error)?;
     Ok(no_store_json(
         AdminModelPriceSourcePreviewResponse::from_preview(preview),
+    ))
+}
+
+/// 使用生产表达式执行链路试算未保存正文和结构化用量。
+pub(crate) async fn preview_admin_model_price_expression(
+    State(state): State<HttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    request: Result<Json<AdminModelPriceExpressionPreviewRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let command = request
+        .map_err(|_| ManagementError::InvalidRequest)?
+        .0
+        .into_command()?;
+    let service = state
+        .admin_model_price_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let preview = service
+        .preview_expression(authentication.principal(), command)
+        .await
+        .map_err(map_price_error)?;
+    Ok(no_store_json(
+        AdminModelPriceExpressionPreviewResponse::from_preview(&preview),
     ))
 }
 
@@ -345,6 +459,48 @@ impl AdminModelPriceWriteItemRequest {
     }
 }
 
+impl AdminModelPriceExpressionPreviewRequest {
+    fn into_command(self) -> Result<AdminModelPriceExpressionPreviewCommand, ManagementError> {
+        let usage = AdminModelPriceExpressionUsage::new(
+            self.usage.input_tokens,
+            self.usage.output_tokens,
+            self.usage.cache_read_tokens,
+            self.usage.cache_creation_5m_tokens,
+            self.usage.cache_creation_1h_tokens,
+            self.usage.semantics.into(),
+        )
+        .map_err(map_price_error)?;
+        let ratios = AdminModelPriceExpressionRatios::new([
+            self.ratios.group_micros,
+            self.ratios.group_model_micros,
+            self.ratios.peak_micros,
+        ])
+        .map_err(map_price_error)?;
+        AdminModelPriceExpressionPreviewCommand::new(self.billing_expression, usage, ratios)
+            .map_err(map_price_error)
+    }
+}
+
+impl AdminModelPriceExpressionPreviewResponse {
+    fn from_preview(preview: &AdminModelPriceExpressionPreview) -> Self {
+        let variables = preview.variables();
+        Self {
+            matched_tier: preview.matched_tier().to_owned(),
+            variables: AdminModelPriceExpressionVariablesResponse {
+                input_tokens: variables.input_tokens(),
+                output_tokens: variables.output_tokens(),
+                cache_read_tokens: variables.cache_read_tokens(),
+                cache_creation_5m_tokens: variables.cache_creation_5m_tokens(),
+                cache_creation_1h_tokens: variables.cache_creation_1h_tokens(),
+                context_length_tokens: variables.context_length_tokens(),
+            },
+            base_usd: decimal_text(preview.base_usd()),
+            total_usd: decimal_text(preview.total_usd()),
+            quota: preview.quota_units().to_string(),
+        }
+    }
+}
+
 fn parse_list_query(raw_query: Option<&str>) -> Result<AdminModelPriceListQuery, ManagementError> {
     let Some(raw_query) = raw_query else {
         return Ok(AdminModelPriceListQuery::default());
@@ -436,6 +592,13 @@ fn map_price_error(error: AdminModelPriceError) -> ManagementError {
         AdminModelPriceError::Forbidden => ManagementError::Forbidden,
         AdminModelPriceError::ModelNotFound => ManagementError::ModelNotFound,
         AdminModelPriceError::Conflict => ManagementError::ModelPriceConflict,
+        AdminModelPriceError::ExpressionInvalid => ManagementError::ModelPriceExpressionInvalid,
+        AdminModelPriceError::ExpressionPreviewInvalid => {
+            ManagementError::ModelPriceExpressionPreviewInvalid
+        }
+        AdminModelPriceError::ExpressionEvaluationFailed => {
+            ManagementError::ModelPriceExpressionEvaluationFailed
+        }
         AdminModelPriceError::SourceTimeout => ManagementError::ModelPriceSourceTimeout,
         AdminModelPriceError::SourceUnavailable => ManagementError::ModelPriceSourceUnavailable,
         AdminModelPriceError::SourceResponseTooLarge => {
@@ -492,5 +655,47 @@ mod tests {
         ] {
             assert!(parse_list_query(Some(query)).is_err(), "{query}");
         }
+    }
+
+    #[test]
+    fn expression_preview_request_builds_exact_command_and_rejects_invalid_usage() {
+        let request = AdminModelPriceExpressionPreviewRequest {
+            billing_expression: r#"tier("base", p)"#.to_owned(),
+            usage: AdminModelPriceExpressionUsageRequest {
+                input_tokens: 100,
+                output_tokens: 20,
+                cache_read_tokens: 10,
+                cache_creation_5m_tokens: 5,
+                cache_creation_1h_tokens: 5,
+                semantics: AdminModelPriceExpressionUsageSemanticsValue::Inclusive,
+            },
+            ratios: AdminModelPriceExpressionRatiosRequest {
+                group_micros: 1_000_000,
+                group_model_micros: 1_000_000,
+                peak_micros: 1_000_000,
+            },
+        };
+        assert!(request.into_command().is_ok());
+
+        let invalid = AdminModelPriceExpressionPreviewRequest {
+            billing_expression: r#"tier("base", p)"#.to_owned(),
+            usage: AdminModelPriceExpressionUsageRequest {
+                input_tokens: 5,
+                output_tokens: 0,
+                cache_read_tokens: 6,
+                cache_creation_5m_tokens: 0,
+                cache_creation_1h_tokens: 0,
+                semantics: AdminModelPriceExpressionUsageSemanticsValue::Inclusive,
+            },
+            ratios: AdminModelPriceExpressionRatiosRequest {
+                group_micros: 1_000_000,
+                group_model_micros: 1_000_000,
+                peak_micros: 1_000_000,
+            },
+        };
+        assert!(matches!(
+            invalid.into_command(),
+            Err(ManagementError::ModelPriceExpressionPreviewInvalid)
+        ));
     }
 }

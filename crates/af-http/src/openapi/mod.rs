@@ -252,6 +252,7 @@ mod tests {
             "loginManagementSession",
             "probeAdminChannel",
             "previewAdminModelPrices",
+            "previewAdminModelPriceExpression",
             "registerUser",
             "redeemUserRedemptionCode",
             "revokePlaygroundShare",
@@ -387,6 +388,8 @@ mod tests {
         assert!(schemas.contains_key("AdminModelPriceListResponse"));
         assert!(schemas.contains_key("AdminModelPriceSourcePreview"));
         assert!(schemas.contains_key("AdminModelPriceBatchRequest"));
+        assert!(schemas.contains_key("AdminModelPriceExpressionPreviewRequest"));
+        assert!(schemas.contains_key("AdminModelPriceExpressionPreviewResponse"));
         assert_eq!(
             schemas["AdminModelPriceBillingMode"]["enum"],
             serde_json::json!(["per_token", "free", "expression"])

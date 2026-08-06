@@ -30,7 +30,8 @@ pub use billing_session::{
 pub use database_sink::DatabaseBillingBatchSink;
 pub use expression_pricing::{
     BillingExpression, BillingExpressionDefinition, BillingExpressionError,
-    BillingExpressionResult, ExpressionVariable, ExpressionVariableUsage, ExpressionVersion,
+    BillingExpressionResult, BillingExpressionUsage, BillingExpressionUsageSemantics,
+    BillingExpressionVariables, ExpressionVariable, ExpressionVariableUsage, ExpressionVersion,
     MAX_BILLING_EXPRESSION_BYTES,
 };
 pub use group_pricing_cache::{

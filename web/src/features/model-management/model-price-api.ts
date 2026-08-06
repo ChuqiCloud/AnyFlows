@@ -3,10 +3,14 @@ import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-q
 import { apiClient, ApiError } from '@/lib/api'
 import {
   applyAdminModelPrices,
+  previewAdminModelPriceExpression,
   listAdminModelPrices,
   previewAdminModelPrices,
 } from '@/lib/api/generated/sdk.gen'
-import type { AdminModelPriceBatchRequest } from '@/lib/api/generated/types.gen'
+import type {
+  AdminModelPriceBatchRequest,
+  AdminModelPriceExpressionPreviewRequest,
+} from '@/lib/api/generated/types.gen'
 
 export const adminModelPriceQueryKey = ['admin-model-prices'] as const
 
@@ -32,6 +36,16 @@ export function usePreviewAdminModelPrices() {
   return useMutation({
     mutationFn: async () => {
       const { data } = await previewAdminModelPrices({ client: apiClient })
+      return data
+    },
+  })
+}
+
+/** 使用服务端生产计费链路试算未保存表达式，前端不自行重算金额。 */
+export function usePreviewAdminModelPriceExpression() {
+  return useMutation({
+    mutationFn: async (body: AdminModelPriceExpressionPreviewRequest) => {
+      const { data } = await previewAdminModelPriceExpression({ body, client: apiClient })
       return data
     },
   })

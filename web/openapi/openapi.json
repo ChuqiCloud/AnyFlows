@@ -5165,6 +5165,92 @@
         ]
       }
     },
+    "/api/admin/model-prices/expression-preview": {
+      "post": {
+        "tags": [
+          "模型管理"
+        ],
+        "summary": "使用生产计费链路试算未保存表达式",
+        "operationId": "previewAdminModelPriceExpression",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminModelPriceExpressionPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "精确的 tier、变量、美元成本与整数额度明细",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminModelPriceExpressionPreviewResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "用量或倍率输入无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "表达式无效或无法在当前输入下执行",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/model-prices/batch": {
       "post": {
         "tags": [
@@ -11413,6 +11499,200 @@
           "expression"
         ]
       },
+      "AdminModelPriceExpressionPreviewRequest": {
+        "type": "object",
+        "required": [
+          "billing_expression",
+          "usage",
+          "ratios"
+        ],
+        "properties": {
+          "billing_expression": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 1
+          },
+          "usage": {
+            "$ref": "#/components/schemas/AdminModelPriceExpressionUsage"
+          },
+          "ratios": {
+            "$ref": "#/components/schemas/AdminModelPriceExpressionRatios"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelPriceExpressionPreviewResponse": {
+        "type": "object",
+        "required": [
+          "matched_tier",
+          "variables",
+          "base_usd",
+          "total_usd",
+          "quota"
+        ],
+        "properties": {
+          "matched_tier": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "variables": {
+            "$ref": "#/components/schemas/AdminModelPriceExpressionVariables"
+          },
+          "base_usd": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          },
+          "total_usd": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$"
+          },
+          "quota": {
+            "type": "string",
+            "maxLength": 19,
+            "minLength": 1,
+            "pattern": "^[0-9]+$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelPriceExpressionRatios": {
+        "type": "object",
+        "required": [
+          "group_micros",
+          "group_model_micros",
+          "peak_micros"
+        ],
+        "properties": {
+          "group_micros": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0
+          },
+          "group_model_micros": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0
+          },
+          "peak_micros": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelPriceExpressionUsage": {
+        "type": "object",
+        "required": [
+          "input_tokens",
+          "output_tokens",
+          "cache_read_tokens",
+          "cache_creation_5m_tokens",
+          "cache_creation_1h_tokens",
+          "semantics"
+        ],
+        "properties": {
+          "input_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0
+          },
+          "cache_read_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0
+          },
+          "cache_creation_5m_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0
+          },
+          "cache_creation_1h_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0
+          },
+          "semantics": {
+            "$ref": "#/components/schemas/AdminModelPriceExpressionUsageSemantics"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminModelPriceExpressionUsageSemantics": {
+        "type": "string",
+        "enum": [
+          "inclusive",
+          "cache_separated"
+        ]
+      },
+      "AdminModelPriceExpressionVariables": {
+        "type": "object",
+        "required": [
+          "input_tokens",
+          "output_tokens",
+          "cache_read_tokens",
+          "cache_creation_5m_tokens",
+          "cache_creation_1h_tokens",
+          "context_length_tokens"
+        ],
+        "properties": {
+          "input_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0
+          },
+          "cache_read_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0
+          },
+          "cache_creation_5m_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0
+          },
+          "cache_creation_1h_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0
+          },
+          "context_length_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 9007199254740991,
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminModelPriceListResponse": {
         "type": "object",
         "required": [
@@ -13935,6 +14215,9 @@
               "model_sync_preview_already_applied",
               "model_sync_conflict",
               "model_price_conflict",
+              "model_price_expression_invalid",
+              "model_price_expression_preview_invalid",
+              "model_price_expression_evaluation_failed",
               "model_price_source_timeout",
               "model_price_source_unavailable",
               "model_price_source_response_too_large",

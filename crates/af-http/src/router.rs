@@ -54,7 +54,8 @@ use crate::management_dashboard::get_admin_dashboard;
 use crate::management_group_writes::{create_admin_group, delete_admin_group, update_admin_group};
 use crate::management_groups::{get_admin_group, list_admin_groups};
 use crate::management_model_prices::{
-    apply_admin_model_prices, list_admin_model_prices, preview_admin_model_prices,
+    apply_admin_model_prices, list_admin_model_prices, preview_admin_model_price_expression,
+    preview_admin_model_prices,
 };
 use crate::management_model_sync::{
     apply_admin_model_sync_preview, create_admin_model_sync_preview, list_missing_admin_models,
@@ -484,6 +485,12 @@ pub fn build_router(
         .route(
             "/api/admin/model-prices/models-dev-preview",
             post(preview_admin_model_prices)
+                .route_layer(middleware::from_fn(authorize_management_admin))
+                .route_layer(model_management_collection_authentication.clone()),
+        )
+        .route(
+            "/api/admin/model-prices/expression-preview",
+            post(preview_admin_model_price_expression)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(model_management_collection_authentication.clone()),
         )
