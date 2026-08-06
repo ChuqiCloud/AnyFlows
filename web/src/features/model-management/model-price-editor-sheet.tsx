@@ -22,7 +22,7 @@ type ModelPriceEditorSheetProps = {
   target?: ModelPriceEditorTarget
 }
 
-/** 使用独立 Sheet 承载五价编辑，关闭时由工作区保留已形成的草稿。 */
+/** 使用独立 Sheet 承载固定价格与表达式编辑，关闭时由工作区保留已形成的草稿。 */
 export function ModelPriceEditorSheet(props: ModelPriceEditorSheetProps) {
   const { t } = useTranslation()
   const target = props.target

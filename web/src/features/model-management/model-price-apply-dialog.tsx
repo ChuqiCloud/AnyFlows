@@ -27,7 +27,7 @@ type ModelPriceApplyDialogProps = {
   pending: boolean
 }
 
-/** 在写入前逐项回显最终五价和冻结版本，避免来源证据被误认为正式价格。 */
+/** 在写入前逐项回显最终定价模式和冻结版本，避免来源证据被误认为正式价格。 */
 export function ModelPriceApplyDialog(props: ModelPriceApplyDialogProps) {
   const { t } = useTranslation()
   return (
@@ -47,11 +47,20 @@ export function ModelPriceApplyDialog(props: ModelPriceApplyDialogProps) {
                 </span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[0.6875rem] sm:grid-cols-5">
-                <FinalPrice label={t('modelManagement.prices.fields.input')} value={staged.draft.input} />
-                <FinalPrice label={t('modelManagement.prices.fields.output')} value={staged.draft.output} />
-                <FinalPrice label={t('modelManagement.prices.fields.cacheRead')} value={staged.draft.cacheRead} />
-                <FinalPrice label={t('modelManagement.prices.fields.cacheCreation5m')} value={staged.draft.cacheCreation5m} />
-                <FinalPrice label={t('modelManagement.prices.fields.cacheCreation1h')} value={staged.draft.cacheCreation1h} />
+                {staged.draft.billingMode === 'expression' ? (
+                  <div className="col-span-2 grid gap-1 sm:col-span-5">
+                    <span className="text-muted-foreground">{t('modelManagement.prices.apply.expression')}</span>
+                    <code className="break-all rounded bg-surface-2 px-2 py-1 font-mono text-[0.6875rem]">{staged.draft.expression}</code>
+                  </div>
+                ) : (
+                  <>
+                    <FinalPrice label={t('modelManagement.prices.fields.input')} value={staged.draft.input} />
+                    <FinalPrice label={t('modelManagement.prices.fields.output')} value={staged.draft.output} />
+                    <FinalPrice label={t('modelManagement.prices.fields.cacheRead')} value={staged.draft.cacheRead} />
+                    <FinalPrice label={t('modelManagement.prices.fields.cacheCreation5m')} value={staged.draft.cacheCreation5m} />
+                    <FinalPrice label={t('modelManagement.prices.fields.cacheCreation1h')} value={staged.draft.cacheCreation1h} />
+                  </>
+                )}
               </div>
             </section>
           ))}
