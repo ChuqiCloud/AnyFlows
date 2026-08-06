@@ -304,8 +304,8 @@ pub use invite_rebate::{
 pub use migration::{MigrationOptions, run_pending_migrations};
 pub use model_catalog_metadata::ModelCatalogMetadataPageRecord;
 pub use model_price::{
-    MAX_MODEL_PRICE_ENTRIES, ModelPriceBillingMode, ModelPriceRecord, ModelPriceRepository,
-    ModelPriceRepositoryError,
+    MAX_MODEL_PRICE_ENTRIES, MAX_MODEL_PRICE_EXPRESSION_BYTES, ModelPriceBillingMode,
+    ModelPriceRecord, ModelPriceRepository, ModelPriceRepositoryError,
 };
 pub use model_price_admin::{
     MAX_MODEL_PRICE_PAGE_SIZE, MAX_MODEL_PRICE_WRITE_BATCH, ModelPricePageRecord,

@@ -122,10 +122,17 @@ impl RuntimeModelCatalogReader {
         price: ModelPrice,
     ) -> Result<ModelCatalogItem, ModelCatalogReadError> {
         let ratios = PricingRatios::new(PricingRatio::ONE, PricingRatio::ONE, PricingRatio::ONE);
+        // 表达式生产快照尚未接通时，公开目录也不得把它渲染成零价固定模式。
+        let billing_mode = price
+            .billing_mode()
+            .ok_or(ModelCatalogReadError::Internal)?;
+        let resolver = price
+            .resolver(ratios)
+            .ok_or(ModelCatalogReadError::Internal)?;
         Self::catalog_item_from_pricing(
             metadata,
-            price.billing_mode(),
-            price.resolver(ratios),
+            billing_mode,
+            resolver,
             ratios,
             price.version(),
             ModelCatalogRuntimeStatus::NotEvaluated,

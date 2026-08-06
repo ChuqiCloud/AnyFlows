@@ -24,7 +24,9 @@ pub trait RequestPricingSnapshotSource: Send + Sync + 'static {
 #[must_use = "请求定价快照必须用于构造同一生命周期的解析器"]
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct RequestPricingSnapshot {
-    model_price: crate::ModelPrice,
+    billing_mode: BillingMode,
+    resolver: RatioPricingResolver,
+    model_version: u64,
     ratios: PricingRatios,
     model_generation: u64,
     group_generation: u64,
@@ -34,13 +36,13 @@ impl RequestPricingSnapshot {
     /// 返回快照模型的显式计费模式。
     #[must_use]
     pub const fn billing_mode(self) -> BillingMode {
-        self.model_price.billing_mode()
+        self.billing_mode
     }
 
     /// 返回模型价格的持久化正版本。
     #[must_use]
     pub const fn model_version(self) -> u64 {
-        self.model_price.version()
+        self.model_version
     }
 
     /// 返回捕获时模型价格目录的本地代数。
@@ -64,7 +66,7 @@ impl RequestPricingSnapshot {
     /// 构造同时用于预估和实际 usage 的纯计算解析器。
     #[must_use]
     pub const fn resolver(self) -> RatioPricingResolver {
-        self.model_price.resolver(self.ratios)
+        self.resolver
     }
 }
 
@@ -108,6 +110,9 @@ pub enum RequestPricingSnapshotError {
     /// 当前计费时间无效。
     #[error("请求计费时间无效")]
     InvalidCurrentTime,
+    /// 表达式已经完成持久化和缓存校验，但生产请求执行器尚未接通。
+    #[error("请求模型的表达式定价暂不可用")]
+    ExpressionPricingUnavailable,
 }
 
 /// 组合模型价格与分组倍率缓存的同步请求快照来源。
@@ -159,8 +164,17 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
         let ratios = group_snapshot
             .ratios_for_request(source_group_id, target_group_id, current_second)
             .map_err(map_lookup_error)?;
+        // 表达式定义可以先进入缓存，但结算生命周期接通前绝不能按零价或免费回退。
+        let billing_mode = model_price
+            .billing_mode()
+            .ok_or(RequestPricingSnapshotError::ExpressionPricingUnavailable)?;
+        let resolver = model_price
+            .resolver(ratios)
+            .ok_or(RequestPricingSnapshotError::ExpressionPricingUnavailable)?;
         Ok(RequestPricingSnapshot {
-            model_price,
+            billing_mode,
+            resolver,
+            model_version: model_price.version(),
             ratios,
             model_generation: model_snapshot.generation(),
             group_generation: group_snapshot.generation(),

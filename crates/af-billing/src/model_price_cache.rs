@@ -16,7 +16,9 @@ use af_db::{
 use af_domain::MAX_MODEL_NAME_BYTES;
 use thiserror::Error;
 
-use crate::{BillingMode, PricingRatios, RatioPricingResolver, TokenPrices};
+use crate::{
+    BillingExpressionDefinition, BillingMode, PricingRatios, RatioPricingResolver, TokenPrices,
+};
 
 /// 定价目录 source 的异步加载结果。
 pub type ModelPriceSourceFuture<'a> = Pin<
@@ -70,8 +72,28 @@ impl ModelPriceSourceRecord {
         Ok(Self {
             model,
             price: ModelPrice {
-                billing_mode,
-                prices,
+                definition: match billing_mode {
+                    BillingMode::PerToken => ModelPriceDefinition::PerToken(prices),
+                    BillingMode::Free => ModelPriceDefinition::Free,
+                },
+                version,
+            },
+        })
+    }
+
+    /// 使用已经完成版本与沙箱校验的表达式定义构造 source 记录。
+    pub fn expression(
+        model: String,
+        definition: BillingExpressionDefinition,
+        version: u64,
+    ) -> Result<Self, ModelPriceCacheError> {
+        if !is_valid_model_name(&model) || version == 0 {
+            return Err(ModelPriceCacheError::InvalidRecord);
+        }
+        Ok(Self {
+            model,
+            price: ModelPrice {
+                definition: ModelPriceDefinition::Expression(definition),
                 version,
             },
         })
@@ -85,32 +107,66 @@ impl fmt::Debug for ModelPriceSourceRecord {
 }
 
 /// 单个模型的不可变定价快照。
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ModelPrice {
-    billing_mode: BillingMode,
-    prices: TokenPrices,
+    definition: ModelPriceDefinition,
     version: u64,
 }
 
+#[derive(Clone, Eq, PartialEq)]
+enum ModelPriceDefinition {
+    PerToken(TokenPrices),
+    Free,
+    Expression(BillingExpressionDefinition),
+}
+
+/// 缓存中已校验的模型定价定义模式。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ModelPriceMode {
+    /// 五类固定单价。
+    PerToken,
+    /// 显式免费。
+    Free,
+    /// 版本化计费表达式。
+    Expression,
+}
+
 impl ModelPrice {
-    /// 返回显式免费或按 token 计费模式。
+    /// 返回缓存中保存的闭合定价定义模式。
     #[must_use]
-    pub const fn billing_mode(self) -> BillingMode {
-        self.billing_mode
+    pub const fn mode(&self) -> ModelPriceMode {
+        match &self.definition {
+            ModelPriceDefinition::PerToken(_) => ModelPriceMode::PerToken,
+            ModelPriceDefinition::Free => ModelPriceMode::Free,
+            ModelPriceDefinition::Expression(_) => ModelPriceMode::Expression,
+        }
+    }
+
+    /// 返回当前 Ratio/Free 生命周期可处理的模式；Expression 尚未接线时返回空。
+    #[must_use]
+    pub const fn billing_mode(&self) -> Option<BillingMode> {
+        match &self.definition {
+            ModelPriceDefinition::PerToken(_) => Some(BillingMode::PerToken),
+            ModelPriceDefinition::Free => Some(BillingMode::Free),
+            ModelPriceDefinition::Expression(_) => None,
+        }
     }
 
     /// 返回该模型的正版本。
     #[must_use]
-    pub const fn version(self) -> u64 {
+    pub const fn version(&self) -> u64 {
         self.version
     }
 
-    /// 把价格快照与本次请求已经确定的倍率组合成纯计算解析器。
+    /// 把固定单价与本次请求倍率组合成解析器；Expression 尚未接线时返回空。
     #[must_use]
-    pub const fn resolver(self, ratios: PricingRatios) -> RatioPricingResolver {
-        match self.billing_mode {
-            BillingMode::PerToken => RatioPricingResolver::metered(self.prices, ratios),
-            BillingMode::Free => RatioPricingResolver::free(),
+    pub const fn resolver(&self, ratios: PricingRatios) -> Option<RatioPricingResolver> {
+        match &self.definition {
+            ModelPriceDefinition::PerToken(prices) => {
+                Some(RatioPricingResolver::metered(*prices, ratios))
+            }
+            ModelPriceDefinition::Free => Some(RatioPricingResolver::free()),
+            ModelPriceDefinition::Expression(_) => None,
         }
     }
 }
@@ -119,7 +175,7 @@ impl fmt::Debug for ModelPrice {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("ModelPrice")
-            .field("billing_mode", &self.billing_mode)
+            .field("mode", &self.mode())
             .field("version", &self.version)
             .finish_non_exhaustive()
     }
@@ -150,17 +206,17 @@ impl ModelPriceSnapshot {
         self.entries.is_empty()
     }
 
-    /// 按区分大小写的 Canonical 模型名读取复制安全的价格快照。
+    /// 按区分大小写的 Canonical 模型名读取克隆安全的价格快照。
     #[must_use]
     pub fn get(&self, model: &str) -> Option<ModelPrice> {
-        self.entries.get(model).copied()
+        self.entries.get(model).cloned()
     }
 
-    /// 按 Canonical 模型名字典序枚举复制安全的价格记录。
+    /// 按 Canonical 模型名字典序枚举克隆安全的价格记录。
     pub fn entries(&self) -> impl ExactSizeIterator<Item = (&str, ModelPrice)> {
         self.entries
             .iter()
-            .map(|(model, price)| (model.as_str(), *price))
+            .map(|(model, price)| (model.as_str(), price.clone()))
     }
 }
 
@@ -327,22 +383,39 @@ impl ModelPriceSource for DatabaseModelPriceSource {
                 .await
                 .map_err(map_repository_error)?
                 .into_iter()
-                .map(|record| {
-                    let prices = record.prices();
-                    let prices =
-                        TokenPrices::new(prices[0], prices[1], prices[2], prices[3], prices[4])
+                .map(|record| match record.billing_mode() {
+                    ModelPriceBillingMode::PerToken | ModelPriceBillingMode::Free => {
+                        let prices = record.prices();
+                        let prices =
+                            TokenPrices::new(prices[0], prices[1], prices[2], prices[3], prices[4])
+                                .map_err(|_| ModelPriceSourceError::Invariant)?;
+                        let billing_mode =
+                            if record.billing_mode() == ModelPriceBillingMode::PerToken {
+                                BillingMode::PerToken
+                            } else {
+                                BillingMode::Free
+                            };
+                        ModelPriceSourceRecord::new(
+                            record.model().to_owned(),
+                            billing_mode,
+                            prices,
+                            record.version(),
+                        )
+                        .map_err(|_| ModelPriceSourceError::Invariant)
+                    }
+                    ModelPriceBillingMode::Expression => {
+                        let source = record
+                            .billing_expression()
+                            .ok_or(ModelPriceSourceError::Invariant)?;
+                        let definition = BillingExpressionDefinition::new(source.to_owned())
                             .map_err(|_| ModelPriceSourceError::Invariant)?;
-                    let billing_mode = match record.billing_mode() {
-                        ModelPriceBillingMode::PerToken => BillingMode::PerToken,
-                        ModelPriceBillingMode::Free => BillingMode::Free,
-                    };
-                    ModelPriceSourceRecord::new(
-                        record.model().to_owned(),
-                        billing_mode,
-                        prices,
-                        record.version(),
-                    )
-                    .map_err(|_| ModelPriceSourceError::Invariant)
+                        ModelPriceSourceRecord::expression(
+                            record.model().to_owned(),
+                            definition,
+                            record.version(),
+                        )
+                        .map_err(|_| ModelPriceSourceError::Invariant)
+                    }
                 })
                 .collect()
         })

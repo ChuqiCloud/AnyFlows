@@ -12,6 +12,8 @@ use crate::{DatabasePool, entity::model_prices};
 const DEFAULT_LOAD_TIMEOUT: Duration = Duration::from_secs(5);
 /// 单次目录快照允许加载的模型价格上限。
 pub const MAX_MODEL_PRICE_ENTRIES: usize = 100_000;
+/// 持久化计费表达式允许的最大 UTF-8 字节数。
+pub const MAX_MODEL_PRICE_EXPRESSION_BYTES: usize = 8 * 1024;
 
 /// 当前持久化目录支持的计费模式。
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -20,6 +22,8 @@ pub enum ModelPriceBillingMode {
     PerToken,
     /// 显式免费；上层仍记录 usage，但跳过预扣与结算。
     Free,
+    /// 由版本化表达式计算用量价格；五类固定单价必须全部为零。
+    Expression,
 }
 
 impl ModelPriceBillingMode {
@@ -27,6 +31,7 @@ impl ModelPriceBillingMode {
         match code {
             1 => Ok(Self::PerToken),
             2 => Ok(Self::Free),
+            3 => Ok(Self::Expression),
             _ => Err(ModelPriceRepositoryError::Invariant),
         }
     }
@@ -35,6 +40,7 @@ impl ModelPriceBillingMode {
         match self {
             Self::PerToken => 1,
             Self::Free => 2,
+            Self::Expression => 3,
         }
     }
 }
@@ -45,6 +51,7 @@ pub struct ModelPriceRecord {
     model: String,
     billing_mode: ModelPriceBillingMode,
     prices: [Decimal; 5],
+    billing_expression: Option<String>,
     version: u64,
 }
 
@@ -67,6 +74,12 @@ impl ModelPriceRecord {
         self.prices
     }
 
+    /// 返回版本化计费表达式正文；调用方不得将正文写入日志或公共错误。
+    #[must_use]
+    pub fn billing_expression(&self) -> Option<&str> {
+        self.billing_expression.as_deref()
+    }
+
     /// 返回管理员每次修改必须递增的正版本。
     #[must_use]
     pub const fn version(&self) -> u64 {
@@ -85,6 +98,10 @@ impl ModelPriceRecord {
             model.cache_creation_5m_price.expose(),
             model.cache_creation_1h_price.expose(),
         ];
+        let billing_expression = model
+            .billing_expression
+            .as_ref()
+            .map(|expression| expression.as_str());
         let version = u64::try_from(model.version)
             .ok()
             .filter(|version| *version > 0)
@@ -93,8 +110,7 @@ impl ModelPriceRecord {
             || prices
                 .iter()
                 .any(|price| !is_valid_model_price_decimal(*price))
-            || (billing_mode == ModelPriceBillingMode::Free
-                && prices.iter().any(|price| !price.is_zero()))
+            || !is_valid_model_price_shape(billing_mode, prices, billing_expression)
         {
             return Err(ModelPriceRepositoryError::Invariant);
         }
@@ -102,6 +118,7 @@ impl ModelPriceRecord {
             model: name.to_owned(),
             billing_mode,
             prices,
+            billing_expression: billing_expression.map(str::to_owned),
             version,
         })
     }
@@ -218,6 +235,27 @@ pub(crate) fn is_valid_model_price_decimal(price: Decimal) -> bool {
     let significant_digits = normalized.mantissa().unsigned_abs().to_string().len();
     let integer_digits = significant_digits.saturating_sub(normalized.scale() as usize);
     integer_digits <= 10
+}
+
+pub(crate) fn is_valid_model_price_shape(
+    billing_mode: ModelPriceBillingMode,
+    prices: [Decimal; 5],
+    billing_expression: Option<&str>,
+) -> bool {
+    match billing_mode {
+        ModelPriceBillingMode::PerToken => billing_expression.is_none(),
+        ModelPriceBillingMode::Free => {
+            billing_expression.is_none() && prices.iter().all(Decimal::is_zero)
+        }
+        ModelPriceBillingMode::Expression => {
+            prices.iter().all(Decimal::is_zero)
+                && billing_expression.is_some_and(is_valid_billing_expression_storage)
+        }
+    }
+}
+
+fn is_valid_billing_expression_storage(expression: &str) -> bool {
+    !expression.trim().is_empty() && expression.len() <= MAX_MODEL_PRICE_EXPRESSION_BYTES
 }
 
 fn record_internal_error(error: ModelPriceRepositoryError) -> ModelPriceRepositoryError {

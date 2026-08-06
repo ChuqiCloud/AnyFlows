@@ -12,9 +12,10 @@ use rust_decimal::Decimal;
 use tokio::sync::Notify;
 
 use crate::{
-    BillingMode, ModelPriceCache, ModelPriceCacheError, ModelPriceSource, ModelPriceSourceError,
-    ModelPriceSourceFuture, ModelPriceSourceRecord, PricingContext, PricingRatio, PricingRatios,
-    PricingResolver, TokenPrices,
+    BillingExpressionDefinition, BillingMode, ModelPriceCache, ModelPriceCacheError,
+    ModelPriceMode, ModelPriceSource, ModelPriceSourceError, ModelPriceSourceFuture,
+    ModelPriceSourceRecord, PricingContext, PricingRatio, PricingRatios, PricingResolver,
+    TokenPrices,
 };
 
 type SourceResult = Result<Vec<ModelPriceSourceRecord>, ModelPriceSourceError>;
@@ -139,10 +140,12 @@ async fn initial_snapshot_preserves_modes_prices_and_redaction() {
     );
 
     let paid_price = snapshot.get("gpt-5.5-private").unwrap();
-    assert_eq!(paid_price.billing_mode(), BillingMode::PerToken);
+    assert_eq!(paid_price.mode(), ModelPriceMode::PerToken);
+    assert_eq!(paid_price.billing_mode(), Some(BillingMode::PerToken));
     assert_eq!(paid_price.version(), 7);
     let price = paid_price
         .resolver(unit_ratios())
+        .unwrap()
         .resolve(&PricingContext::new(&million_input_usage()))
         .unwrap();
     assert_eq!(price.quota(), Quota::new(1_000_000).unwrap());
@@ -151,6 +154,7 @@ async fn initial_snapshot_preserves_modes_prices_and_redaction() {
     let zero_metered = snapshot.get("zero-metered-private").unwrap();
     let zero_price = zero_metered
         .resolver(unit_ratios())
+        .unwrap()
         .resolve(&PricingContext::new(&million_input_usage()))
         .unwrap();
     assert_eq!(zero_price.quota(), Quota::ZERO);
@@ -159,6 +163,7 @@ async fn initial_snapshot_preserves_modes_prices_and_redaction() {
     let free = snapshot.get("free-private").unwrap();
     let free_price = free
         .resolver(unit_ratios())
+        .unwrap()
         .resolve(&PricingContext::new(&million_input_usage()))
         .unwrap();
     assert_eq!(free_price.quota(), Quota::ZERO);
@@ -168,6 +173,22 @@ async fn initial_snapshot_preserves_modes_prices_and_redaction() {
     let rendered = format!("{paid_price:?}\n{snapshot:?}\n{cache:?}");
     assert!(!rendered.contains("gpt-5.5-private"));
     assert!(!rendered.contains("prices"));
+}
+
+#[tokio::test]
+async fn expression_definition_is_retained_without_leaking_source() {
+    let definition =
+        BillingExpressionDefinition::new(r#"v1:tier("base", p * 2.5)"#.to_owned()).unwrap();
+    let source = Arc::new(SequenceSource::new([Ok(vec![
+        ModelPriceSourceRecord::expression("expression-model".to_owned(), definition, 3).unwrap(),
+    ])]));
+    let cache = ModelPriceCache::load(source).await.unwrap();
+    let price = cache.snapshot().unwrap().get("expression-model").unwrap();
+
+    assert_eq!(price.mode(), ModelPriceMode::Expression);
+    assert_eq!(price.billing_mode(), None);
+    assert!(price.resolver(unit_ratios()).is_none());
+    assert!(!format!("{price:?}").contains("expression-model"));
 }
 
 #[tokio::test]
