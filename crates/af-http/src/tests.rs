@@ -346,8 +346,24 @@ async fn cors_rejects_untrusted_origin_before_handler_and_stays_off_operations_r
 }
 
 #[tokio::test]
-async fn empty_cors_allowlist_rejects_browser_origin_but_allows_api_clients() {
+async fn empty_cors_allowlist_allows_same_origin_and_api_clients_but_rejects_cross_origin() {
     let router = test_router(&[], 64);
+    let same_origin = router
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/body")
+                .header(ORIGIN, ALLOWED_ORIGIN)
+                .header(http::header::HOST, "console.example")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(same_origin.status(), StatusCode::NO_CONTENT);
+    request_id(&same_origin);
+
     let blocked = router
         .clone()
         .oneshot(
@@ -355,6 +371,7 @@ async fn empty_cors_allowlist_rejects_browser_origin_but_allows_api_clients() {
                 .method(Method::POST)
                 .uri("/body")
                 .header(ORIGIN, ALLOWED_ORIGIN)
+                .header(http::header::HOST, "gateway.example")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -374,6 +391,49 @@ async fn empty_cors_allowlist_rejects_browser_origin_but_allows_api_clients() {
         .await
         .unwrap();
     assert_eq!(api_client.status(), StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn same_origin_requires_exact_host_and_effective_port() {
+    let router = test_router(&[], 64);
+    for (origin, host, expected) in [
+        (
+            "https://console.example",
+            "CONSOLE.EXAMPLE",
+            StatusCode::NO_CONTENT,
+        ),
+        (
+            "http://127.0.0.1:8085",
+            "127.0.0.1:8085",
+            StatusCode::NO_CONTENT,
+        ),
+        (
+            "http://127.0.0.1:8085",
+            "127.0.0.1:8086",
+            StatusCode::FORBIDDEN,
+        ),
+        (
+            "https://console.example",
+            "console.example.evil",
+            StatusCode::FORBIDDEN,
+        ),
+    ] {
+        let response = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/body")
+                    .header(ORIGIN, origin)
+                    .header(http::header::HOST, host)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+        request_id(&response);
+    }
 }
 
 #[tokio::test]

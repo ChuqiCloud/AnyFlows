@@ -16,7 +16,6 @@ import {
 import { ModelPriceApplyDialog, type ModelPriceApplyItem } from './model-price-apply-dialog'
 import { ModelPriceEditorSheet, type ModelPriceEditorTarget } from './model-price-editor-sheet'
 import {
-  modelPriceCanUseFixedEditor,
   modelPriceDraftIsComplete,
   toModelPriceWriteItem,
   type ModelPriceDraft,
@@ -58,7 +57,7 @@ export function ModelPriceWorkspace() {
       const draft = staged[model]
       const currentPrice = rowByModel.get(model)?.price
       const versionReady = currentPrice === undefined || draft?.expectedVersion === currentPrice.version
-      return draft && modelPriceCanUseFixedEditor(currentPrice) && versionReady && modelPriceDraftIsComplete(draft.draft) ? [{ model, staged: draft }] : []
+      return draft && versionReady && modelPriceDraftIsComplete(draft.draft) ? [{ model, staged: draft }] : []
     }), [rowByModel, selected, staged])
   const editorTarget = editingModel ? rowToEditorTarget(rowByModel.get(editingModel)) : undefined
   const initialError = (modelsQuery.isError && modelsQuery.data === undefined)

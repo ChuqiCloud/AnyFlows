@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowDownToLine, CircleDollarSign, Info, TriangleAlert } from 'lucide-react'
+import { ArrowDownToLine, CircleDollarSign, Gift, Info, Sparkles, TriangleAlert } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
@@ -13,10 +13,12 @@ import type {
   AdminModelPriceSourceCandidate,
 } from '@/lib/api/generated/types.gen'
 import { ModelManagementField } from './model-management-field'
+import { ModelPriceExpressionEditor } from './model-price-expression-editor'
 import {
   applyModelPriceEvidence,
   buildModelPriceDraftSchema,
   defaultModelPriceDraft,
+  expressionModelPriceDraft,
   freeModelPriceDraft,
   type ModelPriceDraft,
   type ModelPriceEvidenceField,
@@ -40,18 +42,24 @@ const priceFields = [
   { key: 'cacheCreation1h', translation: 'cacheCreation1h' },
 ] as const
 
-/** 编辑正式五价草稿；公开来源只能由管理员逐字段采用。 */
+/** 编辑正式定价草稿；公开来源只能由管理员逐字段采用。 */
 export function ModelPriceForm(props: ModelPriceFormProps) {
   const { t } = useTranslation()
   const schema = buildModelPriceDraftSchema({
     decimal: t('modelManagement.prices.validation.decimal'),
     free: t('modelManagement.prices.validation.free'),
+    expression: t('modelManagement.prices.validation.expression'),
+    expressionTooLong: t('modelManagement.prices.validation.expressionTooLong'),
+    expressionValues: t('modelManagement.prices.validation.expressionValues'),
   })
   const initialDraft = props.staged?.draft ?? defaultModelPriceDraft(props.price)
   const perTokenDraft = useRef<ModelPriceDraft>(
     initialDraft.billingMode === 'per_token'
       ? initialDraft
-      : { ...freeModelPriceDraft(), billingMode: 'per_token' },
+      : { ...initialDraft, billingMode: 'per_token', expression: '' },
+  )
+  const expressionDraft = useRef<ModelPriceDraft>(
+    initialDraft.billingMode === 'expression' ? initialDraft : expressionModelPriceDraft(),
   )
   const form = useForm<ModelPriceDraft>({
     defaultValues: initialDraft,
@@ -62,6 +70,7 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
   useEffect(() => {
     const next = props.staged?.draft ?? defaultModelPriceDraft(props.price)
     if (next.billingMode === 'per_token') perTokenDraft.current = next
+    if (next.billingMode === 'expression') expressionDraft.current = next
     form.reset(next)
     setExpectedVersion(props.staged?.expectedVersion ?? props.price?.version ?? null)
   }, [form, props.model.model, props.price, props.staged])
@@ -71,10 +80,17 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
     const current = form.getValues()
     if (nextMode === 'free') {
       if (current.billingMode === 'per_token') perTokenDraft.current = current
+      if (current.billingMode === 'expression') expressionDraft.current = current
       form.reset(freeModelPriceDraft())
       return
     }
-    form.reset({ ...perTokenDraft.current, billingMode: 'per_token' })
+    if (nextMode === 'expression') {
+      if (current.billingMode === 'per_token') perTokenDraft.current = current
+      form.reset({ ...expressionDraft.current, billingMode: 'expression' })
+      return
+    }
+    if (current.billingMode === 'expression') expressionDraft.current = current
+    form.reset({ ...perTokenDraft.current, billingMode: 'per_token', expression: '' })
   }
   const useEvidence = (field: ModelPriceEvidenceField) => {
     if (!props.candidate) return
@@ -86,6 +102,7 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
     perTokenDraft.current = next
     form.reset(next, { keepDefaultValues: true })
   }
+  const expression = form.watch('expression')
   const versionChanged = props.price !== undefined && expectedVersion !== props.price.version
   const submit = form.handleSubmit((draft) => props.onStage(draft, expectedVersion))
 
@@ -106,9 +123,13 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
           <div
             role="radiogroup"
             aria-label={t('modelManagement.prices.form.billingMode')}
-            className="grid grid-cols-2 gap-1 rounded-lg border border-[var(--hairline)] bg-surface-2/55 p-1"
+            className="grid grid-cols-3 gap-1 rounded-lg border border-[var(--hairline)] bg-surface-2/55 p-1"
           >
-            {(['per_token', 'free'] as const).map((mode) => (
+            {([
+              ['per_token', CircleDollarSign],
+              ['free', Gift],
+              ['expression', Sparkles],
+            ] as const).map(([mode, Icon]) => (
               <Button
                 key={mode}
                 type="button"
@@ -118,14 +139,18 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
                 className={billingMode === mode ? 'bg-surface-1 shadow-sm hover:bg-surface-1' : undefined}
                 onClick={() => changeBillingMode(mode)}
               >
-                <CircleDollarSign aria-hidden="true" />
+                <Icon aria-hidden="true" />
                 {t(`modelManagement.prices.billing.${mode}`)}
               </Button>
             ))}
           </div>
           <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
             <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-            {t(billingMode === 'free' ? 'modelManagement.prices.form.freeHint' : 'modelManagement.prices.form.perTokenHint')}
+            {t(billingMode === 'free'
+              ? 'modelManagement.prices.form.freeHint'
+              : billingMode === 'expression'
+                ? 'modelManagement.prices.form.expressionHint'
+                : 'modelManagement.prices.form.perTokenHint')}
           </p>
           {versionChanged ? (
             <div className="flex flex-col gap-2 rounded-lg border border-warning/20 bg-warning/8 px-3 py-2 text-xs text-warning sm:flex-row sm:items-center sm:justify-between">
@@ -137,36 +162,48 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
           ) : null}
         </section>
 
-        <section className="grid gap-3 border-t border-[var(--hairline)] pt-5" aria-labelledby="model-price-values">
-          <div>
-            <h3 id="model-price-values" className="text-xs font-semibold">{t('modelManagement.prices.form.values')}</h3>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('modelManagement.prices.form.valuesHint')}</p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {priceFields.map(({ key, translation }) => (
-              <ModelManagementField
-                key={key}
-                id={`model-price-${key}`}
-                label={t(`modelManagement.prices.fields.${translation}`)}
-                hint={t('modelManagement.prices.form.priceUnit')}
-                error={form.formState.errors[key]?.message}
-              >
-                <Input
-                  id={`model-price-${key}`}
-                  type="text"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  disabled={billingMode === 'free'}
-                  aria-invalid={!!form.formState.errors[key]}
-                  className="font-mono tabular-nums"
-                  {...form.register(key)}
-                />
-              </ModelManagementField>
-            ))}
-          </div>
-        </section>
+        {billingMode === 'expression' ? (
+          <ModelPriceExpressionEditor
+            key={props.model.model}
+            candidate={props.candidate}
+            value={expression}
+            error={form.formState.errors.expression?.message}
+            onChange={(value) => form.setValue('expression', value, { shouldDirty: true, shouldValidate: true })}
+          />
+        ) : (
+          <>
+            <section className="grid gap-3 border-t border-[var(--hairline)] pt-5" aria-labelledby="model-price-values">
+              <div>
+                <h3 id="model-price-values" className="text-xs font-semibold">{t('modelManagement.prices.form.values')}</h3>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('modelManagement.prices.form.valuesHint')}</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {priceFields.map(({ key, translation }) => (
+                  <ModelManagementField
+                    key={key}
+                    id={`model-price-${key}`}
+                    label={t(`modelManagement.prices.fields.${translation}`)}
+                    hint={t('modelManagement.prices.form.priceUnit')}
+                    error={form.formState.errors[key]?.message}
+                  >
+                    <Input
+                      id={`model-price-${key}`}
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
+                      disabled={billingMode === 'free'}
+                      aria-invalid={!!form.formState.errors[key]}
+                      className="font-mono tabular-nums"
+                      {...form.register(key)}
+                    />
+                  </ModelManagementField>
+                ))}
+              </div>
+            </section>
 
-        <PriceEvidence candidate={props.candidate} onUse={useEvidence} />
+            <PriceEvidence candidate={props.candidate} onUse={useEvidence} />
+          </>
+        )}
       </div>
 
       <div className="flex justify-end gap-2 border-t border-[var(--hairline)] p-4">

@@ -15,7 +15,6 @@ import type {
 import { cn } from '@/lib/utils'
 import {
   modelPriceCandidateNeedsReview,
-  modelPriceCanUseFixedEditor,
   modelPriceDraftIsComplete,
   type StagedModelPriceDraft,
 } from './model-price-form-model'
@@ -130,10 +129,10 @@ function ModelIdentity({ row, priceIndexComplete }: { row: ModelPriceRow; priceI
 
 function PriceStatus({ row, priceIndexComplete }: { row: ModelPriceRow; priceIndexComplete: boolean }) {
   const { t } = useTranslation()
-  const status = row.price?.billing_mode === 'expression'
-    ? 'expression'
-    : row.staged
-      ? 'staged'
+  const status = row.staged
+    ? 'staged'
+    : row.price?.billing_mode === 'expression'
+      ? 'expression'
       : row.price?.billing_mode === 'free'
       ? 'free'
       : row.price
@@ -152,6 +151,7 @@ function PriceStatus({ row, priceIndexComplete }: { row: ModelPriceRow; priceInd
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <Badge className={cn(styles[status])}>{t(`modelManagement.prices.status.${status}`)}</Badge>
+      {row.staged?.draft.billingMode === 'expression' ? <Badge className="border-transparent bg-warning/10 text-warning">{t('modelManagement.prices.status.expression')}</Badge> : null}
       {modelPriceCandidateNeedsReview(row.candidate) ? <Badge className="border-transparent bg-warning/10 text-warning">{t('modelManagement.prices.status.review')}</Badge> : null}
       {row.staged && row.price && row.staged.expectedVersion !== row.price.version ? <Badge className="border-transparent bg-destructive/10 text-destructive">{t('modelManagement.prices.status.versionChanged')}</Badge> : null}
       {row.price ? <span className="font-mono text-[0.6875rem] text-muted-foreground">v{row.price.version}</span> : null}
@@ -166,8 +166,7 @@ function RowCheckbox(props: {
 }) {
   const { t } = useTranslation()
   const versionReady = !props.row.price || props.row.staged?.expectedVersion === props.row.price.version
-  const enabled = modelPriceCanUseFixedEditor(props.row.price)
-    && versionReady
+  const enabled = versionReady
     && modelPriceDraftIsComplete(props.row.staged?.draft)
   const id = `select-price-${props.row.model.id}`
   return (
@@ -190,24 +189,24 @@ function RowCheckbox(props: {
 
 function EditButton({ row, onEdit }: { row: ModelPriceRow; onEdit: (row: ModelPriceRow) => void }) {
   const { t } = useTranslation()
-  const readOnly = !modelPriceCanUseFixedEditor(row.price)
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <span className="inline-flex">
-          <Button type="button" size="icon-sm" variant="ghost" className="size-10 md:size-8" disabled={readOnly} aria-label={t('modelManagement.prices.actions.edit', { model: row.model.model })} onClick={() => onEdit(row)}>
+          <Button type="button" size="icon-sm" variant="ghost" className="size-10 md:size-8" aria-label={t('modelManagement.prices.actions.edit', { model: row.model.model })} onClick={() => onEdit(row)}>
             {row.price || row.staged ? <Pencil aria-hidden="true" /> : <CircleDollarSign aria-hidden="true" />}
           </Button>
         </span>
       </TooltipTrigger>
-      <TooltipContent>{t(readOnly ? 'modelManagement.prices.actions.expressionReadOnly' : row.price || row.staged ? 'modelManagement.prices.actions.editPrice' : 'modelManagement.prices.actions.setPrice')}</TooltipContent>
+      <TooltipContent>{t(row.price?.billing_mode === 'expression' ? 'modelManagement.prices.actions.expressionReadOnly' : row.price || row.staged ? 'modelManagement.prices.actions.editPrice' : 'modelManagement.prices.actions.setPrice')}</TooltipContent>
     </Tooltip>
   )
 }
 
 function displayPrice(row: ModelPriceRow): { values?: AdminModelPriceValues } {
-  if (!row.staged) return { values: row.price?.prices }
+  if (!row.staged) return row.price?.billing_mode === 'expression' ? {} : { values: row.price?.prices }
   const draft = row.staged.draft
+  if (draft.billingMode === 'expression') return {}
   return {
     values: {
       input: draft.input,

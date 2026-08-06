@@ -1431,7 +1431,8 @@
       },
       "billing": {
         "per_token": "按 Token 计费",
-        "free": "显式免费"
+        "free": "显式免费",
+        "expression": "表达式计费"
       },
       "fields": {
         "input": "输入",
@@ -1448,12 +1449,16 @@
         "values": "正式销售价格",
         "valuesHint": "这些值会直接参与新请求计费，不会根据参考来源自动覆盖。",
         "priceUnit": "美元 / 百万 Token",
+        "expressionHint": "表达式由服务端 Rhai 沙箱校验并在请求级结算；五项固定价格列保持为 0。",
         "versionChanged": "草稿基于 {{expected}}，当前正式价格为 v{{current}}。核对后才能更新版本前置条件。",
         "newVersion": "新建前置条件"
       },
       "validation": {
         "decimal": "请输入不带符号或科学计数法的非负十进制数，整数最多 10 位，小数最多 28 位。",
-        "free": "显式免费模式的五项价格必须全部为 0。"
+        "free": "显式免费模式的五项价格必须全部为 0。",
+        "expression": "请输入计费表达式正文。",
+        "expressionTooLong": "表达式正文不能超过 8192 个 UTF-8 字节。",
+        "expressionValues": "表达式模式的固定价格列必须全部为 0。"
       },
       "actions": {
         "preview": "从 models.dev 获取参考价",
@@ -1463,11 +1468,11 @@
         "apply": "应用 {{count}} 项价格",
         "select": "选择模型 {{model}} 的价格草稿",
         "selectionReady": "此草稿可加入批量提交",
-        "editBeforeSelect": "先编辑并补齐五项价格",
+        "editBeforeSelect": "先编辑并完成定价草稿",
         "edit": "编辑模型 {{model}} 的价格",
         "editPrice": "编辑价格",
         "setPrice": "设置价格",
-        "expressionReadOnly": "表达式计费暂由后台管理，当前表单不可编辑",
+        "expressionReadOnly": "编辑表达式计费",
         "useCurrentVersion": "采用当前版本"
       },
       "preview": {
@@ -1490,15 +1495,50 @@
       },
       "editor": {
         "title": "编辑正式模型价格",
-        "description": "为 {{model}} 创建可复核的五价草稿。",
-        "fallbackDescription": "创建可复核的五价草稿。"
+        "description": "为 {{model}} 创建可复核的正式定价草稿。",
+        "fallbackDescription": "创建可复核的正式定价草稿。"
+      },
+      "expression": {
+        "title": "表达式计费规则",
+        "description": "可视化模式只生成首版受控线性规则；原始模式可编辑已支持的 Rhai 表达式。",
+        "tabs": {
+          "label": "表达式编辑模式",
+          "visual": "可视化",
+          "raw": "原始正文",
+          "preview": "提交预览"
+        },
+        "rawLabel": "原始计费表达式",
+        "rawHint": "支持 v1: 前缀、p/c/cr/cc/cc1h/len 变量和 tier(name, value)；最终以服务端沙箱校验为准。",
+        "presets": {
+          "token": "输入 + 输出",
+          "cache": "启用缓存维度"
+        },
+        "tierName": "档位名称",
+        "tierNameHint": "可视化模式使用字母、数字、短横线或下划线，最长 64 字节。",
+        "components": "计价维度",
+        "componentsHint": "只有打开开关的变量会进入表达式；缓存变量会影响 Inclusive 输入扣减口径。",
+        "priceUnit": "美元 / 百万 Token",
+        "rate": "{{variable}} 单价",
+        "useReference": "采用参考价 ${{value}}",
+        "cacheBoundary": "启用 cr、cc 或 cc1h 后，服务端会按表达式实际引用的缓存维度从 Inclusive 输入中扣减，避免重复计费。",
+        "visualUnavailable": "当前原始表达式不是可视化编辑器生成的线性规则，不能无损转换。",
+        "useVisualTemplate": "改用可视化模板（覆盖正文）",
+        "visualInvalid": "请填写合法档位名，并至少启用一个非空的计价维度。",
+        "previewSource": "将提交的表达式正文",
+        "previewBytes": "{{count}} / 8192 字节",
+        "previewEmpty": "尚未生成表达式",
+        "previewVariables": "引用变量",
+        "previewNoVariables": "当前正文尚未引用受控变量。",
+        "previewServerValidation": "此处只展示真实提交正文和安全边界；金额、倍率与最终 quota 仍由后端 Decimal 计费内核计算。",
+        "previewBackToVisual": "返回可视化"
       },
       "apply": {
         "title": "确认应用正式价格",
-        "description_one": "核对所选 {{count}} 个模型的最终五价与版本前置条件。",
-        "description_other": "核对所选 {{count}} 个模型的最终五价与版本前置条件。",
+        "description_one": "核对所选 {{count}} 个模型的最终定价与版本前置条件。",
+        "description_other": "核对所选 {{count}} 个模型的最终定价与版本前置条件。",
         "createVersion": "创建新价格",
         "updateVersion": "基于 v{{version}} 更新",
+        "expression": "表达式正文",
         "boundary": "全部价格会在同一事务中写入；任一模型或版本冲突都会整体失败。成功后立即刷新运行时快照，并影响后续新请求。",
         "success_one": "已应用 {{count}} 个模型价格，模型广场已刷新。",
         "success_other": "已应用 {{count}} 个模型价格，模型广场已刷新。"
@@ -1518,7 +1558,7 @@
         "body": "模型或价格目录没有返回可靠快照，请稍后重试。"
       },
       "errors": {
-        "invalid_request": "价格草稿无效，请检查计费模式、版本和五项十进制价格。",
+        "invalid_request": "价格草稿无效，请检查计费模式、版本、固定价格或表达式正文。",
         "invalid_session": "登录会话已失效，请重新登录。",
         "forbidden": "当前会话没有模型价格管理权限。",
         "model_not_found": "模型元数据已不存在，请刷新模型目录。",
