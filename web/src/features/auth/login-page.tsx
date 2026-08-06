@@ -36,7 +36,9 @@ type LoginError = LoginNotice | 'invalidCredentials' | 'passwordLoginDisabled' |
 function classifyLoginError(error: unknown): LoginError {
   if (error instanceof ApiError) {
     const code = errorCode(error.details)
-    if (error.status === 403 && code === 'password_login_disabled') return 'passwordLoginDisabled'
+    // 兼容网关将管理错误包裹到 error 字段后的响应，避免把可解释的认证失败误报为服务不可用。
+    if (code === 'password_login_disabled') return 'passwordLoginDisabled'
+    if (code === 'invalid_credentials') return 'invalidCredentials'
     if (error.status === 400 || error.status === 401) return 'invalidCredentials'
   }
   return 'unavailable'
@@ -241,6 +243,10 @@ export function LoginPage({ notice, onAuthenticated }: LoginPageProps) {
 }
 
 function errorCode(details: unknown) {
-  if (typeof details !== 'object' || details === null || !('code' in details)) return undefined
-  return typeof details.code === 'string' ? details.code : undefined
+  if (typeof details !== 'object' || details === null) return undefined
+  if ('code' in details && typeof details.code === 'string') return details.code
+  if ('error' in details && typeof details.error === 'object' && details.error !== null && 'code' in details.error) {
+    return typeof details.error.code === 'string' ? details.error.code : undefined
+  }
+  return undefined
 }
