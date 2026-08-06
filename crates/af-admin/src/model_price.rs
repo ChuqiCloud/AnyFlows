@@ -610,10 +610,10 @@ impl AdminModelPriceService for DatabaseAdminModelPriceService {
                 .refresh()
                 .await
                 .map_err(|_| AdminModelPriceError::RuntimeRefreshFailed)?;
-            Ok(records
+            records
                 .into_iter()
                 .map(AdminModelPrice::from_record)
-                .collect::<Result<Vec<_>, _>>()?)
+                .collect::<Result<Vec<_>, _>>()
         })
     }
 }
