@@ -5165,6 +5165,82 @@
         ]
       }
     },
+    "/api/admin/model-prices/litellm-preview": {
+      "post": {
+        "tags": [
+          "模型管理"
+        ],
+        "summary": "从 LiteLLM 官方固定价表预览公开参考价",
+        "operationId": "previewAdminLiteLlmModelPrices",
+        "responses": {
+          "200": {
+            "description": "与本地权威模型身份精确匹配的参考价",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminModelPriceSourcePreview"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "公开来源不可用、响应过大、损坏或候选超限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "公开来源请求超时",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/model-prices/expression-preview": {
       "post": {
         "tags": [
@@ -11727,6 +11803,7 @@
           "source_model",
           "source_name",
           "last_updated",
+          "source_deprecation_date",
           "costs",
           "has_tiered_pricing",
           "source_deprecated"
@@ -11764,6 +11841,13 @@
             ],
             "maxLength": 32
           },
+          "source_deprecation_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 10
+          },
           "costs": {
             "$ref": "#/components/schemas/AdminModelPriceSourceCosts"
           },
@@ -11778,12 +11862,14 @@
       },
       "AdminModelPriceSourceCosts": {
         "type": "object",
-        "description": "models.dev 公开来源返回的可选成本证据。",
+        "description": "公开来源返回的可选成本证据；金额统一为美元/百万 Token。",
         "required": [
           "input",
           "output",
           "cache_read",
-          "cache_write"
+          "cache_write",
+          "cache_creation_5m",
+          "cache_creation_1h"
         ],
         "properties": {
           "input": {
@@ -11814,6 +11900,22 @@
             ],
             "description": "通用缓存写价格只作为证据，不能映射为正式 5m 或 1h 单价。",
             "maxLength": 64
+          },
+          "cache_creation_5m": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "LiteLLM 明确的 5 分钟缓存创建单价。",
+            "maxLength": 64
+          },
+          "cache_creation_1h": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "LiteLLM 明确的 1 小时缓存创建单价。",
+            "maxLength": 64
           }
         },
         "additionalProperties": false
@@ -11829,7 +11931,7 @@
         "properties": {
           "source": {
             "type": "string",
-            "pattern": "^models_dev$"
+            "pattern": "^(models_dev|litellm)$"
           },
           "fetched_at": {
             "type": "integer",

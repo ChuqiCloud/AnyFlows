@@ -131,7 +131,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 66);
+        assert_eq!(document.paths.paths.len(), 67);
         let operation_count = document
             .paths
             .paths
@@ -152,7 +152,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 104);
+        assert_eq!(operation_count, 105);
         assert!(
             document
                 .components
@@ -251,6 +251,7 @@ mod tests {
             "listUserWalletEntries",
             "loginManagementSession",
             "probeAdminChannel",
+            "previewAdminLiteLlmModelPrices",
             "previewAdminModelPrices",
             "previewAdminModelPriceExpression",
             "registerUser",

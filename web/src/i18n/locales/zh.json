@@ -1434,6 +1434,12 @@
         "free": "显式免费",
         "expression": "表达式计费"
       },
+      "sources": {
+        "label": "参考价来源",
+        "public": "公开价表",
+        "models_dev": "models.dev",
+        "litellm": "LiteLLM 官方价表"
+      },
       "fields": {
         "input": "输入",
         "output": "输出",
@@ -1461,7 +1467,7 @@
         "expressionValues": "表达式模式的固定价格列必须全部为 0。"
       },
       "actions": {
-        "preview": "从 models.dev 获取参考价",
+        "preview": "获取参考价",
         "previewing": "正在读取参考价",
         "stage": "加入待提交",
         "reviewApply": "复核并应用（{{count}}）",
@@ -1481,16 +1487,17 @@
         "fetchedAt": "读取于 {{value}}"
       },
       "evidence": {
-        "title": "models.dev 公开参考证据",
-        "sourceBadge": "models.dev",
-        "none": "尚未获取与当前厂商和 Canonical 标识精确匹配的参考价。",
+        "title": "{{source}} 公开参考证据",
+        "sourceBadge": "公开价表",
+        "none": "{{source}} 尚未返回与当前厂商和 Canonical 标识精确匹配的参考价。",
         "disclaimer": "公开成本只用于人工复核，不代表本站正式售价，也不会自动覆盖草稿。",
         "deprecated": "来源已弃用",
-        "tieredWarning": "来源包含分层或长上下文价格，当前计费引擎不能等价表达，禁止直接套用。",
+        "deprecationDate": "计划于 {{date}} 弃用",
+        "tieredWarning": "来源包含分层、优先级、Flex、Batch 或长上下文价格，当前计费引擎不能等价表达，禁止直接套用。",
         "missing": "未提供",
         "use": "采用{{field}}参考值",
         "cacheWriteBoundary": "不能等价映射到 5m 或 1h，必须分别人工确认。",
-        "source": "来源模型 {{model}}，更新日期 {{updated}}",
+        "source": "来源条目 {{name}} · {{model}}，更新日期 {{updated}}",
         "unknownDate": "未知"
       },
       "editor": {
@@ -1603,10 +1610,10 @@
         "model_price_expression_invalid": "表达式无法通过版本、语法或沙箱校验，请检查原始正文。",
         "model_price_expression_preview_invalid": "试算用量或倍率不满足精确整数边界，请检查输入口径和字段值。",
         "model_price_expression_evaluation_failed": "表达式无法在当前用量和倍率下完成执行，请检查除零、负值、溢出或 tier 分支。",
-        "model_price_source_timeout": "models.dev 请求超时，请稍后重试。",
-        "model_price_source_unavailable": "models.dev 当前不可用，请稍后重试。",
-        "model_price_source_response_too_large": "models.dev 响应超过固定容量上限，未生成参考预览。",
-        "model_price_source_invalid_response": "models.dev 响应无法通过结构或金额校验。",
+        "model_price_source_timeout": "{{source}} 请求超时，请稍后重试。",
+        "model_price_source_unavailable": "{{source}} 当前不可用，请稍后重试。",
+        "model_price_source_response_too_large": "{{source}} 响应超过固定容量上限，未生成参考预览。",
+        "model_price_source_invalid_response": "{{source}} 响应无法通过结构或金额校验。",
         "model_price_source_candidate_limit_exceeded": "公开来源或本地模型数量超过单次预览上限。",
         "internal_error": "价格持久化或运行时快照刷新失败，提交结果需要重新读取确认。",
         "unknown": "模型价格请求失败，请检查网络后重试。"

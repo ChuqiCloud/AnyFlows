@@ -8,8 +8,8 @@ use std::{
 use af_admin::{
     MAX_MODEL_PRICE_SOURCE_TARGETS, ModelPriceRuntimeRefreshError, ModelPriceRuntimeRefreshFuture,
     ModelPriceRuntimeRefresher, ModelPriceSourceCandidate, ModelPriceSourceDiscoverer,
-    ModelPriceSourceDiscoveryError, ModelPriceSourceDiscoveryFuture, ModelPriceSourcePreview,
-    ModelPriceSourceTarget,
+    ModelPriceSourceDiscoveryError, ModelPriceSourceDiscoveryFuture, ModelPriceSourceKind,
+    ModelPriceSourcePreview, ModelPriceSourceTarget,
 };
 use af_billing::ModelPriceCache;
 use af_httpclient::{
@@ -18,22 +18,32 @@ use af_httpclient::{
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
+mod litellm;
+
 const MODELS_DEV_ENDPOINT: &str = "https://models.dev/api.json";
-const MODELS_DEV_TIMEOUT: Duration = Duration::from_secs(30);
-const MAX_MODELS_DEV_RESPONSE_BYTES: usize = 8 * 1_024 * 1_024;
+const LITELLM_ENDPOINT: &str =
+    "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
+const PUBLIC_SOURCE_TIMEOUT: Duration = Duration::from_secs(30);
+const MAX_PUBLIC_SOURCE_RESPONSE_BYTES: usize = 8 * 1_024 * 1_024;
 const MAX_MODELS_DEV_PROVIDERS: usize = 512;
 const MAX_MODELS_DEV_MODELS: usize = 20_000;
+const MAX_LITELLM_MODELS: usize = 50_000;
 
 type Clock = Arc<dyn Fn() -> Option<i64> + Send + Sync>;
 
-/// 使用生产受控 HTTP Client 读取固定 models.dev 公开价格目录。
+struct SourcePayload {
+    body: Vec<u8>,
+    revision: Option<String>,
+}
+
+/// 使用生产受控 HTTP Client 读取固定公开价格目录。
 #[derive(Clone)]
-pub(crate) struct ModelsDevPriceDiscoverer {
+pub(crate) struct ModelPriceDiscoverer {
     clients: HttpClientProvider,
     clock: Clock,
 }
 
-impl ModelsDevPriceDiscoverer {
+impl ModelPriceDiscoverer {
     #[must_use]
     pub(crate) fn new(clients: HttpClientProvider) -> Self {
         Self {
@@ -44,14 +54,36 @@ impl ModelsDevPriceDiscoverer {
 
     async fn discover_inner(
         &self,
+        source: ModelPriceSourceKind,
         targets: Vec<ModelPriceSourceTarget>,
     ) -> Result<ModelPriceSourcePreview, ModelPriceSourceDiscoveryError> {
         if targets.len() > MAX_MODEL_PRICE_SOURCE_TARGETS {
             return Err(ModelPriceSourceDiscoveryError::CandidateLimitExceeded);
         }
+        let (endpoint, allow_text_plain) = match source {
+            ModelPriceSourceKind::ModelsDev => (MODELS_DEV_ENDPOINT, false),
+            ModelPriceSourceKind::LiteLlm => (LITELLM_ENDPOINT, true),
+        };
+        let payload = self.fetch_source(endpoint, allow_text_plain).await?;
+        let fetched_at = (self.clock)().ok_or(ModelPriceSourceDiscoveryError::InvalidResponse)?;
+        match source {
+            ModelPriceSourceKind::ModelsDev => {
+                parse_models_dev(&payload.body, targets, fetched_at, payload.revision)
+            }
+            ModelPriceSourceKind::LiteLlm => {
+                litellm::parse(&payload.body, targets, fetched_at, payload.revision)
+            }
+        }
+    }
+
+    async fn fetch_source(
+        &self,
+        endpoint: &str,
+        allow_text_plain: bool,
+    ) -> Result<SourcePayload, ModelPriceSourceDiscoveryError> {
         let client = self
             .clients
-            .get(Some(MODELS_DEV_TIMEOUT))
+            .get(Some(PUBLIC_SOURCE_TIMEOUT))
             .map_err(|_| ModelPriceSourceDiscoveryError::Unavailable)?;
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -59,21 +91,23 @@ impl ModelsDevPriceDiscoverer {
             HeaderValue::from_static("application/json"),
         );
         let response = client
-            .execute(Method::GET, MODELS_DEV_ENDPOINT, headers, None)
+            .execute(Method::GET, endpoint, headers, None)
             .await
             .map_err(map_transport_error)?;
-        if !response.status().is_success()
-            || response
-                .headers()
-                .get(HeaderName::from_static("content-type"))
-                .and_then(|value| value.to_str().ok())
-                .is_some_and(|value| !value.to_ascii_lowercase().contains("application/json"))
-        {
+        let content_type = response
+            .headers()
+            .get(HeaderName::from_static("content-type"))
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_ascii_lowercase);
+        let content_type_valid = content_type.as_deref().is_some_and(|value| {
+            value.contains("application/json") || (allow_text_plain && value.contains("text/plain"))
+        });
+        if !response.status().is_success() || !content_type_valid {
             return Err(ModelPriceSourceDiscoveryError::Unavailable);
         }
         if response
             .content_length()
-            .is_some_and(|length| length > MAX_MODELS_DEV_RESPONSE_BYTES as u64)
+            .is_some_and(|length| length > MAX_PUBLIC_SOURCE_RESPONSE_BYTES as u64)
         {
             return Err(ModelPriceSourceDiscoveryError::ResponseTooLarge);
         }
@@ -90,25 +124,26 @@ impl ModelsDevPriceDiscoverer {
                 .len()
                 .checked_add(chunk.len())
                 .ok_or(ModelPriceSourceDiscoveryError::ResponseTooLarge)?;
-            if next_len > MAX_MODELS_DEV_RESPONSE_BYTES {
+            if next_len > MAX_PUBLIC_SOURCE_RESPONSE_BYTES {
                 return Err(ModelPriceSourceDiscoveryError::ResponseTooLarge);
             }
             body.extend_from_slice(&chunk);
         }
-        let fetched_at = (self.clock)().ok_or(ModelPriceSourceDiscoveryError::InvalidResponse)?;
-        parse_models_dev(&body, targets, fetched_at, revision)
+        Ok(SourcePayload { body, revision })
     }
 }
 
-impl ModelPriceSourceDiscoverer for ModelsDevPriceDiscoverer {
+impl ModelPriceSourceDiscoverer for ModelPriceDiscoverer {
     fn discover<'a>(
         &'a self,
+        source: ModelPriceSourceKind,
         targets: Vec<ModelPriceSourceTarget>,
     ) -> ModelPriceSourceDiscoveryFuture<'a> {
         Box::pin(async move {
-            let result = self.discover_inner(targets).await;
+            let result = self.discover_inner(source, targets).await;
             if let Err(error) = result.as_ref() {
                 tracing::debug!(
+                    source = source.as_str(),
                     error_kind = source_error_kind(*error),
                     "公开模型价格源读取失败"
                 );
@@ -118,9 +153,9 @@ impl ModelPriceSourceDiscoverer for ModelsDevPriceDiscoverer {
     }
 }
 
-impl fmt::Debug for ModelsDevPriceDiscoverer {
+impl fmt::Debug for ModelPriceDiscoverer {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("ModelsDevPriceDiscoverer(<固定公开来源>)")
+        formatter.write_str("ModelPriceDiscoverer(<固定公开来源>)")
     }
 }
 

@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-q
 import { apiClient, ApiError } from '@/lib/api'
 import {
   applyAdminModelPrices,
+  previewAdminLiteLlmModelPrices,
   previewAdminModelPriceExpression,
   listAdminModelPrices,
   previewAdminModelPrices,
@@ -13,6 +14,9 @@ import type {
 } from '@/lib/api/generated/types.gen'
 
 export const adminModelPriceQueryKey = ['admin-model-prices'] as const
+
+export const modelPriceSources = ['models_dev', 'litellm'] as const
+export type ModelPriceSource = typeof modelPriceSources[number]
 
 /** 按 Canonical 游标加载正式价格，保持与模型元数据缓存相互独立。 */
 export function useAdminModelPrices() {
@@ -31,11 +35,14 @@ export function useAdminModelPrices() {
   })
 }
 
-/** 读取固定 models.dev 公开来源，不接收前端 URL 或厂商覆盖。 */
+/** 按固定来源标识读取公开价表，不接收前端 URL 或厂商覆盖。 */
 export function usePreviewAdminModelPrices() {
   return useMutation({
-    mutationFn: async () => {
-      const { data } = await previewAdminModelPrices({ client: apiClient })
+    mutationFn: async (source: ModelPriceSource) => {
+      const request = source === 'litellm'
+        ? previewAdminLiteLlmModelPrices
+        : previewAdminModelPrices
+      const { data } = await request({ client: apiClient })
       return data
     },
   })

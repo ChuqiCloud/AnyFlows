@@ -3,7 +3,7 @@ use af_admin::{
     AdminModelPriceExpressionPreview, AdminModelPriceExpressionPreviewCommand,
     AdminModelPriceExpressionRatios, AdminModelPriceExpressionUsage, AdminModelPriceListQuery,
     AdminModelPricePage, AdminModelPriceUsageSemantics, AdminModelPriceWriteCommand,
-    ModelPriceSourceCandidate, ModelPriceSourcePreview,
+    ModelPriceSourceCandidate, ModelPriceSourceKind, ModelPriceSourcePreview,
 };
 use axum::{
     Json,
@@ -122,7 +122,7 @@ pub(crate) struct AdminModelPriceListResponse {
     next_cursor: Option<String>,
 }
 
-/// models.dev 公开来源返回的可选成本证据。
+/// 公开来源返回的可选成本证据；金额统一为美元/百万 Token。
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 #[schema(as = AdminModelPriceSourceCosts)]
@@ -136,6 +136,12 @@ pub(crate) struct AdminModelPriceSourceCostsResponse {
     /// 通用缓存写价格只作为证据，不能映射为正式 5m 或 1h 单价。
     #[schema(value_type = Option<String>, max_length = 64, required = true)]
     cache_write: Option<String>,
+    /// LiteLLM 明确的 5 分钟缓存创建单价。
+    #[schema(value_type = Option<String>, max_length = 64, required = true)]
+    cache_creation_5m: Option<String>,
+    /// LiteLLM 明确的 1 小时缓存创建单价。
+    #[schema(value_type = Option<String>, max_length = 64, required = true)]
+    cache_creation_1h: Option<String>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -154,6 +160,8 @@ pub(crate) struct AdminModelPriceSourceCandidateResponse {
     source_name: String,
     #[schema(max_length = 32, required = true)]
     last_updated: Option<String>,
+    #[schema(max_length = 10, required = true)]
+    source_deprecation_date: Option<String>,
     costs: AdminModelPriceSourceCostsResponse,
     has_tiered_pricing: bool,
     source_deprecated: bool,
@@ -163,7 +171,7 @@ pub(crate) struct AdminModelPriceSourceCandidateResponse {
 #[serde(deny_unknown_fields)]
 #[schema(as = AdminModelPriceSourcePreview)]
 pub(crate) struct AdminModelPriceSourcePreviewResponse {
-    #[schema(value_type = String, pattern = "^models_dev$")]
+    #[schema(value_type = String, pattern = "^(models_dev|litellm)$")]
     source: &'static str,
     #[schema(minimum = 1)]
     fetched_at: i64,
@@ -322,7 +330,25 @@ pub(crate) async fn preview_admin_model_prices(
         .as_ref()
         .ok_or(ManagementError::Internal)?;
     let preview = service
-        .preview(authentication.principal())
+        .preview(authentication.principal(), ModelPriceSourceKind::ModelsDev)
+        .await
+        .map_err(map_price_error)?;
+    Ok(no_store_json(
+        AdminModelPriceSourcePreviewResponse::from_preview(preview),
+    ))
+}
+
+/// 从 LiteLLM 官方固定价表读取与本地权威身份精确匹配的参考价。
+pub(crate) async fn preview_admin_litellm_model_prices(
+    State(state): State<HttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    let service = state
+        .admin_model_price_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let preview = service
+        .preview(authentication.principal(), ModelPriceSourceKind::LiteLlm)
         .await
         .map_err(map_price_error)?;
     Ok(no_store_json(
@@ -427,6 +453,7 @@ impl AdminModelPriceSourcePreviewResponse {
 impl AdminModelPriceSourceCandidateResponse {
     fn from_candidate(candidate: &ModelPriceSourceCandidate) -> Self {
         let [input, output, cache_read, cache_write] = candidate.costs();
+        let [cache_creation_5m, cache_creation_1h] = candidate.cache_creation_prices();
         Self {
             model: candidate.model().to_owned(),
             provider: candidate.provider().to_owned(),
@@ -434,11 +461,14 @@ impl AdminModelPriceSourceCandidateResponse {
             source_model: candidate.source_model().to_owned(),
             source_name: candidate.source_name().to_owned(),
             last_updated: candidate.last_updated().map(str::to_owned),
+            source_deprecation_date: candidate.source_deprecation_date().map(str::to_owned),
             costs: AdminModelPriceSourceCostsResponse {
                 input: input.map(decimal_text),
                 output: output.map(decimal_text),
                 cache_read: cache_read.map(decimal_text),
                 cache_write: cache_write.map(decimal_text),
+                cache_creation_5m: cache_creation_5m.map(decimal_text),
+                cache_creation_1h: cache_creation_1h.map(decimal_text),
             },
             has_tiered_pricing: candidate.has_tiered_pricing(),
             source_deprecated: candidate.source_deprecated(),

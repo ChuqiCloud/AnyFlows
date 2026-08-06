@@ -1,4 +1,4 @@
-//! 正式模型价格、models.dev 参考价与原子应用 OpenAPI 契约。
+//! 正式模型价格、公开参考价与原子应用 OpenAPI 契约。
 
 #![allow(dead_code, reason = "文档端点仅由 utoipa 过程宏读取")]
 
@@ -59,6 +59,24 @@ fn preview_admin_model_prices() {}
 
 #[utoipa::path(
     post,
+    path = "/api/admin/model-prices/litellm-preview",
+    operation_id = "previewAdminLiteLlmModelPrices",
+    tag = "模型管理",
+    summary = "从 LiteLLM 官方固定价表预览公开参考价",
+    responses(
+        (status = 200, description = "与本地权威模型身份精确匹配的参考价", body = AdminModelPriceSourcePreviewResponse),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 502, description = "公开来源不可用、响应过大、损坏或候选超限", body = ManagementErrorBody),
+        (status = 504, description = "公开来源请求超时", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn preview_admin_litellm_model_prices() {}
+
+#[utoipa::path(
+    post,
     path = "/api/admin/model-prices/expression-preview",
     operation_id = "previewAdminModelPriceExpression",
     tag = "模型管理",
@@ -101,6 +119,7 @@ fn apply_admin_model_prices() {}
     paths(
         list_admin_model_prices,
         preview_admin_model_prices,
+        preview_admin_litellm_model_prices,
         preview_admin_model_price_expression,
         apply_admin_model_prices
     ),

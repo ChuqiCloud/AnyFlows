@@ -4,14 +4,17 @@ import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminModelPriceSourcePreview } from '@/lib/api/generated/types.gen'
 import { useAdminModelMetadata } from './model-management-api'
 import {
+  modelPriceSources,
   modelPriceErrorCode,
   useAdminModelPrices,
   useApplyAdminModelPrices,
   usePreviewAdminModelPrices,
+  type ModelPriceSource,
 } from './model-price-api'
 import { ModelPriceApplyDialog, type ModelPriceApplyItem } from './model-price-apply-dialog'
 import { ModelPriceEditorSheet, type ModelPriceEditorTarget } from './model-price-editor-sheet'
@@ -30,13 +33,15 @@ export function ModelPriceWorkspace() {
   const pricesQuery = useAdminModelPrices()
   const previewMutation = usePreviewAdminModelPrices()
   const applyMutation = useApplyAdminModelPrices()
-  const [preview, setPreview] = useState<AdminModelPriceSourcePreview>()
+  const [priceSource, setPriceSource] = useState<ModelPriceSource>('models_dev')
+  const [previews, setPreviews] = useState<Partial<Record<ModelPriceSource, AdminModelPriceSourcePreview>>>({})
   const [staged, setStaged] = useState<Record<string, StagedModelPriceDraft>>({})
   const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const [editingModel, setEditingModel] = useState<string>()
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [lastAppliedCount, setLastAppliedCount] = useState<number>()
 
+  const preview = previews[priceSource]
   const models = useMemo(() => modelsQuery.data?.pages.flatMap((page) => page.models) ?? [], [modelsQuery.data])
   const prices = useMemo(() => pricesQuery.data?.pages.flatMap((page) => page.prices) ?? [], [pricesQuery.data])
   const priceByModel = useMemo(() => new Map(prices.map((price) => [price.model, price])), [prices])
@@ -45,8 +50,9 @@ export function ModelPriceWorkspace() {
     model,
     price: priceByModel.get(model.model),
     candidate: candidateByModel.get(model.model),
+    source: candidateByModel.has(model.model) ? priceSource : undefined,
     staged: staged[model.model],
-  })), [candidateByModel, models, priceByModel, staged])
+  })), [candidateByModel, models, priceByModel, priceSource, staged])
   const rowByModel = useMemo(() => new Map(rows.map((row) => [row.model.model, row])), [rows])
   const priceIndexComplete = !pricesQuery.hasNextPage
   const pricedCount = rows.filter((row) => row.price !== undefined).length
@@ -64,12 +70,17 @@ export function ModelPriceWorkspace() {
     || (pricesQuery.isError && pricesQuery.data === undefined)
 
   const createPreview = async () => {
+    const requestedSource = priceSource
     try {
-      const next = await previewMutation.mutateAsync()
-      setPreview(next)
+      const next = await previewMutation.mutateAsync(requestedSource)
+      setPreviews((current) => ({ ...current, [requestedSource]: next }))
     } catch {
       // 已编辑草稿和上一份成功预览保持不变，管理员可以按稳定错误分类重试。
     }
+  }
+  const changePriceSource = (source: ModelPriceSource) => {
+    previewMutation.reset()
+    setPriceSource(source)
   }
   const stageDraft = (model: string, draft: ModelPriceDraft, expectedVersion: number | null) => {
     setStaged((current) => ({
@@ -116,6 +127,18 @@ export function ModelPriceWorkspace() {
             <RefreshCw className={modelsQuery.isFetching || pricesQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />
             {t('modelManagement.actions.refresh')}
           </Button>
+          <label htmlFor="model-price-source" className="sr-only">{t('modelManagement.prices.sources.label')}</label>
+          <Select
+            id="model-price-source"
+            className="w-40 text-xs"
+            value={priceSource}
+            disabled={previewMutation.isPending}
+            onChange={(event) => changePriceSource(event.target.value as ModelPriceSource)}
+          >
+            {modelPriceSources.map((source) => (
+              <option key={source} value={source}>{t(`modelManagement.prices.sources.${source}`)}</option>
+            ))}
+          </Select>
           <Button type="button" size="sm" variant="secondary" disabled={previewMutation.isPending} onClick={() => void createPreview()}>
             <CloudDownload className={previewMutation.isPending ? 'animate-pulse' : undefined} aria-hidden="true" />
             {t(previewMutation.isPending ? 'modelManagement.prices.actions.previewing' : 'modelManagement.prices.actions.preview')}
@@ -128,13 +151,18 @@ export function ModelPriceWorkspace() {
 
       {preview ? (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" role="status">
-          <Badge>{t('modelManagement.prices.evidence.sourceBadge')}</Badge>
+          <Badge>{t(`modelManagement.prices.sources.${priceSource}`)}</Badge>
           <span>{t('modelManagement.prices.preview.loaded', { count: preview.candidates.length })}</span>
           <span>{t('modelManagement.prices.preview.fetchedAt', { value: new Date(preview.fetched_at * 1000).toLocaleString() })}</span>
           {preview.revision ? <span className="max-w-64 truncate font-mono">{preview.revision}</span> : null}
         </div>
       ) : null}
-      {previewMutation.error ? <ModelPriceError code={modelPriceErrorCode(previewMutation.error) ?? 'unknown'} /> : null}
+      {previewMutation.error && previewMutation.variables === priceSource ? (
+        <ModelPriceError
+          code={modelPriceErrorCode(previewMutation.error) ?? 'unknown'}
+          source={t(`modelManagement.prices.sources.${priceSource}`)}
+        />
+      ) : null}
       {lastAppliedCount !== undefined ? (
         <div role="status" className="flex items-start gap-2 rounded-xl border border-success/20 bg-success/8 p-3 text-xs text-success">
           <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -204,15 +232,21 @@ export function ModelPriceWorkspace() {
 }
 
 function rowToEditorTarget(row?: ModelPriceRow): ModelPriceEditorTarget | undefined {
-  return row ? { model: row.model, price: row.price, candidate: row.candidate, staged: row.staged } : undefined
+  return row ? {
+    model: row.model,
+    price: row.price,
+    candidate: row.candidate,
+    source: row.source,
+    staged: row.staged,
+  } : undefined
 }
 
-function ModelPriceError({ code }: { code: string }) {
+function ModelPriceError({ code, source }: { code: string; source: string }) {
   const { t } = useTranslation()
   return (
     <div role="alert" className="flex items-start gap-2 rounded-xl border border-destructive/20 bg-destructive/8 p-3 text-xs text-destructive">
       <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-      <span>{t(`modelManagement.prices.errors.${code}`, { defaultValue: t('modelManagement.prices.errors.unknown') })}</span>
+      <span>{t(`modelManagement.prices.errors.${code}`, { defaultValue: t('modelManagement.prices.errors.unknown'), source })}</span>
     </div>
   )
 }
