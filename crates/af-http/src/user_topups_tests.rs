@@ -175,7 +175,7 @@ async fn unconfigured_stripe_returns_explicit_unavailable_error() {
 }
 
 fn router(service: Option<Arc<FakeUserTopupService>>) -> Router {
-    let service: Option<Arc<dyn UserTopupService>> = service.map(|service| service);
+    let service = service.map(|service| -> Arc<dyn UserTopupService> { service });
     build_user_topup_router(service, Arc::new(FakeSessionAuthenticator))
 }
 
