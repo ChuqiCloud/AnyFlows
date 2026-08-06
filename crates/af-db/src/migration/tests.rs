@@ -699,6 +699,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     exercise_quota_repository(&pool).await?;
     exercise_billing_batch_repository(&pool).await?;
     exercise_model_price_repository(&pool).await?;
+    // Expression 降级保护由独立测试覆盖；全量回滚前清理业务测试行以允许迁移降级。
+    model_prices::Entity::delete_many()
+        .exec(pool.connection())
+        .await?;
     exercise_usage_log_repository(&pool).await?;
     exercise_playground_share_repository(&pool).await?;
     exercise_playground_conversation_repository(&pool).await?;
