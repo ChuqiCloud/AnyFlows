@@ -49,6 +49,47 @@ async fn batch_insert_and_update_enforce_optimistic_versions() -> Result<(), Box
 }
 
 #[tokio::test]
+async fn expression_price_round_trips_and_is_cleared_when_switching_mode()
+-> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let models = AdminModelRepository::new(pool.clone(), std::time::Duration::from_secs(1))?;
+    models
+        .create(AdminModelCreateRecord::new(
+            "gpt-test".to_owned(),
+            model_fields(),
+        ))
+        .await?;
+    let prices = ModelPriceRepository::new(pool.clone());
+
+    let expression = ModelPriceWriteRecord::new_with_expression(
+        "gpt-test".to_owned(),
+        None,
+        ModelPriceBillingMode::Expression,
+        [Decimal::ZERO; 5],
+        Some("tier(\"base\", p)".to_owned()),
+    )?;
+    let created = prices.apply_batch(vec![expression]).await?;
+    assert_eq!(created[0].billing_expression(), Some("tier(\"base\", p)"));
+
+    let fixed = ModelPriceWriteRecord::new(
+        "gpt-test".to_owned(),
+        Some(created[0].version()),
+        ModelPriceBillingMode::PerToken,
+        [Decimal::ONE; 5],
+    )?;
+    let updated = prices.apply_batch(vec![fixed]).await?;
+    assert_eq!(updated[0].billing_mode(), ModelPriceBillingMode::PerToken);
+    assert_eq!(updated[0].billing_expression(), None);
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn batch_is_atomic_when_any_model_or_version_is_invalid() -> Result<(), Box<dyn Error>> {
     let pool = crate::connect_and_migrate(
         &DatabaseOptions::new("sqlite::memory:")?,

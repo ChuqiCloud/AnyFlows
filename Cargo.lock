@@ -64,6 +64,7 @@ name = "af-admin"
 version = "0.1.0"
 dependencies = [
  "af-account",
+ "af-billing",
  "af-config",
  "af-db",
  "af-domain",

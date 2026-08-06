@@ -447,6 +447,7 @@ export type AdminModelPrice = {
     model: string;
     billing_mode: AdminModelPriceBillingMode;
     prices: AdminModelPriceValues;
+    billing_expression: string | null;
     version: number;
 };
 export type AdminModelPriceBatchRequest = {
@@ -455,7 +456,7 @@ export type AdminModelPriceBatchRequest = {
 export type AdminModelPriceBatchResponse = {
     prices: Array<AdminModelPrice>;
 };
-export type AdminModelPriceBillingMode = 'per_token' | 'free';
+export type AdminModelPriceBillingMode = 'per_token' | 'free' | 'expression';
 export type AdminModelPriceListResponse = {
     prices: Array<AdminModelPrice>;
     next_cursor: string | null;
@@ -495,6 +496,7 @@ export type AdminModelPriceWriteItem = {
     expected_version: number | null;
     billing_mode: AdminModelPriceBillingMode;
     prices: AdminModelPriceValues;
+    billing_expression?: string | null;
 };
 export type AdminModelSyncApplyItemRequest = {
     item_id: number;
