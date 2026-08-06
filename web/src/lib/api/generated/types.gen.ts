@@ -3270,3 +3270,24 @@ export type GetAdminDebugTraceResponses = {
     200: AdminDebugTraceDetailResponse;
 };
 export type GetAdminDebugTraceResponse = GetAdminDebugTraceResponses[keyof GetAdminDebugTraceResponses];
+export type ReceivePaymentWebhookData = {
+    body?: unknown;
+    headers: {
+        'stripe-signature': string;
+    };
+    path: {
+        provider: string;
+    };
+    query?: never;
+    url: '/api/payment/webhook/{provider}';
+};
+export type ReceivePaymentWebhookErrors = {
+    400: unknown;
+    404: unknown;
+    409: unknown;
+    500: unknown;
+    503: unknown;
+};
+export type ReceivePaymentWebhookResponses = {
+    200: unknown;
+};
