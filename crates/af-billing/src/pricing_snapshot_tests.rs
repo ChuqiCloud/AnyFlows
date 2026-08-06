@@ -9,7 +9,7 @@ use crate::{
     GroupModelRatioSourceRecord, GroupPricingCache, GroupPricingSource, GroupPricingSourceCatalog,
     GroupPricingSourceFuture, GroupPricingSourceRecord, ModelPriceCache, ModelPriceMode,
     ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord, PricingContext, PricingRatio,
-    PricingResolver, RequestPricingSnapshotError, RequestPricingSnapshotSource, TokenPrices,
+    RequestPricingSnapshotError, RequestPricingSnapshotSource, TokenPrices,
 };
 
 struct ModelSource;
