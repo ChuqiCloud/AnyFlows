@@ -421,6 +421,7 @@ pub(in crate::migration) mod model_prices {
         CacheCreation5mPrice,
         #[sea_orm(iden = "cache_creation_1h_price")]
         CacheCreation1hPrice,
+        BillingExpression,
         Version,
         CreatedAt,
         UpdatedAt,

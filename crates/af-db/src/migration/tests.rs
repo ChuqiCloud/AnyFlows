@@ -53,7 +53,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 43;
+const EXPECTED_MIGRATION_COUNT: usize = 44;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -351,6 +351,41 @@ async fn wallet_topup_migration_refuses_down_with_topup_entries() -> Result<(), 
         1
     );
 
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn model_price_expression_migration_refuses_down_with_expression_rows()
+-> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), None).await?;
+    model_prices::ActiveModel {
+        model: Set(SensitiveString::from("expression-down-model")),
+        billing_mode: Set(3),
+        input_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        output_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        cache_read_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        cache_creation_5m_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        cache_creation_1h_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        billing_expression: Set(Some(SensitiveString::from(r#"tier("base", p)"#))),
+        version: Set(1),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+
+    let manager = SchemaManager::new(pool.connection());
+    let error = m20260806_000044_add_model_price_expression::Migration
+        .down(&manager)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        DbErr::Custom(message) if message == "存在表达式模型价格，无法回退计费表达式字段"
+    ));
+    assert!(manager.has_table("model_prices").await?);
+    assert!(!manager.has_table("model_prices_next").await?);
     pool.close().await?;
     Ok(())
 }
@@ -772,10 +807,16 @@ async fn model_price_migration_smoke() -> Result<(), Box<dyn Error>> {
     let pool = connect(&options).await?;
     let manager = SchemaManager::new(pool.connection());
     let migration = m20260722_000012_create_model_prices::Migration;
+    let expression_migration = m20260806_000044_add_model_price_expression::Migration;
 
     migration.up(&manager).await?;
+    expression_migration.up(&manager).await?;
     assert!(manager.has_table("model_prices").await?);
     exercise_model_price_repository(&pool).await?;
+    model_prices::Entity::delete_many()
+        .exec(pool.connection())
+        .await?;
+    expression_migration.down(&manager).await?;
     migration.down(&manager).await?;
     assert!(!manager.has_table("model_prices").await?);
 
@@ -881,6 +922,20 @@ async fn exercise_model_price_repository(pool: &DatabasePool) -> Result<(), Box<
     }
     .insert(pool.connection())
     .await?;
+    model_prices::ActiveModel {
+        model: Set(SensitiveString::from("smoke-expression-model")),
+        billing_mode: Set(3),
+        input_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        output_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        cache_read_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        cache_creation_5m_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        cache_creation_1h_price: Set(SensitiveDecimal::from(Decimal::ZERO)),
+        billing_expression: Set(Some(SensitiveString::from(r#"tier("base", p)"#))),
+        version: Set(2),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
 
     let records = ModelPriceRepository::new(pool.clone()).load_all().await?;
     let priced = records
@@ -905,6 +960,12 @@ async fn exercise_model_price_repository(pool: &DatabasePool) -> Result<(), Box<
         .ok_or("免费模型必须存在")?;
     assert_eq!(free.billing_mode(), ModelPriceBillingMode::Free);
     assert_eq!(free.prices(), [Decimal::ZERO; 5]);
+    let expression = records
+        .iter()
+        .find(|record| record.model() == "smoke-expression-model")
+        .ok_or("表达式模型必须存在")?;
+    assert_eq!(expression.billing_mode(), ModelPriceBillingMode::Expression);
+    assert_eq!(expression.billing_expression(), Some(r#"tier("base", p)"#));
     Ok(())
 }
 

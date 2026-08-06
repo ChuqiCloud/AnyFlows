@@ -45,8 +45,8 @@ pub use lifecycle::{
     UsageRecordOutcome, UsageRecordPort,
 };
 pub use model_price_cache::{
-    ModelPrice, ModelPriceCache, ModelPriceCacheError, ModelPriceSnapshot, ModelPriceSource,
-    ModelPriceSourceError, ModelPriceSourceFuture, ModelPriceSourceRecord,
+    ModelPrice, ModelPriceCache, ModelPriceCacheError, ModelPriceMode, ModelPriceSnapshot,
+    ModelPriceSource, ModelPriceSourceError, ModelPriceSourceFuture, ModelPriceSourceRecord,
 };
 pub use payment_webhook::{
     MAX_PAYMENT_WEBHOOK_HEADER_NAME_BYTES, MAX_PAYMENT_WEBHOOK_HEADER_VALUE_BYTES,

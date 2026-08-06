@@ -127,7 +127,7 @@ pub struct BillingExpression {
 ///
 /// 定义只保存受限正文和语义版本；每次请求仍需结合已冻结的倍率生成独立执行快照，
 /// 避免把可变配置或跨请求运行状态放进计费生命周期。
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct BillingExpressionDefinition {
     version: ExpressionVersion,
     source: Arc<str>,

@@ -1,4 +1,4 @@
-//! Ratio 模式的模型定价目录。
+//! 模型定价目录持久化实体。
 
 use sea_orm::entity::prelude::*;
 
@@ -24,6 +24,8 @@ pub struct Model {
     pub cache_creation_5m_price: SensitiveDecimal,
     #[sea_orm(column_type = "Decimal(Some((38, 28)))")]
     pub cache_creation_1h_price: SensitiveDecimal,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub billing_expression: Option<SensitiveString>,
     pub version: i64,
     pub created_at: TimeDateTimeWithTimeZone,
     pub updated_at: TimeDateTimeWithTimeZone,

@@ -27,15 +27,6 @@ pub enum AdminModelPriceBillingMode {
     Free,
 }
 
-impl From<ModelPriceBillingMode> for AdminModelPriceBillingMode {
-    fn from(value: ModelPriceBillingMode) -> Self {
-        match value {
-            ModelPriceBillingMode::PerToken => Self::PerToken,
-            ModelPriceBillingMode::Free => Self::Free,
-        }
-    }
-}
-
 impl From<AdminModelPriceBillingMode> for ModelPriceBillingMode {
     fn from(value: AdminModelPriceBillingMode) -> Self {
         match value {
@@ -54,13 +45,19 @@ pub struct AdminModelPrice {
 }
 
 impl AdminModelPrice {
-    fn from_record(record: ModelPriceRecord) -> Self {
-        Self {
+    fn from_record(record: ModelPriceRecord) -> Result<Self, AdminModelPriceError> {
+        let billing_mode = match record.billing_mode() {
+            ModelPriceBillingMode::PerToken => AdminModelPriceBillingMode::PerToken,
+            ModelPriceBillingMode::Free => AdminModelPriceBillingMode::Free,
+            // 表达式编辑契约尚未进入管理 API，禁止丢失正文后伪装成固定单价。
+            ModelPriceBillingMode::Expression => return Err(AdminModelPriceError::Internal),
+        };
+        Ok(Self {
             model: record.model().to_owned(),
-            billing_mode: record.billing_mode().into(),
+            billing_mode,
             prices: record.prices(),
             version: record.version(),
-        }
+        })
     }
 
     #[must_use]
@@ -574,7 +571,7 @@ impl AdminModelPriceService for DatabaseAdminModelPriceService {
                 prices: prices
                     .into_iter()
                     .map(AdminModelPrice::from_record)
-                    .collect(),
+                    .collect::<Result<Vec<_>, _>>()?,
                 next_cursor,
             })
         })
@@ -616,7 +613,7 @@ impl AdminModelPriceService for DatabaseAdminModelPriceService {
             Ok(records
                 .into_iter()
                 .map(AdminModelPrice::from_record)
-                .collect())
+                .collect::<Result<Vec<_>, _>>()?)
         })
     }
 }

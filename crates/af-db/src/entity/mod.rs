@@ -435,18 +435,28 @@ where
             persisted.as_ref().map(|row| row.cache_creation_1h_price),
         ),
     ];
+    let billing_expression = match &model.billing_expression {
+        ActiveValue::Set(value) | ActiveValue::Unchanged(value) => {
+            value.as_ref().map(SensitiveString::as_str)
+        }
+        ActiveValue::NotSet => persisted
+            .as_ref()
+            .and_then(|record| record.billing_expression.as_ref())
+            .map(SensitiveString::as_str),
+    };
     let version = model
         .version
         .try_as_ref()
         .copied()
         .or_else(|| persisted.as_ref().map(|record| record.version))
         .unwrap_or(1);
-    if !matches!(billing_mode, 1 | 2)
-        || version < 1
+    let billing_mode = crate::model_price::ModelPriceBillingMode::from_code(billing_mode)
+        .map_err(|_| DbErr::Custom("模型价格计费模式无效".to_owned()))?;
+    if version < 1
         || prices
             .iter()
             .any(|price| !crate::model_price::is_valid_model_price_decimal(*price))
-        || (billing_mode == 2 && prices.iter().any(|price| !price.is_zero()))
+        || !crate::model_price::is_valid_model_price_shape(billing_mode, prices, billing_expression)
     {
         return Err(DbErr::Custom("模型价格状态无效".to_owned()));
     }

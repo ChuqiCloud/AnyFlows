@@ -114,7 +114,9 @@ pub(super) use playground::{create_playground_shares, create_playground_shares_i
 pub(super) use playground_conversation::{
     create_playground_conversation_indexes, create_playground_conversations,
 };
-pub(super) use pricing::{create_group_model_ratios, create_model_prices};
+pub(super) use pricing::{
+    create_group_model_ratios, create_model_prices, rebuild_model_prices_for_expression,
+};
 pub(super) use proxy::{
     CREDENTIAL_PROXY_FOREIGN_KEY, create_credential_proxy_reference, create_proxies,
 };

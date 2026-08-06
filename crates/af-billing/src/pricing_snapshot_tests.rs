@@ -5,10 +5,10 @@ use af_protocol::{TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};
 use rust_decimal::Decimal;
 
 use crate::{
-    BillingMode, CachedRequestPricingSnapshotSource, GroupModelRatioSourceRecord,
-    GroupPricingCache, GroupPricingSource, GroupPricingSourceCatalog, GroupPricingSourceFuture,
-    GroupPricingSourceRecord, ModelPriceCache, ModelPriceSource, ModelPriceSourceFuture,
-    ModelPriceSourceRecord, PricingContext, PricingRatio, PricingResolver,
+    BillingExpressionDefinition, BillingMode, CachedRequestPricingSnapshotSource,
+    GroupModelRatioSourceRecord, GroupPricingCache, GroupPricingSource, GroupPricingSourceCatalog,
+    GroupPricingSourceFuture, GroupPricingSourceRecord, ModelPriceCache, ModelPriceSource,
+    ModelPriceSourceFuture, ModelPriceSourceRecord, PricingContext, PricingRatio, PricingResolver,
     RequestPricingSnapshotError, RequestPricingSnapshotSource, TokenPrices,
 };
 
@@ -30,6 +30,12 @@ impl ModelPriceSource for ModelSource {
                     )
                     .unwrap(),
                     11,
+                )
+                .unwrap(),
+                ModelPriceSourceRecord::expression(
+                    "expression-model".to_owned(),
+                    BillingExpressionDefinition::new(r#"tier("base", p)"#.to_owned()).unwrap(),
+                    12,
                 )
                 .unwrap(),
             ])
@@ -115,6 +121,25 @@ async fn stale_catalog_and_unknown_model_never_become_free() {
             0
         ),
         Err(RequestPricingSnapshotError::GroupPricingStale)
+    );
+}
+
+#[tokio::test]
+async fn expression_snapshot_fails_closed_before_request_execution_is_connected() {
+    let model_cache = ModelPriceCache::load(Arc::new(ModelSource)).await.unwrap();
+    let group_cache = GroupPricingCache::load(Arc::new(GroupSource))
+        .await
+        .unwrap();
+    let source = CachedRequestPricingSnapshotSource::new(model_cache, group_cache);
+
+    assert_eq!(
+        source.capture(
+            "expression-model",
+            GroupId::new(1).unwrap(),
+            GroupId::new(2).unwrap(),
+            0,
+        ),
+        Err(RequestPricingSnapshotError::ExpressionPricingUnavailable)
     );
 }
 

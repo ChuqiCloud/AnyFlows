@@ -49,6 +49,7 @@ mod m20260804_000040_create_scheduler_outbox;
 mod m20260805_000041_create_routes;
 mod m20260805_000042_create_proxies;
 mod m20260806_000043_create_debug_traces;
+mod m20260806_000044_add_model_price_expression;
 mod schema;
 
 #[cfg(test)]
@@ -135,6 +136,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260805_000041_create_routes::Migration),
             Box::new(m20260805_000042_create_proxies::Migration),
             Box::new(m20260806_000043_create_debug_traces::Migration),
+            Box::new(m20260806_000044_add_model_price_expression::Migration),
         ]
     }
 }

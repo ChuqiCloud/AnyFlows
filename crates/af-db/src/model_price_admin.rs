@@ -66,8 +66,8 @@ impl ModelPriceWriteRecord {
             || prices
                 .iter()
                 .any(|price| !is_valid_model_price_decimal(*price))
-            || (billing_mode == ModelPriceBillingMode::Free
-                && prices.iter().any(|price| !price.is_zero()))
+            || billing_mode == ModelPriceBillingMode::Expression
+            || !crate::model_price::is_valid_model_price_shape(billing_mode, prices, None)
         {
             return Err(ModelPriceWriteError::InvalidInput);
         }
@@ -317,6 +317,8 @@ fn apply_fields(
     active.cache_read_price = Set(SensitiveDecimal::from(cache_read));
     active.cache_creation_5m_price = Set(SensitiveDecimal::from(cache_creation_5m));
     active.cache_creation_1h_price = Set(SensitiveDecimal::from(cache_creation_1h));
+    // 当前管理 API 尚未开放表达式编辑，写入固定单价时必须显式清除旧表达式。
+    active.billing_expression = Set(None);
     active.version = Set(version);
 }
 

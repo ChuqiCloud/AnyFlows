@@ -53,6 +53,7 @@ async fn repository_loads_a_stable_validated_catalog() -> Result<(), Box<dyn Err
     assert_eq!(records[1].billing_mode(), ModelPriceBillingMode::PerToken);
     assert_eq!(records[1].prices(), [Decimal::new(1, 28); 5]);
     assert_eq!(records[1].version(), 7);
+    assert_eq!(records[1].billing_expression(), None);
 
     let rendered = format!("{:?}", records[1]);
     assert!(!rendered.contains("z-model"));
@@ -86,6 +87,48 @@ async fn database_and_repository_reject_invalid_pricing_states() -> Result<(), B
             .insert(pool.connection())
             .await
             .is_err()
+    );
+    assert!(
+        model_price_with_expression(
+            "valid-expression",
+            3,
+            [Decimal::ZERO; 5],
+            1,
+            Some("tier(\"base\", p)")
+        )
+        .insert(pool.connection())
+        .await
+        .is_ok()
+    );
+    assert!(
+        model_price_with_expression(
+            "expression-with-price",
+            3,
+            [Decimal::ONE; 5],
+            1,
+            Some("tier(\"base\", p)")
+        )
+        .insert(pool.connection())
+        .await
+        .is_err()
+    );
+    assert!(
+        model_price_with_expression("expression-without-source", 3, [Decimal::ZERO; 5], 1, None)
+            .insert(pool.connection())
+            .await
+            .is_err()
+    );
+    assert!(
+        model_price_with_expression(
+            "per-token-with-source",
+            1,
+            [Decimal::ONE; 5],
+            1,
+            Some("tier(\"base\", p)")
+        )
+        .insert(pool.connection())
+        .await
+        .is_err()
     );
     assert!(
         model_price(" invalid-name ", 1, [Decimal::ZERO; 5], 1)
@@ -151,6 +194,16 @@ fn model_price(
     prices: [Decimal; 5],
     version: i64,
 ) -> model_prices::ActiveModel {
+    model_price_with_expression(model, billing_mode, prices, version, None)
+}
+
+fn model_price_with_expression(
+    model: &str,
+    billing_mode: i16,
+    prices: [Decimal; 5],
+    version: i64,
+    billing_expression: Option<&str>,
+) -> model_prices::ActiveModel {
     let [
         input_price,
         output_price,
@@ -166,6 +219,7 @@ fn model_price(
         cache_read_price: Set(SensitiveDecimal::from(cache_read_price)),
         cache_creation_5m_price: Set(SensitiveDecimal::from(cache_creation_5m_price)),
         cache_creation_1h_price: Set(SensitiveDecimal::from(cache_creation_1h_price)),
+        billing_expression: Set(billing_expression.map(SensitiveString::from)),
         version: Set(version),
         ..Default::default()
     }
