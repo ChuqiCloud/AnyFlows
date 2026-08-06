@@ -5,8 +5,8 @@ use af_protocol::{TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};
 use rust_decimal::Decimal;
 
 use crate::{
-    BillingExpression, BillingExpressionError, ExpressionVariable, ExpressionVersion,
-    MAX_BILLING_EXPRESSION_BYTES, PricingRatio, PricingRatios,
+    BillingExpression, BillingExpressionDefinition, BillingExpressionError, ExpressionVariable,
+    ExpressionVersion, MAX_BILLING_EXPRESSION_BYTES, PricingRatio, PricingRatios,
 };
 
 fn count(tokens: i64) -> TokenCount {
@@ -98,6 +98,20 @@ fn explicit_and_implicit_v1_are_compatible() {
         BillingExpression::compile(r#"v2:tier("base", p)"#, unit_ratios()).unwrap_err(),
         BillingExpressionError::UnsupportedVersion
     );
+}
+
+#[test]
+fn versioned_definition_validates_once_and_compiles_with_frozen_ratios() {
+    let definition = BillingExpressionDefinition::new("v1:tier(\"base\", p)".to_owned()).unwrap();
+    let result = definition
+        .compile(unit_ratios())
+        .unwrap()
+        .evaluate(&usage(1_000, 0, 0, 0, 0, UsageSemantics::Inclusive))
+        .unwrap();
+
+    assert_eq!(definition.version(), ExpressionVersion::V1);
+    assert_eq!(result.quota(), Quota::new(500).unwrap());
+    assert!(!format!("{definition:?}").contains("tier"));
 }
 
 #[test]

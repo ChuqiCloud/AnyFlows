@@ -17,7 +17,7 @@ use rust_decimal::Decimal;
 use thiserror::Error;
 
 use crate::{
-    PricingRatios,
+    PricingRatio, PricingRatios,
     quota_math::{self, QuotaMathError},
 };
 
@@ -121,6 +121,50 @@ pub struct BillingExpression {
     ast: AST,
     variables: ExpressionVariableUsage,
     ratio_micros: [i64; 3],
+}
+
+/// 已校验的版本化表达式定义，可作为模型价格快照的持久化边界。
+///
+/// 定义只保存受限正文和语义版本；每次请求仍需结合已冻结的倍率生成独立执行快照，
+/// 避免把可变配置或跨请求运行状态放进计费生命周期。
+#[derive(Clone)]
+pub struct BillingExpressionDefinition {
+    version: ExpressionVersion,
+    source: Arc<str>,
+}
+
+impl BillingExpressionDefinition {
+    /// 校验并构造版本化表达式定义；无前缀正文按 V1 处理。
+    pub fn new(source: String) -> Result<Self, BillingExpressionError> {
+        let validated = BillingExpression::compile(&source, unit_pricing_ratios())?;
+        Ok(Self {
+            version: validated.version(),
+            source: Arc::from(source.trim()),
+        })
+    }
+
+    /// 返回固定的表达式语义版本。
+    #[must_use]
+    pub const fn version(&self) -> ExpressionVersion {
+        self.version
+    }
+
+    /// 使用请求级倍率生成不可变执行快照。
+    pub fn compile(
+        &self,
+        ratios: PricingRatios,
+    ) -> Result<BillingExpression, BillingExpressionError> {
+        BillingExpression::compile(&self.source, ratios)
+    }
+}
+
+impl fmt::Debug for BillingExpressionDefinition {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("BillingExpressionDefinition")
+            .field("version", &self.version)
+            .finish_non_exhaustive()
+    }
 }
 
 impl BillingExpression {
@@ -348,6 +392,10 @@ fn parse_version(source: &str) -> Result<(ExpressionVersion, &str), BillingExpre
         return Err(BillingExpressionError::UnsupportedVersion);
     }
     Ok((ExpressionVersion::V1, source))
+}
+
+const fn unit_pricing_ratios() -> PricingRatios {
+    PricingRatios::new(PricingRatio::ONE, PricingRatio::ONE, PricingRatio::ONE)
 }
 
 fn sandbox_engine() -> Engine {
