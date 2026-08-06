@@ -1,6 +1,9 @@
 use std::{collections::BTreeSet, fmt, future::Future, pin::Pin, sync::Arc};
 
-use af_billing::BillingExpressionDefinition;
+use af_billing::{
+    BillingExpressionDefinition, BillingExpressionResult, BillingExpressionUsage,
+    BillingExpressionUsageSemantics, BillingExpressionVariables, PricingRatio, PricingRatios,
+};
 use af_db::{
     AdminModelRepository, MAX_ADMIN_MODEL_PAGE_SIZE, MAX_ADMIN_MODEL_PROVIDER_BYTES,
     MAX_MODEL_PRICE_PAGE_SIZE, MAX_MODEL_PRICE_WRITE_BATCH, ModelPriceBillingMode,
@@ -16,6 +19,8 @@ use crate::{SessionPrincipal, SessionRole};
 pub const DEFAULT_ADMIN_MODEL_PRICE_PAGE_SIZE: usize = 50;
 /// 单次公开参考价预览允许匹配的本地模型上限。
 pub const MAX_MODEL_PRICE_SOURCE_TARGETS: usize = 10_000;
+/// 管理试算 JSON 整数保持 JavaScript 安全整数精度的上限。
+pub const MAX_MODEL_PRICE_EXPRESSION_PREVIEW_INTEGER: i64 = 9_007_199_254_740_991;
 const MAX_SOURCE_REVISION_BYTES: usize = 128;
 const MAX_SOURCE_TEXT_BYTES: usize = 128;
 
@@ -264,6 +269,162 @@ impl fmt::Debug for AdminModelPriceApplyCommand {
             .debug_struct("AdminModelPriceApplyCommand")
             .field("item_count", &self.items.len())
             .finish()
+    }
+}
+
+/// 管理试算使用的上游输入用量口径。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AdminModelPriceUsageSemantics {
+    /// 输入总量已经包含缓存明细。
+    Inclusive,
+    /// 缓存明细独立于输入总量。
+    CacheSeparated,
+}
+
+impl From<AdminModelPriceUsageSemantics> for BillingExpressionUsageSemantics {
+    fn from(value: AdminModelPriceUsageSemantics) -> Self {
+        match value {
+            AdminModelPriceUsageSemantics::Inclusive => Self::Inclusive,
+            AdminModelPriceUsageSemantics::CacheSeparated => Self::CacheSeparated,
+        }
+    }
+}
+
+/// 已校验的表达式试算用量，不保存客户端原始 JSON。
+pub struct AdminModelPriceExpressionUsage(BillingExpressionUsage);
+
+impl AdminModelPriceExpressionUsage {
+    /// 构造五类 Token 用量；试算暂不接受推理或音频明细。
+    pub fn new(
+        input_tokens: i64,
+        output_tokens: i64,
+        cache_read_tokens: i64,
+        cache_creation_5m_tokens: i64,
+        cache_creation_1h_tokens: i64,
+        semantics: AdminModelPriceUsageSemantics,
+    ) -> Result<Self, AdminModelPriceError> {
+        if [
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_creation_5m_tokens,
+            cache_creation_1h_tokens,
+        ]
+        .into_iter()
+        .any(|value| !(0..=MAX_MODEL_PRICE_EXPRESSION_PREVIEW_INTEGER).contains(&value))
+        {
+            return Err(AdminModelPriceError::ExpressionPreviewInvalid);
+        }
+        let usage = BillingExpressionUsage::new(
+            input_tokens,
+            output_tokens,
+            cache_read_tokens,
+            cache_creation_5m_tokens,
+            cache_creation_1h_tokens,
+            semantics.into(),
+        )
+        .map_err(|_| AdminModelPriceError::ExpressionPreviewInvalid)?;
+        if usage.context_length_tokens() > MAX_MODEL_PRICE_EXPRESSION_PREVIEW_INTEGER {
+            return Err(AdminModelPriceError::ExpressionPreviewInvalid);
+        }
+        Ok(Self(usage))
+    }
+}
+
+impl fmt::Debug for AdminModelPriceExpressionUsage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AdminModelPriceExpressionUsage(<已校验>)")
+    }
+}
+
+/// 已校验的表达式试算倍率快照，单位均为百万分之一。
+pub struct AdminModelPriceExpressionRatios(PricingRatios);
+
+impl AdminModelPriceExpressionRatios {
+    pub fn new(ratio_micros: [i64; 3]) -> Result<Self, AdminModelPriceError> {
+        if ratio_micros
+            .into_iter()
+            .any(|value| !(0..=MAX_MODEL_PRICE_EXPRESSION_PREVIEW_INTEGER).contains(&value))
+        {
+            return Err(AdminModelPriceError::ExpressionPreviewInvalid);
+        }
+        let [group, group_model, peak] = ratio_micros
+            .map(|value| PricingRatio::new(value).expect("非负安全整数必须是有效百万分倍率"));
+        Ok(Self(PricingRatios::new(group, group_model, peak)))
+    }
+}
+
+impl fmt::Debug for AdminModelPriceExpressionRatios {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AdminModelPriceExpressionRatios(<已校验>)")
+    }
+}
+
+/// 未保存表达式的一次管理员试算命令。
+pub struct AdminModelPriceExpressionPreviewCommand {
+    definition: BillingExpressionDefinition,
+    usage: AdminModelPriceExpressionUsage,
+    ratios: AdminModelPriceExpressionRatios,
+}
+
+impl AdminModelPriceExpressionPreviewCommand {
+    pub fn new(
+        source: String,
+        usage: AdminModelPriceExpressionUsage,
+        ratios: AdminModelPriceExpressionRatios,
+    ) -> Result<Self, AdminModelPriceError> {
+        let definition = BillingExpressionDefinition::new(source)
+            .map_err(|_| AdminModelPriceError::ExpressionInvalid)?;
+        Ok(Self {
+            definition,
+            usage,
+            ratios,
+        })
+    }
+}
+
+impl fmt::Debug for AdminModelPriceExpressionPreviewCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AdminModelPriceExpressionPreviewCommand(<已脱敏>)")
+    }
+}
+
+/// 服务端复用生产表达式链路得到的精确试算结果。
+pub struct AdminModelPriceExpressionPreview(BillingExpressionResult);
+
+impl AdminModelPriceExpressionPreview {
+    #[must_use]
+    pub fn matched_tier(&self) -> &str {
+        self.0.matched_tier()
+    }
+
+    #[must_use]
+    pub const fn variables(&self) -> BillingExpressionVariables {
+        self.0.variables()
+    }
+
+    #[must_use]
+    pub const fn base_usd(&self) -> Decimal {
+        self.0.base_usd()
+    }
+
+    #[must_use]
+    pub const fn total_usd(&self) -> Decimal {
+        self.0.total_usd()
+    }
+
+    #[must_use]
+    pub const fn quota_units(&self) -> i64 {
+        self.0.quota().units()
+    }
+}
+
+impl fmt::Debug for AdminModelPriceExpressionPreview {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AdminModelPriceExpressionPreview")
+            .field("matched_tier", &self.matched_tier())
+            .finish_non_exhaustive()
     }
 }
 
@@ -529,6 +690,12 @@ pub enum AdminModelPriceError {
     ModelNotFound,
     #[error("模型价格发生并发冲突")]
     Conflict,
+    #[error("模型价格表达式无效")]
+    ExpressionInvalid,
+    #[error("模型价格表达式试算输入无效")]
+    ExpressionPreviewInvalid,
+    #[error("模型价格表达式试算执行失败")]
+    ExpressionEvaluationFailed,
     #[error("公开价格源请求超时")]
     SourceTimeout,
     #[error("公开价格源不可用")]
@@ -552,6 +719,13 @@ pub type AdminModelPricePreviewFuture<'a> = Pin<
 >;
 pub type AdminModelPriceWriteFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Vec<AdminModelPrice>, AdminModelPriceError>> + Send + 'a>>;
+pub type AdminModelPriceExpressionPreviewFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<AdminModelPriceExpressionPreview, AdminModelPriceError>>
+            + Send
+            + 'a,
+    >,
+>;
 
 /// 管理员价格读取、公开参考价预览和原子应用端口。
 pub trait AdminModelPriceService: Send + Sync {
@@ -562,6 +736,12 @@ pub trait AdminModelPriceService: Send + Sync {
     ) -> AdminModelPriceListFuture<'a>;
 
     fn preview<'a>(&'a self, principal: SessionPrincipal) -> AdminModelPricePreviewFuture<'a>;
+
+    fn preview_expression<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: AdminModelPriceExpressionPreviewCommand,
+    ) -> AdminModelPriceExpressionPreviewFuture<'a>;
 
     fn apply<'a>(
         &'a self,
@@ -630,6 +810,14 @@ impl AdminModelPriceService for DatabaseAdminModelPriceService {
         })
     }
 
+    fn preview_expression<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: AdminModelPriceExpressionPreviewCommand,
+    ) -> AdminModelPriceExpressionPreviewFuture<'a> {
+        Box::pin(async move { evaluate_expression_preview(principal, command) })
+    }
+
     fn apply<'a>(
         &'a self,
         principal: SessionPrincipal,
@@ -658,6 +846,21 @@ impl AdminModelPriceService for DatabaseAdminModelPriceService {
                 .collect())
         })
     }
+}
+
+fn evaluate_expression_preview(
+    principal: SessionPrincipal,
+    command: AdminModelPriceExpressionPreviewCommand,
+) -> Result<AdminModelPriceExpressionPreview, AdminModelPriceError> {
+    require_admin(principal)?;
+    let expression = command
+        .definition
+        .compile(command.ratios.0)
+        .map_err(|_| AdminModelPriceError::ExpressionEvaluationFailed)?;
+    expression
+        .evaluate_prepared_usage(&command.usage.0)
+        .map(AdminModelPriceExpressionPreview)
+        .map_err(|_| AdminModelPriceError::ExpressionEvaluationFailed)
 }
 
 impl DatabaseAdminModelPriceService {
@@ -831,6 +1034,95 @@ mod tests {
         assert_eq!(
             require_admin(principal),
             Err(AdminModelPriceError::Forbidden)
+        );
+    }
+
+    #[test]
+    fn expression_preview_reuses_normalized_usage_and_exact_ratio_math() {
+        let usage = AdminModelPriceExpressionUsage::new(
+            1_000,
+            500,
+            200,
+            100,
+            50,
+            AdminModelPriceUsageSemantics::Inclusive,
+        )
+        .unwrap();
+        let ratios = AdminModelPriceExpressionRatios::new([1_500_000, 800_000, 2_000_000]).unwrap();
+        let command = AdminModelPriceExpressionPreviewCommand::new(
+            r#"v1:tier("base", p * 2 + c * 10 + cr * 0.5)"#.to_owned(),
+            usage,
+            ratios,
+        )
+        .unwrap();
+        let principal = SessionPrincipal::new(UserId::new(1).unwrap(), SessionRole::Admin);
+        let preview = evaluate_expression_preview(principal, command).unwrap();
+
+        assert_eq!(preview.matched_tier(), "base");
+        assert_eq!(preview.variables().input_tokens(), 800);
+        assert_eq!(preview.variables().context_length_tokens(), 1_000);
+        assert_eq!(preview.base_usd(), Decimal::new(67, 4));
+        assert_eq!(preview.total_usd(), Decimal::new(1608, 5));
+        assert_eq!(preview.quota_units(), 8_040);
+    }
+
+    #[test]
+    fn expression_preview_rejects_invalid_source_usage_and_runtime_result() {
+        assert_eq!(
+            AdminModelPriceExpressionUsage::new(
+                10,
+                0,
+                11,
+                0,
+                0,
+                AdminModelPriceUsageSemantics::Inclusive,
+            )
+            .unwrap_err(),
+            AdminModelPriceError::ExpressionPreviewInvalid
+        );
+        assert_eq!(
+            AdminModelPriceExpressionUsage::new(
+                MAX_MODEL_PRICE_EXPRESSION_PREVIEW_INTEGER,
+                0,
+                1,
+                0,
+                0,
+                AdminModelPriceUsageSemantics::CacheSeparated,
+            )
+            .unwrap_err(),
+            AdminModelPriceError::ExpressionPreviewInvalid
+        );
+        let usage = || {
+            AdminModelPriceExpressionUsage::new(
+                10,
+                0,
+                0,
+                0,
+                0,
+                AdminModelPriceUsageSemantics::Inclusive,
+            )
+            .unwrap()
+        };
+        let ratios = || AdminModelPriceExpressionRatios::new([1_000_000; 3]).unwrap();
+        assert_eq!(
+            AdminModelPriceExpressionPreviewCommand::new(
+                "not valid".to_owned(),
+                usage(),
+                ratios(),
+            )
+            .unwrap_err(),
+            AdminModelPriceError::ExpressionInvalid
+        );
+        let command = AdminModelPriceExpressionPreviewCommand::new(
+            r#"tier("negative", -p)"#.to_owned(),
+            usage(),
+            ratios(),
+        )
+        .unwrap();
+        let principal = SessionPrincipal::new(UserId::new(1).unwrap(), SessionRole::Admin);
+        assert_eq!(
+            evaluate_expression_preview(principal, command).unwrap_err(),
+            AdminModelPriceError::ExpressionEvaluationFailed
         );
     }
 }

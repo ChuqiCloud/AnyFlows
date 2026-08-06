@@ -5,8 +5,9 @@ use af_protocol::{TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource};
 use rust_decimal::Decimal;
 
 use crate::{
-    BillingExpression, BillingExpressionDefinition, BillingExpressionError, ExpressionVariable,
-    ExpressionVersion, MAX_BILLING_EXPRESSION_BYTES, PricingRatio, PricingRatios,
+    BillingExpression, BillingExpressionDefinition, BillingExpressionError, BillingExpressionUsage,
+    BillingExpressionUsageSemantics, ExpressionVariable, ExpressionVersion,
+    MAX_BILLING_EXPRESSION_BYTES, PricingRatio, PricingRatios,
 };
 
 fn count(tokens: i64) -> TokenCount {
@@ -54,8 +55,16 @@ fn expression_uses_decimal_math_and_only_subtracts_referenced_inclusive_details(
         .unwrap();
 
     assert_eq!(result.total_usd(), Decimal::new(71, 4));
+    assert_eq!(result.base_usd(), Decimal::new(71, 4));
     assert_eq!(result.quota(), Quota::new(3_550).unwrap());
     assert_eq!(result.matched_tier(), "base");
+    let variables = result.variables();
+    assert_eq!(variables.input_tokens(), 800);
+    assert_eq!(variables.output_tokens(), 500);
+    assert_eq!(variables.cache_read_tokens(), 200);
+    assert_eq!(variables.cache_creation_5m_tokens(), 100);
+    assert_eq!(variables.cache_creation_1h_tokens(), 50);
+    assert_eq!(variables.context_length_tokens(), 1_000);
     assert!(expression.variables().uses(ExpressionVariable::Input));
     assert!(expression.variables().uses(ExpressionVariable::Output));
     assert!(expression.variables().uses(ExpressionVariable::CacheRead));
@@ -80,6 +89,51 @@ fn cache_separated_context_length_includes_cache_without_reducing_input() {
     assert_eq!(result.matched_tier(), "long");
     assert_eq!(result.total_usd(), Decimal::new(1, 4));
     assert_eq!(result.quota(), Quota::new(50).unwrap());
+    assert_eq!(result.variables().input_tokens(), 100);
+    assert_eq!(result.variables().context_length_tokens(), 200);
+}
+
+#[test]
+fn prepared_usage_keeps_protocol_construction_inside_billing_boundary() {
+    let prepared = BillingExpressionUsage::new(
+        100,
+        20,
+        50,
+        20,
+        30,
+        BillingExpressionUsageSemantics::CacheSeparated,
+    )
+    .unwrap();
+    assert_eq!(prepared.context_length_tokens(), 200);
+    let expression = BillingExpression::compile(r#"tier("base", len)"#, unit_ratios()).unwrap();
+    let result = expression.evaluate_prepared_usage(&prepared).unwrap();
+    assert_eq!(result.variables().input_tokens(), 100);
+    assert_eq!(result.variables().context_length_tokens(), 200);
+
+    assert!(
+        BillingExpressionUsage::new(10, 0, 11, 0, 0, BillingExpressionUsageSemantics::Inclusive,)
+            .is_err()
+    );
+}
+
+#[test]
+fn preview_result_keeps_base_and_ratio_adjusted_costs_from_one_execution() {
+    let expression = BillingExpression::compile(
+        r#"tier("base", p * 2)"#,
+        PricingRatios::new(
+            PricingRatio::new(1_500_000).unwrap(),
+            PricingRatio::new(800_000).unwrap(),
+            PricingRatio::new(2_000_000).unwrap(),
+        ),
+    )
+    .unwrap();
+    let result = expression
+        .evaluate(&usage(1_000, 0, 0, 0, 0, UsageSemantics::Inclusive))
+        .unwrap();
+
+    assert_eq!(result.base_usd(), Decimal::new(2, 3));
+    assert_eq!(result.total_usd(), Decimal::new(48, 4));
+    assert_eq!(result.quota(), Quota::new(2_400).unwrap());
 }
 
 #[test]

@@ -16,6 +16,15 @@ import {
   expressionVariables,
   parseExpressionVisualDraft,
 } from '../src/features/model-management/model-price-expression-model.ts'
+import {
+  DEFAULT_EXPRESSION_PREVIEW_RATIOS,
+  DEFAULT_EXPRESSION_PREVIEW_USAGE,
+  buildExpressionPreviewRequest,
+  expressionPreviewResultFields,
+  formatPreviewRatioMicros,
+  parsePreviewInteger,
+  parsePreviewRatioMicros,
+} from '../src/features/model-management/model-price-expression-preview-model.ts'
 
 const messages = { decimal: 'decimal', free: 'free', expression: 'expression', expressionTooLong: 'expression too long', expressionValues: 'expression values' }
 
@@ -90,4 +99,74 @@ test('可视化表达式只解析自身生成的线性正文并保留变量边�
   assert.deepEqual(expressionVariables(source), ['p', 'c', 'cr'])
   assert.deepEqual(parseExpressionVisualDraft(source), visual)
   assert.equal(parseExpressionVisualDraft('v1:tier("base", len > 100 ? tier("long", p) : tier("base", p))'), undefined)
+})
+
+test('试算倍率通过 BigInt 精确转换为百万分整数', () => {
+  assert.equal(parsePreviewRatioMicros('1'), 1_000_000)
+  assert.equal(parsePreviewRatioMicros('0.000001'), 1)
+  assert.equal(parsePreviewRatioMicros('123.456789'), 123_456_789)
+  assert.equal(formatPreviewRatioMicros(1_500_000), '1.5')
+  assert.equal(formatPreviewRatioMicros(1), '0.000001')
+  for (const value of ['-1', '+1', '01', '.5', '1.', '1.0000001', '1e3', '9007199254.740992']) {
+    assert.equal(parsePreviewRatioMicros(value), undefined, value)
+  }
+})
+
+test('试算请求只接受安全整数并保持结构化用量口径', () => {
+  assert.equal(parsePreviewInteger('9007199254740991'), Number.MAX_SAFE_INTEGER)
+  assert.equal(parsePreviewInteger('9007199254740992'), undefined)
+  const request = buildExpressionPreviewRequest(
+    '  v1:tier("base", p + c)  ',
+    { ...DEFAULT_EXPRESSION_PREVIEW_USAGE, cacheReadTokens: '200', semantics: 'inclusive' },
+    { ...DEFAULT_EXPRESSION_PREVIEW_RATIOS, group: '1.5', groupModel: '0.8', peak: '2' },
+  )
+
+  assert.deepEqual(request, {
+    billing_expression: 'v1:tier("base", p + c)',
+    usage: {
+      input_tokens: 1000,
+      output_tokens: 500,
+      cache_read_tokens: 200,
+      cache_creation_5m_tokens: 0,
+      cache_creation_1h_tokens: 0,
+      semantics: 'inclusive',
+    },
+    ratios: { group_micros: 1_500_000, group_model_micros: 800_000, peak_micros: 2_000_000 },
+  })
+  assert.equal(buildExpressionPreviewRequest(
+    'tier("base", p)',
+    { ...DEFAULT_EXPRESSION_PREVIEW_USAGE, inputTokens: '10', cacheReadTokens: '11' },
+    DEFAULT_EXPRESSION_PREVIEW_RATIOS,
+  ), undefined)
+  assert.equal(buildExpressionPreviewRequest(
+    'tier("base", len)',
+    { ...DEFAULT_EXPRESSION_PREVIEW_USAGE, inputTokens: String(Number.MAX_SAFE_INTEGER), cacheReadTokens: '1', semantics: 'cache_separated' },
+    DEFAULT_EXPRESSION_PREVIEW_RATIOS,
+  ), undefined)
+})
+
+test('试算结果变量严格采用服务端返回值和稳定顺序', () => {
+  const fields = expressionPreviewResultFields({
+    matched_tier: 'base',
+    base_usd: '0.0067',
+    total_usd: '0.01608',
+    quota: '8040',
+    variables: {
+      input_tokens: 800,
+      output_tokens: 500,
+      cache_read_tokens: 200,
+      cache_creation_5m_tokens: 100,
+      cache_creation_1h_tokens: 50,
+      context_length_tokens: 1000,
+    },
+  })
+
+  assert.deepEqual(fields, [
+    { key: 'p', value: '800' },
+    { key: 'c', value: '500' },
+    { key: 'cr', value: '200' },
+    { key: 'cc', value: '100' },
+    { key: 'cc1h', value: '50' },
+    { key: 'len', value: '1000' },
+  ])
 })

@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { ArrowDownToLine, Braces, Check, Code2, Eye, Info, RotateCcw, Sparkles } from 'lucide-react'
+import { ArrowDownToLine, Braces, Code2, Eye, Info, RotateCcw, Sparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
@@ -13,12 +13,11 @@ import {
   defaultExpressionVisualDraft,
   expressionFromVisualDraft,
   expressionPriceVariables,
-  expressionSourceBytes,
-  expressionVariables,
   expressionVisualDraftIsValid,
   parseExpressionVisualDraft,
   type ExpressionVisualDraft,
 } from './model-price-expression-model'
+import { ModelPriceExpressionPreview } from './model-price-expression-preview'
 
 type ExpressionEditorProps = {
   candidate?: AdminModelPriceSourceCandidate
@@ -36,8 +35,6 @@ export function ModelPriceExpressionEditor(props: ExpressionEditorProps) {
   const [tab, setTab] = useState<ExpressionEditorTab>(parsed || !props.value ? 'visual' : 'raw')
   const [visualDraft, setVisualDraft] = useState<ExpressionVisualDraft>(() => parsed ?? defaultExpressionVisualDraft())
   const activeVisualDraft = parsed ?? visualDraft
-  const variables = expressionVariables(props.value)
-  const sourceBytes = expressionSourceBytes(props.value)
 
   const updateVisual = (next: ExpressionVisualDraft) => {
     setVisualDraft(next)
@@ -106,7 +103,7 @@ export function ModelPriceExpressionEditor(props: ExpressionEditorProps) {
       ) : null}
 
       {tab === 'preview' ? (
-        <PreviewPanel source={props.value} sourceBytes={sourceBytes} variables={variables} onUseVisual={parsed ? () => setTab('visual') : useVisualTemplate} />
+        <ModelPriceExpressionPreview source={props.value} onUseVisual={parsed ? () => setTab('visual') : useVisualTemplate} />
       ) : null}
 
       {props.error ? <p role="alert" className="text-xs text-destructive">{props.error}</p> : null}
@@ -189,29 +186,6 @@ function VisualEditor(props: { candidate?: AdminModelPriceSourceCandidate; draft
         <span>{t('modelManagement.prices.expression.cacheBoundary')}</span>
       </div>
       {!valid ? <p role="alert" className="text-xs text-destructive">{t('modelManagement.prices.expression.visualInvalid')}</p> : null}
-    </div>
-  )
-}
-
-function PreviewPanel(props: { onUseVisual: () => void; source: string; sourceBytes: number; variables: string[] }) {
-  const { t } = useTranslation()
-  return (
-    <div className="grid gap-3">
-      <div className="grid gap-2 rounded-lg border border-[var(--hairline)] bg-surface-2/45 p-3">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-          <span className="font-semibold">{t('modelManagement.prices.expression.previewSource')}</span>
-          <span className="font-mono text-muted-foreground">{t('modelManagement.prices.expression.previewBytes', { count: props.sourceBytes })}</span>
-        </div>
-        <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-md bg-background px-3 py-2 font-mono text-[0.6875rem] leading-5">{props.source || t('modelManagement.prices.expression.previewEmpty')}</pre>
-      </div>
-      <div className="grid gap-2 rounded-lg border border-[var(--hairline)] p-3">
-        <h4 className="text-xs font-semibold">{t('modelManagement.prices.expression.previewVariables')}</h4>
-        {props.variables.length > 0 ? <div className="flex flex-wrap gap-1.5">{props.variables.map((variable) => <Badge key={variable} className="font-mono">{variable}</Badge>)}</div> : <p className="text-xs text-muted-foreground">{t('modelManagement.prices.expression.previewNoVariables')}</p>}
-        <p className="text-[0.6875rem] leading-4 text-muted-foreground">{t('modelManagement.prices.expression.previewServerValidation')}</p>
-      </div>
-      <Button type="button" size="sm" variant="secondary" className="justify-self-start" onClick={props.onUseVisual}>
-        <Check aria-hidden="true" />{t('modelManagement.prices.expression.previewBackToVisual')}
-      </Button>
     </div>
   )
 }

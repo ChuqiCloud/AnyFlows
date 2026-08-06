@@ -9,7 +9,7 @@ use std::{
 };
 
 use af_domain::Quota;
-use af_protocol::{Usage, UsageError, UsageSemantics};
+use af_protocol::{TokenCount, Usage, UsageDetails, UsageError, UsageSemantics, UsageSource};
 use rhai::{
     AST, ASTNode, Engine, EvalAltResult, Expr, ImmutableString, OptimizationLevel, Position, Scope,
 };
@@ -133,6 +133,81 @@ pub struct BillingExpressionDefinition {
     source: Arc<str>,
 }
 
+/// 管理或工具侧构造表达式用量时使用的缓存计入口径。
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BillingExpressionUsageSemantics {
+    /// 输入总量已经包含缓存明细。
+    Inclusive,
+    /// 缓存明细独立于输入总量。
+    CacheSeparated,
+}
+
+impl From<BillingExpressionUsageSemantics> for UsageSemantics {
+    fn from(value: BillingExpressionUsageSemantics) -> Self {
+        match value {
+            BillingExpressionUsageSemantics::Inclusive => Self::Inclusive,
+            BillingExpressionUsageSemantics::CacheSeparated => Self::CacheSeparated,
+        }
+    }
+}
+
+/// 由闭合整数边界构造的表达式用量，避免上层直接依赖协议内部类型。
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct BillingExpressionUsage {
+    usage: Usage,
+    context_length_tokens: i64,
+}
+
+impl BillingExpressionUsage {
+    /// 构造五类 Token 用量，并完成缓存口径与 checked 汇总校验。
+    pub fn new(
+        input_tokens: i64,
+        output_tokens: i64,
+        cache_read_tokens: i64,
+        cache_creation_5m_tokens: i64,
+        cache_creation_1h_tokens: i64,
+        semantics: BillingExpressionUsageSemantics,
+    ) -> Result<Self, BillingExpressionError> {
+        let input = TokenCount::new(input_tokens)?;
+        let output = TokenCount::new(output_tokens)?;
+        let cache_read = TokenCount::new(cache_read_tokens)?;
+        let cache_creation_5m = TokenCount::new(cache_creation_5m_tokens)?;
+        let cache_creation_1h = TokenCount::new(cache_creation_1h_tokens)?;
+        let usage = Usage::new(
+            input,
+            output,
+            UsageDetails::new(
+                cache_read,
+                cache_creation_5m,
+                cache_creation_1h,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+            ),
+            UsageSource::Estimated,
+            semantics.into(),
+        )?;
+        let context_length_tokens = usage.checked_input_tokens()?.get();
+        Ok(Self {
+            usage,
+            context_length_tokens,
+        })
+    }
+
+    /// 返回按缓存口径 checked 汇总后的完整输入上下文长度。
+    #[must_use]
+    pub const fn context_length_tokens(&self) -> i64 {
+        self.context_length_tokens
+    }
+}
+
+impl fmt::Debug for BillingExpressionUsage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("BillingExpressionUsage(<已校验>)")
+    }
+}
+
 impl BillingExpressionDefinition {
     /// 校验并构造版本化表达式定义；无前缀正文按 V1 处理。
     pub fn new(source: String) -> Result<Self, BillingExpressionError> {
@@ -230,17 +305,17 @@ impl BillingExpression {
         &self,
         usage: &Usage,
     ) -> Result<BillingExpressionResult, BillingExpressionError> {
-        let values = ExpressionValues::from_usage(usage, self.variables)?;
+        let variables = BillingExpressionVariables::from_usage(usage, self.variables)?;
         let tier_capture = Arc::new(Mutex::new(None));
         let mut engine = sandbox_engine();
         register_runtime_tier(&mut engine, Arc::clone(&tier_capture));
         let mut scope = variable_scope(
-            values.input,
-            values.output,
-            values.cache_read,
-            values.cache_creation_5m,
-            values.cache_creation_1h,
-            values.context_length,
+            Decimal::from(variables.input_tokens),
+            Decimal::from(variables.output_tokens),
+            Decimal::from(variables.cache_read_tokens),
+            Decimal::from(variables.cache_creation_5m_tokens),
+            Decimal::from(variables.cache_creation_1h_tokens),
+            Decimal::from(variables.context_length_tokens),
         );
         let weighted_cost = engine
             .eval_ast_with_scope::<Decimal>(&mut scope, &self.ast)
@@ -257,9 +332,19 @@ impl BillingExpression {
 
         Ok(BillingExpressionResult {
             quota: resolved.quota,
+            base_usd: resolved.base_usd,
             total_usd: resolved.total_usd,
             matched_tier,
+            variables,
         })
+    }
+
+    /// 执行由计费层闭合构造的用量，供管理试算等非协议入口复用生产语义。
+    pub fn evaluate_prepared_usage(
+        &self,
+        usage: &BillingExpressionUsage,
+    ) -> Result<BillingExpressionResult, BillingExpressionError> {
+        self.evaluate(&usage.usage)
     }
 }
 
@@ -310,8 +395,10 @@ impl fmt::Debug for ExpressionPricingResolver {
 #[derive(Clone, Eq, PartialEq)]
 pub struct BillingExpressionResult {
     quota: Quota,
+    base_usd: Decimal,
     total_usd: Decimal,
     matched_tier: String,
+    variables: BillingExpressionVariables,
 }
 
 impl BillingExpressionResult {
@@ -319,6 +406,12 @@ impl BillingExpressionResult {
     #[must_use]
     pub const fn quota(&self) -> Quota {
         self.quota
+    }
+
+    /// 返回应用倍率前的精确美元成本。
+    #[must_use]
+    pub const fn base_usd(&self) -> Decimal {
+        self.base_usd
     }
 
     /// 返回应用倍率后的精确美元成本。
@@ -331,6 +424,12 @@ impl BillingExpressionResult {
     #[must_use]
     pub fn matched_tier(&self) -> &str {
         &self.matched_tier
+    }
+
+    /// 返回表达式本次实际读取的规范化变量值。
+    #[must_use]
+    pub const fn variables(&self) -> BillingExpressionVariables {
+        self.variables
     }
 }
 
@@ -380,29 +479,66 @@ pub enum BillingExpressionError {
     Math(#[from] QuotaMathError),
 }
 
-#[derive(Clone, Copy)]
-struct ExpressionValues {
-    input: Decimal,
-    output: Decimal,
-    cache_read: Decimal,
-    cache_creation_5m: Decimal,
-    cache_creation_1h: Decimal,
-    context_length: Decimal,
+/// 表达式执行时使用的规范化整数变量，供管理试算展示与生产审计复用。
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct BillingExpressionVariables {
+    input_tokens: i64,
+    output_tokens: i64,
+    cache_read_tokens: i64,
+    cache_creation_5m_tokens: i64,
+    cache_creation_1h_tokens: i64,
+    context_length_tokens: i64,
 }
 
-impl ExpressionValues {
+impl BillingExpressionVariables {
     fn from_usage(usage: &Usage, variables: ExpressionVariableUsage) -> Result<Self, UsageError> {
         let details = usage.details();
         let input = normalized_input_tokens(usage, variables)?;
         let context_length = usage.checked_input_tokens()?.get();
         Ok(Self {
-            input: Decimal::from(input),
-            output: Decimal::from(usage.output_tokens().get()),
-            cache_read: Decimal::from(details.cache_read().get()),
-            cache_creation_5m: Decimal::from(details.cache_creation_5m().get()),
-            cache_creation_1h: Decimal::from(details.cache_creation_1h().get()),
-            context_length: Decimal::from(context_length),
+            input_tokens: input,
+            output_tokens: usage.output_tokens().get(),
+            cache_read_tokens: details.cache_read().get(),
+            cache_creation_5m_tokens: details.cache_creation_5m().get(),
+            cache_creation_1h_tokens: details.cache_creation_1h().get(),
+            context_length_tokens: context_length,
         })
+    }
+
+    #[must_use]
+    pub const fn input_tokens(self) -> i64 {
+        self.input_tokens
+    }
+
+    #[must_use]
+    pub const fn output_tokens(self) -> i64 {
+        self.output_tokens
+    }
+
+    #[must_use]
+    pub const fn cache_read_tokens(self) -> i64 {
+        self.cache_read_tokens
+    }
+
+    #[must_use]
+    pub const fn cache_creation_5m_tokens(self) -> i64 {
+        self.cache_creation_5m_tokens
+    }
+
+    #[must_use]
+    pub const fn cache_creation_1h_tokens(self) -> i64 {
+        self.cache_creation_1h_tokens
+    }
+
+    #[must_use]
+    pub const fn context_length_tokens(self) -> i64 {
+        self.context_length_tokens
+    }
+}
+
+impl fmt::Debug for BillingExpressionVariables {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("BillingExpressionVariables(<已规范化>)")
     }
 }
 

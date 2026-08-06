@@ -107,6 +107,12 @@ pub(crate) enum ManagementError {
     ModelSyncConflict,
     /// 正式模型价格与并发写入发生乐观版本冲突。
     ModelPriceConflict,
+    /// 管理试算提交的计费表达式无法通过版本或沙箱校验。
+    ModelPriceExpressionInvalid,
+    /// 管理试算提交的用量或倍率不满足结构化边界。
+    ModelPriceExpressionPreviewInvalid,
+    /// 已校验表达式无法在本次用量和倍率下完成精确执行。
+    ModelPriceExpressionEvaluationFailed,
     /// models.dev 公开参考价读取超过硬截止时间。
     ModelPriceSourceTimeout,
     /// models.dev 公开参考价当前不可用。
@@ -525,6 +531,27 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "model_price_conflict",
                     message: "Model price conflict",
+                },
+            ),
+            Self::ModelPriceExpressionInvalid => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ManagementErrorBody {
+                    code: "model_price_expression_invalid",
+                    message: "Model price expression invalid",
+                },
+            ),
+            Self::ModelPriceExpressionPreviewInvalid => (
+                StatusCode::BAD_REQUEST,
+                ManagementErrorBody {
+                    code: "model_price_expression_preview_invalid",
+                    message: "Model price expression preview input invalid",
+                },
+            ),
+            Self::ModelPriceExpressionEvaluationFailed => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                ManagementErrorBody {
+                    code: "model_price_expression_evaluation_failed",
+                    message: "Model price expression evaluation failed",
                 },
             ),
             Self::ModelPriceSourceTimeout => (
