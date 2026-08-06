@@ -1,0 +1,386 @@
+use std::{
+    fmt,
+    future::Future,
+    pin::Pin,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
+use af_billing::{STRIPE_PAYMENT_PROVIDER, quota_math::quota_from_usd};
+use af_db::{
+    TopupOrderCreate, TopupOrderCreateOutcome, TopupOrderRecord, TopupRepository,
+    TopupRepositoryError,
+};
+use af_domain::{Quota, TopupOrderId, TopupOrderStatus, TopupRequestId, UserId};
+use rust_decimal::Decimal;
+use sha2::{Digest, Sha256};
+use thiserror::Error;
+
+use crate::SessionPrincipal;
+
+/// Stripe 首切片固定使用的结算币种。
+pub const STRIPE_TOPUP_CURRENCY: &str = "USD";
+/// Stripe 美元支付的官方最低非零金额，单位为美分。
+pub const MIN_STRIPE_TOPUP_AMOUNT_MINOR: i64 = 50;
+/// 为兼容 Stripe 非银行卡支付方式而采用的八位最小单位上限。
+pub const MAX_STRIPE_TOPUP_AMOUNT_MINOR: i64 = 99_999_999;
+
+const USD_MINOR_UNITS: i64 = 100;
+const TOPUP_IDENTIFIER_BYTES: usize = 16;
+const REQUEST_ID_DOMAIN: &[u8] = b"anyflows:topup-request:v1";
+const ORDER_ID_DOMAIN: &[u8] = b"anyflows:topup-order:v1";
+
+/// 当前用户创建充值订单的结构化命令。
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub struct UserTopupOrderCreateCommand {
+    client_request_id: TopupRequestId,
+    amount_minor: u64,
+}
+
+impl UserTopupOrderCreateCommand {
+    /// 校验固定长度幂等键和 Stripe/USD 整数最小单位边界。
+    pub fn new(idempotency_key: &str, amount_minor: i64) -> Result<Self, UserTopupError> {
+        if !(MIN_STRIPE_TOPUP_AMOUNT_MINOR..=MAX_STRIPE_TOPUP_AMOUNT_MINOR).contains(&amount_minor)
+        {
+            return Err(UserTopupError::InvalidInput);
+        }
+        let client_request_id = TopupRequestId::from_persistence_key(idempotency_key)
+            .map_err(|_| UserTopupError::InvalidInput)?;
+        Ok(Self {
+            client_request_id,
+            amount_minor: u64::try_from(amount_minor).map_err(|_| UserTopupError::InvalidInput)?,
+        })
+    }
+
+    /// 返回客户端为失败重试复用的原始幂等标识。
+    #[must_use]
+    pub const fn client_request_id(self) -> TopupRequestId {
+        self.client_request_id
+    }
+
+    /// 返回待支付的整数美分金额。
+    #[must_use]
+    pub const fn amount_minor(self) -> u64 {
+        self.amount_minor
+    }
+}
+
+impl fmt::Debug for UserTopupOrderCreateCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("UserTopupOrderCreateCommand(<redacted>)")
+    }
+}
+
+/// 当前用户可见的充值订单快照，不包含 Provider 订单号或支付流水号。
+pub struct UserTopupOrder {
+    order_id: TopupOrderId,
+    provider: String,
+    status: TopupOrderStatus,
+    amount_minor: u64,
+    currency: String,
+    quota_amount: Quota,
+    version: u64,
+    created_at: u64,
+    replayed: bool,
+}
+
+impl UserTopupOrder {
+    /// 组合经过应用边界校验的订单快照，供替代实现和传输层测试使用。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "参数与对外充值订单快照字段一一对应"
+    )]
+    #[must_use]
+    pub fn from_parts(
+        order_id: TopupOrderId,
+        provider: String,
+        status: TopupOrderStatus,
+        amount_minor: u64,
+        currency: String,
+        quota_amount: Quota,
+        version: u64,
+        created_at: u64,
+        replayed: bool,
+    ) -> Self {
+        Self {
+            order_id,
+            provider,
+            status,
+            amount_minor,
+            currency,
+            quota_amount,
+            version,
+            created_at,
+            replayed,
+        }
+    }
+
+    /// 返回稳定本地订单标识。
+    #[must_use]
+    pub const fn order_id(&self) -> TopupOrderId {
+        self.order_id
+    }
+
+    /// 返回规范支付 Provider 标识。
+    #[must_use]
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+
+    /// 返回当前闭合订单状态。
+    #[must_use]
+    pub const fn status(&self) -> TopupOrderStatus {
+        self.status
+    }
+
+    /// 返回待支付的整数最小单位金额。
+    #[must_use]
+    pub const fn amount_minor(&self) -> u64 {
+        self.amount_minor
+    }
+
+    /// 返回三位大写结算币种。
+    #[must_use]
+    pub fn currency(&self) -> &str {
+        &self.currency
+    }
+
+    /// 返回支付成功后应增加的钱包额度。
+    #[must_use]
+    pub const fn quota_amount(&self) -> Quota {
+        self.quota_amount
+    }
+
+    /// 返回订单状态机当前版本。
+    #[must_use]
+    pub const fn version(&self) -> u64 {
+        self.version
+    }
+
+    /// 返回首次创建时间 Unix 秒数。
+    #[must_use]
+    pub const fn created_at(&self) -> u64 {
+        self.created_at
+    }
+
+    /// 返回本次调用是否恢复了已有幂等事实。
+    #[must_use]
+    pub const fn replayed(&self) -> bool {
+        self.replayed
+    }
+
+    fn from_record(record: TopupOrderRecord, replayed: bool) -> Self {
+        Self {
+            order_id: record.order_id(),
+            provider: record.provider().to_owned(),
+            status: record.status(),
+            amount_minor: record.amount_minor(),
+            currency: record.currency().to_owned(),
+            quota_amount: record.quota_amount(),
+            version: record.version(),
+            created_at: record.created_at(),
+            replayed,
+        }
+    }
+}
+
+impl fmt::Debug for UserTopupOrder {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("UserTopupOrder(<redacted>)")
+    }
+}
+
+/// 当前用户充值订单创建错误；不携带用户、金额或幂等标识。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum UserTopupError {
+    /// 幂等键或金额不满足公开边界。
+    #[error("充值订单请求无效")]
+    InvalidInput,
+    /// 当前会话用户已经不存在或失效。
+    #[error("充值订单会话无效")]
+    InvalidSession,
+    /// 相同幂等键已经绑定不同充值事实。
+    #[error("充值订单幂等事实冲突")]
+    Conflict,
+    /// 数据库提交结果未知，调用方必须复用同一幂等键确认。
+    #[error("充值订单提交结果未知")]
+    OutcomeUnknown,
+    /// 数据库暂时无法完成充值订单写入。
+    #[error("充值订单服务暂不可用")]
+    Unavailable,
+    /// 时钟、额度换算或持久化不变量失败。
+    #[error("充值订单内部失败")]
+    Internal,
+}
+
+/// 当前用户充值订单创建的对象安全 Future。
+pub type UserTopupOrderCreateFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<UserTopupOrder, UserTopupError>> + Send + 'a>>;
+
+/// 当前用户充值订单应用端口；订单所有权只能从会话主体推导。
+pub trait UserTopupService: Send + Sync {
+    /// 为当前会话用户幂等创建本地 Stripe 充值订单。
+    fn create<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: UserTopupOrderCreateCommand,
+    ) -> UserTopupOrderCreateFuture<'a>;
+}
+
+/// 使用原子充值仓储实现当前用户订单创建。
+pub struct DatabaseUserTopupService {
+    repository: TopupRepository,
+}
+
+impl DatabaseUserTopupService {
+    /// 绑定已经配置数据库操作截止时间的充值仓储。
+    #[must_use]
+    pub const fn new(repository: TopupRepository) -> Self {
+        Self { repository }
+    }
+}
+
+impl UserTopupService for DatabaseUserTopupService {
+    fn create<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: UserTopupOrderCreateCommand,
+    ) -> UserTopupOrderCreateFuture<'a> {
+        Box::pin(async move {
+            let (request_id, order_id) =
+                scoped_identifiers(principal.user_id(), command.client_request_id())?;
+            let quota_amount = quota_for_amount_minor(command.amount_minor())?;
+            let write = TopupOrderCreate::new(
+                order_id,
+                request_id,
+                principal.user_id(),
+                STRIPE_PAYMENT_PROVIDER.to_owned(),
+                command.amount_minor(),
+                STRIPE_TOPUP_CURRENCY.to_owned(),
+                quota_amount,
+                unix_now()?,
+            )
+            .map_err(|_| UserTopupError::Internal)?;
+            match self
+                .repository
+                .create_order(write)
+                .await
+                .map_err(map_repository_error)?
+            {
+                TopupOrderCreateOutcome::Created(record) => {
+                    Ok(UserTopupOrder::from_record(record, false))
+                }
+                TopupOrderCreateOutcome::Existing(record) => {
+                    Ok(UserTopupOrder::from_record(record, true))
+                }
+                TopupOrderCreateOutcome::NotFound => Err(UserTopupError::InvalidSession),
+            }
+        })
+    }
+}
+
+impl fmt::Debug for DatabaseUserTopupService {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("DatabaseUserTopupService(<redacted>)")
+    }
+}
+
+fn scoped_identifiers(
+    user_id: UserId,
+    client_request_id: TopupRequestId,
+) -> Result<(TopupRequestId, TopupOrderId), UserTopupError> {
+    let request_bytes = derive_identifier(REQUEST_ID_DOMAIN, user_id, client_request_id);
+    let order_bytes = derive_identifier(ORDER_ID_DOMAIN, user_id, client_request_id);
+    Ok((
+        TopupRequestId::new(request_bytes).map_err(|_| UserTopupError::Internal)?,
+        TopupOrderId::new(order_bytes).map_err(|_| UserTopupError::Internal)?,
+    ))
+}
+
+fn derive_identifier(
+    domain: &[u8],
+    user_id: UserId,
+    client_request_id: TopupRequestId,
+) -> [u8; TOPUP_IDENTIFIER_BYTES] {
+    let mut digest = Sha256::new();
+    digest.update(domain);
+    digest.update(user_id.get().to_be_bytes());
+    digest.update(client_request_id.bytes());
+    let digest = digest.finalize();
+    let mut identifier = [0_u8; TOPUP_IDENTIFIER_BYTES];
+    identifier.copy_from_slice(&digest[..TOPUP_IDENTIFIER_BYTES]);
+    identifier
+}
+
+fn quota_for_amount_minor(amount_minor: u64) -> Result<Quota, UserTopupError> {
+    let usd = Decimal::from(amount_minor)
+        .checked_div(Decimal::from(USD_MINOR_UNITS))
+        .ok_or(UserTopupError::Internal)?;
+    let quota = quota_from_usd(usd).map_err(|_| UserTopupError::Internal)?;
+    if quota.is_zero() {
+        return Err(UserTopupError::Internal);
+    }
+    Ok(quota)
+}
+
+fn unix_now() -> Result<u64, UserTopupError> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .map_err(|_| UserTopupError::Internal)
+}
+
+fn map_repository_error(error: TopupRepositoryError) -> UserTopupError {
+    match error {
+        TopupRepositoryError::Conflict => UserTopupError::Conflict,
+        TopupRepositoryError::OutcomeUnknown => UserTopupError::OutcomeUnknown,
+        TopupRepositoryError::Query | TopupRepositoryError::Timeout => UserTopupError::Unavailable,
+        TopupRepositoryError::Invariant => UserTopupError::Internal,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const IDEMPOTENCY_KEY: &str = "1234567890abcdef1234567890abcdef";
+
+    #[test]
+    fn command_rejects_invalid_key_and_stripe_amount_boundaries() {
+        assert_eq!(
+            UserTopupOrderCreateCommand::new("invalid", 500),
+            Err(UserTopupError::InvalidInput)
+        );
+        assert_eq!(
+            UserTopupOrderCreateCommand::new(IDEMPOTENCY_KEY, 49),
+            Err(UserTopupError::InvalidInput)
+        );
+        assert_eq!(
+            UserTopupOrderCreateCommand::new(IDEMPOTENCY_KEY, MAX_STRIPE_TOPUP_AMOUNT_MINOR + 1,),
+            Err(UserTopupError::InvalidInput)
+        );
+        assert_eq!(
+            UserTopupOrderCreateCommand::new(IDEMPOTENCY_KEY, 500)
+                .unwrap()
+                .amount_minor(),
+            500
+        );
+    }
+
+    #[test]
+    fn usd_minor_units_use_the_shared_quota_conversion() {
+        assert_eq!(quota_for_amount_minor(50).unwrap().units(), 250_000);
+        assert_eq!(quota_for_amount_minor(1_000).unwrap().units(), 5_000_000);
+    }
+
+    #[test]
+    fn idempotency_identifiers_are_stable_and_scoped_by_user() {
+        let client = TopupRequestId::from_persistence_key(IDEMPOTENCY_KEY).unwrap();
+        let first = scoped_identifiers(UserId::new(1).unwrap(), client).unwrap();
+        let replay = scoped_identifiers(UserId::new(1).unwrap(), client).unwrap();
+        let other_user = scoped_identifiers(UserId::new(2).unwrap(), client).unwrap();
+
+        assert_eq!(first, replay);
+        assert_ne!(first, other_user);
+        assert_ne!(first.0.bytes(), first.1.bytes());
+    }
+}

@@ -310,7 +310,7 @@ impl TopupOrderRecord {
             && self.amount_minor == write.amount_minor as u64
             && self.currency == write.currency
             && self.quota_amount == write.quota_amount
-            && self.created_at == write.created_at
+        // 创建时间是服务端首次接收事实，不参与跨请求幂等比较；重试仍保留数据库原值。
     }
 
     pub(super) fn matches_submission(&self, write: &TopupOrderSubmission) -> bool {

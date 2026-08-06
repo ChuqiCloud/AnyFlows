@@ -60,6 +60,7 @@ mod site_settings;
 mod streaming;
 mod user_profile;
 mod user_tokens;
+mod user_topups;
 mod user_wallet;
 mod wallet_query;
 
@@ -133,5 +134,7 @@ mod site_settings_tests;
 mod tests;
 #[cfg(test)]
 mod user_tokens_tests;
+#[cfg(test)]
+mod user_topups_tests;
 #[cfg(test)]
 mod user_wallet_tests;

@@ -30,6 +30,7 @@ async fn create_and_submit_are_idempotent_and_version_guarded() -> Result<(), Bo
     };
     assert_eq!(created.status(), TopupOrderStatus::Created);
     assert_eq!(created.version(), 1);
+    assert_eq!(created.created_at(), CREATED_AT);
 
     assert!(matches!(
         fixture
@@ -38,6 +39,22 @@ async fn create_and_submit_are_idempotent_and_version_guarded() -> Result<(), Bo
             .await?,
         TopupOrderCreateOutcome::Existing(_)
     ));
+    let later_retry = TopupOrderCreate::new(
+        topup_order_id(0x11),
+        topup_request_id(0x21),
+        fixture.user_id,
+        "stripe".to_owned(),
+        1_000,
+        "USD".to_owned(),
+        Quota::new(10_000)?,
+        CREATED_AT + 5,
+    )?;
+    let TopupOrderCreateOutcome::Existing(later_retry) =
+        fixture.repository.create_order(later_retry).await?
+    else {
+        panic!("跨秒重试必须恢复首次创建事实")
+    };
+    assert_eq!(later_retry.created_at(), CREATED_AT);
     assert_eq!(
         fixture
             .repository
