@@ -16,6 +16,7 @@ mod models;
 mod network_settings;
 mod oauth_connections;
 mod password_reset;
+mod payment_webhook;
 mod playground_conversations;
 mod playground_shares;
 mod redemptions;
@@ -73,6 +74,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(credentials::document());
     document.merge(credential_proxies::document());
     document.merge(debug_traces::document());
+    document.merge(payment_webhook::document());
 
     document.tags = Some(vec![
         Tag::new("公开注册"),
@@ -105,6 +107,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("凭据管理"),
         Tag::new("专属代理"),
         Tag::new("调试追踪"),
+        Tag::new("支付回调"),
     ]);
     document
         .components
@@ -131,7 +134,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 67);
+        assert_eq!(document.paths.paths.len(), 68);
         let operation_count = document
             .paths
             .paths
@@ -152,7 +155,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 105);
+        assert_eq!(operation_count, 106);
         assert!(
             document
                 .components
@@ -248,6 +251,7 @@ mod tests {
             "listModels",
             "listPlaygroundConversations",
             "listUserTokens",
+            "receivePaymentWebhook",
             "listUserWalletEntries",
             "loginManagementSession",
             "probeAdminChannel",
@@ -436,6 +440,11 @@ mod tests {
         assert_eq!(
             document["paths"]["/api/models"]["get"]["security"],
             serde_json::json!([{}, { "bearerAuth": [] }])
+        );
+        assert!(
+            document["paths"]["/api/payment/webhook/{provider}"]["post"]
+                .get("security")
+                .is_none()
         );
     }
 

@@ -453,6 +453,7 @@ fn allowed_internal_dependencies(name: &str) -> &'static [&'static str] {
         "af-http" => &[
             "af-admin",
             "af-analytics",
+            "af-billing",
             "af-config",
             "af-domain",
             "af-protocol",

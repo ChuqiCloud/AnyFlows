@@ -8622,6 +8622,63 @@
           }
         ]
       }
+    },
+    "/api/payment/webhook/{provider}": {
+      "post": {
+        "tags": [
+          "支付回调"
+        ],
+        "summary": "接收支付 Provider webhook",
+        "operationId": "receivePaymentWebhook",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "description": "支付 Provider 标识",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "minLength": 1
+            }
+          },
+          {
+            "name": "stripe-signature",
+            "in": "header",
+            "description": "Stripe 原始签名；服务端会先验签再解析正文",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "必须保留 Provider 原始请求正文，服务端在任何解析前完成验签",
+          "content": {
+            "application/json": {}
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "事件已验签并完成幂等确认"
+          },
+          "400": {
+            "description": "请求正文或签名无效"
+          },
+          "404": {
+            "description": "Provider 不受支持"
+          },
+          "409": {
+            "description": "支付事件与已有记录发生冲突"
+          },
+          "500": {
+            "description": "服务内部状态异常"
+          },
+          "503": {
+            "description": "回调未启用或持久化暂不可用"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -15847,6 +15904,9 @@
     },
     {
       "name": "调试追踪"
+    },
+    {
+      "name": "支付回调"
     }
   ]
 }

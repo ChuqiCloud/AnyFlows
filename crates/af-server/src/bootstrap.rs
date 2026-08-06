@@ -34,8 +34,9 @@ use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
     DatabaseUsageRecordSink, GroupPricingCache, GroupPricingCacheError, ModelPriceCache,
     ModelPriceCacheError, RefundSignalConsumer, RefundSignalConsumerError, RefundSignalPort,
-    RefundSignalQueue, RefundSignalQueueError, RefundSignalSink, UsageRecordConsumer,
-    UsageRecordConsumerError, UsageRecordPort, UsageRecordQueue, UsageRecordQueueError,
+    RefundSignalQueue, RefundSignalQueueError, RefundSignalSink, StripePaymentProvider,
+    TopupWebhookProcessor, UsageRecordConsumer, UsageRecordConsumerError, UsageRecordPort,
+    UsageRecordQueue, UsageRecordQueueError,
 };
 use af_cache::{
     CacheError, RedisConcurrencyConfig, RedisConcurrencyStore, RedisConfig, RedisHealthConfig,
@@ -64,7 +65,7 @@ use af_db::{
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RegistrationRepository, RegistrationRepositoryConfigError,
     SiteSettingsRepository, SiteSettingsRepositoryConfigError, TokenAuthRepository,
-    TokenAuthRepositoryConfigError, UsageLogRepository, UserInvitationRepository,
+    TokenAuthRepositoryConfigError, TopupRepository, UsageLogRepository, UserInvitationRepository,
     UserInvitationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
     UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
     UserTokenRepositoryConfigError, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
@@ -72,8 +73,8 @@ use af_db::{
 };
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, ChatService, HttpListener, HttpRouter,
-    QueryApiKeyPolicy, ReadinessHandle, ServeError, ServeOutcome, build_router,
-    serve_with_graceful_shutdown,
+    QueryApiKeyPolicy, ReadinessHandle, ServeError, ServeOutcome, build_payment_webhook_router,
+    build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
@@ -1361,6 +1362,25 @@ impl Bootstrap<Supervised> {
                     self.stage.debug_trace_runtime.clone(),
                 )),
             ));
+        let payment_webhook_processor =
+            self.config.payment().stripe_webhook_secret().map(|secret| {
+                let provider = StripePaymentProvider::new(
+                    secret.expose(),
+                    self.config.payment().stripe_signature_tolerance_secs(),
+                )
+                .expect("已校验的 Stripe webhook 配置必须满足 Provider 边界");
+                let repository = TopupRepository::new(
+                    self.stage.infrastructure.infrastructure.database.clone(),
+                    Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+                )
+                .expect("认证查询超时已校验为正数，充值仓储必须可装配");
+                Arc::new(TopupWebhookProcessor::new(
+                    Arc::new(provider),
+                    Arc::new(repository),
+                ))
+            });
+        let payment_webhook_routes =
+            build_payment_webhook_router("stripe", payment_webhook_processor);
         let router = build_router(
             self.config.server(),
             self.stage.chat.clone(),
@@ -1410,6 +1430,7 @@ impl Bootstrap<Supervised> {
             Some(Arc::clone(&self.stage.infrastructure.admin_wallet_service)),
             self.stage.infrastructure.query_api_key_policy,
             Some(Arc::new(EmbeddedFrontendAssets)),
+            Some(payment_webhook_routes),
         );
         let Bootstrap {
             config,

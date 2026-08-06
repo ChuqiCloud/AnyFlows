@@ -13,8 +13,8 @@ use serde::Serialize;
 
 use crate::{
     AppConfig, BillingSettings, ChannelProbeSettings, ConfigError,
-    DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS, DEFAULT_AUTH_SESSION_TTL_SECS, ServerConfig,
-    TelemetrySettings,
+    DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS, DEFAULT_AUTH_SESSION_TTL_SECS,
+    DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS, ServerConfig, TelemetrySettings,
 };
 
 /// 默认配置文件名；文件不存在时仅使用默认值与环境变量。
@@ -30,12 +30,28 @@ struct ConfigDefaults {
     telemetry: TelemetrySettings,
     database: DatabaseDefaults,
     billing: BillingSettings,
+    payment: PaymentDefaults,
     channel_probe: ChannelProbeSettings,
     credential_encryption: CredentialEncryptionDefaults,
     redis: RedisDefaults,
     auth: AuthDefaults,
     oauth: OAuthDefaults,
     http_client: HttpClientDefaults,
+}
+
+#[derive(Serialize)]
+struct PaymentDefaults {
+    stripe_webhook_secret: Option<String>,
+    stripe_signature_tolerance_secs: u64,
+}
+
+impl Default for PaymentDefaults {
+    fn default() -> Self {
+        Self {
+            stripe_webhook_secret: None,
+            stripe_signature_tolerance_secs: DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -215,6 +231,9 @@ fn known_field(path: &str) -> Option<&'static str> {
         "billing.usage_record_queue_capacity" => "billing.usage_record_queue_capacity",
         "billing.usage_record_worker_count" => "billing.usage_record_worker_count",
         "billing.wal_directory" => "billing.wal_directory",
+        "payment" => "payment",
+        "payment.stripe_webhook_secret" => "payment.stripe_webhook_secret",
+        "payment.stripe_signature_tolerance_secs" => "payment.stripe_signature_tolerance_secs",
         "channel_probe" => "channel_probe",
         "channel_probe.enabled" => "channel_probe.enabled",
         "channel_probe.batch_size" => "channel_probe.batch_size",
@@ -328,6 +347,11 @@ mod tests {
             assert_eq!(
                 config.billing().wal_directory(),
                 Path::new("data/billing-wal")
+            );
+            assert!(config.payment().stripe_webhook_secret().is_none());
+            assert_eq!(
+                config.payment().stripe_signature_tolerance_secs(),
+                DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS
             );
             assert!(!config.channel_probe().enabled());
             assert_eq!(config.channel_probe().batch_size(), 16);
@@ -565,7 +589,7 @@ mod tests {
     fn toml_values_override_defaults() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[billing]\nbatch_enabled = true\nflush_interval_secs = 11\nflush_timeout_secs = 17\nwal_directory = 'private-billing-wal'\n[auth]\nallow_query_api_key = true\nlookup_timeout_secs = 7\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
+                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[billing]\nbatch_enabled = true\nflush_interval_secs = 11\nflush_timeout_secs = 17\nwal_directory = 'private-billing-wal'\n[payment]\nstripe_webhook_secret = 'whsec-test-secret'\nstripe_signature_tolerance_secs = 42\n[auth]\nallow_query_api_key = true\nlookup_timeout_secs = 7\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
@@ -587,6 +611,12 @@ mod tests {
                 Path::new("private-billing-wal")
             );
             assert!(!format!("{:?}", config.billing()).contains("private-billing-wal"));
+            assert_eq!(
+                config.payment().stripe_webhook_secret().unwrap().expose(),
+                "whsec-test-secret"
+            );
+            assert_eq!(config.payment().stripe_signature_tolerance_secs(), 42);
+            assert!(!format!("{:?}", config.payment()).contains("whsec-test-secret"));
             assert!(config.auth().allow_query_api_key());
             assert_eq!(config.auth().lookup_timeout_secs(), 7);
             assert_eq!(config.http_client().max_cached_clients(), Some(7));
@@ -722,6 +752,11 @@ mod tests {
                 config.billing().wal_directory(),
                 Path::new("environment-billing-wal")
             );
+            assert_eq!(
+                config.payment().stripe_webhook_secret().unwrap().expose(),
+                "whsec-environment-secret"
+            );
+            assert_eq!(config.payment().stripe_signature_tolerance_secs(), 120);
             assert!(config.channel_probe().enabled());
             assert_eq!(config.channel_probe().batch_size(), 8);
             assert_eq!(config.channel_probe().interval_secs(), 120);
@@ -786,6 +821,11 @@ mod tests {
                 .env("AF_BILLING__FLUSH_INTERVAL_SECS", "19")
                 .env("AF_BILLING__FLUSH_TIMEOUT_SECS", "23")
                 .env("AF_BILLING__WAL_DIRECTORY", "environment-billing-wal")
+                .env(
+                    "AF_PAYMENT__STRIPE_WEBHOOK_SECRET",
+                    "whsec-environment-secret",
+                )
+                .env("AF_PAYMENT__STRIPE_SIGNATURE_TOLERANCE_SECS", "120")
                 .env("AF_CHANNEL_PROBE__ENABLED", "true")
                 .env("AF_CHANNEL_PROBE__BATCH_SIZE", "8")
                 .env("AF_CHANNEL_PROBE__INTERVAL_SECS", "120")
@@ -1125,6 +1165,10 @@ mod tests {
                     "[database]\nurl = 'sqlite::memory:'\n[billing]\nusage_record_worker_count = 0\n",
                 ),
                 (
+                    "payment.stripe_signature_tolerance_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[payment]\nstripe_signature_tolerance_secs = 0\n",
+                ),
+                (
                     "channel_probe.batch_size",
                     "[database]\nurl = 'sqlite::memory:'\n[channel_probe]\nbatch_size = 0\n",
                 ),
@@ -1282,6 +1326,10 @@ mod tests {
                 (
                     "billing.usage_record_worker_count",
                     "[database]\nurl = 'sqlite::memory:'\n[billing]\nusage_record_worker_count = 65\n",
+                ),
+                (
+                    "payment.stripe_signature_tolerance_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[payment]\nstripe_signature_tolerance_secs = 86401\n",
                 ),
                 (
                     "channel_probe.batch_size",
