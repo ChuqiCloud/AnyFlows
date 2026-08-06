@@ -15,6 +15,7 @@ import type {
 import { cn } from '@/lib/utils'
 import {
   modelPriceCandidateNeedsReview,
+  modelPriceCanUseFixedEditor,
   modelPriceDraftIsComplete,
   type StagedModelPriceDraft,
 } from './model-price-form-model'
@@ -129,9 +130,11 @@ function ModelIdentity({ row, priceIndexComplete }: { row: ModelPriceRow; priceI
 
 function PriceStatus({ row, priceIndexComplete }: { row: ModelPriceRow; priceIndexComplete: boolean }) {
   const { t } = useTranslation()
-  const status = row.staged
-    ? 'staged'
-    : row.price?.billing_mode === 'free'
+  const status = row.price?.billing_mode === 'expression'
+    ? 'expression'
+    : row.staged
+      ? 'staged'
+      : row.price?.billing_mode === 'free'
       ? 'free'
       : row.price
         ? 'priced'
@@ -141,6 +144,7 @@ function PriceStatus({ row, priceIndexComplete }: { row: ModelPriceRow; priceInd
   const styles: Record<typeof status, string> = {
     staged: 'border-transparent bg-warning/10 text-warning',
     free: 'border-transparent bg-success/10 text-success',
+    expression: 'border-transparent bg-warning/10 text-warning',
     priced: 'border-transparent bg-info/10 text-info',
     unpriced: 'border-transparent bg-destructive/10 text-destructive',
     checking: 'text-muted-foreground',
@@ -162,7 +166,9 @@ function RowCheckbox(props: {
 }) {
   const { t } = useTranslation()
   const versionReady = !props.row.price || props.row.staged?.expectedVersion === props.row.price.version
-  const enabled = versionReady && modelPriceDraftIsComplete(props.row.staged?.draft)
+  const enabled = modelPriceCanUseFixedEditor(props.row.price)
+    && versionReady
+    && modelPriceDraftIsComplete(props.row.staged?.draft)
   const id = `select-price-${props.row.model.id}`
   return (
     <Tooltip>
@@ -184,14 +190,17 @@ function RowCheckbox(props: {
 
 function EditButton({ row, onEdit }: { row: ModelPriceRow; onEdit: (row: ModelPriceRow) => void }) {
   const { t } = useTranslation()
+  const readOnly = !modelPriceCanUseFixedEditor(row.price)
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button type="button" size="icon-sm" variant="ghost" className="size-10 md:size-8" aria-label={t('modelManagement.prices.actions.edit', { model: row.model.model })} onClick={() => onEdit(row)}>
-          {row.price || row.staged ? <Pencil aria-hidden="true" /> : <CircleDollarSign aria-hidden="true" />}
-        </Button>
+        <span className="inline-flex">
+          <Button type="button" size="icon-sm" variant="ghost" className="size-10 md:size-8" disabled={readOnly} aria-label={t('modelManagement.prices.actions.edit', { model: row.model.model })} onClick={() => onEdit(row)}>
+            {row.price || row.staged ? <Pencil aria-hidden="true" /> : <CircleDollarSign aria-hidden="true" />}
+          </Button>
+        </span>
       </TooltipTrigger>
-      <TooltipContent>{t(row.price || row.staged ? 'modelManagement.prices.actions.editPrice' : 'modelManagement.prices.actions.setPrice')}</TooltipContent>
+      <TooltipContent>{t(readOnly ? 'modelManagement.prices.actions.expressionReadOnly' : row.price || row.staged ? 'modelManagement.prices.actions.editPrice' : 'modelManagement.prices.actions.setPrice')}</TooltipContent>
     </Tooltip>
   )
 }
