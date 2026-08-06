@@ -1,11 +1,12 @@
-use std::fmt;
+use std::{fmt, sync::Arc};
 
 use af_domain::GroupId;
 use thiserror::Error;
 
 use crate::{
     BillingMode, GroupPricingCache, GroupPricingCacheError, GroupPricingLookupError,
-    ModelPriceCache, ModelPriceCacheError, PricingRatios, RatioPricingResolver,
+    ModelPriceCache, ModelPriceCacheError, ModelPriceMode, PricingRatios, PricingResolver,
+    RatioPricingResolver,
 };
 
 /// 从进程内不可变目录同步固定一次请求的完整定价事实。
@@ -22,10 +23,12 @@ pub trait RequestPricingSnapshotSource: Send + Sync + 'static {
 
 /// 一次请求从预扣到最终结算始终复用的不可变定价快照。
 #[must_use = "请求定价快照必须用于构造同一生命周期的解析器"]
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone)]
 pub struct RequestPricingSnapshot {
     billing_mode: BillingMode,
-    resolver: RatioPricingResolver,
+    model_mode: ModelPriceMode,
+    resolver: Arc<dyn PricingResolver>,
+    ratio_resolver: Option<RatioPricingResolver>,
     model_version: u64,
     ratios: PricingRatios,
     model_generation: u64,
@@ -35,38 +38,50 @@ pub struct RequestPricingSnapshot {
 impl RequestPricingSnapshot {
     /// 返回快照模型的显式计费模式。
     #[must_use]
-    pub const fn billing_mode(self) -> BillingMode {
+    pub const fn billing_mode(&self) -> BillingMode {
         self.billing_mode
+    }
+
+    /// 返回模型目录中的原始定价模式，供静态目录与运行时审计区分 Expression。
+    #[must_use]
+    pub const fn model_mode(&self) -> ModelPriceMode {
+        self.model_mode
     }
 
     /// 返回模型价格的持久化正版本。
     #[must_use]
-    pub const fn model_version(self) -> u64 {
+    pub const fn model_version(&self) -> u64 {
         self.model_version
     }
 
     /// 返回捕获时模型价格目录的本地代数。
     #[must_use]
-    pub const fn model_generation(self) -> u64 {
+    pub const fn model_generation(&self) -> u64 {
         self.model_generation
     }
 
     /// 返回捕获时分组倍率目录的本地代数。
     #[must_use]
-    pub const fn group_generation(self) -> u64 {
+    pub const fn group_generation(&self) -> u64 {
         self.group_generation
     }
 
     /// 返回请求固定的三层倍率，供审计与回归验证使用。
     #[must_use]
-    pub const fn ratios(self) -> PricingRatios {
+    pub const fn ratios(&self) -> PricingRatios {
         self.ratios
     }
 
     /// 构造同时用于预估和实际 usage 的纯计算解析器。
     #[must_use]
-    pub const fn resolver(self) -> RatioPricingResolver {
-        self.resolver
+    pub fn resolver(&self) -> Arc<dyn PricingResolver> {
+        Arc::clone(&self.resolver)
+    }
+
+    /// 返回可展示静态五价的 Ratio 解析器；Expression 固定返回空。
+    #[must_use]
+    pub const fn ratio_resolver(&self) -> Option<RatioPricingResolver> {
+        self.ratio_resolver
     }
 }
 
@@ -110,8 +125,8 @@ pub enum RequestPricingSnapshotError {
     /// 当前计费时间无效。
     #[error("请求计费时间无效")]
     InvalidCurrentTime,
-    /// 表达式已经完成持久化和缓存校验，但生产请求执行器尚未接通。
-    #[error("请求模型的表达式定价暂不可用")]
+    /// 表达式定义无法构造请求级执行快照。
+    #[error("请求模型的表达式定价不可用")]
     ExpressionPricingUnavailable,
 }
 
@@ -164,16 +179,21 @@ impl RequestPricingSnapshotSource for CachedRequestPricingSnapshotSource {
         let ratios = group_snapshot
             .ratios_for_request(source_group_id, target_group_id, current_second)
             .map_err(map_lookup_error)?;
-        // 表达式定义可以先进入缓存，但结算生命周期接通前绝不能按零价或免费回退。
-        let billing_mode = model_price
-            .billing_mode()
-            .ok_or(RequestPricingSnapshotError::ExpressionPricingUnavailable)?;
+        let model_mode = model_price.mode();
+        // Expression 与固定五价同属需预扣和结算的按量请求，但保留独立目录模式供展示边界判断。
+        let billing_mode = match model_mode {
+            ModelPriceMode::PerToken | ModelPriceMode::Expression => BillingMode::PerToken,
+            ModelPriceMode::Free => BillingMode::Free,
+        };
+        let ratio_resolver = model_price.resolver(ratios);
         let resolver = model_price
-            .resolver(ratios)
-            .ok_or(RequestPricingSnapshotError::ExpressionPricingUnavailable)?;
+            .request_resolver(ratios)
+            .map_err(|_| RequestPricingSnapshotError::ExpressionPricingUnavailable)?;
         Ok(RequestPricingSnapshot {
             billing_mode,
+            model_mode,
             resolver,
+            ratio_resolver,
             model_version: model_price.version(),
             ratios,
             model_generation: model_snapshot.generation(),

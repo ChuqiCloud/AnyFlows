@@ -108,7 +108,9 @@ impl RuntimeModelCatalogReader {
         Self::catalog_item_from_pricing(
             metadata,
             pricing.billing_mode(),
-            pricing.resolver(),
+            pricing
+                .ratio_resolver()
+                .ok_or(ModelCatalogReadError::Internal)?,
             pricing.ratios(),
             pricing.model_version(),
             ModelCatalogRuntimeStatus::Available,

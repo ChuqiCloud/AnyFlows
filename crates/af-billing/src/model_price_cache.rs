@@ -17,7 +17,9 @@ use af_domain::MAX_MODEL_NAME_BYTES;
 use thiserror::Error;
 
 use crate::{
-    BillingExpressionDefinition, BillingMode, PricingRatios, RatioPricingResolver, TokenPrices,
+    BillingExpressionDefinition, BillingExpressionError, BillingMode, PricingRatios,
+    PricingResolver, RatioPricingResolver, TokenPrices,
+    expression_pricing::ExpressionPricingResolver,
 };
 
 /// 定价目录 source 的异步加载结果。
@@ -167,6 +169,22 @@ impl ModelPrice {
             }
             ModelPriceDefinition::Free => Some(RatioPricingResolver::free()),
             ModelPriceDefinition::Expression(_) => None,
+        }
+    }
+
+    /// 构造生产请求使用的统一解析器，并在 Expression 模式固定本次请求倍率。
+    pub fn request_resolver(
+        &self,
+        ratios: PricingRatios,
+    ) -> Result<Arc<dyn PricingResolver>, BillingExpressionError> {
+        match &self.definition {
+            ModelPriceDefinition::PerToken(prices) => {
+                Ok(Arc::new(RatioPricingResolver::metered(*prices, ratios)))
+            }
+            ModelPriceDefinition::Free => Ok(Arc::new(RatioPricingResolver::free())),
+            ModelPriceDefinition::Expression(definition) => Ok(Arc::new(
+                ExpressionPricingResolver::new(definition.compile(ratios)?),
+            )),
         }
     }
 }
