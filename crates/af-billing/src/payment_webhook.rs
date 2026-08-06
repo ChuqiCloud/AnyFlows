@@ -172,6 +172,18 @@ impl fmt::Debug for VerifiedTopupPaymentEvent {
 ///
 /// 实现必须先用原始 payload 和 Provider 规定的原始请求头完成密码学验证，再解析事件；
 /// 禁止先规范化 JSON、表单或头值后验签。
+pub trait PaymentProvider: Send + Sync + 'static {
+    /// 返回与充值订单持久化值一致的规范 Provider 标识。
+    fn provider(&self) -> &str;
+
+    /// 验证原始 webhook 并返回不含原始 payload 的规范事件。
+    fn verify_webhook(
+        &self,
+        request: &PaymentWebhookRequest<'_>,
+    ) -> Result<VerifiedTopupPaymentEvent, PaymentWebhookVerificationError>;
+}
+
+/// 兼容旧调用方的 webhook 验签视图；新 Provider 应直接实现 [`PaymentProvider`]。
 pub trait PaymentWebhookVerifier: Send + Sync + 'static {
     /// 返回与充值订单中保存值一致的规范 Provider 标识。
     fn provider(&self) -> &str;
@@ -181,6 +193,22 @@ pub trait PaymentWebhookVerifier: Send + Sync + 'static {
         &self,
         request: &PaymentWebhookRequest<'_>,
     ) -> Result<VerifiedTopupPaymentEvent, PaymentWebhookVerificationError>;
+}
+
+impl<T> PaymentWebhookVerifier for T
+where
+    T: PaymentProvider + ?Sized,
+{
+    fn provider(&self) -> &str {
+        PaymentProvider::provider(self)
+    }
+
+    fn verify(
+        &self,
+        request: &PaymentWebhookRequest<'_>,
+    ) -> Result<VerifiedTopupPaymentEvent, PaymentWebhookVerificationError> {
+        PaymentProvider::verify_webhook(self, request)
+    }
 }
 
 /// 持久化已验证事件的一次异步调用结果。

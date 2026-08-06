@@ -14,10 +14,12 @@ futures-util.workspace = true
 rhai.workspace = true
 rust_decimal.workspace = true
 sha2.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+zeroize.workspace = true
 
 [lints]
 workspace = true
