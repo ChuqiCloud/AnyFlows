@@ -46,6 +46,16 @@ allow = ["BSL-1.0"]
 crate = "quoted_printable"
 allow = ["0BSD"]
 
+# Rhai 使用该依赖保存脚本标识符；MPL 仅约束对依赖自身文件的修改，不扩散到本项目代码。
+[[licenses.exceptions]]
+crate = "smartstring"
+allow = ["MPL-2.0"]
+
+# Rhai 的哈希依赖通过该实现生成编译期随机种子；CC0 为公共领域式宽松许可。
+[[licenses.exceptions]]
+crate = "tiny-keccak"
+allow = ["CC0-1.0"]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
