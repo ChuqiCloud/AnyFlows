@@ -5194,7 +5194,7 @@
             }
           },
           "400": {
-            "description": "模型、版本、模式或十进制价格无效",
+            "description": "模型、版本、模式、十进制价格或计费表达式无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -11340,6 +11340,7 @@
           "model",
           "billing_mode",
           "prices",
+          "billing_expression",
           "version"
         ],
         "properties": {
@@ -11353,6 +11354,13 @@
           },
           "prices": {
             "$ref": "#/components/schemas/AdminModelPriceValues"
+          },
+          "billing_expression": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 8192
           },
           "version": {
             "type": "integer",
@@ -11401,7 +11409,8 @@
         "description": "HTTP 契约支持的闭合模型计费模式。",
         "enum": [
           "per_token",
-          "free"
+          "free",
+          "expression"
         ]
       },
       "AdminModelPriceListResponse": {
@@ -11635,6 +11644,13 @@
           },
           "prices": {
             "$ref": "#/components/schemas/AdminModelPriceValues"
+          },
+          "billing_expression": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 8192
           }
         },
         "additionalProperties": false

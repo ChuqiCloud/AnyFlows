@@ -8,7 +8,7 @@ import type {
 } from '@/lib/api/generated/types.gen'
 
 export type ModelPriceDraft = {
-  billingMode: AdminModelPriceBillingMode
+  billingMode: Extract<AdminModelPriceBillingMode, 'per_token' | 'free'>
   input: string
   output: string
   cacheRead: string
@@ -54,7 +54,8 @@ export function buildModelPriceDraftSchema(messages: ModelPriceValidationMessage
 
 export function defaultModelPriceDraft(price?: AdminModelPrice): ModelPriceDraft {
   return {
-    billingMode: price?.billing_mode ?? 'per_token',
+    // 表达式正文尚未接入本页编辑器，表达式价格由表格保持只读。
+    billingMode: price?.billing_mode === 'free' ? 'free' : 'per_token',
     input: price?.prices.input ?? '',
     output: price?.prices.output ?? '',
     cacheRead: price?.prices.cache_read ?? '',
@@ -78,6 +79,11 @@ export function freeModelPriceDraft(): ModelPriceDraft {
 export function modelPriceDraftIsComplete(draft?: ModelPriceDraft) {
   if (!draft) return false
   return buildModelPriceDraftSchema({ decimal: 'decimal', free: 'free' }).safeParse(draft).success
+}
+
+/** 表达式正文编辑器未交付前，现有五价表单不得覆盖表达式价格。 */
+export function modelPriceCanUseFixedEditor(price?: AdminModelPrice) {
+  return price?.billing_mode !== 'expression'
 }
 
 export function toModelPriceWriteItem(

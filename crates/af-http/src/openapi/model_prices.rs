@@ -63,7 +63,7 @@ fn preview_admin_model_prices() {}
     request_body = AdminModelPriceBatchRequest,
     responses(
         (status = 200, description = "正式模型价格已写入且运行时快照已刷新", body = AdminModelPriceBatchResponse),
-        (status = 400, description = "模型、版本、模式或十进制价格无效", body = ManagementErrorBody),
+        (status = 400, description = "模型、版本、模式、十进制价格或计费表达式无效", body = ManagementErrorBody),
         (status = 401, description = "会话无效", body = ManagementErrorBody),
         (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
         (status = 404, description = "模型元数据不存在", body = ManagementErrorBody),

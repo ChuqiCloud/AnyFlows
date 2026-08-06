@@ -387,6 +387,26 @@ mod tests {
         assert!(schemas.contains_key("AdminModelPriceListResponse"));
         assert!(schemas.contains_key("AdminModelPriceSourcePreview"));
         assert!(schemas.contains_key("AdminModelPriceBatchRequest"));
+        assert_eq!(
+            schemas["AdminModelPriceBillingMode"]["enum"],
+            serde_json::json!(["per_token", "free", "expression"])
+        );
+        assert!(
+            schemas["AdminModelPrice"]["required"]
+                .as_array()
+                .is_some_and(|required| required.iter().any(|field| field == "billing_expression"))
+        );
+        assert_eq!(
+            schemas["AdminModelPrice"]["properties"]["billing_expression"]["type"],
+            serde_json::json!(["string", "null"])
+        );
+        assert!(
+            schemas["AdminModelPriceWriteItem"]["required"]
+                .as_array()
+                .is_some_and(|required| {
+                    required.iter().all(|field| field != "billing_expression")
+                })
+        );
         assert!(schemas.contains_key("PlaygroundShareCreateRequest"));
         assert!(schemas.contains_key("PlaygroundShareReadResponse"));
         assert!(schemas.contains_key("PlaygroundConversationSaveRequest"));

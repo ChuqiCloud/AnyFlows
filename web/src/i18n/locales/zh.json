@@ -1422,6 +1422,7 @@
         "unpriced": "未定价",
         "priced": "已定价",
         "free": "显式免费",
+        "expression": "表达式计费",
         "staged": "待提交",
         "review": "需复核",
         "versionChanged": "版本已变化",
@@ -1466,6 +1467,7 @@
         "edit": "编辑模型 {{model}} 的价格",
         "editPrice": "编辑价格",
         "setPrice": "设置价格",
+        "expressionReadOnly": "表达式计费暂由后台管理，当前表单不可编辑",
         "useCurrentVersion": "采用当前版本"
       },
       "preview": {

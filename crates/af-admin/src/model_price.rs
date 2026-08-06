@@ -1,5 +1,6 @@
 use std::{collections::BTreeSet, fmt, future::Future, pin::Pin, sync::Arc};
 
+use af_billing::BillingExpressionDefinition;
 use af_db::{
     AdminModelRepository, MAX_ADMIN_MODEL_PAGE_SIZE, MAX_ADMIN_MODEL_PROVIDER_BYTES,
     MAX_MODEL_PRICE_PAGE_SIZE, MAX_MODEL_PRICE_WRITE_BATCH, ModelPriceBillingMode,
@@ -25,6 +26,18 @@ pub enum AdminModelPriceBillingMode {
     PerToken,
     /// 显式免费，五类单价必须全部为零。
     Free,
+    /// 使用版本化 Rhai 表达式定价，五类固定单价必须全部为零。
+    Expression,
+}
+
+impl From<ModelPriceBillingMode> for AdminModelPriceBillingMode {
+    fn from(value: ModelPriceBillingMode) -> Self {
+        match value {
+            ModelPriceBillingMode::PerToken => Self::PerToken,
+            ModelPriceBillingMode::Free => Self::Free,
+            ModelPriceBillingMode::Expression => Self::Expression,
+        }
+    }
 }
 
 impl From<AdminModelPriceBillingMode> for ModelPriceBillingMode {
@@ -32,6 +45,7 @@ impl From<AdminModelPriceBillingMode> for ModelPriceBillingMode {
         match value {
             AdminModelPriceBillingMode::PerToken => Self::PerToken,
             AdminModelPriceBillingMode::Free => Self::Free,
+            AdminModelPriceBillingMode::Expression => Self::Expression,
         }
     }
 }
@@ -41,23 +55,19 @@ pub struct AdminModelPrice {
     model: String,
     billing_mode: AdminModelPriceBillingMode,
     prices: [Decimal; 5],
+    billing_expression: Option<String>,
     version: u64,
 }
 
 impl AdminModelPrice {
-    fn from_record(record: ModelPriceRecord) -> Result<Self, AdminModelPriceError> {
-        let billing_mode = match record.billing_mode() {
-            ModelPriceBillingMode::PerToken => AdminModelPriceBillingMode::PerToken,
-            ModelPriceBillingMode::Free => AdminModelPriceBillingMode::Free,
-            // 表达式编辑契约尚未进入管理 API，禁止丢失正文后伪装成固定单价。
-            ModelPriceBillingMode::Expression => return Err(AdminModelPriceError::Internal),
-        };
-        Ok(Self {
+    fn from_record(record: ModelPriceRecord) -> Self {
+        Self {
             model: record.model().to_owned(),
-            billing_mode,
+            billing_mode: record.billing_mode().into(),
             prices: record.prices(),
+            billing_expression: record.billing_expression().map(str::to_owned),
             version: record.version(),
-        })
+        }
     }
 
     #[must_use]
@@ -73,6 +83,12 @@ impl AdminModelPrice {
     #[must_use]
     pub const fn prices(&self) -> [Decimal; 5] {
         self.prices
+    }
+
+    /// 返回管理员可编辑的表达式正文；不存在时表示固定单价或免费模式。
+    #[must_use]
+    pub fn billing_expression(&self) -> Option<&str> {
+        self.billing_expression.as_deref()
     }
 
     #[must_use]
@@ -178,9 +194,35 @@ impl AdminModelPriceWriteCommand {
         billing_mode: AdminModelPriceBillingMode,
         prices: [Decimal; 5],
     ) -> Result<Self, AdminModelPriceError> {
-        let record =
-            ModelPriceWriteRecord::new(model, expected_version, billing_mode.into(), prices)
-                .map_err(map_write_error)?;
+        Self::new_with_expression(model, expected_version, billing_mode, prices, None)
+    }
+
+    /// 校验并构造包含可选表达式正文的管理员写入命令。
+    pub fn new_with_expression(
+        model: String,
+        expected_version: Option<u64>,
+        billing_mode: AdminModelPriceBillingMode,
+        prices: [Decimal; 5],
+        billing_expression: Option<String>,
+    ) -> Result<Self, AdminModelPriceError> {
+        if billing_mode == AdminModelPriceBillingMode::Expression {
+            let source = billing_expression
+                .as_deref()
+                .ok_or(AdminModelPriceError::InvalidInput)?;
+            // 管理边界先编译校验，避免把无法加载的表达式写入正式目录。
+            BillingExpressionDefinition::new(source.to_owned())
+                .map_err(|_| AdminModelPriceError::InvalidInput)?;
+        } else if billing_expression.is_some() {
+            return Err(AdminModelPriceError::InvalidInput);
+        }
+        let record = ModelPriceWriteRecord::new_with_expression(
+            model,
+            expected_version,
+            billing_mode.into(),
+            prices,
+            billing_expression,
+        )
+        .map_err(map_write_error)?;
         Ok(Self { record })
     }
 
@@ -571,7 +613,7 @@ impl AdminModelPriceService for DatabaseAdminModelPriceService {
                 prices: prices
                     .into_iter()
                     .map(AdminModelPrice::from_record)
-                    .collect::<Result<Vec<_>, _>>()?,
+                    .collect(),
                 next_cursor,
             })
         })
@@ -610,10 +652,10 @@ impl AdminModelPriceService for DatabaseAdminModelPriceService {
                 .refresh()
                 .await
                 .map_err(|_| AdminModelPriceError::RuntimeRefreshFailed)?;
-            records
+            Ok(records
                 .into_iter()
                 .map(AdminModelPrice::from_record)
-                .collect::<Result<Vec<_>, _>>()
+                .collect())
         })
     }
 }
@@ -736,6 +778,51 @@ mod tests {
             AdminModelPriceApplyCommand::new(vec![command(), command()]),
             Err(AdminModelPriceError::InvalidInput)
         ));
+    }
+
+    #[test]
+    fn expression_write_commands_require_valid_source_and_zero_prices() {
+        let valid = AdminModelPriceWriteCommand::new_with_expression(
+            "gpt-test".to_owned(),
+            None,
+            AdminModelPriceBillingMode::Expression,
+            [Decimal::ZERO; 5],
+            Some("tier(\"base\", p)".to_owned()),
+        );
+        assert!(valid.is_ok());
+
+        for (prices, source) in [
+            ([Decimal::ONE; 5], Some("tier(\"base\", p)".to_owned())),
+            ([Decimal::ZERO; 5], None),
+            ([Decimal::ZERO; 5], Some("not valid".to_owned())),
+        ] {
+            assert!(matches!(
+                AdminModelPriceWriteCommand::new_with_expression(
+                    "gpt-test".to_owned(),
+                    None,
+                    AdminModelPriceBillingMode::Expression,
+                    prices,
+                    source,
+                ),
+                Err(AdminModelPriceError::InvalidInput)
+            ));
+        }
+
+        for billing_mode in [
+            AdminModelPriceBillingMode::PerToken,
+            AdminModelPriceBillingMode::Free,
+        ] {
+            assert!(matches!(
+                AdminModelPriceWriteCommand::new_with_expression(
+                    "gpt-test".to_owned(),
+                    None,
+                    billing_mode,
+                    [Decimal::ZERO; 5],
+                    Some("tier(\"base\", p)".to_owned()),
+                ),
+                Err(AdminModelPriceError::InvalidInput)
+            ));
+        }
     }
 
     #[test]

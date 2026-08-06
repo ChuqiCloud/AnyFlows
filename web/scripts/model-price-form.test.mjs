@@ -6,6 +6,7 @@ import {
   buildModelPriceDraftSchema,
   defaultModelPriceDraft,
   freeModelPriceDraft,
+  modelPriceCanUseFixedEditor,
   modelPriceDraftIsComplete,
   toModelPriceWriteItem,
 } from '../src/features/model-management/model-price-form-model.ts'
@@ -59,4 +60,10 @@ test('写入请求保留正版本或显式创建前置条件', () => {
   const draft = freeModelPriceDraft()
   assert.equal(toModelPriceWriteItem('new-model', { draft, expectedVersion: null }).expected_version, null)
   assert.equal(toModelPriceWriteItem('priced-model', { draft, expectedVersion: 7 }).expected_version, 7)
+})
+
+test('五价表单拒绝覆盖表达式价格', () => {
+  assert.equal(modelPriceCanUseFixedEditor(), true)
+  assert.equal(modelPriceCanUseFixedEditor({ billing_mode: 'per_token' }), true)
+  assert.equal(modelPriceCanUseFixedEditor({ billing_mode: 'expression' }), false)
 })

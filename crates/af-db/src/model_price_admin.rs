@@ -51,6 +51,7 @@ pub struct ModelPriceWriteRecord {
     expected_version: Option<u64>,
     billing_mode: ModelPriceBillingMode,
     prices: [Decimal; 5],
+    billing_expression: Option<String>,
 }
 
 impl ModelPriceWriteRecord {
@@ -61,13 +62,27 @@ impl ModelPriceWriteRecord {
         billing_mode: ModelPriceBillingMode,
         prices: [Decimal; 5],
     ) -> Result<Self, ModelPriceWriteError> {
+        Self::new_with_expression(model, expected_version, billing_mode, prices, None)
+    }
+
+    /// 校验并构造包含可选计费表达式的管理员写入记录。
+    pub fn new_with_expression(
+        model: String,
+        expected_version: Option<u64>,
+        billing_mode: ModelPriceBillingMode,
+        prices: [Decimal; 5],
+        billing_expression: Option<String>,
+    ) -> Result<Self, ModelPriceWriteError> {
         if !is_valid_model_name(&model)
             || expected_version == Some(0)
             || prices
                 .iter()
                 .any(|price| !is_valid_model_price_decimal(*price))
-            || billing_mode == ModelPriceBillingMode::Expression
-            || !crate::model_price::is_valid_model_price_shape(billing_mode, prices, None)
+            || !crate::model_price::is_valid_model_price_shape(
+                billing_mode,
+                prices,
+                billing_expression.as_deref(),
+            )
         {
             return Err(ModelPriceWriteError::InvalidInput);
         }
@@ -76,6 +91,7 @@ impl ModelPriceWriteRecord {
             expected_version,
             billing_mode,
             prices,
+            billing_expression,
         })
     }
 
@@ -97,6 +113,12 @@ impl ModelPriceWriteRecord {
     #[must_use]
     pub const fn prices(&self) -> [Decimal; 5] {
         self.prices
+    }
+
+    /// 返回待写入的表达式正文；调用方不得将正文写入日志或错误。
+    #[must_use]
+    pub fn billing_expression(&self) -> Option<&str> {
+        self.billing_expression.as_deref()
     }
 }
 
@@ -317,8 +339,8 @@ fn apply_fields(
     active.cache_read_price = Set(SensitiveDecimal::from(cache_read));
     active.cache_creation_5m_price = Set(SensitiveDecimal::from(cache_creation_5m));
     active.cache_creation_1h_price = Set(SensitiveDecimal::from(cache_creation_1h));
-    // 当前管理 API 尚未开放表达式编辑，写入固定单价时必须显式清除旧表达式。
-    active.billing_expression = Set(None);
+    // 表达式正文与计费模式保持同一事务更新，切回固定单价时显式清除旧正文。
+    active.billing_expression = Set(write.billing_expression.clone().map(SensitiveString::from));
     active.version = Set(version);
 }
 

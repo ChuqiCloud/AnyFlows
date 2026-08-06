@@ -27,6 +27,7 @@ const MAX_DECIMAL_TEXT_BYTES: usize = 39;
 pub(crate) enum AdminModelPriceBillingModeValue {
     PerToken,
     Free,
+    Expression,
 }
 
 impl From<AdminModelPriceBillingMode> for AdminModelPriceBillingModeValue {
@@ -34,6 +35,7 @@ impl From<AdminModelPriceBillingMode> for AdminModelPriceBillingModeValue {
         match value {
             AdminModelPriceBillingMode::PerToken => Self::PerToken,
             AdminModelPriceBillingMode::Free => Self::Free,
+            AdminModelPriceBillingMode::Expression => Self::Expression,
         }
     }
 }
@@ -43,6 +45,7 @@ impl From<AdminModelPriceBillingModeValue> for AdminModelPriceBillingMode {
         match value {
             AdminModelPriceBillingModeValue::PerToken => Self::PerToken,
             AdminModelPriceBillingModeValue::Free => Self::Free,
+            AdminModelPriceBillingModeValue::Expression => Self::Expression,
         }
     }
 }
@@ -101,6 +104,8 @@ pub(crate) struct AdminModelPriceResponse {
     model: String,
     billing_mode: AdminModelPriceBillingModeValue,
     prices: AdminModelPriceValues,
+    #[schema(max_length = 8192, required = true)]
+    billing_expression: Option<String>,
     #[schema(minimum = 1)]
     version: u64,
 }
@@ -176,6 +181,8 @@ pub(crate) struct AdminModelPriceWriteItemRequest {
     expected_version: Option<u64>,
     billing_mode: AdminModelPriceBillingModeValue,
     prices: AdminModelPriceValues,
+    #[schema(max_length = 8192)]
+    billing_expression: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -269,6 +276,7 @@ impl AdminModelPriceResponse {
             model: price.model().to_owned(),
             billing_mode: price.billing_mode().into(),
             prices: AdminModelPriceValues::from_prices(price.prices()),
+            billing_expression: price.billing_expression().map(str::to_owned),
             version: price.version(),
         }
     }
@@ -326,11 +334,12 @@ impl AdminModelPriceSourceCandidateResponse {
 
 impl AdminModelPriceWriteItemRequest {
     fn into_command(self) -> Result<AdminModelPriceWriteCommand, ManagementError> {
-        AdminModelPriceWriteCommand::new(
+        AdminModelPriceWriteCommand::new_with_expression(
             self.model,
             self.expected_version,
             self.billing_mode.into(),
             self.prices.into_prices()?,
+            self.billing_expression,
         )
         .map_err(map_price_error)
     }
