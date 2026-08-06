@@ -21,13 +21,14 @@ use af_admin::{
     DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
     DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
     DatabaseSiteSettingsService, DatabaseTokenAuthenticator, DatabaseUserInvitationService,
-    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery,
-    InitialSetup, ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
-    PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
-    PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
+    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserTopupService,
+    DatabaseUserWalletService, EmailDelivery, InitialSetup, ModelCatalogReader,
+    NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError, PasswordResetService,
+    PasswordResetServiceConfigError, PlaygroundConversationService, PlaygroundShareService,
+    RedemptionService, RegistrationService, RegistrationServiceConfigError,
     RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
     SiteSettingsService, TokenAuthenticator, UserInvitationService, UserProfileService,
-    UserTokenService, UserWalletService,
+    UserTokenService, UserTopupService, UserWalletService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -1362,8 +1363,8 @@ impl Bootstrap<Supervised> {
                     self.stage.debug_trace_runtime.clone(),
                 )),
             ));
-        let payment_webhook_processor =
-            self.config.payment().stripe_webhook_secret().map(|secret| {
+        let (user_topup_service, payment_webhook_processor) =
+            if let Some(secret) = self.config.payment().stripe_webhook_secret() {
                 let provider = StripePaymentProvider::new(
                     secret.expose(),
                     self.config.payment().stripe_signature_tolerance_secs(),
@@ -1374,11 +1375,18 @@ impl Bootstrap<Supervised> {
                     Duration::from_secs(self.config.auth().lookup_timeout_secs()),
                 )
                 .expect("认证查询超时已校验为正数，充值仓储必须可装配");
-                Arc::new(TopupWebhookProcessor::new(
-                    Arc::new(provider),
-                    Arc::new(repository),
-                ))
-            });
+                let service: Arc<dyn UserTopupService> =
+                    Arc::new(DatabaseUserTopupService::new(repository.clone()));
+                (
+                    Some(service),
+                    Some(Arc::new(TopupWebhookProcessor::new(
+                        Arc::new(provider),
+                        Arc::new(repository),
+                    ))),
+                )
+            } else {
+                (None, None)
+            };
         let payment_webhook_routes =
             build_payment_webhook_router("stripe", payment_webhook_processor);
         let router = build_router(
@@ -1396,6 +1404,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.password_reset_service),
             Arc::clone(&self.stage.infrastructure.user_profile_service),
             Arc::clone(&self.stage.infrastructure.user_wallet_service),
+            user_topup_service,
             Arc::clone(&self.stage.infrastructure.redemption_service),
             Arc::clone(&self.stage.infrastructure.user_invitation_service),
             Arc::clone(&self.stage.infrastructure.site_settings_service),

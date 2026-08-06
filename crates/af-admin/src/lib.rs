@@ -46,6 +46,7 @@ mod usage_log_read;
 mod user_profile;
 mod user_read;
 mod user_token;
+mod user_topup;
 mod user_wallet;
 mod user_write;
 mod wallet;
@@ -273,6 +274,11 @@ pub use user_token::{
     MAX_USER_TOKENS_PER_USER, UserToken, UserTokenCreateFuture, UserTokenDeleteFuture,
     UserTokenError, UserTokenGetFuture, UserTokenListFuture, UserTokenListQuery, UserTokenPage,
     UserTokenService, UserTokenStatus, UserTokenUpdateFuture, UserTokenWriteCommand,
+};
+pub use user_topup::{
+    DatabaseUserTopupService, MAX_STRIPE_TOPUP_AMOUNT_MINOR, MIN_STRIPE_TOPUP_AMOUNT_MINOR,
+    STRIPE_TOPUP_CURRENCY, UserTopupError, UserTopupOrder, UserTopupOrderCreateCommand,
+    UserTopupOrderCreateFuture, UserTopupService,
 };
 pub use user_wallet::{
     DEFAULT_USER_WALLET_PAGE_SIZE, DatabaseUserWalletService, UserWalletEntry, UserWalletEntryType,

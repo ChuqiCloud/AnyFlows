@@ -33,6 +33,12 @@ pub(crate) enum ManagementError {
     WalletOverflow,
     /// 调账提交结果未知，调用方必须复用同一事件键确认。
     WalletOutcomeUnknown,
+    /// 当前实例尚未配置可用的 Stripe 充值通道。
+    TopupUnavailable,
+    /// 充值幂等键已经绑定不同订单事实。
+    TopupOrderConflict,
+    /// 充值订单提交结果未知，调用方必须复用同一幂等键确认。
+    TopupOrderOutcomeUnknown,
     /// 兑换码批次不存在。
     RedemptionBatchNotFound,
     /// 兑换码批次版本或不可变事实发生冲突。
@@ -272,6 +278,27 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "wallet_outcome_unknown",
                     message: "Wallet outcome unknown",
+                },
+            ),
+            Self::TopupUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "topup_unavailable",
+                    message: "Top-up service unavailable",
+                },
+            ),
+            Self::TopupOrderConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "topup_order_conflict",
+                    message: "Top-up order conflict",
+                },
+            ),
+            Self::TopupOrderOutcomeUnknown => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "topup_order_outcome_unknown",
+                    message: "Top-up order outcome unknown",
                 },
             ),
             Self::RedemptionBatchNotFound => (

@@ -30,6 +30,7 @@ mod tokens;
 mod usage_logs;
 mod user_profile;
 mod user_tokens;
+mod user_topups;
 mod user_wallet;
 mod users;
 mod wallet;
@@ -50,6 +51,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(password_reset::document());
     document.merge(user_profile::document());
     document.merge(user_wallet::document());
+    document.merge(user_topups::document());
     document.merge(invitations::document());
     document.merge(email_settings::document());
     document.merge(network_settings::document());
@@ -134,7 +136,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 68);
+        assert_eq!(document.paths.paths.len(), 69);
         let operation_count = document
             .paths
             .paths
@@ -155,7 +157,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 106);
+        assert_eq!(operation_count, 107);
         assert!(
             document
                 .components
@@ -197,6 +199,7 @@ mod tests {
             "updateUserNotificationPreferences",
             "createPlaygroundShare",
             "createUserToken",
+            "createUserTopupOrder",
             "deletePlaygroundConversation",
             "deleteAdminChannel",
             "deleteAdminCredential",
@@ -289,7 +292,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 176);
+        assert_eq!(schemas.len(), 179);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminChannelAutoBanRules"));
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
@@ -342,6 +345,9 @@ mod tests {
         assert!(schemas.contains_key("UserWalletEntryType"));
         assert!(schemas.contains_key("UserWalletEntry"));
         assert!(schemas.contains_key("UserWalletListResponse"));
+        assert!(schemas.contains_key("UserTopupOrderCreateRequest"));
+        assert!(schemas.contains_key("UserTopupOrderStatus"));
+        assert!(schemas.contains_key("UserTopupOrder"));
         assert!(schemas.contains_key("UserNotificationPreferencesResponse"));
         assert!(schemas.contains_key("UserProfileUpdateRequest"));
         assert!(schemas.contains_key("UserPasswordChangeRequest"));

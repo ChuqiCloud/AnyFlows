@@ -1454,6 +1454,102 @@
         ]
       }
     },
+    "/api/account/wallet/topups": {
+      "post": {
+        "tags": [
+          "我的钱包"
+        ],
+        "summary": "创建当前用户充值订单",
+        "operationId": "createUserTopupOrder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserTopupOrderCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "相同幂等键和金额对应的订单已经存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTopupOrder"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "本地 Stripe 充值订单首次创建；尚未向 Provider 提交",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTopupOrder"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "幂等键或 Stripe/USD 金额无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等键已经绑定不同充值事实",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Stripe 未配置、数据库暂不可用或提交结果未知",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/account/invitations": {
       "get": {
         "tags": [
@@ -14340,6 +14436,9 @@
               "wallet_insufficient_quota",
               "wallet_overflow",
               "wallet_outcome_unknown",
+              "topup_unavailable",
+              "topup_order_conflict",
+              "topup_order_outcome_unknown",
               "redemption_batch_not_found",
               "redemption_batch_conflict",
               "redemption_code_invalid",
@@ -15692,6 +15791,103 @@
           }
         },
         "additionalProperties": false
+      },
+      "UserTopupOrder": {
+        "type": "object",
+        "description": "当前用户可见的充值订单快照，不包含支付侧订单号或流水号。",
+        "required": [
+          "order_id",
+          "provider",
+          "status",
+          "amount_minor",
+          "currency",
+          "quota_amount",
+          "version",
+          "created_at",
+          "replayed"
+        ],
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "provider": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/UserTopupOrderStatus"
+          },
+          "amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 99999999,
+            "minimum": 50
+          },
+          "currency": {
+            "type": "string",
+            "maxLength": 3,
+            "minLength": 3,
+            "pattern": "^[A-Z]{3}$"
+          },
+          "quota_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserTopupOrderCreateRequest": {
+        "type": "object",
+        "description": "当前用户创建本地充值订单的结构化请求。",
+        "required": [
+          "idempotency_key",
+          "amount_minor"
+        ],
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 99999999,
+            "minimum": 50
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserTopupOrderStatus": {
+        "type": "string",
+        "description": "当前用户可见的闭合充值订单状态。",
+        "enum": [
+          "created",
+          "pending",
+          "paid",
+          "failed",
+          "canceled",
+          "expired"
+        ]
       },
       "UserWalletEntry": {
         "type": "object",
