@@ -13,6 +13,7 @@ mod pricing_snapshot;
 pub mod quota_math;
 mod refund_signal_consumer;
 mod refund_signal_queue;
+mod stripe;
 mod usage_record_consumer;
 mod usage_record_database_sink;
 mod usage_record_queue;
@@ -51,10 +52,10 @@ pub use model_price_cache::{
 };
 pub use payment_webhook::{
     MAX_PAYMENT_WEBHOOK_HEADER_NAME_BYTES, MAX_PAYMENT_WEBHOOK_HEADER_VALUE_BYTES,
-    MAX_PAYMENT_WEBHOOK_HEADERS, MAX_PAYMENT_WEBHOOK_PAYLOAD_BYTES, PaymentWebhookHeader,
-    PaymentWebhookInputError, PaymentWebhookRequest, PaymentWebhookVerificationError,
-    PaymentWebhookVerifier, TopupPaymentEventFuture, TopupPaymentEventPort,
-    TopupPaymentEventPortError, TopupWebhookOutcome, TopupWebhookProcessor,
+    MAX_PAYMENT_WEBHOOK_HEADERS, MAX_PAYMENT_WEBHOOK_PAYLOAD_BYTES, PaymentProvider,
+    PaymentWebhookHeader, PaymentWebhookInputError, PaymentWebhookRequest,
+    PaymentWebhookVerificationError, PaymentWebhookVerifier, TopupPaymentEventFuture,
+    TopupPaymentEventPort, TopupPaymentEventPortError, TopupWebhookOutcome, TopupWebhookProcessor,
     TopupWebhookProcessorError, VerifiedTopupPaymentEvent,
 };
 pub use pricing::{
@@ -71,6 +72,11 @@ pub use refund_signal_consumer::{
 };
 pub use refund_signal_queue::{
     RefundSignalDelivery, RefundSignalQueue, RefundSignalQueueError, RefundSignalReceiver,
+};
+pub use stripe::{
+    DEFAULT_STRIPE_SIGNATURE_TOLERANCE_SECS, MAX_STRIPE_SIGNATURE_TOLERANCE_SECS,
+    STRIPE_PAYMENT_PROVIDER, STRIPE_SIGNATURE_HEADER, StripePaymentProvider,
+    StripePaymentProviderConfigError,
 };
 pub use usage_record_consumer::{
     UsageRecordConsumer, UsageRecordConsumerError, UsageRecordSink, UsageRecordSinkError,
