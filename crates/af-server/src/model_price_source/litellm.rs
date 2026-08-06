@@ -183,7 +183,10 @@ mod tests {
             1,
             None,
         );
-        assert_eq!(result, Err(ModelPriceSourceDiscoveryError::InvalidResponse));
+        assert!(matches!(
+            result,
+            Err(ModelPriceSourceDiscoveryError::InvalidResponse)
+        ));
     }
 
     #[test]
