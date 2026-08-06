@@ -1434,6 +1434,12 @@
         "free": "Explicitly free",
         "expression": "Expression billing"
       },
+      "sources": {
+        "label": "Reference price source",
+        "public": "public price source",
+        "models_dev": "models.dev",
+        "litellm": "LiteLLM official prices"
+      },
       "fields": {
         "input": "Input",
         "output": "Output",
@@ -1461,7 +1467,7 @@
         "expressionValues": "Fixed price columns must all be zero in expression mode."
       },
       "actions": {
-        "preview": "Get models.dev reference prices",
+        "preview": "Get reference prices",
         "previewing": "Reading reference prices",
         "stage": "Add to pending batch",
         "reviewApply": "Review and apply ({{count}})",
@@ -1481,16 +1487,17 @@
         "fetchedAt": "Fetched {{value}}"
       },
       "evidence": {
-        "title": "models.dev public reference evidence",
-        "sourceBadge": "models.dev",
-        "none": "No reference price has been fetched for this exact provider and Canonical identifier.",
+        "title": "{{source}} public reference evidence",
+        "sourceBadge": "Public price source",
+        "none": "{{source}} has not returned a reference price for this exact provider and Canonical identifier.",
         "disclaimer": "Public costs are review evidence only. They are not this site's sale prices and never overwrite a draft automatically.",
         "deprecated": "Deprecated at source",
-        "tieredWarning": "The source includes tiered or long-context pricing that the current billing engine cannot represent equivalently. Direct application is blocked.",
+        "deprecationDate": "Deprecates on {{date}}",
+        "tieredWarning": "The source includes tiered, priority, flex, batch, or long-context pricing that the current billing engine cannot represent equivalently. Direct application is blocked.",
         "missing": "Not provided",
         "use": "Use the {{field}} reference",
         "cacheWriteBoundary": "This cannot map equivalently to 5m or 1h. Confirm both formal prices manually.",
-        "source": "Source model {{model}}, updated {{updated}}",
+        "source": "Source entry {{name}} · {{model}}, updated {{updated}}",
         "unknownDate": "unknown"
       },
       "editor": {
@@ -1603,10 +1610,10 @@
         "model_price_expression_invalid": "The expression failed version, syntax, or sandbox validation. Check the raw source.",
         "model_price_expression_preview_invalid": "The trial usage or ratios violate exact integer boundaries. Check the input semantics and values.",
         "model_price_expression_evaluation_failed": "The expression could not run with this usage and ratio snapshot. Check division by zero, negative results, overflow, or tier branches.",
-        "model_price_source_timeout": "The models.dev request timed out. Try again shortly.",
-        "model_price_source_unavailable": "models.dev is currently unavailable. Try again shortly.",
-        "model_price_source_response_too_large": "The models.dev response exceeded the fixed capacity limit, so no preview was created.",
-        "model_price_source_invalid_response": "The models.dev response failed structural or decimal validation.",
+        "model_price_source_timeout": "The {{source}} request timed out. Try again shortly.",
+        "model_price_source_unavailable": "{{source}} is currently unavailable. Try again shortly.",
+        "model_price_source_response_too_large": "The {{source}} response exceeded the fixed capacity limit, so no preview was created.",
+        "model_price_source_invalid_response": "The {{source}} response failed structural or decimal validation.",
         "model_price_source_candidate_limit_exceeded": "The public source or local model catalog exceeded the preview candidate limit.",
         "internal_error": "Persistence or runtime snapshot refresh failed. Reload formal prices to confirm the result.",
         "unknown": "The model price request failed. Check the connection and try again."

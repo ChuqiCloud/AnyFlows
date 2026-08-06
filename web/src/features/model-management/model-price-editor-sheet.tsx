@@ -7,12 +7,14 @@ import type {
   AdminModelPriceSourceCandidate,
 } from '@/lib/api/generated/types.gen'
 import { ModelPriceForm } from './model-price-form'
+import type { ModelPriceSource } from './model-price-api'
 import type { ModelPriceDraft, StagedModelPriceDraft } from './model-price-form-model'
 
 export type ModelPriceEditorTarget = {
   candidate?: AdminModelPriceSourceCandidate
   model: AdminModel
   price?: AdminModelPrice
+  source?: ModelPriceSource
   staged?: StagedModelPriceDraft
 }
 
@@ -42,6 +44,7 @@ export function ModelPriceEditorSheet(props: ModelPriceEditorSheetProps) {
             candidate={target.candidate}
             model={target.model}
             price={target.price}
+            source={target.source}
             staged={target.staged}
             onCancel={() => props.onOpenChange(false)}
             onStage={(draft, expectedVersion) => props.onStage(target.model.model, draft, expectedVersion)}

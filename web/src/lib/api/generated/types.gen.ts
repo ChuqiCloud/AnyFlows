@@ -502,6 +502,7 @@ export type AdminModelPriceSourceCandidate = {
     source_model: string;
     source_name: string;
     last_updated: string | null;
+    source_deprecation_date: string | null;
     costs: AdminModelPriceSourceCosts;
     has_tiered_pricing: boolean;
     source_deprecated: boolean;
@@ -511,6 +512,8 @@ export type AdminModelPriceSourceCosts = {
     output: string | null;
     cache_read: string | null;
     cache_write: string | null;
+    cache_creation_5m: string | null;
+    cache_creation_1h: string | null;
 };
 export type AdminModelPriceSourcePreview = {
     source: string;
@@ -2481,6 +2484,24 @@ export type PreviewAdminModelPricesResponses = {
     200: AdminModelPriceSourcePreview;
 };
 export type PreviewAdminModelPricesResponse = PreviewAdminModelPricesResponses[keyof PreviewAdminModelPricesResponses];
+export type PreviewAdminLiteLlmModelPricesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/model-prices/litellm-preview';
+};
+export type PreviewAdminLiteLlmModelPricesErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+    502: ManagementError;
+    504: ManagementError;
+};
+export type PreviewAdminLiteLlmModelPricesError = PreviewAdminLiteLlmModelPricesErrors[keyof PreviewAdminLiteLlmModelPricesErrors];
+export type PreviewAdminLiteLlmModelPricesResponses = {
+    200: AdminModelPriceSourcePreview;
+};
+export type PreviewAdminLiteLlmModelPricesResponse = PreviewAdminLiteLlmModelPricesResponses[keyof PreviewAdminLiteLlmModelPricesResponses];
 export type PreviewAdminModelPriceExpressionData = {
     body: AdminModelPriceExpressionPreviewRequest;
     path?: never;

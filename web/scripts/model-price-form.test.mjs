@@ -7,6 +7,7 @@ import {
   defaultModelPriceDraft,
   expressionModelPriceDraft,
   freeModelPriceDraft,
+  modelPriceCandidateNeedsReview,
   modelPriceDraftIsComplete,
   toModelPriceWriteItem,
 } from '../src/features/model-management/model-price-form-model.ts'
@@ -51,7 +52,7 @@ test('显式免费要求五类价格全部为零', () => {
   assert.equal(modelPriceDraftIsComplete({ ...free, output: '0.1' }), false)
 })
 
-test('models.dev 证据只按等价字段由管理员明确采用', () => {
+test('公开价表证据只按五类等价字段由管理员明确采用', () => {
   const draft = freeModelPriceDraft()
   const candidate = {
     model: 'gpt-test',
@@ -60,15 +61,41 @@ test('models.dev 证据只按等价字段由管理员明确采用', () => {
     source_model: 'gpt-test',
     source_name: 'GPT Test',
     last_updated: null,
-    costs: { input: '1.25', output: '5', cache_read: '0.5', cache_write: '2' },
+    source_deprecation_date: null,
+    costs: {
+      input: '1.25',
+      output: '5',
+      cache_read: '0.5',
+      cache_write: null,
+      cache_creation_5m: '1.5',
+      cache_creation_1h: '2.5',
+    },
     has_tiered_pricing: false,
     source_deprecated: false,
   }
 
-  const applied = applyModelPriceEvidence(draft, candidate, 'input')
-  assert.equal(applied.input, '1.25')
-  assert.equal(applied.cacheCreation5m, '0')
-  assert.equal(applied.cacheCreation1h, '0')
+  const fields = ['input', 'output', 'cacheRead', 'cacheCreation5m', 'cacheCreation1h']
+  const applied = fields.reduce(
+    (current, field) => applyModelPriceEvidence(current, candidate, field),
+    draft,
+  )
+  assert.deepEqual(applied, {
+    ...draft,
+    input: '1.25',
+    output: '5',
+    cacheRead: '0.5',
+    cacheCreation5m: '1.5',
+    cacheCreation1h: '2.5',
+  })
+  assert.equal(modelPriceCandidateNeedsReview(candidate), false)
+  assert.equal(modelPriceCandidateNeedsReview({
+    ...candidate,
+    source_deprecation_date: '2026-12-31',
+  }), true)
+  assert.equal(modelPriceCandidateNeedsReview({
+    ...candidate,
+    costs: { ...candidate.costs, cache_creation_1h: null },
+  }), true)
 })
 
 test('写入请求保留正版本或显式创建前置条件', () => {

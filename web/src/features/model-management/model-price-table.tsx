@@ -18,11 +18,13 @@ import {
   modelPriceDraftIsComplete,
   type StagedModelPriceDraft,
 } from './model-price-form-model'
+import type { ModelPriceSource } from './model-price-api'
 
 export type ModelPriceRow = {
   candidate?: AdminModelPriceSourceCandidate
   model: AdminModel
   price?: AdminModelPrice
+  source?: ModelPriceSource
   staged?: StagedModelPriceDraft
 }
 
@@ -120,7 +122,7 @@ function ModelIdentity({ row, priceIndexComplete }: { row: ModelPriceRow; priceI
       <div className="mt-0.5 truncate font-mono text-[0.6875rem] text-muted-foreground">{row.model.model}</div>
       <div className="mt-1 flex flex-wrap items-center gap-1.5">
         <Badge>{row.model.provider}</Badge>
-        {row.candidate ? <Badge>{t('modelManagement.prices.evidence.sourceBadge')}</Badge> : null}
+        {row.candidate && row.source ? <Badge>{t(`modelManagement.prices.sources.${row.source}`)}</Badge> : null}
       </div>
       {missingPublicPrice ? <p className="mt-1.5 text-[0.6875rem] leading-4 text-warning">{t('modelManagement.prices.status.publicMissing')}</p> : null}
     </div>

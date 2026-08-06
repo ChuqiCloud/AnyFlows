@@ -100,7 +100,7 @@ use crate::{
     group_pricing_refresh::RuntimeGroupPricingRefresher,
     model_catalog::RuntimeModelCatalogReader,
     model_discovery::DatabaseUpstreamModelDiscoverer,
-    model_price_source::{ModelsDevPriceDiscoverer, RuntimeModelPriceRefresher},
+    model_price_source::{ModelPriceDiscoverer, RuntimeModelPriceRefresher},
     oauth_connection::{
         OAuthRuntimeConfigError, PreparedOAuthLoopbackServer, initialize_oauth_refresh_supervisor,
         initialize_oauth_runtime, register_oauth_loopback_servers,
@@ -945,7 +945,7 @@ impl Bootstrap<RelayReady> {
                     self.stage.infrastructure.infrastructure.database.clone(),
                 ),
                 model_catalog_metadata.clone(),
-                Arc::new(ModelsDevPriceDiscoverer::new(
+                Arc::new(ModelPriceDiscoverer::new(
                     self.stage.upstream_clients.clone(),
                 )),
                 Arc::new(RuntimeModelPriceRefresher::new(model_prices.clone())),

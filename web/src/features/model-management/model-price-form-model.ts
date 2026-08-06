@@ -30,7 +30,12 @@ export type ModelPriceValidationMessages = {
   expressionValues: string
 }
 
-export type ModelPriceEvidenceField = 'input' | 'output' | 'cacheRead'
+export type ModelPriceEvidenceField =
+  | 'input'
+  | 'output'
+  | 'cacheRead'
+  | 'cacheCreation5m'
+  | 'cacheCreation1h'
 
 const DECIMAL_PATTERN = /^(0|[1-9][0-9]{0,9})(\.[0-9]{1,28})?$/
 const ZERO_DECIMAL_PATTERN = /^0+(\.0+)?$/
@@ -137,14 +142,20 @@ export function toModelPriceWriteItem(
   }
 }
 
-/** 只允许语义等价的输入、输出和缓存读取证据进入对应正式字段。 */
+/** 只允许语义等价的五类公开价格证据进入对应正式字段。 */
 export function applyModelPriceEvidence(
   draft: ModelPriceDraft,
   candidate: AdminModelPriceSourceCandidate,
   field: ModelPriceEvidenceField,
 ): ModelPriceDraft {
-  const sourceKey = field === 'cacheRead' ? 'cache_read' : field
-  const value = candidate.costs[sourceKey]
+  const sourceKey = {
+    input: 'input',
+    output: 'output',
+    cacheRead: 'cache_read',
+    cacheCreation5m: 'cache_creation_5m',
+    cacheCreation1h: 'cache_creation_1h',
+  } as const
+  const value = candidate.costs[sourceKey[field]]
   return value === null ? draft : { ...draft, [field]: value }
 }
 
@@ -152,9 +163,12 @@ export function modelPriceCandidateNeedsReview(candidate?: AdminModelPriceSource
   return candidate !== undefined && (
     candidate.has_tiered_pricing
     || candidate.source_deprecated
+    || candidate.source_deprecation_date !== null
     || candidate.costs.input === null
     || candidate.costs.output === null
     || candidate.costs.cache_read === null
+    || candidate.costs.cache_creation_5m === null
+    || candidate.costs.cache_creation_1h === null
     || candidate.costs.cache_write !== null
   )
 }

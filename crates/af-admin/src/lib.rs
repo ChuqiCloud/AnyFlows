@@ -148,7 +148,8 @@ pub use model_price::{
     MAX_MODEL_PRICE_EXPRESSION_PREVIEW_INTEGER, MAX_MODEL_PRICE_SOURCE_TARGETS,
     ModelPriceRuntimeRefreshError, ModelPriceRuntimeRefreshFuture, ModelPriceRuntimeRefresher,
     ModelPriceSourceCandidate, ModelPriceSourceDiscoverer, ModelPriceSourceDiscoveryError,
-    ModelPriceSourceDiscoveryFuture, ModelPriceSourcePreview, ModelPriceSourceTarget,
+    ModelPriceSourceDiscoveryFuture, ModelPriceSourceKind, ModelPriceSourcePreview,
+    ModelPriceSourceTarget,
 };
 pub use model_sync::{
     AdminModelSyncApplyCommand, AdminModelSyncApplyItemCommand, AdminModelSyncError,

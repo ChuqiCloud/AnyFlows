@@ -24,6 +24,25 @@ pub const MAX_MODEL_PRICE_EXPRESSION_PREVIEW_INTEGER: i64 = 9_007_199_254_740_99
 const MAX_SOURCE_REVISION_BYTES: usize = 128;
 const MAX_SOURCE_TEXT_BYTES: usize = 128;
 
+/// 管理端支持读取的固定公开模型价格来源。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ModelPriceSourceKind {
+    /// models.dev 的提供商分组目录。
+    ModelsDev,
+    /// LiteLLM 官方模型价格映射。
+    LiteLlm,
+}
+
+impl ModelPriceSourceKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ModelsDev => "models_dev",
+            Self::LiteLlm => "litellm",
+        }
+    }
+}
+
 /// 管理端可写入的闭合模型计费模式。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AdminModelPriceBillingMode {
@@ -468,6 +487,8 @@ pub struct ModelPriceSourceCandidate {
     source_name: String,
     last_updated: Option<String>,
     costs: [Option<Decimal>; 4],
+    cache_creation_prices: [Option<Decimal>; 2],
+    source_deprecation_date: Option<String>,
     has_tiered_pricing: bool,
     source_deprecated: bool,
 }
@@ -505,6 +526,8 @@ impl ModelPriceSourceCandidate {
             source_name,
             last_updated,
             costs,
+            cache_creation_prices: [None; 2],
+            source_deprecation_date: None,
             has_tiered_pricing,
             source_deprecated,
         })
@@ -546,6 +569,42 @@ impl ModelPriceSourceCandidate {
         self.costs
     }
 
+    /// 返回 LiteLLM 明确提供的 5 分钟与 1 小时缓存创建单价。
+    #[must_use]
+    pub const fn cache_creation_prices(&self) -> [Option<Decimal>; 2] {
+        self.cache_creation_prices
+    }
+
+    /// 返回来源声明的弃用日期；它只用于人工复核，不自动改变正式价格。
+    #[must_use]
+    pub fn source_deprecation_date(&self) -> Option<&str> {
+        self.source_deprecation_date.as_deref()
+    }
+
+    /// 补充来源的两类缓存创建价格证据。
+    pub fn with_cache_creation_prices(
+        mut self,
+        prices: [Option<Decimal>; 2],
+    ) -> Result<Self, ModelPriceSourceDiscoveryError> {
+        if prices.iter().flatten().any(|price| *price < Decimal::ZERO) {
+            return Err(ModelPriceSourceDiscoveryError::InvalidResponse);
+        }
+        self.cache_creation_prices = prices;
+        Ok(self)
+    }
+
+    /// 补充来源声明的弃用日期，并校验其为短日期文本。
+    pub fn with_source_deprecation_date(
+        mut self,
+        date: Option<String>,
+    ) -> Result<Self, ModelPriceSourceDiscoveryError> {
+        if date.as_deref().is_some_and(|value| !valid_date_text(value)) {
+            return Err(ModelPriceSourceDiscoveryError::InvalidResponse);
+        }
+        self.source_deprecation_date = date;
+        Ok(self)
+    }
+
     #[must_use]
     pub const fn has_tiered_pricing(&self) -> bool {
         self.has_tiered_pricing
@@ -565,6 +624,14 @@ impl fmt::Debug for ModelPriceSourceCandidate {
             .field("has_output", &self.costs[1].is_some())
             .field("has_cache_read", &self.costs[2].is_some())
             .field("has_cache_write", &self.costs[3].is_some())
+            .field(
+                "has_cache_creation_5m",
+                &self.cache_creation_prices[0].is_some(),
+            )
+            .field(
+                "has_cache_creation_1h",
+                &self.cache_creation_prices[1].is_some(),
+            )
             .field("has_tiered_pricing", &self.has_tiered_pricing)
             .field("source_deprecated", &self.source_deprecated)
             .finish_non_exhaustive()
@@ -586,7 +653,7 @@ impl ModelPriceSourcePreview {
         revision: Option<String>,
         candidates: Vec<ModelPriceSourceCandidate>,
     ) -> Result<Self, ModelPriceSourceDiscoveryError> {
-        if source != "models_dev"
+        if !matches!(source, "models_dev" | "litellm")
             || fetched_at <= 0
             || revision
                 .as_deref()
@@ -662,6 +729,7 @@ pub type ModelPriceSourceDiscoveryFuture<'a> = Pin<
 pub trait ModelPriceSourceDiscoverer: Send + Sync {
     fn discover<'a>(
         &'a self,
+        source: ModelPriceSourceKind,
         targets: Vec<ModelPriceSourceTarget>,
     ) -> ModelPriceSourceDiscoveryFuture<'a>;
 }
@@ -735,7 +803,11 @@ pub trait AdminModelPriceService: Send + Sync {
         query: AdminModelPriceListQuery,
     ) -> AdminModelPriceListFuture<'a>;
 
-    fn preview<'a>(&'a self, principal: SessionPrincipal) -> AdminModelPricePreviewFuture<'a>;
+    fn preview<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        source: ModelPriceSourceKind,
+    ) -> AdminModelPricePreviewFuture<'a>;
 
     fn preview_expression<'a>(
         &'a self,
@@ -799,12 +871,16 @@ impl AdminModelPriceService for DatabaseAdminModelPriceService {
         })
     }
 
-    fn preview<'a>(&'a self, principal: SessionPrincipal) -> AdminModelPricePreviewFuture<'a> {
+    fn preview<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        source: ModelPriceSourceKind,
+    ) -> AdminModelPricePreviewFuture<'a> {
         Box::pin(async move {
             require_admin(principal)?;
             let targets = self.load_source_targets().await?;
             self.source
-                .discover(targets)
+                .discover(source, targets)
                 .await
                 .map_err(map_source_error)
         })
@@ -949,6 +1025,17 @@ fn valid_text(value: &str, maximum_bytes: usize) -> bool {
         && value.len() <= maximum_bytes
         && value.trim() == value
         && !value.chars().any(char::is_control)
+}
+
+fn valid_date_text(value: &str) -> bool {
+    value.len() == 10
+        && value.as_bytes()[4] == b'-'
+        && value.as_bytes()[7] == b'-'
+        && value
+            .as_bytes()
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| matches!(index, 4 | 7) || byte.is_ascii_digit())
 }
 
 #[cfg(test)]

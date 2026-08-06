@@ -13,6 +13,7 @@ import type {
   AdminModelPriceSourceCandidate,
 } from '@/lib/api/generated/types.gen'
 import { ModelManagementField } from './model-management-field'
+import type { ModelPriceSource } from './model-price-api'
 import { ModelPriceExpressionEditor } from './model-price-expression-editor'
 import {
   applyModelPriceEvidence,
@@ -31,6 +32,7 @@ type ModelPriceFormProps = {
   onCancel: () => void
   onStage: (draft: ModelPriceDraft, expectedVersion: number | null) => void
   price?: AdminModelPrice
+  source?: ModelPriceSource
   staged?: StagedModelPriceDraft
 }
 
@@ -201,7 +203,7 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
               </div>
             </section>
 
-            <PriceEvidence candidate={props.candidate} onUse={useEvidence} />
+            <PriceEvidence candidate={props.candidate} source={props.source} onUse={useEvidence} />
           </>
         )}
       </div>
@@ -217,14 +219,18 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
 function PriceEvidence(props: {
   candidate?: AdminModelPriceSourceCandidate
   onUse: (field: ModelPriceEvidenceField) => void
+  source?: ModelPriceSource
 }) {
   const { t } = useTranslation()
   const candidate = props.candidate
+  const sourceName = props.source
+    ? t(`modelManagement.prices.sources.${props.source}`)
+    : t('modelManagement.prices.sources.public')
   if (!candidate) {
     return (
       <section className="border-t border-[var(--hairline)] pt-5" aria-labelledby="model-price-evidence">
-        <h3 id="model-price-evidence" className="text-xs font-semibold">{t('modelManagement.prices.evidence.title')}</h3>
-        <p className="mt-2 text-xs leading-5 text-muted-foreground">{t('modelManagement.prices.evidence.none')}</p>
+        <h3 id="model-price-evidence" className="text-xs font-semibold">{t('modelManagement.prices.evidence.title', { source: sourceName })}</h3>
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">{t('modelManagement.prices.evidence.none', { source: sourceName })}</p>
       </section>
     )
   }
@@ -232,15 +238,18 @@ function PriceEvidence(props: {
     { field: 'input', label: 'input', value: candidate.costs.input },
     { field: 'output', label: 'output', value: candidate.costs.output },
     { field: 'cacheRead', label: 'cacheRead', value: candidate.costs.cache_read },
+    { field: 'cacheCreation5m', label: 'cacheCreation5m', value: candidate.costs.cache_creation_5m },
+    { field: 'cacheCreation1h', label: 'cacheCreation1h', value: candidate.costs.cache_creation_1h },
   ] as const
   return (
     <section className="grid gap-3 border-t border-[var(--hairline)] pt-5" aria-labelledby="model-price-evidence">
       <div>
         <div className="flex flex-wrap items-center gap-2">
-          <h3 id="model-price-evidence" className="text-xs font-semibold">{t('modelManagement.prices.evidence.title')}</h3>
+          <h3 id="model-price-evidence" className="text-xs font-semibold">{t('modelManagement.prices.evidence.title', { source: sourceName })}</h3>
           <Badge>{candidate.provider_name}</Badge>
           {candidate.has_tiered_pricing ? <Badge className="border-transparent bg-warning/10 text-warning">{t('modelManagement.prices.status.review')}</Badge> : null}
           {candidate.source_deprecated ? <Badge className="border-transparent bg-destructive/10 text-destructive">{t('modelManagement.prices.evidence.deprecated')}</Badge> : null}
+          {candidate.source_deprecation_date ? <Badge className="border-transparent bg-warning/10 text-warning">{t('modelManagement.prices.evidence.deprecationDate', { date: candidate.source_deprecation_date })}</Badge> : null}
         </div>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('modelManagement.prices.evidence.disclaimer')}</p>
       </div>
@@ -262,16 +271,22 @@ function PriceEvidence(props: {
             </Button>
           </div>
         ))}
-        <div className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-[var(--hairline)] px-3 py-2 sm:col-span-2">
-          <div className="min-w-0">
-            <dt className="text-[0.6875rem] text-muted-foreground">{t('modelManagement.prices.fields.cacheWriteEvidence')}</dt>
-            <dd className="mt-1 truncate font-mono text-xs tabular-nums">{candidate.costs.cache_write === null ? t('modelManagement.prices.evidence.missing') : `$${candidate.costs.cache_write}`}</dd>
+        {candidate.costs.cache_write !== null ? (
+          <div className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-[var(--hairline)] px-3 py-2 sm:col-span-2">
+            <div className="min-w-0">
+              <dt className="text-[0.6875rem] text-muted-foreground">{t('modelManagement.prices.fields.cacheWriteEvidence')}</dt>
+              <dd className="mt-1 truncate font-mono text-xs tabular-nums">${candidate.costs.cache_write}</dd>
+            </div>
+            <span className="max-w-52 text-right text-[0.6875rem] leading-4 text-muted-foreground">{t('modelManagement.prices.evidence.cacheWriteBoundary')}</span>
           </div>
-          <span className="max-w-52 text-right text-[0.6875rem] leading-4 text-muted-foreground">{t('modelManagement.prices.evidence.cacheWriteBoundary')}</span>
-        </div>
+        ) : null}
       </dl>
       <p className="text-[0.6875rem] text-muted-foreground">
-        {t('modelManagement.prices.evidence.source', { model: candidate.source_model, updated: candidate.last_updated ?? t('modelManagement.prices.evidence.unknownDate') })}
+        {t('modelManagement.prices.evidence.source', {
+          model: candidate.source_model,
+          name: candidate.source_name,
+          updated: candidate.last_updated ?? t('modelManagement.prices.evidence.unknownDate'),
+        })}
       </p>
     </section>
   )
