@@ -49,6 +49,7 @@ mod openai_responses;
 mod openapi;
 mod operations;
 mod password_reset;
+mod payment_webhook;
 mod playground_conversations;
 mod playground_shares;
 mod redemption;
@@ -80,6 +81,7 @@ pub use openapi::openapi_document;
 pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
 };
+pub use payment_webhook::build_payment_webhook_router;
 pub use router::{DEFAULT_REQUEST_BODY_LIMIT_BYTES, HttpRouter, build_router};
 pub use serve::{HttpListener, ServeError, ServeOutcome, serve_with_graceful_shutdown};
 
@@ -117,6 +119,8 @@ mod oauth_connections_tests;
 mod operations_tests;
 #[cfg(test)]
 mod password_reset_tests;
+#[cfg(test)]
+mod payment_webhook_tests;
 #[cfg(test)]
 mod playground_conversations_tests;
 #[cfg(test)]

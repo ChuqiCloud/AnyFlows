@@ -18,6 +18,8 @@ mod usage_record_consumer;
 mod usage_record_database_sink;
 mod usage_record_queue;
 
+/// 已通过 webhook 处理器校验的持久化事件写入值。
+pub use af_db::TopupPaymentEventWrite;
 pub use batch::{
     BillingBatch, BillingBatchApplyOutcome, BillingBatchError, BillingBatchEvent,
     BillingBatchFlushOutcome, BillingBatchRecordOutcome, BillingBatchSink, BillingBatchSinkError,

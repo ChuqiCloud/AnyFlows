@@ -37,6 +37,12 @@ pub const DEFAULT_BILLING_FLUSH_TIMEOUT_SECS: u64 = 30;
 pub const MAX_BILLING_FLUSH_INTERVAL_SECS: u64 = 3_600;
 /// 计费 WAL 启动恢复或关闭收尾允许配置的硬上限。
 pub const MAX_BILLING_FLUSH_TIMEOUT_SECS: u64 = 300;
+/// Stripe webhook 签名时间容差默认值。
+pub const DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS: u64 = 300;
+/// Stripe webhook 签名时间容差允许的最大值。
+pub const MAX_PAYMENT_SIGNATURE_TOLERANCE_SECS: u64 = 86_400;
+/// 支付 Provider webhook 密钥允许的最大字节数。
+pub const MAX_PAYMENT_WEBHOOK_SECRET_BYTES: usize = 4 * 1_024;
 /// 用量记录内存接收队列的默认容量。
 pub const DEFAULT_USAGE_RECORD_QUEUE_CAPACITY: usize = 4_096;
 /// 单实例用量记录队列允许配置的硬容量上限。
@@ -404,6 +410,37 @@ impl Default for BillingSettings {
             usage_record_queue_capacity: DEFAULT_USAGE_RECORD_QUEUE_CAPACITY,
             usage_record_worker_count: DEFAULT_USAGE_RECORD_WORKER_COUNT,
             wal_directory: PathBuf::from("data/billing-wal"),
+        }
+    }
+}
+
+/// 支付 Provider 的启动期安全配置。
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct PaymentSettings {
+    stripe_webhook_secret: Option<SecretString>,
+    stripe_signature_tolerance_secs: u64,
+}
+
+impl PaymentSettings {
+    /// 返回 Stripe webhook 密钥；未配置时回调路由保持禁用。
+    #[must_use]
+    pub fn stripe_webhook_secret(&self) -> Option<&SecretString> {
+        self.stripe_webhook_secret.as_ref()
+    }
+
+    /// 返回 Stripe webhook 的重放保护时间容差。
+    #[must_use]
+    pub const fn stripe_signature_tolerance_secs(&self) -> u64 {
+        self.stripe_signature_tolerance_secs
+    }
+}
+
+impl Default for PaymentSettings {
+    fn default() -> Self {
+        Self {
+            stripe_webhook_secret: None,
+            stripe_signature_tolerance_secs: DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS,
         }
     }
 }
@@ -824,6 +861,8 @@ pub struct AppConfig {
     #[serde(default)]
     billing: BillingSettings,
     #[serde(default)]
+    payment: PaymentSettings,
+    #[serde(default)]
     channel_probe: ChannelProbeSettings,
     #[serde(default)]
     credential_encryption: CredentialEncryptionSettings,
@@ -862,6 +901,12 @@ impl AppConfig {
     #[must_use]
     pub const fn billing(&self) -> &BillingSettings {
         &self.billing
+    }
+
+    /// 返回支付 Provider 的启动期安全配置。
+    #[must_use]
+    pub const fn payment(&self) -> &PaymentSettings {
+        &self.payment
     }
 
     /// 返回自动禁用渠道的周期探活设置。
@@ -1020,6 +1065,32 @@ impl AppConfig {
             return Err(ConfigError::EmptyValue {
                 field: "billing.wal_directory",
             });
+        }
+        if self.payment.stripe_signature_tolerance_secs == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "payment.stripe_signature_tolerance_secs",
+            });
+        }
+        if self.payment.stripe_signature_tolerance_secs > MAX_PAYMENT_SIGNATURE_TOLERANCE_SECS {
+            return Err(ConfigError::OutOfRange {
+                field: "payment.stripe_signature_tolerance_secs",
+            });
+        }
+        if let Some(secret) = self.payment.stripe_webhook_secret.as_ref() {
+            validate_nonempty_text(
+                secret.expose(),
+                "payment.stripe_webhook_secret",
+                MAX_PAYMENT_WEBHOOK_SECRET_BYTES,
+            )?;
+            if secret
+                .expose()
+                .bytes()
+                .any(|byte| byte < b' ' || byte == 0x7f)
+            {
+                return Err(ConfigError::InvalidField {
+                    field: "payment.stripe_webhook_secret",
+                });
+            }
         }
         if self.channel_probe.batch_size == 0 {
             return Err(ConfigError::NonPositive {

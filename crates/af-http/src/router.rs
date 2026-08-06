@@ -167,6 +167,7 @@ pub fn build_router(
     admin_wallet_service: Option<Arc<dyn AdminWalletService>>,
     query_api_key_policy: QueryApiKeyPolicy,
     frontend_assets: Option<Arc<dyn FrontendAssetSource>>,
+    payment_webhook_routes: Option<Router>,
 ) -> HttpRouter {
     let openai_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config),
@@ -590,7 +591,9 @@ pub fn build_router(
         None => management_routes,
     };
     HttpRouter::new(build_router_with_routes_and_frontend(
-        public_routes.merge(management_routes),
+        public_routes
+            .merge(management_routes)
+            .merge(payment_webhook_routes.unwrap_or_else(Router::new)),
         operations_router(readiness),
         config,
         DEFAULT_REQUEST_BODY_LIMIT_BYTES,
