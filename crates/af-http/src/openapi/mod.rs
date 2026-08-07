@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 70);
+        assert_eq!(document.paths.paths.len(), 71);
         let operation_count = document
             .paths
             .paths
@@ -157,7 +157,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 108);
+        assert_eq!(operation_count, 109);
         assert!(
             document
                 .components
@@ -247,6 +247,7 @@ mod tests {
             "listAdminModels",
             "listAdminOAuthProviders",
             "listAdminModelPrices",
+            "listAdminRedemptionAudit",
             "listAdminRedemptionBatches",
             "listMissingAdminModels",
             "listAdminTokens",
@@ -293,7 +294,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 181);
+        assert_eq!(schemas.len(), 185);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminChannelAutoBanRules"));
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
@@ -323,6 +324,10 @@ mod tests {
         assert!(schemas.contains_key("AdminWalletEntryType"));
         assert!(schemas.contains_key("AdminWalletListResponse"));
         assert!(schemas.contains_key("AdminWalletAdjustmentRequest"));
+        assert!(schemas.contains_key("AdminRedemptionAuditBatch"));
+        assert!(schemas.contains_key("AdminRedemptionAuditListResponse"));
+        assert!(schemas.contains_key("AdminRedemptionAuditStatus"));
+        assert!(schemas.contains_key("AdminRedemptionAuditSummary"));
         assert!(schemas.contains_key("AdminRedemptionBatch"));
         assert!(schemas.contains_key("AdminRedemptionBatchStatus"));
         assert!(schemas.contains_key("AdminRedemptionBatchListResponse"));

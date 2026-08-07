@@ -641,6 +641,36 @@ export type AdminOAuthProviderStatus = {
     loopback_listener_ready: boolean;
     manual_callback_supported: boolean;
 };
+export type AdminRedemptionAuditBatch = {
+    batch_id: string;
+    name: string;
+    created_by_user_id: number;
+    status: AdminRedemptionBatchStatus;
+    quota_amount: number;
+    issued_count: number;
+    redeemed_count: number;
+    remaining_count: number;
+    expired_count: number;
+    disabled_count: number;
+    expires_at: number | null;
+    disabled_at: number | null;
+    last_redeemed_at: number | null;
+    created_at: number;
+    updated_at: number;
+};
+export type AdminRedemptionAuditListResponse = {
+    batches: Array<AdminRedemptionAuditBatch>;
+    summary: AdminRedemptionAuditSummary;
+    next_cursor: number | null;
+};
+export type AdminRedemptionAuditStatus = 'active' | 'expired' | 'disabled' | 'redeemed';
+export type AdminRedemptionAuditSummary = {
+    issued_count: number;
+    redeemed_count: number;
+    remaining_count: number;
+    expired_count: number;
+    disabled_count: number;
+};
 export type AdminRedemptionBatch = {
     batch_id: string;
     name: string;
@@ -1492,6 +1522,30 @@ export type UpdateAdminAuthenticationSettingsResponses = {
     200: AdminAuthenticationSettings;
 };
 export type UpdateAdminAuthenticationSettingsResponse = UpdateAdminAuthenticationSettingsResponses[keyof UpdateAdminAuthenticationSettingsResponses];
+export type ListAdminRedemptionAuditData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+        batch_id?: string;
+        status?: AdminRedemptionAuditStatus;
+        redeemed_after?: number;
+        redeemed_before?: number;
+    };
+    url: '/api/admin/redemption-audit';
+};
+export type ListAdminRedemptionAuditErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminRedemptionAuditError = ListAdminRedemptionAuditErrors[keyof ListAdminRedemptionAuditErrors];
+export type ListAdminRedemptionAuditResponses = {
+    200: AdminRedemptionAuditListResponse;
+};
+export type ListAdminRedemptionAuditResponse = ListAdminRedemptionAuditResponses[keyof ListAdminRedemptionAuditResponses];
 export type ListAdminRedemptionBatchesData = {
     body?: never;
     path?: never;

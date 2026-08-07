@@ -196,12 +196,14 @@ pub use playground_share_token::{
     PresentedPlaygroundShareToken,
 };
 pub use redemption::{
-    AdminRedemptionBatch, AdminRedemptionBatchCreateCommand, AdminRedemptionBatchDisableCommand,
+    AdminRedemptionAuditBatch, AdminRedemptionAuditPage, AdminRedemptionAuditQuery,
+    AdminRedemptionAuditStatus, AdminRedemptionAuditSummary, AdminRedemptionBatch,
+    AdminRedemptionBatchCreateCommand, AdminRedemptionBatchDisableCommand,
     AdminRedemptionBatchDisableResult, AdminRedemptionBatchListQuery, AdminRedemptionBatchPage,
-    DEFAULT_ADMIN_REDEMPTION_BATCH_PAGE_SIZE, DatabaseRedemptionService,
-    IssuedAdminRedemptionBatch, RedemptionCreateFuture, RedemptionDisableFuture,
-    RedemptionListFuture, RedemptionRedeemFuture, RedemptionService, RedemptionServiceError,
-    UserRedemptionCommand, UserRedemptionResult,
+    DEFAULT_ADMIN_REDEMPTION_AUDIT_PAGE_SIZE, DEFAULT_ADMIN_REDEMPTION_BATCH_PAGE_SIZE,
+    DatabaseRedemptionService, IssuedAdminRedemptionBatch, RedemptionAuditFuture,
+    RedemptionCreateFuture, RedemptionDisableFuture, RedemptionListFuture, RedemptionRedeemFuture,
+    RedemptionService, RedemptionServiceError, UserRedemptionCommand, UserRedemptionResult,
 };
 pub use registration::{
     DatabaseRegistrationService, MAX_REGISTRATION_PASSWORD_BYTES, MIN_REGISTRATION_PASSWORD_BYTES,

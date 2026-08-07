@@ -354,14 +354,16 @@ pub use quota::{
     QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationStatus,
 };
 pub use redemption::{
-    IssuedRedemptionBatch, IssuedRedemptionCode, MAX_REDEMPTION_BATCH_CODES,
-    MAX_REDEMPTION_BATCH_NAME_BYTES, MAX_REDEMPTION_BATCH_PAGE_SIZE, PresentedRedemptionCode,
-    RedemptionAttempt, RedemptionBatchCreateOutcome, RedemptionBatchDisable,
-    RedemptionBatchDisableOutcome, RedemptionBatchListRecord, RedemptionBatchPageRecord,
-    RedemptionBatchRecord, RedemptionBatchWrite, RedemptionCodeDefinition, RedemptionCodeDigest,
-    RedemptionInputError, RedemptionMaterialError, RedemptionOutcome, RedemptionRecord,
-    RedemptionRejection, RedemptionRepository, RedemptionRepositoryConfigError,
-    RedemptionRepositoryError,
+    IssuedRedemptionBatch, IssuedRedemptionCode, MAX_REDEMPTION_AUDIT_PAGE_SIZE,
+    MAX_REDEMPTION_BATCH_CODES, MAX_REDEMPTION_BATCH_NAME_BYTES, MAX_REDEMPTION_BATCH_PAGE_SIZE,
+    PresentedRedemptionCode, RedemptionAttempt, RedemptionAuditBatchRecord,
+    RedemptionAuditPageRecord, RedemptionAuditQuery, RedemptionAuditQueryError,
+    RedemptionAuditStatus, RedemptionAuditSummaryRecord, RedemptionBatchCreateOutcome,
+    RedemptionBatchDisable, RedemptionBatchDisableOutcome, RedemptionBatchListRecord,
+    RedemptionBatchPageRecord, RedemptionBatchRecord, RedemptionBatchWrite,
+    RedemptionCodeDefinition, RedemptionCodeDigest, RedemptionInputError, RedemptionMaterialError,
+    RedemptionOutcome, RedemptionRecord, RedemptionRejection, RedemptionRepository,
+    RedemptionRepositoryConfigError, RedemptionRepositoryError,
 };
 pub use registration::{
     DEFAULT_REGISTRATION_RATE_LIMIT_ATTEMPTS, DEFAULT_REGISTRATION_RATE_LIMIT_WINDOW_SECONDS,

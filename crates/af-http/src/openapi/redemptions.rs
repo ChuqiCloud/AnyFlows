@@ -7,12 +7,39 @@ use utoipa::OpenApi;
 use crate::{
     management_error::ManagementErrorBody,
     redemption::{
+        AdminRedemptionAuditBatchResponse, AdminRedemptionAuditListResponse,
+        AdminRedemptionAuditStatusDto, AdminRedemptionAuditSummaryResponse,
         AdminRedemptionBatchCreateRequest, AdminRedemptionBatchDisableRequest,
         AdminRedemptionBatchDisableResponse, AdminRedemptionBatchListResponse,
         AdminRedemptionBatchResponse, AdminRedemptionBatchStatusDto,
         IssuedAdminRedemptionBatchResponse, UserRedemptionRequest, UserRedemptionResponse,
     },
 };
+
+#[utoipa::path(
+    get,
+    path = "/api/admin/redemption-audit",
+    operation_id = "listAdminRedemptionAudit",
+    tag = "兑换码",
+    summary = "读取兑换码运营审计报表",
+    params(
+        ("before" = Option<i64>, Query, minimum = 1, description = "上一页末尾的批次主键游标"),
+        ("limit" = Option<i32>, Query, minimum = 1, maximum = 100, description = "每页批次数量，默认 25"),
+        ("batch_id" = Option<String>, Query, min_length = 32, max_length = 32, description = "精确批次标识"),
+        ("status" = Option<AdminRedemptionAuditStatusDto>, Query, description = "有效批次状态或至少存在兑换事实"),
+        ("redeemed_after" = Option<i64>, Query, minimum = 1, description = "兑换时间窗口起点（Unix 秒，包含）"),
+        ("redeemed_before" = Option<i64>, Query, minimum = 1, description = "兑换时间窗口终点（Unix 秒，不包含）")
+    ),
+    responses(
+        (status = 200, description = "当前结果页的批次审计统计", body = AdminRedemptionAuditListResponse),
+        (status = 400, description = "筛选、时间窗口或分页参数无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn list_admin_redemption_audit() {}
 
 #[utoipa::path(
     get,
@@ -100,12 +127,17 @@ fn redeem_user_redemption_code() {}
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        list_admin_redemption_audit,
         list_admin_redemption_batches,
         create_admin_redemption_batch,
         disable_admin_redemption_batch,
         redeem_user_redemption_code
     ),
     components(schemas(
+        AdminRedemptionAuditStatusDto,
+        AdminRedemptionAuditBatchResponse,
+        AdminRedemptionAuditSummaryResponse,
+        AdminRedemptionAuditListResponse,
         AdminRedemptionBatchStatusDto,
         AdminRedemptionBatchResponse,
         AdminRedemptionBatchListResponse,

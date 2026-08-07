@@ -2853,6 +2853,11 @@
     "eyebrow": "运营工具",
     "title": "兑换码管理",
     "subtitle": "按批次签发同面额兑换码，跟踪到账进度，并在需要时整体停用尚未消费的码。",
+    "views": {
+      "label": "兑换码工作区",
+      "batches": "批次管理",
+      "audit": "运营审计"
+    },
     "summary": {
       "loaded": "已加载 {{count}} 个批次",
       "active": "{{count}} 个有效批次",
@@ -2871,6 +2876,7 @@
       "codeCount": "共 {{count}} 个",
       "redeemed": "{{count}} / {{total}} 已到账",
       "neverExpires": "永不过期",
+      "never": "暂无",
       "createdAt": "创建于 {{value}}"
     },
     "status": {
@@ -2930,6 +2936,58 @@
     "disable": {
       "title": "停用兑换码批次",
       "description": "停用“{{name}}”后，尚未使用的兑换码将立即无法到账；已完成的账本事实不受影响。"
+    },
+    "audit": {
+      "title": "兑换码运营审计",
+      "description": "按批次查看签发、到账和失效分布；筛选只定位已有事实，不会修改批次或余额。",
+      "filters": {
+        "status": "状态筛选",
+        "batchId": "精确批次标识",
+        "batchIdPlaceholder": "32 位批次 ID（可选）",
+        "redeemedWindow": "兑换时间窗口",
+        "redeemedAfter": "起始时间",
+        "redeemedBefore": "结束时间",
+        "hint": "兑换时间筛选使用左闭右开区间；汇总按当前加载结果页计算。",
+        "invalidBatchId": "批次 ID 必须是 32 位十六进制字符。",
+        "invalidDate": "请输入有效的兑换时间。",
+        "reversed": "结束时间必须晚于起始时间。",
+        "reset": "重置",
+        "apply": "应用筛选"
+      },
+      "status": {
+        "all": "全部批次",
+        "redeemed": "有兑换事实"
+      },
+      "metrics": {
+        "issued": "签发",
+        "redeemed": "已兑换",
+        "remaining": "当前可用",
+        "expired": "到期失效",
+        "disabled": "停用失效"
+      },
+      "columns": {
+        "batch": "批次",
+        "issued": "签发数量",
+        "states": "状态分布",
+        "redeemedAt": "最近兑换",
+        "status": "批次状态"
+      },
+      "values": {
+        "redeemed": "已兑换 {{count}}",
+        "remaining": "可用 {{count}}",
+        "invalid": "失效 {{count}}"
+      },
+      "loading": "正在加载运营审计",
+      "empty": {
+        "title": "没有符合条件的批次",
+        "body": "调整状态或兑换时间窗口后再试。"
+      },
+      "privacy": "审计视图只展示批次事实和统计，不返回兑换码明文、摘要或用户敏感凭据。",
+      "errors": {
+        "title": "无法加载运营审计",
+        "body": "审计数据暂时不可用，请稍后重试。",
+        "more": "更早的审计批次加载失败。"
+      }
     },
     "errors": {
       "listTitle": "无法加载兑换码批次",

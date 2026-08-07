@@ -10,6 +10,8 @@ use zeroize::Zeroize as _;
 
 use crate::SessionPrincipal;
 
+use super::audit::{AdminRedemptionAuditQuery, RedemptionAuditFuture};
+
 /// 管理端兑换码批次默认分页数量。
 pub const DEFAULT_ADMIN_REDEMPTION_BATCH_PAGE_SIZE: usize = 25;
 
@@ -457,6 +459,13 @@ pub type RedemptionRedeemFuture<'a> =
 
 /// 兑换码管理与当前用户兑换应用端口。
 pub trait RedemptionService: Send + Sync {
+    /// 读取管理员可见的批次运营统计和兑换事实时间筛选结果。
+    fn audit<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        query: AdminRedemptionAuditQuery,
+    ) -> RedemptionAuditFuture<'a>;
+
     /// 列出管理员可见的非敏感批次汇总。
     fn list<'a>(
         &'a self,

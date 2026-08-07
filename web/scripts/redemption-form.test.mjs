@@ -7,6 +7,7 @@ import {
   expirationUnixSeconds,
   toRedemptionBatchRequest,
 } from '../src/features/redemptions/redemption-form-model.ts'
+import { parseRedemptionAuditFilters } from '../src/features/redemptions/redemption-audit-model.ts'
 
 const messages = {
   name: 'name',
@@ -50,4 +51,34 @@ test('到期时间必须在当前时间之后且数量保持安全整数', () =>
     expires: true,
     expiresAt: '2000-01-01T00:00',
   }).success, false)
+})
+
+test('审计筛选只提交完整批次标识和左闭右开时间窗口', () => {
+  assert.deepEqual(parseRedemptionAuditFilters({
+    status: 'redeemed',
+    batchId: ' ABCDEF0123456789ABCDEF0123456789 ',
+    redeemedAfter: '2035-01-02T03:04',
+    redeemedBefore: '2035-01-02T04:04',
+  }), {
+    ok: true,
+    filters: {
+      status: 'redeemed',
+      batchId: 'abcdef0123456789abcdef0123456789',
+      redeemedAfter: Math.floor(new Date('2035-01-02T03:04').getTime() / 1_000),
+      redeemedBefore: Math.floor(new Date('2035-01-02T04:04').getTime() / 1_000),
+    },
+  })
+
+  assert.deepEqual(parseRedemptionAuditFilters({
+    status: 'all',
+    batchId: 'abc',
+    redeemedAfter: '',
+    redeemedBefore: '',
+  }), { ok: false, error: 'invalidBatchId' })
+  assert.deepEqual(parseRedemptionAuditFilters({
+    status: 'all',
+    batchId: '',
+    redeemedAfter: '2035-01-02T04:04',
+    redeemedBefore: '2035-01-02T04:04',
+  }), { ok: false, error: 'reversed' })
 })

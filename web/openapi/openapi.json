@@ -547,6 +547,139 @@
         ]
       }
     },
+    "/api/admin/redemption-audit": {
+      "get": {
+        "tags": [
+          "兑换码"
+        ],
+        "summary": "读取兑换码运营审计报表",
+        "operationId": "listAdminRedemptionAudit",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页末尾的批次主键游标",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "每页批次数量，默认 25",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "maximum": 100,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "batch_id",
+            "in": "query",
+            "description": "精确批次标识",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "minLength": 32
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "有效批次状态或至少存在兑换事实",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/AdminRedemptionAuditStatus"
+            }
+          },
+          {
+            "name": "redeemed_after",
+            "in": "query",
+            "description": "兑换时间窗口起点（Unix 秒，包含）",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "redeemed_before",
+            "in": "query",
+            "description": "兑换时间窗口终点（Unix 秒，不包含）",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前结果页的批次审计统计",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminRedemptionAuditListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "筛选、时间窗口或分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/redemption-batches": {
       "get": {
         "tags": [
@@ -12889,6 +13022,187 @@
           },
           "manual_callback_supported": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminRedemptionAuditBatch": {
+        "type": "object",
+        "description": "管理员可见的单批次兑换码运营统计，不包含明文码或摘要。",
+        "required": [
+          "batch_id",
+          "name",
+          "created_by_user_id",
+          "status",
+          "quota_amount",
+          "issued_count",
+          "redeemed_count",
+          "remaining_count",
+          "expired_count",
+          "disabled_count",
+          "expires_at",
+          "disabled_at",
+          "last_redeemed_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1
+          },
+          "created_by_user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdminRedemptionBatchStatus"
+          },
+          "quota_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "issued_count": {
+            "type": "integer",
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "redeemed_count": {
+            "type": "integer",
+            "maximum": 1000,
+            "minimum": 0
+          },
+          "remaining_count": {
+            "type": "integer",
+            "maximum": 1000,
+            "minimum": 0
+          },
+          "expired_count": {
+            "type": "integer",
+            "maximum": 1000,
+            "minimum": 0
+          },
+          "disabled_count": {
+            "type": "integer",
+            "maximum": 1000,
+            "minimum": 0
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "disabled_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "last_redeemed_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminRedemptionAuditListResponse": {
+        "type": "object",
+        "description": "管理员兑换码运营报表响应。",
+        "required": [
+          "batches",
+          "summary",
+          "next_cursor"
+        ],
+        "properties": {
+          "batches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminRedemptionAuditBatch"
+            },
+            "maxItems": 100
+          },
+          "summary": {
+            "$ref": "#/components/schemas/AdminRedemptionAuditSummary"
+          },
+          "next_cursor": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminRedemptionAuditStatus": {
+        "type": "string",
+        "description": "兑换码运营报表支持的闭合筛选状态。",
+        "enum": [
+          "active",
+          "expired",
+          "disabled",
+          "redeemed"
+        ]
+      },
+      "AdminRedemptionAuditSummary": {
+        "type": "object",
+        "description": "当前返回页内各互斥兑换状态的闭合汇总。",
+        "required": [
+          "issued_count",
+          "redeemed_count",
+          "remaining_count",
+          "expired_count",
+          "disabled_count"
+        ],
+        "properties": {
+          "issued_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "redeemed_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "remaining_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expired_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "disabled_count": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "additionalProperties": false

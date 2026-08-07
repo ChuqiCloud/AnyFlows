@@ -285,6 +285,14 @@ impl UserWalletService for RejectUserWallet {
 }
 
 impl RedemptionService for RejectRedemptions {
+    fn audit<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _query: af_admin::AdminRedemptionAuditQuery,
+    ) -> af_admin::RedemptionAuditFuture<'a> {
+        Box::pin(async { Err(RedemptionServiceError::Internal) })
+    }
+
     fn list<'a>(
         &'a self,
         _principal: SessionPrincipal,
