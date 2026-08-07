@@ -165,7 +165,9 @@ export function WalletTopupPanel() {
   }
 
   const amountLocked = attempt !== undefined
-  const activePayment = order?.status === 'pending' && order.payment && !confirmation
+  const activePayment = order?.status === 'pending' && !confirmation
+    ? order.payment ?? undefined
+    : undefined
   const appearance = stripeTopupAppearance(theme)
   const amountLabel = moneyFormat.format((order?.amount_minor ?? attempt?.amountMinor ?? 0) / 100)
 

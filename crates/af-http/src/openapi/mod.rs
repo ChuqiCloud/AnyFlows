@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 69);
+        assert_eq!(document.paths.paths.len(), 70);
         let operation_count = document
             .paths
             .paths
@@ -157,7 +157,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 107);
+        assert_eq!(operation_count, 108);
         assert!(
             document
                 .components
@@ -192,6 +192,7 @@ mod tests {
             "confirmPasswordReset",
             "completeAdminOAuthManualCallback",
             "getUserProfile",
+            "getUserTopupConfiguration",
             "getUserWallet",
             "getUserInvitations",
             "updateUserProfile",
@@ -292,7 +293,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 180);
+        assert_eq!(schemas.len(), 181);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminChannelAutoBanRules"));
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
@@ -345,6 +346,7 @@ mod tests {
         assert!(schemas.contains_key("UserWalletEntryType"));
         assert!(schemas.contains_key("UserWalletEntry"));
         assert!(schemas.contains_key("UserWalletListResponse"));
+        assert!(schemas.contains_key("UserTopupConfiguration"));
         assert!(schemas.contains_key("UserTopupOrderCreateRequest"));
         assert!(schemas.contains_key("UserTopupOrderStatus"));
         assert!(schemas.contains_key("UserTopupOrder"));
