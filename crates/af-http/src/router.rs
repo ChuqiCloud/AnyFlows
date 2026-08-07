@@ -8,8 +8,8 @@ use af_admin::{
     AdminRouteWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
     AdminUserWriter, AdminWalletService, InitialSetup, ModelCatalogReader, PasswordResetService,
     PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
-    SessionAuthenticator, SiteSettingsService, TokenAuthenticator, UserInvitationService,
-    UserTopupService, UserWalletService,
+    SessionAuthenticator, SiteSettingsService, SubscriptionService, TokenAuthenticator,
+    UserInvitationService, UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -88,6 +88,7 @@ use crate::playground_shares::build_playground_share_router;
 use crate::redemption::build_redemption_router;
 use crate::registration::build_registration_router;
 use crate::site_settings::build_site_settings_router;
+use crate::subscriptions::build_subscription_router;
 use crate::user_profile::build_user_profile_router;
 use crate::user_tokens::build_user_token_router;
 use crate::user_topups::build_user_topup_router;
@@ -141,6 +142,7 @@ pub fn build_router(
     user_wallet_service: Arc<dyn UserWalletService>,
     user_topup_service: Option<Arc<dyn UserTopupService>>,
     redemption_service: Arc<dyn RedemptionService>,
+    subscription_service: Arc<dyn SubscriptionService>,
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
@@ -348,6 +350,10 @@ pub fn build_router(
     );
     let redemption_routes = build_redemption_router(
         redemption_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
+    let subscription_routes = build_subscription_router(
+        subscription_service,
         Arc::clone(&http_state.session_authenticator),
     );
     let user_invitation_routes = build_user_invitation_router(
@@ -586,6 +592,7 @@ pub fn build_router(
         .merge(user_wallet_routes)
         .merge(user_topup_routes)
         .merge(redemption_routes)
+        .merge(subscription_routes)
         .merge(user_invitation_routes)
         .merge(site_settings_routes)
         .merge(email_settings_routes)

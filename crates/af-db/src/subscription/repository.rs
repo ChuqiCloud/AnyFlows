@@ -12,7 +12,7 @@ use af_domain::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
-    QueryFilter, QuerySelect, Set, TransactionTrait,
+    QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, LockType},
 };
@@ -26,9 +26,10 @@ use crate::{
 
 use super::types::valid_name;
 use super::{
-    SubscriptionPlanCreateOutcome, SubscriptionPlanDisable, SubscriptionPlanDisableOutcome,
-    SubscriptionPlanRecord, SubscriptionPlanWrite, SubscriptionRepositoryConfigError,
-    SubscriptionRepositoryError, UserSubscriptionBind, UserSubscriptionBindOutcome,
+    MAX_SUBSCRIPTION_PAGE_SIZE, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
+    SubscriptionPlanDisableOutcome, SubscriptionPlanPageRecord, SubscriptionPlanRecord,
+    SubscriptionPlanWrite, SubscriptionRepositoryConfigError, SubscriptionRepositoryError,
+    UserSubscriptionBind, UserSubscriptionBindOutcome, UserSubscriptionPageRecord,
     UserSubscriptionRecord,
 };
 
@@ -56,6 +57,65 @@ impl SubscriptionRepository {
             #[cfg(test)]
             outcome_unknown_after_commit: Arc::new(AtomicBool::new(false)),
         })
+    }
+
+    /// 按稳定业务标识读取单个订阅计划。
+    pub async fn get_plan(
+        &self,
+        plan_id: SubscriptionPlanId,
+    ) -> Result<Option<SubscriptionPlanRecord>, SubscriptionRepositoryError> {
+        let operation = async {
+            load_plan(self.pool.connection(), plan_id)
+                .await?
+                .map(plan_record)
+                .transpose()
+        }
+        .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal),
+            Err(_) => Err(internal(SubscriptionRepositoryError::Timeout)),
+        }
+    }
+
+    /// 按内部主键倒序读取一页订阅计划。
+    pub async fn list_plans(
+        &self,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<SubscriptionPlanPageRecord, SubscriptionRepositoryError> {
+        if before.is_some_and(|value| value <= 0)
+            || !(1..=MAX_SUBSCRIPTION_PAGE_SIZE).contains(&limit)
+        {
+            return Err(internal(SubscriptionRepositoryError::Invariant));
+        }
+        let operation = self
+            .list_plans_inner(before, limit)
+            .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal),
+            Err(_) => Err(internal(SubscriptionRepositoryError::Timeout)),
+        }
+    }
+
+    /// 按内部主键倒序读取指定用户的一页订阅记录。
+    pub async fn list_user_subscriptions(
+        &self,
+        user_id: UserId,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<UserSubscriptionPageRecord, SubscriptionRepositoryError> {
+        if before.is_some_and(|value| value <= 0)
+            || !(1..=MAX_SUBSCRIPTION_PAGE_SIZE).contains(&limit)
+        {
+            return Err(internal(SubscriptionRepositoryError::Invariant));
+        }
+        let operation = self
+            .list_user_subscriptions_inner(user_id, before, limit)
+            .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal),
+            Err(_) => Err(internal(SubscriptionRepositoryError::Timeout)),
+        }
     }
 
     /// 按稳定标识和完整不可变事实幂等创建订阅计划。
@@ -132,6 +192,75 @@ impl SubscriptionRepository {
     pub(crate) fn inject_outcome_unknown_after_commit(&self) {
         self.outcome_unknown_after_commit
             .store(true, Ordering::Release);
+    }
+
+    async fn list_plans_inner(
+        &self,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<SubscriptionPlanPageRecord, SubscriptionRepositoryError> {
+        let mut query = subscription_plans::Entity::find()
+            .order_by_desc(subscription_plans::Column::Id)
+            .limit(page_query_limit(limit)?);
+        if let Some(before) = before {
+            query = query.filter(subscription_plans::Column::Id.lt(before));
+        }
+        let mut models = query
+            .all(self.pool.connection())
+            .await
+            .map_err(|_| SubscriptionRepositoryError::Query)?;
+        let has_more = models.len() > limit;
+        if has_more {
+            models.pop();
+        }
+        let next_cursor = if has_more {
+            models.last().map(|model| model.id)
+        } else {
+            None
+        };
+        let plans = models
+            .into_iter()
+            .map(plan_record)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(SubscriptionPlanPageRecord::new(plans, next_cursor))
+    }
+
+    async fn list_user_subscriptions_inner(
+        &self,
+        user_id: UserId,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<UserSubscriptionPageRecord, SubscriptionRepositoryError> {
+        let mut query = user_subscriptions::Entity::find()
+            .find_also_related(subscription_plans::Entity)
+            .filter(user_subscriptions::Column::UserId.eq(user_id.get()))
+            .order_by_desc(user_subscriptions::Column::Id)
+            .limit(page_query_limit(limit)?);
+        if let Some(before) = before {
+            query = query.filter(user_subscriptions::Column::Id.lt(before));
+        }
+        let mut rows = query
+            .all(self.pool.connection())
+            .await
+            .map_err(|_| SubscriptionRepositoryError::Query)?;
+        let has_more = rows.len() > limit;
+        if has_more {
+            rows.pop();
+        }
+        let next_cursor = if has_more {
+            rows.last().map(|(subscription, _)| subscription.id)
+        } else {
+            None
+        };
+        let subscriptions = rows
+            .into_iter()
+            .map(|(subscription, plan)| {
+                let plan = plan.ok_or(SubscriptionRepositoryError::Invariant)?;
+                let plan = plan_record(plan)?;
+                subscription_record(subscription, &plan)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(UserSubscriptionPageRecord::new(subscriptions, next_cursor))
     }
 
     async fn create_plan_inner(
@@ -587,6 +716,7 @@ fn subscription_record(
         subscription_id,
         user_id,
         plan_id: plan.plan_id,
+        plan_name: plan.name.clone(),
         plan_version,
         status,
         quota_amount,
@@ -628,6 +758,13 @@ fn monotonic_updated_at(
         .max(business_time)
 }
 
+fn page_query_limit(limit: usize) -> Result<u64, SubscriptionRepositoryError> {
+    u64::try_from(limit)
+        .ok()
+        .and_then(|value| value.checked_add(1))
+        .ok_or(SubscriptionRepositoryError::Invariant)
+}
+
 fn is_unique_conflict(error: &sea_orm::DbErr) -> bool {
     let rendered = error.to_string();
     rendered.contains("uq_subscription_plans_plan_key")
@@ -663,6 +800,7 @@ fn internal(error: SubscriptionRepositoryError) -> SubscriptionRepositoryError {
     let error_kind = match error {
         SubscriptionRepositoryError::Conflict => return error,
         SubscriptionRepositoryError::Query => "subscription_query",
+        SubscriptionRepositoryError::Timeout => "subscription_timeout",
         SubscriptionRepositoryError::OutcomeUnknown => "subscription_outcome_unknown",
         SubscriptionRepositoryError::Invariant => "subscription_invariant",
     };

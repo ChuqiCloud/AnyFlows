@@ -768,6 +768,30 @@ export type AdminSiteSettingsRequest = {
     public_base_url?: string | null;
     brand: AdminBrandSettingsRequest;
 };
+export type AdminSubscriptionPlan = {
+    plan_id: string;
+    name: string;
+    created_by_user_id: number;
+    status: SubscriptionPlanStatus;
+    quota_amount: number;
+    cycle: SubscriptionCycle;
+    version: number;
+    disabled_at: number | null;
+    created_at: number;
+    updated_at: number;
+};
+export type AdminSubscriptionPlanCreateRequest = {
+    name: string;
+    quota_amount: number;
+    cycle: SubscriptionCycle;
+};
+export type AdminSubscriptionPlanDisableRequest = {
+    expected_version: number;
+};
+export type AdminSubscriptionPlanListResponse = {
+    plans: Array<AdminSubscriptionPlan>;
+    next_cursor: number | null;
+};
 export type AdminToken = {
     id: number;
     user_id: number;
@@ -872,6 +896,9 @@ export type AdminUserListResponse = {
     next_cursor: number | null;
 };
 export type AdminUserStatus = 'enabled' | 'disabled';
+export type AdminUserSubscriptionBindRequest = {
+    plan_id: string;
+};
 export type AdminUserUpdateRequest = {
     username: string;
     email?: string | null;
@@ -1076,6 +1103,8 @@ export type SetupRequest = {
 export type SetupStatusResponse = {
     setup_required: boolean;
 };
+export type SubscriptionCycle = 'daily' | 'weekly' | 'monthly' | 'yearly';
+export type SubscriptionPlanStatus = 'active' | 'disabled';
 export type UserInvitationRebateResponse = {
     quota_amount: number;
     credited_at: number;
@@ -1123,6 +1152,28 @@ export type UserRedemptionResult = {
     redeemed_at: number;
     replayed: boolean;
 };
+export type UserSubscription = {
+    subscription_id: string;
+    user_id: number;
+    plan_id: string;
+    plan_name: string;
+    plan_version: number;
+    status: UserSubscriptionStatus;
+    quota_amount: number;
+    quota_used: number;
+    cycle: SubscriptionCycle;
+    window_started_at: number;
+    window_ends_at: number;
+    version: number;
+    bound_at: number;
+    status_changed_at: number;
+    updated_at: number;
+};
+export type UserSubscriptionListResponse = {
+    subscriptions: Array<UserSubscription>;
+    next_cursor: number | null;
+};
+export type UserSubscriptionStatus = 'active' | 'suspended' | 'canceled' | 'expired';
 export type UserToken = {
     id: number;
     key_prefix: string;
@@ -1626,6 +1677,130 @@ export type RedeemUserRedemptionCodeResponses = {
     200: UserRedemptionResult;
 };
 export type RedeemUserRedemptionCodeResponse = RedeemUserRedemptionCodeResponses[keyof RedeemUserRedemptionCodeResponses];
+export type ListAdminSubscriptionPlansData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/admin/subscription-plans';
+};
+export type ListAdminSubscriptionPlansErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminSubscriptionPlansError = ListAdminSubscriptionPlansErrors[keyof ListAdminSubscriptionPlansErrors];
+export type ListAdminSubscriptionPlansResponses = {
+    200: AdminSubscriptionPlanListResponse;
+};
+export type ListAdminSubscriptionPlansResponse = ListAdminSubscriptionPlansResponses[keyof ListAdminSubscriptionPlansResponses];
+export type CreateAdminSubscriptionPlanData = {
+    body: AdminSubscriptionPlanCreateRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/subscription-plans';
+};
+export type CreateAdminSubscriptionPlanErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type CreateAdminSubscriptionPlanError = CreateAdminSubscriptionPlanErrors[keyof CreateAdminSubscriptionPlanErrors];
+export type CreateAdminSubscriptionPlanResponses = {
+    201: AdminSubscriptionPlan;
+};
+export type CreateAdminSubscriptionPlanResponse = CreateAdminSubscriptionPlanResponses[keyof CreateAdminSubscriptionPlanResponses];
+export type DisableAdminSubscriptionPlanData = {
+    body: AdminSubscriptionPlanDisableRequest;
+    path: {
+        plan_id: string;
+    };
+    query?: never;
+    url: '/api/admin/subscription-plans/{plan_id}/disable';
+};
+export type DisableAdminSubscriptionPlanErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type DisableAdminSubscriptionPlanError = DisableAdminSubscriptionPlanErrors[keyof DisableAdminSubscriptionPlanErrors];
+export type DisableAdminSubscriptionPlanResponses = {
+    200: AdminSubscriptionPlan;
+};
+export type DisableAdminSubscriptionPlanResponse = DisableAdminSubscriptionPlanResponses[keyof DisableAdminSubscriptionPlanResponses];
+export type ListAdminUserSubscriptionsData = {
+    body?: never;
+    path: {
+        user_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/admin/users/{user_id}/subscriptions';
+};
+export type ListAdminUserSubscriptionsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type ListAdminUserSubscriptionsError = ListAdminUserSubscriptionsErrors[keyof ListAdminUserSubscriptionsErrors];
+export type ListAdminUserSubscriptionsResponses = {
+    200: UserSubscriptionListResponse;
+};
+export type ListAdminUserSubscriptionsResponse = ListAdminUserSubscriptionsResponses[keyof ListAdminUserSubscriptionsResponses];
+export type BindAdminUserSubscriptionData = {
+    body: AdminUserSubscriptionBindRequest;
+    path: {
+        user_id: number;
+    };
+    query?: never;
+    url: '/api/admin/users/{user_id}/subscriptions';
+};
+export type BindAdminUserSubscriptionErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type BindAdminUserSubscriptionError = BindAdminUserSubscriptionErrors[keyof BindAdminUserSubscriptionErrors];
+export type BindAdminUserSubscriptionResponses = {
+    201: UserSubscription;
+};
+export type BindAdminUserSubscriptionResponse = BindAdminUserSubscriptionResponses[keyof BindAdminUserSubscriptionResponses];
+export type ListCurrentUserSubscriptionsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/account/subscriptions';
+};
+export type ListCurrentUserSubscriptionsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListCurrentUserSubscriptionsError = ListCurrentUserSubscriptionsErrors[keyof ListCurrentUserSubscriptionsErrors];
+export type ListCurrentUserSubscriptionsResponses = {
+    200: UserSubscriptionListResponse;
+};
+export type ListCurrentUserSubscriptionsResponse = ListCurrentUserSubscriptionsResponses[keyof ListCurrentUserSubscriptionsResponses];
 export type RequestPasswordResetData = {
     body: PasswordResetRequest;
     path?: never;

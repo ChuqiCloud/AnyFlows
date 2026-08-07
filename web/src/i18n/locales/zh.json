@@ -15,9 +15,11 @@
     "playground": "对话试炼场",
     "apiKeys": "我的 API Key",
     "wallet": "我的钱包",
+    "subscriptions": "我的订阅",
     "invitations": "邀请中心",
     "profile": "个人资料",
     "users": "用户管理",
+    "subscriptionManagement": "订阅管理",
     "redemptionCodes": "兑换码管理",
     "siteSettings": "站点设置",
     "authenticationSettings": "认证设置",
@@ -2847,6 +2849,159 @@
       "loadTitle": "无法加载邀请中心",
       "loadBody": "当前邀请数据暂时不可用，请稍后重试。",
       "copy": "浏览器未允许写入剪贴板，请手动选择内容复制。"
+    }
+  },
+  "subscriptions": {
+    "eyebrow": "订阅权益",
+    "title": "我的订阅",
+    "subtitle": "查看计划额度、当前 UTC 周期窗口与订阅状态。",
+    "managementEyebrow": "商业化配置",
+    "managementTitle": "订阅管理",
+    "managementSubtitle": "维护不可变计划目录，并为真实用户绑定当前有效计划。",
+    "loading": "正在加载订阅",
+    "loadingPlans": "正在加载订阅计划",
+    "views": {
+      "label": "订阅管理视图",
+      "plans": "计划目录",
+      "users": "用户订阅"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "loadMore": "加载更多",
+      "loadingMore": "正在加载",
+      "createPlan": "新建计划",
+      "creatingPlan": "正在创建",
+      "disablePlan": "停用计划",
+      "disablingPlan": "正在停用",
+      "bindPlan": "绑定计划",
+      "bind": "确认绑定",
+      "binding": "正在绑定",
+      "cancel": "取消",
+      "loadMorePlans": "加载更多计划",
+      "loadingMorePlans": "正在加载计划",
+      "loadMoreUsers": "加载更多用户",
+      "loadingMoreUsers": "正在加载用户"
+    },
+    "summary": {
+      "loaded": "已加载 {{count}} 条订阅",
+      "active": "{{count}} 条有效",
+      "nextWindow": "最近窗口结束于 {{value}}",
+      "noUpcomingWindow": "暂无有效周期窗口",
+      "plansLoaded": "已加载 {{count}} 个计划",
+      "plansActive": "{{count}} 个可绑定",
+      "planPages": "{{count}} 页计划事实",
+      "userSubscriptions": "{{count}} 条订阅"
+    },
+    "columns": {
+      "plan": "计划",
+      "quota": "周期额度",
+      "cycle": "周期",
+      "window": "当前窗口",
+      "bound": "绑定时间",
+      "updated": "最近变更",
+      "actions": "操作"
+    },
+    "status": {
+      "active": "有效",
+      "suspended": "已暂停",
+      "canceled": "已取消",
+      "expired": "已过期"
+    },
+    "planStatus": {
+      "active": "可绑定",
+      "disabled": "已停用"
+    },
+    "cycle": {
+      "daily": "每日",
+      "weekly": "每周",
+      "monthly": "每月",
+      "yearly": "每年"
+    },
+    "values": {
+      "planVersion": "计划版本 v{{version}}",
+      "subscriptionVersion": "订阅版本 v{{version}}",
+      "quotaUsage": "{{used}} / {{total}}",
+      "window": "{{start}} 至 {{end}}",
+      "creator": "创建人 #{{id}}",
+      "createdAt": "创建于 {{value}}",
+      "disabledAt": "停用于 {{value}}"
+    },
+    "fields": {
+      "name": "计划名称",
+      "nameHint": "1 至 80 个 UTF-8 字节，首尾不能包含空白。",
+      "quotaAmount": "周期额度",
+      "quotaAmountHint": "输入大于零的整数额度单位。",
+      "cycle": "重置周期",
+      "cycleHint": "新绑定按 UTC 日历边界计算首个周期窗口。",
+      "plan": "订阅计划",
+      "planHint": "只列出当前仍可新增绑定的计划。"
+    },
+    "validation": {
+      "name": "请输入有效的计划名称。",
+      "quotaAmount": "请输入大于零且可安全表示的整数额度。"
+    },
+    "create": {
+      "title": "新建订阅计划",
+      "description": "创建后额度和周期成为不可变快照，后续只能停用新增绑定。",
+      "snapshotNotice": "已绑定订阅保留绑定时的计划版本、额度和周期快照。"
+    },
+    "disable": {
+      "title": "停用订阅计划",
+      "description": "停用“{{name}}”后不能新增绑定，已有用户订阅不被改写。"
+    },
+    "bind": {
+      "title": "绑定订阅计划",
+      "description": "为当前选中的用户创建独立订阅和 UTC 周期窗口。",
+      "loadingPlans": "正在读取可绑定计划。",
+      "noPlans": "当前没有可绑定计划，请先创建并启用计划。",
+      "planQuota": "额度 {{value}}",
+      "planCycle": "周期 {{value}}",
+      "planVersion": "版本 v{{version}}"
+    },
+    "user": {
+      "selectorLabel": "选择用户",
+      "loading": "正在加载用户目录",
+      "none": "尚未选择用户",
+      "noEmail": "未设置邮箱",
+      "status": {
+        "enabled": "已启用",
+        "disabled": "已停用"
+      }
+    },
+    "empty": {
+      "currentTitle": "还没有订阅",
+      "currentBody": "管理员绑定计划后，当前周期与额度会显示在这里。",
+      "adminTitle": "该用户还没有订阅",
+      "adminBody": "选择一个有效计划并完成绑定后，订阅事实会显示在这里。",
+      "plansTitle": "还没有订阅计划",
+      "plansBody": "创建第一个额度与周期明确的计划后即可为用户绑定。",
+      "usersTitle": "还没有可管理用户",
+      "usersBody": "创建用户后再为其绑定订阅计划。"
+    },
+    "errors": {
+      "currentTitle": "无法读取我的订阅",
+      "currentBody": "服务暂时没有返回当前账户的订阅事实，请稍后重试。",
+      "adminTitle": "无法读取用户订阅",
+      "adminBody": "服务暂时没有返回该用户的订阅事实，请稍后重试。",
+      "plansTitle": "无法读取订阅计划",
+      "plansBody": "服务暂时没有返回计划目录，请稍后重试。",
+      "usersTitle": "无法读取用户目录",
+      "usersBody": "服务暂时没有返回可管理用户，请稍后重试。",
+      "more": "更早的订阅加载失败，已加载内容保持不变。",
+      "morePlans": "更早的计划加载失败，已加载内容保持不变。",
+      "moreUsers": "更多用户加载失败，已加载内容保持不变。",
+      "bindPlans": "无法读取可绑定计划，请刷新后重试。",
+      "createPlan": "计划创建失败，请检查输入后重试。",
+      "createConflict": "计划事实发生冲突，请刷新目录后重试。",
+      "disablePlan": "计划停用失败，请稍后重试。",
+      "disableConflict": "计划版本已变化，请刷新目录后重试。",
+      "bind": "计划绑定失败，请稍后重试。",
+      "bindConflict": "绑定事实发生冲突，请刷新用户订阅后重试。",
+      "planNotFound": "计划不存在或已被移除，请刷新计划目录。",
+      "planDisabled": "计划已经停用，请选择其他有效计划。",
+      "userNotFound": "用户不存在或已被移除，请刷新用户目录。",
+      "outcomeUnknown": "提交结果暂时无法确认，请刷新当前页面核对事实。"
     }
   },
   "redemptions": {

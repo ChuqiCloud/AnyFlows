@@ -31,6 +31,8 @@ import { RegistrationPage } from '@/features/registration/registration-page'
 import { RedemptionPage } from '@/features/redemptions/redemption-page'
 import { RoutePage } from '@/features/routes/route-page'
 import { SiteSettingsPage } from '@/features/site-settings/site-settings-page'
+import { MySubscriptionsPage } from '@/features/subscriptions/my-subscriptions-page'
+import { SubscriptionManagementPage } from '@/features/subscriptions/subscription-management-page'
 import { TokenPage } from '@/features/tokens/token-page'
 import { UsageLogPage } from '@/features/usage-logs/usage-log-page'
 import { UserPage } from '@/features/users/user-page'
@@ -126,6 +128,10 @@ function ManagementEntry({
         ? 'authenticationSettings.title'
           : view === 'redemption-codes'
             ? 'redemptions.title'
+          : view === 'subscription-management'
+            ? 'subscriptions.managementTitle'
+          : view === 'subscriptions'
+            ? 'subscriptions.title'
         : view === 'routes'
           ? 'routes.title'
         : view === 'email-settings'
@@ -171,6 +177,10 @@ function ManagementEntry({
         ? <AuthenticationSettingsPage />
         : view === 'redemption-codes'
           ? <RedemptionPage />
+        : view === 'subscription-management'
+          ? <SubscriptionManagementPage />
+        : view === 'subscriptions'
+          ? <MySubscriptionsPage />
         : view === 'routes'
           ? <RoutePage />
         : view === 'email-settings'
@@ -207,6 +217,7 @@ function ManagementEntry({
 
   const requireAdmin = view !== 'api-keys'
     && view !== 'wallet'
+    && view !== 'subscriptions'
     && view !== 'invitations'
     && view !== 'models'
     && view !== 'playground'

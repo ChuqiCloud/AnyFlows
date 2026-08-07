@@ -15,9 +15,11 @@
     "playground": "Playground",
     "apiKeys": "My API keys",
     "wallet": "My wallet",
+    "subscriptions": "My subscriptions",
     "invitations": "Invitations",
     "profile": "Profile",
     "users": "Users",
+    "subscriptionManagement": "Subscription management",
     "redemptionCodes": "Redemption codes",
     "siteSettings": "Site settings",
     "authenticationSettings": "Authentication",
@@ -2848,6 +2850,159 @@
       "loadTitle": "Invitation center is unavailable",
       "loadBody": "Invitation data could not be loaded. Try again shortly.",
       "copy": "Clipboard access was denied. Select and copy the value manually."
+    }
+  },
+  "subscriptions": {
+    "eyebrow": "Subscription benefits",
+    "title": "My subscriptions",
+    "subtitle": "Review plan quota, the current UTC window, and subscription status.",
+    "managementEyebrow": "Commercial configuration",
+    "managementTitle": "Subscription management",
+    "managementSubtitle": "Maintain immutable plans and bind active plans to real users.",
+    "loading": "Loading subscriptions",
+    "loadingPlans": "Loading subscription plans",
+    "views": {
+      "label": "Subscription management views",
+      "plans": "Plan catalog",
+      "users": "User subscriptions"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "loadMore": "Load more",
+      "loadingMore": "Loading",
+      "createPlan": "New plan",
+      "creatingPlan": "Creating",
+      "disablePlan": "Disable plan",
+      "disablingPlan": "Disabling",
+      "bindPlan": "Bind plan",
+      "bind": "Confirm binding",
+      "binding": "Binding",
+      "cancel": "Cancel",
+      "loadMorePlans": "Load more plans",
+      "loadingMorePlans": "Loading plans",
+      "loadMoreUsers": "Load more users",
+      "loadingMoreUsers": "Loading users"
+    },
+    "summary": {
+      "loaded": "{{count}} subscriptions loaded",
+      "active": "{{count}} active",
+      "nextWindow": "Nearest window ends {{value}}",
+      "noUpcomingWindow": "No active window",
+      "plansLoaded": "{{count}} plans loaded",
+      "plansActive": "{{count}} available to bind",
+      "planPages": "{{count}} pages of plan facts",
+      "userSubscriptions": "{{count}} subscriptions"
+    },
+    "columns": {
+      "plan": "Plan",
+      "quota": "Period quota",
+      "cycle": "Cycle",
+      "window": "Current window",
+      "bound": "Bound at",
+      "updated": "Last changed",
+      "actions": "Actions"
+    },
+    "status": {
+      "active": "Active",
+      "suspended": "Suspended",
+      "canceled": "Canceled",
+      "expired": "Expired"
+    },
+    "planStatus": {
+      "active": "Available",
+      "disabled": "Disabled"
+    },
+    "cycle": {
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "monthly": "Monthly",
+      "yearly": "Yearly"
+    },
+    "values": {
+      "planVersion": "Plan version v{{version}}",
+      "subscriptionVersion": "Subscription version v{{version}}",
+      "quotaUsage": "{{used}} / {{total}}",
+      "window": "{{start}} to {{end}}",
+      "creator": "Created by #{{id}}",
+      "createdAt": "Created {{value}}",
+      "disabledAt": "Disabled {{value}}"
+    },
+    "fields": {
+      "name": "Plan name",
+      "nameHint": "1 to 80 UTF-8 bytes, without leading or trailing whitespace.",
+      "quotaAmount": "Period quota",
+      "quotaAmountHint": "Enter a positive integer quota amount.",
+      "cycle": "Reset cycle",
+      "cycleHint": "New bindings use UTC calendar boundaries for their first window.",
+      "plan": "Subscription plan",
+      "planHint": "Only plans that still accept new bindings are listed."
+    },
+    "validation": {
+      "name": "Enter a valid plan name.",
+      "quotaAmount": "Enter a positive integer that can be represented safely."
+    },
+    "create": {
+      "title": "New subscription plan",
+      "description": "Quota and cycle become immutable after creation. The plan can later stop accepting new bindings.",
+      "snapshotNotice": "Existing subscriptions keep the plan version, quota, and cycle captured when they were bound."
+    },
+    "disable": {
+      "title": "Disable subscription plan",
+      "description": "Disabling “{{name}}” prevents new bindings and does not rewrite existing subscriptions."
+    },
+    "bind": {
+      "title": "Bind subscription plan",
+      "description": "Create an independent subscription and UTC window for the selected user.",
+      "loadingPlans": "Loading available plans.",
+      "noPlans": "No plans are available. Create an active plan first.",
+      "planQuota": "Quota {{value}}",
+      "planCycle": "Cycle {{value}}",
+      "planVersion": "Version v{{version}}"
+    },
+    "user": {
+      "selectorLabel": "Select user",
+      "loading": "Loading user directory",
+      "none": "No user selected",
+      "noEmail": "No email address",
+      "status": {
+        "enabled": "Enabled",
+        "disabled": "Disabled"
+      }
+    },
+    "empty": {
+      "currentTitle": "No subscriptions yet",
+      "currentBody": "Your current window and quota will appear after an administrator binds a plan.",
+      "adminTitle": "This user has no subscriptions",
+      "adminBody": "Select an active plan and complete a binding to create the first subscription.",
+      "plansTitle": "No subscription plans yet",
+      "plansBody": "Create a plan with an explicit quota and cycle before binding users.",
+      "usersTitle": "No users to manage",
+      "usersBody": "Create a user before binding a subscription plan."
+    },
+    "errors": {
+      "currentTitle": "My subscriptions could not be loaded",
+      "currentBody": "The service did not return subscription facts for this account. Try again shortly.",
+      "adminTitle": "User subscriptions could not be loaded",
+      "adminBody": "The service did not return subscription facts for this user. Try again shortly.",
+      "plansTitle": "Subscription plans could not be loaded",
+      "plansBody": "The service did not return the plan catalog. Try again shortly.",
+      "usersTitle": "Users could not be loaded",
+      "usersBody": "The service did not return the user directory. Try again shortly.",
+      "more": "Older subscriptions could not be loaded. Existing results remain available.",
+      "morePlans": "Older plans could not be loaded. Existing results remain available.",
+      "moreUsers": "More users could not be loaded. Existing results remain available.",
+      "bindPlans": "Available plans could not be loaded. Refresh and try again.",
+      "createPlan": "The plan could not be created. Check the input and try again.",
+      "createConflict": "Plan facts changed concurrently. Refresh the catalog and try again.",
+      "disablePlan": "The plan could not be disabled. Try again shortly.",
+      "disableConflict": "The plan version changed. Refresh the catalog and try again.",
+      "bind": "The plan could not be bound. Try again shortly.",
+      "bindConflict": "Binding facts changed concurrently. Refresh the user subscriptions and try again.",
+      "planNotFound": "The plan no longer exists. Refresh the plan catalog.",
+      "planDisabled": "The plan is disabled. Select another active plan.",
+      "userNotFound": "The user no longer exists. Refresh the user directory.",
+      "outcomeUnknown": "The result cannot be confirmed yet. Refresh this page to reconcile the persisted facts."
     }
   },
   "redemptions": {

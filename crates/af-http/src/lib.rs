@@ -58,6 +58,7 @@ mod router;
 mod serve;
 mod site_settings;
 mod streaming;
+mod subscriptions;
 mod user_profile;
 mod user_tokens;
 mod user_topups;

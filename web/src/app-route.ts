@@ -22,6 +22,8 @@ export type AppView =
   | 'reset-password'
   | 'site-settings'
   | 'share'
+  | 'subscription-management'
+  | 'subscriptions'
   | 'tokens'
   | 'usage-logs'
   | 'users'
@@ -80,6 +82,8 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/proxies')) return { view: 'credential-proxies' }
   if (hash.startsWith('#/console/debug-traces')) return { view: 'debug-traces' }
   if (hash.startsWith('#/console/redemption-codes')) return { view: 'redemption-codes' }
+  if (hash.startsWith('#/console/subscription-management')) return { view: 'subscription-management' }
+  if (hash.startsWith('#/console/subscriptions')) return { view: 'subscriptions' }
   if (hash.startsWith('#/console/routes')) return { view: 'routes' }
   if (hash.startsWith('#/console/system-settings/site')) return { view: 'site-settings' }
   if (hash.startsWith('#/console/system-settings/authentication')) return { view: 'authentication-settings' }

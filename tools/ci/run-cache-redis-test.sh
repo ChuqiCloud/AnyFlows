@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/container-endpoint.sh"
+
 readonly REDIS_IMAGE="docker.io/library/redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3"
 readonly SMOKE_TEST_NAME="redis_hybrid_cache_smoke"
 
@@ -31,40 +33,6 @@ wait_for_redis() {
     return 1
 }
 
-docker_daemon_host() {
-    local endpoint="${DOCKER_HOST:-}"
-    local gateway=""
-
-    if [[ "${endpoint}" =~ ^tcp://(\[[^]]+\]|[^:/]+)(:[0-9]+)?/?$ ]]; then
-        printf '%s\n' "${BASH_REMATCH[1]}"
-        return 0
-    fi
-
-    # Unix socket 场景使用 Docker bridge 网关，兼容宿主机与容器内客户端。
-    gateway="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)"
-    printf '%s\n' "${gateway:-127.0.0.1}"
-}
-
-url_host() {
-    local host="$1"
-    if [[ "${host}" == *:* && "${host}" != \[*\] ]]; then
-        printf '[%s]\n' "${host}"
-    else
-        printf '%s\n' "${host}"
-    fi
-}
-
-published_port() {
-    local mapping=""
-
-    mapping="$(docker port "${container_name}" 6379/tcp | head -n 1)"
-    if [[ -z "${mapping}" ]]; then
-        echo "无法读取 Redis 6379/tcp 的随机映射端口" >&2
-        return 1
-    fi
-    printf '%s\n' "${mapping##*:}"
-}
-
 run_smoke_test() {
     local test_list=""
 
@@ -86,7 +54,8 @@ if [[ -z "${redis_url}" ]]; then
     docker run --detach --name "${container_name}" --publish 6379 \
         "${REDIS_IMAGE}" redis-server --save '' --appendonly no >/dev/null
     wait_for_redis
-    redis_url="redis://$(url_host "$(docker_daemon_host)"):$(published_port)/"
+    ci_wait_for_published_endpoint "${container_name}" 6379 "Redis"
+    redis_url="redis://$(ci_url_host "${CI_SERVICE_HOST}"):${CI_SERVICE_PORT}/"
 fi
 
 case "${redis_url}" in

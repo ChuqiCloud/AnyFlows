@@ -9,6 +9,9 @@ use thiserror::Error;
 /// 订阅计划名称允许的最大 UTF-8 字节数。
 pub const MAX_SUBSCRIPTION_PLAN_NAME_BYTES: usize = 80;
 
+/// 订阅目录与用户订阅列表允许的最大页大小。
+pub const MAX_SUBSCRIPTION_PAGE_SIZE: usize = 100;
+
 /// 创建订阅计划时固化的不可变业务事实。
 pub struct SubscriptionPlanWrite {
     pub(super) plan_id: SubscriptionPlanId,
@@ -158,6 +161,12 @@ impl SubscriptionPlanRecord {
         &self.name
     }
 
+    /// 返回创建该计划的用户。
+    #[must_use]
+    pub const fn created_by_user_id(&self) -> UserId {
+        self.created_by_user_id
+    }
+
     /// 返回当前计划状态。
     #[must_use]
     pub const fn status(&self) -> SubscriptionPlanStatus {
@@ -188,6 +197,12 @@ impl SubscriptionPlanRecord {
         self.disabled_at
     }
 
+    /// 返回计划创建时间的 Unix 秒数。
+    #[must_use]
+    pub const fn created_at(&self) -> u64 {
+        self.created_at
+    }
+
     /// 返回保持单调的计划审计更新时间 Unix 秒数。
     #[must_use]
     pub const fn updated_at(&self) -> u64 {
@@ -215,6 +230,7 @@ pub struct UserSubscriptionRecord {
     pub(super) subscription_id: UserSubscriptionId,
     pub(super) user_id: UserId,
     pub(super) plan_id: SubscriptionPlanId,
+    pub(super) plan_name: String,
     pub(super) plan_version: u64,
     pub(super) status: UserSubscriptionStatus,
     pub(super) quota_amount: Quota,
@@ -246,6 +262,12 @@ impl UserSubscriptionRecord {
     #[must_use]
     pub const fn plan_id(&self) -> SubscriptionPlanId {
         self.plan_id
+    }
+
+    /// 返回绑定计划的不可变名称。
+    #[must_use]
+    pub fn plan_name(&self) -> &str {
+        &self.plan_name
     }
 
     /// 返回绑定时快照的计划版本。
@@ -336,6 +358,80 @@ impl fmt::Debug for UserSubscriptionRecord {
     }
 }
 
+/// 订阅计划分页查询结果；游标使用内部主键但不会进入响应正文之外的业务事实。
+pub struct SubscriptionPlanPageRecord {
+    plans: Vec<SubscriptionPlanRecord>,
+    next_cursor: Option<i64>,
+}
+
+impl SubscriptionPlanPageRecord {
+    pub(super) fn new(plans: Vec<SubscriptionPlanRecord>, next_cursor: Option<i64>) -> Self {
+        Self { plans, next_cursor }
+    }
+
+    /// 返回当前页计划。
+    #[must_use]
+    pub fn plans(&self) -> &[SubscriptionPlanRecord] {
+        &self.plans
+    }
+
+    /// 返回下一页游标。
+    #[must_use]
+    pub const fn next_cursor(&self) -> Option<i64> {
+        self.next_cursor
+    }
+}
+
+impl fmt::Debug for SubscriptionPlanPageRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SubscriptionPlanPageRecord")
+            .field("plan_count", &self.plans.len())
+            .field("has_next_cursor", &self.next_cursor.is_some())
+            .finish()
+    }
+}
+
+/// 指定用户订阅分页查询结果。
+pub struct UserSubscriptionPageRecord {
+    subscriptions: Vec<UserSubscriptionRecord>,
+    next_cursor: Option<i64>,
+}
+
+impl UserSubscriptionPageRecord {
+    pub(super) fn new(
+        subscriptions: Vec<UserSubscriptionRecord>,
+        next_cursor: Option<i64>,
+    ) -> Self {
+        Self {
+            subscriptions,
+            next_cursor,
+        }
+    }
+
+    /// 返回当前页订阅。
+    #[must_use]
+    pub fn subscriptions(&self) -> &[UserSubscriptionRecord] {
+        &self.subscriptions
+    }
+
+    /// 返回下一页游标。
+    #[must_use]
+    pub const fn next_cursor(&self) -> Option<i64> {
+        self.next_cursor
+    }
+}
+
+impl fmt::Debug for UserSubscriptionPageRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UserSubscriptionPageRecord")
+            .field("subscription_count", &self.subscriptions.len())
+            .field("has_next_cursor", &self.next_cursor.is_some())
+            .finish()
+    }
+}
+
 /// 幂等创建订阅计划后的闭合结果。
 pub enum SubscriptionPlanCreateOutcome {
     /// 本次调用创建了新计划。
@@ -407,6 +503,9 @@ pub enum SubscriptionRepositoryError {
     /// 获取连接或执行确定未提交的数据库操作失败。
     #[error("订阅数据库操作失败")]
     Query,
+    /// 只读查询超过仓储截止时间。
+    #[error("订阅数据库查询超时")]
+    Timeout,
     /// 写入超时或提交失败，调用方必须复用原标识查询或重试。
     #[error("订阅操作结果未知")]
     OutcomeUnknown,
