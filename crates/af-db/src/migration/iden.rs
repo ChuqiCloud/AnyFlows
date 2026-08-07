@@ -362,6 +362,7 @@ pub(in crate::migration) mod billing_reservations {
         TokenId,
         GroupId,
         Status,
+        ReservationKind,
         FundingSource,
         ReservedQuota,
         TokenReservedQuota,

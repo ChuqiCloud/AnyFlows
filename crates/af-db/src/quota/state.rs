@@ -26,6 +26,38 @@ impl QuotaFundingSource {
     }
 }
 
+/// 计费预留的业务用途；用途决定资金来源与结算上限，创建后不可变。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i16)]
+pub enum QuotaReservationKind {
+    /// 同步或流式请求，可使用订阅并在实际用量超出预扣时补扣。
+    Request = 1,
+    /// 异步批量任务，只冻结钱包且实际结算不得超过冻结上限。
+    BatchTask = 2,
+}
+
+impl QuotaReservationKind {
+    pub(crate) const fn code(self) -> i16 {
+        self as i16
+    }
+
+    pub(crate) const fn allows_subscription(self) -> bool {
+        matches!(self, Self::Request)
+    }
+
+    pub(crate) const fn allows_supplement(self) -> bool {
+        matches!(self, Self::Request)
+    }
+
+    fn from_code(code: i16) -> Result<Self, QuotaRepositoryError> {
+        match code {
+            1 => Ok(Self::Request),
+            2 => Ok(Self::BatchTask),
+            _ => Err(QuotaRepositoryError::Invariant),
+        }
+    }
+}
+
 /// 计费预留的持久化状态。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(i16)]
@@ -86,6 +118,9 @@ pub enum QuotaRepositoryError {
     /// 有限令牌不足以完成预扣或结算补扣。
     #[error("令牌额度不足")]
     TokenQuotaInsufficient,
+    /// 批量任务实际额度超过创建任务时冻结的上限。
+    #[error("批量任务实际额度超过冻结上限")]
+    ActualExceedsReservation,
     /// 获取连接或执行非提交数据库操作失败。
     #[error("额度仓储数据库操作失败")]
     Query,
@@ -102,6 +137,7 @@ pub(crate) struct ReservationState {
     pub(crate) token_id: i64,
     pub(crate) group_id: i64,
     pub(crate) status: QuotaReservationStatus,
+    pub(crate) reservation_kind: QuotaReservationKind,
     pub(crate) funding_source: QuotaFundingSource,
     pub(crate) reserved_quota: i64,
     pub(crate) token_reserved_quota: i64,
@@ -116,6 +152,7 @@ impl ReservationState {
             token_id: get(result, "token_id")?,
             group_id: get(result, "group_id")?,
             status,
+            reservation_kind: QuotaReservationKind::from_code(get(result, "reservation_kind")?)?,
             funding_source: QuotaFundingSource::from_code(get(result, "funding_source")?)?,
             reserved_quota: get(result, "reserved_quota")?,
             token_reserved_quota: get(result, "token_reserved_quota")?,
@@ -126,10 +163,16 @@ impl ReservationState {
         Ok(state)
     }
 
-    pub(crate) fn matches_precharge(&self, principal: GatewayPrincipal, amount: Quota) -> bool {
+    pub(crate) fn matches_precharge(
+        &self,
+        principal: GatewayPrincipal,
+        amount: Quota,
+        reservation_kind: QuotaReservationKind,
+    ) -> bool {
         self.user_id == principal.user_id().get()
             && self.token_id == principal.token_id().get()
             && self.group_id == principal.group_id().get()
+            && self.reservation_kind == reservation_kind
             && self.reserved_quota == amount.units()
     }
 
@@ -142,18 +185,27 @@ impl ReservationState {
         self.user_id == observed.user_id
             && self.token_id == observed.token_id
             && self.group_id == observed.group_id
+            && self.reservation_kind == observed.reservation_kind
             && self.funding_source == observed.funding_source
             && self.reserved_quota == observed.reserved_quota
             && self.token_reserved_quota == observed.token_reserved_quota
     }
 
     fn validate(&self, finalized: bool) -> Result<(), QuotaRepositoryError> {
+        let valid_funding = self.reservation_kind.allows_subscription()
+            || self.funding_source == QuotaFundingSource::Wallet;
+        let valid_actual = self.reservation_kind.allows_supplement()
+            || self
+                .actual_quota
+                .is_none_or(|actual| actual <= self.reserved_quota);
         if self.user_id <= 0
             || self.token_id <= 0
             || self.group_id <= 0
             || self.reserved_quota <= 0
             || (self.token_reserved_quota != 0 && self.token_reserved_quota != self.reserved_quota)
             || self.actual_quota.is_some_and(|value| value < 0)
+            || !valid_funding
+            || !valid_actual
         {
             return Err(QuotaRepositoryError::Invariant);
         }

@@ -53,7 +53,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 45;
+const EXPECTED_MIGRATION_COUNT: usize = 46;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -209,6 +209,42 @@ async fn credential_oauth_expiration_migration_preserves_existing_rows()
     let mut invalid = valid.into_active_model();
     invalid.oauth_expires_at_epoch_seconds = Set(Some(-1));
     assert!(invalid.update(pool.connection()).await.is_err());
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn billing_reservation_kind_migration_backfills_existing_rows() -> Result<(), Box<dyn Error>>
+{
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), Some(45)).await?;
+    let group = group_active_model("reservation-kind-backfill", "预留用途回填分组")
+        .insert(pool.connection())
+        .await?;
+    let user = user_active_model(
+        group.id,
+        "reservation-kind-user",
+        "reservation-kind@example.com",
+        "invite-reservation-kind",
+    )
+    .insert(pool.connection())
+    .await?;
+    let token = token_active_model(user.id, group.id, TOKEN_HASH_A, "reservation-kind-token")
+        .insert(pool.connection())
+        .await?;
+    let reservation_id = "abababababababababababababababab";
+    reservation_active_model(reservation_id, user.id, token.id, group.id, 100, 100)
+        .insert(pool.connection())
+        .await?;
+
+    Migrator::up(pool.connection(), None).await?;
+    let reservation =
+        billing_reservations::Entity::find_by_id(BillingReservationKey::parse(reservation_id)?)
+            .one(pool.connection())
+            .await?
+            .expect("迁移后的计费预留必须保留");
+    assert_eq!(reservation.reservation_kind, 1);
 
     pool.close().await?;
     Ok(())
@@ -1389,6 +1425,7 @@ async fn exercise_quota_repository(pool: &DatabasePool) -> Result<(), Box<dyn Er
     );
     let settled_id = BillingReservationId::new([0xd1; 16])?;
     let refunded_id = BillingReservationId::new([0xd2; 16])?;
+    let batch_id = BillingReservationId::new([0xd3; 16])?;
     let repository = QuotaRepository::new(pool.clone());
 
     let barrier = Arc::new(tokio::sync::Barrier::new(3));
@@ -1440,6 +1477,24 @@ async fn exercise_quota_repository(pool: &DatabasePool) -> Result<(), Box<dyn Er
         repository.refund(refunded_id).await?,
         QuotaMutationOutcome::Existing(QuotaReservationStatus::Refunded)
     );
+    assert_eq!(
+        repository
+            .reserve_batch_task(batch_id, principal, Quota::new(30).unwrap())
+            .await?,
+        QuotaMutationOutcome::Applied
+    );
+    assert_eq!(
+        repository
+            .settle_batch_task(batch_id, Quota::new(20).unwrap())
+            .await?,
+        QuotaMutationOutcome::Applied
+    );
+    assert_eq!(
+        repository
+            .settle_batch_task(batch_id, Quota::new(20).unwrap())
+            .await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Settled)
+    );
 
     let user = users::Entity::find_by_id(user.id)
         .one(pool.connection())
@@ -1456,13 +1511,14 @@ async fn exercise_quota_repository(pool: &DatabasePool) -> Result<(), Box<dyn Er
             user.frozen_quota,
             user.request_count
         ),
-        (150, 50, 0, 1)
+        (130, 70, 0, 2)
     );
-    assert_eq!((token.remain_quota, token.used_quota), (150, 50));
+    assert_eq!((token.remain_quota, token.used_quota), (130, 70));
 
     for (id, expected_status) in [
         (settled_id, QuotaReservationStatus::Settled),
         (refunded_id, QuotaReservationStatus::Refunded),
+        (batch_id, QuotaReservationStatus::Settled),
     ] {
         let key = BillingReservationKey::parse(&id.persistence_key())?;
         let reservation = billing_reservations::Entity::find_by_id(key.clone())
@@ -1473,6 +1529,10 @@ async fn exercise_quota_repository(pool: &DatabasePool) -> Result<(), Box<dyn Er
             .finalized_at
             .expect("额度冒烟终态必须记录完成时间");
         assert_eq!(reservation.status, expected_status.code());
+        assert_eq!(
+            reservation.reservation_kind,
+            if id == batch_id { 2 } else { 1 }
+        );
         assert!(reservation.updated_at >= reservation.created_at);
         assert!(finalized_at >= reservation.created_at);
         assert_eq!(finalized_at, reservation.updated_at);

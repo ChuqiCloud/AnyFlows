@@ -257,6 +257,267 @@ async fn subscription_refund_releases_hold_without_touching_wallet_or_usage()
 }
 
 #[tokio::test]
+async fn batch_task_reservation_uses_wallet_without_subscription() -> Result<(), Box<dyn Error>> {
+    let config = FixtureConfig {
+        user_quota: 200,
+        token_remain_quota: 200,
+        ..FixtureConfig::default()
+    };
+    let fixture = fixture(config).await?;
+    let subscription = add_subscription(&fixture, 0xb1, 100, SubscriptionCycle::Daily).await?;
+    let id = reservation_id(0xb2);
+
+    assert_eq!(
+        fixture
+            .repository
+            .reserve_batch_task(id, fixture.principal, quota(60))
+            .await?,
+        QuotaMutationOutcome::Applied
+    );
+    assert_eq!(
+        account_snapshot(&fixture.pool, fixture.principal).await?,
+        after_precharge(config, 60)
+    );
+    assert_eq!(subscription_quota_used(&fixture, subscription.id).await?, 0);
+    assert_eq!(
+        subscription_billing_snapshot(&fixture.pool, id).await?,
+        Some(SubscriptionBillingSnapshot {
+            funding_source: 1,
+            subscription_database_id: None,
+            reserved_quota: None,
+            subscription_actual_quota: None,
+        })
+    );
+    let key = BillingReservationKey::parse(&id.persistence_key())?;
+    let reservation = billing_reservations::Entity::find_by_id(key)
+        .one(fixture.pool.connection())
+        .await?
+        .expect("批量任务预留必须存在");
+    assert_eq!(reservation.reservation_kind, 2);
+
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn batch_task_actual_above_reservation_stays_reserved() -> Result<(), Box<dyn Error>> {
+    let config = FixtureConfig {
+        user_quota: 200,
+        token_remain_quota: 200,
+        ..FixtureConfig::default()
+    };
+    let fixture = fixture(config).await?;
+    let id = reservation_id(0xb3);
+    fixture
+        .repository
+        .reserve_batch_task(id, fixture.principal, quota(30))
+        .await?;
+    let precharged = account_snapshot(&fixture.pool, fixture.principal).await?;
+
+    assert_eq!(
+        fixture.repository.settle_batch_task(id, quota(31)).await,
+        Err(QuotaRepositoryError::ActualExceedsReservation)
+    );
+    assert_eq!(
+        account_snapshot(&fixture.pool, fixture.principal).await?,
+        precharged
+    );
+    assert_eq!(
+        reservation_snapshot(&fixture.pool, id).await?,
+        Some(ReservationSnapshot {
+            status: status_code(QuotaReservationStatus::Reserved),
+            reserved_quota: 30,
+            token_reserved_quota: 30,
+            actual_quota: None,
+            finalized: false,
+        })
+    );
+
+    assert_eq!(
+        fixture.repository.settle_batch_task(id, quota(20)).await?,
+        QuotaMutationOutcome::Applied
+    );
+    assert_eq!(
+        fixture.repository.settle_batch_task(id, quota(20)).await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Settled)
+    );
+
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn batch_task_settlement_releases_unused_hold() -> Result<(), Box<dyn Error>> {
+    let config = FixtureConfig {
+        user_quota: 200,
+        token_remain_quota: 200,
+        ..FixtureConfig::default()
+    };
+    let fixture = fixture(config).await?;
+    let id = reservation_id(0xb4);
+    fixture
+        .repository
+        .reserve_batch_task(id, fixture.principal, quota(60))
+        .await?;
+
+    assert_eq!(
+        fixture.repository.settle_batch_task(id, quota(40)).await?,
+        QuotaMutationOutcome::Applied
+    );
+    assert_eq!(
+        account_snapshot(&fixture.pool, fixture.principal).await?,
+        after_settlement(config, 40)
+    );
+    assert_eq!(
+        fixture.repository.settle_batch_task(id, quota(40)).await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Settled)
+    );
+    assert_eq!(
+        fixture.repository.release_batch_task(id).await,
+        Err(QuotaRepositoryError::Conflict)
+    );
+
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn request_and_batch_task_interfaces_are_isolated() -> Result<(), Box<dyn Error>> {
+    let config = FixtureConfig::default();
+    let fixture = fixture(config).await?;
+    let batch_id = reservation_id(0xb5);
+    fixture
+        .repository
+        .reserve_batch_task(batch_id, fixture.principal, quota(20))
+        .await?;
+    let batch_precharged = account_snapshot(&fixture.pool, fixture.principal).await?;
+    assert_eq!(
+        fixture.repository.settle(batch_id, quota(10)).await,
+        Err(QuotaRepositoryError::Conflict)
+    );
+    assert_eq!(
+        fixture.repository.refund(batch_id).await,
+        Err(QuotaRepositoryError::Conflict)
+    );
+    assert_eq!(
+        account_snapshot(&fixture.pool, fixture.principal).await?,
+        batch_precharged
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .settle_batch_task(batch_id, quota(10))
+            .await?,
+        QuotaMutationOutcome::Applied
+    );
+    assert_eq!(
+        fixture.repository.settle(batch_id, quota(10)).await,
+        Err(QuotaRepositoryError::Conflict)
+    );
+
+    let request_id = reservation_id(0xb6);
+    fixture
+        .repository
+        .precharge(request_id, fixture.principal, quota(20))
+        .await?;
+    let request_precharged = account_snapshot(&fixture.pool, fixture.principal).await?;
+    assert_eq!(
+        fixture
+            .repository
+            .settle_batch_task(request_id, quota(10))
+            .await,
+        Err(QuotaRepositoryError::Conflict)
+    );
+    assert_eq!(
+        fixture.repository.release_batch_task(request_id).await,
+        Err(QuotaRepositoryError::Conflict)
+    );
+    assert_eq!(
+        account_snapshot(&fixture.pool, fixture.principal).await?,
+        request_precharged
+    );
+    assert_eq!(
+        fixture.repository.settle(request_id, quota(10)).await?,
+        QuotaMutationOutcome::Applied
+    );
+
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn batch_task_outcome_unknown_replays_without_duplicate_mutation()
+-> Result<(), Box<dyn Error>> {
+    let config = FixtureConfig::default();
+    let fixture = fixture(config).await?;
+    let settled_id = reservation_id(0xb7);
+
+    fixture
+        .repository
+        .inject_outcome_unknown_after_commit(QuotaRepositoryOperation::Precharge);
+    assert_eq!(
+        fixture
+            .repository
+            .reserve_batch_task(settled_id, fixture.principal, quota(20))
+            .await,
+        Err(QuotaRepositoryError::OutcomeUnknown)
+    );
+    let precharged = account_snapshot(&fixture.pool, fixture.principal).await?;
+    assert_eq!(precharged, after_precharge(config, 20));
+    assert_eq!(
+        fixture
+            .repository
+            .reserve_batch_task(settled_id, fixture.principal, quota(20))
+            .await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Reserved)
+    );
+
+    fixture
+        .repository
+        .inject_outcome_unknown_after_commit(QuotaRepositoryOperation::Settle);
+    assert_eq!(
+        fixture
+            .repository
+            .settle_batch_task(settled_id, quota(15))
+            .await,
+        Err(QuotaRepositoryError::OutcomeUnknown)
+    );
+    let settled = account_snapshot(&fixture.pool, fixture.principal).await?;
+    assert_eq!(settled, after_settlement(config, 15));
+    assert_eq!(
+        fixture
+            .repository
+            .settle_batch_task(settled_id, quota(15))
+            .await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Settled)
+    );
+
+    let refunded_id = reservation_id(0xb8);
+    fixture
+        .repository
+        .reserve_batch_task(refunded_id, fixture.principal, quota(20))
+        .await?;
+    fixture
+        .repository
+        .inject_outcome_unknown_after_commit(QuotaRepositoryOperation::Refund);
+    assert_eq!(
+        fixture.repository.release_batch_task(refunded_id).await,
+        Err(QuotaRepositoryError::OutcomeUnknown)
+    );
+    assert_eq!(
+        fixture.repository.release_batch_task(refunded_id).await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Refunded)
+    );
+    assert_eq!(
+        account_snapshot(&fixture.pool, fixture.principal).await?,
+        settled
+    );
+
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn subscription_selection_skips_insufficient_candidate_and_falls_back_to_wallet()
 -> Result<(), Box<dyn Error>> {
     let config = FixtureConfig {

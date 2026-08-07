@@ -13,6 +13,7 @@ pub struct Model {
     pub token_id: i64,
     pub group_id: i64,
     pub status: i16,
+    pub reservation_kind: i16,
     pub funding_source: i16,
     pub reserved_quota: i64,
     pub token_reserved_quota: i64,

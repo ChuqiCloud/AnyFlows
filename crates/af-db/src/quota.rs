@@ -20,7 +20,9 @@ mod sql;
 mod state;
 pub(crate) mod subscription;
 
-pub use state::{QuotaMutationOutcome, QuotaRepositoryError, QuotaReservationStatus};
+pub use state::{
+    QuotaMutationOutcome, QuotaRepositoryError, QuotaReservationKind, QuotaReservationStatus,
+};
 use state::{ReservationState, TokenQuotaState, UserQuotaState};
 
 const DEFAULT_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
@@ -89,11 +91,33 @@ impl QuotaRepository {
         principal: GatewayPrincipal,
         amount: Quota,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
+        self.reserve_with_kind(id, principal, amount, QuotaReservationKind::Request)
+            .await
+    }
+
+    /// 为异步批量任务冻结钱包余额与有限令牌额度；不使用订阅，也不允许后续补扣。
+    pub async fn reserve_batch_task(
+        &self,
+        id: BillingReservationId,
+        principal: GatewayPrincipal,
+        amount: Quota,
+    ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
+        self.reserve_with_kind(id, principal, amount, QuotaReservationKind::BatchTask)
+            .await
+    }
+
+    async fn reserve_with_kind(
+        &self,
+        id: BillingReservationId,
+        principal: GatewayPrincipal,
+        amount: Quota,
+        reservation_kind: QuotaReservationKind,
+    ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         if amount.is_zero() {
             return Err(QuotaRepositoryError::ZeroAmount);
         }
         let operation = self
-            .precharge_inner(id, principal, amount)
+            .precharge_inner(id, principal, amount, reservation_kind)
             .with_subscriber(NoSubscriber::default());
         match timeout(self.operation_timeout, operation).await {
             Ok(result) => self.finish_operation(result, QuotaRepositoryOperation::Precharge),
@@ -107,8 +131,28 @@ impl QuotaRepository {
         id: BillingReservationId,
         actual: Quota,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
+        self.settle_with_kind(id, actual, QuotaReservationKind::Request)
+            .await
+    }
+
+    /// 结算批量任务；实际额度不得超过创建任务时冻结的额度。
+    pub async fn settle_batch_task(
+        &self,
+        id: BillingReservationId,
+        actual: Quota,
+    ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
+        self.settle_with_kind(id, actual, QuotaReservationKind::BatchTask)
+            .await
+    }
+
+    async fn settle_with_kind(
+        &self,
+        id: BillingReservationId,
+        actual: Quota,
+        reservation_kind: QuotaReservationKind,
+    ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         let operation = self
-            .settle_inner(id, actual)
+            .settle_inner(id, actual, reservation_kind)
             .with_subscriber(NoSubscriber::default());
         match timeout(self.operation_timeout, operation).await {
             Ok(result) => self.finish_operation(result, QuotaRepositoryOperation::Settle),
@@ -121,8 +165,26 @@ impl QuotaRepository {
         &self,
         id: BillingReservationId,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
+        self.release_with_kind(id, QuotaReservationKind::Request)
+            .await
+    }
+
+    /// 释放尚未结算的批量任务冻结额度；终态释放可安全重放。
+    pub async fn release_batch_task(
+        &self,
+        id: BillingReservationId,
+    ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
+        self.release_with_kind(id, QuotaReservationKind::BatchTask)
+            .await
+    }
+
+    async fn release_with_kind(
+        &self,
+        id: BillingReservationId,
+        reservation_kind: QuotaReservationKind,
+    ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         let operation = self
-            .refund_inner(id)
+            .refund_inner(id, reservation_kind)
             .with_subscriber(NoSubscriber::default());
         match timeout(self.operation_timeout, operation).await {
             Ok(result) => self.finish_operation(result, QuotaRepositoryOperation::Refund),
@@ -153,6 +215,7 @@ impl QuotaRepository {
         id: BillingReservationId,
         principal: GatewayPrincipal,
         amount: Quota,
+        reservation_kind: QuotaReservationKind,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         let key = id.persistence_key();
         let (now, expires_at) = reservation_times(self.reservation_ttl)?;
@@ -182,6 +245,7 @@ impl QuotaRepository {
                 key.clone(),
                 principal,
                 amount,
+                reservation_kind,
                 now,
                 expires_at,
             )))
@@ -196,7 +260,9 @@ impl QuotaRepository {
                     .rollback()
                     .await
                     .map_err(|_| QuotaRepositoryError::OutcomeUnknown)?;
-                return self.existing_precharge(key, principal, amount).await;
+                return self
+                    .existing_precharge(key, principal, amount, reservation_kind)
+                    .await;
             }
             Err(_) => {
                 return rollback_with_error(transaction, QuotaRepositoryError::Query).await;
@@ -206,7 +272,7 @@ impl QuotaRepository {
         let parent = match load_reservation(&transaction, key.clone(), true).await {
             Ok(Some(state))
                 if state.status == QuotaReservationStatus::Reserved
-                    && state.matches_precharge(principal, amount) =>
+                    && state.matches_precharge(principal, amount, reservation_kind) =>
             {
                 state
             }
@@ -215,11 +281,14 @@ impl QuotaRepository {
             }
             Err(error) => return rollback_with_error(transaction, error).await,
         };
-        let uses_subscription =
+        let uses_subscription = if reservation_kind.allows_subscription() {
             match subscription::try_reserve(&transaction, &key, &parent, amount, now).await {
                 Ok(value) => value,
                 Err(error) => return rollback_with_error(transaction, error).await,
-            };
+            }
+        } else {
+            false
+        };
 
         if !uses_subscription {
             let user_result = transaction
@@ -273,6 +342,7 @@ impl QuotaRepository {
         key: String,
         principal: GatewayPrincipal,
         amount: Quota,
+        reservation_kind: QuotaReservationKind,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         let result = query_one(
             self.pool.connection(),
@@ -284,7 +354,7 @@ impl QuotaRepository {
             .ok_or(QuotaRepositoryError::Invariant)
             .and_then(ReservationState::try_from_result)?;
         subscription::load_allocation(self.pool.connection(), &key, &state).await?;
-        if state.matches_precharge(principal, amount) {
+        if state.matches_precharge(principal, amount, reservation_kind) {
             Ok(QuotaMutationOutcome::Existing(state.status))
         } else {
             Err(QuotaRepositoryError::Conflict)
@@ -295,12 +365,19 @@ impl QuotaRepository {
         &self,
         id: BillingReservationId,
         actual: Quota,
+        reservation_kind: QuotaReservationKind,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         let key = id.persistence_key();
         // 主体预读不进入事务快照；SQLite 随后可先取得写锁，再读取 reservation 最新状态。
         let observed = load_reservation(self.pool.connection(), key.clone(), false)
             .await?
             .ok_or(QuotaRepositoryError::NotFound)?;
+        if observed.reservation_kind != reservation_kind {
+            return Err(QuotaRepositoryError::Conflict);
+        }
+        if !reservation_kind.allows_supplement() && actual.units() > observed.reserved_quota {
+            return Err(QuotaRepositoryError::ActualExceedsReservation);
+        }
         let transaction = self
             .pool
             .connection()
@@ -329,6 +406,16 @@ impl QuotaRepository {
         };
         if !state.matches_immutable_snapshot(&observed) {
             return rollback_with_error(transaction, QuotaRepositoryError::Invariant).await;
+        }
+        if state.reservation_kind != reservation_kind {
+            return rollback_with_error(transaction, QuotaRepositoryError::Conflict).await;
+        }
+        if !reservation_kind.allows_supplement() && actual.units() > state.reserved_quota {
+            return rollback_with_error(
+                transaction,
+                QuotaRepositoryError::ActualExceedsReservation,
+            )
+            .await;
         }
         let allocation = match subscription::load_allocation(&transaction, &key, &state).await {
             Ok(allocation) => allocation,
@@ -476,11 +563,15 @@ impl QuotaRepository {
     async fn refund_inner(
         &self,
         id: BillingReservationId,
+        reservation_kind: QuotaReservationKind,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
         let key = id.persistence_key();
         let observed = load_reservation(self.pool.connection(), key.clone(), false)
             .await?
             .ok_or(QuotaRepositoryError::NotFound)?;
+        if observed.reservation_kind != reservation_kind {
+            return Err(QuotaRepositoryError::Conflict);
+        }
         let transaction = self
             .pool
             .connection()
@@ -508,6 +599,9 @@ impl QuotaRepository {
         };
         if !state.matches_immutable_snapshot(&observed) {
             return rollback_with_error(transaction, QuotaRepositoryError::Invariant).await;
+        }
+        if state.reservation_kind != reservation_kind {
+            return rollback_with_error(transaction, QuotaRepositoryError::Conflict).await;
         }
         let allocation = match subscription::load_allocation(&transaction, &key, &state).await {
             Ok(allocation) => allocation,
@@ -945,7 +1039,8 @@ fn record_internal_error(error: QuotaRepositoryError) -> QuotaRepositoryError {
         | QuotaRepositoryError::NotFound
         | QuotaRepositoryError::Conflict
         | QuotaRepositoryError::UserQuotaInsufficient
-        | QuotaRepositoryError::TokenQuotaInsufficient => return error,
+        | QuotaRepositoryError::TokenQuotaInsufficient
+        | QuotaRepositoryError::ActualExceedsReservation => return error,
     };
     tracing::error!(
         target: "af_db::quota",
