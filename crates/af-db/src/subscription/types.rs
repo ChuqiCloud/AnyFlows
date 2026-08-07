@@ -1,8 +1,8 @@
 use std::fmt;
 
 use af_domain::{
-    Quota, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus, UserId,
-    UserSubscriptionId, UserSubscriptionStatus,
+    Quota, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow,
+    UserId, UserSubscriptionId, UserSubscriptionStatus,
 };
 use thiserror::Error;
 
@@ -130,6 +130,98 @@ impl UserSubscriptionBind {
 impl fmt::Debug for UserSubscriptionBind {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("UserSubscriptionBind(<redacted>)")
+    }
+}
+
+/// 订阅周期扫描使用的复合游标，按窗口结束时间和数据库主键稳定排序。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SubscriptionResetDueCursor {
+    window_ends_at: i64,
+    database_id: i64,
+}
+
+impl SubscriptionResetDueCursor {
+    /// 校验并构造一个可继续使用的到期扫描游标。
+    pub fn new(window_ends_at: u64, database_id: i64) -> Result<Self, SubscriptionInputError> {
+        let window_ends_at =
+            i64::try_from(window_ends_at).map_err(|_| SubscriptionInputError::InvalidCursor)?;
+        if window_ends_at < 0 || database_id <= 0 {
+            return Err(SubscriptionInputError::InvalidCursor);
+        }
+        Ok(Self {
+            window_ends_at,
+            database_id,
+        })
+    }
+
+    /// 返回游标保存的窗口结束时间。
+    #[must_use]
+    pub const fn window_ends_at(self) -> u64 {
+        self.window_ends_at as u64
+    }
+
+    /// 返回游标保存的数据库主键。
+    #[must_use]
+    pub const fn database_id(self) -> i64 {
+        self.database_id
+    }
+}
+
+/// 推进单个用户订阅窗口的 CAS 命令。
+pub struct UserSubscriptionWindowAdvance {
+    pub(super) subscription_id: UserSubscriptionId,
+    pub(super) expected_version: i64,
+    pub(super) window_started_at: u64,
+    pub(super) window_ends_at: u64,
+    pub(super) now: u64,
+}
+
+impl UserSubscriptionWindowAdvance {
+    /// 校验版本、观测窗口和扫描时刻，固化一次可重放的推进事实。
+    pub fn new(
+        subscription_id: UserSubscriptionId,
+        expected_version: u64,
+        window_started_at: u64,
+        window_ends_at: u64,
+        now: u64,
+    ) -> Result<Self, SubscriptionInputError> {
+        let expected_version =
+            i64::try_from(expected_version).map_err(|_| SubscriptionInputError::InvalidVersion)?;
+        if expected_version <= 0 || expected_version == i64::MAX {
+            return Err(SubscriptionInputError::InvalidVersion);
+        }
+        validate_time(window_started_at)?;
+        validate_time(window_ends_at)?;
+        validate_time(now)?;
+        SubscriptionWindow::new(window_started_at, window_ends_at)
+            .map_err(|_| SubscriptionInputError::InvalidWindow)?;
+        Ok(Self {
+            subscription_id,
+            expected_version,
+            window_started_at,
+            window_ends_at,
+            now,
+        })
+    }
+
+    /// 从已读出的订阅快照构造推进命令，避免调用方拼接窗口事实。
+    pub fn from_record(
+        record: &UserSubscriptionRecord,
+        now: u64,
+    ) -> Result<Self, SubscriptionInputError> {
+        Self::new(
+            record.subscription_id,
+            record.version,
+            record.window_started_at,
+            record.window_ends_at,
+            now,
+        )
+    }
+}
+
+impl fmt::Debug for UserSubscriptionWindowAdvance {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("UserSubscriptionWindowAdvance(<redacted>)")
     }
 }
 
@@ -432,6 +524,82 @@ impl fmt::Debug for UserSubscriptionPageRecord {
     }
 }
 
+/// 到期 Active 订阅的稳定分页结果。
+pub struct UserSubscriptionResetDuePageRecord {
+    subscriptions: Vec<UserSubscriptionRecord>,
+    next_cursor: Option<SubscriptionResetDueCursor>,
+}
+
+impl UserSubscriptionResetDuePageRecord {
+    pub(super) fn new(
+        subscriptions: Vec<UserSubscriptionRecord>,
+        next_cursor: Option<SubscriptionResetDueCursor>,
+    ) -> Self {
+        Self {
+            subscriptions,
+            next_cursor,
+        }
+    }
+
+    /// 返回当前页的到期 Active 订阅。
+    #[must_use]
+    pub fn subscriptions(&self) -> &[UserSubscriptionRecord] {
+        &self.subscriptions
+    }
+
+    /// 返回下一页复合游标。
+    #[must_use]
+    pub const fn next_cursor(&self) -> Option<SubscriptionResetDueCursor> {
+        self.next_cursor
+    }
+}
+
+impl fmt::Debug for UserSubscriptionResetDuePageRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UserSubscriptionResetDuePageRecord")
+            .field("subscription_count", &self.subscriptions.len())
+            .field("has_next_cursor", &self.next_cursor.is_some())
+            .finish()
+    }
+}
+
+/// 单订阅窗口推进的闭合结果。
+pub struct UserSubscriptionWindowAdvanceRecord {
+    subscription: UserSubscriptionRecord,
+    periods_elapsed: u32,
+}
+
+impl UserSubscriptionWindowAdvanceRecord {
+    pub(super) const fn new(subscription: UserSubscriptionRecord, periods_elapsed: u32) -> Self {
+        Self {
+            subscription,
+            periods_elapsed,
+        }
+    }
+
+    /// 返回推进后的订阅快照。
+    #[must_use]
+    pub const fn subscription(&self) -> &UserSubscriptionRecord {
+        &self.subscription
+    }
+
+    /// 返回本次跨越的完整周期数。
+    #[must_use]
+    pub const fn periods_elapsed(&self) -> u32 {
+        self.periods_elapsed
+    }
+}
+
+impl fmt::Debug for UserSubscriptionWindowAdvanceRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UserSubscriptionWindowAdvanceRecord")
+            .field("periods_elapsed", &self.periods_elapsed)
+            .finish_non_exhaustive()
+    }
+}
+
 /// 幂等创建订阅计划后的闭合结果。
 pub enum SubscriptionPlanCreateOutcome {
     /// 本次调用创建了新计划。
@@ -466,6 +634,20 @@ pub enum UserSubscriptionBindOutcome {
     PlanDisabled,
 }
 
+/// 单订阅窗口推进的状态结果，不把非 Active 订阅误当作可重置对象。
+pub enum UserSubscriptionWindowAdvanceOutcome {
+    /// 本次调用完成了窗口推进和用量归零。
+    Applied(UserSubscriptionWindowAdvanceRecord),
+    /// 相同命令已经完成过，返回当前相同窗口快照。
+    Existing(UserSubscriptionWindowAdvanceRecord),
+    /// 订阅标识不存在。
+    NotFound,
+    /// 当前窗口尚未到期。
+    NotDue(UserSubscriptionRecord),
+    /// 订阅处于暂停、取消或过期状态，留给生命周期切片处理。
+    Inactive(UserSubscriptionRecord),
+}
+
 /// 订阅输入构造错误；不携带名称、标识或用户信息。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum SubscriptionInputError {
@@ -484,6 +666,9 @@ pub enum SubscriptionInputError {
     /// CAS 版本不是可递增的正整数。
     #[error("订阅计划版本无效")]
     InvalidVersion,
+    /// 到期扫描游标的时间或数据库主键无效。
+    #[error("订阅扫描游标无效")]
+    InvalidCursor,
 }
 
 /// 订阅仓储构造错误。
@@ -556,6 +741,26 @@ impl fmt::Debug for UserSubscriptionBindOutcome {
             Self::UserNotFound => formatter.write_str("UserSubscriptionBindOutcome::UserNotFound"),
             Self::PlanNotFound => formatter.write_str("UserSubscriptionBindOutcome::PlanNotFound"),
             Self::PlanDisabled => formatter.write_str("UserSubscriptionBindOutcome::PlanDisabled"),
+        }
+    }
+}
+
+impl fmt::Debug for UserSubscriptionWindowAdvanceOutcome {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Applied(_) => {
+                formatter.write_str("UserSubscriptionWindowAdvanceOutcome::Applied(<redacted>)")
+            }
+            Self::Existing(_) => {
+                formatter.write_str("UserSubscriptionWindowAdvanceOutcome::Existing(<redacted>)")
+            }
+            Self::NotFound => formatter.write_str("UserSubscriptionWindowAdvanceOutcome::NotFound"),
+            Self::NotDue(_) => {
+                formatter.write_str("UserSubscriptionWindowAdvanceOutcome::NotDue(<redacted>)")
+            }
+            Self::Inactive(_) => {
+                formatter.write_str("UserSubscriptionWindowAdvanceOutcome::Inactive(<redacted>)")
+            }
         }
     }
 }

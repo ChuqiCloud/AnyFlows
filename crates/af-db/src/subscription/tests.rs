@@ -1,18 +1,19 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    GroupId, Quota, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus, UserId,
-    UserSubscriptionId, UserSubscriptionStatus,
+    GroupId, Quota, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
+    SubscriptionWindow, UserId, UserSubscriptionId, UserSubscriptionStatus,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, Set,
-    entity::prelude::TimeDateTimeWithTimeZone,
+    entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
 };
 
 use super::{
     SubscriptionInputError, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
     SubscriptionPlanDisableOutcome, SubscriptionPlanWrite, SubscriptionRepositoryError,
-    UserSubscriptionBind, UserSubscriptionBindOutcome,
+    SubscriptionResetDueCursor, UserSubscriptionBind, UserSubscriptionBindOutcome,
+    UserSubscriptionWindowAdvance, UserSubscriptionWindowAdvanceOutcome,
 };
 use crate::{
     AdminUserCreateRecord, AdminUserRepository, DatabaseOptions, DatabasePool, MigrationOptions,
@@ -87,6 +88,40 @@ fn subscription_inputs_reject_ambiguous_facts() {
         )
         .unwrap_err(),
         SubscriptionInputError::InvalidTiming
+    );
+}
+
+#[test]
+fn subscription_window_commands_validate_versions_and_cursors() {
+    assert_eq!(
+        SubscriptionResetDueCursor::new(1, 0).unwrap_err(),
+        SubscriptionInputError::InvalidCursor
+    );
+    assert_eq!(
+        SubscriptionResetDueCursor::new(i64::MAX as u64 + 1, 1).unwrap_err(),
+        SubscriptionInputError::InvalidCursor
+    );
+    assert_eq!(
+        UserSubscriptionWindowAdvance::new(
+            subscription_id(0x25),
+            0,
+            WINDOW_STARTED_AT,
+            WINDOW_ENDS_AT,
+            WINDOW_ENDS_AT,
+        )
+        .unwrap_err(),
+        SubscriptionInputError::InvalidVersion
+    );
+    assert_eq!(
+        UserSubscriptionWindowAdvance::new(
+            subscription_id(0x25),
+            1,
+            WINDOW_ENDS_AT,
+            WINDOW_STARTED_AT,
+            WINDOW_ENDS_AT,
+        )
+        .unwrap_err(),
+        SubscriptionInputError::InvalidWindow
     );
 }
 
@@ -193,6 +228,267 @@ async fn plan_and_user_subscription_lists_use_stable_cursors() -> Result<(), Box
         plan_ids[0]
     );
     assert!(second_subscriptions.next_cursor().is_none());
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn reset_due_scan_filters_active_rows_and_pages_by_composite_cursor()
+-> Result<(), Box<dyn Error>> {
+    let fixture = setup_fixture().await?;
+    let plan_id = test_plan_id(0x57);
+    fixture
+        .repository
+        .create_plan(&fixture.plan_with_id(
+            plan_id,
+            "到期扫描计划",
+            10_000,
+            SubscriptionCycle::Daily,
+        )?)
+        .await?;
+    let windows = [
+        SubscriptionWindow::initial(SubscriptionCycle::Daily, CREATED_AT)?,
+        SubscriptionWindow::initial(SubscriptionCycle::Daily, CREATED_AT + 86_400)?,
+        SubscriptionWindow::initial(SubscriptionCycle::Daily, CREATED_AT + 2 * 86_400)?,
+        SubscriptionWindow::initial(SubscriptionCycle::Daily, CREATED_AT + 4 * 86_400)?,
+    ];
+    let ids = [
+        subscription_id(0x71),
+        subscription_id(0x72),
+        subscription_id(0x73),
+        subscription_id(0x74),
+    ];
+    for (subscription_id, window) in ids.into_iter().zip(windows) {
+        let bind = UserSubscriptionBind::new(
+            subscription_id,
+            fixture.first_user_id,
+            plan_id,
+            window.started_at(),
+            window.ends_at(),
+            window.started_at(),
+        )?;
+        fixture.repository.bind_user(&bind).await?;
+    }
+    let suspended_at = windows[1].ends_at() + 10;
+    user_subscriptions::Entity::update_many()
+        .filter(
+            user_subscriptions::Column::SubscriptionKey
+                .eq(SensitiveString::from(ids[1].persistence_key())),
+        )
+        .col_expr(
+            user_subscriptions::Column::Status,
+            Expr::value(UserSubscriptionStatus::Suspended.code()),
+        )
+        .col_expr(user_subscriptions::Column::Version, Expr::value(2_i64))
+        .col_expr(
+            user_subscriptions::Column::StatusChangedAt,
+            Expr::value(database_time(suspended_at)),
+        )
+        .col_expr(
+            user_subscriptions::Column::UpdatedAt,
+            Expr::value(database_time(suspended_at)),
+        )
+        .exec(fixture.pool.connection())
+        .await?;
+
+    let now = windows[2].ends_at();
+    let first = fixture
+        .repository
+        .list_reset_due_subscriptions(now, None, 1)
+        .await?;
+    assert_eq!(first.subscriptions()[0].subscription_id(), ids[0]);
+    let cursor = first.next_cursor().expect("仍有到期订阅时必须返回复合游标");
+    let second = fixture
+        .repository
+        .list_reset_due_subscriptions(now, Some(cursor), 1)
+        .await?;
+    assert_eq!(second.subscriptions().len(), 1);
+    assert_eq!(second.subscriptions()[0].subscription_id(), ids[2]);
+    assert!(second.next_cursor().is_none());
+    assert!(
+        !second
+            .subscriptions()
+            .iter()
+            .any(|subscription| subscription.subscription_id() == ids[1])
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn advancing_subscription_window_resets_quota_skips_periods_and_replays()
+-> Result<(), Box<dyn Error>> {
+    let fixture = setup_fixture().await?;
+    let plan_id = test_plan_id(0x58);
+    fixture
+        .repository
+        .create_plan(&fixture.plan_with_id(
+            plan_id,
+            "周期推进计划",
+            10_000,
+            SubscriptionCycle::Daily,
+        )?)
+        .await?;
+    let window = SubscriptionWindow::initial(SubscriptionCycle::Daily, CREATED_AT)?;
+    let subscription_id = subscription_id(0x75);
+    let bind = UserSubscriptionBind::new(
+        subscription_id,
+        fixture.first_user_id,
+        plan_id,
+        window.started_at(),
+        window.ends_at(),
+        CREATED_AT,
+    )?;
+    fixture.repository.bind_user(&bind).await?;
+    user_subscriptions::Entity::update_many()
+        .filter(
+            user_subscriptions::Column::SubscriptionKey
+                .eq(SensitiveString::from(subscription_id.persistence_key())),
+        )
+        .col_expr(user_subscriptions::Column::QuotaUsed, Expr::value(123_i64))
+        .exec(fixture.pool.connection())
+        .await?;
+
+    let current_page = fixture
+        .repository
+        .list_user_subscriptions(fixture.first_user_id, None, 10)
+        .await?;
+    let current = current_page
+        .subscriptions()
+        .first()
+        .expect("周期推进测试订阅必须存在");
+    let now = window.ends_at() + 2 * 86_400 + 1;
+    let advance = UserSubscriptionWindowAdvance::from_record(current, now)?;
+    fixture.repository.inject_outcome_unknown_after_commit();
+    assert_eq!(
+        fixture
+            .repository
+            .advance_user_subscription_window(&advance)
+            .await
+            .unwrap_err(),
+        SubscriptionRepositoryError::OutcomeUnknown
+    );
+    let replay = fixture
+        .repository
+        .advance_user_subscription_window(&advance)
+        .await?;
+    let UserSubscriptionWindowAdvanceOutcome::Existing(replayed) = replay else {
+        panic!("结果未知重试必须恢复同一个订阅窗口推进")
+    };
+    assert_eq!(replayed.periods_elapsed(), 3);
+    assert_eq!(replayed.subscription().quota_used().units(), 0);
+    assert_eq!(replayed.subscription().version(), 2);
+    assert_eq!(
+        replayed.subscription().window_started_at(),
+        window.ends_at() + 2 * 86_400
+    );
+
+    let current_window = replayed.subscription();
+    let not_due = UserSubscriptionWindowAdvance::new(
+        subscription_id,
+        current_window.version(),
+        current_window.window_started_at(),
+        current_window.window_ends_at(),
+        current_window.window_ends_at() - 1,
+    )?;
+    assert!(matches!(
+        fixture
+            .repository
+            .advance_user_subscription_window(&not_due)
+            .await?,
+        UserSubscriptionWindowAdvanceOutcome::NotDue(_)
+    ));
+    let stale = UserSubscriptionWindowAdvance::new(
+        subscription_id,
+        1,
+        window.started_at(),
+        window.ends_at(),
+        current_window.window_ends_at() + 1,
+    )?;
+    assert_eq!(
+        fixture
+            .repository
+            .advance_user_subscription_window(&stale)
+            .await
+            .unwrap_err(),
+        SubscriptionRepositoryError::Conflict
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn inactive_subscription_states_are_not_reset() -> Result<(), Box<dyn Error>> {
+    let fixture = setup_fixture().await?;
+    let plan_id = test_plan_id(0x59);
+    fixture
+        .repository
+        .create_plan(&fixture.plan_with_id(
+            plan_id,
+            "生命周期占位计划",
+            10_000,
+            SubscriptionCycle::Daily,
+        )?)
+        .await?;
+    let window = SubscriptionWindow::initial(SubscriptionCycle::Daily, CREATED_AT)?;
+    let statuses = [
+        (0x76, UserSubscriptionStatus::Suspended),
+        (0x77, UserSubscriptionStatus::Canceled),
+        (0x78, UserSubscriptionStatus::Expired),
+    ];
+    for (marker, status) in statuses {
+        let id = subscription_id(marker);
+        let bind = UserSubscriptionBind::new(
+            id,
+            fixture.first_user_id,
+            plan_id,
+            window.started_at(),
+            window.ends_at(),
+            CREATED_AT,
+        )?;
+        fixture.repository.bind_user(&bind).await?;
+        let changed_at = window.ends_at() + 20;
+        user_subscriptions::Entity::update_many()
+            .filter(
+                user_subscriptions::Column::SubscriptionKey
+                    .eq(SensitiveString::from(id.persistence_key())),
+            )
+            .col_expr(
+                user_subscriptions::Column::Status,
+                Expr::value(status.code()),
+            )
+            .col_expr(user_subscriptions::Column::Version, Expr::value(2_i64))
+            .col_expr(
+                user_subscriptions::Column::StatusChangedAt,
+                Expr::value(database_time(changed_at)),
+            )
+            .col_expr(
+                user_subscriptions::Column::UpdatedAt,
+                Expr::value(database_time(changed_at)),
+            )
+            .exec(fixture.pool.connection())
+            .await?;
+        let current_page = fixture
+            .repository
+            .list_user_subscriptions(fixture.first_user_id, None, 10)
+            .await?;
+        let current = current_page
+            .subscriptions()
+            .iter()
+            .find(|subscription| subscription.subscription_id() == id)
+            .expect("生命周期测试订阅必须存在");
+        let advance = UserSubscriptionWindowAdvance::from_record(current, changed_at + 1)?;
+        let outcome = fixture
+            .repository
+            .advance_user_subscription_window(&advance)
+            .await?;
+        let UserSubscriptionWindowAdvanceOutcome::Inactive(skipped) = outcome else {
+            panic!("非 Active 订阅不得被窗口推进")
+        };
+        assert_eq!(skipped.status(), status);
+        assert_eq!(skipped.version(), 2);
+        assert_eq!(skipped.window_ends_at(), window.ends_at());
+    }
     fixture.pool.close().await?;
     Ok(())
 }

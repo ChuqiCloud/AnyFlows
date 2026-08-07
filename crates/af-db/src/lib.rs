@@ -401,8 +401,10 @@ pub use subscription::{
     SubscriptionPlanCreateOutcome, SubscriptionPlanDisable, SubscriptionPlanDisableOutcome,
     SubscriptionPlanPageRecord, SubscriptionPlanRecord, SubscriptionPlanWrite,
     SubscriptionRepository, SubscriptionRepositoryConfigError, SubscriptionRepositoryError,
-    UserSubscriptionBind, UserSubscriptionBindOutcome, UserSubscriptionPageRecord,
-    UserSubscriptionRecord,
+    SubscriptionResetDueCursor, UserSubscriptionBind, UserSubscriptionBindOutcome,
+    UserSubscriptionPageRecord, UserSubscriptionRecord, UserSubscriptionResetDuePageRecord,
+    UserSubscriptionWindowAdvance, UserSubscriptionWindowAdvanceOutcome,
+    UserSubscriptionWindowAdvanceRecord,
 };
 pub use topup::{
     MAX_PAYMENT_PROVIDER_BYTES, MAX_PROVIDER_EVENT_ID_BYTES, MAX_PROVIDER_ORDER_ID_BYTES,
