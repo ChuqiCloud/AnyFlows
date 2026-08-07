@@ -365,13 +365,11 @@ impl QuotaRepository {
                 }
                 if let (Some(current), Some(settlement)) =
                     (allocation.as_ref(), subscription_settlement)
-                {
-                    if let Err(error) =
+                    && let Err(error) =
                         subscription::persist_settlement(&transaction, current, settlement, now)
                             .await
-                    {
-                        return rollback_with_error(transaction, error).await;
-                    }
+                {
+                    return rollback_with_error(transaction, error).await;
                 }
                 state = match load_reservation(&transaction, key.clone(), true).await {
                     Ok(Some(state)) => state,
@@ -431,14 +429,16 @@ impl QuotaRepository {
         };
         let adjustment = settle_adjustment(
             &savepoint,
-            &key,
-            &state,
-            reserved,
-            token_reserved,
-            actual,
-            &user_state,
-            subscription_settlement,
-            now,
+            SettlementAdjustment {
+                key: &key,
+                state: &state,
+                reserved,
+                token_reserved,
+                actual,
+                user_state: &user_state,
+                subscription_settlement,
+                now,
+            },
         )
         .await;
 
@@ -603,17 +603,32 @@ impl fmt::Debug for QuotaRepository {
     }
 }
 
-async fn settle_adjustment(
-    savepoint: &DatabaseTransaction,
-    key: &str,
-    state: &ReservationState,
+/// 一次保存点内完成结算所需的不可变事务快照。
+struct SettlementAdjustment<'a> {
+    key: &'a str,
+    state: &'a ReservationState,
     reserved: Quota,
     token_reserved: Quota,
     actual: Quota,
-    user_state: &UserQuotaState,
+    user_state: &'a UserQuotaState,
     subscription_settlement: Option<subscription::SubscriptionSettlement>,
     now: TimeDateTimeWithTimeZone,
+}
+
+async fn settle_adjustment(
+    savepoint: &DatabaseTransaction,
+    adjustment: SettlementAdjustment<'_>,
 ) -> Result<(), QuotaRepositoryError> {
+    let SettlementAdjustment {
+        key,
+        state,
+        reserved,
+        token_reserved,
+        actual,
+        user_state,
+        subscription_settlement,
+        now,
+    } = adjustment;
     let backend = savepoint.get_database_backend();
     if let Some(settlement) = subscription_settlement {
         subscription::apply_settlement(savepoint, state, user_state, actual, settlement, now)
