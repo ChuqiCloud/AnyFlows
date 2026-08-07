@@ -7,14 +7,15 @@ use std::sync::{
 };
 
 use af_domain::{
-    Quota, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus, UserId,
-    UserSubscriptionId, UserSubscriptionStatus,
+    Quota, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow,
+    SubscriptionWindowAdvance as DomainSubscriptionWindowAdvance, UserId, UserSubscriptionId,
+    UserSubscriptionStatus,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
     QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
-    sea_query::{Expr, LockType},
+    sea_query::{Condition, Expr, LockType},
 };
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
@@ -29,8 +30,10 @@ use super::{
     MAX_SUBSCRIPTION_PAGE_SIZE, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
     SubscriptionPlanDisableOutcome, SubscriptionPlanPageRecord, SubscriptionPlanRecord,
     SubscriptionPlanWrite, SubscriptionRepositoryConfigError, SubscriptionRepositoryError,
-    UserSubscriptionBind, UserSubscriptionBindOutcome, UserSubscriptionPageRecord,
-    UserSubscriptionRecord,
+    SubscriptionResetDueCursor, UserSubscriptionBind, UserSubscriptionBindOutcome,
+    UserSubscriptionPageRecord, UserSubscriptionRecord, UserSubscriptionResetDuePageRecord,
+    UserSubscriptionWindowAdvance, UserSubscriptionWindowAdvanceOutcome,
+    UserSubscriptionWindowAdvanceRecord,
 };
 
 /// 原子维护订阅计划启停和用户订阅幂等绑定的数据库仓储。
@@ -118,6 +121,25 @@ impl SubscriptionRepository {
         }
     }
 
+    /// 按窗口结束时间和主键升序读取一页到期 Active 订阅。
+    pub async fn list_reset_due_subscriptions(
+        &self,
+        now: u64,
+        after: Option<SubscriptionResetDueCursor>,
+        limit: usize,
+    ) -> Result<UserSubscriptionResetDuePageRecord, SubscriptionRepositoryError> {
+        if now > i64::MAX as u64 || !(1..=MAX_SUBSCRIPTION_PAGE_SIZE).contains(&limit) {
+            return Err(internal(SubscriptionRepositoryError::Invariant));
+        }
+        let operation = self
+            .list_reset_due_subscriptions_inner(now, after, limit)
+            .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal),
+            Err(_) => Err(internal(SubscriptionRepositoryError::Timeout)),
+        }
+    }
+
     /// 按稳定标识和完整不可变事实幂等创建订阅计划。
     pub async fn create_plan(
         &self,
@@ -178,6 +200,29 @@ impl SubscriptionRepository {
         };
         #[cfg(test)]
         if matches!(&outcome, UserSubscriptionBindOutcome::Created(_))
+            && self
+                .outcome_unknown_after_commit
+                .swap(false, Ordering::AcqRel)
+        {
+            return Err(internal(SubscriptionRepositoryError::OutcomeUnknown));
+        }
+        Ok(outcome)
+    }
+
+    /// 通过订阅版本和观测窗口 CAS 推进到包含扫描时刻的新窗口。
+    pub async fn advance_user_subscription_window(
+        &self,
+        advance: &UserSubscriptionWindowAdvance,
+    ) -> Result<UserSubscriptionWindowAdvanceOutcome, SubscriptionRepositoryError> {
+        let operation = self
+            .advance_user_subscription_window_inner(advance)
+            .with_subscriber(NoSubscriber::default());
+        let outcome = match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal)?,
+            Err(_) => return Err(internal(SubscriptionRepositoryError::OutcomeUnknown)),
+        };
+        #[cfg(test)]
+        if matches!(&outcome, UserSubscriptionWindowAdvanceOutcome::Applied(_))
             && self
                 .outcome_unknown_after_commit
                 .swap(false, Ordering::AcqRel)
@@ -261,6 +306,69 @@ impl SubscriptionRepository {
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(UserSubscriptionPageRecord::new(subscriptions, next_cursor))
+    }
+
+    async fn list_reset_due_subscriptions_inner(
+        &self,
+        now: u64,
+        after: Option<SubscriptionResetDueCursor>,
+        limit: usize,
+    ) -> Result<UserSubscriptionResetDuePageRecord, SubscriptionRepositoryError> {
+        let now = to_database_time(now)?;
+        let mut query = user_subscriptions::Entity::find()
+            .find_also_related(subscription_plans::Entity)
+            .filter(user_subscriptions::Column::Status.eq(UserSubscriptionStatus::Active.code()))
+            .filter(user_subscriptions::Column::WindowEndsAt.lte(now))
+            .order_by_asc(user_subscriptions::Column::WindowEndsAt)
+            .order_by_asc(user_subscriptions::Column::Id)
+            .limit(page_query_limit(limit)?);
+        if let Some(after) = after {
+            let window_ends_at = to_database_time(after.window_ends_at())?;
+            query = query.filter(
+                Condition::any()
+                    .add(user_subscriptions::Column::WindowEndsAt.gt(window_ends_at))
+                    .add(
+                        Condition::all()
+                            .add(user_subscriptions::Column::WindowEndsAt.eq(window_ends_at))
+                            .add(user_subscriptions::Column::Id.gt(after.database_id())),
+                    ),
+            );
+        }
+        let mut rows = query
+            .all(self.pool.connection())
+            .await
+            .map_err(|_| SubscriptionRepositoryError::Query)?;
+        let has_more = rows.len() > limit;
+        if has_more {
+            rows.pop();
+        }
+        let next_cursor = if has_more {
+            let subscription = rows
+                .last()
+                .map(|(subscription, _)| subscription)
+                .ok_or(SubscriptionRepositoryError::Invariant)?;
+            Some(
+                SubscriptionResetDueCursor::new(
+                    unix_seconds(subscription.window_ends_at)?,
+                    subscription.id,
+                )
+                .map_err(|_| SubscriptionRepositoryError::Invariant)?,
+            )
+        } else {
+            None
+        };
+        let subscriptions = rows
+            .into_iter()
+            .map(|(subscription, plan)| {
+                let plan = plan.ok_or(SubscriptionRepositoryError::Invariant)?;
+                let plan = plan_record(plan)?;
+                subscription_record(subscription, &plan)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(UserSubscriptionResetDuePageRecord::new(
+            subscriptions,
+            next_cursor,
+        ))
     }
 
     async fn create_plan_inner(
@@ -463,6 +571,119 @@ impl SubscriptionRepository {
         commit(transaction).await?;
         Ok(UserSubscriptionBindOutcome::Created(record))
     }
+
+    async fn advance_user_subscription_window_inner(
+        &self,
+        advance: &UserSubscriptionWindowAdvance,
+    ) -> Result<UserSubscriptionWindowAdvanceOutcome, SubscriptionRepositoryError> {
+        let transaction = begin(&self.pool).await?;
+        let Some((model, plan_model)) =
+            lock_subscription(&transaction, advance.subscription_id).await?
+        else {
+            rollback(transaction).await?;
+            return Ok(UserSubscriptionWindowAdvanceOutcome::NotFound);
+        };
+        let plan = plan_record(plan_model)?;
+        let current = subscription_record(model.clone(), &plan)?;
+
+        if current.status != UserSubscriptionStatus::Active {
+            rollback(transaction).await?;
+            return if matches_advance_snapshot(&current, advance) {
+                Ok(UserSubscriptionWindowAdvanceOutcome::Inactive(current))
+            } else {
+                Err(SubscriptionRepositoryError::Conflict)
+            };
+        }
+
+        let requested = requested_window_advance(current.cycle, advance)?;
+        if current.version == advance.expected_version as u64 {
+            if !matches_advance_snapshot(&current, advance) {
+                rollback(transaction).await?;
+                return Err(SubscriptionRepositoryError::Conflict);
+            }
+            let Some(requested) = requested else {
+                rollback(transaction).await?;
+                return Ok(UserSubscriptionWindowAdvanceOutcome::NotDue(current));
+            };
+
+            let next_window = requested.window();
+            let next_version = advance
+                .expected_version
+                .checked_add(1)
+                .ok_or(SubscriptionRepositoryError::Invariant)?;
+            let window_started_at = to_database_time(next_window.started_at())?;
+            let window_ends_at = to_database_time(next_window.ends_at())?;
+            let observed_window_started_at = to_database_time(advance.window_started_at)?;
+            let observed_window_ends_at = to_database_time(advance.window_ends_at)?;
+            let updated_at = monotonic_updated_at(model.updated_at, to_database_time(advance.now)?);
+            let update = user_subscriptions::Entity::update_many()
+                .filter(user_subscriptions::Column::Id.eq(model.id))
+                .filter(
+                    user_subscriptions::Column::Status.eq(UserSubscriptionStatus::Active.code()),
+                )
+                .filter(user_subscriptions::Column::Version.eq(advance.expected_version))
+                .filter(user_subscriptions::Column::WindowStartedAt.eq(observed_window_started_at))
+                .filter(user_subscriptions::Column::WindowEndsAt.eq(observed_window_ends_at))
+                .col_expr(user_subscriptions::Column::QuotaUsed, Expr::value(0_i64))
+                .col_expr(
+                    user_subscriptions::Column::WindowStartedAt,
+                    Expr::value(window_started_at),
+                )
+                .col_expr(
+                    user_subscriptions::Column::WindowEndsAt,
+                    Expr::value(window_ends_at),
+                )
+                .col_expr(
+                    user_subscriptions::Column::Version,
+                    Expr::value(next_version),
+                )
+                .col_expr(
+                    user_subscriptions::Column::UpdatedAt,
+                    Expr::value(updated_at),
+                )
+                .exec(&transaction)
+                .await
+                .map_err(|_| SubscriptionRepositoryError::Query)?;
+            if update.rows_affected != 1 {
+                rollback(transaction).await?;
+                return Err(SubscriptionRepositoryError::Conflict);
+            }
+
+            let updated = user_subscriptions::Entity::find_by_id(model.id)
+                .one(&transaction)
+                .await
+                .map_err(|_| SubscriptionRepositoryError::Query)?
+                .ok_or(SubscriptionRepositoryError::Invariant)?;
+            let record = subscription_record(updated, &plan)?;
+            commit(transaction).await?;
+            return Ok(UserSubscriptionWindowAdvanceOutcome::Applied(
+                UserSubscriptionWindowAdvanceRecord::new(record, requested.periods_elapsed()),
+            ));
+        }
+
+        let replay_version = advance
+            .expected_version
+            .checked_add(1)
+            .ok_or(SubscriptionRepositoryError::Invariant)?;
+        let Some(requested) = requested else {
+            rollback(transaction).await?;
+            return Err(SubscriptionRepositoryError::Conflict);
+        };
+        let replay_window = requested.window();
+        if current.version == replay_version as u64
+            && current.window_started_at == replay_window.started_at()
+            && current.window_ends_at == replay_window.ends_at()
+            && current.quota_used.is_zero()
+        {
+            rollback(transaction).await?;
+            return Ok(UserSubscriptionWindowAdvanceOutcome::Existing(
+                UserSubscriptionWindowAdvanceRecord::new(current, requested.periods_elapsed()),
+            ));
+        }
+
+        rollback(transaction).await?;
+        Err(SubscriptionRepositoryError::Conflict)
+    }
 }
 
 async fn recover_plan_collision<C>(
@@ -517,6 +738,32 @@ fn classify_subscription(
     }
 }
 
+fn requested_window_advance(
+    cycle: SubscriptionCycle,
+    advance: &UserSubscriptionWindowAdvance,
+) -> Result<Option<DomainSubscriptionWindowAdvance>, SubscriptionRepositoryError> {
+    let window = SubscriptionWindow::new(advance.window_started_at, advance.window_ends_at)
+        .map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    let next = SubscriptionWindow::initial(cycle, window.ends_at())
+        .map_err(|_| SubscriptionRepositoryError::Invariant)?;
+    if next.started_at() != window.ends_at() {
+        return Err(SubscriptionRepositoryError::Invariant);
+    }
+    window
+        .advance_until(cycle, advance.now)
+        .map_err(|_| SubscriptionRepositoryError::Invariant)
+}
+
+fn matches_advance_snapshot(
+    current: &UserSubscriptionRecord,
+    advance: &UserSubscriptionWindowAdvance,
+) -> bool {
+    current.subscription_id == advance.subscription_id
+        && current.version == advance.expected_version as u64
+        && current.window_started_at == advance.window_started_at
+        && current.window_ends_at == advance.window_ends_at
+}
+
 async fn load_plan<C>(
     connection: &C,
     plan_id: SubscriptionPlanId,
@@ -557,6 +804,46 @@ where
     };
     let plan = subscription_plans::Entity::find_by_id(subscription.plan_id)
         .one(connection)
+        .await
+        .map_err(|_| SubscriptionRepositoryError::Query)?
+        .ok_or(SubscriptionRepositoryError::Invariant)?;
+    Ok(Some((subscription, plan)))
+}
+
+async fn lock_subscription(
+    transaction: &DatabaseTransaction,
+    subscription_id: UserSubscriptionId,
+) -> Result<
+    Option<(user_subscriptions::Model, subscription_plans::Model)>,
+    SubscriptionRepositoryError,
+> {
+    let subscription_key = SensitiveString::from(subscription_id.persistence_key());
+    if transaction.get_database_backend() == DbBackend::Sqlite {
+        // SQLite 不支持 FOR UPDATE，使用同值更新提前取得写锁并保持后续 CAS 原子性。
+        user_subscriptions::Entity::update_many()
+            .filter(user_subscriptions::Column::SubscriptionKey.eq(subscription_key.clone()))
+            .col_expr(
+                user_subscriptions::Column::Version,
+                Expr::col(user_subscriptions::Column::Version).into(),
+            )
+            .exec(transaction)
+            .await
+            .map_err(|_| SubscriptionRepositoryError::Query)?;
+    }
+    let mut query = user_subscriptions::Entity::find()
+        .filter(user_subscriptions::Column::SubscriptionKey.eq(subscription_key));
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    let Some(subscription) = query
+        .one(transaction)
+        .await
+        .map_err(|_| SubscriptionRepositoryError::Query)?
+    else {
+        return Ok(None);
+    };
+    let plan = subscription_plans::Entity::find_by_id(subscription.plan_id)
+        .one(transaction)
         .await
         .map_err(|_| SubscriptionRepositoryError::Query)?
         .ok_or(SubscriptionRepositoryError::Invariant)?;
