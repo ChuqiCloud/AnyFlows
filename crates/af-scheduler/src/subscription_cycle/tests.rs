@@ -1,6 +1,5 @@
 use std::{
     collections::VecDeque,
-    future,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -332,30 +331,27 @@ impl FakeStore {
 }
 
 impl SubscriptionCycleStore for FakeStore {
-    fn load_window_advances(
+    async fn load_window_advances(
         &self,
         now: u64,
         after: Option<SubscriptionResetDueCursor>,
         limit: usize,
-    ) -> impl Future<Output = Result<SubscriptionWindowAdvanceBatch, SubscriptionRepositoryError>> + Send
-    {
-        let result = {
+    ) -> Result<SubscriptionWindowAdvanceBatch, SubscriptionRepositoryError> {
+        {
             let mut state = self.state.lock().unwrap();
             state.window_loads.push((now, after, limit));
             state
                 .window_batches
                 .pop_front()
                 .unwrap_or_else(|| Ok(SubscriptionWindowAdvanceBatch::new(Vec::new(), None)))
-        };
-        async move { result }
+        }
     }
 
-    fn advance_window(
+    async fn advance_window(
         &self,
         command: &UserSubscriptionWindowAdvance,
-    ) -> impl Future<Output = Result<SubscriptionCycleMutationOutcome, SubscriptionRepositoryError>> + Send
-    {
-        let result = {
+    ) -> Result<SubscriptionCycleMutationOutcome, SubscriptionRepositoryError> {
+        {
             let mut state = self.state.lock().unwrap();
             state
                 .window_command_addresses
@@ -364,41 +360,35 @@ impl SubscriptionCycleStore for FakeStore {
                 .window_outcomes
                 .pop_front()
                 .unwrap_or(Ok(SubscriptionCycleMutationOutcome::Applied))
-        };
-        async move { result }
+        }
     }
 
-    fn load_expirations(
+    async fn load_expirations(
         &self,
         now: u64,
         after: Option<SubscriptionExpirationDueCursor>,
         limit: usize,
-    ) -> impl Future<Output = Result<SubscriptionExpirationBatch, SubscriptionRepositoryError>> + Send
-    {
-        let result = {
+    ) -> Result<SubscriptionExpirationBatch, SubscriptionRepositoryError> {
+        {
             let mut state = self.state.lock().unwrap();
             state.expiration_loads.push((now, after, limit));
             state
                 .expiration_batches
                 .pop_front()
                 .unwrap_or_else(|| Ok(SubscriptionExpirationBatch::new(Vec::new(), None)))
-        };
-        async move { result }
+        }
     }
 
-    fn expire_subscription(
+    async fn expire_subscription(
         &self,
         _command: &UserSubscriptionLifecycleTransition,
-    ) -> impl Future<Output = Result<SubscriptionCycleMutationOutcome, SubscriptionRepositoryError>> + Send
-    {
-        let result = self
-            .state
+    ) -> Result<SubscriptionCycleMutationOutcome, SubscriptionRepositoryError> {
+        self.state
             .lock()
             .unwrap()
             .expiration_outcomes
             .pop_front()
-            .unwrap_or(Ok(SubscriptionCycleMutationOutcome::Applied));
-        async move { result }
+            .unwrap_or(Ok(SubscriptionCycleMutationOutcome::Applied))
     }
 }
 
@@ -407,43 +397,37 @@ struct BlockingStore {
 }
 
 impl SubscriptionCycleStore for BlockingStore {
-    fn load_window_advances(
+    async fn load_window_advances(
         &self,
         _now: u64,
         _after: Option<SubscriptionResetDueCursor>,
         _limit: usize,
-    ) -> impl Future<Output = Result<SubscriptionWindowAdvanceBatch, SubscriptionRepositoryError>> + Send
-    {
+    ) -> Result<SubscriptionWindowAdvanceBatch, SubscriptionRepositoryError> {
         let started = Arc::clone(&self.started);
-        async move {
-            started.notify_one();
-            future::pending().await
-        }
+        started.notify_one();
+        std::future::pending().await
     }
 
-    fn advance_window(
+    async fn advance_window(
         &self,
         _command: &UserSubscriptionWindowAdvance,
-    ) -> impl Future<Output = Result<SubscriptionCycleMutationOutcome, SubscriptionRepositoryError>> + Send
-    {
-        future::ready(Ok(SubscriptionCycleMutationOutcome::Applied))
+    ) -> Result<SubscriptionCycleMutationOutcome, SubscriptionRepositoryError> {
+        Ok(SubscriptionCycleMutationOutcome::Applied)
     }
 
-    fn load_expirations(
+    async fn load_expirations(
         &self,
         _now: u64,
         _after: Option<SubscriptionExpirationDueCursor>,
         _limit: usize,
-    ) -> impl Future<Output = Result<SubscriptionExpirationBatch, SubscriptionRepositoryError>> + Send
-    {
-        future::ready(Ok(SubscriptionExpirationBatch::new(Vec::new(), None)))
+    ) -> Result<SubscriptionExpirationBatch, SubscriptionRepositoryError> {
+        Ok(SubscriptionExpirationBatch::new(Vec::new(), None))
     }
 
-    fn expire_subscription(
+    async fn expire_subscription(
         &self,
         _command: &UserSubscriptionLifecycleTransition,
-    ) -> impl Future<Output = Result<SubscriptionCycleMutationOutcome, SubscriptionRepositoryError>> + Send
-    {
-        future::ready(Ok(SubscriptionCycleMutationOutcome::Applied))
+    ) -> Result<SubscriptionCycleMutationOutcome, SubscriptionRepositoryError> {
+        Ok(SubscriptionCycleMutationOutcome::Applied)
     }
 }
