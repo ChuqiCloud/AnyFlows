@@ -74,6 +74,7 @@ async fn receive_payment_webhook(
             | TopupWebhookOutcome::Acknowledged(_)
             | TopupWebhookOutcome::Existing(_)
             | TopupWebhookOutcome::RecordedUnprocessed { .. }
+            | TopupWebhookOutcome::IgnoredNonTerminal
             | TopupWebhookOutcome::NotFound,
         ) => {
             // 已验签但订单不存在或暂未处理的事件也确认接收，避免 Provider 无限重试。

@@ -519,6 +519,7 @@ pub(crate) enum ManagementErrorCodeSchema {
     WalletOverflow,
     WalletOutcomeUnknown,
     TopupUnavailable,
+    TopupProviderRejected,
     TopupOrderConflict,
     TopupOrderOutcomeUnknown,
     RedemptionBatchNotFound,

@@ -7,6 +7,7 @@ mod expression_pricing;
 mod group_pricing_cache;
 mod lifecycle;
 mod model_price_cache;
+mod payment_order;
 mod payment_webhook;
 mod pricing;
 mod pricing_snapshot;
@@ -51,6 +52,11 @@ pub use lifecycle::{
 pub use model_price_cache::{
     ModelPrice, ModelPriceCache, ModelPriceCacheError, ModelPriceMode, ModelPriceSnapshot,
     ModelPriceSource, ModelPriceSourceError, ModelPriceSourceFuture, ModelPriceSourceRecord,
+};
+pub use payment_order::{
+    MAX_PAYMENT_CLIENT_SECRET_BYTES, PaymentClientSecret, PaymentOrderFuture,
+    PaymentOrderInputError, PaymentOrderProvider, PaymentOrderProviderError,
+    PaymentOrderRecoveryRequest, PaymentOrderRequest, PaymentOrderSession,
 };
 pub use payment_webhook::{
     MAX_PAYMENT_WEBHOOK_HEADER_NAME_BYTES, MAX_PAYMENT_WEBHOOK_HEADER_VALUE_BYTES,

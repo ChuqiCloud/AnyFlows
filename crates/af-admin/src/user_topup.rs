@@ -2,13 +2,19 @@ use std::{
     fmt,
     future::Future,
     pin::Pin,
+    sync::Arc,
+    time::Duration,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use af_billing::{STRIPE_PAYMENT_PROVIDER, quota_math::quota_from_usd};
+use af_billing::{
+    PaymentClientSecret, PaymentOrderProvider, PaymentOrderProviderError,
+    PaymentOrderRecoveryRequest, PaymentOrderRequest, PaymentOrderSession, STRIPE_PAYMENT_PROVIDER,
+    quota_math::quota_from_usd,
+};
 use af_db::{
-    TopupOrderCreate, TopupOrderCreateOutcome, TopupOrderRecord, TopupRepository,
-    TopupRepositoryError,
+    TopupOrderCreate, TopupOrderCreateOutcome, TopupOrderRecord, TopupOrderSubmission,
+    TopupOrderSubmitOutcome, TopupRepository, TopupRepositoryError,
 };
 use af_domain::{Quota, TopupOrderId, TopupOrderStatus, TopupRequestId, UserId};
 use rust_decimal::Decimal;
@@ -28,6 +34,7 @@ const USD_MINOR_UNITS: i64 = 100;
 const TOPUP_IDENTIFIER_BYTES: usize = 16;
 const REQUEST_ID_DOMAIN: &[u8] = b"anyflows:topup-request:v1";
 const ORDER_ID_DOMAIN: &[u8] = b"anyflows:topup-order:v1";
+const STRIPE_TOPUP_ORDER_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// 当前用户创建充值订单的结构化命令。
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -70,7 +77,50 @@ impl fmt::Debug for UserTopupOrderCreateCommand {
     }
 }
 
-/// 当前用户可见的充值订单快照，不包含 Provider 订单号或支付流水号。
+/// 当前用户可继续确认的 Stripe 支付会话。
+pub struct UserTopupPaymentSession {
+    session: PaymentOrderSession,
+}
+
+impl UserTopupPaymentSession {
+    /// 组合只在公开 HTTPS 响应中出现的支付会话。
+    #[must_use]
+    const fn new(session: PaymentOrderSession) -> Self {
+        Self { session }
+    }
+
+    /// 供替代服务实现和传输层测试构造已校验支付会话。
+    pub fn from_parts(
+        payment_intent_id: String,
+        client_secret: String,
+    ) -> Result<Self, UserTopupError> {
+        let secret =
+            PaymentClientSecret::new(client_secret).map_err(|_| UserTopupError::Internal)?;
+        let session = PaymentOrderSession::new(payment_intent_id, secret)
+            .map_err(|_| UserTopupError::Internal)?;
+        Ok(Self::new(session))
+    }
+
+    /// 返回 Stripe PaymentIntent 标识；调用方不得写入日志。
+    #[must_use]
+    pub fn payment_intent_id(&self) -> &str {
+        self.session.provider_order_id()
+    }
+
+    /// 返回仅供支付 SDK 使用的客户端密钥。
+    #[must_use]
+    pub fn client_secret(&self) -> &str {
+        self.session.client_secret().expose()
+    }
+}
+
+impl fmt::Debug for UserTopupPaymentSession {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("UserTopupPaymentSession(<已脱敏>)")
+    }
+}
+
+/// 当前用户可见的充值订单快照，不包含支付流水号。
 pub struct UserTopupOrder {
     order_id: TopupOrderId,
     provider: String,
@@ -81,6 +131,7 @@ pub struct UserTopupOrder {
     version: u64,
     created_at: u64,
     replayed: bool,
+    payment: Option<UserTopupPaymentSession>,
 }
 
 impl UserTopupOrder {
@@ -100,6 +151,7 @@ impl UserTopupOrder {
         version: u64,
         created_at: u64,
         replayed: bool,
+        payment: Option<UserTopupPaymentSession>,
     ) -> Self {
         Self {
             order_id,
@@ -111,6 +163,7 @@ impl UserTopupOrder {
             version,
             created_at,
             replayed,
+            payment,
         }
     }
 
@@ -168,7 +221,17 @@ impl UserTopupOrder {
         self.replayed
     }
 
-    fn from_record(record: TopupOrderRecord, replayed: bool) -> Self {
+    /// 返回待确认的支付会话；终态订单不会携带该字段。
+    #[must_use]
+    pub const fn payment(&self) -> Option<&UserTopupPaymentSession> {
+        self.payment.as_ref()
+    }
+
+    fn from_record(
+        record: TopupOrderRecord,
+        replayed: bool,
+        payment: Option<UserTopupPaymentSession>,
+    ) -> Self {
         Self {
             order_id: record.order_id(),
             provider: record.provider().to_owned(),
@@ -179,6 +242,7 @@ impl UserTopupOrder {
             version: record.version(),
             created_at: record.created_at(),
             replayed,
+            payment,
         }
     }
 }
@@ -207,6 +271,9 @@ pub enum UserTopupError {
     /// 数据库暂时无法完成充值订单写入。
     #[error("充值订单服务暂不可用")]
     Unavailable,
+    /// Stripe 确定拒绝了服务端构造的支付请求。
+    #[error("充值支付请求被 Provider 拒绝")]
+    ProviderRejected,
     /// 时钟、额度换算或持久化不变量失败。
     #[error("充值订单内部失败")]
     Internal,
@@ -226,16 +293,22 @@ pub trait UserTopupService: Send + Sync {
     ) -> UserTopupOrderCreateFuture<'a>;
 }
 
-/// 使用原子充值仓储实现当前用户订单创建。
+/// 使用原子充值仓储和支付 Provider 实现订单创建与提交。
 pub struct DatabaseUserTopupService {
     repository: TopupRepository,
+    provider: Arc<dyn PaymentOrderProvider>,
+    order_ttl: Duration,
 }
 
 impl DatabaseUserTopupService {
-    /// 绑定已经配置数据库操作截止时间的充值仓储。
+    /// 绑定充值仓储、Stripe Provider 与固定本地订单有效期。
     #[must_use]
-    pub const fn new(repository: TopupRepository) -> Self {
-        Self { repository }
+    pub fn new(repository: TopupRepository, provider: Arc<dyn PaymentOrderProvider>) -> Self {
+        Self {
+            repository,
+            provider,
+            order_ttl: STRIPE_TOPUP_ORDER_TTL,
+        }
     }
 }
 
@@ -260,21 +333,116 @@ impl UserTopupService for DatabaseUserTopupService {
                 unix_now()?,
             )
             .map_err(|_| UserTopupError::Internal)?;
-            match self
+            let (record, replayed) = match self
                 .repository
                 .create_order(write)
                 .await
                 .map_err(map_repository_error)?
             {
-                TopupOrderCreateOutcome::Created(record) => {
-                    Ok(UserTopupOrder::from_record(record, false))
-                }
-                TopupOrderCreateOutcome::Existing(record) => {
-                    Ok(UserTopupOrder::from_record(record, true))
-                }
-                TopupOrderCreateOutcome::NotFound => Err(UserTopupError::InvalidSession),
-            }
+                TopupOrderCreateOutcome::Created(record) => (record, false),
+                TopupOrderCreateOutcome::Existing(record) => (record, true),
+                TopupOrderCreateOutcome::NotFound => return Err(UserTopupError::InvalidSession),
+            };
+            self.prepare_payment(record, replayed).await
         })
+    }
+}
+
+impl DatabaseUserTopupService {
+    async fn prepare_payment(
+        &self,
+        record: TopupOrderRecord,
+        replayed: bool,
+    ) -> Result<UserTopupOrder, UserTopupError> {
+        if record.provider() != self.provider.provider() {
+            return Err(UserTopupError::Internal);
+        }
+        match record.status() {
+            TopupOrderStatus::Created => self.submit_created_order(record, replayed).await,
+            TopupOrderStatus::Pending => self.recover_pending_order(record, replayed).await,
+            TopupOrderStatus::Paid
+            | TopupOrderStatus::Failed
+            | TopupOrderStatus::Canceled
+            | TopupOrderStatus::Expired => Ok(UserTopupOrder::from_record(record, replayed, None)),
+        }
+    }
+
+    async fn submit_created_order(
+        &self,
+        record: TopupOrderRecord,
+        replayed: bool,
+    ) -> Result<UserTopupOrder, UserTopupError> {
+        let started_at = unix_now()?;
+        let expires_at = record
+            .created_at()
+            .checked_add(self.order_ttl.as_secs())
+            .ok_or(UserTopupError::Internal)?;
+        if expires_at <= started_at {
+            return Err(UserTopupError::Conflict);
+        }
+        let request = payment_request(&record)?;
+        let session = self
+            .provider
+            .create(request)
+            .await
+            .map_err(map_provider_error)?;
+        let submitted_at = unix_now()?;
+        if expires_at <= submitted_at {
+            return Err(UserTopupError::Conflict);
+        }
+        let submission = TopupOrderSubmission::new(
+            record.order_id(),
+            record.version(),
+            session.provider_order_id().to_owned(),
+            submitted_at,
+            expires_at,
+        )
+        .map_err(|_| UserTopupError::Internal)?;
+        let submitted = match self
+            .repository
+            .submit_order(submission)
+            .await
+            .map_err(map_repository_error)?
+        {
+            TopupOrderSubmitOutcome::Applied(record)
+            | TopupOrderSubmitOutcome::Existing(record) => record,
+            TopupOrderSubmitOutcome::NotFound => return Err(UserTopupError::Internal),
+        };
+        if submitted.provider_order_id() != Some(session.provider_order_id())
+            || submitted.expires_at() != Some(expires_at)
+        {
+            return Err(UserTopupError::Internal);
+        }
+        Ok(UserTopupOrder::from_record(
+            submitted,
+            replayed,
+            Some(UserTopupPaymentSession::new(session)),
+        ))
+    }
+
+    async fn recover_pending_order(
+        &self,
+        record: TopupOrderRecord,
+        replayed: bool,
+    ) -> Result<UserTopupOrder, UserTopupError> {
+        let provider_order_id = record
+            .provider_order_id()
+            .ok_or(UserTopupError::Internal)?
+            .to_owned();
+        record.expires_at().ok_or(UserTopupError::Internal)?;
+        let request =
+            PaymentOrderRecoveryRequest::new(payment_request(&record)?, provider_order_id)
+                .map_err(|_| UserTopupError::Internal)?;
+        let session = self
+            .provider
+            .recover(request)
+            .await
+            .map_err(map_provider_error)?;
+        Ok(UserTopupOrder::from_record(
+            record,
+            replayed,
+            Some(UserTopupPaymentSession::new(session)),
+        ))
     }
 }
 
@@ -322,6 +490,15 @@ fn quota_for_amount_minor(amount_minor: u64) -> Result<Quota, UserTopupError> {
     Ok(quota)
 }
 
+fn payment_request(record: &TopupOrderRecord) -> Result<PaymentOrderRequest, UserTopupError> {
+    PaymentOrderRequest::new(
+        record.order_id(),
+        record.amount_minor(),
+        record.currency().to_owned(),
+    )
+    .map_err(|_| UserTopupError::Internal)
+}
+
 fn unix_now() -> Result<u64, UserTopupError> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -338,8 +515,28 @@ fn map_repository_error(error: TopupRepositoryError) -> UserTopupError {
     }
 }
 
+fn map_provider_error(error: PaymentOrderProviderError) -> UserTopupError {
+    match error {
+        PaymentOrderProviderError::Rejected => UserTopupError::ProviderRejected,
+        PaymentOrderProviderError::OutcomeUnknown => UserTopupError::OutcomeUnknown,
+        PaymentOrderProviderError::Unavailable => UserTopupError::Unavailable,
+        PaymentOrderProviderError::InvalidResponse => UserTopupError::Internal,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::{
+        error::Error,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    use af_billing::{PaymentOrderFuture, PaymentOrderInputError};
+    use af_db::{
+        DatabaseOptions, InitialSetupOutcome, InitialSetupRecord, InitialSetupRepository,
+        MigrationOptions,
+    };
+
     use super::*;
 
     const IDEMPOTENCY_KEY: &str = "1234567890abcdef1234567890abcdef";
@@ -382,5 +579,86 @@ mod tests {
         assert_eq!(first, replay);
         assert_ne!(first, other_user);
         assert_ne!(first.0.bytes(), first.1.bytes());
+    }
+
+    #[tokio::test]
+    async fn created_order_is_submitted_once_and_pending_replay_recovers_it()
+    -> Result<(), Box<dyn Error>> {
+        let pool = af_db::connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:")?,
+            MigrationOptions::default(),
+        )
+        .await?;
+        let InitialSetupOutcome::Initialized { user_id } =
+            InitialSetupRepository::new(pool.clone(), Duration::from_secs(5))?
+                .initialize(InitialSetupRecord::new(
+                    "topup-owner".to_owned(),
+                    "topup secure password".to_owned(),
+                ))
+                .await?
+        else {
+            panic!("空数据库必须完成首次安装");
+        };
+        let provider = Arc::new(RecordingPaymentProvider::default());
+        let repository = TopupRepository::new(pool, Duration::from_secs(5))?;
+        let service = DatabaseUserTopupService::new(repository, provider.clone());
+        let principal = SessionPrincipal::new(user_id, crate::SessionRole::Admin);
+        let command = UserTopupOrderCreateCommand::new(IDEMPOTENCY_KEY, 500)?;
+
+        let created = service.create(principal, command).await?;
+        assert_eq!(created.status(), TopupOrderStatus::Pending);
+        assert!(!created.replayed());
+        assert_eq!(
+            created.payment().unwrap().payment_intent_id(),
+            "pi_test_123"
+        );
+
+        let replay = service.create(principal, command).await?;
+        assert_eq!(replay.status(), TopupOrderStatus::Pending);
+        assert!(replay.replayed());
+        assert_eq!(
+            replay.payment().unwrap().client_secret(),
+            "pi_test_123_secret_client"
+        );
+        assert_eq!(provider.create_calls.load(Ordering::Acquire), 1);
+        assert_eq!(provider.recover_calls.load(Ordering::Acquire), 1);
+        Ok(())
+    }
+
+    #[derive(Default)]
+    struct RecordingPaymentProvider {
+        create_calls: AtomicUsize,
+        recover_calls: AtomicUsize,
+    }
+
+    impl PaymentOrderProvider for RecordingPaymentProvider {
+        fn provider(&self) -> &str {
+            STRIPE_PAYMENT_PROVIDER
+        }
+
+        fn create<'a>(&'a self, request: PaymentOrderRequest) -> PaymentOrderFuture<'a> {
+            self.create_calls.fetch_add(1, Ordering::AcqRel);
+            assert_eq!(request.amount_minor(), 500);
+            assert_eq!(request.currency(), STRIPE_TOPUP_CURRENCY);
+            Box::pin(async {
+                payment_session().map_err(|_| PaymentOrderProviderError::InvalidResponse)
+            })
+        }
+
+        fn recover<'a>(&'a self, request: PaymentOrderRecoveryRequest) -> PaymentOrderFuture<'a> {
+            self.recover_calls.fetch_add(1, Ordering::AcqRel);
+            assert_eq!(request.provider_order_id(), "pi_test_123");
+            assert_eq!(request.order().amount_minor(), 500);
+            Box::pin(async {
+                payment_session().map_err(|_| PaymentOrderProviderError::InvalidResponse)
+            })
+        }
+    }
+
+    fn payment_session() -> Result<PaymentOrderSession, PaymentOrderInputError> {
+        PaymentOrderSession::new(
+            "pi_test_123".to_owned(),
+            PaymentClientSecret::new("pi_test_123_secret_client".to_owned())?,
+        )
     }
 }

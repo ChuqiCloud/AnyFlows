@@ -1473,7 +1473,7 @@
         },
         "responses": {
           "200": {
-            "description": "相同幂等键和金额对应的订单已经存在",
+            "description": "相同幂等键和金额对应的订单已恢复；待支付时携带同一 PaymentIntent 会话",
             "content": {
               "application/json": {
                 "schema": {
@@ -1483,7 +1483,7 @@
             }
           },
           "201": {
-            "description": "本地 Stripe 充值订单首次创建；尚未向 Provider 提交",
+            "description": "本地订单首次创建并已绑定 Stripe PaymentIntent",
             "content": {
               "application/json": {
                 "schema": {
@@ -1524,6 +1524,16 @@
           },
           "500": {
             "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Stripe 确定拒绝服务端支付请求",
             "content": {
               "application/json": {
                 "schema": {
@@ -14437,6 +14447,7 @@
               "wallet_overflow",
               "wallet_outcome_unknown",
               "topup_unavailable",
+              "topup_provider_rejected",
               "topup_order_conflict",
               "topup_order_outcome_unknown",
               "redemption_batch_not_found",
@@ -15850,6 +15861,16 @@
           },
           "replayed": {
             "type": "boolean"
+          },
+          "payment": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UserTopupPaymentSession"
+              }
+            ]
           }
         },
         "additionalProperties": false
@@ -15888,6 +15909,29 @@
           "canceled",
           "expired"
         ]
+      },
+      "UserTopupPaymentSession": {
+        "type": "object",
+        "description": "当前用户可交给 Stripe SDK 的短生命周期支付会话。",
+        "required": [
+          "payment_intent_id",
+          "client_secret"
+        ],
+        "properties": {
+          "payment_intent_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 4,
+            "pattern": "^pi_[A-Za-z0-9_]+$"
+          },
+          "client_secret": {
+            "type": "string",
+            "readOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
       },
       "UserWalletEntry": {
         "type": "object",

@@ -41,6 +41,7 @@ struct ConfigDefaults {
 
 #[derive(Serialize)]
 struct PaymentDefaults {
+    stripe_secret_key: Option<String>,
     stripe_webhook_secret: Option<String>,
     stripe_signature_tolerance_secs: u64,
 }
@@ -48,6 +49,7 @@ struct PaymentDefaults {
 impl Default for PaymentDefaults {
     fn default() -> Self {
         Self {
+            stripe_secret_key: None,
             stripe_webhook_secret: None,
             stripe_signature_tolerance_secs: DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS,
         }
@@ -232,6 +234,7 @@ fn known_field(path: &str) -> Option<&'static str> {
         "billing.usage_record_worker_count" => "billing.usage_record_worker_count",
         "billing.wal_directory" => "billing.wal_directory",
         "payment" => "payment",
+        "payment.stripe_secret_key" => "payment.stripe_secret_key",
         "payment.stripe_webhook_secret" => "payment.stripe_webhook_secret",
         "payment.stripe_signature_tolerance_secs" => "payment.stripe_signature_tolerance_secs",
         "channel_probe" => "channel_probe",
@@ -348,6 +351,7 @@ mod tests {
                 config.billing().wal_directory(),
                 Path::new("data/billing-wal")
             );
+            assert!(config.payment().stripe_secret_key().is_none());
             assert!(config.payment().stripe_webhook_secret().is_none());
             assert_eq!(
                 config.payment().stripe_signature_tolerance_secs(),
@@ -589,7 +593,7 @@ mod tests {
     fn toml_values_override_defaults() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[billing]\nbatch_enabled = true\nflush_interval_secs = 11\nflush_timeout_secs = 17\nwal_directory = 'private-billing-wal'\n[payment]\nstripe_webhook_secret = 'whsec-test-secret'\nstripe_signature_tolerance_secs = 42\n[auth]\nallow_query_api_key = true\nlookup_timeout_secs = 7\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
+                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[billing]\nbatch_enabled = true\nflush_interval_secs = 11\nflush_timeout_secs = 17\nwal_directory = 'private-billing-wal'\n[payment]\nstripe_secret_key = 'sk-test-secret'\nstripe_webhook_secret = 'whsec-test-secret'\nstripe_signature_tolerance_secs = 42\n[auth]\nallow_query_api_key = true\nlookup_timeout_secs = 7\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
@@ -612,10 +616,15 @@ mod tests {
             );
             assert!(!format!("{:?}", config.billing()).contains("private-billing-wal"));
             assert_eq!(
+                config.payment().stripe_secret_key().unwrap().expose(),
+                "sk-test-secret"
+            );
+            assert_eq!(
                 config.payment().stripe_webhook_secret().unwrap().expose(),
                 "whsec-test-secret"
             );
             assert_eq!(config.payment().stripe_signature_tolerance_secs(), 42);
+            assert!(!format!("{:?}", config.payment()).contains("sk-test-secret"));
             assert!(!format!("{:?}", config.payment()).contains("whsec-test-secret"));
             assert!(config.auth().allow_query_api_key());
             assert_eq!(config.auth().lookup_timeout_secs(), 7);
@@ -624,6 +633,24 @@ mod tests {
             assert_eq!(
                 config.http_client().proxy_url().unwrap().expose(),
                 "socks5://127.0.0.1:10808"
+            );
+        });
+    }
+
+    #[test]
+    fn stripe_api_key_requires_a_webhook_secret() {
+        with_clean_env(|_| {
+            let path = temp_file(
+                "[database]\nurl = 'sqlite::memory:'\n[payment]\nstripe_secret_key = 'sk-test-secret'\n",
+            );
+            let error = load_from(&path).unwrap_err();
+            let _ = fs::remove_file(path);
+
+            assert_eq!(
+                error,
+                ConfigError::EmptyValue {
+                    field: "payment.stripe_webhook_secret"
+                }
             );
         });
     }
@@ -753,6 +780,10 @@ mod tests {
                 Path::new("environment-billing-wal")
             );
             assert_eq!(
+                config.payment().stripe_secret_key().unwrap().expose(),
+                "sk-environment-secret"
+            );
+            assert_eq!(
                 config.payment().stripe_webhook_secret().unwrap().expose(),
                 "whsec-environment-secret"
             );
@@ -821,6 +852,7 @@ mod tests {
                 .env("AF_BILLING__FLUSH_INTERVAL_SECS", "19")
                 .env("AF_BILLING__FLUSH_TIMEOUT_SECS", "23")
                 .env("AF_BILLING__WAL_DIRECTORY", "environment-billing-wal")
+                .env("AF_PAYMENT__STRIPE_SECRET_KEY", "sk-environment-secret")
                 .env(
                     "AF_PAYMENT__STRIPE_WEBHOOK_SECRET",
                     "whsec-environment-secret",

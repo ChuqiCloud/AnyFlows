@@ -41,6 +41,8 @@ pub const MAX_BILLING_FLUSH_TIMEOUT_SECS: u64 = 300;
 pub const DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS: u64 = 300;
 /// Stripe webhook 签名时间容差允许的最大值。
 pub const MAX_PAYMENT_SIGNATURE_TOLERANCE_SECS: u64 = 86_400;
+/// Stripe API 密钥允许的最大字节数。
+pub const MAX_PAYMENT_SECRET_KEY_BYTES: usize = 4 * 1_024;
 /// 支付 Provider webhook 密钥允许的最大字节数。
 pub const MAX_PAYMENT_WEBHOOK_SECRET_BYTES: usize = 4 * 1_024;
 /// 用量记录内存接收队列的默认容量。
@@ -418,11 +420,18 @@ impl Default for BillingSettings {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct PaymentSettings {
+    stripe_secret_key: Option<SecretString>,
     stripe_webhook_secret: Option<SecretString>,
     stripe_signature_tolerance_secs: u64,
 }
 
 impl PaymentSettings {
+    /// 返回 Stripe 服务端 API 密钥；未配置时禁止创建 PaymentIntent。
+    #[must_use]
+    pub fn stripe_secret_key(&self) -> Option<&SecretString> {
+        self.stripe_secret_key.as_ref()
+    }
+
     /// 返回 Stripe webhook 密钥；未配置时回调路由保持禁用。
     #[must_use]
     pub fn stripe_webhook_secret(&self) -> Option<&SecretString> {
@@ -439,6 +448,7 @@ impl PaymentSettings {
 impl Default for PaymentSettings {
     fn default() -> Self {
         Self {
+            stripe_secret_key: None,
             stripe_webhook_secret: None,
             stripe_signature_tolerance_secs: DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS,
         }
@@ -1075,6 +1085,28 @@ impl AppConfig {
             return Err(ConfigError::OutOfRange {
                 field: "payment.stripe_signature_tolerance_secs",
             });
+        }
+        if let Some(secret) = self.payment.stripe_secret_key.as_ref() {
+            validate_nonempty_text(
+                secret.expose(),
+                "payment.stripe_secret_key",
+                MAX_PAYMENT_SECRET_KEY_BYTES,
+            )?;
+            if !secret
+                .expose()
+                .bytes()
+                .all(|byte| (0x21..=0x7e).contains(&byte))
+            {
+                return Err(ConfigError::InvalidField {
+                    field: "payment.stripe_secret_key",
+                });
+            }
+            // 禁止创建无法通过可信 webhook 原子到账的真实支付订单。
+            if self.payment.stripe_webhook_secret.is_none() {
+                return Err(ConfigError::EmptyValue {
+                    field: "payment.stripe_webhook_secret",
+                });
+            }
         }
         if let Some(secret) = self.payment.stripe_webhook_secret.as_ref() {
             validate_nonempty_text(

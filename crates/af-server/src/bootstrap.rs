@@ -90,6 +90,8 @@ use af_scheduler::{
 use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
 use thiserror::Error;
 
+use crate::stripe_payment_intent::StripePaymentIntentProvider;
+
 use crate::readiness::DatabaseReadinessProbe;
 use crate::{
     BackgroundTaskSupervisor, BillingChatService, BillingFlushReport, BillingRuntime,
@@ -222,6 +224,7 @@ pub struct Supervised {
     billing: BillingRuntime,
     usage_record_queue: UsageRecordQueue,
     refund_signal_queue: RefundSignalQueue,
+    upstream_clients: HttpClientProvider,
     _channel_index: InMemoryChannelIndex,
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     admin_model_sync_service: Arc<dyn AdminModelSyncService>,
@@ -1270,6 +1273,7 @@ impl Bootstrap<BillingReady> {
                 billing,
                 usage_record_queue,
                 refund_signal_queue,
+                upstream_clients,
                 _channel_index: channel_index,
                 model_catalog_reader,
                 admin_model_sync_service,
@@ -1363,30 +1367,53 @@ impl Bootstrap<Supervised> {
                     self.stage.debug_trace_runtime.clone(),
                 )),
             ));
-        let (user_topup_service, payment_webhook_processor) =
-            if let Some(secret) = self.config.payment().stripe_webhook_secret() {
+        let topup_repository = self.config.payment().stripe_webhook_secret().map(|_| {
+            TopupRepository::new(
+                self.stage.infrastructure.infrastructure.database.clone(),
+                Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+            )
+            .expect("认证查询超时已校验为正数，充值仓储必须可装配")
+        });
+        let payment_webhook_processor = self
+            .config
+            .payment()
+            .stripe_webhook_secret()
+            .zip(topup_repository.as_ref())
+            .map(|(secret, repository)| {
                 let provider = StripePaymentProvider::new(
                     secret.expose(),
                     self.config.payment().stripe_signature_tolerance_secs(),
                 )
                 .expect("已校验的 Stripe webhook 配置必须满足 Provider 边界");
-                let repository = TopupRepository::new(
-                    self.stage.infrastructure.infrastructure.database.clone(),
-                    Duration::from_secs(self.config.auth().lookup_timeout_secs()),
-                )
-                .expect("认证查询超时已校验为正数，充值仓储必须可装配");
-                let service: Arc<dyn UserTopupService> =
-                    Arc::new(DatabaseUserTopupService::new(repository.clone()));
-                (
-                    Some(service),
-                    Some(Arc::new(TopupWebhookProcessor::new(
-                        Arc::new(provider),
-                        Arc::new(repository),
-                    ))),
-                )
-            } else {
-                (None, None)
-            };
+                Arc::new(TopupWebhookProcessor::new(
+                    Arc::new(provider),
+                    Arc::new(repository.clone()),
+                ))
+            });
+        let user_topup_service =
+            self.config
+                .payment()
+                .stripe_secret_key()
+                .zip(topup_repository)
+                .map(|(secret, repository)| {
+                    let request_timeout = self
+                        .stage
+                        .upstream_clients
+                        .base_config()
+                        .expect("已装配的全局 HTTP Client 基线必须可读")
+                        .timeouts()
+                        .request();
+                    let provider = StripePaymentIntentProvider::new(
+                        secret.expose(),
+                        self.stage.upstream_clients.clone(),
+                        request_timeout,
+                    )
+                    .expect("已校验的 Stripe API 配置必须满足 Provider 边界");
+                    let service: Arc<dyn UserTopupService> = Arc::new(
+                        DatabaseUserTopupService::new(repository, Arc::new(provider)),
+                    );
+                    service
+                });
         let payment_webhook_routes =
             build_payment_webhook_router("stripe", payment_webhook_processor);
         let router = build_router(
@@ -1536,6 +1563,7 @@ impl Bootstrap<ListenerReady> {
             admin_channel_probe: _,
             debug_trace_repository: _,
             debug_trace_runtime: _,
+            upstream_clients: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
         let http =
