@@ -32,6 +32,7 @@ pub const MAX_STRIPE_TOPUP_AMOUNT_MINOR: i64 = 99_999_999;
 
 const USD_MINOR_UNITS: i64 = 100;
 const TOPUP_IDENTIFIER_BYTES: usize = 16;
+const MAX_STRIPE_PUBLISHABLE_KEY_BYTES: usize = 512;
 const REQUEST_ID_DOMAIN: &[u8] = b"anyflows:topup-request:v1";
 const ORDER_ID_DOMAIN: &[u8] = b"anyflows:topup-order:v1";
 const STRIPE_TOPUP_ORDER_TTL: Duration = Duration::from_secs(24 * 60 * 60);
@@ -117,6 +118,63 @@ impl UserTopupPaymentSession {
 impl fmt::Debug for UserTopupPaymentSession {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("UserTopupPaymentSession(<已脱敏>)")
+    }
+}
+
+/// 当前用户可读取的 Stripe.js 充值配置，不包含任何服务端密钥。
+pub struct UserTopupConfiguration {
+    publishable_key: String,
+}
+
+impl UserTopupConfiguration {
+    /// 校验 Stripe publishable key，并组合固定 Provider、币种与金额边界。
+    pub fn new(publishable_key: String) -> Result<Self, UserTopupError> {
+        if publishable_key.is_empty()
+            || publishable_key.len() > MAX_STRIPE_PUBLISHABLE_KEY_BYTES
+            || !publishable_key
+                .bytes()
+                .all(|byte| (0x21..=0x7e).contains(&byte))
+            || !(publishable_key.starts_with("pk_test_") || publishable_key.starts_with("pk_live_"))
+        {
+            return Err(UserTopupError::InvalidInput);
+        }
+        Ok(Self { publishable_key })
+    }
+
+    /// 返回固定 Stripe Provider 标识。
+    #[must_use]
+    pub fn provider(&self) -> &'static str {
+        STRIPE_PAYMENT_PROVIDER
+    }
+
+    /// 返回固定美元结算币种。
+    #[must_use]
+    pub const fn currency(&self) -> &'static str {
+        STRIPE_TOPUP_CURRENCY
+    }
+
+    /// 返回 Stripe/USD 允许创建的最小整数美分金额。
+    #[must_use]
+    pub const fn min_amount_minor(&self) -> i64 {
+        MIN_STRIPE_TOPUP_AMOUNT_MINOR
+    }
+
+    /// 返回 Stripe/USD 允许创建的最大整数美分金额。
+    #[must_use]
+    pub const fn max_amount_minor(&self) -> i64 {
+        MAX_STRIPE_TOPUP_AMOUNT_MINOR
+    }
+
+    /// 返回仅供 Stripe.js 初始化使用的 publishable key。
+    #[must_use]
+    pub fn publishable_key(&self) -> &str {
+        &self.publishable_key
+    }
+}
+
+impl fmt::Debug for UserTopupConfiguration {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("UserTopupConfiguration(<已脱敏>)")
     }
 }
 
@@ -285,6 +343,9 @@ pub type UserTopupOrderCreateFuture<'a> =
 
 /// 当前用户充值订单应用端口；订单所有权只能从会话主体推导。
 pub trait UserTopupService: Send + Sync {
+    /// 返回当前用户可读取的 Stripe.js 充值配置。
+    fn configuration(&self) -> &UserTopupConfiguration;
+
     /// 为当前会话用户幂等创建本地 Stripe 充值订单。
     fn create<'a>(
         &'a self,
@@ -297,22 +358,32 @@ pub trait UserTopupService: Send + Sync {
 pub struct DatabaseUserTopupService {
     repository: TopupRepository,
     provider: Arc<dyn PaymentOrderProvider>,
+    configuration: UserTopupConfiguration,
     order_ttl: Duration,
 }
 
 impl DatabaseUserTopupService {
     /// 绑定充值仓储、Stripe Provider 与固定本地订单有效期。
     #[must_use]
-    pub fn new(repository: TopupRepository, provider: Arc<dyn PaymentOrderProvider>) -> Self {
+    pub fn new(
+        repository: TopupRepository,
+        provider: Arc<dyn PaymentOrderProvider>,
+        configuration: UserTopupConfiguration,
+    ) -> Self {
         Self {
             repository,
             provider,
+            configuration,
             order_ttl: STRIPE_TOPUP_ORDER_TTL,
         }
     }
 }
 
 impl UserTopupService for DatabaseUserTopupService {
+    fn configuration(&self) -> &UserTopupConfiguration {
+        &self.configuration
+    }
+
     fn create<'a>(
         &'a self,
         principal: SessionPrincipal,
@@ -564,6 +635,27 @@ mod tests {
     }
 
     #[test]
+    fn public_configuration_accepts_only_stripe_publishable_keys() {
+        let configuration = UserTopupConfiguration::new("pk_test_public".to_owned()).unwrap();
+        assert_eq!(configuration.provider(), STRIPE_PAYMENT_PROVIDER);
+        assert_eq!(configuration.currency(), STRIPE_TOPUP_CURRENCY);
+        assert_eq!(
+            configuration.min_amount_minor(),
+            MIN_STRIPE_TOPUP_AMOUNT_MINOR
+        );
+        assert_eq!(
+            configuration.max_amount_minor(),
+            MAX_STRIPE_TOPUP_AMOUNT_MINOR
+        );
+        assert_eq!(configuration.publishable_key(), "pk_test_public");
+        assert!(matches!(
+            UserTopupConfiguration::new("sk_test_secret".to_owned()),
+            Err(UserTopupError::InvalidInput)
+        ));
+        assert!(!format!("{configuration:?}").contains("pk_test_public"));
+    }
+
+    #[test]
     fn usd_minor_units_use_the_shared_quota_conversion() {
         assert_eq!(quota_for_amount_minor(50).unwrap().units(), 250_000);
         assert_eq!(quota_for_amount_minor(1_000).unwrap().units(), 5_000_000);
@@ -601,7 +693,11 @@ mod tests {
         };
         let provider = Arc::new(RecordingPaymentProvider::default());
         let repository = TopupRepository::new(pool, Duration::from_secs(5))?;
-        let service = DatabaseUserTopupService::new(repository, provider.clone());
+        let service = DatabaseUserTopupService::new(
+            repository,
+            provider.clone(),
+            UserTopupConfiguration::new("pk_test_public".to_owned())?,
+        );
         let principal = SessionPrincipal::new(user_id, crate::SessionRole::Admin);
         let command = UserTopupOrderCreateCommand::new(IDEMPOTENCY_KEY, 500)?;
 

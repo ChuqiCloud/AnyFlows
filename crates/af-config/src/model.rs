@@ -43,6 +43,8 @@ pub const DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS: u64 = 300;
 pub const MAX_PAYMENT_SIGNATURE_TOLERANCE_SECS: u64 = 86_400;
 /// Stripe API 密钥允许的最大字节数。
 pub const MAX_PAYMENT_SECRET_KEY_BYTES: usize = 4 * 1_024;
+/// Stripe publishable key 允许的最大字节数。
+const MAX_PAYMENT_PUBLISHABLE_KEY_BYTES: usize = 512;
 /// 支付 Provider webhook 密钥允许的最大字节数。
 pub const MAX_PAYMENT_WEBHOOK_SECRET_BYTES: usize = 4 * 1_024;
 /// 用量记录内存接收队列的默认容量。
@@ -421,6 +423,7 @@ impl Default for BillingSettings {
 #[serde(default, deny_unknown_fields)]
 pub struct PaymentSettings {
     stripe_secret_key: Option<SecretString>,
+    stripe_publishable_key: Option<String>,
     stripe_webhook_secret: Option<SecretString>,
     stripe_signature_tolerance_secs: u64,
 }
@@ -430,6 +433,12 @@ impl PaymentSettings {
     #[must_use]
     pub fn stripe_secret_key(&self) -> Option<&SecretString> {
         self.stripe_secret_key.as_ref()
+    }
+
+    /// 返回可安全交给 Stripe.js 的 publishable key。
+    #[must_use]
+    pub fn stripe_publishable_key(&self) -> Option<&str> {
+        self.stripe_publishable_key.as_deref()
     }
 
     /// 返回 Stripe webhook 密钥；未配置时回调路由保持禁用。
@@ -449,6 +458,7 @@ impl Default for PaymentSettings {
     fn default() -> Self {
         Self {
             stripe_secret_key: None,
+            stripe_publishable_key: None,
             stripe_webhook_secret: None,
             stripe_signature_tolerance_secs: DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS,
         }
@@ -1105,6 +1115,31 @@ impl AppConfig {
             if self.payment.stripe_webhook_secret.is_none() {
                 return Err(ConfigError::EmptyValue {
                     field: "payment.stripe_webhook_secret",
+                });
+            }
+            if self.payment.stripe_publishable_key.is_none() {
+                return Err(ConfigError::EmptyValue {
+                    field: "payment.stripe_publishable_key",
+                });
+            }
+        }
+        if let Some(key) = self.payment.stripe_publishable_key.as_deref() {
+            validate_nonempty_text(
+                key,
+                "payment.stripe_publishable_key",
+                MAX_PAYMENT_PUBLISHABLE_KEY_BYTES,
+            )?;
+            if !key.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
+                || !(key.starts_with("pk_test_") || key.starts_with("pk_live_"))
+            {
+                return Err(ConfigError::InvalidField {
+                    field: "payment.stripe_publishable_key",
+                });
+            }
+            // 单独公开客户端密钥无法创建订单，启动期直接拒绝半配置状态。
+            if self.payment.stripe_secret_key.is_none() {
+                return Err(ConfigError::EmptyValue {
+                    field: "payment.stripe_secret_key",
                 });
             }
         }

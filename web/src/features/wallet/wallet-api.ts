@@ -2,14 +2,20 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 
 import { apiClient } from '@/lib/api'
 import {
+  createUserTopupOrder,
+  getUserTopupConfiguration,
   getUserWallet,
   listUserWalletEntries,
   redeemUserRedemptionCode,
 } from '@/lib/api/generated/sdk.gen'
-import type { UserRedemptionRequest } from '@/lib/api/generated/types.gen'
+import type {
+  UserRedemptionRequest,
+  UserTopupOrderCreateRequest,
+} from '@/lib/api/generated/types.gen'
 
 export const userWalletSummaryQueryKey = ['user-wallet', 'summary'] as const
 export const userWalletEntriesQueryKey = ['user-wallet', 'entries'] as const
+export const userTopupConfigurationQueryKey = ['user-wallet', 'topup-configuration'] as const
 
 /** 读取当前登录用户自己的钱包摘要，并周期校正顶栏余额。 */
 export function useUserWalletSummary() {
@@ -37,6 +43,30 @@ export function useUserWalletEntries() {
       return data
     },
     getNextPageParam: (page) => page.next_cursor ?? undefined,
+  })
+}
+
+/** 读取只含 Stripe.js 客户端材料的当前用户充值配置。 */
+export function useUserTopupConfiguration() {
+  return useQuery({
+    queryKey: userTopupConfigurationQueryKey,
+    queryFn: async ({ signal }) => {
+      const { data } = await getUserTopupConfiguration({ client: apiClient, signal })
+      return data
+    },
+    retry: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  })
+}
+
+/** 创建或以原幂等键恢复当前用户的 Stripe 充值订单。 */
+export function useCreateUserTopupOrder() {
+  return useMutation({
+    gcTime: 0,
+    mutationFn: async (body: UserTopupOrderCreateRequest) => {
+      const { data } = await createUserTopupOrder({ body, client: apiClient })
+      return data
+    },
   })
 }
 

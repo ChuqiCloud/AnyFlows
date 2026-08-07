@@ -1122,6 +1122,13 @@ export type UserTokenWriteRequest = {
     model_limits: Array<string> | null;
     allow_ips: Array<string> | null;
 };
+export type UserTopupConfiguration = {
+    provider: string;
+    currency: string;
+    min_amount_minor: number;
+    max_amount_minor: number;
+    publishable_key: string;
+};
 export type UserTopupOrder = {
     order_id: string;
     provider: string;
@@ -1697,6 +1704,21 @@ export type ListUserWalletEntriesResponses = {
     200: UserWalletListResponse;
 };
 export type ListUserWalletEntriesResponse = ListUserWalletEntriesResponses[keyof ListUserWalletEntriesResponses];
+export type GetUserTopupConfigurationData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/account/wallet/topups/config';
+};
+export type GetUserTopupConfigurationErrors = {
+    401: ManagementError;
+    503: ManagementError;
+};
+export type GetUserTopupConfigurationError = GetUserTopupConfigurationErrors[keyof GetUserTopupConfigurationErrors];
+export type GetUserTopupConfigurationResponses = {
+    200: UserTopupConfiguration;
+};
+export type GetUserTopupConfigurationResponse = GetUserTopupConfigurationResponses[keyof GetUserTopupConfigurationResponses];
 export type CreateUserTopupOrderData = {
     body: UserTopupOrderCreateRequest;
     path?: never;

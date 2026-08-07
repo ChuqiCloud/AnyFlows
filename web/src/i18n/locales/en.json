@@ -2964,6 +2964,68 @@
       "emptyTitle": "No balance changes yet",
       "emptyBody": "A zero opening balance does not create an empty ledger entry. Your first credit will appear here."
     },
+    "topup": {
+      "title": "Online top-up",
+      "description": "Add quota to this account through Stripe.",
+      "unavailable": {
+        "title": "Online top-up is unavailable",
+        "retryable": "Payment configuration could not be loaded. Try again shortly.",
+        "notConfigured": "Online top-up is not configured for this instance. Redemption codes remain available."
+      },
+      "amount": {
+        "label": "Top-up amount",
+        "presets": "Common top-up amounts",
+        "validation": "Enter an amount from {{min}} to {{max}} with no more than two decimal places.",
+        "hint": "Per-payment range {{min}} to {{max}}",
+        "quota": "Expected quota credit"
+      },
+      "payment": {
+        "pay": "Pay {{amount}}",
+        "confirming": "Confirming payment",
+        "securedByStripe": "Payment details are securely handled by Stripe",
+        "errors": {
+          "rejected": "The payment method could not be confirmed. Check it and try again.",
+          "unknown": "The payment result cannot be confirmed yet. Do not create another order."
+        }
+      },
+      "states": {
+        "readyTitle": "Ready to create a payment",
+        "readyBody": "The server returns the exact quota credit after confirming the amount.",
+        "creatingTitle": "Preparing payment",
+        "creatingBody": "Creating or recovering the same Stripe payment order.",
+        "resumeTitle": "An unfinished top-up was found",
+        "resumeBody": "The original {{amount}} order is available to resume.",
+        "confirmedTitle": "Payment confirmed by Stripe",
+        "processingTitle": "Payment is processing",
+        "confirmedBody": "Waiting for the payment webhook to credit the wallet. Do not pay again.",
+        "paidTitle": "Top-up credited",
+        "paidBody": "{{amount}} quota was written to the wallet and top-up ledger.",
+        "failedTitle": "Payment was not completed",
+        "failedBody": "Stripe closed this payment order. Start a new top-up to try again.",
+        "canceledTitle": "Payment canceled",
+        "canceledBody": "This payment order was canceled and no quota will be credited.",
+        "expiredTitle": "Payment order expired",
+        "expiredBody": "The order passed its validity window. Choose an amount and start again.",
+        "errorTitle": "Payment could not be prepared"
+      },
+      "actions": {
+        "continue": "Continue to payment",
+        "changeAmount": "Change amount",
+        "resume": "Resume order",
+        "retrySame": "Retry original order",
+        "refreshStatus": "Refresh credit status",
+        "newAttempt": "Start another top-up",
+        "done": "Done"
+      },
+      "errors": {
+        "unavailable": "The top-up service is unavailable. Keep this page open and retry.",
+        "providerRejected": "Stripe rejected the payment order. Start again shortly.",
+        "conflict": "The idempotency key is bound to another amount. Choose the amount again.",
+        "outcomeUnknown": "The order result cannot be confirmed yet. Retry the same order.",
+        "invalid": "The top-up amount or order data is invalid. Choose the amount again.",
+        "unknown": "The payment service did not return a reliable result. Retry the original order."
+      }
+    },
     "redemption": {
       "title": "Redeem quota",
       "description": "Enter a one-time code issued by the platform. The balance and redemption ledger update in one transaction.",

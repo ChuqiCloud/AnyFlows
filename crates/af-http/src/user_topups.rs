@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use af_admin::{
-    SessionAuthentication, SessionAuthenticator, UserTopupError, UserTopupOrder,
-    UserTopupOrderCreateCommand, UserTopupPaymentSession, UserTopupService,
+    SessionAuthentication, SessionAuthenticator, UserTopupConfiguration, UserTopupError,
+    UserTopupOrder, UserTopupOrderCreateCommand, UserTopupPaymentSession, UserTopupService,
 };
 use af_domain::TopupOrderStatus;
 use axum::{
@@ -10,7 +10,7 @@ use axum::{
     extract::{State, rejection::JsonRejection},
     middleware,
     response::{IntoResponse, Response},
-    routing::post,
+    routing::{get, post},
 };
 use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
 use serde::{Deserialize, Serialize};
@@ -36,6 +36,23 @@ pub(crate) struct UserTopupOrderCreateRequest {
     idempotency_key: String,
     #[schema(minimum = 50, maximum = 99_999_999)]
     amount_minor: i64,
+}
+
+/// 当前登录用户可读取的 Stripe.js 充值配置。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserTopupConfiguration)]
+pub(crate) struct UserTopupConfigurationResponse {
+    #[schema(value_type = String, example = "stripe")]
+    provider: &'static str,
+    #[schema(min_length = 3, max_length = 3, pattern = "^[A-Z]{3}$")]
+    currency: &'static str,
+    #[schema(minimum = 50)]
+    min_amount_minor: i64,
+    #[schema(maximum = 99_999_999)]
+    max_amount_minor: i64,
+    #[schema(min_length = 9, max_length = 512, pattern = "^pk_(test|live)_[!-~]+$")]
+    publishable_key: String,
 }
 
 /// 当前用户可见的闭合充值订单状态。
@@ -97,9 +114,27 @@ pub(crate) fn build_user_topup_router(
         authenticate_management_session,
     );
     Router::new()
+        .route(
+            "/api/account/wallet/topups/config",
+            get(get_user_topup_configuration),
+        )
         .route("/api/account/wallet/topups", post(create_user_topup_order))
         .route_layer(authentication)
         .with_state(UserTopupHttpState { service })
+}
+
+/// 返回只包含 Stripe.js 客户端材料和固定金额边界的充值配置。
+async fn get_user_topup_configuration(
+    State(state): State<UserTopupHttpState>,
+) -> Result<Response, ManagementError> {
+    let service = state
+        .service
+        .as_ref()
+        .ok_or(ManagementError::TopupUnavailable)?;
+    Ok(status_json(
+        StatusCode::OK,
+        UserTopupConfigurationResponse::from_configuration(service.configuration()),
+    ))
 }
 
 /// 为当前会话用户幂等创建本地 Stripe 充值订单。
@@ -155,6 +190,18 @@ impl UserTopupOrderResponse {
                 .map(UserTopupPaymentSessionResponse::from_session)
                 .transpose()?,
         })
+    }
+}
+
+impl UserTopupConfigurationResponse {
+    fn from_configuration(configuration: &UserTopupConfiguration) -> Self {
+        Self {
+            provider: configuration.provider(),
+            currency: configuration.currency(),
+            min_amount_minor: configuration.min_amount_minor(),
+            max_amount_minor: configuration.max_amount_minor(),
+            publishable_key: configuration.publishable_key().to_owned(),
+        }
     }
 }
 

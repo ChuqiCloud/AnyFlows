@@ -2963,6 +2963,68 @@
       "emptyTitle": "还没有余额变更记录",
       "emptyBody": "零初始余额不会生成空账本；首次额度到账后会显示在这里。"
     },
+    "topup": {
+      "title": "在线充值",
+      "description": "通过 Stripe 为当前账户充值额度。",
+      "unavailable": {
+        "title": "在线充值暂不可用",
+        "retryable": "支付配置暂时无法读取，请稍后重试。",
+        "notConfigured": "当前实例尚未配置在线充值，可继续使用兑换码。"
+      },
+      "amount": {
+        "label": "充值金额",
+        "presets": "常用充值金额",
+        "validation": "请输入 {{min}} 至 {{max}} 之间的金额，最多两位小数。",
+        "hint": "单笔范围 {{min}} 至 {{max}}",
+        "quota": "预计到账额度"
+      },
+      "payment": {
+        "pay": "支付 {{amount}}",
+        "confirming": "正在确认支付",
+        "securedByStripe": "支付信息由 Stripe 安全处理",
+        "errors": {
+          "rejected": "支付方式未通过确认，请检查后重试。",
+          "unknown": "暂时无法确认支付结果，请勿重复创建订单。"
+        }
+      },
+      "states": {
+        "readyTitle": "准备创建支付订单",
+        "readyBody": "服务端将在确认金额后返回精确到账额度。",
+        "creatingTitle": "正在准备支付",
+        "creatingBody": "正在创建或恢复同一笔 Stripe 支付订单。",
+        "resumeTitle": "发现未完成的充值",
+        "resumeBody": "保留了 {{amount}} 的原订单，可继续恢复支付。",
+        "confirmedTitle": "支付已由 Stripe 确认",
+        "processingTitle": "支付正在处理中",
+        "confirmedBody": "正在等待支付回调完成钱包入账，请勿重复支付。",
+        "paidTitle": "充值已经到账",
+        "paidBody": "{{amount}} 额度已写入钱包与充值账本。",
+        "failedTitle": "支付未完成",
+        "failedBody": "Stripe 已关闭本次支付订单，请重新发起充值。",
+        "canceledTitle": "支付已取消",
+        "canceledBody": "本次支付订单已取消，不会产生钱包入账。",
+        "expiredTitle": "支付订单已过期",
+        "expiredBody": "订单已超过有效期，请重新选择金额发起充值。",
+        "errorTitle": "暂时无法准备支付"
+      },
+      "actions": {
+        "continue": "继续支付",
+        "changeAmount": "更换金额",
+        "resume": "恢复订单",
+        "retrySame": "重试原订单",
+        "refreshStatus": "刷新到账状态",
+        "newAttempt": "重新充值",
+        "done": "完成"
+      },
+      "errors": {
+        "unavailable": "充值服务暂不可用，请保留当前页面后重试。",
+        "providerRejected": "Stripe 拒绝创建支付订单，请稍后重新发起。",
+        "conflict": "原幂等键已绑定其他金额，请重新选择金额。",
+        "outcomeUnknown": "服务暂时无法确认订单结果，请重试同一订单。",
+        "invalid": "充值金额或订单参数无效，请重新选择金额。",
+        "unknown": "支付服务暂时没有返回可靠结果，请重试原订单。"
+      }
+    },
     "redemption": {
       "title": "兑换额度",
       "description": "输入平台签发的一次性兑换码，额度会与兑换账本在同一事务到账。",
