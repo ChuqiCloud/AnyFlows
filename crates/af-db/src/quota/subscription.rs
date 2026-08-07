@@ -194,7 +194,11 @@ pub(super) async fn persist_settlement(
         )
         .exec(transaction)
         .await
-        .map_err(|_| QuotaRepositoryError::Query)?;
+        .map_err(|_| {
+            #[cfg(test)]
+            eprintln!("订阅结算诊断：固化分摊失败");
+            QuotaRepositoryError::Query
+        })?;
     if result.rows_affected != 1 {
         return Err(QuotaRepositoryError::Invariant);
     }
@@ -289,7 +293,11 @@ pub(super) async fn apply_settlement(
         .col_expr(users::Column::UpdatedAt, Expr::value(now))
         .exec(transaction)
         .await
-        .map_err(|_| QuotaRepositoryError::Query)?;
+        .map_err(|_| {
+            #[cfg(test)]
+            eprintln!("订阅结算诊断：更新用户累计失败");
+            QuotaRepositoryError::Query
+        })?;
     if user_result.rows_affected != 1 {
         return Err(QuotaRepositoryError::Invariant);
     }
@@ -319,7 +327,11 @@ pub(super) async fn apply_settlement(
         .col_expr(user_subscriptions::Column::UpdatedAt, Expr::value(now))
         .exec(transaction)
         .await
-        .map_err(|_| QuotaRepositoryError::Query)?;
+        .map_err(|_| {
+            #[cfg(test)]
+            eprintln!("订阅结算诊断：更新订阅用量失败");
+            QuotaRepositoryError::Query
+        })?;
     if subscription_result.rows_affected != 1 {
         return Err(QuotaRepositoryError::Invariant);
     }
