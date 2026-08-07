@@ -52,11 +52,11 @@ use af_admin::{
     RegistrationPolicyUpdateFuture, RegistrationService, RegistrationStatusFuture,
     SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
     SessionLoginFuture, SessionPrincipal, SiteSettingsCommand, SiteSettingsError,
-    SiteSettingsService, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
-    UserInvitationError, UserInvitationReadFuture, UserInvitationService,
-    UserNotificationPreferencesCommand, UserNotificationUpdateFuture, UserPasswordChangeCommand,
-    UserPasswordChangeFuture, UserProfileError, UserProfileReadFuture, UserProfileService,
-    UserProfileUpdateCommand, UserProfileUpdateFuture, UserTokenCreateFuture,
+    SiteSettingsService, SubscriptionService, SubscriptionServiceError, TokenAuthentication,
+    TokenAuthenticationFuture, TokenAuthenticator, UserInvitationError, UserInvitationReadFuture,
+    UserInvitationService, UserNotificationPreferencesCommand, UserNotificationUpdateFuture,
+    UserPasswordChangeCommand, UserPasswordChangeFuture, UserProfileError, UserProfileReadFuture,
+    UserProfileService, UserProfileUpdateCommand, UserProfileUpdateFuture, UserTokenCreateFuture,
     UserTokenDeleteFuture, UserTokenError, UserTokenGetFuture, UserTokenListFuture,
     UserTokenListQuery, UserTokenService, UserTokenUpdateFuture, UserTokenWriteCommand,
     UserWalletError, UserWalletListFuture, UserWalletListQuery, UserWalletService,
@@ -174,6 +174,7 @@ struct RejectPasswordReset;
 struct RejectUserProfile;
 struct RejectUserWallet;
 struct RejectRedemptions;
+struct RejectSubscriptions;
 struct RejectUserInvitations;
 struct RejectSiteSettings;
 struct RejectAdminEmailSettings;
@@ -324,6 +325,59 @@ impl RedemptionService for RejectRedemptions {
         _command: af_admin::UserRedemptionCommand,
     ) -> RedemptionRedeemFuture<'a> {
         Box::pin(async { Err(RedemptionServiceError::Internal) })
+    }
+}
+
+impl SubscriptionService for RejectSubscriptions {
+    fn list_plans<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _query: af_admin::AdminSubscriptionPageQuery,
+    ) -> af_admin::SubscriptionListPlansFuture<'a> {
+        Box::pin(async { Err(SubscriptionServiceError::Internal) })
+    }
+
+    fn create_plan<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: af_admin::AdminSubscriptionPlanCreateCommand,
+    ) -> af_admin::SubscriptionCreatePlanFuture<'a> {
+        Box::pin(async { Err(SubscriptionServiceError::Internal) })
+    }
+
+    fn disable_plan<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _plan_id: af_domain::SubscriptionPlanId,
+        _command: af_admin::AdminSubscriptionPlanDisableCommand,
+    ) -> af_admin::SubscriptionDisablePlanFuture<'a> {
+        Box::pin(async { Err(SubscriptionServiceError::Internal) })
+    }
+
+    fn list_user_subscriptions<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _user_id: UserId,
+        _query: af_admin::AdminSubscriptionPageQuery,
+    ) -> af_admin::SubscriptionListUserFuture<'a> {
+        Box::pin(async { Err(SubscriptionServiceError::Internal) })
+    }
+
+    fn list_current_subscriptions<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _query: af_admin::AdminSubscriptionPageQuery,
+    ) -> af_admin::SubscriptionListUserFuture<'a> {
+        Box::pin(async { Err(SubscriptionServiceError::Internal) })
+    }
+
+    fn bind_user<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _user_id: UserId,
+        _command: af_admin::AdminUserSubscriptionBindCommand,
+    ) -> af_admin::SubscriptionBindFuture<'a> {
+        Box::pin(async { Err(SubscriptionServiceError::Internal) })
     }
 }
 
@@ -1723,6 +1777,7 @@ async fn start_server(
         Arc::new(RejectUserWallet),
         None,
         Arc::new(RejectRedemptions),
+        Arc::new(RejectSubscriptions),
         Arc::new(RejectUserInvitations),
         Arc::new(RejectSiteSettings),
         Arc::new(RejectAdminEmailSettings),

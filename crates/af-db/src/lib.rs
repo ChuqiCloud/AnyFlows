@@ -397,10 +397,11 @@ pub use site_settings::{
     SiteSettingsRepositoryError, SiteSettingsWriteRecord,
 };
 pub use subscription::{
-    MAX_SUBSCRIPTION_PLAN_NAME_BYTES, SubscriptionInputError, SubscriptionPlanCreateOutcome,
-    SubscriptionPlanDisable, SubscriptionPlanDisableOutcome, SubscriptionPlanRecord,
-    SubscriptionPlanWrite, SubscriptionRepository, SubscriptionRepositoryConfigError,
-    SubscriptionRepositoryError, UserSubscriptionBind, UserSubscriptionBindOutcome,
+    MAX_SUBSCRIPTION_PAGE_SIZE, MAX_SUBSCRIPTION_PLAN_NAME_BYTES, SubscriptionInputError,
+    SubscriptionPlanCreateOutcome, SubscriptionPlanDisable, SubscriptionPlanDisableOutcome,
+    SubscriptionPlanPageRecord, SubscriptionPlanRecord, SubscriptionPlanWrite,
+    SubscriptionRepository, SubscriptionRepositoryConfigError, SubscriptionRepositoryError,
+    UserSubscriptionBind, UserSubscriptionBindOutcome, UserSubscriptionPageRecord,
     UserSubscriptionRecord,
 };
 pub use topup::{

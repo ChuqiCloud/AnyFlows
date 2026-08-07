@@ -55,6 +55,14 @@ pub(crate) enum ManagementError {
     RedemptionCodeAlreadyUsed,
     /// 兑换操作提交结果未知，调用方可重试同一明文确认。
     RedemptionOutcomeUnknown,
+    /// 订阅计划不存在。
+    SubscriptionPlanNotFound,
+    /// 订阅计划已经停用，不能新增绑定。
+    SubscriptionPlanDisabled,
+    /// 订阅计划版本、业务标识或绑定事实发生冲突。
+    SubscriptionConflict,
+    /// 订阅写入结果未知，服务端重试后仍无法确认。
+    SubscriptionOutcomeUnknown,
     /// 当前实例尚未启用公开注册。
     RegistrationDisabled,
     /// 当前客户端已耗尽公开注册固定窗口尝试次数。
@@ -357,6 +365,34 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "redemption_outcome_unknown",
                     message: "Redemption outcome unknown",
+                },
+            ),
+            Self::SubscriptionPlanNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "subscription_plan_not_found",
+                    message: "Subscription plan not found",
+                },
+            ),
+            Self::SubscriptionPlanDisabled => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "subscription_plan_disabled",
+                    message: "Subscription plan disabled",
+                },
+            ),
+            Self::SubscriptionConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "subscription_conflict",
+                    message: "Subscription conflict",
+                },
+            ),
+            Self::SubscriptionOutcomeUnknown => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "subscription_outcome_unknown",
+                    message: "Subscription outcome unknown",
                 },
             ),
             Self::RegistrationDisabled => (

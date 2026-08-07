@@ -26,6 +26,7 @@ pub(crate) mod schema;
 mod session;
 mod setup;
 mod site_settings;
+mod subscriptions;
 mod tokens;
 mod usage_logs;
 mod user_profile;
@@ -48,6 +49,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(setup::document());
     document.merge(registration::document());
     document.merge(redemptions::document());
+    document.merge(subscriptions::document());
     document.merge(password_reset::document());
     document.merge(user_profile::document());
     document.merge(user_wallet::document());
@@ -85,6 +87,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("个人资料与安全"),
         Tag::new("我的钱包"),
         Tag::new("兑换码"),
+        Tag::new("订阅管理"),
         Tag::new("邀请中心"),
         Tag::new("站点设置"),
         Tag::new("邮件设置"),
@@ -136,7 +139,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 71);
+        assert_eq!(document.paths.paths.len(), 75);
         let operation_count = document
             .paths
             .paths
@@ -157,7 +160,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 109);
+        assert_eq!(operation_count, 115);
         assert!(
             document
                 .components
@@ -186,6 +189,7 @@ mod tests {
             "createAdminModel",
             "createAdminModelSyncPreview",
             "createAdminRedemptionBatch",
+            "createAdminSubscriptionPlan",
             "createAdminToken",
             "createAdminUser",
             "beginAdminOAuthAuthorization",
@@ -212,6 +216,7 @@ mod tests {
             "deleteAdminUser",
             "deleteUserToken",
             "disableAdminRedemptionBatch",
+            "disableAdminSubscriptionPlan",
             "getAdminChannel",
             "getAdminBalanceAlertSettings",
             "getAdminCredential",
@@ -249,6 +254,8 @@ mod tests {
             "listAdminModelPrices",
             "listAdminRedemptionAudit",
             "listAdminRedemptionBatches",
+            "listAdminSubscriptionPlans",
+            "listAdminUserSubscriptions",
             "listMissingAdminModels",
             "listAdminTokens",
             "listAdminUsageLogs",
@@ -258,6 +265,7 @@ mod tests {
             "listUserTokens",
             "receivePaymentWebhook",
             "listUserWalletEntries",
+            "listCurrentUserSubscriptions",
             "loginManagementSession",
             "probeAdminChannel",
             "previewAdminLiteLlmModelPrices",
@@ -286,6 +294,7 @@ mod tests {
             "updateAdminUser",
             "updateUserToken",
             "adjustAdminWallet",
+            "bindAdminUserSubscription",
             "listAdminWalletEntries",
         ]
         .into_iter()
@@ -294,7 +303,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 185);
+        assert_eq!(schemas.len(), 195);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminChannelAutoBanRules"));
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
@@ -337,6 +346,16 @@ mod tests {
         assert!(schemas.contains_key("AdminRedemptionBatchDisableResponse"));
         assert!(schemas.contains_key("UserRedemptionRequest"));
         assert!(schemas.contains_key("UserRedemptionResult"));
+        assert!(schemas.contains_key("SubscriptionCycle"));
+        assert!(schemas.contains_key("SubscriptionPlanStatus"));
+        assert!(schemas.contains_key("UserSubscriptionStatus"));
+        assert!(schemas.contains_key("AdminSubscriptionPlan"));
+        assert!(schemas.contains_key("AdminSubscriptionPlanListResponse"));
+        assert!(schemas.contains_key("AdminSubscriptionPlanCreateRequest"));
+        assert!(schemas.contains_key("AdminSubscriptionPlanDisableRequest"));
+        assert!(schemas.contains_key("UserSubscription"));
+        assert!(schemas.contains_key("UserSubscriptionListResponse"));
+        assert!(schemas.contains_key("AdminUserSubscriptionBindRequest"));
         assert!(schemas.contains_key("SetupRequest"));
         assert!(schemas.contains_key("SetupStatusResponse"));
         assert!(schemas.contains_key("RegistrationStatusResponse"));

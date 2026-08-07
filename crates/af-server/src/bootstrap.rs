@@ -20,15 +20,16 @@ use af_admin::{
     DatabaseAdminWalletService, DatabaseInitialSetup, DatabasePasswordResetService,
     DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
     DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
-    DatabaseSiteSettingsService, DatabaseTokenAuthenticator, DatabaseUserInvitationService,
-    DatabaseUserProfileService, DatabaseUserTokenService, DatabaseUserTopupService,
-    DatabaseUserWalletService, EmailDelivery, InitialSetup, ModelCatalogReader,
-    NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError, PasswordResetService,
-    PasswordResetServiceConfigError, PlaygroundConversationService, PlaygroundShareService,
-    RedemptionService, RegistrationService, RegistrationServiceConfigError,
+    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
+    DatabaseUserInvitationService, DatabaseUserProfileService, DatabaseUserTokenService,
+    DatabaseUserTopupService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
+    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
+    PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
     RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
-    SiteSettingsService, TokenAuthenticator, UserInvitationService, UserProfileService,
-    UserTokenService, UserTopupConfiguration, UserTopupService, UserWalletService,
+    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
+    UserProfileService, UserTokenService, UserTopupConfiguration, UserTopupService,
+    UserWalletService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -65,8 +66,9 @@ use af_db::{
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RegistrationRepository, RegistrationRepositoryConfigError,
-    SiteSettingsRepository, SiteSettingsRepositoryConfigError, TokenAuthRepository,
-    TokenAuthRepositoryConfigError, TopupRepository, UsageLogRepository, UserInvitationRepository,
+    SiteSettingsRepository, SiteSettingsRepositoryConfigError, SubscriptionRepository,
+    SubscriptionRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
+    TopupRepository, UsageLogRepository, UserInvitationRepository,
     UserInvitationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
     UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
     UserTokenRepositoryConfigError, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
@@ -151,6 +153,7 @@ pub struct AuthenticationReady {
     user_profile_service: Arc<dyn UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
     redemption_service: Arc<dyn RedemptionService>,
+    subscription_service: Arc<dyn SubscriptionService>,
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
@@ -372,6 +375,9 @@ pub enum BootstrapError {
     /// 兑换码仓储的启动参数无效。
     #[error("兑换码仓储启动参数无效")]
     RedemptionRepository(#[source] RedemptionRepositoryConfigError),
+    /// 订阅仓储的启动参数无效。
+    #[error("订阅仓储启动参数无效")]
+    SubscriptionRepository(#[source] SubscriptionRepositoryConfigError),
     /// 普通用户资料仓储的启动参数无效。
     #[error("用户资料仓储启动参数无效")]
     UserProfileRepository(#[source] UserProfileRepositoryConfigError),
@@ -646,6 +652,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::RedemptionRepository)?;
+        let subscription_repository = SubscriptionRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::SubscriptionRepository)?;
         let user_profile_repository = UserProfileRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -772,6 +783,9 @@ impl Bootstrap<DatabaseReady> {
                     wallet_ledger_repository.clone(),
                 )),
                 redemption_service: Arc::new(DatabaseRedemptionService::new(redemption_repository)),
+                subscription_service: Arc::new(DatabaseSubscriptionService::new(
+                    subscription_repository,
+                )),
                 user_invitation_service: Arc::new(DatabaseUserInvitationService::new(
                     user_invitation_repository,
                 )),
@@ -1437,6 +1451,7 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.user_wallet_service),
             user_topup_service,
             Arc::clone(&self.stage.infrastructure.redemption_service),
+            Arc::clone(&self.stage.infrastructure.subscription_service),
             Arc::clone(&self.stage.infrastructure.user_invitation_service),
             Arc::clone(&self.stage.infrastructure.site_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_email_settings_service),

@@ -13,6 +13,7 @@ mod quota;
 mod redemption;
 mod routing;
 mod subscription;
+mod subscription_window;
 mod token_policy;
 mod wallet;
 
@@ -49,6 +50,10 @@ pub use routing::{
 pub use subscription::{
     SubscriptionCycle, SubscriptionIdentifierError, SubscriptionPlanId, SubscriptionPlanStatus,
     SubscriptionStateCodeError, UserSubscriptionId, UserSubscriptionStatus,
+};
+pub use subscription_window::{
+    MAX_SUBSCRIPTION_WINDOW_ADVANCES, SubscriptionWindow, SubscriptionWindowAdvance,
+    SubscriptionWindowError,
 };
 pub use token_policy::{
     MAX_MODEL_NAME_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_COUNT, MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES,

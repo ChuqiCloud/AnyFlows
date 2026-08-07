@@ -39,6 +39,7 @@ mod route_write;
 mod routing_read;
 mod session;
 mod site_settings;
+mod subscription;
 mod token_auth;
 mod token_read;
 mod token_write;
@@ -237,6 +238,14 @@ pub use site_settings::{
     AdminSiteSettings, AdminSiteSettingsReadFuture, AdminSiteSettingsUpdateFuture,
     DatabaseSiteSettingsService, PublicSiteSettings, PublicSiteSettingsFuture, SiteSettingsCommand,
     SiteSettingsError, SiteSettingsService,
+};
+pub use subscription::{
+    AdminSubscriptionPageQuery, AdminSubscriptionPlan, AdminSubscriptionPlanCreateCommand,
+    AdminSubscriptionPlanDisableCommand, AdminSubscriptionPlanPage, AdminUserSubscription,
+    AdminUserSubscriptionBindCommand, AdminUserSubscriptionPage,
+    DEFAULT_ADMIN_SUBSCRIPTION_PAGE_SIZE, DatabaseSubscriptionService, SubscriptionBindFuture,
+    SubscriptionCreatePlanFuture, SubscriptionDisablePlanFuture, SubscriptionListPlansFuture,
+    SubscriptionListUserFuture, SubscriptionService, SubscriptionServiceError,
 };
 pub use token_auth::{
     DatabaseTokenAuthenticator, TokenAuthentication, TokenAuthenticationError,

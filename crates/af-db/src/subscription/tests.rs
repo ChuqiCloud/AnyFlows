@@ -127,6 +127,77 @@ async fn plan_creation_is_idempotent_and_facts_are_immutable() -> Result<(), Box
 }
 
 #[tokio::test]
+async fn plan_and_user_subscription_lists_use_stable_cursors() -> Result<(), Box<dyn Error>> {
+    let fixture = setup_fixture().await?;
+    let plan_ids = [test_plan_id(0x51), test_plan_id(0x52), test_plan_id(0x53)];
+    for (index, plan_id) in plan_ids.into_iter().enumerate() {
+        fixture
+            .repository
+            .create_plan(&fixture.plan_with_id(
+                plan_id,
+                &format!("分页计划-{index}"),
+                1_000 + i64::try_from(index)?,
+                SubscriptionCycle::Monthly,
+            )?)
+            .await?;
+        fixture
+            .repository
+            .bind_user(&fixture.bind(
+                0x61 + u8::try_from(index)?,
+                fixture.first_user_id,
+                plan_id,
+            )?)
+            .await?;
+    }
+
+    let first_plans = fixture.repository.list_plans(None, 2).await?;
+    assert_eq!(first_plans.plans().len(), 2);
+    assert_eq!(first_plans.plans()[0].plan_id(), plan_ids[2]);
+    let second_plans = fixture
+        .repository
+        .list_plans(first_plans.next_cursor(), 2)
+        .await?;
+    assert_eq!(second_plans.plans().len(), 1);
+    assert_eq!(second_plans.plans()[0].plan_id(), plan_ids[0]);
+    assert!(second_plans.next_cursor().is_none());
+    assert_eq!(
+        fixture
+            .repository
+            .get_plan(plan_ids[1])
+            .await?
+            .expect("计划必须可按稳定标识读取")
+            .created_by_user_id(),
+        fixture.admin_user_id
+    );
+
+    let first_subscriptions = fixture
+        .repository
+        .list_user_subscriptions(fixture.first_user_id, None, 2)
+        .await?;
+    assert_eq!(first_subscriptions.subscriptions().len(), 2);
+    assert_eq!(
+        first_subscriptions.subscriptions()[0].plan_id(),
+        plan_ids[2]
+    );
+    assert_eq!(
+        first_subscriptions.subscriptions()[0].plan_name(),
+        "分页计划-2"
+    );
+    let second_subscriptions = fixture
+        .repository
+        .list_user_subscriptions(fixture.first_user_id, first_subscriptions.next_cursor(), 2)
+        .await?;
+    assert_eq!(second_subscriptions.subscriptions().len(), 1);
+    assert_eq!(
+        second_subscriptions.subscriptions()[0].plan_id(),
+        plan_ids[0]
+    );
+    assert!(second_subscriptions.next_cursor().is_none());
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn disabled_plan_replays_cas_and_rejects_new_binding() -> Result<(), Box<dyn Error>> {
     let fixture = setup_fixture().await?;
     let plan_id = test_plan_id(0x32);

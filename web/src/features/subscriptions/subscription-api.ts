@@ -1,0 +1,145 @@
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+
+import { apiClient, ApiError } from '@/lib/api'
+import {
+  bindAdminUserSubscription,
+  createAdminSubscriptionPlan,
+  disableAdminSubscriptionPlan,
+  listAdminSubscriptionPlans,
+  listAdminUserSubscriptions,
+  listCurrentUserSubscriptions,
+} from '@/lib/api/generated/sdk.gen'
+import type {
+  AdminSubscriptionPlanCreateRequest,
+  AdminSubscriptionPlanDisableRequest,
+  AdminUserSubscriptionBindRequest,
+} from '@/lib/api/generated/types.gen'
+
+export const adminSubscriptionPlansQueryKey = ['admin-subscription-plans'] as const
+export const adminUserSubscriptionsQueryKey = ['admin-user-subscriptions'] as const
+export const currentUserSubscriptionsQueryKey = ['current-user-subscriptions'] as const
+
+/** 按计划主键倒序读取管理员计划目录。 */
+export function useAdminSubscriptionPlans() {
+  return useInfiniteQuery({
+    queryKey: adminSubscriptionPlansQueryKey,
+    initialPageParam: undefined as number | undefined,
+    queryFn: async ({ pageParam, signal }) => {
+      const { data } = await listAdminSubscriptionPlans({
+        client: apiClient,
+        query: { before: pageParam, limit: 25 },
+        signal,
+      })
+      return data
+    },
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+  })
+}
+
+/** 只在管理员选定用户后读取该用户的订阅事实。 */
+export function useAdminUserSubscriptions(userId: number | undefined) {
+  return useInfiniteQuery({
+    queryKey: [...adminUserSubscriptionsQueryKey, userId],
+    enabled: userId !== undefined,
+    initialPageParam: undefined as number | undefined,
+    queryFn: async ({ pageParam, signal }) => {
+      if (userId === undefined) throw new Error('订阅查询缺少用户 ID')
+      const { data } = await listAdminUserSubscriptions({
+        client: apiClient,
+        path: { user_id: userId },
+        query: { before: pageParam, limit: 25 },
+        signal,
+      })
+      return data
+    },
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+  })
+}
+
+/** 按当前会话主体读取本人订阅，不接受客户端所有权参数。 */
+export function useCurrentUserSubscriptions() {
+  return useInfiniteQuery({
+    queryKey: currentUserSubscriptionsQueryKey,
+    initialPageParam: undefined as number | undefined,
+    queryFn: async ({ pageParam, signal }) => {
+      const { data } = await listCurrentUserSubscriptions({
+        client: apiClient,
+        query: { before: pageParam, limit: 25 },
+        signal,
+      })
+      return data
+    },
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+  })
+}
+
+/** 创建成功后重新读取计划目录，避免前端伪造服务端版本。 */
+export function useCreateAdminSubscriptionPlan() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: AdminSubscriptionPlanCreateRequest) => {
+      const { data } = await createAdminSubscriptionPlan({ body, client: apiClient })
+      return data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminSubscriptionPlansQueryKey }),
+  })
+}
+
+/** 以服务端返回的计划版本执行 CAS 停用。 */
+export function useDisableAdminSubscriptionPlan() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      planId,
+      body,
+    }: {
+      planId: string
+      body: AdminSubscriptionPlanDisableRequest
+    }) => {
+      const { data } = await disableAdminSubscriptionPlan({
+        body,
+        client: apiClient,
+        path: { plan_id: planId },
+      })
+      return data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminSubscriptionPlansQueryKey }),
+  })
+}
+
+/** 给路径指定用户绑定计划，并校正管理员与本人订阅缓存。 */
+export function useBindAdminUserSubscription() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      userId,
+      body,
+    }: {
+      userId: number
+      body: AdminUserSubscriptionBindRequest
+    }) => {
+      const { data } = await bindAdminUserSubscription({
+        body,
+        client: apiClient,
+        path: { user_id: userId },
+      })
+      return data
+    },
+    onSuccess: (_data, variables) => Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: [...adminUserSubscriptionsQueryKey, variables.userId],
+      }),
+      queryClient.invalidateQueries({ queryKey: currentUserSubscriptionsQueryKey }),
+    ]),
+  })
+}
+
+/** 提取订阅接口的稳定公开错误码。 */
+export function subscriptionErrorCode(error: unknown) {
+  if (!(error instanceof ApiError) || typeof error.details !== 'object' || error.details === null) {
+    return undefined
+  }
+  return 'code' in error.details && typeof error.details.code === 'string'
+    ? error.details.code
+    : undefined
+}

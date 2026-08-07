@@ -1,12 +1,14 @@
 import {
   Activity,
   Boxes,
+  CalendarRange,
   CircleDollarSign,
   Gauge,
   GitBranch,
   Fingerprint,
   KeyRound,
   Layers3,
+  ListChecks,
   Mail,
   MessageSquareText,
   Network,
@@ -43,7 +45,7 @@ type AppNavigationProps = {
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'wallet' | 'invitations' | 'profile' | 'users' | 'redemptionCodes' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'credentials' | 'credentialProxies' | 'routes' | 'keys' | 'usage' | 'debugTraces'
+  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'wallet' | 'subscriptions' | 'invitations' | 'profile' | 'users' | 'subscriptionManagement' | 'redemptionCodes' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'credentials' | 'credentialProxies' | 'routes' | 'keys' | 'usage' | 'debugTraces'
   icon: LucideIcon
   href: `#/console${string}`
 }
@@ -69,6 +71,7 @@ const navGroups: readonly NavGroup[] = [
     items: [
       { key: 'apiKeys', icon: KeyRound, href: '#/console/api-keys' },
       { key: 'wallet', icon: WalletCards, href: '#/console/wallet' },
+      { key: 'subscriptions', icon: CalendarRange, href: '#/console/subscriptions' },
       { key: 'invitations', icon: TicketCheck, href: '#/console/invitations' },
       { key: 'profile', icon: UserRound, href: '#/console/profile' },
     ],
@@ -79,6 +82,7 @@ const navGroups: readonly NavGroup[] = [
     items: [
       { key: 'overview', icon: Gauge, href: '#/console' },
       { key: 'users', icon: UsersRound, href: '#/console/users' },
+      { key: 'subscriptionManagement', icon: ListChecks, href: '#/console/subscription-management' },
       { key: 'redemptionCodes', icon: Ticket, href: '#/console/redemption-codes' },
       { key: 'siteSettings', icon: PanelsTopLeft, href: '#/console/system-settings/site' },
       { key: 'authenticationSettings', icon: Fingerprint, href: '#/console/system-settings/authentication' },
@@ -104,9 +108,11 @@ const activeKeyByView: Partial<Record<AppView, NavItem['key']>> = {
   playground: 'playground',
   'api-keys': 'apiKeys',
   wallet: 'wallet',
+  subscriptions: 'subscriptions',
   invitations: 'invitations',
   profile: 'profile',
   users: 'users',
+  'subscription-management': 'subscriptionManagement',
   'redemption-codes': 'redemptionCodes',
   'site-settings': 'siteSettings',
   'authentication-settings': 'authenticationSettings',
