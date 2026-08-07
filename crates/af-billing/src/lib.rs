@@ -15,7 +15,6 @@ pub mod quota_math;
 mod refund_signal_consumer;
 mod refund_signal_queue;
 mod stripe;
-mod stripe_payment_intent;
 mod usage_record_consumer;
 mod usage_record_database_sink;
 mod usage_record_queue;
@@ -87,7 +86,6 @@ pub use stripe::{
     STRIPE_PAYMENT_PROVIDER, STRIPE_SIGNATURE_HEADER, StripePaymentProvider,
     StripePaymentProviderConfigError,
 };
-pub use stripe_payment_intent::{StripePaymentIntentConfigError, StripePaymentIntentProvider};
 pub use usage_record_consumer::{
     UsageRecordConsumer, UsageRecordConsumerError, UsageRecordSink, UsageRecordSinkError,
     UsageRecordSinkFuture,

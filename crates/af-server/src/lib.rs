@@ -27,6 +27,7 @@ mod scheduler_invalidation;
 mod shutdown;
 mod smtp_delivery;
 mod sticky_session;
+mod stripe_payment_intent;
 mod supervisor;
 mod utc_time;
 

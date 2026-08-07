@@ -6,7 +6,7 @@ use thiserror::Error;
 use url::form_urlencoded;
 use zeroize::Zeroize;
 
-use crate::{
+use af_billing::{
     PaymentClientSecret, PaymentOrderFuture, PaymentOrderProvider, PaymentOrderProviderError,
     PaymentOrderRecoveryRequest, PaymentOrderRequest, PaymentOrderSession, STRIPE_PAYMENT_PROVIDER,
 };
@@ -19,7 +19,7 @@ const STRIPE_IDEMPOTENCY_DOMAIN: &str = "anyflows-pi-v1";
 
 /// Stripe PaymentIntent 出站配置错误；不携带 API 密钥内容。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
-pub enum StripePaymentIntentConfigError {
+pub(crate) enum StripePaymentIntentConfigError {
     /// API 密钥为空、过长或包含不可打印字符。
     #[error("Stripe API 密钥无效")]
     InvalidSecretKey,
@@ -29,7 +29,7 @@ pub enum StripePaymentIntentConfigError {
 }
 
 /// 使用共享受控 HTTP Client 创建与恢复 Stripe PaymentIntent。
-pub struct StripePaymentIntentProvider {
+pub(crate) struct StripePaymentIntentProvider {
     secret_key: Vec<u8>,
     clients: HttpClientProvider,
     request_timeout: Duration,
@@ -38,7 +38,7 @@ pub struct StripePaymentIntentProvider {
 
 impl StripePaymentIntentProvider {
     /// 使用固定 Stripe 官方端点和全局网络基线创建 Provider。
-    pub fn new(
+    pub(crate) fn new(
         secret_key: impl AsRef<[u8]>,
         clients: HttpClientProvider,
         request_timeout: Duration,

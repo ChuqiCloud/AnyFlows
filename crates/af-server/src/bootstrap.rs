@@ -35,9 +35,9 @@ use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
     DatabaseUsageRecordSink, GroupPricingCache, GroupPricingCacheError, ModelPriceCache,
     ModelPriceCacheError, RefundSignalConsumer, RefundSignalConsumerError, RefundSignalPort,
-    RefundSignalQueue, RefundSignalQueueError, RefundSignalSink, StripePaymentIntentProvider,
-    StripePaymentProvider, TopupWebhookProcessor, UsageRecordConsumer, UsageRecordConsumerError,
-    UsageRecordPort, UsageRecordQueue, UsageRecordQueueError,
+    RefundSignalQueue, RefundSignalQueueError, RefundSignalSink, StripePaymentProvider,
+    TopupWebhookProcessor, UsageRecordConsumer, UsageRecordConsumerError, UsageRecordPort,
+    UsageRecordQueue, UsageRecordQueueError,
 };
 use af_cache::{
     CacheError, RedisConcurrencyConfig, RedisConcurrencyStore, RedisConfig, RedisHealthConfig,
@@ -89,6 +89,8 @@ use af_scheduler::{
 };
 use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
 use thiserror::Error;
+
+use crate::stripe_payment_intent::StripePaymentIntentProvider;
 
 use crate::readiness::DatabaseReadinessProbe;
 use crate::{
@@ -1561,6 +1563,7 @@ impl Bootstrap<ListenerReady> {
             admin_channel_probe: _,
             debug_trace_repository: _,
             debug_trace_runtime: _,
+            upstream_clients: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
         let http =
