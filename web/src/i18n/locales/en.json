@@ -2854,6 +2854,11 @@
     "eyebrow": "Operations",
     "title": "Redemption codes",
     "subtitle": "Issue fixed-value codes in batches, track credited redemptions, and disable unused codes when needed.",
+    "views": {
+      "label": "Redemption workspace",
+      "batches": "Batch management",
+      "audit": "Operations audit"
+    },
     "summary": {
       "loaded": "{{count}} batches loaded",
       "active": "{{count}} active batches",
@@ -2872,6 +2877,7 @@
       "codeCount": "{{count}} codes",
       "redeemed": "{{count}} / {{total}} credited",
       "neverExpires": "Never expires",
+      "never": "Not available",
       "createdAt": "Created {{value}}"
     },
     "status": {
@@ -2931,6 +2937,58 @@
     "disable": {
       "title": "Disable redemption batch",
       "description": "Unused codes in “{{name}}” will stop crediting immediately. Existing ledger facts are unchanged."
+    },
+    "audit": {
+      "title": "Redemption operations audit",
+      "description": "Review issued, credited, and invalid code distribution by batch. Filters locate existing facts and never mutate balances.",
+      "filters": {
+        "status": "Status filter",
+        "batchId": "Exact batch identifier",
+        "batchIdPlaceholder": "32-character batch ID (optional)",
+        "redeemedWindow": "Redemption window",
+        "redeemedAfter": "Start time",
+        "redeemedBefore": "End time",
+        "hint": "The redemption window is left-closed and right-open; metrics are summed across loaded results.",
+        "invalidBatchId": "The batch ID must contain exactly 32 hexadecimal characters.",
+        "invalidDate": "Enter a valid redemption time.",
+        "reversed": "End time must be later than start time.",
+        "reset": "Reset",
+        "apply": "Apply filters"
+      },
+      "status": {
+        "all": "All batches",
+        "redeemed": "Has redemption facts"
+      },
+      "metrics": {
+        "issued": "Issued",
+        "redeemed": "Redeemed",
+        "remaining": "Available",
+        "expired": "Expired",
+        "disabled": "Disabled"
+      },
+      "columns": {
+        "batch": "Batch",
+        "issued": "Issued quantity",
+        "states": "State distribution",
+        "redeemedAt": "Latest redemption",
+        "status": "Batch status"
+      },
+      "values": {
+        "redeemed": "Redeemed {{count}}",
+        "remaining": "Available {{count}}",
+        "invalid": "Invalid {{count}}"
+      },
+      "loading": "Loading operations audit",
+      "empty": {
+        "title": "No batches match these filters",
+        "body": "Adjust the status or redemption window and try again."
+      },
+      "privacy": "The audit view exposes batch facts and counts only; plaintext codes, digests, and sensitive user credentials are never returned.",
+      "errors": {
+        "title": "Operations audit is unavailable",
+        "body": "Audit data could not be loaded. Try again shortly.",
+        "more": "Earlier audit batches could not be loaded."
+      }
     },
     "errors": {
       "listTitle": "Redemption batches could not be loaded",

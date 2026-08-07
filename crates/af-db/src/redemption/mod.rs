@@ -1,7 +1,13 @@
+mod audit;
 mod material;
 mod repository;
 mod types;
 
+pub use audit::{
+    MAX_REDEMPTION_AUDIT_PAGE_SIZE, RedemptionAuditBatchRecord, RedemptionAuditPageRecord,
+    RedemptionAuditQuery, RedemptionAuditQueryError, RedemptionAuditStatus,
+    RedemptionAuditSummaryRecord,
+};
 pub use material::{
     IssuedRedemptionBatch, IssuedRedemptionCode, PresentedRedemptionCode, RedemptionCodeDefinition,
     RedemptionCodeDigest, RedemptionMaterialError,

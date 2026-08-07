@@ -11,6 +11,7 @@ use af_db::{
 
 use crate::{SessionPrincipal, SessionRole};
 
+use super::audit::{AdminRedemptionAuditPage, AdminRedemptionAuditQuery, RedemptionAuditFuture};
 use super::types::{
     AdminRedemptionBatch, AdminRedemptionBatchCreateCommand, AdminRedemptionBatchDisableCommand,
     AdminRedemptionBatchDisableResult, AdminRedemptionBatchListQuery, AdminRedemptionBatchPage,
@@ -33,6 +34,23 @@ impl DatabaseRedemptionService {
 }
 
 impl RedemptionService for DatabaseRedemptionService {
+    fn audit<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        query: AdminRedemptionAuditQuery,
+    ) -> RedemptionAuditFuture<'a> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            let query = query.into_repository_query(unix_now()?)?;
+            let page = self
+                .repository
+                .audit_batches(&query)
+                .await
+                .map_err(map_read_error)?;
+            Ok(AdminRedemptionAuditPage::from_record(page))
+        })
+    }
+
     fn list<'a>(
         &'a self,
         principal: SessionPrincipal,

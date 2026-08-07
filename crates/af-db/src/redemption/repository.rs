@@ -14,7 +14,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
     QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
-    sea_query::{Expr, LockType},
+    sea_query::{Expr, LockType, Query},
 };
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
@@ -30,11 +30,12 @@ use crate::{
 use super::types::valid_name;
 use super::{
     MAX_REDEMPTION_BATCH_CODES, MAX_REDEMPTION_BATCH_PAGE_SIZE, RedemptionAttempt,
-    RedemptionBatchCreateOutcome, RedemptionBatchDisable, RedemptionBatchDisableOutcome,
-    RedemptionBatchListRecord, RedemptionBatchPageRecord, RedemptionBatchRecord,
-    RedemptionBatchWrite, RedemptionCodeDefinition, RedemptionCodeDigest, RedemptionOutcome,
-    RedemptionRecord, RedemptionRejection, RedemptionRepositoryConfigError,
-    RedemptionRepositoryError,
+    RedemptionAuditBatchRecord, RedemptionAuditPageRecord, RedemptionAuditQuery,
+    RedemptionAuditStatus, RedemptionAuditSummaryRecord, RedemptionBatchCreateOutcome,
+    RedemptionBatchDisable, RedemptionBatchDisableOutcome, RedemptionBatchListRecord,
+    RedemptionBatchPageRecord, RedemptionBatchRecord, RedemptionBatchWrite,
+    RedemptionCodeDefinition, RedemptionCodeDigest, RedemptionOutcome, RedemptionRecord,
+    RedemptionRejection, RedemptionRepositoryConfigError, RedemptionRepositoryError,
 };
 
 /// 原子维护兑换码批次、单次消费与钱包到账的数据库仓储。
@@ -76,6 +77,20 @@ impl RedemptionRepository {
         }
         let operation = self
             .list_batches_inner(before, limit)
+            .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal),
+            Err(_) => Err(internal(RedemptionRepositoryError::Timeout)),
+        }
+    }
+
+    /// 按批次读取兑换码运营统计，筛选只作用于已持久化的批次和兑换事实。
+    pub async fn audit_batches(
+        &self,
+        query: &RedemptionAuditQuery,
+    ) -> Result<RedemptionAuditPageRecord, RedemptionRepositoryError> {
+        let operation = self
+            .audit_batches_inner(query)
             .with_subscriber(NoSubscriber::default());
         match timeout(self.operation_timeout, operation).await {
             Ok(result) => result.map_err(internal),
@@ -214,6 +229,209 @@ impl RedemptionRepository {
             return Err(RedemptionRepositoryError::Invariant);
         }
         Ok(RedemptionBatchPageRecord::new(batches, next_cursor))
+    }
+
+    async fn audit_batches_inner(
+        &self,
+        query: &RedemptionAuditQuery,
+    ) -> Result<RedemptionAuditPageRecord, RedemptionRepositoryError> {
+        let now = to_database_time(query.now())?;
+        let query_limit = u64::try_from(query.limit())
+            .ok()
+            .and_then(|value| value.checked_add(1))
+            .ok_or(RedemptionRepositoryError::Invariant)?;
+        let mut batches_query = redemption_batches::Entity::find()
+            .order_by_desc(redemption_batches::Column::Id)
+            .limit(query_limit);
+        if let Some(before) = query.before() {
+            batches_query = batches_query.filter(redemption_batches::Column::Id.lt(before));
+        }
+        if let Some(batch_id) = query.batch_id() {
+            batches_query = batches_query.filter(
+                redemption_batches::Column::BatchKey
+                    .eq(SensitiveString::from(batch_id.persistence_key())),
+            );
+        }
+        match query.status() {
+            Some(RedemptionAuditStatus::Active) => {
+                batches_query = batches_query.filter(
+                    redemption_batches::Column::Status
+                        .eq(RedemptionBatchStatus::Active.code())
+                        .and(
+                            redemption_batches::Column::ExpiresAt
+                                .is_null()
+                                .or(redemption_batches::Column::ExpiresAt.gt(now)),
+                        ),
+                );
+            }
+            Some(RedemptionAuditStatus::Expired) => {
+                batches_query = batches_query.filter(
+                    redemption_batches::Column::Status
+                        .eq(RedemptionBatchStatus::Active.code())
+                        .and(
+                            redemption_batches::Column::ExpiresAt
+                                .is_not_null()
+                                .and(redemption_batches::Column::ExpiresAt.lte(now)),
+                        ),
+                );
+            }
+            Some(RedemptionAuditStatus::Disabled) => {
+                batches_query = batches_query.filter(
+                    redemption_batches::Column::Status.eq(RedemptionBatchStatus::Disabled.code()),
+                );
+            }
+            Some(RedemptionAuditStatus::Redeemed) | None => {}
+        }
+
+        let needs_redeemed_filter = query.status() == Some(RedemptionAuditStatus::Redeemed)
+            || query.redeemed_after().is_some()
+            || query.redeemed_before().is_some();
+        if needs_redeemed_filter {
+            // 兑换事实可能跨越大量批次，使用数据库子查询避免把全量 ID 拉回并撞绑定参数上限。
+            let mut matching_batches = Query::select();
+            matching_batches
+                .distinct()
+                .column(redemption_codes::Column::BatchId)
+                .from(redemption_codes::Entity)
+                .and_where(
+                    Expr::col(redemption_codes::Column::Status)
+                        .eq(RedemptionCodeStatus::Redeemed.code()),
+                );
+            if let Some(after) = query.redeemed_after() {
+                matching_batches.and_where(
+                    Expr::col(redemption_codes::Column::RedeemedAt)
+                        .is_not_null()
+                        .and(
+                            Expr::col(redemption_codes::Column::RedeemedAt)
+                                .gte(to_database_time(after)?),
+                        ),
+                );
+            }
+            if let Some(before) = query.redeemed_before() {
+                matching_batches.and_where(
+                    Expr::col(redemption_codes::Column::RedeemedAt)
+                        .is_not_null()
+                        .and(
+                            Expr::col(redemption_codes::Column::RedeemedAt)
+                                .lt(to_database_time(before)?),
+                        ),
+                );
+            }
+            batches_query = batches_query.filter(
+                Expr::col(redemption_batches::Column::Id).in_subquery(matching_batches.to_owned()),
+            );
+        }
+
+        let mut batch_models = batches_query
+            .all(self.pool.connection())
+            .await
+            .map_err(|_| RedemptionRepositoryError::Query)?;
+        let has_more = batch_models.len() > query.limit();
+        if has_more {
+            batch_models.truncate(query.limit());
+        }
+        let next_cursor = has_more
+            .then(|| batch_models.last().map(|model| model.id))
+            .flatten();
+        let batch_records = batch_models
+            .into_iter()
+            .map(batch_record)
+            .collect::<Result<Vec<_>, _>>()?;
+        let batch_ids = batch_records
+            .iter()
+            .map(RedemptionBatchRecord::database_id)
+            .collect::<Vec<_>>();
+        if batch_ids.is_empty() {
+            return Ok(empty_audit_page());
+        }
+
+        let code_models = redemption_codes::Entity::find()
+            .filter(redemption_codes::Column::BatchId.is_in(batch_ids.clone()))
+            .all(self.pool.connection())
+            .await
+            .map_err(|_| RedemptionRepositoryError::Query)?;
+        let mut code_stats = HashMap::<i64, AuditCodeStats>::with_capacity(batch_ids.len());
+        for model in code_models {
+            let code = code_record(model)?;
+            if !batch_ids.contains(&code.batch_database_id) {
+                return Err(RedemptionRepositoryError::Invariant);
+            }
+            let stats = code_stats.entry(code.batch_database_id).or_default();
+            if code.status == RedemptionCodeStatus::Redeemed {
+                stats.redeemed_count = stats
+                    .redeemed_count
+                    .checked_add(1)
+                    .ok_or(RedemptionRepositoryError::Invariant)?;
+                let redeemed_at = code
+                    .redeemed_at
+                    .ok_or(RedemptionRepositoryError::Invariant)?;
+                stats.last_redeemed_at = Some(
+                    stats
+                        .last_redeemed_at
+                        .map_or(redeemed_at, |current| current.max(redeemed_at)),
+                );
+                continue;
+            }
+            let batch = batch_records
+                .iter()
+                .find(|record| record.database_id() == code.batch_database_id)
+                .ok_or(RedemptionRepositoryError::Invariant)?;
+            if batch.status() == RedemptionBatchStatus::Disabled {
+                stats.disabled_count = stats
+                    .disabled_count
+                    .checked_add(1)
+                    .ok_or(RedemptionRepositoryError::Invariant)?;
+            } else if batch.expires_at().is_some_and(|value| value <= query.now()) {
+                stats.expired_count = stats
+                    .expired_count
+                    .checked_add(1)
+                    .ok_or(RedemptionRepositoryError::Invariant)?;
+            } else {
+                stats.remaining_count = stats
+                    .remaining_count
+                    .checked_add(1)
+                    .ok_or(RedemptionRepositoryError::Invariant)?;
+            }
+        }
+
+        let mut audit_batches = Vec::with_capacity(batch_records.len());
+        let mut summary = AuditSummaryAccumulator::default();
+        for batch in batch_records {
+            let stats = code_stats.remove(&batch.database_id()).unwrap_or_default();
+            let classified = stats
+                .redeemed_count
+                .checked_add(stats.remaining_count)
+                .and_then(|value| value.checked_add(stats.expired_count))
+                .and_then(|value| value.checked_add(stats.disabled_count))
+                .ok_or(RedemptionRepositoryError::Invariant)?;
+            if classified != batch.code_count() {
+                return Err(RedemptionRepositoryError::Invariant);
+            }
+            summary.add(
+                batch.code_count(),
+                stats.redeemed_count,
+                stats.remaining_count,
+                stats.expired_count,
+                stats.disabled_count,
+            )?;
+            audit_batches.push(RedemptionAuditBatchRecord::new(
+                batch,
+                classified,
+                stats.redeemed_count,
+                stats.remaining_count,
+                stats.expired_count,
+                stats.disabled_count,
+                stats.last_redeemed_at,
+            ));
+        }
+        if !code_stats.is_empty() {
+            return Err(RedemptionRepositoryError::Invariant);
+        }
+        Ok(RedemptionAuditPageRecord::new(
+            audit_batches,
+            summary.finish(),
+            next_cursor,
+        ))
     }
 
     /// 仅供回归测试模拟事务已提交但调用方未收到确定结果。
@@ -534,6 +752,75 @@ struct StoredCode {
     used_by_user_id: Option<UserId>,
     redeemed_at: Option<u64>,
     created_at: u64,
+}
+
+#[derive(Default)]
+struct AuditCodeStats {
+    redeemed_count: usize,
+    remaining_count: usize,
+    expired_count: usize,
+    disabled_count: usize,
+    last_redeemed_at: Option<u64>,
+}
+
+#[derive(Default)]
+struct AuditSummaryAccumulator {
+    issued_count: usize,
+    redeemed_count: usize,
+    remaining_count: usize,
+    expired_count: usize,
+    disabled_count: usize,
+}
+
+impl AuditSummaryAccumulator {
+    fn add(
+        &mut self,
+        issued_count: usize,
+        redeemed_count: usize,
+        remaining_count: usize,
+        expired_count: usize,
+        disabled_count: usize,
+    ) -> Result<(), RedemptionRepositoryError> {
+        self.issued_count = self
+            .issued_count
+            .checked_add(issued_count)
+            .ok_or(RedemptionRepositoryError::Invariant)?;
+        self.redeemed_count = self
+            .redeemed_count
+            .checked_add(redeemed_count)
+            .ok_or(RedemptionRepositoryError::Invariant)?;
+        self.remaining_count = self
+            .remaining_count
+            .checked_add(remaining_count)
+            .ok_or(RedemptionRepositoryError::Invariant)?;
+        self.expired_count = self
+            .expired_count
+            .checked_add(expired_count)
+            .ok_or(RedemptionRepositoryError::Invariant)?;
+        self.disabled_count = self
+            .disabled_count
+            .checked_add(disabled_count)
+            .ok_or(RedemptionRepositoryError::Invariant)?;
+        Ok(())
+    }
+
+    const fn finish(self) -> RedemptionAuditSummaryRecord {
+        RedemptionAuditSummaryRecord::new(
+            self.issued_count,
+            self.redeemed_count,
+            self.remaining_count,
+            self.expired_count,
+            self.disabled_count,
+        )
+    }
+}
+
+fn empty_audit_page() -> RedemptionAuditPageRecord {
+    RedemptionAuditPageRecord::new(
+        Vec::new(),
+        RedemptionAuditSummaryRecord::new(0, 0, 0, 0, 0),
+        None,
+    )
 }
 
 async fn classify_redeemed_code(

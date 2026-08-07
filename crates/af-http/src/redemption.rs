@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AdminRedemptionBatch, AdminRedemptionBatchCreateCommand, AdminRedemptionBatchDisableCommand,
-    AdminRedemptionBatchListQuery, IssuedAdminRedemptionBatch, RedemptionService,
-    RedemptionServiceError, SessionAuthentication, SessionAuthenticator, UserRedemptionCommand,
-    UserRedemptionResult,
+    AdminRedemptionAuditBatch, AdminRedemptionAuditQuery, AdminRedemptionAuditStatus,
+    AdminRedemptionAuditSummary, AdminRedemptionBatch, AdminRedemptionBatchCreateCommand,
+    AdminRedemptionBatchDisableCommand, AdminRedemptionBatchListQuery, IssuedAdminRedemptionBatch,
+    RedemptionService, RedemptionServiceError, SessionAuthentication, SessionAuthenticator,
+    UserRedemptionCommand, UserRedemptionResult,
 };
 use af_domain::{RedemptionBatchId, RedemptionBatchStatus};
 use axum::{
@@ -49,6 +50,17 @@ impl From<RedemptionBatchStatus> for AdminRedemptionBatchStatusDto {
     }
 }
 
+/// 兑换码运营报表支持的闭合筛选状态。
+#[derive(Clone, Copy, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = AdminRedemptionAuditStatus, rename_all = "snake_case")]
+pub(crate) enum AdminRedemptionAuditStatusDto {
+    Active,
+    Expired,
+    Disabled,
+    Redeemed,
+}
+
 /// 管理员可见的兑换码批次汇总，不包含明文或摘要。
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -85,6 +97,71 @@ pub(crate) struct AdminRedemptionBatchResponse {
 pub(crate) struct AdminRedemptionBatchListResponse {
     #[schema(max_items = 100)]
     batches: Vec<AdminRedemptionBatchResponse>,
+    #[schema(minimum = 1, required = true)]
+    next_cursor: Option<i64>,
+}
+
+/// 管理员可见的单批次兑换码运营统计，不包含明文码或摘要。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminRedemptionAuditBatch)]
+pub(crate) struct AdminRedemptionAuditBatchResponse {
+    #[schema(min_length = 32, max_length = 32, pattern = "^[0-9a-f]{32}$")]
+    batch_id: String,
+    #[schema(min_length = 1, max_length = 80)]
+    name: String,
+    #[schema(minimum = 1)]
+    created_by_user_id: i64,
+    status: AdminRedemptionBatchStatusDto,
+    #[schema(minimum = 1)]
+    quota_amount: i64,
+    #[schema(minimum = 1, maximum = 1000)]
+    issued_count: usize,
+    #[schema(minimum = 0, maximum = 1000)]
+    redeemed_count: usize,
+    #[schema(minimum = 0, maximum = 1000)]
+    remaining_count: usize,
+    #[schema(minimum = 0, maximum = 1000)]
+    expired_count: usize,
+    #[schema(minimum = 0, maximum = 1000)]
+    disabled_count: usize,
+    #[schema(minimum = 1, required = true)]
+    expires_at: Option<i64>,
+    #[schema(minimum = 1, required = true)]
+    disabled_at: Option<i64>,
+    #[schema(minimum = 1, required = true)]
+    last_redeemed_at: Option<i64>,
+    #[schema(minimum = 1)]
+    created_at: i64,
+    #[schema(minimum = 1)]
+    updated_at: i64,
+}
+
+/// 当前返回页内各互斥兑换状态的闭合汇总。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminRedemptionAuditSummary)]
+pub(crate) struct AdminRedemptionAuditSummaryResponse {
+    #[schema(minimum = 0)]
+    issued_count: usize,
+    #[schema(minimum = 0)]
+    redeemed_count: usize,
+    #[schema(minimum = 0)]
+    remaining_count: usize,
+    #[schema(minimum = 0)]
+    expired_count: usize,
+    #[schema(minimum = 0)]
+    disabled_count: usize,
+}
+
+/// 管理员兑换码运营报表响应。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminRedemptionAuditListResponse)]
+pub(crate) struct AdminRedemptionAuditListResponse {
+    #[schema(max_items = 100)]
+    batches: Vec<AdminRedemptionAuditBatchResponse>,
+    summary: AdminRedemptionAuditSummaryResponse,
     #[schema(minimum = 1, required = true)]
     next_cursor: Option<i64>,
 }
@@ -187,6 +264,10 @@ pub(crate) fn build_redemption_router(
     );
     let admin_routes = Router::new()
         .route(
+            "/api/admin/redemption-audit",
+            get(list_admin_redemption_audit),
+        )
+        .route(
             "/api/admin/redemption-batches",
             get(list_admin_redemption_batches).post(create_admin_redemption_batch),
         )
@@ -205,6 +286,30 @@ pub(crate) fn build_redemption_router(
         .route_layer(user_authentication)
         .with_state(state);
     admin_routes.merge(user_routes)
+}
+
+/// 按结构化条件读取当前管理员可见的兑换码运营报表。
+async fn list_admin_redemption_audit(
+    State(state): State<RedemptionHttpState>,
+    RawQuery(raw_query): RawQuery,
+    Extension(authentication): Extension<SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    let query = parse_audit_query(raw_query.as_deref())?;
+    let page = state
+        .service
+        .audit(authentication.principal(), query)
+        .await
+        .map_err(map_service_error)?;
+    let batches = page
+        .batches()
+        .iter()
+        .map(AdminRedemptionAuditBatchResponse::from_batch)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(no_store_json(AdminRedemptionAuditListResponse {
+        batches,
+        summary: AdminRedemptionAuditSummaryResponse::from_summary(page.summary()),
+        next_cursor: page.next_cursor(),
+    }))
 }
 
 /// 按新到旧返回兑换码批次汇总。
@@ -323,6 +428,41 @@ impl AdminRedemptionBatchResponse {
     }
 }
 
+impl AdminRedemptionAuditBatchResponse {
+    fn from_batch(batch: &AdminRedemptionAuditBatch) -> Result<Self, ManagementError> {
+        let facts = batch.batch();
+        Ok(Self {
+            batch_id: facts.batch_id().persistence_key(),
+            name: facts.name().to_owned(),
+            created_by_user_id: facts.created_by_user_id().get(),
+            status: facts.status().into(),
+            quota_amount: facts.quota_amount().units(),
+            issued_count: batch.issued_count(),
+            redeemed_count: facts.redeemed_count(),
+            remaining_count: batch.remaining_count(),
+            expired_count: batch.expired_count(),
+            disabled_count: batch.disabled_count(),
+            expires_at: optional_i64(facts.expires_at())?,
+            disabled_at: optional_i64(facts.disabled_at())?,
+            last_redeemed_at: optional_i64(batch.last_redeemed_at())?,
+            created_at: i64::try_from(facts.created_at()).map_err(|_| ManagementError::Internal)?,
+            updated_at: i64::try_from(facts.updated_at()).map_err(|_| ManagementError::Internal)?,
+        })
+    }
+}
+
+impl AdminRedemptionAuditSummaryResponse {
+    const fn from_summary(summary: AdminRedemptionAuditSummary) -> Self {
+        Self {
+            issued_count: summary.issued_count(),
+            redeemed_count: summary.redeemed_count(),
+            remaining_count: summary.remaining_count(),
+            expired_count: summary.expired_count(),
+            disabled_count: summary.disabled_count(),
+        }
+    }
+}
+
 impl<'a> IssuedAdminRedemptionBatchResponse<'a> {
     fn from_issued(issued: &'a IssuedAdminRedemptionBatch) -> Result<Self, ManagementError> {
         Ok(Self {
@@ -352,6 +492,112 @@ fn parse_batch_id(value: &str) -> Result<RedemptionBatchId, ManagementError> {
     RedemptionBatchId::from_persistence_key(value).map_err(|_| ManagementError::InvalidRequest)
 }
 
+fn parse_audit_query(
+    raw_query: Option<&str>,
+) -> Result<AdminRedemptionAuditQuery, ManagementError> {
+    let Some(raw_query) = raw_query else {
+        return Ok(AdminRedemptionAuditQuery::default());
+    };
+    if raw_query.is_empty() {
+        return Ok(AdminRedemptionAuditQuery::default());
+    }
+    if raw_query.len() > 1_024 {
+        return Err(ManagementError::InvalidRequest);
+    }
+    validate_percent_encoding(raw_query)?;
+
+    let mut before = None;
+    let mut limit = None;
+    let mut batch_id = None;
+    let mut status = None;
+    let mut redeemed_after = None;
+    let mut redeemed_before = None;
+    for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
+        if key.contains('\u{fffd}') || value.contains('\u{fffd}') {
+            return Err(ManagementError::InvalidRequest);
+        }
+        match key.as_ref() {
+            "before" if before.is_none() => before = Some(parse_positive_i64(&value)?),
+            "limit" if limit.is_none() => limit = Some(parse_positive_usize(&value)?),
+            "batch_id" if batch_id.is_none() => batch_id = Some(parse_batch_id(&value)?),
+            "status" if status.is_none() => status = Some(parse_audit_status(&value)?),
+            "redeemed_after" if redeemed_after.is_none() => {
+                redeemed_after = Some(parse_positive_i64(&value)?);
+            }
+            "redeemed_before" if redeemed_before.is_none() => {
+                redeemed_before = Some(parse_positive_i64(&value)?);
+            }
+            _ => return Err(ManagementError::InvalidRequest),
+        }
+    }
+    AdminRedemptionAuditQuery::new(
+        before,
+        limit.unwrap_or(af_admin::DEFAULT_ADMIN_REDEMPTION_AUDIT_PAGE_SIZE),
+        batch_id,
+        status,
+        redeemed_after,
+        redeemed_before,
+    )
+    .map_err(map_service_error)
+}
+
+fn parse_audit_status(value: &str) -> Result<AdminRedemptionAuditStatus, ManagementError> {
+    match value {
+        "active" => Ok(AdminRedemptionAuditStatus::Active),
+        "expired" => Ok(AdminRedemptionAuditStatus::Expired),
+        "disabled" => Ok(AdminRedemptionAuditStatus::Disabled),
+        "redeemed" => Ok(AdminRedemptionAuditStatus::Redeemed),
+        _ => Err(ManagementError::InvalidRequest),
+    }
+}
+
+fn parse_positive_i64(value: &str) -> Result<i64, ManagementError> {
+    if value.is_empty() || value.chars().any(|character| !character.is_ascii_digit()) {
+        return Err(ManagementError::InvalidRequest);
+    }
+    let value = value
+        .parse::<i64>()
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    (value > 0)
+        .then_some(value)
+        .ok_or(ManagementError::InvalidRequest)
+}
+
+fn parse_positive_usize(value: &str) -> Result<usize, ManagementError> {
+    if value.is_empty() || value.chars().any(|character| !character.is_ascii_digit()) {
+        return Err(ManagementError::InvalidRequest);
+    }
+    value
+        .parse::<usize>()
+        .map_err(|_| ManagementError::InvalidRequest)
+}
+
+fn validate_percent_encoding(raw_query: &str) -> Result<(), ManagementError> {
+    let bytes = raw_query.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len()
+                || !bytes[index + 1].is_ascii_hexdigit()
+                || !bytes[index + 2].is_ascii_hexdigit()
+            {
+                return Err(ManagementError::InvalidRequest);
+            }
+            index += 3;
+        } else {
+            index += 1;
+        }
+    }
+    Ok(())
+}
+
+fn optional_i64(value: Option<u64>) -> Result<Option<i64>, ManagementError> {
+    value
+        .map(i64::try_from)
+        .transpose()
+        .map_err(|_| ManagementError::Internal)
+}
+
 fn map_service_error(error: RedemptionServiceError) -> ManagementError {
     match error {
         RedemptionServiceError::InvalidInput => ManagementError::InvalidRequest,
@@ -375,4 +621,47 @@ fn status_json(status: StatusCode, value: impl Serialize) -> Response {
         .headers_mut()
         .insert(CACHE_CONTROL, HeaderValue::from_static("no-store"));
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn audit_query_parser_accepts_closed_filters() {
+        assert_eq!(
+            parse_audit_query(None).unwrap(),
+            AdminRedemptionAuditQuery::default()
+        );
+        let batch_id = "11111111111111111111111111111111";
+        assert!(
+            parse_audit_query(Some(&format!(
+                "before=9&limit=50&batch_id={batch_id}&status=redeemed&redeemed_after=100&redeemed_before=200"
+            )))
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn audit_query_parser_rejects_ambiguous_inputs() {
+        for raw_query in [
+            "before=0",
+            "limit=0",
+            "limit=101",
+            "status=all",
+            "status=active&status=disabled",
+            "batch_id=1111111111111111111111111111111g",
+            "redeemed_after=200&redeemed_before=200",
+            "redeemed_after=201&redeemed_before=200",
+            "unknown=1",
+            "before=%",
+            "before=%ff",
+        ] {
+            assert_eq!(
+                parse_audit_query(Some(raw_query)),
+                Err(ManagementError::InvalidRequest),
+                "{raw_query}"
+            );
+        }
+    }
 }
