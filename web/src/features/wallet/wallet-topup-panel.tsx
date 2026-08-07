@@ -268,11 +268,11 @@ export function WalletTopupPanel() {
               />
             ) : activePayment ? (
               <Elements
-                key={order.payment.payment_intent_id}
+                key={activePayment.payment_intent_id}
                 stripe={stripe}
                 options={{
                   appearance,
-                  clientSecret: order.payment.client_secret,
+                  clientSecret: activePayment.client_secret,
                   locale: locale === 'zh-CN' ? 'zh' : 'en',
                 }}
               >

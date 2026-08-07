@@ -8,7 +8,7 @@ export type TopupAttempt = Readonly<{
   amountMinor: number
 }>
 
-type RandomValues = (buffer: Uint8Array) => Uint8Array
+type RandomValues = (buffer: Uint8Array<ArrayBuffer>) => Uint8Array<ArrayBuffer>
 
 const idempotencyKeyPattern = /^[0-9a-f]{32}$/
 
@@ -30,7 +30,8 @@ export function topupAmountMinor(value: string, bounds: TopupAmountBounds) {
 export function createTopupIdempotencyKey(
   randomValues: RandomValues = (buffer) => crypto.getRandomValues(buffer),
 ) {
-  return Array.from(randomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  const buffer = new Uint8Array(new ArrayBuffer(16))
+  return Array.from(randomValues(buffer), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 /** 为一次明确金额创建可跨失败重试复用的充值尝试。 */
