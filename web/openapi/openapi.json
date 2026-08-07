@@ -13186,28 +13186,23 @@
         "properties": {
           "issued_count": {
             "type": "integer",
-            "minimum": 0,
-            "format": "int64"
+            "minimum": 0
           },
           "redeemed_count": {
             "type": "integer",
-            "minimum": 0,
-            "format": "int64"
+            "minimum": 0
           },
           "remaining_count": {
             "type": "integer",
-            "minimum": 0,
-            "format": "int64"
+            "minimum": 0
           },
           "expired_count": {
             "type": "integer",
-            "minimum": 0,
-            "format": "int64"
+            "minimum": 0
           },
           "disabled_count": {
             "type": "integer",
-            "minimum": 0,
-            "format": "int64"
+            "minimum": 0
           }
         },
         "additionalProperties": false
