@@ -4,10 +4,9 @@ use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
     ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr, EntityTrait,
-    JoinType, LockType, QueryFilter, QueryOrder, QueryResult, QuerySelect, QueryTrait,
-    RelationTrait,
+    JoinType, QueryFilter, QueryOrder, QueryResult, QuerySelect, QueryTrait, RelationTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
-    sea_query::{Alias, Expr, Func},
+    sea_query::{Expr, Func, LockType},
 };
 
 use crate::entity::{
@@ -24,7 +23,7 @@ use super::{
 };
 
 const MAX_SUBSCRIPTION_CANDIDATES: u64 = 100;
-const COMMITTED_QUOTA_ALIAS: &str = "committed_quota";
+const COMMITTED_QUOTA_ALIAS: &str = "reserved_quota";
 
 /// 单次请求绑定的订阅窗口预留快照。
 #[derive(Clone)]
@@ -307,7 +306,7 @@ pub(super) async fn apply_settlement(
         .filter(user_subscriptions::Column::WindowEndsAt.eq(settlement.window_ends_at))
         .filter(user_subscriptions::Column::QuotaUsed.gte(0_i64))
         .filter(
-            user_subscriptions::Column::QuotaUsed.lte(
+            Expr::col(user_subscriptions::Column::QuotaUsed).lte(
                 Expr::col(user_subscriptions::Column::QuotaAmount)
                     .sub(settlement.subscription_actual_quota),
             ),
@@ -479,7 +478,10 @@ async fn active_commitment(
     )));
     let query = billing_subscription_reservations::Entity::find()
         .select_only()
-        .expr_as(Func::sum(committed), Alias::new(COMMITTED_QUOTA_ALIAS))
+        .expr_as(
+            Func::sum(committed),
+            billing_subscription_reservations::Column::ReservedQuota,
+        )
         .join(
             JoinType::InnerJoin,
             billing_subscription_reservations::Relation::BillingReservation.def(),
