@@ -12,6 +12,7 @@ mod probe;
 mod retry;
 mod stable_first;
 mod sticky;
+mod subscription_cycle;
 mod weighted;
 
 pub use auto_ban::{
@@ -57,6 +58,14 @@ pub use stable_first::{
 };
 pub use sticky::{
     RouteWaitKind, RouteWaitPlan, StickyRouteOutcome, StickyWaitPolicy, StickyWaitPolicyError,
+};
+pub use subscription_cycle::{
+    DEFAULT_SUBSCRIPTION_CYCLE_BATCH_SIZE, DEFAULT_SUBSCRIPTION_CYCLE_INTERVAL,
+    DEFAULT_SUBSCRIPTION_CYCLE_MAX_BATCHES_PER_RUN, MAX_SUBSCRIPTION_CYCLE_BATCHES_PER_RUN,
+    SubscriptionCycleMutationOutcome, SubscriptionCyclePhaseReport, SubscriptionCycleRunReport,
+    SubscriptionCycleStore, SubscriptionCycleSupervisor, SubscriptionCycleSupervisorConfig,
+    SubscriptionCycleSupervisorConfigError, SubscriptionCycleSupervisorError,
+    SubscriptionExpirationBatch, SubscriptionWindowAdvanceBatch,
 };
 pub use weighted::{
     MAX_SCHEDULER_CANDIDATES, WEIGHT_BASE, WeightedSelection, WeightedSelectionError,

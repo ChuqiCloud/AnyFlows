@@ -55,6 +55,20 @@ pub const MAX_USAGE_RECORD_QUEUE_CAPACITY: usize = 1_000_000;
 pub const DEFAULT_USAGE_RECORD_WORKER_COUNT: usize = 1;
 /// 单实例用量记录持久化 worker 数量硬上限。
 pub const MAX_USAGE_RECORD_WORKER_COUNT: usize = 64;
+/// 订阅生命周期周期任务默认开启，确保到期窗口和取消订阅能够自动收敛。
+pub const DEFAULT_SUBSCRIPTION_CYCLE_ENABLED: bool = true;
+/// 订阅生命周期周期任务默认单批记录数。
+pub const DEFAULT_SUBSCRIPTION_CYCLE_BATCH_SIZE: usize = 64;
+/// 订阅生命周期周期任务默认执行间隔。
+pub const DEFAULT_SUBSCRIPTION_CYCLE_INTERVAL_SECS: u64 = 60;
+/// 每类订阅状态单轮默认最多扫描的批次数。
+pub const DEFAULT_SUBSCRIPTION_CYCLE_MAX_BATCHES_PER_RUN: usize = 8;
+/// 订阅生命周期单批记录数硬上限，与数据库分页边界保持一致。
+pub const MAX_SUBSCRIPTION_CYCLE_BATCH_SIZE: usize = 100;
+/// 订阅生命周期执行间隔允许配置的硬上限。
+pub const MAX_SUBSCRIPTION_CYCLE_INTERVAL_SECS: u64 = 3_600;
+/// 每类订阅状态单轮扫描批次数硬上限。
+pub const MAX_SUBSCRIPTION_CYCLE_BATCHES_PER_RUN: usize = 64;
 /// 渠道探活后台任务默认关闭，避免凭据运行时尚未接线时产生无效调用。
 pub const DEFAULT_CHANNEL_PROBE_ENABLED: bool = false;
 /// 渠道探活默认单轮批次。
@@ -414,6 +428,53 @@ impl Default for BillingSettings {
             usage_record_queue_capacity: DEFAULT_USAGE_RECORD_QUEUE_CAPACITY,
             usage_record_worker_count: DEFAULT_USAGE_RECORD_WORKER_COUNT,
             wal_directory: PathBuf::from("data/billing-wal"),
+        }
+    }
+}
+
+/// 订阅窗口推进与到期迁移的启动期周期任务设置。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SubscriptionSettings {
+    enabled: bool,
+    batch_size: usize,
+    interval_secs: u64,
+    max_batches_per_run: usize,
+}
+
+impl SubscriptionSettings {
+    /// 返回是否注册订阅生命周期周期任务。
+    #[must_use]
+    pub const fn enabled(self) -> bool {
+        self.enabled
+    }
+
+    /// 返回单次数据库分页最多读取的订阅数量。
+    #[must_use]
+    pub const fn batch_size(self) -> usize {
+        self.batch_size
+    }
+
+    /// 返回两轮订阅生命周期扫描之间的等待秒数。
+    #[must_use]
+    pub const fn interval_secs(self) -> u64 {
+        self.interval_secs
+    }
+
+    /// 返回每类订阅状态单轮最多扫描的批次数。
+    #[must_use]
+    pub const fn max_batches_per_run(self) -> usize {
+        self.max_batches_per_run
+    }
+}
+
+impl Default for SubscriptionSettings {
+    fn default() -> Self {
+        Self {
+            enabled: DEFAULT_SUBSCRIPTION_CYCLE_ENABLED,
+            batch_size: DEFAULT_SUBSCRIPTION_CYCLE_BATCH_SIZE,
+            interval_secs: DEFAULT_SUBSCRIPTION_CYCLE_INTERVAL_SECS,
+            max_batches_per_run: DEFAULT_SUBSCRIPTION_CYCLE_MAX_BATCHES_PER_RUN,
         }
     }
 }
@@ -881,6 +942,8 @@ pub struct AppConfig {
     #[serde(default)]
     billing: BillingSettings,
     #[serde(default)]
+    subscription: SubscriptionSettings,
+    #[serde(default)]
     payment: PaymentSettings,
     #[serde(default)]
     channel_probe: ChannelProbeSettings,
@@ -921,6 +984,12 @@ impl AppConfig {
     #[must_use]
     pub const fn billing(&self) -> &BillingSettings {
         &self.billing
+    }
+
+    /// 返回订阅生命周期周期任务设置。
+    #[must_use]
+    pub const fn subscription(&self) -> &SubscriptionSettings {
+        &self.subscription
     }
 
     /// 返回支付 Provider 的启动期安全配置。
@@ -1084,6 +1153,36 @@ impl AppConfig {
         if self.billing.wal_directory.as_os_str().is_empty() {
             return Err(ConfigError::EmptyValue {
                 field: "billing.wal_directory",
+            });
+        }
+        if self.subscription.batch_size == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "subscription.batch_size",
+            });
+        }
+        if self.subscription.batch_size > MAX_SUBSCRIPTION_CYCLE_BATCH_SIZE {
+            return Err(ConfigError::OutOfRange {
+                field: "subscription.batch_size",
+            });
+        }
+        if self.subscription.interval_secs == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "subscription.interval_secs",
+            });
+        }
+        if self.subscription.interval_secs > MAX_SUBSCRIPTION_CYCLE_INTERVAL_SECS {
+            return Err(ConfigError::OutOfRange {
+                field: "subscription.interval_secs",
+            });
+        }
+        if self.subscription.max_batches_per_run == 0 {
+            return Err(ConfigError::NonPositive {
+                field: "subscription.max_batches_per_run",
+            });
+        }
+        if self.subscription.max_batches_per_run > MAX_SUBSCRIPTION_CYCLE_BATCHES_PER_RUN {
+            return Err(ConfigError::OutOfRange {
+                field: "subscription.max_batches_per_run",
             });
         }
         if self.payment.stripe_signature_tolerance_secs == 0 {

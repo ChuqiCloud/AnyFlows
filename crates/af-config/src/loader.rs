@@ -14,7 +14,8 @@ use serde::Serialize;
 use crate::{
     AppConfig, BillingSettings, ChannelProbeSettings, ConfigError,
     DEFAULT_AUTH_LOOKUP_TIMEOUT_SECS, DEFAULT_AUTH_SESSION_TTL_SECS,
-    DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS, ServerConfig, TelemetrySettings,
+    DEFAULT_PAYMENT_SIGNATURE_TOLERANCE_SECS, ServerConfig, SubscriptionSettings,
+    TelemetrySettings,
 };
 
 /// 默认配置文件名；文件不存在时仅使用默认值与环境变量。
@@ -30,6 +31,7 @@ struct ConfigDefaults {
     telemetry: TelemetrySettings,
     database: DatabaseDefaults,
     billing: BillingSettings,
+    subscription: SubscriptionSettings,
     payment: PaymentDefaults,
     channel_probe: ChannelProbeSettings,
     credential_encryption: CredentialEncryptionDefaults,
@@ -235,6 +237,11 @@ fn known_field(path: &str) -> Option<&'static str> {
         "billing.usage_record_queue_capacity" => "billing.usage_record_queue_capacity",
         "billing.usage_record_worker_count" => "billing.usage_record_worker_count",
         "billing.wal_directory" => "billing.wal_directory",
+        "subscription" => "subscription",
+        "subscription.enabled" => "subscription.enabled",
+        "subscription.batch_size" => "subscription.batch_size",
+        "subscription.interval_secs" => "subscription.interval_secs",
+        "subscription.max_batches_per_run" => "subscription.max_batches_per_run",
         "payment" => "payment",
         "payment.stripe_secret_key" => "payment.stripe_secret_key",
         "payment.stripe_publishable_key" => "payment.stripe_publishable_key",
@@ -354,6 +361,10 @@ mod tests {
                 config.billing().wal_directory(),
                 Path::new("data/billing-wal")
             );
+            assert!(config.subscription().enabled());
+            assert_eq!(config.subscription().batch_size(), 64);
+            assert_eq!(config.subscription().interval_secs(), 60);
+            assert_eq!(config.subscription().max_batches_per_run(), 8);
             assert!(config.payment().stripe_secret_key().is_none());
             assert!(config.payment().stripe_publishable_key().is_none());
             assert!(config.payment().stripe_webhook_secret().is_none());
@@ -597,7 +608,7 @@ mod tests {
     fn toml_values_override_defaults() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[billing]\nbatch_enabled = true\nflush_interval_secs = 11\nflush_timeout_secs = 17\nwal_directory = 'private-billing-wal'\n[payment]\nstripe_secret_key = 'sk-test-secret'\nstripe_publishable_key = 'pk_test_public'\nstripe_webhook_secret = 'whsec-test-secret'\nstripe_signature_tolerance_secs = 42\n[auth]\nallow_query_api_key = true\nlookup_timeout_secs = 7\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
+                "[server]\nbind = '127.0.0.2:9000'\ncors_allowed_origins = ['https://Console.Example:443/']\nshutdown_timeout_secs = 45\n[telemetry]\nlevel = 'debug'\n[database]\nurl = 'postgres://user:secret@db/app'\nmigration_timeout_secs = 42\nhealth_check_timeout_secs = 3\n[billing]\nbatch_enabled = true\nflush_interval_secs = 11\nflush_timeout_secs = 17\nwal_directory = 'private-billing-wal'\n[subscription]\nenabled = false\nbatch_size = 48\ninterval_secs = 75\nmax_batches_per_run = 12\n[payment]\nstripe_secret_key = 'sk-test-secret'\nstripe_publishable_key = 'pk_test_public'\nstripe_webhook_secret = 'whsec-test-secret'\nstripe_signature_tolerance_secs = 42\n[auth]\nallow_query_api_key = true\nlookup_timeout_secs = 7\n[http_client]\nmax_cached_clients = 7\nconnect_timeout_secs = 2\nread_timeout_secs = 8\nrequest_timeout_secs = 13\nproxy_url = 'socks5://127.0.0.1:10808'\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
@@ -619,6 +630,10 @@ mod tests {
                 Path::new("private-billing-wal")
             );
             assert!(!format!("{:?}", config.billing()).contains("private-billing-wal"));
+            assert!(!config.subscription().enabled());
+            assert_eq!(config.subscription().batch_size(), 48);
+            assert_eq!(config.subscription().interval_secs(), 75);
+            assert_eq!(config.subscription().max_batches_per_run(), 12);
             assert_eq!(
                 config.payment().stripe_secret_key().unwrap().expose(),
                 "sk-test-secret"
@@ -805,6 +820,10 @@ mod tests {
                 config.billing().wal_directory(),
                 Path::new("environment-billing-wal")
             );
+            assert!(!config.subscription().enabled());
+            assert_eq!(config.subscription().batch_size(), 32);
+            assert_eq!(config.subscription().interval_secs(), 90);
+            assert_eq!(config.subscription().max_batches_per_run(), 6);
             assert_eq!(
                 config.payment().stripe_secret_key().unwrap().expose(),
                 "sk-environment-secret"
@@ -882,6 +901,10 @@ mod tests {
                 .env("AF_BILLING__FLUSH_INTERVAL_SECS", "19")
                 .env("AF_BILLING__FLUSH_TIMEOUT_SECS", "23")
                 .env("AF_BILLING__WAL_DIRECTORY", "environment-billing-wal")
+                .env("AF_SUBSCRIPTION__ENABLED", "false")
+                .env("AF_SUBSCRIPTION__BATCH_SIZE", "32")
+                .env("AF_SUBSCRIPTION__INTERVAL_SECS", "90")
+                .env("AF_SUBSCRIPTION__MAX_BATCHES_PER_RUN", "6")
                 .env("AF_PAYMENT__STRIPE_SECRET_KEY", "sk-environment-secret")
                 .env("AF_PAYMENT__STRIPE_PUBLISHABLE_KEY", "pk_test_environment")
                 .env(
@@ -1228,6 +1251,18 @@ mod tests {
                     "[database]\nurl = 'sqlite::memory:'\n[billing]\nusage_record_worker_count = 0\n",
                 ),
                 (
+                    "subscription.batch_size",
+                    "[database]\nurl = 'sqlite::memory:'\n[subscription]\nbatch_size = 0\n",
+                ),
+                (
+                    "subscription.interval_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[subscription]\ninterval_secs = 0\n",
+                ),
+                (
+                    "subscription.max_batches_per_run",
+                    "[database]\nurl = 'sqlite::memory:'\n[subscription]\nmax_batches_per_run = 0\n",
+                ),
+                (
                     "payment.stripe_signature_tolerance_secs",
                     "[database]\nurl = 'sqlite::memory:'\n[payment]\nstripe_signature_tolerance_secs = 0\n",
                 ),
@@ -1389,6 +1424,18 @@ mod tests {
                 (
                     "billing.usage_record_worker_count",
                     "[database]\nurl = 'sqlite::memory:'\n[billing]\nusage_record_worker_count = 65\n",
+                ),
+                (
+                    "subscription.batch_size",
+                    "[database]\nurl = 'sqlite::memory:'\n[subscription]\nbatch_size = 101\n",
+                ),
+                (
+                    "subscription.interval_secs",
+                    "[database]\nurl = 'sqlite::memory:'\n[subscription]\ninterval_secs = 3601\n",
+                ),
+                (
+                    "subscription.max_batches_per_run",
+                    "[database]\nurl = 'sqlite::memory:'\n[subscription]\nmax_batches_per_run = 65\n",
                 ),
                 (
                     "payment.stripe_signature_tolerance_secs",
