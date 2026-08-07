@@ -249,6 +249,8 @@ pub enum TopupWebhookOutcome {
         /// 未处理的闭合原因。
         reason: TopupPaymentEventRejection,
     },
+    /// 已验签事件只描述 Provider 可重试中间态，无需持久化或推进订单。
+    IgnoredNonTerminal,
     /// 事件引用的本地订单不存在。
     NotFound,
 }
@@ -278,10 +280,13 @@ impl TopupWebhookProcessor {
         &self,
         request: PaymentWebhookRequest<'_>,
     ) -> Result<TopupWebhookOutcome, TopupWebhookProcessorError> {
-        let verified = self
-            .verifier
-            .verify(&request)
-            .map_err(|_| TopupWebhookProcessorError::VerificationRejected)?;
+        let verified = match self.verifier.verify(&request) {
+            Ok(verified) => verified,
+            Err(PaymentWebhookVerificationError::NonTerminalEvent) => {
+                return Ok(TopupWebhookOutcome::IgnoredNonTerminal);
+            }
+            Err(_) => return Err(TopupWebhookProcessorError::VerificationRejected),
+        };
         let event_id = TopupPaymentEventId::new(*Uuid::new_v4().as_bytes())
             .map_err(|_| TopupWebhookProcessorError::Invariant)?;
         let payload_sha256: [u8; 32] = Sha256::digest(request.payload()).into();
@@ -339,6 +344,9 @@ pub enum PaymentWebhookVerificationError {
     /// Provider 事件类型不在当前闭合集合中。
     #[error("支付 webhook 事件不受支持")]
     UnsupportedEvent,
+    /// 事件已经验签，但只描述可重试的中间状态，不应关闭本地订单。
+    #[error("支付 webhook 事件属于非终态")]
+    NonTerminalEvent,
     /// 解析后的规范事件违反字段边界。
     #[error("支付 webhook 事件字段无效")]
     InvalidEvent,

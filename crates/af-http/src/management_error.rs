@@ -35,6 +35,8 @@ pub(crate) enum ManagementError {
     WalletOutcomeUnknown,
     /// 当前实例尚未配置可用的 Stripe 充值通道。
     TopupUnavailable,
+    /// Stripe 确定拒绝服务端构造的 PaymentIntent 请求。
+    TopupProviderRejected,
     /// 充值幂等键已经绑定不同订单事实。
     TopupOrderConflict,
     /// 充值订单提交结果未知，调用方必须复用同一幂等键确认。
@@ -285,6 +287,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "topup_unavailable",
                     message: "Top-up service unavailable",
+                },
+            ),
+            Self::TopupProviderRejected => (
+                StatusCode::BAD_GATEWAY,
+                ManagementErrorBody {
+                    code: "topup_provider_rejected",
+                    message: "Top-up provider rejected request",
                 },
             ),
             Self::TopupOrderConflict => (

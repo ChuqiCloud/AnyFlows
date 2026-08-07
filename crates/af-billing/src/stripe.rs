@@ -153,8 +153,10 @@ impl StripePaymentProvider {
             "checkout.session.async_payment_succeeded" => {
                 (TopupPaymentEventType::Succeeded, checkout_trade_no(object))
             }
-            "checkout.session.async_payment_failed" | "payment_intent.payment_failed" => {
-                (TopupPaymentEventType::Failed, object_id)
+            "checkout.session.async_payment_failed" => (TopupPaymentEventType::Failed, object_id),
+            // 单次支付方式失败后同一个 PaymentIntent 仍可继续确认，不能关闭本地订单。
+            "payment_intent.payment_failed" => {
+                return Err(PaymentWebhookVerificationError::NonTerminalEvent);
             }
             "checkout.session.expired" => (TopupPaymentEventType::Expired, object_id),
             "payment_intent.succeeded" => (TopupPaymentEventType::Succeeded, object_id),
@@ -369,6 +371,23 @@ mod tests {
             provider.verify_webhook(&unknown_request),
             Err(PaymentWebhookVerificationError::UnsupportedEvent)
         ));
+    }
+
+    #[test]
+    fn treats_payment_method_failure_as_a_retryable_non_terminal_event() {
+        let provider = StripePaymentProvider::new("whsec_test", 300).unwrap();
+        let payload = r#"{"id":"evt_failed","type":"payment_intent.payment_failed","data":{"object":{"id":"pi_123","status":"requires_payment_method","metadata":{"anyflows_order_id":"ORDER_ID"}}}}"#
+            .replace("ORDER_ID", ORDER_ID);
+        let signature = signature_header(&provider, payload.as_bytes(), RECEIVED_AT);
+        let header = PaymentWebhookHeader::new(STRIPE_SIGNATURE_HEADER, &signature).unwrap();
+        let headers = [header];
+        let request =
+            PaymentWebhookRequest::new(payload.as_bytes(), &headers, RECEIVED_AT).unwrap();
+
+        assert_eq!(
+            provider.verify_webhook(&request).unwrap_err(),
+            PaymentWebhookVerificationError::NonTerminalEvent
+        );
     }
 
     #[test]

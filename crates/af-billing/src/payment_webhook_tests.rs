@@ -83,6 +83,26 @@ async fn invalid_provider_contract_fails_closed_before_persistence() {
     assert_eq!(calls.load(Ordering::Acquire), 0);
 }
 
+#[tokio::test]
+async fn verified_non_terminal_event_is_acknowledged_without_persistence() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let processor = TopupWebhookProcessor::new(
+        Arc::new(NonTerminalVerifier),
+        Arc::new(RecordingPort {
+            calls: calls.clone(),
+            outcome: TopupWebhookOutcome::Applied(TopupOrderStatus::Failed),
+        }),
+    );
+    let headers = [PaymentWebhookHeader::new("stripe-signature", "valid").unwrap()];
+    let request = PaymentWebhookRequest::new(b"payload", &headers, RECEIVED_AT).unwrap();
+
+    assert_eq!(
+        processor.process(request).await,
+        Ok(TopupWebhookOutcome::IgnoredNonTerminal)
+    );
+    assert_eq!(calls.load(Ordering::Acquire), 0);
+}
+
 #[test]
 fn request_and_verified_event_debug_output_are_redacted() {
     let header = PaymentWebhookHeader::new("x-signature", "signature-secret").unwrap();
@@ -176,6 +196,21 @@ impl PaymentWebhookVerifier for FakeVerifier {
 struct RecordingPort {
     calls: Arc<AtomicUsize>,
     outcome: TopupWebhookOutcome,
+}
+
+struct NonTerminalVerifier;
+
+impl PaymentWebhookVerifier for NonTerminalVerifier {
+    fn provider(&self) -> &str {
+        "stripe"
+    }
+
+    fn verify(
+        &self,
+        _request: &PaymentWebhookRequest<'_>,
+    ) -> Result<VerifiedTopupPaymentEvent, PaymentWebhookVerificationError> {
+        Err(PaymentWebhookVerificationError::NonTerminalEvent)
+    }
 }
 
 impl TopupPaymentEventPort for RecordingPort {

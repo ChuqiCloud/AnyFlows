@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use af_admin::{
     SessionAuthentication, SessionAuthenticator, UserTopupError, UserTopupOrder,
-    UserTopupOrderCreateCommand, UserTopupService,
+    UserTopupOrderCreateCommand, UserTopupPaymentSession, UserTopupService,
 };
 use af_domain::TopupOrderStatus;
 use axum::{
@@ -72,6 +72,19 @@ pub(crate) struct UserTopupOrderResponse {
     #[schema(minimum = 1)]
     created_at: i64,
     replayed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payment: Option<UserTopupPaymentSessionResponse>,
+}
+
+/// 当前用户可交给 Stripe SDK 的短生命周期支付会话。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserTopupPaymentSession)]
+pub(crate) struct UserTopupPaymentSessionResponse {
+    #[schema(min_length = 4, max_length = 128, pattern = "^pi_[A-Za-z0-9_]+$")]
+    payment_intent_id: String,
+    #[schema(min_length = 1, max_length = 4096, read_only = true)]
+    client_secret: String,
 }
 
 /// 构建只允许有效登录会话创建本人充值订单的路由。
@@ -137,6 +150,19 @@ impl UserTopupOrderResponse {
             version: i64::try_from(order.version()).map_err(|_| ManagementError::Internal)?,
             created_at: i64::try_from(order.created_at()).map_err(|_| ManagementError::Internal)?,
             replayed: order.replayed(),
+            payment: order
+                .payment()
+                .map(UserTopupPaymentSessionResponse::from_session)
+                .transpose()?,
+        })
+    }
+}
+
+impl UserTopupPaymentSessionResponse {
+    fn from_session(session: &UserTopupPaymentSession) -> Result<Self, ManagementError> {
+        Ok(Self {
+            payment_intent_id: session.payment_intent_id().to_owned(),
+            client_secret: session.client_secret().to_owned(),
         })
     }
 }
@@ -148,6 +174,7 @@ fn map_topup_error(error: UserTopupError) -> ManagementError {
         UserTopupError::Conflict => ManagementError::TopupOrderConflict,
         UserTopupError::OutcomeUnknown => ManagementError::TopupOrderOutcomeUnknown,
         UserTopupError::Unavailable => ManagementError::TopupUnavailable,
+        UserTopupError::ProviderRejected => ManagementError::TopupProviderRejected,
         UserTopupError::Internal => ManagementError::Internal,
     }
 }

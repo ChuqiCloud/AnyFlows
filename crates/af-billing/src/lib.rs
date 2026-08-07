@@ -7,6 +7,7 @@ mod expression_pricing;
 mod group_pricing_cache;
 mod lifecycle;
 mod model_price_cache;
+mod payment_order;
 mod payment_webhook;
 mod pricing;
 mod pricing_snapshot;
@@ -14,6 +15,7 @@ pub mod quota_math;
 mod refund_signal_consumer;
 mod refund_signal_queue;
 mod stripe;
+mod stripe_payment_intent;
 mod usage_record_consumer;
 mod usage_record_database_sink;
 mod usage_record_queue;
@@ -52,6 +54,11 @@ pub use model_price_cache::{
     ModelPrice, ModelPriceCache, ModelPriceCacheError, ModelPriceMode, ModelPriceSnapshot,
     ModelPriceSource, ModelPriceSourceError, ModelPriceSourceFuture, ModelPriceSourceRecord,
 };
+pub use payment_order::{
+    MAX_PAYMENT_CLIENT_SECRET_BYTES, PaymentClientSecret, PaymentOrderFuture,
+    PaymentOrderInputError, PaymentOrderProvider, PaymentOrderProviderError,
+    PaymentOrderRecoveryRequest, PaymentOrderRequest, PaymentOrderSession,
+};
 pub use payment_webhook::{
     MAX_PAYMENT_WEBHOOK_HEADER_NAME_BYTES, MAX_PAYMENT_WEBHOOK_HEADER_VALUE_BYTES,
     MAX_PAYMENT_WEBHOOK_HEADERS, MAX_PAYMENT_WEBHOOK_PAYLOAD_BYTES, PaymentProvider,
@@ -80,6 +87,7 @@ pub use stripe::{
     STRIPE_PAYMENT_PROVIDER, STRIPE_SIGNATURE_HEADER, StripePaymentProvider,
     StripePaymentProviderConfigError,
 };
+pub use stripe_payment_intent::{StripePaymentIntentConfigError, StripePaymentIntentProvider};
 pub use usage_record_consumer::{
     UsageRecordConsumer, UsageRecordConsumerError, UsageRecordSink, UsageRecordSinkError,
     UsageRecordSinkFuture,

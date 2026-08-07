@@ -7,7 +7,7 @@ use af_admin::{
     LoginCredentials, SessionAuthentication, SessionAuthenticationError,
     SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
     SessionRole, UserTopupError, UserTopupOrder, UserTopupOrderCreateCommand,
-    UserTopupOrderCreateFuture, UserTopupService,
+    UserTopupOrderCreateFuture, UserTopupPaymentSession, UserTopupService,
 };
 use af_domain::{GroupId, Quota, TopupOrderId, TopupOrderStatus, UserId};
 use axum::{
@@ -87,16 +87,21 @@ impl UserTopupService for FakeUserTopupService {
                 2 => false,
                 _ => return Err(UserTopupError::InvalidSession),
             };
+            let payment = UserTopupPaymentSession::from_parts(
+                "pi_test_123".to_owned(),
+                "pi_test_123_secret_client".to_owned(),
+            )?;
             Ok(UserTopupOrder::from_parts(
                 TopupOrderId::new([0x42; 16]).unwrap(),
                 "stripe".to_owned(),
-                TopupOrderStatus::Created,
+                TopupOrderStatus::Pending,
                 500,
                 "USD".to_owned(),
                 Quota::new(2_500_000).unwrap(),
                 1,
                 1_900_000_000,
                 replayed,
+                Some(payment),
             ))
         })
     }
@@ -116,11 +121,16 @@ async fn create_uses_only_the_authenticated_user_and_preserves_replay_status() {
     assert_eq!(created.headers()[CACHE_CONTROL], "no-store");
     let created = response_json(created).await;
     assert_eq!(created["provider"], "stripe");
-    assert_eq!(created["status"], "created");
+    assert_eq!(created["status"], "pending");
     assert_eq!(created["amount_minor"], 500);
     assert_eq!(created["currency"], "USD");
     assert_eq!(created["quota_amount"], 2_500_000);
     assert_eq!(created["replayed"], false);
+    assert_eq!(created["payment"]["payment_intent_id"], "pi_test_123");
+    assert_eq!(
+        created["payment"]["client_secret"],
+        "pi_test_123_secret_client"
+    );
     assert!(created.get("user_id").is_none());
     assert!(created.get("idempotency_key").is_none());
 
