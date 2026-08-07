@@ -28,7 +28,7 @@ use af_admin::{
     RedemptionService, RegistrationService, RegistrationServiceConfigError,
     RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
     SiteSettingsService, TokenAuthenticator, UserInvitationService, UserProfileService,
-    UserTokenService, UserTopupService, UserWalletService,
+    UserTokenService, UserTopupConfiguration, UserTopupService, UserWalletService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
@@ -1390,30 +1390,34 @@ impl Bootstrap<Supervised> {
                     Arc::new(repository.clone()),
                 ))
             });
-        let user_topup_service =
-            self.config
-                .payment()
-                .stripe_secret_key()
-                .zip(topup_repository)
-                .map(|(secret, repository)| {
-                    let request_timeout = self
-                        .stage
-                        .upstream_clients
-                        .base_config()
-                        .expect("已装配的全局 HTTP Client 基线必须可读")
-                        .timeouts()
-                        .request();
-                    let provider = StripePaymentIntentProvider::new(
-                        secret.expose(),
-                        self.stage.upstream_clients.clone(),
-                        request_timeout,
-                    )
-                    .expect("已校验的 Stripe API 配置必须满足 Provider 边界");
-                    let service: Arc<dyn UserTopupService> = Arc::new(
-                        DatabaseUserTopupService::new(repository, Arc::new(provider)),
-                    );
-                    service
-                });
+        let user_topup_service = self
+            .config
+            .payment()
+            .stripe_secret_key()
+            .zip(self.config.payment().stripe_publishable_key())
+            .zip(topup_repository)
+            .map(|((secret, publishable_key), repository)| {
+                let request_timeout = self
+                    .stage
+                    .upstream_clients
+                    .base_config()
+                    .expect("已装配的全局 HTTP Client 基线必须可读")
+                    .timeouts()
+                    .request();
+                let provider = StripePaymentIntentProvider::new(
+                    secret.expose(),
+                    self.stage.upstream_clients.clone(),
+                    request_timeout,
+                )
+                .expect("已校验的 Stripe API 配置必须满足 Provider 边界");
+                let service: Arc<dyn UserTopupService> = Arc::new(DatabaseUserTopupService::new(
+                    repository,
+                    Arc::new(provider),
+                    UserTopupConfiguration::new(publishable_key.to_owned())
+                        .expect("已校验的 Stripe publishable key 必须满足应用边界"),
+                ));
+                service
+            });
         let payment_webhook_routes =
             build_payment_webhook_router("stripe", payment_webhook_processor);
         let router = build_router(

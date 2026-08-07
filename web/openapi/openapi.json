@@ -1454,6 +1454,52 @@
         ]
       }
     },
+    "/api/account/wallet/topups/config": {
+      "get": {
+        "tags": [
+          "我的钱包"
+        ],
+        "summary": "读取当前用户充值配置",
+        "operationId": "getUserTopupConfiguration",
+        "responses": {
+          "200": {
+            "description": "Stripe.js 客户端配置与固定金额边界",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserTopupConfiguration"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Stripe 未完整配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/account/wallet/topups": {
       "post": {
         "tags": [
@@ -15799,6 +15845,46 @@
             "description": "IP/CIDR 白名单；null 表示关闭过滤，顺序和重复项会保留。",
             "maxItems": 64,
             "minItems": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserTopupConfiguration": {
+        "type": "object",
+        "description": "当前登录用户可读取的 Stripe.js 充值配置。",
+        "required": [
+          "provider",
+          "currency",
+          "min_amount_minor",
+          "max_amount_minor",
+          "publishable_key"
+        ],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "example": "stripe"
+          },
+          "currency": {
+            "type": "string",
+            "maxLength": 3,
+            "minLength": 3,
+            "pattern": "^[A-Z]{3}$"
+          },
+          "min_amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 50
+          },
+          "max_amount_minor": {
+            "type": "integer",
+            "format": "int64",
+            "maximum": 99999999
+          },
+          "publishable_key": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 9,
+            "pattern": "^pk_(test|live)_[!-~]+$"
           }
         },
         "additionalProperties": false

@@ -1,0 +1,76 @@
+export type TopupAmountBounds = Readonly<{
+  min: number
+  max: number
+}>
+
+export type TopupAttempt = Readonly<{
+  idempotencyKey: string
+  amountMinor: number
+}>
+
+type RandomValues = (buffer: Uint8Array) => Uint8Array
+
+const idempotencyKeyPattern = /^[0-9a-f]{32}$/
+
+/** 将结构化美元输入精确转换为整数美分，避免浮点金额进入 API。 */
+export function topupAmountMinor(value: string, bounds: TopupAmountBounds) {
+  const match = /^(0|[1-9]\d{0,8})(?:\.(\d{1,2}))?$/.exec(value.trim())
+  if (!match) return undefined
+
+  const whole = Number(match[1])
+  const fraction = Number((match[2] ?? '').padEnd(2, '0'))
+  const amountMinor = whole * 100 + fraction
+  if (!Number.isSafeInteger(amountMinor) || amountMinor < bounds.min || amountMinor > bounds.max) {
+    return undefined
+  }
+  return amountMinor
+}
+
+/** 生成浏览器侧 128 位小写十六进制幂等键。 */
+export function createTopupIdempotencyKey(
+  randomValues: RandomValues = (buffer) => crypto.getRandomValues(buffer),
+) {
+  return Array.from(randomValues(new Uint8Array(16)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/** 为一次明确金额创建可跨失败重试复用的充值尝试。 */
+export function createTopupAttempt(
+  amountMinor: number,
+  randomValues?: RandomValues,
+): TopupAttempt {
+  return {
+    amountMinor,
+    idempotencyKey: createTopupIdempotencyKey(randomValues),
+  }
+}
+
+/** 校验从会话存储恢复的充值尝试，拒绝损坏或越界数据。 */
+export function parseStoredTopupAttempt(
+  value: string | null,
+  bounds: TopupAmountBounds,
+): TopupAttempt | undefined {
+  if (!value) return undefined
+  try {
+    const parsed = JSON.parse(value) as Partial<TopupAttempt>
+    if (
+      typeof parsed.idempotencyKey !== 'string'
+      || !idempotencyKeyPattern.test(parsed.idempotencyKey)
+      || !Number.isSafeInteger(parsed.amountMinor)
+      || (parsed.amountMinor ?? 0) < bounds.min
+      || (parsed.amountMinor ?? 0) > bounds.max
+    ) {
+      return undefined
+    }
+    return {
+      idempotencyKey: parsed.idempotencyKey,
+      amountMinor: parsed.amountMinor as number,
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/** 将整数美分还原为金额输入框需要的两位小数文本。 */
+export function topupAmountInput(amountMinor: number) {
+  return `${Math.floor(amountMinor / 100)}.${String(amountMinor % 100).padStart(2, '0')}`
+}

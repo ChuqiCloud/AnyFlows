@@ -20,6 +20,7 @@ import type { UserWalletEntry, UserWalletSummary } from '@/lib/api/generated/typ
 import { cn } from '@/lib/utils'
 import { useUserWalletEntries, useUserWalletSummary } from './wallet-api'
 import { WalletRedemptionPanel } from './wallet-redemption-panel'
+import { WalletTopupPanel } from './wallet-topup-panel'
 
 const entryTone = {
   opening_balance: 'text-info',
@@ -83,6 +84,8 @@ export function WalletPage() {
       ) : (
         <WalletSummaryCards summary={summaryQuery.data} formatQuota={numberFormat.format} />
       )}
+
+      <WalletTopupPanel />
 
       <WalletRedemptionPanel />
 

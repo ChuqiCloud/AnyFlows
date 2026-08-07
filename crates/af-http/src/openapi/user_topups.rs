@@ -7,10 +7,25 @@ use utoipa::OpenApi;
 use crate::{
     management_error::ManagementErrorBody,
     user_topups::{
-        UserTopupOrderCreateRequest, UserTopupOrderResponse, UserTopupOrderStatusResponse,
-        UserTopupPaymentSessionResponse,
+        UserTopupConfigurationResponse, UserTopupOrderCreateRequest, UserTopupOrderResponse,
+        UserTopupOrderStatusResponse, UserTopupPaymentSessionResponse,
     },
 };
+
+#[utoipa::path(
+    get,
+    path = "/api/account/wallet/topups/config",
+    operation_id = "getUserTopupConfiguration",
+    tag = "我的钱包",
+    summary = "读取当前用户充值配置",
+    responses(
+        (status = 200, description = "Stripe.js 客户端配置与固定金额边界", body = UserTopupConfigurationResponse),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 503, description = "Stripe 未完整配置", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn get_user_topup_configuration() {}
 
 #[utoipa::path(
     post,
@@ -35,8 +50,9 @@ fn create_user_topup_order() {}
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(create_user_topup_order),
+    paths(get_user_topup_configuration, create_user_topup_order),
     components(schemas(
+        UserTopupConfigurationResponse,
         UserTopupOrderCreateRequest,
         UserTopupOrderStatusResponse,
         UserTopupOrderResponse,

@@ -6,8 +6,9 @@ use std::sync::{
 use af_admin::{
     LoginCredentials, SessionAuthentication, SessionAuthenticationError,
     SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
-    SessionRole, UserTopupError, UserTopupOrder, UserTopupOrderCreateCommand,
-    UserTopupOrderCreateFuture, UserTopupPaymentSession, UserTopupService,
+    SessionRole, UserTopupConfiguration, UserTopupError, UserTopupOrder,
+    UserTopupOrderCreateCommand, UserTopupOrderCreateFuture, UserTopupPaymentSession,
+    UserTopupService,
 };
 use af_domain::{GroupId, Quota, TopupOrderId, TopupOrderStatus, UserId};
 use axum::{
@@ -59,17 +60,23 @@ impl SessionAuthenticator for FakeSessionAuthenticator {
 
 struct FakeUserTopupService {
     calls: AtomicUsize,
+    configuration: UserTopupConfiguration,
 }
 
 impl FakeUserTopupService {
     fn new() -> Self {
         Self {
             calls: AtomicUsize::new(0),
+            configuration: UserTopupConfiguration::new("pk_test_public".to_owned()).unwrap(),
         }
     }
 }
 
 impl UserTopupService for FakeUserTopupService {
+    fn configuration(&self) -> &UserTopupConfiguration {
+        &self.configuration
+    }
+
     fn create<'a>(
         &'a self,
         principal: SessionPrincipal,
@@ -105,6 +112,32 @@ impl UserTopupService for FakeUserTopupService {
             ))
         })
     }
+}
+
+#[tokio::test]
+async fn configuration_requires_a_session_and_exposes_only_client_material() {
+    let app = router(Some(Arc::new(FakeUserTopupService::new())));
+    let unauthorized = app
+        .clone()
+        .oneshot(configuration_request("invalid"))
+        .await
+        .unwrap();
+    assert_management_error(unauthorized, StatusCode::UNAUTHORIZED, "invalid_session").await;
+
+    let response = app
+        .oneshot(configuration_request(USER_TOKEN))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
+    let body = response_json(response).await;
+    assert_eq!(body["provider"], "stripe");
+    assert_eq!(body["currency"], "USD");
+    assert_eq!(body["min_amount_minor"], 50);
+    assert_eq!(body["max_amount_minor"], 99_999_999);
+    assert_eq!(body["publishable_key"], "pk_test_public");
+    assert!(body.get("secret_key").is_none());
+    assert!(body.get("webhook_secret").is_none());
 }
 
 #[tokio::test]
@@ -172,7 +205,20 @@ async fn invalid_session_and_request_fail_before_the_topup_service() {
 
 #[tokio::test]
 async fn unconfigured_stripe_returns_explicit_unavailable_error() {
-    let response = router(None)
+    let app = router(None);
+    let configuration = app
+        .clone()
+        .oneshot(configuration_request(USER_TOKEN))
+        .await
+        .unwrap();
+    assert_management_error(
+        configuration,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "topup_unavailable",
+    )
+    .await;
+
+    let response = app
         .oneshot(topup_request(USER_TOKEN, valid_body()))
         .await
         .unwrap();
@@ -182,6 +228,14 @@ async fn unconfigured_stripe_returns_explicit_unavailable_error() {
         "topup_unavailable",
     )
     .await;
+}
+
+fn configuration_request(token: &str) -> Request<Body> {
+    Request::builder()
+        .uri("/api/account/wallet/topups/config")
+        .header("authorization", format!("Bearer {token}"))
+        .body(Body::empty())
+        .unwrap()
 }
 
 fn router(service: Option<Arc<FakeUserTopupService>>) -> Router {
