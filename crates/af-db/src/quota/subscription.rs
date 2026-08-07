@@ -9,9 +9,12 @@ use sea_orm::{
     sea_query::{Expr, Func, LockType},
 };
 
-use crate::entity::{
-    BillingReservationKey, billing_reservations, billing_subscription_reservations,
-    user_subscriptions, users,
+use crate::{
+    entity::{
+        BillingReservationKey, billing_reservations, billing_subscription_reservations,
+        user_subscriptions, users,
+    },
+    subscription::monotonic_updated_at,
 };
 
 use super::{
@@ -44,6 +47,7 @@ pub(super) struct SubscriptionSettlement {
     subscription_database_id: i64,
     window_started_at: TimeDateTimeWithTimeZone,
     window_ends_at: TimeDateTimeWithTimeZone,
+    subscription_updated_at: TimeDateTimeWithTimeZone,
     subscription_actual_quota: i64,
     wallet_actual_quota: i64,
 }
@@ -160,6 +164,7 @@ pub(super) async fn prepare_settlement(
         subscription_database_id: allocation.subscription_database_id,
         window_started_at: allocation.window_started_at,
         window_ends_at: allocation.window_ends_at,
+        subscription_updated_at: subscription.updated_at,
         subscription_actual_quota,
         wallet_actual_quota,
     })
@@ -194,11 +199,7 @@ pub(super) async fn persist_settlement(
         )
         .exec(transaction)
         .await
-        .map_err(|_| {
-            #[cfg(test)]
-            eprintln!("订阅结算诊断：固化分摊失败");
-            QuotaRepositoryError::Query
-        })?;
+        .map_err(|_| QuotaRepositoryError::Query)?;
     if result.rows_affected != 1 {
         return Err(QuotaRepositoryError::Invariant);
     }
@@ -235,6 +236,7 @@ pub(super) async fn replay_settlement(
         subscription_database_id: allocation.subscription_database_id,
         window_started_at: allocation.window_started_at,
         window_ends_at: allocation.window_ends_at,
+        subscription_updated_at: subscription.updated_at,
         subscription_actual_quota,
         wallet_actual_quota,
     })
@@ -270,6 +272,7 @@ pub(super) async fn apply_settlement(
         return Err(QuotaRepositoryError::UserQuotaInsufficient);
     }
 
+    let subscription_updated_at = monotonic_updated_at(settlement.subscription_updated_at, now);
     let user_result = users::Entity::update_many()
         .filter(users::Column::Id.eq(parent.user_id))
         .filter(users::Column::Quota.gte(settlement.wallet_actual_quota))
@@ -293,11 +296,7 @@ pub(super) async fn apply_settlement(
         .col_expr(users::Column::UpdatedAt, Expr::value(now))
         .exec(transaction)
         .await
-        .map_err(|_| {
-            #[cfg(test)]
-            eprintln!("订阅结算诊断：更新用户累计失败");
-            QuotaRepositoryError::Query
-        })?;
+        .map_err(|_| QuotaRepositoryError::Query)?;
     if user_result.rows_affected != 1 {
         return Err(QuotaRepositoryError::Invariant);
     }
@@ -324,16 +323,13 @@ pub(super) async fn apply_settlement(
             Expr::col(user_subscriptions::Column::QuotaUsed)
                 .add(settlement.subscription_actual_quota),
         )
-        .col_expr(user_subscriptions::Column::UpdatedAt, Expr::value(now))
+        .col_expr(
+            user_subscriptions::Column::UpdatedAt,
+            Expr::value(subscription_updated_at),
+        )
         .exec(transaction)
         .await
-        .map_err(|error| {
-            #[cfg(test)]
-            eprintln!("订阅结算诊断：更新订阅用量失败：{error}");
-            #[cfg(not(test))]
-            let _ = error;
-            QuotaRepositoryError::Query
-        })?;
+        .map_err(|_| QuotaRepositoryError::Query)?;
     if subscription_result.rows_affected != 1 {
         return Err(QuotaRepositoryError::Invariant);
     }
