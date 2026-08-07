@@ -234,9 +234,17 @@ async fn billing_reservation_kind_migration_backfills_existing_rows() -> Result<
         .insert(pool.connection())
         .await?;
     let reservation_id = "abababababababababababababababab";
-    reservation_active_model(reservation_id, user.id, token.id, group.id, 100, 100)
-        .insert(pool.connection())
-        .await?;
+    // 旧 schema 尚无用途列，插入时不能让 ORM 返回并投影新实体。
+    billing_reservations::Entity::insert(reservation_active_model(
+        reservation_id,
+        user.id,
+        token.id,
+        group.id,
+        100,
+        100,
+    ))
+    .exec_without_returning(pool.connection())
+    .await?;
 
     Migrator::up(pool.connection(), None).await?;
     let reservation =
