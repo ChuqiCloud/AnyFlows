@@ -33,7 +33,7 @@ use super::{
     SubscriptionResetDueCursor, UserSubscriptionBind, UserSubscriptionBindOutcome,
     UserSubscriptionPageRecord, UserSubscriptionRecord, UserSubscriptionResetDuePageRecord,
     UserSubscriptionWindowAdvance, UserSubscriptionWindowAdvanceOutcome,
-    UserSubscriptionWindowAdvanceRecord,
+    UserSubscriptionWindowAdvanceRecord, monotonic_updated_at,
 };
 
 /// 原子维护订阅计划启停和用户订阅幂等绑定的数据库仓储。
@@ -605,6 +605,13 @@ impl SubscriptionRepository {
                 rollback(transaction).await?;
                 return Ok(UserSubscriptionWindowAdvanceOutcome::NotDue(current));
             };
+            if crate::quota::subscription::has_in_flight_reservation(&transaction, model.id)
+                .await
+                .map_err(|_| SubscriptionRepositoryError::Query)?
+            {
+                rollback(transaction).await?;
+                return Ok(UserSubscriptionWindowAdvanceOutcome::InUse(current));
+            }
 
             let next_window = requested.window();
             let next_version = advance
@@ -1050,16 +1057,6 @@ fn optional_unix_seconds(
     value: Option<TimeDateTimeWithTimeZone>,
 ) -> Result<Option<u64>, SubscriptionRepositoryError> {
     value.map(unix_seconds).transpose()
-}
-
-pub(super) fn monotonic_updated_at(
-    current: TimeDateTimeWithTimeZone,
-    business_time: TimeDateTimeWithTimeZone,
-) -> TimeDateTimeWithTimeZone {
-    // 审计更新时间不能因历史停用时间或跨主机时钟偏差发生回拨。
-    current
-        .max(TimeDateTimeWithTimeZone::now_utc())
-        .max(business_time)
 }
 
 pub(super) fn page_query_limit(limit: usize) -> Result<u64, SubscriptionRepositoryError> {

@@ -8,19 +8,28 @@ use std::{
     time::Duration,
 };
 
-use af_domain::{BillingReservationId, GatewayPrincipal, GroupId, Quota, TokenId, UserId};
+use af_domain::{
+    BillingReservationId, GatewayPrincipal, GroupId, Quota, SubscriptionCycle, SubscriptionPlanId,
+    SubscriptionWindow, TokenId, UserId, UserSubscriptionId,
+};
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
-    ConnectionTrait, EntityTrait, IntoActiveModel, JsonValue, PaginatorTrait, TransactionTrait,
+    ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, JsonValue, PaginatorTrait,
+    QueryFilter, TransactionTrait,
+    entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, Query},
 };
 use tokio::{sync::Barrier, task::JoinSet};
 
 use crate::{
     DatabaseOptions, DatabasePool, MigrationOptions, PoolOptions, QuotaRepository,
-    QuotaRepositoryError,
-    entity::{BillingReservationKey, TokenHash, billing_reservations, groups, tokens, users},
+    QuotaRepositoryError, SubscriptionPlanWrite, SubscriptionRepository, UserSubscriptionBind,
+    UserSubscriptionWindowAdvance, UserSubscriptionWindowAdvanceOutcome,
+    entity::{
+        BillingReservationKey, SensitiveString, TokenHash, billing_reservations,
+        billing_subscription_reservations, groups, tokens, user_subscriptions, users,
+    },
     quota::{QuotaMutationOutcome, QuotaRepositoryOperation, QuotaReservationStatus},
 };
 
@@ -92,6 +101,13 @@ struct Fixture {
     principal: GatewayPrincipal,
 }
 
+struct TestSubscription {
+    id: i64,
+    stable_id: UserSubscriptionId,
+    window_ends_at: u64,
+    repository: SubscriptionRepository,
+}
+
 impl Fixture {
     async fn close(self) -> Result<(), crate::DatabaseError> {
         let pool = self.pool.clone();
@@ -118,6 +134,271 @@ struct ReservationSnapshot {
     token_reserved_quota: i64,
     actual_quota: Option<i64>,
     finalized: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SubscriptionBillingSnapshot {
+    funding_source: i16,
+    subscription_database_id: Option<i64>,
+    reserved_quota: Option<i64>,
+    subscription_actual_quota: Option<i64>,
+}
+
+#[tokio::test]
+async fn subscription_settlement_preserves_wallet_and_records_actual_usage()
+-> Result<(), Box<dyn Error>> {
+    let config = FixtureConfig {
+        user_quota: 200,
+        token_remain_quota: 200,
+        ..FixtureConfig::default()
+    };
+    let fixture = fixture(config).await?;
+    let subscription = add_subscription(&fixture, 0xa1, 100, SubscriptionCycle::Daily).await?;
+    let id = reservation_id(0xa2);
+
+    assert_eq!(
+        fixture
+            .repository
+            .precharge(id, fixture.principal, quota(60))
+            .await?,
+        QuotaMutationOutcome::Applied
+    );
+    assert_eq!(
+        account_snapshot(&fixture.pool, fixture.principal).await?,
+        AccountSnapshot {
+            token_remain_quota: config.token_remain_quota - 60,
+            ..initial_snapshot(config)
+        }
+    );
+    assert_eq!(subscription_quota_used(&fixture, subscription.id).await?, 0);
+    assert_eq!(
+        subscription_billing_snapshot(&fixture.pool, id).await?,
+        Some(SubscriptionBillingSnapshot {
+            funding_source: 2,
+            subscription_database_id: Some(subscription.id),
+            reserved_quota: Some(60),
+            subscription_actual_quota: None,
+        })
+    );
+
+    assert_eq!(
+        fixture.repository.settle(id, quota(40)).await?,
+        QuotaMutationOutcome::Applied
+    );
+    assert_eq!(
+        fixture.repository.settle(id, quota(40)).await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Settled)
+    );
+    assert_eq!(
+        account_snapshot(&fixture.pool, fixture.principal).await?,
+        AccountSnapshot {
+            user_used_quota: config.user_used_quota + 40,
+            user_request_count: config.user_request_count + 1,
+            token_remain_quota: config.token_remain_quota - 40,
+            token_used_quota: config.token_used_quota + 40,
+            ..initial_snapshot(config)
+        }
+    );
+    assert_eq!(
+        subscription_quota_used(&fixture, subscription.id).await?,
+        40
+    );
+    assert_eq!(
+        subscription_billing_snapshot(&fixture.pool, id)
+            .await?
+            .expect("订阅结算快照必须存在")
+            .subscription_actual_quota,
+        Some(40)
+    );
+
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn subscription_refund_releases_hold_without_touching_wallet_or_usage()
+-> Result<(), Box<dyn Error>> {
+    let config = FixtureConfig {
+        user_quota: 200,
+        token_remain_quota: 200,
+        ..FixtureConfig::default()
+    };
+    let fixture = fixture(config).await?;
+    let subscription = add_subscription(&fixture, 0xa3, 100, SubscriptionCycle::Daily).await?;
+    let id = reservation_id(0xa4);
+    fixture
+        .repository
+        .precharge(id, fixture.principal, quota(60))
+        .await?;
+
+    assert_eq!(
+        fixture.repository.refund(id).await?,
+        QuotaMutationOutcome::Applied
+    );
+    assert_eq!(
+        fixture.repository.refund(id).await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Refunded)
+    );
+    assert_eq!(
+        account_snapshot(&fixture.pool, fixture.principal).await?,
+        initial_snapshot(config)
+    );
+    assert_eq!(subscription_quota_used(&fixture, subscription.id).await?, 0);
+    assert_eq!(
+        subscription_billing_snapshot(&fixture.pool, id)
+            .await?
+            .expect("订阅退款快照必须保留审计事实")
+            .subscription_actual_quota,
+        None
+    );
+
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn subscription_selection_skips_insufficient_candidate_and_falls_back_to_wallet()
+-> Result<(), Box<dyn Error>> {
+    let config = FixtureConfig {
+        user_quota: 300,
+        token_remain_quota: 300,
+        ..FixtureConfig::default()
+    };
+    let fixture = fixture(config).await?;
+    let daily = add_subscription(&fixture, 0xa5, 20, SubscriptionCycle::Daily).await?;
+    let monthly = add_subscription(&fixture, 0xa6, 100, SubscriptionCycle::Monthly).await?;
+    assert!(daily.window_ends_at < monthly.window_ends_at);
+
+    let subscription_id = reservation_id(0xa7);
+    fixture
+        .repository
+        .precharge(subscription_id, fixture.principal, quota(30))
+        .await?;
+    assert_eq!(
+        subscription_billing_snapshot(&fixture.pool, subscription_id)
+            .await?
+            .expect("额度足够的后续订阅必须被选中")
+            .subscription_database_id,
+        Some(monthly.id)
+    );
+
+    let wallet_id = reservation_id(0xa8);
+    fixture
+        .repository
+        .precharge(wallet_id, fixture.principal, quota(80))
+        .await?;
+    assert_eq!(
+        subscription_billing_snapshot(&fixture.pool, wallet_id).await?,
+        Some(SubscriptionBillingSnapshot {
+            funding_source: 1,
+            subscription_database_id: None,
+            reserved_quota: None,
+            subscription_actual_quota: None,
+        })
+    );
+    assert_eq!(subscription_quota_used(&fixture, daily.id).await?, 0);
+    assert_eq!(subscription_quota_used(&fixture, monthly.id).await?, 0);
+    assert_eq!(
+        account_snapshot(&fixture.pool, fixture.principal)
+            .await?
+            .user_frozen_quota,
+        config.user_frozen_quota + 80
+    );
+
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn pending_subscription_overflow_replays_frozen_split_after_wallet_topup()
+-> Result<(), Box<dyn Error>> {
+    let config = FixtureConfig {
+        user_quota: 10,
+        token_remain_quota: 200,
+        ..FixtureConfig::default()
+    };
+    let fixture = fixture(config).await?;
+    let subscription = add_subscription(&fixture, 0xa9, 100, SubscriptionCycle::Daily).await?;
+    let id = reservation_id(0xaa);
+    fixture
+        .repository
+        .precharge(id, fixture.principal, quota(60))
+        .await?;
+
+    assert_eq!(
+        fixture.repository.settle(id, quota(120)).await,
+        Err(QuotaRepositoryError::UserQuotaInsufficient)
+    );
+    assert_pending(&fixture.pool, id, 60, 60, 120).await?;
+    assert_eq!(
+        subscription_billing_snapshot(&fixture.pool, id)
+            .await?
+            .expect("待结算订阅分摊必须持久化")
+            .subscription_actual_quota,
+        Some(100)
+    );
+    assert_eq!(subscription_quota_used(&fixture, subscription.id).await?, 0);
+    update_user(&fixture, |user| user.quota = Set(30)).await?;
+
+    assert_eq!(
+        fixture.repository.settle(id, quota(120)).await?,
+        QuotaMutationOutcome::Applied
+    );
+    assert_eq!(
+        subscription_quota_used(&fixture, subscription.id).await?,
+        100
+    );
+    assert_eq!(
+        account_snapshot(&fixture.pool, fixture.principal).await?,
+        AccountSnapshot {
+            user_quota: 10,
+            user_used_quota: config.user_used_quota + 120,
+            user_frozen_quota: config.user_frozen_quota,
+            user_request_count: config.user_request_count + 1,
+            token_remain_quota: config.token_remain_quota - 120,
+            token_unlimited_quota: false,
+            token_used_quota: config.token_used_quota + 120,
+        }
+    );
+
+    fixture.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn in_flight_subscription_blocks_window_advance_until_refund() -> Result<(), Box<dyn Error>> {
+    let config = FixtureConfig {
+        user_quota: 200,
+        token_remain_quota: 200,
+        ..FixtureConfig::default()
+    };
+    let fixture = fixture(config).await?;
+    let subscription = add_subscription(&fixture, 0xab, 100, SubscriptionCycle::Daily).await?;
+    let id = reservation_id(0xac);
+    fixture
+        .repository
+        .precharge(id, fixture.principal, quota(20))
+        .await?;
+    let advance = current_window_advance(&fixture, subscription.stable_id).await?;
+
+    assert!(matches!(
+        subscription
+            .repository
+            .advance_user_subscription_window(&advance)
+            .await?,
+        UserSubscriptionWindowAdvanceOutcome::InUse(_)
+    ));
+    fixture.repository.refund(id).await?;
+    assert!(matches!(
+        subscription
+            .repository
+            .advance_user_subscription_window(&advance)
+            .await?,
+        UserSubscriptionWindowAdvanceOutcome::Applied(_)
+    ));
+
+    fixture.close().await?;
+    Ok(())
 }
 
 #[tokio::test]
@@ -1465,6 +1746,70 @@ async fn fixture_with_options(
     })
 }
 
+async fn add_subscription(
+    fixture: &Fixture,
+    marker: u8,
+    quota_amount: i64,
+    cycle: SubscriptionCycle,
+) -> Result<TestSubscription, Box<dyn Error>> {
+    let repository = SubscriptionRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
+    let now = u64::try_from(TimeDateTimeWithTimeZone::now_utc().unix_timestamp())?;
+    let plan_id = SubscriptionPlanId::new([marker; 16])?;
+    let stable_id = UserSubscriptionId::new([marker; 16])?;
+    let window = SubscriptionWindow::initial(cycle, now)?;
+    let plan = SubscriptionPlanWrite::new(
+        plan_id,
+        format!("额度订阅测试计划 {marker}"),
+        fixture.principal.user_id(),
+        quota(quota_amount),
+        cycle,
+        now,
+    )?;
+    repository.create_plan(&plan).await?;
+    let bind = UserSubscriptionBind::new(
+        stable_id,
+        fixture.principal.user_id(),
+        plan_id,
+        window.started_at(),
+        window.ends_at(),
+        now,
+    )?;
+    repository.bind_user(&bind).await?;
+    let row = user_subscriptions::Entity::find()
+        .filter(
+            user_subscriptions::Column::SubscriptionKey
+                .eq(SensitiveString::from(stable_id.persistence_key())),
+        )
+        .one(fixture.pool.connection())
+        .await?
+        .expect("测试用户订阅必须存在");
+    Ok(TestSubscription {
+        id: row.id,
+        stable_id,
+        window_ends_at: window.ends_at(),
+        repository,
+    })
+}
+
+async fn current_window_advance(
+    fixture: &Fixture,
+    subscription_id: UserSubscriptionId,
+) -> Result<UserSubscriptionWindowAdvance, Box<dyn Error>> {
+    let repository = SubscriptionRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
+    let page = repository
+        .list_user_subscriptions(fixture.principal.user_id(), None, 100)
+        .await?;
+    let record = page
+        .subscriptions()
+        .iter()
+        .find(|record| record.subscription_id() == subscription_id)
+        .expect("测试用户订阅必须可读");
+    Ok(UserSubscriptionWindowAdvance::from_record(
+        record,
+        record.window_ends_at(),
+    )?)
+}
+
 async fn create_account(
     pool: &DatabasePool,
     marker: u8,
@@ -1552,6 +1897,41 @@ async fn reservation_snapshot(
             actual_quota: reservation.actual_quota,
             finalized: reservation.finalized_at.is_some(),
         }))
+}
+
+async fn subscription_billing_snapshot(
+    pool: &DatabasePool,
+    id: BillingReservationId,
+) -> Result<Option<SubscriptionBillingSnapshot>, sea_orm::DbErr> {
+    let key = BillingReservationKey::parse(&id.persistence_key()).expect("测试幂等键必须有效");
+    let Some(parent) = billing_reservations::Entity::find_by_id(key.clone())
+        .one(pool.connection())
+        .await?
+    else {
+        return Ok(None);
+    };
+    let allocation = billing_subscription_reservations::Entity::find_by_id(key)
+        .one(pool.connection())
+        .await?;
+    Ok(Some(SubscriptionBillingSnapshot {
+        funding_source: parent.funding_source,
+        subscription_database_id: allocation.as_ref().map(|row| row.user_subscription_id),
+        reserved_quota: allocation.as_ref().map(|row| row.reserved_quota),
+        subscription_actual_quota: allocation.and_then(|row| row.subscription_actual_quota),
+    }))
+}
+
+async fn subscription_quota_used(
+    fixture: &Fixture,
+    subscription_database_id: i64,
+) -> Result<i64, sea_orm::DbErr> {
+    Ok(
+        user_subscriptions::Entity::find_by_id(subscription_database_id)
+            .one(fixture.pool.connection())
+            .await?
+            .expect("测试用户订阅必须存在")
+            .quota_used,
+    )
 }
 
 async fn reservation_count(pool: &DatabasePool) -> Result<u64, sea_orm::DbErr> {

@@ -10,7 +10,7 @@ use sea_orm::{
 
 use crate::entity::{billing_reservations, groups, tokens, users};
 
-use super::state::QuotaReservationStatus;
+use super::state::{QuotaFundingSource, QuotaReservationStatus};
 
 pub(crate) fn insert_reservation(
     key: String,
@@ -27,6 +27,7 @@ pub(crate) fn insert_reservation(
             billing_reservations::Column::TokenId,
             billing_reservations::Column::GroupId,
             billing_reservations::Column::Status,
+            billing_reservations::Column::FundingSource,
             billing_reservations::Column::ReservedQuota,
             billing_reservations::Column::TokenReservedQuota,
             billing_reservations::Column::ActualQuota,
@@ -41,6 +42,7 @@ pub(crate) fn insert_reservation(
             principal.token_id().get().into(),
             principal.group_id().get().into(),
             QuotaReservationStatus::Reserved.code().into(),
+            QuotaFundingSource::Wallet.code().into(),
             amount.units().into(),
             0_i64.into(),
             Option::<i64>::None.into(),
@@ -60,6 +62,7 @@ pub(crate) fn reservation_state(key: String, lock: bool) -> SelectStatement {
             billing_reservations::Column::TokenId,
             billing_reservations::Column::GroupId,
             billing_reservations::Column::Status,
+            billing_reservations::Column::FundingSource,
             billing_reservations::Column::ReservedQuota,
             billing_reservations::Column::TokenReservedQuota,
             billing_reservations::Column::ActualQuota,

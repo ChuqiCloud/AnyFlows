@@ -4,6 +4,8 @@ mod repository;
 mod tests;
 mod types;
 
+use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
+
 pub use lifecycle::{
     SubscriptionExpirationDueCursor, UserSubscriptionExpirationDuePageRecord,
     UserSubscriptionLifecycleTransition, UserSubscriptionLifecycleTransitionOutcome,
@@ -19,3 +21,18 @@ pub use types::{
     UserSubscriptionRecord, UserSubscriptionResetDuePageRecord, UserSubscriptionWindowAdvance,
     UserSubscriptionWindowAdvanceOutcome, UserSubscriptionWindowAdvanceRecord,
 };
+
+/// 生成不会回拨且适合 SQLite 文本比较的订阅审计时间。
+pub(crate) fn monotonic_updated_at(
+    current: TimeDateTimeWithTimeZone,
+    business_time: TimeDateTimeWithTimeZone,
+) -> TimeDateTimeWithTimeZone {
+    // SQLite 按 RFC3339 文本比较时间，可选小数秒在同一秒内不保持词典序。
+    let wall_clock = TimeDateTimeWithTimeZone::now_utc()
+        .replace_nanosecond(0)
+        .expect("零纳秒始终是合法时间");
+    let business_time = business_time
+        .replace_nanosecond(0)
+        .expect("零纳秒始终是合法时间");
+    current.max(wall_clock).max(business_time)
+}

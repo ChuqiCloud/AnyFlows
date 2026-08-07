@@ -13,7 +13,7 @@ use super::{
     SubscriptionInputError, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
     SubscriptionPlanDisableOutcome, SubscriptionPlanWrite, SubscriptionRepositoryError,
     SubscriptionResetDueCursor, UserSubscriptionBind, UserSubscriptionBindOutcome,
-    UserSubscriptionWindowAdvance, UserSubscriptionWindowAdvanceOutcome,
+    UserSubscriptionWindowAdvance, UserSubscriptionWindowAdvanceOutcome, monotonic_updated_at,
 };
 use crate::{
     AdminUserCreateRecord, AdminUserRepository, DatabaseOptions, DatabasePool, MigrationOptions,
@@ -26,6 +26,25 @@ const CREATED_AT: u64 = 1_900_000_000;
 const WINDOW_STARTED_AT: u64 = CREATED_AT + 60;
 const WINDOW_ENDS_AT: u64 = WINDOW_STARTED_AT + 86_400;
 const BOUND_AT: u64 = CREATED_AT + 30;
+
+#[test]
+fn subscription_audit_time_uses_fixed_second_precision_without_rollback() {
+    let current = TimeDateTimeWithTimeZone::from_unix_timestamp(4_000_000_000).unwrap();
+    let next = TimeDateTimeWithTimeZone::from_unix_timestamp(4_000_000_001)
+        .unwrap()
+        .replace_nanosecond(123_456_789)
+        .unwrap();
+    assert_eq!(
+        monotonic_updated_at(current, next),
+        TimeDateTimeWithTimeZone::from_unix_timestamp(4_000_000_001).unwrap()
+    );
+
+    let future_current = current.replace_nanosecond(987_654_321).unwrap();
+    assert_eq!(
+        monotonic_updated_at(future_current, current),
+        future_current
+    );
+}
 
 #[test]
 fn subscription_inputs_reject_ambiguous_facts() {

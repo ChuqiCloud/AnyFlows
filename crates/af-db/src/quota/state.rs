@@ -2,6 +2,30 @@ use af_domain::{GatewayPrincipal, Quota};
 use sea_orm::{QueryResult, entity::prelude::TimeDateTimeWithTimeZone};
 use thiserror::Error;
 
+/// 持久化预留选择的资金来源。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i16)]
+pub(crate) enum QuotaFundingSource {
+    /// 使用用户钱包预留和结算。
+    Wallet = 1,
+    /// 优先使用绑定到请求的订阅窗口，溢出部分由钱包结算。
+    Subscription = 2,
+}
+
+impl QuotaFundingSource {
+    pub(crate) const fn code(self) -> i16 {
+        self as i16
+    }
+
+    fn from_code(code: i16) -> Result<Self, QuotaRepositoryError> {
+        match code {
+            1 => Ok(Self::Wallet),
+            2 => Ok(Self::Subscription),
+            _ => Err(QuotaRepositoryError::Invariant),
+        }
+    }
+}
+
 /// 计费预留的持久化状态。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(i16)]
@@ -78,6 +102,7 @@ pub(crate) struct ReservationState {
     pub(crate) token_id: i64,
     pub(crate) group_id: i64,
     pub(crate) status: QuotaReservationStatus,
+    pub(crate) funding_source: QuotaFundingSource,
     pub(crate) reserved_quota: i64,
     pub(crate) token_reserved_quota: i64,
     pub(crate) actual_quota: Option<i64>,
@@ -91,6 +116,7 @@ impl ReservationState {
             token_id: get(result, "token_id")?,
             group_id: get(result, "group_id")?,
             status,
+            funding_source: QuotaFundingSource::from_code(get(result, "funding_source")?)?,
             reserved_quota: get(result, "reserved_quota")?,
             token_reserved_quota: get(result, "token_reserved_quota")?,
             actual_quota: get(result, "actual_quota")?,
@@ -116,6 +142,7 @@ impl ReservationState {
         self.user_id == observed.user_id
             && self.token_id == observed.token_id
             && self.group_id == observed.group_id
+            && self.funding_source == observed.funding_source
             && self.reserved_quota == observed.reserved_quota
             && self.token_reserved_quota == observed.token_reserved_quota
     }

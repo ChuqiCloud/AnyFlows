@@ -13,15 +13,14 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::entity::{subscription_plans, user_subscriptions};
 
-use super::repository::{
-    SubscriptionRepository, advance_window_until, begin, commit, internal, lock_subscription,
-    monotonic_updated_at, page_query_limit, plan_record, rollback, subscription_record,
-    to_database_time,
-};
-use super::types::validate_time;
 use super::{
     MAX_SUBSCRIPTION_PAGE_SIZE, SubscriptionInputError, SubscriptionRepositoryError,
-    UserSubscriptionRecord,
+    UserSubscriptionRecord, monotonic_updated_at,
+    repository::{
+        SubscriptionRepository, advance_window_until, begin, commit, internal, lock_subscription,
+        page_query_limit, plan_record, rollback, subscription_record, to_database_time,
+    },
+    types::validate_time,
 };
 
 /// 到期取消订阅扫描使用的复合游标。
@@ -215,6 +214,8 @@ pub enum UserSubscriptionLifecycleTransitionOutcome {
     NotFound,
     /// 取消订阅尚未到达当前窗口终点。
     NotDue(UserSubscriptionRecord),
+    /// 窗口仍绑定在途计费预留，不能推进或关闭该窗口。
+    InUse(UserSubscriptionRecord),
 }
 
 impl fmt::Debug for UserSubscriptionLifecycleTransitionOutcome {
@@ -229,6 +230,9 @@ impl fmt::Debug for UserSubscriptionLifecycleTransitionOutcome {
             }
             Self::NotDue(_) => formatter
                 .write_str("UserSubscriptionLifecycleTransitionOutcome::NotDue(<redacted>)"),
+            Self::InUse(_) => {
+                formatter.write_str("UserSubscriptionLifecycleTransitionOutcome::InUse(<redacted>)")
+            }
         }
     }
 }
@@ -403,6 +407,14 @@ impl SubscriptionRepository {
             return Ok(UserSubscriptionLifecycleTransitionOutcome::NotDue(current));
         }
         let effect = lifecycle_effect(current.cycle, transition)?;
+        if (effect.reset_quota || transition.target_status == UserSubscriptionStatus::Expired)
+            && crate::quota::subscription::has_in_flight_reservation(&transaction, model.id)
+                .await
+                .map_err(|_| SubscriptionRepositoryError::Query)?
+        {
+            rollback(transaction).await?;
+            return Ok(UserSubscriptionLifecycleTransitionOutcome::InUse(current));
+        }
 
         let next_version = transition
             .expected_version
