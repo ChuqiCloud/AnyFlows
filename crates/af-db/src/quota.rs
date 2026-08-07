@@ -18,6 +18,7 @@ use crate::DatabasePool;
 
 mod sql;
 mod state;
+pub(crate) mod subscription;
 
 pub use state::{QuotaMutationOutcome, QuotaRepositoryError, QuotaReservationStatus};
 use state::{ReservationState, TokenQuotaState, UserQuotaState};
@@ -202,17 +203,41 @@ impl QuotaRepository {
             }
         }
 
-        let user_result = transaction
-            .execute(backend.build(&sql::precharge_user(principal.user_id().get(), amount, now)))
-            .await;
-        match user_result {
-            Ok(result) if result.rows_affected() == 1 => {}
-            Ok(_) => {
-                let error = classify_user_precharge(&transaction, principal, amount).await?;
-                return rollback_with_error(transaction, error).await;
+        let parent = match load_reservation(&transaction, key.clone(), true).await {
+            Ok(Some(state))
+                if state.status == QuotaReservationStatus::Reserved
+                    && state.matches_precharge(principal, amount) =>
+            {
+                state
             }
-            Err(_) => {
-                return rollback_with_error(transaction, QuotaRepositoryError::Query).await;
+            Ok(Some(_)) | Ok(None) => {
+                return rollback_with_error(transaction, QuotaRepositoryError::Invariant).await;
+            }
+            Err(error) => return rollback_with_error(transaction, error).await,
+        };
+        let uses_subscription =
+            match subscription::try_reserve(&transaction, &key, &parent, amount, now).await {
+                Ok(value) => value,
+                Err(error) => return rollback_with_error(transaction, error).await,
+            };
+
+        if !uses_subscription {
+            let user_result = transaction
+                .execute(backend.build(&sql::precharge_user(
+                    principal.user_id().get(),
+                    amount,
+                    now,
+                )))
+                .await;
+            match user_result {
+                Ok(result) if result.rows_affected() == 1 => {}
+                Ok(_) => {
+                    let error = classify_user_precharge(&transaction, principal, amount).await?;
+                    return rollback_with_error(transaction, error).await;
+                }
+                Err(_) => {
+                    return rollback_with_error(transaction, QuotaRepositoryError::Query).await;
+                }
             }
         }
 
@@ -249,11 +274,16 @@ impl QuotaRepository {
         principal: GatewayPrincipal,
         amount: Quota,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
-        let result = query_one(self.pool.connection(), sql::reservation_state(key, false)).await?;
+        let result = query_one(
+            self.pool.connection(),
+            sql::reservation_state(key.clone(), false),
+        )
+        .await?;
         let state = result
             .as_ref()
             .ok_or(QuotaRepositoryError::Invariant)
             .and_then(ReservationState::try_from_result)?;
+        subscription::load_allocation(self.pool.connection(), &key, &state).await?;
         if state.matches_precharge(principal, amount) {
             Ok(QuotaMutationOutcome::Existing(state.status))
         } else {
@@ -279,7 +309,7 @@ impl QuotaRepository {
             .map_err(|_| QuotaRepositoryError::Query)?;
         let backend = transaction.get_database_backend();
 
-        if let Err(error) = lock_subject(
+        let (user_state, _) = match lock_subject(
             &transaction,
             observed.group_id,
             observed.user_id,
@@ -287,8 +317,9 @@ impl QuotaRepository {
         )
         .await
         {
-            return rollback_with_error(transaction, error).await;
-        }
+            Ok(state) => state,
+            Err(error) => return rollback_with_error(transaction, error).await,
+        };
         let mut state = match load_reservation(&transaction, key.clone(), true).await {
             Ok(Some(state)) => state,
             Ok(None) => {
@@ -299,10 +330,28 @@ impl QuotaRepository {
         if !state.matches_immutable_snapshot(&observed) {
             return rollback_with_error(transaction, QuotaRepositoryError::Invariant).await;
         }
+        let allocation = match subscription::load_allocation(&transaction, &key, &state).await {
+            Ok(allocation) => allocation,
+            Err(error) => return rollback_with_error(transaction, error).await,
+        };
         let now = TimeDateTimeWithTimeZone::now_utc();
+        let mut subscription_settlement = None;
 
         match state.status {
             QuotaReservationStatus::Reserved => {
+                if let Some(current) = allocation.as_ref() {
+                    subscription_settlement = match subscription::prepare_settlement(
+                        &transaction,
+                        &state,
+                        current,
+                        actual,
+                    )
+                    .await
+                    {
+                        Ok(settlement) => Some(settlement),
+                        Err(error) => return rollback_with_error(transaction, error).await,
+                    };
+                }
                 let transition = transaction
                     .execute(backend.build(&sql::begin_settlement(key.clone(), actual, now)))
                     .await;
@@ -313,6 +362,16 @@ impl QuotaRepository {
                         QuotaRepositoryError::Invariant
                     };
                     return rollback_with_error(transaction, error).await;
+                }
+                if let (Some(current), Some(settlement)) =
+                    (allocation.as_ref(), subscription_settlement)
+                {
+                    if let Err(error) =
+                        subscription::persist_settlement(&transaction, current, settlement, now)
+                            .await
+                    {
+                        return rollback_with_error(transaction, error).await;
+                    }
                 }
                 state = match load_reservation(&transaction, key.clone(), true).await {
                     Ok(Some(state)) => state,
@@ -328,8 +387,26 @@ impl QuotaRepository {
                 {
                     return rollback_with_error(transaction, QuotaRepositoryError::Invariant).await;
                 }
+                if let Err(error) = subscription::load_allocation(&transaction, &key, &state).await
+                {
+                    return rollback_with_error(transaction, error).await;
+                }
             }
-            QuotaReservationStatus::SettlementPending if state.matches_actual(actual) => {}
+            QuotaReservationStatus::SettlementPending if state.matches_actual(actual) => {
+                if let Some(current) = allocation.as_ref() {
+                    subscription_settlement = match subscription::replay_settlement(
+                        &transaction,
+                        &state,
+                        current,
+                        actual,
+                    )
+                    .await
+                    {
+                        Ok(settlement) => Some(settlement),
+                        Err(error) => return rollback_with_error(transaction, error).await,
+                    };
+                }
+            }
             QuotaReservationStatus::Settled if state.matches_actual(actual) => {
                 return rollback_with_outcome(
                     transaction,
@@ -359,6 +436,8 @@ impl QuotaRepository {
             reserved,
             token_reserved,
             actual,
+            &user_state,
+            subscription_settlement,
             now,
         )
         .await;
@@ -430,10 +509,20 @@ impl QuotaRepository {
         if !state.matches_immutable_snapshot(&observed) {
             return rollback_with_error(transaction, QuotaRepositoryError::Invariant).await;
         }
+        let allocation = match subscription::load_allocation(&transaction, &key, &state).await {
+            Ok(allocation) => allocation,
+            Err(error) => return rollback_with_error(transaction, error).await,
+        };
         let now = TimeDateTimeWithTimeZone::now_utc();
 
         match state.status {
             QuotaReservationStatus::Reserved => {
+                if let Some(current) = allocation.as_ref()
+                    && let Err(error) =
+                        subscription::lock_for_refund(&transaction, &state, current).await
+                {
+                    return rollback_with_error(transaction, error).await;
+                }
                 let transition = transaction
                     .execute(backend.build(&sql::begin_refund(key.clone(), now)))
                     .await;
@@ -473,16 +562,18 @@ impl QuotaRepository {
 
         let reserved = quota_from_db(state.reserved_quota)?;
         let token_reserved = quota_from_db(state.token_reserved_quota)?;
-        let user_result = transaction
-            .execute(backend.build(&sql::refund_user(state.user_id, reserved, now)))
-            .await;
-        if !matches!(user_result, Ok(ref result) if result.rows_affected() == 1) {
-            let error = if user_result.is_err() {
-                QuotaRepositoryError::Query
-            } else {
-                QuotaRepositoryError::Invariant
-            };
-            return rollback_with_error(transaction, error).await;
+        if allocation.is_none() {
+            let user_result = transaction
+                .execute(backend.build(&sql::refund_user(state.user_id, reserved, now)))
+                .await;
+            if !matches!(user_result, Ok(ref result) if result.rows_affected() == 1) {
+                let error = if user_result.is_err() {
+                    QuotaRepositoryError::Query
+                } else {
+                    QuotaRepositoryError::Invariant
+                };
+                return rollback_with_error(transaction, error).await;
+            }
         }
         let token_result = transaction
             .execute(backend.build(&sql::refund_token(
@@ -519,15 +610,22 @@ async fn settle_adjustment(
     reserved: Quota,
     token_reserved: Quota,
     actual: Quota,
+    user_state: &UserQuotaState,
+    subscription_settlement: Option<subscription::SubscriptionSettlement>,
     now: TimeDateTimeWithTimeZone,
 ) -> Result<(), QuotaRepositoryError> {
     let backend = savepoint.get_database_backend();
-    let user_result = savepoint
-        .execute(backend.build(&sql::settle_user(state.user_id, reserved, actual, now)))
-        .await
-        .map_err(|_| QuotaRepositoryError::Query)?;
-    if user_result.rows_affected() != 1 {
-        return Err(classify_user_settlement(savepoint, state, reserved, actual).await?);
+    if let Some(settlement) = subscription_settlement {
+        subscription::apply_settlement(savepoint, state, user_state, actual, settlement, now)
+            .await?;
+    } else {
+        let user_result = savepoint
+            .execute(backend.build(&sql::settle_user(state.user_id, reserved, actual, now)))
+            .await
+            .map_err(|_| QuotaRepositoryError::Query)?;
+        if user_result.rows_affected() != 1 {
+            return Err(classify_user_settlement(savepoint, state, reserved, actual).await?);
+        }
     }
 
     let token_result = savepoint

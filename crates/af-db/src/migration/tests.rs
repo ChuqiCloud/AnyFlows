@@ -24,13 +24,13 @@ use crate::entity::{
     EncryptedJson, HeaderOverrides, PasswordHash, PlaygroundConversationKey, SensitiveDecimal,
     SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, WalletLedgerKey, abilities,
     auth_challenge_rate_limits, auth_challenges, authentication_settings, balance_alert_events,
-    balance_alert_settings, billing_batch_checkpoints, billing_reservations, channel_groups,
-    channel_models, channels, credentials, email_settings, group_model_ratios, groups,
-    invite_rebate_events, model_prices, model_sync_items, model_sync_runs, models, options,
-    playground_conversations, playground_shares, redemption_batches, redemption_codes,
-    registration_rate_limits, scheduler_outbox_events, site_settings, subscription_plans, tokens,
-    topup_orders, topup_payment_events, usage_logs, user_subscriptions, users,
-    wallet_ledger_entries,
+    balance_alert_settings, billing_batch_checkpoints, billing_reservations,
+    billing_subscription_reservations, channel_groups, channel_models, channels, credentials,
+    email_settings, group_model_ratios, groups, invite_rebate_events, model_prices,
+    model_sync_items, model_sync_runs, models, options, playground_conversations,
+    playground_shares, redemption_batches, redemption_codes, registration_rate_limits,
+    scheduler_outbox_events, site_settings, subscription_plans, tokens, topup_orders,
+    topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -53,7 +53,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 44;
+const EXPECTED_MIGRATION_COUNT: usize = 45;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -71,7 +71,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 40] = [
+const CORE_TABLES: [&str; 41] = [
     "groups",
     "users",
     "channels",
@@ -83,6 +83,7 @@ const CORE_TABLES: [&str; 40] = [
     "scheduler_outbox_events",
     "options",
     "billing_reservations",
+    "billing_subscription_reservations",
     "billing_batch_checkpoints",
     "model_prices",
     "group_model_ratios",
@@ -1837,6 +1838,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<abilities::Column>(&manager, "abilities").await?;
     assert_entity_columns::<options::Column>(&manager, "options").await?;
     assert_entity_columns::<billing_reservations::Column>(&manager, "billing_reservations").await?;
+    assert_entity_columns::<billing_subscription_reservations::Column>(
+        &manager,
+        "billing_subscription_reservations",
+    )
+    .await?;
     assert_entity_columns::<billing_batch_checkpoints::Column>(
         &manager,
         "billing_batch_checkpoints",
@@ -1897,6 +1903,10 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         (
             "billing_reservations",
             "idx_billing_reservations_token_created",
+        ),
+        (
+            "billing_subscription_reservations",
+            "idx_billing_subscription_reservations_subscription",
         ),
         ("group_model_ratios", "idx_group_model_ratios_target"),
         ("playground_shares", "uq_playground_shares_token_hash"),

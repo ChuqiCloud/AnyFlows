@@ -215,6 +215,8 @@ pub enum UserSubscriptionLifecycleTransitionOutcome {
     NotFound,
     /// 取消订阅尚未到达当前窗口终点。
     NotDue(UserSubscriptionRecord),
+    /// 窗口仍绑定在途计费预留，不能推进或关闭该窗口。
+    InUse(UserSubscriptionRecord),
 }
 
 impl fmt::Debug for UserSubscriptionLifecycleTransitionOutcome {
@@ -229,6 +231,9 @@ impl fmt::Debug for UserSubscriptionLifecycleTransitionOutcome {
             }
             Self::NotDue(_) => formatter
                 .write_str("UserSubscriptionLifecycleTransitionOutcome::NotDue(<redacted>)"),
+            Self::InUse(_) => {
+                formatter.write_str("UserSubscriptionLifecycleTransitionOutcome::InUse(<redacted>)")
+            }
         }
     }
 }
@@ -403,6 +408,14 @@ impl SubscriptionRepository {
             return Ok(UserSubscriptionLifecycleTransitionOutcome::NotDue(current));
         }
         let effect = lifecycle_effect(current.cycle, transition)?;
+        if (effect.reset_quota || transition.target_status == UserSubscriptionStatus::Expired)
+            && crate::quota::subscription::has_in_flight_reservation(&transaction, model.id)
+                .await
+                .map_err(|_| SubscriptionRepositoryError::Query)?
+        {
+            rollback(transaction).await?;
+            return Ok(UserSubscriptionLifecycleTransitionOutcome::InUse(current));
+        }
 
         let next_version = transition
             .expected_version

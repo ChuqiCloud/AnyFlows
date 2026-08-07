@@ -644,6 +644,8 @@ pub enum UserSubscriptionWindowAdvanceOutcome {
     NotFound,
     /// 当前窗口尚未到期。
     NotDue(UserSubscriptionRecord),
+    /// 当前窗口仍有请求处于预留或待结算状态，必须等待原请求终态。
+    InUse(UserSubscriptionRecord),
     /// 订阅处于暂停、取消或过期状态，留给生命周期切片处理。
     Inactive(UserSubscriptionRecord),
 }
@@ -760,6 +762,9 @@ impl fmt::Debug for UserSubscriptionWindowAdvanceOutcome {
             Self::NotFound => formatter.write_str("UserSubscriptionWindowAdvanceOutcome::NotFound"),
             Self::NotDue(_) => {
                 formatter.write_str("UserSubscriptionWindowAdvanceOutcome::NotDue(<redacted>)")
+            }
+            Self::InUse(_) => {
+                formatter.write_str("UserSubscriptionWindowAdvanceOutcome::InUse(<redacted>)")
             }
             Self::Inactive(_) => {
                 formatter.write_str("UserSubscriptionWindowAdvanceOutcome::Inactive(<redacted>)")

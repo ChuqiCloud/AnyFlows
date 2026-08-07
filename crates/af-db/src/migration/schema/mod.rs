@@ -6,6 +6,7 @@ mod auth_challenge_rate_limit;
 mod balance_alert;
 mod billing;
 mod billing_batch;
+mod billing_subscription;
 mod debug_trace;
 mod email;
 mod identity;
@@ -106,6 +107,7 @@ where
 }
 pub(super) use billing::create_billing_reservations;
 pub(super) use billing_batch::create_billing_batch_checkpoints;
+pub(super) use billing_subscription::create_billing_subscription_reservations;
 pub(super) use model::create_models;
 pub(super) use model_sync::create_model_sync_audit;
 pub(super) use network::create_network_settings;

@@ -83,6 +83,7 @@ impl SubscriptionCycleStore for SubscriptionRepository {
                 }
                 UserSubscriptionWindowAdvanceOutcome::NotFound
                 | UserSubscriptionWindowAdvanceOutcome::NotDue(_)
+                | UserSubscriptionWindowAdvanceOutcome::InUse(_)
                 | UserSubscriptionWindowAdvanceOutcome::Inactive(_) => {
                     SubscriptionCycleMutationOutcome::Skipped
                 }
@@ -130,7 +131,8 @@ impl SubscriptionCycleStore for SubscriptionRepository {
                     SubscriptionCycleMutationOutcome::Existing
                 }
                 UserSubscriptionLifecycleTransitionOutcome::NotFound
-                | UserSubscriptionLifecycleTransitionOutcome::NotDue(_) => {
+                | UserSubscriptionLifecycleTransitionOutcome::NotDue(_)
+                | UserSubscriptionLifecycleTransitionOutcome::InUse(_) => {
                     SubscriptionCycleMutationOutcome::Skipped
                 }
             })

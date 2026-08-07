@@ -10,10 +10,10 @@ use rust_decimal::Decimal;
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 use af_domain::{
-    ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, Quota, QuotaDelta, RedemptionBatchId,
-    RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus, RouteMode, RouteStrategy,
-    SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus, UserSubscriptionId,
-    UserSubscriptionStatus, WalletEventId, validate_route_model_pattern,
+    BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, Quota, QuotaDelta,
+    RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus, RouteMode,
+    RouteStrategy, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
+    UserSubscriptionId, UserSubscriptionStatus, WalletEventId, validate_route_model_pattern,
 };
 
 pub(crate) mod abilities;
@@ -24,6 +24,7 @@ pub(crate) mod balance_alert_events;
 pub(crate) mod balance_alert_settings;
 pub(crate) mod billing_batch_checkpoints;
 pub(crate) mod billing_reservations;
+pub(crate) mod billing_subscription_reservations;
 pub(crate) mod channel_groups;
 pub(crate) mod channel_models;
 pub(crate) mod channels;
@@ -1221,7 +1222,7 @@ impl_updated_at_behavior!(
     authentication_settings::ActiveModel => validate_default,
     balance_alert_settings::ActiveModel => validate_default,
     billing_batch_checkpoints::ActiveModel => validate_default,
-    billing_reservations::ActiveModel => validate_default,
+    billing_reservations::ActiveModel => validate_billing_reservation,
     channel_groups::ActiveModel => validate_default,
     channel_models::ActiveModel => validate_default,
     channels::ActiveModel => validate_channel,
@@ -1242,6 +1243,77 @@ impl_updated_at_behavior!(
     topup_orders::ActiveModel => validate_topup_order,
     users::ActiveModel => validate_user,
 );
+
+async fn validate_billing_reservation<C>(
+    model: &billing_reservations::ActiveModel,
+    _database: &C,
+    _insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if model
+        .funding_source
+        .try_as_ref()
+        .is_some_and(|source| !matches!(*source, 1 | 2))
+    {
+        return Err(DbErr::Custom("计费预留资金来源无效".to_owned()));
+    }
+    Ok(())
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for billing_subscription_reservations::ActiveModel {
+    async fn before_save<C>(self, _database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        // 订阅实际分摊只能由额度仓储与父预留状态在同一事务内固化。
+        if !insert {
+            return Err(DbErr::Custom("订阅计费预留必须通过额度仓储更新".to_owned()));
+        }
+        let key = self
+            .idempotency_key
+            .try_as_ref()
+            .ok_or_else(|| DbErr::Custom("订阅计费预留标识缺失".to_owned()))?;
+        let subscription_id = self
+            .user_subscription_id
+            .try_as_ref()
+            .copied()
+            .unwrap_or_default();
+        let reserved = self
+            .reserved_quota
+            .try_as_ref()
+            .copied()
+            .unwrap_or_default();
+        let actual = self
+            .subscription_actual_quota
+            .try_as_ref()
+            .copied()
+            .flatten();
+        let (Some(window_started_at), Some(window_ends_at), Some(created_at), Some(updated_at)) = (
+            self.window_started_at.try_as_ref().copied(),
+            self.window_ends_at.try_as_ref().copied(),
+            self.created_at.try_as_ref().copied(),
+            self.updated_at.try_as_ref().copied(),
+        ) else {
+            return Err(DbErr::Custom("订阅计费预留时间缺失".to_owned()));
+        };
+        if BillingReservationId::from_persistence_key(key.as_str()).is_err()
+            || subscription_id <= 0
+            || reserved <= 0
+            || actual.is_some()
+            || window_started_at.unix_timestamp() < 0
+            || window_ends_at <= window_started_at
+            || created_at < window_started_at
+            || created_at >= window_ends_at
+            || updated_at != created_at
+        {
+            return Err(DbErr::Custom("订阅计费预留状态无效".to_owned()));
+        }
+        Ok(self)
+    }
+}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for debug_traces::ActiveModel {}

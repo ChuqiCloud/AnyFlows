@@ -605,6 +605,13 @@ impl SubscriptionRepository {
                 rollback(transaction).await?;
                 return Ok(UserSubscriptionWindowAdvanceOutcome::NotDue(current));
             };
+            if crate::quota::subscription::has_in_flight_reservation(&transaction, model.id)
+                .await
+                .map_err(|_| SubscriptionRepositoryError::Query)?
+            {
+                rollback(transaction).await?;
+                return Ok(UserSubscriptionWindowAdvanceOutcome::InUse(current));
+            }
 
             let next_window = requested.window();
             let next_version = advance
