@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+source "$(dirname "${BASH_SOURCE[0]}")/container-endpoint.sh"
+
 readonly DIALECT="${1:-}"
 readonly POSTGRES_IMAGE="docker.io/library/postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010"
 readonly MYSQL_IMAGE="docker.io/library/mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e"
@@ -50,41 +52,6 @@ wait_for_mysql() {
     return 1
 }
 
-docker_daemon_host() {
-    local endpoint="${DOCKER_HOST:-}"
-    local gateway=""
-
-    if [[ "${endpoint}" =~ ^tcp://(\[[^]]+\]|[^:/]+)(:[0-9]+)?/?$ ]]; then
-        printf '%s\n' "${BASH_REMATCH[1]}"
-        return 0
-    fi
-
-    # Unix socket 场景优先使用 Docker bridge 网关，兼容宿主机与容器内客户端。
-    gateway="$(docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || true)"
-    printf '%s\n' "${gateway:-127.0.0.1}"
-}
-
-url_host() {
-    local host="$1"
-    if [[ "${host}" == *:* && "${host}" != \[*\] ]]; then
-        printf '[%s]\n' "${host}"
-    else
-        printf '%s\n' "${host}"
-    fi
-}
-
-published_port() {
-    local container_port="$1"
-    local mapping=""
-
-    mapping="$(docker port "${container_name}" "${container_port}/tcp" | head -n 1)"
-    if [[ -z "${mapping}" ]]; then
-        echo "无法读取容器 ${container_port}/tcp 的随机映射端口" >&2
-        return 1
-    fi
-    printf '%s\n' "${mapping##*:}"
-}
-
 run_smoke_test() {
     local test_list=""
 
@@ -115,7 +82,8 @@ if [[ -z "${database_url}" ]]; then
                 --env POSTGRES_DB="${TEST_DATABASE}" \
                 "${POSTGRES_IMAGE}" >/dev/null
             wait_for_postgres
-            database_url="postgres://${TEST_USER}:${TEST_PASSWORD}@$(url_host "$(docker_daemon_host)"):$(published_port 5432)/${TEST_DATABASE}"
+            ci_wait_for_published_endpoint "${container_name}" 5432 "PostgreSQL"
+            database_url="postgres://${TEST_USER}:${TEST_PASSWORD}@$(ci_url_host "${CI_SERVICE_HOST}"):${CI_SERVICE_PORT}/${TEST_DATABASE}"
             ;;
         mysql)
             container_name="anyflows-mysql-${BASHPID}"
@@ -126,7 +94,8 @@ if [[ -z "${database_url}" ]]; then
                 --env MYSQL_DATABASE="${TEST_DATABASE}" \
                 "${MYSQL_IMAGE}" >/dev/null
             wait_for_mysql
-            database_url="mysql://${TEST_USER}:${TEST_PASSWORD}@$(url_host "$(docker_daemon_host)"):$(published_port 3306)/${TEST_DATABASE}?timezone=%2B08:00"
+            ci_wait_for_published_endpoint "${container_name}" 3306 "MySQL"
+            database_url="mysql://${TEST_USER}:${TEST_PASSWORD}@$(ci_url_host "${CI_SERVICE_HOST}"):${CI_SERVICE_PORT}/${TEST_DATABASE}?timezone=%2B08:00"
             ;;
         *)
             echo "用法：$0 <sqlite|postgres|mysql>" >&2
