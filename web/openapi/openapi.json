@@ -13135,6 +13135,7 @@
       },
       "AdminRedemptionAuditListResponse": {
         "type": "object",
+        "description": "管理员兑换码运营报表响应。",
         "required": [
           "batches",
           "summary",
