@@ -327,9 +327,11 @@ pub(super) async fn apply_settlement(
         .col_expr(user_subscriptions::Column::UpdatedAt, Expr::value(now))
         .exec(transaction)
         .await
-        .map_err(|_| {
+        .map_err(|error| {
             #[cfg(test)]
-            eprintln!("订阅结算诊断：更新订阅用量失败");
+            eprintln!("订阅结算诊断：更新订阅用量失败：{error}");
+            #[cfg(not(test))]
+            let _ = error;
             QuotaRepositoryError::Query
         })?;
     if subscription_result.rows_affected != 1 {
