@@ -51,6 +51,7 @@ impl From<RedemptionBatchStatus> for AdminRedemptionBatchStatusDto {
 }
 
 /// 兑换码运营报表支持的闭合筛选状态。
+#[allow(dead_code, reason = "筛选枚举仅由 OpenAPI 过程宏读取")]
 #[derive(Clone, Copy, Debug, Serialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[schema(as = AdminRedemptionAuditStatus, rename_all = "snake_case")]

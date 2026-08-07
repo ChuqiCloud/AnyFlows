@@ -641,20 +641,6 @@ export type AdminOAuthProviderStatus = {
     loopback_listener_ready: boolean;
     manual_callback_supported: boolean;
 };
-export type AdminRedemptionBatch = {
-    batch_id: string;
-    name: string;
-    created_by_user_id: number;
-    status: AdminRedemptionBatchStatus;
-    quota_amount: number;
-    code_count: number;
-    redeemed_count: number;
-    version: number;
-    expires_at: number | null;
-    disabled_at: number | null;
-    created_at: number;
-    updated_at: number;
-};
 export type AdminRedemptionAuditBatch = {
     batch_id: string;
     name: string;
@@ -684,6 +670,20 @@ export type AdminRedemptionAuditSummary = {
     remaining_count: number;
     expired_count: number;
     disabled_count: number;
+};
+export type AdminRedemptionBatch = {
+    batch_id: string;
+    name: string;
+    created_by_user_id: number;
+    status: AdminRedemptionBatchStatus;
+    quota_amount: number;
+    code_count: number;
+    redeemed_count: number;
+    version: number;
+    expires_at: number | null;
+    disabled_at: number | null;
+    created_at: number;
+    updated_at: number;
 };
 export type AdminRedemptionBatchCreateRequest = {
     name: string;

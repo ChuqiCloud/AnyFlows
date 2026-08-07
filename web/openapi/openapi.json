@@ -13026,92 +13026,6 @@
         },
         "additionalProperties": false
       },
-      "AdminRedemptionBatch": {
-        "type": "object",
-        "description": "管理员可见的兑换码批次汇总，不包含明文或摘要。",
-        "required": [
-          "batch_id",
-          "name",
-          "created_by_user_id",
-          "status",
-          "quota_amount",
-          "code_count",
-          "redeemed_count",
-          "version",
-          "expires_at",
-          "disabled_at",
-          "created_at",
-          "updated_at"
-        ],
-        "properties": {
-          "batch_id": {
-            "type": "string",
-            "maxLength": 32,
-            "minLength": 32,
-            "pattern": "^[0-9a-f]{32}$"
-          },
-          "name": {
-            "type": "string",
-            "maxLength": 80,
-            "minLength": 1
-          },
-          "created_by_user_id": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "status": {
-            "$ref": "#/components/schemas/AdminRedemptionBatchStatus"
-          },
-          "quota_amount": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "code_count": {
-            "type": "integer",
-            "maximum": 1000,
-            "minimum": 1
-          },
-          "redeemed_count": {
-            "type": "integer",
-            "maximum": 1000,
-            "minimum": 0
-          },
-          "version": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "expires_at": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "minimum": 1
-          },
-          "disabled_at": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "minimum": 1
-          },
-          "created_at": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          },
-          "updated_at": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 1
-          }
-        },
-        "additionalProperties": false
-      },
       "AdminRedemptionAuditBatch": {
         "type": "object",
         "description": "管理员可见的单批次兑换码运营统计，不包含明文码或摘要。",
@@ -13293,6 +13207,92 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminRedemptionBatch": {
+        "type": "object",
+        "description": "管理员可见的兑换码批次汇总，不包含明文或摘要。",
+        "required": [
+          "batch_id",
+          "name",
+          "created_by_user_id",
+          "status",
+          "quota_amount",
+          "code_count",
+          "redeemed_count",
+          "version",
+          "expires_at",
+          "disabled_at",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1
+          },
+          "created_by_user_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/AdminRedemptionBatchStatus"
+          },
+          "quota_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "code_count": {
+            "type": "integer",
+            "maximum": 1000,
+            "minimum": 1
+          },
+          "redeemed_count": {
+            "type": "integer",
+            "maximum": 1000,
+            "minimum": 0
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "disabled_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
           }
         },
         "additionalProperties": false
