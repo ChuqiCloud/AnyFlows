@@ -1,7 +1,11 @@
 use thiserror::Error;
-use time::{Date, Month, OffsetDateTime, UtcOffset};
 
 use crate::SubscriptionCycle;
+
+const SECONDS_PER_DAY: u64 = 86_400;
+const CIVIL_EPOCH_OFFSET_DAYS: i64 = 719_468;
+const DAYS_PER_400_YEARS: i64 = 146_097;
+const MAX_SUPPORTED_UNIX_SECONDS: u64 = 253_402_300_799;
 
 /// 周期窗口推进时允许一次任务跨越的最大日历周期数。
 pub const MAX_SUBSCRIPTION_WINDOW_ADVANCES: u32 = 8_192;
@@ -14,12 +18,12 @@ pub struct SubscriptionWindow {
 }
 
 impl SubscriptionWindow {
-    /// 校验并构造一个非空的订阅窗口。
+    /// 校验并构造一个非空且处于受支持 UTC 日历范围内的订阅窗口。
     pub const fn new(started_at: u64, ends_at: u64) -> Result<Self, SubscriptionWindowError> {
         if started_at >= ends_at {
             return Err(SubscriptionWindowError::InvalidBounds);
         }
-        if ends_at > i64::MAX as u64 {
+        if ends_at > MAX_SUPPORTED_UNIX_SECONDS {
             return Err(SubscriptionWindowError::InvalidTimestamp);
         }
         Ok(Self {
@@ -33,9 +37,9 @@ impl SubscriptionWindow {
         cycle: SubscriptionCycle,
         bound_at: u64,
     ) -> Result<Self, SubscriptionWindowError> {
-        let timestamp = utc_timestamp(bound_at)?;
-        let start_date = period_start_date(cycle, timestamp.date());
-        window_from_start(cycle, start_date)
+        let bound_day = utc_day(bound_at)?;
+        let start_day = period_start_day(cycle, bound_day)?;
+        window_from_start(cycle, start_day)
     }
 
     /// 若窗口已经到期，推进到包含 `now` 的最新窗口；未到期时返回空值。
@@ -44,7 +48,7 @@ impl SubscriptionWindow {
         cycle: SubscriptionCycle,
         now: u64,
     ) -> Result<Option<SubscriptionWindowAdvance>, SubscriptionWindowError> {
-        let _ = utc_timestamp(now)?;
+        let _ = utc_day(now)?;
         if now < self.ends_at {
             return Ok(None);
         }
@@ -113,88 +117,138 @@ pub enum SubscriptionWindowError {
     AdvanceLimitExceeded,
 }
 
-fn utc_timestamp(value: u64) -> Result<OffsetDateTime, SubscriptionWindowError> {
-    let value = i64::try_from(value).map_err(|_| SubscriptionWindowError::InvalidTimestamp)?;
-    OffsetDateTime::from_unix_timestamp(value)
-        .map(|timestamp| timestamp.to_offset(UtcOffset::UTC))
-        .map_err(|_| SubscriptionWindowError::InvalidTimestamp)
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CivilDate {
+    year: i32,
+    month: u8,
+    day: u8,
 }
 
-fn period_start_date(cycle: SubscriptionCycle, date: Date) -> Date {
+fn utc_day(value: u64) -> Result<i64, SubscriptionWindowError> {
+    if value > MAX_SUPPORTED_UNIX_SECONDS {
+        return Err(SubscriptionWindowError::InvalidTimestamp);
+    }
+    i64::try_from(value / SECONDS_PER_DAY).map_err(|_| SubscriptionWindowError::InvalidTimestamp)
+}
+
+fn period_start_day(
+    cycle: SubscriptionCycle,
+    bound_day: i64,
+) -> Result<i64, SubscriptionWindowError> {
     match cycle {
-        SubscriptionCycle::Daily => date,
+        SubscriptionCycle::Daily => Ok(bound_day),
         SubscriptionCycle::Weekly => {
-            date - time::Duration::days(i64::from(date.weekday().number_days_from_monday()))
+            // Unix 纪元是周四，因此加三后对七取模可得到周一偏移。
+            let days_since_monday = (bound_day + 3).rem_euclid(7);
+            bound_day
+                .checked_sub(days_since_monday)
+                .ok_or(SubscriptionWindowError::InvalidTimestamp)
         }
-        SubscriptionCycle::Monthly => Date::from_calendar_date(date.year(), date.month(), 1)
-            .expect("有效日期的月份第一天必须有效"),
-        SubscriptionCycle::Yearly => Date::from_calendar_date(date.year(), Month::January, 1)
-            .expect("有效日期的年份第一天必须有效"),
+        SubscriptionCycle::Monthly => {
+            let date = civil_from_days(bound_day)?;
+            days_from_civil(date.year, date.month, 1)
+        }
+        SubscriptionCycle::Yearly => {
+            let date = civil_from_days(bound_day)?;
+            days_from_civil(date.year, 1, 1)
+        }
     }
 }
 
 fn window_from_start(
     cycle: SubscriptionCycle,
-    start_date: Date,
+    start_day: i64,
 ) -> Result<SubscriptionWindow, SubscriptionWindowError> {
-    let end_date = match cycle {
-        SubscriptionCycle::Daily => start_date + time::Duration::days(1),
-        SubscriptionCycle::Weekly => start_date + time::Duration::days(7),
-        SubscriptionCycle::Monthly => next_month(start_date)?,
-        SubscriptionCycle::Yearly => Date::from_calendar_date(
-            start_date
-                .year()
+    let end_day = match cycle {
+        SubscriptionCycle::Daily => start_day.checked_add(1),
+        SubscriptionCycle::Weekly => start_day.checked_add(7),
+        SubscriptionCycle::Monthly => Some(next_month_start(start_day)?),
+        SubscriptionCycle::Yearly => Some(next_year_start(start_day)?),
+    }
+    .ok_or(SubscriptionWindowError::InvalidTimestamp)?;
+    SubscriptionWindow::new(
+        unix_seconds_at_day(start_day)?,
+        unix_seconds_at_day(end_day)?,
+    )
+}
+
+fn next_month_start(start_day: i64) -> Result<i64, SubscriptionWindowError> {
+    let date = civil_from_days(start_day)?;
+    let (year, month) = if date.month == 12 {
+        (
+            date.year
                 .checked_add(1)
                 .ok_or(SubscriptionWindowError::InvalidTimestamp)?,
-            Month::January,
             1,
         )
-        .map_err(|_| SubscriptionWindowError::InvalidTimestamp)?,
-    };
-    let started_at = start_date
-        .midnight()
-        .assume_utc()
-        .unix_timestamp()
-        .try_into()
-        .map_err(|_| SubscriptionWindowError::InvalidTimestamp)?;
-    let ends_at = end_date
-        .midnight()
-        .assume_utc()
-        .unix_timestamp()
-        .try_into()
-        .map_err(|_| SubscriptionWindowError::InvalidTimestamp)?;
-    SubscriptionWindow::new(started_at, ends_at)
-}
-
-fn next_month(date: Date) -> Result<Date, SubscriptionWindowError> {
-    let (year, month) = if date.month() == Month::December {
-        (
-            date.year()
-                .checked_add(1)
-                .ok_or(SubscriptionWindowError::InvalidTimestamp)?,
-            Month::January,
-        )
     } else {
-        (date.year(), month_after(date.month()))
+        (date.year, date.month + 1)
     };
-    Date::from_calendar_date(year, month, 1).map_err(|_| SubscriptionWindowError::InvalidTimestamp)
+    days_from_civil(year, month, 1)
 }
 
-const fn month_after(month: Month) -> Month {
-    match month {
-        Month::January => Month::February,
-        Month::February => Month::March,
-        Month::March => Month::April,
-        Month::April => Month::May,
-        Month::May => Month::June,
-        Month::June => Month::July,
-        Month::July => Month::August,
-        Month::August => Month::September,
-        Month::September => Month::October,
-        Month::October => Month::November,
-        Month::November => Month::December,
-        Month::December => Month::January,
+fn next_year_start(start_day: i64) -> Result<i64, SubscriptionWindowError> {
+    let year = civil_from_days(start_day)?
+        .year
+        .checked_add(1)
+        .ok_or(SubscriptionWindowError::InvalidTimestamp)?;
+    days_from_civil(year, 1, 1)
+}
+
+fn unix_seconds_at_day(day: i64) -> Result<u64, SubscriptionWindowError> {
+    let day = u64::try_from(day).map_err(|_| SubscriptionWindowError::InvalidTimestamp)?;
+    let timestamp = day
+        .checked_mul(SECONDS_PER_DAY)
+        .ok_or(SubscriptionWindowError::InvalidTimestamp)?;
+    if timestamp > MAX_SUPPORTED_UNIX_SECONDS {
+        return Err(SubscriptionWindowError::InvalidTimestamp);
     }
+    Ok(timestamp)
+}
+
+// 采用公历 400 年循环换算，避免领域 crate 为简单 UTC 日历引入外部时间依赖。
+fn civil_from_days(days_since_epoch: i64) -> Result<CivilDate, SubscriptionWindowError> {
+    let shifted = days_since_epoch
+        .checked_add(CIVIL_EPOCH_OFFSET_DAYS)
+        .ok_or(SubscriptionWindowError::InvalidTimestamp)?;
+    let era = shifted.div_euclid(DAYS_PER_400_YEARS);
+    let day_of_era = shifted.rem_euclid(DAYS_PER_400_YEARS);
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_prime + 2) / 5 + 1;
+    let month = month_prime + if month_prime < 10 { 3 } else { -9 };
+    if month <= 2 {
+        year += 1;
+    }
+    Ok(CivilDate {
+        year: i32::try_from(year).map_err(|_| SubscriptionWindowError::InvalidTimestamp)?,
+        month: u8::try_from(month).map_err(|_| SubscriptionWindowError::InvalidTimestamp)?,
+        day: u8::try_from(day).map_err(|_| SubscriptionWindowError::InvalidTimestamp)?,
+    })
+}
+
+fn days_from_civil(year: i32, month: u8, day: u8) -> Result<i64, SubscriptionWindowError> {
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return Err(SubscriptionWindowError::InvalidTimestamp);
+    }
+    let mut year = i64::from(year);
+    if month <= 2 {
+        year = year
+            .checked_sub(1)
+            .ok_or(SubscriptionWindowError::InvalidTimestamp)?;
+    }
+    let era = year.div_euclid(400);
+    let year_of_era = year.rem_euclid(400);
+    let month_prime = i64::from(month) + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * month_prime + 2) / 5 + i64::from(day) - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era.checked_mul(DAYS_PER_400_YEARS)
+        .and_then(|value| value.checked_add(day_of_era))
+        .and_then(|value| value.checked_sub(CIVIL_EPOCH_OFFSET_DAYS))
+        .ok_or(SubscriptionWindowError::InvalidTimestamp)
 }
 
 #[cfg(test)]
@@ -204,12 +258,39 @@ mod tests {
     const JANUARY_31_2026: u64 = 1_769_817_600;
 
     #[test]
+    fn civil_calendar_round_trips_known_boundaries() {
+        assert_eq!(
+            civil_from_days(0).unwrap(),
+            CivilDate {
+                year: 1970,
+                month: 1,
+                day: 1,
+            }
+        );
+        assert_eq!(days_from_civil(1970, 1, 1).unwrap(), 0);
+        assert_eq!(days_from_civil(2024, 2, 29).unwrap(), 19_782);
+        assert_eq!(
+            civil_from_days(19_782).unwrap(),
+            CivilDate {
+                year: 2024,
+                month: 2,
+                day: 29,
+            }
+        );
+    }
+
+    #[test]
     fn initial_windows_follow_utc_calendar_boundaries() {
         let daily =
             SubscriptionWindow::initial(SubscriptionCycle::Daily, JANUARY_31_2026 + 12 * 3600)
                 .unwrap();
         assert_eq!(daily.started_at(), JANUARY_31_2026);
-        assert_eq!(daily.ends_at() - daily.started_at(), 86_400);
+        assert_eq!(daily.ends_at() - daily.started_at(), SECONDS_PER_DAY);
+
+        let weekly =
+            SubscriptionWindow::initial(SubscriptionCycle::Weekly, JANUARY_31_2026).unwrap();
+        assert_eq!(weekly.started_at(), 1_769_385_600);
+        assert_eq!(weekly.ends_at(), 1_769_990_400);
 
         let monthly =
             SubscriptionWindow::initial(SubscriptionCycle::Monthly, JANUARY_31_2026).unwrap();
@@ -246,6 +327,18 @@ mod tests {
                 .advance_until(SubscriptionCycle::Weekly, window.ends_at() - 1)
                 .unwrap(),
             None
+        );
+    }
+
+    #[test]
+    fn timestamps_outside_supported_calendar_fail_closed() {
+        assert_eq!(
+            SubscriptionWindow::initial(SubscriptionCycle::Daily, MAX_SUPPORTED_UNIX_SECONDS + 1),
+            Err(SubscriptionWindowError::InvalidTimestamp)
+        );
+        assert_eq!(
+            SubscriptionWindow::new(1, MAX_SUPPORTED_UNIX_SECONDS + 1),
+            Err(SubscriptionWindowError::InvalidTimestamp)
         );
     }
 }
