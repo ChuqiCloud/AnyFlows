@@ -87,7 +87,8 @@ use af_httpclient::{
 use af_scheduler::{
     ChannelIndexCacheError, ChannelIndexRefreshConfig, ChannelIndexRefreshSupervisor, ChannelProbe,
     ChannelProbeSupervisor, ChannelProbeSupervisorConfig, InMemoryChannelIndex,
-    IndexedWeightedScheduler, StickyWaitPolicy,
+    IndexedWeightedScheduler, StickyWaitPolicy, SubscriptionCycleSupervisor,
+    SubscriptionCycleSupervisorConfig,
 };
 use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
 use thiserror::Error;
@@ -154,6 +155,7 @@ pub struct AuthenticationReady {
     user_wallet_service: Arc<dyn UserWalletService>,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
+    subscription_repository: SubscriptionRepository,
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
@@ -220,7 +222,7 @@ pub struct BillingReady {
     debug_trace_worker: DebugTraceWorker,
 }
 
-/// 后台任务监督域已经建立，周期 flush、渠道索引、渠道探活与可靠队列 worker 已注册。
+/// 后台任务监督域已经建立，周期 flush、订阅周期、渠道索引、渠道探活与可靠队列 worker 已注册。
 pub struct Supervised {
     infrastructure: AuthenticationReady,
     chat: Arc<dyn ChatService>,
@@ -784,8 +786,9 @@ impl Bootstrap<DatabaseReady> {
                 )),
                 redemption_service: Arc::new(DatabaseRedemptionService::new(redemption_repository)),
                 subscription_service: Arc::new(DatabaseSubscriptionService::new(
-                    subscription_repository,
+                    subscription_repository.clone(),
                 )),
+                subscription_repository,
                 user_invitation_service: Arc::new(DatabaseUserInvitationService::new(
                     user_invitation_repository,
                 )),
@@ -1224,6 +1227,13 @@ impl Bootstrap<BillingReady> {
                 }
             }
         });
+        if config.subscription().enabled() {
+            spawn_subscription_cycle_task(
+                &mut supervisor,
+                infrastructure.subscription_repository.clone(),
+                subscription_cycle_config(&config),
+            );
+        }
         if billing.batch_enabled() {
             supervisor.spawn("billing-flush", {
                 let billing = billing.clone();
@@ -1330,6 +1340,22 @@ fn spawn_oauth_refresh_task(
     });
 }
 
+/// 注册启动即扫描、可重建且响应统一关闭信号的订阅周期任务。
+fn spawn_subscription_cycle_task(
+    supervisor: &mut BackgroundTaskSupervisor,
+    repository: SubscriptionRepository,
+    cycle_config: SubscriptionCycleSupervisorConfig,
+) {
+    supervisor.spawn("subscription-cycle", move |task_shutdown| {
+        let repository = repository.clone();
+        async move {
+            SubscriptionCycleSupervisor::new(repository, cycle_config)
+                .run_periodic_until(task_shutdown.cancelled())
+                .await;
+        }
+    });
+}
+
 /// 注册可重建且响应统一关闭信号的渠道探活周期任务。
 fn spawn_channel_probe_task<P>(
     supervisor: &mut BackgroundTaskSupervisor,
@@ -1365,6 +1391,17 @@ fn channel_probe_config(config: &AppConfig) -> ChannelProbeSupervisorConfig {
         hard_timeout,
     )
     .expect("已校验的渠道探活配置必须满足调度层边界")
+}
+
+/// 将已校验的启动配置转换为调度层订阅周期边界。
+fn subscription_cycle_config(config: &AppConfig) -> SubscriptionCycleSupervisorConfig {
+    let settings = config.subscription();
+    SubscriptionCycleSupervisorConfig::new(
+        settings.batch_size(),
+        Duration::from_secs(settings.interval_secs()),
+        settings.max_batches_per_run(),
+    )
+    .expect("已校验的订阅周期配置必须满足调度层边界")
 }
 
 impl Bootstrap<Supervised> {
@@ -2108,7 +2145,7 @@ mod tests {
             .await
             .unwrap()
             .start_supervisor();
-        assert_eq!(supervised.stage.supervisor.task_count(), 7);
+        assert_eq!(supervised.stage.supervisor.task_count(), 8);
         let report = supervised
             .build_router()
             .bind()
@@ -2294,6 +2331,32 @@ mod tests {
             )
             .unwrap(),
             TestUnhealthyChannelProbe,
+        );
+
+        assert_eq!(supervisor.task_count(), 1);
+        assert_eq!(
+            supervisor.shutdown(Duration::from_secs(1)).await.unwrap(),
+            SupervisorShutdown::Drained
+        );
+        database.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn subscription_cycle_task_is_registered_and_cancellable() {
+        let database = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let repository =
+            SubscriptionRepository::new(database.clone(), Duration::from_secs(1)).unwrap();
+        let shutdown = ShutdownController::new();
+        let mut supervisor = BackgroundTaskSupervisor::new(shutdown);
+        spawn_subscription_cycle_task(
+            &mut supervisor,
+            repository,
+            SubscriptionCycleSupervisorConfig::new(1, Duration::from_secs(3_600), 1).unwrap(),
         );
 
         assert_eq!(supervisor.task_count(), 1);
