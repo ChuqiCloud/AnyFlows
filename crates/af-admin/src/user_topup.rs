@@ -372,12 +372,12 @@ impl DatabaseUserTopupService {
         record: TopupOrderRecord,
         replayed: bool,
     ) -> Result<UserTopupOrder, UserTopupError> {
-        let submitted_at = unix_now()?;
+        let started_at = unix_now()?;
         let expires_at = record
             .created_at()
             .checked_add(self.order_ttl.as_secs())
             .ok_or(UserTopupError::Internal)?;
-        if expires_at <= submitted_at {
+        if expires_at <= started_at {
             return Err(UserTopupError::Conflict);
         }
         let request = payment_request(&record)?;
@@ -386,6 +386,10 @@ impl DatabaseUserTopupService {
             .create(request)
             .await
             .map_err(map_provider_error)?;
+        let submitted_at = unix_now()?;
+        if expires_at <= submitted_at {
+            return Err(UserTopupError::Conflict);
+        }
         let submission = TopupOrderSubmission::new(
             record.order_id(),
             record.version(),
