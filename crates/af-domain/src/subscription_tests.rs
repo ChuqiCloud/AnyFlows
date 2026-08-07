@@ -89,3 +89,31 @@ fn subscription_state_codes_are_closed() {
         Err(SubscriptionStateCodeError::InvalidCycle)
     );
 }
+
+#[test]
+fn user_subscription_lifecycle_graph_is_closed() {
+    let statuses = [
+        UserSubscriptionStatus::Active,
+        UserSubscriptionStatus::Suspended,
+        UserSubscriptionStatus::Canceled,
+        UserSubscriptionStatus::Expired,
+    ];
+    for source in statuses {
+        for target in statuses {
+            let expected = matches!(
+                (source, target),
+                (
+                    UserSubscriptionStatus::Active,
+                    UserSubscriptionStatus::Suspended | UserSubscriptionStatus::Canceled
+                ) | (
+                    UserSubscriptionStatus::Suspended,
+                    UserSubscriptionStatus::Active | UserSubscriptionStatus::Canceled
+                ) | (
+                    UserSubscriptionStatus::Canceled,
+                    UserSubscriptionStatus::Expired
+                )
+            );
+            assert_eq!(source.can_transition_to(target), expected);
+        }
+    }
+}

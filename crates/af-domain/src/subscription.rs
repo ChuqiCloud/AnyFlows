@@ -139,6 +139,18 @@ impl UserSubscriptionStatus {
     pub const fn code(self) -> i16 {
         self as i16
     }
+
+    /// 判断当前状态是否允许迁移到目标状态。
+    #[must_use]
+    pub const fn can_transition_to(self, target: Self) -> bool {
+        matches!(
+            (self, target),
+            (Self::Active, Self::Suspended)
+                | (Self::Suspended, Self::Active)
+                | (Self::Active | Self::Suspended, Self::Canceled)
+                | (Self::Canceled, Self::Expired)
+        )
+    }
 }
 
 /// 订阅额度时间窗的闭合日历周期。

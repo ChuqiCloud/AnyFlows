@@ -397,14 +397,16 @@ pub use site_settings::{
     SiteSettingsRepositoryError, SiteSettingsWriteRecord,
 };
 pub use subscription::{
-    MAX_SUBSCRIPTION_PAGE_SIZE, MAX_SUBSCRIPTION_PLAN_NAME_BYTES, SubscriptionInputError,
-    SubscriptionPlanCreateOutcome, SubscriptionPlanDisable, SubscriptionPlanDisableOutcome,
-    SubscriptionPlanPageRecord, SubscriptionPlanRecord, SubscriptionPlanWrite,
-    SubscriptionRepository, SubscriptionRepositoryConfigError, SubscriptionRepositoryError,
-    SubscriptionResetDueCursor, UserSubscriptionBind, UserSubscriptionBindOutcome,
-    UserSubscriptionPageRecord, UserSubscriptionRecord, UserSubscriptionResetDuePageRecord,
-    UserSubscriptionWindowAdvance, UserSubscriptionWindowAdvanceOutcome,
-    UserSubscriptionWindowAdvanceRecord,
+    MAX_SUBSCRIPTION_PAGE_SIZE, MAX_SUBSCRIPTION_PLAN_NAME_BYTES, SubscriptionExpirationDueCursor,
+    SubscriptionInputError, SubscriptionPlanCreateOutcome, SubscriptionPlanDisable,
+    SubscriptionPlanDisableOutcome, SubscriptionPlanPageRecord, SubscriptionPlanRecord,
+    SubscriptionPlanWrite, SubscriptionRepository, SubscriptionRepositoryConfigError,
+    SubscriptionRepositoryError, SubscriptionResetDueCursor, UserSubscriptionBind,
+    UserSubscriptionBindOutcome, UserSubscriptionExpirationDuePageRecord,
+    UserSubscriptionLifecycleTransition, UserSubscriptionLifecycleTransitionOutcome,
+    UserSubscriptionLifecycleTransitionRecord, UserSubscriptionPageRecord, UserSubscriptionRecord,
+    UserSubscriptionResetDuePageRecord, UserSubscriptionWindowAdvance,
+    UserSubscriptionWindowAdvanceOutcome, UserSubscriptionWindowAdvanceRecord,
 };
 pub use topup::{
     MAX_PAYMENT_PROVIDER_BYTES, MAX_PROVIDER_EVENT_ID_BYTES, MAX_PROVIDER_ORDER_ID_BYTES,

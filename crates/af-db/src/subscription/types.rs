@@ -669,6 +669,9 @@ pub enum SubscriptionInputError {
     /// 到期扫描游标的时间或数据库主键无效。
     #[error("订阅扫描游标无效")]
     InvalidCursor,
+    /// 生命周期源状态与目标状态不属于闭合迁移图。
+    #[error("订阅生命周期迁移无效")]
+    InvalidLifecycleTransition,
 }
 
 /// 订阅仓储构造错误。

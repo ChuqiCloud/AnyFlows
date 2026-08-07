@@ -39,10 +39,10 @@ use super::{
 /// 原子维护订阅计划启停和用户订阅幂等绑定的数据库仓储。
 #[derive(Clone)]
 pub struct SubscriptionRepository {
-    pool: DatabasePool,
-    operation_timeout: Duration,
+    pub(super) pool: DatabasePool,
+    pub(super) operation_timeout: Duration,
     #[cfg(test)]
-    outcome_unknown_after_commit: Arc<AtomicBool>,
+    pub(super) outcome_unknown_after_commit: Arc<AtomicBool>,
 }
 
 impl SubscriptionRepository {
@@ -742,7 +742,22 @@ fn requested_window_advance(
     cycle: SubscriptionCycle,
     advance: &UserSubscriptionWindowAdvance,
 ) -> Result<Option<DomainSubscriptionWindowAdvance>, SubscriptionRepositoryError> {
-    let window = SubscriptionWindow::new(advance.window_started_at, advance.window_ends_at)
+    advance_window_until(
+        cycle,
+        advance.window_started_at,
+        advance.window_ends_at,
+        advance.now,
+    )
+}
+
+/// 校验窗口连续性，并推进到包含指定时刻的 UTC 日历周期。
+pub(super) fn advance_window_until(
+    cycle: SubscriptionCycle,
+    window_started_at: u64,
+    window_ends_at: u64,
+    now: u64,
+) -> Result<Option<DomainSubscriptionWindowAdvance>, SubscriptionRepositoryError> {
+    let window = SubscriptionWindow::new(window_started_at, window_ends_at)
         .map_err(|_| SubscriptionRepositoryError::Invariant)?;
     let next = SubscriptionWindow::initial(cycle, window.ends_at())
         .map_err(|_| SubscriptionRepositoryError::Invariant)?;
@@ -750,7 +765,7 @@ fn requested_window_advance(
         return Err(SubscriptionRepositoryError::Invariant);
     }
     window
-        .advance_until(cycle, advance.now)
+        .advance_until(cycle, now)
         .map_err(|_| SubscriptionRepositoryError::Invariant)
 }
 
@@ -810,7 +825,7 @@ where
     Ok(Some((subscription, plan)))
 }
 
-async fn lock_subscription(
+pub(super) async fn lock_subscription(
     transaction: &DatabaseTransaction,
     subscription_id: UserSubscriptionId,
 ) -> Result<
@@ -909,7 +924,7 @@ async fn lock_user(
         .map_err(|_| SubscriptionRepositoryError::Query)
 }
 
-fn plan_record(
+pub(super) fn plan_record(
     model: subscription_plans::Model,
 ) -> Result<SubscriptionPlanRecord, SubscriptionRepositoryError> {
     let plan_id = SubscriptionPlanId::from_persistence_key(model.plan_key.as_str())
@@ -956,7 +971,7 @@ fn plan_record(
     })
 }
 
-fn subscription_record(
+pub(super) fn subscription_record(
     model: user_subscriptions::Model,
     plan: &SubscriptionPlanRecord,
 ) -> Result<UserSubscriptionRecord, SubscriptionRepositoryError> {
@@ -1019,7 +1034,9 @@ fn subscription_record(
     })
 }
 
-fn to_database_time(value: u64) -> Result<TimeDateTimeWithTimeZone, SubscriptionRepositoryError> {
+pub(super) fn to_database_time(
+    value: u64,
+) -> Result<TimeDateTimeWithTimeZone, SubscriptionRepositoryError> {
     let value = i64::try_from(value).map_err(|_| SubscriptionRepositoryError::Invariant)?;
     TimeDateTimeWithTimeZone::from_unix_timestamp(value)
         .map_err(|_| SubscriptionRepositoryError::Invariant)
@@ -1035,7 +1052,7 @@ fn optional_unix_seconds(
     value.map(unix_seconds).transpose()
 }
 
-fn monotonic_updated_at(
+pub(super) fn monotonic_updated_at(
     current: TimeDateTimeWithTimeZone,
     business_time: TimeDateTimeWithTimeZone,
 ) -> TimeDateTimeWithTimeZone {
@@ -1045,7 +1062,7 @@ fn monotonic_updated_at(
         .max(business_time)
 }
 
-fn page_query_limit(limit: usize) -> Result<u64, SubscriptionRepositoryError> {
+pub(super) fn page_query_limit(limit: usize) -> Result<u64, SubscriptionRepositoryError> {
     u64::try_from(limit)
         .ok()
         .and_then(|value| value.checked_add(1))
@@ -1061,21 +1078,27 @@ fn is_unique_conflict(error: &sea_orm::DbErr) -> bool {
         || rendered.contains("Duplicate entry")
 }
 
-async fn begin(pool: &DatabasePool) -> Result<DatabaseTransaction, SubscriptionRepositoryError> {
+pub(super) async fn begin(
+    pool: &DatabasePool,
+) -> Result<DatabaseTransaction, SubscriptionRepositoryError> {
     pool.connection()
         .begin()
         .await
         .map_err(|_| SubscriptionRepositoryError::Query)
 }
 
-async fn commit(transaction: DatabaseTransaction) -> Result<(), SubscriptionRepositoryError> {
+pub(super) async fn commit(
+    transaction: DatabaseTransaction,
+) -> Result<(), SubscriptionRepositoryError> {
     transaction
         .commit()
         .await
         .map_err(|_| SubscriptionRepositoryError::OutcomeUnknown)
 }
 
-async fn rollback(transaction: DatabaseTransaction) -> Result<(), SubscriptionRepositoryError> {
+pub(super) async fn rollback(
+    transaction: DatabaseTransaction,
+) -> Result<(), SubscriptionRepositoryError> {
     transaction
         .rollback()
         .await
@@ -1083,7 +1106,7 @@ async fn rollback(transaction: DatabaseTransaction) -> Result<(), SubscriptionRe
 }
 
 /// 仅记录闭合内部分类，避免计划、绑定键和用户标识进入日志。
-fn internal(error: SubscriptionRepositoryError) -> SubscriptionRepositoryError {
+pub(super) fn internal(error: SubscriptionRepositoryError) -> SubscriptionRepositoryError {
     let error_kind = match error {
         SubscriptionRepositoryError::Conflict => return error,
         SubscriptionRepositoryError::Query => "subscription_query",
