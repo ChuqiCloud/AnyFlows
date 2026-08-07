@@ -20,6 +20,8 @@ use crate::{
     entity::{SensitiveString, groups, subscription_plans, user_subscriptions},
 };
 
+mod lifecycle;
+
 const CREATED_AT: u64 = 1_900_000_000;
 const WINDOW_STARTED_AT: u64 = CREATED_AT + 60;
 const WINDOW_ENDS_AT: u64 = WINDOW_STARTED_AT + 86_400;
