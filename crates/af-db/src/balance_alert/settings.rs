@@ -18,6 +18,9 @@ pub const DEFAULT_BALANCE_ALERT_THRESHOLD_QUOTA: i64 = 1_000;
 pub const DEFAULT_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS: u64 = 86_400;
 pub const MIN_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS: u64 = 3_600;
 pub const MAX_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS: u64 = 604_800;
+pub const DEFAULT_SUBSCRIPTION_REMAINING_PERCENT: i16 = 20;
+pub const MIN_SUBSCRIPTION_REMAINING_PERCENT: i16 = 1;
+pub const MAX_SUBSCRIPTION_REMAINING_PERCENT: i16 = 99;
 
 /// 已完成持久化校验的余额预警全局设置。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -25,6 +28,8 @@ pub struct BalanceAlertSettingsRecord {
     enabled: bool,
     default_threshold: Quota,
     reminder_interval_seconds: u64,
+    subscription_alert_enabled: bool,
+    subscription_remaining_percent: i16,
     version: i64,
 }
 
@@ -42,6 +47,18 @@ impl BalanceAlertSettingsRecord {
     #[must_use]
     pub const fn reminder_interval_seconds(self) -> u64 {
         self.reminder_interval_seconds
+    }
+
+    /// 返回订阅窗口剩余额度预警是否启用。
+    #[must_use]
+    pub const fn subscription_alert_enabled(self) -> bool {
+        self.subscription_alert_enabled
+    }
+
+    /// 返回触发订阅预警的剩余额度百分比。
+    #[must_use]
+    pub const fn subscription_remaining_percent(self) -> i16 {
+        self.subscription_remaining_percent
     }
 
     #[must_use]
@@ -72,6 +89,8 @@ pub struct BalanceAlertSettingsWriteRecord {
     enabled: bool,
     default_threshold: Quota,
     reminder_interval_seconds: u64,
+    subscription_alert_enabled: bool,
+    subscription_remaining_percent: i16,
 }
 
 impl BalanceAlertSettingsWriteRecord {
@@ -86,7 +105,17 @@ impl BalanceAlertSettingsWriteRecord {
             enabled,
             default_threshold,
             reminder_interval_seconds,
+            subscription_alert_enabled: false,
+            subscription_remaining_percent: DEFAULT_SUBSCRIPTION_REMAINING_PERCENT,
         }
+    }
+
+    /// 覆盖订阅窗口预警草稿；关闭时仍保留百分比供后续启用。
+    #[must_use]
+    pub const fn with_subscription_alerts(mut self, enabled: bool, remaining_percent: i16) -> Self {
+        self.subscription_alert_enabled = enabled;
+        self.subscription_remaining_percent = remaining_percent;
+        self
     }
 
     fn validate(self) -> Result<(), BalanceAlertSettingsRepositoryError> {
@@ -94,6 +123,8 @@ impl BalanceAlertSettingsWriteRecord {
             || !(MIN_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS
                 ..=MAX_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS)
                 .contains(&self.reminder_interval_seconds)
+            || !(MIN_SUBSCRIPTION_REMAINING_PERCENT..=MAX_SUBSCRIPTION_REMAINING_PERCENT)
+                .contains(&self.subscription_remaining_percent)
         {
             return Err(BalanceAlertSettingsRepositoryError::InvalidSettings);
         }
@@ -199,6 +230,8 @@ impl BalanceAlertSettingsRepository {
             enabled: Set(record.enabled),
             default_threshold_quota: Set(record.default_threshold.units()),
             reminder_interval_seconds: Set(reminder_interval_seconds),
+            subscription_alert_enabled: Set(record.subscription_alert_enabled),
+            subscription_remaining_percent: Set(record.subscription_remaining_percent),
             version: Set(version),
             created_at: Set(existing.created_at),
             updated_at: Set(TimeDateTimeWithTimeZone::now_utc()),
@@ -264,6 +297,8 @@ fn record_from_model(
         || !(MIN_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS
             ..=MAX_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS)
             .contains(&reminder_interval_seconds)
+        || !(MIN_SUBSCRIPTION_REMAINING_PERCENT..=MAX_SUBSCRIPTION_REMAINING_PERCENT)
+            .contains(&model.subscription_remaining_percent)
     {
         return Err(internal_error(
             BalanceAlertSettingsRepositoryError::Invariant,
@@ -273,6 +308,8 @@ fn record_from_model(
         enabled: model.enabled,
         default_threshold,
         reminder_interval_seconds,
+        subscription_alert_enabled: model.subscription_alert_enabled,
+        subscription_remaining_percent: model.subscription_remaining_percent,
         version: model.version,
     })
 }

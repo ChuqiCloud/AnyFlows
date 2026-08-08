@@ -9688,6 +9688,8 @@
           "enabled",
           "default_threshold",
           "reminder_interval_seconds",
+          "subscription_alert_enabled",
+          "subscription_remaining_percent",
           "version"
         ],
         "properties": {
@@ -9705,6 +9707,15 @@
             "maximum": 604800,
             "minimum": 3600
           },
+          "subscription_alert_enabled": {
+            "type": "boolean"
+          },
+          "subscription_remaining_percent": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 99,
+            "minimum": 1
+          },
           "version": {
             "type": "integer",
             "format": "int64",
@@ -9718,7 +9729,9 @@
         "required": [
           "enabled",
           "default_threshold",
-          "reminder_interval_seconds"
+          "reminder_interval_seconds",
+          "subscription_alert_enabled",
+          "subscription_remaining_percent"
         ],
         "properties": {
           "enabled": {
@@ -9734,6 +9747,15 @@
             "format": "int64",
             "maximum": 604800,
             "minimum": 3600
+          },
+          "subscription_alert_enabled": {
+            "type": "boolean"
+          },
+          "subscription_remaining_percent": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 99,
+            "minimum": 1
           }
         },
         "additionalProperties": false
@@ -16572,7 +16594,9 @@
           "email_usage_alerts",
           "balance_alert_enabled",
           "balance_alert_threshold",
-          "effective_balance_alert_threshold"
+          "effective_balance_alert_threshold",
+          "subscription_alert_enabled",
+          "subscription_remaining_percent"
         ],
         "properties": {
           "email_product_updates": {
@@ -16595,6 +16619,15 @@
           "effective_balance_alert_threshold": {
             "type": "integer",
             "format": "int64",
+            "minimum": 1
+          },
+          "subscription_alert_enabled": {
+            "type": "boolean"
+          },
+          "subscription_remaining_percent": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 99,
             "minimum": 1
           }
         },

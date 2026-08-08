@@ -2408,11 +2408,17 @@
   },
   "billingSettings": {
     "title": "Billing settings",
-    "subtitle": "Configure the global balance threshold, reminder window, and email delivery cadence.",
+    "subtitle": "Configure wallet and subscription-window quota alerts with a shared delivery policy.",
     "loading": "Loading billing settings",
     "form": {
-      "title": "Balance alerts",
-      "subtitle": "Control the low-balance email policy in one place."
+      "title": "Quota alerts",
+      "subtitle": "Maintain wallet and subscription-window email rules separately."
+    },
+    "sections": {
+      "wallet": "Wallet balance alerts",
+      "walletHint": "Use a fixed quota threshold with a repeat reminder window.",
+      "subscription": "Subscription window alerts",
+      "subscriptionHint": "Evaluate the remaining quota percentage of every subscription window independently."
     },
     "status": {
       "enabled": "Running",
@@ -2427,7 +2433,11 @@
       "thresholdHint": "Users without a personal threshold inherit this positive integer quota.",
       "quotaUnit": "quota",
       "window": "Repeat reminder window",
-      "windowHint": "Each user can receive at most one alert in a reminder window."
+      "windowHint": "Each user can receive at most one wallet alert in a reminder window.",
+      "subscriptionEnabled": "Enable subscription window alerts",
+      "subscriptionEnabledHint": "Only active windows are scanned, and each subscription window sends at most one email.",
+      "subscriptionPercent": "Remaining quota threshold",
+      "subscriptionPercentHint": "Enter the alert boundary from 1% to 99% of remaining window quota."
     },
     "windows": {
       "3600": "Every hour",
@@ -2441,7 +2451,7 @@
     "delivery": {
       "title": "Delivery policy",
       "subtitle": "Persistent state drives each delivery independently of process memory.",
-      "dedup": "A user and reminder window form a unique event across all instances.",
+      "dedup": "Wallet events deduplicate by user and reminder window; subscription events deduplicate by subscription and UTC window.",
       "retry": "Timeout and transport failures retry up to 5 times; configuration failures stop immediately."
     },
     "actions": {
@@ -2452,7 +2462,8 @@
     },
     "validation": {
       "threshold": "The default threshold must be a positive safe integer.",
-      "window": "The reminder window must be between 1 hour and 7 days."
+      "window": "The reminder window must be between 1 hour and 7 days.",
+      "subscriptionPercent": "The subscription remaining-quota threshold must be an integer from 1 to 99."
     },
     "errors": {
       "title": "Billing settings are unavailable",
@@ -2923,10 +2934,19 @@
       "planVersion": "Plan version v{{version}}",
       "subscriptionVersion": "Subscription version v{{version}}",
       "quotaUsage": "{{used}} / {{total}}",
+      "remainingPercent": "{{percent}}% remaining",
       "window": "{{start}} to {{end}}",
       "creator": "Created by #{{id}}",
       "createdAt": "Created {{value}}",
       "disabledAt": "Disabled {{value}}"
+    },
+    "alerts": {
+      "description": "Send one usage email when an active subscription has no more than {{percent}}% quota remaining.",
+      "loading": "Loading alert policy",
+      "active": "Alerts active · {{count}} in range",
+      "paused": "Alerts paused",
+      "unavailable": "Your alert policy is temporarily unavailable. Subscription facts remain visible.",
+      "due": "Alert range"
     },
     "fields": {
       "name": "Plan name",
@@ -3354,6 +3374,10 @@
       "balanceAlertDescription": "Receive a usage email when your balance falls below the effective threshold.",
       "balanceAlertActive": "System enabled",
       "balanceAlertPaused": "System paused",
+      "subscriptionAlertTitle": "Subscription window quota alerts",
+      "subscriptionAlertDescription": "Receive one usage email per subscription window when no more than {{percent}}% quota remains.",
+      "subscriptionAlertActive": "System enabled",
+      "subscriptionAlertPaused": "System paused",
       "thresholdMode": "Threshold mode",
       "thresholdInherit": "Inherit system default",
       "thresholdCustom": "Use personal threshold",

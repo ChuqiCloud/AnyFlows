@@ -10,6 +10,8 @@ pub struct Model {
     pub enabled: bool,
     pub default_threshold_quota: i64,
     pub reminder_interval_seconds: i64,
+    pub subscription_alert_enabled: bool,
+    pub subscription_remaining_percent: i16,
     pub version: i64,
     pub created_at: TimeDateTimeWithTimeZone,
     pub updated_at: TimeDateTimeWithTimeZone,

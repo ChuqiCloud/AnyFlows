@@ -2,7 +2,7 @@ use std::{fmt, future::Future, pin::Pin, sync::Arc};
 
 use af_account::{DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretKind};
 use af_db::{
-    EmailPasswordUpdate, EmailSettingsRecord, EmailSettingsRepository,
+    DatabaseTimestamp, EmailPasswordUpdate, EmailSettingsRecord, EmailSettingsRepository,
     EmailSettingsRepositoryError, EmailSettingsWriteRecord, EmailTlsMode,
 };
 use af_domain::Quota;
@@ -479,6 +479,59 @@ impl EmailDeliveryRequest {
         Self::from_record(record, cipher, recipient, subject, body)
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "显式传入已校验的订阅与投递快照，避免隐藏跨层依赖"
+    )]
+    pub(crate) fn subscription_balance_alert(
+        record: &EmailSettingsRecord,
+        cipher: &SystemSecretCipher,
+        recipient: String,
+        site_name: &str,
+        username: &str,
+        plan_name: &str,
+        quota_amount: Quota,
+        quota_used: Quota,
+        window_ends_at: DatabaseTimestamp,
+        threshold_percent: i16,
+    ) -> Result<Self, AdminEmailSettingsError> {
+        if site_name.is_empty()
+            || site_name.len() > 80
+            || username.is_empty()
+            || username.len() > 64
+            || plan_name.is_empty()
+            || plan_name.len() > 80
+            || site_name.chars().any(char::is_control)
+            || username.chars().any(char::is_control)
+            || plan_name.chars().any(char::is_control)
+            || quota_amount.is_zero()
+            || quota_used > quota_amount
+            || !(1..=99).contains(&threshold_percent)
+        {
+            return Err(AdminEmailSettingsError::Internal);
+        }
+        let remaining = quota_amount
+            .units()
+            .checked_sub(quota_used.units())
+            .ok_or(AdminEmailSettingsError::Internal)?;
+        let threshold = subscription_remaining_threshold(quota_amount.units(), threshold_percent)?;
+        if remaining > threshold {
+            return Err(AdminEmailSettingsError::Internal);
+        }
+        let window_end = format!(
+            "{} {:02}:{:02} UTC",
+            window_ends_at.date(),
+            window_ends_at.hour(),
+            window_ends_at.minute()
+        );
+        let subject = format!("{site_name} 订阅额度预警");
+        let body = format!(
+            "您好，{username}：\n\n您的订阅计划“{plan_name}”当前剩余额度为 {remaining} / {}，已达到剩余 {threshold_percent}% 的提醒边界。本窗口将在 {window_end} 结束，请及时检查后续用量安排。\n\n同一订阅窗口最多发送一次此类提醒。如不希望继续接收，可在个人资料的通知偏好中关闭用量提醒。",
+            quota_amount.units()
+        );
+        Self::from_record(record, cipher, recipient, subject, body)
+    }
+
     #[must_use]
     pub fn host(&self) -> &str {
         &self.host
@@ -540,6 +593,26 @@ impl EmailDeliveryRequest {
     pub const fn timeout_seconds(&self) -> u16 {
         self.timeout_seconds
     }
+}
+
+/// 按向下取整语义计算订阅窗口的剩余额度阈值，并避免整数乘法溢出。
+fn subscription_remaining_threshold(
+    quota_amount: i64,
+    threshold_percent: i16,
+) -> Result<i64, AdminEmailSettingsError> {
+    let percent = i64::from(threshold_percent);
+    let whole = quota_amount
+        .div_euclid(100)
+        .checked_mul(percent)
+        .ok_or(AdminEmailSettingsError::Internal)?;
+    let remainder = quota_amount
+        .rem_euclid(100)
+        .checked_mul(percent)
+        .ok_or(AdminEmailSettingsError::Internal)?
+        .div_euclid(100);
+    whole
+        .checked_add(remainder)
+        .ok_or(AdminEmailSettingsError::Internal)
 }
 
 impl fmt::Debug for EmailDeliveryRequest {

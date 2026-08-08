@@ -7,6 +7,7 @@ use af_db::{
     BalanceAlertSettingsRepository, DatabaseOptions, EmailPasswordUpdate, EmailSettingsRepository,
     EmailSettingsWriteRecord, EmailTlsMode, InitialSetupOutcome, InitialSetupRecord,
     InitialSetupRepository, MigrationOptions, SiteSettingsRepository,
+    SubscriptionBalanceAlertRepository,
 };
 use af_domain::Quota;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -78,6 +79,8 @@ async fn admin_settings_require_admin_and_preserve_integer_boundaries() -> Resul
     assert!(!defaults.enabled());
     assert_eq!(defaults.default_threshold().units(), 1_000);
     assert_eq!(defaults.reminder_interval_seconds(), 86_400);
+    assert!(!defaults.subscription_alert_enabled());
+    assert_eq!(defaults.subscription_remaining_percent(), 20);
     assert_eq!(
         service.settings(user).await.unwrap_err(),
         AdminBalanceAlertSettingsError::Forbidden
@@ -86,12 +89,14 @@ async fn admin_settings_require_admin_and_preserve_integer_boundaries() -> Resul
     let updated = service
         .update(
             admin,
-            AdminBalanceAlertSettingsCommand::new(true, Quota::new(2_500)?, 7_200)?,
+            AdminBalanceAlertSettingsCommand::new(true, Quota::new(2_500)?, 7_200, true, 15)?,
         )
         .await?;
     assert!(updated.enabled());
     assert_eq!(updated.default_threshold().units(), 2_500);
     assert_eq!(updated.reminder_interval_seconds(), 7_200);
+    assert!(updated.subscription_alert_enabled());
+    assert_eq!(updated.subscription_remaining_percent(), 15);
     assert_eq!(updated.version(), 2);
     pool.close().await?;
     Ok(())
@@ -159,6 +164,7 @@ async fn task_delivers_once_per_user_and_window() -> Result<(), Box<dyn Error>> 
     let task = BalanceAlertTask::new(
         settings,
         BalanceAlertRepository::new(pool.clone(), Duration::from_secs(5))?,
+        SubscriptionBalanceAlertRepository::new(pool.clone(), Duration::from_secs(5))?,
         email_settings,
         SiteSettingsRepository::new(pool.clone(), Duration::from_secs(5))?,
         cipher(),

@@ -2407,11 +2407,17 @@
   },
   "billingSettings": {
     "title": "计费设置",
-    "subtitle": "配置全局余额预警阈值、提醒窗口和邮件投递节奏。",
+    "subtitle": "配置钱包余额与订阅窗口的额度预警规则和邮件投递节奏。",
     "loading": "正在加载计费设置",
     "form": {
-      "title": "余额预警",
-      "subtitle": "统一控制低余额邮件提醒规则。"
+      "title": "额度预警",
+      "subtitle": "分别维护钱包余额与订阅窗口的邮件提醒规则。"
+    },
+    "sections": {
+      "wallet": "钱包余额预警",
+      "walletHint": "使用固定额度阈值，并按提醒时间窗口控制重复投递。",
+      "subscription": "订阅窗口预警",
+      "subscriptionHint": "按每条订阅当前窗口的剩余额度百分比独立判断。"
     },
     "status": {
       "enabled": "运行中",
@@ -2426,7 +2432,11 @@
       "thresholdHint": "没有设置个人阈值的用户继承此正整数额度。",
       "quotaUnit": "额度",
       "window": "重复提醒窗口",
-      "windowHint": "同一用户在一个窗口内最多生成一条提醒。"
+      "windowHint": "同一用户在一个钱包提醒窗口内最多生成一条提醒。",
+      "subscriptionEnabled": "启用订阅窗口预警",
+      "subscriptionEnabledHint": "只扫描当前有效订阅；同一订阅窗口最多发送一次邮件。",
+      "subscriptionPercent": "剩余额度阈值",
+      "subscriptionPercentHint": "剩余额度不高于此百分比时进入预警区间，支持 1% 至 99%。"
     },
     "windows": {
       "3600": "每 1 小时",
@@ -2440,7 +2450,7 @@
     "delivery": {
       "title": "投递策略",
       "subtitle": "任务按持久化状态推进，不依赖单个进程内存。",
-      "dedup": "按用户和提醒窗口唯一去重，多实例不会重复建单。",
+      "dedup": "钱包按用户与提醒窗口去重，订阅按订阅实例与 UTC 窗口去重。",
       "retry": "超时和传输失败最多尝试 5 次，配置错误直接终止。"
     },
     "actions": {
@@ -2451,7 +2461,8 @@
     },
     "validation": {
       "threshold": "默认阈值必须是大于 0 的安全整数。",
-      "window": "提醒窗口必须在 1 小时至 7 天之间。"
+      "window": "提醒窗口必须在 1 小时至 7 天之间。",
+      "subscriptionPercent": "订阅剩余额度阈值必须是 1 至 99 的整数百分比。"
     },
     "errors": {
       "title": "计费设置暂时不可用",
@@ -2922,10 +2933,19 @@
       "planVersion": "计划版本 v{{version}}",
       "subscriptionVersion": "订阅版本 v{{version}}",
       "quotaUsage": "{{used}} / {{total}}",
+      "remainingPercent": "剩余 {{percent}}%",
       "window": "{{start}} 至 {{end}}",
       "creator": "创建人 #{{id}}",
       "createdAt": "创建于 {{value}}",
       "disabledAt": "停用于 {{value}}"
+    },
+    "alerts": {
+      "description": "有效订阅剩余额度不高于 {{percent}}% 时发送一次用量提醒邮件。",
+      "loading": "正在读取预警规则",
+      "active": "预警运行中 · {{count}} 条已进入区间",
+      "paused": "预警未启用",
+      "unavailable": "暂时无法读取个人预警规则，订阅事实仍可正常查看。",
+      "due": "预警区间"
     },
     "fields": {
       "name": "计划名称",
@@ -3353,6 +3373,10 @@
       "balanceAlertDescription": "余额低于有效阈值时，通过用量提醒邮件通知你。",
       "balanceAlertActive": "系统已启用",
       "balanceAlertPaused": "系统已暂停",
+      "subscriptionAlertTitle": "订阅窗口额度预警",
+      "subscriptionAlertDescription": "有效订阅剩余额度不高于 {{percent}}% 时，通过用量提醒邮件通知你；每个订阅窗口最多一次。",
+      "subscriptionAlertActive": "系统已启用",
+      "subscriptionAlertPaused": "系统已暂停",
       "thresholdMode": "阈值模式",
       "thresholdInherit": "继承系统默认",
       "thresholdCustom": "使用个人阈值",

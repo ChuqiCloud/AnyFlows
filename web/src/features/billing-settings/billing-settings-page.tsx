@@ -37,7 +37,7 @@ export function BillingSettingsPage() {
               <Skeleton className="h-5 w-44" />
               <Skeleton className="h-5 w-16" />
             </div>
-            {[0, 1, 2].map((item) => (
+            {[0, 1, 2, 3, 4].map((item) => (
               <div key={item} className="grid gap-3 border-b border-[var(--hairline)] px-5 py-4 last:border-b-0 md:grid-cols-2">
                 <div className="grid gap-2"><Skeleton className="h-4 w-32" /><Skeleton className="h-3 w-64 max-w-full" /></div>
                 <Skeleton className="h-8 w-full md:ml-auto md:max-w-xs" />

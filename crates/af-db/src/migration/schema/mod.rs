@@ -27,6 +27,7 @@ mod routing;
 mod scheduler;
 mod site;
 mod subscription;
+mod subscription_alert;
 mod usage;
 mod wallet;
 
@@ -126,6 +127,7 @@ pub(super) use redemption::create_redemption_storage;
 pub(super) use registration::create_registration_rate_limits;
 pub(super) use site::{create_authentication_settings, create_site_settings};
 pub(super) use subscription::create_subscription_storage;
+pub(super) use subscription_alert::create_subscription_balance_alert_storage;
 pub(super) use usage::{create_usage_logs, create_usage_logs_indexes};
 pub(super) use wallet::create_wallet_ledger;
 pub(super) use wallet::rebuild_wallet_ledger_for_invite_rebate;

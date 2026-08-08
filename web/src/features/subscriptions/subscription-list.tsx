@@ -1,4 +1,4 @@
-import { CalendarRange, Clock3, Layers3, RefreshCw } from 'lucide-react'
+import { BellRing, CalendarRange, Clock3, Layers3, RefreshCw } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { UserSubscription } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
+import { isSubscriptionAlertDue, subscriptionRemainingPercent } from './subscription-alert-policy'
 import { useCurrentUserSubscriptions } from './subscription-api'
 
 type SubscriptionListQuery = Pick<
@@ -25,10 +26,14 @@ type SubscriptionListProps = {
   subscriptions: UserSubscription[]
   query: SubscriptionListQuery
   scope: 'current' | 'admin'
+  alertPolicy?: {
+    enabled: boolean
+    thresholdPercent: number
+  }
 }
 
 /** 以桌面表格和移动条目展示订阅窗口及额度事实。 */
-export function SubscriptionList({ subscriptions, query, scope }: SubscriptionListProps) {
+export function SubscriptionList({ subscriptions, query, scope, alertPolicy }: SubscriptionListProps) {
   const { i18n, t } = useTranslation()
   const locale = i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US'
   const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale])
@@ -93,7 +98,7 @@ export function SubscriptionList({ subscriptions, query, scope }: SubscriptionLi
             {subscriptions.map((subscription) => (
               <tr key={subscription.subscription_id} className="hover:bg-surface-2/35">
                 <td className="px-3 py-3"><SubscriptionIdentity subscription={subscription} /></td>
-                <td className="px-3 py-3"><SubscriptionQuota subscription={subscription} formatQuota={numberFormat.format} /></td>
+                <td className="px-3 py-3"><SubscriptionQuota subscription={subscription} formatQuota={numberFormat.format} alertPolicy={alertPolicy} /></td>
                 <td className="px-3 py-3"><SubscriptionWindow subscription={subscription} formatTime={formatTime} /></td>
                 <td className="px-3 py-3"><SubscriptionBinding subscription={subscription} formatTime={formatTime} /></td>
               </tr>
@@ -107,7 +112,7 @@ export function SubscriptionList({ subscriptions, query, scope }: SubscriptionLi
           <article key={subscription.subscription_id} className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
             <SubscriptionIdentity subscription={subscription} />
             <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--hairline)] pt-3">
-              <SubscriptionQuota subscription={subscription} formatQuota={numberFormat.format} />
+              <SubscriptionQuota subscription={subscription} formatQuota={numberFormat.format} alertPolicy={alertPolicy} />
               <SubscriptionBinding subscription={subscription} formatTime={formatTime} />
             </div>
             <div className="mt-3 border-t border-[var(--hairline)] pt-3">
@@ -175,14 +180,21 @@ function SubscriptionStatusBadge({ status }: { status: UserSubscription['status'
 function SubscriptionQuota({
   subscription,
   formatQuota,
+  alertPolicy,
 }: {
   subscription: UserSubscription
   formatQuota: (value: number) => string
+  alertPolicy?: SubscriptionListProps['alertPolicy']
 }) {
   const { t } = useTranslation()
   const percent = subscription.quota_amount <= 0
     ? 0
     : Math.min(100, Math.round(subscription.quota_used / subscription.quota_amount * 100))
+  const remainingPercent = subscriptionRemainingPercent(subscription)
+  const alertDue = Boolean(
+    alertPolicy?.enabled
+      && isSubscriptionAlertDue(subscription, alertPolicy.thresholdPercent),
+  )
   return (
     <div className="tabular-nums">
       <div className="font-medium">
@@ -192,7 +204,16 @@ function SubscriptionQuota({
         })}
       </div>
       <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-2" aria-hidden="true">
-        <div className="h-full rounded-full bg-brand transition-[width] duration-150" style={{ width: `${percent}%` }} />
+        <div className={cn('h-full rounded-full transition-[width] duration-150', alertDue ? 'bg-warning' : 'bg-brand')} style={{ width: `${percent}%` }} />
+      </div>
+      <div className="mt-1.5 flex min-h-5 items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
+        <span>{t('subscriptions.values.remainingPercent', { percent: remainingPercent })}</span>
+        {alertDue ? (
+          <Badge className="gap-1 bg-warning/10 px-1.5 py-0 text-warning">
+            <BellRing className="size-3" aria-hidden="true" />
+            {t('subscriptions.alerts.due')}
+          </Badge>
+        ) : null}
       </div>
     </div>
   )
