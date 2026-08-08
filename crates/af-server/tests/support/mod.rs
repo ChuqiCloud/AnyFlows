@@ -16,7 +16,7 @@ use chacha20poly1305::{
     aead::{Aead as _, KeyInit as _, Payload},
 };
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
-use serde_json::json;
+use serde_json::{Value, json};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -401,6 +401,30 @@ pub struct RawResponse {
     pub status: u16,
     pub headers: BTreeMap<String, String>,
     pub body: Vec<u8>,
+}
+
+/// 从 JSON 错误响应中提取受限错误码，供真实联调失败诊断使用。
+///
+/// 仅保留短 ASCII 标识，错误消息、正文和控制字符永不进入构建日志。
+pub fn sanitized_json_error_code(body: &[u8]) -> Option<String> {
+    if body.len() > 64 * 1024 {
+        return None;
+    }
+    let value = serde_json::from_slice::<Value>(body).ok()?;
+    let code = ["/code", "/error/code", "/response/error/code"]
+        .into_iter()
+        .find_map(|pointer| value.pointer(pointer).and_then(Value::as_str))?;
+    let code = code.trim();
+    if !code.is_empty()
+        && code.len() <= 96
+        && code
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+        Some(code.to_owned())
+    } else {
+        Some("无效错误码".to_owned())
+    }
 }
 
 /// 通过原始 TCP 请求测试服务，避免客户端自动改写协议边界。

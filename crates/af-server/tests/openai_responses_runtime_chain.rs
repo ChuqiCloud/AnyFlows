@@ -13,9 +13,8 @@ use af_protocol::{
 };
 use af_server::{Bootstrap, BootstrapError, ShutdownReport};
 use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
-use serde_json::Value;
 use support::{
-    CLIENT_KEY, GROUP_ID, UPSTREAM_MODEL, credential_encryption_key,
+    CLIENT_KEY, GROUP_ID, UPSTREAM_MODEL, credential_encryption_key, sanitized_json_error_code,
     seed_openai_responses_runtime_channel_with, send_request_with_timeout,
 };
 use tokio::{sync::oneshot, time::timeout};
@@ -130,7 +129,7 @@ async fn run_live_responses_request(request_body: &[u8]) {
         response.status,
         200,
         "真实 Responses HTTP 状态异常；错误码：{}",
-        diagnostic_error_code(&body).unwrap_or_else(|| "未提供".to_owned())
+        sanitized_json_error_code(&body).unwrap_or_else(|| "未提供".to_owned())
     );
     assert!(
         response
@@ -286,7 +285,7 @@ fn append_sse_summary(
         .as_deref()
         .map(|name| sanitize_diagnostic_token(name, "无效事件"))
         .unwrap_or_else(|| "message".to_owned());
-    if let Some(code) = diagnostic_error_code(data) {
+    if let Some(code) = sanitized_json_error_code(data) {
         summaries.push(format!("{event}[code={code}]"));
     } else {
         summaries.push(event);
@@ -306,18 +305,6 @@ fn sanitize_diagnostic_token(value: &str, fallback: &str) -> String {
     } else {
         fallback.to_owned()
     }
-}
-
-/// 从受限 JSON 事件中提取错误码；错误消息和其他字段永不进入摘要。
-fn diagnostic_error_code(data: &[u8]) -> Option<String> {
-    if data.len() > 64 * 1024 {
-        return None;
-    }
-    let value = serde_json::from_slice::<Value>(data).ok()?;
-    let code = ["/code", "/error/code", "/response/error/code"]
-        .into_iter()
-        .find_map(|pointer| value.pointer(pointer).and_then(Value::as_str))?;
-    Some(sanitize_diagnostic_token(code, "无效错误码"))
 }
 
 async fn seed_database(
@@ -543,11 +530,16 @@ data: {"response":{"error":{"code":"server_error","message":"secret"}}}
     assert!(!summary.contains("do not print this"));
     assert!(!summary.contains("secret"));
     assert_eq!(
-        diagnostic_error_code(
+        sanitized_json_error_code(
             br#"{"error":{"code":"upstream_unavailable","message":"do not print this"}}"#
         ),
         Some("upstream_unavailable".to_owned())
     );
+    assert_eq!(
+        sanitized_json_error_code(br#"{"code":"line\nbreak","message":"secret"}"#),
+        Some("无效错误码".to_owned())
+    );
+    assert_eq!(sanitized_json_error_code(b"not-json"), None);
 }
 
 #[test]

@@ -17,8 +17,9 @@ use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
 use serde_json::{Value, json};
 use support::{
     CLIENT_KEY, GROUP_ID, IO_TIMEOUT, RUNTIME_HEADER_NAME, RUNTIME_HEADER_VALUE, UPSTREAM_BASE_URL,
-    UPSTREAM_KEY, UPSTREAM_MODEL, credential_encryption_key, seed_gemini_runtime_channel_with,
-    send_request, send_request_with_timeout, spawn_proxy, spawn_streaming_proxy,
+    UPSTREAM_KEY, UPSTREAM_MODEL, credential_encryption_key, sanitized_json_error_code,
+    seed_gemini_runtime_channel_with, send_request, send_request_with_timeout, spawn_proxy,
+    spawn_streaming_proxy,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -249,7 +250,12 @@ async fn live_native_gemini_runtime() {
     .await;
     stop_gateway(shutdown, server).await;
 
-    assert_eq!(response.status, 200);
+    assert_eq!(
+        response.status,
+        200,
+        "真实 Gemini HTTP 状态异常；错误码：{}",
+        sanitized_json_error_code(&response.body).unwrap_or_else(|| "未提供".to_owned())
+    );
     let body: Value = serde_json::from_slice(&response.body).unwrap();
     assert_eq!(body["modelVersion"], UPSTREAM_MODEL);
     assert!(
