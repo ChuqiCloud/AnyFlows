@@ -275,6 +275,12 @@ async fn valid_lookup_carries_user_and_group_rpm_snapshots() -> Result<(), Box<d
 #[tokio::test]
 async fn negative_rpm_snapshot_fails_closed() -> Result<(), Box<dyn Error>> {
     let fixture = fixture(Duration::from_secs(1)).await?;
+    // 生产迁移会阻止负值写入；测试显式绕过约束以模拟旧数据或人工损坏。
+    fixture
+        .pool
+        .connection()
+        .execute_unprepared("PRAGMA ignore_check_constraints = ON")
+        .await?;
     set_user_column(&fixture, users::Column::RpmLimit, Expr::value(Some(-1_i32))).await?;
 
     assert_eq!(
@@ -284,6 +290,11 @@ async fn negative_rpm_snapshot_fails_closed() -> Result<(), Box<dyn Error>> {
             .await,
         Err(TokenAuthRepositoryError::Invariant)
     );
+    fixture
+        .pool
+        .connection()
+        .execute_unprepared("PRAGMA ignore_check_constraints = OFF")
+        .await?;
     fixture.pool.close().await?;
     Ok(())
 }
