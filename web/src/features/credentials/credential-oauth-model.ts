@@ -4,7 +4,7 @@ import type {
   AdminOAuthProviderStatus,
 } from '@/lib/api/generated/types.gen'
 
-export const adminOAuthProviders = ['codex', 'gemini', 'antigravity'] as const
+export const adminOAuthProviders = ['claude_code', 'codex', 'gemini', 'antigravity'] as const
 
 export type OAuthCredentialBaseline = {
   revision: number

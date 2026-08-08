@@ -633,7 +633,7 @@ export type AdminOAuthCompletionStatus = 'connected';
 export type AdminOAuthManualCallbackRequest = {
     provider: AdminOAuthProvider;
 };
-export type AdminOAuthProvider = 'codex' | 'gemini' | 'antigravity';
+export type AdminOAuthProvider = 'claude_code' | 'codex' | 'gemini' | 'antigravity';
 export type AdminOAuthProviderListResponse = {
     providers: Array<AdminOAuthProviderStatus>;
 };

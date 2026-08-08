@@ -13723,6 +13723,7 @@
         "type": "string",
         "description": "管理 API 支持的上游 OAuth provider。",
         "enum": [
+          "claude_code",
           "codex",
           "gemini",
           "antigravity"

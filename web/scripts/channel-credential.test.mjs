@@ -165,7 +165,8 @@ test('自动完成只接受本次 provider 且 OAuth 版本推进的凭据', () 
 
 test('provider 收敛与授权剩余时间保持闭合', () => {
   assert.equal(asAdminOAuthProvider('gemini'), 'gemini')
-  assert.equal(asAdminOAuthProvider('claude_code'), undefined)
+  assert.equal(asAdminOAuthProvider('claude_code'), 'claude_code')
+  assert.equal(asAdminOAuthProvider('unknown'), undefined)
   assert.equal(oauthAuthorizationRemainingSeconds(2_001, 1_000), 2)
   assert.equal(oauthAuthorizationRemainingSeconds(999, 1_000), 0)
 })
@@ -186,7 +187,7 @@ test('独立账号池与 OAuth 固定终态都有中英文文案', () => {
     for (const kind of ['api_key', 'oauth', 'bedrock', 'service_account']) {
       assert.equal(typeof messages.credentials.kind[kind], 'string')
     }
-    for (const provider of ['codex', 'gemini', 'antigravity']) {
+    for (const provider of ['claude_code', 'codex', 'gemini', 'antigravity']) {
       assert.equal(typeof messages.credentials.oauth.providers[provider], 'string')
     }
     for (const code of errorCodes) {

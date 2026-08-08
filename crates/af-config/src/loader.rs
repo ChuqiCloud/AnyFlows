@@ -270,6 +270,8 @@ fn known_field(path: &str) -> Option<&'static str> {
         "oauth.refresh_before_expiry_secs" => "oauth.refresh_before_expiry_secs",
         "oauth.refresh_batch_size" => "oauth.refresh_batch_size",
         "oauth.refresh_concurrency" => "oauth.refresh_concurrency",
+        "oauth.claude_code" => "oauth.claude_code",
+        "oauth.claude_code.client_id" => "oauth.claude_code.client_id",
         "oauth.codex" => "oauth.codex",
         "oauth.codex.client_id" => "oauth.codex.client_id",
         "oauth.gemini" => "oauth.gemini",
@@ -700,7 +702,7 @@ mod tests {
     fn oauth_clients_are_closed_validated_and_redacted() {
         with_clean_env(|_| {
             let path = temp_file(
-                "[database]\nurl = 'sqlite::memory:'\n[oauth]\nmax_pending_authorizations = 32\nsession_ttl_secs = 120\nrefresh_enabled = false\nrefresh_interval_secs = 45\nrefresh_before_expiry_secs = 240\nrefresh_batch_size = 24\nrefresh_concurrency = 6\n[oauth.codex]\nclient_id = 'codex-client-marker'\n[oauth.gemini]\nclient_id = 'gemini-client-marker'\nclient_secret = 'gemini-secret-marker'\n[oauth.antigravity]\nclient_id = 'antigravity-client-marker'\nclient_secret = 'antigravity-secret-marker'\n",
+                "[database]\nurl = 'sqlite::memory:'\n[oauth]\nmax_pending_authorizations = 32\nsession_ttl_secs = 120\nrefresh_enabled = false\nrefresh_interval_secs = 45\nrefresh_before_expiry_secs = 240\nrefresh_batch_size = 24\nrefresh_concurrency = 6\n[oauth.claude_code]\nclient_id = 'claude-client-marker'\n[oauth.codex]\nclient_id = 'codex-client-marker'\n[oauth.gemini]\nclient_id = 'gemini-client-marker'\nclient_secret = 'gemini-secret-marker'\n[oauth.antigravity]\nclient_id = 'antigravity-client-marker'\nclient_secret = 'antigravity-secret-marker'\n",
             );
             let config = load_from(&path).unwrap();
             let _ = fs::remove_file(path);
@@ -712,7 +714,11 @@ mod tests {
             assert_eq!(config.oauth().refresh_before_expiry_secs(), 240);
             assert_eq!(config.oauth().refresh_batch_size(), 24);
             assert_eq!(config.oauth().refresh_concurrency(), 6);
-            assert_eq!(config.oauth().configured_provider_count(), 3);
+            assert_eq!(config.oauth().configured_provider_count(), 4);
+            assert_eq!(
+                config.oauth().claude_code().unwrap().client_id().expose(),
+                "claude-client-marker"
+            );
             assert_eq!(
                 config.oauth().codex().unwrap().client_id().expose(),
                 "codex-client-marker"
@@ -723,6 +729,7 @@ mod tests {
             );
             let debug = format!("{:?}", config.oauth());
             for private in [
+                "claude-client-marker",
                 "codex-client-marker",
                 "gemini-client-marker",
                 "gemini-secret-marker",
@@ -772,6 +779,12 @@ mod tests {
                     "[database]\nurl = 'sqlite::memory:'\n[oauth]\nrefresh_batch_size = 8\nrefresh_concurrency = 9\n",
                     ConfigError::OutOfRange {
                         field: "oauth.refresh_concurrency",
+                    },
+                ),
+                (
+                    "[database]\nurl = 'sqlite::memory:'\n[oauth.claude_code]\nclient_id = ''\n",
+                    ConfigError::InvalidField {
+                        field: "oauth.claude_code.client_id",
                     },
                 ),
                 (
@@ -846,6 +859,10 @@ mod tests {
             assert_eq!(config.oauth().refresh_before_expiry_secs(), 420);
             assert_eq!(config.oauth().refresh_batch_size(), 12);
             assert_eq!(config.oauth().refresh_concurrency(), 3);
+            assert_eq!(
+                config.oauth().claude_code().unwrap().client_id().expose(),
+                "environment-claude-client"
+            );
             assert_eq!(config.credential_encryption().key_id(), Some("primary"));
             assert_eq!(
                 config.credential_encryption().key().unwrap().expose(),
@@ -921,6 +938,10 @@ mod tests {
                 .env("AF_OAUTH__REFRESH_BEFORE_EXPIRY_SECS", "420")
                 .env("AF_OAUTH__REFRESH_BATCH_SIZE", "12")
                 .env("AF_OAUTH__REFRESH_CONCURRENCY", "3")
+                .env(
+                    "AF_OAUTH__CLAUDE_CODE__CLIENT_ID",
+                    "environment-claude-client",
+                )
                 .env("AF_CREDENTIAL_ENCRYPTION__KEY_ID", "primary")
                 .env(
                     "AF_CREDENTIAL_ENCRYPTION__KEY",
