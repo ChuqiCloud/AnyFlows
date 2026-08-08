@@ -12,6 +12,10 @@ use thiserror::Error;
 
 use crate::SessionPrincipal;
 
+use super::lifecycle::{
+    AdminUserSubscriptionLifecycleCommand, AdminUserSubscriptionLifecycleResult,
+};
+
 /// 管理端订阅目录和用户订阅列表的默认页大小。
 pub const DEFAULT_ADMIN_SUBSCRIPTION_PAGE_SIZE: usize = 25;
 
@@ -442,6 +446,15 @@ pub enum SubscriptionServiceError {
     /// 目标用户不存在。
     #[error("订阅用户不存在")]
     UserNotFound,
+    /// 订阅不存在或不属于路径指定用户。
+    #[error("用户订阅不存在")]
+    SubscriptionNotFound,
+    /// 当前状态不允许执行请求的生命周期动作。
+    #[error("订阅生命周期动作无效")]
+    InvalidTransition,
+    /// 陈旧窗口仍绑定在途计费预留，暂时不能恢复。
+    #[error("订阅仍有在途计费预留")]
+    InUse,
     /// 版本或业务事实发生冲突。
     #[error("订阅状态发生冲突")]
     Conflict,
@@ -480,6 +493,14 @@ pub type SubscriptionListUserFuture<'a> = Pin<
 /// 管理员绑定用户计划的异步结果。
 pub type SubscriptionBindFuture<'a> = Pin<
     Box<dyn Future<Output = Result<AdminUserSubscription, SubscriptionServiceError>> + Send + 'a>,
+>;
+/// 管理员迁移用户订阅生命周期的异步结果。
+pub type SubscriptionLifecycleFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<AdminUserSubscriptionLifecycleResult, SubscriptionServiceError>>
+            + Send
+            + 'a,
+    >,
 >;
 
 /// 管理员订阅管理与当前用户只读应用端口。
@@ -528,4 +549,13 @@ pub trait SubscriptionService: Send + Sync {
         user_id: UserId,
         command: AdminUserSubscriptionBindCommand,
     ) -> SubscriptionBindFuture<'a>;
+
+    /// 管理员迁移路径指定用户的单个订阅生命周期。
+    fn transition_user_lifecycle<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        user_id: UserId,
+        subscription_id: UserSubscriptionId,
+        command: AdminUserSubscriptionLifecycleCommand,
+    ) -> SubscriptionLifecycleFuture<'a>;
 }

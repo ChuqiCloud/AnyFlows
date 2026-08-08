@@ -1,14 +1,20 @@
-import { BellRing, CalendarRange, Clock3, Layers3, RefreshCw } from 'lucide-react'
+import { Layers3, RefreshCw } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { UserSubscription } from '@/lib/api/generated/types.gen'
+import type {
+  AdminUserSubscriptionLifecycleAction,
+  UserSubscription,
+} from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
-import { isSubscriptionAlertDue, subscriptionRemainingPercent } from './subscription-alert-policy'
 import { useCurrentUserSubscriptions } from './subscription-api'
+import {
+  SubscriptionDesktopRow,
+  SubscriptionMobileItem,
+  type SubscriptionAlertPolicy,
+} from './subscription-list-item'
 
 type SubscriptionListQuery = Pick<
   ReturnType<typeof useCurrentUserSubscriptions>,
@@ -26,14 +32,21 @@ type SubscriptionListProps = {
   subscriptions: UserSubscription[]
   query: SubscriptionListQuery
   scope: 'current' | 'admin'
-  alertPolicy?: {
-    enabled: boolean
-    thresholdPercent: number
-  }
+  alertPolicy?: SubscriptionAlertPolicy
+  onLifecycleAction?: (
+    subscription: UserSubscription,
+    action: AdminUserSubscriptionLifecycleAction,
+  ) => void
 }
 
 /** 以桌面表格和移动条目展示订阅窗口及额度事实。 */
-export function SubscriptionList({ subscriptions, query, scope, alertPolicy }: SubscriptionListProps) {
+export function SubscriptionList({
+  subscriptions,
+  query,
+  scope,
+  alertPolicy,
+  onLifecycleAction,
+}: SubscriptionListProps) {
   const { i18n, t } = useTranslation()
   const locale = i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US'
   const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale])
@@ -88,20 +101,23 @@ export function SubscriptionList({ subscriptions, query, scope, alertPolicy }: S
         <table className="w-full table-fixed text-left text-xs">
           <thead className="bg-surface-2/60 text-muted-foreground">
             <tr>
-              <th className="w-[28%] px-3 py-2 font-medium">{t('subscriptions.columns.plan')}</th>
-              <th className="w-[22%] px-3 py-2 font-medium">{t('subscriptions.columns.quota')}</th>
-              <th className="w-[30%] px-3 py-2 font-medium">{t('subscriptions.columns.window')}</th>
-              <th className="w-[20%] px-3 py-2 font-medium">{t('subscriptions.columns.bound')}</th>
+              <th className={cn(onLifecycleAction ? 'w-[22%]' : 'w-[28%]', 'px-3 py-2 font-medium')}>{t('subscriptions.columns.plan')}</th>
+              <th className={cn(onLifecycleAction ? 'w-[20%]' : 'w-[22%]', 'px-3 py-2 font-medium')}>{t('subscriptions.columns.quota')}</th>
+              <th className={cn(onLifecycleAction ? 'w-[24%]' : 'w-[30%]', 'px-3 py-2 font-medium')}>{t('subscriptions.columns.window')}</th>
+              <th className={cn(onLifecycleAction ? 'w-[16%]' : 'w-[20%]', 'px-3 py-2 font-medium')}>{t('subscriptions.columns.bound')}</th>
+              {onLifecycleAction ? <th className="w-[18%] px-3 py-2 font-medium">{t('subscriptions.columns.actions')}</th> : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--hairline)]">
             {subscriptions.map((subscription) => (
-              <tr key={subscription.subscription_id} className="hover:bg-surface-2/35">
-                <td className="px-3 py-3"><SubscriptionIdentity subscription={subscription} /></td>
-                <td className="px-3 py-3"><SubscriptionQuota subscription={subscription} formatQuota={numberFormat.format} alertPolicy={alertPolicy} /></td>
-                <td className="px-3 py-3"><SubscriptionWindow subscription={subscription} formatTime={formatTime} /></td>
-                <td className="px-3 py-3"><SubscriptionBinding subscription={subscription} formatTime={formatTime} /></td>
-              </tr>
+              <SubscriptionDesktopRow
+                key={subscription.subscription_id}
+                subscription={subscription}
+                formatQuota={numberFormat.format}
+                formatTime={formatTime}
+                alertPolicy={alertPolicy}
+                onLifecycleAction={onLifecycleAction}
+              />
             ))}
           </tbody>
         </table>
@@ -109,16 +125,14 @@ export function SubscriptionList({ subscriptions, query, scope, alertPolicy }: S
 
       <div className="grid gap-2 md:hidden">
         {subscriptions.map((subscription) => (
-          <article key={subscription.subscription_id} className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
-            <SubscriptionIdentity subscription={subscription} />
-            <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--hairline)] pt-3">
-              <SubscriptionQuota subscription={subscription} formatQuota={numberFormat.format} alertPolicy={alertPolicy} />
-              <SubscriptionBinding subscription={subscription} formatTime={formatTime} />
-            </div>
-            <div className="mt-3 border-t border-[var(--hairline)] pt-3">
-              <SubscriptionWindow subscription={subscription} formatTime={formatTime} />
-            </div>
-          </article>
+          <SubscriptionMobileItem
+            key={subscription.subscription_id}
+            subscription={subscription}
+            formatQuota={numberFormat.format}
+            formatTime={formatTime}
+            alertPolicy={alertPolicy}
+            onLifecycleAction={onLifecycleAction}
+          />
         ))}
       </div>
 
@@ -144,122 +158,5 @@ export function SubscriptionList({ subscriptions, query, scope, alertPolicy }: S
         </div>
       ) : null}
     </>
-  )
-}
-
-function SubscriptionIdentity({ subscription }: { subscription: UserSubscription }) {
-  const { t } = useTranslation()
-  return (
-    <div className="min-w-0">
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <span className="truncate font-medium">{subscription.plan_name}</span>
-        <SubscriptionStatusBadge status={subscription.status} />
-      </div>
-      <div className="mt-1 truncate font-mono text-[0.6875rem] text-muted-foreground" title={subscription.subscription_id}>
-        {subscription.subscription_id.slice(0, 8)} · {t('subscriptions.values.planVersion', { version: subscription.plan_version })}
-      </div>
-    </div>
-  )
-}
-
-function SubscriptionStatusBadge({ status }: { status: UserSubscription['status'] }) {
-  const { t } = useTranslation()
-  return (
-    <Badge className={cn(
-      'border-transparent',
-      status === 'active' && 'bg-success/10 text-success',
-      status === 'suspended' && 'bg-warning/10 text-warning',
-      status === 'canceled' && 'bg-destructive/10 text-destructive',
-      status === 'expired' && 'bg-surface-2 text-muted-foreground',
-    )}>
-      {t(`subscriptions.status.${status}`)}
-    </Badge>
-  )
-}
-
-function SubscriptionQuota({
-  subscription,
-  formatQuota,
-  alertPolicy,
-}: {
-  subscription: UserSubscription
-  formatQuota: (value: number) => string
-  alertPolicy?: SubscriptionListProps['alertPolicy']
-}) {
-  const { t } = useTranslation()
-  const percent = subscription.quota_amount <= 0
-    ? 0
-    : Math.min(100, Math.round(subscription.quota_used / subscription.quota_amount * 100))
-  const remainingPercent = subscriptionRemainingPercent(subscription)
-  const alertDue = Boolean(
-    alertPolicy?.enabled
-      && isSubscriptionAlertDue(subscription, alertPolicy.thresholdPercent),
-  )
-  return (
-    <div className="tabular-nums">
-      <div className="font-medium">
-        {t('subscriptions.values.quotaUsage', {
-          used: formatQuota(subscription.quota_used),
-          total: formatQuota(subscription.quota_amount),
-        })}
-      </div>
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-2" aria-hidden="true">
-        <div className={cn('h-full rounded-full transition-[width] duration-150', alertDue ? 'bg-warning' : 'bg-brand')} style={{ width: `${percent}%` }} />
-      </div>
-      <div className="mt-1.5 flex min-h-5 items-center justify-between gap-2 text-[0.6875rem] text-muted-foreground">
-        <span>{t('subscriptions.values.remainingPercent', { percent: remainingPercent })}</span>
-        {alertDue ? (
-          <Badge className="gap-1 bg-warning/10 px-1.5 py-0 text-warning">
-            <BellRing className="size-3" aria-hidden="true" />
-            {t('subscriptions.alerts.due')}
-          </Badge>
-        ) : null}
-      </div>
-    </div>
-  )
-}
-
-function SubscriptionWindow({
-  subscription,
-  formatTime,
-}: {
-  subscription: UserSubscription
-  formatTime: (value: number) => string
-}) {
-  const { t } = useTranslation()
-  return (
-    <div>
-      <div className="flex items-center gap-1.5 font-medium">
-        <CalendarRange className="size-3.5 text-muted-foreground" aria-hidden="true" />
-        {t(`subscriptions.cycle.${subscription.cycle}`)}
-      </div>
-      <div className="mt-1 text-[0.6875rem] leading-5 text-muted-foreground">
-        {t('subscriptions.values.window', {
-          start: formatTime(subscription.window_started_at),
-          end: formatTime(subscription.window_ends_at),
-        })}
-      </div>
-    </div>
-  )
-}
-
-function SubscriptionBinding({
-  subscription,
-  formatTime,
-}: {
-  subscription: UserSubscription
-  formatTime: (value: number) => string
-}) {
-  const { t } = useTranslation()
-  return (
-    <div>
-      <div className="flex items-center gap-1.5 font-medium">
-        <Clock3 className="size-3.5 text-muted-foreground" aria-hidden="true" />
-        {formatTime(subscription.bound_at)}
-      </div>
-      <div className="mt-1 text-[0.6875rem] text-muted-foreground">
-        {t('subscriptions.values.subscriptionVersion', { version: subscription.version })}
-      </div>
-    </div>
   )
 }

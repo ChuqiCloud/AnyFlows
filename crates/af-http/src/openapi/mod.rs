@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 75);
+        assert_eq!(document.paths.paths.len(), 76);
         let operation_count = document
             .paths
             .paths
@@ -160,7 +160,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 115);
+        assert_eq!(operation_count, 116);
         assert!(
             document
                 .components
@@ -295,6 +295,7 @@ mod tests {
             "updateUserToken",
             "adjustAdminWallet",
             "bindAdminUserSubscription",
+            "transitionAdminUserSubscriptionLifecycle",
             "listAdminWalletEntries",
         ]
         .into_iter()
@@ -303,7 +304,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 195);
+        assert_eq!(schemas.len(), 198);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminChannelAutoBanRules"));
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
@@ -356,6 +357,9 @@ mod tests {
         assert!(schemas.contains_key("UserSubscription"));
         assert!(schemas.contains_key("UserSubscriptionListResponse"));
         assert!(schemas.contains_key("AdminUserSubscriptionBindRequest"));
+        assert!(schemas.contains_key("AdminUserSubscriptionLifecycleAction"));
+        assert!(schemas.contains_key("AdminUserSubscriptionLifecycleRequest"));
+        assert!(schemas.contains_key("AdminUserSubscriptionLifecycleResponse"));
         assert!(schemas.contains_key("SetupRequest"));
         assert!(schemas.contains_key("SetupStatusResponse"));
         assert!(schemas.contains_key("RegistrationStatusResponse"));

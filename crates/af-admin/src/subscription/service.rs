@@ -6,20 +6,26 @@ use std::{
 use af_db::{
     SubscriptionPlanCreateOutcome, SubscriptionPlanDisable, SubscriptionPlanDisableOutcome,
     SubscriptionPlanWrite, SubscriptionRepository, SubscriptionRepositoryError,
-    UserSubscriptionBind, UserSubscriptionBindOutcome,
+    UserSubscriptionBind, UserSubscriptionBindOutcome, UserSubscriptionLifecycleTransition,
+    UserSubscriptionLifecycleTransitionOutcome,
 };
 use af_domain::{
     SubscriptionPlanId, SubscriptionPlanStatus, SubscriptionWindow, UserId, UserSubscriptionId,
+    UserSubscriptionStatus,
 };
 
 use crate::{SessionPrincipal, SessionRole};
 
-use super::types::{
-    AdminSubscriptionPageQuery, AdminSubscriptionPlan, AdminSubscriptionPlanCreateCommand,
-    AdminSubscriptionPlanDisableCommand, AdminSubscriptionPlanPage, AdminUserSubscription,
-    AdminUserSubscriptionBindCommand, AdminUserSubscriptionPage, SubscriptionBindFuture,
-    SubscriptionCreatePlanFuture, SubscriptionDisablePlanFuture, SubscriptionListPlansFuture,
-    SubscriptionListUserFuture, SubscriptionService, SubscriptionServiceError,
+use super::{
+    lifecycle::{AdminUserSubscriptionLifecycleCommand, AdminUserSubscriptionLifecycleResult},
+    types::{
+        AdminSubscriptionPageQuery, AdminSubscriptionPlan, AdminSubscriptionPlanCreateCommand,
+        AdminSubscriptionPlanDisableCommand, AdminSubscriptionPlanPage, AdminUserSubscription,
+        AdminUserSubscriptionBindCommand, AdminUserSubscriptionPage, SubscriptionBindFuture,
+        SubscriptionCreatePlanFuture, SubscriptionDisablePlanFuture, SubscriptionLifecycleFuture,
+        SubscriptionListPlansFuture, SubscriptionListUserFuture, SubscriptionService,
+        SubscriptionServiceError,
+    },
 };
 
 /// 使用订阅仓储的生产应用服务。
@@ -173,6 +179,55 @@ impl SubscriptionService for DatabaseSubscriptionService {
             Ok(AdminUserSubscription::from_record(&record))
         })
     }
+
+    fn transition_user_lifecycle<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        user_id: UserId,
+        subscription_id: UserSubscriptionId,
+        command: AdminUserSubscriptionLifecycleCommand,
+    ) -> SubscriptionLifecycleFuture<'a> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            let subscription = self
+                .repository
+                .get_user_subscription(subscription_id)
+                .await
+                .map_err(map_read_error)?
+                .ok_or(SubscriptionServiceError::SubscriptionNotFound)?;
+            let target_status = resolve_lifecycle_target(
+                subscription.user_id(),
+                user_id,
+                subscription.version(),
+                subscription.status(),
+                command,
+            )?;
+            let changed_at = unix_now()?.max(subscription.status_changed_at());
+            let transition = UserSubscriptionLifecycleTransition::from_record(
+                &subscription,
+                target_status,
+                changed_at,
+            )
+            .map_err(|_| SubscriptionServiceError::Internal)?;
+            let record = match recover_lifecycle(&self.repository, &transition).await? {
+                UserSubscriptionLifecycleTransitionOutcome::Applied(record)
+                | UserSubscriptionLifecycleTransitionOutcome::Existing(record) => record,
+                UserSubscriptionLifecycleTransitionOutcome::NotFound => {
+                    return Err(SubscriptionServiceError::SubscriptionNotFound);
+                }
+                UserSubscriptionLifecycleTransitionOutcome::InUse(_) => {
+                    return Err(SubscriptionServiceError::InUse);
+                }
+                UserSubscriptionLifecycleTransitionOutcome::NotDue(_) => {
+                    return Err(SubscriptionServiceError::Internal);
+                }
+            };
+            Ok(AdminUserSubscriptionLifecycleResult::new(
+                AdminUserSubscription::from_record(record.subscription()),
+                record.periods_elapsed(),
+            ))
+        })
+    }
 }
 
 impl fmt::Debug for DatabaseSubscriptionService {
@@ -236,6 +291,39 @@ async fn recover_bind(
     }
 }
 
+async fn recover_lifecycle(
+    repository: &SubscriptionRepository,
+    transition: &UserSubscriptionLifecycleTransition,
+) -> Result<UserSubscriptionLifecycleTransitionOutcome, SubscriptionServiceError> {
+    match repository
+        .transition_user_subscription_lifecycle(transition)
+        .await
+    {
+        Err(SubscriptionRepositoryError::OutcomeUnknown) => repository
+            .transition_user_subscription_lifecycle(transition)
+            .await
+            .map_err(map_write_error),
+        result => result.map_err(map_write_error),
+    }
+}
+
+fn resolve_lifecycle_target(
+    subscription_user_id: UserId,
+    path_user_id: UserId,
+    current_version: u64,
+    current_status: UserSubscriptionStatus,
+    command: AdminUserSubscriptionLifecycleCommand,
+) -> Result<UserSubscriptionStatus, SubscriptionServiceError> {
+    // 所有权不匹配与订阅不存在使用同一错误，避免跨用户误操作。
+    if subscription_user_id != path_user_id {
+        return Err(SubscriptionServiceError::SubscriptionNotFound);
+    }
+    if current_version != command.expected_version {
+        return Err(SubscriptionServiceError::Conflict);
+    }
+    command.action.target_status(current_status)
+}
+
 fn require_admin(principal: SessionPrincipal) -> Result<(), SubscriptionServiceError> {
     if principal.role() == SessionRole::Admin {
         Ok(())
@@ -288,5 +376,40 @@ fn map_write_error(error: SubscriptionRepositoryError) -> SubscriptionServiceErr
         SubscriptionRepositoryError::Query
         | SubscriptionRepositoryError::Timeout
         | SubscriptionRepositoryError::Invariant => SubscriptionServiceError::Internal,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::subscription::lifecycle::AdminUserSubscriptionLifecycleAction;
+
+    #[test]
+    fn lifecycle_target_checks_ownership_and_version_before_the_action() {
+        let owner = UserId::new(7).unwrap();
+        let other_user = UserId::new(8).unwrap();
+        let command = AdminUserSubscriptionLifecycleCommand::new(
+            AdminUserSubscriptionLifecycleAction::Suspend,
+            3,
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_lifecycle_target(
+                owner,
+                other_user,
+                3,
+                UserSubscriptionStatus::Active,
+                command
+            ),
+            Err(SubscriptionServiceError::SubscriptionNotFound)
+        );
+        assert_eq!(
+            resolve_lifecycle_target(owner, owner, 4, UserSubscriptionStatus::Active, command),
+            Err(SubscriptionServiceError::Conflict)
+        );
+        assert_eq!(
+            resolve_lifecycle_target(owner, owner, 3, UserSubscriptionStatus::Active, command),
+            Ok(UserSubscriptionStatus::Suspended)
+        );
     }
 }

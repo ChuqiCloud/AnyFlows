@@ -10,6 +10,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAdminUsers } from '@/features/users/user-api'
 import type { AdminSubscriptionPlan } from '@/lib/api/generated/types.gen'
 import { SubscriptionBindSheet } from './subscription-bind-sheet'
+import {
+  SubscriptionLifecycleDialog,
+  type SubscriptionLifecycleOperation,
+} from './subscription-lifecycle-dialog'
 import { SubscriptionList } from './subscription-list'
 import { useAdminSubscriptionPlans, useAdminUserSubscriptions } from './subscription-api'
 
@@ -30,6 +34,7 @@ export function SubscriptionUserPanel({ plans, plansQuery }: SubscriptionUserPan
   const subscriptionsQuery = useAdminUserSubscriptions(selectedUser?.id)
   const subscriptions = subscriptionsQuery.data?.pages.flatMap((page) => page.subscriptions) ?? []
   const [binding, setBinding] = useState(false)
+  const [lifecycleOperation, setLifecycleOperation] = useState<SubscriptionLifecycleOperation>()
 
   if (usersQuery.isPending) {
     return (
@@ -71,7 +76,10 @@ export function SubscriptionUserPanel({ plans, plansQuery }: SubscriptionUserPan
           <Select
             id="subscription-user-selector"
             value={selectedUser.id}
-            onChange={(event) => setChosenUserId(Number(event.target.value))}
+            onChange={(event) => {
+              setChosenUserId(Number(event.target.value))
+              setLifecycleOperation(undefined)
+            }}
           >
             {users.map((user) => (
               <option key={user.id} value={user.id}>
@@ -119,13 +127,25 @@ export function SubscriptionUserPanel({ plans, plansQuery }: SubscriptionUserPan
         </div>
       ) : null}
 
-      <SubscriptionList subscriptions={subscriptions} query={subscriptionsQuery} scope="admin" />
+      <SubscriptionList
+        subscriptions={subscriptions}
+        query={subscriptionsQuery}
+        scope="admin"
+        onLifecycleAction={(subscription, action) => {
+          setLifecycleOperation({ subscription, action })
+        }}
+      />
       <SubscriptionBindSheet
         open={binding}
         onOpenChange={setBinding}
         user={selectedUser}
         plans={plans}
         plansQuery={plansQuery}
+      />
+      <SubscriptionLifecycleDialog
+        userId={selectedUser.id}
+        operation={lifecycleOperation}
+        onClose={() => setLifecycleOperation(undefined)}
       />
     </div>
   )

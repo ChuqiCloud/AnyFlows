@@ -3,10 +3,13 @@ use std::sync::Arc;
 use af_admin::{
     AdminSubscriptionPageQuery, AdminSubscriptionPlan, AdminSubscriptionPlanCreateCommand,
     AdminSubscriptionPlanDisableCommand, AdminUserSubscription, AdminUserSubscriptionBindCommand,
-    SessionAuthentication, SessionAuthenticator, SubscriptionService, SubscriptionServiceError,
+    AdminUserSubscriptionLifecycleAction, AdminUserSubscriptionLifecycleCommand,
+    AdminUserSubscriptionLifecycleResult, SessionAuthentication, SessionAuthenticator,
+    SubscriptionService, SubscriptionServiceError,
 };
 use af_domain::{
-    SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus, UserId, UserSubscriptionStatus,
+    SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus, UserId, UserSubscriptionId,
+    UserSubscriptionStatus,
 };
 use axum::{
     Extension, Json, Router,
@@ -217,6 +220,46 @@ pub(crate) struct AdminUserSubscriptionBindRequest {
     plan_id: String,
 }
 
+/// 管理员可提交的闭合订阅生命周期动作。
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = AdminUserSubscriptionLifecycleAction, rename_all = "snake_case")]
+pub(crate) enum AdminUserSubscriptionLifecycleActionDto {
+    Suspend,
+    Resume,
+    Cancel,
+}
+
+impl From<AdminUserSubscriptionLifecycleActionDto> for AdminUserSubscriptionLifecycleAction {
+    fn from(value: AdminUserSubscriptionLifecycleActionDto) -> Self {
+        match value {
+            AdminUserSubscriptionLifecycleActionDto::Suspend => Self::Suspend,
+            AdminUserSubscriptionLifecycleActionDto::Resume => Self::Resume,
+            AdminUserSubscriptionLifecycleActionDto::Cancel => Self::Cancel,
+        }
+    }
+}
+
+/// 管理员迁移用户订阅生命周期的 CAS 请求。
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminUserSubscriptionLifecycleRequest)]
+pub(crate) struct AdminUserSubscriptionLifecycleRequest {
+    action: AdminUserSubscriptionLifecycleActionDto,
+    #[schema(minimum = 1)]
+    expected_version: i64,
+}
+
+/// 生命周期迁移后的订阅事实和窗口推进信息。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminUserSubscriptionLifecycleResponse)]
+pub(crate) struct AdminUserSubscriptionLifecycleResponse {
+    subscription: UserSubscriptionResponse,
+    #[schema(minimum = 0)]
+    periods_elapsed: u32,
+}
+
 /// 构建管理员订阅管理和当前用户订阅读取路由。
 pub(crate) fn build_subscription_router(
     service: Arc<dyn SubscriptionService>,
@@ -243,6 +286,10 @@ pub(crate) fn build_subscription_router(
         .route(
             "/api/admin/users/{user_id}/subscriptions",
             get(list_admin_user_subscriptions).post(bind_admin_user_subscription),
+        )
+        .route(
+            "/api/admin/users/{user_id}/subscriptions/{subscription_id}/lifecycle",
+            post(transition_admin_user_subscription_lifecycle),
         )
         .route_layer(middleware::from_fn(authorize_management_admin))
         .route_layer(admin_authentication)
@@ -372,6 +419,33 @@ async fn bind_admin_user_subscription(
     ))
 }
 
+async fn transition_admin_user_subscription_lifecycle(
+    State(state): State<SubscriptionHttpState>,
+    Path((user_id, subscription_id)): Path<(String, String)>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    request: Result<Json<AdminUserSubscriptionLifecycleRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let user_id = parse_user_id(&user_id)?;
+    let subscription_id = parse_subscription_id(&subscription_id)?;
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let command =
+        AdminUserSubscriptionLifecycleCommand::new(request.action.into(), request.expected_version)
+            .map_err(map_service_error)?;
+    let result = state
+        .service
+        .transition_user_lifecycle(
+            authentication.principal(),
+            user_id,
+            subscription_id,
+            command,
+        )
+        .await
+        .map_err(map_service_error)?;
+    Ok(no_store_json(
+        AdminUserSubscriptionLifecycleResponse::from_result(&result)?,
+    ))
+}
+
 impl AdminSubscriptionPlanResponse {
     fn from_plan(plan: &AdminSubscriptionPlan) -> Result<Self, ManagementError> {
         Ok(Self {
@@ -418,6 +492,15 @@ impl UserSubscriptionResponse {
     }
 }
 
+impl AdminUserSubscriptionLifecycleResponse {
+    fn from_result(result: &AdminUserSubscriptionLifecycleResult) -> Result<Self, ManagementError> {
+        Ok(Self {
+            subscription: UserSubscriptionResponse::from_subscription(result.subscription())?,
+            periods_elapsed: result.periods_elapsed(),
+        })
+    }
+}
+
 fn user_subscription_page_response(
     page: af_admin::AdminUserSubscriptionPage,
 ) -> Result<Response, ManagementError> {
@@ -455,6 +538,10 @@ fn parse_user_id(value: &str) -> Result<UserId, ManagementError> {
         .ok_or(ManagementError::InvalidRequest)
 }
 
+fn parse_subscription_id(value: &str) -> Result<UserSubscriptionId, ManagementError> {
+    UserSubscriptionId::from_persistence_key(value).map_err(|_| ManagementError::InvalidRequest)
+}
+
 fn optional_i64(value: Option<u64>) -> Result<Option<i64>, ManagementError> {
     value
         .map(i64::try_from)
@@ -470,6 +557,11 @@ fn map_service_error(error: SubscriptionServiceError) -> ManagementError {
         SubscriptionServiceError::PlanNotFound => ManagementError::SubscriptionPlanNotFound,
         SubscriptionServiceError::PlanDisabled => ManagementError::SubscriptionPlanDisabled,
         SubscriptionServiceError::UserNotFound => ManagementError::UserNotFound,
+        SubscriptionServiceError::SubscriptionNotFound => ManagementError::SubscriptionNotFound,
+        SubscriptionServiceError::InvalidTransition => {
+            ManagementError::SubscriptionTransitionInvalid
+        }
+        SubscriptionServiceError::InUse => ManagementError::SubscriptionInUse,
         SubscriptionServiceError::Conflict => ManagementError::SubscriptionConflict,
         SubscriptionServiceError::OutcomeUnknown => ManagementError::SubscriptionOutcomeUnknown,
         SubscriptionServiceError::Internal => ManagementError::Internal,
@@ -491,6 +583,11 @@ mod tests {
     #[test]
     fn identifiers_and_pagination_reject_ambiguous_inputs() {
         assert!(parse_plan_id("11111111111111111111111111111111").is_ok());
+        assert!(parse_subscription_id("22222222222222222222222222222222").is_ok());
+        assert_eq!(
+            parse_subscription_id("2222"),
+            Err(ManagementError::InvalidRequest)
+        );
         assert_eq!(parse_user_id("42").unwrap().get(), 42);
         for value in ["", "0", "+1", "-1", "1.0", "abc"] {
             assert_eq!(parse_user_id(value), Err(ManagementError::InvalidRequest));

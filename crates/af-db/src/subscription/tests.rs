@@ -239,6 +239,13 @@ async fn plan_and_user_subscription_lists_use_stable_cursors() -> Result<(), Box
         first_subscriptions.subscriptions()[0].plan_name(),
         "分页计划-2"
     );
+    let subscription = fixture
+        .repository
+        .get_user_subscription(subscription_id(0x62))
+        .await?
+        .expect("用户订阅必须可按稳定标识读取");
+    assert_eq!(subscription.user_id(), fixture.first_user_id);
+    assert_eq!(subscription.plan_id(), plan_ids[1]);
     let second_subscriptions = fixture
         .repository
         .list_user_subscriptions(fixture.first_user_id, first_subscriptions.next_cursor(), 2)

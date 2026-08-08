@@ -2890,6 +2890,15 @@
       "bind": "Confirm binding",
       "binding": "Binding",
       "cancel": "Cancel",
+      "suspend": "Suspend",
+      "resume": "Resume",
+      "cancelSubscription": "Cancel subscription",
+      "transitioning": "Submitting",
+      "confirmSuspend": "Confirm suspend",
+      "confirmResume": "Confirm resume",
+      "confirmCancel": "Confirm cancellation",
+      "cancelDialog": "Cancel",
+      "done": "Done",
       "loadMorePlans": "Load more plans",
       "loadingMorePlans": "Loading plans",
       "loadMoreUsers": "Load more users",
@@ -2980,6 +2989,18 @@
       "planCycle": "Cycle {{value}}",
       "planVersion": "Version v{{version}}"
     },
+    "lifecycle": {
+      "readOnly": "Read only",
+      "suspendTitle": "Suspend subscription",
+      "suspendDescription": "Suspending “{{name}}” preserves the current window and used quota. Subscription quota remains unavailable until it is resumed.",
+      "resumeTitle": "Resume subscription",
+      "resumeDescription": "Resuming “{{name}}” continues the current window. If that window is stale, the service advances it to the current UTC period and clears old usage.",
+      "cancelTitle": "Cancel subscription",
+      "cancelDescription": "Canceling “{{name}}” stops subscription quota immediately. The scheduler marks it expired after the current window ends. This cannot be undone.",
+      "successTitle": "Subscription updated",
+      "success": "The lifecycle action was committed. The list will refresh from persisted facts.",
+      "successAdvanced": "The subscription was resumed and advanced by {{periods}} complete UTC periods. Usage from the stale window was cleared."
+    },
     "user": {
       "selectorLabel": "Select user",
       "loading": "Loading user directory",
@@ -3022,6 +3043,11 @@
       "planNotFound": "The plan no longer exists. Refresh the plan catalog.",
       "planDisabled": "The plan is disabled. Select another active plan.",
       "userNotFound": "The user no longer exists. Refresh the user directory.",
+      "lifecycle": "The subscription state could not be updated. Try again shortly.",
+      "lifecycleNotFound": "The subscription no longer exists or belongs to another user. Refresh the list.",
+      "lifecycleInvalid": "The current subscription state does not allow this action. Refresh the list to reconcile the facts.",
+      "lifecycleInUse": "The subscription window still has an in-flight billed request. Wait for it to finish, then try again.",
+      "lifecycleConflict": "The subscription version or window changed. Refresh the list and try again.",
       "outcomeUnknown": "The result cannot be confirmed yet. Refresh this page to reconcile the persisted facts."
     }
   },

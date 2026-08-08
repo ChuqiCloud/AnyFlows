@@ -59,6 +59,12 @@ pub(crate) enum ManagementError {
     SubscriptionPlanNotFound,
     /// 订阅计划已经停用，不能新增绑定。
     SubscriptionPlanDisabled,
+    /// 用户订阅不存在或不属于路径指定用户。
+    SubscriptionNotFound,
+    /// 当前订阅状态不允许执行请求的生命周期动作。
+    SubscriptionTransitionInvalid,
+    /// 订阅窗口仍绑定在途计费预留。
+    SubscriptionInUse,
     /// 订阅计划版本、业务标识或绑定事实发生冲突。
     SubscriptionConflict,
     /// 订阅写入结果未知，服务端重试后仍无法确认。
@@ -379,6 +385,27 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "subscription_plan_disabled",
                     message: "Subscription plan disabled",
+                },
+            ),
+            Self::SubscriptionNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "subscription_not_found",
+                    message: "Subscription not found",
+                },
+            ),
+            Self::SubscriptionTransitionInvalid => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "subscription_transition_invalid",
+                    message: "Subscription transition invalid",
+                },
+            ),
+            Self::SubscriptionInUse => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "subscription_in_use",
+                    message: "Subscription in use",
                 },
             ),
             Self::SubscriptionConflict => (
