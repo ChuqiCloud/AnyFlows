@@ -295,7 +295,10 @@ async fn seed_account(
             ],
         ))
         .await?;
-    let max_requests = max_requests.map_or(DatabaseValue::Null, DatabaseValue::from);
+    let max_requests: DatabaseValue = match max_requests {
+        Some(value) => value.into(),
+        None => Option::<i64>::None.into(),
+    };
     connection
         .execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
