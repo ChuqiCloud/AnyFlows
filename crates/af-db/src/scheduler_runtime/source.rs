@@ -3,6 +3,7 @@ use af_domain::{
     Protocol, ProxyId, Status,
 };
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
+use thiserror::Error;
 
 use crate::{
     CredentialProxyScheme,
@@ -17,7 +18,8 @@ use crate::{
 use super::{ChannelModelMappings, ChannelParameterOverrides, SchedulerRuntimeProxyRecord};
 
 /// 将持久化实体转换为运行时选择策略可理解的内部来源对象时发生的不变量错误。
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+#[error("调度运行时来源不变量无效")]
 pub(super) enum SchedulerRuntimeSourceError {
     Invariant,
 }
