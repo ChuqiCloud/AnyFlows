@@ -28,6 +28,64 @@ pub use refresh::{
 
 const DEFAULT_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_OAUTH_PROVIDER_BYTES: usize = 64;
+const MAX_OAUTH_IDENTITY_BYTES: usize = 255;
+
+/// OAuth token 响应允许补充的非敏感身份字段；空字段表示保留数据库原值。
+#[derive(Clone, Default, Eq, PartialEq)]
+pub struct OAuthCredentialIdentityPatch {
+    account_key: Option<String>,
+    project_id: Option<String>,
+}
+
+impl OAuthCredentialIdentityPatch {
+    /// 创建经过长度、空白和控制字符校验的身份补丁。
+    pub fn new(
+        account_key: Option<String>,
+        project_id: Option<String>,
+    ) -> Result<Self, OAuthCredentialRepositoryError> {
+        let patch = Self {
+            account_key,
+            project_id,
+        };
+        if !valid_identity_value(patch.account_key.as_deref())
+            || !valid_identity_value(patch.project_id.as_deref())
+        {
+            return Err(OAuthCredentialRepositoryError::InvalidIdentity);
+        }
+        Ok(patch)
+    }
+
+    /// 返回可替换现有账号键的新值。
+    #[must_use]
+    pub fn account_key(&self) -> Option<&str> {
+        self.account_key.as_deref()
+    }
+
+    /// 返回可替换现有项目标识的新值。
+    #[must_use]
+    pub fn project_id(&self) -> Option<&str> {
+        self.project_id.as_deref()
+    }
+
+    /// 返回本补丁是否不会改变任何身份字段。
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.account_key.is_none() && self.project_id.is_none()
+    }
+}
+
+impl fmt::Debug for OAuthCredentialIdentityPatch {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OAuthCredentialIdentityPatch")
+            .field(
+                "account_key",
+                &self.account_key.as_ref().map(|_| "<已脱敏>"),
+            )
+            .field("project_id", &self.project_id.as_ref().map(|_| "<已脱敏>"))
+            .finish()
+    }
+}
 
 /// OAuth token 密文原子替换结果。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -53,6 +111,9 @@ pub enum OAuthCredentialRepositoryError {
     /// token 绝对到期时间不能为负数。
     #[error("OAuth token 到期时间无效")]
     InvalidExpiration,
+    /// 自动提取的 OAuth 身份字段违反长度或文本边界。
+    #[error("OAuth 身份字段无效")]
+    InvalidIdentity,
     /// 到期阈值或批量上限违反候选查询边界。
     #[error("OAuth 刷新候选查询参数无效")]
     InvalidCandidateQuery,
@@ -106,6 +167,7 @@ impl OAuthCredentialRepository {
         provider: &str,
         expires_at_epoch_seconds: Option<i64>,
         envelope: EncryptedCredentialEnvelope,
+        identity: OAuthCredentialIdentityPatch,
     ) -> Result<OAuthCredentialTokenUpdateOutcome, OAuthCredentialRepositoryError> {
         if !is_valid_provider(provider) {
             return Err(OAuthCredentialRepositoryError::InvalidProvider);
@@ -121,6 +183,7 @@ impl OAuthCredentialRepository {
                 provider,
                 expires_at_epoch_seconds,
                 encrypted,
+                identity,
             )
             .with_subscriber(NoSubscriber::default());
         match timeout(self.operation_timeout, operation).await {
@@ -138,6 +201,7 @@ impl OAuthCredentialRepository {
         provider: &str,
         expires_at_epoch_seconds: Option<i64>,
         encrypted: EncryptedJson,
+        identity: OAuthCredentialIdentityPatch,
     ) -> Result<OAuthCredentialTokenUpdateOutcome, OAuthCredentialRepositoryError> {
         let now = TimeDateTimeWithTimeZone::now_utc();
         // OAuth 交换成功必须与调度目录通知共用同一事务，避免快照继续使用旧密文。
@@ -150,7 +214,7 @@ impl OAuthCredentialRepository {
         let provider_filter = Condition::any()
             .add(credentials::Column::OauthProvider.is_null())
             .add(credentials::Column::OauthProvider.eq(provider));
-        let result = credentials::Entity::update_many()
+        let mut update = credentials::Entity::update_many()
             .filter(credentials::Column::Id.eq(credential_id.get()))
             .filter(credentials::Column::ChannelId.eq(channel_id.get()))
             .filter(credentials::Column::Kind.eq(CredentialKind::Oauth.as_str()))
@@ -172,7 +236,20 @@ impl OAuthCredentialRepository {
                 credentials::Column::OauthExpiresAtEpochSeconds,
                 Expr::value(expires_at_epoch_seconds),
             )
-            .col_expr(credentials::Column::UpdatedAt, Expr::value(now))
+            .col_expr(credentials::Column::UpdatedAt, Expr::value(now));
+        if let Some(account_key) = identity.account_key {
+            update = update.col_expr(
+                credentials::Column::OauthAccountKey,
+                Expr::value(Some(account_key)),
+            );
+        }
+        if let Some(project_id) = identity.project_id {
+            update = update.col_expr(
+                credentials::Column::OauthProjectId,
+                Expr::value(Some(project_id)),
+            );
+        }
+        let result = update
             .exec(&transaction)
             .await
             .map_err(|_| query_error("oauth_credential_update"))?;
@@ -273,6 +350,15 @@ fn is_valid_provider(provider: &str) -> bool {
         })
 }
 
+fn valid_identity_value(value: Option<&str>) -> bool {
+    value.is_none_or(|value| {
+        !value.is_empty()
+            && value.len() <= MAX_OAUTH_IDENTITY_BYTES
+            && value.trim() == value
+            && !value.chars().any(char::is_control)
+    })
+}
+
 fn query_error(operation: &'static str) -> OAuthCredentialRepositoryError {
     tracing::error!(
         target: "af_db::oauth_credential",
@@ -287,6 +373,7 @@ fn record_internal_error(error: OAuthCredentialRepositoryError) -> OAuthCredenti
         OAuthCredentialRepositoryError::InvalidConfiguration
         | OAuthCredentialRepositoryError::InvalidProvider
         | OAuthCredentialRepositoryError::InvalidExpiration
+        | OAuthCredentialRepositoryError::InvalidIdentity
         | OAuthCredentialRepositoryError::InvalidCandidateQuery => return error,
         OAuthCredentialRepositoryError::Query => "oauth_credential_query",
         OAuthCredentialRepositoryError::Timeout => "oauth_credential_timeout",

@@ -238,6 +238,8 @@ impl OAuthProviderProfile {
     ) -> Result<(), OAuthTokenExchangeError> {
         if (self.requires_refresh_token && token_set.refresh_token().is_none())
             || (self.requires_expiration && token_set.expires_in().is_none())
+            || (self.provider == UpstreamOAuthProvider::Codex
+                && token_set.oauth_account_key().is_none())
         {
             return Err(OAuthTokenExchangeError::InvalidTokenResponse);
         }
@@ -388,7 +390,7 @@ mod tests {
     use af_domain::{ChannelId, CredentialId, UserId};
 
     use super::*;
-    use crate::oauth::OAuthAuthorizationSessionStore;
+    use crate::oauth::{OAuthAuthorizationSessionStore, identity::OAuthIdentityMetadata};
 
     const EXPECTED_CODEX_PARAMETERS: &[(&str, &str)] = &[
         ("prompt", "login"),
@@ -551,13 +553,19 @@ mod tests {
                     .unwrap_err(),
                 OAuthTokenExchangeError::InvalidTokenResponse
             );
-            let complete = OAuthTokenSet::for_test(
+            let identity = if provider == UpstreamOAuthProvider::Codex {
+                OAuthIdentityMetadata::for_test(Some("codex-account-marker".to_owned()), None)
+            } else {
+                OAuthIdentityMetadata::default()
+            };
+            let complete = OAuthTokenSet::for_test_with_identity(
                 provider,
                 context(),
                 "access-token-marker".to_owned(),
                 Some("refresh-token-marker".to_owned()),
                 Some(Duration::from_secs(3_600)),
                 None,
+                identity,
             );
             profile.validate_initial_token_set(&complete).unwrap();
         }

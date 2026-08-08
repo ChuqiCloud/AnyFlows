@@ -10,8 +10,8 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use super::{
-    OAuthCredentialRepository, OAuthCredentialRepositoryError, encrypted_json, is_valid_provider,
-    query_error, record_internal_error,
+    OAuthCredentialIdentityPatch, OAuthCredentialRepository, OAuthCredentialRepositoryError,
+    encrypted_json, is_valid_provider, query_error, record_internal_error,
 };
 use crate::{
     EncryptedCredentialEnvelope,
@@ -397,13 +397,19 @@ impl OAuthCredentialRepository {
         candidate: OAuthRefreshCandidateRecord,
         expires_at_epoch_seconds: i64,
         envelope: EncryptedCredentialEnvelope,
+        identity: OAuthCredentialIdentityPatch,
     ) -> Result<OAuthCredentialRefreshUpdateOutcome, OAuthCredentialRepositoryError> {
         if expires_at_epoch_seconds < 0 {
             return Err(OAuthCredentialRepositoryError::InvalidExpiration);
         }
         let encrypted = encrypted_json(envelope)?;
         let operation = self
-            .replace_refreshed_token_secret_inner(candidate, expires_at_epoch_seconds, encrypted)
+            .replace_refreshed_token_secret_inner(
+                candidate,
+                expires_at_epoch_seconds,
+                encrypted,
+                identity,
+            )
             .with_subscriber(NoSubscriber::default());
         match timeout(self.operation_timeout, operation).await {
             Ok(result) => result.map_err(record_internal_error),
@@ -418,9 +424,10 @@ impl OAuthCredentialRepository {
         candidate: OAuthRefreshCandidateRecord,
         expires_at_epoch_seconds: i64,
         encrypted: EncryptedJson,
+        identity: OAuthCredentialIdentityPatch,
     ) -> Result<OAuthCredentialRefreshUpdateOutcome, OAuthCredentialRepositoryError> {
         let now = sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc();
-        let result = credentials::Entity::update_many()
+        let mut update = credentials::Entity::update_many()
             .filter(credentials::Column::Id.eq(candidate.credential_id.get()))
             .filter(credentials::Column::ChannelId.eq(candidate.channel_id.get()))
             .filter(credentials::Column::Kind.eq(CredentialKind::Oauth.as_str()))
@@ -439,7 +446,20 @@ impl OAuthCredentialRepository {
                 credentials::Column::OauthRevision,
                 Expr::col(credentials::Column::OauthRevision).add(1_i64),
             )
-            .col_expr(credentials::Column::UpdatedAt, Expr::value(now))
+            .col_expr(credentials::Column::UpdatedAt, Expr::value(now));
+        if let Some(account_key) = identity.account_key {
+            update = update.col_expr(
+                credentials::Column::OauthAccountKey,
+                Expr::value(Some(account_key)),
+            );
+        }
+        if let Some(project_id) = identity.project_id {
+            update = update.col_expr(
+                credentials::Column::OauthProjectId,
+                Expr::value(Some(project_id)),
+            );
+        }
+        let result = update
             .exec(self.pool.connection())
             .await
             .map_err(|_| query_error("oauth_refresh_token_update"))?;
