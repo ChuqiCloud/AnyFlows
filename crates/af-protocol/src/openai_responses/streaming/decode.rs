@@ -359,7 +359,9 @@ impl OpenAiResponsesStreamDecoder {
     ) -> Result<(), ParseStreamError> {
         self.require_in_progress()?;
         if self.outputs.has_active_item() {
-            return Err(ParseStreamError::InvalidSequence);
+            // 部分兼容供应商直接以终态完整快照收束消息，省略三层 done 事件。
+            self.outputs
+                .complete_active_message_from_terminal(&response, output)?;
         }
         self.outputs.validate_terminal_item_ids(&response)?;
         let canonical = parse_terminal_response(&response)?;

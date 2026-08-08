@@ -145,6 +145,108 @@ fn decodes_text_stream_across_transport_chunks() {
 }
 
 #[test]
+fn terminal_snapshot_closes_message_when_done_events_are_omitted() {
+    let item_id = "msg_terminal_close";
+    let bytes = stream_with_terminal_message_only(item_id, "hello", "hello");
+    let mut decoder = OpenAiResponsesStreamDecoder::new();
+    let events = decoder.push(&bytes).unwrap();
+    decoder.finish().unwrap();
+
+    assert_eq!(
+        events,
+        vec![
+            CanonicalStreamEvent::MessageStart {
+                choice_index: 0,
+                role: Role::Assistant,
+            },
+            CanonicalStreamEvent::ContentDelta {
+                choice_index: 0,
+                content_index: 0,
+                delta: ContentDelta::Text("hello".to_owned()),
+            },
+            CanonicalStreamEvent::Finish {
+                choice_index: 0,
+                reason: FinishReason::Stop,
+                stop_sequence: None,
+            },
+            CanonicalStreamEvent::Usage(usage(8, 3, 2, 1)),
+            CanonicalStreamEvent::StreamEnd,
+        ]
+    );
+
+    let mismatch = stream_with_terminal_message_only(item_id, "left", "right");
+    let mut mismatch_decoder = OpenAiResponsesStreamDecoder::new();
+    assert_eq!(
+        mismatch_decoder.push(&mismatch),
+        Err(ParseStreamError::InvalidSequence)
+    );
+}
+
+/// 构造省略文本、Part 与 Item 三层完成事件的供应商兼容流。
+fn stream_with_terminal_message_only(item_id: &str, delta: &str, terminal_text: &str) -> Vec<u8> {
+    join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.in_progress",
+            1,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.output_item.added",
+            2,
+            json!({
+                "output_index": 0,
+                "item": {
+                    "id": item_id,
+                    "type": "message",
+                    "status": "in_progress",
+                    "role": "assistant",
+                    "content": [],
+                }
+            }),
+        ),
+        frame(
+            "response.content_part.added",
+            3,
+            json!({
+                "item_id": item_id,
+                "output_index": 0,
+                "content_index": 0,
+                "part": output_text(""),
+            }),
+        ),
+        frame(
+            "response.output_text.delta",
+            4,
+            json!({
+                "item_id": item_id,
+                "output_index": 0,
+                "content_index": 0,
+                "delta": delta,
+                "logprobs": [],
+            }),
+        ),
+        frame(
+            "response.completed",
+            5,
+            json!({
+                "response": response(
+                    "completed",
+                    vec![message_item(item_id, "completed", terminal_text)],
+                    Some(usage_value(8, 3, 2, 1)),
+                    None,
+                    None,
+                )
+            }),
+        ),
+    ])
+}
+
+#[test]
 fn rejects_commentary_message_phase() {
     let bytes = join([
         frame(
