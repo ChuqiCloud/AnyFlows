@@ -42,7 +42,8 @@ use af_billing::{
 };
 use af_cache::{
     CacheError, RedisConcurrencyConfig, RedisConcurrencyStore, RedisConfig, RedisHealthConfig,
-    RedisHealthStore, RedisStickySessionConfig, RedisStickySessionStore,
+    RedisHealthStore, RedisRequestRateLimitConfig, RedisRequestRateLimitStore,
+    RedisStickySessionConfig, RedisStickySessionStore,
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
@@ -113,6 +114,7 @@ use crate::{
         OAuthRuntimeConfigError, PreparedOAuthLoopbackServer, initialize_oauth_refresh_supervisor,
         initialize_oauth_runtime, register_oauth_loopback_servers,
     },
+    request_rate_limit::{RequestRateLimitStore, RuntimeTokenAuthenticator},
     scheduled_chat::ScheduledChatService,
     scheduler_invalidation::{
         PreparedSchedulerInvalidationRuntime, SchedulerInvalidationRuntimeError,
@@ -471,6 +473,9 @@ pub enum BootstrapError {
     /// Redis 并发槽位存储无法安全装配。
     #[error("初始化调度并发槽位失败")]
     Concurrency(#[source] CacheError),
+    /// Redis 生产请求限流存储无法安全装配。
+    #[error("初始化生产请求限流失败")]
+    RequestRateLimit(#[source] CacheError),
     /// 内部退款信号队列容量配置无效。
     #[error("初始化退款信号队列失败")]
     RefundSignalQueue(#[source] RefundSignalQueueError),
@@ -1044,6 +1049,19 @@ impl Bootstrap<RelayReady> {
         } else {
             None
         };
+        let request_rate_limit_store = if let Some(redis_url) = self.config.redis().url() {
+            let config = RedisRequestRateLimitConfig::new(
+                RedisConfig::new(redis_url.expose().to_owned()),
+                "anyflows.gateway.rpm.v1",
+            )
+            .map_err(BootstrapError::RequestRateLimit)?;
+            let store = RedisRequestRateLimitStore::connect(config)
+                .await
+                .map_err(BootstrapError::RequestRateLimit)?;
+            Some(Arc::new(store) as Arc<dyn RequestRateLimitStore>)
+        } else {
+            None
+        };
         let (concurrency_runtime, concurrency_release_worker, concurrency_cleanup_worker) =
             match concurrency {
                 Some((runtime, release_worker, cleanup_worker)) => {
@@ -1127,6 +1145,11 @@ impl Bootstrap<RelayReady> {
         } = self;
         let mut infrastructure = stage.infrastructure;
         infrastructure.admin_group_writer = admin_group_writer;
+        let authenticator = Arc::clone(&infrastructure.authenticator);
+        infrastructure.authenticator = Arc::new(RuntimeTokenAuthenticator::new(
+            authenticator,
+            request_rate_limit_store,
+        ));
         Ok(Bootstrap {
             config,
             shutdown_timeout,

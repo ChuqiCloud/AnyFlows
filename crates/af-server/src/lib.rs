@@ -21,6 +21,7 @@ mod model_discovery;
 mod model_price_source;
 mod oauth_connection;
 mod readiness;
+mod request_rate_limit;
 mod responses_websocket_runtime;
 mod scheduled_chat;
 mod scheduler_invalidation;

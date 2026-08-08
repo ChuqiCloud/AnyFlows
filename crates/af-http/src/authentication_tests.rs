@@ -26,7 +26,7 @@ use http::{
     HeaderMap, HeaderValue, Method, Request, StatusCode, Uri,
     header::{
         ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_EXPOSE_HEADERS, ACCESS_CONTROL_REQUEST_METHOD,
-        AUTHORIZATION, CONTENT_LENGTH, ORIGIN,
+        AUTHORIZATION, CONTENT_LENGTH, ORIGIN, RETRY_AFTER,
     },
 };
 use serde_json::{Value, json};
@@ -49,6 +49,7 @@ enum AuthenticationOutcome {
     Success,
     InvalidApiKey,
     Internal,
+    RateLimited,
 }
 
 struct FakeAuthenticator {
@@ -109,6 +110,9 @@ impl TokenAuthenticator for FakeAuthenticator {
                     Err(TokenAuthenticationError::InvalidApiKey)
                 }
                 AuthenticationOutcome::Internal => Err(TokenAuthenticationError::Internal),
+                AuthenticationOutcome::RateLimited => Err(TokenAuthenticationError::RateLimited {
+                    retry_after: af_domain::UpstreamRetryAfter::from_seconds(37).unwrap(),
+                }),
             }
         })
     }
@@ -247,6 +251,33 @@ async fn valid_key_is_hashed_once_and_verified_principal_reaches_handler() {
         authenticator.client_ips(),
         vec![TrustedClientIp::new(TEST_PEER_IP.parse().unwrap())]
     );
+}
+
+#[tokio::test]
+async fn authenticated_rate_limit_returns_retry_after_header() {
+    let authenticator = Arc::new(FakeAuthenticator::new(AuthenticationOutcome::RateLimited));
+    let response = authenticated_router(
+        Arc::clone(&authenticator),
+        QueryApiKeyPolicy::Deny,
+        &[ALLOWED_ORIGIN],
+        64,
+    )
+    .oneshot({
+        let mut request = bearer_request("/protected");
+        request
+            .headers_mut()
+            .insert(ORIGIN, HeaderValue::from_static(ALLOWED_ORIGIN));
+        request
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(response.headers()[RETRY_AFTER], "37");
+    let body = response_json(response).await;
+    assert_eq!(body["error"]["code"], "rate_limited");
+    assert_eq!(body["error"]["type"], "rate_limit_error");
+    assert_eq!(authenticator.calls(), 1);
 }
 
 #[tokio::test]

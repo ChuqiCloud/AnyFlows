@@ -1,7 +1,7 @@
-use af_domain::{AfError, Protocol, PublicErrorCode, UpstreamError};
+use af_domain::{AfError, Protocol, PublicErrorCode, UpstreamError, UpstreamRetryAfter};
 use af_protocol::{anthropic, gemini, openai_chat};
 use axum::{Json, response::IntoResponse};
-use http::StatusCode;
+use http::{HeaderValue, StatusCode, header::RETRY_AFTER};
 
 use crate::ApiKeyExtractionError;
 
@@ -80,6 +80,23 @@ impl IntoResponse for GeminiHttpError {
 /// 为路由级中间件按客户端协议构造错误响应。
 pub(crate) fn api_error_response(protocol: Protocol, error: AfError) -> axum::response::Response {
     protocol_error_response(protocol, classify_error(error))
+}
+
+/// 返回生产请求限流响应，并把 Redis 计算的窗口恢复时间转换为标准头。
+pub(crate) fn rate_limit_error_response(
+    protocol: Protocol,
+    retry_after: UpstreamRetryAfter,
+) -> axum::response::Response {
+    let mut response = protocol_error_response(
+        protocol,
+        MappedError::new(PublicErrorCode::RateLimited, "request_rate_limited"),
+    );
+    response.headers_mut().insert(
+        RETRY_AFTER,
+        HeaderValue::from_str(&retry_after.seconds().to_string())
+            .expect("受控正整数秒数必须始终是有效响应头"),
+    );
+    response
 }
 
 fn protocol_error_response(protocol: Protocol, mapped: MappedError) -> axum::response::Response {

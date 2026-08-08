@@ -232,6 +232,63 @@ async fn valid_lookup_carries_the_user_concurrency_snapshot() -> Result<(), Box<
 }
 
 #[tokio::test]
+async fn valid_lookup_carries_user_and_group_rpm_snapshots() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    set_user_column(&fixture, users::Column::RpmLimit, Expr::value(Some(60_i32))).await?;
+    set_group_column(&fixture, fixture.token_group_id, Expr::value(Some(120_i32))).await?;
+
+    let outcome = fixture
+        .repository
+        .lookup(&fixture.lookup, test_client_ip())
+        .await?;
+    let TokenAuthLookupOutcome::Authenticated {
+        user_rpm_limit,
+        group_rpm_limit,
+        ..
+    } = outcome
+    else {
+        return Err("有效令牌必须返回 RPM 快照".into());
+    };
+    assert_eq!(user_rpm_limit.map(|value| value.get()), Some(60));
+    assert_eq!(group_rpm_limit.map(|value| value.get()), Some(120));
+
+    set_user_column(&fixture, users::Column::RpmLimit, Expr::value(Some(0_i32))).await?;
+    set_group_column(&fixture, fixture.token_group_id, Expr::value(Some(0_i32))).await?;
+    let outcome = fixture
+        .repository
+        .lookup(&fixture.lookup, test_client_ip())
+        .await?;
+    let TokenAuthLookupOutcome::Authenticated {
+        user_rpm_limit,
+        group_rpm_limit,
+        ..
+    } = outcome
+    else {
+        return Err("零 RPM 配置不应拒绝有效令牌".into());
+    };
+    assert_eq!(user_rpm_limit, None);
+    assert_eq!(group_rpm_limit, None);
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn negative_rpm_snapshot_fails_closed() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    set_user_column(&fixture, users::Column::RpmLimit, Expr::value(Some(-1_i32))).await?;
+
+    assert_eq!(
+        fixture
+            .repository
+            .lookup(&fixture.lookup, test_client_ip())
+            .await,
+        Err(TokenAuthRepositoryError::Invariant)
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn model_policy_null_is_unrestricted_and_allowlist_matches_exactly()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture(Duration::from_secs(1)).await?;
@@ -837,6 +894,30 @@ async fn set_user_column(
         .table(users::Entity)
         .value(column, value)
         .and_where(Expr::col(users::Column::Id).eq(fixture.user_id))
+        .to_owned();
+    fixture
+        .pool
+        .connection()
+        .execute(
+            fixture
+                .pool
+                .connection()
+                .get_database_backend()
+                .build(&statement),
+        )
+        .await?;
+    Ok(())
+}
+
+async fn set_group_column(
+    fixture: &Fixture,
+    group_id: i64,
+    value: SimpleExpr,
+) -> Result<(), DbErr> {
+    let statement = Query::update()
+        .table(groups::Entity)
+        .value(groups::Column::RpmLimit, value)
+        .and_where(Expr::col(groups::Column::Id).eq(group_id))
         .to_owned();
     fixture
         .pool

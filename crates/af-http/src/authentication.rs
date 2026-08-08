@@ -9,7 +9,7 @@ use axum::{
 };
 
 use crate::client_ip::{ClientIpResolutionError, ClientIpResolver};
-use crate::error_response::api_error_response;
+use crate::error_response::{api_error_response, rate_limit_error_response};
 use crate::{QueryApiKeyPolicy, extract_presented_api_key};
 
 /// HTTP API Key 鉴权中间件所需的不可变状态。
@@ -86,6 +86,12 @@ pub(crate) async fn authenticate_api_key(
         }
         Err(TokenAuthenticationError::Internal) => {
             api_error_response(state.error_protocol, AfError::Internal)
+        }
+        Err(TokenAuthenticationError::RateLimitUnavailable) => {
+            api_error_response(state.error_protocol, AfError::Internal)
+        }
+        Err(TokenAuthenticationError::RateLimited { retry_after }) => {
+            rate_limit_error_response(state.error_protocol, retry_after)
         }
     }
 }
