@@ -13,6 +13,7 @@ use af_protocol::{
 };
 use af_server::{Bootstrap, BootstrapError, ShutdownReport};
 use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
+use serde_json::Value;
 use support::{
     CLIENT_KEY, GROUP_ID, UPSTREAM_MODEL, credential_encryption_key,
     seed_openai_responses_runtime_channel_with, send_request_with_timeout,
@@ -136,17 +137,40 @@ async fn run_live_responses_request(request_body: &[u8]) {
     );
 
     let body = decode_response_body(&response);
-    let rendered = String::from_utf8(body.clone()).unwrap();
-    assert!(rendered.contains("event: response.created"));
-    assert!(rendered.contains("event: response.completed"));
+    let rendered = std::str::from_utf8(&body).unwrap_or_else(|_| {
+        panic!(
+            "真实 Responses SSE 响应不是 UTF-8；事件摘要：{}",
+            summarize_sse(&body)
+        )
+    });
+    assert_sse_event(rendered, &body, "response.created");
+    assert_sse_event(rendered, &body, "response.completed");
     assert!(rendered.contains("\"model\":\"test-model\""));
-    assert!(!rendered.contains("event: error"));
-    assert!(!rendered.contains("event: response.failed"));
+    assert!(
+        !rendered.contains("event: error"),
+        "真实 Responses SSE 返回错误事件；事件摘要：{}",
+        summarize_sse(&body)
+    );
+    assert!(
+        !rendered.contains("event: response.failed"),
+        "真实 Responses SSE 返回失败终态；事件摘要：{}",
+        summarize_sse(&body)
+    );
     assert!(!rendered.contains(&upstream_model));
 
     let mut decoder = OpenAiResponsesStreamDecoder::new();
-    let events = decoder.push(&body).unwrap();
-    decoder.finish().unwrap();
+    let events = decoder.push(&body).unwrap_or_else(|error| {
+        panic!(
+            "真实 Responses SSE 解码失败：{error}；事件摘要：{}",
+            summarize_sse(&body)
+        )
+    });
+    decoder.finish().unwrap_or_else(|error| {
+        panic!(
+            "真实 Responses SSE 在流结束时解码失败：{error}；事件摘要：{}",
+            summarize_sse(&body)
+        )
+    });
     assert!(events.iter().any(|event| matches!(
         event,
         CanonicalStreamEvent::ContentDelta {
@@ -173,6 +197,121 @@ async fn run_live_responses_request(request_body: &[u8]) {
         .expect("真实 Responses 流必须返回终态用量");
     assert!(usage.input_tokens().get() > 0);
     assert!(usage.output_tokens().get() > 0);
+}
+
+/// 在真实联调失败时只保留协议事件名和受限错误码，不打印上游正文。
+fn assert_sse_event(rendered: &str, body: &[u8], expected: &str) {
+    let marker = format!("event: {expected}");
+    assert!(
+        rendered.contains(&marker),
+        "真实 Responses SSE 缺少事件 `{expected}`；事件摘要：{}",
+        summarize_sse(body)
+    );
+}
+
+/// 生成有界的 SSE 诊断摘要，避免把提示词、模型响应或供应商正文写入构建日志。
+fn summarize_sse(body: &[u8]) -> String {
+    const MAX_EVENTS: usize = 64;
+    const MAX_DATA_BYTES: usize = 64 * 1024;
+
+    let text = String::from_utf8_lossy(body);
+    let mut event_name: Option<String> = None;
+    let mut data = Vec::new();
+    let mut saw_data = false;
+    let mut summaries = Vec::new();
+    let mut omitted = 0usize;
+
+    for line in text.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line.is_empty() {
+            if saw_data {
+                append_sse_summary(
+                    event_name.take(),
+                    &data,
+                    &mut summaries,
+                    &mut omitted,
+                    MAX_EVENTS,
+                );
+                data.clear();
+                saw_data = false;
+            } else {
+                event_name = None;
+            }
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("event:") {
+            event_name = Some(value.trim().to_owned());
+        } else if let Some(value) = line.strip_prefix("data:") {
+            if saw_data && data.len() < MAX_DATA_BYTES {
+                data.push(b'\n');
+            }
+            let remaining = MAX_DATA_BYTES.saturating_sub(data.len());
+            data.extend_from_slice(&value.as_bytes()[..value.len().min(remaining)]);
+            saw_data = true;
+        }
+    }
+    if saw_data {
+        append_sse_summary(event_name, &data, &mut summaries, &mut omitted, MAX_EVENTS);
+    }
+
+    if omitted > 0 {
+        summaries.push(format!("其余 {omitted} 个事件已省略"));
+    }
+    if summaries.is_empty() {
+        "未解析到完整 SSE 事件".to_owned()
+    } else {
+        summaries.join(", ")
+    }
+}
+
+/// 把单个 SSE 帧压缩成事件名及可安全展示的错误码。
+fn append_sse_summary(
+    event_name: Option<String>,
+    data: &[u8],
+    summaries: &mut Vec<String>,
+    omitted: &mut usize,
+    max_events: usize,
+) {
+    if summaries.len() >= max_events {
+        *omitted = omitted.saturating_add(1);
+        return;
+    }
+    let event = event_name
+        .as_deref()
+        .map(|name| sanitize_diagnostic_token(name, "无效事件"))
+        .unwrap_or_else(|| "message".to_owned());
+    if let Some(code) = diagnostic_error_code(data) {
+        summaries.push(format!("{event}[code={code}]"));
+    } else {
+        summaries.push(event);
+    }
+}
+
+/// 只接受短 ASCII 标识，防止错误字段携带正文、控制字符或日志换行。
+fn sanitize_diagnostic_token(value: &str, fallback: &str) -> String {
+    let value = value.trim();
+    if !value.is_empty()
+        && value.len() <= 96
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+        value.to_owned()
+    } else {
+        fallback.to_owned()
+    }
+}
+
+/// 从受限 JSON 事件中提取错误码；错误消息和其他字段永不进入摘要。
+fn diagnostic_error_code(data: &[u8]) -> Option<String> {
+    if data.len() > 64 * 1024 {
+        return None;
+    }
+    let value = serde_json::from_slice::<Value>(data).ok()?;
+    let code = ["/code", "/error/code", "/response/error/code"]
+        .into_iter()
+        .find_map(|pointer| value.pointer(pointer).and_then(Value::as_str))?;
+    Some(sanitize_diagnostic_token(code, "无效错误码"))
 }
 
 async fn seed_database(
@@ -377,4 +516,35 @@ fn decode_chunked_body(mut input: &[u8]) -> Vec<u8> {
 fn chunked_response_body_is_decoded_before_protocol_validation() {
     let encoded = b"4\r\neven\r\n8;sample=yes\r\nt stream\r\n0\r\n\r\n";
     assert_eq!(decode_chunked_body(encoded), b"event stream");
+}
+
+#[test]
+fn sse_summary_only_contains_event_names_and_error_codes() {
+    let summary = summarize_sse(
+        br#"event: response.failed
+data: {"code":"rate_limit_exceeded","message":"do not print this"}
+
+event: response.completed
+data: {"response":{"error":{"code":"server_error","message":"secret"}}}
+
+"#,
+    );
+
+    assert_eq!(
+        summary,
+        "response.failed[code=rate_limit_exceeded], response.completed[code=server_error]"
+    );
+    assert!(!summary.contains("do not print this"));
+    assert!(!summary.contains("secret"));
+}
+
+#[test]
+fn sse_summary_bounds_event_count() {
+    let body = (0..70)
+        .map(|_| "event: response.created\ndata: {}\n\n")
+        .collect::<String>();
+    let summary = summarize_sse(body.as_bytes());
+
+    assert!(summary.contains("其余 6 个事件已省略"));
+    assert!(!summary.contains('\n'));
 }
