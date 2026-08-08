@@ -81,7 +81,7 @@ async fn live_native_openai_responses_runtime() {
     .await;
 }
 
-/// 以固定输出上限运行真实 Responses 网关验收，避免手动门禁消耗无界额度。
+/// 以供应商最小共同字段运行真实 Responses 网关验收。
 #[tokio::test]
 async fn live_native_openai_responses_low_cost() {
     if env::var("ANYFLOWS_LIVE_OPENAI_RESPONSES_CASE").as_deref()
@@ -91,7 +91,8 @@ async fn live_native_openai_responses_low_cost() {
     }
 
     run_live_responses_request(
-        br#"{"model":"test-model","input":"Reply with exactly OK.","store":false,"stream":true,"max_output_tokens":128,"reasoning":{"effort":"low"}}"#,
+        // 部分聚合层会拒绝可选的输出上限或推理配置；短提示与单用例门禁负责控制额度。
+        br#"{"model":"test-model","input":"Reply with exactly OK.","stream":true}"#,
     )
     .await;
 }
@@ -124,7 +125,13 @@ async fn run_live_responses_request(request_body: &[u8]) {
     .await;
     stop_gateway(shutdown, server).await;
 
-    assert_eq!(response.status, 200);
+    let body = decode_response_body(&response);
+    assert_eq!(
+        response.status,
+        200,
+        "真实 Responses HTTP 状态异常；错误码：{}",
+        diagnostic_error_code(&body).unwrap_or_else(|| "未提供".to_owned())
+    );
     assert!(
         response
             .headers
@@ -136,7 +143,6 @@ async fn run_live_responses_request(request_body: &[u8]) {
         Some("no-cache, no-transform")
     );
 
-    let body = decode_response_body(&response);
     let rendered = std::str::from_utf8(&body).unwrap_or_else(|_| {
         panic!(
             "真实 Responses SSE 响应不是 UTF-8；事件摘要：{}",
@@ -536,6 +542,12 @@ data: {"response":{"error":{"code":"server_error","message":"secret"}}}
     );
     assert!(!summary.contains("do not print this"));
     assert!(!summary.contains("secret"));
+    assert_eq!(
+        diagnostic_error_code(
+            br#"{"error":{"code":"upstream_unavailable","message":"do not print this"}}"#
+        ),
+        Some("upstream_unavailable".to_owned())
+    );
 }
 
 #[test]
