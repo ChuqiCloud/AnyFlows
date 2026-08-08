@@ -14,7 +14,7 @@ use af_protocol::{
 use af_server::{Bootstrap, BootstrapError, ShutdownReport};
 use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
 use support::{
-    CLIENT_KEY, GROUP_ID, UPSTREAM_MODEL, credential_encryption_key,
+    CLIENT_KEY, GROUP_ID, UPSTREAM_MODEL, credential_encryption_key, sanitized_json_error_code,
     seed_openai_responses_runtime_channel_with, send_request_with_timeout,
 };
 use tokio::{sync::oneshot, time::timeout};
@@ -22,6 +22,7 @@ use tokio::{sync::oneshot, time::timeout};
 const CLIENT_KEY_DIGEST: &str = "58e7607fb7ed996d551ba517addbcf51a35206b43706e233737d242773845efa";
 const LOOPBACK_ALLOWLIST: &str = r#"["127.0.0.1/32"]"#;
 const LIVE_OPENAI_RESPONSES_CASE: &str = "live_native_openai_responses_runtime";
+const LIVE_OPENAI_RESPONSES_LOW_COST_CASE: &str = "live_native_openai_responses_low_cost";
 /// 真实聚合上游可能执行较长推理，验收渠道保留三分钟总时限。
 const LIVE_OPENAI_RESPONSES_TIMEOUT_SECS: i32 = 180;
 /// 测试客户端必须比渠道总时限更长，避免辅助层抢先中断网关响应。
@@ -72,6 +73,30 @@ async fn live_native_openai_responses_runtime() {
         return;
     }
 
+    run_live_responses_request(
+        // 精确复现 AI SDK 无状态请求：数组输入、加密推理回传和缺省输出上限必须同链路可用。
+        br#"{"model":"test-model","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"store":false,"include":["reasoning.encrypted_content"],"stream":true}"#,
+    )
+    .await;
+}
+
+/// 以供应商最小共同字段运行真实 Responses 网关验收。
+#[tokio::test]
+async fn live_native_openai_responses_low_cost() {
+    if env::var("ANYFLOWS_LIVE_OPENAI_RESPONSES_CASE").as_deref()
+        != Ok(LIVE_OPENAI_RESPONSES_LOW_COST_CASE)
+    {
+        return;
+    }
+
+    run_live_responses_request(
+        // 部分聚合层会拒绝可选的输出上限或推理配置；短提示与单用例门禁负责控制额度。
+        br#"{"model":"test-model","input":"Reply with exactly OK.","stream":true}"#,
+    )
+    .await;
+}
+
+async fn run_live_responses_request(request_body: &[u8]) {
     let base_url = env::var("ANYFLOWS_LIVE_OPENAI_RESPONSES_BASE_URL")
         .expect("真实 OpenAI Responses 联调必须设置 ANYFLOWS_LIVE_OPENAI_RESPONSES_BASE_URL");
     let api_key = env::var("ANYFLOWS_LIVE_OPENAI_RESPONSES_API_KEY")
@@ -89,8 +114,7 @@ async fn live_native_openai_responses_runtime() {
         address,
         "POST",
         "/v1/responses",
-        // 精确复现 AI SDK 无状态请求：数组输入、加密推理回传和缺省输出上限必须同链路可用。
-        br#"{"model":"test-model","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"store":false,"include":["reasoning.encrypted_content"],"stream":true}"#,
+        request_body,
         &[
             ("Content-Type", "application/json"),
             ("Authorization", &format!("Bearer {CLIENT_KEY}")),
@@ -100,7 +124,13 @@ async fn live_native_openai_responses_runtime() {
     .await;
     stop_gateway(shutdown, server).await;
 
-    assert_eq!(response.status, 200);
+    let body = decode_response_body(&response);
+    assert_eq!(
+        response.status,
+        200,
+        "真实 Responses HTTP 状态异常；错误码：{}",
+        sanitized_json_error_code(&body).unwrap_or_else(|| "未提供".to_owned())
+    );
     assert!(
         response
             .headers
@@ -112,18 +142,40 @@ async fn live_native_openai_responses_runtime() {
         Some("no-cache, no-transform")
     );
 
-    let body = decode_response_body(&response);
-    let rendered = String::from_utf8(body.clone()).unwrap();
-    assert!(rendered.contains("event: response.created"));
-    assert!(rendered.contains("event: response.completed"));
+    let rendered = std::str::from_utf8(&body).unwrap_or_else(|_| {
+        panic!(
+            "真实 Responses SSE 响应不是 UTF-8；事件摘要：{}",
+            summarize_sse(&body)
+        )
+    });
+    assert_sse_event(rendered, &body, "response.created");
+    assert_sse_event(rendered, &body, "response.completed");
     assert!(rendered.contains("\"model\":\"test-model\""));
-    assert!(!rendered.contains("event: error"));
-    assert!(!rendered.contains("event: response.failed"));
+    assert!(
+        !rendered.contains("event: error"),
+        "真实 Responses SSE 返回错误事件；事件摘要：{}",
+        summarize_sse(&body)
+    );
+    assert!(
+        !rendered.contains("event: response.failed"),
+        "真实 Responses SSE 返回失败终态；事件摘要：{}",
+        summarize_sse(&body)
+    );
     assert!(!rendered.contains(&upstream_model));
 
     let mut decoder = OpenAiResponsesStreamDecoder::new();
-    let events = decoder.push(&body).unwrap();
-    decoder.finish().unwrap();
+    let events = decoder.push(&body).unwrap_or_else(|error| {
+        panic!(
+            "真实 Responses SSE 解码失败：{error}；事件摘要：{}",
+            summarize_sse(&body)
+        )
+    });
+    decoder.finish().unwrap_or_else(|error| {
+        panic!(
+            "真实 Responses SSE 在流结束时解码失败：{error}；事件摘要：{}",
+            summarize_sse(&body)
+        )
+    });
     assert!(events.iter().any(|event| matches!(
         event,
         CanonicalStreamEvent::ContentDelta {
@@ -150,6 +202,109 @@ async fn live_native_openai_responses_runtime() {
         .expect("真实 Responses 流必须返回终态用量");
     assert!(usage.input_tokens().get() > 0);
     assert!(usage.output_tokens().get() > 0);
+}
+
+/// 在真实联调失败时只保留协议事件名和受限错误码，不打印上游正文。
+fn assert_sse_event(rendered: &str, body: &[u8], expected: &str) {
+    let marker = format!("event: {expected}");
+    assert!(
+        rendered.contains(&marker),
+        "真实 Responses SSE 缺少事件 `{expected}`；事件摘要：{}",
+        summarize_sse(body)
+    );
+}
+
+/// 生成有界的 SSE 诊断摘要，避免把提示词、模型响应或供应商正文写入构建日志。
+fn summarize_sse(body: &[u8]) -> String {
+    const MAX_EVENTS: usize = 64;
+    const MAX_DATA_BYTES: usize = 64 * 1024;
+
+    let text = String::from_utf8_lossy(body);
+    let mut event_name: Option<String> = None;
+    let mut data = Vec::new();
+    let mut saw_data = false;
+    let mut summaries = Vec::new();
+    let mut omitted = 0usize;
+
+    for line in text.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line.is_empty() {
+            if saw_data {
+                append_sse_summary(
+                    event_name.take(),
+                    &data,
+                    &mut summaries,
+                    &mut omitted,
+                    MAX_EVENTS,
+                );
+                data.clear();
+                saw_data = false;
+            } else {
+                event_name = None;
+            }
+            continue;
+        }
+        if let Some(value) = line.strip_prefix("event:") {
+            event_name = Some(value.trim().to_owned());
+        } else if let Some(value) = line.strip_prefix("data:") {
+            if saw_data && data.len() < MAX_DATA_BYTES {
+                data.push(b'\n');
+            }
+            let remaining = MAX_DATA_BYTES.saturating_sub(data.len());
+            data.extend_from_slice(&value.as_bytes()[..value.len().min(remaining)]);
+            saw_data = true;
+        }
+    }
+    if saw_data {
+        append_sse_summary(event_name, &data, &mut summaries, &mut omitted, MAX_EVENTS);
+    }
+
+    if omitted > 0 {
+        summaries.push(format!("其余 {omitted} 个事件已省略"));
+    }
+    if summaries.is_empty() {
+        "未解析到完整 SSE 事件".to_owned()
+    } else {
+        summaries.join(", ")
+    }
+}
+
+/// 把单个 SSE 帧压缩成事件名及可安全展示的错误码。
+fn append_sse_summary(
+    event_name: Option<String>,
+    data: &[u8],
+    summaries: &mut Vec<String>,
+    omitted: &mut usize,
+    max_events: usize,
+) {
+    if summaries.len() >= max_events {
+        *omitted = omitted.saturating_add(1);
+        return;
+    }
+    let event = event_name
+        .as_deref()
+        .map(|name| sanitize_diagnostic_token(name, "无效事件"))
+        .unwrap_or_else(|| "message".to_owned());
+    if let Some(code) = sanitized_json_error_code(data) {
+        summaries.push(format!("{event}[code={code}]"));
+    } else {
+        summaries.push(event);
+    }
+}
+
+/// 只接受短 ASCII 标识，防止错误字段携带正文、控制字符或日志换行。
+fn sanitize_diagnostic_token(value: &str, fallback: &str) -> String {
+    let value = value.trim();
+    if !value.is_empty()
+        && value.len() <= 96
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    {
+        value.to_owned()
+    } else {
+        fallback.to_owned()
+    }
 }
 
 async fn seed_database(
@@ -354,4 +509,46 @@ fn decode_chunked_body(mut input: &[u8]) -> Vec<u8> {
 fn chunked_response_body_is_decoded_before_protocol_validation() {
     let encoded = b"4\r\neven\r\n8;sample=yes\r\nt stream\r\n0\r\n\r\n";
     assert_eq!(decode_chunked_body(encoded), b"event stream");
+}
+
+#[test]
+fn sse_summary_only_contains_event_names_and_error_codes() {
+    let summary = summarize_sse(
+        br#"event: response.failed
+data: {"code":"rate_limit_exceeded","message":"do not print this"}
+
+event: response.completed
+data: {"response":{"error":{"code":"server_error","message":"secret"}}}
+
+"#,
+    );
+
+    assert_eq!(
+        summary,
+        "response.failed[code=rate_limit_exceeded], response.completed[code=server_error]"
+    );
+    assert!(!summary.contains("do not print this"));
+    assert!(!summary.contains("secret"));
+    assert_eq!(
+        sanitized_json_error_code(
+            br#"{"error":{"code":"upstream_unavailable","message":"do not print this"}}"#
+        ),
+        Some("upstream_unavailable".to_owned())
+    );
+    assert_eq!(
+        sanitized_json_error_code(br#"{"code":"line\nbreak","message":"secret"}"#),
+        Some("无效错误码".to_owned())
+    );
+    assert_eq!(sanitized_json_error_code(b"not-json"), None);
+}
+
+#[test]
+fn sse_summary_bounds_event_count() {
+    let body = (0..70)
+        .map(|_| "event: response.created\ndata: {}\n\n")
+        .collect::<String>();
+    let summary = summarize_sse(body.as_bytes());
+
+    assert!(summary.contains("其余 6 个事件已省略"));
+    assert!(!summary.contains('\n'));
 }

@@ -420,6 +420,73 @@ impl OutputDecodeState {
         self.active.is_some()
     }
 
+    /// 使用终态完整快照补闭供应商省略的消息完成事件。
+    ///
+    /// 仅允许补闭当前活动消息，并复用三层现有校验；推理与函数调用仍要求显式完成事件。
+    pub(super) fn complete_active_message_from_terminal(
+        &mut self,
+        response: &Value,
+        output: &mut Vec<CanonicalStreamEvent>,
+    ) -> Result<(), ParseStreamError> {
+        let (output_index, item_id, active_part) = match self.active.as_ref() {
+            Some(ActiveItem::Message(message)) => (
+                message.output_index,
+                message.id.clone(),
+                message
+                    .active_part
+                    .as_ref()
+                    .map(|part| (part.content_index, part.text_done)),
+            ),
+            Some(ActiveItem::Reasoning(_) | ActiveItem::Function(_)) => {
+                return Err(ParseStreamError::InvalidSequence);
+            }
+            None => return Ok(()),
+        };
+        let item_index =
+            usize::try_from(output_index).map_err(|_| ParseStreamError::InvalidSequence)?;
+        let terminal_item = response
+            .as_object()
+            .and_then(|root| root.get("output"))
+            .and_then(Value::as_array)
+            .and_then(|items| items.get(item_index))
+            .cloned()
+            .ok_or(ParseStreamError::InvalidSequence)?;
+
+        if let Some((content_index, text_done)) = active_part {
+            let content_index_usize =
+                usize::try_from(content_index).map_err(|_| ParseStreamError::InvalidSequence)?;
+            let terminal_part = terminal_item
+                .as_object()
+                .and_then(|item| item.get("content"))
+                .and_then(Value::as_array)
+                .and_then(|parts| parts.get(content_index_usize))
+                .cloned()
+                .ok_or(ParseStreamError::InvalidSequence)?;
+            let terminal_part: OutputContentWire = serde_json::from_value(terminal_part)
+                .map_err(|_| ParseStreamError::InvalidValue)?;
+            let OutputContentWire::Text(text) = &terminal_part else {
+                return Err(ParseStreamError::UnsupportedFeature);
+            };
+            if !text_done {
+                self.output_text_done(
+                    &item_id,
+                    output_index,
+                    content_index,
+                    &text.text,
+                    text.logprobs.as_deref().unwrap_or(&[]),
+                )?;
+            }
+            self.content_part_done(&item_id, output_index, content_index, terminal_part, output)?;
+        }
+
+        let terminal_item: ResponseOutputItemWire =
+            serde_json::from_value(terminal_item).map_err(|_| ParseStreamError::InvalidValue)?;
+        if !matches!(terminal_item, ResponseOutputItemWire::Message(_)) {
+            return Err(ParseStreamError::InvalidSequence);
+        }
+        self.item_done(output_index, terminal_item, output)
+    }
+
     /// 校验终态 Response 的输出 Item 标识与流内生命周期一致。
     pub(super) fn validate_terminal_item_ids(
         &self,

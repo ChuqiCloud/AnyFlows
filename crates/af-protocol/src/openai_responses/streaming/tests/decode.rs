@@ -2,8 +2,8 @@ use af_domain::{Role, UpstreamError};
 use serde_json::{Value, json};
 
 use super::{
-    CREATED_AT, MODEL, RESPONSE_ID, frame, initial_response, join, message_item, output_text,
-    response, usage, usage_value,
+    CREATED_AT, MODEL, RESPONSE_ID, frame, frame_without_sequence, initial_response, join,
+    message_item, output_text, response, usage, usage_value,
 };
 use crate::openai_responses::{OpenAiResponsesStreamDecoder, ParseStreamError};
 use crate::{CanonicalStreamEvent, ContentDelta, FinishReason};
@@ -142,6 +142,108 @@ fn decodes_text_stream_across_transport_chunks() {
     let debug = format!("{events:?}");
     assert!(!debug.contains("hello"));
     assert!(!format!("{decoder:?}").contains(RESPONSE_ID));
+}
+
+#[test]
+fn terminal_snapshot_closes_message_when_done_events_are_omitted() {
+    let item_id = "msg_terminal_close";
+    let bytes = stream_with_terminal_message_only(item_id, "hello", "hello");
+    let mut decoder = OpenAiResponsesStreamDecoder::new();
+    let events = decoder.push(&bytes).unwrap();
+    decoder.finish().unwrap();
+
+    assert_eq!(
+        events,
+        vec![
+            CanonicalStreamEvent::MessageStart {
+                choice_index: 0,
+                role: Role::Assistant,
+            },
+            CanonicalStreamEvent::ContentDelta {
+                choice_index: 0,
+                content_index: 0,
+                delta: ContentDelta::Text("hello".to_owned()),
+            },
+            CanonicalStreamEvent::Finish {
+                choice_index: 0,
+                reason: FinishReason::Stop,
+                stop_sequence: None,
+            },
+            CanonicalStreamEvent::Usage(usage(8, 3, 2, 1)),
+            CanonicalStreamEvent::StreamEnd,
+        ]
+    );
+
+    let mismatch = stream_with_terminal_message_only(item_id, "left", "right");
+    let mut mismatch_decoder = OpenAiResponsesStreamDecoder::new();
+    assert_eq!(
+        mismatch_decoder.push(&mismatch),
+        Err(ParseStreamError::InvalidSequence)
+    );
+}
+
+/// 构造省略文本、Part 与 Item 三层完成事件的供应商兼容流。
+fn stream_with_terminal_message_only(item_id: &str, delta: &str, terminal_text: &str) -> Vec<u8> {
+    join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.in_progress",
+            1,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.output_item.added",
+            2,
+            json!({
+                "output_index": 0,
+                "item": {
+                    "id": item_id,
+                    "type": "message",
+                    "status": "in_progress",
+                    "role": "assistant",
+                    "content": [],
+                }
+            }),
+        ),
+        frame(
+            "response.content_part.added",
+            3,
+            json!({
+                "item_id": item_id,
+                "output_index": 0,
+                "content_index": 0,
+                "part": output_text(""),
+            }),
+        ),
+        frame(
+            "response.output_text.delta",
+            4,
+            json!({
+                "item_id": item_id,
+                "output_index": 0,
+                "content_index": 0,
+                "delta": delta,
+                "logprobs": [],
+            }),
+        ),
+        frame(
+            "response.completed",
+            5,
+            json!({
+                "response": response(
+                    "completed",
+                    vec![message_item(item_id, "completed", terminal_text)],
+                    Some(usage_value(8, 3, 2, 1)),
+                    None,
+                    None,
+                )
+            }),
+        ),
+    ])
 }
 
 #[test]
@@ -539,6 +641,36 @@ fn accepts_optional_done_only_after_terminal_event() {
 }
 
 #[test]
+fn ignores_rate_limit_metadata_and_missing_sequence_numbers() {
+    let mut lifecycle = initial_response();
+    lifecycle["frequency_penalty"] = json!(0);
+    lifecycle["presence_penalty"] = json!(0);
+    lifecycle["service_tier"] = json!("auto");
+    let mut terminal = response("completed", Vec::new(), None, None, None);
+    terminal["_sub2api_display_scaled"] = json!(true);
+    let bytes = join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": lifecycle.clone()}),
+        ),
+        b"event: codex.rate_limits\ndata: {\"rate_limits\":{\"primary\":{\"remaining\":1}}}\n\n"
+            .to_vec(),
+        frame_without_sequence("response.in_progress", json!({"response": lifecycle})),
+        frame("response.completed", 8, json!({"response": terminal})),
+    ]);
+
+    let mut decoder = OpenAiResponsesStreamDecoder::new();
+    let events = decoder.push(&bytes).unwrap();
+    decoder.finish().unwrap();
+    assert!(events.contains(&CanonicalStreamEvent::MessageStart {
+        choice_index: 0,
+        role: Role::Assistant,
+    }));
+    assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+}
+
+#[test]
 fn maps_structured_error_without_preserving_message() {
     let bytes = frame(
         "error",
@@ -589,17 +721,42 @@ fn maps_only_deterministic_auth_and_account_death_as_permanent() {
 }
 
 #[test]
-fn fails_closed_on_sequence_schema_and_terminal_mismatch() {
-    let mut gap = OpenAiResponsesStreamDecoder::new();
-    assert_eq!(
-        gap.push(&frame(
+fn accepts_gapped_sequence_but_rejects_rewind_schema_and_terminal_mismatch() {
+    let terminal = response("completed", Vec::new(), None, None, None);
+    let mut gapped = OpenAiResponsesStreamDecoder::new();
+    let gapped_bytes = join([
+        frame(
             "response.created",
             1,
-            json!({"response": initial_response()})
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.in_progress",
+            3,
+            json!({"response": initial_response()}),
+        ),
+        frame("response.completed", 9, json!({"response": terminal})),
+    ]);
+    gapped.push(&gapped_bytes).unwrap();
+    gapped.finish().unwrap();
+
+    let mut rewind = OpenAiResponsesStreamDecoder::new();
+    rewind
+        .push(&frame(
+            "response.created",
+            1,
+            json!({"response": initial_response()}),
+        ))
+        .unwrap();
+    assert_eq!(
+        rewind.push(&frame(
+            "response.in_progress",
+            1,
+            json!({"response": initial_response()}),
         )),
         Err(ParseStreamError::InvalidSequence)
     );
-    assert_eq!(gap.push(b""), Err(ParseStreamError::DecoderFailed));
+    assert_eq!(rewind.push(b""), Err(ParseStreamError::DecoderFailed));
 
     let mut unsupported = OpenAiResponsesStreamDecoder::new();
     assert_eq!(
@@ -609,6 +766,15 @@ fn fails_closed_on_sequence_schema_and_terminal_mismatch() {
             json!({"delta": "hidden"})
         )),
         Err(ParseStreamError::UnsupportedFeature)
+    );
+
+    let mut unknown_metadata = OpenAiResponsesStreamDecoder::new();
+    assert_eq!(
+        unknown_metadata.push(&frame_without_sequence(
+            "codex.unknown",
+            json!({"private": true}),
+        )),
+        Err(ParseStreamError::InvalidValue)
     );
 
     let duplicate = "event: response.created\ndata: {\"type\":\"response.created\",\"type\":\"response.created\",\"sequence_number\":0,\"response\":{}}\n\n";

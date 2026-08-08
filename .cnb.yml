@@ -20,6 +20,28 @@ include:
     - name: 构建前端
       script: corepack pnpm@10.33.0 --dir web build
 
+# 真实供应商门禁只由显式 API 事件触发，禁止进入普通 push/PR 流水线。
+.live-provider-e2e-base: &live-provider-e2e-base
+  runner:
+    tags: cnb:arch:amd64
+    cpus: 64
+  sandbox: true
+  lock:
+    key: anyflows-live-provider-e2e
+    wait: false
+  docker:
+    build:
+      dockerfile: ./.cnb/ci.Dockerfile
+      by:
+        - ./.cnb/ci.Dockerfile
+    volumes:
+      - rust-cargo:/usr/local/cargo/registry:copy-on-write
+      - rust-cargo:/usr/local/cargo/git:copy-on-write
+      - rust-live-provider-1.97.1:./target:copy-on-write
+  env:
+    CARGO_TERM_COLOR: always
+    RUST_BACKTRACE: "0"
+
 "(master|develop)":
   push:
     - <<: *frontend-quality
@@ -327,7 +349,7 @@ include:
         - name: 确认流水线配置
           script: test -s .cnb.yml
 
-"**":
+$:
   web_trigger_ci:
     - <<: *frontend-quality
 
@@ -477,3 +499,39 @@ include:
       stages:
         - name: 运行 Redis 缓存冒烟
           script: bash tools/ci/run-cache-redis-test.sh
+
+  api_trigger_live_openai:
+    - <<: *live-provider-e2e-base
+      name: 真实 OpenAI Responses 低额度 E2E
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "0"
+        ANYFLOWS_LIVE_OPENAI_RESPONSES_CASE: live_native_openai_responses_low_cost
+      stages:
+        - name: 运行真实 OpenAI Responses E2E
+          timeout: 15m
+          script: bash tools/ci/run-live-provider-test.sh openai
+
+  api_trigger_live_anthropic:
+    - <<: *live-provider-e2e-base
+      name: 真实 Anthropic 低额度 E2E
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "0"
+        ANYFLOWS_LIVE_ANTHROPIC_CASE: live_native_anthropic_runtime
+      stages:
+        - name: 运行真实 Anthropic E2E
+          timeout: 15m
+          script: bash tools/ci/run-live-provider-test.sh anthropic
+
+  api_trigger_live_gemini:
+    - <<: *live-provider-e2e-base
+      name: 真实 Gemini 低额度 E2E
+      env:
+        CARGO_TERM_COLOR: always
+        RUST_BACKTRACE: "0"
+        ANYFLOWS_LIVE_GEMINI_CASE: live_native_gemini_runtime
+      stages:
+        - name: 运行真实 Gemini E2E
+          timeout: 15m
+          script: bash tools/ci/run-live-provider-test.sh gemini

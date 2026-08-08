@@ -7,8 +7,8 @@ use super::{
     ParseStreamError,
     decode_state::OutputDecodeState,
     wire::{
-        StreamEventWire, is_known_unsupported_event_type, is_supported_event_type,
-        uses_known_unsupported_payload,
+        StreamEventWire, is_ignored_metadata_event_type, is_known_unsupported_event_type,
+        is_supported_event_type, uses_known_unsupported_payload,
     },
 };
 use crate::bounded_json::{BoundedJsonError, parse_value};
@@ -21,16 +21,16 @@ use crate::openai_responses::{
 use crate::sse::{SseEvent, SseParseError, SseParser};
 use crate::{CanonicalResponse, CanonicalStreamEvent, FinishReason};
 
-/// 将 OpenAI Responses SSE 解码为严格有序的 Canonical 流事件。
+/// 将 OpenAI Responses SSE 解码为受控有序的 Canonical 流事件。
 ///
-/// decoder 校验官方事件序号、Response 身份、Item/Part 生命周期和终态冗余快照；
+/// decoder 校验可选序号的递增关系、Response 身份、Item/Part 生命周期和终态冗余快照；
 /// 任一错误后实例进入失败状态，调用方必须丢弃。
 pub struct OpenAiResponsesStreamDecoder {
     parser: SseParser,
     phase: LifecyclePhase,
     identity: Option<StreamIdentity>,
     outputs: OutputDecodeState,
-    next_sequence: u64,
+    last_sequence: Option<u64>,
     done: bool,
     compatibility_done_seen: bool,
     failed: bool,
@@ -50,7 +50,7 @@ impl OpenAiResponsesStreamDecoder {
             phase: LifecyclePhase::AwaitingCreated,
             identity: None,
             outputs: OutputDecodeState::default(),
-            next_sequence: 0,
+            last_sequence: None,
             done: false,
             compatibility_done_seen: false,
             failed: false,
@@ -120,20 +120,30 @@ impl OpenAiResponsesStreamDecoder {
 
         let value =
             parse_value(frame.data(), super::super::REQUEST_JSON_LIMITS).map_err(map_json_error)?;
+        let event_name = frame
+            .event_name()
+            .ok_or(ParseStreamError::InvalidSequence)?;
         let kind = value
             .as_object()
             .and_then(|event| event.get("type"))
             .and_then(Value::as_str)
-            .ok_or(ParseStreamError::InvalidValue)?
-            .to_owned();
+            .map(str::to_owned);
+        if kind.as_deref().is_some_and(|kind| kind != event_name) {
+            return Err(ParseStreamError::InvalidSequence);
+        }
+        // 供应商可在响应语义事件之间插入受控元数据，不得改变 Canonical 生命周期。
+        if is_ignored_metadata_event_type(event_name) {
+            if !value.is_object() {
+                return Err(ParseStreamError::InvalidValue);
+            }
+            return Ok(());
+        }
+        let kind = kind.ok_or(ParseStreamError::InvalidValue)?;
         if is_known_unsupported_event_type(&kind) {
             return Err(ParseStreamError::UnsupportedFeature);
         }
         if !is_supported_event_type(&kind) {
             return Err(ParseStreamError::InvalidValue);
-        }
-        if frame.event_name() != Some(kind.as_str()) {
-            return Err(ParseStreamError::InvalidSequence);
         }
         if uses_known_unsupported_payload(&kind, &value) {
             return Err(ParseStreamError::UnsupportedFeature);
@@ -349,7 +359,9 @@ impl OpenAiResponsesStreamDecoder {
     ) -> Result<(), ParseStreamError> {
         self.require_in_progress()?;
         if self.outputs.has_active_item() {
-            return Err(ParseStreamError::InvalidSequence);
+            // 部分兼容供应商直接以终态完整快照收束消息，省略三层 done 事件。
+            self.outputs
+                .complete_active_message_from_terminal(&response, output)?;
         }
         self.outputs.validate_terminal_item_ids(&response)?;
         let canonical = parse_terminal_response(&response)?;
@@ -468,14 +480,15 @@ impl OpenAiResponsesStreamDecoder {
         }
     }
 
-    fn accept_sequence(&mut self, sequence: u64) -> Result<(), ParseStreamError> {
-        if sequence != self.next_sequence {
+    fn accept_sequence(&mut self, sequence: Option<u64>) -> Result<(), ParseStreamError> {
+        let Some(sequence) = sequence else {
+            return Ok(());
+        };
+        // 序号是可选的兼容提示；出现时只要求严格递增，允许供应商插入事件造成跳号。
+        if self.last_sequence.is_some_and(|last| sequence <= last) {
             return Err(ParseStreamError::InvalidSequence);
         }
-        self.next_sequence = self
-            .next_sequence
-            .checked_add(1)
-            .ok_or(ParseStreamError::StructureLimitExceeded)?;
+        self.last_sequence = Some(sequence);
         Ok(())
     }
 }
@@ -487,7 +500,7 @@ impl Default for OpenAiResponsesStreamDecoder {
             phase: LifecyclePhase::AwaitingCreated,
             identity: None,
             outputs: OutputDecodeState::default(),
-            next_sequence: 0,
+            last_sequence: None,
             done: false,
             compatibility_done_seen: false,
             failed: false,
@@ -500,7 +513,7 @@ impl fmt::Debug for OpenAiResponsesStreamDecoder {
         formatter
             .debug_struct("OpenAiResponsesStreamDecoder")
             .field("has_identity", &self.identity.is_some())
-            .field("next_sequence", &self.next_sequence)
+            .field("last_sequence", &self.last_sequence)
             .field("done", &self.done)
             .field("failed", &self.failed)
             .finish()
@@ -676,10 +689,16 @@ fn terminal_raw_matches(initial: &Map<String, Value>, terminal: &Map<String, Val
     let mut terminal_without_tier = terminal.clone();
     let initial_tier = initial_without_tier.remove("service_tier");
     let terminal_tier = terminal_without_tier.remove("service_tier");
-    if initial_without_tier != terminal_without_tier {
-        return false;
+    // 供应商终态可能省略请求回显字段；仅比较双方都返回的字段，避免放宽身份校验。
+    for (key, initial_value) in initial_without_tier {
+        if terminal_without_tier
+            .get(&key)
+            .is_some_and(|terminal_value| terminal_value != &initial_value)
+        {
+            return false;
+        }
     }
-    if initial_tier == terminal_tier {
+    if initial_tier.is_none() || terminal_tier.is_none() || initial_tier == terminal_tier {
         return true;
     }
     // `auto` 是请求策略；终态按官方契约回显实际采用的处理层级。
