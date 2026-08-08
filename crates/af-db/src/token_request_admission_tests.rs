@@ -165,7 +165,8 @@ async fn disabled_deleted_and_missing_tokens_are_rejected_without_increment()
 async fn corrupt_counters_and_unrepresentable_unlimited_counter_fail_closed()
 -> Result<(), Box<dyn Error>> {
     let database = TestDatabase::new();
-    let fixture = fixture(&database, None, 0).await?;
+    // SQLite 的约束绕过开关属于连接级状态，损坏注入必须固定在单连接池中。
+    let fixture = fixture_with_pool_size(&database, None, 0, Duration::from_secs(5), 1).await?;
     fixture
         .pool
         .connection()
@@ -259,8 +260,18 @@ async fn fixture_with_timeout(
     used_requests: i64,
     operation_timeout: Duration,
 ) -> Result<Fixture, Box<dyn Error>> {
+    fixture_with_pool_size(database, max_requests, used_requests, operation_timeout, 8).await
+}
+
+async fn fixture_with_pool_size(
+    database: &TestDatabase,
+    max_requests: Option<i64>,
+    used_requests: i64,
+    operation_timeout: Duration,
+    max_connections: u32,
+) -> Result<Fixture, Box<dyn Error>> {
     let options = DatabaseOptions::new(database.url.clone())?.with_pool_options(PoolOptions {
-        max_connections: 8,
+        max_connections,
         min_connections: 1,
         acquire_timeout: Duration::from_secs(15),
         ..PoolOptions::default()
