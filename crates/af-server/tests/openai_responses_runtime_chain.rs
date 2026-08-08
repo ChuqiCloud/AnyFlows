@@ -22,6 +22,7 @@ use tokio::{sync::oneshot, time::timeout};
 const CLIENT_KEY_DIGEST: &str = "58e7607fb7ed996d551ba517addbcf51a35206b43706e233737d242773845efa";
 const LOOPBACK_ALLOWLIST: &str = r#"["127.0.0.1/32"]"#;
 const LIVE_OPENAI_RESPONSES_CASE: &str = "live_native_openai_responses_runtime";
+const LIVE_OPENAI_RESPONSES_LOW_COST_CASE: &str = "live_native_openai_responses_low_cost";
 /// 真实聚合上游可能执行较长推理，验收渠道保留三分钟总时限。
 const LIVE_OPENAI_RESPONSES_TIMEOUT_SECS: i32 = 180;
 /// 测试客户端必须比渠道总时限更长，避免辅助层抢先中断网关响应。
@@ -72,6 +73,29 @@ async fn live_native_openai_responses_runtime() {
         return;
     }
 
+    run_live_responses_request(
+        // 精确复现 AI SDK 无状态请求：数组输入、加密推理回传和缺省输出上限必须同链路可用。
+        br#"{"model":"test-model","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"store":false,"include":["reasoning.encrypted_content"],"stream":true}"#,
+    )
+    .await;
+}
+
+/// 以固定输出上限运行真实 Responses 网关验收，避免手动门禁消耗无界额度。
+#[tokio::test]
+async fn live_native_openai_responses_low_cost() {
+    if env::var("ANYFLOWS_LIVE_OPENAI_RESPONSES_CASE").as_deref()
+        != Ok(LIVE_OPENAI_RESPONSES_LOW_COST_CASE)
+    {
+        return;
+    }
+
+    run_live_responses_request(
+        br#"{"model":"test-model","input":"Reply with exactly OK.","store":false,"stream":true,"max_output_tokens":128,"reasoning":{"effort":"low"}}"#,
+    )
+    .await;
+}
+
+async fn run_live_responses_request(request_body: &[u8]) {
     let base_url = env::var("ANYFLOWS_LIVE_OPENAI_RESPONSES_BASE_URL")
         .expect("真实 OpenAI Responses 联调必须设置 ANYFLOWS_LIVE_OPENAI_RESPONSES_BASE_URL");
     let api_key = env::var("ANYFLOWS_LIVE_OPENAI_RESPONSES_API_KEY")
@@ -89,8 +113,7 @@ async fn live_native_openai_responses_runtime() {
         address,
         "POST",
         "/v1/responses",
-        // 精确复现 AI SDK 无状态请求：数组输入、加密推理回传和缺省输出上限必须同链路可用。
-        br#"{"model":"test-model","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"store":false,"include":["reasoning.encrypted_content"],"stream":true}"#,
+        request_body,
         &[
             ("Content-Type", "application/json"),
             ("Authorization", &format!("Bearer {CLIENT_KEY}")),

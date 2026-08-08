@@ -221,7 +221,8 @@ async fn live_native_gemini_runtime() {
     let upstream_model = env::var("ANYFLOWS_LIVE_GEMINI_MODEL")
         .expect("真实 Gemini 联调必须设置 ANYFLOWS_LIVE_GEMINI_MODEL");
     let proxy_url = env::var("ANYFLOWS_LIVE_GEMINI_PROXY_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:10808".to_owned());
+        .ok()
+        .filter(|value| !value.trim().is_empty());
     let database = TestDatabase::new();
     seed_database(
         &database,
@@ -231,7 +232,8 @@ async fn live_native_gemini_runtime() {
         Some(LIVE_GEMINI_TIMEOUT_SECS),
     )
     .await;
-    let (address, shutdown, server) = start_gateway(&database, &proxy_url).await;
+    let (address, shutdown, server) =
+        start_gateway_with_optional_proxy(&database, proxy_url.as_deref()).await;
 
     let response = send_request_with_timeout(
         address,
@@ -357,12 +359,29 @@ async fn start_gateway(
     oneshot::Sender<()>,
     tokio::task::JoinHandle<Result<ShutdownReport, BootstrapError>>,
 ) {
+    start_gateway_with_optional_proxy(database, Some(proxy_url)).await
+}
+
+async fn start_gateway_with_optional_proxy(
+    database: &TestDatabase,
+    proxy_url: Option<&str>,
+) -> (
+    SocketAddr,
+    oneshot::Sender<()>,
+    tokio::task::JoinHandle<Result<ShutdownReport, BootstrapError>>,
+) {
     let config_path = database.path.with_extension("toml");
     let credential_key = credential_encryption_key();
+    let proxy_config = proxy_url.map_or_else(String::new, |proxy_url| {
+        format!(
+            "proxy_url = {}\ntrust_proxy_dns = true\n",
+            serde_json::to_string(proxy_url).unwrap()
+        )
+    });
     fs::write(
         &config_path,
         format!(
-            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'gateway-test-key'\nkey = '{credential_key}'\n[auth]\nlookup_timeout_secs = 1\nsession_signing_key = '{credential_key}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = '{proxy_url}'\ntrust_proxy_dns = true\n",
+            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'gateway-test-key'\nkey = '{credential_key}'\n[auth]\nlookup_timeout_secs = 1\nsession_signing_key = '{credential_key}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\n{proxy_config}",
             database.url,
             database
                 .billing_wal_directory()
