@@ -46,6 +46,7 @@ const RAW_FIELD_ALLOWLIST: &[&str] = &[
     "reasoning",
     "safety_identifier",
     "service_tier",
+    "_sub2api_display_scaled",
     "store",
     "temperature",
     "text",
@@ -119,6 +120,11 @@ pub(super) fn validate_raw_fields(
             "safety_identifier" => validate_opaque_string(value, 64)?,
             "service_tier" => {
                 validate_enum(value, &["auto", "default", "flex", "scale", "priority"])?;
+            }
+            "_sub2api_display_scaled" => {
+                if !value.is_boolean() {
+                    return Err(ResponseRawError::InvalidValue);
+                }
             }
             "temperature" => validate_number_range(value, 0.0, 2.0)?,
             "text" => validate_text_config(value)?,

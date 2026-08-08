@@ -24,6 +24,19 @@ pub(super) fn frame(kind: &str, sequence: u64, fields: Value) -> Vec<u8> {
     output
 }
 
+pub(super) fn frame_without_sequence(kind: &str, fields: Value) -> Vec<u8> {
+    let mut fields = fields.as_object().cloned().expect("测试事件必须是对象");
+    fields.insert("type".to_owned(), Value::String(kind.to_owned()));
+    let data = serde_json::to_vec(&Value::Object(fields)).expect("测试事件必须可序列化");
+    let mut output = Vec::new();
+    output.extend_from_slice(b"event: ");
+    output.extend_from_slice(kind.as_bytes());
+    output.extend_from_slice(b"\ndata: ");
+    output.extend_from_slice(&data);
+    output.extend_from_slice(b"\n\n");
+    output
+}
+
 pub(super) fn initial_response() -> Value {
     response("in_progress", Vec::new(), None, None, None)
 }

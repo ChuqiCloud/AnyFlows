@@ -10,24 +10,28 @@ pub(super) enum StreamEventWire {
     #[serde(rename = "response.created")]
     ResponseCreated {
         response: Value,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.in_progress")]
     ResponseInProgress {
         response: Value,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.output_item.added")]
     OutputItemAdded {
         output_index: u32,
         item: ResponseOutputItemWire,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.output_item.done")]
     OutputItemDone {
         output_index: u32,
         item: ResponseOutputItemWire,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.content_part.added")]
     ContentPartAdded {
@@ -35,7 +39,8 @@ pub(super) enum StreamEventWire {
         output_index: u32,
         content_index: u32,
         part: OutputContentWire,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.content_part.done")]
     ContentPartDone {
@@ -43,7 +48,8 @@ pub(super) enum StreamEventWire {
         output_index: u32,
         content_index: u32,
         part: OutputContentWire,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.output_text.delta")]
     OutputTextDelta {
@@ -55,7 +61,8 @@ pub(super) enum StreamEventWire {
         logprobs: Vec<Value>,
         #[serde(default, rename = "obfuscation")]
         _obfuscation: Option<String>,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.output_text.done")]
     OutputTextDone {
@@ -65,7 +72,8 @@ pub(super) enum StreamEventWire {
         text: String,
         #[serde(default)]
         logprobs: Vec<Value>,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.function_call_arguments.delta")]
     FunctionArgumentsDelta {
@@ -74,7 +82,8 @@ pub(super) enum StreamEventWire {
         delta: String,
         #[serde(default, rename = "obfuscation")]
         _obfuscation: Option<String>,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.function_call_arguments.done")]
     FunctionArgumentsDone {
@@ -82,7 +91,8 @@ pub(super) enum StreamEventWire {
         output_index: u32,
         arguments: String,
         name: String,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.reasoning_summary_part.added")]
     ReasoningSummaryPartAdded {
@@ -90,7 +100,8 @@ pub(super) enum StreamEventWire {
         output_index: u32,
         summary_index: u32,
         part: SummaryTextWire,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.reasoning_summary_part.done")]
     ReasoningSummaryPartDone {
@@ -98,7 +109,8 @@ pub(super) enum StreamEventWire {
         output_index: u32,
         summary_index: u32,
         part: SummaryTextWire,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.reasoning_summary_text.delta")]
     ReasoningSummaryTextDelta {
@@ -108,7 +120,8 @@ pub(super) enum StreamEventWire {
         delta: String,
         #[serde(default, rename = "obfuscation")]
         _obfuscation: Option<String>,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.reasoning_summary_text.done")]
     ReasoningSummaryTextDone {
@@ -116,22 +129,26 @@ pub(super) enum StreamEventWire {
         output_index: u32,
         summary_index: u32,
         text: String,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.completed")]
     ResponseCompleted {
         response: Value,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.incomplete")]
     ResponseIncomplete {
         response: Value,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "response.failed")]
     ResponseFailed {
         response: Value,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
     #[serde(rename = "error")]
     Error {
@@ -141,13 +158,14 @@ pub(super) enum StreamEventWire {
         _message: String,
         #[serde(default, rename = "param")]
         _param: Option<String>,
-        sequence_number: u64,
+        #[serde(default)]
+        sequence_number: Option<u64>,
     },
 }
 
 impl StreamEventWire {
-    /// 返回官方单调事件序号。
-    pub(super) const fn sequence_number(&self) -> u64 {
+    /// 返回供应商提供的可选事件序号。
+    pub(super) const fn sequence_number(&self) -> Option<u64> {
         match self {
             Self::ResponseCreated {
                 sequence_number, ..
@@ -230,6 +248,11 @@ pub(super) fn is_supported_event_type(kind: &str) -> bool {
             | "response.failed"
             | "error"
     )
+}
+
+/// 允许忽略但不改变响应生命周期的供应商元数据事件。
+pub(super) fn is_ignored_metadata_event_type(kind: &str) -> bool {
+    matches!(kind, "codex.rate_limits")
 }
 
 /// 已知但尚未进入 Canonical 的事件必须按能力不支持失败关闭。
