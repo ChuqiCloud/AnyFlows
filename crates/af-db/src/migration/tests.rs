@@ -29,8 +29,9 @@ use crate::entity::{
     email_settings, group_model_ratios, groups, invite_rebate_events, model_prices,
     model_sync_items, model_sync_runs, models, options, playground_conversations,
     playground_shares, redemption_batches, redemption_codes, registration_rate_limits,
-    scheduler_outbox_events, site_settings, subscription_plans, tokens, topup_orders,
-    topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
+    scheduler_outbox_events, site_settings, subscription_balance_alert_events, subscription_plans,
+    tokens, topup_orders, topup_payment_events, usage_logs, user_subscriptions, users,
+    wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -53,7 +54,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 46;
+const EXPECTED_MIGRATION_COUNT: usize = 47;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -71,7 +72,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 41] = [
+const CORE_TABLES: [&str; 42] = [
     "groups",
     "users",
     "channels",
@@ -110,6 +111,7 @@ const CORE_TABLES: [&str; 41] = [
     "invite_rebate_events",
     "balance_alert_settings",
     "balance_alert_events",
+    "subscription_balance_alert_events",
     "routes",
     "route_channels",
     "proxies",
@@ -1947,6 +1949,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<balance_alert_settings::Column>(&manager, "balance_alert_settings")
         .await?;
     assert_entity_columns::<balance_alert_events::Column>(&manager, "balance_alert_events").await?;
+    assert_entity_columns::<subscription_balance_alert_events::Column>(
+        &manager,
+        "subscription_balance_alert_events",
+    )
+    .await?;
 
     assert!(manager.has_column("tokens", "key_hash").await?);
     assert!(manager.has_column("tokens", "key_prefix").await?);
@@ -2051,6 +2058,18 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "balance_alert_events",
             "idx_balance_alert_events_user_created",
         ),
+        (
+            "subscription_balance_alert_events",
+            "uq_subscription_balance_alert_window",
+        ),
+        (
+            "subscription_balance_alert_events",
+            "idx_subscription_balance_alert_due",
+        ),
+        (
+            "subscription_balance_alert_events",
+            "idx_subscription_balance_alert_user_created",
+        ),
     ] {
         assert!(
             manager.has_index(table, index).await?,
@@ -2137,7 +2156,28 @@ async fn exercise_balance_alert_migration(
     assert!(!settings.enabled);
     assert_eq!(settings.default_threshold_quota, 1_000);
     assert_eq!(settings.reminder_interval_seconds, 86_400);
+    assert!(!settings.subscription_alert_enabled);
+    assert_eq!(settings.subscription_remaining_percent, 20);
     assert_eq!(settings.version, 1);
+
+    let invalid_subscription_percent = Query::update()
+        .table(balance_alert_settings::Entity)
+        .value(
+            balance_alert_settings::Column::SubscriptionRemainingPercent,
+            0_i16,
+        )
+        .and_where(Expr::col(balance_alert_settings::Column::Id).eq(1_i16))
+        .to_owned();
+    assert!(
+        connection
+            .execute(
+                connection
+                    .get_database_backend()
+                    .build(&invalid_subscription_percent),
+            )
+            .await
+            .is_err()
+    );
 
     let group = group_active_model("balance-alert-smoke", "余额预警迁移验证")
         .insert(connection)
@@ -2204,6 +2244,71 @@ async fn exercise_balance_alert_migration(
     invalid_state.attempt_count = Set(1);
     assert!(
         balance_alert_events::Entity::insert(invalid_state)
+            .exec_without_returning(connection)
+            .await
+            .is_err()
+    );
+
+    let plan = subscription_plans::ActiveModel {
+        plan_key: Set(SensitiveString::from("1234567890abcdef1234567890abcdef")),
+        name: Set("迁移预警计划".to_owned()),
+        created_by_user_id: Set(user.id),
+        status: Set(1),
+        quota_amount: Set(1_000),
+        cycle: Set(1),
+        version: Set(1),
+        disabled_at: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(connection)
+    .await?;
+    let window_ends_at = now + Duration::from_secs(86_400);
+    let subscription = user_subscriptions::ActiveModel {
+        subscription_key: Set(SensitiveString::from("abcdef1234567890abcdef1234567890")),
+        user_id: Set(user.id),
+        plan_id: Set(plan.id),
+        plan_version: Set(1),
+        status: Set(1),
+        quota_amount: Set(1_000),
+        quota_used: Set(0),
+        cycle: Set(1),
+        window_started_at: Set(now),
+        window_ends_at: Set(window_ends_at),
+        version: Set(1),
+        bound_at: Set(now),
+        status_changed_at: Set(now),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(connection)
+    .await?;
+    let subscription_event = || subscription_balance_alert_events::ActiveModel {
+        user_subscription_id: Set(subscription.id),
+        user_id: Set(user.id),
+        window_started_at: Set(now),
+        window_ends_at: Set(window_ends_at),
+        threshold_percent: Set(20),
+        quota_amount: Set(1_000),
+        observed_quota_used: Set(800),
+        status: Set(1),
+        attempt_count: Set(0),
+        next_attempt_at: Set(now),
+        lease_expires_at: Set(None),
+        last_error_kind: Set(None),
+        version: Set(1),
+        sent_at: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+    subscription_balance_alert_events::Entity::insert(subscription_event())
+        .exec_without_returning(connection)
+        .await?;
+    assert!(
+        subscription_balance_alert_events::Entity::insert(subscription_event())
             .exec_without_returning(connection)
             .await
             .is_err()

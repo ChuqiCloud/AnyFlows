@@ -2,8 +2,8 @@ use std::{error::Error, sync::Mutex, time::Duration};
 
 use af_account::{SystemSecretCipher, SystemSecretKind};
 use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
-use af_db::{DatabaseOptions, EmailSettingsRepository, MigrationOptions};
-use af_domain::UserId;
+use af_db::{DatabaseOptions, DatabaseTimestamp, EmailSettingsRepository, MigrationOptions};
+use af_domain::{Quota, UserId};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::json;
 
@@ -198,6 +198,61 @@ async fn authorization_configuration_and_delivery_failures_are_stable() -> Resul
         Err(AdminEmailSettingsError::DeliveryFailed)
     );
     assert_eq!(delivery.requests().len(), 1);
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn subscription_alert_body_enforces_floor_boundary() -> Result<(), Box<dyn Error>> {
+    let (pool, repository) = installed_repository().await?;
+    let cipher = cipher();
+    DatabaseAdminEmailSettingsService::new(
+        repository.clone(),
+        cipher.clone(),
+        std::sync::Arc::new(RecordingDelivery::successful()),
+    )
+    .update(
+        principal(SessionRole::Admin),
+        settings_command(Some("private smtp password")),
+    )
+    .await?;
+    let record = repository.settings().await?;
+    let window_ends_at = DatabaseTimestamp::from_unix_timestamp(1_800_000_000)?;
+
+    let request = EmailDeliveryRequest::subscription_balance_alert(
+        &record,
+        &cipher,
+        "recipient@example.com".to_owned(),
+        "AnyFlows",
+        "subscription-user",
+        "专业订阅",
+        Quota::new(999)?,
+        Quota::new(800)?,
+        window_ends_at,
+        20,
+    )?;
+    assert_eq!(request.subject(), "AnyFlows 订阅额度预警");
+    assert!(request.body().contains("199 / 999"));
+    assert!(request.body().contains("20%"));
+    assert!(request.body().contains("UTC"));
+
+    assert_eq!(
+        EmailDeliveryRequest::subscription_balance_alert(
+            &record,
+            &cipher,
+            "recipient@example.com".to_owned(),
+            "AnyFlows",
+            "subscription-user",
+            "专业订阅",
+            Quota::new(999)?,
+            Quota::new(799)?,
+            window_ends_at,
+            20,
+        )
+        .unwrap_err(),
+        AdminEmailSettingsError::Internal
+    );
 
     pool.close().await?;
     Ok(())

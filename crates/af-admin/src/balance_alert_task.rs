@@ -6,7 +6,8 @@ use af_db::{
     BalanceAlertRepository, BalanceAlertRepositoryError, BalanceAlertSettingsRepository,
     BalanceAlertSettingsRepositoryError, DatabaseTimestamp, EmailSettingsRepository,
     EmailSettingsRepositoryError, MAX_BALANCE_ALERT_BATCH_SIZE, SiteSettingsRepository,
-    SiteSettingsRepositoryError,
+    SiteSettingsRepositoryError, SubscriptionBalanceAlertClaimOutcome,
+    SubscriptionBalanceAlertRepository, SubscriptionBalanceAlertRepositoryError,
 };
 use thiserror::Error;
 
@@ -94,6 +95,7 @@ impl BalanceAlertTaskError {
 pub struct BalanceAlertTask {
     settings: BalanceAlertSettingsRepository,
     queue: BalanceAlertRepository,
+    subscription_queue: SubscriptionBalanceAlertRepository,
     email_settings: EmailSettingsRepository,
     site_settings: SiteSettingsRepository,
     cipher: SystemSecretCipher,
@@ -105,6 +107,7 @@ impl BalanceAlertTask {
     pub fn new(
         settings: BalanceAlertSettingsRepository,
         queue: BalanceAlertRepository,
+        subscription_queue: SubscriptionBalanceAlertRepository,
         email_settings: EmailSettingsRepository,
         site_settings: SiteSettingsRepository,
         cipher: SystemSecretCipher,
@@ -113,6 +116,7 @@ impl BalanceAlertTask {
         Self {
             settings,
             queue,
+            subscription_queue,
             email_settings,
             site_settings,
             cipher,
@@ -137,21 +141,53 @@ impl BalanceAlertTask {
             .fail_exhausted(now)
             .await
             .map_err(map_queue_error)?;
+        let subscription_stale_canceled = self
+            .subscription_queue
+            .cancel_expired(now)
+            .await
+            .map_err(map_subscription_queue_error)?;
+        let subscription_exhausted_failed = self
+            .subscription_queue
+            .fail_exhausted(now)
+            .await
+            .map_err(map_subscription_queue_error)?;
         let mut report = BalanceAlertTaskReport {
-            stale_canceled,
-            exhausted_failed,
+            stale_canceled: stale_canceled
+                .checked_add(subscription_stale_canceled)
+                .ok_or(BalanceAlertTaskError::Queue)?,
+            exhausted_failed: exhausted_failed
+                .checked_add(subscription_exhausted_failed)
+                .ok_or(BalanceAlertTaskError::Queue)?,
             ..BalanceAlertTaskReport::default()
         };
-        if !settings.enabled() {
+        if !settings.enabled() && !settings.subscription_alert_enabled() {
             return Ok(report);
         }
 
-        report.enqueued = self
-            .queue
-            .enqueue_due(settings, now, MAX_BALANCE_ALERT_BATCH_SIZE)
-            .await
-            .map_err(map_queue_error)?
-            .eligible();
+        if settings.enabled() {
+            report.enqueued = self
+                .queue
+                .enqueue_due(settings, now, MAX_BALANCE_ALERT_BATCH_SIZE)
+                .await
+                .map_err(map_queue_error)?
+                .eligible();
+        }
+        if settings.subscription_alert_enabled() {
+            report.enqueued = report
+                .enqueued
+                .checked_add(
+                    self.subscription_queue
+                        .enqueue_due(
+                            settings.subscription_remaining_percent(),
+                            now,
+                            MAX_BALANCE_ALERT_BATCH_SIZE,
+                        )
+                        .await
+                        .map_err(map_subscription_queue_error)?
+                        .eligible(),
+                )
+                .ok_or(BalanceAlertTaskError::Queue)?;
+        }
         let email_settings = self
             .email_settings
             .settings()
@@ -163,6 +199,35 @@ impl BalanceAlertTask {
             .await
             .map_err(map_site_settings_error)?;
 
+        if settings.enabled() {
+            self.deliver_wallet_alerts(
+                settings,
+                window_started_at_epoch,
+                &email_settings,
+                site_settings.site_name(),
+                &mut report,
+            )
+            .await?;
+        }
+        if settings.subscription_alert_enabled() {
+            self.deliver_subscription_alerts(
+                &email_settings,
+                site_settings.site_name(),
+                &mut report,
+            )
+            .await?;
+        }
+        Ok(report)
+    }
+
+    async fn deliver_wallet_alerts(
+        &self,
+        settings: af_db::BalanceAlertSettingsRecord,
+        window_started_at_epoch: i64,
+        email_settings: &af_db::EmailSettingsRecord,
+        site_name: &str,
+        report: &mut BalanceAlertTaskReport,
+    ) -> Result<(), BalanceAlertTaskError> {
         for _ in 0..MAX_BALANCE_ALERT_DELIVERIES_PER_RUN {
             let claim_now = DatabaseTimestamp::now_utc();
             if settings
@@ -180,16 +245,19 @@ impl BalanceAlertTask {
             {
                 BalanceAlertClaimOutcome::Claimed(lease) => lease,
                 BalanceAlertClaimOutcome::Skipped => {
-                    report.skipped += 1;
+                    report.skipped = report
+                        .skipped
+                        .checked_add(1)
+                        .ok_or(BalanceAlertTaskError::Queue)?;
                     continue;
                 }
                 BalanceAlertClaimOutcome::Empty => break,
             };
             let delivery_result = EmailDeliveryRequest::balance_alert(
-                &email_settings,
+                email_settings,
                 &self.cipher,
                 lease.recipient().to_owned(),
-                site_settings.site_name(),
+                site_name,
                 lease.username(),
                 lease.current_quota(),
                 lease.threshold(),
@@ -209,7 +277,10 @@ impl BalanceAlertTask {
                         .map_err(map_queue_error)?
                         == BalanceAlertCompletionOutcome::Completed
                     {
-                        report.sent += 1;
+                        report.sent = report
+                            .sent
+                            .checked_add(1)
+                            .ok_or(BalanceAlertTaskError::Queue)?;
                     }
                 }
                 Err(error) => {
@@ -225,15 +296,108 @@ impl BalanceAlertTask {
                         if matches!(failure, BalanceAlertDeliveryFailureKind::Configuration)
                             || lease.attempt_count() >= af_db::MAX_BALANCE_ALERT_ATTEMPTS
                         {
-                            report.terminal_failed += 1;
+                            report.terminal_failed = report
+                                .terminal_failed
+                                .checked_add(1)
+                                .ok_or(BalanceAlertTaskError::Queue)?;
                         } else {
-                            report.retry_scheduled += 1;
+                            report.retry_scheduled = report
+                                .retry_scheduled
+                                .checked_add(1)
+                                .ok_or(BalanceAlertTaskError::Queue)?;
                         }
                     }
                 }
             }
         }
-        Ok(report)
+        Ok(())
+    }
+
+    async fn deliver_subscription_alerts(
+        &self,
+        email_settings: &af_db::EmailSettingsRecord,
+        site_name: &str,
+        report: &mut BalanceAlertTaskReport,
+    ) -> Result<(), BalanceAlertTaskError> {
+        for _ in 0..MAX_BALANCE_ALERT_DELIVERIES_PER_RUN {
+            let claim_now = DatabaseTimestamp::now_utc();
+            let lease = match self
+                .subscription_queue
+                .claim_next(claim_now)
+                .await
+                .map_err(map_subscription_queue_error)?
+            {
+                SubscriptionBalanceAlertClaimOutcome::Claimed(lease) => lease,
+                SubscriptionBalanceAlertClaimOutcome::Skipped => {
+                    report.skipped = report
+                        .skipped
+                        .checked_add(1)
+                        .ok_or(BalanceAlertTaskError::Queue)?;
+                    continue;
+                }
+                SubscriptionBalanceAlertClaimOutcome::Empty => break,
+            };
+            let delivery_result = EmailDeliveryRequest::subscription_balance_alert(
+                email_settings,
+                &self.cipher,
+                lease.recipient().to_owned(),
+                site_name,
+                lease.username(),
+                lease.plan_name(),
+                lease.quota_amount(),
+                lease.quota_used(),
+                lease.window_ends_at(),
+                lease.threshold_percent(),
+            )
+            .map_err(|_| EmailDeliveryError::InvalidConfiguration);
+            let delivery_result = match delivery_result {
+                Ok(request) => self.delivery.send(request).await,
+                Err(error) => Err(error),
+            };
+            match delivery_result {
+                Ok(()) => {
+                    let completed_at = DatabaseTimestamp::now_utc();
+                    if self
+                        .subscription_queue
+                        .mark_sent(&lease, completed_at)
+                        .await
+                        .map_err(map_subscription_queue_error)?
+                        == BalanceAlertCompletionOutcome::Completed
+                    {
+                        report.sent = report
+                            .sent
+                            .checked_add(1)
+                            .ok_or(BalanceAlertTaskError::Queue)?;
+                    }
+                }
+                Err(error) => {
+                    let completed_at = DatabaseTimestamp::now_utc();
+                    let failure = delivery_failure_kind(error);
+                    if self
+                        .subscription_queue
+                        .record_failure(&lease, failure, completed_at)
+                        .await
+                        .map_err(map_subscription_queue_error)?
+                        == BalanceAlertCompletionOutcome::Completed
+                    {
+                        if matches!(failure, BalanceAlertDeliveryFailureKind::Configuration)
+                            || lease.attempt_count() >= af_db::MAX_BALANCE_ALERT_ATTEMPTS
+                        {
+                            report.terminal_failed = report
+                                .terminal_failed
+                                .checked_add(1)
+                                .ok_or(BalanceAlertTaskError::Queue)?;
+                        } else {
+                            report.retry_scheduled = report
+                                .retry_scheduled
+                                .checked_add(1)
+                                .ok_or(BalanceAlertTaskError::Queue)?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -256,6 +420,12 @@ fn map_settings_error(_: BalanceAlertSettingsRepositoryError) -> BalanceAlertTas
 }
 
 fn map_queue_error(_: BalanceAlertRepositoryError) -> BalanceAlertTaskError {
+    BalanceAlertTaskError::Queue
+}
+
+fn map_subscription_queue_error(
+    _: SubscriptionBalanceAlertRepositoryError,
+) -> BalanceAlertTaskError {
     BalanceAlertTaskError::Queue
 }
 

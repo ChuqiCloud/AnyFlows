@@ -82,6 +82,9 @@ pub(crate) struct UserNotificationPreferencesResponse {
     balance_alert_threshold: Option<i64>,
     #[schema(minimum = 1)]
     effective_balance_alert_threshold: i64,
+    subscription_alert_enabled: bool,
+    #[schema(minimum = 1, maximum = 99)]
+    subscription_remaining_percent: i16,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -213,6 +216,8 @@ impl UserNotificationPreferencesResponse {
             effective_balance_alert_threshold: preferences
                 .effective_balance_alert_threshold()
                 .units(),
+            subscription_alert_enabled: preferences.subscription_alert_enabled(),
+            subscription_remaining_percent: preferences.subscription_remaining_percent(),
         }
     }
 }

@@ -3,7 +3,8 @@ use std::{fmt, future::Future, pin::Pin};
 use af_db::{
     BalanceAlertSettingsRecord, BalanceAlertSettingsRepository,
     BalanceAlertSettingsRepositoryError, BalanceAlertSettingsWriteRecord,
-    MAX_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS, MIN_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS,
+    MAX_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS, MAX_SUBSCRIPTION_REMAINING_PERCENT,
+    MIN_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS, MIN_SUBSCRIPTION_REMAINING_PERCENT,
 };
 use af_domain::Quota;
 use thiserror::Error;
@@ -16,6 +17,8 @@ pub struct AdminBalanceAlertSettings {
     enabled: bool,
     default_threshold: Quota,
     reminder_interval_seconds: u64,
+    subscription_alert_enabled: bool,
+    subscription_remaining_percent: i16,
     version: i64,
 }
 
@@ -25,12 +28,16 @@ impl AdminBalanceAlertSettings {
         enabled: bool,
         default_threshold: Quota,
         reminder_interval_seconds: u64,
+        subscription_alert_enabled: bool,
+        subscription_remaining_percent: i16,
         version: i64,
     ) -> Result<Self, AdminBalanceAlertSettingsError> {
         if default_threshold.is_zero()
             || !(MIN_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS
                 ..=MAX_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS)
                 .contains(&reminder_interval_seconds)
+            || !(MIN_SUBSCRIPTION_REMAINING_PERCENT..=MAX_SUBSCRIPTION_REMAINING_PERCENT)
+                .contains(&subscription_remaining_percent)
             || version < 1
         {
             return Err(AdminBalanceAlertSettingsError::InvalidInput);
@@ -39,6 +46,8 @@ impl AdminBalanceAlertSettings {
             enabled,
             default_threshold,
             reminder_interval_seconds,
+            subscription_alert_enabled,
+            subscription_remaining_percent,
             version,
         })
     }
@@ -59,6 +68,16 @@ impl AdminBalanceAlertSettings {
     }
 
     #[must_use]
+    pub const fn subscription_alert_enabled(self) -> bool {
+        self.subscription_alert_enabled
+    }
+
+    #[must_use]
+    pub const fn subscription_remaining_percent(self) -> i16 {
+        self.subscription_remaining_percent
+    }
+
+    #[must_use]
     pub const fn version(self) -> i64 {
         self.version
     }
@@ -70,6 +89,8 @@ impl AdminBalanceAlertSettings {
             record.enabled(),
             record.default_threshold(),
             record.reminder_interval_seconds(),
+            record.subscription_alert_enabled(),
+            record.subscription_remaining_percent(),
             record.version(),
         )
         .map_err(|_| AdminBalanceAlertSettingsError::Internal)
@@ -82,6 +103,8 @@ pub struct AdminBalanceAlertSettingsCommand {
     enabled: bool,
     default_threshold: Quota,
     reminder_interval_seconds: u64,
+    subscription_alert_enabled: bool,
+    subscription_remaining_percent: i16,
 }
 
 impl AdminBalanceAlertSettingsCommand {
@@ -90,11 +113,15 @@ impl AdminBalanceAlertSettingsCommand {
         enabled: bool,
         default_threshold: Quota,
         reminder_interval_seconds: u64,
+        subscription_alert_enabled: bool,
+        subscription_remaining_percent: i16,
     ) -> Result<Self, AdminBalanceAlertSettingsError> {
         if default_threshold.is_zero()
             || !(MIN_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS
                 ..=MAX_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS)
                 .contains(&reminder_interval_seconds)
+            || !(MIN_SUBSCRIPTION_REMAINING_PERCENT..=MAX_SUBSCRIPTION_REMAINING_PERCENT)
+                .contains(&subscription_remaining_percent)
         {
             return Err(AdminBalanceAlertSettingsError::InvalidInput);
         }
@@ -102,6 +129,8 @@ impl AdminBalanceAlertSettingsCommand {
             enabled,
             default_threshold,
             reminder_interval_seconds,
+            subscription_alert_enabled,
+            subscription_remaining_percent,
         })
     }
 
@@ -110,6 +139,10 @@ impl AdminBalanceAlertSettingsCommand {
             self.enabled,
             self.default_threshold,
             self.reminder_interval_seconds,
+        )
+        .with_subscription_alerts(
+            self.subscription_alert_enabled,
+            self.subscription_remaining_percent,
         )
     }
 }

@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   BellRing,
+  CalendarClock,
   Check,
   CircleDollarSign,
   KeyRound,
@@ -274,6 +275,24 @@ function NotificationsCard({ profile }: { profile: UserProfileResponse }) {
                   : profile.notifications.effective_balance_alert_threshold}
               </Badge>
             </div>
+          </div>
+          <div className="flex flex-wrap items-start justify-between gap-3 py-4">
+            <div className="flex min-w-0 gap-3">
+              <CalendarClock className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />
+              <div>
+                <p className="text-sm font-medium">{t('profile.notifications.subscriptionAlertTitle')}</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {t('profile.notifications.subscriptionAlertDescription', {
+                    percent: profile.notifications.subscription_remaining_percent,
+                  })}
+                </p>
+              </div>
+            </div>
+            <Badge className={profile.notifications.subscription_alert_enabled ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'}>
+              {t(profile.notifications.subscription_alert_enabled
+                ? 'profile.notifications.subscriptionAlertActive'
+                : 'profile.notifications.subscriptionAlertPaused')}
+            </Badge>
           </div>
           <div className="flex items-start gap-3 py-4"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden="true" /><div className="min-w-0"><p className="text-sm font-medium">{t('profile.notifications.securityTitle')}</p><p className="mt-1 text-xs leading-5 text-muted-foreground">{t('profile.notifications.securityDescription')}</p></div><Badge className="ml-auto shrink-0 bg-success/10 text-success">{t('profile.notifications.alwaysOn')}</Badge></div>
         </div>

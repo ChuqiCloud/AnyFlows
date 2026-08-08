@@ -66,7 +66,8 @@ use af_db::{
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RegistrationRepository, RegistrationRepositoryConfigError,
-    SiteSettingsRepository, SiteSettingsRepositoryConfigError, SubscriptionRepository,
+    SiteSettingsRepository, SiteSettingsRepositoryConfigError, SubscriptionBalanceAlertRepository,
+    SubscriptionBalanceAlertRepositoryConfigError, SubscriptionRepository,
     SubscriptionRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
     TopupRepository, UsageLogRepository, UserInvitationRepository,
     UserInvitationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
@@ -356,6 +357,9 @@ pub enum BootstrapError {
     /// 余额预警事件仓储的启动参数无效。
     #[error("余额预警事件仓储启动参数无效")]
     BalanceAlertRepository(#[source] BalanceAlertRepositoryConfigError),
+    /// 订阅窗口预警事件仓储的启动参数无效。
+    #[error("订阅窗口预警事件仓储启动参数无效")]
+    SubscriptionBalanceAlertRepository(#[source] SubscriptionBalanceAlertRepositoryConfigError),
     /// SMTP 密码加解密器无法从启动配置安全装配。
     #[error("初始化 SMTP 密码加解密器失败")]
     SystemSecret(#[source] SystemSecretError),
@@ -619,6 +623,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::BalanceAlertRepository)?;
+        let subscription_balance_alert_repository = SubscriptionBalanceAlertRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::SubscriptionBalanceAlertRepository)?;
         let password_reset_repository = PasswordResetRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -679,6 +688,7 @@ impl Bootstrap<DatabaseReady> {
         let balance_alert_task = BalanceAlertTask::new(
             balance_alert_settings_repository.clone(),
             balance_alert_repository,
+            subscription_balance_alert_repository,
             email_settings_repository.clone(),
             site_settings_repository.clone(),
             system_secret_cipher.clone(),

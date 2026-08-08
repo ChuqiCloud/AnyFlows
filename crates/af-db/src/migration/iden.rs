@@ -1126,6 +1126,8 @@ pub(in crate::migration) mod balance_alert_settings {
         Enabled,
         DefaultThresholdQuota,
         ReminderIntervalSeconds,
+        SubscriptionAlertEnabled,
+        SubscriptionRemainingPercent,
         Version,
         CreatedAt,
         UpdatedAt,
@@ -1152,6 +1154,41 @@ pub(in crate::migration) mod balance_alert_events {
         WindowStartedAtEpoch,
         ThresholdQuota,
         ObservedQuota,
+        Status,
+        AttemptCount,
+        NextAttemptAt,
+        LeaseExpiresAt,
+        LastErrorKind,
+        Version,
+        SentAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod subscription_balance_alert_events {
+    use super::DeriveIden;
+
+    /// `subscription_balance_alert_events` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "subscription_balance_alert_events")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 订阅窗口剩余额度预警事件的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        UserSubscriptionId,
+        UserId,
+        WindowStartedAt,
+        WindowEndsAt,
+        ThresholdPercent,
+        QuotaAmount,
+        ObservedQuotaUsed,
         Status,
         AttemptCount,
         NextAttemptAt,

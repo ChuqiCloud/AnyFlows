@@ -77,6 +77,8 @@ pub struct UserNotificationPreferences {
     balance_alert_enabled: bool,
     balance_alert_threshold: Option<Quota>,
     effective_balance_alert_threshold: Quota,
+    subscription_alert_enabled: bool,
+    subscription_remaining_percent: i16,
 }
 
 impl UserNotificationPreferences {
@@ -88,6 +90,8 @@ impl UserNotificationPreferences {
         balance_alert_enabled: bool,
         balance_alert_threshold: Option<Quota>,
         effective_balance_alert_threshold: Quota,
+        subscription_alert_enabled: bool,
+        subscription_remaining_percent: i16,
     ) -> Self {
         Self {
             email_product_updates,
@@ -95,6 +99,8 @@ impl UserNotificationPreferences {
             balance_alert_enabled,
             balance_alert_threshold,
             effective_balance_alert_threshold,
+            subscription_alert_enabled,
+            subscription_remaining_percent,
         }
     }
 
@@ -126,6 +132,18 @@ impl UserNotificationPreferences {
     #[must_use]
     pub const fn effective_balance_alert_threshold(self) -> Quota {
         self.effective_balance_alert_threshold
+    }
+
+    /// 系统是否启用订阅窗口剩余额度预警。
+    #[must_use]
+    pub const fn subscription_alert_enabled(self) -> bool {
+        self.subscription_alert_enabled
+    }
+
+    /// 返回订阅窗口预警使用的全局剩余额度百分比。
+    #[must_use]
+    pub const fn subscription_remaining_percent(self) -> i16 {
+        self.subscription_remaining_percent
     }
 }
 
@@ -422,6 +440,8 @@ fn profile_from_record(
             settings.enabled(),
             personal_threshold,
             personal_threshold.unwrap_or(settings.default_threshold()),
+            settings.subscription_alert_enabled(),
+            settings.subscription_remaining_percent(),
         ),
     })
 }

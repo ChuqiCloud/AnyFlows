@@ -127,6 +127,7 @@ mod site_settings;
 #[cfg(test)]
 mod site_settings_tests;
 mod subscription;
+mod subscription_alert;
 mod token_owner_guard;
 mod topup;
 mod usage_log;
@@ -237,8 +238,10 @@ pub use balance_alert::{
     BalanceAlertSettingsRepository, BalanceAlertSettingsRepositoryConfigError,
     BalanceAlertSettingsRepositoryError, BalanceAlertSettingsWriteRecord,
     DEFAULT_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS, DEFAULT_BALANCE_ALERT_THRESHOLD_QUOTA,
-    MAX_BALANCE_ALERT_ATTEMPTS, MAX_BALANCE_ALERT_BATCH_SIZE,
-    MAX_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS, MIN_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS,
+    DEFAULT_SUBSCRIPTION_REMAINING_PERCENT, MAX_BALANCE_ALERT_ATTEMPTS,
+    MAX_BALANCE_ALERT_BATCH_SIZE, MAX_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS,
+    MAX_SUBSCRIPTION_REMAINING_PERCENT, MIN_BALANCE_ALERT_REMINDER_INTERVAL_SECONDS,
+    MIN_SUBSCRIPTION_REMAINING_PERCENT,
 };
 pub use billing_batch::{
     BillingBatchRepository, BillingBatchRepositoryError, BillingBatchWrite, BillingBatchWriteError,
@@ -408,6 +411,11 @@ pub use subscription::{
     UserSubscriptionLifecycleTransitionRecord, UserSubscriptionPageRecord, UserSubscriptionRecord,
     UserSubscriptionResetDuePageRecord, UserSubscriptionWindowAdvance,
     UserSubscriptionWindowAdvanceOutcome, UserSubscriptionWindowAdvanceRecord,
+};
+pub use subscription_alert::{
+    SubscriptionBalanceAlertClaimOutcome, SubscriptionBalanceAlertDeliveryLease,
+    SubscriptionBalanceAlertEnqueueReport, SubscriptionBalanceAlertRepository,
+    SubscriptionBalanceAlertRepositoryConfigError, SubscriptionBalanceAlertRepositoryError,
 };
 pub use topup::{
     MAX_PAYMENT_PROVIDER_BYTES, MAX_PROVIDER_EVENT_ID_BYTES, MAX_PROVIDER_ORDER_ID_BYTES,

@@ -1,8 +1,11 @@
-import { CalendarRange, RefreshCw } from 'lucide-react'
+import { BellRing, CalendarRange, RefreshCw } from 'lucide-react'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { useUserProfile } from '@/features/profile/profile-api'
+import { isSubscriptionAlertDue } from './subscription-alert-policy'
 import { SubscriptionList } from './subscription-list'
 import { useCurrentUserSubscriptions } from './subscription-api'
 
@@ -10,8 +13,17 @@ import { useCurrentUserSubscriptions } from './subscription-api'
 export function MySubscriptionsPage() {
   const { i18n, t } = useTranslation()
   const query = useCurrentUserSubscriptions()
+  const profileQuery = useUserProfile()
   const subscriptions = query.data?.pages.flatMap((page) => page.subscriptions) ?? []
   const active = subscriptions.filter((subscription) => subscription.status === 'active')
+  const notifications = profileQuery.data?.notifications
+  const alertThresholdPercent = notifications?.subscription_remaining_percent ?? 20
+  const alertPolicyEnabled = Boolean(
+    notifications?.subscription_alert_enabled && notifications.email_usage_alerts,
+  )
+  const warningCount = alertPolicyEnabled
+    ? active.filter((subscription) => isSubscriptionAlertDue(subscription, alertThresholdPercent)).length
+    : 0
   const nextWindowEnd = active.reduce<number | undefined>((current, subscription) => (
     current === undefined || subscription.window_ends_at < current
       ? subscription.window_ends_at
@@ -36,8 +48,14 @@ export function MySubscriptionsPage() {
             {t('subscriptions.subtitle')}
           </p>
         </div>
-        <Button type="button" size="sm" variant="secondary" disabled={query.isFetching} onClick={() => void query.refetch()}>
-          <RefreshCw className={query.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={query.isFetching || profileQuery.isFetching}
+          onClick={() => void Promise.all([query.refetch(), profileQuery.refetch()])}
+        >
+          <RefreshCw className={query.isFetching || profileQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />
           {t('subscriptions.actions.refresh')}
         </Button>
       </header>
@@ -52,7 +70,30 @@ export function MySubscriptionsPage() {
         </span>
       </div>
 
-      <SubscriptionList subscriptions={subscriptions} query={query} scope="current" />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--hairline)] pb-3 text-xs">
+        <div className="flex min-w-0 items-start gap-2 text-muted-foreground">
+          <BellRing className="mt-0.5 size-3.5 shrink-0 text-info" aria-hidden="true" />
+          <span>
+            {profileQuery.isError
+              ? t('subscriptions.alerts.unavailable')
+              : t('subscriptions.alerts.description', { percent: alertThresholdPercent })}
+          </span>
+        </div>
+        <Badge className={alertPolicyEnabled ? 'bg-success/10 text-success' : 'bg-surface-2 text-muted-foreground'}>
+          {profileQuery.isPending
+            ? t('subscriptions.alerts.loading')
+            : alertPolicyEnabled
+              ? t('subscriptions.alerts.active', { count: warningCount })
+              : t('subscriptions.alerts.paused')}
+        </Badge>
+      </div>
+
+      <SubscriptionList
+        subscriptions={subscriptions}
+        query={query}
+        scope="current"
+        alertPolicy={{ enabled: alertPolicyEnabled, thresholdPercent: alertThresholdPercent }}
+      />
     </div>
   )
 }

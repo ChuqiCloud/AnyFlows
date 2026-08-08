@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowUpRight, BellRing, Check, Clock3, LoaderCircle, WalletCards } from 'lucide-react'
+import { ArrowUpRight, BellRing, Check, Clock3, Gauge, LoaderCircle, WalletCards } from 'lucide-react'
 import { type ReactNode, useEffect } from 'react'
 import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -34,6 +34,7 @@ export function BillingSettingsForm({ settings }: BillingSettingsFormProps) {
     resolver: zodResolver(buildBillingSettingsSchema({
       invalidThreshold: t('billingSettings.validation.threshold'),
       invalidWindow: t('billingSettings.validation.window'),
+      invalidSubscriptionPercent: t('billingSettings.validation.subscriptionPercent'),
     })),
   })
 
@@ -42,6 +43,8 @@ export function BillingSettingsForm({ settings }: BillingSettingsFormProps) {
   }, [form, settings])
 
   const enabled = form.watch('enabled')
+  const subscriptionAlertEnabled = form.watch('subscriptionAlertEnabled')
+  const anyEnabled = enabled || subscriptionAlertEnabled
   const currentWindow = form.watch('reminderIntervalSeconds')
   const usesCustomWindow = !BALANCE_ALERT_WINDOW_OPTIONS.some((seconds) => String(seconds) === currentWindow)
   const onSubmit = form.handleSubmit(async (values) => {
@@ -66,11 +69,16 @@ export function BillingSettingsForm({ settings }: BillingSettingsFormProps) {
               <CardDescription className="mt-1">{t('billingSettings.form.subtitle')}</CardDescription>
             </div>
           </div>
-          <Badge className={enabled ? 'bg-success/10 text-success' : 'bg-surface-2 text-muted-foreground'}>
-            {t(enabled ? 'billingSettings.status.enabled' : 'billingSettings.status.disabled')}
+          <Badge className={anyEnabled ? 'bg-success/10 text-success' : 'bg-surface-2 text-muted-foreground'}>
+            {t(anyEnabled ? 'billingSettings.status.enabled' : 'billingSettings.status.disabled')}
           </Badge>
         </CardHeader>
         <CardContent className="p-0">
+          <SettingSectionHeader
+            icon={<WalletCards className="size-4" aria-hidden="true" />}
+            title={t('billingSettings.sections.wallet')}
+            description={t('billingSettings.sections.walletHint')}
+          />
           <SettingRow
             title={t('billingSettings.fields.enabled')}
             description={t('billingSettings.fields.enabledHint')}
@@ -141,6 +149,55 @@ export function BillingSettingsForm({ settings }: BillingSettingsFormProps) {
               </div>
             )}
           />
+          <SettingSectionHeader
+            icon={<Gauge className="size-4" aria-hidden="true" />}
+            title={t('billingSettings.sections.subscription')}
+            description={t('billingSettings.sections.subscriptionHint')}
+          />
+          <SettingRow
+            title={t('billingSettings.fields.subscriptionEnabled')}
+            description={t('billingSettings.fields.subscriptionEnabledHint')}
+            control={(
+              <Controller
+                control={form.control}
+                name="subscriptionAlertEnabled"
+                render={({ field }) => (
+                  <Switch
+                    id="subscription-alert-enabled"
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    aria-label={t('billingSettings.fields.subscriptionEnabled')}
+                  />
+                )}
+              />
+            )}
+          />
+          <SettingRow
+            title={t('billingSettings.fields.subscriptionPercent')}
+            description={t('billingSettings.fields.subscriptionPercentHint')}
+            control={(
+              <div className="w-full md:max-w-xs">
+                <div className="relative">
+                  <Input
+                    id="subscription-alert-percent"
+                    type="number"
+                    min={1}
+                    max={99}
+                    step={1}
+                    className="pr-12 tabular-nums"
+                    aria-invalid={!!form.formState.errors.subscriptionRemainingPercent}
+                    {...form.register('subscriptionRemainingPercent', { valueAsNumber: true })}
+                  />
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                    %
+                  </span>
+                </div>
+                {form.formState.errors.subscriptionRemainingPercent ? (
+                  <p className="mt-1.5 text-xs text-destructive">{form.formState.errors.subscriptionRemainingPercent.message}</p>
+                ) : null}
+              </div>
+            )}
+          />
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--hairline)] px-5 py-4">
             <div className="text-xs text-muted-foreground">
               {mutation.isSuccess ? (
@@ -193,6 +250,18 @@ function SettingRow({ title, description, control }: { title: string; descriptio
         <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>
       </div>
       <div className="flex justify-start md:justify-end">{control}</div>
+    </div>
+  )
+}
+
+function SettingSectionHeader({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
+  return (
+    <div className="flex items-start gap-3 border-b border-[var(--hairline)] bg-surface-2/45 px-5 py-3">
+      <span className="mt-0.5 shrink-0 text-brand">{icon}</span>
+      <div>
+        <p className="text-sm font-medium">{title}</p>
+        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{description}</p>
+      </div>
     </div>
   )
 }

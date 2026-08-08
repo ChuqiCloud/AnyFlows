@@ -52,6 +52,7 @@ pub(crate) mod route_channels;
 pub(crate) mod routes;
 pub(crate) mod scheduler_outbox_events;
 pub(crate) mod site_settings;
+pub(crate) mod subscription_balance_alert_events;
 pub(crate) mod subscription_plans;
 pub(crate) mod tokens;
 pub(crate) mod topup_orders;
@@ -1379,6 +1380,71 @@ impl ActiveModelBehavior for balance_alert_events::ActiveModel {
             || !shape_valid
         {
             return Err(DbErr::Custom("余额预警事件状态无效".to_owned()));
+        }
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for subscription_balance_alert_events::ActiveModel {
+    async fn before_save<C>(self, _database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        // 投递状态只能由订阅预警仓储使用带版本条件的批量更新推进。
+        if !insert {
+            return Err(DbErr::Custom("订阅预警事件必须通过仓储更新".to_owned()));
+        }
+        let status = self.status.try_as_ref().copied().unwrap_or_default();
+        let attempts = self.attempt_count.try_as_ref().copied().unwrap_or_default();
+        let lease = self.lease_expires_at.try_as_ref().copied().flatten();
+        let sent_at = self.sent_at.try_as_ref().copied().flatten();
+        let last_error = self.last_error_kind.try_as_ref().copied().flatten();
+        let window_started_at = self.window_started_at.try_as_ref().copied();
+        let window_ends_at = self.window_ends_at.try_as_ref().copied();
+        let quota_amount = self.quota_amount.try_as_ref().copied().unwrap_or_default();
+        let observed_quota_used = self.observed_quota_used.try_as_ref().copied().unwrap_or(-1);
+        let shape_valid = match status {
+            1 => {
+                (0..=4).contains(&attempts)
+                    && lease.is_none()
+                    && sent_at.is_none()
+                    && ((attempts == 0 && last_error.is_none())
+                        || (attempts > 0 && last_error.is_some()))
+            }
+            2 => (1..=5).contains(&attempts) && lease.is_some() && sent_at.is_none(),
+            3 => (1..=5).contains(&attempts) && lease.is_none() && sent_at.is_some(),
+            4 => (1..=5).contains(&attempts) && lease.is_none() && sent_at.is_none(),
+            5 => lease.is_none() && sent_at.is_none(),
+            _ => false,
+        };
+        if self
+            .user_subscription_id
+            .try_as_ref()
+            .copied()
+            .unwrap_or_default()
+            <= 0
+            || self.user_id.try_as_ref().copied().unwrap_or_default() <= 0
+            || window_started_at.is_none()
+            || window_ends_at.is_none()
+            || window_ends_at <= window_started_at
+            || !(1..=99).contains(
+                &self
+                    .threshold_percent
+                    .try_as_ref()
+                    .copied()
+                    .unwrap_or_default(),
+            )
+            || quota_amount <= 0
+            || !(0..=quota_amount).contains(&observed_quota_used)
+            || self.version.try_as_ref().copied().unwrap_or_default() != 1
+            || self.next_attempt_at.try_as_ref().is_none()
+            || self.created_at.try_as_ref().is_none()
+            || self.updated_at.try_as_ref().is_none()
+            || last_error.is_some_and(|kind| !(1..=3).contains(&kind))
+            || !shape_valid
+        {
+            return Err(DbErr::Custom("订阅预警事件状态无效".to_owned()));
         }
         Ok(self)
     }

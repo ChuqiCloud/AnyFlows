@@ -36,6 +36,9 @@ pub(crate) struct AdminBalanceAlertSettingsResponse {
     default_threshold: i64,
     #[schema(minimum = 3600, maximum = 604800)]
     reminder_interval_seconds: u64,
+    subscription_alert_enabled: bool,
+    #[schema(minimum = 1, maximum = 99)]
+    subscription_remaining_percent: i16,
     #[schema(minimum = 1)]
     version: i64,
 }
@@ -49,6 +52,9 @@ pub(crate) struct AdminBalanceAlertSettingsRequest {
     default_threshold: i64,
     #[schema(minimum = 3600, maximum = 604800)]
     reminder_interval_seconds: u64,
+    subscription_alert_enabled: bool,
+    #[schema(minimum = 1, maximum = 99)]
+    subscription_remaining_percent: i16,
 }
 
 /// 构建仅管理员可访问的余额预警设置路由。
@@ -96,6 +102,8 @@ async fn update_balance_alert_settings(
         request.enabled,
         threshold,
         request.reminder_interval_seconds,
+        request.subscription_alert_enabled,
+        request.subscription_remaining_percent,
     )
     .map_err(map_balance_alert_settings_error)?;
     let settings = state
@@ -114,6 +122,8 @@ impl From<AdminBalanceAlertSettings> for AdminBalanceAlertSettingsResponse {
             enabled: settings.enabled(),
             default_threshold: settings.default_threshold().units(),
             reminder_interval_seconds: settings.reminder_interval_seconds(),
+            subscription_alert_enabled: settings.subscription_alert_enabled(),
+            subscription_remaining_percent: settings.subscription_remaining_percent(),
             version: settings.version(),
         }
     }

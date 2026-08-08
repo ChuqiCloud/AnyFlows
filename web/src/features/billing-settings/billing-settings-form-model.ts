@@ -11,11 +11,14 @@ export type BillingSettingsValues = {
   enabled: boolean
   defaultThreshold: number
   reminderIntervalSeconds: string
+  subscriptionAlertEnabled: boolean
+  subscriptionRemainingPercent: number
 }
 
 type ValidationMessages = {
   invalidThreshold: string
   invalidWindow: string
+  invalidSubscriptionPercent: string
 }
 
 /** 从服务端快照构造完整计费设置表单值。 */
@@ -24,6 +27,8 @@ export function billingSettingsValues(settings: AdminBalanceAlertSettings): Bill
     enabled: settings.enabled,
     defaultThreshold: settings.default_threshold,
     reminderIntervalSeconds: String(settings.reminder_interval_seconds),
+    subscriptionAlertEnabled: settings.subscription_alert_enabled,
+    subscriptionRemainingPercent: settings.subscription_remaining_percent,
   }
 }
 
@@ -39,6 +44,12 @@ export function buildBillingSettingsSchema(messages: ValidationMessages) {
       const parsed = Number(value)
       return Number.isSafeInteger(parsed) && parsed >= 3_600 && parsed <= 604_800
     }, messages.invalidWindow),
+    subscriptionAlertEnabled: z.boolean(),
+    subscriptionRemainingPercent: z.number()
+      .int(messages.invalidSubscriptionPercent)
+      .safe(messages.invalidSubscriptionPercent)
+      .min(1, messages.invalidSubscriptionPercent)
+      .max(99, messages.invalidSubscriptionPercent),
   })
 }
 
@@ -54,5 +65,7 @@ export function toBillingSettingsRequest(
     enabled: values.enabled,
     default_threshold: values.defaultThreshold,
     reminder_interval_seconds: reminderIntervalSeconds,
+    subscription_alert_enabled: values.subscriptionAlertEnabled,
+    subscription_remaining_percent: values.subscriptionRemainingPercent,
   }
 }

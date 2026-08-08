@@ -28,12 +28,16 @@ export type AdminBalanceAlertSettings = {
     enabled: boolean;
     default_threshold: number;
     reminder_interval_seconds: number;
+    subscription_alert_enabled: boolean;
+    subscription_remaining_percent: number;
     version: number;
 };
 export type AdminBalanceAlertSettingsRequest = {
     enabled: boolean;
     default_threshold: number;
     reminder_interval_seconds: number;
+    subscription_alert_enabled: boolean;
+    subscription_remaining_percent: number;
 };
 export type AdminBrandSettingsRequest = {
     logo_url?: string | null;
@@ -1128,6 +1132,8 @@ export type UserNotificationPreferencesResponse = {
     balance_alert_enabled: boolean;
     balance_alert_threshold: number | null;
     effective_balance_alert_threshold: number;
+    subscription_alert_enabled: boolean;
+    subscription_remaining_percent: number;
 };
 export type UserPasswordChangeRequest = {
     current_password: string;
