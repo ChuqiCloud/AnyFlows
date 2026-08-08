@@ -1,8 +1,7 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use af_admin::{
-    ApiKeyDigest, TokenAuthentication, TokenAuthenticationError, TokenAuthenticationFuture,
-    TokenAuthenticator,
+    ApiKeyDigest, TokenAuthenticationError, TokenAuthenticationFuture, TokenAuthenticator,
 };
 use af_db::{
     TokenRequestAdmissionOutcome, TokenRequestAdmissionRepository,
@@ -81,8 +80,8 @@ impl TokenAuthenticator for TokenRequestAdmissionAuthenticator {
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use af_admin::{PresentedApiKey, TokenModelPolicy};
-    use af_domain::{GatewayPrincipal, GroupId, TokenId, UserId};
+    use af_admin::{PresentedApiKey, TokenAuthentication};
+    use af_domain::{GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, UserId};
 
     use super::*;
 
