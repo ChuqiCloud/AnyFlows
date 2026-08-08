@@ -9,8 +9,10 @@ use crate::{
     subscriptions::{
         AdminSubscriptionPlanCreateRequest, AdminSubscriptionPlanDisableRequest,
         AdminSubscriptionPlanListResponse, AdminSubscriptionPlanResponse,
-        AdminUserSubscriptionBindRequest, SubscriptionCycleDto, SubscriptionPlanStatusDto,
-        UserSubscriptionListResponse, UserSubscriptionResponse, UserSubscriptionStatusDto,
+        AdminUserSubscriptionBindRequest, AdminUserSubscriptionLifecycleActionDto,
+        AdminUserSubscriptionLifecycleRequest, AdminUserSubscriptionLifecycleResponse,
+        SubscriptionCycleDto, SubscriptionPlanStatusDto, UserSubscriptionListResponse,
+        UserSubscriptionResponse, UserSubscriptionStatusDto,
     },
 };
 
@@ -122,6 +124,31 @@ fn list_admin_user_subscriptions() {}
 fn bind_admin_user_subscription() {}
 
 #[utoipa::path(
+    post,
+    path = "/api/admin/users/{user_id}/subscriptions/{subscription_id}/lifecycle",
+    operation_id = "transitionAdminUserSubscriptionLifecycle",
+    tag = "订阅管理",
+    summary = "迁移指定用户订阅生命周期",
+    params(
+        ("user_id" = i64, Path, minimum = 1, description = "用户 ID"),
+        ("subscription_id" = String, Path, min_length = 32, max_length = 32, description = "用户订阅标识")
+    ),
+    request_body = AdminUserSubscriptionLifecycleRequest,
+    responses(
+        (status = 200, description = "生命周期迁移已提交或相同迁移已存在", body = AdminUserSubscriptionLifecycleResponse),
+        (status = 400, description = "用户 ID、订阅标识、动作或版本无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 404, description = "订阅不存在或不属于指定用户", body = ManagementErrorBody),
+        (status = 409, description = "状态动作无效、版本冲突或存在在途计费预留", body = ManagementErrorBody),
+        (status = 503, description = "提交结果未知", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn transition_admin_user_subscription_lifecycle() {}
+
+#[utoipa::path(
     get,
     path = "/api/account/subscriptions",
     operation_id = "listCurrentUserSubscriptions",
@@ -149,6 +176,7 @@ fn list_current_user_subscriptions() {}
         disable_admin_subscription_plan,
         list_admin_user_subscriptions,
         bind_admin_user_subscription,
+        transition_admin_user_subscription_lifecycle,
         list_current_user_subscriptions
     ),
     components(schemas(
@@ -162,6 +190,9 @@ fn list_current_user_subscriptions() {}
         UserSubscriptionResponse,
         UserSubscriptionListResponse,
         AdminUserSubscriptionBindRequest,
+        AdminUserSubscriptionLifecycleActionDto,
+        AdminUserSubscriptionLifecycleRequest,
+        AdminUserSubscriptionLifecycleResponse,
         ManagementErrorBody
     ))
 )]

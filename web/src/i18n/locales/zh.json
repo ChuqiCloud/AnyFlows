@@ -2889,6 +2889,15 @@
       "bind": "确认绑定",
       "binding": "正在绑定",
       "cancel": "取消",
+      "suspend": "暂停",
+      "resume": "恢复",
+      "cancelSubscription": "取消订阅",
+      "transitioning": "正在提交",
+      "confirmSuspend": "确认暂停",
+      "confirmResume": "确认恢复",
+      "confirmCancel": "确认取消",
+      "cancelDialog": "取消",
+      "done": "完成",
       "loadMorePlans": "加载更多计划",
       "loadingMorePlans": "正在加载计划",
       "loadMoreUsers": "加载更多用户",
@@ -2979,6 +2988,18 @@
       "planCycle": "周期 {{value}}",
       "planVersion": "版本 v{{version}}"
     },
+    "lifecycle": {
+      "readOnly": "只读",
+      "suspendTitle": "暂停订阅",
+      "suspendDescription": "暂停“{{name}}”后保留当前窗口和已用额度，恢复前不再消费订阅额度。",
+      "resumeTitle": "恢复订阅",
+      "resumeDescription": "恢复“{{name}}”后继续使用当前窗口；若窗口已经陈旧，服务端会推进到当前 UTC 周期并清零旧窗口用量。",
+      "cancelTitle": "取消订阅",
+      "cancelDescription": "取消“{{name}}”后立即停止消费订阅额度，并在当前窗口结束后由周期任务标记为过期。该操作不可恢复。",
+      "successTitle": "订阅状态已更新",
+      "success": "生命周期操作已经提交，列表将按服务端事实刷新。",
+      "successAdvanced": "订阅已恢复，并推进了 {{periods}} 个完整 UTC 周期；旧窗口用量已经清零。"
+    },
     "user": {
       "selectorLabel": "选择用户",
       "loading": "正在加载用户目录",
@@ -3021,6 +3042,11 @@
       "planNotFound": "计划不存在或已被移除，请刷新计划目录。",
       "planDisabled": "计划已经停用，请选择其他有效计划。",
       "userNotFound": "用户不存在或已被移除，请刷新用户目录。",
+      "lifecycle": "订阅状态操作失败，请稍后重试。",
+      "lifecycleNotFound": "订阅不存在或已经不属于当前用户，请刷新列表。",
+      "lifecycleInvalid": "当前订阅状态不允许执行该操作，请刷新列表核对事实。",
+      "lifecycleInUse": "订阅窗口仍有在途计费请求，暂时不能恢复；请等待请求完成后重试。",
+      "lifecycleConflict": "订阅版本或窗口已经变化，请刷新列表后重试。",
       "outcomeUnknown": "提交结果暂时无法确认，请刷新当前页面核对事实。"
     }
   },

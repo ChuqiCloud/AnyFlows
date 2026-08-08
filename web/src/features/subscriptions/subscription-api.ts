@@ -8,11 +8,13 @@ import {
   listAdminSubscriptionPlans,
   listAdminUserSubscriptions,
   listCurrentUserSubscriptions,
+  transitionAdminUserSubscriptionLifecycle,
 } from '@/lib/api/generated/sdk.gen'
 import type {
   AdminSubscriptionPlanCreateRequest,
   AdminSubscriptionPlanDisableRequest,
   AdminUserSubscriptionBindRequest,
+  AdminUserSubscriptionLifecycleRequest,
 } from '@/lib/api/generated/types.gen'
 
 export const adminSubscriptionPlansQueryKey = ['admin-subscription-plans'] as const
@@ -122,6 +124,35 @@ export function useBindAdminUserSubscription() {
         body,
         client: apiClient,
         path: { user_id: userId },
+      })
+      return data
+    },
+    onSuccess: (_data, variables) => Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: [...adminUserSubscriptionsQueryKey, variables.userId],
+      }),
+      queryClient.invalidateQueries({ queryKey: currentUserSubscriptionsQueryKey }),
+    ]),
+  })
+}
+
+/** 使用订阅当前版本迁移生命周期，并校正管理员与本人订阅缓存。 */
+export function useTransitionAdminUserSubscriptionLifecycle() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      userId,
+      subscriptionId,
+      body,
+    }: {
+      userId: number
+      subscriptionId: string
+      body: AdminUserSubscriptionLifecycleRequest
+    }) => {
+      const { data } = await transitionAdminUserSubscriptionLifecycle({
+        body,
+        client: apiClient,
+        path: { user_id: userId, subscription_id: subscriptionId },
       })
       return data
     },

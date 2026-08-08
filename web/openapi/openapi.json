@@ -1603,6 +1603,136 @@
         ]
       }
     },
+    "/api/admin/users/{user_id}/subscriptions/{subscription_id}/lifecycle": {
+      "post": {
+        "tags": [
+          "订阅管理"
+        ],
+        "summary": "迁移指定用户订阅生命周期",
+        "operationId": "transitionAdminUserSubscriptionLifecycle",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "description": "用户 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "description": "用户订阅标识",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "minLength": 32
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserSubscriptionLifecycleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "生命周期迁移已提交或相同迁移已存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserSubscriptionLifecycleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "用户 ID、订阅标识、动作或版本无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "订阅不存在或不属于指定用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态动作无效、版本冲突或存在在途计费预留",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "提交结果未知",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/account/subscriptions": {
       "get": {
         "tags": [
@@ -15220,6 +15350,53 @@
         },
         "additionalProperties": false
       },
+      "AdminUserSubscriptionLifecycleAction": {
+        "type": "string",
+        "description": "管理员可提交的闭合订阅生命周期动作。",
+        "enum": [
+          "suspend",
+          "resume",
+          "cancel"
+        ]
+      },
+      "AdminUserSubscriptionLifecycleRequest": {
+        "type": "object",
+        "description": "管理员迁移用户订阅生命周期的 CAS 请求。",
+        "required": [
+          "action",
+          "expected_version"
+        ],
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/AdminUserSubscriptionLifecycleAction"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminUserSubscriptionLifecycleResponse": {
+        "type": "object",
+        "description": "生命周期迁移后的订阅事实和窗口推进信息。",
+        "required": [
+          "subscription",
+          "periods_elapsed"
+        ],
+        "properties": {
+          "subscription": {
+            "$ref": "#/components/schemas/UserSubscription"
+          },
+          "periods_elapsed": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminUserUpdateRequest": {
         "type": "object",
         "description": "管理端更新用户资料时使用的写入正文；额度只能通过独立调账接口变更。",
@@ -15594,6 +15771,13 @@
               "redemption_code_expired",
               "redemption_code_already_used",
               "redemption_outcome_unknown",
+              "subscription_plan_not_found",
+              "subscription_plan_disabled",
+              "subscription_not_found",
+              "subscription_transition_invalid",
+              "subscription_in_use",
+              "subscription_conflict",
+              "subscription_outcome_unknown",
               "registration_disabled",
               "registration_rate_limited",
               "registration_rejected",

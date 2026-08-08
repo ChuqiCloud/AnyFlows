@@ -242,10 +242,12 @@ pub use site_settings::{
 pub use subscription::{
     AdminSubscriptionPageQuery, AdminSubscriptionPlan, AdminSubscriptionPlanCreateCommand,
     AdminSubscriptionPlanDisableCommand, AdminSubscriptionPlanPage, AdminUserSubscription,
-    AdminUserSubscriptionBindCommand, AdminUserSubscriptionPage,
-    DEFAULT_ADMIN_SUBSCRIPTION_PAGE_SIZE, DatabaseSubscriptionService, SubscriptionBindFuture,
-    SubscriptionCreatePlanFuture, SubscriptionDisablePlanFuture, SubscriptionListPlansFuture,
-    SubscriptionListUserFuture, SubscriptionService, SubscriptionServiceError,
+    AdminUserSubscriptionBindCommand, AdminUserSubscriptionLifecycleAction,
+    AdminUserSubscriptionLifecycleCommand, AdminUserSubscriptionLifecycleResult,
+    AdminUserSubscriptionPage, DEFAULT_ADMIN_SUBSCRIPTION_PAGE_SIZE, DatabaseSubscriptionService,
+    SubscriptionBindFuture, SubscriptionCreatePlanFuture, SubscriptionDisablePlanFuture,
+    SubscriptionLifecycleFuture, SubscriptionListPlansFuture, SubscriptionListUserFuture,
+    SubscriptionService, SubscriptionServiceError,
 };
 pub use token_auth::{
     DatabaseTokenAuthenticator, TokenAuthentication, TokenAuthenticationError,

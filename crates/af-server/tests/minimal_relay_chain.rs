@@ -379,6 +379,16 @@ impl SubscriptionService for RejectSubscriptions {
     ) -> af_admin::SubscriptionBindFuture<'a> {
         Box::pin(async { Err(SubscriptionServiceError::Internal) })
     }
+
+    fn transition_user_lifecycle<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _user_id: UserId,
+        _subscription_id: af_domain::UserSubscriptionId,
+        _command: af_admin::AdminUserSubscriptionLifecycleCommand,
+    ) -> af_admin::SubscriptionLifecycleFuture<'a> {
+        Box::pin(async { Err(SubscriptionServiceError::Internal) })
+    }
 }
 
 impl UserInvitationService for RejectUserInvitations {
