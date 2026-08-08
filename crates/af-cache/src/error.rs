@@ -27,6 +27,7 @@ pub enum CacheOperation {
     ConcurrencyRelease,
     ConcurrencyLoad,
     ConcurrencyCleanup,
+    RateLimitCheck,
     HealthRead,
     HealthWrite,
 }
@@ -55,6 +56,7 @@ impl fmt::Display for CacheOperation {
             Self::ConcurrencyRelease => "释放并发槽位",
             Self::ConcurrencyLoad => "读取并发负载",
             Self::ConcurrencyCleanup => "清理并发槽位",
+            Self::RateLimitCheck => "检查请求限流",
             Self::HealthRead => "读取调度健康状态",
             Self::HealthWrite => "写入调度健康状态",
         };
@@ -130,6 +132,10 @@ pub enum CacheError {
     InvalidConcurrencyIdentifier,
     #[error("并发槽位批次为空间无效、重复或超过容量上限")]
     InvalidConcurrencyBatch,
+    #[error("请求限流规则批次包含重复项或超过容量上限")]
+    InvalidRateLimitBatch,
+    #[error("请求限流固定窗口不得超过七天")]
+    InvalidRateLimitWindow,
     #[error("调度健康状态批次为空、超过容量上限或包含重复读取目标")]
     InvalidHealthBatch,
     #[error("调度健康状态策略参数无效")]

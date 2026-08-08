@@ -1,5 +1,7 @@
 use std::{
-    env, process,
+    env,
+    num::NonZeroU32,
+    process,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -10,10 +12,12 @@ use af_cache::{
     LeaseAcquireOutcome, LeaseReleaseOutcome, ProjectionWriteOutcome, RedisBroadcastConfig,
     RedisBroadcastPublisher, RedisBroadcastSubscriber, RedisConcurrencyConfig,
     RedisConcurrencyStore, RedisConfig, RedisHealthConfig, RedisHealthEvent, RedisHealthFailure,
-    RedisHealthStore, RedisHealthTarget, RedisProjectionConfig, RedisStickySessionConfig,
-    RedisStickySessionStore, RedisVersionedProjectionStore,
+    RedisHealthStore, RedisHealthTarget, RedisProjectionConfig, RedisRequestRateLimitConfig,
+    RedisRequestRateLimitStore, RedisStickySessionConfig, RedisStickySessionStore,
+    RedisVersionedProjectionStore, RequestRateLimitOutcome, RequestRateLimitRule,
+    RequestRateLimitSubject,
 };
-use af_domain::{ConcurrencyLimit, CredentialId, TokenId, UserId};
+use af_domain::{ConcurrencyLimit, CredentialId, GroupId, TokenId, UserId};
 
 const LIVE_REDIS_GATE: &str = "AF_REQUIRE_LIVE_REDIS";
 const LIVE_REDIS_URL: &str = "AF_TEST_REDIS_URL";
@@ -90,6 +94,62 @@ async fn redis_hybrid_cache_smoke() {
     verify_sticky_session_contract(&redis_url, &format!("{namespace}.sticky")).await;
     verify_concurrency_contract(&redis_url, &format!("{namespace}.concurrency")).await;
     verify_health_contract(&redis_url, &format!("{namespace}.health")).await;
+    verify_request_rate_limit_contract(&redis_url, &format!("{namespace}.rate-limit")).await;
+}
+
+async fn verify_request_rate_limit_contract(redis_url: &str, namespace: &str) {
+    let config = || {
+        RedisRequestRateLimitConfig::new(
+            RedisConfig::new(redis_url)
+                .with_timeouts(DEFAULT_REDIS_CONNECT_TIMEOUT, Duration::from_secs(2)),
+            namespace,
+        )
+        .unwrap()
+    };
+    let first = RedisRequestRateLimitStore::connect(config()).await.unwrap();
+    let second = RedisRequestRateLimitStore::connect(config()).await.unwrap();
+    let window = Duration::from_millis(300);
+    let user_rule = RequestRateLimitRule::new(
+        RequestRateLimitSubject::User(UserId::new(101).unwrap()),
+        NonZeroU32::new(2).unwrap(),
+        window,
+    )
+    .unwrap();
+    let group_rule = RequestRateLimitRule::new(
+        RequestRateLimitSubject::Group(GroupId::new(201).unwrap()),
+        NonZeroU32::new(1).unwrap(),
+        window,
+    )
+    .unwrap();
+
+    assert_eq!(
+        first.admit(&[user_rule, group_rule]).await.unwrap(),
+        RequestRateLimitOutcome::Admitted
+    );
+    let RequestRateLimitOutcome::Limited(rejection) =
+        second.admit(&[user_rule, group_rule]).await.unwrap()
+    else {
+        panic!("分组窗口达到上限后必须拒绝第二个跨实例请求");
+    };
+    assert_eq!(rejection.subject(), group_rule.subject());
+    assert!(!rejection.retry_after().is_zero());
+    assert!(rejection.retry_after() <= window);
+
+    // 多主体拒绝不得预先消耗仍有余量的用户计数。
+    assert_eq!(
+        second.admit(&[user_rule]).await.unwrap(),
+        RequestRateLimitOutcome::Admitted
+    );
+    assert!(matches!(
+        first.admit(&[user_rule]).await.unwrap(),
+        RequestRateLimitOutcome::Limited(_)
+    ));
+
+    tokio::time::sleep(window + Duration::from_millis(50)).await;
+    assert_eq!(
+        second.admit(&[user_rule, group_rule]).await.unwrap(),
+        RequestRateLimitOutcome::Admitted
+    );
 }
 
 async fn verify_health_contract(redis_url: &str, namespace: &str) {

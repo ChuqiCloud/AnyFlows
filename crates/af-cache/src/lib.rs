@@ -13,6 +13,7 @@ mod hybrid;
 mod lease;
 mod local;
 mod projection;
+mod rate_limit;
 mod redis_backend;
 mod remote;
 mod sticky;
@@ -47,6 +48,11 @@ pub use lease::{
 pub use projection::{
     ProjectionWriteOutcome, RedisProjectionConfig, RedisProjectionEntry,
     RedisVersionedProjectionStore,
+};
+pub use rate_limit::{
+    MAX_REQUEST_RATE_LIMIT_RULES, RedisRequestRateLimitConfig, RedisRequestRateLimitStore,
+    RequestRateLimitOutcome, RequestRateLimitRejection, RequestRateLimitRule,
+    RequestRateLimitSubject,
 };
 pub use sticky::{DEFAULT_STICKY_SESSION_TTL, RedisStickySessionConfig, RedisStickySessionStore};
 
