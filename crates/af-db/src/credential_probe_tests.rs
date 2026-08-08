@@ -68,6 +68,18 @@ async fn load_selects_stable_model_and_highest_priority_credential() -> Result<(
     )
     .insert(pool.connection())
     .await?;
+    let mut pending = credential(
+        channel.id,
+        CredentialKind::Oauth,
+        40,
+        true,
+        Status::Enabled,
+        None,
+        "pending-key-id-canary",
+        0x44,
+    );
+    pending.oauth_token_pending = Set(true);
+    pending.insert(pool.connection()).await?;
 
     let target = ChannelProbeTargetRepository::new(pool.clone())
         .load(channel_id(channel.id))

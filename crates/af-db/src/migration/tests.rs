@@ -54,7 +54,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 47;
+const EXPECTED_MIGRATION_COUNT: usize = 48;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -211,6 +211,34 @@ async fn credential_oauth_expiration_migration_preserves_existing_rows()
     let mut invalid = valid.into_active_model();
     invalid.oauth_expires_at_epoch_seconds = Set(Some(-1));
     assert!(invalid.update(pool.connection()).await.is_err());
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn credential_oauth_pending_migration_backfills_existing_rows() -> Result<(), Box<dyn Error>>
+{
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), Some(47)).await?;
+    let channel = channel_active_model("oauth-pending-backfill")
+        .insert(pool.connection())
+        .await?;
+    let credential_id = 90_040_i64;
+    let mut credential = credential_active_model(channel.id, "oauth-pending-ciphertext");
+    credential.id = Set(credential_id);
+    credential.kind = Set(CredentialKind::Oauth.as_str().to_owned());
+    credential.oauth_provider = Set(Some("codex".to_owned()));
+    credentials::Entity::insert(credential)
+        .exec_without_returning(pool.connection())
+        .await?;
+
+    Migrator::up(pool.connection(), None).await?;
+    let credential = credentials::Entity::find_by_id(credential_id)
+        .one(pool.connection())
+        .await?
+        .expect("迁移后的凭据必须保留");
+    assert!(!credential.oauth_token_pending);
 
     pool.close().await?;
     Ok(())

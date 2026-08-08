@@ -379,7 +379,8 @@ impl AdminChannelWriteFields {
 /// 管理员创建凭据时使用的完整配置和一次性明文。
 pub struct AdminCredentialCreateCommand {
     fields: AdminCredentialWriteFields,
-    secret: PlainCredentialSecret,
+    secret: Option<PlainCredentialSecret>,
+    oauth_token_pending: bool,
 }
 
 impl AdminCredentialCreateCommand {
@@ -426,11 +427,69 @@ impl AdminCredentialCreateCommand {
         if secret.kind() != kind {
             return Err(AdminChannelWriteError::InvalidInput);
         }
-        Ok(Self { fields, secret })
+        Ok(Self {
+            fields,
+            secret: Some(secret),
+            oauth_token_pending: false,
+        })
     }
 
-    fn into_parts(self) -> (AdminCredentialWriteRecord, PlainCredentialSecret) {
-        (self.fields.into_record(), self.secret)
+    /// 创建等待首次 OAuth 授权的凭据；该模式不接收伪造 token。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与管理端凭据写入契约一一对应"
+    )]
+    pub fn new_pending_oauth(
+        kind: CredentialKind,
+        status: AdminRoutingWriteStatus,
+        multi_key_mode: Option<AdminCredentialMultiKeyMode>,
+        priority: i32,
+        weight: i32,
+        concurrency: Option<i32>,
+        load_factor_micros: Option<i64>,
+        rate_multiplier_micros: Option<i64>,
+        schedulable: bool,
+        parent_id: Option<CredentialId>,
+        quota_dimension: AdminCredentialQuotaDimension,
+        proxy_id: Option<i64>,
+        oauth_provider: Option<String>,
+        oauth_account_key: Option<String>,
+        oauth_project_id: Option<String>,
+    ) -> Result<Self, AdminChannelWriteError> {
+        if kind != CredentialKind::Oauth || oauth_provider.is_none() {
+            return Err(AdminChannelWriteError::InvalidInput);
+        }
+        let fields = AdminCredentialWriteFields::new(
+            kind,
+            status,
+            multi_key_mode,
+            priority,
+            weight,
+            concurrency,
+            load_factor_micros,
+            rate_multiplier_micros,
+            schedulable,
+            parent_id,
+            quota_dimension,
+            proxy_id,
+            oauth_provider,
+            oauth_account_key,
+            oauth_project_id,
+        )?;
+        Ok(Self {
+            fields,
+            secret: None,
+            oauth_token_pending: true,
+        })
+    }
+
+    fn into_parts(self) -> (AdminCredentialWriteRecord, Option<PlainCredentialSecret>) {
+        (
+            self.fields
+                .into_record()
+                .with_oauth_token_pending(self.oauth_token_pending),
+            self.secret,
+        )
     }
 }
 
@@ -778,16 +837,23 @@ impl AdminChannelWriter for DatabaseAdminChannelWriter {
         Box::pin(async move {
             require_admin(principal)?;
             let (record, secret) = command.into_parts();
-            match self
-                .repository
-                .create_credential(channel_id, record, |credential_id| {
-                    self.encryptor
-                        .encrypt(channel_id, credential_id.get(), &secret)
-                        .map_err(|_| ())
-                })
-                .await
-                .map_err(map_repository_error)?
-            {
+            let outcome = match secret {
+                Some(secret) => self
+                    .repository
+                    .create_credential(channel_id, record, |credential_id| {
+                        self.encryptor
+                            .encrypt(channel_id, credential_id.get(), &secret)
+                            .map_err(|_| ())
+                    })
+                    .await
+                    .map_err(map_repository_error)?,
+                None => self
+                    .repository
+                    .create_pending_oauth_credential(channel_id, record)
+                    .await
+                    .map_err(map_repository_error)?,
+            };
+            match outcome {
                 AdminCredentialCreateOutcome::Created(record) => map_credential(*record),
                 AdminCredentialCreateOutcome::ChannelNotFound => {
                     Err(AdminChannelWriteError::ChannelNotFound)

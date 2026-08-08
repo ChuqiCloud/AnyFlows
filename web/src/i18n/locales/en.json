@@ -563,6 +563,7 @@
     },
     "runtime": {
       "available": "Available",
+      "authorizationPending": "Authorization pending",
       "autoDisabled": "Auto-disabled",
       "cooling": "Cooling down",
       "disabled": "Disabled",
@@ -581,6 +582,7 @@
       "parent": "Parent account #{{id}}",
       "proxy": "Proxy #{{id}}",
       "coolingUntil": "Cooling until {{value}}",
+      "authorizationRequired": "Complete OAuth authorization before scheduling begins",
       "neverUsed": "Not used yet",
       "lastUsed": "Last used {{value}}"
     },
@@ -604,6 +606,12 @@
     },
     "secret": {
       "apiKey": "Upstream API key",
+      "oauthCreateMode": "OAuth setup mode",
+      "oauthMode": {
+        "authorize": "Official OAuth authorization",
+        "access_token": "Existing access token"
+      },
+      "authorizeHint": "Create an authorization-pending credential, then connect OAuth from the account pool without entering a placeholder token.",
       "accessToken": "Existing access token",
       "accessTokenHint": "Save an existing token first, then complete official OAuth authorization from the account pool.",
       "accessKeyId": "Access key ID",
@@ -643,6 +651,7 @@
       "callbackPort": "Callback port {{port}}",
       "connectionTitle": "Official OAuth connection",
       "connectionHint": "Authorization securely updates the access token and refresh token.",
+      "pendingConnectionHint": "This credential has no usable token and remains excluded from scheduling until authorization completes.",
       "preparing": "Preparing OAuth authorization…",
       "popupBlocked": "The browser blocked the authorization window. Open it manually.",
       "waiting": "Waiting for authorization. This session expires in about {{seconds}} seconds.",
@@ -655,6 +664,7 @@
       "submitCallback": "Complete connection",
       "connected": "The OAuth credential was updated.",
       "connect": "Connect provider",
+      "connectPending": "Connect OAuth",
       "reauthorize": "Reauthorize",
       "expired": "This authorization session has expired.",
       "restart": "Restart authorization",

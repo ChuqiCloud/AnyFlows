@@ -164,6 +164,7 @@ export type AdminCredential = {
     quota_dimension: AdminCredentialQuotaDimension;
     proxy_id: number | null;
     oauth_provider: string | null;
+    oauth_token_pending: boolean;
     oauth_account_key: string | null;
     oauth_project_id: string | null;
     oauth_revision: number;
@@ -173,7 +174,7 @@ export type AdminCredential = {
 };
 export type AdminCredentialCreateRequest = {
     kind: 'api_key' | 'oauth' | 'bedrock' | 'service_account';
-    secret: AdminCredentialSecret;
+    secret: null | AdminCredentialSecret;
     status: AdminRoutingWriteStatus;
     multi_key_mode: null | AdminCredentialMultiKeyMode;
     priority: number;
@@ -1331,7 +1332,7 @@ export type AdminChannelUpdateRequestWritable = {
 };
 export type AdminCredentialCreateRequestWritable = {
     kind: 'api_key' | 'oauth' | 'bedrock' | 'service_account';
-    secret: AdminCredentialSecretWritable;
+    secret: null | AdminCredentialSecretWritable;
     status: AdminRoutingWriteStatus;
     multi_key_mode: null | AdminCredentialMultiKeyMode;
     priority: number;

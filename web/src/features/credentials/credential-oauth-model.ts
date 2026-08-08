@@ -51,13 +51,15 @@ export function isValidOAuthCallbackUrl(value: string, redirectUri: string) {
   }
 }
 
-/** 仅当目标凭据绑定了本次 provider 且 OAuth 专用版本推进时认定自动回调完成。 */
+/** 仅当目标凭据已退出待授权状态、绑定本次 provider 且版本推进时认定回调完成。 */
 export function oauthCredentialConnectionUpdated(
   credential: AdminCredential,
   provider: AdminOAuthProvider,
   baseline: OAuthCredentialBaseline,
 ) {
-  if (credential.kind !== 'oauth' || credential.oauth_provider !== provider) return false
+  if (credential.kind !== 'oauth'
+    || credential.oauth_token_pending
+    || credential.oauth_provider !== provider) return false
   return credential.oauth_revision > baseline.revision
 }
 

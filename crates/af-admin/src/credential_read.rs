@@ -107,6 +107,7 @@ pub struct AdminCredential {
     quota_dimension: AdminCredentialQuotaDimension,
     proxy_id: Option<i64>,
     oauth_provider: Option<String>,
+    oauth_token_pending: bool,
     oauth_account_key: Option<String>,
     oauth_project_id: Option<String>,
     oauth_revision: i64,
@@ -141,6 +142,7 @@ impl AdminCredential {
         quota_dimension: AdminCredentialQuotaDimension,
         proxy_id: Option<i64>,
         oauth_provider: Option<String>,
+        oauth_token_pending: bool,
         oauth_account_key: Option<String>,
         oauth_project_id: Option<String>,
         oauth_revision: i64,
@@ -170,6 +172,7 @@ impl AdminCredential {
             quota_dimension,
             proxy_id,
             oauth_provider,
+            oauth_token_pending,
             oauth_account_key,
             oauth_project_id,
             oauth_revision,
@@ -284,6 +287,12 @@ impl AdminCredential {
     pub fn oauth_provider(&self) -> Option<&str> {
         self.oauth_provider.as_deref()
     }
+
+    /// 返回 OAuth token 是否仍等待首次授权交换。
+    #[must_use]
+    pub const fn oauth_token_pending(&self) -> bool {
+        self.oauth_token_pending
+    }
     /// 返回 OAuth 账号的非令牌业务标识。
     #[must_use]
     pub fn oauth_account_key(&self) -> Option<&str> {
@@ -343,6 +352,7 @@ impl AdminCredential {
             AdminCredentialQuotaDimension::from_database(record.quota_dimension())?,
             record.proxy_id(),
             record.oauth_provider().map(str::to_owned),
+            record.oauth_token_pending(),
             record.oauth_account_key().map(str::to_owned),
             record.oauth_project_id().map(str::to_owned),
             record.oauth_revision(),

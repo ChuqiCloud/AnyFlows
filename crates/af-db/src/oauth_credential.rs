@@ -3,7 +3,7 @@ use std::{fmt, time::Duration};
 use af_domain::{ChannelId, CredentialId, CredentialKind};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{
-    ColumnTrait, EntityTrait, QueryFilter, QuerySelect,
+    ColumnTrait, EntityTrait, QueryFilter, QuerySelect, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Condition, Expr},
 };
@@ -12,8 +12,9 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    DatabasePool, EncryptedCredentialEnvelope,
+    DatabasePool, EncryptedCredentialEnvelope, SchedulerCatalogSubject,
     entity::{EncryptedJson, credentials},
+    scheduler_outbox::enqueue_scheduler_catalog_change,
 };
 
 mod refresh;
@@ -139,6 +140,13 @@ impl OAuthCredentialRepository {
         encrypted: EncryptedJson,
     ) -> Result<OAuthCredentialTokenUpdateOutcome, OAuthCredentialRepositoryError> {
         let now = TimeDateTimeWithTimeZone::now_utc();
+        // OAuth 交换成功必须与调度目录通知共用同一事务，避免快照继续使用旧密文。
+        let transaction = self
+            .pool
+            .connection()
+            .begin()
+            .await
+            .map_err(|_| query_error("oauth_credential_begin"))?;
         let provider_filter = Condition::any()
             .add(credentials::Column::OauthProvider.is_null())
             .add(credentials::Column::OauthProvider.eq(provider));
@@ -151,6 +159,7 @@ impl OAuthCredentialRepository {
             .filter(credentials::Column::OauthRevision.gte(0_i64))
             .filter(credentials::Column::OauthRevision.lt(i64::MAX))
             .col_expr(credentials::Column::Secret, Expr::value(encrypted))
+            .col_expr(credentials::Column::OauthTokenPending, Expr::value(false))
             .col_expr(
                 credentials::Column::OauthProvider,
                 Expr::value(Some(provider.to_owned())),
@@ -164,16 +173,39 @@ impl OAuthCredentialRepository {
                 Expr::value(expires_at_epoch_seconds),
             )
             .col_expr(credentials::Column::UpdatedAt, Expr::value(now))
-            .exec(self.pool.connection())
+            .exec(&transaction)
             .await
             .map_err(|_| query_error("oauth_credential_update"))?;
         match result.rows_affected {
-            1 => Ok(OAuthCredentialTokenUpdateOutcome::Updated),
+            1 => {
+                enqueue_scheduler_catalog_change(
+                    &transaction,
+                    SchedulerCatalogSubject::Channel(channel_id),
+                    now,
+                )
+                .await
+                .map_err(|_| query_error("oauth_credential_outbox"))?;
+                transaction
+                    .commit()
+                    .await
+                    .map_err(|_| query_error("oauth_credential_commit"))?;
+                Ok(OAuthCredentialTokenUpdateOutcome::Updated)
+            }
             0 => {
+                transaction
+                    .rollback()
+                    .await
+                    .map_err(|_| query_error("oauth_credential_rollback"))?;
                 self.classify_rejected_target(channel_id, credential_id, provider)
                     .await
             }
-            _ => Err(OAuthCredentialRepositoryError::Invariant),
+            _ => {
+                transaction
+                    .rollback()
+                    .await
+                    .map_err(|_| query_error("oauth_credential_rollback"))?;
+                Err(OAuthCredentialRepositoryError::Invariant)
+            }
         }
     }
 

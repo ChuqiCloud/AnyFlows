@@ -22,6 +22,9 @@ export function credentialFormValues(
   const kind = credential ? asWritableCredentialKind(credential.kind) ?? initialKind : initialKind
   return {
     kind,
+    oauthCreateMode: credential === undefined && initialKind === 'oauth'
+      ? 'authorize'
+      : 'access_token',
     rotateSecret: credential === undefined,
     apiKey: '', accessToken: '', accessKeyId: '', secretAccessKey: '', sessionToken: '',
     clientEmail: '', privateKeyId: '', privateKey: '',
@@ -58,6 +61,7 @@ export function updateCredentialStatusRequest(
   credential: AdminCredential,
   status: AdminRoutingWriteStatus,
 ): AdminCredentialUpdateRequestWritable | undefined {
+  if (credential.oauth_token_pending) return undefined
   const kind = asWritableCredentialKind(credential.kind)
   if (!kind) return undefined
   return {
@@ -102,7 +106,9 @@ function writeFields(values: CredentialFormValues) {
 function credentialSecret(values: CredentialFormValues): AdminCredentialCreateRequestWritable['secret'] {
   switch (values.kind) {
     case 'api_key': return { kind: 'api_key', api_key: values.apiKey }
-    case 'oauth': return { kind: 'oauth', access_token: values.accessToken }
+    case 'oauth': return values.oauthCreateMode === 'authorize'
+      ? null
+      : { kind: 'oauth', access_token: values.accessToken }
     case 'bedrock': return { kind: 'bedrock', access_key_id: values.accessKeyId, secret_access_key: values.secretAccessKey, session_token: optionalText(values.sessionToken) }
     case 'service_account': return { kind: 'service_account', client_email: values.clientEmail, private_key_id: optionalText(values.privateKeyId), private_key: values.privateKey }
   }

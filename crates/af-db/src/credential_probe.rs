@@ -305,6 +305,7 @@ impl ChannelProbeTargetRepository {
                 .filter(credentials::Column::ChannelId.eq(channel_id.get()))
                 .filter(credentials::Column::Status.eq(Status::Enabled.code()))
                 .filter(credentials::Column::Schedulable.eq(true))
+                .filter(credentials::Column::OauthTokenPending.eq(false))
                 .filter(credentials::Column::DeletedAt.is_null())
                 .order_by_desc(credentials::Column::Priority)
                 .order_by_asc(credentials::Column::Id)

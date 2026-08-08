@@ -8,6 +8,7 @@ export type WritableCredentialKind = AdminCredentialCreateRequestWritable['kind'
 
 export type CredentialRuntimeState =
   | 'available'
+  | 'authorizationPending'
   | 'autoDisabled'
   | 'cooling'
   | 'disabled'
@@ -47,6 +48,7 @@ export function credentialRuntimeState(
   credential: AdminCredential,
   nowSeconds = Math.floor(Date.now() / 1_000),
 ): CredentialRuntimeState {
+  if (credential.oauth_token_pending) return 'authorizationPending'
   if (credential.status === 'auto_disabled') return 'autoDisabled'
   if (credential.status !== 'enabled') return 'disabled'
   if (!credential.schedulable) return 'paused'

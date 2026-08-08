@@ -81,6 +81,22 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     )
     .insert(pool.connection())
     .await?;
+    let mut pending_oauth = runtime_credential(
+        supported.id,
+        CredentialKind::Oauth,
+        45,
+        true,
+        None,
+        "pending-oauth-key-id-canary",
+        0x23,
+        false,
+    );
+    pending_oauth.oauth_token_pending = Set(true);
+    let pending_oauth = pending_oauth.insert(pool.connection()).await?;
+    assert!(
+        super::source::SchedulerRuntimeCredentialSource::from_entity(pending_oauth, None)?
+            .is_none()
+    );
     runtime_proxy(91).insert(pool.connection()).await?;
     let selected = runtime_credential(
         supported.id,

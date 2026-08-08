@@ -105,7 +105,7 @@ impl AdminCredentialSecretValue {
     }
 }
 
-/// 创建凭据；明文仅用于生成密文，不随响应返回。
+/// 创建凭据；OAuth 可不带明文进入待授权态，其余明文仅用于生成密文。
 pub(crate) async fn create_admin_credential(
     State(state): State<HttpState>,
     Path(channel_id): Path<String>,
@@ -182,14 +182,11 @@ pub(crate) async fn delete_admin_credential(
 impl AdminCredentialWriteRequest {
     fn into_create_command(self) -> Result<AdminCredentialCreateCommand, ManagementError> {
         let secret = match self.secret {
-            AdminCredentialSecretInput::Present(Some(secret)) => secret.into_secret()?,
-            AdminCredentialSecretInput::Missing | AdminCredentialSecretInput::Present(None) => {
-                return Err(ManagementError::InvalidRequest);
-            }
+            AdminCredentialSecretInput::Present(Some(secret)) => Some(secret.into_secret()?),
+            AdminCredentialSecretInput::Present(None) => None,
+            AdminCredentialSecretInput::Missing => return Err(ManagementError::InvalidRequest),
         };
-        AdminCredentialCreateCommand::new(
-            self.kind,
-            secret,
+        let args = (
             self.status,
             self.multi_key_mode,
             self.priority,
@@ -204,8 +201,19 @@ impl AdminCredentialWriteRequest {
             self.oauth_provider,
             self.oauth_account_key,
             self.oauth_project_id,
-        )
-        .map_err(map_write_error)
+        );
+        match secret {
+            Some(secret) => AdminCredentialCreateCommand::new(
+                self.kind, secret, args.0, args.1, args.2, args.3, args.4, args.5, args.6, args.7,
+                args.8, args.9, args.10, args.11, args.12, args.13,
+            )
+            .map_err(map_write_error),
+            None => AdminCredentialCreateCommand::new_pending_oauth(
+                self.kind, args.0, args.1, args.2, args.3, args.4, args.5, args.6, args.7, args.8,
+                args.9, args.10, args.11, args.12, args.13,
+            )
+            .map_err(map_write_error),
+        }
     }
 
     fn into_update_command(self) -> Result<AdminCredentialUpdateCommand, ManagementError> {
@@ -290,13 +298,23 @@ mod tests {
     }
 
     #[test]
-    fn typed_secret_requests_reject_kind_mismatch_unknown_fields_and_missing_updates() {
+    fn typed_secret_requests_cover_pending_oauth_and_missing_field_boundaries() {
         let mismatch = serde_json::from_value::<AdminCredentialWriteRequest>(request(
             "bedrock",
             json!({"kind": "api_key", "api_key": "sk-private"}),
         ))
         .unwrap();
         assert!(mismatch.into_create_command().is_err());
+
+        let pending =
+            serde_json::from_value::<AdminCredentialWriteRequest>(request("oauth", Value::Null))
+                .unwrap();
+        assert!(pending.into_create_command().is_ok());
+
+        let non_oauth_pending =
+            serde_json::from_value::<AdminCredentialWriteRequest>(request("api_key", Value::Null))
+                .unwrap();
+        assert!(non_oauth_pending.into_create_command().is_err());
 
         let service_account_with_token_uri = request(
             "service_account",

@@ -498,9 +498,23 @@ mod tests {
                 .iter()
                 .any(|field| field == "secret")
         );
+        assert!(
+            create["properties"]["secret"]["oneOf"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value["$ref"] == "#/components/schemas/AdminCredentialSecret")
+        );
+        assert!(
+            create["properties"]["secret"]["oneOf"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value["type"] == "null")
+        );
         assert_eq!(
-            create["properties"]["secret"]["$ref"],
-            "#/components/schemas/AdminCredentialSecret"
+            schemas["AdminCredential"]["properties"]["oauth_token_pending"]["type"],
+            "boolean"
         );
 
         let secret_variants = schemas["AdminCredentialSecret"]["oneOf"]

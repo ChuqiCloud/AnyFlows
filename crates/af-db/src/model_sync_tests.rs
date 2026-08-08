@@ -1,18 +1,19 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::{ChannelId, ChannelType, Protocol, UserId};
+use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Status, UserId};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
 
 use super::{
     AdminModelCreateRecord, AdminModelLifecycleRecord, AdminModelModalitiesRecord,
     AdminModelRepository, AdminModelVisibilityRecord, AdminModelWriteRecord, DatabaseOptions,
     DiscoveredModelRecord, MODEL_SYNC_PREVIEW_TTL_SECONDS, MigrationOptions,
-    ModelSyncApplyItemRecord, ModelSyncPreviewWrite, ModelSyncRelationRecord, ModelSyncRepository,
-    ModelSyncRepositoryError,
+    ModelDiscoveryTargetLookup, ModelSyncApplyItemRecord, ModelSyncPreviewWrite,
+    ModelSyncRelationRecord, ModelSyncRepository, ModelSyncRepositoryError,
 };
 use crate::entity::{
-    ChannelBaseUrl, HeaderOverrides, SensitiveJson, channel_models, channels, groups,
-    model_sync_items, model_sync_runs, models, users,
+    ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channel_models, channels,
+    credentials, groups, model_sync_items, model_sync_runs, models, users,
 };
 
 const PREVIEW_ID: &str = "018f8e52-7e21-7f47-a540-3f1bb2785594";
@@ -235,6 +236,54 @@ async fn concurrent_model_conflict_rolls_back_every_selected_item() -> Result<()
         .expect("冲突后预览仍应存在");
     assert_eq!(run.state, 1);
     assert!(run.applied_at.is_none());
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn discovery_target_excludes_pending_oauth_credentials() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let pending = credentials::ActiveModel {
+        channel_id: Set(fixture.channel_id.get()),
+        kind: Set(CredentialKind::Oauth.as_str().to_owned()),
+        secret: Set(EncryptedJson::from_envelope(serde_json::json!({
+            "version": 1,
+            "algorithm": "xchacha20poly1305",
+            "key_id": "oauth-token-pending",
+            "nonce": URL_SAFE_NO_PAD.encode([0_u8; 24]),
+            "ciphertext": URL_SAFE_NO_PAD.encode([0_u8; 16]),
+        }))?),
+        status: Set(Status::Enabled.code()),
+        schedulable: Set(true),
+        oauth_provider: Set(Some("codex".to_owned())),
+        oauth_token_pending: Set(true),
+        ..Default::default()
+    }
+    .insert(fixture.pool.connection())
+    .await?;
+    assert!(matches!(
+        fixture
+            .sync
+            .load_discovery_target(fixture.channel_id)
+            .await?,
+        ModelDiscoveryTargetLookup::Unavailable
+    ));
+
+    credentials::ActiveModel {
+        id: Set(pending.id),
+        oauth_token_pending: Set(false),
+        ..Default::default()
+    }
+    .update(fixture.pool.connection())
+    .await?;
+    assert!(matches!(
+        fixture
+            .sync
+            .load_discovery_target(fixture.channel_id)
+            .await?,
+        ModelDiscoveryTargetLookup::Found(_)
+    ));
 
     fixture.pool.close().await?;
     Ok(())

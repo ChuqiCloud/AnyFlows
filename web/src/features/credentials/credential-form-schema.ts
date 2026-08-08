@@ -23,6 +23,7 @@ type CredentialSchemaOptions = {
 
 const credentialFormShape = z.object({
   kind: z.enum(['api_key', 'oauth', 'bedrock', 'service_account']),
+  oauthCreateMode: z.enum(['authorize', 'access_token']),
   rotateSecret: z.boolean(),
   apiKey: z.string(), accessToken: z.string(), accessKeyId: z.string(),
   secretAccessKey: z.string(), sessionToken: z.string(), clientEmail: z.string(),
@@ -65,6 +66,7 @@ export function buildCredentialFormSchema(options: CredentialSchemaOptions) {
       issue(context, 'oauthProvider', message.oauthProvider)
     }
 
+    if (options.creating && values.kind === 'oauth' && values.oauthCreateMode === 'authorize') return
     if (!options.creating && !values.rotateSecret) return
     validateSecret(values, context, message)
   })
