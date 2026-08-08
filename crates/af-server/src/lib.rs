@@ -30,6 +30,7 @@ mod smtp_delivery;
 mod sticky_session;
 mod stripe_payment_intent;
 mod supervisor;
+mod token_request_admission;
 mod utc_time;
 
 pub use billing_chat::{

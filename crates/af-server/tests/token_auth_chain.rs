@@ -137,6 +137,53 @@ async fn start_rpm_server(
     (address, shutdown, task)
 }
 
+async fn start_token_admission_server(
+    database: &TestDatabase,
+    proxy_address: SocketAddr,
+) -> RpmServer {
+    let config_path = std::env::temp_dir().join(format!(
+        "anyflows-token-admission-http-{}.toml",
+        std::process::id()
+    ));
+    let wal_directory = database.path.with_extension("billing-wal-token-admission");
+    let credential_key = credential_encryption_key();
+    fs::write(
+        &config_path,
+        format!(
+            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'gateway-test-key'\nkey = '{credential_key}'\n[auth]\nlookup_timeout_secs = 1\nsession_signing_key = '{credential_key}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n",
+            database.url,
+            wal_directory.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    let config = af_config::load_from(&config_path).unwrap();
+    let _ = fs::remove_file(config_path);
+    let bootstrap = Bootstrap::new(config)
+        .unwrap()
+        .init_telemetry()
+        .unwrap()
+        .connect_database()
+        .await
+        .unwrap()
+        .init_authentication()
+        .unwrap()
+        .init_relay()
+        .unwrap()
+        .init_billing()
+        .await
+        .unwrap()
+        .start_supervisor()
+        .build_router()
+        .bind()
+        .unwrap();
+    let address = bootstrap.local_addr();
+    let (shutdown, shutdown_rx) = oneshot::channel();
+    let task = tokio::spawn(bootstrap.serve(async move {
+        let _ = shutdown_rx.await;
+    }));
+    (address, shutdown, task)
+}
+
 async fn stop_rpm_server(server: RpmServer) {
     server.1.send(()).unwrap();
     let report = timeout(IO_TIMEOUT, server.2)
@@ -234,6 +281,75 @@ async fn redis_rpm_admission_is_shared_across_http_instances() {
         proxy.accept().unwrap_err().kind(),
         std::io::ErrorKind::WouldBlock
     ));
+
+    stop_rpm_server(server).await;
+}
+
+#[tokio::test]
+async fn cumulative_token_request_limit_rejects_before_second_upstream_call() {
+    let upstream_body = serde_json::to_vec(&json!({
+        "id": "chatcmpl-token-limit",
+        "object": "chat.completion",
+        "created": 1_700_000_000,
+        "model": UPSTREAM_MODEL,
+        "choices": [{
+            "index": 0,
+            "message": { "role": "assistant", "content": "hello" },
+            "finish_reason": "stop"
+        }],
+        "usage": { "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2 }
+    }))
+    .unwrap();
+    let database = TestDatabase::new();
+    seed_valid_token(&database.url).await;
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET max_requests = ?, used_requests = ? WHERE id = ?",
+        vec![1_i64.into(), 0_i64.into(), TOKEN_ID.into()],
+    )
+    .await;
+    let (proxy_address, captured, proxy) = spawn_proxy(
+        "200 OK",
+        &upstream_body,
+        &[("Content-Type", "application/json")],
+    );
+    let server = start_token_admission_server(&database, proxy_address).await;
+    let authorization = format!("Bearer {CLIENT_KEY}");
+    let inbound = br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}]}"#;
+
+    let first = send_request(
+        server.0,
+        "POST",
+        "/v1/chat/completions",
+        inbound,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &authorization),
+        ],
+    )
+    .await;
+    assert_eq!(first.status, 200);
+    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    assert_eq!(upstream.body, inbound);
+    proxy.join().unwrap();
+
+    let second = send_request(
+        server.0,
+        "POST",
+        "/v1/chat/completions",
+        inbound,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &authorization),
+        ],
+    )
+    .await;
+    assert_eq!(second.status, 429);
+    assert!(!second.headers.contains_key("retry-after"));
+    let body: Value = serde_json::from_slice(&second.body).unwrap();
+    assert_eq!(body["error"]["code"], "insufficient_quota");
+    assert_eq!(body["error"]["type"], "insufficient_quota");
+    assert!(matches!(captured.try_recv(), Err(TryRecvError::Empty)));
 
     stop_rpm_server(server).await;
 }

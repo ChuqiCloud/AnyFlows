@@ -50,6 +50,7 @@ enum AuthenticationOutcome {
     InvalidApiKey,
     Internal,
     RateLimited,
+    RequestLimitReached,
 }
 
 struct FakeAuthenticator {
@@ -113,6 +114,9 @@ impl TokenAuthenticator for FakeAuthenticator {
                 AuthenticationOutcome::RateLimited => Err(TokenAuthenticationError::RateLimited {
                     retry_after: af_domain::UpstreamRetryAfter::from_seconds(37).unwrap(),
                 }),
+                AuthenticationOutcome::RequestLimitReached => {
+                    Err(TokenAuthenticationError::RequestLimitReached)
+                }
             }
         })
     }
@@ -277,6 +281,35 @@ async fn authenticated_rate_limit_returns_retry_after_header() {
     let body = response_json(response).await;
     assert_eq!(body["error"]["code"], "rate_limited");
     assert_eq!(body["error"]["type"], "rate_limit_error");
+    assert_eq!(authenticator.calls(), 1);
+}
+
+#[tokio::test]
+async fn cumulative_request_limit_returns_insufficient_quota_without_retry_after() {
+    let authenticator = Arc::new(FakeAuthenticator::new(
+        AuthenticationOutcome::RequestLimitReached,
+    ));
+    let response = authenticated_router(
+        Arc::clone(&authenticator),
+        QueryApiKeyPolicy::Deny,
+        &[ALLOWED_ORIGIN],
+        64,
+    )
+    .oneshot({
+        let mut request = bearer_request("/protected");
+        request
+            .headers_mut()
+            .insert(ORIGIN, HeaderValue::from_static(ALLOWED_ORIGIN));
+        request
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(!response.headers().contains_key(RETRY_AFTER));
+    let body = response_json(response).await;
+    assert_eq!(body["error"]["code"], "insufficient_quota");
+    assert_eq!(body["error"]["type"], "insufficient_quota");
     assert_eq!(authenticator.calls(), 1);
 }
 

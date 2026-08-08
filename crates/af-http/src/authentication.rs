@@ -93,5 +93,9 @@ pub(crate) async fn authenticate_api_key(
         Err(TokenAuthenticationError::RateLimited { retry_after }) => {
             rate_limit_error_response(state.error_protocol, retry_after)
         }
+        Err(TokenAuthenticationError::RequestLimitReached) => {
+            // 累计请求上限不会自动恢复，因此不能伪造 Retry-After。
+            api_error_response(state.error_protocol, AfError::InsufficientQuota)
+        }
     }
 }

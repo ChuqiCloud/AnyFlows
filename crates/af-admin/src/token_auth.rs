@@ -110,6 +110,9 @@ pub enum TokenAuthenticationError {
     /// 已认证主体触发用户或分组 RPM 窗口。
     #[error("请求达到 RPM 限制")]
     RateLimited { retry_after: UpstreamRetryAfter },
+    /// 已认证令牌达到累计请求数上限。
+    #[error("令牌达到累计请求数上限")]
+    RequestLimitReached,
 }
 
 /// 下游 API Key 认证端口；HTTP 层只提交摘要，不跨异步边界保留明文。

@@ -70,11 +70,11 @@ use af_db::{
     SiteSettingsRepository, SiteSettingsRepositoryConfigError, SubscriptionBalanceAlertRepository,
     SubscriptionBalanceAlertRepositoryConfigError, SubscriptionRepository,
     SubscriptionRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
-    TopupRepository, UsageLogRepository, UserInvitationRepository,
-    UserInvitationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
-    UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
-    UserTokenRepositoryConfigError, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
-    connect_and_migrate,
+    TokenRequestAdmissionRepository, TokenRequestAdmissionRepositoryConfigError, TopupRepository,
+    UsageLogRepository, UserInvitationRepository, UserInvitationRepositoryConfigError,
+    UserProfileRepository, UserProfileRepositoryConfigError, UserSessionRepository,
+    UserSessionRepositoryConfigError, UserTokenRepository, UserTokenRepositoryConfigError,
+    WalletLedgerRepository, WalletLedgerRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, ChatService, HttpListener, HttpRouter,
@@ -122,6 +122,7 @@ use crate::{
     },
     smtp_delivery::SmtpEmailDelivery,
     system_shutdown_signal,
+    token_request_admission::TokenRequestAdmissionAuthenticator,
 };
 
 const BILLING_QUEUE_RETRY_DELAY: Duration = Duration::from_millis(100);
@@ -314,6 +315,9 @@ pub enum BootstrapError {
     /// 令牌仓储的启动参数无效。
     #[error("令牌认证启动参数无效")]
     Authentication(#[source] TokenAuthRepositoryConfigError),
+    /// 令牌累计请求数准入仓储的启动参数无效。
+    #[error("令牌请求数准入启动参数无效")]
+    TokenRequestAdmissionRepository(#[source] TokenRequestAdmissionRepositoryConfigError),
     /// 用户会话仓储的启动参数无效。
     #[error("用户会话启动参数无效")]
     SessionRepository(#[source] UserSessionRepositoryConfigError),
@@ -567,6 +571,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::Authentication)?;
+        let token_request_admission_repository = TokenRequestAdmissionRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::TokenRequestAdmissionRepository)?;
         let session_repository = UserSessionRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -781,13 +790,18 @@ impl Bootstrap<DatabaseReady> {
             shutdown,
             stage,
         } = self;
+        let database_authenticator: Arc<dyn TokenAuthenticator> =
+            Arc::new(DatabaseTokenAuthenticator::new(repository));
         Ok(Bootstrap {
             config,
             shutdown_timeout,
             shutdown,
             stage: AuthenticationReady {
                 infrastructure: stage,
-                authenticator: Arc::new(DatabaseTokenAuthenticator::new(repository)),
+                authenticator: Arc::new(TokenRequestAdmissionAuthenticator::new(
+                    database_authenticator,
+                    Arc::new(token_request_admission_repository),
+                )),
                 session_authenticator: Arc::new(session_authenticator),
                 initial_setup: Arc::new(DatabaseInitialSetup::new(initial_setup_repository)),
                 registration_service: Arc::new(registration_service),
