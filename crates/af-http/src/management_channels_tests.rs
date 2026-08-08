@@ -960,6 +960,7 @@ fn sample_credential(channel_id: ChannelId, id: i64) -> AdminCredential {
         AdminCredentialQuotaDimension::Global,
         None,
         Some("example-oauth".to_owned()),
+        false,
         Some("account-public-id".to_owned()),
         Some("project-public-id".to_owned()),
         0,
