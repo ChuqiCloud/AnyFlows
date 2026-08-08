@@ -4,8 +4,8 @@ use std::{
 };
 
 use af_db::{
-    EncryptedCredentialEnvelope, OAuthCredentialRepository, OAuthCredentialRepositoryError,
-    OAuthCredentialTokenUpdateOutcome,
+    EncryptedCredentialEnvelope, OAuthCredentialIdentityPatch, OAuthCredentialRepository,
+    OAuthCredentialRepositoryError, OAuthCredentialTokenUpdateOutcome,
 };
 use af_domain::{ChannelId, CredentialId};
 use thiserror::Error;
@@ -84,6 +84,7 @@ impl OAuthTokenPersistenceService {
                 prepared.provider.as_str(),
                 prepared.expires_at_epoch_seconds,
                 prepared.envelope,
+                prepared.identity,
             )
             .await
             .map_err(map_repository_error)?;
@@ -116,6 +117,7 @@ struct PreparedOAuthCredential {
     provider: UpstreamOAuthProvider,
     expires_at_epoch_seconds: Option<i64>,
     envelope: EncryptedCredentialEnvelope,
+    identity: OAuthCredentialIdentityPatch,
 }
 
 fn prepare_token_set(
@@ -135,6 +137,9 @@ fn prepare_token_set(
         .transpose()
         .map_err(|()| OAuthTokenPersistenceError::InvalidExpiration)?;
     let provider = parts.provider;
+    let (account_key, project_id) = parts.identity.into_parts();
+    let identity = OAuthCredentialIdentityPatch::new(account_key, project_id)
+        .map_err(|_| OAuthTokenPersistenceError::InvalidTokenSet)?;
     let secret = PlainOAuthCredential::from_zeroizing(
         parts.access_token,
         parts.refresh_token,
@@ -153,6 +158,7 @@ fn prepare_token_set(
         provider,
         expires_at_epoch_seconds,
         envelope,
+        identity,
     })
 }
 
@@ -172,6 +178,7 @@ const fn map_repository_error(error: OAuthCredentialRepositoryError) -> OAuthTok
         OAuthCredentialRepositoryError::InvalidConfiguration
         | OAuthCredentialRepositoryError::InvalidProvider
         | OAuthCredentialRepositoryError::InvalidExpiration
+        | OAuthCredentialRepositoryError::InvalidIdentity
         | OAuthCredentialRepositoryError::Invariant => OAuthTokenPersistenceError::Invariant,
         _ => OAuthTokenPersistenceError::Invariant,
     }
@@ -186,7 +193,10 @@ mod tests {
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
     use super::*;
-    use crate::{CredentialDecryptor, oauth::OAuthAuthorizationContext};
+    use crate::{
+        CredentialDecryptor,
+        oauth::{OAuthAuthorizationContext, identity::OAuthIdentityMetadata},
+    };
 
     const CHANNEL_ID: i64 = 22;
     const CREDENTIAL_ID: i64 = 33;
@@ -214,6 +224,8 @@ mod tests {
         assert_eq!(prepared.channel_id.get(), CHANNEL_ID);
         assert_eq!(prepared.credential_id.get(), CREDENTIAL_ID);
         assert_eq!(prepared.provider, UpstreamOAuthProvider::Codex);
+        assert_eq!(prepared.identity.account_key(), Some("account-marker"));
+        assert_eq!(prepared.identity.project_id(), None);
         let complete = decryptor
             .decrypt_oauth_envelope(
                 prepared.channel_id,
@@ -279,13 +291,14 @@ mod tests {
         context: OAuthAuthorizationContext,
         expires_in: Option<Duration>,
     ) -> OAuthTokenSet {
-        OAuthTokenSet::for_test(
+        OAuthTokenSet::for_test_with_identity(
             UpstreamOAuthProvider::Codex,
             context,
             "access-private".to_owned(),
             Some("refresh-private".to_owned()),
             expires_in,
             Some("openid profile".to_owned()),
+            OAuthIdentityMetadata::for_test(Some("account-marker".to_owned()), None),
         )
     }
 

@@ -1,9 +1,9 @@
 use std::{fmt, time::SystemTime};
 
 use af_db::{
-    OAuthCredentialExpirationProjectionUpdateOutcome, OAuthCredentialRefreshFailureKind,
-    OAuthCredentialRefreshFailureUpdateOutcome, OAuthCredentialRefreshUpdateOutcome,
-    OAuthCredentialRepository, OAuthCredentialRepositoryError,
+    OAuthCredentialExpirationProjectionUpdateOutcome, OAuthCredentialIdentityPatch,
+    OAuthCredentialRefreshFailureKind, OAuthCredentialRefreshFailureUpdateOutcome,
+    OAuthCredentialRefreshUpdateOutcome, OAuthCredentialRepository, OAuthCredentialRepositoryError,
     OAuthExpirationProjectionCandidateRecord, OAuthRefreshCandidateRecord,
 };
 use af_domain::{ChannelId, CredentialId};
@@ -413,6 +413,9 @@ impl OAuthRefreshPersistenceService {
             .ok_or(OAuthRefreshPersistenceError::InvalidExpiration)?;
         let expires_at_epoch_seconds = checked_expiration_epoch_seconds(now, expires_in)
             .map_err(|()| OAuthRefreshPersistenceError::InvalidExpiration)?;
+        let (account_key, project_id) = parts.identity.into_parts();
+        let identity = OAuthCredentialIdentityPatch::new(account_key, project_id)
+            .map_err(|_| OAuthRefreshPersistenceError::InvalidTokenSet)?;
         let secret = PlainOAuthCredential::from_zeroizing(
             parts.access_token,
             Some(parts.refresh_token),
@@ -428,7 +431,12 @@ impl OAuthRefreshPersistenceService {
         drop(secret);
         let outcome = self
             .repository
-            .replace_refreshed_token_secret(guard.record, expires_at_epoch_seconds, envelope)
+            .replace_refreshed_token_secret(
+                guard.record,
+                expires_at_epoch_seconds,
+                envelope,
+                identity,
+            )
             .await
             .map_err(map_repository_error)?;
         Ok(match outcome {
@@ -477,6 +485,7 @@ fn map_repository_error(error: OAuthCredentialRepositoryError) -> OAuthRefreshPe
         OAuthCredentialRepositoryError::InvalidConfiguration
         | OAuthCredentialRepositoryError::InvalidProvider
         | OAuthCredentialRepositoryError::InvalidExpiration
+        | OAuthCredentialRepositoryError::InvalidIdentity
         | OAuthCredentialRepositoryError::Invariant => OAuthRefreshPersistenceError::Invariant,
         _ => OAuthRefreshPersistenceError::Invariant,
     }

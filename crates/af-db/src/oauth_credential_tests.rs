@@ -8,9 +8,10 @@ use super::{
     AdminChannelRepository, AdminChannelWriteRecord, AdminCredentialCreateOutcome,
     AdminCredentialDeleteOutcome, AdminCredentialWriteRecord, DatabaseOptions,
     MAX_OAUTH_REFRESH_CANDIDATES, MigrationOptions,
-    OAuthCredentialExpirationProjectionUpdateOutcome, OAuthCredentialRefreshFailureKind,
-    OAuthCredentialRefreshFailureUpdateOutcome, OAuthCredentialRefreshUpdateOutcome,
-    OAuthCredentialRepository, OAuthCredentialRepositoryError, OAuthCredentialTokenUpdateOutcome,
+    OAuthCredentialExpirationProjectionUpdateOutcome, OAuthCredentialIdentityPatch,
+    OAuthCredentialRefreshFailureKind, OAuthCredentialRefreshFailureUpdateOutcome,
+    OAuthCredentialRefreshUpdateOutcome, OAuthCredentialRepository, OAuthCredentialRepositoryError,
+    OAuthCredentialTokenUpdateOutcome,
     entity::{EncryptedJson, channels, credentials, scheduler_outbox_events},
 };
 use crate::EncryptedCredentialEnvelope;
@@ -51,6 +52,7 @@ async fn oauth_token_update_preserves_scheduler_and_runtime_fields() -> Result<(
                 "codex",
                 Some(1_800_000_000),
                 envelope(0x22),
+                OAuthCredentialIdentityPatch::default(),
             )
             .await?,
         OAuthCredentialTokenUpdateOutcome::Updated
@@ -85,6 +87,91 @@ async fn oauth_token_update_preserves_scheduler_and_runtime_fields() -> Result<(
 
     fixture.pool.close().await?;
     Ok(())
+}
+
+#[tokio::test]
+async fn oauth_identity_patch_updates_only_present_fields() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let channel_id = create_channel(&fixture, "identity-patch").await?;
+    let credential_id =
+        create_credential(&fixture, channel_id, CredentialKind::Oauth, None, 0x23).await?;
+    let mut active = credential_model(&fixture, credential_id)
+        .await?
+        .into_active_model();
+    active.oauth_account_key = Set(Some("manual-account".to_owned()));
+    active.oauth_project_id = Set(Some("manual-project".to_owned()));
+    active.update(fixture.pool.connection()).await?;
+
+    let initial_identity =
+        OAuthCredentialIdentityPatch::new(Some("token-account".to_owned()), None)?;
+    let rendered = format!("{initial_identity:?}");
+    assert!(!rendered.contains("token-account"));
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .replace_token_secret(
+                channel_id,
+                credential_id,
+                "codex",
+                Some(100),
+                envelope(0x24),
+                initial_identity,
+            )
+            .await?,
+        OAuthCredentialTokenUpdateOutcome::Updated
+    );
+    let connected = credential_model(&fixture, credential_id).await?;
+    assert_eq!(
+        connected.oauth_account_key.as_deref(),
+        Some("token-account")
+    );
+    assert_eq!(
+        connected.oauth_project_id.as_deref(),
+        Some("manual-project")
+    );
+
+    let candidate = fixture
+        .oauth_repository
+        .due_refresh_candidates(100, 1)
+        .await?
+        .pop()
+        .expect("到期凭据必须形成刷新候选");
+    let refreshed_identity =
+        OAuthCredentialIdentityPatch::new(None, Some("discovered-project".to_owned()))?;
+    assert_eq!(
+        fixture
+            .oauth_repository
+            .replace_refreshed_token_secret(candidate, 200, envelope(0x25), refreshed_identity,)
+            .await?,
+        OAuthCredentialRefreshUpdateOutcome::Updated
+    );
+    let refreshed = credential_model(&fixture, credential_id).await?;
+    assert_eq!(
+        refreshed.oauth_account_key.as_deref(),
+        Some("token-account")
+    );
+    assert_eq!(
+        refreshed.oauth_project_id.as_deref(),
+        Some("discovered-project")
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[test]
+fn oauth_identity_patch_rejects_unsafe_values() {
+    assert!(OAuthCredentialIdentityPatch::default().is_empty());
+    for invalid in ["", " leading", "trailing ", "line\nbreak"] {
+        assert_eq!(
+            OAuthCredentialIdentityPatch::new(Some(invalid.to_owned()), None).unwrap_err(),
+            OAuthCredentialRepositoryError::InvalidIdentity
+        );
+    }
+    assert_eq!(
+        OAuthCredentialIdentityPatch::new(None, Some("x".repeat(256)),).unwrap_err(),
+        OAuthCredentialRepositoryError::InvalidIdentity
+    );
 }
 
 #[tokio::test]
@@ -125,6 +212,7 @@ async fn oauth_token_update_rejects_wrong_targets_without_changing_secrets()
                 "codex",
                 Some(1_800_000_000),
                 envelope(0x41),
+                OAuthCredentialIdentityPatch::default(),
             )
             .await?,
         OAuthCredentialTokenUpdateOutcome::TargetNotFound
@@ -144,6 +232,7 @@ async fn oauth_token_update_rejects_wrong_targets_without_changing_secrets()
                 "codex",
                 Some(1_800_000_000),
                 envelope(0x42),
+                OAuthCredentialIdentityPatch::default(),
             )
             .await?,
         OAuthCredentialTokenUpdateOutcome::TargetNotFound
@@ -163,6 +252,7 @@ async fn oauth_token_update_rejects_wrong_targets_without_changing_secrets()
                 "codex",
                 Some(1_800_000_000),
                 envelope(0x43),
+                OAuthCredentialIdentityPatch::default(),
             )
             .await?,
         OAuthCredentialTokenUpdateOutcome::TargetNotFound
@@ -182,6 +272,7 @@ async fn oauth_token_update_rejects_wrong_targets_without_changing_secrets()
                 "codex",
                 Some(1_800_000_000),
                 envelope(0x44),
+                OAuthCredentialIdentityPatch::default(),
             )
             .await?,
         OAuthCredentialTokenUpdateOutcome::ProviderMismatch
@@ -200,6 +291,7 @@ async fn oauth_token_update_rejects_wrong_targets_without_changing_secrets()
                 "codex",
                 Some(1_800_000_000),
                 envelope(0x45),
+                OAuthCredentialIdentityPatch::default(),
             )
             .await?,
         OAuthCredentialTokenUpdateOutcome::TargetNotFound
@@ -213,6 +305,7 @@ async fn oauth_token_update_rejects_wrong_targets_without_changing_secrets()
                 "Codex",
                 Some(1_800_000_000),
                 envelope(0x46),
+                OAuthCredentialIdentityPatch::default(),
             )
             .await
             .unwrap_err(),
@@ -221,7 +314,14 @@ async fn oauth_token_update_rejects_wrong_targets_without_changing_secrets()
     assert_eq!(
         fixture
             .oauth_repository
-            .replace_token_secret(first_channel, oauth_id, "codex", Some(-1), envelope(0x47),)
+            .replace_token_secret(
+                first_channel,
+                oauth_id,
+                "codex",
+                Some(-1),
+                envelope(0x47),
+                OAuthCredentialIdentityPatch::default(),
+            )
             .await
             .unwrap_err(),
         OAuthCredentialRepositoryError::InvalidExpiration
@@ -308,6 +408,7 @@ async fn due_refresh_candidates_are_bounded_stable_and_fail_closed() -> Result<(
                     "codex",
                     Some(expires_at),
                     envelope(marker),
+                    OAuthCredentialIdentityPatch::default(),
                 )
                 .await?,
             OAuthCredentialTokenUpdateOutcome::Updated
@@ -510,6 +611,7 @@ async fn refresh_cas_preserves_runtime_changes_and_rejects_stale_secret()
             "codex",
             Some(100),
             envelope(0x72),
+            OAuthCredentialIdentityPatch::default(),
         )
         .await?;
     let candidate = fixture
@@ -528,7 +630,12 @@ async fn refresh_cas_preserves_runtime_changes_and_rejects_stale_secret()
     assert_eq!(
         fixture
             .oauth_repository
-            .replace_refreshed_token_secret(candidate, 200, envelope(0x73))
+            .replace_refreshed_token_secret(
+                candidate,
+                200,
+                envelope(0x73),
+                OAuthCredentialIdentityPatch::default(),
+            )
             .await?,
         OAuthCredentialRefreshUpdateOutcome::Updated
     );
@@ -560,7 +667,12 @@ async fn refresh_cas_preserves_runtime_changes_and_rejects_stale_secret()
     assert_eq!(
         fixture
             .oauth_repository
-            .replace_refreshed_token_secret(stale_candidate, 300, envelope(0x75))
+            .replace_refreshed_token_secret(
+                stale_candidate,
+                300,
+                envelope(0x75),
+                OAuthCredentialIdentityPatch::default(),
+            )
             .await?,
         OAuthCredentialRefreshUpdateOutcome::Stale
     );
@@ -587,6 +699,7 @@ async fn refresh_failure_write_is_guarded_and_closes_runtime_state() -> Result<(
             "codex",
             Some(100),
             envelope(0x82),
+            OAuthCredentialIdentityPatch::default(),
         )
         .await?;
     let mut candidates = Vec::with_capacity(3);
@@ -681,6 +794,7 @@ async fn refresh_failure_write_is_guarded_and_closes_runtime_state() -> Result<(
                 "codex",
                 Some(200),
                 envelope(0x83),
+                OAuthCredentialIdentityPatch::default(),
             )
             .await?,
         OAuthCredentialTokenUpdateOutcome::Updated

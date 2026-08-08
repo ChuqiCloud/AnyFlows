@@ -10,8 +10,8 @@ use std::{
 use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
 use af_db::{
     AdminChannelRepository, AdminChannelWriteRecord, AdminCredentialCreateOutcome,
-    AdminCredentialWriteRecord, DatabaseOptions, DatabasePool, EncryptedCredentialEnvelope,
-    MigrationOptions, OAuthCredentialRepository,
+    AdminCredentialLookupOutcome, AdminCredentialWriteRecord, DatabaseOptions, DatabasePool,
+    EncryptedCredentialEnvelope, MigrationOptions, OAuthCredentialRepository,
 };
 use af_domain::{
     ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind, Protocol, Status, UserId,
@@ -111,6 +111,15 @@ async fn coordinator_closes_profile_lookup_one_time_exchange_and_persistence_map
     );
     server.join().unwrap();
     assert_eq!(coordinator.pending_count()?, 0);
+    let AdminCredentialLookupOutcome::Found(connected) = fixture
+        .admin_repository
+        .get_credential(channel_id, credential_id)
+        .await?
+    else {
+        panic!("完成授权后必须仍能读取目标凭据");
+    };
+    assert_eq!(connected.oauth_account_key(), Some("org-codex-test"));
+    assert_eq!(connected.oauth_project_id(), Some("project-id"));
 
     let replay =
         OAuthAuthorizationCallback::from_redirect_url(UpstreamOAuthProvider::Codex, callback_url)?;
@@ -273,7 +282,7 @@ fn callback_url(start: &OAuthAuthorizationStart) -> (String, Url) {
 }
 
 fn successful_token_response() -> &'static [u8] {
-    br#"{"access_token":"access-token-marker","token_type":"Bearer","expires_in":3600,"refresh_token":"refresh-token-marker","scope":"openid profile"}"#
+    br#"{"access_token":"access-token-marker","token_type":"Bearer","expires_in":3600,"refresh_token":"refresh-token-marker","scope":"openid profile","id_token":"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGguY2hhdGdwdF9hY2NvdW50X2lkIjoib3JnLWNvZGV4LXRlc3QifQ.c2lnbmF0dXJl"}"#
 }
 
 fn spawn_token_server<F>(

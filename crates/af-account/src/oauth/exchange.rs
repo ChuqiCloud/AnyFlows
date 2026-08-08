@@ -11,6 +11,7 @@ use super::authorization::{
     OAuthAuthorizationContext, OAuthAuthorizationGrant, UpstreamOAuthProvider, validate_client_id,
     validate_scope,
 };
+use super::identity::{ClaudeAccountKey, OAuthIdentityMetadata};
 use crate::credential_decryption::MAX_DECRYPTED_CREDENTIAL_SECRET_BYTES;
 
 /// OAuth token endpoint 响应体硬上限。
@@ -512,6 +513,7 @@ pub struct OAuthRefreshedTokenSet {
     refresh_token: TokenSecret,
     expires_in: Option<Duration>,
     scope: Option<TokenSecret>,
+    identity: OAuthIdentityMetadata,
 }
 
 impl OAuthRefreshedTokenSet {
@@ -523,17 +525,33 @@ impl OAuthRefreshedTokenSet {
         if !is_valid_token_response(&wire) {
             return Err(OAuthTokenExchangeError::InvalidTokenResponse);
         }
+        let identity = OAuthIdentityMetadata::parse_refresh(
+            provider,
+            wire.id_token.as_ref().map(TokenSecret::expose),
+            wire.account.as_ref().and_then(ClaudeAccountKey::uuid),
+        )
+        .map_err(|_| OAuthTokenExchangeError::InvalidTokenResponse)?;
         let OAuthTokenRefreshRequest {
             provider: _,
             refresh_token: previous_refresh_token,
             scope: previous_scope,
         } = request;
+        let TokenResponseWire {
+            access_token,
+            refresh_token,
+            expires_in,
+            scope,
+            token_type: _,
+            id_token: _,
+            account: _,
+        } = wire;
         Ok(Self {
             provider,
-            access_token: wire.access_token,
-            refresh_token: wire.refresh_token.unwrap_or(previous_refresh_token),
-            expires_in: wire.expires_in.map(Duration::from_secs),
-            scope: wire.scope.or(previous_scope),
+            access_token,
+            refresh_token: refresh_token.unwrap_or(previous_refresh_token),
+            expires_in: expires_in.map(Duration::from_secs),
+            scope: scope.or(previous_scope),
+            identity,
         })
     }
 
@@ -567,6 +585,18 @@ impl OAuthRefreshedTokenSet {
         self.scope.as_ref().map(TokenSecret::expose)
     }
 
+    /// 返回 token 响应中可用于账号路由的非敏感身份键。
+    #[must_use]
+    pub fn oauth_account_key(&self) -> Option<&str> {
+        self.identity.account_key()
+    }
+
+    /// 返回 token 响应中可用于项目路由的非敏感项目标识。
+    #[must_use]
+    pub fn oauth_project_id(&self) -> Option<&str> {
+        self.identity.project_id()
+    }
+
     /// 按所有权拆分刷新结果，供加密持久化边界消费。
     pub(super) fn into_parts(self) -> OAuthRefreshedTokenSetParts {
         let Self {
@@ -575,6 +605,7 @@ impl OAuthRefreshedTokenSet {
             refresh_token,
             expires_in,
             scope,
+            identity,
         } = self;
         OAuthRefreshedTokenSetParts {
             provider,
@@ -582,6 +613,7 @@ impl OAuthRefreshedTokenSet {
             refresh_token: refresh_token.into_zeroizing(),
             expires_in,
             scope: scope.map(TokenSecret::into_zeroizing),
+            identity,
         }
     }
 
@@ -593,12 +625,32 @@ impl OAuthRefreshedTokenSet {
         expires_in: Option<Duration>,
         scope: Option<String>,
     ) -> Self {
+        Self::for_test_with_identity(
+            provider,
+            access_token,
+            refresh_token,
+            expires_in,
+            scope,
+            OAuthIdentityMetadata::default(),
+        )
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test_with_identity(
+        provider: UpstreamOAuthProvider,
+        access_token: String,
+        refresh_token: String,
+        expires_in: Option<Duration>,
+        scope: Option<String>,
+        identity: OAuthIdentityMetadata,
+    ) -> Self {
         Self {
             provider,
             access_token: TokenSecret::new_unchecked(access_token),
             refresh_token: TokenSecret::new_unchecked(refresh_token),
             expires_in,
             scope: scope.map(TokenSecret::new_unchecked),
+            identity,
         }
     }
 }
@@ -610,6 +662,7 @@ pub(super) struct OAuthRefreshedTokenSetParts {
     pub(super) refresh_token: Zeroizing<String>,
     pub(super) expires_in: Option<Duration>,
     pub(super) scope: Option<Zeroizing<String>>,
+    pub(super) identity: OAuthIdentityMetadata,
 }
 
 impl fmt::Debug for OAuthRefreshedTokenSet {
@@ -633,6 +686,7 @@ pub struct OAuthTokenSet {
     refresh_token: Option<TokenSecret>,
     expires_in: Option<Duration>,
     scope: Option<TokenSecret>,
+    identity: OAuthIdentityMetadata,
 }
 
 impl OAuthTokenSet {
@@ -644,13 +698,29 @@ impl OAuthTokenSet {
         if !is_valid_token_response(&wire) {
             return Err(OAuthTokenExchangeError::InvalidTokenResponse);
         }
+        let identity = OAuthIdentityMetadata::parse_initial(
+            provider,
+            wire.id_token.as_ref().map(TokenSecret::expose),
+            wire.account.as_ref().and_then(ClaudeAccountKey::uuid),
+        )
+        .map_err(|_| OAuthTokenExchangeError::InvalidTokenResponse)?;
+        let TokenResponseWire {
+            access_token,
+            refresh_token,
+            expires_in,
+            scope,
+            token_type: _,
+            id_token: _,
+            account: _,
+        } = wire;
         Ok(Self {
             provider,
             context,
-            access_token: wire.access_token,
-            refresh_token: wire.refresh_token,
-            expires_in: wire.expires_in.map(Duration::from_secs),
-            scope: wire.scope,
+            access_token,
+            refresh_token,
+            expires_in: expires_in.map(Duration::from_secs),
+            scope,
+            identity,
         })
     }
 
@@ -690,6 +760,18 @@ impl OAuthTokenSet {
         self.scope.as_ref().map(TokenSecret::expose)
     }
 
+    /// 返回 token 响应中可用于账号路由的非敏感身份键。
+    #[must_use]
+    pub fn oauth_account_key(&self) -> Option<&str> {
+        self.identity.account_key()
+    }
+
+    /// 返回 token 响应中可用于项目路由的非敏感项目标识。
+    #[must_use]
+    pub fn oauth_project_id(&self) -> Option<&str> {
+        self.identity.project_id()
+    }
+
     pub(super) fn into_parts(self) -> OAuthTokenSetParts {
         let Self {
             provider,
@@ -698,6 +780,7 @@ impl OAuthTokenSet {
             refresh_token,
             expires_in,
             scope,
+            identity,
         } = self;
         OAuthTokenSetParts {
             provider,
@@ -705,6 +788,7 @@ impl OAuthTokenSet {
             refresh_token: refresh_token.map(TokenSecret::into_zeroizing),
             expires_in,
             scope: scope.map(TokenSecret::into_zeroizing),
+            identity,
         }
     }
 
@@ -717,6 +801,27 @@ impl OAuthTokenSet {
         expires_in: Option<Duration>,
         scope: Option<String>,
     ) -> Self {
+        Self::for_test_with_identity(
+            provider,
+            context,
+            access_token,
+            refresh_token,
+            expires_in,
+            scope,
+            OAuthIdentityMetadata::default(),
+        )
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test_with_identity(
+        provider: UpstreamOAuthProvider,
+        context: OAuthAuthorizationContext,
+        access_token: String,
+        refresh_token: Option<String>,
+        expires_in: Option<Duration>,
+        scope: Option<String>,
+        identity: OAuthIdentityMetadata,
+    ) -> Self {
         Self {
             provider,
             context,
@@ -724,6 +829,7 @@ impl OAuthTokenSet {
             refresh_token: refresh_token.map(TokenSecret::new_unchecked),
             expires_in,
             scope: scope.map(TokenSecret::new_unchecked),
+            identity,
         }
     }
 }
@@ -734,6 +840,7 @@ pub(super) struct OAuthTokenSetParts {
     pub(super) refresh_token: Option<Zeroizing<String>>,
     pub(super) expires_in: Option<Duration>,
     pub(super) scope: Option<Zeroizing<String>>,
+    pub(super) identity: OAuthIdentityMetadata,
 }
 
 impl fmt::Debug for OAuthTokenSet {
@@ -838,6 +945,10 @@ struct TokenResponseWire {
     refresh_token: Option<TokenSecret>,
     #[serde(default)]
     scope: Option<TokenSecret>,
+    #[serde(default)]
+    id_token: Option<TokenSecret>,
+    #[serde(default)]
+    account: Option<ClaudeAccountKey>,
 }
 
 struct TokenSecret(String);

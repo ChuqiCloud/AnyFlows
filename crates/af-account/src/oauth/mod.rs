@@ -1,6 +1,7 @@
 mod authorization;
 mod coordinator;
 mod exchange;
+mod identity;
 mod persistence;
 mod profile;
 mod refresh_coordinator;

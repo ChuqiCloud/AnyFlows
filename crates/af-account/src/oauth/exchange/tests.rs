@@ -313,7 +313,7 @@ fn refresh_request_validates_and_redacts_renewable_material() {
 async fn public_client_exchange_sends_exact_pkce_form_and_returns_typed_tokens() {
     let (address, server) = spawn_json_server(
         200,
-        br#"{"access_token":"access-token-marker","token_type":"Bearer","expires_in":3600,"refresh_token":"refresh-token-marker","scope":"openid profile","provider_extension":"ignored"}"#,
+        br#"{"access_token":"access-token-marker","token_type":"Bearer","expires_in":3600,"refresh_token":"refresh-token-marker","scope":"openid profile","account":{"uuid":"550E8400-E29B-41D4-A716-446655440000","email_address":"private@example.com"},"provider_extension":"ignored"}"#,
         |request| {
             assert!(request.starts_with("POST http://token.example/oauth/token HTTP/1.1"));
             assert_eq!(
@@ -365,14 +365,50 @@ async fn public_client_exchange_sends_exact_pkce_form_and_returns_typed_tokens()
     assert_eq!(result.refresh_token(), Some("refresh-token-marker"));
     assert_eq!(result.expires_in(), Some(Duration::from_secs(3_600)));
     assert_eq!(result.scope(), Some("openid profile"));
+    assert_eq!(
+        result.oauth_account_key(),
+        Some("550e8400-e29b-41d4-a716-446655440000")
+    );
+    assert_eq!(result.oauth_project_id(), None);
     let debug = format!("{result:?}");
     for private in [
         "access-token-marker",
         "refresh-token-marker",
         "openid profile",
+        "550e8400-e29b-41d4-a716-446655440000",
+        "private@example.com",
     ] {
         assert!(!debug.contains(private));
     }
+}
+
+#[tokio::test]
+async fn codex_exchange_requires_and_extracts_the_account_claim() {
+    let (address, server) = spawn_json_server(
+        200,
+        br#"{"access_token":"access-token-marker","token_type":"Bearer","expires_in":3600,"refresh_token":"refresh-token-marker","id_token":"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGguY2hhdGdwdF9hY2NvdW50X2lkIjoib3JnLWNvZGV4LXRlc3QifQ.c2lnbmF0dXJl"}"#,
+        |_| {},
+    );
+    let mut exchange = OAuthTokenExchange::new(
+        UpstreamOAuthProvider::Codex,
+        "public-client".to_owned(),
+        "https://token.example/oauth/token".to_owned(),
+        OAuthClientAuthenticationMethod::Public,
+        None,
+    )
+    .unwrap();
+    exchange.token_endpoint = Url::parse("http://token.example/oauth/token").unwrap();
+    let result = exchange
+        .exchange(
+            &proxied_client(address),
+            grant(UpstreamOAuthProvider::Codex),
+        )
+        .await
+        .unwrap();
+    server.join().unwrap();
+
+    assert_eq!(result.oauth_account_key(), Some("org-codex-test"));
+    assert_eq!(result.oauth_project_id(), None);
 }
 
 #[tokio::test]
