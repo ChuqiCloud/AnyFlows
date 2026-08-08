@@ -284,11 +284,24 @@ async fn seed_account(
     connection
         .execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "INSERT INTO users (id, username, status, quota, aff_code, settings) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO groups (id, name, display_name, flags) VALUES (?, ?, ?, ?)",
+            [
+                3_i64.into(),
+                "admission-group".into(),
+                "准入测试分组".into(),
+                "{}".into(),
+            ],
+        ))
+        .await?;
+    connection
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO users (id, username, status, default_group_id, quota, aff_code, settings) VALUES (?, ?, ?, ?, ?, ?, ?)",
             [
                 2_i64.into(),
                 "admission-user".into(),
                 1_i16.into(),
+                3_i64.into(),
                 1_000_000_i64.into(),
                 "admission-aff".into(),
                 "{}".into(),
