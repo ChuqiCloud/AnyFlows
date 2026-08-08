@@ -2,7 +2,7 @@ use std::{fmt, time::Duration};
 
 use af_domain::TokenId;
 use sea_orm::{
-    ConnectionTrait, DbBackend, DbErr, QueryResult,
+    ConnectionTrait, DbErr, QueryResult,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, Query, SelectStatement, UpdateStatement},
 };
@@ -152,7 +152,7 @@ fn admission_update(token_id: TokenId) -> UpdateStatement {
         .and_where(Expr::col(tokens::Column::Id).eq(token_id.get()))
         .and_where(Expr::col(tokens::Column::Status).eq(1_i16))
         .and_where(Expr::col(tokens::Column::DeletedAt).is_null())
-        .and_where(used_requests.gte(0_i64))
+        .and_where(used_requests.clone().gte(0_i64))
         .and_where(used_requests.lt(i64::MAX))
         .and_where(finite_available)
         .to_owned()
@@ -249,7 +249,10 @@ fn record_query_error(
 
 #[cfg(test)]
 mod sql_tests {
-    use sea_orm::sea_query::{MysqlQueryBuilder, PostgresQueryBuilder, SqliteQueryBuilder};
+    use sea_orm::{
+        DbBackend,
+        sea_query::{MysqlQueryBuilder, PostgresQueryBuilder, SqliteQueryBuilder},
+    };
 
     use super::*;
 
