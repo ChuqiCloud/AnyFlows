@@ -90,12 +90,12 @@ enum AdminCredentialSecretSchema {
 #[serde(deny_unknown_fields)]
 #[schema(as = AdminCredentialCreateRequest)]
 struct AdminCredentialCreateRequestSchema {
-    /// 凭据类型必须与 secret 对象的 kind 完全一致。
+    /// 非空 secret 的 kind 必须一致；null 仅用于创建待授权 OAuth 凭据。
     #[schema(value_type = AdminCredentialWriteKindSchema, inline)]
     kind: String,
-    /// 类型化明文；只用于本次加密，永不随响应返回。
-    #[schema(write_only)]
-    secret: AdminCredentialSecretSchema,
+    /// 类型化明文；OAuth 可传 null 以创建待授权凭据，永不随响应返回。
+    #[schema(required = true, write_only)]
+    secret: Option<AdminCredentialSecretSchema>,
     #[schema(value_type = AdminRoutingWriteStatusSchema)]
     status: String,
     #[schema(value_type = Option<AdminCredentialMultiKeyModeSchema>, required = true)]

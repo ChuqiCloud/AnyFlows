@@ -44,7 +44,9 @@ export function CredentialOAuthStatusView({ controller, credential }: {
   return (
     <Button type="button" size="sm" className="mt-3 w-fit" disabled={!controller.providerReady || controller.providerUnavailable || controller.beginPending} onClick={controller.startAuthorization}>
       {controller.beginPending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <ExternalLink aria-hidden="true" />}
-      {t(controller.boundProvider === undefined ? 'credentials.oauth.connect' : 'credentials.oauth.reauthorize')}
+      {t(credential.oauth_token_pending
+        ? 'credentials.oauth.connectPending'
+        : controller.boundProvider === undefined ? 'credentials.oauth.connect' : 'credentials.oauth.reauthorize')}
     </Button>
   )
 }

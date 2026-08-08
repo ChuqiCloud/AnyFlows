@@ -849,6 +849,7 @@ async fn admin_can_read_channel_and_credential_snapshots() {
     assert_eq!(credentials["credentials"][0]["kind"], "api_key");
     assert_eq!(credentials["credentials"][0]["multi_key_mode"], "random");
     assert_eq!(credentials["credentials"][0]["oauth_revision"], 0);
+    assert_eq!(credentials["credentials"][0]["oauth_token_pending"], false);
     assert!(!credentials.to_string().contains("secret"));
 
     let credential = app

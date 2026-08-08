@@ -563,6 +563,7 @@
     },
     "runtime": {
       "available": "可用",
+      "authorizationPending": "待授权",
       "autoDisabled": "自动停用",
       "cooling": "冷却中",
       "disabled": "已停用",
@@ -581,6 +582,7 @@
       "parent": "父账号 #{{id}}",
       "proxy": "代理 #{{id}}",
       "coolingUntil": "冷却至 {{value}}",
+      "authorizationRequired": "完成 OAuth 授权后自动进入调度",
       "neverUsed": "尚未参与请求",
       "lastUsed": "上次使用 {{value}}"
     },
@@ -604,6 +606,12 @@
     },
     "secret": {
       "apiKey": "上游 API Key",
+      "oauthCreateMode": "OAuth 创建方式",
+      "oauthMode": {
+        "authorize": "官方 OAuth 授权",
+        "access_token": "已有 Access Token"
+      },
+      "authorizeHint": "先创建待授权凭据，保存后从账号池发起官方 OAuth 连接，无需填写伪 token。",
       "accessToken": "现有 Access Token",
       "accessTokenHint": "可先保存现有 token，再通过账号池列表完成官方 OAuth 授权。",
       "accessKeyId": "Access Key ID",
@@ -643,6 +651,7 @@
       "callbackPort": "回调端口 {{port}}",
       "connectionTitle": "官方 OAuth 连接",
       "connectionHint": "授权完成后将安全更新 access token 与 refresh token。",
+      "pendingConnectionHint": "该凭据尚无可用 token，完成授权后才会进入调度。",
       "preparing": "正在准备 OAuth 授权…",
       "popupBlocked": "浏览器阻止了授权窗口，请点击“打开授权页面”。",
       "waiting": "正在等待授权完成，当前会话约 {{seconds}} 秒后过期。",
@@ -655,6 +664,7 @@
       "submitCallback": "完成连接",
       "connected": "OAuth 凭据已更新。",
       "connect": "连接 Provider",
+      "connectPending": "连接 OAuth",
       "reauthorize": "重新授权",
       "expired": "本次授权会话已过期。",
       "restart": "重新发起授权",

@@ -221,6 +221,7 @@ impl OAuthCredentialRepository {
             .filter(credentials::Column::Kind.eq(CredentialKind::Oauth.as_str()))
             .filter(credentials::Column::Status.eq(Status::Enabled.code()))
             .filter(credentials::Column::Schedulable.eq(true))
+            .filter(credentials::Column::OauthTokenPending.eq(false))
             .filter(credentials::Column::ParentId.is_null())
             .filter(credentials::Column::OauthProvider.is_not_null())
             .filter(credentials::Column::OauthRevision.gte(0_i64))
@@ -279,6 +280,7 @@ impl OAuthCredentialRepository {
             .filter(credentials::Column::Kind.eq(CredentialKind::Oauth.as_str()))
             .filter(credentials::Column::Status.eq(Status::Enabled.code()))
             .filter(credentials::Column::Schedulable.eq(true))
+            .filter(credentials::Column::OauthTokenPending.eq(false))
             .filter(credentials::Column::ParentId.is_null())
             .filter(credentials::Column::OauthProvider.is_not_null())
             .filter(credentials::Column::OauthRevision.gte(0_i64))
@@ -336,6 +338,7 @@ impl OAuthCredentialRepository {
             .filter(credentials::Column::Id.eq(candidate.credential_id.get()))
             .filter(credentials::Column::ChannelId.eq(candidate.channel_id.get()))
             .filter(credentials::Column::Kind.eq(CredentialKind::Oauth.as_str()))
+            .filter(credentials::Column::OauthTokenPending.eq(false))
             .filter(credentials::Column::DeletedAt.is_null())
             .filter(credentials::Column::OauthProvider.eq(candidate.provider.clone()))
             .filter(credentials::Column::OauthRevision.eq(candidate.expected_revision))
@@ -378,7 +381,8 @@ impl OAuthCredentialRepository {
         if target.oauth_provider.as_deref() != Some(candidate.provider.as_str()) {
             return Ok(OAuthCredentialExpirationProjectionUpdateOutcome::ProviderMismatch);
         }
-        if target.oauth_revision != candidate.expected_revision
+        if target.oauth_token_pending
+            || target.oauth_revision != candidate.expected_revision
             || target.secret != candidate.expected_secret
             || target.oauth_expires_at_epoch_seconds.is_some()
         {
@@ -420,6 +424,7 @@ impl OAuthCredentialRepository {
             .filter(credentials::Column::Id.eq(candidate.credential_id.get()))
             .filter(credentials::Column::ChannelId.eq(candidate.channel_id.get()))
             .filter(credentials::Column::Kind.eq(CredentialKind::Oauth.as_str()))
+            .filter(credentials::Column::OauthTokenPending.eq(false))
             .filter(credentials::Column::DeletedAt.is_null())
             .filter(credentials::Column::OauthProvider.eq(candidate.provider.clone()))
             .filter(credentials::Column::OauthRevision.eq(candidate.expected_revision))
@@ -464,7 +469,8 @@ impl OAuthCredentialRepository {
         if target.oauth_provider.as_deref() != Some(candidate.provider.as_str()) {
             return Ok(OAuthCredentialRefreshUpdateOutcome::ProviderMismatch);
         }
-        if target.oauth_revision != candidate.expected_revision
+        if target.oauth_token_pending
+            || target.oauth_revision != candidate.expected_revision
             || target.secret != candidate.expected_secret
         {
             return Ok(OAuthCredentialRefreshUpdateOutcome::Stale);
@@ -507,6 +513,7 @@ impl OAuthCredentialRepository {
             .filter(credentials::Column::Kind.eq(CredentialKind::Oauth.as_str()))
             .filter(credentials::Column::Status.eq(Status::Enabled.code()))
             .filter(credentials::Column::Schedulable.eq(true))
+            .filter(credentials::Column::OauthTokenPending.eq(false))
             .filter(credentials::Column::ParentId.is_null())
             .filter(credentials::Column::DeletedAt.is_null())
             .filter(credentials::Column::OauthProvider.eq(candidate.provider.clone()))
@@ -588,7 +595,8 @@ impl OAuthCredentialRepository {
         if target.oauth_provider.as_deref() != Some(candidate.provider.as_str()) {
             return Ok(OAuthCredentialRefreshFailureUpdateOutcome::ProviderMismatch);
         }
-        if target.oauth_revision != candidate.expected_revision
+        if target.oauth_token_pending
+            || target.oauth_revision != candidate.expected_revision
             || target.secret != candidate.expected_secret
         {
             return Ok(OAuthCredentialRefreshFailureUpdateOutcome::Stale);
@@ -638,6 +646,7 @@ fn candidate_from_models(
     if credential.kind != CredentialKind::Oauth.as_str()
         || credential.status != Status::Enabled.code()
         || !credential.schedulable
+        || credential.oauth_token_pending
         || credential.parent_id.is_some()
         || credential.deleted_at.is_some()
         || credential.oauth_revision < 0
@@ -681,6 +690,7 @@ fn expiration_projection_candidate_from_models(
     if credential.kind != CredentialKind::Oauth.as_str()
         || credential.status != Status::Enabled.code()
         || !credential.schedulable
+        || credential.oauth_token_pending
         || credential.parent_id.is_some()
         || credential.deleted_at.is_some()
         || credential.oauth_revision < 0

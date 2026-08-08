@@ -175,6 +175,7 @@ impl SchedulerRuntimeRepository {
                 .filter(credentials::Column::ChannelId.is_in(raw_channel_ids))
                 .filter(credentials::Column::Status.eq(Status::Enabled.code()))
                 .filter(credentials::Column::Schedulable.eq(true))
+                .filter(credentials::Column::OauthTokenPending.eq(false))
                 .filter(credentials::Column::DeletedAt.is_null())
                 .order_by_asc(credentials::Column::ChannelId)
                 .order_by_desc(credentials::Column::Priority)

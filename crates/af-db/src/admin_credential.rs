@@ -36,6 +36,7 @@ pub struct AdminCredentialRecord {
     quota_dimension: String,
     proxy_id: Option<i64>,
     oauth_provider: Option<String>,
+    oauth_token_pending: bool,
     oauth_account_key: Option<String>,
     oauth_project_id: Option<String>,
     oauth_revision: i64,
@@ -70,6 +71,7 @@ impl AdminCredentialRecord {
             quota_dimension: model.quota_dimension,
             proxy_id: model.proxy_id,
             oauth_provider: model.oauth_provider,
+            oauth_token_pending: model.oauth_token_pending,
             oauth_account_key: model.oauth_account_key,
             oauth_project_id: model.oauth_project_id,
             oauth_revision: model.oauth_revision,
@@ -204,6 +206,12 @@ impl AdminCredentialRecord {
     #[must_use]
     pub fn oauth_provider(&self) -> Option<&str> {
         self.oauth_provider.as_deref()
+    }
+
+    /// 返回 OAuth token 是否仍等待首次授权交换。
+    #[must_use]
+    pub const fn oauth_token_pending(&self) -> bool {
+        self.oauth_token_pending
     }
 
     /// 返回 OAuth 账号的非令牌业务标识。
@@ -418,6 +426,7 @@ struct AdminCredentialRow {
     quota_dimension: String,
     proxy_id: Option<i64>,
     oauth_provider: Option<String>,
+    oauth_token_pending: bool,
     oauth_account_key: Option<String>,
     oauth_project_id: Option<String>,
     oauth_revision: i64,
@@ -450,6 +459,7 @@ impl AdminCredentialRow {
             quota_dimension: result.try_get("", "quota_dimension")?,
             proxy_id: result.try_get("", "proxy_id")?,
             oauth_provider: result.try_get("", "oauth_provider")?,
+            oauth_token_pending: result.try_get("", "oauth_token_pending")?,
             oauth_account_key: result.try_get("", "oauth_account_key")?,
             oauth_project_id: result.try_get("", "oauth_project_id")?,
             oauth_revision: result.try_get("", "oauth_revision")?,
@@ -492,6 +502,8 @@ impl AdminCredentialRow {
             || !valid_optional_text(self.oauth_provider.as_deref(), 64)
             || !valid_optional_text(self.oauth_account_key.as_deref(), 255)
             || !valid_optional_text(self.oauth_project_id.as_deref(), 255)
+            || (self.oauth_token_pending
+                && (kind != CredentialKind::Oauth || self.oauth_provider.is_none()))
             || self.oauth_revision < 0
             || created_at < 0
             || updated_at < created_at
@@ -521,6 +533,7 @@ impl AdminCredentialRow {
             quota_dimension: self.quota_dimension,
             proxy_id: self.proxy_id,
             oauth_provider: self.oauth_provider,
+            oauth_token_pending: self.oauth_token_pending,
             oauth_account_key: self.oauth_account_key,
             oauth_project_id: self.oauth_project_id,
             oauth_revision: self.oauth_revision,
@@ -669,6 +682,10 @@ pub(crate) fn credential_base_query() -> SelectStatement {
         .expr_as(
             Expr::col((credentials::Entity, credentials::Column::OauthProvider)),
             Alias::new("oauth_provider"),
+        )
+        .expr_as(
+            Expr::col((credentials::Entity, credentials::Column::OauthTokenPending)),
+            Alias::new("oauth_token_pending"),
         )
         .expr_as(
             Expr::col((credentials::Entity, credentials::Column::OauthAccountKey)),

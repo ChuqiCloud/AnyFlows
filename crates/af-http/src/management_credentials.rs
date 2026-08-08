@@ -64,6 +64,8 @@ pub(crate) struct AdminCredentialResponse {
     proxy_id: Option<i64>,
     #[schema(min_length = 1, max_length = 64, required = true)]
     oauth_provider: Option<String>,
+    /// OAuth token 尚未完成首次交换时为 true，此状态不会进入运行时调度。
+    oauth_token_pending: bool,
     /// OAuth 账号的非令牌业务标识。
     #[schema(min_length = 1, max_length = 255, required = true)]
     oauth_account_key: Option<String>,
@@ -173,6 +175,7 @@ impl AdminCredentialResponse {
             quota_dimension: credential.quota_dimension(),
             proxy_id: credential.proxy_id(),
             oauth_provider: credential.oauth_provider().map(str::to_owned),
+            oauth_token_pending: credential.oauth_token_pending(),
             oauth_account_key: credential.oauth_account_key().map(str::to_owned),
             oauth_project_id: credential.oauth_project_id().map(str::to_owned),
             oauth_revision: credential.oauth_revision(),

@@ -9,6 +9,7 @@ export type CredentialFormKind = AdminCredentialCreateRequestWritable['kind']
 
 export type CredentialFormValues = {
   kind: CredentialFormKind
+  oauthCreateMode: 'authorize' | 'access_token'
   rotateSecret: boolean
   apiKey: string
   accessToken: string

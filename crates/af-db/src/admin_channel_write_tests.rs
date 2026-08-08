@@ -307,6 +307,58 @@ async fn credential_create_uses_real_id_and_failure_rolls_back() -> Result<(), B
 }
 
 #[tokio::test]
+async fn pending_oauth_creation_keeps_placeholder_and_metadata_updates_pending()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let channel_id = create_channel(&fixture).await?;
+    let AdminCredentialCreateOutcome::Created(created) = fixture
+        .repository
+        .create_pending_oauth_credential(
+            channel_id,
+            oauth_credential_record("codex", None).with_oauth_token_pending(true),
+        )
+        .await?
+    else {
+        panic!("有效渠道必须创建待授权 OAuth 凭据");
+    };
+    assert!(created.oauth_token_pending());
+    let secret = credential_secret(&fixture, created.credential_id()).await?;
+    assert!(secret.contains("oauth-token-pending"));
+    assert!(!secret.contains("transaction-pending"));
+
+    let AdminCredentialMutationOutcome::Mutated(updated) = fixture
+        .repository
+        .update_credential(
+            channel_id,
+            created.credential_id(),
+            oauth_credential_record("codex", None),
+            None,
+        )
+        .await?
+    else {
+        panic!("待授权凭据元数据更新必须成功");
+    };
+    assert!(updated.oauth_token_pending());
+
+    let AdminCredentialMutationOutcome::Mutated(rotated) = fixture
+        .repository
+        .update_credential(
+            channel_id,
+            created.credential_id(),
+            oauth_credential_record("codex", None),
+            Some(envelope(0x32)),
+        )
+        .await?
+    else {
+        panic!("手工写入真实 token 必须激活待授权凭据");
+    };
+    assert!(!rotated.oauth_token_pending());
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn credential_update_preserves_secret_and_runtime_state() -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
     let channel_id = create_channel(&fixture).await?;

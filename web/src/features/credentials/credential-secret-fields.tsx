@@ -1,9 +1,11 @@
 import { Controller, type UseFormReturn } from 'react-hook-form'
-import { KeyRound, LockKeyhole } from 'lucide-react'
+import { KeyRound, Link2, LockKeyhole } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 import { CredentialField, CredentialSecretInput } from './credential-form-field'
 import type { CredentialFormValues } from './credential-form-model'
 
@@ -15,9 +17,13 @@ export function CredentialSecretFields({ form, creating, disabled }: {
   const { t } = useTranslation()
   const kind = form.watch('kind')
   const rotateSecret = form.watch('rotateSecret')
+  const oauthCreateMode = form.watch('oauthCreateMode')
 
   return (
     <div className="grid gap-3">
+      {creating && kind === 'oauth' ? (
+        <OAuthCreateModePicker form={form} disabled={disabled} />
+      ) : null}
       {!creating ? (
         <div className="flex items-start justify-between gap-4 rounded-lg border border-[var(--hairline)] px-3 py-2.5">
           <div>
@@ -39,6 +45,11 @@ export function CredentialSecretFields({ form, creating, disabled }: {
           <LockKeyhole className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           <p className="text-xs leading-5">{t('credentials.form.secretPreserved')}</p>
         </div>
+      ) : kind === 'oauth' && creating && oauthCreateMode === 'authorize' ? (
+        <div className="flex items-start gap-2.5 rounded-lg bg-info/8 px-3 py-2.5 text-info">
+          <Link2 className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <p className="text-xs leading-5">{t('credentials.secret.authorizeHint')}</p>
+        </div>
       ) : kind === 'api_key' ? (
         <CredentialField id="credential-api-key" label={t('credentials.secret.apiKey')} error={form.formState.errors.apiKey?.message}>
           <CredentialSecretInput id="credential-api-key" maxLength={16 * 1_024} disabled={disabled} aria-invalid={Boolean(form.formState.errors.apiKey)} {...form.register('apiKey')} />
@@ -52,6 +63,37 @@ export function CredentialSecretFields({ form, creating, disabled }: {
       ) : (
         <ServiceAccountSecretFields form={form} disabled={disabled} />
       )}
+    </div>
+  )
+}
+
+function OAuthCreateModePicker({ form, disabled }: {
+  form: UseFormReturn<CredentialFormValues>
+  disabled?: boolean
+}) {
+  const { t } = useTranslation()
+  const value = form.watch('oauthCreateMode')
+  return (
+    <div className="grid gap-1 rounded-lg bg-surface-2 p-1 sm:grid-cols-2" role="radiogroup" aria-label={t('credentials.secret.oauthCreateMode')}>
+      {(['authorize', 'access_token'] as const).map((mode) => {
+        const Icon = mode === 'authorize' ? Link2 : KeyRound
+        return (
+          <Button
+            key={mode}
+            type="button"
+            size="sm"
+            variant="ghost"
+            role="radio"
+            aria-checked={value === mode}
+            disabled={disabled}
+            className={cn('h-10 justify-start text-xs', value === mode && 'bg-background text-foreground shadow-xs hover:bg-background')}
+            onClick={() => form.setValue('oauthCreateMode', mode, { shouldDirty: true, shouldValidate: true })}
+          >
+            <Icon className="size-4" aria-hidden="true" />
+            {t(`credentials.secret.oauthMode.${mode}`)}
+          </Button>
+        )
+      })}
     </div>
   )
 }

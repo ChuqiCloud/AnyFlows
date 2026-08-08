@@ -187,7 +187,11 @@ impl SchedulerRuntimeCredentialSource {
         }
         let status = Status::try_from(credential.status)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
-        if !status.is_enabled() || !credential.schedulable || credential.deleted_at.is_some() {
+        if !status.is_enabled()
+            || !credential.schedulable
+            || credential.oauth_token_pending
+            || credential.deleted_at.is_some()
+        {
             return Ok(None);
         }
 

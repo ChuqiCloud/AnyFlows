@@ -33,7 +33,7 @@ export function CredentialOAuthConnection({ active, channelId, credential, onRef
           <div className="grid size-7 shrink-0 place-items-center rounded-md bg-background text-muted-foreground"><Link2 className="size-3.5" aria-hidden="true" /></div>
           <div className="min-w-0">
             <p className="text-xs font-medium">{t('credentials.oauth.connectionTitle')}</p>
-            <p className="mt-0.5 text-[0.6875rem] leading-4 text-muted-foreground">{t('credentials.oauth.connectionHint')}</p>
+            <p className="mt-0.5 text-[0.6875rem] leading-4 text-muted-foreground">{t(credential.oauth_token_pending ? 'credentials.oauth.pendingConnectionHint' : 'credentials.oauth.connectionHint')}</p>
           </div>
         </div>
         {controller.selectedStatus ? (

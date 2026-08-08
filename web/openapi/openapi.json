@@ -10609,6 +10609,7 @@
           "quota_dimension",
           "proxy_id",
           "oauth_provider",
+          "oauth_token_pending",
           "oauth_account_key",
           "oauth_project_id",
           "oauth_revision",
@@ -10755,6 +10756,10 @@
             "maxLength": 64,
             "minLength": 1
           },
+          "oauth_token_pending": {
+            "type": "boolean",
+            "description": "OAuth token 尚未完成首次交换时为 true，此状态不会进入运行时调度。"
+          },
           "oauth_account_key": {
             "type": [
               "string",
@@ -10832,11 +10837,18 @@
                 ]
               }
             ],
-            "description": "凭据类型必须与 secret 对象的 kind 完全一致。"
+            "description": "非空 secret 的 kind 必须一致；null 仅用于创建待授权 OAuth 凭据。"
           },
           "secret": {
-            "$ref": "#/components/schemas/AdminCredentialSecret",
-            "description": "类型化明文；只用于本次加密，永不随响应返回。"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminCredentialSecret",
+                "description": "类型化明文；OAuth 可传 null 以创建待授权凭据，永不随响应返回。"
+              }
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/AdminRoutingWriteStatus"

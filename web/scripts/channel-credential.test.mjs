@@ -8,6 +8,7 @@ import {
   credentialFormValues,
   updateCredentialRequest,
 } from '../src/features/credentials/credential-form-request.ts'
+import { credentialRuntimeState } from '../src/features/credentials/credential-model.ts'
 import {
   formatMicros,
   parseMicros,
@@ -45,6 +46,7 @@ const oauthCredential = {
   quota_dimension: 'global',
   proxy_id: null,
   oauth_provider: 'codex',
+  oauth_token_pending: false,
   oauth_account_key: null,
   oauth_project_id: null,
   oauth_revision: 0,
@@ -60,6 +62,7 @@ test('四类凭据创建请求只发送对应的结构化密文', () => {
   })
   const oauth = createCredentialRequest({
     ...credentialFormValues(undefined, 'oauth'),
+    oauthCreateMode: 'access_token',
     accessToken: 'access-test',
     oauthProvider: 'codex',
   })
@@ -92,6 +95,24 @@ test('四类凭据创建请求只发送对应的结构化密文', () => {
     private_key_id: 'key-id',
     private_key: '-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----\n',
   })
+})
+
+test('OAuth 创建默认使用官方授权占位而不是伪 access token', () => {
+  const values = {
+    ...credentialFormValues(undefined, 'oauth'),
+    oauthProvider: 'codex',
+  }
+  assert.equal(values.oauthCreateMode, 'authorize')
+  const request = createCredentialRequest(values)
+  assert.equal(request.secret, null)
+  assert.equal(request.oauth_provider, 'codex')
+})
+
+test('待授权状态由服务端字段独立驱动', () => {
+  assert.equal(
+    credentialRuntimeState({ ...oauthCredential, oauth_token_pending: true }),
+    'authorizationPending',
+  )
 })
 
 test('编辑凭据默认保留密文且完整保留已有代理绑定', () => {
@@ -159,6 +180,7 @@ test('自动完成只接受本次 provider 且 OAuth 版本推进的凭据', () 
   const baseline = { revision: 0 }
   assert.equal(oauthCredentialConnectionUpdated(oauthCredential, 'codex', baseline), false)
   assert.equal(oauthCredentialConnectionUpdated({ ...oauthCredential, oauth_revision: 1 }, 'codex', baseline), true)
+  assert.equal(oauthCredentialConnectionUpdated({ ...oauthCredential, oauth_revision: 1, oauth_token_pending: true }, 'codex', baseline), false)
   assert.equal(oauthCredentialConnectionUpdated({ ...oauthCredential, oauth_revision: 1 }, 'gemini', baseline), false)
   assert.equal(oauthCredentialConnectionUpdated({ ...oauthCredential, oauth_provider: null, oauth_revision: 1 }, 'codex', baseline), false)
 })
@@ -187,6 +209,9 @@ test('独立账号池与 OAuth 固定终态都有中英文文案', () => {
     for (const kind of ['api_key', 'oauth', 'bedrock', 'service_account']) {
       assert.equal(typeof messages.credentials.kind[kind], 'string')
     }
+    assert.equal(typeof messages.credentials.runtime.authorizationPending, 'string')
+    assert.equal(typeof messages.credentials.secret.oauthMode.authorize, 'string')
+    assert.equal(typeof messages.credentials.secret.oauthMode.access_token, 'string')
     for (const provider of ['claude_code', 'codex', 'gemini', 'antigravity']) {
       assert.equal(typeof messages.credentials.oauth.providers[provider], 'string')
     }

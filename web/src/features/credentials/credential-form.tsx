@@ -99,6 +99,7 @@ export function CredentialForm({ channel, credential, credentials, active, onSav
 
   const selectKind = (nextKind: CredentialFormValues['kind']) => {
     form.setValue('kind', nextKind, { shouldDirty: true, shouldValidate: true })
+    form.setValue('oauthCreateMode', nextKind === 'oauth' ? 'authorize' : 'access_token', { shouldDirty: false })
     for (const field of ['apiKey', 'accessToken', 'accessKeyId', 'secretAccessKey', 'sessionToken', 'clientEmail', 'privateKeyId', 'privateKey', 'oauthProvider', 'oauthAccountKey', 'oauthProjectId'] as const) {
       form.setValue(field, '', { shouldDirty: false })
     }

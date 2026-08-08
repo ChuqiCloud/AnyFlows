@@ -38,6 +38,8 @@ pub struct Model {
     pub proxy_id: Option<i64>,
     #[sea_orm(column_type = "String(StringLen::N(64))", nullable)]
     pub oauth_provider: Option<String>,
+    /// OAuth token 尚未交换成功时保持待授权状态，禁止进入运行时调度。
+    pub oauth_token_pending: bool,
     #[sea_orm(column_type = "String(StringLen::N(255))", nullable)]
     pub oauth_account_key: Option<String>,
     #[sea_orm(column_type = "String(StringLen::N(255))", nullable)]

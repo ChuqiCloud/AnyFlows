@@ -2,7 +2,7 @@ use std::{error::Error, time::Duration};
 
 use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, Protocol, Status};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
+use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, PaginatorTrait, Set};
 
 use super::{
     AdminChannelRepository, AdminChannelWriteRecord, AdminCredentialCreateOutcome,
@@ -11,7 +11,7 @@ use super::{
     OAuthCredentialExpirationProjectionUpdateOutcome, OAuthCredentialRefreshFailureKind,
     OAuthCredentialRefreshFailureUpdateOutcome, OAuthCredentialRefreshUpdateOutcome,
     OAuthCredentialRepository, OAuthCredentialRepositoryError, OAuthCredentialTokenUpdateOutcome,
-    entity::{EncryptedJson, channels, credentials},
+    entity::{EncryptedJson, channels, credentials, scheduler_outbox_events},
 };
 use crate::EncryptedCredentialEnvelope;
 
@@ -35,8 +35,12 @@ async fn oauth_token_update_preserves_scheduler_and_runtime_fields() -> Result<(
     active.session_window_start = Set(Some(now));
     active.session_window_end = Set(Some(now + Duration::from_secs(3_600)));
     active.last_used_at = Set(Some(now));
+    active.oauth_token_pending = Set(true);
     active.update(fixture.pool.connection()).await?;
     let before = credential_model(&fixture, credential_id).await?;
+    let outbox_before = scheduler_outbox_events::Entity::find()
+        .count(fixture.pool.connection())
+        .await?;
 
     assert_eq!(
         fixture
@@ -54,6 +58,7 @@ async fn oauth_token_update_preserves_scheduler_and_runtime_fields() -> Result<(
     let after = credential_model(&fixture, credential_id).await?;
     assert_ne!(after.secret, before.secret);
     assert_eq!(after.oauth_provider.as_deref(), Some("codex"));
+    assert!(!after.oauth_token_pending);
     assert_eq!(after.oauth_expires_at_epoch_seconds, Some(1_800_000_000));
     assert_eq!(before.oauth_revision, 0);
     assert_eq!(after.oauth_revision, 1);
@@ -61,11 +66,18 @@ async fn oauth_token_update_preserves_scheduler_and_runtime_fields() -> Result<(
     assert_eq!(key_id, "oauth-write-test-key");
     assert_eq!(nonce, [0x22; 24]);
     assert_eq!(ciphertext, vec![0x22; 32]);
+    assert_eq!(
+        scheduler_outbox_events::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        outbox_before + 1
+    );
 
     // 除密文、provider、OAuth 版本与审计更新时间外，回调不得重写业务或运行字段。
     let mut normalized = after;
     normalized.secret = before.secret.clone();
     normalized.oauth_provider = before.oauth_provider.clone();
+    normalized.oauth_token_pending = before.oauth_token_pending;
     normalized.oauth_revision = before.oauth_revision;
     normalized.oauth_expires_at_epoch_seconds = before.oauth_expires_at_epoch_seconds;
     normalized.updated_at = before.updated_at;
@@ -243,6 +255,8 @@ async fn due_refresh_candidates_are_bounded_stable_and_fail_closed() -> Result<(
         create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x54).await?;
     let unschedulable =
         create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x55).await?;
+    let pending =
+        create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x5c).await?;
     let active_cooldown =
         create_credential(&fixture, enabled_channel, CredentialKind::Oauth, None, 0x56).await?;
     let elapsed_cooldown =
@@ -274,6 +288,7 @@ async fn due_refresh_candidates_are_bounded_stable_and_fail_closed() -> Result<(
         (future, 101, 0x63),
         (disabled, 80, 0x64),
         (unschedulable, 70, 0x65),
+        (pending, 65, 0x6b),
         (active_cooldown, 60, 0x66),
         (elapsed_cooldown, 50, 0x67),
         (root, 101, 0x68),
@@ -311,6 +326,11 @@ async fn due_refresh_candidates_are_bounded_stable_and_fail_closed() -> Result<(
     unschedulable_model
         .update(fixture.pool.connection())
         .await?;
+    let mut pending_model = credential_model(&fixture, pending)
+        .await?
+        .into_active_model();
+    pending_model.oauth_token_pending = Set(true);
+    pending_model.update(fixture.pool.connection()).await?;
     let now = sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc();
     let mut active_cooldown_model = credential_model(&fixture, active_cooldown)
         .await?
@@ -349,6 +369,7 @@ async fn due_refresh_candidates_are_bounded_stable_and_fail_closed() -> Result<(
         .collect::<Vec<_>>();
     assert_eq!(candidate_ids, vec![elapsed_cooldown, first_due, second_due]);
     assert!(!candidate_ids.contains(&active_cooldown));
+    assert!(!candidate_ids.contains(&pending));
     assert!(!candidate_ids.contains(&missing_projection));
     for candidate in &candidates {
         assert_eq!(candidate.channel_id(), enabled_channel);

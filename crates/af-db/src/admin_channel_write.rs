@@ -205,6 +205,8 @@ pub struct AdminCredentialWriteRecord {
     quota_dimension: String,
     proxy_id: Option<i64>,
     oauth_provider: Option<String>,
+    /// 创建时可显式声明等待 OAuth 首次授权；更新时为 `None` 表示保留数据库原值。
+    oauth_token_pending: Option<bool>,
     oauth_account_key: Option<String>,
     oauth_project_id: Option<String>,
 }
@@ -247,6 +249,7 @@ impl AdminCredentialWriteRecord {
             quota_dimension: quota_dimension.into(),
             proxy_id,
             oauth_provider,
+            oauth_token_pending: None,
             oauth_account_key,
             oauth_project_id,
         }
@@ -256,6 +259,13 @@ impl AdminCredentialWriteRecord {
     #[must_use]
     pub const fn kind(&self) -> CredentialKind {
         self.kind
+    }
+
+    /// 设置创建阶段的 OAuth 待授权标记；普通更新不得使用该字段覆盖数据库状态。
+    #[must_use]
+    pub fn with_oauth_token_pending(mut self, pending: bool) -> Self {
+        self.oauth_token_pending = Some(pending);
+        self
     }
 }
 
@@ -426,7 +436,28 @@ impl AdminChannelRepository {
     {
         match timeout(
             self.lookup_timeout,
-            self.create_credential_inner(channel_id, record, prepare_secret),
+            self.create_credential_inner(channel_id, record, Some(prepare_secret)),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(internal_error(AdminChannelWriteRepositoryError::Timeout)),
+        }
+    }
+
+    /// 创建尚未完成首次 OAuth 交换的凭据；占位密文不会调用加密回调。
+    pub async fn create_pending_oauth_credential(
+        &self,
+        channel_id: ChannelId,
+        record: AdminCredentialWriteRecord,
+    ) -> Result<AdminCredentialCreateOutcome, AdminChannelWriteRepositoryError> {
+        match timeout(
+            self.lookup_timeout,
+            self.create_credential_inner(
+                channel_id,
+                record,
+                None::<fn(CredentialId) -> Result<EncryptedCredentialEnvelope, ()>>,
+            ),
         )
         .await
         {
@@ -713,19 +744,28 @@ impl AdminChannelRepository {
         &self,
         channel_id: ChannelId,
         record: AdminCredentialWriteRecord,
-        prepare_secret: F,
+        prepare_secret: Option<F>,
     ) -> Result<AdminCredentialCreateOutcome, AdminChannelWriteRepositoryError>
     where
         F: FnOnce(CredentialId) -> Result<EncryptedCredentialEnvelope, ()>,
     {
         let fields = validate_credential_fields(record)?;
+        let oauth_token_pending = fields.oauth_token_pending.unwrap_or(false);
+        // 待授权创建只能走占位密文分支，普通创建必须提供真实加密回调。
+        if oauth_token_pending != prepare_secret.is_none() {
+            return Err(AdminChannelWriteRepositoryError::InvalidInput);
+        }
         let transaction = begin_transaction(self).await?;
         if !active_channel_exists(&transaction, channel_id).await? {
             return Ok(AdminCredentialCreateOutcome::ChannelNotFound);
         }
         validate_parent(&transaction, channel_id, None, &fields).await?;
         validate_proxy_binding(&transaction, fields.proxy_id).await?;
-        let placeholder = pending_encrypted_json()?;
+        let placeholder = if oauth_token_pending {
+            oauth_token_pending_encrypted_json()?
+        } else {
+            pending_encrypted_json()?
+        };
         let inserted = credentials::ActiveModel {
             channel_id: Set(channel_id.get()),
             kind: Set(fields.kind.as_str().to_owned()),
@@ -742,6 +782,7 @@ impl AdminChannelRepository {
             quota_dimension: Set(fields.quota_dimension),
             proxy_id: Set(fields.proxy_id),
             oauth_provider: Set(fields.oauth_provider),
+            oauth_token_pending: Set(oauth_token_pending),
             oauth_account_key: Set(fields.oauth_account_key),
             oauth_project_id: Set(fields.oauth_project_id),
             ..Default::default()
@@ -752,19 +793,22 @@ impl AdminChannelRepository {
         .map_err(map_db_error)?;
         let credential_id = CredentialId::new(inserted.id)
             .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
-        let envelope = prepare_secret(credential_id)
-            .map_err(|()| internal_error(AdminChannelWriteRepositoryError::SecretPreparation))?;
-        let encrypted = encrypted_json(envelope)?;
-        let result = credentials::Entity::update_many()
-            .filter(credentials::Column::Id.eq(credential_id.get()))
-            .filter(credentials::Column::ChannelId.eq(channel_id.get()))
-            .filter(credentials::Column::DeletedAt.is_null())
-            .col_expr(credentials::Column::Secret, Expr::value(encrypted))
-            .exec(&transaction)
-            .with_subscriber(NoSubscriber::default())
-            .await
-            .map_err(map_db_error)?;
-        require_rows(result.rows_affected, 1)?;
+        if let Some(prepare_secret) = prepare_secret {
+            let envelope = prepare_secret(credential_id).map_err(|()| {
+                internal_error(AdminChannelWriteRepositoryError::SecretPreparation)
+            })?;
+            let encrypted = encrypted_json(envelope)?;
+            let result = credentials::Entity::update_many()
+                .filter(credentials::Column::Id.eq(credential_id.get()))
+                .filter(credentials::Column::ChannelId.eq(channel_id.get()))
+                .filter(credentials::Column::DeletedAt.is_null())
+                .col_expr(credentials::Column::Secret, Expr::value(encrypted))
+                .exec(&transaction)
+                .with_subscriber(NoSubscriber::default())
+                .await
+                .map_err(map_db_error)?;
+            require_rows(result.rows_affected, 1)?;
+        }
         let model = fetch_credential_model(&transaction, channel_id, credential_id).await?;
         let snapshot = AdminCredentialRecord::try_from_model(model).map_err(map_read_error)?;
         enqueue_scheduler_catalog_change(
@@ -786,7 +830,11 @@ impl AdminChannelRepository {
         replacement_secret: Option<EncryptedCredentialEnvelope>,
     ) -> Result<AdminCredentialMutationOutcome, AdminChannelWriteRepositoryError> {
         let fields = validate_credential_fields(record)?;
+        if fields.oauth_token_pending.is_some() {
+            return Err(AdminChannelWriteRepositoryError::InvalidInput);
+        }
         let replacement_secret = replacement_secret.map(encrypted_json).transpose()?;
+        let has_replacement_secret = replacement_secret.is_some();
         let transaction = begin_transaction(self).await?;
         if !active_channel_exists(&transaction, channel_id).await? {
             return Ok(AdminCredentialMutationOutcome::ChannelNotFound);
@@ -801,7 +849,7 @@ impl AdminChannelRepository {
             return Err(AdminChannelWriteRepositoryError::InvalidInput);
         }
         let oauth_contract_changed = current_kind == CredentialKind::Oauth
-            && (replacement_secret.is_some()
+            && (has_replacement_secret
                 || current.oauth_provider.as_deref() != fields.oauth_provider.as_deref());
         if oauth_contract_changed
             && (current.oauth_revision < 0 || current.oauth_revision == i64::MAX)
@@ -865,7 +913,9 @@ impl AdminChannelRepository {
             )
             .col_expr(credentials::Column::UpdatedAt, Expr::value(now));
         if let Some(secret) = replacement_secret {
-            update = update.col_expr(credentials::Column::Secret, Expr::value(secret));
+            update = update
+                .col_expr(credentials::Column::Secret, Expr::value(secret))
+                .col_expr(credentials::Column::OauthTokenPending, Expr::value(false));
         }
         if oauth_contract_changed {
             // 手工换 token 或切换 Provider 必须使并发后台刷新失效，并清除旧到期投影。
@@ -1067,6 +1117,7 @@ struct ValidatedCredentialFields {
     quota_dimension: String,
     proxy_id: Option<i64>,
     oauth_provider: Option<String>,
+    oauth_token_pending: Option<bool>,
     oauth_account_key: Option<String>,
     oauth_project_id: Option<String>,
 }
@@ -1077,6 +1128,7 @@ fn validate_credential_fields(
     let oauth_fields_present = record.oauth_provider.is_some()
         || record.oauth_account_key.is_some()
         || record.oauth_project_id.is_some();
+    let oauth_token_pending = record.oauth_token_pending;
     if !matches!(
         record.kind,
         CredentialKind::ApiKey
@@ -1096,6 +1148,8 @@ fn validate_credential_fields(
         || !valid_optional_text(record.oauth_provider.as_deref(), 64)
         || !valid_optional_text(record.oauth_account_key.as_deref(), 255)
         || !valid_optional_text(record.oauth_project_id.as_deref(), 255)
+        || (oauth_token_pending == Some(true)
+            && (record.kind != CredentialKind::Oauth || record.oauth_provider.is_none()))
         || (record.kind != CredentialKind::Oauth && oauth_fields_present)
     {
         return Err(AdminChannelWriteRepositoryError::InvalidInput);
@@ -1114,6 +1168,7 @@ fn validate_credential_fields(
         quota_dimension: record.quota_dimension,
         proxy_id: record.proxy_id,
         oauth_provider: record.oauth_provider,
+        oauth_token_pending,
         oauth_account_key: record.oauth_account_key,
         oauth_project_id: record.oauth_project_id,
     })
@@ -1347,6 +1402,18 @@ fn pending_encrypted_json() -> Result<EncryptedJson, AdminChannelWriteRepository
         "version": 1,
         "algorithm": "xchacha20poly1305",
         "key_id": "transaction-pending",
+        "nonce": URL_SAFE_NO_PAD.encode([0_u8; 24]),
+        "ciphertext": URL_SAFE_NO_PAD.encode([0_u8; 16]),
+    }))
+    .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))
+}
+
+/// 待授权凭据使用独立占位标识，避免被误认为可解密的真实 token。
+fn oauth_token_pending_encrypted_json() -> Result<EncryptedJson, AdminChannelWriteRepositoryError> {
+    EncryptedJson::from_envelope(serde_json::json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": "oauth-token-pending",
         "nonce": URL_SAFE_NO_PAD.encode([0_u8; 24]),
         "ciphertext": URL_SAFE_NO_PAD.encode([0_u8; 16]),
     }))
