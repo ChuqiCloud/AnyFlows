@@ -1253,6 +1253,13 @@ where
     C: ConnectionTrait,
 {
     if model
+        .reservation_kind
+        .try_as_ref()
+        .is_some_and(|kind| !matches!(*kind, 1 | 2))
+    {
+        return Err(DbErr::Custom("计费预留用途无效".to_owned()));
+    }
+    if model
         .funding_source
         .try_as_ref()
         .is_some_and(|source| !matches!(*source, 1 | 2))

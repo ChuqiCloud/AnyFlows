@@ -20,8 +20,8 @@ use crate::{
 use super::{
     quota_from_db,
     state::{
-        QuotaFundingSource, QuotaRepositoryError, QuotaReservationStatus, ReservationState,
-        UserQuotaState,
+        QuotaFundingSource, QuotaRepositoryError, QuotaReservationKind, QuotaReservationStatus,
+        ReservationState, UserQuotaState,
     },
 };
 
@@ -378,6 +378,9 @@ async fn persist_allocation(
     let source = billing_reservations::Entity::update_many()
         .filter(billing_reservations::Column::IdempotencyKey.eq(key.clone()))
         .filter(billing_reservations::Column::Status.eq(QuotaReservationStatus::Reserved.code()))
+        .filter(
+            billing_reservations::Column::ReservationKind.eq(QuotaReservationKind::Request.code()),
+        )
         .filter(billing_reservations::Column::FundingSource.eq(QuotaFundingSource::Wallet.code()))
         .filter(billing_reservations::Column::ReservedQuota.eq(amount.units()))
         .col_expr(
@@ -528,6 +531,13 @@ async fn has_invalid_active_allocation(
         billing_reservations::Column::ActualQuota,
     ));
     let invalid = Condition::any()
+        .add(
+            Expr::col((
+                billing_reservations::Entity,
+                billing_reservations::Column::ReservationKind,
+            ))
+            .ne(QuotaReservationKind::Request.code()),
+        )
         .add(
             Expr::col((
                 billing_reservations::Entity,

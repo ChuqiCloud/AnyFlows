@@ -351,7 +351,8 @@ pub use playground_share::{
     PlaygroundShareRevokeOutcome, PlaygroundShareWrite,
 };
 pub use quota::{
-    QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationStatus,
+    QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationKind,
+    QuotaReservationStatus,
 };
 pub use redemption::{
     IssuedRedemptionBatch, IssuedRedemptionCode, MAX_REDEMPTION_AUDIT_PAGE_SIZE,

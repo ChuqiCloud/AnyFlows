@@ -51,6 +51,7 @@ mod m20260805_000042_create_proxies;
 mod m20260806_000043_create_debug_traces;
 mod m20260806_000044_add_model_price_expression;
 mod m20260807_000045_create_subscription_billing_reservations;
+mod m20260808_000046_add_billing_reservation_kind;
 mod schema;
 
 #[cfg(test)]
@@ -139,6 +140,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260806_000043_create_debug_traces::Migration),
             Box::new(m20260806_000044_add_model_price_expression::Migration),
             Box::new(m20260807_000045_create_subscription_billing_reservations::Migration),
+            Box::new(m20260808_000046_add_billing_reservation_kind::Migration),
         ]
     }
 }
