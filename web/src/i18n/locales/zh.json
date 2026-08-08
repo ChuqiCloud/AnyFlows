@@ -349,6 +349,7 @@
         "providersFailed": "OAuth Provider 配置读取失败。",
         "providersEmpty": "服务端尚未配置可用的 OAuth Provider。",
         "providers": {
+          "claude_code": "Claude Code",
           "codex": "Codex",
           "gemini": "Gemini CLI",
           "antigravity": "Antigravity"
@@ -629,6 +630,7 @@
       "loadFailed": "OAuth Provider 配置读取失败。",
       "empty": "服务端尚未配置可用的 OAuth Provider。",
       "providers": {
+        "claude_code": "Claude Code",
         "codex": "Codex",
         "gemini": "Gemini CLI",
         "antigravity": "Antigravity"

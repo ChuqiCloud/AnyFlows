@@ -49,6 +49,8 @@ pub const OAUTH_CALLBACK_COMPLETION_TIMEOUT: Duration = Duration::from_secs(120)
 #[serde(rename_all = "snake_case")]
 #[schema(as = AdminOAuthProvider, rename_all = "snake_case")]
 pub enum AdminOAuthProvider {
+    /// Anthropic Claude Code 官方账号。
+    ClaudeCode,
     /// OpenAI Codex 官方账号。
     Codex,
     /// Google Gemini CLI 官方账号。
@@ -62,6 +64,7 @@ impl AdminOAuthProvider {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::ClaudeCode => "claude_code",
             Self::Codex => "codex",
             Self::Gemini => "gemini",
             Self::Antigravity => "antigravity",

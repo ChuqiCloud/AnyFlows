@@ -740,6 +740,7 @@ pub struct OAuthSettings {
     refresh_before_expiry_secs: u64,
     refresh_batch_size: usize,
     refresh_concurrency: usize,
+    claude_code: Option<OAuthPublicClientSettings>,
     codex: Option<OAuthPublicClientSettings>,
     gemini: Option<OAuthConfidentialClientSettings>,
     antigravity: Option<OAuthConfidentialClientSettings>,
@@ -788,6 +789,12 @@ impl OAuthSettings {
         self.refresh_concurrency
     }
 
+    /// 返回可选 Claude Code 公共客户端配置。
+    #[must_use]
+    pub const fn claude_code(&self) -> Option<&OAuthPublicClientSettings> {
+        self.claude_code.as_ref()
+    }
+
     /// 返回可选 Codex 公共客户端配置。
     #[must_use]
     pub const fn codex(&self) -> Option<&OAuthPublicClientSettings> {
@@ -810,6 +817,7 @@ impl OAuthSettings {
     #[must_use]
     pub fn configured_provider_count(&self) -> usize {
         [
+            self.claude_code.is_some(),
             self.codex.is_some(),
             self.gemini.is_some(),
             self.antigravity.is_some(),
@@ -830,6 +838,7 @@ impl Default for OAuthSettings {
             refresh_before_expiry_secs: DEFAULT_OAUTH_REFRESH_BEFORE_EXPIRY_SECS,
             refresh_batch_size: DEFAULT_OAUTH_REFRESH_BATCH_SIZE,
             refresh_concurrency: DEFAULT_OAUTH_REFRESH_CONCURRENCY,
+            claude_code: None,
             codex: None,
             gemini: None,
             antigravity: None,
@@ -1418,8 +1427,13 @@ fn validate_oauth_settings(settings: &OAuthSettings) -> Result<(), ConfigError> 
             field: "oauth.refresh_concurrency",
         });
     }
-    if let Some(client) = settings.codex() {
-        validate_oauth_client_id(client.client_id(), "oauth.codex.client_id")?;
+    for (client, field) in [
+        (settings.claude_code(), "oauth.claude_code.client_id"),
+        (settings.codex(), "oauth.codex.client_id"),
+    ] {
+        if let Some(client) = client {
+            validate_oauth_client_id(client.client_id(), field)?;
+        }
     }
     for (client, id_field, secret_field) in [
         (

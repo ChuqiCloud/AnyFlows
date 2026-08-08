@@ -15,6 +15,12 @@ use super::{
     authorization::{parse_profile_loopback_redirect_uri, validate_authorization_profile},
 };
 
+const CLAUDE_CODE_AUTHORIZATION_ENDPOINT: &str = "https://claude.com/cai/oauth/authorize";
+const CLAUDE_CODE_TOKEN_ENDPOINT: &str = "https://platform.claude.com/v1/oauth/token";
+const CLAUDE_CODE_SCOPE: &str = "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
+const CLAUDE_CODE_AUTHORIZATION_PARAMETERS: &[(&str, &str)] = &[("code", "true")];
+const CLAUDE_CODE_LOOPBACK_REDIRECT_URI: &str = "http://localhost:54545/callback";
+
 const CODEX_AUTHORIZATION_ENDPOINT: &str = "https://auth.openai.com/oauth/authorize";
 const CODEX_TOKEN_ENDPOINT: &str = "https://auth.openai.com/oauth/token";
 const CODEX_SCOPE: &str = "openid email profile offline_access";
@@ -310,11 +316,22 @@ impl ProviderSpecification {
         provider: UpstreamOAuthProvider,
     ) -> Result<Self, OAuthProviderProfileError> {
         match provider {
-            // Claude Code 的公开参考对 token endpoint 与 redirect 合约存在冲突，
-            // 在取得可验证契约前只保留 state + JSON 底层能力，不猜测激活 profile。
-            UpstreamOAuthProvider::ClaudeCode => {
-                Err(OAuthProviderProfileError::ProviderContractUnavailable { provider })
-            }
+            // Claude Code 官方客户端使用公共客户端、PKCE 与 JSON token 请求，且要求原始 state。
+            UpstreamOAuthProvider::ClaudeCode => Ok(Self {
+                authorization_endpoint: CLAUDE_CODE_AUTHORIZATION_ENDPOINT,
+                token_endpoint: CLAUDE_CODE_TOKEN_ENDPOINT,
+                scope: CLAUDE_CODE_SCOPE,
+                authorization_parameters: CLAUDE_CODE_AUTHORIZATION_PARAMETERS,
+                authentication_method: OAuthClientAuthenticationMethod::Public,
+                request_encoding: OAuthTokenRequestEncoding::Json,
+                loopback_bind_address: SocketAddr::V4(SocketAddrV4::new(
+                    Ipv4Addr::LOCALHOST,
+                    54_545,
+                )),
+                loopback_redirect_uri: CLAUDE_CODE_LOOPBACK_REDIRECT_URI,
+                requires_refresh_token: true,
+                requires_expiration: true,
+            }),
             UpstreamOAuthProvider::Codex => Ok(Self {
                 authorization_endpoint: CODEX_AUTHORIZATION_ENDPOINT,
                 token_endpoint: CODEX_TOKEN_ENDPOINT,
@@ -383,6 +400,7 @@ mod tests {
         ("prompt", "consent"),
         ("include_granted_scopes", "true"),
     ];
+    const EXPECTED_CLAUDE_CODE_PARAMETERS: &[(&str, &str)] = &[("code", "true")];
 
     #[test]
     fn provider_profiles_emit_only_their_closed_authorization_contracts() {
@@ -475,36 +493,31 @@ mod tests {
 
     #[test]
     fn profile_client_authentication_requirements_are_closed() {
-        assert!(
-            OAuthProviderProfile::new(
-                UpstreamOAuthProvider::Codex,
-                "client".to_owned(),
-                Some("unexpected-secret".to_owned()),
-            )
-            .is_err()
-        );
+        for provider in [
+            UpstreamOAuthProvider::ClaudeCode,
+            UpstreamOAuthProvider::Codex,
+        ] {
+            assert!(
+                OAuthProviderProfile::new(
+                    provider,
+                    "client".to_owned(),
+                    Some("unexpected-secret".to_owned()),
+                )
+                .is_err()
+            );
+        }
         for provider in [
             UpstreamOAuthProvider::Gemini,
             UpstreamOAuthProvider::Antigravity,
         ] {
             assert!(OAuthProviderProfile::new(provider, "client".to_owned(), None).is_err());
         }
-        assert_eq!(
-            OAuthProviderProfile::new(
-                UpstreamOAuthProvider::ClaudeCode,
-                "client".to_owned(),
-                None,
-            )
-            .unwrap_err(),
-            OAuthProviderProfileError::ProviderContractUnavailable {
-                provider: UpstreamOAuthProvider::ClaudeCode
-            }
-        );
     }
 
     #[test]
     fn initial_offline_connections_require_refresh_token_and_expiration() {
         for provider in [
+            UpstreamOAuthProvider::ClaudeCode,
             UpstreamOAuthProvider::Codex,
             UpstreamOAuthProvider::Gemini,
             UpstreamOAuthProvider::Antigravity,
@@ -553,6 +566,7 @@ mod tests {
     #[test]
     fn refreshed_offline_connections_require_expiration() {
         for provider in [
+            UpstreamOAuthProvider::ClaudeCode,
             UpstreamOAuthProvider::Codex,
             UpstreamOAuthProvider::Gemini,
             UpstreamOAuthProvider::Antigravity,
@@ -615,8 +629,22 @@ mod tests {
         redirect_uri: &'static str,
     }
 
-    fn expectations() -> [ProfileExpectation; 3] {
+    fn expectations() -> [ProfileExpectation; 4] {
         [
+            ProfileExpectation {
+                provider: UpstreamOAuthProvider::ClaudeCode,
+                host: "claude.com",
+                path: "/cai/oauth/authorize",
+                token_host: "platform.claude.com",
+                token_path: "/v1/oauth/token",
+                scope: "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload",
+                additional_parameters: EXPECTED_CLAUDE_CODE_PARAMETERS,
+                authentication_method: OAuthClientAuthenticationMethod::Public,
+                encoding: OAuthTokenRequestEncoding::Json,
+                bind_address: "127.0.0.1:54545".parse().unwrap(),
+                callback_path: "/callback",
+                redirect_uri: "http://localhost:54545/callback",
+            },
             ProfileExpectation {
                 provider: UpstreamOAuthProvider::Codex,
                 host: "auth.openai.com",

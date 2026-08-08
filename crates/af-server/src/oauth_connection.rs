@@ -341,15 +341,19 @@ fn build_profiles(
     config: &AppConfig,
 ) -> Result<Vec<Arc<OAuthProviderProfile>>, OAuthRuntimeConfigError> {
     let mut profiles = Vec::with_capacity(config.oauth().configured_provider_count());
-    if let Some(client) = config.oauth().codex() {
-        profiles.push(Arc::new(
-            OAuthProviderProfile::new(
-                UpstreamOAuthProvider::Codex,
-                client.client_id().expose().to_owned(),
-                None,
-            )
-            .map_err(OAuthRuntimeConfigError::Profile)?,
-        ));
+    for (provider, client) in [
+        (
+            UpstreamOAuthProvider::ClaudeCode,
+            config.oauth().claude_code(),
+        ),
+        (UpstreamOAuthProvider::Codex, config.oauth().codex()),
+    ] {
+        if let Some(client) = client {
+            profiles.push(Arc::new(
+                OAuthProviderProfile::new(provider, client.client_id().expose().to_owned(), None)
+                    .map_err(OAuthRuntimeConfigError::Profile)?,
+            ));
+        }
     }
     for (provider, client) in [
         (UpstreamOAuthProvider::Gemini, config.oauth().gemini()),
@@ -474,6 +478,7 @@ fn parse_callback(
 
 const fn account_provider(provider: AdminOAuthProvider) -> UpstreamOAuthProvider {
     match provider {
+        AdminOAuthProvider::ClaudeCode => UpstreamOAuthProvider::ClaudeCode,
         AdminOAuthProvider::Codex => UpstreamOAuthProvider::Codex,
         AdminOAuthProvider::Gemini => UpstreamOAuthProvider::Gemini,
         AdminOAuthProvider::Antigravity => UpstreamOAuthProvider::Antigravity,
@@ -482,20 +487,19 @@ const fn account_provider(provider: AdminOAuthProvider) -> UpstreamOAuthProvider
 
 const fn http_provider(provider: UpstreamOAuthProvider) -> AdminOAuthProvider {
     match provider {
+        UpstreamOAuthProvider::ClaudeCode => AdminOAuthProvider::ClaudeCode,
         UpstreamOAuthProvider::Codex => AdminOAuthProvider::Codex,
         UpstreamOAuthProvider::Gemini => AdminOAuthProvider::Gemini,
         UpstreamOAuthProvider::Antigravity => AdminOAuthProvider::Antigravity,
-        UpstreamOAuthProvider::ClaudeCode => {
-            panic!("Claude Code profile 未启用时不得形成 loopback 合约")
-        }
     }
 }
 
 const fn provider_bit(provider: AdminOAuthProvider) -> u8 {
     match provider {
-        AdminOAuthProvider::Codex => 1 << 0,
-        AdminOAuthProvider::Gemini => 1 << 1,
-        AdminOAuthProvider::Antigravity => 1 << 2,
+        AdminOAuthProvider::ClaudeCode => 1 << 0,
+        AdminOAuthProvider::Codex => 1 << 1,
+        AdminOAuthProvider::Gemini => 1 << 2,
+        AdminOAuthProvider::Antigravity => 1 << 3,
     }
 }
 

@@ -128,10 +128,10 @@ impl OAuthConnectionCoordinator {
     #[must_use]
     pub fn configured_loopback_redirects(&self) -> Vec<OAuthLoopbackRedirect> {
         [
+            UpstreamOAuthProvider::ClaudeCode,
             UpstreamOAuthProvider::Codex,
             UpstreamOAuthProvider::Gemini,
             UpstreamOAuthProvider::Antigravity,
-            UpstreamOAuthProvider::ClaudeCode,
         ]
         .into_iter()
         .filter_map(|provider| self.profiles.get(&provider))

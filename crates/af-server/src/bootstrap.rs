@@ -2289,6 +2289,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn claude_code_profile_is_exposed_with_ready_loopback_listener() {
+        let path = config_file("sqlite::memory:");
+        let contents = fs::read_to_string(&path).unwrap();
+        fs::write(
+            &path,
+            format!("{contents}[oauth.claude_code]\nclient_id = 'bootstrap-claude-client'\n"),
+        )
+        .unwrap();
+        let config = af_config::load_from(&path).unwrap();
+        let wal_directory = billing_wal_directory(&path);
+        let _ = fs::remove_file(path);
+
+        let relay = Bootstrap::new(config)
+            .unwrap()
+            .init_telemetry()
+            .unwrap()
+            .connect_database()
+            .await
+            .unwrap()
+            .init_authentication()
+            .unwrap()
+            .init_relay()
+            .unwrap();
+        let statuses = relay
+            .stage
+            .admin_oauth_connection_service
+            .provider_statuses(SessionPrincipal::new(
+                UserId::new(1).unwrap(),
+                SessionRole::Admin,
+            ))
+            .unwrap();
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(
+            statuses[0].provider(),
+            af_http::AdminOAuthProvider::ClaudeCode
+        );
+        assert!(statuses[0].loopback_listener_ready());
+        assert_eq!(
+            statuses[0].redirect_uri(),
+            "http://localhost:54545/callback"
+        );
+        let _ = fs::remove_dir_all(wal_directory);
+    }
+
+    #[tokio::test]
     async fn missing_management_session_key_rejects_authentication_stage() {
         let path = config_file("sqlite::memory:");
         let contents = fs::read_to_string(&path).unwrap();
