@@ -12,8 +12,6 @@ pub(super) const MAX_OAUTH_IDENTITY_BYTES: usize = 255;
 const MAX_CODEX_JWT_SEGMENT_BYTES: usize = 12 * 1_024;
 const MAX_CODEX_JWT_PAYLOAD_BYTES: usize = 8 * 1_024;
 
-const CODEX_ACCOUNT_CLAIM: &str = "https://api.openai.com/auth.chatgpt_account_id";
-
 /// 从 provider 响应中提取出的非敏感 OAuth 身份元数据。
 #[derive(Clone, Default, Eq, PartialEq)]
 pub(super) struct OAuthIdentityMetadata {
@@ -187,6 +185,7 @@ fn valid_identity_component(value: &str) -> bool {
 mod tests {
     use super::*;
 
+    const CODEX_ACCOUNT_CLAIM: &str = "https://api.openai.com/auth.chatgpt_account_id";
     const CODEX_ACCOUNT: &str = "org-codex-account";
     const CLAUDE_ACCOUNT: &str = "550E8400-E29B-41D4-A716-446655440000";
 
