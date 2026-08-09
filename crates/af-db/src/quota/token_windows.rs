@@ -2,9 +2,10 @@ use af_domain::{Quota, UpstreamRetryAfter};
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
-    ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
+    ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
+    QueryFilter,
     entity::prelude::TimeDateTimeWithTimeZone,
-    sea_query::{Alias, Expr, Func, Query},
+    sea_query::{Alias, Expr, Func, IntoColumnRef, Query, SimpleExpr},
 };
 
 use crate::entity::{
@@ -133,7 +134,7 @@ pub(super) async fn apply_settlement(
 ) -> Result<(), QuotaRepositoryError> {
     if parent.status != QuotaReservationStatus::SettlementPending || !parent.matches_actual(actual)
     {
-        return Err(invariant_failure("settlement_parent"));
+        return Err(QuotaRepositoryError::Invariant);
     }
     if !parent.reservation_kind.uses_token_windows() {
         return allocation
@@ -142,7 +143,7 @@ pub(super) async fn apply_settlement(
             .ok_or(QuotaRepositoryError::Invariant);
     }
     let Some(allocation) = allocation else {
-        return Err(invariant_failure("settlement_allocation_missing"));
+        return Err(QuotaRepositoryError::Invariant);
     };
     let (windows, reset) = TokenWindows::from_token(token).normalized(now)?;
     if reset {
@@ -239,7 +240,7 @@ impl TokenWindows {
         ] {
             if window.started_at == snapshot {
                 if committed < actual.units() {
-                    return Err(invariant_failure("settlement_commitment"));
+                    return Err(QuotaRepositoryError::Invariant);
                 }
                 relevant.push((window, committed));
             }
@@ -258,7 +259,7 @@ impl WindowState {
             || self.started_at.unix_timestamp_nanos() < 0
             || self.started_at > now
         {
-            return Err(invariant_failure("window_state"));
+            return Err(QuotaRepositoryError::Invariant);
         }
         if now.unix_timestamp_nanos() >= self.ends_at_nanos()? {
             return Ok((
@@ -353,15 +354,28 @@ async fn persist_reset(
     windows: TokenWindows,
     now: TimeDateTimeWithTimeZone,
 ) -> Result<(), QuotaRepositoryError> {
+    let backend = transaction.get_database_backend();
     let result = tokens::Entity::update_many()
         .filter(tokens::Column::Id.eq(parent.token_id))
         .filter(tokens::Column::UserId.eq(parent.user_id))
         .filter(tokens::Column::Usage5h.eq(observed.usage_5h))
         .filter(tokens::Column::Usage1d.eq(observed.usage_1d))
         .filter(tokens::Column::Usage7d.eq(observed.usage_7d))
-        .filter(tokens::Column::Window5hStart.eq(observed.window_5h_start))
-        .filter(tokens::Column::Window1dStart.eq(observed.window_1d_start))
-        .filter(tokens::Column::Window7dStart.eq(observed.window_7d_start))
+        .filter(timestamp_eq(
+            backend,
+            tokens::Column::Window5hStart,
+            observed.window_5h_start,
+        ))
+        .filter(timestamp_eq(
+            backend,
+            tokens::Column::Window1dStart,
+            observed.window_1d_start,
+        ))
+        .filter(timestamp_eq(
+            backend,
+            tokens::Column::Window7dStart,
+            observed.window_7d_start,
+        ))
         .col_expr(
             tokens::Column::Usage5h,
             Expr::value(windows.five_hours.usage),
@@ -388,7 +402,7 @@ async fn persist_reset(
         .await
         .map_err(|_| QuotaRepositoryError::Query)?;
     if result.rows_affected != 1 {
-        return Err(invariant_failure("persist_reset_rows"));
+        return Err(QuotaRepositoryError::Invariant);
     }
     Ok(())
 }
@@ -429,12 +443,25 @@ async fn persist_actual(
     if !matches_5h && !matches_1d && !matches_7d {
         return Ok(());
     }
+    let backend = transaction.get_database_backend();
     let mut update = tokens::Entity::update_many()
         .filter(tokens::Column::Id.eq(parent.token_id))
         .filter(tokens::Column::UserId.eq(parent.user_id))
-        .filter(tokens::Column::Window5hStart.eq(windows.five_hours.started_at))
-        .filter(tokens::Column::Window1dStart.eq(windows.one_day.started_at))
-        .filter(tokens::Column::Window7dStart.eq(windows.seven_days.started_at))
+        .filter(timestamp_eq(
+            backend,
+            tokens::Column::Window5hStart,
+            windows.five_hours.started_at,
+        ))
+        .filter(timestamp_eq(
+            backend,
+            tokens::Column::Window1dStart,
+            windows.one_day.started_at,
+        ))
+        .filter(timestamp_eq(
+            backend,
+            tokens::Column::Window7dStart,
+            windows.seven_days.started_at,
+        ))
         .col_expr(tokens::Column::UpdatedAt, Expr::value(now));
     if matches_5h {
         update = update
@@ -465,7 +492,7 @@ async fn persist_actual(
         .await
         .map_err(|_| QuotaRepositoryError::Query)?;
     if result.rows_affected != 1 {
-        return Err(invariant_failure("persist_actual_rows"));
+        return Err(QuotaRepositoryError::Invariant);
     }
     Ok(())
 }
@@ -476,8 +503,9 @@ async fn active_commitments(
     windows: TokenWindows,
     excluded_key: Option<&str>,
 ) -> Result<WindowCommitments, QuotaRepositoryError> {
+    let backend = transaction.get_database_backend();
     if has_invalid_active_allocation(transaction, token_id, excluded_key).await? {
-        return Err(invariant_failure("active_allocation"));
+        return Err(QuotaRepositoryError::Invariant);
     }
     let status = Expr::col((
         billing_reservations::Entity,
@@ -498,11 +526,14 @@ async fn active_commitments(
         .expr_as(
             Func::sum(
                 Expr::case(
-                    Expr::col((
-                        billing_token_window_reservations::Entity,
-                        billing_token_window_reservations::Column::Window5hStart,
-                    ))
-                    .eq(windows.five_hours.started_at),
+                    timestamp_eq(
+                        backend,
+                        (
+                            billing_token_window_reservations::Entity,
+                            billing_token_window_reservations::Column::Window5hStart,
+                        ),
+                        windows.five_hours.started_at,
+                    ),
                     committed.clone(),
                 )
                 .finally(0_i64),
@@ -512,11 +543,14 @@ async fn active_commitments(
         .expr_as(
             Func::sum(
                 Expr::case(
-                    Expr::col((
-                        billing_token_window_reservations::Entity,
-                        billing_token_window_reservations::Column::Window1dStart,
-                    ))
-                    .eq(windows.one_day.started_at),
+                    timestamp_eq(
+                        backend,
+                        (
+                            billing_token_window_reservations::Entity,
+                            billing_token_window_reservations::Column::Window1dStart,
+                        ),
+                        windows.one_day.started_at,
+                    ),
                     committed.clone(),
                 )
                 .finally(0_i64),
@@ -526,11 +560,14 @@ async fn active_commitments(
         .expr_as(
             Func::sum(
                 Expr::case(
-                    Expr::col((
-                        billing_token_window_reservations::Entity,
-                        billing_token_window_reservations::Column::Window7dStart,
-                    ))
-                    .eq(windows.seven_days.started_at),
+                    timestamp_eq(
+                        backend,
+                        (
+                            billing_token_window_reservations::Entity,
+                            billing_token_window_reservations::Column::Window7dStart,
+                        ),
+                        windows.seven_days.started_at,
+                    ),
                     committed,
                 )
                 .finally(0_i64),
@@ -567,12 +604,11 @@ async fn active_commitments(
             ]),
         )
         .to_owned();
-    let backend = transaction.get_database_backend();
     let result = transaction
         .query_one(backend.build(&query))
         .await
         .map_err(|_| QuotaRepositoryError::Query)?
-        .ok_or_else(|| invariant_failure("active_commitments_missing"))?;
+        .ok_or(QuotaRepositoryError::Invariant)?;
     Ok(WindowCommitments {
         five_hours: subscription::read_sum(&result, COMMITTED_5H_ALIAS, backend)?,
         one_day: subscription::read_sum(&result, COMMITTED_1D_ALIAS, backend)?,
@@ -724,17 +760,26 @@ fn validate_allocation(
         })
         || allocation.key.as_str().is_empty()
     {
-        return Err(invariant_failure("allocation_shape"));
+        return Err(QuotaRepositoryError::Invariant);
     }
     Ok(())
 }
 
-fn invariant_failure(operation: &'static str) -> QuotaRepositoryError {
-    #[cfg(test)]
-    eprintln!("token_window_invariant:{operation}");
-    #[cfg(not(test))]
-    let _ = operation;
-    QuotaRepositoryError::Invariant
+/// SQLite 会混用原生时间文本与 RFC3339 参数，等值条件必须按时间值比较。
+fn timestamp_eq<C>(backend: DbBackend, column: C, value: TimeDateTimeWithTimeZone) -> SimpleExpr
+where
+    C: IntoColumnRef,
+{
+    if backend != DbBackend::Sqlite {
+        return Expr::col(column).eq(value);
+    }
+    let column: SimpleExpr = Func::cust(Alias::new("julianday"))
+        .arg(Expr::col(column))
+        .into();
+    let value: SimpleExpr = Func::cust(Alias::new("julianday"))
+        .arg(Expr::value(value))
+        .into();
+    column.eq(value)
 }
 
 fn parse_key(value: &str) -> Result<BillingReservationKey, QuotaRepositoryError> {
