@@ -121,7 +121,8 @@ impl BedrockAdaptor {
                 kind: credential.kind(),
             });
         };
-        let (method, target, mut headers, body, response_mode) = request.into_parts();
+        let (method, target, mut headers, body, response_mode, response_body_limit) =
+            request.into_parts();
         if method != Method::POST {
             return Err(AdaptorError::UnsupportedRequestMethod);
         }
@@ -214,6 +215,7 @@ impl BedrockAdaptor {
         }
 
         UpstreamRequest::new(method, target, headers, body)
+            .and_then(|request| request.with_response_body_limit(response_body_limit))
             .map(|request| request.with_response_mode(response_mode))
     }
 }

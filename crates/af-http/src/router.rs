@@ -81,6 +81,7 @@ use crate::model_catalog::list_models;
 use crate::network_settings::build_network_settings_router;
 use crate::oauth_connections::{AdminOAuthConnectionService, build_admin_oauth_connection_router};
 use crate::openai_embeddings::openai_embeddings;
+use crate::openai_images::openai_images;
 use crate::openai_responses::openai_responses;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::password_reset::build_password_reset_router;
@@ -95,7 +96,7 @@ use crate::user_tokens::build_user_token_router;
 use crate::user_topups::build_user_topup_router;
 use crate::user_wallet::build_user_wallet_router;
 use crate::{
-    ChatService, EmbeddingService, QueryApiKeyPolicy, chat_completions::HttpState,
+    ChatService, EmbeddingService, ImageService, QueryApiKeyPolicy, chat_completions::HttpState,
     chat_completions::chat_completions,
 };
 
@@ -131,6 +132,7 @@ pub fn build_router(
     config: &ServerConfig,
     chat: Arc<dyn ChatService>,
     embedding: Arc<dyn EmbeddingService>,
+    image: Arc<dyn ImageService>,
     readiness: ReadinessHandle,
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
@@ -206,6 +208,7 @@ pub fn build_router(
         admin_user_writer,
     )
     .with_embedding_service(embedding)
+    .with_image_service(image)
     .with_initial_setup(initial_setup)
     .with_model_catalog_reader(model_catalog_reader)
     .with_admin_model_reader(admin_model_reader)
@@ -229,7 +232,12 @@ pub fn build_router(
         .route(
             "/v1/embeddings",
             // Embeddings 与 Chat 共用 OpenAI 错误 wire，但使用独立非流式业务端口。
-            post(openai_embeddings).route_layer(openai_authentication),
+            post(openai_embeddings).route_layer(openai_authentication.clone()),
+        )
+        .route(
+            "/v1/images/generations",
+            // Images 共用 OpenAI 错误 wire，但使用独立的大响应非流式业务端口。
+            post(openai_images).route_layer(openai_authentication),
         )
         .route(
             "/v1/responses",

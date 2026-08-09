@@ -268,7 +268,10 @@ impl AdminChannelWriteFields {
                 (channel_type, protocol),
                 (
                     ChannelType::OpenAi,
-                    Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings
+                    Protocol::OpenAiChat
+                        | Protocol::OpenAiResponses
+                        | Protocol::OpenAiEmbeddings
+                        | Protocol::OpenAiImages
                 ) | (ChannelType::Anthropic, Protocol::Anthropic)
                     | (ChannelType::Gemini, Protocol::Gemini)
             )

@@ -5,6 +5,7 @@ mod auto_ban_feedback;
 mod balance_alert_runtime;
 mod billing_chat;
 mod billing_embedding;
+mod billing_image;
 mod billing_runtime;
 mod bootstrap;
 mod channel_probe;
@@ -41,6 +42,10 @@ pub use billing_chat::{
 pub use billing_embedding::{
     BillingEmbeddingService, EmbeddingRoutePlanFuture, EmbeddingRoutePlanner,
     PlannedEmbeddingExecution, PlannedEmbeddingExecutionFuture,
+};
+pub use billing_image::{
+    BillingImageService, ImageRoutePlanFuture, ImageRoutePlanner, PlannedImageExecution,
+    PlannedImageExecutionFuture,
 };
 pub use billing_runtime::{BillingFlushReport, BillingRuntime, BillingRuntimeError};
 pub use bootstrap::{

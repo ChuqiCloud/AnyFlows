@@ -121,6 +121,7 @@
       "openai_chat": "OpenAI Chat",
       "openai_responses": "OpenAI Responses",
       "openai_embeddings": "OpenAI 向量",
+      "openai_images": "OpenAI 图片",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -1878,6 +1879,7 @@
       "openai_chat": "OpenAI Chat",
       "openai_responses": "OpenAI Responses",
       "openai_embeddings": "OpenAI 向量",
+      "openai_images": "OpenAI 图片",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -1999,6 +2001,7 @@
       "openai_chat": "OpenAI Chat",
       "openai_responses": "OpenAI Responses",
       "openai_embeddings": "OpenAI 向量",
+      "openai_images": "OpenAI 图片",
       "anthropic": "Anthropic",
       "gemini": "Gemini"
     },
@@ -2088,6 +2091,7 @@
         "openai_chat": "OpenAI Chat",
         "openai_responses": "OpenAI Responses",
         "openai_embeddings": "OpenAI 向量",
+        "openai_images": "OpenAI 图片",
         "anthropic": "Anthropic",
         "gemini": "Gemini",
         "unavailable": "试炼场暂不支持"

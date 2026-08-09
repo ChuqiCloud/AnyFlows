@@ -289,7 +289,8 @@ impl Adaptor for VertexAdaptor {
         credential: &Credential,
         context: &RelayContext,
     ) -> AdaptorResult<UpstreamRequest> {
-        let (method, target, mut headers, body, response_mode) = request.into_parts();
+        let (method, target, mut headers, body, response_mode, response_body_limit) =
+            request.into_parts();
         if method != Method::POST {
             return Err(AdaptorError::UnsupportedRequestMethod);
         }
@@ -307,6 +308,7 @@ impl Adaptor for VertexAdaptor {
         Self::apply_json_headers(&mut headers);
         insert_bearer_header(&mut headers, access_token.as_str())?;
         UpstreamRequest::new(method, target, headers, body)
+            .and_then(|request| request.with_response_body_limit(response_body_limit))
             .map(|request| request.with_response_mode(response_mode))
     }
 }

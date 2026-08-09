@@ -228,14 +228,14 @@ async fn send_http(
     request: UpstreamRequest,
     context: &RelayContext,
 ) -> AdaptorResult<UpstreamResponse> {
-    let (method, target, headers, body, response_mode) = request.into_parts();
+    let (method, target, headers, body, response_mode, response_body_limit) = request.into_parts();
     let response = context
         .http_client()
         .execute(method, &target, headers, body.map(Body::from))
         .await?;
     match response_mode {
-        ResponseMode::Full => UpstreamResponse::from_http_full(response).await,
-        ResponseMode::Stream => UpstreamResponse::from_http_stream(response),
+        ResponseMode::Full => UpstreamResponse::from_http_full(response, response_body_limit).await,
+        ResponseMode::Stream => UpstreamResponse::from_http_stream(response, response_body_limit),
     }
 }
 

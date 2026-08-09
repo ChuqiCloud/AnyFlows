@@ -107,6 +107,7 @@ impl CustomAdaptor {
         match self.protocol {
             Protocol::OpenAiResponses => Operation::Responses,
             Protocol::OpenAiEmbeddings => Operation::Embedding,
+            Protocol::OpenAiImages => Operation::Image,
             Protocol::OpenAiChat | Protocol::Anthropic | Protocol::Gemini => Operation::Chat,
         }
     }
@@ -195,13 +196,15 @@ impl Adaptor for CustomAdaptor {
         credential: &Credential,
         context: &RelayContext,
     ) -> AdaptorResult<UpstreamRequest> {
-        let (method, target, mut headers, body, response_mode) = request.into_parts();
+        let (method, target, mut headers, body, response_mode, response_body_limit) =
+            request.into_parts();
         if method != Method::POST {
             return Err(AdaptorError::UnsupportedRequestMethod);
         }
         // 渠道 Header 覆盖已结束；此处重新建立唯一认证和 JSON 基线。
         self.apply_headers(&mut headers, credential, context)?;
         UpstreamRequest::new(method, target, headers, body)
+            .and_then(|request| request.with_response_body_limit(response_body_limit))
             .map(|request| request.with_response_mode(response_mode))
     }
 }

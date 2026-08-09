@@ -278,6 +278,7 @@ pub struct RelayRequest {
     method: Method,
     body: Option<Bytes>,
     response_mode: ResponseMode,
+    response_body_limit: usize,
 }
 
 impl RelayRequest {
@@ -298,6 +299,7 @@ impl RelayRequest {
             method,
             body,
             response_mode: ResponseMode::default(),
+            response_body_limit: af_adapter::MAX_UPSTREAM_RESPONSE_BODY_BYTES,
         })
     }
 
@@ -305,6 +307,13 @@ impl RelayRequest {
     #[must_use]
     pub const fn with_response_mode(mut self, response_mode: ResponseMode) -> Self {
         self.response_mode = response_mode;
+        self
+    }
+
+    /// 为单次非流式协议请求选择受控的大响应收集预算。
+    #[must_use]
+    pub const fn with_response_body_limit(mut self, max_bytes: usize) -> Self {
+        self.response_body_limit = max_bytes;
         self
     }
 }
@@ -316,6 +325,7 @@ impl fmt::Debug for RelayRequest {
             .field("operation", &self.operation)
             .field("method", &self.method)
             .field("response_mode", &self.response_mode)
+            .field("response_body_limit", &self.response_body_limit)
             .field("body_bytes", &self.body.as_ref().map(Bytes::len))
             .field("model", &"<已脱敏>")
             .finish()
@@ -547,6 +557,9 @@ impl RelayStateMachine {
                     .as_ref()
                     .map_or_else(|| request.body.clone(), RelayCandidateRequest::body),
             )
+            .and_then(|upstream_request| {
+                upstream_request.with_response_body_limit(request.response_body_limit)
+            })
             .map(|upstream_request| upstream_request.with_response_mode(request.response_mode))
             {
                 Ok(request) => request,
