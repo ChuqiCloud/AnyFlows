@@ -99,7 +99,7 @@ impl Drop for TestDatabase {
 async fn all_blocking_windows_return_longest_retry_or_permanent_shortage()
 -> Result<(), Box<dyn Error>> {
     let now = second_time(0);
-    let fixture = fixture(WindowConfig::new(
+    let fixture = new_fixture(WindowConfig::new(
         [Some(100), Some(200), Some(300)],
         [90, 190, 290],
         [
@@ -134,7 +134,7 @@ async fn all_blocking_windows_return_longest_retry_or_permanent_shortage()
     assert_eq!(token(&fixture).await?, before_token);
     fixture.close().await?;
 
-    let hard = fixture(WindowConfig::new(
+    let hard = new_fixture(WindowConfig::new(
         [Some(10), None, None],
         [0, 0, 0],
         [now; 3],
@@ -155,7 +155,7 @@ async fn all_blocking_windows_return_longest_retry_or_permanent_shortage()
 async fn unlimited_windows_accumulate_actual_usage_and_zero_limit_rejects()
 -> Result<(), Box<dyn Error>> {
     let now = second_time(0);
-    let fixture = fixture(WindowConfig::new([None, None, None], [5, 6, 7], [now; 3])).await?;
+    let fixture = new_fixture(WindowConfig::new([None, None, None], [5, 6, 7], [now; 3])).await?;
     let id = reservation_id(3);
     assert_eq!(
         fixture
@@ -172,7 +172,7 @@ async fn unlimited_windows_accumulate_actual_usage_and_zero_limit_rejects()
     assert_eq!(window_usages(&fixture).await?, [13, 14, 15]);
     fixture.close().await?;
 
-    let zero = fixture(WindowConfig::new(
+    let zero = new_fixture(WindowConfig::new(
         [Some(0), None, None],
         [0, 0, 0],
         [now; 3],
@@ -240,7 +240,7 @@ async fn concurrent_precharges_do_not_oversell_window_capacity() -> Result<(), B
 #[tokio::test]
 async fn refund_releases_commitment_without_reversing_settled_usage() -> Result<(), Box<dyn Error>>
 {
-    let fixture = fixture(WindowConfig::new(
+    let fixture = new_fixture(WindowConfig::new(
         [Some(10), None, None],
         [0, 0, 0],
         [second_time(0); 3],
@@ -283,7 +283,7 @@ async fn refund_releases_commitment_without_reversing_settled_usage() -> Result<
 async fn settlement_after_partial_rollover_counts_only_matching_windows()
 -> Result<(), Box<dyn Error>> {
     let old_start = second_time(-3_600);
-    let fixture = fixture(WindowConfig::new(
+    let fixture = new_fixture(WindowConfig::new(
         [Some(100), Some(100), Some(100)],
         [0, 0, 0],
         [old_start; 3],
@@ -308,7 +308,7 @@ async fn settlement_after_partial_rollover_counts_only_matching_windows()
 
 #[tokio::test]
 async fn outcome_unknown_replay_never_duplicates_window_mutation() -> Result<(), Box<dyn Error>> {
-    let fixture = fixture(WindowConfig::new(
+    let fixture = new_fixture(WindowConfig::new(
         [Some(100), Some(100), Some(100)],
         [0, 0, 0],
         [second_time(0); 3],
@@ -352,7 +352,7 @@ async fn outcome_unknown_replay_never_duplicates_window_mutation() -> Result<(),
 
 #[tokio::test]
 async fn damaged_active_snapshot_fails_closed() -> Result<(), Box<dyn Error>> {
-    let fixture = fixture(WindowConfig::new(
+    let fixture = new_fixture(WindowConfig::new(
         [Some(100), Some(100), Some(100)],
         [0, 0, 0],
         [second_time(0); 3],
@@ -410,7 +410,7 @@ async fn damaged_active_snapshot_fails_closed() -> Result<(), Box<dyn Error>> {
 #[tokio::test]
 async fn expired_windows_reset_lazily_before_new_precharge() -> Result<(), Box<dyn Error>> {
     let stale = second_time(-8 * 24 * 60 * 60);
-    let fixture = fixture(WindowConfig::new(
+    let fixture = new_fixture(WindowConfig::new(
         [Some(5), Some(5), Some(5)],
         [5, 5, 5],
         [stale; 3],
@@ -437,7 +437,7 @@ async fn expired_windows_reset_lazily_before_new_precharge() -> Result<(), Box<d
 
 #[tokio::test]
 async fn batch_tasks_never_create_or_consume_token_window_snapshot() -> Result<(), Box<dyn Error>> {
-    let fixture = fixture(WindowConfig::new(
+    let fixture = new_fixture(WindowConfig::new(
         [Some(0), Some(0), Some(0)],
         [0, 0, 0],
         [second_time(0); 3],
@@ -458,7 +458,7 @@ async fn batch_tasks_never_create_or_consume_token_window_snapshot() -> Result<(
     Ok(())
 }
 
-async fn fixture(config: WindowConfig) -> Result<Fixture, Box<dyn Error>> {
+async fn new_fixture(config: WindowConfig) -> Result<Fixture, Box<dyn Error>> {
     fixture_with_options(DatabaseOptions::new("sqlite::memory:")?, config).await
 }
 
