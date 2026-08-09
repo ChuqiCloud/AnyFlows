@@ -144,68 +144,33 @@ async fn native_embeddings_maps_model_rebuilds_response_and_records_usage() {
 }
 
 #[tokio::test]
-async fn invalid_upstream_indexes_dimensions_and_usage_fail_closed() {
-    let cases = [
-        (
-            br#"{"model":"test-model","input":"hi"}"#.as_slice(),
-            br#"{"object":"list","data":[{"object":"embedding","index":1,"embedding":[1.0]}],"model":"private-index-model","usage":{"prompt_tokens":1,"total_tokens":1}}"#.as_slice(),
-        ),
-        (
-            br#"{"model":"test-model","input":"hi","dimensions":2}"#.as_slice(),
-            br#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[1.0]}],"model":"private-dimension-model","usage":{"prompt_tokens":1,"total_tokens":1}}"#.as_slice(),
-        ),
-        (
-            br#"{"model":"test-model","input":"a"}"#.as_slice(),
-            br#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[1.0]}],"model":"private-usage-model","usage":{"prompt_tokens":2,"total_tokens":2}}"#.as_slice(),
-        ),
-    ];
+async fn invalid_upstream_indexes_fail_closed() {
+    assert_invalid_upstream_response(
+        br#"{"model":"test-model","input":"hi"}"#,
+        br#"{"object":"list","data":[{"object":"embedding","index":1,"embedding":[1.0]}],"model":"private-index-model","usage":{"prompt_tokens":1,"total_tokens":1}}"#,
+        "private-index-model",
+    )
+    .await;
+}
 
-    for (request_body, upstream_body) in cases {
-        let database = TestDatabase::new();
-        let connection = seed_base_database(&database).await;
-        seed_openai_embeddings_runtime_channel_with(
-            &connection,
-            GROUP_ID,
-            UPSTREAM_BASE_URL,
-            UPSTREAM_MODEL,
-            PRIVATE_UPSTREAM_MODEL,
-            UPSTREAM_KEY,
-            None,
-        )
-        .await;
-        connection.close().await.unwrap();
-        let (proxy_address, captured, proxy) = spawn_proxy(
-            "200 OK",
-            upstream_body,
-            &[("Content-Type", "application/json")],
-        );
-        let proxy_url = format!("http://{proxy_address}");
-        let (address, shutdown, server) = start_gateway(&database, Some(&proxy_url)).await;
+#[tokio::test]
+async fn invalid_upstream_dimensions_fail_closed() {
+    assert_invalid_upstream_response(
+        br#"{"model":"test-model","input":"hi","dimensions":2}"#,
+        br#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[1.0]}],"model":"private-dimension-model","usage":{"prompt_tokens":1,"total_tokens":1}}"#,
+        "private-dimension-model",
+    )
+    .await;
+}
 
-        let response = send_request(
-            address,
-            "POST",
-            "/v1/embeddings",
-            request_body,
-            &[
-                ("Content-Type", "application/json"),
-                ("Authorization", &format!("Bearer {CLIENT_KEY}")),
-            ],
-        )
-        .await;
-        stop_gateway(shutdown, server).await;
-        captured.recv_timeout(IO_TIMEOUT).unwrap();
-        proxy.join().unwrap();
-
-        assert_eq!(response.status, 503);
-        let body: Value = serde_json::from_slice(&response.body).unwrap();
-        assert_eq!(body["error"]["code"], "upstream_unavailable");
-        let rendered = String::from_utf8_lossy(&response.body);
-        assert!(!rendered.contains("private-index-model"));
-        assert!(!rendered.contains("private-dimension-model"));
-        assert!(!rendered.contains("private-usage-model"));
-        assert_eq!(usage_summary(&database).await, (0, 0, 0));
-    }
+#[tokio::test]
+async fn invalid_upstream_usage_fail_closed() {
+    assert_invalid_upstream_response(
+        br#"{"model":"test-model","input":"a"}"#,
+        br#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[1.0]}],"model":"private-usage-model","usage":{"prompt_tokens":2,"total_tokens":2}}"#,
+        "private-usage-model",
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -390,4 +355,52 @@ async fn usage_summary(database: &TestDatabase) -> (i64, i64, i64) {
     );
     connection.close().await.unwrap();
     summary
+}
+
+async fn assert_invalid_upstream_response(
+    request_body: &[u8],
+    upstream_body: &[u8],
+    private_model: &str,
+) {
+    let database = TestDatabase::new();
+    let connection = seed_base_database(&database).await;
+    seed_openai_embeddings_runtime_channel_with(
+        &connection,
+        GROUP_ID,
+        UPSTREAM_BASE_URL,
+        UPSTREAM_MODEL,
+        PRIVATE_UPSTREAM_MODEL,
+        UPSTREAM_KEY,
+        None,
+    )
+    .await;
+    connection.close().await.unwrap();
+    let (proxy_address, captured, proxy) = spawn_proxy(
+        "200 OK",
+        upstream_body,
+        &[("Content-Type", "application/json")],
+    );
+    let proxy_url = format!("http://{proxy_address}");
+    let (address, shutdown, server) = start_gateway(&database, Some(&proxy_url)).await;
+
+    let response = send_request(
+        address,
+        "POST",
+        "/v1/embeddings",
+        request_body,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &format!("Bearer {CLIENT_KEY}")),
+        ],
+    )
+    .await;
+    stop_gateway(shutdown, server).await;
+    captured.recv_timeout(IO_TIMEOUT).unwrap();
+    proxy.join().unwrap();
+
+    assert_eq!(response.status, 503);
+    let body: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body["error"]["code"], "upstream_unavailable");
+    assert!(!String::from_utf8_lossy(&response.body).contains(private_model));
+    assert_eq!(usage_summary(&database).await, (0, 0, 0));
 }
