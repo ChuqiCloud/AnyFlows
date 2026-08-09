@@ -15,10 +15,9 @@ use crate::bounded_json::{self, BoundedJsonError, JsonLimits};
 use crate::{
     CanonicalImageGenerationRequest, CanonicalImageGenerationRequestError,
     CanonicalImageGenerationResponse, GeneratedImage, ImageBackground, ImageCompression,
-    ImageCount, ImageDimensions, ImageGenerationOptions, ImageGenerationUsage, ImageModeration,
-    ImageOutputFormat, ImageQuality, ImageSize, ImageTokenBreakdown, MAX_GENERATED_IMAGE_BYTES,
-    MAX_IMAGE_GENERATION_COUNT, MAX_IMAGE_PROMPT_BYTES, MAX_TOTAL_GENERATED_IMAGE_BYTES,
-    TokenCount,
+    ImageCount, ImageGenerationOptions, ImageGenerationUsage, ImageModeration, ImageOutputFormat,
+    ImageQuality, ImageSize, ImageTokenBreakdown, MAX_GENERATED_IMAGE_BYTES,
+    MAX_IMAGE_GENERATION_COUNT, MAX_TOTAL_GENERATED_IMAGE_BYTES, TokenCount,
 };
 
 mod wire;
@@ -35,7 +34,7 @@ pub const MAX_REQUEST_BODY_BYTES: usize = 256 * 1_024;
 /// OpenAI Images 非流式响应正文上限。
 pub const MAX_RESPONSE_BODY_BYTES: usize = 192 * 1_024 * 1_024;
 
-const MAX_ENCODED_IMAGE_BYTES: usize = ((MAX_GENERATED_IMAGE_BYTES + 2) / 3) * 4;
+const MAX_ENCODED_IMAGE_BYTES: usize = MAX_GENERATED_IMAGE_BYTES.div_ceil(3) * 4;
 
 const REQUEST_JSON_LIMITS: JsonLimits = JsonLimits {
     max_depth: 4,
