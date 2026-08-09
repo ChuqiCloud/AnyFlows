@@ -87,16 +87,14 @@ pub(crate) fn rate_limit_error_response(
     protocol: Protocol,
     retry_after: UpstreamRetryAfter,
 ) -> axum::response::Response {
-    let mut response = protocol_error_response(
+    protocol_error_response(
         protocol,
-        MappedError::new(PublicErrorCode::RateLimited, "request_rate_limited"),
-    );
-    response.headers_mut().insert(
-        RETRY_AFTER,
-        HeaderValue::from_str(&retry_after.seconds().to_string())
-            .expect("受控正整数秒数必须始终是有效响应头"),
-    );
-    response
+        MappedError::with_retry_after(
+            PublicErrorCode::RateLimited,
+            "request_rate_limited",
+            retry_after,
+        ),
+    )
 }
 
 fn protocol_error_response(protocol: Protocol, mapped: MappedError) -> axum::response::Response {
@@ -108,18 +106,44 @@ fn protocol_error_response(protocol: Protocol, mapped: MappedError) -> axum::res
             openai_chat::encode_error(mapped.code, mapped.message())
         }
     };
-    (mapped.status(), Json(body)).into_response()
+    let mut response = (mapped.status(), Json(body)).into_response();
+    if let Some(retry_after) = mapped.retry_after {
+        response.headers_mut().insert(
+            RETRY_AFTER,
+            HeaderValue::from_str(&retry_after.seconds().to_string())
+                .expect("受控正整数秒数必须始终是有效响应头"),
+        );
+    }
+    response
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct MappedError {
     code: PublicErrorCode,
     error_kind: &'static str,
+    retry_after: Option<UpstreamRetryAfter>,
 }
 
 impl MappedError {
     pub(super) const fn new(code: PublicErrorCode, error_kind: &'static str) -> Self {
-        Self { code, error_kind }
+        Self {
+            code,
+            error_kind,
+            retry_after: None,
+        }
+    }
+
+    /// 构造带标准相对等待时间的限流响应映射。
+    pub(super) const fn with_retry_after(
+        code: PublicErrorCode,
+        error_kind: &'static str,
+        retry_after: UpstreamRetryAfter,
+    ) -> Self {
+        Self {
+            code,
+            error_kind,
+            retry_after: Some(retry_after),
+        }
     }
 
     pub(super) const fn status(self) -> StatusCode {
@@ -167,6 +191,11 @@ fn classify_error(error: AfError) -> MappedError {
         AfError::InsufficientQuota => {
             MappedError::new(PublicErrorCode::InsufficientQuota, "insufficient_quota")
         }
+        AfError::QuotaWindowLimited { retry_after } => MappedError::with_retry_after(
+            PublicErrorCode::RateLimited,
+            "quota_window_limited",
+            retry_after,
+        ),
         AfError::ConcurrencyLimited => {
             MappedError::new(PublicErrorCode::RateLimited, "concurrency_limited")
         }

@@ -1,7 +1,7 @@
 use std::{future::Future, pin::Pin};
 
 use af_db::{QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationStatus};
-use af_domain::{BillingReservationId, GatewayPrincipal, Quota};
+use af_domain::{BillingReservationId, GatewayPrincipal, Quota, UpstreamRetryAfter};
 use thiserror::Error;
 
 use crate::SettlementRequest;
@@ -40,6 +40,12 @@ pub enum BillingPrechargeError {
     /// 预扣时用户或有限令牌额度不足。
     #[error("预扣额度不足")]
     InsufficientQuota,
+    /// 当前令牌额度窗口已满，可在指定秒数后重试。
+    #[error("预扣额度窗口已达上限")]
+    RateLimited {
+        /// 当前所有阻塞窗口中最长的剩余等待时间。
+        retry_after: UpstreamRetryAfter,
+    },
     /// 超时或提交失败导致终态未知，只能重放同一请求。
     #[error("持久化预扣结果未知")]
     OutcomeUnknown,
@@ -124,7 +130,10 @@ impl BillingSettlementPort for QuotaRepository {
 const fn map_quota_repository_error(error: QuotaRepositoryError) -> BillingSettlementError {
     match error {
         QuotaRepositoryError::UserQuotaInsufficient
-        | QuotaRepositoryError::TokenQuotaInsufficient => BillingSettlementError::InsufficientQuota,
+        | QuotaRepositoryError::TokenQuotaInsufficient
+        | QuotaRepositoryError::TokenWindowQuotaInsufficient { .. } => {
+            BillingSettlementError::InsufficientQuota
+        }
         QuotaRepositoryError::OutcomeUnknown => BillingSettlementError::OutcomeUnknown,
         QuotaRepositoryError::NotFound | QuotaRepositoryError::Conflict => {
             BillingSettlementError::Conflict
@@ -147,6 +156,12 @@ const fn map_quota_repository_precharge_error(
     match error {
         QuotaRepositoryError::UserQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient => BillingPrechargeError::InsufficientQuota,
+        QuotaRepositoryError::TokenWindowQuotaInsufficient {
+            retry_after: Some(retry_after),
+        } => BillingPrechargeError::RateLimited { retry_after },
+        QuotaRepositoryError::TokenWindowQuotaInsufficient { retry_after: None } => {
+            BillingPrechargeError::InsufficientQuota
+        }
         QuotaRepositoryError::OutcomeUnknown => BillingPrechargeError::OutcomeUnknown,
         QuotaRepositoryError::NotFound | QuotaRepositoryError::Conflict => {
             BillingPrechargeError::Conflict
@@ -183,4 +198,34 @@ pub enum UsageRecordOutcome {
 pub trait UsageRecordPort: Send + Sync + 'static {
     /// 尝试接收一条不含模型名或请求内容的规范化用量记录。
     fn try_record(&self, record: BillingUsageRecord) -> UsageRecordOutcome;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_window_precharge_preserves_only_recoverable_retry_after() {
+        let retry_after = UpstreamRetryAfter::from_seconds(37).unwrap();
+        assert_eq!(
+            map_quota_repository_precharge_error(
+                QuotaRepositoryError::TokenWindowQuotaInsufficient {
+                    retry_after: Some(retry_after),
+                }
+            ),
+            BillingPrechargeError::RateLimited { retry_after }
+        );
+        assert_eq!(
+            map_quota_repository_precharge_error(
+                QuotaRepositoryError::TokenWindowQuotaInsufficient { retry_after: None }
+            ),
+            BillingPrechargeError::InsufficientQuota
+        );
+        assert_eq!(
+            map_quota_repository_error(QuotaRepositoryError::TokenWindowQuotaInsufficient {
+                retry_after: Some(retry_after),
+            }),
+            BillingSettlementError::InsufficientQuota
+        );
+    }
 }

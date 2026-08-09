@@ -19,6 +19,7 @@ use crate::DatabasePool;
 mod sql;
 mod state;
 pub(crate) mod subscription;
+mod token_windows;
 
 pub use state::{
     QuotaMutationOutcome, QuotaRepositoryError, QuotaReservationKind, QuotaReservationStatus,
@@ -324,6 +325,13 @@ impl QuotaRepository {
             }
         }
 
+        if reservation_kind.uses_token_windows()
+            && let Err(error) =
+                token_windows::reserve(&transaction, &key, &parent, token_state, amount, now).await
+        {
+            return rollback_with_error(transaction, error).await;
+        }
+
         if !token_state.unlimited_quota {
             let snapshot = transaction
                 .execute(backend.build(&sql::snapshot_token_reservation(key, amount, now)))
@@ -354,6 +362,7 @@ impl QuotaRepository {
             .ok_or(QuotaRepositoryError::Invariant)
             .and_then(ReservationState::try_from_result)?;
         subscription::load_allocation(self.pool.connection(), &key, &state).await?;
+        token_windows::load_allocation(self.pool.connection(), &key, &state).await?;
         if state.matches_precharge(principal, amount, reservation_kind) {
             Ok(QuotaMutationOutcome::Existing(state.status))
         } else {
@@ -386,7 +395,7 @@ impl QuotaRepository {
             .map_err(|_| QuotaRepositoryError::Query)?;
         let backend = transaction.get_database_backend();
 
-        let (user_state, _) = match lock_subject(
+        let (user_state, token_state) = match lock_subject(
             &transaction,
             observed.group_id,
             observed.user_id,
@@ -421,6 +430,11 @@ impl QuotaRepository {
             Ok(allocation) => allocation,
             Err(error) => return rollback_with_error(transaction, error).await,
         };
+        let token_window_allocation =
+            match token_windows::load_allocation(&transaction, &key, &state).await {
+                Ok(allocation) => allocation,
+                Err(error) => return rollback_with_error(transaction, error).await,
+            };
         let now = TimeDateTimeWithTimeZone::now_utc();
         let mut subscription_settlement = None;
 
@@ -476,6 +490,10 @@ impl QuotaRepository {
                 {
                     return rollback_with_error(transaction, error).await;
                 }
+                if let Err(error) = token_windows::load_allocation(&transaction, &key, &state).await
+                {
+                    return rollback_with_error(transaction, error).await;
+                }
             }
             QuotaReservationStatus::SettlementPending if state.matches_actual(actual) => {
                 if let Some(current) = allocation.as_ref() {
@@ -523,7 +541,9 @@ impl QuotaRepository {
                 token_reserved,
                 actual,
                 user_state: &user_state,
+                token_state,
                 subscription_settlement,
+                token_window_allocation: token_window_allocation.as_ref(),
                 now,
             },
         )
@@ -538,7 +558,8 @@ impl QuotaRepository {
             }
             Err(
                 error @ (QuotaRepositoryError::UserQuotaInsufficient
-                | QuotaRepositoryError::TokenQuotaInsufficient),
+                | QuotaRepositoryError::TokenQuotaInsufficient
+                | QuotaRepositoryError::TokenWindowQuotaInsufficient { .. }),
             ) => {
                 savepoint
                     .rollback()
@@ -607,6 +628,9 @@ impl QuotaRepository {
             Ok(allocation) => allocation,
             Err(error) => return rollback_with_error(transaction, error).await,
         };
+        if let Err(error) = token_windows::load_allocation(&transaction, &key, &state).await {
+            return rollback_with_error(transaction, error).await;
+        }
         let now = TimeDateTimeWithTimeZone::now_utc();
 
         match state.status {
@@ -705,7 +729,9 @@ struct SettlementAdjustment<'a> {
     token_reserved: Quota,
     actual: Quota,
     user_state: &'a UserQuotaState,
+    token_state: TokenQuotaState,
     subscription_settlement: Option<subscription::SubscriptionSettlement>,
+    token_window_allocation: Option<&'a token_windows::TokenWindowAllocation>,
     now: TimeDateTimeWithTimeZone,
 }
 
@@ -720,7 +746,9 @@ async fn settle_adjustment(
         token_reserved,
         actual,
         user_state,
+        token_state,
         subscription_settlement,
+        token_window_allocation,
         now,
     } = adjustment;
     let backend = savepoint.get_database_backend();
@@ -753,6 +781,16 @@ async fn settle_adjustment(
             classify_token_settlement(savepoint, state, token_reserved, reserved, actual).await?,
         );
     }
+
+    token_windows::apply_settlement(
+        savepoint,
+        state,
+        token_window_allocation,
+        token_state,
+        actual,
+        now,
+    )
+    .await?;
 
     let finalized = savepoint
         .execute(backend.build(&sql::finalize_settlement(key.to_owned(), actual, now)))
@@ -1040,6 +1078,7 @@ fn record_internal_error(error: QuotaRepositoryError) -> QuotaRepositoryError {
         | QuotaRepositoryError::Conflict
         | QuotaRepositoryError::UserQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient
+        | QuotaRepositoryError::TokenWindowQuotaInsufficient { .. }
         | QuotaRepositoryError::ActualExceedsReservation => return error,
     };
     tracing::error!(

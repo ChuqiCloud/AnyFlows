@@ -25,6 +25,7 @@ pub(crate) mod balance_alert_settings;
 pub(crate) mod billing_batch_checkpoints;
 pub(crate) mod billing_reservations;
 pub(crate) mod billing_subscription_reservations;
+pub(crate) mod billing_token_window_reservations;
 pub(crate) mod channel_groups;
 pub(crate) mod channel_models;
 pub(crate) mod channels;
@@ -1318,6 +1319,51 @@ impl ActiveModelBehavior for billing_subscription_reservations::ActiveModel {
             || updated_at != created_at
         {
             return Err(DbErr::Custom("订阅计费预留状态无效".to_owned()));
+        }
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for billing_token_window_reservations::ActiveModel {
+    async fn before_save<C>(self, _database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        // 窗口起点只能在父预留创建时固化，后续结算仅读取该快照。
+        if !insert {
+            return Err(DbErr::Custom("令牌窗口预留必须通过额度仓储更新".to_owned()));
+        }
+        let key = self
+            .idempotency_key
+            .try_as_ref()
+            .ok_or_else(|| DbErr::Custom("令牌窗口预留标识缺失".to_owned()))?;
+        let reserved = self
+            .reserved_quota
+            .try_as_ref()
+            .copied()
+            .unwrap_or_default();
+        let (Some(window_5h_start), Some(window_1d_start), Some(window_7d_start)) = (
+            self.window_5h_start.try_as_ref().copied(),
+            self.window_1d_start.try_as_ref().copied(),
+            self.window_7d_start.try_as_ref().copied(),
+        ) else {
+            return Err(DbErr::Custom("令牌窗口预留起点缺失".to_owned()));
+        };
+        let (Some(created_at), Some(updated_at)) = (
+            self.created_at.try_as_ref().copied(),
+            self.updated_at.try_as_ref().copied(),
+        ) else {
+            return Err(DbErr::Custom("令牌窗口预留审计时间缺失".to_owned()));
+        };
+        if BillingReservationId::from_persistence_key(key.as_str()).is_err()
+            || reserved <= 0
+            || [window_5h_start, window_1d_start, window_7d_start]
+                .into_iter()
+                .any(|started_at| started_at.unix_timestamp() < 0 || started_at > created_at)
+            || updated_at != created_at
+        {
+            return Err(DbErr::Custom("令牌窗口预留状态无效".to_owned()));
         }
         Ok(self)
     }

@@ -221,6 +221,12 @@ pub enum AfError {
     /// 用户钱包或下游令牌额度不足，无法继续发送请求。
     #[error("下游可用额度不足")]
     InsufficientQuota,
+    /// 下游令牌额度窗口已满，可在指定秒数后重新准入。
+    #[error("下游令牌额度窗口已达上限")]
+    QuotaWindowLimited {
+        /// 当前所有阻塞窗口中最长的剩余等待时间。
+        retry_after: UpstreamRetryAfter,
+    },
     /// 用户级或上游账号级并发槽位在等待期限内不可用。
     #[error("并发请求已达上限")]
     ConcurrencyLimited,
