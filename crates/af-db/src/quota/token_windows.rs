@@ -649,7 +649,8 @@ async fn has_invalid_active_allocation(
                 .eq(QuotaReservationStatus::SettlementPending.code())
                 .and(actual.clone().is_null().or(actual.lt(0_i64))),
         );
-    let mut query = Query::select()
+    let mut query = Query::select();
+    query
         .column((
             billing_reservations::Entity,
             billing_reservations::Column::IdempotencyKey,
@@ -684,7 +685,7 @@ async fn has_invalid_active_allocation(
             ]),
         );
     if let Some(excluded_key) = excluded_key {
-        query = query.and_where(
+        query.and_where(
             Expr::col((
                 billing_reservations::Entity,
                 billing_reservations::Column::IdempotencyKey,
