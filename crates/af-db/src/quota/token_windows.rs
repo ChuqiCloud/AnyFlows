@@ -102,7 +102,7 @@ where
     let model = billing_token_window_reservations::Entity::find_by_id(key.clone())
         .one(connection)
         .await
-        .map_err(|_| QuotaRepositoryError::Query)?;
+        .map_err(|_| query_failure("load_allocation"))?;
     match (parent.reservation_kind.uses_token_windows(), model) {
         (true, Some(model)) => {
             let allocation = TokenWindowAllocation {
@@ -386,7 +386,7 @@ async fn persist_reset(
         .col_expr(tokens::Column::UpdatedAt, Expr::value(now))
         .exec(transaction)
         .await
-        .map_err(|_| QuotaRepositoryError::Query)?;
+        .map_err(|_| query_failure("persist_reset"))?;
     if result.rows_affected != 1 {
         return Err(QuotaRepositoryError::Invariant);
     }
@@ -411,7 +411,7 @@ async fn persist_allocation(
     }
     .insert(transaction)
     .await
-    .map_err(|_| QuotaRepositoryError::Query)?;
+    .map_err(|_| query_failure("persist_allocation"))?;
     Ok(())
 }
 
@@ -463,7 +463,7 @@ async fn persist_actual(
     let result = update
         .exec(transaction)
         .await
-        .map_err(|_| QuotaRepositoryError::Query)?;
+        .map_err(|_| query_failure("persist_actual"))?;
     if result.rows_affected != 1 {
         return Err(QuotaRepositoryError::Invariant);
     }
@@ -571,7 +571,7 @@ async fn active_commitments(
     let result = transaction
         .query_one(backend.build(&query))
         .await
-        .map_err(|_| QuotaRepositoryError::Query)?
+        .map_err(|_| query_failure("active_commitments"))?
         .ok_or(QuotaRepositoryError::Invariant)?;
     Ok(WindowCommitments {
         five_hours: subscription::read_sum(&result, COMMITTED_5H_ALIAS, backend)?,
@@ -697,8 +697,16 @@ async fn has_invalid_active_allocation(
     Ok(transaction
         .query_one(transaction.get_database_backend().build(&query))
         .await
-        .map_err(|_| QuotaRepositoryError::Query)?
+        .map_err(|_| query_failure("has_invalid_active_allocation"))?
         .is_some())
+}
+
+fn query_failure(operation: &'static str) -> QuotaRepositoryError {
+    #[cfg(test)]
+    eprintln!("token_window_query_failure:{operation}");
+    #[cfg(not(test))]
+    let _ = operation;
+    QuotaRepositoryError::Query
 }
 
 fn validate_allocation(
