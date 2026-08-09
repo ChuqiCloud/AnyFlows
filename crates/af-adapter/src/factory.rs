@@ -33,7 +33,10 @@ impl OpenAiAdaptorSettings {
     pub fn for_protocol(protocol: Protocol, supported_models: Vec<String>) -> AdaptorResult<Self> {
         if !matches!(
             protocol,
-            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings
+            Protocol::OpenAiChat
+                | Protocol::OpenAiResponses
+                | Protocol::OpenAiEmbeddings
+                | Protocol::OpenAiImages
         ) {
             return Err(AdaptorError::InvalidChannelSettings {
                 channel_type: ChannelType::OpenAi,

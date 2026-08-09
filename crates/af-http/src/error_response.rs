@@ -102,9 +102,10 @@ fn protocol_error_response(protocol: Protocol, mapped: MappedError) -> axum::res
     let body = match protocol {
         Protocol::Anthropic => anthropic::encode_error(mapped.code, mapped.message()),
         Protocol::Gemini => gemini::encode_error(mapped.code, mapped.message()),
-        Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings => {
-            openai_chat::encode_error(mapped.code, mapped.message())
-        }
+        Protocol::OpenAiChat
+        | Protocol::OpenAiResponses
+        | Protocol::OpenAiEmbeddings
+        | Protocol::OpenAiImages => openai_chat::encode_error(mapped.code, mapped.message()),
     };
     let mut response = (mapped.status(), Json(body)).into_response();
     if let Some(retry_after) = mapped.retry_after {

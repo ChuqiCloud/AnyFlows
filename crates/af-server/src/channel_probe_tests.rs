@@ -134,6 +134,34 @@ async fn valid_openai_embeddings_response_is_healthy_and_uses_native_endpoint() 
 }
 
 #[tokio::test]
+async fn valid_openai_images_response_is_healthy_and_uses_low_cost_probe() {
+    let key = [0x48; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    let database = test_database().await;
+    seed_probe_target(&database.seed, &key, Protocol::OpenAiImages, false, false).await;
+    let response =
+        br#"{"created":1700000000,"data":[{"b64_json":"iVBORw0KGgo="}],"output_format":"png"}"#;
+    let (proxy_address, captured, server) = spawn_proxy("200 OK", response);
+    let probe = probe(&database.pool, &key, proxy_address);
+
+    assert_eq!(probe.check(channel_id()).await, ChannelProbeStatus::Healthy);
+
+    let request = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    server.join().unwrap();
+    let head = request.head.to_ascii_lowercase();
+    assert!(head.starts_with("post http://probe-upstream.example/v1/images/generations http/1.1"));
+    assert!(head.contains("authorization: bearer probe-secret-canary"));
+    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["model"], MODEL_CANARY);
+    assert_eq!(body["prompt"], "ping");
+    assert_eq!(body["size"], "1024x1024");
+    assert_eq!(body["quality"], "low");
+    assert_eq!(body["output_format"], "png");
+    assert!(body.get("stream").is_none());
+
+    database.close().await;
+}
+
+#[tokio::test]
 async fn valid_anthropic_response_is_healthy_and_sends_messages_headers() {
     let key = [0x44; CREDENTIAL_ENCRYPTION_KEY_BYTES];
     let database = test_database().await;
@@ -299,7 +327,10 @@ async fn seed_probe_target(
     let header_override = json!({"x-probe-header": "probe-header-value-canary"}).to_string();
     let channel_type = match protocol {
         Protocol::Anthropic => "anthropic",
-        Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings => "openai",
+        Protocol::OpenAiChat
+        | Protocol::OpenAiResponses
+        | Protocol::OpenAiEmbeddings
+        | Protocol::OpenAiImages => "openai",
         Protocol::Gemini => "gemini",
     };
     let channel_sql = format!(

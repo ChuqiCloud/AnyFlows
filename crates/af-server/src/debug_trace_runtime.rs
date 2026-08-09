@@ -337,7 +337,7 @@ const fn map_protocol(protocol: Protocol) -> Option<DebugTraceProtocol> {
         Protocol::OpenAiChat => Some(DebugTraceProtocol::OpenAiChat),
         Protocol::OpenAiResponses => Some(DebugTraceProtocol::OpenAiResponses),
         // Embeddings 追踪需要先扩展三方言闭合约束，本切片不伪装成 Chat 记录。
-        Protocol::OpenAiEmbeddings => None,
+        Protocol::OpenAiEmbeddings | Protocol::OpenAiImages => None,
         Protocol::Anthropic => Some(DebugTraceProtocol::Anthropic),
         Protocol::Gemini => Some(DebugTraceProtocol::Gemini),
     }

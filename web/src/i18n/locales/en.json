@@ -121,6 +121,7 @@
       "openai_chat": "OpenAI Chat",
       "openai_responses": "OpenAI Responses",
       "openai_embeddings": "OpenAI Embeddings",
+      "openai_images": "OpenAI Images",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -1878,6 +1879,7 @@
       "openai_chat": "OpenAI Chat",
       "openai_responses": "OpenAI Responses",
       "openai_embeddings": "OpenAI Embeddings",
+      "openai_images": "OpenAI Images",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -1999,6 +2001,7 @@
       "openai_chat": "OpenAI Chat",
       "openai_responses": "OpenAI Responses",
       "openai_embeddings": "OpenAI Embeddings",
+      "openai_images": "OpenAI Images",
       "anthropic": "Anthropic",
       "gemini": "Gemini"
     },
@@ -2088,6 +2091,7 @@
         "openai_chat": "OpenAI Chat",
         "openai_responses": "OpenAI Responses",
         "openai_embeddings": "OpenAI Embeddings",
+        "openai_images": "OpenAI Images",
         "anthropic": "Anthropic",
         "gemini": "Gemini",
         "unavailable": "Unsupported in Playground"

@@ -63,6 +63,12 @@ const OPENAI_EMBEDDINGS_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilitie
     response: &[],
     stream: &[],
 };
+const OPENAI_IMAGES_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {
+    protocol: Protocol::OpenAiImages,
+    request: &[],
+    response: &[],
+    stream: &[],
+};
 const ANTHROPIC_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {
     protocol: Protocol::Anthropic,
     request: request::ANTHROPIC,
@@ -83,6 +89,7 @@ pub const fn protocol_capabilities(protocol: Protocol) -> &'static ProtocolCapab
         Protocol::OpenAiChat => &OPENAI_CHAT_CAPABILITIES,
         Protocol::OpenAiResponses => &OPENAI_RESPONSES_CAPABILITIES,
         Protocol::OpenAiEmbeddings => &OPENAI_EMBEDDINGS_CAPABILITIES,
+        Protocol::OpenAiImages => &OPENAI_IMAGES_CAPABILITIES,
         Protocol::Anthropic => &ANTHROPIC_CAPABILITIES,
         Protocol::Gemini => &GEMINI_CAPABILITIES,
     }

@@ -71,13 +71,15 @@ use af_domain::{
     TokenId, TokenModelPolicy, TrustedClientIp, UserId,
 };
 use af_http::{
-    EmbeddingService, EmbeddingServiceFuture, HttpListener, QueryApiKeyPolicy, ReadinessFuture,
-    ReadinessHandle, ReadinessProbe, ServeOutcome, build_router, serve_with_graceful_shutdown,
+    EmbeddingService, EmbeddingServiceFuture, HttpListener, ImageService, ImageServiceFuture,
+    QueryApiKeyPolicy, ReadinessFuture, ReadinessHandle, ReadinessProbe, ServeOutcome,
+    build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
 use af_protocol::{
-    CanonicalEmbeddingRequest, CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage,
-    UsageDetails, UsageSemantics, UsageSource, openai_responses::OpenAiResponsesStreamEncoder,
+    CanonicalEmbeddingRequest, CanonicalImageGenerationRequest, CanonicalStreamEvent, ContentDelta,
+    FinishReason, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
+    openai_responses::OpenAiResponsesStreamEncoder,
 };
 use af_relay::RelayService;
 use serde_json::{Value, json};
@@ -187,6 +189,7 @@ struct RejectAdminDashboard;
 struct RejectAdminUsageLogs;
 struct RejectAdminUsers;
 struct RejectEmbeddings;
+struct RejectImages;
 
 impl EmbeddingService for RejectEmbeddings {
     fn embeddings<'a>(
@@ -196,6 +199,18 @@ impl EmbeddingService for RejectEmbeddings {
         _request: CanonicalEmbeddingRequest,
         _request_id: &'a str,
     ) -> EmbeddingServiceFuture<'a> {
+        Box::pin(async { Err(AfError::Internal) })
+    }
+}
+
+impl ImageService for RejectImages {
+    fn generate<'a>(
+        &'a self,
+        _principal: &'a GatewayPrincipal,
+        _user_concurrency: Option<ConcurrencyLimit>,
+        _request: CanonicalImageGenerationRequest,
+        _request_id: &'a str,
+    ) -> ImageServiceFuture<'a> {
         Box::pin(async { Err(AfError::Internal) })
     }
 }
@@ -1787,6 +1802,7 @@ async fn start_server(
         &server_config,
         relay,
         Arc::new(RejectEmbeddings),
+        Arc::new(RejectImages),
         readiness,
         Arc::new(AlwaysAuthenticates),
         Arc::new(RejectSessions),

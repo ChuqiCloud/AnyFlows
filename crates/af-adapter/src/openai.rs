@@ -61,7 +61,10 @@ impl OpenAiAdaptor {
     {
         if !matches!(
             protocol,
-            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings
+            Protocol::OpenAiChat
+                | Protocol::OpenAiResponses
+                | Protocol::OpenAiEmbeddings
+                | Protocol::OpenAiImages
         ) {
             return Err(AdaptorError::InvalidChannelSettings {
                 channel_type: ChannelType::OpenAi,
@@ -82,6 +85,7 @@ impl OpenAiAdaptor {
             (Protocol::OpenAiChat, Operation::Chat) => "chat/completions",
             (Protocol::OpenAiResponses, Operation::Responses) => "responses",
             (Protocol::OpenAiEmbeddings, Operation::Embedding) => "embeddings",
+            (Protocol::OpenAiImages, Operation::Image) => "images/generations",
             (_, operation) => return Err(AdaptorError::UnsupportedOperation { operation }),
         };
         let base_url = context.resolve_base_url(Self::DEFAULT_BASE_URL)?;
@@ -96,6 +100,7 @@ impl OpenAiAdaptor {
                 "chat/completions" => "v1/chat/completions",
                 "responses" => "v1/responses",
                 "embeddings" => "v1/embeddings",
+                "images/generations" => "v1/images/generations",
                 _ => unreachable!("OpenAI 端点集合保持闭合"),
             }
         })
@@ -303,6 +308,39 @@ mod tests {
             )
             .unwrap();
         assert!(proxied.ends_with("/proxy/openai/v1/embeddings"));
+        assert_eq!(
+            adaptor
+                .build_url(&context(), target(Operation::Chat))
+                .unwrap_err(),
+            AdaptorError::UnsupportedOperation {
+                operation: Operation::Chat
+            }
+        );
+    }
+
+    #[test]
+    fn images_protocol_uses_the_native_generation_endpoint_only() {
+        let adaptor = OpenAiAdaptor::with_protocol_and_supported_models(
+            Protocol::OpenAiImages,
+            ["gpt-image-test"],
+        )
+        .unwrap();
+        assert_eq!(adaptor.default_protocol(), Protocol::OpenAiImages);
+        assert_eq!(
+            adaptor
+                .build_url(&context(), target(Operation::Image))
+                .unwrap(),
+            "https://api.openai.com/v1/images/generations"
+        );
+        let proxied = adaptor
+            .build_url(
+                &context()
+                    .with_base_url("https://gateway.example/proxy/openai/v1")
+                    .unwrap(),
+                target(Operation::Image),
+            )
+            .unwrap();
+        assert!(proxied.ends_with("/proxy/openai/v1/images/generations"));
         assert_eq!(
             adaptor
                 .build_url(&context(), target(Operation::Chat))

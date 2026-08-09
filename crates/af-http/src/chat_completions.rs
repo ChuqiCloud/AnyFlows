@@ -25,7 +25,7 @@ use http::{
 };
 
 use crate::{
-    ChatService, EmbeddingService, OpenAiHttpError,
+    ChatService, EmbeddingService, ImageService, OpenAiHttpError,
     streaming::{StreamDeliveryPolicy, openai_chat_body},
 };
 
@@ -34,6 +34,7 @@ use crate::{
 pub(crate) struct HttpState {
     chat: Arc<dyn ChatService>,
     embedding: Option<Arc<dyn EmbeddingService>>,
+    image: Option<Arc<dyn ImageService>>,
     pub(crate) session_authenticator: Arc<dyn SessionAuthenticator>,
     pub(crate) initial_setup: Option<Arc<dyn InitialSetup>>,
     pub(crate) model_catalog_reader: Option<Arc<dyn af_admin::ModelCatalogReader>>,
@@ -72,6 +73,7 @@ impl HttpState {
         Self {
             chat,
             embedding: None,
+            image: None,
             session_authenticator,
             initial_setup: None,
             model_catalog_reader: None,
@@ -100,6 +102,12 @@ impl HttpState {
     /// 注入独立 Embeddings 生产服务；未注入时公开端点失败关闭。
     pub(crate) fn with_embedding_service(mut self, service: Arc<dyn EmbeddingService>) -> Self {
         self.embedding = Some(service);
+        self
+    }
+
+    /// 注入独立 Images 生产服务；未注入时公开端点失败关闭。
+    pub(crate) fn with_image_service(mut self, service: Arc<dyn ImageService>) -> Self {
+        self.image = Some(service);
         self
     }
 
@@ -228,6 +236,11 @@ impl HttpState {
     /// 返回可选的独立 Embeddings 执行端口。
     pub(crate) fn embedding_service(&self) -> Option<&Arc<dyn EmbeddingService>> {
         self.embedding.as_ref()
+    }
+
+    /// 返回可选的独立 Images 执行端口。
+    pub(crate) fn image_service(&self) -> Option<&Arc<dyn ImageService>> {
+        self.image.as_ref()
     }
 
     /// 返回统一的下游 SSE 交付策略。

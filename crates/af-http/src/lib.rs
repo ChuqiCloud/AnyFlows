@@ -15,6 +15,7 @@ mod embedding_service;
 mod error_response;
 mod frontend_assets;
 mod gemini_generate_content;
+mod image_service;
 mod invitations;
 #[cfg(test)]
 mod invitations_tests;
@@ -47,6 +48,7 @@ mod model_catalog;
 mod network_settings;
 mod oauth_connections;
 mod openai_embeddings;
+mod openai_images;
 mod openai_responses;
 mod openapi;
 mod operations;
@@ -73,6 +75,7 @@ pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presente
 pub use embedding_service::{EmbeddingService, EmbeddingServiceFuture};
 pub use error_response::OpenAiHttpError;
 pub use frontend_assets::{FrontendAsset, FrontendAssetSource};
+pub use image_service::{ImageService, ImageServiceFuture};
 pub use middleware::REQUEST_ID_HEADER_NAME;
 pub use oauth_connections::{
     AdminOAuthAuthorizationStart, AdminOAuthBeginFuture, AdminOAuthCompleteFuture,

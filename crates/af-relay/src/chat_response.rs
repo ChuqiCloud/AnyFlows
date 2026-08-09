@@ -60,7 +60,10 @@ pub(crate) fn encode_full_response(
     let response_id = match protocol {
         Protocol::Anthropic => format!("msg_{request_id}"),
         Protocol::Gemini => format!("response-{request_id}"),
-        Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings => {
+        Protocol::OpenAiChat
+        | Protocol::OpenAiResponses
+        | Protocol::OpenAiEmbeddings
+        | Protocol::OpenAiImages => {
             return Err(AfError::Internal);
         }
     };
@@ -77,7 +80,10 @@ pub(crate) fn encode_full_response(
             .map_err(|_| AfError::from(UpstreamError::ProtocolError))?,
         Protocol::Gemini => gemini::build_response(&response)
             .map_err(|_| AfError::from(UpstreamError::ProtocolError))?,
-        Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings => {
+        Protocol::OpenAiChat
+        | Protocol::OpenAiResponses
+        | Protocol::OpenAiEmbeddings
+        | Protocol::OpenAiImages => {
             unreachable!("协议分支已在上方闭合")
         }
     };
