@@ -489,7 +489,7 @@ async fn active_batch_task_does_not_block_a_regular_request() -> Result<(), Box<
     let request_id = reservation_id(92);
     fixture
         .repository
-        .reserve(request_id, fixture.principals[0], quota(4))
+        .precharge(request_id, fixture.principals[0], quota(4))
         .await?;
     assert_eq!(allocation_count(&fixture).await?, 1);
     fixture.repository.settle(request_id, quota(3)).await?;

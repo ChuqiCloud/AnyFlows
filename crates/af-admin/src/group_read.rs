@@ -439,7 +439,7 @@ impl AdminGroupReader for DatabaseAdminGroupReader {
                 .await
                 .map_err(map_repository_error)?
             {
-                AdminGroupLookupOutcome::Found(record) => Ok(AdminGroup::from_record(record)),
+                AdminGroupLookupOutcome::Found(record) => Ok(AdminGroup::from_record(*record)),
                 AdminGroupLookupOutcome::NotFound => Err(AdminGroupReadError::NotFound),
             }
         })

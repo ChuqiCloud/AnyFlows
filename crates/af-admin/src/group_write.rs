@@ -427,7 +427,7 @@ impl AdminGroupWriter for DatabaseAdminGroupWriter {
                 .await
                 .map_err(map_repository_error)?
             {
-                AdminGroupMutationOutcome::Mutated(record) => Ok(AdminGroup::from_record(record)),
+                AdminGroupMutationOutcome::Mutated(record) => Ok(AdminGroup::from_record(*record)),
                 AdminGroupMutationOutcome::NotFound => Err(AdminGroupWriteError::NotFound),
             }
         })

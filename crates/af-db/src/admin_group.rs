@@ -342,7 +342,7 @@ impl fmt::Debug for AdminGroupPageRecord {
 /// 分组详情查询结果。
 pub enum AdminGroupLookupOutcome {
     /// 找到当前未软删除分组。
-    Found(AdminGroupRecord),
+    Found(Box<AdminGroupRecord>),
     /// 分组不存在或已经软删除。
     NotFound,
 }
@@ -471,9 +471,9 @@ impl AdminGroupRepository {
         };
         match models.len() {
             0 => Ok(AdminGroupLookupOutcome::NotFound),
-            1 => Ok(AdminGroupLookupOutcome::Found(
+            1 => Ok(AdminGroupLookupOutcome::Found(Box::new(
                 AdminGroupRecord::try_from_model(models.pop().ok_or_else(internal_invariant)?)?,
-            )),
+            ))),
             _ => Err(internal_invariant()),
         }
     }
