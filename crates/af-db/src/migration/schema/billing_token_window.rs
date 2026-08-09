@@ -9,6 +9,7 @@ use super::{table, timestamp};
 pub(in crate::migration) async fn create_billing_token_window_reservations(
     manager: &SchemaManager<'_>,
 ) -> Result<(), DbErr> {
+    let backend = manager.get_database_backend();
     let mut statement = table(manager, billing_token_window_reservations::Entity);
     statement
         .col(
@@ -59,27 +60,48 @@ pub(in crate::migration) async fn create_billing_token_window_reservations(
                 .on_update(ForeignKeyAction::Cascade)
                 .on_delete(ForeignKeyAction::Cascade),
         )
-        .check(
-            Expr::col(billing_token_window_reservations::Column::Window5hStart).lte(Expr::col(
-                billing_token_window_reservations::Column::CreatedAt,
-            )),
-        )
-        .check(
-            Expr::col(billing_token_window_reservations::Column::Window1dStart).lte(Expr::col(
-                billing_token_window_reservations::Column::CreatedAt,
-            )),
-        )
-        .check(
-            Expr::col(billing_token_window_reservations::Column::Window7dStart).lte(Expr::col(
-                billing_token_window_reservations::Column::CreatedAt,
-            )),
-        )
-        .check(
-            Expr::col(billing_token_window_reservations::Column::UpdatedAt).gte(Expr::col(
-                billing_token_window_reservations::Column::CreatedAt,
-            )),
-        );
+        .check(timestamp_lte_check(
+            backend,
+            billing_token_window_reservations::Column::Window5hStart,
+            billing_token_window_reservations::Column::CreatedAt,
+        ))
+        .check(timestamp_lte_check(
+            backend,
+            billing_token_window_reservations::Column::Window1dStart,
+            billing_token_window_reservations::Column::CreatedAt,
+        ))
+        .check(timestamp_lte_check(
+            backend,
+            billing_token_window_reservations::Column::Window7dStart,
+            billing_token_window_reservations::Column::CreatedAt,
+        ))
+        .check(timestamp_lte_check(
+            backend,
+            billing_token_window_reservations::Column::CreatedAt,
+            billing_token_window_reservations::Column::UpdatedAt,
+        ));
     manager.create_table(statement).await
+}
+
+/// SQLite 的 RFC3339 时间文本含可选小数秒，跨列比较前必须转换为时间值。
+fn timestamp_lte_check(
+    backend: DbBackend,
+    left: billing_token_window_reservations::Column,
+    right: billing_token_window_reservations::Column,
+) -> SimpleExpr {
+    if backend != DbBackend::Sqlite {
+        return Expr::col(left).lte(Expr::col(right));
+    }
+    let left: SimpleExpr = Func::cust(Alias::new("julianday"))
+        .arg(Expr::col(left))
+        .into();
+    let right: SimpleExpr = Func::cust(Alias::new("julianday"))
+        .arg(Expr::col(right))
+        .into();
+    left.clone()
+        .is_not_null()
+        .and(right.clone().is_not_null())
+        .and(left.lte(right))
 }
 
 /// 为每次窗口准入聚合提供令牌与状态联合索引。
@@ -120,4 +142,27 @@ WHERE "reservation_kind" = 1 AND "status" IN (1, 2)"#
     };
     manager.get_connection().execute_unprepared(sql).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use sea_orm::sea_query::{Query, SqliteQueryBuilder};
+
+    use super::*;
+
+    #[test]
+    fn sqlite_timestamp_check_uses_chronological_comparison() {
+        let query = Query::select()
+            .expr(timestamp_lte_check(
+                DbBackend::Sqlite,
+                billing_token_window_reservations::Column::Window5hStart,
+                billing_token_window_reservations::Column::CreatedAt,
+            ))
+            .to_owned();
+        let sql = query.to_string(SqliteQueryBuilder);
+
+        assert!(sql.contains("julianday(\"window_5h_start\")"));
+        assert!(sql.contains("julianday(\"created_at\")"));
+        assert_eq!(sql.matches("IS NOT NULL").count(), 2);
+    }
 }
