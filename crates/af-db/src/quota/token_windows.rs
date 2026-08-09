@@ -2,8 +2,7 @@ use af_domain::{Quota, UpstreamRetryAfter};
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
-    ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, EntityTrait, JoinType,
-    QueryFilter, QuerySelect, QueryTrait, RelationTrait,
+    ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Alias, Expr, Func, Query},
 };
@@ -493,13 +492,15 @@ async fn active_commitments(
         billing_reservations::Entity,
         billing_reservations::Column::ActualQuota,
     )));
-    let query = billing_token_window_reservations::Entity::find()
-        .select_only()
+    let query = Query::select()
         .expr_as(
             Func::sum(
                 Expr::case(
-                    Expr::col(billing_token_window_reservations::Column::Window5hStart)
-                        .eq(windows.five_hours.started_at),
+                    Expr::col((
+                        billing_token_window_reservations::Entity,
+                        billing_token_window_reservations::Column::Window5hStart,
+                    ))
+                    .eq(windows.five_hours.started_at),
                     committed.clone(),
                 )
                 .finally(0_i64),
@@ -509,8 +510,11 @@ async fn active_commitments(
         .expr_as(
             Func::sum(
                 Expr::case(
-                    Expr::col(billing_token_window_reservations::Column::Window1dStart)
-                        .eq(windows.one_day.started_at),
+                    Expr::col((
+                        billing_token_window_reservations::Entity,
+                        billing_token_window_reservations::Column::Window1dStart,
+                    ))
+                    .eq(windows.one_day.started_at),
                     committed.clone(),
                 )
                 .finally(0_i64),
@@ -520,24 +524,47 @@ async fn active_commitments(
         .expr_as(
             Func::sum(
                 Expr::case(
-                    Expr::col(billing_token_window_reservations::Column::Window7dStart)
-                        .eq(windows.seven_days.started_at),
+                    Expr::col((
+                        billing_token_window_reservations::Entity,
+                        billing_token_window_reservations::Column::Window7dStart,
+                    ))
+                    .eq(windows.seven_days.started_at),
                     committed,
                 )
                 .finally(0_i64),
             ),
             Alias::new(COMMITTED_7D_ALIAS),
         )
-        .join(
-            JoinType::InnerJoin,
-            billing_token_window_reservations::Relation::BillingReservation.def(),
+        .from(billing_token_window_reservations::Entity)
+        .inner_join(
+            billing_reservations::Entity,
+            Expr::col((
+                billing_token_window_reservations::Entity,
+                billing_token_window_reservations::Column::IdempotencyKey,
+            ))
+            .equals((
+                billing_reservations::Entity,
+                billing_reservations::Column::IdempotencyKey,
+            )),
         )
-        .filter(billing_reservations::Column::TokenId.eq(token_id))
-        .filter(billing_reservations::Column::Status.is_in([
-            QuotaReservationStatus::Reserved.code(),
-            QuotaReservationStatus::SettlementPending.code(),
-        ]))
-        .into_query();
+        .and_where(
+            Expr::col((
+                billing_reservations::Entity,
+                billing_reservations::Column::TokenId,
+            ))
+            .eq(token_id),
+        )
+        .and_where(
+            Expr::col((
+                billing_reservations::Entity,
+                billing_reservations::Column::Status,
+            ))
+            .is_in([
+                QuotaReservationStatus::Reserved.code(),
+                QuotaReservationStatus::SettlementPending.code(),
+            ]),
+        )
+        .to_owned();
     let backend = transaction.get_database_backend();
     let result = transaction
         .query_one(backend.build(&query))
