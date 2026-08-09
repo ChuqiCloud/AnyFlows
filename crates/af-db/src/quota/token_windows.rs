@@ -621,6 +621,14 @@ async fn has_invalid_active_allocation(
     token_id: i64,
     excluded_key: Option<&str>,
 ) -> Result<bool, QuotaRepositoryError> {
+    let reservation_kind = Expr::col((
+        billing_reservations::Entity,
+        billing_reservations::Column::ReservationKind,
+    ));
+    let allocation_key = Expr::col((
+        billing_token_window_reservations::Entity,
+        billing_token_window_reservations::Column::IdempotencyKey,
+    ));
     let status = Expr::col((
         billing_reservations::Entity,
         billing_reservations::Column::Status,
@@ -629,21 +637,8 @@ async fn has_invalid_active_allocation(
         billing_reservations::Entity,
         billing_reservations::Column::ActualQuota,
     ));
-    let invalid = Condition::any()
-        .add(
-            Expr::col((
-                billing_token_window_reservations::Entity,
-                billing_token_window_reservations::Column::IdempotencyKey,
-            ))
-            .is_null(),
-        )
-        .add(
-            Expr::col((
-                billing_reservations::Entity,
-                billing_reservations::Column::ReservationKind,
-            ))
-            .ne(QuotaReservationKind::Request.code()),
-        )
+    let invalid_request = Condition::any()
+        .add(allocation_key.clone().is_null())
         .add(
             Expr::col((
                 billing_token_window_reservations::Entity,
@@ -685,6 +680,30 @@ async fn has_invalid_active_allocation(
                 .eq(QuotaReservationStatus::SettlementPending.code())
                 .and(actual.clone().is_null().or(actual.lt(0_i64))),
         );
+    // 普通请求必须有窗口快照，批量任务必须没有；两类在途记录可以安全共存。
+    let invalid = Condition::any()
+        .add(
+            Condition::all()
+                .add(
+                    reservation_kind
+                        .clone()
+                        .eq(QuotaReservationKind::Request.code()),
+                )
+                .add(invalid_request),
+        )
+        .add(
+            Condition::all()
+                .add(
+                    reservation_kind
+                        .clone()
+                        .eq(QuotaReservationKind::BatchTask.code()),
+                )
+                .add(allocation_key.is_not_null()),
+        )
+        .add(reservation_kind.is_not_in([
+            QuotaReservationKind::Request.code(),
+            QuotaReservationKind::BatchTask.code(),
+        ]));
     let mut query = Query::select();
     query
         .column((

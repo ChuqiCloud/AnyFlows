@@ -1103,6 +1103,10 @@
       "weekly": "Weekly",
       "monthly": "Monthly",
       "unlimited": "No limit",
+      "windowUsage": "{{used}} used / {{limit}}",
+      "windowUsageUnlimited": "{{used}} used / unlimited",
+      "windowResetsAt": "Resets {{value}}",
+      "windowRemainingResetsAt": "{{remaining}} left · resets {{value}}",
       "fallback": "Fallback target",
       "noFallback": "No fallback"
     },

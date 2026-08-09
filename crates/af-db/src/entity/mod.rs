@@ -13,7 +13,8 @@ use af_domain::{
     BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, Quota, QuotaDelta,
     RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus, RouteMode,
     RouteStrategy, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
-    UserSubscriptionId, UserSubscriptionStatus, WalletEventId, validate_route_model_pattern,
+    SubscriptionWindow, UserSubscriptionId, UserSubscriptionStatus, WalletEventId,
+    validate_route_model_pattern,
 };
 
 pub(crate) mod abilities;
@@ -23,6 +24,7 @@ pub(crate) mod authentication_settings;
 pub(crate) mod balance_alert_events;
 pub(crate) mod balance_alert_settings;
 pub(crate) mod billing_batch_checkpoints;
+pub(crate) mod billing_group_window_reservations;
 pub(crate) mod billing_reservations;
 pub(crate) mod billing_subscription_reservations;
 pub(crate) mod billing_token_window_reservations;
@@ -200,6 +202,33 @@ where
     C: ConnectionTrait,
 {
     validate_group_pricing(model, database, insert).await?;
+    if [
+        model.daily_limit.try_as_ref().copied().flatten(),
+        model.weekly_limit.try_as_ref().copied().flatten(),
+        model.monthly_limit.try_as_ref().copied().flatten(),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|limit| limit < 0)
+        || [
+            model.daily_usage.try_as_ref().copied(),
+            model.weekly_usage.try_as_ref().copied(),
+            model.monthly_usage.try_as_ref().copied(),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|usage| usage < 0)
+        || [
+            model.daily_window_start.try_as_ref().copied(),
+            model.weekly_window_start.try_as_ref().copied(),
+            model.monthly_window_start.try_as_ref().copied(),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|started_at| started_at.unix_timestamp() < 0)
+    {
+        return Err(DbErr::Custom("分组额度窗口字段无效".to_owned()));
+    }
     if let Some(reference_id) = changed_reference(&model.fallback_group_id, insert) {
         validate_not_self_reference(&model.id, reference_id, "fallback_group_id")?;
         if groups::Entity::find_by_id(reference_id)
@@ -1232,7 +1261,6 @@ impl_updated_at_behavior!(
     debug_trace_settings::ActiveModel => validate_default,
     email_settings::ActiveModel => validate_default,
     group_model_ratios::ActiveModel => validate_group_model_ratio,
-    groups::ActiveModel => validate_group,
     model_prices::ActiveModel => validate_model_price,
     models::ActiveModel => validate_default,
     network_settings::ActiveModel => validate_default,
@@ -1245,6 +1273,65 @@ impl_updated_at_behavior!(
     topup_orders::ActiveModel => validate_topup_order,
     users::ActiveModel => validate_user,
 );
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for groups::ActiveModel {
+    async fn before_save<C>(mut self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        if insert {
+            let starts = current_group_window_starts()?;
+            if self.daily_usage.is_not_set() {
+                self.daily_usage = Set(0);
+            }
+            if self.weekly_usage.is_not_set() {
+                self.weekly_usage = Set(0);
+            }
+            if self.monthly_usage.is_not_set() {
+                self.monthly_usage = Set(0);
+            }
+            if self.daily_window_start.is_not_set() {
+                self.daily_window_start = Set(starts[0]);
+            }
+            if self.weekly_window_start.is_not_set() {
+                self.weekly_window_start = Set(starts[1]);
+            }
+            if self.monthly_window_start.is_not_set() {
+                self.monthly_window_start = Set(starts[2]);
+            }
+        }
+        validate_group(&self, database, insert).await?;
+        if !insert {
+            self.updated_at = Set(TimeDateTimeWithTimeZone::now_utc());
+        }
+        Ok(self)
+    }
+}
+
+fn current_group_window_starts() -> Result<[TimeDateTimeWithTimeZone; 3], DbErr> {
+    let now = TimeDateTimeWithTimeZone::now_utc();
+    let now = u64::try_from(now.unix_timestamp())
+        .map_err(|_| DbErr::Custom("分组额度窗口当前时间无效".to_owned()))?;
+    let mut starts = [TimeDateTimeWithTimeZone::UNIX_EPOCH; 3];
+    for (index, cycle) in [
+        SubscriptionCycle::Daily,
+        SubscriptionCycle::Weekly,
+        SubscriptionCycle::Monthly,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let window = SubscriptionWindow::initial(cycle, now)
+            .map_err(|_| DbErr::Custom("分组额度窗口边界无效".to_owned()))?;
+        starts[index] = TimeDateTimeWithTimeZone::from_unix_timestamp(
+            i64::try_from(window.started_at())
+                .map_err(|_| DbErr::Custom("分组额度窗口边界无效".to_owned()))?,
+        )
+        .map_err(|_| DbErr::Custom("分组额度窗口边界无效".to_owned()))?;
+    }
+    Ok(starts)
+}
 
 async fn validate_billing_reservation<C>(
     model: &billing_reservations::ActiveModel,
@@ -1364,6 +1451,51 @@ impl ActiveModelBehavior for billing_token_window_reservations::ActiveModel {
             || updated_at != created_at
         {
             return Err(DbErr::Custom("令牌窗口预留状态无效".to_owned()));
+        }
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for billing_group_window_reservations::ActiveModel {
+    async fn before_save<C>(self, _database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        // 窗口起点只能在父预留创建时固化，后续结算仅读取该快照。
+        if !insert {
+            return Err(DbErr::Custom("分组窗口预留必须通过额度仓储更新".to_owned()));
+        }
+        let key = self
+            .idempotency_key
+            .try_as_ref()
+            .ok_or_else(|| DbErr::Custom("分组窗口预留标识缺失".to_owned()))?;
+        let reserved = self
+            .reserved_quota
+            .try_as_ref()
+            .copied()
+            .unwrap_or_default();
+        let (Some(daily_start), Some(weekly_start), Some(monthly_start)) = (
+            self.daily_window_start.try_as_ref().copied(),
+            self.weekly_window_start.try_as_ref().copied(),
+            self.monthly_window_start.try_as_ref().copied(),
+        ) else {
+            return Err(DbErr::Custom("分组窗口预留起点缺失".to_owned()));
+        };
+        let (Some(created_at), Some(updated_at)) = (
+            self.created_at.try_as_ref().copied(),
+            self.updated_at.try_as_ref().copied(),
+        ) else {
+            return Err(DbErr::Custom("分组窗口预留审计时间缺失".to_owned()));
+        };
+        if BillingReservationId::from_persistence_key(key.as_str()).is_err()
+            || reserved <= 0
+            || [daily_start, weekly_start, monthly_start]
+                .into_iter()
+                .any(|started_at| started_at.unix_timestamp() < 0 || started_at > created_at)
+            || updated_at != created_at
+        {
+            return Err(DbErr::Custom("分组窗口预留状态无效".to_owned()));
         }
         Ok(self)
     }

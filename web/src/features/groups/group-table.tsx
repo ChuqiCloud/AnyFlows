@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { AdminGroup } from '@/lib/api/generated/types.gen'
 import { ratioFromMicros } from './group-form-model'
+import { GroupQuotaWindows } from './group-quota-windows'
 
 type GroupTableProps = {
   groups: AdminGroup[]
@@ -38,21 +39,6 @@ function PricingValue({ group }: { group: AdminGroup }) {
           })}
         </div>
       ) : <div className="mt-1 text-[0.6875rem] text-muted-foreground">{t('groups.values.noPeak')}</div>}
-    </div>
-  )
-}
-
-function LimitValue({ group }: { group: AdminGroup }) {
-  const { i18n, t } = useTranslation()
-  const format = (value: number | null) => value === null
-    ? t('groups.values.unlimited')
-    : new Intl.NumberFormat(i18n.language).format(value)
-  return (
-    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[0.6875rem] tabular-nums">
-      <span className="text-muted-foreground">{t('groups.values.daily')}</span><span>{format(group.daily_limit)}</span>
-      <span className="text-muted-foreground">{t('groups.values.weekly')}</span><span>{format(group.weekly_limit)}</span>
-      <span className="text-muted-foreground">{t('groups.values.monthly')}</span><span>{format(group.monthly_limit)}</span>
-      <span className="text-muted-foreground">RPM</span><span>{format(group.rpm_limit)}</span>
     </div>
   )
 }
@@ -115,9 +101,9 @@ export function GroupTable({ groups, onDelete, onEdit }: GroupTableProps) {
         <table className="w-full table-fixed text-left text-xs">
           <thead className="bg-surface-2/60 text-muted-foreground">
             <tr>
-              <th className="w-[24%] px-3 py-2 font-medium">{t('groups.columns.group')}</th>
-              <th className="w-[22%] px-3 py-2 font-medium">{t('groups.columns.pricing')}</th>
-              <th className="w-[24%] px-3 py-2 font-medium">{t('groups.columns.limits')}</th>
+              <th className="w-[22%] px-3 py-2 font-medium">{t('groups.columns.group')}</th>
+              <th className="w-[18%] px-3 py-2 font-medium">{t('groups.columns.pricing')}</th>
+              <th className="w-[30%] px-3 py-2 font-medium">{t('groups.columns.limits')}</th>
               <th className="w-[20%] px-3 py-2 font-medium">{t('groups.columns.routing')}</th>
               <th className="w-[10%] px-3 py-2"><span className="sr-only">{t('groups.columns.actions')}</span></th>
             </tr>
@@ -131,7 +117,7 @@ export function GroupTable({ groups, onDelete, onEdit }: GroupTableProps) {
                   <div className="mt-1.5"><GroupBadges group={group} /></div>
                 </td>
                 <td className="px-3 py-2.5"><PricingValue group={group} /></td>
-                <td className="px-3 py-2.5"><LimitValue group={group} /></td>
+                <td className="px-3 py-2.5"><GroupQuotaWindows group={group} /></td>
                 <td className="px-3 py-2.5"><RoutingValue group={group} groupNames={groupNames} /></td>
                 <td className="px-2 py-2.5"><RowActions group={group} onDelete={onDelete} onEdit={onEdit} /></td>
               </tr>
@@ -155,7 +141,7 @@ export function GroupTable({ groups, onDelete, onEdit }: GroupTableProps) {
               <PricingValue group={group} />
               <RoutingValue group={group} groupNames={groupNames} />
             </div>
-            <div className="mt-3 border-t border-[var(--hairline)] pt-3"><LimitValue group={group} /></div>
+            <div className="mt-3 border-t border-[var(--hairline)] pt-3"><GroupQuotaWindows group={group} /></div>
           </article>
         ))}
       </div>

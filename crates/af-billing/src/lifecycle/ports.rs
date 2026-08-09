@@ -131,6 +131,7 @@ const fn map_quota_repository_error(error: QuotaRepositoryError) -> BillingSettl
     match error {
         QuotaRepositoryError::UserQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient
+        | QuotaRepositoryError::GroupWindowQuotaInsufficient { .. }
         | QuotaRepositoryError::TokenWindowQuotaInsufficient { .. } => {
             BillingSettlementError::InsufficientQuota
         }
@@ -156,10 +157,14 @@ const fn map_quota_repository_precharge_error(
     match error {
         QuotaRepositoryError::UserQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient => BillingPrechargeError::InsufficientQuota,
-        QuotaRepositoryError::TokenWindowQuotaInsufficient {
+        QuotaRepositoryError::GroupWindowQuotaInsufficient {
+            retry_after: Some(retry_after),
+        }
+        | QuotaRepositoryError::TokenWindowQuotaInsufficient {
             retry_after: Some(retry_after),
         } => BillingPrechargeError::RateLimited { retry_after },
-        QuotaRepositoryError::TokenWindowQuotaInsufficient { retry_after: None } => {
+        QuotaRepositoryError::GroupWindowQuotaInsufficient { retry_after: None }
+        | QuotaRepositoryError::TokenWindowQuotaInsufficient { retry_after: None } => {
             BillingPrechargeError::InsufficientQuota
         }
         QuotaRepositoryError::OutcomeUnknown => BillingPrechargeError::OutcomeUnknown,

@@ -53,6 +53,10 @@ impl QuotaReservationKind {
         matches!(self, Self::Request)
     }
 
+    pub(crate) const fn uses_group_windows(self) -> bool {
+        matches!(self, Self::Request)
+    }
+
     fn from_code(code: i16) -> Result<Self, QuotaRepositoryError> {
         match code {
             1 => Ok(Self::Request),
@@ -125,6 +129,11 @@ pub enum QuotaRepositoryError {
     /// 令牌 5h/1d/7d 窗口无法容纳本次预扣；可恢复时携带最长等待时间。
     #[error("令牌额度窗口不足")]
     TokenWindowQuotaInsufficient {
+        retry_after: Option<UpstreamRetryAfter>,
+    },
+    /// 分组日、周、月共享窗口无法容纳本次预扣；可恢复时携带最长等待时间。
+    #[error("分组额度窗口不足")]
+    GroupWindowQuotaInsufficient {
         retry_after: Option<UpstreamRetryAfter>,
     },
     /// 批量任务实际额度超过创建任务时冻结的上限。
@@ -228,6 +237,56 @@ impl ReservationState {
         valid_state
             .then_some(())
             .ok_or(QuotaRepositoryError::Invariant)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct GroupQuotaState {
+    pub(crate) group_id: i64,
+    pub(crate) daily_limit: Option<i64>,
+    pub(crate) weekly_limit: Option<i64>,
+    pub(crate) monthly_limit: Option<i64>,
+    pub(crate) daily_usage: i64,
+    pub(crate) weekly_usage: i64,
+    pub(crate) monthly_usage: i64,
+    pub(crate) daily_window_start: TimeDateTimeWithTimeZone,
+    pub(crate) weekly_window_start: TimeDateTimeWithTimeZone,
+    pub(crate) monthly_window_start: TimeDateTimeWithTimeZone,
+}
+
+impl GroupQuotaState {
+    pub(crate) fn try_from_result(result: &QueryResult) -> Result<Self, QuotaRepositoryError> {
+        let state = Self {
+            group_id: get(result, "id")?,
+            daily_limit: get(result, "daily_limit")?,
+            weekly_limit: get(result, "weekly_limit")?,
+            monthly_limit: get(result, "monthly_limit")?,
+            daily_usage: get(result, "daily_usage")?,
+            weekly_usage: get(result, "weekly_usage")?,
+            monthly_usage: get(result, "monthly_usage")?,
+            daily_window_start: get(result, "daily_window_start")?,
+            weekly_window_start: get(result, "weekly_window_start")?,
+            monthly_window_start: get(result, "monthly_window_start")?,
+        };
+        if state.group_id <= 0
+            || [state.daily_limit, state.weekly_limit, state.monthly_limit]
+                .into_iter()
+                .flatten()
+                .any(|limit| limit < 0)
+            || [state.daily_usage, state.weekly_usage, state.monthly_usage]
+                .into_iter()
+                .any(|usage| usage < 0)
+            || [
+                state.daily_window_start,
+                state.weekly_window_start,
+                state.monthly_window_start,
+            ]
+            .into_iter()
+            .any(|started_at| started_at.unix_timestamp() < 0)
+        {
+            return Err(QuotaRepositoryError::Invariant);
+        }
+        Ok(state)
     }
 }
 

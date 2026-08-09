@@ -103,7 +103,18 @@ pub(crate) fn user_state(user_id: i64, lock: bool) -> SelectStatement {
 pub(crate) fn group_state(group_id: i64, lock: bool) -> SelectStatement {
     let mut statement = Query::select();
     statement
-        .column(groups::Column::Id)
+        .columns([
+            groups::Column::Id,
+            groups::Column::DailyLimit,
+            groups::Column::WeeklyLimit,
+            groups::Column::MonthlyLimit,
+            groups::Column::DailyUsage,
+            groups::Column::WeeklyUsage,
+            groups::Column::MonthlyUsage,
+            groups::Column::DailyWindowStart,
+            groups::Column::WeeklyWindowStart,
+            groups::Column::MonthlyWindowStart,
+        ])
         .from(groups::Entity)
         .and_where(groups::Column::Id.eq(group_id))
         .limit(1);

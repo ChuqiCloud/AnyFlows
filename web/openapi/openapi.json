@@ -12064,6 +12064,9 @@
           "daily_limit",
           "weekly_limit",
           "monthly_limit",
+          "daily_window",
+          "weekly_window",
+          "monthly_window",
           "rpm_limit",
           "fallback_group_id",
           "flags"
@@ -12139,6 +12142,15 @@
             "format": "int64",
             "minimum": 0
           },
+          "daily_window": {
+            "$ref": "#/components/schemas/AdminGroupWindow"
+          },
+          "weekly_window": {
+            "$ref": "#/components/schemas/AdminGroupWindow"
+          },
+          "monthly_window": {
+            "$ref": "#/components/schemas/AdminGroupWindow"
+          },
           "rpm_limit": {
             "type": [
               "integer",
@@ -12181,6 +12193,32 @@
               "integer",
               "null"
             ],
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminGroupWindow": {
+        "type": "object",
+        "required": [
+          "usage",
+          "started_at",
+          "resets_at"
+        ],
+        "properties": {
+          "usage": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "started_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "resets_at": {
+            "type": "integer",
             "format": "int64",
             "minimum": 1
           }

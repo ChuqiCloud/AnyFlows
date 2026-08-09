@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use af_domain::{
     BillingReservationId, ChannelId, CredentialKind, GatewayPrincipal, GroupId, Quota, QuotaDelta,
-    TokenId, TrustedClientIp, UserId,
+    SubscriptionCycle, SubscriptionWindow, TokenId, TrustedClientIp, UserId,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rust_decimal::Decimal;
@@ -24,10 +24,10 @@ use crate::entity::{
     EncryptedJson, HeaderOverrides, PasswordHash, PlaygroundConversationKey, SensitiveDecimal,
     SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, WalletLedgerKey, abilities,
     auth_challenge_rate_limits, auth_challenges, authentication_settings, balance_alert_events,
-    balance_alert_settings, billing_batch_checkpoints, billing_reservations,
-    billing_subscription_reservations, billing_token_window_reservations, channel_groups,
-    channel_models, channels, credentials, email_settings, group_model_ratios, groups,
-    invite_rebate_events, model_prices, model_sync_items, model_sync_runs, models, options,
+    balance_alert_settings, billing_batch_checkpoints, billing_group_window_reservations,
+    billing_reservations, billing_subscription_reservations, billing_token_window_reservations,
+    channel_groups, channel_models, channels, credentials, email_settings, group_model_ratios,
+    groups, invite_rebate_events, model_prices, model_sync_items, model_sync_runs, models, options,
     playground_conversations, playground_shares, redemption_batches, redemption_codes,
     registration_rate_limits, scheduler_outbox_events, site_settings,
     subscription_balance_alert_events, subscription_plans, tokens, topup_orders,
@@ -54,7 +54,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 49;
+const EXPECTED_MIGRATION_COUNT: usize = 50;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -72,7 +72,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 43] = [
+const CORE_TABLES: [&str; 44] = [
     "groups",
     "users",
     "channels",
@@ -86,6 +86,7 @@ const CORE_TABLES: [&str; 43] = [
     "billing_reservations",
     "billing_subscription_reservations",
     "billing_token_window_reservations",
+    "billing_group_window_reservations",
     "billing_batch_checkpoints",
     "model_prices",
     "group_model_ratios",
@@ -249,26 +250,29 @@ async fn credential_oauth_pending_migration_backfills_existing_rows() -> Result<
 async fn token_window_migration_backfills_only_active_requests() -> Result<(), Box<dyn Error>> {
     let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
     Migrator::up(pool.connection(), Some(48)).await?;
-    let group = group_active_model("token-window-backfill", "令牌窗口回填分组")
-        .insert(pool.connection())
-        .await?;
+    let group_id = insert_legacy_group(
+        pool.connection(),
+        "token-window-backfill",
+        "令牌窗口回填分组",
+    )
+    .await?;
     let user = user_active_model(
-        group.id,
+        group_id,
         "token-window-user",
         "token-window@example.com",
         "invite-token-window",
     )
     .insert(pool.connection())
     .await?;
-    let token = token_active_model(user.id, group.id, TOKEN_HASH_A, "token-window-token")
+    let token = token_active_model(user.id, group_id, TOKEN_HASH_A, "token-window-token")
         .insert(pool.connection())
         .await?;
     let request_key = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
-    let request = reservation_active_model(request_key, user.id, token.id, group.id, 80, 80)
+    let request = reservation_active_model(request_key, user.id, token.id, group_id, 80, 80)
         .insert(pool.connection())
         .await?;
     let batch_key = "dededededededededededededededede";
-    let mut batch = reservation_active_model(batch_key, user.id, token.id, group.id, 90, 90);
+    let mut batch = reservation_active_model(batch_key, user.id, token.id, group_id, 90, 90);
     batch.reservation_kind = Set(2);
     batch.insert(pool.connection()).await?;
 
@@ -308,22 +312,110 @@ async fn token_window_migration_backfills_only_active_requests() -> Result<(), B
 }
 
 #[tokio::test]
+async fn group_window_migration_backfills_state_and_only_active_requests()
+-> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), Some(49)).await?;
+    let group_id = insert_legacy_group(
+        pool.connection(),
+        "group-window-backfill",
+        "分组窗口回填分组",
+    )
+    .await?;
+    let user = user_active_model(
+        group_id,
+        "group-window-user",
+        "group-window@example.com",
+        "invite-group-window",
+    )
+    .insert(pool.connection())
+    .await?;
+    let token = token_active_model(user.id, group_id, TOKEN_HASH_B, "group-window-token")
+        .insert(pool.connection())
+        .await?;
+    let request_key = "efefefefefefefefefefefefefefefef";
+    let request = reservation_active_model(request_key, user.id, token.id, group_id, 70, 70)
+        .insert(pool.connection())
+        .await?;
+    let batch_key = "fafafafafafafafafafafafafafafafa";
+    let mut batch = reservation_active_model(batch_key, user.id, token.id, group_id, 90, 90);
+    batch.reservation_kind = Set(2);
+    batch.insert(pool.connection()).await?;
+
+    Migrator::up(pool.connection(), None).await?;
+    let manager = SchemaManager::new(pool.connection());
+    assert!(
+        manager
+            .has_index(
+                "billing_reservations",
+                "idx_billing_reservations_group_status"
+            )
+            .await?
+    );
+    let group = groups::Entity::find_by_id(group_id)
+        .one(pool.connection())
+        .await?
+        .expect("升级后的分组必须保留");
+    assert_eq!(
+        [group.daily_usage, group.weekly_usage, group.monthly_usage],
+        [0, 0, 0]
+    );
+    for (cycle, started_at) in [
+        (SubscriptionCycle::Daily, group.daily_window_start),
+        (SubscriptionCycle::Weekly, group.weekly_window_start),
+        (SubscriptionCycle::Monthly, group.monthly_window_start),
+    ] {
+        let seconds = <u64 as std::convert::TryFrom<i64>>::try_from(started_at.unix_timestamp())?;
+        assert_eq!(
+            SubscriptionWindow::initial(cycle, seconds)?.started_at(),
+            seconds
+        );
+    }
+    let snapshot = billing_group_window_reservations::Entity::find_by_id(
+        BillingReservationKey::parse(request_key)?,
+    )
+    .one(pool.connection())
+    .await?
+    .expect("升级前在途普通请求必须获得分组兼容快照");
+    assert_eq!(snapshot.reserved_quota, request.reserved_quota);
+    assert_eq!(snapshot.daily_window_start, request.created_at);
+    assert_eq!(snapshot.weekly_window_start, request.created_at);
+    assert_eq!(snapshot.monthly_window_start, request.created_at);
+    assert_eq!(snapshot.created_at, request.created_at);
+    assert_eq!(snapshot.updated_at, request.created_at);
+    assert!(
+        billing_group_window_reservations::Entity::find_by_id(BillingReservationKey::parse(
+            batch_key
+        )?)
+        .one(pool.connection())
+        .await?
+        .is_none()
+    );
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn billing_reservation_kind_migration_backfills_existing_rows() -> Result<(), Box<dyn Error>>
 {
     let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
     Migrator::up(pool.connection(), Some(45)).await?;
-    let group = group_active_model("reservation-kind-backfill", "预留用途回填分组")
-        .insert(pool.connection())
-        .await?;
+    let group_id = insert_legacy_group(
+        pool.connection(),
+        "reservation-kind-backfill",
+        "预留用途回填分组",
+    )
+    .await?;
     let user = user_active_model(
-        group.id,
+        group_id,
         "reservation-kind-user",
         "reservation-kind@example.com",
         "invite-reservation-kind",
     )
     .insert(pool.connection())
     .await?;
-    let token = token_active_model(user.id, group.id, TOKEN_HASH_A, "reservation-kind-token")
+    let token = token_active_model(user.id, group_id, TOKEN_HASH_A, "reservation-kind-token")
         .insert(pool.connection())
         .await?;
     let reservation_id = "abababababababababababababababab";
@@ -332,7 +424,7 @@ async fn billing_reservation_kind_migration_backfills_existing_rows() -> Result<
         reservation_id,
         user.id,
         token.id,
-        group.id,
+        group_id,
         100,
         100,
     ))
@@ -356,15 +448,14 @@ async fn site_authentication_migration_moves_legacy_registration_policy()
 -> Result<(), Box<dyn Error>> {
     let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
     Migrator::up(pool.connection(), Some(19)).await?;
-    let group = group_active_model("legacy-registration", "旧注册分组")
-        .insert(pool.connection())
-        .await?;
+    let group_id =
+        insert_legacy_group(pool.connection(), "legacy-registration", "旧注册分组").await?;
     option_active_model(
         "system.registration.policy.v1",
         &serde_json::json!({
             "version": 1,
             "enabled": true,
-            "default_group_id": group.id,
+            "default_group_id": group_id,
             "initial_quota": 250,
             "email_required": true,
             "rate_limit_attempts": 7,
@@ -382,7 +473,7 @@ async fn site_authentication_migration_moves_legacy_registration_policy()
         .expect("认证设置固定记录必须存在");
     assert!(settings.password_login_enabled);
     assert!(settings.registration_enabled);
-    assert_eq!(settings.registration_default_group_id, Some(group.id));
+    assert_eq!(settings.registration_default_group_id, Some(group_id));
     assert_eq!(settings.registration_initial_quota, 250);
     assert_eq!(settings.invitation_rebate_quota, 0);
     assert!(settings.registration_email_required);
@@ -403,11 +494,9 @@ async fn site_authentication_migration_moves_legacy_registration_policy()
 async fn wallet_migration_backfills_existing_nonzero_balances() -> Result<(), Box<dyn Error>> {
     let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
     Migrator::up(pool.connection(), Some(26)).await?;
-    let group = group_active_model("legacy-wallet", "旧钱包分组")
-        .insert(pool.connection())
-        .await?;
+    let group_id = insert_legacy_group(pool.connection(), "legacy-wallet", "旧钱包分组").await?;
     let mut user = user_active_model(
-        group.id,
+        group_id,
         "legacy-wallet-user",
         "legacy-wallet@example.com",
         "invite-legacy-wallet",
@@ -2009,6 +2098,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         "billing_token_window_reservations",
     )
     .await?;
+    assert_entity_columns::<billing_group_window_reservations::Column>(
+        &manager,
+        "billing_group_window_reservations",
+    )
+    .await?;
     assert_entity_columns::<billing_batch_checkpoints::Column>(
         &manager,
         "billing_batch_checkpoints",
@@ -3592,6 +3686,20 @@ fn group_active_model(name: &str, display_name: &str) -> groups::ActiveModel {
         flags: Set(empty_json_object()),
         ..Default::default()
     }
+}
+
+/// 在历史 schema 上只取自增主键，避免 RETURNING 投影尚未迁移的新分组列。
+async fn insert_legacy_group(
+    connection: &DatabaseConnection,
+    name: &str,
+    display_name: &str,
+) -> Result<i64, DbErr> {
+    Ok(
+        groups::Entity::insert(group_active_model(name, display_name))
+            .exec(connection)
+            .await?
+            .last_insert_id,
+    )
 }
 
 fn user_active_model(

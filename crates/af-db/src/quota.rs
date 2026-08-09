@@ -16,15 +16,16 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::DatabasePool;
 
+mod group_windows;
 mod sql;
 mod state;
 pub(crate) mod subscription;
 mod token_windows;
 
+use state::{GroupQuotaState, ReservationState, TokenQuotaState, UserQuotaState};
 pub use state::{
     QuotaMutationOutcome, QuotaRepositoryError, QuotaReservationKind, QuotaReservationStatus,
 };
-use state::{ReservationState, TokenQuotaState, UserQuotaState};
 
 const DEFAULT_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_RESERVATION_TTL: Duration = Duration::from_secs(15 * 60);
@@ -229,7 +230,7 @@ impl QuotaRepository {
         let backend = transaction.get_database_backend();
 
         // 先取得会被修改的父行锁，避免 MySQL 外键检查先持有共享锁后再升级而死锁。
-        let (_, token_state) = match lock_subject(
+        let (group_state, _, token_state) = match lock_subject(
             &transaction,
             principal.group_id().get(),
             principal.user_id().get(),
@@ -282,6 +283,12 @@ impl QuotaRepository {
             }
             Err(error) => return rollback_with_error(transaction, error).await,
         };
+        if reservation_kind.uses_group_windows()
+            && let Err(error) =
+                group_windows::reserve(&transaction, &key, &parent, group_state, amount, now).await
+        {
+            return rollback_with_error(transaction, error).await;
+        }
         let uses_subscription = if reservation_kind.allows_subscription() {
             match subscription::try_reserve(&transaction, &key, &parent, amount, now).await {
                 Ok(value) => value,
@@ -362,6 +369,7 @@ impl QuotaRepository {
             .ok_or(QuotaRepositoryError::Invariant)
             .and_then(ReservationState::try_from_result)?;
         subscription::load_allocation(self.pool.connection(), &key, &state).await?;
+        group_windows::load_allocation(self.pool.connection(), &key, &state).await?;
         token_windows::load_allocation(self.pool.connection(), &key, &state).await?;
         if state.matches_precharge(principal, amount, reservation_kind) {
             Ok(QuotaMutationOutcome::Existing(state.status))
@@ -395,7 +403,7 @@ impl QuotaRepository {
             .map_err(|_| QuotaRepositoryError::Query)?;
         let backend = transaction.get_database_backend();
 
-        let (user_state, token_state) = match lock_subject(
+        let (group_state, user_state, token_state) = match lock_subject(
             &transaction,
             observed.group_id,
             observed.user_id,
@@ -430,6 +438,11 @@ impl QuotaRepository {
             Ok(allocation) => allocation,
             Err(error) => return rollback_with_error(transaction, error).await,
         };
+        let group_window_allocation =
+            match group_windows::load_allocation(&transaction, &key, &state).await {
+                Ok(allocation) => allocation,
+                Err(error) => return rollback_with_error(transaction, error).await,
+            };
         let token_window_allocation =
             match token_windows::load_allocation(&transaction, &key, &state).await {
                 Ok(allocation) => allocation,
@@ -490,6 +503,10 @@ impl QuotaRepository {
                 {
                     return rollback_with_error(transaction, error).await;
                 }
+                if let Err(error) = group_windows::load_allocation(&transaction, &key, &state).await
+                {
+                    return rollback_with_error(transaction, error).await;
+                }
                 if let Err(error) = token_windows::load_allocation(&transaction, &key, &state).await
                 {
                     return rollback_with_error(transaction, error).await;
@@ -541,8 +558,10 @@ impl QuotaRepository {
                 token_reserved,
                 actual,
                 user_state: &user_state,
+                group_state,
                 token_state,
                 subscription_settlement,
+                group_window_allocation: group_window_allocation.as_ref(),
                 token_window_allocation: token_window_allocation.as_ref(),
                 now,
             },
@@ -559,6 +578,7 @@ impl QuotaRepository {
             Err(
                 error @ (QuotaRepositoryError::UserQuotaInsufficient
                 | QuotaRepositoryError::TokenQuotaInsufficient
+                | QuotaRepositoryError::GroupWindowQuotaInsufficient { .. }
                 | QuotaRepositoryError::TokenWindowQuotaInsufficient { .. }),
             ) => {
                 savepoint
@@ -628,6 +648,9 @@ impl QuotaRepository {
             Ok(allocation) => allocation,
             Err(error) => return rollback_with_error(transaction, error).await,
         };
+        if let Err(error) = group_windows::load_allocation(&transaction, &key, &state).await {
+            return rollback_with_error(transaction, error).await;
+        }
         if let Err(error) = token_windows::load_allocation(&transaction, &key, &state).await {
             return rollback_with_error(transaction, error).await;
         }
@@ -729,8 +752,10 @@ struct SettlementAdjustment<'a> {
     token_reserved: Quota,
     actual: Quota,
     user_state: &'a UserQuotaState,
+    group_state: GroupQuotaState,
     token_state: TokenQuotaState,
     subscription_settlement: Option<subscription::SubscriptionSettlement>,
+    group_window_allocation: Option<&'a group_windows::GroupWindowAllocation>,
     token_window_allocation: Option<&'a token_windows::TokenWindowAllocation>,
     now: TimeDateTimeWithTimeZone,
 }
@@ -746,12 +771,23 @@ async fn settle_adjustment(
         token_reserved,
         actual,
         user_state,
+        group_state,
         token_state,
         subscription_settlement,
+        group_window_allocation,
         token_window_allocation,
         now,
     } = adjustment;
     let backend = savepoint.get_database_backend();
+    group_windows::apply_settlement(
+        savepoint,
+        state,
+        group_window_allocation,
+        group_state,
+        actual,
+        now,
+    )
+    .await?;
     if let Some(settlement) = subscription_settlement {
         subscription::apply_settlement(savepoint, state, user_state, actual, settlement, now)
             .await?;
@@ -885,20 +921,20 @@ async fn lock_subject(
     group_id: i64,
     user_id: i64,
     token_id: i64,
-) -> Result<(UserQuotaState, TokenQuotaState), QuotaRepositoryError> {
-    lock_group(transaction, group_id).await?;
+) -> Result<(GroupQuotaState, UserQuotaState, TokenQuotaState), QuotaRepositoryError> {
+    let group = lock_group(transaction, group_id).await?;
     let user = lock_user(transaction, user_id).await?;
     let token = lock_token(transaction, token_id).await?;
     if token.user_id != user_id {
         return Err(QuotaRepositoryError::Invariant);
     }
-    Ok((user, token))
+    Ok((group, user, token))
 }
 
 async fn lock_group(
     transaction: &DatabaseTransaction,
     group_id: i64,
-) -> Result<(), QuotaRepositoryError> {
+) -> Result<GroupQuotaState, QuotaRepositoryError> {
     if transaction.get_database_backend() == DbBackend::Sqlite {
         let result = transaction
             .execute(DbBackend::Sqlite.build(&sql::sqlite_lock_group(group_id)))
@@ -910,9 +946,9 @@ async fn lock_group(
     }
     query_one(transaction, sql::group_state(group_id, true))
         .await?
-        .is_some()
-        .then_some(())
+        .as_ref()
         .ok_or(QuotaRepositoryError::Invariant)
+        .and_then(GroupQuotaState::try_from_result)
 }
 
 async fn lock_user(
@@ -1078,6 +1114,7 @@ fn record_internal_error(error: QuotaRepositoryError) -> QuotaRepositoryError {
         | QuotaRepositoryError::Conflict
         | QuotaRepositoryError::UserQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient
+        | QuotaRepositoryError::GroupWindowQuotaInsufficient { .. }
         | QuotaRepositoryError::TokenWindowQuotaInsufficient { .. }
         | QuotaRepositoryError::ActualExceedsReservation => return error,
     };
