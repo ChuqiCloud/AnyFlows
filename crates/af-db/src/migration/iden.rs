@@ -416,8 +416,11 @@ pub(in crate::migration) mod billing_token_window_reservations {
     #[derive(Clone, Copy, DeriveIden)]
     pub(in crate::migration) enum Column {
         IdempotencyKey,
+        #[sea_orm(iden = "window_5h_start")]
         Window5hStart,
+        #[sea_orm(iden = "window_1d_start")]
         Window1dStart,
+        #[sea_orm(iden = "window_7d_start")]
         Window7dStart,
         ReservedQuota,
         CreatedAt,
