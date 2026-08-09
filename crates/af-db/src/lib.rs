@@ -112,6 +112,8 @@ mod playground_share_tests;
 mod quota;
 #[cfg(test)]
 mod quota_tests;
+#[cfg(test)]
+mod quota_token_window_tests;
 mod redemption;
 mod registration;
 #[cfg(test)]

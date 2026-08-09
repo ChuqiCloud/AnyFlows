@@ -1,4 +1,4 @@
-use af_domain::{GatewayPrincipal, Quota};
+use af_domain::{GatewayPrincipal, Quota, UpstreamRetryAfter};
 use sea_orm::{QueryResult, entity::prelude::TimeDateTimeWithTimeZone};
 use thiserror::Error;
 
@@ -46,6 +46,10 @@ impl QuotaReservationKind {
     }
 
     pub(crate) const fn allows_supplement(self) -> bool {
+        matches!(self, Self::Request)
+    }
+
+    pub(crate) const fn uses_token_windows(self) -> bool {
         matches!(self, Self::Request)
     }
 
@@ -118,6 +122,11 @@ pub enum QuotaRepositoryError {
     /// 有限令牌不足以完成预扣或结算补扣。
     #[error("令牌额度不足")]
     TokenQuotaInsufficient,
+    /// 令牌 5h/1d/7d 窗口无法容纳本次预扣；可恢复时携带最长等待时间。
+    #[error("令牌额度窗口不足")]
+    TokenWindowQuotaInsufficient {
+        retry_after: Option<UpstreamRetryAfter>,
+    },
     /// 批量任务实际额度超过创建任务时冻结的上限。
     #[error("批量任务实际额度超过冻结上限")]
     ActualExceedsReservation,
@@ -248,11 +257,21 @@ impl UserQuotaState {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct TokenQuotaState {
     pub(crate) user_id: i64,
     pub(crate) remain_quota: i64,
     pub(crate) unlimited_quota: bool,
     pub(crate) used_quota: i64,
+    pub(crate) rate_limit_5h: Option<i64>,
+    pub(crate) rate_limit_1d: Option<i64>,
+    pub(crate) rate_limit_7d: Option<i64>,
+    pub(crate) usage_5h: i64,
+    pub(crate) usage_1d: i64,
+    pub(crate) usage_7d: i64,
+    pub(crate) window_5h_start: TimeDateTimeWithTimeZone,
+    pub(crate) window_1d_start: TimeDateTimeWithTimeZone,
+    pub(crate) window_7d_start: TimeDateTimeWithTimeZone,
 }
 
 impl TokenQuotaState {
@@ -262,8 +281,38 @@ impl TokenQuotaState {
             remain_quota: get(result, "remain_quota")?,
             unlimited_quota: get(result, "unlimited_quota")?,
             used_quota: get(result, "used_quota")?,
+            rate_limit_5h: get(result, "rate_limit_5h")?,
+            rate_limit_1d: get(result, "rate_limit_1d")?,
+            rate_limit_7d: get(result, "rate_limit_7d")?,
+            usage_5h: get(result, "usage_5h")?,
+            usage_1d: get(result, "usage_1d")?,
+            usage_7d: get(result, "usage_7d")?,
+            window_5h_start: get(result, "window_5h_start")?,
+            window_1d_start: get(result, "window_1d_start")?,
+            window_7d_start: get(result, "window_7d_start")?,
         };
-        if state.user_id <= 0 || state.remain_quota < 0 || state.used_quota < 0 {
+        if state.user_id <= 0
+            || state.remain_quota < 0
+            || state.used_quota < 0
+            || [
+                state.rate_limit_5h,
+                state.rate_limit_1d,
+                state.rate_limit_7d,
+            ]
+            .into_iter()
+            .flatten()
+            .any(|limit| limit < 0)
+            || [state.usage_5h, state.usage_1d, state.usage_7d]
+                .into_iter()
+                .any(|usage| usage < 0)
+            || [
+                state.window_5h_start,
+                state.window_1d_start,
+                state.window_7d_start,
+            ]
+            .into_iter()
+            .any(|started_at| started_at.unix_timestamp() < 0)
+        {
             return Err(QuotaRepositoryError::Invariant);
         }
         Ok(state)

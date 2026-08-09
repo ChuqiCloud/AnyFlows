@@ -25,13 +25,13 @@ use crate::entity::{
     SensitiveJson, SensitiveString, TokenHash, TokenIpAllowlist, WalletLedgerKey, abilities,
     auth_challenge_rate_limits, auth_challenges, authentication_settings, balance_alert_events,
     balance_alert_settings, billing_batch_checkpoints, billing_reservations,
-    billing_subscription_reservations, channel_groups, channel_models, channels, credentials,
-    email_settings, group_model_ratios, groups, invite_rebate_events, model_prices,
-    model_sync_items, model_sync_runs, models, options, playground_conversations,
-    playground_shares, redemption_batches, redemption_codes, registration_rate_limits,
-    scheduler_outbox_events, site_settings, subscription_balance_alert_events, subscription_plans,
-    tokens, topup_orders, topup_payment_events, usage_logs, user_subscriptions, users,
-    wallet_ledger_entries,
+    billing_subscription_reservations, billing_token_window_reservations, channel_groups,
+    channel_models, channels, credentials, email_settings, group_model_ratios, groups,
+    invite_rebate_events, model_prices, model_sync_items, model_sync_runs, models, options,
+    playground_conversations, playground_shares, redemption_batches, redemption_codes,
+    registration_rate_limits, scheduler_outbox_events, site_settings,
+    subscription_balance_alert_events, subscription_plans, tokens, topup_orders,
+    topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -54,7 +54,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 48;
+const EXPECTED_MIGRATION_COUNT: usize = 49;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -72,7 +72,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 42] = [
+const CORE_TABLES: [&str; 43] = [
     "groups",
     "users",
     "channels",
@@ -85,6 +85,7 @@ const CORE_TABLES: [&str; 42] = [
     "options",
     "billing_reservations",
     "billing_subscription_reservations",
+    "billing_token_window_reservations",
     "billing_batch_checkpoints",
     "model_prices",
     "group_model_ratios",
@@ -239,6 +240,68 @@ async fn credential_oauth_pending_migration_backfills_existing_rows() -> Result<
         .await?
         .expect("迁移后的凭据必须保留");
     assert!(!credential.oauth_token_pending);
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn token_window_migration_backfills_only_active_requests() -> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), Some(48)).await?;
+    let group = group_active_model("token-window-backfill", "令牌窗口回填分组")
+        .insert(pool.connection())
+        .await?;
+    let user = user_active_model(
+        group.id,
+        "token-window-user",
+        "token-window@example.com",
+        "invite-token-window",
+    )
+    .insert(pool.connection())
+    .await?;
+    let token = token_active_model(user.id, group.id, TOKEN_HASH_A, "token-window-token")
+        .insert(pool.connection())
+        .await?;
+    let request_key = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+    let request = reservation_active_model(request_key, user.id, token.id, group.id, 80, 80)
+        .insert(pool.connection())
+        .await?;
+    let batch_key = "dededededededededededededededede";
+    let mut batch = reservation_active_model(batch_key, user.id, token.id, group.id, 90, 90);
+    batch.reservation_kind = Set(2);
+    batch.insert(pool.connection()).await?;
+
+    Migrator::up(pool.connection(), None).await?;
+    let manager = SchemaManager::new(pool.connection());
+    assert!(
+        manager
+            .has_index(
+                "billing_reservations",
+                "idx_billing_reservations_token_status"
+            )
+            .await?
+    );
+    let snapshot = billing_token_window_reservations::Entity::find_by_id(
+        BillingReservationKey::parse(request_key)?,
+    )
+    .one(pool.connection())
+    .await?
+    .expect("升级前在途普通请求必须获得兼容快照");
+    assert_eq!(snapshot.reserved_quota, request.reserved_quota);
+    assert_eq!(snapshot.window_5h_start, request.created_at);
+    assert_eq!(snapshot.window_1d_start, request.created_at);
+    assert_eq!(snapshot.window_7d_start, request.created_at);
+    assert_eq!(snapshot.created_at, request.created_at);
+    assert_eq!(snapshot.updated_at, request.created_at);
+    assert!(
+        billing_token_window_reservations::Entity::find_by_id(BillingReservationKey::parse(
+            batch_key
+        )?)
+        .one(pool.connection())
+        .await?
+        .is_none()
+    );
 
     pool.close().await?;
     Ok(())
@@ -1939,6 +2002,11 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     assert_entity_columns::<billing_subscription_reservations::Column>(
         &manager,
         "billing_subscription_reservations",
+    )
+    .await?;
+    assert_entity_columns::<billing_token_window_reservations::Column>(
+        &manager,
+        "billing_token_window_reservations",
     )
     .await?;
     assert_entity_columns::<billing_batch_checkpoints::Column>(

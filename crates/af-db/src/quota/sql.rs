@@ -121,6 +121,15 @@ pub(crate) fn token_state(token_id: i64, lock: bool) -> SelectStatement {
             tokens::Column::RemainQuota,
             tokens::Column::UnlimitedQuota,
             tokens::Column::UsedQuota,
+            tokens::Column::RateLimit5h,
+            tokens::Column::RateLimit1d,
+            tokens::Column::RateLimit7d,
+            tokens::Column::Usage5h,
+            tokens::Column::Usage1d,
+            tokens::Column::Usage7d,
+            tokens::Column::Window5hStart,
+            tokens::Column::Window1dStart,
+            tokens::Column::Window7dStart,
         ])
         .from(tokens::Entity)
         .and_where(tokens::Column::Id.eq(token_id))

@@ -1,7 +1,7 @@
 use af_config::{CorsOrigin, ServerConfig};
 use af_domain::{
     AfError, NetworkFailureKind, PublicErrorCode, RateLimitScope, UpstreamError,
-    UpstreamServerStatus,
+    UpstreamRetryAfter, UpstreamServerStatus,
 };
 use af_telemetry::RequestId;
 use axum::{
@@ -14,7 +14,7 @@ use http::{
     Request, StatusCode,
     header::{
         ACCEPT_LANGUAGE, ACCESS_CONTROL_ALLOW_ORIGIN, ACCESS_CONTROL_EXPOSE_HEADERS, CONTENT_TYPE,
-        ORIGIN,
+        ORIGIN, RETRY_AFTER,
     },
 };
 use serde_json::{Value, json};
@@ -22,7 +22,9 @@ use tower::ServiceExt;
 
 use crate::{
     ApiKeyExtractionError, REQUEST_ID_HEADER_NAME,
-    error_response::{AnthropicHttpError, GeminiHttpError, MappedError, OpenAiHttpError},
+    error_response::{
+        AnthropicHttpError, GeminiHttpError, MappedError, OpenAiHttpError, OpenAiResponsesHttpError,
+    },
     router::build_router_with_routes,
 };
 
@@ -63,6 +65,15 @@ fn error_cases() -> Vec<ErrorCase> {
             code: PublicErrorCode::InsufficientQuota,
             kind: "insufficient_quota",
             message: "Insufficient quota.",
+        },
+        ErrorCase {
+            error: AfError::QuotaWindowLimited {
+                retry_after: UpstreamRetryAfter::from_seconds(37).unwrap(),
+            },
+            status: StatusCode::TOO_MANY_REQUESTS,
+            code: PublicErrorCode::RateLimited,
+            kind: "rate_limit_error",
+            message: "Rate limit exceeded. Please retry later.",
         },
         ErrorCase {
             error: AfError::ConcurrencyLimited,
@@ -309,6 +320,22 @@ async fn maps_every_current_domain_error_to_google_json_api_wire() {
             })
         );
         assert!(!body.to_string().contains(&diagnostic));
+    }
+}
+
+#[test]
+fn quota_window_limit_emits_retry_after_for_every_protocol() {
+    let retry_after = UpstreamRetryAfter::from_seconds(37).unwrap();
+    let responses = [
+        OpenAiHttpError::from(AfError::QuotaWindowLimited { retry_after }).into_response(),
+        OpenAiResponsesHttpError::from(AfError::QuotaWindowLimited { retry_after }).into_response(),
+        AnthropicHttpError::from(AfError::QuotaWindowLimited { retry_after }).into_response(),
+        GeminiHttpError::from(AfError::QuotaWindowLimited { retry_after }).into_response(),
+    ];
+
+    for response in responses {
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(response.headers()[RETRY_AFTER], "37");
     }
 }
 

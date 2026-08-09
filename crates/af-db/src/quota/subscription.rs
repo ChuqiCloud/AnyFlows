@@ -639,7 +639,7 @@ fn parse_key(value: &str) -> Result<BillingReservationKey, QuotaRepositoryError>
     BillingReservationKey::parse(value).map_err(|_| QuotaRepositoryError::Invariant)
 }
 
-fn read_sum(
+pub(super) fn read_sum(
     result: &QueryResult,
     column: &str,
     backend: DbBackend,

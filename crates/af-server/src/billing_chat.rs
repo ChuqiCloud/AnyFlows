@@ -284,6 +284,9 @@ fn map_snapshot_error(_error: RequestPricingSnapshotError) -> AfError {
 fn map_precharge_error(error: BillingPrechargeError) -> AfError {
     match error {
         BillingPrechargeError::InsufficientQuota => AfError::InsufficientQuota,
+        BillingPrechargeError::RateLimited { retry_after } => {
+            AfError::QuotaWindowLimited { retry_after }
+        }
         BillingPrechargeError::OutcomeUnknown
         | BillingPrechargeError::Conflict
         | BillingPrechargeError::Unavailable
@@ -324,7 +327,7 @@ mod tests {
         ModelPriceCache, ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord,
         PricingRatio, RefundSignalOutcome, RequestPricingSnapshot, TokenPrices, UsageRecordOutcome,
     };
-    use af_domain::{GroupId, Operation, Quota, Role, TokenId, UserId};
+    use af_domain::{GroupId, Operation, Quota, Role, TokenId, UpstreamRetryAfter, UserId};
     use af_http::ChatService;
     use af_protocol::{
         CanonicalRequest, CanonicalRequestEnvelope, ContentBlock, Message, TokenCount, Usage,
@@ -333,6 +336,15 @@ mod tests {
     use rust_decimal::Decimal;
 
     use super::*;
+
+    #[test]
+    fn recoverable_window_precharge_maps_to_downstream_rate_limit() {
+        let retry_after = UpstreamRetryAfter::from_seconds(37).unwrap();
+        assert_eq!(
+            map_precharge_error(BillingPrechargeError::RateLimited { retry_after }),
+            AfError::QuotaWindowLimited { retry_after }
+        );
+    }
 
     struct FullStub {
         target_group_id: GroupId,

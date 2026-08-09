@@ -54,6 +54,7 @@ mod m20260807_000045_create_subscription_billing_reservations;
 mod m20260808_000046_add_billing_reservation_kind;
 mod m20260808_000047_create_subscription_balance_alerts;
 mod m20260808_000048_add_credential_oauth_pending;
+mod m20260809_000049_create_token_window_reservations;
 mod schema;
 
 #[cfg(test)]
@@ -145,6 +146,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260808_000046_add_billing_reservation_kind::Migration),
             Box::new(m20260808_000047_create_subscription_balance_alerts::Migration),
             Box::new(m20260808_000048_add_credential_oauth_pending::Migration),
+            Box::new(m20260809_000049_create_token_window_reservations::Migration),
         ]
     }
 }
