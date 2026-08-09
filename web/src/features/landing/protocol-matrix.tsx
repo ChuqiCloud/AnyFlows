@@ -1,11 +1,11 @@
 import { useTranslation } from 'react-i18next'
 
 /**
- * 三种协议既可作客户端入口也可作上游出口，因此两侧共用同一份清单。
+ * 三类协议族既可作客户端入口也可作上游出口，因此两侧共用同一份清单。
  * 顺序固定，避免每次渲染视觉跳动。
  */
 const protocols = [
-  { id: 'openai', label: 'OpenAI', detail: 'Chat / Responses' },
+  { id: 'openai', label: 'OpenAI', detail: 'Chat / Responses / Embeddings' },
   { id: 'anthropic', label: 'Anthropic', detail: 'Messages' },
   { id: 'gemini', label: 'Gemini', detail: 'generateContent' },
 ] as const

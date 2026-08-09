@@ -37,6 +37,8 @@ function ProtocolBadge({ protocol }: { protocol: AdminChannel['protocol'] }) {
       ? 'bg-brand/10 text-brand'
       : protocol === 'openai_responses'
         ? 'bg-success/10 text-success'
+        : protocol === 'openai_embeddings'
+          ? 'bg-surface-2 text-foreground'
         : 'bg-info/10 text-info'
   return <Badge className={cn('border-transparent', tone)}>{t(`channels.protocol.${protocol}`)}</Badge>
 }

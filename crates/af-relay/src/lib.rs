@@ -15,6 +15,7 @@ mod openai_chat;
 mod openai_chat_request;
 mod openai_chat_stream;
 mod openai_chat_usage;
+mod openai_embeddings;
 mod openai_responses;
 mod openai_responses_request;
 mod openai_responses_stream;
@@ -43,6 +44,10 @@ pub use openai_chat_stream::OpenAiChatStream;
 pub use openai_chat_usage::{
     OpenAiChatUsageHandle, UsageResolutionError, estimate_openai_chat_request_upper_bound,
     estimate_openai_request_upper_bound,
+};
+pub use openai_embeddings::{
+    EmbeddingResponse, RelayOpenAiEmbeddingsOutcome, relay_openai_embeddings,
+    relay_openai_embeddings_with_report,
 };
 pub use openai_responses::{
     RelayOpenAiResponsesOutcome, relay_openai_responses, relay_openai_responses_with_report,

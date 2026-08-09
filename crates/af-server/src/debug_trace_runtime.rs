@@ -95,8 +95,8 @@ impl DebugTraceRuntime {
             token_id: principal.token_id().get(),
             group_id: principal.group_id().get(),
             requested_model: requested_model.to_owned(),
-            downstream_protocol: map_protocol(downstream_protocol),
-            upstream_protocol: map_protocol(upstream_protocol),
+            downstream_protocol: map_protocol(downstream_protocol)?,
+            upstream_protocol: map_protocol(upstream_protocol)?,
             operation: map_operation(operation)?,
         })
     }
@@ -332,12 +332,14 @@ fn sampled(request_id: &str, sample_per_million: u64) -> bool {
     bucket < sample_per_million
 }
 
-const fn map_protocol(protocol: Protocol) -> DebugTraceProtocol {
+const fn map_protocol(protocol: Protocol) -> Option<DebugTraceProtocol> {
     match protocol {
-        Protocol::OpenAiChat => DebugTraceProtocol::OpenAiChat,
-        Protocol::OpenAiResponses => DebugTraceProtocol::OpenAiResponses,
-        Protocol::Anthropic => DebugTraceProtocol::Anthropic,
-        Protocol::Gemini => DebugTraceProtocol::Gemini,
+        Protocol::OpenAiChat => Some(DebugTraceProtocol::OpenAiChat),
+        Protocol::OpenAiResponses => Some(DebugTraceProtocol::OpenAiResponses),
+        // Embeddings 追踪需要先扩展三方言闭合约束，本切片不伪装成 Chat 记录。
+        Protocol::OpenAiEmbeddings => None,
+        Protocol::Anthropic => Some(DebugTraceProtocol::Anthropic),
+        Protocol::Gemini => Some(DebugTraceProtocol::Gemini),
     }
 }
 

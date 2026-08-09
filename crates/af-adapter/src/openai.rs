@@ -6,12 +6,12 @@ use af_httpclient::{HeaderMap, HeaderName, HeaderValue};
 use crate::credential::clear_authentication_headers;
 use crate::{Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Credential, RelayContext};
 
-/// OpenAI Chat Completions、Responses 及兼容渠道适配器。
+/// OpenAI Chat Completions、Responses、Embeddings 及兼容渠道适配器。
 ///
 /// 渠道基础地址由 `RelayContext` 覆盖，可传服务根或反向代理前缀；末尾非空段精确为
-/// `v1`（可带尾斜杠）时不会重复追加版本路径，其他路径会追加 `/v1/chat/completions`。
-/// 空模型清单表示无内建模型限制，具体模型由渠道配置提供。当前只实现 Bearer-compatible
-/// OpenAI Chat 的 URL 与认证 Header 构造，Azure deployment 等专用参数留待后续适配器切片。
+/// `v1`（可带尾斜杠）时不会重复追加版本路径，其他路径会追加目标原生端点。
+/// 空模型清单表示无内建模型限制，具体模型由渠道配置提供。当前实现 Bearer-compatible
+/// OpenAI 原生端点的 URL 与认证 Header 构造，Azure deployment 等专用参数留待后续适配器切片。
 #[derive(Clone, Eq, PartialEq)]
 pub struct OpenAiAdaptor {
     protocol: Protocol,
@@ -59,7 +59,10 @@ impl OpenAiAdaptor {
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        if !matches!(protocol, Protocol::OpenAiChat | Protocol::OpenAiResponses) {
+        if !matches!(
+            protocol,
+            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings
+        ) {
             return Err(AdaptorError::InvalidChannelSettings {
                 channel_type: ChannelType::OpenAi,
             });
@@ -78,6 +81,7 @@ impl OpenAiAdaptor {
         let endpoint = match (self.protocol, operation) {
             (Protocol::OpenAiChat, Operation::Chat) => "chat/completions",
             (Protocol::OpenAiResponses, Operation::Responses) => "responses",
+            (Protocol::OpenAiEmbeddings, Operation::Embedding) => "embeddings",
             (_, operation) => return Err(AdaptorError::UnsupportedOperation { operation }),
         };
         let base_url = context.resolve_base_url(Self::DEFAULT_BASE_URL)?;
@@ -91,6 +95,7 @@ impl OpenAiAdaptor {
             match endpoint {
                 "chat/completions" => "v1/chat/completions",
                 "responses" => "v1/responses",
+                "embeddings" => "v1/embeddings",
                 _ => unreachable!("OpenAI 端点集合保持闭合"),
             }
         })
@@ -265,6 +270,39 @@ mod tests {
             )
             .unwrap();
         assert!(proxied.ends_with("/proxy/openai/v1/responses"));
+        assert_eq!(
+            adaptor
+                .build_url(&context(), target(Operation::Chat))
+                .unwrap_err(),
+            AdaptorError::UnsupportedOperation {
+                operation: Operation::Chat
+            }
+        );
+    }
+
+    #[test]
+    fn embeddings_protocol_uses_the_native_endpoint_only() {
+        let adaptor = OpenAiAdaptor::with_protocol_and_supported_models(
+            Protocol::OpenAiEmbeddings,
+            ["text-embedding-test"],
+        )
+        .unwrap();
+        assert_eq!(adaptor.default_protocol(), Protocol::OpenAiEmbeddings);
+        assert_eq!(
+            adaptor
+                .build_url(&context(), target(Operation::Embedding))
+                .unwrap(),
+            "https://api.openai.com/v1/embeddings"
+        );
+        let proxied = adaptor
+            .build_url(
+                &context()
+                    .with_base_url("https://gateway.example/proxy/openai/v1")
+                    .unwrap(),
+                target(Operation::Embedding),
+            )
+            .unwrap();
+        assert!(proxied.ends_with("/proxy/openai/v1/embeddings"));
         assert_eq!(
             adaptor
                 .build_url(&context(), target(Operation::Chat))

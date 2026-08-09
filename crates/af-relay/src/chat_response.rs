@@ -60,7 +60,9 @@ pub(crate) fn encode_full_response(
     let response_id = match protocol {
         Protocol::Anthropic => format!("msg_{request_id}"),
         Protocol::Gemini => format!("response-{request_id}"),
-        Protocol::OpenAiChat | Protocol::OpenAiResponses => return Err(AfError::Internal),
+        Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings => {
+            return Err(AfError::Internal);
+        }
     };
     let response = CanonicalResponse::new(
         response.operation,
@@ -75,7 +77,9 @@ pub(crate) fn encode_full_response(
             .map_err(|_| AfError::from(UpstreamError::ProtocolError))?,
         Protocol::Gemini => gemini::build_response(&response)
             .map_err(|_| AfError::from(UpstreamError::ProtocolError))?,
-        Protocol::OpenAiChat | Protocol::OpenAiResponses => unreachable!("协议分支已在上方闭合"),
+        Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings => {
+            unreachable!("协议分支已在上方闭合")
+        }
     };
     let body = serde_json::to_vec(&value)
         .map(Bytes::from)

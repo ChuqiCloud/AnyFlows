@@ -152,6 +152,9 @@ impl ChannelParameterOverrides {
         &self,
         protocol: Protocol,
     ) -> Result<(), ChannelRequestPolicyError> {
+        if protocol == Protocol::OpenAiEmbeddings && !self.is_empty() {
+            return Err(ChannelRequestPolicyError);
+        }
         if protocol == Protocol::OpenAiResponses && self.stop_sequences.is_some() {
             return Err(ChannelRequestPolicyError);
         }
@@ -357,6 +360,11 @@ mod tests {
         );
         assert!(overrides.validate_for_protocol(Protocol::Gemini).is_ok());
         assert!(overrides.validate_for_protocol(Protocol::Anthropic).is_ok());
+        assert!(
+            overrides
+                .validate_for_protocol(Protocol::OpenAiEmbeddings)
+                .is_err()
+        );
         assert!(
             overrides
                 .validate_for_protocol(Protocol::OpenAiResponses)

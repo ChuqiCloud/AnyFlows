@@ -152,6 +152,15 @@ impl CanonicalEmbeddingRequest {
     pub const fn dimensions(&self) -> Option<EmbeddingDimensions> {
         self.dimensions
     }
+
+    /// 返回全部文本输入的 UTF-8 字节总数，作为标准 Embeddings token 的安全预扣上界。
+    #[must_use]
+    pub fn total_text_bytes(&self) -> usize {
+        match &self.input {
+            EmbeddingInput::Text(text) => text.len(),
+            EmbeddingInput::Texts(texts) => texts.iter().map(|text| text.len()).sum(),
+        }
+    }
 }
 
 impl fmt::Debug for CanonicalEmbeddingRequest {
@@ -333,6 +342,24 @@ impl CanonicalEmbeddingResponse {
         if self.vectors.len() != request.input.len() {
             return Err(CanonicalEmbeddingResponseError::InputCountMismatch);
         }
+        // 同一模型的一批向量必须使用相同维度，避免未指定 dimensions 时接受畸形响应。
+        let expected_dimensions = self
+            .vectors
+            .first()
+            .map(|vector| vector.values.len())
+            .ok_or(CanonicalEmbeddingResponseError::InvalidVectorCount)?;
+        if self
+            .vectors
+            .iter()
+            .any(|vector| vector.values.len() != expected_dimensions)
+        {
+            return Err(CanonicalEmbeddingResponseError::DimensionsMismatch);
+        }
+        if usize::try_from(self.usage.input_tokens().get())
+            .map_or(true, |tokens| tokens > request.total_text_bytes())
+        {
+            return Err(CanonicalEmbeddingResponseError::UsageExceedsInputBudget);
+        }
         if let Some(dimensions) = request.dimensions
             && self
                 .vectors
@@ -374,8 +401,10 @@ pub enum CanonicalEmbeddingResponseError {
     InvalidUsage,
     /// 响应向量条数与请求输入条数不一致。
     InputCountMismatch,
-    /// 响应向量维度与请求指定维度不一致。
+    /// 响应向量维度彼此不一致，或与请求指定维度不一致。
     DimensionsMismatch,
+    /// 上游输入 token 超过请求文本的安全字节上界。
+    UsageExceedsInputBudget,
 }
 
 impl fmt::Display for CanonicalEmbeddingResponseError {
@@ -389,6 +418,7 @@ impl fmt::Display for CanonicalEmbeddingResponseError {
             Self::InvalidUsage => "Embeddings 响应用量无效",
             Self::InputCountMismatch => "Embeddings 响应与请求输入条数不一致",
             Self::DimensionsMismatch => "Embeddings 响应与请求向量维度不一致",
+            Self::UsageExceedsInputBudget => "Embeddings 响应用量超过请求输入预算",
         };
         formatter.write_str(message)
     }

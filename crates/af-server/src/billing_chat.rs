@@ -216,7 +216,7 @@ impl GenerationCompletionHook for BillingStreamCompletionHook {
     }
 }
 
-async fn precharge_with_retries(
+pub(crate) async fn precharge_with_retries(
     port: &Arc<dyn BillingPrechargePort>,
     reservation_id: BillingReservationId,
     principal: GatewayPrincipal,
@@ -235,7 +235,7 @@ async fn precharge_with_retries(
     }
 }
 
-async fn complete_with_retries(
+pub(crate) async fn complete_with_retries(
     lifecycle: &mut BillingRequestLifecycle,
     usage: Usage,
 ) -> Result<af_billing::BillingCompletion, BillingLifecycleError> {
@@ -262,7 +262,7 @@ fn retryable_completion_error(error: BillingLifecycleError) -> bool {
     )
 }
 
-fn new_reservation_id() -> Result<BillingReservationId, AfError> {
+pub(crate) fn new_reservation_id() -> Result<BillingReservationId, AfError> {
     BillingReservationId::new(Uuid::new_v4().into_bytes()).map_err(|_| AfError::Internal)
 }
 
@@ -277,7 +277,7 @@ fn map_upper_bound_error(error: UsageResolutionError) -> AfError {
     }
 }
 
-fn map_snapshot_error(_error: RequestPricingSnapshotError) -> AfError {
+pub(crate) fn map_snapshot_error(_error: RequestPricingSnapshotError) -> AfError {
     AfError::Internal
 }
 
@@ -295,7 +295,7 @@ fn map_precharge_error(error: BillingPrechargeError) -> AfError {
     }
 }
 
-fn map_lifecycle_error(error: BillingLifecycleError) -> AfError {
+pub(crate) fn map_lifecycle_error(error: BillingLifecycleError) -> AfError {
     match error {
         BillingLifecycleError::Settlement(
             af_billing::BillingSettlementError::InsufficientQuota,

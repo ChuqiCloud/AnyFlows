@@ -57,6 +57,12 @@ const OPENAI_RESPONSES_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities
     response: response::OPENAI_RESPONSES,
     stream: stream::OPENAI_RESPONSES,
 };
+const OPENAI_EMBEDDINGS_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {
+    protocol: Protocol::OpenAiEmbeddings,
+    request: &[],
+    response: &[],
+    stream: &[],
+};
 const ANTHROPIC_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {
     protocol: Protocol::Anthropic,
     request: request::ANTHROPIC,
@@ -76,6 +82,7 @@ pub const fn protocol_capabilities(protocol: Protocol) -> &'static ProtocolCapab
     match protocol {
         Protocol::OpenAiChat => &OPENAI_CHAT_CAPABILITIES,
         Protocol::OpenAiResponses => &OPENAI_RESPONSES_CAPABILITIES,
+        Protocol::OpenAiEmbeddings => &OPENAI_EMBEDDINGS_CAPABILITIES,
         Protocol::Anthropic => &ANTHROPIC_CAPABILITIES,
         Protocol::Gemini => &GEMINI_CAPABILITIES,
     }

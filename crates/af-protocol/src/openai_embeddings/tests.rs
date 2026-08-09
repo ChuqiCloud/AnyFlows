@@ -153,6 +153,25 @@ fn response_requires_contiguous_indexes_consistent_usage_and_request_dimensions(
         dimensions_response.validate_for_request(&request),
         Err(CanonicalEmbeddingResponseError::DimensionsMismatch)
     );
+
+    let request_without_dimensions =
+        parse_request(br#"{"model":"model","input":["one","two"]}"#).unwrap();
+    let mixed_dimensions_response = parse_response(
+        br#"{
+            "object":"list",
+            "data":[
+                {"object":"embedding","index":0,"embedding":[1.0]},
+                {"object":"embedding","index":1,"embedding":[2.0,3.0]}
+            ],
+            "model":"model",
+            "usage":{"prompt_tokens":1,"total_tokens":1}
+        }"#,
+    )
+    .unwrap();
+    assert_eq!(
+        mixed_dimensions_response.validate_for_request(&request_without_dimensions),
+        Err(CanonicalEmbeddingResponseError::DimensionsMismatch)
+    );
 }
 
 #[test]

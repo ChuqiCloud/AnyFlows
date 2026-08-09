@@ -142,6 +142,8 @@ string_enum! {
         OpenAiChat => "openai_chat",
         /// OpenAI Responses 协议。
         OpenAiResponses => "openai_responses",
+        /// OpenAI Embeddings 协议。
+        OpenAiEmbeddings => "openai_embeddings",
         /// Anthropic Messages 协议。
         Anthropic => "anthropic",
         /// Gemini generateContent 协议。

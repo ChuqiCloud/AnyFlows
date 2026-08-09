@@ -28,6 +28,7 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
         [
             (Protocol::OpenAiChat, "openai_chat"),
             (Protocol::OpenAiResponses, "openai_responses"),
+            (Protocol::OpenAiEmbeddings, "openai_embeddings"),
             (Protocol::Anthropic, "anthropic"),
             (Protocol::Gemini, "gemini"),
         ]

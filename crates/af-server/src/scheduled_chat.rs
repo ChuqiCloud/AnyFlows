@@ -52,6 +52,8 @@ use af_scheduler::{
     IndexedWeightedSchedulerError, RouteWaitKind, StickyRouteOutcome, StickyWaitPolicy,
 };
 
+mod embedding;
+
 /// 路由计划在同一次 Redis 快照中取得的账号负载与用户许可。
 struct PreparedConcurrencyPlan<'a> {
     account_loads: Option<&'a BTreeMap<i64, CredentialLoad>>,
@@ -858,6 +860,7 @@ fn candidate_request(
             .map(Some)
             .map_err(|_| AfError::Internal)
         }
+        Protocol::OpenAiEmbeddings => Err(AfError::Internal),
         Protocol::Anthropic => AnthropicRequestOverrides::new(
             upstream_model,
             parameters.temperature(),
@@ -890,7 +893,7 @@ fn target_matches_protocol(
             (target.channel_type(), protocol),
             (
                 ChannelType::OpenAi,
-                Protocol::OpenAiChat | Protocol::OpenAiResponses
+                Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
                 | (ChannelType::Gemini, Protocol::Gemini)
         )
@@ -901,12 +904,13 @@ fn adaptor_settings(
     upstream_model: String,
 ) -> Result<AdaptorSettings, AfError> {
     match (target.channel_type(), target.protocol()) {
-        (ChannelType::OpenAi, Protocol::OpenAiChat | Protocol::OpenAiResponses) => {
-            Ok(AdaptorSettings::OpenAi(
-                OpenAiAdaptorSettings::for_protocol(target.protocol(), vec![upstream_model])
-                    .map_err(|_| AfError::Internal)?,
-            ))
-        }
+        (
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings,
+        ) => Ok(AdaptorSettings::OpenAi(
+            OpenAiAdaptorSettings::for_protocol(target.protocol(), vec![upstream_model])
+                .map_err(|_| AfError::Internal)?,
+        )),
         (ChannelType::Anthropic, Protocol::Anthropic) => Ok(AdaptorSettings::Anthropic(
             AnthropicAdaptorSettings::new(vec![upstream_model]),
         )),

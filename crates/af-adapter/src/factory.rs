@@ -29,9 +29,12 @@ impl OpenAiAdaptorSettings {
         }
     }
 
-    /// 为 OpenAI Chat 或 Responses 原生端点创建配置。
+    /// 为 OpenAI Chat、Responses 或 Embeddings 原生端点创建配置。
     pub fn for_protocol(protocol: Protocol, supported_models: Vec<String>) -> AdaptorResult<Self> {
-        if !matches!(protocol, Protocol::OpenAiChat | Protocol::OpenAiResponses) {
+        if !matches!(
+            protocol,
+            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings
+        ) {
             return Err(AdaptorError::InvalidChannelSettings {
                 channel_type: ChannelType::OpenAi,
             });
