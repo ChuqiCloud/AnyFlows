@@ -72,6 +72,38 @@ impl UpstreamRetryAfter {
     }
 }
 
+/// 下游额度窗口的相对重试等待时间。
+///
+/// 只接受整秒且最多三十一天，完整覆盖 UTC 日历月窗口，同时不放宽上游响应头的安全边界。
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct QuotaWindowRetryAfter(u32);
+
+impl QuotaWindowRetryAfter {
+    /// 支持的最大等待秒数，覆盖最长三十一天的日历月。
+    pub const MAX_SECONDS: u64 = 31 * 24 * 60 * 60;
+
+    /// 校验并构造非零额度窗口等待时间。
+    #[must_use]
+    pub const fn from_seconds(seconds: u64) -> Option<Self> {
+        if seconds == 0 || seconds > Self::MAX_SECONDS {
+            return None;
+        }
+        Some(Self(seconds as u32))
+    }
+
+    /// 返回已校验的相对等待秒数。
+    #[must_use]
+    pub const fn seconds(self) -> u32 {
+        self.0
+    }
+
+    /// 返回可直接用于截止时间计算的标准时长。
+    #[must_use]
+    pub const fn duration(self) -> Duration {
+        Duration::from_secs(self.0 as u64)
+    }
+}
+
 /// 限流影响的最小可确认范围。
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RateLimitScope {
@@ -221,11 +253,11 @@ pub enum AfError {
     /// 用户钱包或下游令牌额度不足，无法继续发送请求。
     #[error("下游可用额度不足")]
     InsufficientQuota,
-    /// 下游令牌额度窗口已满，可在指定秒数后重新准入。
-    #[error("下游令牌额度窗口已达上限")]
+    /// 下游令牌或分组额度窗口已满，可在指定秒数后重新准入。
+    #[error("下游额度窗口已达上限")]
     QuotaWindowLimited {
         /// 当前所有阻塞窗口中最长的剩余等待时间。
-        retry_after: UpstreamRetryAfter,
+        retry_after: QuotaWindowRetryAfter,
     },
     /// 用户级或上游账号级并发槽位在等待期限内不可用。
     #[error("并发请求已达上限")]

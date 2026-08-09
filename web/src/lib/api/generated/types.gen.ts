@@ -369,6 +369,9 @@ export type AdminGroup = {
     daily_limit: number | null;
     weekly_limit: number | null;
     monthly_limit: number | null;
+    daily_window: AdminGroupWindow;
+    weekly_window: AdminGroupWindow;
+    monthly_window: AdminGroupWindow;
     rpm_limit: number | null;
     fallback_group_id: number | null;
     flags: {
@@ -378,6 +381,11 @@ export type AdminGroup = {
 export type AdminGroupListResponse = {
     groups: Array<AdminGroup>;
     next_cursor: number | null;
+};
+export type AdminGroupWindow = {
+    usage: number;
+    started_at: number;
+    resets_at: number;
 };
 export type AdminGroupWriteRequest = {
     name: string;

@@ -6,6 +6,7 @@ mod auth_challenge_rate_limit;
 mod balance_alert;
 mod billing;
 mod billing_batch;
+mod billing_group_window;
 mod billing_subscription;
 mod billing_token_window;
 mod debug_trace;
@@ -109,6 +110,10 @@ where
 }
 pub(super) use billing::create_billing_reservations;
 pub(super) use billing_batch::create_billing_batch_checkpoints;
+pub(super) use billing_group_window::{
+    add_group_window_state, backfill_active_billing_group_window_reservations,
+    create_billing_group_window_reservations, create_billing_group_window_reservations_index,
+};
 pub(super) use billing_subscription::create_billing_subscription_reservations;
 pub(super) use billing_token_window::{
     backfill_active_billing_token_window_reservations, create_billing_token_window_reservations,

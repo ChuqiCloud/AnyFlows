@@ -111,6 +111,8 @@ mod playground_share;
 mod playground_share_tests;
 mod quota;
 #[cfg(test)]
+mod quota_group_window_tests;
+#[cfg(test)]
 mod quota_tests;
 #[cfg(test)]
 mod quota_token_window_tests;
@@ -172,7 +174,7 @@ pub use admin_dashboard::{
 pub use admin_group::{
     AdminGroupLookupOutcome, AdminGroupPageRecord, AdminGroupPeakRecord, AdminGroupRecord,
     AdminGroupRepository, AdminGroupRepositoryConfigError, AdminGroupRepositoryError,
-    MAX_ADMIN_GROUP_FLAGS_BYTES, MAX_ADMIN_GROUP_PAGE_SIZE,
+    AdminGroupWindowRecord, MAX_ADMIN_GROUP_FLAGS_BYTES, MAX_ADMIN_GROUP_PAGE_SIZE,
 };
 pub use admin_group_write::{
     AdminGroupDeleteOutcome, AdminGroupMutationOutcome, AdminGroupPeakWriteRecord,

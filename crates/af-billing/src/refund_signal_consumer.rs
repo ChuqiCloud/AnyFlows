@@ -167,6 +167,7 @@ const fn map_quota_repository_refund_error(error: QuotaRepositoryError) -> Refun
         | QuotaRepositoryError::ZeroAmount
         | QuotaRepositoryError::UserQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient
+        | QuotaRepositoryError::GroupWindowQuotaInsufficient { .. }
         | QuotaRepositoryError::TokenWindowQuotaInsufficient { .. }
         | QuotaRepositoryError::Invariant => RefundSignalSinkError::Invariant,
         _ => RefundSignalSinkError::Invariant,

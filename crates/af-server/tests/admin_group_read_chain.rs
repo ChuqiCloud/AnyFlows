@@ -6,6 +6,7 @@ use std::{
 };
 
 use af_db::{DatabaseOptions, MigrationOptions, connect_and_migrate};
+use af_domain::{SubscriptionCycle, SubscriptionWindow};
 use af_http::ServeOutcome;
 use af_server::{Bootstrap, SupervisorShutdown};
 use argon2::{
@@ -13,7 +14,9 @@ use argon2::{
     password_hash::{PasswordHasher, SaltString},
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
+use sea_orm::{
+    ConnectionTrait, Database, DbBackend, Statement, entity::prelude::TimeDateTimeWithTimeZone,
+};
 use serde_json::{Value, json};
 use support::{IO_TIMEOUT, send_request};
 use tokio::{sync::oneshot, time::timeout};
@@ -124,6 +127,7 @@ async fn admin_group_list_and_detail_use_real_database_reader() {
     assert_eq!(first_page.headers["cache-control"], "no-store");
     let first_body = response_json(&first_page);
     assert_eq!(first_body["next_cursor"], DEFAULT_GROUP_ID);
+    assert_group_windows(&first_body["groups"][0], [0, 0, 0]);
     assert_eq!(
         first_body["groups"],
         json!([{
@@ -138,6 +142,9 @@ async fn admin_group_list_and_detail_use_real_database_reader() {
             "daily_limit": Value::Null,
             "weekly_limit": Value::Null,
             "monthly_limit": Value::Null,
+            "daily_window": first_body["groups"][0]["daily_window"].clone(),
+            "weekly_window": first_body["groups"][0]["weekly_window"].clone(),
+            "monthly_window": first_body["groups"][0]["monthly_window"].clone(),
             "rpm_limit": Value::Null,
             "fallback_group_id": Value::Null,
             "flags": {}
@@ -167,8 +174,10 @@ async fn admin_group_list_and_detail_use_real_database_reader() {
     )
     .await;
     assert_eq!(detail.status, 200);
+    let detail_body = response_json(&detail);
+    assert_group_windows(&detail_body, [100, 200, 300]);
     assert_eq!(
-        response_json(&detail),
+        detail_body,
         json!({
             "id": VIP_GROUP_ID,
             "name": "vip",
@@ -181,6 +190,9 @@ async fn admin_group_list_and_detail_use_real_database_reader() {
             "daily_limit": 10000,
             "weekly_limit": 60000,
             "monthly_limit": 200000,
+            "daily_window": detail_body["daily_window"].clone(),
+            "weekly_window": detail_body["weekly_window"].clone(),
+            "monthly_window": detail_body["monthly_window"].clone(),
             "rpm_limit": 120,
             "fallback_group_id": DEFAULT_GROUP_ID,
             "flags": {"claude_code_only": true}
@@ -232,6 +244,12 @@ async fn admin_group_list_and_detail_use_real_database_reader() {
     assert_eq!(created_body["name"], "write-created");
     assert_eq!(created_body["ratio_micros"], 1_100_000);
     assert_eq!(created_body["peak_start"], "09:15:00");
+    assert_group_windows(&created_body, [0, 0, 0]);
+    let created_windows = [
+        created_body["daily_window"].clone(),
+        created_body["weekly_window"].clone(),
+        created_body["monthly_window"].clone(),
+    ];
 
     let conflict = send_request(
         address,
@@ -287,6 +305,9 @@ async fn admin_group_list_and_detail_use_real_database_reader() {
     assert_eq!(updated_body["ratio_micros"], 950_000);
     assert_eq!(updated_body["peak_ratio_micros"], Value::Null);
     assert_eq!(updated_body["weekly_limit"], 250_000);
+    assert_eq!(updated_body["daily_window"], created_windows[0]);
+    assert_eq!(updated_body["weekly_window"], created_windows[1]);
+    assert_eq!(updated_body["monthly_window"], created_windows[2]);
 
     let in_use = send_request(
         address,
@@ -375,14 +396,21 @@ async fn seed_groups_and_users(database_url: &str) {
 }
 
 async fn insert_default_group(connection: &sea_orm::DatabaseConnection) {
+    let starts = current_window_starts();
     connection
         .execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "INSERT INTO groups (id, name, display_name, flags) VALUES (?, ?, ?, ?)",
+            "INSERT INTO groups (id, name, display_name, daily_usage, weekly_usage, monthly_usage, daily_window_start, weekly_window_start, monthly_window_start, flags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 DEFAULT_GROUP_ID.into(),
                 "default".into(),
                 "Default".into(),
+                0_i64.into(),
+                0_i64.into(),
+                0_i64.into(),
+                starts[0].into(),
+                starts[1].into(),
+                starts[2].into(),
                 "{}".into(),
             ],
         ))
@@ -391,10 +419,11 @@ async fn insert_default_group(connection: &sea_orm::DatabaseConnection) {
 }
 
 async fn insert_vip_group(connection: &sea_orm::DatabaseConnection) {
+    let starts = current_window_starts();
     connection
         .execute(Statement::from_sql_and_values(
             DbBackend::Sqlite,
-            "INSERT INTO groups (id, name, display_name, ratio_micros, peak_ratio_micros, peak_start, peak_end, is_exclusive, daily_limit, weekly_limit, monthly_limit, rpm_limit, fallback_group_id, flags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO groups (id, name, display_name, ratio_micros, peak_ratio_micros, peak_start, peak_end, is_exclusive, daily_limit, weekly_limit, monthly_limit, daily_usage, weekly_usage, monthly_usage, daily_window_start, weekly_window_start, monthly_window_start, rpm_limit, fallback_group_id, flags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 VIP_GROUP_ID.into(),
                 "vip".into(),
@@ -407,6 +436,12 @@ async fn insert_vip_group(connection: &sea_orm::DatabaseConnection) {
                 10_000_i64.into(),
                 60_000_i64.into(),
                 200_000_i64.into(),
+                100_i64.into(),
+                200_i64.into(),
+                300_i64.into(),
+                starts[0].into(),
+                starts[1].into(),
+                starts[2].into(),
                 120_i32.into(),
                 DEFAULT_GROUP_ID.into(),
                 json!({"claude_code_only": true}).to_string().into(),
@@ -414,6 +449,42 @@ async fn insert_vip_group(connection: &sea_orm::DatabaseConnection) {
         ))
         .await
         .unwrap();
+}
+
+fn assert_group_windows(group: &Value, expected_usages: [i64; 3]) {
+    let now = TimeDateTimeWithTimeZone::now_utc().unix_timestamp();
+    for (name, expected_usage) in ["daily_window", "weekly_window", "monthly_window"]
+        .into_iter()
+        .zip(expected_usages)
+    {
+        let window = &group[name];
+        assert_eq!(window["usage"], expected_usage);
+        let started_at = window["started_at"].as_i64().expect("窗口起点必须为整数");
+        let resets_at = window["resets_at"].as_i64().expect("窗口终点必须为整数");
+        assert!(started_at <= now);
+        assert!(resets_at > now);
+    }
+}
+
+fn current_window_starts() -> [TimeDateTimeWithTimeZone; 3] {
+    let now = u64::try_from(TimeDateTimeWithTimeZone::now_utc().unix_timestamp())
+        .expect("测试当前时间必须有效");
+    let mut starts = [TimeDateTimeWithTimeZone::UNIX_EPOCH; 3];
+    for (index, cycle) in [
+        SubscriptionCycle::Daily,
+        SubscriptionCycle::Weekly,
+        SubscriptionCycle::Monthly,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let window = SubscriptionWindow::initial(cycle, now).expect("测试窗口必须有效");
+        starts[index] = TimeDateTimeWithTimeZone::from_unix_timestamp(
+            i64::try_from(window.started_at()).expect("测试窗口起点必须有效"),
+        )
+        .expect("测试窗口起点必须可转换");
+    }
+    starts
 }
 
 async fn insert_deleted_group(connection: &sea_orm::DatabaseConnection) {

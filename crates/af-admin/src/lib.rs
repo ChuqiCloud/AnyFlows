@@ -104,8 +104,8 @@ pub use email_settings::{
 };
 pub use group_read::{
     AdminGroup, AdminGroupGetFuture, AdminGroupListFuture, AdminGroupListQuery, AdminGroupPage,
-    AdminGroupPeak, AdminGroupReadError, AdminGroupReader, DEFAULT_ADMIN_GROUP_PAGE_SIZE,
-    DatabaseAdminGroupReader,
+    AdminGroupPeak, AdminGroupReadError, AdminGroupReader, AdminGroupWindow,
+    DEFAULT_ADMIN_GROUP_PAGE_SIZE, DatabaseAdminGroupReader,
 };
 pub use group_write::{
     AdminGroupCreateCommand, AdminGroupCreateFuture, AdminGroupDeleteFuture, AdminGroupPeakCommand,

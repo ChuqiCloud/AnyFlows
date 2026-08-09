@@ -427,7 +427,7 @@ impl AdminGroupWriter for DatabaseAdminGroupWriter {
                 .await
                 .map_err(map_repository_error)?
             {
-                AdminGroupMutationOutcome::Mutated(record) => Ok(AdminGroup::from_record(record)),
+                AdminGroupMutationOutcome::Mutated(record) => Ok(AdminGroup::from_record(*record)),
                 AdminGroupMutationOutcome::NotFound => Err(AdminGroupWriteError::NotFound),
             }
         })
@@ -763,6 +763,9 @@ mod tests {
             None,
             None,
             None,
+            crate::AdminGroupWindow::from_parts(0, 0, 1),
+            crate::AdminGroupWindow::from_parts(0, 0, 1),
+            crate::AdminGroupWindow::from_parts(0, 0, 1),
             None,
             None,
             serde_json::json!({}),

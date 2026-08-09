@@ -13,6 +13,18 @@ use crate::{chat_completions::HttpState, management_error::ManagementError};
 
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
+#[schema(as = AdminGroupWindow)]
+pub(crate) struct AdminGroupWindowResponse {
+    #[schema(minimum = 0)]
+    usage: i64,
+    #[schema(minimum = 0)]
+    started_at: i64,
+    #[schema(minimum = 1)]
+    resets_at: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 #[schema(as = AdminGroup)]
 pub(crate) struct AdminGroupResponse {
     #[schema(minimum = 1)]
@@ -43,6 +55,9 @@ pub(crate) struct AdminGroupResponse {
     weekly_limit: Option<i64>,
     #[schema(minimum = 0, required = true)]
     monthly_limit: Option<i64>,
+    daily_window: AdminGroupWindowResponse,
+    weekly_window: AdminGroupWindowResponse,
+    monthly_window: AdminGroupWindowResponse,
     #[schema(minimum = 0, required = true)]
     rpm_limit: Option<i32>,
     #[schema(minimum = 1, required = true)]
@@ -127,9 +142,22 @@ impl AdminGroupResponse {
             daily_limit: group.daily_limit(),
             weekly_limit: group.weekly_limit(),
             monthly_limit: group.monthly_limit(),
+            daily_window: AdminGroupWindowResponse::from_window(group.daily_window()),
+            weekly_window: AdminGroupWindowResponse::from_window(group.weekly_window()),
+            monthly_window: AdminGroupWindowResponse::from_window(group.monthly_window()),
             rpm_limit: group.rpm_limit(),
             fallback_group_id: group.fallback_group_id().map(GroupId::get),
             flags: group.flags().clone(),
+        }
+    }
+}
+
+impl AdminGroupWindowResponse {
+    fn from_window(window: af_admin::AdminGroupWindow) -> Self {
+        Self {
+            usage: window.usage(),
+            started_at: window.started_at(),
+            resets_at: window.resets_at(),
         }
     }
 }

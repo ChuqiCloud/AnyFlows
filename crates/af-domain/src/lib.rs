@@ -26,8 +26,8 @@ pub use enums::{
     ChannelType, CredentialKind, Operation, ParseEnumError, Protocol, PublicErrorCode, Role, Status,
 };
 pub use error::{
-    AfError, NetworkFailureKind, RateLimitScope, UpstreamError, UpstreamRetryAfter,
-    UpstreamServerStatus,
+    AfError, NetworkFailureKind, QuotaWindowRetryAfter, RateLimitScope, UpstreamError,
+    UpstreamRetryAfter, UpstreamServerStatus,
 };
 pub use network::{IpCidr, IpCidrParseError, TrustedClientIp};
 pub use payment::{

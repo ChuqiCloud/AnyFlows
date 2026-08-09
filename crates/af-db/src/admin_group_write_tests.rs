@@ -3,6 +3,7 @@ use std::{error::Error, time::Duration};
 use af_domain::GroupId;
 use sea_orm::{
     ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, PaginatorTrait, QueryFilter, Statement,
+    sea_query::Expr,
 };
 
 use super::{
@@ -27,6 +28,11 @@ async fn create_and_update_enforce_name_fallback_and_complete_fields() -> Result
     assert_eq!(created.peak().unwrap().start_second(), 8 * 3_600);
     assert_eq!(created.fallback_group_id(), Some(fixture.default_id));
     assert_eq!(created.flags()["claude_code_only"], true);
+    let window_starts = [
+        created.daily_window().started_at(),
+        created.weekly_window().started_at(),
+        created.monthly_window().started_at(),
+    ];
 
     assert_eq!(
         fixture
@@ -64,6 +70,14 @@ async fn create_and_update_enforce_name_fallback_and_complete_fields() -> Result
         AdminGroupRepositoryError::InvalidReference
     );
 
+    groups::Entity::update_many()
+        .filter(groups::Column::Id.eq(vip_id.get()))
+        .col_expr(groups::Column::DailyUsage, Expr::value(10_i64))
+        .col_expr(groups::Column::WeeklyUsage, Expr::value(20_i64))
+        .col_expr(groups::Column::MonthlyUsage, Expr::value(30_i64))
+        .exec(fixture.pool.connection())
+        .await?;
+
     let AdminGroupMutationOutcome::Mutated(updated) = fixture
         .repository
         .update(
@@ -92,6 +106,22 @@ async fn create_and_update_enforce_name_fallback_and_complete_fields() -> Result
     assert!(updated.peak().is_none());
     assert_eq!(updated.weekly_limit(), Some(50_000));
     assert_eq!(updated.fallback_group_id(), None);
+    assert_eq!(
+        [
+            updated.daily_window().usage(),
+            updated.weekly_window().usage(),
+            updated.monthly_window().usage(),
+        ],
+        [10, 20, 30]
+    );
+    assert_eq!(
+        [
+            updated.daily_window().started_at(),
+            updated.weekly_window().started_at(),
+            updated.monthly_window().started_at(),
+        ],
+        window_starts
+    );
 
     fixture.pool.close().await?;
     Ok(())

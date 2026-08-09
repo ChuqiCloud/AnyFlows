@@ -21,6 +21,12 @@ pub struct Model {
     pub daily_limit: Option<i64>,
     pub weekly_limit: Option<i64>,
     pub monthly_limit: Option<i64>,
+    pub daily_usage: i64,
+    pub weekly_usage: i64,
+    pub monthly_usage: i64,
+    pub daily_window_start: TimeDateTimeWithTimeZone,
+    pub weekly_window_start: TimeDateTimeWithTimeZone,
+    pub monthly_window_start: TimeDateTimeWithTimeZone,
     pub rpm_limit: Option<i32>,
     pub fallback_group_id: Option<i64>,
     #[sea_orm(column_type = "JsonBinary")]

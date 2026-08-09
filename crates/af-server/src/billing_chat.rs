@@ -327,7 +327,7 @@ mod tests {
         ModelPriceCache, ModelPriceSource, ModelPriceSourceFuture, ModelPriceSourceRecord,
         PricingRatio, RefundSignalOutcome, RequestPricingSnapshot, TokenPrices, UsageRecordOutcome,
     };
-    use af_domain::{GroupId, Operation, Quota, Role, TokenId, UpstreamRetryAfter, UserId};
+    use af_domain::{GroupId, Operation, Quota, QuotaWindowRetryAfter, Role, TokenId, UserId};
     use af_http::ChatService;
     use af_protocol::{
         CanonicalRequest, CanonicalRequestEnvelope, ContentBlock, Message, TokenCount, Usage,
@@ -339,7 +339,7 @@ mod tests {
 
     #[test]
     fn recoverable_window_precharge_maps_to_downstream_rate_limit() {
-        let retry_after = UpstreamRetryAfter::from_seconds(37).unwrap();
+        let retry_after = QuotaWindowRetryAfter::from_seconds(37).unwrap();
         assert_eq!(
             map_precharge_error(BillingPrechargeError::RateLimited { retry_after }),
             AfError::QuotaWindowLimited { retry_after }

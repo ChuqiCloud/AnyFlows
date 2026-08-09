@@ -1103,6 +1103,10 @@
       "weekly": "周限额",
       "monthly": "月限额",
       "unlimited": "不限",
+      "windowUsage": "已用 {{used}} / {{limit}}",
+      "windowUsageUnlimited": "已用 {{used}} / 不限",
+      "windowResetsAt": "{{value}} 重置",
+      "windowRemainingResetsAt": "剩余 {{remaining}} · {{value}} 重置",
       "fallback": "回退目标",
       "noFallback": "不设置回退"
     },

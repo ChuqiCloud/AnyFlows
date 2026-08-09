@@ -1,8 +1,8 @@
 use std::error::Error as _;
 
 use crate::{
-    AfError, NetworkFailureKind, RateLimitScope, UpstreamError, UpstreamRetryAfter,
-    UpstreamServerStatus,
+    AfError, NetworkFailureKind, QuotaWindowRetryAfter, RateLimitScope, UpstreamError,
+    UpstreamRetryAfter, UpstreamServerStatus,
 };
 
 #[test]
@@ -29,6 +29,24 @@ fn upstream_retry_after_accepts_only_bounded_nonzero_seconds() {
     let retry_after = UpstreamRetryAfter::from_seconds(90).unwrap();
     assert_eq!(retry_after.seconds(), 90);
     assert_eq!(retry_after.duration(), std::time::Duration::from_secs(90));
+}
+
+#[test]
+fn quota_window_retry_after_covers_calendar_month_without_relaxing_upstream_bound() {
+    let eight_days = 8 * 24 * 60 * 60;
+    assert_eq!(UpstreamRetryAfter::from_seconds(eight_days), None);
+
+    let retry_after = QuotaWindowRetryAfter::from_seconds(eight_days).unwrap();
+    assert_eq!(u64::from(retry_after.seconds()), eight_days);
+    assert_eq!(
+        retry_after.duration(),
+        std::time::Duration::from_secs(eight_days)
+    );
+    assert_eq!(QuotaWindowRetryAfter::from_seconds(0), None);
+    assert_eq!(
+        QuotaWindowRetryAfter::from_seconds(QuotaWindowRetryAfter::MAX_SECONDS + 1),
+        None
+    );
 }
 
 #[test]
@@ -131,10 +149,10 @@ fn domain_errors_are_thread_safe_static_errors() {
     assert_eq!(AfError::InsufficientQuota.to_string(), "下游可用额度不足");
     assert_eq!(
         AfError::QuotaWindowLimited {
-            retry_after: UpstreamRetryAfter::from_seconds(37).unwrap(),
+            retry_after: QuotaWindowRetryAfter::from_seconds(37).unwrap(),
         }
         .to_string(),
-        "下游令牌额度窗口已达上限"
+        "下游额度窗口已达上限"
     );
     assert_eq!(AfError::ConcurrencyLimited.to_string(), "并发请求已达上限");
     assert_eq!(AfError::Internal.to_string(), "服务内部错误");
@@ -144,7 +162,7 @@ fn domain_errors_are_thread_safe_static_errors() {
     assert!(AfError::InsufficientQuota.source().is_none());
     assert!(
         AfError::QuotaWindowLimited {
-            retry_after: UpstreamRetryAfter::from_seconds(37).unwrap(),
+            retry_after: QuotaWindowRetryAfter::from_seconds(37).unwrap(),
         }
         .source()
         .is_none()

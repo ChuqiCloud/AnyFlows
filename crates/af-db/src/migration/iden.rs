@@ -28,6 +28,12 @@ pub(in crate::migration) mod groups {
         DailyLimit,
         WeeklyLimit,
         MonthlyLimit,
+        DailyUsage,
+        WeeklyUsage,
+        MonthlyUsage,
+        DailyWindowStart,
+        WeeklyWindowStart,
+        MonthlyWindowStart,
         RpmLimit,
         FallbackGroupId,
         Flags,
@@ -422,6 +428,31 @@ pub(in crate::migration) mod billing_token_window_reservations {
         Window1dStart,
         #[sea_orm(iden = "window_7d_start")]
         Window7dStart,
+        ReservedQuota,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod billing_group_window_reservations {
+    use super::DeriveIden;
+
+    /// `billing_group_window_reservations` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "billing_group_window_reservations")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 分组窗口计费预留的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        IdempotencyKey,
+        DailyWindowStart,
+        WeeklyWindowStart,
+        MonthlyWindowStart,
         ReservedQuota,
         CreatedAt,
         UpdatedAt,
