@@ -50,13 +50,14 @@ pub(in crate::migration) async fn add_group_window_state(
 /// 使用三方言均可接受的常量初值新增窗口列，随后再统一回填真实 UTC 起点。
 fn group_window_start(manager: &SchemaManager<'_>, column: groups::Column) -> ColumnDef {
     let mut definition = nullable_timestamp(manager, column);
-    let epoch = match manager.get_database_backend() {
-        DbBackend::MySql => "1970-01-01 00:00:00.000000",
-        DbBackend::Postgres => "1970-01-01 00:00:00+00",
-        DbBackend::Sqlite => "1970-01-01 00:00:00",
+    let canonical_anchor = match manager.get_database_backend() {
+        DbBackend::MySql => "1970-06-01 00:00:00.000000",
+        DbBackend::Postgres => "1970-06-01 00:00:00+00",
+        DbBackend::Sqlite => "1970-06-01 00:00:00",
     };
     // SQLite 的 ADD COLUMN 禁止 CURRENT_TIMESTAMP 等非常量默认值。
-    definition.not_null().default(epoch);
+    // 1970-06-01 同时是月初和周一，可作为日、周、月三种窗口的合法旧锚点。
+    definition.not_null().default(canonical_anchor);
     definition
 }
 
@@ -252,5 +253,23 @@ mod tests {
         assert!(sql.contains("julianday(\"daily_window_start\")"));
         assert!(sql.contains("julianday(\"created_at\")"));
         assert_eq!(sql.matches("IS NOT NULL").count(), 2);
+    }
+
+    #[test]
+    fn constant_default_anchor_is_valid_for_every_group_cycle() {
+        const JUNE_1_1970: u64 = 151 * 24 * 60 * 60;
+
+        for cycle in [
+            SubscriptionCycle::Daily,
+            SubscriptionCycle::Weekly,
+            SubscriptionCycle::Monthly,
+        ] {
+            assert_eq!(
+                SubscriptionWindow::initial(cycle, JUNE_1_1970)
+                    .unwrap()
+                    .started_at(),
+                JUNE_1_1970
+            );
+        }
     }
 }

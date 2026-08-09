@@ -258,7 +258,20 @@ impl WindowState {
             return Err(QuotaRepositoryError::Invariant);
         }
         let current_start = calendar_window_start(self.cycle, now)?;
-        let observed_start = calendar_window_start(self.cycle, self.started_at)?;
+        let observed_start = match calendar_window_start(self.cycle, self.started_at) {
+            Ok(started_at) => started_at,
+            Err(_) if self.usage == 0 => {
+                // 早期迁移常量可能无法形成完整周期；零用量记录可以无损回到当前窗口。
+                return Ok((
+                    Self {
+                        started_at: current_start,
+                        ..self
+                    },
+                    true,
+                ));
+            }
+            Err(error) => return Err(error),
+        };
         if self.started_at != observed_start {
             // 旧写入口可能留下非日历起点；只有零用量状态可以无损归一化。
             if self.usage != 0 {
@@ -898,6 +911,30 @@ mod tests {
             started_at: now,
         };
         assert_eq!(state.normalized(now), Err(QuotaRepositoryError::Invariant));
+    }
+
+    #[test]
+    fn zero_usage_epoch_weekly_anchor_recovers_but_used_state_fails_closed() {
+        let now =
+            TimeDateTimeWithTimeZone::from_unix_timestamp(1_769_860_800).expect("测试时间必须有效");
+        let state = WindowState {
+            cycle: SubscriptionCycle::Weekly,
+            limit: None,
+            usage: 0,
+            started_at: TimeDateTimeWithTimeZone::UNIX_EPOCH,
+        };
+
+        let (normalized, reset) = state.normalized(now).expect("零用量旧锚点应可安全恢复");
+        assert!(reset);
+        assert_eq!(normalized.usage, 0);
+        assert_eq!(
+            normalized.started_at,
+            calendar_window_start(SubscriptionCycle::Weekly, now).unwrap()
+        );
+        assert_eq!(
+            WindowState { usage: 1, ..state }.normalized(now),
+            Err(QuotaRepositoryError::Invariant)
+        );
     }
 
     #[test]
