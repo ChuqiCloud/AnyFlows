@@ -92,7 +92,7 @@ pub(crate) fn rate_limit_error_response(
         MappedError::with_retry_after(
             PublicErrorCode::RateLimited,
             "request_rate_limited",
-            retry_after,
+            retry_after.seconds(),
         ),
     )
 }
@@ -110,7 +110,7 @@ fn protocol_error_response(protocol: Protocol, mapped: MappedError) -> axum::res
     if let Some(retry_after) = mapped.retry_after {
         response.headers_mut().insert(
             RETRY_AFTER,
-            HeaderValue::from_str(&retry_after.seconds().to_string())
+            HeaderValue::from_str(&retry_after.to_string())
                 .expect("受控正整数秒数必须始终是有效响应头"),
         );
     }
@@ -121,7 +121,7 @@ fn protocol_error_response(protocol: Protocol, mapped: MappedError) -> axum::res
 pub(super) struct MappedError {
     code: PublicErrorCode,
     error_kind: &'static str,
-    retry_after: Option<UpstreamRetryAfter>,
+    retry_after: Option<u32>,
 }
 
 impl MappedError {
@@ -137,7 +137,7 @@ impl MappedError {
     pub(super) const fn with_retry_after(
         code: PublicErrorCode,
         error_kind: &'static str,
-        retry_after: UpstreamRetryAfter,
+        retry_after: u32,
     ) -> Self {
         Self {
             code,
@@ -194,7 +194,7 @@ fn classify_error(error: AfError) -> MappedError {
         AfError::QuotaWindowLimited { retry_after } => MappedError::with_retry_after(
             PublicErrorCode::RateLimited,
             "quota_window_limited",
-            retry_after,
+            retry_after.seconds(),
         ),
         AfError::ConcurrencyLimited => {
             MappedError::new(PublicErrorCode::RateLimited, "concurrency_limited")

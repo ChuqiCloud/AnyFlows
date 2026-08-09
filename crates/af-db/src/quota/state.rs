@@ -1,4 +1,4 @@
-use af_domain::{GatewayPrincipal, Quota, UpstreamRetryAfter};
+use af_domain::{GatewayPrincipal, Quota, QuotaWindowRetryAfter};
 use sea_orm::{QueryResult, entity::prelude::TimeDateTimeWithTimeZone};
 use thiserror::Error;
 
@@ -129,12 +129,12 @@ pub enum QuotaRepositoryError {
     /// 令牌 5h/1d/7d 窗口无法容纳本次预扣；可恢复时携带最长等待时间。
     #[error("令牌额度窗口不足")]
     TokenWindowQuotaInsufficient {
-        retry_after: Option<UpstreamRetryAfter>,
+        retry_after: Option<QuotaWindowRetryAfter>,
     },
     /// 分组日、周、月共享窗口无法容纳本次预扣；可恢复时携带最长等待时间。
     #[error("分组额度窗口不足")]
     GroupWindowQuotaInsufficient {
-        retry_after: Option<UpstreamRetryAfter>,
+        retry_after: Option<QuotaWindowRetryAfter>,
     },
     /// 批量任务实际额度超过创建任务时冻结的上限。
     #[error("批量任务实际额度超过冻结上限")]

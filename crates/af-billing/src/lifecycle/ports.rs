@@ -1,7 +1,7 @@
 use std::{future::Future, pin::Pin};
 
 use af_db::{QuotaMutationOutcome, QuotaRepository, QuotaRepositoryError, QuotaReservationStatus};
-use af_domain::{BillingReservationId, GatewayPrincipal, Quota, UpstreamRetryAfter};
+use af_domain::{BillingReservationId, GatewayPrincipal, Quota, QuotaWindowRetryAfter};
 use thiserror::Error;
 
 use crate::SettlementRequest;
@@ -40,11 +40,11 @@ pub enum BillingPrechargeError {
     /// 预扣时用户或有限令牌额度不足。
     #[error("预扣额度不足")]
     InsufficientQuota,
-    /// 当前令牌额度窗口已满，可在指定秒数后重试。
+    /// 当前令牌或分组额度窗口已满，可在指定秒数后重试。
     #[error("预扣额度窗口已达上限")]
     RateLimited {
         /// 当前所有阻塞窗口中最长的剩余等待时间。
-        retry_after: UpstreamRetryAfter,
+        retry_after: QuotaWindowRetryAfter,
     },
     /// 超时或提交失败导致终态未知，只能重放同一请求。
     #[error("持久化预扣结果未知")]
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn token_window_precharge_preserves_only_recoverable_retry_after() {
-        let retry_after = UpstreamRetryAfter::from_seconds(37).unwrap();
+        let retry_after = QuotaWindowRetryAfter::from_seconds(37).unwrap();
         assert_eq!(
             map_quota_repository_precharge_error(
                 QuotaRepositoryError::TokenWindowQuotaInsufficient {

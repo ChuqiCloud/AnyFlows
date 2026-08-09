@@ -1,4 +1,4 @@
-use af_domain::{Quota, UpstreamRetryAfter};
+use af_domain::{Quota, QuotaWindowRetryAfter};
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
@@ -342,7 +342,10 @@ where
     let retry_after = if hard_limit {
         None
     } else {
-        Some(UpstreamRetryAfter::from_seconds(retry_after).ok_or(QuotaRepositoryError::Invariant)?)
+        Some(
+            QuotaWindowRetryAfter::from_seconds(retry_after)
+                .ok_or(QuotaRepositoryError::Invariant)?,
+        )
     };
     Err(QuotaRepositoryError::TokenWindowQuotaInsufficient { retry_after })
 }

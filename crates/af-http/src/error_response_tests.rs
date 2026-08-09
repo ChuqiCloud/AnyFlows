@@ -1,7 +1,7 @@
 use af_config::{CorsOrigin, ServerConfig};
 use af_domain::{
-    AfError, NetworkFailureKind, PublicErrorCode, RateLimitScope, UpstreamError,
-    UpstreamRetryAfter, UpstreamServerStatus,
+    AfError, NetworkFailureKind, PublicErrorCode, QuotaWindowRetryAfter, RateLimitScope,
+    UpstreamError, UpstreamServerStatus,
 };
 use af_telemetry::RequestId;
 use axum::{
@@ -68,7 +68,7 @@ fn error_cases() -> Vec<ErrorCase> {
         },
         ErrorCase {
             error: AfError::QuotaWindowLimited {
-                retry_after: UpstreamRetryAfter::from_seconds(37).unwrap(),
+                retry_after: QuotaWindowRetryAfter::from_seconds(37).unwrap(),
             },
             status: StatusCode::TOO_MANY_REQUESTS,
             code: PublicErrorCode::RateLimited,
@@ -324,8 +324,8 @@ async fn maps_every_current_domain_error_to_google_json_api_wire() {
 }
 
 #[test]
-fn quota_window_limit_emits_retry_after_for_every_protocol() {
-    let retry_after = UpstreamRetryAfter::from_seconds(37).unwrap();
+fn quota_window_limit_emits_month_scale_retry_after_for_every_protocol() {
+    let retry_after = QuotaWindowRetryAfter::from_seconds(8 * 24 * 60 * 60).unwrap();
     let responses = [
         OpenAiHttpError::from(AfError::QuotaWindowLimited { retry_after }).into_response(),
         OpenAiResponsesHttpError::from(AfError::QuotaWindowLimited { retry_after }).into_response(),
@@ -335,7 +335,7 @@ fn quota_window_limit_emits_retry_after_for_every_protocol() {
 
     for response in responses {
         assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
-        assert_eq!(response.headers()[RETRY_AFTER], "37");
+        assert_eq!(response.headers()[RETRY_AFTER], "691200");
     }
 }
 

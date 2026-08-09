@@ -1,4 +1,4 @@
-use af_domain::{Quota, SubscriptionCycle, SubscriptionWindow, UpstreamRetryAfter};
+use af_domain::{Quota, QuotaWindowRetryAfter, SubscriptionCycle, SubscriptionWindow};
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::Set,
@@ -357,7 +357,10 @@ where
     let retry_after = if hard_limit {
         None
     } else {
-        Some(UpstreamRetryAfter::from_seconds(retry_after).ok_or(QuotaRepositoryError::Invariant)?)
+        Some(
+            QuotaWindowRetryAfter::from_seconds(retry_after)
+                .ok_or(QuotaRepositoryError::Invariant)?,
+        )
     };
     Err(QuotaRepositoryError::GroupWindowQuotaInsufficient { retry_after })
 }
@@ -895,5 +898,35 @@ mod tests {
             started_at: now,
         };
         assert_eq!(state.normalized(now), Err(QuotaRepositoryError::Invariant));
+    }
+
+    #[test]
+    fn monthly_window_preserves_retry_after_beyond_upstream_seven_day_bound() {
+        let started_at =
+            TimeDateTimeWithTimeZone::from_unix_timestamp(1_767_225_600).expect("月初时间必须有效");
+        let now =
+            TimeDateTimeWithTimeZone::from_unix_timestamp(1_767_225_601).expect("测试时间必须有效");
+        let window = WindowState {
+            cycle: SubscriptionCycle::Monthly,
+            limit: Some(100),
+            usage: 100,
+            started_at,
+        };
+        let now_seconds = u64::try_from(now.unix_timestamp()).unwrap();
+        let expected = SubscriptionWindow::initial(SubscriptionCycle::Monthly, now_seconds)
+            .unwrap()
+            .ends_at()
+            - now_seconds;
+
+        let error = capacity_result([(window, 0)], Quota::new(1).unwrap(), now, true)
+            .expect_err("月窗口已满时必须返回可恢复等待时间");
+        let QuotaRepositoryError::GroupWindowQuotaInsufficient {
+            retry_after: Some(retry_after),
+        } = error
+        else {
+            panic!("月窗口不足返回了意外错误：{error:?}");
+        };
+        assert!(expected > af_domain::UpstreamRetryAfter::MAX_SECONDS);
+        assert_eq!(u64::from(retry_after.seconds()), expected);
     }
 }
