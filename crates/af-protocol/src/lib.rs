@@ -7,8 +7,10 @@ mod capability;
 mod embedding;
 mod error_evidence;
 pub mod gemini;
+mod image;
 pub mod openai_chat;
 pub mod openai_embeddings;
+pub mod openai_images;
 pub mod openai_responses;
 mod reasoning_suffix;
 mod request;
@@ -35,6 +37,16 @@ pub use embedding::{
     MAX_TOTAL_EMBEDDING_TEXT_BYTES, MAX_TOTAL_EMBEDDING_VALUES,
 };
 pub use error_evidence::{StructuredErrorEvidence, extract_structured_error_evidence};
+pub use image::{
+    CanonicalImageGenerationRequest, CanonicalImageGenerationRequestError,
+    CanonicalImageGenerationResponse, CanonicalImageGenerationResponseError, GeneratedImage,
+    GeneratedImageError, ImageBackground, ImageCompression, ImageCompressionError, ImageCount,
+    ImageCountError, ImageDimensions, ImageDimensionsError, ImageGenerationOptions,
+    ImageGenerationUsage, ImageGenerationUsageError, ImageModeration, ImageOutputFormat,
+    ImageQuality, ImageSize, ImageTokenBreakdown, MAX_GENERATED_IMAGE_BYTES, MAX_IMAGE_EDGE,
+    MAX_IMAGE_GENERATION_COUNT, MAX_IMAGE_PIXELS, MAX_IMAGE_PROMPT_BYTES, MAX_IMAGE_PROMPT_CHARS,
+    MAX_TOTAL_GENERATED_IMAGE_BYTES, MIN_IMAGE_PIXELS,
+};
 pub use reasoning_suffix::{ReasoningModelSuffixError, apply_reasoning_model_suffix};
 pub use request::{
     Attachment, ReasoningConfig, ReasoningConfigError, ReasoningEffort, RequestContinuation,
