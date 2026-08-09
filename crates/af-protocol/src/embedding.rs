@@ -333,14 +333,13 @@ impl CanonicalEmbeddingResponse {
         if self.vectors.len() != request.input.len() {
             return Err(CanonicalEmbeddingResponseError::InputCountMismatch);
         }
-        if let Some(dimensions) = request.dimensions {
-            if self
+        if let Some(dimensions) = request.dimensions
+            && self
                 .vectors
                 .iter()
                 .any(|vector| vector.values.len() != dimensions.get())
-            {
-                return Err(CanonicalEmbeddingResponseError::DimensionsMismatch);
-            }
+        {
+            return Err(CanonicalEmbeddingResponseError::DimensionsMismatch);
         }
         Ok(())
     }

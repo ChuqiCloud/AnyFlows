@@ -8,8 +8,8 @@ use std::{error::Error, fmt};
 use crate::bounded_json::{self, BoundedJsonError, JsonLimits};
 use crate::{
     CanonicalEmbeddingRequest, CanonicalEmbeddingRequestError, CanonicalEmbeddingResponse,
-    CanonicalEmbeddingResponseError, EmbeddingDimensions, EmbeddingInput, EmbeddingVector,
-    TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
+    EmbeddingDimensions, EmbeddingInput, EmbeddingVector, TokenCount, Usage, UsageDetails,
+    UsageSemantics, UsageSource,
 };
 use serde_json::{Map, Number, Value};
 
