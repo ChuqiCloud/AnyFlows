@@ -83,7 +83,8 @@ pub(super) async fn reserve(
     if reset {
         persist_reset(transaction, parent, token, windows, now).await?;
     }
-    let commitments = active_commitments(transaction, parent.token_id, windows).await?;
+    let commitments =
+        active_commitments(transaction, parent.token_id, windows, Some(reservation_key)).await?;
     windows.ensure_precharge_capacity(commitments, amount, now)?;
     persist_allocation(transaction, reservation_key, windows, amount, now).await
 }
@@ -147,7 +148,7 @@ pub(super) async fn apply_settlement(
     if reset {
         persist_reset(transaction, parent, token, windows, now).await?;
     }
-    let commitments = active_commitments(transaction, parent.token_id, windows).await?;
+    let commitments = active_commitments(transaction, parent.token_id, windows, None).await?;
     windows.ensure_settlement_capacity(allocation, commitments, actual, now)?;
     persist_actual(transaction, parent, windows, allocation, actual, now).await
 }
@@ -473,8 +474,9 @@ async fn active_commitments(
     transaction: &DatabaseTransaction,
     token_id: i64,
     windows: TokenWindows,
+    excluded_key: Option<&str>,
 ) -> Result<WindowCommitments, QuotaRepositoryError> {
-    if has_invalid_active_allocation(transaction, token_id).await? {
+    if has_invalid_active_allocation(transaction, token_id, excluded_key).await? {
         return Err(QuotaRepositoryError::Invariant);
     }
     let status = Expr::col((
@@ -581,6 +583,7 @@ async fn active_commitments(
 async fn has_invalid_active_allocation(
     transaction: &DatabaseTransaction,
     token_id: i64,
+    excluded_key: Option<&str>,
 ) -> Result<bool, QuotaRepositoryError> {
     let status = Expr::col((
         billing_reservations::Entity,
@@ -646,7 +649,7 @@ async fn has_invalid_active_allocation(
                 .eq(QuotaReservationStatus::SettlementPending.code())
                 .and(actual.clone().is_null().or(actual.lt(0_i64))),
         );
-    let query = Query::select()
+    let mut query = Query::select()
         .column((
             billing_reservations::Entity,
             billing_reservations::Column::IdempotencyKey,
@@ -679,10 +682,17 @@ async fn has_invalid_active_allocation(
                 QuotaReservationStatus::Reserved.code(),
                 QuotaReservationStatus::SettlementPending.code(),
             ]),
-        )
-        .cond_where(invalid)
-        .limit(1)
-        .to_owned();
+        );
+    if let Some(excluded_key) = excluded_key {
+        query = query.and_where(
+            Expr::col((
+                billing_reservations::Entity,
+                billing_reservations::Column::IdempotencyKey,
+            ))
+            .ne(excluded_key),
+        );
+    }
+    let query = query.cond_where(invalid).limit(1).to_owned();
     Ok(transaction
         .query_one(transaction.get_database_backend().build(&query))
         .await
