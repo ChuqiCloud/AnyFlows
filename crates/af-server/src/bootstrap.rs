@@ -42,7 +42,8 @@ use af_billing::{
 };
 use af_cache::{
     CacheError, RedisConcurrencyConfig, RedisConcurrencyStore, RedisConfig, RedisHealthConfig,
-    RedisHealthStore, RedisStickySessionConfig, RedisStickySessionStore,
+    RedisHealthStore, RedisRequestRateLimitConfig, RedisRequestRateLimitStore,
+    RedisStickySessionConfig, RedisStickySessionStore,
 };
 use af_config::{AppConfig, ConfigError};
 use af_db::{
@@ -69,11 +70,11 @@ use af_db::{
     SiteSettingsRepository, SiteSettingsRepositoryConfigError, SubscriptionBalanceAlertRepository,
     SubscriptionBalanceAlertRepositoryConfigError, SubscriptionRepository,
     SubscriptionRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
-    TopupRepository, UsageLogRepository, UserInvitationRepository,
-    UserInvitationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
-    UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
-    UserTokenRepositoryConfigError, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
-    connect_and_migrate,
+    TokenRequestAdmissionRepository, TokenRequestAdmissionRepositoryConfigError, TopupRepository,
+    UsageLogRepository, UserInvitationRepository, UserInvitationRepositoryConfigError,
+    UserProfileRepository, UserProfileRepositoryConfigError, UserSessionRepository,
+    UserSessionRepositoryConfigError, UserTokenRepository, UserTokenRepositoryConfigError,
+    WalletLedgerRepository, WalletLedgerRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, ChatService, HttpListener, HttpRouter,
@@ -113,6 +114,7 @@ use crate::{
         OAuthRuntimeConfigError, PreparedOAuthLoopbackServer, initialize_oauth_refresh_supervisor,
         initialize_oauth_runtime, register_oauth_loopback_servers,
     },
+    request_rate_limit::{RequestRateLimitStore, RuntimeTokenAuthenticator},
     scheduled_chat::ScheduledChatService,
     scheduler_invalidation::{
         PreparedSchedulerInvalidationRuntime, SchedulerInvalidationRuntimeError,
@@ -120,6 +122,7 @@ use crate::{
     },
     smtp_delivery::SmtpEmailDelivery,
     system_shutdown_signal,
+    token_request_admission::TokenRequestAdmissionAuthenticator,
 };
 
 const BILLING_QUEUE_RETRY_DELAY: Duration = Duration::from_millis(100);
@@ -312,6 +315,9 @@ pub enum BootstrapError {
     /// 令牌仓储的启动参数无效。
     #[error("令牌认证启动参数无效")]
     Authentication(#[source] TokenAuthRepositoryConfigError),
+    /// 令牌累计请求数准入仓储的启动参数无效。
+    #[error("令牌请求数准入启动参数无效")]
+    TokenRequestAdmissionRepository(#[source] TokenRequestAdmissionRepositoryConfigError),
     /// 用户会话仓储的启动参数无效。
     #[error("用户会话启动参数无效")]
     SessionRepository(#[source] UserSessionRepositoryConfigError),
@@ -471,6 +477,9 @@ pub enum BootstrapError {
     /// Redis 并发槽位存储无法安全装配。
     #[error("初始化调度并发槽位失败")]
     Concurrency(#[source] CacheError),
+    /// Redis 生产请求限流存储无法安全装配。
+    #[error("初始化生产请求限流失败")]
+    RequestRateLimit(#[source] CacheError),
     /// 内部退款信号队列容量配置无效。
     #[error("初始化退款信号队列失败")]
     RefundSignalQueue(#[source] RefundSignalQueueError),
@@ -562,6 +571,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::Authentication)?;
+        let token_request_admission_repository = TokenRequestAdmissionRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::TokenRequestAdmissionRepository)?;
         let session_repository = UserSessionRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -776,13 +790,18 @@ impl Bootstrap<DatabaseReady> {
             shutdown,
             stage,
         } = self;
+        let database_authenticator: Arc<dyn TokenAuthenticator> =
+            Arc::new(DatabaseTokenAuthenticator::new(repository));
         Ok(Bootstrap {
             config,
             shutdown_timeout,
             shutdown,
             stage: AuthenticationReady {
                 infrastructure: stage,
-                authenticator: Arc::new(DatabaseTokenAuthenticator::new(repository)),
+                authenticator: Arc::new(TokenRequestAdmissionAuthenticator::new(
+                    database_authenticator,
+                    Arc::new(token_request_admission_repository),
+                )),
                 session_authenticator: Arc::new(session_authenticator),
                 initial_setup: Arc::new(DatabaseInitialSetup::new(initial_setup_repository)),
                 registration_service: Arc::new(registration_service),
@@ -1044,6 +1063,19 @@ impl Bootstrap<RelayReady> {
         } else {
             None
         };
+        let request_rate_limit_store = if let Some(redis_url) = self.config.redis().url() {
+            let config = RedisRequestRateLimitConfig::new(
+                RedisConfig::new(redis_url.expose().to_owned()),
+                "anyflows.gateway.rpm.v1",
+            )
+            .map_err(BootstrapError::RequestRateLimit)?;
+            let store = RedisRequestRateLimitStore::connect(config)
+                .await
+                .map_err(BootstrapError::RequestRateLimit)?;
+            Some(Arc::new(store) as Arc<dyn RequestRateLimitStore>)
+        } else {
+            None
+        };
         let (concurrency_runtime, concurrency_release_worker, concurrency_cleanup_worker) =
             match concurrency {
                 Some((runtime, release_worker, cleanup_worker)) => {
@@ -1127,6 +1159,11 @@ impl Bootstrap<RelayReady> {
         } = self;
         let mut infrastructure = stage.infrastructure;
         infrastructure.admin_group_writer = admin_group_writer;
+        let authenticator = Arc::clone(&infrastructure.authenticator);
+        infrastructure.authenticator = Arc::new(RuntimeTokenAuthenticator::new(
+            authenticator,
+            request_rate_limit_store,
+        ));
         Ok(Bootstrap {
             config,
             shutdown_timeout,

@@ -1,20 +1,26 @@
 pub mod support;
 
 use std::{
-    fs,
-    net::SocketAddr,
+    env, fs,
+    net::{SocketAddr, TcpListener},
+    num::NonZeroU32,
     sync::{
         atomic::{AtomicU64, Ordering},
         mpsc::TryRecvError,
     },
+    time::Duration,
 };
 
+use af_cache::{
+    RedisConfig, RedisRequestRateLimitConfig, RedisRequestRateLimitStore, RequestRateLimitOutcome,
+    RequestRateLimitRule, RequestRateLimitSubject,
+};
 use af_db::{DatabaseOptions, MigrationOptions, connect_and_migrate};
 use af_http::{
     DEFAULT_REQUEST_BODY_LIMIT_BYTES, HEALTH_PATH, READINESS_PATH, REQUEST_ID_HEADER_NAME,
     ServeOutcome,
 };
-use af_server::{Bootstrap, SupervisorShutdown};
+use af_server::{Bootstrap, BootstrapError, ShutdownReport, SupervisorShutdown};
 use sea_orm::{ConnectionTrait, Database, DbBackend, Statement, Value as DatabaseValue};
 use serde_json::{Value, json};
 use support::{
@@ -22,7 +28,7 @@ use support::{
     TOKEN_ID, UPSTREAM_MODEL, USER_ID, credential_encryption_key, seed_runtime_channel,
     send_request, spawn_proxy,
 };
-use tokio::{sync::oneshot, time::timeout};
+use tokio::{sync::oneshot, task::JoinHandle, time::timeout};
 
 const UNKNOWN_CLIENT_KEY: &str = "sk-af--_________________________________________8";
 const CLIENT_KEY_DIGEST: &str = "58e7607fb7ed996d551ba517addbcf51a35206b43706e233737d242773845efa";
@@ -68,7 +74,283 @@ impl Drop for TestDatabase {
             let _ = fs::remove_file(candidate);
         }
         let _ = fs::remove_dir_all(self.billing_wal_directory());
+        for suffix in ["billing-wal-first", "billing-wal-second"] {
+            let _ = fs::remove_dir_all(self.path.with_extension(suffix));
+        }
     }
+}
+
+type RpmServer = (
+    SocketAddr,
+    oneshot::Sender<()>,
+    JoinHandle<Result<ShutdownReport, BootstrapError>>,
+);
+
+async fn start_rpm_server(
+    database: &TestDatabase,
+    redis_url: &str,
+    proxy_address: SocketAddr,
+    instance: &str,
+) -> RpmServer {
+    let config_path = std::env::temp_dir().join(format!(
+        "anyflows-rpm-http-{}-{instance}.toml",
+        std::process::id()
+    ));
+    let wal_directory = database
+        .path
+        .with_extension(format!("billing-wal-{instance}"));
+    let credential_key = credential_encryption_key();
+    fs::write(
+        &config_path,
+        format!(
+            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[redis]\nurl = '{redis_url}'\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'gateway-test-key'\nkey = '{credential_key}'\n[auth]\nlookup_timeout_secs = 1\nsession_signing_key = '{credential_key}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n",
+            database.url,
+            wal_directory.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    let config = af_config::load_from(&config_path).unwrap();
+    let _ = fs::remove_file(config_path);
+    let bootstrap = Bootstrap::new(config)
+        .unwrap()
+        .init_telemetry()
+        .unwrap()
+        .connect_database()
+        .await
+        .unwrap()
+        .init_authentication()
+        .unwrap()
+        .init_relay()
+        .unwrap()
+        .init_billing()
+        .await
+        .unwrap()
+        .start_supervisor()
+        .build_router()
+        .bind()
+        .unwrap();
+    let address = bootstrap.local_addr();
+    let (shutdown, shutdown_rx) = oneshot::channel();
+    let task = tokio::spawn(bootstrap.serve(async move {
+        let _ = shutdown_rx.await;
+    }));
+    (address, shutdown, task)
+}
+
+async fn start_token_admission_server(
+    database: &TestDatabase,
+    proxy_address: SocketAddr,
+) -> RpmServer {
+    let config_path = std::env::temp_dir().join(format!(
+        "anyflows-token-admission-http-{}.toml",
+        std::process::id()
+    ));
+    let wal_directory = database.path.with_extension("billing-wal-token-admission");
+    let credential_key = credential_encryption_key();
+    fs::write(
+        &config_path,
+        format!(
+            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'gateway-test-key'\nkey = '{credential_key}'\n[auth]\nlookup_timeout_secs = 1\nsession_signing_key = '{credential_key}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n",
+            database.url,
+            wal_directory.to_string_lossy().replace('\\', "/")
+        ),
+    )
+    .unwrap();
+    let config = af_config::load_from(&config_path).unwrap();
+    let _ = fs::remove_file(config_path);
+    let bootstrap = Bootstrap::new(config)
+        .unwrap()
+        .init_telemetry()
+        .unwrap()
+        .connect_database()
+        .await
+        .unwrap()
+        .init_authentication()
+        .unwrap()
+        .init_relay()
+        .unwrap()
+        .init_billing()
+        .await
+        .unwrap()
+        .start_supervisor()
+        .build_router()
+        .bind()
+        .unwrap();
+    let address = bootstrap.local_addr();
+    let (shutdown, shutdown_rx) = oneshot::channel();
+    let task = tokio::spawn(bootstrap.serve(async move {
+        let _ = shutdown_rx.await;
+    }));
+    (address, shutdown, task)
+}
+
+async fn stop_rpm_server(server: RpmServer) {
+    server.1.send(()).unwrap();
+    let report = timeout(IO_TIMEOUT, server.2)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(report.http, ServeOutcome::Drained);
+    assert_eq!(report.background, SupervisorShutdown::Drained);
+}
+
+#[tokio::test]
+#[ignore = "需要显式配置隔离的 Redis 测试实例"]
+async fn redis_rpm_admission_is_shared_across_http_instances() {
+    assert_eq!(
+        env::var("AF_REQUIRE_LIVE_REDIS").as_deref(),
+        Ok("1"),
+        "必须显式设置 AF_REQUIRE_LIVE_REDIS=1"
+    );
+    let redis_url = env::var("AF_TEST_REDIS_URL").expect("必须设置 AF_TEST_REDIS_URL");
+    let database = TestDatabase::new();
+    seed_valid_token(&database.url).await;
+    execute_database_statement(
+        &database.url,
+        "UPDATE users SET rpm_limit = ? WHERE id = ?",
+        vec![1_i32.into(), USER_ID.into()],
+    )
+    .await;
+    execute_database_statement(
+        &database.url,
+        "UPDATE groups SET rpm_limit = ? WHERE id = ?",
+        vec![1_i32.into(), GROUP_ID.into()],
+    )
+    .await;
+
+    let peer_store = RedisRequestRateLimitStore::connect(
+        RedisRequestRateLimitConfig::new(
+            RedisConfig::new(redis_url.clone()),
+            "anyflows.gateway.rpm.v1",
+        )
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    let rules = [
+        RequestRateLimitRule::new(
+            RequestRateLimitSubject::User(af_domain::UserId::new(USER_ID).unwrap()),
+            NonZeroU32::new(1).unwrap(),
+            Duration::from_secs(60),
+        )
+        .unwrap(),
+        RequestRateLimitRule::new(
+            RequestRateLimitSubject::Group(af_domain::GroupId::new(GROUP_ID).unwrap()),
+            NonZeroU32::new(1).unwrap(),
+            Duration::from_secs(60),
+        )
+        .unwrap(),
+    ];
+    assert_eq!(
+        peer_store.admit(&rules).await.unwrap(),
+        RequestRateLimitOutcome::Admitted
+    );
+
+    let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+    proxy.set_nonblocking(true).unwrap();
+    let server =
+        start_rpm_server(&database, &redis_url, proxy.local_addr().unwrap(), "first").await;
+    let authorization = format!("Bearer {CLIENT_KEY}");
+    let inbound = br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}]}"#;
+
+    let limited = send_request(
+        server.0,
+        "POST",
+        "/v1/chat/completions",
+        inbound,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &authorization),
+        ],
+    )
+    .await;
+    assert_eq!(limited.status, 429);
+    assert!(
+        limited
+            .headers
+            .get("retry-after")
+            .and_then(|value| value.parse::<u64>().ok())
+            .is_some_and(|value| (1..=60).contains(&value))
+    );
+    let body: Value = serde_json::from_slice(&limited.body).unwrap();
+    assert_eq!(body["error"]["code"], "rate_limited");
+    assert_eq!(body["error"]["type"], "rate_limit_error");
+    assert_no_auth_canaries(&limited);
+    assert!(matches!(
+        proxy.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    ));
+
+    stop_rpm_server(server).await;
+}
+
+#[tokio::test]
+async fn cumulative_token_request_limit_rejects_before_second_upstream_call() {
+    let upstream_body = serde_json::to_vec(&json!({
+        "id": "chatcmpl-token-limit",
+        "object": "chat.completion",
+        "created": 1_700_000_000,
+        "model": UPSTREAM_MODEL,
+        "choices": [{
+            "index": 0,
+            "message": { "role": "assistant", "content": "hello" },
+            "finish_reason": "stop"
+        }],
+        "usage": { "prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2 }
+    }))
+    .unwrap();
+    let database = TestDatabase::new();
+    seed_valid_token(&database.url).await;
+    execute_database_statement(
+        &database.url,
+        "UPDATE tokens SET max_requests = ?, used_requests = ? WHERE id = ?",
+        vec![1_i64.into(), 0_i64.into(), TOKEN_ID.into()],
+    )
+    .await;
+    let (proxy_address, captured, proxy) = spawn_proxy(
+        "200 OK",
+        &upstream_body,
+        &[("Content-Type", "application/json")],
+    );
+    let server = start_token_admission_server(&database, proxy_address).await;
+    let authorization = format!("Bearer {CLIENT_KEY}");
+    let inbound = br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}]}"#;
+
+    let first = send_request(
+        server.0,
+        "POST",
+        "/v1/chat/completions",
+        inbound,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &authorization),
+        ],
+    )
+    .await;
+    assert_eq!(first.status, 200);
+    let upstream = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    assert_eq!(upstream.body, inbound);
+    proxy.join().unwrap();
+
+    let second = send_request(
+        server.0,
+        "POST",
+        "/v1/chat/completions",
+        inbound,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &authorization),
+        ],
+    )
+    .await;
+    assert_eq!(second.status, 429);
+    assert!(!second.headers.contains_key("retry-after"));
+    let body: Value = serde_json::from_slice(&second.body).unwrap();
+    assert_eq!(body["error"]["code"], "insufficient_quota");
+    assert_eq!(body["error"]["type"], "insufficient_quota");
+
+    stop_rpm_server(server).await;
 }
 
 #[tokio::test]

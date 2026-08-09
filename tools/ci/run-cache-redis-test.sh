@@ -5,6 +5,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/container-endpoint.sh"
 
 readonly REDIS_IMAGE="docker.io/library/redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3"
 readonly SMOKE_TEST_NAME="redis_hybrid_cache_smoke"
+readonly HTTP_SMOKE_TEST_TARGET="token_auth_chain"
+readonly HTTP_SMOKE_TEST_NAME="redis_rpm_admission_is_shared_across_http_instances"
 
 container_name=""
 
@@ -48,6 +50,21 @@ run_smoke_test() {
         "${SMOKE_TEST_NAME}" -- --exact --include-ignored
 }
 
+run_http_smoke_test() {
+    local test_list=""
+
+    test_list="$(cargo test --locked --package af-server --test "${HTTP_SMOKE_TEST_TARGET}" -- --list)"
+    if ! grep --fixed-strings --line-regexp --quiet "${HTTP_SMOKE_TEST_NAME}: test" <<<"${test_list}"; then
+        echo "未发现必需的 Redis HTTP 限流冒烟测试：${HTTP_SMOKE_TEST_NAME}" >&2
+        return 1
+    fi
+
+    AF_TEST_REDIS_URL="${redis_url}" \
+    AF_REQUIRE_LIVE_REDIS=1 \
+    cargo test --locked --package af-server --test "${HTTP_SMOKE_TEST_TARGET}" \
+        "${HTTP_SMOKE_TEST_NAME}" -- --exact --include-ignored
+}
+
 redis_url="${AF_TEST_REDIS_URL:-}"
 if [[ -z "${redis_url}" ]]; then
     container_name="anyflows-redis-${BASHPID}"
@@ -67,3 +84,4 @@ case "${redis_url}" in
 esac
 
 run_smoke_test
+run_http_smoke_test

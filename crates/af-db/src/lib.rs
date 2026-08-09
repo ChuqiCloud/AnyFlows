@@ -129,6 +129,9 @@ mod site_settings_tests;
 mod subscription;
 mod subscription_alert;
 mod token_owner_guard;
+mod token_request_admission;
+#[cfg(test)]
+mod token_request_admission_tests;
 mod topup;
 mod usage_log;
 #[cfg(test)]
@@ -416,6 +419,10 @@ pub use subscription_alert::{
     SubscriptionBalanceAlertClaimOutcome, SubscriptionBalanceAlertDeliveryLease,
     SubscriptionBalanceAlertEnqueueReport, SubscriptionBalanceAlertRepository,
     SubscriptionBalanceAlertRepositoryConfigError, SubscriptionBalanceAlertRepositoryError,
+};
+pub use token_request_admission::{
+    TokenRequestAdmissionOutcome, TokenRequestAdmissionRepository,
+    TokenRequestAdmissionRepositoryConfigError, TokenRequestAdmissionRepositoryError,
 };
 pub use topup::{
     MAX_PAYMENT_PROVIDER_BYTES, MAX_PROVIDER_EVENT_ID_BYTES, MAX_PROVIDER_ORDER_ID_BYTES,

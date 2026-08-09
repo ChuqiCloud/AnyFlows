@@ -21,6 +21,7 @@ mod model_discovery;
 mod model_price_source;
 mod oauth_connection;
 mod readiness;
+mod request_rate_limit;
 mod responses_websocket_runtime;
 mod scheduled_chat;
 mod scheduler_invalidation;
@@ -29,6 +30,7 @@ mod smtp_delivery;
 mod sticky_session;
 mod stripe_payment_intent;
 mod supervisor;
+mod token_request_admission;
 mod utc_time;
 
 pub use billing_chat::{

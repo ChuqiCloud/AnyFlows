@@ -1,4 +1,4 @@
-use std::{fmt, time::Duration};
+use std::{fmt, num::NonZeroU32, time::Duration};
 
 use af_domain::{
     ConcurrencyLimit, GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId,
@@ -60,6 +60,10 @@ pub enum TokenAuthLookupOutcome {
         model_policy: TokenModelPolicy,
         /// 与用户状态同一次查询取得的并发限制快照；空值表示不限并发。
         user_concurrency: Option<ConcurrencyLimit>,
+        /// 与用户和分组状态同一次查询取得的 RPM 限制快照；空值表示不限。
+        user_rpm_limit: Option<NonZeroU32>,
+        /// 当前令牌实际使用分组的 RPM 限制快照；空值表示不限。
+        group_rpm_limit: Option<NonZeroU32>,
     },
     /// Key 不存在，或状态、软删除、过期、客户端 IP 不允许继续访问。
     Rejected,
@@ -240,12 +244,20 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
             Alias::new("user_concurrency"),
         )
         .expr_as(
+            Expr::col((users::Entity, users::Column::RpmLimit)),
+            Alias::new("user_rpm_limit"),
+        )
+        .expr_as(
             Expr::col((groups::Entity, groups::Column::Id)),
             Alias::new("group_id"),
         )
         .expr_as(
             Expr::col((groups::Entity, groups::Column::DeletedAt)),
             Alias::new("group_deleted_at"),
+        )
+        .expr_as(
+            Expr::col((groups::Entity, groups::Column::RpmLimit)),
+            Alias::new("group_rpm_limit"),
         )
         .from(tokens::Entity)
         .left_join(
@@ -298,8 +310,10 @@ struct TokenAuthRow {
     user_status: Option<i16>,
     user_deleted_at: Option<TimeDateTimeWithTimeZone>,
     user_concurrency: Option<i32>,
+    user_rpm_limit: Option<i32>,
     group_id: Option<i64>,
     group_deleted_at: Option<TimeDateTimeWithTimeZone>,
+    group_rpm_limit: Option<i32>,
 }
 
 impl TokenAuthRow {
@@ -317,8 +331,10 @@ impl TokenAuthRow {
             user_status: result.try_get("", "user_status")?,
             user_deleted_at: result.try_get("", "user_deleted_at")?,
             user_concurrency: result.try_get("", "user_concurrency")?,
+            user_rpm_limit: result.try_get("", "user_rpm_limit")?,
             group_id: result.try_get("", "group_id")?,
             group_deleted_at: result.try_get("", "group_deleted_at")?,
+            group_rpm_limit: result.try_get("", "group_rpm_limit")?,
         })
     }
 
@@ -346,9 +362,11 @@ impl TokenAuthRow {
         };
         let user_enabled = enabled_or_rejected(user_status)?;
         let user_concurrency = normalize_concurrency(self.user_concurrency)?;
+        let user_rpm_limit = normalize_rpm_limit(self.user_rpm_limit)?;
         let Some(group_id) = self.group_id else {
             return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
         };
+        let group_rpm_limit = normalize_rpm_limit(self.group_rpm_limit)?;
         let principal = GatewayPrincipal::new(
             TokenId::new(self.token_id)
                 .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?,
@@ -374,6 +392,8 @@ impl TokenAuthRow {
             principal,
             model_policy,
             user_concurrency,
+            user_rpm_limit,
+            group_rpm_limit,
         })
     }
 }
@@ -389,6 +409,20 @@ fn normalize_concurrency(
             .and_then(|value| ConcurrencyLimit::new(value).ok())
             .map(Some)
             .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant)),
+        Some(_) => Err(record_internal_error(TokenAuthRepositoryError::Invariant)),
+    }
+}
+
+/// 将持久化的 RPM 字段收敛为安全的正数快照；负值表示数据损坏并拒绝请求。
+fn normalize_rpm_limit(value: Option<i32>) -> Result<Option<NonZeroU32>, TokenAuthRepositoryError> {
+    match value {
+        None | Some(0) => Ok(None),
+        Some(value) if value > 0 => NonZeroU32::new(
+            u32::try_from(value)
+                .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?,
+        )
+        .map(Some)
+        .ok_or_else(|| record_internal_error(TokenAuthRepositoryError::Invariant)),
         Some(_) => Err(record_internal_error(TokenAuthRepositoryError::Invariant)),
     }
 }
