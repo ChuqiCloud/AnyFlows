@@ -133,7 +133,7 @@ pub(super) async fn apply_settlement(
 ) -> Result<(), QuotaRepositoryError> {
     if parent.status != QuotaReservationStatus::SettlementPending || !parent.matches_actual(actual)
     {
-        return Err(QuotaRepositoryError::Invariant);
+        return Err(invariant_failure("settlement_parent"));
     }
     if !parent.reservation_kind.uses_token_windows() {
         return allocation
@@ -142,7 +142,7 @@ pub(super) async fn apply_settlement(
             .ok_or(QuotaRepositoryError::Invariant);
     }
     let Some(allocation) = allocation else {
-        return Err(QuotaRepositoryError::Invariant);
+        return Err(invariant_failure("settlement_allocation_missing"));
     };
     let (windows, reset) = TokenWindows::from_token(token).normalized(now)?;
     if reset {
@@ -239,7 +239,7 @@ impl TokenWindows {
         ] {
             if window.started_at == snapshot {
                 if committed < actual.units() {
-                    return Err(QuotaRepositoryError::Invariant);
+                    return Err(invariant_failure("settlement_commitment"));
                 }
                 relevant.push((window, committed));
             }
@@ -258,7 +258,7 @@ impl WindowState {
             || self.started_at.unix_timestamp_nanos() < 0
             || self.started_at > now
         {
-            return Err(QuotaRepositoryError::Invariant);
+            return Err(invariant_failure("window_state"));
         }
         if now.unix_timestamp_nanos() >= self.ends_at_nanos()? {
             return Ok((
@@ -388,7 +388,7 @@ async fn persist_reset(
         .await
         .map_err(|_| QuotaRepositoryError::Query)?;
     if result.rows_affected != 1 {
-        return Err(QuotaRepositoryError::Invariant);
+        return Err(invariant_failure("persist_reset_rows"));
     }
     Ok(())
 }
@@ -465,7 +465,7 @@ async fn persist_actual(
         .await
         .map_err(|_| QuotaRepositoryError::Query)?;
     if result.rows_affected != 1 {
-        return Err(QuotaRepositoryError::Invariant);
+        return Err(invariant_failure("persist_actual_rows"));
     }
     Ok(())
 }
@@ -477,7 +477,7 @@ async fn active_commitments(
     excluded_key: Option<&str>,
 ) -> Result<WindowCommitments, QuotaRepositoryError> {
     if has_invalid_active_allocation(transaction, token_id, excluded_key).await? {
-        return Err(QuotaRepositoryError::Invariant);
+        return Err(invariant_failure("active_allocation"));
     }
     let status = Expr::col((
         billing_reservations::Entity,
@@ -572,7 +572,7 @@ async fn active_commitments(
         .query_one(backend.build(&query))
         .await
         .map_err(|_| QuotaRepositoryError::Query)?
-        .ok_or(QuotaRepositoryError::Invariant)?;
+        .ok_or_else(|| invariant_failure("active_commitments_missing"))?;
     Ok(WindowCommitments {
         five_hours: subscription::read_sum(&result, COMMITTED_5H_ALIAS, backend)?,
         one_day: subscription::read_sum(&result, COMMITTED_1D_ALIAS, backend)?,
@@ -724,9 +724,17 @@ fn validate_allocation(
         })
         || allocation.key.as_str().is_empty()
     {
-        return Err(QuotaRepositoryError::Invariant);
+        return Err(invariant_failure("allocation_shape"));
     }
     Ok(())
+}
+
+fn invariant_failure(operation: &'static str) -> QuotaRepositoryError {
+    #[cfg(test)]
+    eprintln!("token_window_invariant:{operation}");
+    #[cfg(not(test))]
+    let _ = operation;
+    QuotaRepositoryError::Invariant
 }
 
 fn parse_key(value: &str) -> Result<BillingReservationKey, QuotaRepositoryError> {
