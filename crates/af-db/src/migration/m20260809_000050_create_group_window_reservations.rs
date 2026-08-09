@@ -1,3 +1,4 @@
+use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 
 use super::{
@@ -18,6 +19,7 @@ impl MigrationTrait for Migration {
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        ensure_mysql_group_foreign_key_index(manager).await?;
         manager
             .drop_table(
                 Table::drop()
@@ -52,4 +54,25 @@ impl MigrationTrait for Migration {
         }
         Ok(())
     }
+}
+
+/// MySQL 可能让本迁移的联合索引接管分组外键，降级前必须先补替代索引。
+async fn ensure_mysql_group_foreign_key_index(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    const INDEX_NAME: &str = "idx_billing_reservations_group_fk";
+    if manager.get_database_backend() != DbBackend::MySql
+        || manager
+            .has_index("billing_reservations", INDEX_NAME)
+            .await?
+    {
+        return Ok(());
+    }
+    manager
+        .create_index(
+            Index::create()
+                .name(INDEX_NAME)
+                .table(billing_reservations::Entity)
+                .col(billing_reservations::Column::GroupId)
+                .to_owned(),
+        )
+        .await
 }
