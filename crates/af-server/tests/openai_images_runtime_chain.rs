@@ -229,9 +229,9 @@ async fn invalid_upstream_image_count_fails_closed_without_usage_record() {
     stop_gateway(shutdown, server).await;
     proxy.join().unwrap();
 
-    assert_eq!(response.status, 502);
+    assert_eq!(response.status, 503);
     let body: Value = serde_json::from_slice(&response.body).unwrap();
-    assert_eq!(body["error"]["code"], "upstream_protocol_error");
+    assert_eq!(body["error"]["code"], "upstream_unavailable");
     assert_eq!(usage_summary(&database).await, (0, 0, 0));
 }
 
