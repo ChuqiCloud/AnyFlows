@@ -80,6 +80,7 @@ use crate::middleware::{
 use crate::model_catalog::list_models;
 use crate::network_settings::build_network_settings_router;
 use crate::oauth_connections::{AdminOAuthConnectionService, build_admin_oauth_connection_router};
+use crate::openai_embeddings::openai_embeddings;
 use crate::openai_responses::openai_responses;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::password_reset::build_password_reset_router;
@@ -94,7 +95,8 @@ use crate::user_tokens::build_user_token_router;
 use crate::user_topups::build_user_topup_router;
 use crate::user_wallet::build_user_wallet_router;
 use crate::{
-    ChatService, QueryApiKeyPolicy, chat_completions::HttpState, chat_completions::chat_completions,
+    ChatService, EmbeddingService, QueryApiKeyPolicy, chat_completions::HttpState,
+    chat_completions::chat_completions,
 };
 
 /// OpenAI Chat 业务路由的默认请求正文上限，与协议解析预算共享单一常量。
@@ -117,7 +119,7 @@ impl HttpRouter {
     }
 }
 
-/// 构建包含已鉴权 OpenAI Chat 非流式入口及健康检查的 HTTP Router。
+/// 构建包含已鉴权模型网关入口、管理端接口及健康检查的 HTTP Router。
 ///
 /// 后续业务与运维路由应分别加入 `public_routes` 和 `operations_routes`，确保
 /// 鉴权与 CORS 永远不会扩散到 `/metrics`、健康检查等运维端点。
@@ -128,6 +130,7 @@ impl HttpRouter {
 pub fn build_router(
     config: &ServerConfig,
     chat: Arc<dyn ChatService>,
+    embedding: Arc<dyn EmbeddingService>,
     readiness: ReadinessHandle,
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
@@ -202,6 +205,7 @@ pub fn build_router(
         admin_user_reader,
         admin_user_writer,
     )
+    .with_embedding_service(embedding)
     .with_initial_setup(initial_setup)
     .with_model_catalog_reader(model_catalog_reader)
     .with_admin_model_reader(admin_model_reader)
@@ -220,7 +224,12 @@ pub fn build_router(
         .route(
             "/v1/chat/completions",
             // 只包裹已注册的 POST endpoint，不把路径级 405 改写为 401。
-            post(chat_completions).route_layer(openai_authentication),
+            post(chat_completions).route_layer(openai_authentication.clone()),
+        )
+        .route(
+            "/v1/embeddings",
+            // Embeddings 与 Chat 共用 OpenAI 错误 wire，但使用独立非流式业务端口。
+            post(openai_embeddings).route_layer(openai_authentication),
         )
         .route(
             "/v1/responses",

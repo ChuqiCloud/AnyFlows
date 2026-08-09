@@ -71,7 +71,7 @@ impl ChatStreamEncoder {
                     encoder: Box::new(encoder),
                 })
             }
-            Protocol::OpenAiResponses => Err(AfError::Internal),
+            Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings => Err(AfError::Internal),
         }
     }
 

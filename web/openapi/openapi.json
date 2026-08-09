@@ -10180,12 +10180,13 @@
                 "enum": [
                   "openai_chat",
                   "openai_responses",
+                  "openai_embeddings",
                   "anthropic",
                   "gemini"
                 ]
               }
             ],
-            "description": "当前生产写链路支持 OpenAI Chat、Responses、Anthropic Messages 与 Gemini 协议。"
+            "description": "当前生产写链路支持 OpenAI Chat、Responses、Embeddings、Anthropic Messages 与 Gemini 协议。"
           },
           "base_url": {
             "type": [
@@ -10377,6 +10378,7 @@
         "enum": [
           "openai_chat",
           "openai_responses",
+          "openai_embeddings",
           "anthropic",
           "gemini"
         ]
@@ -10429,6 +10431,7 @@
             "enum": [
               "openai_chat",
               "openai_responses",
+              "openai_embeddings",
               "anthropic",
               "gemini"
             ]
@@ -16002,7 +16005,7 @@
             "items": {
               "$ref": "#/components/schemas/ModelCatalogProtocol"
             },
-            "maxItems": 4
+            "maxItems": 5
           }
         },
         "additionalProperties": false
@@ -16057,6 +16060,7 @@
         "enum": [
           "openai_chat",
           "openai_responses",
+          "openai_embeddings",
           "anthropic",
           "gemini"
         ]

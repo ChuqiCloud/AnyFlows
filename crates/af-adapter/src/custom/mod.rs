@@ -106,6 +106,7 @@ impl CustomAdaptor {
     fn expected_operation(&self) -> Operation {
         match self.protocol {
             Protocol::OpenAiResponses => Operation::Responses,
+            Protocol::OpenAiEmbeddings => Operation::Embedding,
             Protocol::OpenAiChat | Protocol::Anthropic | Protocol::Gemini => Operation::Chat,
         }
     }

@@ -100,6 +100,40 @@ async fn valid_openai_responses_response_is_healthy_and_disables_storage() {
 }
 
 #[tokio::test]
+async fn valid_openai_embeddings_response_is_healthy_and_uses_native_endpoint() {
+    let key = [0x47; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    let database = test_database().await;
+    seed_probe_target(
+        &database.seed,
+        &key,
+        Protocol::OpenAiEmbeddings,
+        false,
+        false,
+    )
+    .await;
+    let response = br#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.25,0.75]}],"model":"private-probe-model","usage":{"prompt_tokens":1,"total_tokens":1}}"#;
+    let (proxy_address, captured, server) = spawn_proxy("200 OK", response);
+    let probe = probe(&database.pool, &key, proxy_address);
+
+    assert_eq!(probe.check(channel_id()).await, ChannelProbeStatus::Healthy);
+
+    let request = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    server.join().unwrap();
+    let head = request.head.to_ascii_lowercase();
+    assert!(head.starts_with("post http://probe-upstream.example/v1/embeddings http/1.1"));
+    assert!(head.contains("authorization: bearer probe-secret-canary"));
+    assert!(head.contains("x-probe-header: probe-header-value-canary"));
+    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["model"], MODEL_CANARY);
+    assert_eq!(body["input"], "ping");
+    assert_eq!(body["encoding_format"], "float");
+    assert!(body.get("messages").is_none());
+    assert!(body.get("stream").is_none());
+
+    database.close().await;
+}
+
+#[tokio::test]
 async fn valid_anthropic_response_is_healthy_and_sends_messages_headers() {
     let key = [0x44; CREDENTIAL_ENCRYPTION_KEY_BYTES];
     let database = test_database().await;
@@ -265,7 +299,7 @@ async fn seed_probe_target(
     let header_override = json!({"x-probe-header": "probe-header-value-canary"}).to_string();
     let channel_type = match protocol {
         Protocol::Anthropic => "anthropic",
-        Protocol::OpenAiChat | Protocol::OpenAiResponses => "openai",
+        Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings => "openai",
         Protocol::Gemini => "gemini",
     };
     let channel_sql = format!(

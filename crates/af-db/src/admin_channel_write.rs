@@ -1027,7 +1027,7 @@ fn validate_channel_fields(
             (record.channel_type, record.protocol),
             (
                 ChannelType::OpenAi,
-                Protocol::OpenAiChat | Protocol::OpenAiResponses
+                Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
                 | (ChannelType::Gemini, Protocol::Gemini)
         )

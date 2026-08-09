@@ -396,12 +396,13 @@ fn adaptor_settings(
     protocol: Protocol,
 ) -> Result<AdaptorSettings, UpstreamModelDiscoveryError> {
     match (channel_type, protocol) {
-        (ChannelType::OpenAi, Protocol::OpenAiChat | Protocol::OpenAiResponses) => {
-            Ok(AdaptorSettings::OpenAi(
-                OpenAiAdaptorSettings::for_protocol(protocol, Vec::new())
-                    .map_err(|_| UpstreamModelDiscoveryError::UnsupportedChannel)?,
-            ))
-        }
+        (
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings,
+        ) => Ok(AdaptorSettings::OpenAi(
+            OpenAiAdaptorSettings::for_protocol(protocol, Vec::new())
+                .map_err(|_| UpstreamModelDiscoveryError::UnsupportedChannel)?,
+        )),
         (ChannelType::Anthropic, Protocol::Anthropic) => Ok(AdaptorSettings::Anthropic(
             AnthropicAdaptorSettings::new(Vec::new()),
         )),
@@ -417,7 +418,7 @@ fn supported_target(target: &ModelDiscoveryTargetRecord) -> bool {
         (target.channel_type(), target.protocol()),
         (
             ChannelType::OpenAi,
-            Protocol::OpenAiChat | Protocol::OpenAiResponses
+            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
             | (ChannelType::Gemini, Protocol::Gemini)
     )

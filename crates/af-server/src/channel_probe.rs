@@ -12,8 +12,8 @@ use af_domain::{ChannelId, ChannelType, Protocol, Role};
 use af_http::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 use af_httpclient::HttpClientProvider;
 use af_protocol::{
-    CanonicalRequest, ContentBlock, Message, Sampling, TokenCount, ToolChoice, anthropic, gemini,
-    openai_chat, openai_responses,
+    CanonicalEmbeddingRequest, CanonicalRequest, ContentBlock, EmbeddingInput, Message, Sampling,
+    TokenCount, ToolChoice, anthropic, gemini, openai_chat, openai_embeddings, openai_responses,
 };
 use af_scheduler::{ChannelProbe, ChannelProbeStatus};
 use tokio::time::timeout;
@@ -224,10 +224,16 @@ fn probe_operation(protocol: Protocol) -> Result<Operation, ProbeFailure> {
     match protocol {
         Protocol::OpenAiChat | Protocol::Anthropic | Protocol::Gemini => Ok(Operation::Chat),
         Protocol::OpenAiResponses => Ok(Operation::Responses),
+        Protocol::OpenAiEmbeddings => Ok(Operation::Embedding),
     }
 }
 
 fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
+    if protocol == Protocol::OpenAiEmbeddings {
+        let value = openai_embeddings::build_request(&probe_embedding_request(model)?)
+            .map_err(|_| ProbeFailure::RequestBuild)?;
+        return Ok(Bytes::from(value.to_string()));
+    }
     let mut request = CanonicalRequest::new(
         probe_operation(protocol)?,
         model.to_owned(),
@@ -256,6 +262,7 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
             value["store"] = false.into();
             value
         }
+        Protocol::OpenAiEmbeddings => unreachable!("Embeddings 已在独立请求分支返回"),
         Protocol::Anthropic => {
             anthropic::build_request(&request).map_err(|_| ProbeFailure::RequestBuild)?
         }
@@ -274,6 +281,18 @@ fn validate_probe_response(protocol: Protocol, body: &[u8]) -> Result<(), ProbeF
         Protocol::OpenAiResponses => openai_responses::parse_response(body)
             .map(|_| ())
             .map_err(|_| ProbeFailure::InvalidResponse),
+        Protocol::OpenAiEmbeddings => {
+            let request = probe_embedding_request("probe-model")?;
+            openai_embeddings::parse_response(body)
+                .and_then(|response| {
+                    response
+                        .validate_for_request(&request)
+                        .map_err(|_| openai_embeddings::ParseEmbeddingResponseError::InvalidValue)
+                        .map(|_| response)
+                })
+                .map(|_| ())
+                .map_err(|_| ProbeFailure::InvalidResponse)
+        }
         Protocol::Anthropic => anthropic::parse_response(body)
             .map(|_| ())
             .map_err(|_| ProbeFailure::InvalidResponse),
@@ -288,7 +307,7 @@ fn supported_target(target: &ChannelProbeTargetRecord) -> bool {
         (target.channel_type(), target.protocol()),
         (
             ChannelType::OpenAi,
-            Protocol::OpenAiChat | Protocol::OpenAiResponses
+            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
             | (ChannelType::Gemini, Protocol::Gemini)
     )
@@ -315,12 +334,13 @@ fn map_response_read_failure(error: AdaptorError) -> ProbeFailure {
 fn adaptor_settings(target: &ChannelProbeTargetRecord) -> Result<AdaptorSettings, ProbeFailure> {
     let models = vec![target.model().to_owned()];
     match (target.channel_type(), target.protocol()) {
-        (ChannelType::OpenAi, Protocol::OpenAiChat | Protocol::OpenAiResponses) => {
-            Ok(AdaptorSettings::OpenAi(
-                OpenAiAdaptorSettings::for_protocol(target.protocol(), models)
-                    .map_err(|_| ProbeFailure::AdapterBuild)?,
-            ))
-        }
+        (
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat | Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings,
+        ) => Ok(AdaptorSettings::OpenAi(
+            OpenAiAdaptorSettings::for_protocol(target.protocol(), models)
+                .map_err(|_| ProbeFailure::AdapterBuild)?,
+        )),
         (ChannelType::Anthropic, Protocol::Anthropic) => Ok(AdaptorSettings::Anthropic(
             AnthropicAdaptorSettings::new(models),
         )),
@@ -329,6 +349,15 @@ fn adaptor_settings(target: &ChannelProbeTargetRecord) -> Result<AdaptorSettings
         }
         _ => Err(ProbeFailure::UnsupportedTarget),
     }
+}
+
+fn probe_embedding_request(model: &str) -> Result<CanonicalEmbeddingRequest, ProbeFailure> {
+    CanonicalEmbeddingRequest::new(
+        model.to_owned(),
+        EmbeddingInput::Text("ping".to_owned()),
+        None,
+    )
+    .map_err(|_| ProbeFailure::RequestBuild)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

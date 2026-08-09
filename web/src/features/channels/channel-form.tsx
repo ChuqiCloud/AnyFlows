@@ -69,6 +69,10 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
   const autoBan = form.watch('autoBan')
   const poolMode = form.watch('poolMode')
   const removeUnsupportedParameters = (nextProtocol: ChannelProtocol) => {
+    if (nextProtocol === 'openai_embeddings') {
+      form.setValue('paramOverride', [], { shouldDirty: true, shouldValidate: true })
+      return
+    }
     if (nextProtocol !== 'openai_responses') return
     form.setValue(
       'paramOverride',
@@ -130,7 +134,9 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                       ? 'anthropic'
                       : nextType === 'gemini'
                         ? 'gemini'
-                        : currentProtocol === 'openai_chat' || currentProtocol === 'openai_responses'
+                        : currentProtocol === 'openai_chat'
+                          || currentProtocol === 'openai_responses'
+                          || currentProtocol === 'openai_embeddings'
                           ? currentProtocol
                           : 'openai_chat'
                     field.onChange(nextType)
@@ -175,6 +181,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                     <>
                       <option value="openai_chat">{t('channels.protocol.openai_chat')}</option>
                       <option value="openai_responses">{t('channels.protocol.openai_responses')}</option>
+                      <option value="openai_embeddings">{t('channels.protocol.openai_embeddings')}</option>
                     </>
                   )}
                 </Select>
@@ -261,9 +268,11 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
               <ChannelKeyValueEditor rows={field.value} keyLabel={t('channels.mapping.source')} valueLabel={t('channels.mapping.target')} addLabel={t('channels.mapping.add')} removeLabel={t('channels.mapping.remove')} emptyText={t('channels.mapping.empty')} createRow={() => createKeyValueRow('mapping')} onChange={field.onChange} />
             )} />
           </ChannelFormField>
-          <ChannelFormField id="channel-params" htmlFor={false} label={t('channels.fields.paramOverride')} error={form.formState.errors.paramOverride?.message} hint={t('channels.form.parametersHint')}>
-            <Controller control={form.control} name="paramOverride" render={({ field }) => <ChannelParameterEditor protocol={protocol} rows={field.value} onChange={field.onChange} />} />
-          </ChannelFormField>
+          {protocol !== 'openai_embeddings' ? (
+            <ChannelFormField id="channel-params" htmlFor={false} label={t('channels.fields.paramOverride')} error={form.formState.errors.paramOverride?.message} hint={t('channels.form.parametersHint')}>
+              <Controller control={form.control} name="paramOverride" render={({ field }) => <ChannelParameterEditor protocol={protocol} rows={field.value} onChange={field.onChange} />} />
+            </ChannelFormField>
+          ) : null}
           <ChannelHeaderOverrideField mode={mode} form={form} />
         </section>
 

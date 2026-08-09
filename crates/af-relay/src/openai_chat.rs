@@ -338,7 +338,7 @@ fn validate_downstream_request(
             Ok(())
         }
         Protocol::Gemini => Ok(()),
-        Protocol::OpenAiResponses => Err(AfError::Internal),
+        Protocol::OpenAiResponses | Protocol::OpenAiEmbeddings => Err(AfError::Internal),
     }
 }
 

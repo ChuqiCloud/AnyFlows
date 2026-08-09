@@ -77,9 +77,9 @@ use af_db::{
     WalletLedgerRepository, WalletLedgerRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
-    AdminChannelProbe, AdminOAuthConnectionService, ChatService, HttpListener, HttpRouter,
-    QueryApiKeyPolicy, ReadinessHandle, ServeError, ServeOutcome, build_payment_webhook_router,
-    build_router, serve_with_graceful_shutdown,
+    AdminChannelProbe, AdminOAuthConnectionService, ChatService, EmbeddingService, HttpListener,
+    HttpRouter, QueryApiKeyPolicy, ReadinessHandle, ServeError, ServeOutcome,
+    build_payment_webhook_router, build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
@@ -99,8 +99,9 @@ use crate::stripe_payment_intent::StripePaymentIntentProvider;
 
 use crate::readiness::DatabaseReadinessProbe;
 use crate::{
-    BackgroundTaskSupervisor, BillingChatService, BillingFlushReport, BillingRuntime,
-    BillingRuntimeError, ChatRoutePlanner, ShutdownController, SupervisorError, SupervisorShutdown,
+    BackgroundTaskSupervisor, BillingChatService, BillingEmbeddingService, BillingFlushReport,
+    BillingRuntime, BillingRuntimeError, ChatRoutePlanner, EmbeddingRoutePlanner,
+    ShutdownController, SupervisorError, SupervisorShutdown,
     balance_alert_runtime::BalanceAlertRuntime,
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     concurrency_runtime::{ConcurrencyCleanupWorker, ConcurrencyReleaseWorker, ConcurrencyRuntime},
@@ -203,6 +204,7 @@ pub struct RelayReady {
 pub struct BillingReady {
     infrastructure: AuthenticationReady,
     chat: Arc<dyn ChatService>,
+    embedding: Arc<dyn EmbeddingService>,
     billing: BillingRuntime,
     usage_record_queue: UsageRecordQueue,
     usage_record_consumer: UsageRecordConsumer,
@@ -230,6 +232,7 @@ pub struct BillingReady {
 pub struct Supervised {
     infrastructure: AuthenticationReady,
     chat: Arc<dyn ChatService>,
+    embedding: Arc<dyn EmbeddingService>,
     billing: BillingRuntime,
     usage_record_queue: UsageRecordQueue,
     refund_signal_queue: RefundSignalQueue,
@@ -1108,6 +1111,8 @@ impl Bootstrap<RelayReady> {
             Some(store) => route_service.with_scheduler_health(store),
             None => route_service,
         };
+        let embedding_route_planner: Arc<dyn EmbeddingRoutePlanner> =
+            Arc::new(route_service.clone());
         let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(route_service);
         let pricing_source = Arc::new(CachedRequestPricingSnapshotSource::new(
             model_prices.clone(),
@@ -1143,6 +1148,14 @@ impl Bootstrap<RelayReady> {
         )
         .map_err(BootstrapError::RefundSignalConsumer)?;
         let usage_record_worker_count = self.config.billing().usage_record_worker_count();
+        let embedding: Arc<dyn EmbeddingService> = Arc::new(BillingEmbeddingService::new(
+            embedding_route_planner,
+            pricing_source.clone(),
+            Some(precharge_port.clone()),
+            Some(refund_port.clone()),
+            Some(settlement_port.clone()),
+            usage_port.clone(),
+        ));
         let chat: Arc<dyn ChatService> = Arc::new(BillingChatService::new(
             route_planner,
             pricing_source,
@@ -1171,6 +1184,7 @@ impl Bootstrap<RelayReady> {
             stage: BillingReady {
                 infrastructure,
                 chat,
+                embedding,
                 billing,
                 usage_record_queue,
                 usage_record_consumer,
@@ -1211,6 +1225,7 @@ impl Bootstrap<BillingReady> {
         let BillingReady {
             infrastructure,
             chat,
+            embedding,
             billing,
             usage_record_queue,
             usage_record_consumer,
@@ -1341,6 +1356,7 @@ impl Bootstrap<BillingReady> {
             stage: Supervised {
                 infrastructure,
                 chat,
+                embedding,
                 billing,
                 usage_record_queue,
                 refund_signal_queue,
@@ -1521,6 +1537,7 @@ impl Bootstrap<Supervised> {
         let router = build_router(
             self.config.server(),
             self.stage.chat.clone(),
+            self.stage.embedding.clone(),
             readiness.clone(),
             Arc::clone(&self.stage.infrastructure.authenticator),
             Arc::clone(&self.stage.infrastructure.session_authenticator),
@@ -1657,6 +1674,7 @@ impl Bootstrap<ListenerReady> {
             usage_record_queue,
             refund_signal_queue,
             chat: _,
+            embedding: _,
             _channel_index: _,
             model_catalog_reader: _,
             admin_model_sync_service: _,

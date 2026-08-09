@@ -67,17 +67,17 @@ use af_analytics::{
 };
 use af_config::ServerConfig;
 use af_domain::{
-    ChannelId, CredentialId, GatewayPrincipal, GroupId, ProxyId, Role, TokenId, TokenModelPolicy,
-    TrustedClientIp, UserId,
+    AfError, ChannelId, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, ProxyId, Role,
+    TokenId, TokenModelPolicy, TrustedClientIp, UserId,
 };
 use af_http::{
-    HttpListener, QueryApiKeyPolicy, ReadinessFuture, ReadinessHandle, ReadinessProbe,
-    ServeOutcome, build_router, serve_with_graceful_shutdown,
+    EmbeddingService, EmbeddingServiceFuture, HttpListener, QueryApiKeyPolicy, ReadinessFuture,
+    ReadinessHandle, ReadinessProbe, ServeOutcome, build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
 use af_protocol::{
-    CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage, UsageDetails,
-    UsageSemantics, UsageSource, openai_responses::OpenAiResponsesStreamEncoder,
+    CanonicalEmbeddingRequest, CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage,
+    UsageDetails, UsageSemantics, UsageSource, openai_responses::OpenAiResponsesStreamEncoder,
 };
 use af_relay::RelayService;
 use serde_json::{Value, json};
@@ -186,6 +186,19 @@ struct RejectAdminTokens;
 struct RejectAdminDashboard;
 struct RejectAdminUsageLogs;
 struct RejectAdminUsers;
+struct RejectEmbeddings;
+
+impl EmbeddingService for RejectEmbeddings {
+    fn embeddings<'a>(
+        &'a self,
+        _principal: &'a GatewayPrincipal,
+        _user_concurrency: Option<ConcurrencyLimit>,
+        _request: CanonicalEmbeddingRequest,
+        _request_id: &'a str,
+    ) -> EmbeddingServiceFuture<'a> {
+        Box::pin(async { Err(AfError::Internal) })
+    }
+}
 
 impl AdminDebugTraceService for RejectAdminDebugTraces {
     fn settings<'a>(&'a self, _principal: SessionPrincipal) -> AdminDebugTraceSettingsFuture<'a> {
@@ -1773,6 +1786,7 @@ async fn start_server(
     let router = build_router(
         &server_config,
         relay,
+        Arc::new(RejectEmbeddings),
         readiness,
         Arc::new(AlwaysAuthenticates),
         Arc::new(RejectSessions),
