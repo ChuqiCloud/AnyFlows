@@ -1,4 +1,5 @@
 use super::*;
+use crate::CanonicalEmbeddingResponseError;
 
 #[test]
 fn parses_single_text_request_with_float_defaults() {
