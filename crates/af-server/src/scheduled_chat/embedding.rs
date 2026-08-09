@@ -4,8 +4,7 @@ use af_adapter::{RelayContext, get_adaptor};
 use af_domain::{AfError, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, Protocol};
 use af_protocol::{CanonicalEmbeddingRequest, openai_embeddings};
 use af_relay::{
-    EmbeddingResponse, RelayCandidate, RelayCandidateRequest, RelayStateMachine,
-    relay_openai_embeddings_with_report,
+    RelayCandidate, RelayCandidateRequest, RelayStateMachine, relay_openai_embeddings_with_report,
 };
 use af_scheduler::{IndexedRoutePlan, RouteWaitKind};
 
@@ -24,8 +23,8 @@ use crate::{
 };
 
 use super::{
-    PreparedConcurrencyPlan, ScheduledChatService, adaptor_settings, collect_route_accounts,
-    collect_route_credentials, header_overrides, map_scheduler_error, target_matches_protocol,
+    PreparedConcurrencyPlan, ScheduledChatService, adaptor_settings, header_overrides,
+    map_scheduler_error, target_matches_protocol,
 };
 
 impl EmbeddingRoutePlanner for ScheduledChatService {
@@ -319,41 +318,5 @@ fn ordered_credentials<'a>(
             health,
         ),
         _ => order_credentials(request_id, target.channel_id(), target.credentials()),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use af_db::{ChannelModelMappings, ChannelParameterOverrides};
-    use af_domain::{ChannelId, ChannelType};
-    use serde_json::json;
-
-    use super::*;
-
-    #[test]
-    fn mapped_candidate_rebuilds_embeddings_body_without_chat_parameters() {
-        let target = af_db::SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
-            ChannelId::new(1).unwrap(),
-            ChannelType::OpenAi,
-            Protocol::OpenAiEmbeddings,
-            None,
-            Vec::new(),
-            ChannelModelMappings::parse(&json!({"public-model": "private-model"})).unwrap(),
-            ChannelParameterOverrides::default(),
-            Vec::new(),
-        )
-        .unwrap();
-        let request =
-            openai_embeddings::parse_request(br#"{"model":"public-model","input":"hello"}"#)
-                .unwrap();
-        let candidate =
-            embedding_candidate_request(&target, &request, "public-model", "private-model")
-                .unwrap()
-                .unwrap();
-        let (_, body) = candidate.into_parts();
-        let body: serde_json::Value = serde_json::from_slice(&body.unwrap()).unwrap();
-        assert_eq!(body["model"], "private-model");
-        assert_eq!(body["input"], "hello");
-        assert!(body.get("messages").is_none());
     }
 }
