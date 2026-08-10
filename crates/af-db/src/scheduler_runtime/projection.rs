@@ -4,7 +4,9 @@ use std::{
     sync::Arc,
 };
 
-use af_domain::{ChannelId, ChannelTimeout, ChannelType, CredentialKind, GroupId, Protocol};
+use af_domain::{
+    ChannelId, ChannelTimeout, ChannelType, CredentialKind, GroupId, Protocol, ResponsesCompactMode,
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use sea_orm::entity::prelude::Json;
 use serde::{Deserialize, Serialize};
@@ -177,6 +179,8 @@ struct ProjectionTargetWire {
     #[serde(default)]
     pool_mode: bool,
     responses_websocket_enabled: bool,
+    #[serde(default)]
+    responses_compact_mode: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -369,6 +373,7 @@ impl ProjectionTargetWire {
             auto_ban_keywords: target.auto_ban_rules().keywords().to_vec(),
             pool_mode: target.pool_mode(),
             responses_websocket_enabled: target.responses_websocket_enabled(),
+            responses_compact_mode: Some(target.responses_compact_mode().to_string()),
         }
     }
 
@@ -408,6 +413,11 @@ impl ProjectionTargetWire {
         let auto_ban_rules =
             af_domain::ChannelAutoBanRules::new(self.auto_ban_status_codes, self.auto_ban_keywords)
                 .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        let responses_compact_mode = self
+            .responses_compact_mode
+            .unwrap_or_else(|| ResponsesCompactMode::Auto.to_string())
+            .parse::<ResponsesCompactMode>()
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
         SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
             channel_id,
             channel_type,
@@ -423,6 +433,7 @@ impl ProjectionTargetWire {
         .with_auto_ban_rules(auto_ban_rules)
         .with_pool_mode(self.pool_mode)
         .with_responses_websocket_enabled(self.responses_websocket_enabled)
+        .and_then(|target| target.with_responses_compact_mode(responses_compact_mode))
         .map_err(|_| SchedulerRuntimeProjectionError::Invariant)
     }
 }
@@ -626,6 +637,10 @@ mod tests {
         );
         for target in old_wire["targets"].as_array_mut().unwrap() {
             target.as_object_mut().unwrap().remove("pool_mode");
+            target
+                .as_object_mut()
+                .unwrap()
+                .remove("responses_compact_mode");
             for credential in target["credentials"].as_array_mut().unwrap() {
                 credential.as_object_mut().unwrap().remove("concurrency");
             }
@@ -637,6 +652,10 @@ mod tests {
             None
         );
         assert!(!old_decoded.records()[0].target().pool_mode());
+        assert_eq!(
+            old_decoded.records()[0].target().responses_compact_mode(),
+            ResponsesCompactMode::Auto
+        );
 
         let rendered = format!("{decoded:?}");
         for forbidden in [

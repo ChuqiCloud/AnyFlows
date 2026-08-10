@@ -180,6 +180,18 @@ string_enum! {
 }
 
 string_enum! {
+    /// OpenAI Responses Compact 渠道能力的显式策略。
+    pub enum ResponsesCompactMode {
+        /// 由后续探测结果决定是否使用 Compact。
+        Auto => "auto",
+        /// 仅允许在明确支持 Compact 的原生 Responses 渠道上使用。
+        ForceOn => "force_on",
+        /// 即使探测到支持，也不为该渠道使用 Compact。
+        ForceOff => "force_off",
+    }
+}
+
+string_enum! {
     /// 渠道选择的上游适配器类型。
     pub enum ChannelType {
         /// OpenAI 及其兼容 API。
