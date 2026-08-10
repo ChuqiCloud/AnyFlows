@@ -49,6 +49,7 @@ impl ResponsesCompactProbeRecord {
     }
 
     /// 返回最近一次响应的受控 HTTP 状态；传输失败不会产生本记录。
+    #[cfg(test)]
     pub(crate) const fn http_status(self) -> Option<u16> {
         self.http_status
     }

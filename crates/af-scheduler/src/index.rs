@@ -564,7 +564,7 @@ impl IndexedWeightedScheduler {
         let candidates = compact_candidates(&snapshot, group_id, model)?;
         Ok(candidates
             .iter()
-            .map(SchedulerCandidate::channel_id)
+            .map(|candidate| candidate.channel_id())
             .collect())
     }
 
