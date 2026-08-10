@@ -7,6 +7,7 @@ mod expression_pricing;
 mod group_pricing_cache;
 mod lifecycle;
 mod model_price_cache;
+mod multimodal;
 mod payment_order;
 mod payment_webhook;
 mod pricing;
@@ -53,6 +54,12 @@ pub use lifecycle::{
 pub use model_price_cache::{
     ModelPrice, ModelPriceCache, ModelPriceCacheError, ModelPriceMode, ModelPriceSnapshot,
     ModelPriceSource, ModelPriceSourceError, ModelPriceSourceFuture, ModelPriceSourceRecord,
+};
+pub use multimodal::{
+    BillingDurationSeconds, BillingFactor, BillingImageCount, BillingPixelCount, BillingResolution,
+    MAX_BILLING_DURATION_SECONDS, MAX_BILLING_IMAGE_COUNT, MAX_BILLING_RESOLUTION_EDGE,
+    MAX_BILLING_RESOLUTION_PIXELS, MAX_MULTIMODAL_DIMENSIONS, MultimodalBillingDimensions,
+    MultimodalBillingError, MultimodalDimensionError,
 };
 pub use payment_order::{
     MAX_PAYMENT_CLIENT_SECRET_BYTES, PaymentClientSecret, PaymentOrderFuture,
@@ -120,6 +127,8 @@ mod group_pricing_cache_tests;
 mod lifecycle_tests;
 #[cfg(test)]
 mod model_price_cache_tests;
+#[cfg(test)]
+mod multimodal_tests;
 #[cfg(test)]
 mod payment_webhook_tests;
 #[cfg(test)]
