@@ -360,6 +360,7 @@ pub struct SchedulerRuntimeTargetRecord {
     pool_mode: bool,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
+    responses_compact_model_mapping: ChannelModelMappings,
 }
 
 impl SchedulerRuntimeTargetRecord {
@@ -418,10 +419,41 @@ impl SchedulerRuntimeTargetRecord {
         parameter_overrides: ChannelParameterOverrides,
         headers: Vec<(String, String)>,
     ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        Self::new_pool_with_request_policy_and_compact_mapping(
+            channel_id,
+            channel_type,
+            protocol,
+            base_url,
+            credentials,
+            model_mappings,
+            ChannelModelMappings::default(),
+            parameter_overrides,
+            headers,
+        )
+    }
+
+    /// 连同 Compact 专属模型映射构造共享运行时目标。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与不可变运行时目标契约一一对应"
+    )]
+    pub fn new_pool_with_request_policy_and_compact_mapping(
+        channel_id: ChannelId,
+        channel_type: ChannelType,
+        protocol: Protocol,
+        base_url: Option<String>,
+        credentials: Vec<SchedulerRuntimeCredentialRecord>,
+        model_mappings: ChannelModelMappings,
+        responses_compact_model_mapping: ChannelModelMappings,
+        parameter_overrides: ChannelParameterOverrides,
+        headers: Vec<(String, String)>,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
         if !is_supported_runtime_target(channel_type, protocol)
             || credentials.is_empty()
             || credentials.len() > MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL
             || parameter_overrides.validate_for_protocol(protocol).is_err()
+            || (!responses_compact_model_mapping.is_empty()
+                && (channel_type != ChannelType::OpenAi || protocol != Protocol::OpenAiResponses))
         {
             return Err(SchedulerRuntimeTargetRecordError);
         }
@@ -470,6 +502,7 @@ impl SchedulerRuntimeTargetRecord {
             pool_mode: false,
             responses_websocket_enabled: false,
             responses_compact_mode: ResponsesCompactMode::Auto,
+            responses_compact_model_mapping,
         })
     }
 
@@ -608,9 +641,25 @@ impl SchedulerRuntimeTargetRecord {
         self.model_mappings.resolve(requested_model)
     }
 
+    /// 先应用普通映射，再叠加 Compact 专属映射；普通 Responses 永不读取后者。
+    #[must_use]
+    pub fn mapped_responses_compact_model(&self, requested_model: &str) -> &str {
+        let base_model = self
+            .mapped_model(requested_model)
+            .unwrap_or(requested_model);
+        self.responses_compact_model_mapping
+            .resolve(base_model)
+            .unwrap_or(base_model)
+    }
+
     /// 返回受控投影编解码使用的已验证模型映射。
     pub(super) const fn model_mappings(&self) -> &ChannelModelMappings {
         &self.model_mappings
+    }
+
+    /// 返回 Compact 专属模型映射，供 Redis 投影复用已验证值。
+    pub(super) const fn responses_compact_model_mapping(&self) -> &ChannelModelMappings {
+        &self.responses_compact_model_mapping
     }
 
     /// 返回已验证的 Canonical 参数覆盖。
@@ -652,6 +701,10 @@ impl fmt::Debug for SchedulerRuntimeTargetRecord {
                 &self.responses_websocket_enabled,
             )
             .field("responses_compact_mode", &self.responses_compact_mode)
+            .field(
+                "responses_compact_model_mapping_count",
+                &self.responses_compact_model_mapping.len(),
+            )
             .finish()
     }
 }

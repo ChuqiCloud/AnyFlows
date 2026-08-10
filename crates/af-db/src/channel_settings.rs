@@ -1,3 +1,4 @@
+use crate::scheduler_runtime::ChannelModelMappings;
 use af_domain::{ChannelAutoBanRules, ChannelType, Protocol, ResponsesCompactMode};
 use serde_json::{Map, Value, json};
 
@@ -5,6 +6,8 @@ use serde_json::{Map, Value, json};
 pub(crate) const RESPONSES_WEBSOCKET_ENABLED_KEY: &str = "responses_websocket_enabled";
 /// 渠道 settings 中控制 Responses Compact 的三态能力键。
 pub(crate) const RESPONSES_COMPACT_MODE_KEY: &str = "responses_compact_mode";
+/// 渠道 settings 中仅供 `/responses/compact` 使用的上游模型映射键。
+pub(crate) const RESPONSES_COMPACT_MODEL_MAPPING_KEY: &str = "compact_model_mapping";
 /// 渠道 settings 中由管理与运行时共同维护的自动禁用规则键。
 pub(crate) const AUTO_BAN_RULES_KEY: &str = "auto_ban_rules";
 /// 渠道 settings 中由管理与运行时共同维护的外部账号池模式键。
@@ -36,6 +39,31 @@ pub(crate) fn responses_compact_mode(
         Some(Value::String(mode)) => mode.parse().map_err(|_| ChannelSettingsError),
         Some(_) => Err(ChannelSettingsError),
     }
+}
+
+/// 读取 Compact 专属模型映射；缺失时表示沿用普通渠道映射后的模型名。
+pub(crate) fn responses_compact_model_mapping(
+    settings: &Value,
+) -> Result<ChannelModelMappings, ChannelSettingsError> {
+    let object = settings.as_object().ok_or(ChannelSettingsError)?;
+    object.get(RESPONSES_COMPACT_MODEL_MAPPING_KEY).map_or_else(
+        || Ok(ChannelModelMappings::default()),
+        |value| ChannelModelMappings::parse(value).map_err(|_| ChannelSettingsError),
+    )
+}
+
+/// Compact 专属映射只允许挂在原生 OpenAI Responses 渠道上。
+pub(crate) fn validate_responses_compact_model_mapping(
+    channel_type: ChannelType,
+    protocol: Protocol,
+    mapping: &ChannelModelMappings,
+) -> Result<(), ChannelSettingsError> {
+    if !mapping.is_empty()
+        && (channel_type != ChannelType::OpenAi || protocol != Protocol::OpenAiResponses)
+    {
+        return Err(ChannelSettingsError);
+    }
+    Ok(())
 }
 
 /// 从敏感 settings 中读取池模式；缺失表示继续维护渠道级本地健康状态。
@@ -240,6 +268,42 @@ mod tests {
         );
         assert!(responses_compact_mode(&json!({"responses_compact_mode": "unknown"})).is_err());
         assert!(responses_compact_mode(&json!({"responses_compact_mode": true})).is_err());
+    }
+
+    #[test]
+    fn compact_model_mapping_defaults_empty_and_rejects_non_native_channels() {
+        assert!(
+            responses_compact_model_mapping(&json!({}))
+                .unwrap()
+                .is_empty()
+        );
+        let mapping = responses_compact_model_mapping(&json!({
+            "compact_model_mapping": {"gpt-public": "gpt-upstream"}
+        }))
+        .unwrap();
+        assert_eq!(mapping.resolve("gpt-public"), Some("gpt-upstream"));
+        assert!(
+            validate_responses_compact_model_mapping(
+                ChannelType::OpenAi,
+                Protocol::OpenAiResponses,
+                &mapping,
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_responses_compact_model_mapping(
+                ChannelType::OpenAi,
+                Protocol::OpenAiChat,
+                &mapping,
+            )
+            .is_err()
+        );
+        assert!(
+            responses_compact_model_mapping(&json!({
+                "compact_model_mapping": {"gpt-public": 1}
+            }))
+            .is_err()
+        );
     }
 
     #[test]
