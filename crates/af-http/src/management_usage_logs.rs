@@ -44,7 +44,7 @@ pub(crate) struct AdminUsageLogResponse {
     #[schema(minimum = 0)]
     audio_output_tokens: i64,
     /// 音频文件时长纳秒；非 Audio 请求或无真实事实时为 null。
-    #[schema(minimum = 0, maximum = 86400000000000, required = true)]
+    #[schema(minimum = 0, maximum = 86400000000000_i64, required = true)]
     audio_duration_nanoseconds: Option<i64>,
     #[schema(value_type = crate::openapi::schema::AdminUsageLogSourceSchema)]
     usage_source: af_admin::AdminUsageLogSource,

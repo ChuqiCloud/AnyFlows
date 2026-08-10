@@ -47,6 +47,7 @@ pub struct BillingUsageRecord {
 }
 
 impl BillingUsageRecord {
+    #[cfg(test)]
     pub(crate) const fn new(
         event_id: BillingReservationId,
         principal: GatewayPrincipal,
