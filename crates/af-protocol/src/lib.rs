@@ -10,6 +10,7 @@ mod error_evidence;
 pub mod gemini;
 mod image;
 pub mod openai_audio;
+pub mod openai_audio_speech;
 pub mod openai_chat;
 pub mod openai_embeddings;
 pub mod openai_images;
@@ -25,13 +26,20 @@ mod usage;
 pub use audio::{
     AudioDuration, AudioDurationError, AudioFile, AudioFileError, AudioFileFormat,
     AudioInputTokenDetails, AudioLanguageCode, AudioLanguageCodeError, AudioLanguageHints,
-    AudioLanguageHintsError, AudioTranscriptionOptions, AudioTranscriptionOptionsError,
-    AudioTranscriptionTokenUsage, AudioTranscriptionUsage, AudioTranscriptionUsageError,
+    AudioLanguageHintsError, AudioSpeechOptions, AudioSpeechOptionsError, AudioSpeechOutputFormat,
+    AudioSpeechSpeed, AudioSpeechSpeedError, AudioSpeechStreamFormat, AudioSpeechVoice,
+    AudioSpeechVoiceError, AudioSpeechVoiceId, AudioSpeechVoiceName, AudioTranscriptionOptions,
+    AudioTranscriptionOptionsError, AudioTranscriptionTokenUsage, AudioTranscriptionUsage,
+    AudioTranscriptionUsageError, CanonicalAudioSpeechRequest, CanonicalAudioSpeechRequestError,
+    CanonicalAudioSpeechResponse, CanonicalAudioSpeechResponseError,
     CanonicalAudioTranscriptionRequest, CanonicalAudioTranscriptionRequestError,
     CanonicalAudioTranscriptionResponse, CanonicalAudioTranscriptionResponseError,
-    MAX_AUDIO_DETECTED_LANGUAGES, MAX_AUDIO_DURATION_SECONDS, MAX_AUDIO_FILE_BYTES,
-    MAX_AUDIO_KEYWORD_BYTES, MAX_AUDIO_KEYWORDS, MAX_AUDIO_LANGUAGE_HINTS,
-    MAX_AUDIO_TRANSCRIPT_TEXT_BYTES, MAX_AUDIO_TRANSCRIPTION_PROMPT_BYTES,
+    GeneratedSpeechAudio, GeneratedSpeechAudioError, MAX_AUDIO_DETECTED_LANGUAGES,
+    MAX_AUDIO_DURATION_SECONDS, MAX_AUDIO_FILE_BYTES, MAX_AUDIO_KEYWORD_BYTES, MAX_AUDIO_KEYWORDS,
+    MAX_AUDIO_LANGUAGE_HINTS, MAX_AUDIO_SPEECH_INPUT_BYTES, MAX_AUDIO_SPEECH_INPUT_CHARS,
+    MAX_AUDIO_SPEECH_INSTRUCTIONS_BYTES, MAX_AUDIO_SPEECH_VOICE_ID_BYTES,
+    MAX_AUDIO_SPEECH_VOICE_NAME_BYTES, MAX_AUDIO_TRANSCRIPT_TEXT_BYTES,
+    MAX_AUDIO_TRANSCRIPTION_PROMPT_BYTES, MAX_GENERATED_SPEECH_BYTES,
     MAX_TOTAL_AUDIO_KEYWORD_BYTES, TranscriptionKeyword, TranscriptionKeywordError,
     TranscriptionTemperature, TranscriptionTemperatureError,
 };
