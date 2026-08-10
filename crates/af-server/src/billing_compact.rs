@@ -174,12 +174,15 @@ fn compact_usage_upper_bound(
     let value = openai_responses_compact::build_request(request).map_err(|_| AfError::Internal)?;
     let encoded = serde_json::to_vec(&value).map_err(|_| AfError::Internal)?;
     let encoded_tokens = i64::try_from(encoded.len()).map_err(|_| AfError::Internal)?;
-    let media_floor = request
+    let media_floor = if request
         .input()
         .and_then(|input| input.items())
         .is_some_and(|items| items.iter().any(|item| contains_media(item.as_value())))
-        .then_some(MAX_OUTPUT_TOKENS)
-        .unwrap_or(0);
+    {
+        MAX_OUTPUT_TOKENS
+    } else {
+        0
+    };
     let input_tokens = encoded_tokens.max(media_floor);
     Usage::new(
         TokenCount::new(input_tokens).map_err(|_| AfError::Internal)?,
