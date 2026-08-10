@@ -272,6 +272,7 @@ impl AdminChannelWriteFields {
                         | Protocol::OpenAiResponses
                         | Protocol::OpenAiEmbeddings
                         | Protocol::OpenAiImages
+                        | Protocol::OpenAiAudio
                 ) | (ChannelType::Anthropic, Protocol::Anthropic)
                     | (ChannelType::Gemini, Protocol::Gemini)
             )

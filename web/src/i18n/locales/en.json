@@ -122,6 +122,7 @@
       "openai_responses": "OpenAI Responses",
       "openai_embeddings": "OpenAI Embeddings",
       "openai_images": "OpenAI Images",
+      "openai_audio": "OpenAI Audio Transcription",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -1787,6 +1788,7 @@
       "cacheRead": "Cache read {{value}}",
       "cacheCreate": "Cache create 5m {{five}} / 1h {{hour}}",
       "reasoningAudio": "Reasoning {{reasoning}} / Audio {{audio}}",
+      "audioDuration": "Audio duration {{value}}s",
       "quotaSemantics": "Quota {{quota}} / {{semantics}}",
       "billingMode": {
         "per_token": "Per token",
@@ -1880,6 +1882,7 @@
       "openai_responses": "OpenAI Responses",
       "openai_embeddings": "OpenAI Embeddings",
       "openai_images": "OpenAI Images",
+      "openai_audio": "OpenAI Audio Transcription",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -2002,6 +2005,7 @@
       "openai_responses": "OpenAI Responses",
       "openai_embeddings": "OpenAI Embeddings",
       "openai_images": "OpenAI Images",
+      "openai_audio": "OpenAI Audio Transcription",
       "anthropic": "Anthropic",
       "gemini": "Gemini"
     },
@@ -2092,6 +2096,7 @@
         "openai_responses": "OpenAI Responses",
         "openai_embeddings": "OpenAI Embeddings",
         "openai_images": "OpenAI Images",
+        "openai_audio": "OpenAI Audio Transcription",
         "anthropic": "Anthropic",
         "gemini": "Gemini",
         "unavailable": "Unsupported in Playground"

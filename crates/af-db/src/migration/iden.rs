@@ -671,6 +671,7 @@ pub(in crate::migration) mod usage_logs {
         ReasoningTokens,
         AudioInputTokens,
         AudioOutputTokens,
+        AudioDurationNanoseconds,
         UsageSource,
         UsageSemantics,
         Quota,

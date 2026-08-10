@@ -52,6 +52,7 @@ use af_scheduler::{
     IndexedWeightedSchedulerError, RouteWaitKind, StickyRouteOutcome, StickyWaitPolicy,
 };
 
+mod audio;
 mod embedding;
 mod image;
 
@@ -861,7 +862,9 @@ fn candidate_request(
             .map(Some)
             .map_err(|_| AfError::Internal)
         }
-        Protocol::OpenAiEmbeddings | Protocol::OpenAiImages => Err(AfError::Internal),
+        Protocol::OpenAiEmbeddings | Protocol::OpenAiImages | Protocol::OpenAiAudio => {
+            Err(AfError::Internal)
+        }
         Protocol::Anthropic => AnthropicRequestOverrides::new(
             upstream_model,
             parameters.temperature(),
@@ -898,6 +901,7 @@ fn target_matches_protocol(
                     | Protocol::OpenAiResponses
                     | Protocol::OpenAiEmbeddings
                     | Protocol::OpenAiImages
+                    | Protocol::OpenAiAudio
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
                 | (ChannelType::Gemini, Protocol::Gemini)
         )
@@ -913,7 +917,8 @@ fn adaptor_settings(
             Protocol::OpenAiChat
             | Protocol::OpenAiResponses
             | Protocol::OpenAiEmbeddings
-            | Protocol::OpenAiImages,
+            | Protocol::OpenAiImages
+            | Protocol::OpenAiAudio,
         ) => Ok(AdaptorSettings::OpenAi(
             OpenAiAdaptorSettings::for_protocol(target.protocol(), vec![upstream_model])
                 .map_err(|_| AfError::Internal)?,

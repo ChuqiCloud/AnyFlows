@@ -69,6 +69,12 @@ const OPENAI_IMAGES_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {
     response: &[],
     stream: &[],
 };
+const OPENAI_AUDIO_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {
+    protocol: Protocol::OpenAiAudio,
+    request: &[],
+    response: &[],
+    stream: &[],
+};
 const ANTHROPIC_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {
     protocol: Protocol::Anthropic,
     request: request::ANTHROPIC,
@@ -90,6 +96,7 @@ pub const fn protocol_capabilities(protocol: Protocol) -> &'static ProtocolCapab
         Protocol::OpenAiResponses => &OPENAI_RESPONSES_CAPABILITIES,
         Protocol::OpenAiEmbeddings => &OPENAI_EMBEDDINGS_CAPABILITIES,
         Protocol::OpenAiImages => &OPENAI_IMAGES_CAPABILITIES,
+        Protocol::OpenAiAudio => &OPENAI_AUDIO_CAPABILITIES,
         Protocol::Anthropic => &ANTHROPIC_CAPABILITIES,
         Protocol::Gemini => &GEMINI_CAPABILITIES,
     }

@@ -25,7 +25,7 @@ use http::{
 };
 
 use crate::{
-    ChatService, EmbeddingService, ImageService, OpenAiHttpError,
+    AudioService, ChatService, EmbeddingService, ImageService, OpenAiHttpError,
     streaming::{StreamDeliveryPolicy, openai_chat_body},
 };
 
@@ -33,6 +33,7 @@ use crate::{
 #[derive(Clone)]
 pub(crate) struct HttpState {
     chat: Arc<dyn ChatService>,
+    audio: Option<Arc<dyn AudioService>>,
     embedding: Option<Arc<dyn EmbeddingService>>,
     image: Option<Arc<dyn ImageService>>,
     pub(crate) session_authenticator: Arc<dyn SessionAuthenticator>,
@@ -72,6 +73,7 @@ impl HttpState {
     ) -> Self {
         Self {
             chat,
+            audio: None,
             embedding: None,
             image: None,
             session_authenticator,
@@ -97,6 +99,12 @@ impl HttpState {
             admin_wallet_service: None,
             stream_delivery: StreamDeliveryPolicy::default(),
         }
+    }
+
+    /// 注入独立 Audio 转录生产服务；未注入时公开端点失败关闭。
+    pub(crate) fn with_audio_service(mut self, service: Arc<dyn AudioService>) -> Self {
+        self.audio = Some(service);
+        self
     }
 
     /// 注入独立 Embeddings 生产服务；未注入时公开端点失败关闭。
@@ -231,6 +239,11 @@ impl HttpState {
     /// 返回协议入口共享的 Chat 执行端口。
     pub(crate) fn chat_service(&self) -> &Arc<dyn ChatService> {
         &self.chat
+    }
+
+    /// 返回可选的独立 Audio 转录执行端口。
+    pub(crate) fn audio_service(&self) -> Option<&Arc<dyn AudioService>> {
+        self.audio.as_ref()
     }
 
     /// 返回可选的独立 Embeddings 执行端口。

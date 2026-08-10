@@ -71,7 +71,7 @@ fn to_usage_log_write(record: BillingUsageRecord) -> Result<UsageLogWrite, Usage
         UsageSemantics::Inclusive => UsageLogSemantics::Inclusive,
         UsageSemantics::CacheSeparated => UsageLogSemantics::CacheSeparated,
     };
-    Ok(UsageLogWrite::new(
+    let write = UsageLogWrite::new(
         record.event_id(),
         record.principal(),
         billing_mode,
@@ -79,7 +79,16 @@ fn to_usage_log_write(record: BillingUsageRecord) -> Result<UsageLogWrite, Usage
         source,
         semantics,
         record.quota(),
-    ))
+    );
+    let audio_duration_nanoseconds = record
+        .dimensions()
+        .audio_duration()
+        .map(|duration| i64::try_from(duration.as_nanoseconds()))
+        .transpose()
+        .map_err(|_| UsageRecordSinkError::Invariant)?;
+    write
+        .with_audio_duration_nanoseconds(audio_duration_nanoseconds)
+        .map_err(|_| UsageRecordSinkError::Invariant)
 }
 
 fn usage_source(record: af_protocol::Usage) -> UsageSource {

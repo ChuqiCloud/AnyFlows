@@ -22,6 +22,7 @@ use crate::{
 
 const DEFAULT_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 const CONSUME_EVENT_TYPE: i16 = 1;
+const MAX_AUDIO_DURATION_NANOSECONDS: i64 = 24 * 60 * 60 * 1_000_000_000;
 
 /// 用量日志持久化使用的计费模式。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -141,6 +142,7 @@ pub struct UsageLogWrite {
     source: UsageLogSource,
     semantics: UsageLogSemantics,
     quota: Quota,
+    audio_duration_nanoseconds: Option<i64>,
 }
 
 impl UsageLogWrite {
@@ -163,7 +165,22 @@ impl UsageLogWrite {
             source,
             semantics,
             quota,
+            audio_duration_nanoseconds: None,
         }
+    }
+
+    /// 附加可选音频时长事实；缺失与真实零值保持可区分。
+    pub fn with_audio_duration_nanoseconds(
+        mut self,
+        audio_duration_nanoseconds: Option<i64>,
+    ) -> Result<Self, UsageLogWriteError> {
+        if audio_duration_nanoseconds
+            .is_some_and(|value| !(0..=MAX_AUDIO_DURATION_NANOSECONDS).contains(&value))
+        {
+            return Err(UsageLogWriteError::InvalidAudioDuration);
+        }
+        self.audio_duration_nanoseconds = audio_duration_nanoseconds;
+        Ok(self)
     }
 }
 
@@ -184,6 +201,9 @@ pub enum UsageLogWriteError {
     /// 任一 token 维度为负数。
     #[error("用量日志 token 数不能为负数")]
     NegativeTokenCount,
+    /// 音频时长为负数或超过 24 小时固定边界。
+    #[error("用量日志音频时长无效")]
+    InvalidAudioDuration,
 }
 
 /// 幂等写入用量日志后的闭合结果。
@@ -315,6 +335,7 @@ impl UsageLogRepository {
             reasoning_tokens: Set(usage.reasoning_tokens),
             audio_input_tokens: Set(usage.audio_input_tokens),
             audio_output_tokens: Set(usage.audio_output_tokens),
+            audio_duration_nanoseconds: Set(write.audio_duration_nanoseconds),
             usage_source: Set(write.source.database_value()),
             usage_semantics: Set(write.semantics.database_value()),
             quota: Set(write.quota.units()),
@@ -376,6 +397,7 @@ fn matches_write(existing: &usage_logs::Model, write: &UsageLogWrite) -> bool {
         && existing.reasoning_tokens == usage.reasoning_tokens
         && existing.audio_input_tokens == usage.audio_input_tokens
         && existing.audio_output_tokens == usage.audio_output_tokens
+        && existing.audio_duration_nanoseconds == write.audio_duration_nanoseconds
         && existing.usage_source == write.source.database_value()
         && existing.usage_semantics == write.semantics.database_value()
         && existing.quota == write.quota.units()

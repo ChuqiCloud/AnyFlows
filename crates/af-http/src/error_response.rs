@@ -105,7 +105,8 @@ fn protocol_error_response(protocol: Protocol, mapped: MappedError) -> axum::res
         Protocol::OpenAiChat
         | Protocol::OpenAiResponses
         | Protocol::OpenAiEmbeddings
-        | Protocol::OpenAiImages => openai_chat::encode_error(mapped.code, mapped.message()),
+        | Protocol::OpenAiImages
+        | Protocol::OpenAiAudio => openai_chat::encode_error(mapped.code, mapped.message()),
     };
     let mut response = (mapped.status(), Json(body)).into_response();
     if let Some(retry_after) = mapped.retry_after {

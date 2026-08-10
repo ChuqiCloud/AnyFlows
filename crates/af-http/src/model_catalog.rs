@@ -80,7 +80,7 @@ pub(crate) struct ModelCatalogItemResponse {
     ratios: ModelCatalogRatiosResponse,
     #[schema(minimum = 1)]
     price_version: u64,
-    #[schema(max_items = 6)]
+    #[schema(max_items = 7)]
     available_protocols: Vec<ModelCatalogProtocolValue>,
 }
 
@@ -93,6 +93,7 @@ pub(crate) enum ModelCatalogProtocolValue {
     OpenaiResponses,
     OpenaiEmbeddings,
     OpenaiImages,
+    OpenaiAudio,
     Anthropic,
     Gemini,
 }
@@ -104,6 +105,7 @@ impl From<Protocol> for ModelCatalogProtocolValue {
             Protocol::OpenAiResponses => Self::OpenaiResponses,
             Protocol::OpenAiEmbeddings => Self::OpenaiEmbeddings,
             Protocol::OpenAiImages => Self::OpenaiImages,
+            Protocol::OpenAiAudio => Self::OpenaiAudio,
             Protocol::Anthropic => Self::Anthropic,
             Protocol::Gemini => Self::Gemini,
         }

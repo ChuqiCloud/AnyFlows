@@ -330,7 +330,8 @@ async fn seed_probe_target(
         Protocol::OpenAiChat
         | Protocol::OpenAiResponses
         | Protocol::OpenAiEmbeddings
-        | Protocol::OpenAiImages => "openai",
+        | Protocol::OpenAiImages
+        | Protocol::OpenAiAudio => "openai",
         Protocol::Gemini => "gemini",
     };
     let channel_sql = format!(

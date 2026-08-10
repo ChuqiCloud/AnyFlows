@@ -80,6 +80,25 @@ fn usage_log_usage_rejects_negative_token_dimension() {
     );
 }
 
+#[test]
+fn usage_log_audio_duration_keeps_missing_distinct_and_rejects_invalid_values() {
+    let principal = GatewayPrincipal::new(
+        TokenId::new(1).unwrap(),
+        UserId::new(2).unwrap(),
+        GroupId::new(3).unwrap(),
+    );
+    let write = usage_write(principal, 9, 1);
+    assert!(
+        write
+            .with_audio_duration_nanoseconds(Some(1_500_000_000))
+            .is_ok()
+    );
+    assert_eq!(
+        write.with_audio_duration_nanoseconds(Some(-1)),
+        Err(UsageLogWriteError::InvalidAudioDuration)
+    );
+}
+
 async fn create_principal(
     pool: &crate::DatabasePool,
     marker: u8,

@@ -11,6 +11,7 @@ mod gemini;
 mod gemini_request;
 mod gemini_stream;
 mod generation_stream;
+mod openai_audio;
 mod openai_chat;
 mod openai_chat_request;
 mod openai_chat_stream;
@@ -36,6 +37,10 @@ pub use gemini_request::{GeminiRequestOverrideError, GeminiRequestOverrides};
 pub use gemini_stream::GeminiGenerateContentStream;
 pub use generation_stream::{
     GenerationCompletionFuture, GenerationCompletionHook, GenerationStream,
+};
+pub use openai_audio::{
+    AudioTranscriptionResponse, MAX_AUDIO_MULTIPART_BODY_BYTES, RelayOpenAiAudioOutcome,
+    encode_openai_audio_request, relay_openai_audio, relay_openai_audio_with_report,
 };
 pub use openai_chat::{
     RelayOpenAiChatOutcome, RelayService, relay_openai_chat, relay_openai_chat_with_report,

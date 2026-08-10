@@ -10182,12 +10182,13 @@
                   "openai_responses",
                   "openai_embeddings",
                   "openai_images",
+                  "openai_audio",
                   "anthropic",
                   "gemini"
                 ]
               }
             ],
-            "description": "当前生产写链路支持 OpenAI Chat、Responses、Embeddings、Images、Anthropic Messages 与 Gemini 协议。"
+            "description": "当前生产写链路支持 OpenAI Chat、Responses、Embeddings、Images、Audio、Anthropic Messages 与 Gemini 协议。"
           },
           "base_url": {
             "type": [
@@ -10381,6 +10382,7 @@
           "openai_responses",
           "openai_embeddings",
           "openai_images",
+          "openai_audio",
           "anthropic",
           "gemini"
         ]
@@ -10435,6 +10437,7 @@
               "openai_responses",
               "openai_embeddings",
               "openai_images",
+              "openai_audio",
               "anthropic",
               "gemini"
             ]
@@ -15056,6 +15059,7 @@
           "reasoning_tokens",
           "audio_input_tokens",
           "audio_output_tokens",
+          "audio_duration_nanoseconds",
           "usage_source",
           "usage_semantics",
           "quota",
@@ -15130,6 +15134,16 @@
           "audio_output_tokens": {
             "type": "integer",
             "format": "int64",
+            "minimum": 0
+          },
+          "audio_duration_nanoseconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "音频文件时长纳秒；非 Audio 请求或无真实事实时为 null。",
+            "maximum": 86400000000000,
             "minimum": 0
           },
           "usage_source": {
@@ -16008,7 +16022,7 @@
             "items": {
               "$ref": "#/components/schemas/ModelCatalogProtocol"
             },
-            "maxItems": 6
+            "maxItems": 7
           }
         },
         "additionalProperties": false
@@ -16065,6 +16079,7 @@
           "openai_responses",
           "openai_embeddings",
           "openai_images",
+          "openai_audio",
           "anthropic",
           "gemini"
         ]

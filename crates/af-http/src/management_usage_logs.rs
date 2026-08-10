@@ -43,6 +43,9 @@ pub(crate) struct AdminUsageLogResponse {
     audio_input_tokens: i64,
     #[schema(minimum = 0)]
     audio_output_tokens: i64,
+    /// 音频文件时长纳秒；非 Audio 请求或无真实事实时为 null。
+    #[schema(minimum = 0, maximum = 86400000000000, required = true)]
+    audio_duration_nanoseconds: Option<i64>,
     #[schema(value_type = crate::openapi::schema::AdminUsageLogSourceSchema)]
     usage_source: af_admin::AdminUsageLogSource,
     #[schema(value_type = crate::openapi::schema::AdminUsageLogSemanticsSchema)]
@@ -113,6 +116,7 @@ impl AdminUsageLogResponse {
             reasoning_tokens: usage.reasoning_tokens(),
             audio_input_tokens: usage.audio_input_tokens(),
             audio_output_tokens: usage.audio_output_tokens(),
+            audio_duration_nanoseconds: log.audio_duration_nanoseconds(),
             usage_source: log.source(),
             usage_semantics: log.semantics(),
             quota: log.quota(),

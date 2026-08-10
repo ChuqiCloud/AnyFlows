@@ -187,6 +187,7 @@ pub struct AdminUsageLog {
     usage: AdminUsageLogUsage,
     source: AdminUsageLogSource,
     semantics: AdminUsageLogSemantics,
+    audio_duration_nanoseconds: Option<i64>,
     quota: i64,
     created_at: i64,
 }
@@ -246,6 +247,12 @@ impl AdminUsageLog {
         self.semantics
     }
 
+    /// 返回可选的音频时长纳秒事实。
+    #[must_use]
+    pub const fn audio_duration_nanoseconds(&self) -> Option<i64> {
+        self.audio_duration_nanoseconds
+    }
+
     /// 返回最终扣减额度单位数。
     #[must_use]
     pub const fn quota(&self) -> i64 {
@@ -279,6 +286,7 @@ impl AdminUsageLog {
             },
             source: AdminUsageLogSource::from_database(record.usage_source())?,
             semantics: AdminUsageLogSemantics::from_database(record.usage_semantics())?,
+            audio_duration_nanoseconds: record.audio_duration_nanoseconds(),
             quota: record.quota(),
             created_at: record.created_at(),
         })

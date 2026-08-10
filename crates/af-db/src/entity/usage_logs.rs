@@ -24,6 +24,7 @@ pub struct Model {
     pub reasoning_tokens: i64,
     pub audio_input_tokens: i64,
     pub audio_output_tokens: i64,
+    pub audio_duration_nanoseconds: Option<i64>,
     pub usage_source: i16,
     pub usage_semantics: i16,
     pub quota: i64,
