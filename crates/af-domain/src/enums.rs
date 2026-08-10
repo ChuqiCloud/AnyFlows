@@ -162,6 +162,8 @@ string_enum! {
         Chat => "chat",
         /// OpenAI Responses 风格响应。
         Responses => "responses",
+        /// OpenAI Responses 独立上下文压缩。
+        ResponsesCompact => "responses_compact",
         /// 文本向量化。
         Embedding => "embedding",
         /// 图像生成或处理。

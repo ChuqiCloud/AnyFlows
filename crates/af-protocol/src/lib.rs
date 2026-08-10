@@ -15,6 +15,7 @@ pub mod openai_chat;
 pub mod openai_embeddings;
 pub mod openai_images;
 pub mod openai_responses;
+pub mod openai_responses_compact;
 mod reasoning_suffix;
 mod request;
 mod request_envelope;
@@ -69,6 +70,11 @@ pub use image::{
     ImageQuality, ImageSize, ImageTokenBreakdown, MAX_GENERATED_IMAGE_BYTES, MAX_IMAGE_EDGE,
     MAX_IMAGE_GENERATION_COUNT, MAX_IMAGE_PIXELS, MAX_IMAGE_PROMPT_BYTES, MAX_IMAGE_PROMPT_CHARS,
     MAX_TOTAL_GENERATED_IMAGE_BYTES, MIN_IMAGE_PIXELS,
+};
+pub use openai_responses_compact::{
+    CanonicalResponsesCompactionRequest, CanonicalResponsesCompactionRequestError,
+    CanonicalResponsesCompactionResponse, ResponsesCompactionInput, ResponsesCompactionItem,
+    ResponsesCompactionUsage, ResponsesCompactionUsageError,
 };
 pub use reasoning_suffix::{ReasoningModelSuffixError, apply_reasoning_model_suffix};
 pub use request::{

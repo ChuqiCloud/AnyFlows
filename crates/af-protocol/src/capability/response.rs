@@ -65,6 +65,7 @@ impl ResponseCapability {
     pub const ALL: &'static [Self] = &[
         Self::Operation(Operation::Chat),
         Self::Operation(Operation::Responses),
+        Self::Operation(Operation::ResponsesCompact),
         Self::Operation(Operation::Embedding),
         Self::Operation(Operation::Image),
         Self::Operation(Operation::Audio),
