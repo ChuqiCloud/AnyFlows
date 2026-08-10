@@ -643,7 +643,7 @@ impl SchedulerRuntimeTargetRecord {
 
     /// 先应用普通映射，再叠加 Compact 专属映射；普通 Responses 永不读取后者。
     #[must_use]
-    pub fn mapped_responses_compact_model(&self, requested_model: &str) -> &str {
+    pub fn mapped_responses_compact_model<'a>(&'a self, requested_model: &'a str) -> &'a str {
         let base_model = self
             .mapped_model(requested_model)
             .unwrap_or(requested_model);
