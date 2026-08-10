@@ -2,6 +2,25 @@
 
 CI_SERVICE_HOST=""
 CI_SERVICE_PORT=""
+CI_SERVICE_NETWORK_MODE="published"
+declare -a CI_SERVICE_DOCKER_ARGS=()
+
+ci_prepare_service_endpoint() {
+    local container_port="$1"
+
+    CI_SERVICE_HOST=""
+    CI_SERVICE_PORT=""
+    CI_SERVICE_NETWORK_MODE="published"
+    CI_SERVICE_DOCKER_ARGS=(--publish "${container_port}")
+
+    # CNB 的 DinD 与构建容器由同一 daemon 管理时，共享网络命名空间可绕过宿主端口隔离。
+    if [[ -n "${HOSTNAME:-}" ]] && docker inspect "${HOSTNAME}" >/dev/null 2>&1; then
+        CI_SERVICE_HOST="127.0.0.1"
+        CI_SERVICE_PORT="${container_port}"
+        CI_SERVICE_NETWORK_MODE="build-container"
+        CI_SERVICE_DOCKER_ARGS=(--network "container:${HOSTNAME}")
+    fi
+}
 
 ci_docker_daemon_hosts() {
     local endpoint="${DOCKER_HOST:-}"
@@ -81,4 +100,23 @@ ci_wait_for_published_endpoint() {
     done
     echo "${label} 发布端口未在 30 秒内对当前构建容器可达" >&2
     return 1
+}
+
+ci_wait_for_service_endpoint() {
+    local container_name="$1"
+    local container_port="$2"
+    local label="$3"
+
+    if [[ "${CI_SERVICE_NETWORK_MODE}" == "build-container" ]]; then
+        for _ in $(seq 1 30); do
+            if ci_tcp_reachable "${CI_SERVICE_HOST}" "${CI_SERVICE_PORT}"; then
+                return 0
+            fi
+            sleep 1
+        done
+        echo "${label} 未能通过构建容器共享网络访问" >&2
+        return 1
+    fi
+
+    ci_wait_for_published_endpoint "${container_name}" "${container_port}" "${label}"
 }

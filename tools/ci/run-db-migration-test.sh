@@ -76,25 +76,27 @@ if [[ -z "${database_url}" ]]; then
             ;;
         postgres)
             container_name="anyflows-postgres-${BASHPID}"
-            docker run --detach --name "${container_name}" --publish 5432 \
+            ci_prepare_service_endpoint 5432
+            docker run --detach --name "${container_name}" "${CI_SERVICE_DOCKER_ARGS[@]}" \
                 --env POSTGRES_USER="${TEST_USER}" \
                 --env POSTGRES_PASSWORD="${TEST_PASSWORD}" \
                 --env POSTGRES_DB="${TEST_DATABASE}" \
                 "${POSTGRES_IMAGE}" >/dev/null
             wait_for_postgres
-            ci_wait_for_published_endpoint "${container_name}" 5432 "PostgreSQL"
+            ci_wait_for_service_endpoint "${container_name}" 5432 "PostgreSQL"
             database_url="postgres://${TEST_USER}:${TEST_PASSWORD}@$(ci_url_host "${CI_SERVICE_HOST}"):${CI_SERVICE_PORT}/${TEST_DATABASE}"
             ;;
         mysql)
             container_name="anyflows-mysql-${BASHPID}"
-            docker run --detach --name "${container_name}" --publish 3306 \
+            ci_prepare_service_endpoint 3306
+            docker run --detach --name "${container_name}" "${CI_SERVICE_DOCKER_ARGS[@]}" \
                 --env MYSQL_USER="${TEST_USER}" \
                 --env MYSQL_PASSWORD="${TEST_PASSWORD}" \
                 --env MYSQL_ROOT_PASSWORD="root_ci" \
                 --env MYSQL_DATABASE="${TEST_DATABASE}" \
                 "${MYSQL_IMAGE}" >/dev/null
             wait_for_mysql
-            ci_wait_for_published_endpoint "${container_name}" 3306 "MySQL"
+            ci_wait_for_service_endpoint "${container_name}" 3306 "MySQL"
             database_url="mysql://${TEST_USER}:${TEST_PASSWORD}@$(ci_url_host "${CI_SERVICE_HOST}"):${CI_SERVICE_PORT}/${TEST_DATABASE}?timezone=%2B08:00"
             ;;
         *)

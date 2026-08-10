@@ -70,6 +70,8 @@ include:
           script: cargo run --locked --package xtask -- check-deps
         - name: 测试发布脚本
           script: bash tools/ci/test-release-scripts.sh
+        - name: 测试服务容器网络脚本
+          script: bash tools/ci/test-container-endpoint.sh
         - name: 检查 OpenAPI 契约
           script: cargo run --locked --package xtask -- openapi check
         - name: 运行 Clippy
@@ -215,6 +217,8 @@ include:
           script: cargo run --locked --package xtask -- check-deps
         - name: 测试发布脚本
           script: bash tools/ci/test-release-scripts.sh
+        - name: 测试服务容器网络脚本
+          script: bash tools/ci/test-container-endpoint.sh
         - name: 检查 OpenAPI 契约
           script: cargo run --locked --package xtask -- openapi check
         - name: 运行 Clippy
@@ -378,6 +382,8 @@ $:
           script: cargo run --locked --package xtask -- check-deps
         - name: 测试发布脚本
           script: bash tools/ci/test-release-scripts.sh
+        - name: 测试服务容器网络脚本
+          script: bash tools/ci/test-container-endpoint.sh
         - name: 检查 OpenAPI 契约
           script: cargo run --locked --package xtask -- openapi check
         - name: 运行 Clippy

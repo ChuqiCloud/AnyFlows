@@ -68,10 +68,11 @@ run_http_smoke_test() {
 redis_url="${AF_TEST_REDIS_URL:-}"
 if [[ -z "${redis_url}" ]]; then
     container_name="anyflows-redis-${BASHPID}"
-    docker run --detach --name "${container_name}" --publish 6379 \
+    ci_prepare_service_endpoint 6379
+    docker run --detach --name "${container_name}" "${CI_SERVICE_DOCKER_ARGS[@]}" \
         "${REDIS_IMAGE}" redis-server --save '' --appendonly no >/dev/null
     wait_for_redis
-    ci_wait_for_published_endpoint "${container_name}" 6379 "Redis"
+    ci_wait_for_service_endpoint "${container_name}" 6379 "Redis"
     redis_url="redis://$(ci_url_host "${CI_SERVICE_HOST}"):${CI_SERVICE_PORT}/"
 fi
 
