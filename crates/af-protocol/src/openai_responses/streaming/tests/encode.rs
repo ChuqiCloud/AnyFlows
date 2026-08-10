@@ -1,5 +1,5 @@
 use af_domain::{Protocol, Role, UpstreamError};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::{CREATED_AT, MODEL, RESPONSE_ID, parse_encoded_events, usage};
 use crate::openai_responses::{
@@ -9,6 +9,14 @@ use crate::{
     CacheHint, CanonicalStreamEvent, ContentDelta, FinishReason, ProtocolCapability,
     StreamCapability, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
 };
+
+fn compaction_item() -> crate::ResponsesCompactionItem {
+    crate::ResponsesCompactionItem::from_validated_value(json!({
+        "type": "compaction",
+        "id": "cmp_stream_1",
+        "encrypted_content": "opaque-compaction"
+    }))
+}
 
 fn assert_unsupported_capability(error: EncodeStreamError, expected: StreamCapability) {
     let EncodeStreamError::UnsupportedCapability(error) = error else {
@@ -91,6 +99,56 @@ fn encodes_text_lifecycle_and_terminal_usage() {
         })
     );
     assert_eq!(canonical.last(), Some(&CanonicalStreamEvent::StreamEnd));
+}
+
+#[test]
+fn encodes_compaction_item_lifecycle() {
+    let mut encoder = OpenAiResponsesStreamEncoder::new(RESPONSE_ID, MODEL, CREATED_AT).unwrap();
+    let item = compaction_item();
+    let mut bytes = Vec::new();
+    for event in [
+        CanonicalStreamEvent::MessageStart {
+            choice_index: 0,
+            role: Role::Assistant,
+        },
+        CanonicalStreamEvent::CompactionStart {
+            choice_index: 0,
+            output_index: 0,
+            item: item.clone(),
+        },
+        CanonicalStreamEvent::CompactionEnd {
+            choice_index: 0,
+            output_index: 0,
+            item,
+        },
+        CanonicalStreamEvent::Finish {
+            choice_index: 0,
+            reason: FinishReason::Stop,
+            stop_sequence: None,
+        },
+        CanonicalStreamEvent::StreamEnd,
+    ] {
+        bytes.extend(encoder.encode(event).unwrap());
+    }
+    let events = parse_encoded_events(&bytes);
+    assert_eq!(
+        events
+            .iter()
+            .map(|(kind, _)| kind.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "response.created",
+            "response.in_progress",
+            "response.output_item.added",
+            "response.output_item.done",
+            "response.completed",
+        ]
+    );
+    assert_eq!(events[2].1["item"]["type"], "compaction");
+    assert_eq!(
+        events[4].1["response"]["output"][0]["encrypted_content"],
+        "opaque-compaction"
+    );
 }
 
 #[test]

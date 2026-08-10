@@ -26,6 +26,7 @@ pub enum StreamCapability {
     ReasoningSignatures,
     /// 工具调用生命周期。
     ToolCalls,
+    Compaction,
     /// 工具调用思考签名。
     ToolCallSignatures,
     /// 候选结束原因。
@@ -66,6 +67,7 @@ impl StreamCapability {
         Self::ReasoningDelta,
         Self::ReasoningSignatures,
         Self::ToolCalls,
+        Self::Compaction,
         Self::ToolCallSignatures,
         Self::FinishReason(FinishReason::Stop),
         Self::FinishReason(FinishReason::Length),
@@ -98,6 +100,7 @@ impl fmt::Display for StreamCapability {
             Self::ReasoningDelta => formatter.write_str("content.reasoning_delta"),
             Self::ReasoningSignatures => formatter.write_str("content.reasoning_signature"),
             Self::ToolCalls => formatter.write_str("tool_call.lifecycle"),
+            Self::Compaction => formatter.write_str("responses.compaction"),
             Self::ToolCallSignatures => formatter.write_str("tool_call.signature"),
             Self::FinishReason(reason) => {
                 write!(formatter, "finish.{}", finish_reason_name(*reason))
@@ -136,6 +139,7 @@ pub(super) const OPENAI_CHAT: &[StreamCapability] = &[
     StreamCapability::TextDelta,
     StreamCapability::ReasoningDelta,
     StreamCapability::ToolCalls,
+    StreamCapability::Compaction,
     COMMON_FINISH[0],
     COMMON_FINISH[1],
     COMMON_FINISH[2],
@@ -253,6 +257,11 @@ pub fn validate_stream_event_capabilities(
         | CanonicalStreamEvent::ToolCallEnd { choice_index, .. } => {
             validate_choice_index(protocol, *choice_index)?;
             require(protocol, StreamCapability::ToolCalls)
+        }
+        CanonicalStreamEvent::CompactionStart { choice_index, .. }
+        | CanonicalStreamEvent::CompactionEnd { choice_index, .. } => {
+            validate_choice_index(protocol, *choice_index)?;
+            require(protocol, StreamCapability::Compaction)
         }
         CanonicalStreamEvent::ToolCallSignature { choice_index, .. } => {
             validate_choice_index(protocol, *choice_index)?;

@@ -14,6 +14,11 @@ use crate::TokenCount;
 pub struct ResponsesCompactionItem(pub(super) Value);
 
 impl ResponsesCompactionItem {
+    /// 从协议边界已完成校验的 JSON 创建不透明 Item。
+    pub(crate) fn from_validated_value(value: Value) -> Self {
+        Self(value)
+    }
+
     /// 返回只读的已校验 JSON；调用方不得将其转成其他协议。
     #[must_use]
     pub fn as_value(&self) -> &Value {

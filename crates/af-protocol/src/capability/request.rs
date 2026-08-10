@@ -44,6 +44,7 @@ pub enum RequestCapability {
     ThinkingSignatures,
     /// 提示缓存断点。
     CacheControl(CacheHint),
+    Compaction,
     /// 指定推理强度。
     ReasoningEffort(ReasoningEffort),
     /// 指定推理令牌预算。
@@ -112,6 +113,7 @@ impl RequestCapability {
         Self::ThinkingSignatures,
         Self::CacheControl(CacheHint::Ephemeral5Minutes),
         Self::CacheControl(CacheHint::Ephemeral1Hour),
+        Self::Compaction,
         Self::ReasoningEffort(ReasoningEffort::None),
         Self::ReasoningEffort(ReasoningEffort::Minimal),
         Self::ReasoningEffort(ReasoningEffort::Low),
@@ -163,6 +165,7 @@ impl fmt::Display for RequestCapability {
             Self::CacheControl(CacheHint::Ephemeral1Hour) => {
                 formatter.write_str("content.cache_control.1h")
             }
+            Self::Compaction => formatter.write_str("responses.compaction"),
             Self::ReasoningEffort(effort) => {
                 write!(
                     formatter,
@@ -257,6 +260,7 @@ pub(super) const OPENAI_RESPONSES: &[RequestCapability] = &[
     RequestCapability::PreviousResponseContinuation,
     RequestCapability::ConversationContinuation,
     RequestCapability::PromptCacheContinuation,
+    RequestCapability::Compaction,
     RequestCapability::SameProtocolRaw,
 ];
 
@@ -432,6 +436,7 @@ fn validate_content(
             ContentBlock::CacheControl(hint) => {
                 require(protocol, RequestCapability::CacheControl(*hint))?;
             }
+            ContentBlock::Compaction(_) => require(protocol, RequestCapability::Compaction)?,
         }
     }
     Ok(())

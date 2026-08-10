@@ -101,7 +101,8 @@ fn build_user_message(
             | ContentBlock::ToolUse { .. }
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. }
-            | ContentBlock::CacheControl(_) => {
+            | ContentBlock::CacheControl(_)
+            | ContentBlock::Compaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         });
@@ -122,6 +123,10 @@ fn build_assistant_items(
     let mut saw_call = false;
     for block in blocks {
         match block {
+            ContentBlock::Compaction(item) if blocks.len() == 1 => {
+                push_item(items, item.as_value().clone())?;
+                return Ok(());
+            }
             ContentBlock::Thinking { text, signature } if !saw_non_reasoning => {
                 reasoning_items.push(build_reasoning_item(text, signature.as_deref(), state)?);
             }
@@ -151,7 +156,8 @@ fn build_assistant_items(
             | ContentBlock::Image { .. }
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolResult { .. }
-            | ContentBlock::CacheControl(_) => {
+            | ContentBlock::CacheControl(_)
+            | ContentBlock::Compaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }
@@ -308,7 +314,8 @@ fn build_function_output(
                 | ContentBlock::ToolUse { .. }
                 | ContentBlock::ToolResult { .. }
                 | ContentBlock::Thinking { .. }
-                | ContentBlock::CacheControl(_) => {
+                | ContentBlock::CacheControl(_)
+                | ContentBlock::Compaction(_) => {
                     return Err(BuildRequestError::UnsupportedFeature);
                 }
             });

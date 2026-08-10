@@ -447,7 +447,8 @@ fn build_user_message(
             ContentBlock::ToolUse { .. }
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. }
-            | ContentBlock::CacheControl(_) => {
+            | ContentBlock::CacheControl(_)
+            | ContentBlock::Compaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         });
@@ -489,7 +490,8 @@ fn build_assistant_message(
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. }
-            | ContentBlock::CacheControl(_) => {
+            | ContentBlock::CacheControl(_)
+            | ContentBlock::Compaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }

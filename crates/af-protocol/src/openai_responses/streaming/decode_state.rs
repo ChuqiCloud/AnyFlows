@@ -10,11 +10,12 @@ use crate::openai_responses::{
     convert::validate_tool_name,
     input::validate_call_id,
     response_wire::{
-        AssistantRoleWire, FunctionCallWire, ItemStatusWire, MessagePhaseWire, OutputContentWire,
-        OutputMessageWire, ReasoningItemWire, ResponseOutputItemWire, SummaryTextWire,
+        AssistantRoleWire, CompactionItemWire, FunctionCallWire, ItemStatusWire, MessagePhaseWire,
+        OutputContentWire, OutputMessageWire, ReasoningItemWire, ResponseOutputItemWire,
+        SummaryTextWire,
     },
 };
-use crate::{CanonicalStreamEvent, ContentBlock, ContentDelta};
+use crate::{CanonicalStreamEvent, ContentBlock, ContentDelta, ResponsesCompactionItem};
 
 /// 逐项校验 Responses 输出生命周期，并累计最终 Canonical 内容。
 #[derive(Default)]
@@ -58,6 +59,9 @@ impl OutputDecodeState {
             ResponseOutputItemWire::FunctionCall(item) => {
                 self.begin_function(item, output_index, output)
             }
+            ResponseOutputItemWire::Compaction(item) => {
+                self.begin_compaction(item, output_index, output)
+            }
         }
     }
 
@@ -75,6 +79,9 @@ impl OutputDecodeState {
             ResponseOutputItemWire::Message(item) => self.finish_message(output_index, item),
             ResponseOutputItemWire::FunctionCall(item) => {
                 self.finish_function(output_index, item, output)
+            }
+            ResponseOutputItemWire::Compaction(item) => {
+                self.finish_compaction(output_index, item, output)
             }
         }
     }
@@ -437,7 +444,9 @@ impl OutputDecodeState {
                     .as_ref()
                     .map(|part| (part.content_index, part.text_done)),
             ),
-            Some(ActiveItem::Reasoning(_) | ActiveItem::Function(_)) => {
+            Some(
+                ActiveItem::Reasoning(_) | ActiveItem::Function(_) | ActiveItem::Compaction(_),
+            ) => {
                 return Err(ParseStreamError::InvalidSequence);
             }
             None => return Ok(()),
@@ -562,6 +571,33 @@ impl OutputDecodeState {
             summary: None,
             signature: item.encrypted_content,
             emitted,
+        }));
+        Ok(())
+    }
+
+    fn begin_compaction(
+        &mut self,
+        item: CompactionItemWire,
+        output_index: u32,
+        output: &mut Vec<CanonicalStreamEvent>,
+    ) -> Result<(), ParseStreamError> {
+        if self.phase != OutputPhase::Start {
+            return Err(ParseStreamError::InvalidSequence);
+        }
+        let id = item.id.ok_or(ParseStreamError::InvalidValue)?;
+        validate_item_id(&id).map_err(map_state_error)?;
+        self.add_item_id(&id)?;
+        let canonical = compaction_value(&id, &item.encrypted_content)?;
+        let item = ResponsesCompactionItem::from_validated_value(canonical);
+        output.push(CanonicalStreamEvent::CompactionStart {
+            choice_index: 0,
+            output_index,
+            item: item.clone(),
+        });
+        self.active = Some(ActiveItem::Compaction(CompactionState {
+            output_index,
+            id,
+            item,
         }));
         Ok(())
     }
@@ -811,6 +847,42 @@ impl OutputDecodeState {
         Ok(())
     }
 
+    fn finish_compaction(
+        &mut self,
+        output_index: u32,
+        item: CompactionItemWire,
+        output: &mut Vec<CanonicalStreamEvent>,
+    ) -> Result<(), ParseStreamError> {
+        let Some(ActiveItem::Compaction(active)) = self.active.as_ref() else {
+            return Err(ParseStreamError::InvalidSequence);
+        };
+        if active.output_index != output_index || item.id.as_deref() != Some(active.id.as_str()) {
+            return Err(ParseStreamError::InvalidSequence);
+        }
+        let canonical = compaction_value(&active.id, &item.encrypted_content)?;
+        let actual = ResponsesCompactionItem::from_validated_value(canonical);
+        if actual != active.item {
+            return Err(ParseStreamError::InvalidSequence);
+        }
+        let active = match self.active.take() {
+            Some(ActiveItem::Compaction(active)) => active,
+            _ => unreachable!("前置检查已确认当前 Item 为压缩 Item"),
+        };
+        self.content
+            .push(ContentBlock::Compaction(active.item.clone()));
+        self.identities.push(ItemIdentity {
+            kind: ItemKind::Compaction,
+            id: active.id,
+            message_phase: None,
+        });
+        output.push(CanonicalStreamEvent::CompactionEnd {
+            choice_index: 0,
+            output_index,
+            item: active.item,
+        });
+        Ok(())
+    }
+
     fn take_content_index(&mut self) -> Result<u32, ParseStreamError> {
         let index = self.next_content_index;
         self.next_content_index = self
@@ -841,6 +913,13 @@ enum ActiveItem {
     Reasoning(ReasoningState),
     Message(MessageState),
     Function(FunctionState),
+    Compaction(CompactionState),
+}
+
+struct CompactionState {
+    output_index: u32,
+    id: String,
+    item: ResponsesCompactionItem,
 }
 
 struct ReasoningState {
@@ -897,6 +976,7 @@ enum ItemKind {
     Reasoning,
     Message,
     Function,
+    Compaction,
 }
 
 impl ItemKind {
@@ -905,6 +985,7 @@ impl ItemKind {
             Self::Reasoning => "reasoning",
             Self::Message => "message",
             Self::Function => "function_call",
+            Self::Compaction => "compaction",
         }
     }
 }
@@ -944,6 +1025,23 @@ fn validate_terminal_message_phase(
     } else {
         Err(ParseStreamError::InvalidSequence)
     }
+}
+
+fn compaction_value(id: &str, encrypted_content: &str) -> Result<Value, ParseStreamError> {
+    if encrypted_content.is_empty()
+        || encrypted_content.len() > super::super::convert::MAX_ENCRYPTED_REASONING_BYTES
+        || encrypted_content.chars().any(char::is_control)
+    {
+        return Err(ParseStreamError::InvalidValue);
+    }
+    Ok(Value::Object(serde_json::Map::from_iter([
+        ("type".to_owned(), Value::String("compaction".to_owned())),
+        ("id".to_owned(), Value::String(id.to_owned())),
+        (
+            "encrypted_content".to_owned(),
+            Value::String(encrypted_content.to_owned()),
+        ),
+    ])))
 }
 
 fn is_terminal_item_status(status: Option<ItemStatusWire>) -> bool {

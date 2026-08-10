@@ -13,15 +13,16 @@ use super::{
         MAX_TOTAL_ARGUMENT_NODES, MAX_TOTAL_TEXT_BYTES, validate_tool_name, validate_value_shape,
     },
     wire::{
-        Field, FunctionCallItemWire, FunctionCallOutputItemWire, FunctionCallOutputTypeWire,
-        FunctionCallTypeWire, FunctionOutputWire, ImageDetailWire, InputContentWire, InputFileWire,
-        InputImageWire, InputItemWire, InputMessageWire, InputTextWire, InputWire,
-        MessageContentWire, MessageRoleWire, ReasoningInputItemWire, ReasoningInputTypeWire,
-        ReasoningSummaryTypeWire, ReasoningSummaryWire,
+        CompactionInputItemWire, CompactionItemTypeWire, Field, FunctionCallItemWire,
+        FunctionCallOutputItemWire, FunctionCallOutputTypeWire, FunctionCallTypeWire,
+        FunctionOutputWire, ImageDetailWire, InputContentWire, InputFileWire, InputImageWire,
+        InputItemWire, InputMessageWire, InputTextWire, InputWire, MessageContentWire,
+        MessageRoleWire, ReasoningInputItemWire, ReasoningInputTypeWire, ReasoningSummaryTypeWire,
+        ReasoningSummaryWire,
     },
 };
 use crate::{
-    ContentBlock, MediaSource, Message, RequestContinuation,
+    ContentBlock, MediaSource, Message, RequestContinuation, ResponsesCompactionItem,
     bounded_json::{self, BoundedJsonError, JsonLimits},
 };
 
@@ -85,6 +86,13 @@ pub(super) fn convert_input(
                         let message = convert_function_output(output, &mut state)?;
                         push_message(&mut messages, message)?;
                     }
+                    InputItemWire::Compaction(item) => {
+                        if !state.pending_tool_call_ids.is_empty() {
+                            return Err(ParseRequestError::InvalidValue);
+                        }
+                        let item = convert_compaction_item(item, &mut state)?;
+                        push_message(&mut messages, Message::new(Role::Assistant, vec![item]))?;
+                    }
                 }
             }
         }
@@ -94,6 +102,47 @@ pub(super) fn convert_input(
         return Err(ParseRequestError::InvalidValue);
     }
     Ok(messages)
+}
+
+fn convert_compaction_item(
+    item: CompactionInputItemWire,
+    state: &mut InputConvertState,
+) -> Result<ContentBlock, ParseRequestError> {
+    let CompactionInputItemWire {
+        kind: CompactionItemTypeWire::Compaction,
+        id,
+        encrypted_content,
+    } = item;
+    if encrypted_content.is_empty()
+        || encrypted_content.len() > MAX_ENCRYPTED_REASONING_BYTES
+        || encrypted_content.chars().any(char::is_control)
+    {
+        return Err(ParseRequestError::InvalidValue);
+    }
+    let id = match id {
+        Field::Missing => None,
+        Field::Value(id) => {
+            validate_call_id(&id)?;
+            if !state.seen_compaction_ids.insert(id.clone()) {
+                return Err(ParseRequestError::InvalidValue);
+            }
+            Some(id)
+        }
+    };
+    let mut object = Map::from_iter([
+        ("type".to_owned(), Value::String("compaction".to_owned())),
+        (
+            "encrypted_content".to_owned(),
+            Value::String(encrypted_content),
+        ),
+    ]);
+    if let Some(id) = id {
+        object.insert("id".to_owned(), Value::String(id));
+    }
+    state.add_block()?;
+    Ok(ContentBlock::Compaction(
+        ResponsesCompactionItem::from_validated_value(Value::Object(object)),
+    ))
 }
 
 fn convert_reasoning_item(
@@ -517,6 +566,7 @@ struct InputConvertState {
     argument_nodes: usize,
     seen_tool_call_ids: HashSet<String>,
     seen_tool_result_ids: HashSet<String>,
+    seen_compaction_ids: HashSet<String>,
     pending_tool_call_ids: HashSet<String>,
     has_remote_context: bool,
 }
@@ -532,6 +582,7 @@ impl InputConvertState {
             argument_nodes: 0,
             seen_tool_call_ids: HashSet::new(),
             seen_tool_result_ids: HashSet::new(),
+            seen_compaction_ids: HashSet::new(),
             pending_tool_call_ids: HashSet::new(),
             has_remote_context,
         }

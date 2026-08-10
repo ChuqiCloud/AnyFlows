@@ -13,8 +13,8 @@ use super::{
     input::validate_call_id,
     response_raw::{ResponseRawError, validate_raw_fields},
     response_wire::{
-        AssistantRoleWire, FunctionCallWire, IncompleteReasonWire, ItemStatusWire,
-        MessagePhaseWire, OutputContentWire, OutputMessageWire, ReasoningItemWire,
+        AssistantRoleWire, CompactionItemWire, FunctionCallWire, IncompleteReasonWire,
+        ItemStatusWire, MessagePhaseWire, OutputContentWire, OutputMessageWire, ReasoningItemWire,
         ResponseObjectWire, ResponseOutputItemWire, ResponseStatusWire, ResponseUsageWire,
         ResponsesResponseWire,
     },
@@ -66,7 +66,8 @@ fn uses_known_unsupported_output_item(value: &Value) -> bool {
                     item.as_object()
                         .and_then(|item| item.get("type"))
                         .and_then(Value::as_str),
-                    Some(kind) if !matches!(kind, "message" | "function_call" | "reasoning")
+                    Some(kind)
+                        if !matches!(kind, "message" | "function_call" | "reasoning" | "compaction")
                 )
             })
         })
@@ -205,6 +206,13 @@ impl ResponseConvertState {
         Ok(())
     }
 
+    fn begin_compaction(&mut self) -> Result<(), ParseResponseError> {
+        if self.phase != OutputPhase::Start {
+            return Err(ParseResponseError::UnsupportedFeature);
+        }
+        Ok(())
+    }
+
     fn begin_message(&mut self) -> Result<(), ParseResponseError> {
         if !matches!(self.phase, OutputPhase::Start | OutputPhase::AfterReasoning) {
             return Err(ParseResponseError::UnsupportedFeature);
@@ -323,7 +331,48 @@ fn convert_output_item(
             state.begin_reasoning()?;
             convert_reasoning(reasoning, root_status, state, content)
         }
+        ResponseOutputItemWire::Compaction(compaction) => {
+            state.begin_compaction()?;
+            convert_compaction(compaction, root_status, state, content)
+        }
     }
+}
+
+fn convert_compaction(
+    item: CompactionItemWire,
+    root_status: ResponseStatusWire,
+    state: &mut ResponseConvertState,
+    output: &mut Vec<ContentBlock>,
+) -> Result<(), ParseResponseError> {
+    let CompactionItemWire {
+        id,
+        encrypted_content,
+    } = item;
+    if let Some(id) = id.as_deref() {
+        state.add_item_id(id.to_owned())?;
+    }
+    validate_item_status(Some(ItemStatusWire::Completed), root_status)?;
+    if encrypted_content.is_empty()
+        || encrypted_content.len() > super::convert::MAX_ENCRYPTED_REASONING_BYTES
+        || encrypted_content.chars().any(char::is_control)
+    {
+        return Err(ParseResponseError::InvalidValue);
+    }
+    let mut object = Map::from_iter([
+        ("type".to_owned(), Value::String("compaction".to_owned())),
+        (
+            "encrypted_content".to_owned(),
+            Value::String(encrypted_content),
+        ),
+    ]);
+    if let Some(id) = id {
+        object.insert("id".to_owned(), Value::String(id));
+    }
+    state.add_block()?;
+    output.push(ContentBlock::Compaction(
+        crate::ResponsesCompactionItem::from_validated_value(Value::Object(object)),
+    ));
+    Ok(())
 }
 
 fn convert_message(

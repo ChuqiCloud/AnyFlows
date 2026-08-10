@@ -199,7 +199,8 @@ fn build_message_content(
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. }
-            | ContentBlock::CacheControl(_) => {
+            | ContentBlock::CacheControl(_)
+            | ContentBlock::Compaction(_) => {
                 return Err(BuildResponseError::UnsupportedFeature);
             }
         }

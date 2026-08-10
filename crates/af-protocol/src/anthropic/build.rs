@@ -417,7 +417,8 @@ fn build_system_content(
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolUse { .. }
             | ContentBlock::ToolResult { .. }
-            | ContentBlock::Thinking { .. } => {
+            | ContentBlock::Thinking { .. }
+            | ContentBlock::Compaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }
@@ -446,7 +447,8 @@ fn build_user_parts(
             ContentBlock::ToolResult { .. } => return Err(BuildRequestError::InvalidValue),
             ContentBlock::Audio { .. }
             | ContentBlock::ToolUse { .. }
-            | ContentBlock::Thinking { .. } => {
+            | ContentBlock::Thinking { .. }
+            | ContentBlock::Compaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }
@@ -483,7 +485,8 @@ fn build_assistant_content(
             ContentBlock::Image { .. }
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolResult { .. }
-            | ContentBlock::Thinking { .. } => {
+            | ContentBlock::Thinking { .. }
+            | ContentBlock::Compaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }
@@ -566,7 +569,8 @@ fn build_tool_result_content(
             ContentBlock::Audio { .. }
             | ContentBlock::ToolUse { .. }
             | ContentBlock::ToolResult { .. }
-            | ContentBlock::Thinking { .. } => {
+            | ContentBlock::Thinking { .. }
+            | ContentBlock::Compaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }

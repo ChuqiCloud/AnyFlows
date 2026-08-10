@@ -270,7 +270,10 @@ pub(super) fn uses_known_unsupported_payload(kind: &str, value: &Value) -> bool 
             .and_then(|item| item.get("type"))
             .and_then(Value::as_str)
             .is_some_and(|item_kind| {
-                !matches!(item_kind, "message" | "function_call" | "reasoning")
+                !matches!(
+                    item_kind,
+                    "message" | "function_call" | "reasoning" | "compaction"
+                )
             }),
         "response.content_part.added" | "response.content_part.done" => object
             .and_then(|event| event.get("part"))

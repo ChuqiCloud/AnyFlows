@@ -122,6 +122,38 @@ fn round_trips_stateless_encrypted_reasoning_and_include() {
 }
 
 #[test]
+fn round_trips_compaction_context_and_item() {
+    let request = parsed_request(json!({
+        "model": "gpt-5.5",
+        "context_management": [{
+            "type": "compaction",
+            "compact_threshold": 20000
+        }],
+        "input": [{
+            "type": "compaction",
+            "id": "cmp_input_1",
+            "encrypted_content": "opaque-compaction"
+        }]
+    }));
+
+    let value = build_request(&request).unwrap();
+    assert_eq!(
+        value["context_management"],
+        json!([
+            {"type": "compaction", "compact_threshold": 20000}
+        ])
+    );
+    assert_eq!(
+        value["input"][0],
+        json!({
+            "type": "compaction",
+            "id": "cmp_input_1",
+            "encrypted_content": "opaque-compaction"
+        })
+    );
+}
+
+#[test]
 fn round_trips_messages_tools_sampling_continuation_and_raw_fields() {
     let request = parsed_request(json!({
         "model": "gpt-test",

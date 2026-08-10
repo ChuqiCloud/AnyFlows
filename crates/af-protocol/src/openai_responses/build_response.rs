@@ -220,15 +220,22 @@ fn build_output(
 ) -> Result<Vec<Value>, BuildResponseError> {
     let mut state = ResponseBuildState::default();
     let mut reasoning = None;
+    let mut compactions = Vec::new();
     let mut text_parts = Vec::new();
     let mut tools = Vec::new();
+    let mut saw_non_compaction = false;
     for block in &choice.message.content {
         match block {
+            ContentBlock::Compaction(item) if !saw_non_compaction => {
+                compactions.push(item.as_value().clone());
+            }
             ContentBlock::Thinking { text, signature } => {
+                saw_non_compaction = true;
                 state.add_thinking(text, signature.as_deref())?;
                 reasoning = Some((text, signature.as_deref()));
             }
             ContentBlock::Text(text) => {
+                saw_non_compaction = true;
                 state.add_text(text)?;
                 text_parts.push(object_value([
                     ("type", Value::String("output_text".to_owned())),
@@ -243,6 +250,7 @@ fn build_output(
                 input,
                 signature,
             } => {
+                saw_non_compaction = true;
                 if signature.is_some() {
                     return Err(BuildResponseError::UnsupportedFeature);
                 }
@@ -264,14 +272,15 @@ fn build_output(
             ContentBlock::Image { .. }
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolResult { .. }
-            | ContentBlock::CacheControl(_) => {
+            | ContentBlock::CacheControl(_)
+            | ContentBlock::Compaction(_) => {
                 return Err(BuildResponseError::UnsupportedFeature);
             }
         }
     }
 
     let item_status = status.as_str();
-    let mut output = Vec::new();
+    let mut output = compactions;
     if let Some((text, signature)) = reasoning {
         let summary = if text.is_empty() {
             Vec::new()

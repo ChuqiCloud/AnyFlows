@@ -7,9 +7,9 @@ use super::{
     MAX_OUTPUT_TOKENS, ParseRequestError,
     input::convert_input,
     wire::{
-        ConversationWire, Field, FunctionToolWire, FunctionTypeWire, NamedToolChoiceWire,
-        ReasoningEffortWire, ReasoningWire, ResponsesRequestWire, ToolChoiceModeWire,
-        ToolChoiceWire, ToolWire,
+        ContextManagementTypeWire, ContextManagementWire, ConversationWire, Field,
+        FunctionToolWire, FunctionTypeWire, NamedToolChoiceWire, ReasoningEffortWire,
+        ReasoningWire, ResponsesRequestWire, ToolChoiceModeWire, ToolChoiceWire, ToolWire,
     },
 };
 use crate::{
@@ -33,6 +33,7 @@ pub(super) const MAX_MEDIA_URL_BYTES: usize = 8 * 1024;
 pub(super) const MAX_MEDIA_BYTES: usize = 20 * 1024 * 1024;
 pub(super) const MAX_ENCRYPTED_REASONING_BYTES: usize = 8 * 1024 * 1024;
 pub(super) const MAX_REASONING_SUMMARIES: usize = 16;
+pub(super) const MAX_COMPACTION_THRESHOLD: i64 = MAX_OUTPUT_TOKENS;
 
 const MAX_SCHEMA_BYTES: usize = 64 * 1024;
 const MAX_TOTAL_SCHEMA_BYTES: usize = 512 * 1024;
@@ -52,6 +53,7 @@ const MAX_INCLUDE_ITEMS: usize = 32;
 const MAX_INCLUDE_VALUE_BYTES: usize = 128;
 
 const RAW_FIELD_ALLOWLIST: &[&str] = &[
+    "context_management",
     "include",
     "metadata",
     "parallel_tool_calls",
@@ -95,7 +97,12 @@ pub(super) fn convert_request(
     let reasoning = convert_reasoning(wire.reasoning)?;
     let sampling = convert_sampling(wire.temperature, wire.top_p, wire.max_output_tokens)?;
     let metadata = convert_metadata(wire.user)?;
-    let raw = validate_raw(wire.extra)?;
+    let mut raw = validate_raw(wire.extra)?.unwrap_or_default();
+    if let Field::Value(context_management) = wire.context_management {
+        let value = convert_context_management(context_management)?;
+        raw.insert("context_management".to_owned(), value);
+    }
+    let raw = (!raw.is_empty()).then_some(raw);
 
     let mut request = CanonicalRequest::new(Operation::Responses, wire.model, messages, stream);
     request.tools = tools;
@@ -106,6 +113,28 @@ pub(super) fn convert_request(
     request.continuation = continuation;
     Ok(request
         .with_validated_raw_passthrough(raw.map(|fields| (Protocol::OpenAiResponses, fields))))
+}
+
+fn convert_context_management(
+    values: Vec<ContextManagementWire>,
+) -> Result<Value, ParseRequestError> {
+    if values.len() != 1 {
+        return Err(ParseRequestError::InvalidValue);
+    }
+    let ContextManagementWire {
+        kind: ContextManagementTypeWire::Compaction,
+        compact_threshold,
+    } = values.into_iter().next().expect("长度已校验");
+    if !(1..=MAX_COMPACTION_THRESHOLD).contains(&compact_threshold) {
+        return Err(ParseRequestError::InvalidValue);
+    }
+    Ok(Value::Array(vec![Value::Object(Map::from_iter([
+        ("type".to_owned(), Value::String("compaction".to_owned())),
+        (
+            "compact_threshold".to_owned(),
+            Value::Number(compact_threshold.into()),
+        ),
+    ]))]))
 }
 
 pub(super) fn validate_model(model: &str) -> Result<(), ParseRequestError> {
@@ -406,6 +435,7 @@ pub(super) fn validate_raw_fields(extra: &Map<String, Value>) -> Result<(), Pars
 fn validate_raw_semantics(extra: &Map<String, Value>) -> Result<(), ParseRequestError> {
     for (key, value) in extra {
         match key.as_str() {
+            "context_management" => validate_context_management(value)?,
             "include" => validate_include(value)?,
             "metadata" => validate_raw_metadata(value)?,
             "parallel_tool_calls" | "store" => {
@@ -435,6 +465,31 @@ fn validate_raw_semantics(extra: &Map<String, Value>) -> Result<(), ParseRequest
             }
             _ => return Err(ParseRequestError::InvalidValue),
         }
+    }
+    Ok(())
+}
+
+fn validate_context_management(value: &Value) -> Result<(), ParseRequestError> {
+    let values = value.as_array().ok_or(ParseRequestError::InvalidValue)?;
+    if values.len() != 1 {
+        return Err(ParseRequestError::InvalidValue);
+    }
+    let object = values[0]
+        .as_object()
+        .ok_or(ParseRequestError::InvalidValue)?;
+    if object
+        .keys()
+        .any(|key| !matches!(key.as_str(), "type" | "compact_threshold"))
+        || object.get("type").and_then(Value::as_str) != Some("compaction")
+    {
+        return Err(ParseRequestError::InvalidValue);
+    }
+    let threshold = object
+        .get("compact_threshold")
+        .and_then(Value::as_i64)
+        .ok_or(ParseRequestError::InvalidValue)?;
+    if !(1..=MAX_COMPACTION_THRESHOLD).contains(&threshold) {
+        return Err(ParseRequestError::InvalidValue);
     }
     Ok(())
 }

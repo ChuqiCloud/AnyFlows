@@ -3,6 +3,7 @@ use std::{error::Error, fmt};
 use af_domain::{Operation, Protocol, Role};
 use serde_json::{Map, Value};
 
+use crate::ResponsesCompactionItem;
 use crate::request::{
     Attachment, ReasoningConfig, RequestContinuation, RequestMetadata, Sampling, StreamOptions,
     ToolChoice, ToolDef,
@@ -222,6 +223,8 @@ pub enum ContentBlock {
     },
     /// 在当前位置声明提示缓存断点。
     CacheControl(CacheHint),
+    /// OpenAI Responses 专用的不透明上下文压缩 Item。
+    Compaction(ResponsesCompactionItem),
 }
 
 impl fmt::Debug for ContentBlock {
@@ -245,6 +248,7 @@ impl fmt::Debug for ContentBlock {
                 .finish(),
             Self::Thinking { .. } => formatter.write_str("Thinking(<已脱敏>)"),
             Self::CacheControl(hint) => formatter.debug_tuple("CacheControl").field(hint).finish(),
+            Self::Compaction(_) => formatter.write_str("Compaction(<已脱敏>)"),
         }
     }
 }
