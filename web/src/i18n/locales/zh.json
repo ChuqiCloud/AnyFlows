@@ -122,6 +122,7 @@
       "openai_responses": "OpenAI Responses",
       "openai_embeddings": "OpenAI 向量",
       "openai_images": "OpenAI 图片",
+      "openai_audio": "OpenAI 音频转录",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -1787,6 +1788,7 @@
       "cacheRead": "缓存读取 {{value}}",
       "cacheCreate": "缓存创建 5m {{five}} / 1h {{hour}}",
       "reasoningAudio": "推理 {{reasoning}} / 音频 {{audio}}",
+      "audioDuration": "音频时长 {{value}} 秒",
       "quotaSemantics": "额度 {{quota}} / {{semantics}}",
       "billingMode": {
         "per_token": "按 token",
@@ -1880,6 +1882,7 @@
       "openai_responses": "OpenAI Responses",
       "openai_embeddings": "OpenAI 向量",
       "openai_images": "OpenAI 图片",
+      "openai_audio": "OpenAI 音频转录",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -2002,6 +2005,7 @@
       "openai_responses": "OpenAI Responses",
       "openai_embeddings": "OpenAI 向量",
       "openai_images": "OpenAI 图片",
+      "openai_audio": "OpenAI 音频转录",
       "anthropic": "Anthropic",
       "gemini": "Gemini"
     },
@@ -2092,6 +2096,7 @@
         "openai_responses": "OpenAI Responses",
         "openai_embeddings": "OpenAI 向量",
         "openai_images": "OpenAI 图片",
+        "openai_audio": "OpenAI 音频转录",
         "anthropic": "Anthropic",
         "gemini": "Gemini",
         "unavailable": "试炼场暂不支持"

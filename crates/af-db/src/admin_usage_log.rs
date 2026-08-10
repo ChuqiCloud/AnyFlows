@@ -10,6 +10,7 @@ use crate::{DatabasePool, entity::usage_logs};
 
 /// 单页用量日志查询允许返回的最大记录数。
 pub const MAX_ADMIN_USAGE_LOG_PAGE_SIZE: usize = 100;
+const MAX_AUDIO_DURATION_NANOSECONDS: i64 = 24 * 60 * 60 * 1_000_000_000;
 
 /// 管理端读取的规范化 token 用量明细。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -85,6 +86,7 @@ pub struct AdminUsageLogRecord {
     usage: AdminUsageLogUsageRecord,
     usage_source: i16,
     usage_semantics: i16,
+    audio_duration_nanoseconds: Option<i64>,
     quota: i64,
     created_at: i64,
 }
@@ -144,6 +146,12 @@ impl AdminUsageLogRecord {
         self.usage_semantics
     }
 
+    /// 返回可选的音频时长纳秒事实；非 Audio 请求保持缺失。
+    #[must_use]
+    pub const fn audio_duration_nanoseconds(&self) -> Option<i64> {
+        self.audio_duration_nanoseconds
+    }
+
     /// 返回最终扣减额度单位数。
     #[must_use]
     pub const fn quota(&self) -> i64 {
@@ -175,6 +183,9 @@ impl AdminUsageLogRecord {
             || !matches!(model.usage_source, 1 | 2)
             || !matches!(model.usage_semantics, 1 | 2)
             || model.quota < 0
+            || model
+                .audio_duration_nanoseconds
+                .is_some_and(|value| !(0..=MAX_AUDIO_DURATION_NANOSECONDS).contains(&value))
             || token_values.into_iter().any(|value| value < 0)
         {
             return Err(record_internal_error(
@@ -203,6 +214,7 @@ impl AdminUsageLogRecord {
             },
             usage_source: model.usage_source,
             usage_semantics: model.usage_semantics,
+            audio_duration_nanoseconds: model.audio_duration_nanoseconds,
             quota: model.quota,
             created_at: model.created_at.unix_timestamp(),
         })

@@ -146,6 +146,8 @@ string_enum! {
         OpenAiEmbeddings => "openai_embeddings",
         /// OpenAI Images 非流式生成协议。
         OpenAiImages => "openai_images",
+        /// OpenAI Audio 非流式文件转录协议。
+        OpenAiAudio => "openai_audio",
         /// Anthropic Messages 协议。
         Anthropic => "anthropic",
         /// Gemini generateContent 协议。

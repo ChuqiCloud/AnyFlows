@@ -106,6 +106,26 @@ test('渠道类型和协议错配必须失败关闭', () => {
   assert.equal(buildChannelFormSchema('create', messages).safeParse(values).success, false)
 })
 
+test('OpenAI Audio 渠道禁止携带通用 Chat 参数覆盖', () => {
+  const schema = buildChannelFormSchema('create', messages)
+  const values = {
+    ...defaultChannelValues(),
+    name: 'Audio transcription',
+    channelType: 'openai',
+    protocol: 'openai_audio',
+  }
+
+  assert.equal(schema.safeParse(values).success, true)
+  const request = toCreateRequest(values)
+  assert.equal(request.type, 'openai')
+  assert.equal(request.protocol, 'openai_audio')
+  assert.deepEqual(request.param_override, {})
+  assert.equal(schema.safeParse({
+    ...values,
+    paramOverride: [{ id: 'temperature', key: 'temperature', value: '0.5', values: [] }],
+  }).success, false)
+})
+
 test('Anthropic 支持停止序列但温度上限为一', () => {
   const values = {
     ...defaultChannelValues(),

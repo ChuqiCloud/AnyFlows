@@ -13,6 +13,9 @@ function useFormatters() {
   const { i18n } = useTranslation()
   return {
     number: (value: number) => new Intl.NumberFormat(i18n.language).format(value),
+    duration: (nanoseconds: number) => new Intl.NumberFormat(i18n.language, {
+      maximumFractionDigits: 3,
+    }).format(nanoseconds / 1_000_000_000),
     date: (value: number) => new Intl.DateTimeFormat(i18n.language, {
       dateStyle: 'medium',
       timeStyle: 'medium',
@@ -49,7 +52,7 @@ function CoreUsage({ log }: { log: AdminUsageLog }) {
 
 function DetailedUsage({ log }: { log: AdminUsageLog }) {
   const { t } = useTranslation()
-  const { number } = useFormatters()
+  const { duration, number } = useFormatters()
   return (
     <>
       <div>{t('usageLogs.values.cacheRead', { value: number(log.cache_read) })}</div>
@@ -65,6 +68,13 @@ function DetailedUsage({ log }: { log: AdminUsageLog }) {
           audio: number(log.audio_input_tokens + log.audio_output_tokens),
         })}
       </div>
+      {log.audio_duration_nanoseconds !== null ? (
+        <div className="mt-1 text-[0.6875rem] text-muted-foreground">
+          {t('usageLogs.values.audioDuration', {
+            value: duration(log.audio_duration_nanoseconds),
+          })}
+        </div>
+      ) : null}
     </>
   )
 }

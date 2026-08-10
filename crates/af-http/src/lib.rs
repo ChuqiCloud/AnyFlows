@@ -1,6 +1,7 @@
 //! HTTP 路由、中间件、提取器与响应映射。
 
 mod anthropic_messages;
+mod audio_service;
 mod authentication;
 mod balance_alert_settings;
 mod channel_probe;
@@ -47,6 +48,7 @@ mod middleware;
 mod model_catalog;
 mod network_settings;
 mod oauth_connections;
+mod openai_audio;
 mod openai_embeddings;
 mod openai_images;
 mod openai_responses;
@@ -69,6 +71,7 @@ mod user_topups;
 mod user_wallet;
 mod wallet_query;
 
+pub use audio_service::{AudioService, AudioServiceFuture};
 pub use channel_probe::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 pub use chat_service::{ChatService, ChatServiceFuture};
 pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presented_api_key};

@@ -1,8 +1,10 @@
 //! AnyFlows 进程启动编排、后台任务监督与优雅关闭。
 
 mod adaptor_credential;
+mod audio_duration;
 mod auto_ban_feedback;
 mod balance_alert_runtime;
+mod billing_audio;
 mod billing_chat;
 mod billing_embedding;
 mod billing_image;
@@ -35,6 +37,10 @@ mod supervisor;
 mod token_request_admission;
 mod utc_time;
 
+pub use billing_audio::{
+    AudioRoutePlanFuture, AudioRoutePlanner, BillingAudioService, PlannedAudioExecution,
+    PlannedAudioExecutionFuture,
+};
 pub use billing_chat::{
     BillingChatService, ChatRoutePlanFuture, ChatRoutePlanner, PlannedChatExecution,
     PlannedChatExecutionFuture,

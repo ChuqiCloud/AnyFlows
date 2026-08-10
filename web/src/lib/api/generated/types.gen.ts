@@ -82,7 +82,7 @@ export type AdminChannelAutoBanRules = {
 export type AdminChannelCreateRequest = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -114,12 +114,12 @@ export type AdminChannelProbeResponse = {
     latency_ms: number;
 };
 export type AdminChannelProbeStatus = 'healthy' | 'unhealthy' | 'timeout';
-export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'anthropic' | 'gemini';
+export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
 export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'bedrock' | 'vertex' | 'custom';
 export type AdminChannelUpdateRequest = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -867,6 +867,7 @@ export type AdminUsageLog = {
     reasoning_tokens: number;
     audio_input_tokens: number;
     audio_output_tokens: number;
+    audio_duration_nanoseconds: number | null;
     usage_source: AdminUsageLogSource;
     usage_semantics: AdminUsageLogSemantics;
     quota: number;
@@ -1008,7 +1009,7 @@ export type ModelCatalogListResponse = {
     next_cursor: string | null;
 };
 export type ModelCatalogPricingScope = 'public_base' | 'group';
-export type ModelCatalogProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'anthropic' | 'gemini';
+export type ModelCatalogProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
 export type ModelCatalogRatios = {
     group_micros: string;
     group_model_micros: string;
@@ -1277,7 +1278,7 @@ export type UserWalletSummary = {
 export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -1309,7 +1310,7 @@ export type AdminChannelCreateRequestWritable = {
 export type AdminChannelUpdateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;

@@ -1,9 +1,39 @@
 use std::fmt;
 
 use af_domain::{BillingReservationId, GatewayPrincipal, Quota};
-use af_protocol::Usage;
+use af_protocol::{AudioDuration, Usage};
 
 use crate::BillingMode;
+
+/// 请求完成后随 token usage 一并持久化的可选多模态事实。
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct BillingUsageDimensions {
+    audio_duration: Option<AudioDuration>,
+}
+
+impl BillingUsageDimensions {
+    /// 返回不携带多模态事实的默认维度集合。
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            audio_duration: None,
+        }
+    }
+
+    /// 构造只在存在真实或本地探测事实时携带音频时长的维度集合。
+    #[must_use]
+    pub const fn with_audio_duration(audio_duration: AudioDuration) -> Self {
+        Self {
+            audio_duration: Some(audio_duration),
+        }
+    }
+
+    /// 返回可选的音频时长；缺失时不得由存储层伪造零值。
+    #[must_use]
+    pub const fn audio_duration(self) -> Option<AudioDuration> {
+        self.audio_duration
+    }
+}
 
 /// 一次请求完成后交给用量记录边界的最小计费事实。
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -11,11 +41,13 @@ pub struct BillingUsageRecord {
     event_id: BillingReservationId,
     principal: GatewayPrincipal,
     usage: Usage,
+    dimensions: BillingUsageDimensions,
     billing_mode: BillingMode,
     quota: Quota,
 }
 
 impl BillingUsageRecord {
+    #[cfg(test)]
     pub(crate) const fn new(
         event_id: BillingReservationId,
         principal: GatewayPrincipal,
@@ -23,10 +55,29 @@ impl BillingUsageRecord {
         billing_mode: BillingMode,
         quota: Quota,
     ) -> Self {
+        Self::new_with_dimensions(
+            event_id,
+            principal,
+            usage,
+            BillingUsageDimensions::empty(),
+            billing_mode,
+            quota,
+        )
+    }
+
+    pub(crate) const fn new_with_dimensions(
+        event_id: BillingReservationId,
+        principal: GatewayPrincipal,
+        usage: Usage,
+        dimensions: BillingUsageDimensions,
+        billing_mode: BillingMode,
+        quota: Quota,
+    ) -> Self {
         Self {
             event_id,
             principal,
             usage,
+            dimensions,
             billing_mode,
             quota,
         }
@@ -48,6 +99,12 @@ impl BillingUsageRecord {
     #[must_use]
     pub const fn usage(self) -> Usage {
         self.usage
+    }
+
+    /// 返回随本次请求冻结的可选多模态审计维度。
+    #[must_use]
+    pub const fn dimensions(self) -> BillingUsageDimensions {
+        self.dimensions
     }
 
     /// 返回快照解析得到的最终计费模式。
@@ -88,6 +145,12 @@ impl BillingCompletion {
     #[must_use]
     pub const fn usage(self) -> Usage {
         self.record.usage()
+    }
+
+    /// 返回本次请求已成功入队的多模态审计维度。
+    #[must_use]
+    pub const fn dimensions(self) -> BillingUsageDimensions {
+        self.record.dimensions()
     }
 
     /// 返回本次请求的最终计费模式。

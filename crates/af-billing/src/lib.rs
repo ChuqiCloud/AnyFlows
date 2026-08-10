@@ -48,8 +48,8 @@ pub use group_pricing_cache::{
 pub use lifecycle::{
     BillingCompletion, BillingLifecycleError, BillingLifecycleState, BillingPrechargeError,
     BillingPrechargeFuture, BillingPrechargePort, BillingRequestLifecycle, BillingRequestPlan,
-    BillingSettlementError, BillingSettlementFuture, BillingSettlementPort, BillingUsageRecord,
-    UsageRecordOutcome, UsageRecordPort,
+    BillingSettlementError, BillingSettlementFuture, BillingSettlementPort, BillingUsageDimensions,
+    BillingUsageRecord, UsageRecordOutcome, UsageRecordPort,
 };
 pub use model_price_cache::{
     ModelPrice, ModelPriceCache, ModelPriceCacheError, ModelPriceMode, ModelPriceSnapshot,

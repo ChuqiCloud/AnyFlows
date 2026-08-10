@@ -80,6 +80,7 @@ use crate::middleware::{
 use crate::model_catalog::list_models;
 use crate::network_settings::build_network_settings_router;
 use crate::oauth_connections::{AdminOAuthConnectionService, build_admin_oauth_connection_router};
+use crate::openai_audio::openai_audio_transcription;
 use crate::openai_embeddings::openai_embeddings;
 use crate::openai_images::openai_images;
 use crate::openai_responses::openai_responses;
@@ -96,8 +97,8 @@ use crate::user_tokens::build_user_token_router;
 use crate::user_topups::build_user_topup_router;
 use crate::user_wallet::build_user_wallet_router;
 use crate::{
-    ChatService, EmbeddingService, ImageService, QueryApiKeyPolicy, chat_completions::HttpState,
-    chat_completions::chat_completions,
+    AudioService, ChatService, EmbeddingService, ImageService, QueryApiKeyPolicy,
+    chat_completions::HttpState, chat_completions::chat_completions,
 };
 
 /// OpenAI Chat 业务路由的默认请求正文上限，与协议解析预算共享单一常量。
@@ -131,6 +132,7 @@ impl HttpRouter {
 pub fn build_router(
     config: &ServerConfig,
     chat: Arc<dyn ChatService>,
+    audio: Arc<dyn AudioService>,
     embedding: Arc<dyn EmbeddingService>,
     image: Arc<dyn ImageService>,
     readiness: ReadinessHandle,
@@ -207,6 +209,7 @@ pub fn build_router(
         admin_user_reader,
         admin_user_writer,
     )
+    .with_audio_service(audio)
     .with_embedding_service(embedding)
     .with_image_service(image)
     .with_initial_setup(initial_setup)
@@ -237,7 +240,12 @@ pub fn build_router(
         .route(
             "/v1/images/generations",
             // Images 共用 OpenAI 错误 wire，但使用独立的大响应非流式业务端口。
-            post(openai_images).route_layer(openai_authentication),
+            post(openai_images).route_layer(openai_authentication.clone()),
+        )
+        .route(
+            "/v1/audio/transcriptions",
+            // Audio 使用独立 multipart 入口和非流式计费端口，不进入通用 Chat 参数链路。
+            post(openai_audio_transcription).route_layer(openai_authentication),
         )
         .route(
             "/v1/responses",

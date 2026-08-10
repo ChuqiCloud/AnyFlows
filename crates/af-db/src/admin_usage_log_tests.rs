@@ -39,6 +39,7 @@ async fn list_uses_newest_first_cursor_and_preserves_usage_dimensions() -> Resul
     assert_eq!(newest.usage().reasoning_tokens(), 9);
     assert_eq!(newest.usage().audio_input_tokens(), 0);
     assert_eq!(newest.usage().audio_output_tokens(), 0);
+    assert_eq!(newest.audio_duration_nanoseconds(), Some(3_500_000_000));
     assert_eq!(newest.event_id().len(), 32);
     assert!(newest.created_at() > 0);
     assert_eq!(format!("{newest:?}"), "AdminUsageLogRecord(<redacted>)");
@@ -182,29 +183,33 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
             0,
             0,
         )?;
-        writer
-            .record(&UsageLogWrite::new(
-                BillingReservationId::new(event_id)?,
-                principal,
-                if marker == 2 {
-                    UsageLogBillingMode::Free
-                } else {
-                    UsageLogBillingMode::PerToken
-                },
-                usage,
-                if marker == 2 {
-                    UsageLogSource::Estimated
-                } else {
-                    UsageLogSource::Upstream
-                },
-                if marker == 3 {
-                    UsageLogSemantics::CacheSeparated
-                } else {
-                    UsageLogSemantics::Inclusive
-                },
-                Quota::new(i64::from(marker) * 100)?,
-            ))
-            .await?;
+        let write = UsageLogWrite::new(
+            BillingReservationId::new(event_id)?,
+            principal,
+            if marker == 2 {
+                UsageLogBillingMode::Free
+            } else {
+                UsageLogBillingMode::PerToken
+            },
+            usage,
+            if marker == 2 {
+                UsageLogSource::Estimated
+            } else {
+                UsageLogSource::Upstream
+            },
+            if marker == 3 {
+                UsageLogSemantics::CacheSeparated
+            } else {
+                UsageLogSemantics::Inclusive
+            },
+            Quota::new(i64::from(marker) * 100)?,
+        );
+        let write = if marker == 3 {
+            write.with_audio_duration_nanoseconds(Some(3_500_000_000))?
+        } else {
+            write
+        };
+        writer.record(&write).await?;
     }
     Ok(Fixture {
         repository: AdminUsageLogRepository::new(pool.clone(), Duration::from_secs(2))?,

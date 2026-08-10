@@ -12,11 +12,13 @@ use af_domain::{ChannelId, ChannelType, Protocol, Role};
 use af_http::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 use af_httpclient::HttpClientProvider;
 use af_protocol::{
+    AudioFile, AudioFileFormat, AudioTranscriptionOptions, CanonicalAudioTranscriptionRequest,
     CanonicalEmbeddingRequest, CanonicalImageGenerationRequest, CanonicalRequest, ContentBlock,
     EmbeddingInput, ImageDimensions, ImageGenerationOptions, ImageOutputFormat, ImageQuality,
-    ImageSize, Message, Sampling, TokenCount, ToolChoice, anthropic, gemini, openai_chat,
-    openai_embeddings, openai_images, openai_responses,
+    ImageSize, Message, Sampling, TokenCount, ToolChoice, anthropic, gemini, openai_audio,
+    openai_chat, openai_embeddings, openai_images, openai_responses,
 };
+use af_relay::encode_openai_audio_request;
 use af_scheduler::{ChannelProbe, ChannelProbeStatus};
 use tokio::time::timeout;
 
@@ -111,12 +113,16 @@ impl DatabaseChannelProbe {
             Some(probe_body(target.model(), target.protocol())?),
         )
         .map_err(|_| ProbeFailure::RequestBuild)?;
-        let request = if target.protocol() == Protocol::OpenAiImages {
-            request
-                .with_response_body_limit(openai_images::MAX_RESPONSE_BODY_BYTES)
-                .map_err(|_| ProbeFailure::RequestBuild)?
-        } else {
-            request
+        let response_body_limit = match target.protocol() {
+            Protocol::OpenAiImages => Some(openai_images::MAX_RESPONSE_BODY_BYTES),
+            Protocol::OpenAiAudio => Some(openai_audio::MAX_TRANSCRIPTION_RESPONSE_BODY_BYTES),
+            _ => None,
+        };
+        let request = match response_body_limit {
+            Some(limit) => request
+                .with_response_body_limit(limit)
+                .map_err(|_| ProbeFailure::RequestBuild)?,
+            None => request,
         };
         let response = adaptor
             .send(request, &context)
@@ -126,12 +132,9 @@ impl DatabaseChannelProbe {
             return Err(ProbeFailure::UpstreamStatus);
         }
         let response_body = response.into_body();
-        let body = if target.protocol() == Protocol::OpenAiImages {
-            response_body
-                .into_bytes_with_limit(openai_images::MAX_RESPONSE_BODY_BYTES)
-                .await
-        } else {
-            response_body.into_bytes().await
+        let body = match response_body_limit {
+            Some(limit) => response_body.into_bytes_with_limit(limit).await,
+            None => response_body.into_bytes().await,
         }
         .map_err(map_response_read_failure)?;
         validate_probe_response(target.protocol(), &body)?;
@@ -239,6 +242,7 @@ fn probe_operation(protocol: Protocol) -> Result<Operation, ProbeFailure> {
         Protocol::OpenAiResponses => Ok(Operation::Responses),
         Protocol::OpenAiEmbeddings => Ok(Operation::Embedding),
         Protocol::OpenAiImages => Ok(Operation::Image),
+        Protocol::OpenAiAudio => Ok(Operation::Audio),
     }
 }
 
@@ -253,6 +257,10 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
         let value = openai_images::build_request(&probe_image_request(model)?)
             .map_err(|_| ProbeFailure::RequestBuild)?;
         return Ok(Bytes::from(value.to_string()));
+    }
+    if protocol == Protocol::OpenAiAudio {
+        return encode_openai_audio_request(&probe_audio_request(model)?)
+            .map_err(|_| ProbeFailure::RequestBuild);
     }
     let mut request = CanonicalRequest::new(
         probe_operation(protocol)?,
@@ -282,7 +290,7 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
             value["store"] = false.into();
             value
         }
-        Protocol::OpenAiEmbeddings | Protocol::OpenAiImages => {
+        Protocol::OpenAiEmbeddings | Protocol::OpenAiImages | Protocol::OpenAiAudio => {
             unreachable!("非对话协议已在独立请求分支返回")
         }
         Protocol::Anthropic => {
@@ -327,6 +335,9 @@ fn validate_probe_response(protocol: Protocol, body: &[u8]) -> Result<(), ProbeF
                 .map(|_| ())
                 .map_err(|_| ProbeFailure::InvalidResponse)
         }
+        Protocol::OpenAiAudio => openai_audio::parse_transcription_response(body)
+            .map(|_| ())
+            .map_err(|_| ProbeFailure::InvalidResponse),
         Protocol::Anthropic => anthropic::parse_response(body)
             .map(|_| ())
             .map_err(|_| ProbeFailure::InvalidResponse),
@@ -345,6 +356,7 @@ fn supported_target(target: &ChannelProbeTargetRecord) -> bool {
                 | Protocol::OpenAiResponses
                 | Protocol::OpenAiEmbeddings
                 | Protocol::OpenAiImages
+                | Protocol::OpenAiAudio
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
             | (ChannelType::Gemini, Protocol::Gemini)
     )
@@ -376,7 +388,8 @@ fn adaptor_settings(target: &ChannelProbeTargetRecord) -> Result<AdaptorSettings
             Protocol::OpenAiChat
             | Protocol::OpenAiResponses
             | Protocol::OpenAiEmbeddings
-            | Protocol::OpenAiImages,
+            | Protocol::OpenAiImages
+            | Protocol::OpenAiAudio,
         ) => Ok(AdaptorSettings::OpenAi(
             OpenAiAdaptorSettings::for_protocol(target.protocol(), models)
                 .map_err(|_| ProbeFailure::AdapterBuild)?,
@@ -416,6 +429,35 @@ fn probe_image_request(model: &str) -> Result<CanonicalImageGenerationRequest, P
     .map_err(|_| ProbeFailure::RequestBuild)?;
     CanonicalImageGenerationRequest::new(model.to_owned(), "ping".to_owned(), options)
         .map_err(|_| ProbeFailure::RequestBuild)
+}
+
+fn probe_audio_request(model: &str) -> Result<CanonicalAudioTranscriptionRequest, ProbeFailure> {
+    let file = AudioFile::new(AudioFileFormat::Wav, one_second_probe_wav())
+        .map_err(|_| ProbeFailure::RequestBuild)?;
+    let options = AudioTranscriptionOptions::new(None, None, Vec::new(), None)
+        .map_err(|_| ProbeFailure::RequestBuild)?;
+    CanonicalAudioTranscriptionRequest::new(model.to_owned(), file, options)
+        .map_err(|_| ProbeFailure::RequestBuild)
+}
+
+fn one_second_probe_wav() -> Bytes {
+    const SAMPLE_RATE: u32 = 8_000;
+    const DATA_BYTES: u32 = SAMPLE_RATE * 2;
+    let mut bytes = Vec::with_capacity((44 + DATA_BYTES) as usize);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + DATA_BYTES).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u16.to_le_bytes());
+    bytes.extend_from_slice(&1_u16.to_le_bytes());
+    bytes.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+    bytes.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes());
+    bytes.extend_from_slice(&2_u16.to_le_bytes());
+    bytes.extend_from_slice(&16_u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&DATA_BYTES.to_le_bytes());
+    bytes.resize((44 + DATA_BYTES) as usize, 0);
+    Bytes::from(bytes)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -63,7 +63,8 @@ pub(crate) fn encode_full_response(
         Protocol::OpenAiChat
         | Protocol::OpenAiResponses
         | Protocol::OpenAiEmbeddings
-        | Protocol::OpenAiImages => {
+        | Protocol::OpenAiImages
+        | Protocol::OpenAiAudio => {
             return Err(AfError::Internal);
         }
     };
@@ -83,7 +84,8 @@ pub(crate) fn encode_full_response(
         Protocol::OpenAiChat
         | Protocol::OpenAiResponses
         | Protocol::OpenAiEmbeddings
-        | Protocol::OpenAiImages => {
+        | Protocol::OpenAiImages
+        | Protocol::OpenAiAudio => {
             unreachable!("协议分支已在上方闭合")
         }
     };

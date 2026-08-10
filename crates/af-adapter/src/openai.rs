@@ -6,7 +6,7 @@ use af_httpclient::{HeaderMap, HeaderName, HeaderValue};
 use crate::credential::clear_authentication_headers;
 use crate::{Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Credential, RelayContext};
 
-/// OpenAI Chat Completions、Responses、Embeddings 及兼容渠道适配器。
+/// OpenAI Chat Completions、Responses、Embeddings、Images 与 Audio 兼容渠道适配器。
 ///
 /// 渠道基础地址由 `RelayContext` 覆盖，可传服务根或反向代理前缀；末尾非空段精确为
 /// `v1`（可带尾斜杠）时不会重复追加版本路径，其他路径会追加目标原生端点。
@@ -27,6 +27,9 @@ impl Default for OpenAiAdaptor {
 impl OpenAiAdaptor {
     /// OpenAI 官方 API 的默认根地址。
     pub const DEFAULT_BASE_URL: &'static str = "https://api.openai.com";
+    /// Audio multipart 使用的固定高熵边界；编码器会拒绝正文中的碰撞。
+    pub const AUDIO_MULTIPART_BOUNDARY: &'static str =
+        "anyflows-audio-6f4d2e1c9b8a7350d4e6f1a2c3b5d798";
 
     /// 创建不携带内建模型清单的适配器。
     #[must_use]
@@ -65,6 +68,7 @@ impl OpenAiAdaptor {
                 | Protocol::OpenAiResponses
                 | Protocol::OpenAiEmbeddings
                 | Protocol::OpenAiImages
+                | Protocol::OpenAiAudio
         ) {
             return Err(AdaptorError::InvalidChannelSettings {
                 channel_type: ChannelType::OpenAi,
@@ -86,6 +90,7 @@ impl OpenAiAdaptor {
             (Protocol::OpenAiResponses, Operation::Responses) => "responses",
             (Protocol::OpenAiEmbeddings, Operation::Embedding) => "embeddings",
             (Protocol::OpenAiImages, Operation::Image) => "images/generations",
+            (Protocol::OpenAiAudio, Operation::Audio) => "audio/transcriptions",
             (_, operation) => return Err(AdaptorError::UnsupportedOperation { operation }),
         };
         let base_url = context.resolve_base_url(Self::DEFAULT_BASE_URL)?;
@@ -101,6 +106,7 @@ impl OpenAiAdaptor {
                 "responses" => "v1/responses",
                 "embeddings" => "v1/embeddings",
                 "images/generations" => "v1/images/generations",
+                "audio/transcriptions" => "v1/audio/transcriptions",
                 _ => unreachable!("OpenAI 端点集合保持闭合"),
             }
         })
@@ -157,10 +163,16 @@ impl Adaptor for OpenAiAdaptor {
                 .map_err(|_| AdaptorError::InvalidHeader)?;
         authorization.set_sensitive(true);
         headers.insert(HeaderName::from_static("authorization"), authorization);
-        headers.insert(
-            HeaderName::from_static("content-type"),
-            HeaderValue::from_static("application/json"),
-        );
+        let content_type = if self.protocol == Protocol::OpenAiAudio {
+            HeaderValue::from_str(&format!(
+                "multipart/form-data; boundary={}",
+                Self::AUDIO_MULTIPART_BOUNDARY
+            ))
+            .map_err(|_| AdaptorError::InvalidHeader)?
+        } else {
+            HeaderValue::from_static("application/json")
+        };
+        headers.insert(HeaderName::from_static("content-type"), content_type);
         headers.insert(
             HeaderName::from_static("accept"),
             HeaderValue::from_static("application/json"),
@@ -349,6 +361,48 @@ mod tests {
                 operation: Operation::Chat
             }
         );
+    }
+
+    #[test]
+    fn audio_protocol_uses_native_transcription_endpoint_and_multipart_header() {
+        let adaptor = OpenAiAdaptor::with_protocol_and_supported_models(
+            Protocol::OpenAiAudio,
+            ["gpt-audio-test"],
+        )
+        .unwrap();
+        assert_eq!(adaptor.default_protocol(), Protocol::OpenAiAudio);
+        assert_eq!(
+            adaptor
+                .build_url(&context(), target(Operation::Audio))
+                .unwrap(),
+            "https://api.openai.com/v1/audio/transcriptions"
+        );
+        let proxied = adaptor
+            .build_url(
+                &context()
+                    .with_base_url("https://gateway.example/proxy/openai/v1")
+                    .unwrap(),
+                target(Operation::Audio),
+            )
+            .unwrap();
+        assert!(proxied.ends_with("/proxy/openai/v1/audio/transcriptions"));
+
+        let mut headers = HeaderMap::new();
+        adaptor
+            .setup_headers(
+                &mut headers,
+                &Credential::api_key("audio-key").unwrap(),
+                &context(),
+            )
+            .unwrap();
+        assert_eq!(
+            headers["content-type"],
+            format!(
+                "multipart/form-data; boundary={}",
+                OpenAiAdaptor::AUDIO_MULTIPART_BOUNDARY
+            )
+        );
+        assert_eq!(headers["accept"], "application/json");
     }
 
     #[test]

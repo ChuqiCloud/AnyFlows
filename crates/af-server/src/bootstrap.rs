@@ -77,9 +77,9 @@ use af_db::{
     WalletLedgerRepository, WalletLedgerRepositoryConfigError, connect_and_migrate,
 };
 use af_http::{
-    AdminChannelProbe, AdminOAuthConnectionService, ChatService, EmbeddingService, HttpListener,
-    HttpRouter, ImageService, QueryApiKeyPolicy, ReadinessHandle, ServeError, ServeOutcome,
-    build_payment_webhook_router, build_router, serve_with_graceful_shutdown,
+    AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
+    HttpListener, HttpRouter, ImageService, QueryApiKeyPolicy, ReadinessHandle, ServeError,
+    ServeOutcome, build_payment_webhook_router, build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
@@ -99,10 +99,10 @@ use crate::stripe_payment_intent::StripePaymentIntentProvider;
 
 use crate::readiness::DatabaseReadinessProbe;
 use crate::{
-    BackgroundTaskSupervisor, BillingChatService, BillingEmbeddingService, BillingFlushReport,
-    BillingImageService, BillingRuntime, BillingRuntimeError, ChatRoutePlanner,
-    EmbeddingRoutePlanner, ImageRoutePlanner, ShutdownController, SupervisorError,
-    SupervisorShutdown,
+    AudioRoutePlanner, BackgroundTaskSupervisor, BillingAudioService, BillingChatService,
+    BillingEmbeddingService, BillingFlushReport, BillingImageService, BillingRuntime,
+    BillingRuntimeError, ChatRoutePlanner, EmbeddingRoutePlanner, ImageRoutePlanner,
+    ShutdownController, SupervisorError, SupervisorShutdown,
     balance_alert_runtime::BalanceAlertRuntime,
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     concurrency_runtime::{ConcurrencyCleanupWorker, ConcurrencyReleaseWorker, ConcurrencyRuntime},
@@ -205,6 +205,7 @@ pub struct RelayReady {
 pub struct BillingReady {
     infrastructure: AuthenticationReady,
     chat: Arc<dyn ChatService>,
+    audio: Arc<dyn AudioService>,
     embedding: Arc<dyn EmbeddingService>,
     image: Arc<dyn ImageService>,
     billing: BillingRuntime,
@@ -234,6 +235,7 @@ pub struct BillingReady {
 pub struct Supervised {
     infrastructure: AuthenticationReady,
     chat: Arc<dyn ChatService>,
+    audio: Arc<dyn AudioService>,
     embedding: Arc<dyn EmbeddingService>,
     image: Arc<dyn ImageService>,
     billing: BillingRuntime,
@@ -1117,6 +1119,7 @@ impl Bootstrap<RelayReady> {
         let embedding_route_planner: Arc<dyn EmbeddingRoutePlanner> =
             Arc::new(route_service.clone());
         let image_route_planner: Arc<dyn ImageRoutePlanner> = Arc::new(route_service.clone());
+        let audio_route_planner: Arc<dyn AudioRoutePlanner> = Arc::new(route_service.clone());
         let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(route_service);
         let pricing_source = Arc::new(CachedRequestPricingSnapshotSource::new(
             model_prices.clone(),
@@ -1168,6 +1171,14 @@ impl Bootstrap<RelayReady> {
             Some(settlement_port.clone()),
             usage_port.clone(),
         ));
+        let audio: Arc<dyn AudioService> = Arc::new(BillingAudioService::new(
+            audio_route_planner,
+            pricing_source.clone(),
+            Some(precharge_port.clone()),
+            Some(refund_port.clone()),
+            Some(settlement_port.clone()),
+            usage_port.clone(),
+        ));
         let chat: Arc<dyn ChatService> = Arc::new(BillingChatService::new(
             route_planner,
             pricing_source,
@@ -1196,6 +1207,7 @@ impl Bootstrap<RelayReady> {
             stage: BillingReady {
                 infrastructure,
                 chat,
+                audio,
                 embedding,
                 image,
                 billing,
@@ -1238,6 +1250,7 @@ impl Bootstrap<BillingReady> {
         let BillingReady {
             infrastructure,
             chat,
+            audio,
             embedding,
             image,
             billing,
@@ -1370,6 +1383,7 @@ impl Bootstrap<BillingReady> {
             stage: Supervised {
                 infrastructure,
                 chat,
+                audio,
                 embedding,
                 image,
                 billing,
@@ -1552,6 +1566,7 @@ impl Bootstrap<Supervised> {
         let router = build_router(
             self.config.server(),
             self.stage.chat.clone(),
+            self.stage.audio.clone(),
             self.stage.embedding.clone(),
             self.stage.image.clone(),
             readiness.clone(),
@@ -1692,6 +1707,7 @@ impl Bootstrap<ListenerReady> {
             chat: _,
             embedding: _,
             image: _,
+            audio: _,
             _channel_index: _,
             model_catalog_reader: _,
             admin_model_sync_service: _,

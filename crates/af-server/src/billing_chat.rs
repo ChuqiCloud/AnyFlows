@@ -239,9 +239,22 @@ pub(crate) async fn complete_with_retries(
     lifecycle: &mut BillingRequestLifecycle,
     usage: Usage,
 ) -> Result<af_billing::BillingCompletion, BillingLifecycleError> {
+    complete_with_dimensions_retries(
+        lifecycle,
+        usage,
+        af_billing::BillingUsageDimensions::empty(),
+    )
+    .await
+}
+
+pub(crate) async fn complete_with_dimensions_retries(
+    lifecycle: &mut BillingRequestLifecycle,
+    usage: Usage,
+    dimensions: af_billing::BillingUsageDimensions,
+) -> Result<af_billing::BillingCompletion, BillingLifecycleError> {
     let mut attempts = 0;
     loop {
-        match lifecycle.complete(usage).await {
+        match lifecycle.complete_with_dimensions(usage, dimensions).await {
             Ok(completion) => return Ok(completion),
             Err(error)
                 if retryable_completion_error(error) && attempts + 1 < MAX_COMPLETION_ATTEMPTS =>

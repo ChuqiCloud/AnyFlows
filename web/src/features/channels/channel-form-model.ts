@@ -9,7 +9,7 @@ import type {
 export type ChannelEditorMode = 'create' | 'update'
 export type SensitiveEditMode = 'preserve' | 'replace' | 'clear'
 export type ChannelType = 'openai' | 'anthropic' | 'gemini'
-export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'anthropic' | 'gemini'
+export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini'
 export const MAX_CHANNEL_TIMEOUT_SECONDS = 900
 
 export const channelParameterNames = [
@@ -89,7 +89,7 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
     baseUrl: z.string().trim().max(2048, messages.invalidField),
     timeoutSeconds: z.string(),
     channelType: z.enum(['openai', 'anthropic', 'gemini']),
-    protocol: z.enum(['openai_chat', 'openai_responses', 'openai_embeddings', 'openai_images', 'anthropic', 'gemini']),
+    protocol: z.enum(['openai_chat', 'openai_responses', 'openai_embeddings', 'openai_images', 'openai_audio', 'anthropic', 'gemini']),
     tag: z.string().trim().max(64, messages.invalidField),
     status: z.enum(['enabled', 'disabled']),
     weight: z.number().int(messages.invalidField).min(0, messages.invalidField),
@@ -114,6 +114,7 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
           || values.protocol === 'openai_responses'
           || values.protocol === 'openai_embeddings'
           || values.protocol === 'openai_images'
+          || values.protocol === 'openai_audio'
     if (!protocolMatchesType) addIssue(context, 'protocol', messages.invalidField)
     if (values.responsesWebsocketEnabled
       && (values.channelType !== 'openai' || values.protocol !== 'openai_responses')) {
@@ -166,7 +167,9 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
           ? 'openai_responses'
           : channel?.protocol === 'openai_embeddings'
             ? 'openai_embeddings'
-            : channel?.protocol === 'openai_images' ? 'openai_images' : 'openai_chat',
+            : channel?.protocol === 'openai_images'
+              ? 'openai_images'
+              : channel?.protocol === 'openai_audio' ? 'openai_audio' : 'openai_chat',
     tag: channel?.tag ?? '',
     status: channel?.status === 'enabled' ? 'enabled' : 'disabled',
     weight: channel?.weight ?? 10,
@@ -337,7 +340,7 @@ function validateParameterRows(
   messages: ValidationMessages,
   context: z.RefinementCtx,
 ) {
-  if (protocol === 'openai_embeddings' || protocol === 'openai_images') {
+  if (protocol === 'openai_embeddings' || protocol === 'openai_images' || protocol === 'openai_audio') {
     if (rows.length > 0) addIssue(context, 'paramOverride', messages.invalidParameter)
     return
   }

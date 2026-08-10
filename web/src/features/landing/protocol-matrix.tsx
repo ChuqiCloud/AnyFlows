@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
  * 顺序固定，避免每次渲染视觉跳动。
  */
 const protocols = [
-  { id: 'openai', label: 'OpenAI', detail: 'Chat / Responses / Embeddings / Images' },
+  { id: 'openai', label: 'OpenAI', detail: 'Chat / Responses / Embeddings / Images / Audio' },
   { id: 'anthropic', label: 'Anthropic', detail: 'Messages' },
   { id: 'gemini', label: 'Gemini', detail: 'generateContent' },
 ] as const

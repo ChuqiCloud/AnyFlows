@@ -71,15 +71,15 @@ use af_domain::{
     TokenId, TokenModelPolicy, TrustedClientIp, UserId,
 };
 use af_http::{
-    EmbeddingService, EmbeddingServiceFuture, HttpListener, ImageService, ImageServiceFuture,
-    QueryApiKeyPolicy, ReadinessFuture, ReadinessHandle, ReadinessProbe, ServeOutcome,
-    build_router, serve_with_graceful_shutdown,
+    AudioService, AudioServiceFuture, EmbeddingService, EmbeddingServiceFuture, HttpListener,
+    ImageService, ImageServiceFuture, QueryApiKeyPolicy, ReadinessFuture, ReadinessHandle,
+    ReadinessProbe, ServeOutcome, build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
 use af_protocol::{
-    CanonicalEmbeddingRequest, CanonicalImageGenerationRequest, CanonicalStreamEvent, ContentDelta,
-    FinishReason, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
-    openai_responses::OpenAiResponsesStreamEncoder,
+    CanonicalAudioTranscriptionRequest, CanonicalEmbeddingRequest, CanonicalImageGenerationRequest,
+    CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage, UsageDetails,
+    UsageSemantics, UsageSource, openai_responses::OpenAiResponsesStreamEncoder,
 };
 use af_relay::RelayService;
 use serde_json::{Value, json};
@@ -190,6 +190,19 @@ struct RejectAdminUsageLogs;
 struct RejectAdminUsers;
 struct RejectEmbeddings;
 struct RejectImages;
+struct RejectAudio;
+
+impl AudioService for RejectAudio {
+    fn transcribe<'a>(
+        &'a self,
+        _principal: &'a GatewayPrincipal,
+        _user_concurrency: Option<ConcurrencyLimit>,
+        _request: CanonicalAudioTranscriptionRequest,
+        _request_id: &'a str,
+    ) -> AudioServiceFuture<'a> {
+        Box::pin(async { Err(AfError::Internal) })
+    }
+}
 
 impl EmbeddingService for RejectEmbeddings {
     fn embeddings<'a>(
@@ -1801,6 +1814,7 @@ async fn start_server(
     let router = build_router(
         &server_config,
         relay,
+        Arc::new(RejectAudio),
         Arc::new(RejectEmbeddings),
         Arc::new(RejectImages),
         readiness,
