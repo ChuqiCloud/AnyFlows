@@ -193,9 +193,15 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         "https://responses-channel-canary.example.com",
         [],
     );
+    responses_channel.model_mapping = Set(serde_json::json!({
+        "gpt-runtime-canary": "gpt-responses-upstream-canary"
+    }));
     responses_channel.settings = Set(SensitiveJson::from(serde_json::json!({
         "responses_websocket_enabled": true,
         "responses_compact_mode": "force_on",
+        "compact_model_mapping": {
+            "gpt-responses-upstream-canary": "gpt-compact-upstream-canary"
+        },
         "pool_mode": true,
         "auto_ban_rules": {
             "status_codes": [503],
@@ -331,6 +337,16 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         responses_record.target().responses_compact_mode(),
         ResponsesCompactMode::ForceOn
     );
+    assert_eq!(
+        responses_record.target().mapped_model("gpt-runtime-canary"),
+        Some("gpt-responses-upstream-canary")
+    );
+    assert_eq!(
+        responses_record
+            .target()
+            .mapped_responses_compact_model("gpt-runtime-canary"),
+        "gpt-compact-upstream-canary"
+    );
     assert!(responses_record.target().pool_mode());
     assert_eq!(
         responses_record.target().auto_ban_rules().server_statuses()[0].get(),
@@ -352,6 +368,8 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         "selected-key-id-canary",
         "anthropic-channel-canary",
         "anthropic-channel-key",
+        "gpt-responses-upstream-canary",
+        "gpt-compact-upstream-canary",
     ] {
         assert!(!rendered.contains(secret));
     }
@@ -511,7 +529,7 @@ fn credential_revision_changes_with_every_envelope_component() {
 }
 
 #[test]
-fn responses_websocket_capability_only_accepts_native_responses_target() {
+fn responses_specific_capabilities_only_accept_native_responses_target() {
     let responses = SchedulerRuntimeTargetRecord::new_pool(
         ChannelId::new(1).unwrap(),
         ChannelType::OpenAi,
@@ -550,6 +568,53 @@ fn responses_websocket_capability_only_accepts_native_responses_target() {
     assert_eq!(
         native_compact.responses_compact_mode(),
         ResponsesCompactMode::ForceOn
+    );
+    let normal_mapping = ChannelModelMappings::parse(&serde_json::json!({
+        "gpt-public": "gpt-upstream"
+    }))
+    .unwrap();
+    let compact_mapping = ChannelModelMappings::parse(&serde_json::json!({
+        "gpt-upstream": "gpt-compact-upstream"
+    }))
+    .unwrap();
+    let mapped_compact =
+        SchedulerRuntimeTargetRecord::new_pool_with_request_policy_and_compact_mapping(
+            ChannelId::new(3).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiResponses,
+            None,
+            vec![runtime_credential_record(3)],
+            normal_mapping,
+            compact_mapping.clone(),
+            ChannelParameterOverrides::default(),
+            Vec::new(),
+        )
+        .unwrap();
+    assert_eq!(
+        mapped_compact.mapped_model("gpt-public"),
+        Some("gpt-upstream")
+    );
+    assert_eq!(
+        mapped_compact.mapped_responses_compact_model("gpt-public"),
+        "gpt-compact-upstream"
+    );
+    assert_eq!(
+        mapped_compact.mapped_responses_compact_model("gpt-unmapped"),
+        "gpt-unmapped"
+    );
+    assert!(
+        SchedulerRuntimeTargetRecord::new_pool_with_request_policy_and_compact_mapping(
+            ChannelId::new(4).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+            None,
+            vec![runtime_credential_record(4)],
+            ChannelModelMappings::default(),
+            compact_mapping,
+            ChannelParameterOverrides::default(),
+            Vec::new(),
+        )
+        .is_err()
     );
     assert!(
         chat.with_responses_compact_mode(ResponsesCompactMode::ForceOn)

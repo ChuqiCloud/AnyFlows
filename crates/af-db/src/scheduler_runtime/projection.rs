@@ -181,6 +181,9 @@ struct ProjectionTargetWire {
     responses_websocket_enabled: bool,
     #[serde(default)]
     responses_compact_mode: Option<String>,
+    /// 旧投影缺少该字段时按空映射兼容。
+    #[serde(default)]
+    responses_compact_model_mapping: Option<Json>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -374,6 +377,11 @@ impl ProjectionTargetWire {
             pool_mode: target.pool_mode(),
             responses_websocket_enabled: target.responses_websocket_enabled(),
             responses_compact_mode: Some(target.responses_compact_mode().to_string()),
+            responses_compact_model_mapping: Some(
+                target
+                    .responses_compact_model_mapping()
+                    .to_projection_json(),
+            ),
         }
     }
 
@@ -418,13 +426,20 @@ impl ProjectionTargetWire {
             .unwrap_or_else(|| ResponsesCompactMode::Auto.to_string())
             .parse::<ResponsesCompactMode>()
             .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
-        SchedulerRuntimeTargetRecord::new_pool_with_request_policy(
+        let responses_compact_model_mapping = self
+            .responses_compact_model_mapping
+            .unwrap_or_else(|| Json::Object(Default::default()));
+        let responses_compact_model_mapping =
+            ChannelModelMappings::parse(&responses_compact_model_mapping)
+                .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        SchedulerRuntimeTargetRecord::new_pool_with_request_policy_and_compact_mapping(
             channel_id,
             channel_type,
             protocol,
             self.base_url,
             credentials,
             model_mappings,
+            responses_compact_model_mapping,
             parameter_overrides,
             headers,
         )
@@ -576,10 +591,10 @@ mod tests {
     fn projection_round_trips_without_exposing_sensitive_debug_fields() {
         let channel_id = ChannelId::new(7).unwrap();
         let target = Arc::new(
-            SchedulerRuntimeTargetRecord::new_pool(
+            SchedulerRuntimeTargetRecord::new_pool_with_request_policy_and_compact_mapping(
                 channel_id,
                 ChannelType::OpenAi,
-                Protocol::OpenAiChat,
+                Protocol::OpenAiResponses,
                 Some("https://private.example/v1".to_owned()),
                 vec![
                     SchedulerRuntimeCredentialRecord::new(
@@ -591,6 +606,15 @@ mod tests {
                     )
                     .unwrap(),
                 ],
+                ChannelModelMappings::parse(&serde_json::json!({
+                    "private-model": "private-upstream-model"
+                }))
+                .unwrap(),
+                ChannelModelMappings::parse(&serde_json::json!({
+                    "private-upstream-model": "private-compact-model"
+                }))
+                .unwrap(),
+                ChannelParameterOverrides::default(),
                 vec![("x-private-header".to_owned(), "private-value".to_owned())],
             )
             .unwrap()
@@ -601,7 +625,9 @@ mod tests {
                 )
                 .unwrap(),
             )
-            .with_pool_mode(true),
+            .with_pool_mode(true)
+            .with_responses_compact_mode(ResponsesCompactMode::ForceOn)
+            .unwrap(),
         );
         let record = SchedulerRuntimeRecord::new(
             SchedulerAbilityRecord::from_projection_parts(
@@ -627,6 +653,12 @@ mod tests {
         assert_eq!(decoded.subject(), projection.subject());
         assert_eq!(decoded.records(), projection.records());
         assert!(decoded.records()[0].target().pool_mode());
+        assert_eq!(
+            decoded.records()[0]
+                .target()
+                .mapped_responses_compact_model("private-model"),
+            "private-compact-model"
+        );
 
         // 普通账号保持旧 wire 形态；旧投影缺少并发字段时继续解码为不限并发。
         let mut old_wire: serde_json::Value = serde_json::from_slice(&payload).unwrap();
@@ -641,6 +673,10 @@ mod tests {
                 .as_object_mut()
                 .unwrap()
                 .remove("responses_compact_mode");
+            target
+                .as_object_mut()
+                .unwrap()
+                .remove("responses_compact_model_mapping");
             for credential in target["credentials"].as_array_mut().unwrap() {
                 credential.as_object_mut().unwrap().remove("concurrency");
             }
@@ -656,6 +692,12 @@ mod tests {
             old_decoded.records()[0].target().responses_compact_mode(),
             ResponsesCompactMode::Auto
         );
+        assert_eq!(
+            old_decoded.records()[0]
+                .target()
+                .mapped_responses_compact_model("private-model"),
+            "private-upstream-model"
+        );
 
         let rendered = format!("{decoded:?}");
         for forbidden in [
@@ -664,6 +706,8 @@ mod tests {
             "private-key-id",
             "private-value",
             "private-rule-canary",
+            "private-upstream-model",
+            "private-compact-model",
         ] {
             assert!(!rendered.contains(forbidden));
         }
