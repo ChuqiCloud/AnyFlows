@@ -6,7 +6,7 @@ use af_httpclient::{HeaderMap, HeaderName, HeaderValue};
 use crate::credential::clear_authentication_headers;
 use crate::{Adaptor, AdaptorError, AdaptorResult, AdaptorTarget, Credential, RelayContext};
 
-/// OpenAI Chat Completions、Responses、Embeddings、Images 与 Audio 兼容渠道适配器。
+/// OpenAI Chat Completions、Responses、Responses Compact、Embeddings、Images 与 Audio 兼容渠道适配器。
 ///
 /// 渠道基础地址由 `RelayContext` 覆盖，可传服务根或反向代理前缀；末尾非空段精确为
 /// `v1`（可带尾斜杠）时不会重复追加版本路径，其他路径会追加目标原生端点。
@@ -88,6 +88,7 @@ impl OpenAiAdaptor {
         let endpoint = match (self.protocol, operation) {
             (Protocol::OpenAiChat, Operation::Chat) => "chat/completions",
             (Protocol::OpenAiResponses, Operation::Responses) => "responses",
+            (Protocol::OpenAiResponses, Operation::ResponsesCompact) => "responses/compact",
             (Protocol::OpenAiEmbeddings, Operation::Embedding) => "embeddings",
             (Protocol::OpenAiImages, Operation::Image) => "images/generations",
             (Protocol::OpenAiAudio, Operation::Audio) => "audio/transcriptions",
@@ -104,6 +105,7 @@ impl OpenAiAdaptor {
             match endpoint {
                 "chat/completions" => "v1/chat/completions",
                 "responses" => "v1/responses",
+                "responses/compact" => "v1/responses/compact",
                 "embeddings" => "v1/embeddings",
                 "images/generations" => "v1/images/generations",
                 "audio/transcriptions" => "v1/audio/transcriptions",
@@ -278,6 +280,12 @@ mod tests {
                 .unwrap(),
             "https://api.openai.com/v1/responses"
         );
+        assert_eq!(
+            adaptor
+                .build_url(&context(), target(Operation::ResponsesCompact))
+                .unwrap(),
+            "https://api.openai.com/v1/responses/compact"
+        );
         let proxied = adaptor
             .build_url(
                 &context()
@@ -287,6 +295,15 @@ mod tests {
             )
             .unwrap();
         assert!(proxied.ends_with("/proxy/openai/v1/responses"));
+        let proxied_compact = adaptor
+            .build_url(
+                &context()
+                    .with_base_url("https://gateway.example/proxy/openai/v1")
+                    .unwrap(),
+                target(Operation::ResponsesCompact),
+            )
+            .unwrap();
+        assert!(proxied_compact.ends_with("/proxy/openai/v1/responses/compact"));
         assert_eq!(
             adaptor
                 .build_url(&context(), target(Operation::Chat))
