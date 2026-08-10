@@ -2,6 +2,7 @@ mod file;
 mod options;
 mod request;
 mod response;
+mod speech;
 mod usage;
 
 pub use file::{AudioFile, AudioFileError, AudioFileFormat, MAX_AUDIO_FILE_BYTES};
@@ -16,6 +17,16 @@ pub use request::{CanonicalAudioTranscriptionRequest, CanonicalAudioTranscriptio
 pub use response::{
     CanonicalAudioTranscriptionResponse, CanonicalAudioTranscriptionResponseError,
     MAX_AUDIO_DETECTED_LANGUAGES, MAX_AUDIO_TRANSCRIPT_TEXT_BYTES,
+};
+pub use speech::{
+    AudioSpeechOptions, AudioSpeechOptionsError, AudioSpeechOutputFormat, AudioSpeechSpeed,
+    AudioSpeechSpeedError, AudioSpeechStreamFormat, AudioSpeechVoice, AudioSpeechVoiceError,
+    AudioSpeechVoiceId, AudioSpeechVoiceName, CanonicalAudioSpeechRequest,
+    CanonicalAudioSpeechRequestError, CanonicalAudioSpeechResponse,
+    CanonicalAudioSpeechResponseError, GeneratedSpeechAudio, GeneratedSpeechAudioError,
+    MAX_AUDIO_SPEECH_INPUT_BYTES, MAX_AUDIO_SPEECH_INPUT_CHARS,
+    MAX_AUDIO_SPEECH_INSTRUCTIONS_BYTES, MAX_AUDIO_SPEECH_VOICE_ID_BYTES,
+    MAX_AUDIO_SPEECH_VOICE_NAME_BYTES, MAX_GENERATED_SPEECH_BYTES,
 };
 pub use usage::{
     AudioDuration, AudioDurationError, AudioInputTokenDetails, AudioTranscriptionTokenUsage,
