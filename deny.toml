@@ -57,7 +57,15 @@ crate = "symphonia"
 allow = ["MPL-2.0"]
 
 [[licenses.exceptions]]
+crate = "symphonia-bundle-flac"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
 crate = "symphonia-bundle-mp3"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-codec-aac"
 allow = ["MPL-2.0"]
 
 [[licenses.exceptions]]
@@ -70,6 +78,10 @@ allow = ["MPL-2.0"]
 
 [[licenses.exceptions]]
 crate = "symphonia-format-mkv"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-format-ogg"
 allow = ["MPL-2.0"]
 
 [[licenses.exceptions]]
