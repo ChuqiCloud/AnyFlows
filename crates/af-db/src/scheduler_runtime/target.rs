@@ -642,7 +642,7 @@ impl SchedulerRuntimeTargetRecord {
 
     /// 按三态策略和探测事实判断该目标是否具备 Compact 调度资格。
     #[must_use]
-    pub const fn responses_compact_schedulable(&self) -> bool {
+    pub fn responses_compact_schedulable(&self) -> bool {
         if self.channel_type != ChannelType::OpenAi || self.protocol != Protocol::OpenAiResponses {
             return false;
         }
