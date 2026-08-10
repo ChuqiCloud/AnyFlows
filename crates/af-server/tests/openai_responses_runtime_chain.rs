@@ -15,8 +15,8 @@ use af_server::{Bootstrap, BootstrapError, ShutdownReport};
 use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
 use serde_json::json;
 use support::{
-    CLIENT_KEY, GROUP_ID, OPENAI_RESPONSES_CHANNEL_ID, UPSTREAM_KEY, UPSTREAM_MODEL,
-    credential_encryption_key, sanitized_json_error_code,
+    CLIENT_KEY, GROUP_ID, OPENAI_RESPONSES_CHANNEL_ID, UPSTREAM_BASE_URL, UPSTREAM_KEY,
+    UPSTREAM_MODEL, credential_encryption_key, sanitized_json_error_code,
     seed_openai_responses_runtime_channel_with, send_request_with_timeout, spawn_proxy,
 };
 use tokio::{sync::oneshot, time::timeout};
@@ -97,15 +97,10 @@ async fn compact_runtime_uses_the_dedicated_upstream_path() {
         &[("Content-Type", "application/json")],
     );
     let database = TestDatabase::new();
-    seed_database(
-        &database,
-        &format!("http://{upstream_address}/v1"),
-        UPSTREAM_MODEL,
-        UPSTREAM_KEY,
-    )
-    .await;
+    seed_database(&database, UPSTREAM_BASE_URL, UPSTREAM_MODEL, UPSTREAM_KEY).await;
     enable_compact_channel(&database).await;
-    let (address, shutdown, server) = start_gateway(&database, None).await;
+    let proxy_url = format!("http://{upstream_address}");
+    let (address, shutdown, server) = start_gateway(&database, Some(&proxy_url)).await;
 
     let response = send_request_with_timeout(
         address,
@@ -134,7 +129,7 @@ async fn compact_runtime_uses_the_dedicated_upstream_path() {
     assert!(
         captured
             .head
-            .starts_with("POST /v1/responses/compact HTTP/1.1\r\n")
+            .starts_with("POST http://upstream.example/proxy/v1/responses/compact HTTP/1.1\r\n")
     );
     let upstream_head = captured.head.to_ascii_lowercase();
     assert!(upstream_head.contains("authorization: bearer configured-upstream-key"));
