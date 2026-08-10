@@ -1,6 +1,7 @@
 //! 协议纯净的规范请求、响应与流式转换。
 
 pub mod anthropic;
+mod audio;
 mod bounded_json;
 mod canonical;
 mod capability;
@@ -8,6 +9,7 @@ mod embedding;
 mod error_evidence;
 pub mod gemini;
 mod image;
+pub mod openai_audio;
 pub mod openai_chat;
 pub mod openai_embeddings;
 pub mod openai_images;
@@ -20,6 +22,19 @@ mod sse;
 mod stream;
 mod usage;
 
+pub use audio::{
+    AudioDuration, AudioDurationError, AudioFile, AudioFileError, AudioFileFormat,
+    AudioInputTokenDetails, AudioLanguageCode, AudioLanguageCodeError, AudioLanguageHints,
+    AudioLanguageHintsError, AudioTranscriptionOptions, AudioTranscriptionOptionsError,
+    AudioTranscriptionTokenUsage, AudioTranscriptionUsage, AudioTranscriptionUsageError,
+    CanonicalAudioTranscriptionRequest, CanonicalAudioTranscriptionRequestError,
+    CanonicalAudioTranscriptionResponse, CanonicalAudioTranscriptionResponseError,
+    MAX_AUDIO_DETECTED_LANGUAGES, MAX_AUDIO_DURATION_SECONDS, MAX_AUDIO_FILE_BYTES,
+    MAX_AUDIO_KEYWORD_BYTES, MAX_AUDIO_KEYWORDS, MAX_AUDIO_LANGUAGE_HINTS,
+    MAX_AUDIO_TRANSCRIPT_TEXT_BYTES, MAX_AUDIO_TRANSCRIPTION_PROMPT_BYTES,
+    MAX_TOTAL_AUDIO_KEYWORD_BYTES, TranscriptionKeyword, TranscriptionKeywordError,
+    TranscriptionTemperature, TranscriptionTemperatureError,
+};
 pub use canonical::{
     CacheHint, CanonicalRequest, ContentBlock, MediaSource, Message, RawPassthrough,
     RawPassthroughError,
