@@ -58,6 +58,11 @@ export type AdminChannel = {
     auto_ban_rules: AdminChannelAutoBanRules;
     pool_mode: boolean;
     responses_websocket_enabled: boolean;
+    responses_compact_mode: ResponsesCompactMode;
+    responses_compact_model_mapping: {
+        [key: string]: string;
+    };
+    responses_compact_probe: AdminResponsesCompactProbe;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -92,6 +97,10 @@ export type AdminChannelCreateRequest = {
     auto_ban_rules?: AdminChannelAutoBanRules;
     pool_mode?: boolean;
     responses_websocket_enabled?: boolean;
+    responses_compact_mode?: ResponsesCompactMode;
+    responses_compact_model_mapping?: {
+        [key: string]: string;
+    };
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -129,6 +138,10 @@ export type AdminChannelUpdateRequest = {
     auto_ban_rules?: null | AdminChannelAutoBanRules;
     pool_mode?: boolean | null;
     responses_websocket_enabled?: boolean | null;
+    responses_compact_mode?: null | ResponsesCompactMode;
+    responses_compact_model_mapping?: {
+        [key: string]: string;
+    } | null;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -717,6 +730,11 @@ export type AdminRedemptionBatchListResponse = {
     next_cursor: number | null;
 };
 export type AdminRedemptionBatchStatus = 'active' | 'disabled';
+export type AdminResponsesCompactProbe = {
+    result: ResponsesCompactProbeResult;
+    checked_at: number | null;
+    http_status: number | null;
+};
 export type AdminRoute = {
     id: number;
     name: string;
@@ -994,6 +1012,7 @@ export type ModelCatalogItem = {
     output_modalities: Array<AdminModelModality>;
     supports_reasoning: boolean;
     supports_tool_calls: boolean;
+    supports_responses_compact: boolean;
     lifecycle: ModelCatalogLifecycle;
     runtime_status: ModelCatalogRuntimeStatus;
     billing_mode: ModelCatalogBillingMode;
@@ -1111,6 +1130,45 @@ export type RegistrationStatusResponse = {
     password_login_enabled: boolean;
     enabled: boolean;
     email_required: boolean;
+};
+export type ResponsesCompactError = {
+    error: ResponsesCompactErrorBody;
+};
+export type ResponsesCompactErrorBody = {
+    code: string;
+    message: string;
+    param: string | null;
+    type: string;
+};
+export type ResponsesCompactInput = string | Array<ResponsesCompactItem>;
+export type ResponsesCompactInputUsageDetails = {
+    cached_tokens: number;
+    cache_write_tokens: number;
+};
+export type ResponsesCompactItem = unknown;
+export type ResponsesCompactMode = 'auto' | 'force_on' | 'force_off';
+export type ResponsesCompactOutputUsageDetails = {
+    reasoning_tokens: number;
+};
+export type ResponsesCompactProbeResult = 'unknown' | 'supported' | 'unsupported';
+export type ResponsesCompactRequest = {
+    model: string;
+    input: ResponsesCompactInput;
+    instructions?: string | null;
+};
+export type ResponsesCompactResponse = {
+    id: string;
+    object: string;
+    created_at: number;
+    output: Array<ResponsesCompactItem>;
+    usage: ResponsesCompactUsage;
+};
+export type ResponsesCompactUsage = {
+    input_tokens: number;
+    input_tokens_details: ResponsesCompactInputUsageDetails;
+    output_tokens: number;
+    output_tokens_details: ResponsesCompactOutputUsageDetails;
+    total_tokens: number;
 };
 export type SessionResponse = {
     user: SessionUser;
@@ -1288,6 +1346,10 @@ export type AdminChannelCreateRequestWritable = {
     auto_ban_rules?: AdminChannelAutoBanRules;
     pool_mode?: boolean;
     responses_websocket_enabled?: boolean;
+    responses_compact_mode?: ResponsesCompactMode;
+    responses_compact_model_mapping?: {
+        [key: string]: string;
+    };
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -1320,6 +1382,10 @@ export type AdminChannelUpdateRequestWritable = {
     auto_ban_rules?: null | AdminChannelAutoBanRules;
     pool_mode?: boolean | null;
     responses_websocket_enabled?: boolean | null;
+    responses_compact_mode?: null | ResponsesCompactMode;
+    responses_compact_model_mapping?: {
+        [key: string]: string;
+    } | null;
     models: Array<string>;
     group_ids: Array<number>;
     model_mapping: {
@@ -1433,6 +1499,8 @@ export type RegistrationRequestWritable = {
     verification_code?: string | null;
     invite_code?: string | null;
 };
+export type ResponsesCompactInputWritable = string | Array<ResponsesCompactItemWritable>;
+export type ResponsesCompactItemWritable = unknown;
 export type SetupRequestWritable = {
     username: string;
     password: string;
@@ -1598,6 +1666,24 @@ export type UpdateAdminAuthenticationSettingsResponses = {
     200: AdminAuthenticationSettings;
 };
 export type UpdateAdminAuthenticationSettingsResponse = UpdateAdminAuthenticationSettingsResponses[keyof UpdateAdminAuthenticationSettingsResponses];
+export type CompactResponseData = {
+    body: ResponsesCompactRequest;
+    path?: never;
+    query?: never;
+    url: '/v1/responses/compact';
+};
+export type CompactResponseErrors = {
+    400: ResponsesCompactError;
+    401: ResponsesCompactError;
+    429: ResponsesCompactError;
+    500: ResponsesCompactError;
+    503: ResponsesCompactError;
+};
+export type CompactResponseError = CompactResponseErrors[keyof CompactResponseErrors];
+export type CompactResponseResponses = {
+    200: ResponsesCompactResponse;
+};
+export type CompactResponseResponse = CompactResponseResponses[keyof CompactResponseResponses];
 export type ListAdminRedemptionAuditData = {
     body?: never;
     path?: never;

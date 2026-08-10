@@ -73,13 +73,15 @@ use af_domain::{
 use af_http::{
     AudioService, AudioServiceFuture, EmbeddingService, EmbeddingServiceFuture, HttpListener,
     ImageService, ImageServiceFuture, QueryApiKeyPolicy, ReadinessFuture, ReadinessHandle,
-    ReadinessProbe, ServeOutcome, build_router, serve_with_graceful_shutdown,
+    ReadinessProbe, ResponsesCompactService, ResponsesCompactServiceFuture, ServeOutcome,
+    build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
 use af_protocol::{
     CanonicalAudioTranscriptionRequest, CanonicalEmbeddingRequest, CanonicalImageGenerationRequest,
-    CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage, UsageDetails,
-    UsageSemantics, UsageSource, openai_responses::OpenAiResponsesStreamEncoder,
+    CanonicalResponsesCompactionRequest, CanonicalStreamEvent, ContentDelta, FinishReason,
+    TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
+    openai_responses::OpenAiResponsesStreamEncoder,
 };
 use af_relay::RelayService;
 use serde_json::{Value, json};
@@ -191,6 +193,19 @@ struct RejectAdminUsers;
 struct RejectEmbeddings;
 struct RejectImages;
 struct RejectAudio;
+struct RejectResponsesCompact;
+
+impl ResponsesCompactService for RejectResponsesCompact {
+    fn compact<'a>(
+        &'a self,
+        _principal: &'a GatewayPrincipal,
+        _user_concurrency: Option<ConcurrencyLimit>,
+        _request: CanonicalResponsesCompactionRequest,
+        _request_id: &'a str,
+    ) -> ResponsesCompactServiceFuture<'a> {
+        Box::pin(async { Err(AfError::Internal) })
+    }
+}
 
 impl AudioService for RejectAudio {
     fn transcribe<'a>(
@@ -1817,6 +1832,7 @@ async fn start_server(
         Arc::new(RejectAudio),
         Arc::new(RejectEmbeddings),
         Arc::new(RejectImages),
+        Arc::new(RejectResponsesCompact),
         readiness,
         Arc::new(AlwaysAuthenticates),
         Arc::new(RejectSessions),

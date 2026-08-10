@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AdjustAdminWalletData, AdjustAdminWalletErrors, AdjustAdminWalletResponses, ApplyAdminModelPricesData, ApplyAdminModelPricesErrors, ApplyAdminModelPricesResponses, ApplyAdminModelSyncPreviewData, ApplyAdminModelSyncPreviewErrors, ApplyAdminModelSyncPreviewResponses, BeginAdminOAuthAuthorizationData, BeginAdminOAuthAuthorizationErrors, BeginAdminOAuthAuthorizationResponses, BindAdminUserSubscriptionData, BindAdminUserSubscriptionErrors, BindAdminUserSubscriptionResponses, ChangeUserPasswordData, ChangeUserPasswordErrors, ChangeUserPasswordResponses, CompleteAdminOAuthManualCallbackData, CompleteAdminOAuthManualCallbackErrors, CompleteAdminOAuthManualCallbackResponses, ConfirmPasswordResetData, ConfirmPasswordResetErrors, ConfirmPasswordResetResponses, CreateAdminChannelData, CreateAdminChannelErrors, CreateAdminChannelResponses, CreateAdminCredentialData, CreateAdminCredentialErrors, CreateAdminCredentialProxyData, CreateAdminCredentialProxyErrors, CreateAdminCredentialProxyResponses, CreateAdminCredentialResponses, CreateAdminGroupData, CreateAdminGroupErrors, CreateAdminGroupResponses, CreateAdminModelData, CreateAdminModelErrors, CreateAdminModelResponses, CreateAdminModelSyncPreviewData, CreateAdminModelSyncPreviewErrors, CreateAdminModelSyncPreviewResponses, CreateAdminRedemptionBatchData, CreateAdminRedemptionBatchErrors, CreateAdminRedemptionBatchResponses, CreateAdminRouteData, CreateAdminRouteErrors, CreateAdminRouteResponses, CreateAdminSubscriptionPlanData, CreateAdminSubscriptionPlanErrors, CreateAdminSubscriptionPlanResponses, CreateAdminTokenData, CreateAdminTokenErrors, CreateAdminTokenResponses, CreateAdminUserData, CreateAdminUserErrors, CreateAdminUserResponses, CreatePlaygroundShareData, CreatePlaygroundShareErrors, CreatePlaygroundShareResponses, CreateUserTokenData, CreateUserTokenErrors, CreateUserTokenResponses, CreateUserTopupOrderData, CreateUserTopupOrderErrors, CreateUserTopupOrderResponses, DeleteAdminChannelData, DeleteAdminChannelErrors, DeleteAdminChannelResponses, DeleteAdminCredentialData, DeleteAdminCredentialErrors, DeleteAdminCredentialProxyData, DeleteAdminCredentialProxyErrors, DeleteAdminCredentialProxyResponses, DeleteAdminCredentialResponses, DeleteAdminGroupData, DeleteAdminGroupErrors, DeleteAdminGroupResponses, DeleteAdminModelData, DeleteAdminModelErrors, DeleteAdminModelResponses, DeleteAdminRouteData, DeleteAdminRouteErrors, DeleteAdminRouteResponses, DeleteAdminTokenData, DeleteAdminTokenErrors, DeleteAdminTokenResponses, DeleteAdminUserData, DeleteAdminUserErrors, DeleteAdminUserResponses, DeletePlaygroundConversationData, DeletePlaygroundConversationErrors, DeletePlaygroundConversationResponses, DeleteUserTokenData, DeleteUserTokenErrors, DeleteUserTokenResponses, DisableAdminRedemptionBatchData, DisableAdminRedemptionBatchErrors, DisableAdminRedemptionBatchResponses, DisableAdminSubscriptionPlanData, DisableAdminSubscriptionPlanErrors, DisableAdminSubscriptionPlanResponses, GetAdminAuthenticationSettingsData, GetAdminAuthenticationSettingsErrors, GetAdminAuthenticationSettingsResponses, GetAdminBalanceAlertSettingsData, GetAdminBalanceAlertSettingsErrors, GetAdminBalanceAlertSettingsResponses, GetAdminChannelData, GetAdminChannelErrors, GetAdminChannelResponses, GetAdminCredentialData, GetAdminCredentialErrors, GetAdminCredentialProxyData, GetAdminCredentialProxyErrors, GetAdminCredentialProxyResponses, GetAdminCredentialResponses, GetAdminDashboardData, GetAdminDashboardErrors, GetAdminDashboardResponses, GetAdminDebugTraceData, GetAdminDebugTraceErrors, GetAdminDebugTraceResponses, GetAdminDebugTraceSettingsData, GetAdminDebugTraceSettingsErrors, GetAdminDebugTraceSettingsResponses, GetAdminEmailSettingsData, GetAdminEmailSettingsErrors, GetAdminEmailSettingsResponses, GetAdminGroupData, GetAdminGroupErrors, GetAdminGroupResponses, GetAdminModelData, GetAdminModelErrors, GetAdminModelResponses, GetAdminNetworkSettingsData, GetAdminNetworkSettingsErrors, GetAdminNetworkSettingsResponses, GetAdminRouteData, GetAdminRouteErrors, GetAdminRouteResponses, GetAdminSiteSettingsData, GetAdminSiteSettingsErrors, GetAdminSiteSettingsResponses, GetAdminTokenData, GetAdminTokenErrors, GetAdminTokenResponses, GetAdminUserData, GetAdminUserErrors, GetAdminUserResponses, GetInitialSetupStatusData, GetInitialSetupStatusErrors, GetInitialSetupStatusResponses, GetManagementSessionData, GetManagementSessionErrors, GetManagementSessionResponses, GetPlaygroundConversationData, GetPlaygroundConversationErrors, GetPlaygroundConversationResponses, GetPlaygroundShareData, GetPlaygroundShareErrors, GetPlaygroundShareResponses, GetPublicSiteSettingsData, GetPublicSiteSettingsErrors, GetPublicSiteSettingsResponses, GetRegistrationStatusData, GetRegistrationStatusErrors, GetRegistrationStatusResponses, GetUserInvitationsData, GetUserInvitationsErrors, GetUserInvitationsResponses, GetUserProfileData, GetUserProfileErrors, GetUserProfileResponses, GetUserTokenData, GetUserTokenErrors, GetUserTokenResponses, GetUserTopupConfigurationData, GetUserTopupConfigurationErrors, GetUserTopupConfigurationResponses, GetUserWalletData, GetUserWalletErrors, GetUserWalletResponses, InitializeAdminSetupData, InitializeAdminSetupErrors, InitializeAdminSetupResponses, ListAdminChannelsData, ListAdminChannelsErrors, ListAdminChannelsResponses, ListAdminCredentialProxiesData, ListAdminCredentialProxiesErrors, ListAdminCredentialProxiesResponses, ListAdminCredentialsData, ListAdminCredentialsErrors, ListAdminCredentialsResponses, ListAdminDebugTracesData, ListAdminDebugTracesErrors, ListAdminDebugTracesResponses, ListAdminGroupsData, ListAdminGroupsErrors, ListAdminGroupsResponses, ListAdminModelPricesData, ListAdminModelPricesErrors, ListAdminModelPricesResponses, ListAdminModelsData, ListAdminModelsErrors, ListAdminModelsResponses, ListAdminOAuthProvidersData, ListAdminOAuthProvidersErrors, ListAdminOAuthProvidersResponses, ListAdminRedemptionAuditData, ListAdminRedemptionAuditErrors, ListAdminRedemptionAuditResponses, ListAdminRedemptionBatchesData, ListAdminRedemptionBatchesErrors, ListAdminRedemptionBatchesResponses, ListAdminRoutesData, ListAdminRoutesErrors, ListAdminRoutesResponses, ListAdminSubscriptionPlansData, ListAdminSubscriptionPlansErrors, ListAdminSubscriptionPlansResponses, ListAdminTokensData, ListAdminTokensErrors, ListAdminTokensResponses, ListAdminUsageLogsData, ListAdminUsageLogsErrors, ListAdminUsageLogsResponses, ListAdminUsersData, ListAdminUsersErrors, ListAdminUsersResponses, ListAdminUserSubscriptionsData, ListAdminUserSubscriptionsErrors, ListAdminUserSubscriptionsResponses, ListAdminWalletEntriesData, ListAdminWalletEntriesErrors, ListAdminWalletEntriesResponses, ListCurrentUserSubscriptionsData, ListCurrentUserSubscriptionsErrors, ListCurrentUserSubscriptionsResponses, ListMissingAdminModelsData, ListMissingAdminModelsErrors, ListMissingAdminModelsResponses, ListModelsData, ListModelsErrors, ListModelsResponses, ListPlaygroundConversationsData, ListPlaygroundConversationsErrors, ListPlaygroundConversationsResponses, ListUserTokensData, ListUserTokensErrors, ListUserTokensResponses, ListUserWalletEntriesData, ListUserWalletEntriesErrors, ListUserWalletEntriesResponses, LoginManagementSessionData, LoginManagementSessionErrors, LoginManagementSessionResponses, PreviewAdminLiteLlmModelPricesData, PreviewAdminLiteLlmModelPricesErrors, PreviewAdminLiteLlmModelPricesResponses, PreviewAdminModelPriceExpressionData, PreviewAdminModelPriceExpressionErrors, PreviewAdminModelPriceExpressionResponses, PreviewAdminModelPricesData, PreviewAdminModelPricesErrors, PreviewAdminModelPricesResponses, ProbeAdminChannelData, ProbeAdminChannelErrors, ProbeAdminChannelResponses, ReceivePaymentWebhookData, ReceivePaymentWebhookErrors, ReceivePaymentWebhookResponses, RedeemUserRedemptionCodeData, RedeemUserRedemptionCodeErrors, RedeemUserRedemptionCodeResponses, RegisterUserData, RegisterUserErrors, RegisterUserResponses, RequestPasswordResetData, RequestPasswordResetErrors, RequestPasswordResetResponses, RevokePlaygroundShareData, RevokePlaygroundShareErrors, RevokePlaygroundShareResponses, SavePlaygroundConversationData, SavePlaygroundConversationErrors, SavePlaygroundConversationResponses, SendAdminEmailTestData, SendAdminEmailTestErrors, SendAdminEmailTestResponses, SendRegistrationEmailVerificationData, SendRegistrationEmailVerificationErrors, SendRegistrationEmailVerificationResponses, TransitionAdminUserSubscriptionLifecycleData, TransitionAdminUserSubscriptionLifecycleErrors, TransitionAdminUserSubscriptionLifecycleResponses, UpdateAdminAuthenticationSettingsData, UpdateAdminAuthenticationSettingsErrors, UpdateAdminAuthenticationSettingsResponses, UpdateAdminBalanceAlertSettingsData, UpdateAdminBalanceAlertSettingsErrors, UpdateAdminBalanceAlertSettingsResponses, UpdateAdminChannelData, UpdateAdminChannelErrors, UpdateAdminChannelResponses, UpdateAdminCredentialData, UpdateAdminCredentialErrors, UpdateAdminCredentialProxyData, UpdateAdminCredentialProxyErrors, UpdateAdminCredentialProxyResponses, UpdateAdminCredentialResponses, UpdateAdminDebugTraceSettingsData, UpdateAdminDebugTraceSettingsErrors, UpdateAdminDebugTraceSettingsResponses, UpdateAdminEmailSettingsData, UpdateAdminEmailSettingsErrors, UpdateAdminEmailSettingsResponses, UpdateAdminGroupData, UpdateAdminGroupErrors, UpdateAdminGroupResponses, UpdateAdminModelData, UpdateAdminModelErrors, UpdateAdminModelResponses, UpdateAdminNetworkSettingsData, UpdateAdminNetworkSettingsErrors, UpdateAdminNetworkSettingsResponses, UpdateAdminRouteData, UpdateAdminRouteErrors, UpdateAdminRouteResponses, UpdateAdminSiteSettingsData, UpdateAdminSiteSettingsErrors, UpdateAdminSiteSettingsResponses, UpdateAdminTokenData, UpdateAdminTokenErrors, UpdateAdminTokenResponses, UpdateAdminUserData, UpdateAdminUserErrors, UpdateAdminUserResponses, UpdateUserNotificationPreferencesData, UpdateUserNotificationPreferencesErrors, UpdateUserNotificationPreferencesResponses, UpdateUserProfileData, UpdateUserProfileErrors, UpdateUserProfileResponses, UpdateUserTokenData, UpdateUserTokenErrors, UpdateUserTokenResponses } from './types.gen';
+import type { AdjustAdminWalletData, AdjustAdminWalletErrors, AdjustAdminWalletResponses, ApplyAdminModelPricesData, ApplyAdminModelPricesErrors, ApplyAdminModelPricesResponses, ApplyAdminModelSyncPreviewData, ApplyAdminModelSyncPreviewErrors, ApplyAdminModelSyncPreviewResponses, BeginAdminOAuthAuthorizationData, BeginAdminOAuthAuthorizationErrors, BeginAdminOAuthAuthorizationResponses, BindAdminUserSubscriptionData, BindAdminUserSubscriptionErrors, BindAdminUserSubscriptionResponses, ChangeUserPasswordData, ChangeUserPasswordErrors, ChangeUserPasswordResponses, CompactResponseData, CompactResponseErrors, CompactResponseResponses, CompleteAdminOAuthManualCallbackData, CompleteAdminOAuthManualCallbackErrors, CompleteAdminOAuthManualCallbackResponses, ConfirmPasswordResetData, ConfirmPasswordResetErrors, ConfirmPasswordResetResponses, CreateAdminChannelData, CreateAdminChannelErrors, CreateAdminChannelResponses, CreateAdminCredentialData, CreateAdminCredentialErrors, CreateAdminCredentialProxyData, CreateAdminCredentialProxyErrors, CreateAdminCredentialProxyResponses, CreateAdminCredentialResponses, CreateAdminGroupData, CreateAdminGroupErrors, CreateAdminGroupResponses, CreateAdminModelData, CreateAdminModelErrors, CreateAdminModelResponses, CreateAdminModelSyncPreviewData, CreateAdminModelSyncPreviewErrors, CreateAdminModelSyncPreviewResponses, CreateAdminRedemptionBatchData, CreateAdminRedemptionBatchErrors, CreateAdminRedemptionBatchResponses, CreateAdminRouteData, CreateAdminRouteErrors, CreateAdminRouteResponses, CreateAdminSubscriptionPlanData, CreateAdminSubscriptionPlanErrors, CreateAdminSubscriptionPlanResponses, CreateAdminTokenData, CreateAdminTokenErrors, CreateAdminTokenResponses, CreateAdminUserData, CreateAdminUserErrors, CreateAdminUserResponses, CreatePlaygroundShareData, CreatePlaygroundShareErrors, CreatePlaygroundShareResponses, CreateUserTokenData, CreateUserTokenErrors, CreateUserTokenResponses, CreateUserTopupOrderData, CreateUserTopupOrderErrors, CreateUserTopupOrderResponses, DeleteAdminChannelData, DeleteAdminChannelErrors, DeleteAdminChannelResponses, DeleteAdminCredentialData, DeleteAdminCredentialErrors, DeleteAdminCredentialProxyData, DeleteAdminCredentialProxyErrors, DeleteAdminCredentialProxyResponses, DeleteAdminCredentialResponses, DeleteAdminGroupData, DeleteAdminGroupErrors, DeleteAdminGroupResponses, DeleteAdminModelData, DeleteAdminModelErrors, DeleteAdminModelResponses, DeleteAdminRouteData, DeleteAdminRouteErrors, DeleteAdminRouteResponses, DeleteAdminTokenData, DeleteAdminTokenErrors, DeleteAdminTokenResponses, DeleteAdminUserData, DeleteAdminUserErrors, DeleteAdminUserResponses, DeletePlaygroundConversationData, DeletePlaygroundConversationErrors, DeletePlaygroundConversationResponses, DeleteUserTokenData, DeleteUserTokenErrors, DeleteUserTokenResponses, DisableAdminRedemptionBatchData, DisableAdminRedemptionBatchErrors, DisableAdminRedemptionBatchResponses, DisableAdminSubscriptionPlanData, DisableAdminSubscriptionPlanErrors, DisableAdminSubscriptionPlanResponses, GetAdminAuthenticationSettingsData, GetAdminAuthenticationSettingsErrors, GetAdminAuthenticationSettingsResponses, GetAdminBalanceAlertSettingsData, GetAdminBalanceAlertSettingsErrors, GetAdminBalanceAlertSettingsResponses, GetAdminChannelData, GetAdminChannelErrors, GetAdminChannelResponses, GetAdminCredentialData, GetAdminCredentialErrors, GetAdminCredentialProxyData, GetAdminCredentialProxyErrors, GetAdminCredentialProxyResponses, GetAdminCredentialResponses, GetAdminDashboardData, GetAdminDashboardErrors, GetAdminDashboardResponses, GetAdminDebugTraceData, GetAdminDebugTraceErrors, GetAdminDebugTraceResponses, GetAdminDebugTraceSettingsData, GetAdminDebugTraceSettingsErrors, GetAdminDebugTraceSettingsResponses, GetAdminEmailSettingsData, GetAdminEmailSettingsErrors, GetAdminEmailSettingsResponses, GetAdminGroupData, GetAdminGroupErrors, GetAdminGroupResponses, GetAdminModelData, GetAdminModelErrors, GetAdminModelResponses, GetAdminNetworkSettingsData, GetAdminNetworkSettingsErrors, GetAdminNetworkSettingsResponses, GetAdminRouteData, GetAdminRouteErrors, GetAdminRouteResponses, GetAdminSiteSettingsData, GetAdminSiteSettingsErrors, GetAdminSiteSettingsResponses, GetAdminTokenData, GetAdminTokenErrors, GetAdminTokenResponses, GetAdminUserData, GetAdminUserErrors, GetAdminUserResponses, GetInitialSetupStatusData, GetInitialSetupStatusErrors, GetInitialSetupStatusResponses, GetManagementSessionData, GetManagementSessionErrors, GetManagementSessionResponses, GetPlaygroundConversationData, GetPlaygroundConversationErrors, GetPlaygroundConversationResponses, GetPlaygroundShareData, GetPlaygroundShareErrors, GetPlaygroundShareResponses, GetPublicSiteSettingsData, GetPublicSiteSettingsErrors, GetPublicSiteSettingsResponses, GetRegistrationStatusData, GetRegistrationStatusErrors, GetRegistrationStatusResponses, GetUserInvitationsData, GetUserInvitationsErrors, GetUserInvitationsResponses, GetUserProfileData, GetUserProfileErrors, GetUserProfileResponses, GetUserTokenData, GetUserTokenErrors, GetUserTokenResponses, GetUserTopupConfigurationData, GetUserTopupConfigurationErrors, GetUserTopupConfigurationResponses, GetUserWalletData, GetUserWalletErrors, GetUserWalletResponses, InitializeAdminSetupData, InitializeAdminSetupErrors, InitializeAdminSetupResponses, ListAdminChannelsData, ListAdminChannelsErrors, ListAdminChannelsResponses, ListAdminCredentialProxiesData, ListAdminCredentialProxiesErrors, ListAdminCredentialProxiesResponses, ListAdminCredentialsData, ListAdminCredentialsErrors, ListAdminCredentialsResponses, ListAdminDebugTracesData, ListAdminDebugTracesErrors, ListAdminDebugTracesResponses, ListAdminGroupsData, ListAdminGroupsErrors, ListAdminGroupsResponses, ListAdminModelPricesData, ListAdminModelPricesErrors, ListAdminModelPricesResponses, ListAdminModelsData, ListAdminModelsErrors, ListAdminModelsResponses, ListAdminOAuthProvidersData, ListAdminOAuthProvidersErrors, ListAdminOAuthProvidersResponses, ListAdminRedemptionAuditData, ListAdminRedemptionAuditErrors, ListAdminRedemptionAuditResponses, ListAdminRedemptionBatchesData, ListAdminRedemptionBatchesErrors, ListAdminRedemptionBatchesResponses, ListAdminRoutesData, ListAdminRoutesErrors, ListAdminRoutesResponses, ListAdminSubscriptionPlansData, ListAdminSubscriptionPlansErrors, ListAdminSubscriptionPlansResponses, ListAdminTokensData, ListAdminTokensErrors, ListAdminTokensResponses, ListAdminUsageLogsData, ListAdminUsageLogsErrors, ListAdminUsageLogsResponses, ListAdminUsersData, ListAdminUsersErrors, ListAdminUsersResponses, ListAdminUserSubscriptionsData, ListAdminUserSubscriptionsErrors, ListAdminUserSubscriptionsResponses, ListAdminWalletEntriesData, ListAdminWalletEntriesErrors, ListAdminWalletEntriesResponses, ListCurrentUserSubscriptionsData, ListCurrentUserSubscriptionsErrors, ListCurrentUserSubscriptionsResponses, ListMissingAdminModelsData, ListMissingAdminModelsErrors, ListMissingAdminModelsResponses, ListModelsData, ListModelsErrors, ListModelsResponses, ListPlaygroundConversationsData, ListPlaygroundConversationsErrors, ListPlaygroundConversationsResponses, ListUserTokensData, ListUserTokensErrors, ListUserTokensResponses, ListUserWalletEntriesData, ListUserWalletEntriesErrors, ListUserWalletEntriesResponses, LoginManagementSessionData, LoginManagementSessionErrors, LoginManagementSessionResponses, PreviewAdminLiteLlmModelPricesData, PreviewAdminLiteLlmModelPricesErrors, PreviewAdminLiteLlmModelPricesResponses, PreviewAdminModelPriceExpressionData, PreviewAdminModelPriceExpressionErrors, PreviewAdminModelPriceExpressionResponses, PreviewAdminModelPricesData, PreviewAdminModelPricesErrors, PreviewAdminModelPricesResponses, ProbeAdminChannelData, ProbeAdminChannelErrors, ProbeAdminChannelResponses, ReceivePaymentWebhookData, ReceivePaymentWebhookErrors, ReceivePaymentWebhookResponses, RedeemUserRedemptionCodeData, RedeemUserRedemptionCodeErrors, RedeemUserRedemptionCodeResponses, RegisterUserData, RegisterUserErrors, RegisterUserResponses, RequestPasswordResetData, RequestPasswordResetErrors, RequestPasswordResetResponses, RevokePlaygroundShareData, RevokePlaygroundShareErrors, RevokePlaygroundShareResponses, SavePlaygroundConversationData, SavePlaygroundConversationErrors, SavePlaygroundConversationResponses, SendAdminEmailTestData, SendAdminEmailTestErrors, SendAdminEmailTestResponses, SendRegistrationEmailVerificationData, SendRegistrationEmailVerificationErrors, SendRegistrationEmailVerificationResponses, TransitionAdminUserSubscriptionLifecycleData, TransitionAdminUserSubscriptionLifecycleErrors, TransitionAdminUserSubscriptionLifecycleResponses, UpdateAdminAuthenticationSettingsData, UpdateAdminAuthenticationSettingsErrors, UpdateAdminAuthenticationSettingsResponses, UpdateAdminBalanceAlertSettingsData, UpdateAdminBalanceAlertSettingsErrors, UpdateAdminBalanceAlertSettingsResponses, UpdateAdminChannelData, UpdateAdminChannelErrors, UpdateAdminChannelResponses, UpdateAdminCredentialData, UpdateAdminCredentialErrors, UpdateAdminCredentialProxyData, UpdateAdminCredentialProxyErrors, UpdateAdminCredentialProxyResponses, UpdateAdminCredentialResponses, UpdateAdminDebugTraceSettingsData, UpdateAdminDebugTraceSettingsErrors, UpdateAdminDebugTraceSettingsResponses, UpdateAdminEmailSettingsData, UpdateAdminEmailSettingsErrors, UpdateAdminEmailSettingsResponses, UpdateAdminGroupData, UpdateAdminGroupErrors, UpdateAdminGroupResponses, UpdateAdminModelData, UpdateAdminModelErrors, UpdateAdminModelResponses, UpdateAdminNetworkSettingsData, UpdateAdminNetworkSettingsErrors, UpdateAdminNetworkSettingsResponses, UpdateAdminRouteData, UpdateAdminRouteErrors, UpdateAdminRouteResponses, UpdateAdminSiteSettingsData, UpdateAdminSiteSettingsErrors, UpdateAdminSiteSettingsResponses, UpdateAdminTokenData, UpdateAdminTokenErrors, UpdateAdminTokenResponses, UpdateAdminUserData, UpdateAdminUserErrors, UpdateAdminUserResponses, UpdateUserNotificationPreferencesData, UpdateUserNotificationPreferencesErrors, UpdateUserNotificationPreferencesResponses, UpdateUserProfileData, UpdateUserProfileErrors, UpdateUserProfileResponses, UpdateUserTokenData, UpdateUserTokenErrors, UpdateUserTokenResponses } from './types.gen';
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     client?: Client;
     meta?: keyof ClientMeta extends never ? Record<string, unknown> : ClientMeta;
@@ -16,7 +16,11 @@ export const loginManagementSession = <ThrowOnError extends boolean = true>(opti
     }
 });
 export const getManagementSession = <ThrowOnError extends boolean = true>(options?: Options<GetManagementSessionData, ThrowOnError>): RequestResult<GetManagementSessionResponses, GetManagementSessionErrors, ThrowOnError> => (options?.client ?? client).get<GetManagementSessionResponses, GetManagementSessionErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/auth/session',
     ...options
 });
@@ -47,12 +51,20 @@ export const registerUser = <ThrowOnError extends boolean = true>(options: Optio
     }
 });
 export const getAdminAuthenticationSettings = <ThrowOnError extends boolean = true>(options?: Options<GetAdminAuthenticationSettingsData, ThrowOnError>): RequestResult<GetAdminAuthenticationSettingsResponses, GetAdminAuthenticationSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminAuthenticationSettingsResponses, GetAdminAuthenticationSettingsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/authentication-settings',
     ...options
 });
 export const updateAdminAuthenticationSettings = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminAuthenticationSettingsData, ThrowOnError>): RequestResult<UpdateAdminAuthenticationSettingsResponses, UpdateAdminAuthenticationSettingsErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminAuthenticationSettingsResponses, UpdateAdminAuthenticationSettingsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/authentication-settings',
     ...options,
     headers: {
@@ -60,18 +72,43 @@ export const updateAdminAuthenticationSettings = <ThrowOnError extends boolean =
         ...options.headers
     }
 });
+export const compactResponse = <ThrowOnError extends boolean = true>(options: Options<CompactResponseData, ThrowOnError>): RequestResult<CompactResponseResponses, CompactResponseErrors, ThrowOnError> => (options.client ?? client).post<CompactResponseResponses, CompactResponseErrors, ThrowOnError>({
+    security: [{
+            key: 'apiKeyAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
+    url: '/v1/responses/compact',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 export const listAdminRedemptionAudit = <ThrowOnError extends boolean = true>(options?: Options<ListAdminRedemptionAuditData, ThrowOnError>): RequestResult<ListAdminRedemptionAuditResponses, ListAdminRedemptionAuditErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminRedemptionAuditResponses, ListAdminRedemptionAuditErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/redemption-audit',
     ...options
 });
 export const listAdminRedemptionBatches = <ThrowOnError extends boolean = true>(options?: Options<ListAdminRedemptionBatchesData, ThrowOnError>): RequestResult<ListAdminRedemptionBatchesResponses, ListAdminRedemptionBatchesErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminRedemptionBatchesResponses, ListAdminRedemptionBatchesErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/redemption-batches',
     ...options
 });
 export const createAdminRedemptionBatch = <ThrowOnError extends boolean = true>(options: Options<CreateAdminRedemptionBatchData, ThrowOnError>): RequestResult<CreateAdminRedemptionBatchResponses, CreateAdminRedemptionBatchErrors, ThrowOnError> => (options.client ?? client).post<CreateAdminRedemptionBatchResponses, CreateAdminRedemptionBatchErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/redemption-batches',
     ...options,
     headers: {
@@ -80,7 +117,11 @@ export const createAdminRedemptionBatch = <ThrowOnError extends boolean = true>(
     }
 });
 export const disableAdminRedemptionBatch = <ThrowOnError extends boolean = true>(options: Options<DisableAdminRedemptionBatchData, ThrowOnError>): RequestResult<DisableAdminRedemptionBatchResponses, DisableAdminRedemptionBatchErrors, ThrowOnError> => (options.client ?? client).post<DisableAdminRedemptionBatchResponses, DisableAdminRedemptionBatchErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/redemption-batches/{batch_id}/disable',
     ...options,
     headers: {
@@ -89,7 +130,11 @@ export const disableAdminRedemptionBatch = <ThrowOnError extends boolean = true>
     }
 });
 export const redeemUserRedemptionCode = <ThrowOnError extends boolean = true>(options: Options<RedeemUserRedemptionCodeData, ThrowOnError>): RequestResult<RedeemUserRedemptionCodeResponses, RedeemUserRedemptionCodeErrors, ThrowOnError> => (options.client ?? client).post<RedeemUserRedemptionCodeResponses, RedeemUserRedemptionCodeErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/account/wallet/redemptions',
     ...options,
     headers: {
@@ -98,12 +143,20 @@ export const redeemUserRedemptionCode = <ThrowOnError extends boolean = true>(op
     }
 });
 export const listAdminSubscriptionPlans = <ThrowOnError extends boolean = true>(options?: Options<ListAdminSubscriptionPlansData, ThrowOnError>): RequestResult<ListAdminSubscriptionPlansResponses, ListAdminSubscriptionPlansErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminSubscriptionPlansResponses, ListAdminSubscriptionPlansErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/subscription-plans',
     ...options
 });
 export const createAdminSubscriptionPlan = <ThrowOnError extends boolean = true>(options: Options<CreateAdminSubscriptionPlanData, ThrowOnError>): RequestResult<CreateAdminSubscriptionPlanResponses, CreateAdminSubscriptionPlanErrors, ThrowOnError> => (options.client ?? client).post<CreateAdminSubscriptionPlanResponses, CreateAdminSubscriptionPlanErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/subscription-plans',
     ...options,
     headers: {
@@ -112,7 +165,11 @@ export const createAdminSubscriptionPlan = <ThrowOnError extends boolean = true>
     }
 });
 export const disableAdminSubscriptionPlan = <ThrowOnError extends boolean = true>(options: Options<DisableAdminSubscriptionPlanData, ThrowOnError>): RequestResult<DisableAdminSubscriptionPlanResponses, DisableAdminSubscriptionPlanErrors, ThrowOnError> => (options.client ?? client).post<DisableAdminSubscriptionPlanResponses, DisableAdminSubscriptionPlanErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/subscription-plans/{plan_id}/disable',
     ...options,
     headers: {
@@ -121,12 +178,20 @@ export const disableAdminSubscriptionPlan = <ThrowOnError extends boolean = true
     }
 });
 export const listAdminUserSubscriptions = <ThrowOnError extends boolean = true>(options: Options<ListAdminUserSubscriptionsData, ThrowOnError>): RequestResult<ListAdminUserSubscriptionsResponses, ListAdminUserSubscriptionsErrors, ThrowOnError> => (options.client ?? client).get<ListAdminUserSubscriptionsResponses, ListAdminUserSubscriptionsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/users/{user_id}/subscriptions',
     ...options
 });
 export const bindAdminUserSubscription = <ThrowOnError extends boolean = true>(options: Options<BindAdminUserSubscriptionData, ThrowOnError>): RequestResult<BindAdminUserSubscriptionResponses, BindAdminUserSubscriptionErrors, ThrowOnError> => (options.client ?? client).post<BindAdminUserSubscriptionResponses, BindAdminUserSubscriptionErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/users/{user_id}/subscriptions',
     ...options,
     headers: {
@@ -135,7 +200,11 @@ export const bindAdminUserSubscription = <ThrowOnError extends boolean = true>(o
     }
 });
 export const transitionAdminUserSubscriptionLifecycle = <ThrowOnError extends boolean = true>(options: Options<TransitionAdminUserSubscriptionLifecycleData, ThrowOnError>): RequestResult<TransitionAdminUserSubscriptionLifecycleResponses, TransitionAdminUserSubscriptionLifecycleErrors, ThrowOnError> => (options.client ?? client).post<TransitionAdminUserSubscriptionLifecycleResponses, TransitionAdminUserSubscriptionLifecycleErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/users/{user_id}/subscriptions/{subscription_id}/lifecycle',
     ...options,
     headers: {
@@ -144,7 +213,11 @@ export const transitionAdminUserSubscriptionLifecycle = <ThrowOnError extends bo
     }
 });
 export const listCurrentUserSubscriptions = <ThrowOnError extends boolean = true>(options?: Options<ListCurrentUserSubscriptionsData, ThrowOnError>): RequestResult<ListCurrentUserSubscriptionsResponses, ListCurrentUserSubscriptionsErrors, ThrowOnError> => (options?.client ?? client).get<ListCurrentUserSubscriptionsResponses, ListCurrentUserSubscriptionsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/account/subscriptions',
     ...options
 });
@@ -165,12 +238,20 @@ export const confirmPasswordReset = <ThrowOnError extends boolean = true>(option
     }
 });
 export const getUserProfile = <ThrowOnError extends boolean = true>(options?: Options<GetUserProfileData, ThrowOnError>): RequestResult<GetUserProfileResponses, GetUserProfileErrors, ThrowOnError> => (options?.client ?? client).get<GetUserProfileResponses, GetUserProfileErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/account/profile',
     ...options
 });
 export const updateUserProfile = <ThrowOnError extends boolean = true>(options: Options<UpdateUserProfileData, ThrowOnError>): RequestResult<UpdateUserProfileResponses, UpdateUserProfileErrors, ThrowOnError> => (options.client ?? client).put<UpdateUserProfileResponses, UpdateUserProfileErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/account/profile',
     ...options,
     headers: {
@@ -179,7 +260,11 @@ export const updateUserProfile = <ThrowOnError extends boolean = true>(options: 
     }
 });
 export const changeUserPassword = <ThrowOnError extends boolean = true>(options: Options<ChangeUserPasswordData, ThrowOnError>): RequestResult<ChangeUserPasswordResponses, ChangeUserPasswordErrors, ThrowOnError> => (options.client ?? client).put<ChangeUserPasswordResponses, ChangeUserPasswordErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/account/password',
     ...options,
     headers: {
@@ -188,7 +273,11 @@ export const changeUserPassword = <ThrowOnError extends boolean = true>(options:
     }
 });
 export const updateUserNotificationPreferences = <ThrowOnError extends boolean = true>(options: Options<UpdateUserNotificationPreferencesData, ThrowOnError>): RequestResult<UpdateUserNotificationPreferencesResponses, UpdateUserNotificationPreferencesErrors, ThrowOnError> => (options.client ?? client).put<UpdateUserNotificationPreferencesResponses, UpdateUserNotificationPreferencesErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/account/notifications',
     ...options,
     headers: {
@@ -197,22 +286,38 @@ export const updateUserNotificationPreferences = <ThrowOnError extends boolean =
     }
 });
 export const getUserWallet = <ThrowOnError extends boolean = true>(options?: Options<GetUserWalletData, ThrowOnError>): RequestResult<GetUserWalletResponses, GetUserWalletErrors, ThrowOnError> => (options?.client ?? client).get<GetUserWalletResponses, GetUserWalletErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/account/wallet',
     ...options
 });
 export const listUserWalletEntries = <ThrowOnError extends boolean = true>(options?: Options<ListUserWalletEntriesData, ThrowOnError>): RequestResult<ListUserWalletEntriesResponses, ListUserWalletEntriesErrors, ThrowOnError> => (options?.client ?? client).get<ListUserWalletEntriesResponses, ListUserWalletEntriesErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/account/wallet/entries',
     ...options
 });
 export const getUserTopupConfiguration = <ThrowOnError extends boolean = true>(options?: Options<GetUserTopupConfigurationData, ThrowOnError>): RequestResult<GetUserTopupConfigurationResponses, GetUserTopupConfigurationErrors, ThrowOnError> => (options?.client ?? client).get<GetUserTopupConfigurationResponses, GetUserTopupConfigurationErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/account/wallet/topups/config',
     ...options
 });
 export const createUserTopupOrder = <ThrowOnError extends boolean = true>(options: Options<CreateUserTopupOrderData, ThrowOnError>): RequestResult<CreateUserTopupOrderResponses, CreateUserTopupOrderErrors, ThrowOnError> => (options.client ?? client).post<CreateUserTopupOrderResponses, CreateUserTopupOrderErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/account/wallet/topups',
     ...options,
     headers: {
@@ -221,17 +326,29 @@ export const createUserTopupOrder = <ThrowOnError extends boolean = true>(option
     }
 });
 export const getUserInvitations = <ThrowOnError extends boolean = true>(options?: Options<GetUserInvitationsData, ThrowOnError>): RequestResult<GetUserInvitationsResponses, GetUserInvitationsErrors, ThrowOnError> => (options?.client ?? client).get<GetUserInvitationsResponses, GetUserInvitationsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/account/invitations',
     ...options
 });
 export const getAdminEmailSettings = <ThrowOnError extends boolean = true>(options?: Options<GetAdminEmailSettingsData, ThrowOnError>): RequestResult<GetAdminEmailSettingsResponses, GetAdminEmailSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminEmailSettingsResponses, GetAdminEmailSettingsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/email-settings',
     ...options
 });
 export const updateAdminEmailSettings = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminEmailSettingsData, ThrowOnError>): RequestResult<UpdateAdminEmailSettingsResponses, UpdateAdminEmailSettingsErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminEmailSettingsResponses, UpdateAdminEmailSettingsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/email-settings',
     ...options,
     headers: {
@@ -240,7 +357,11 @@ export const updateAdminEmailSettings = <ThrowOnError extends boolean = true>(op
     }
 });
 export const sendAdminEmailTest = <ThrowOnError extends boolean = true>(options: Options<SendAdminEmailTestData, ThrowOnError>): RequestResult<SendAdminEmailTestResponses, SendAdminEmailTestErrors, ThrowOnError> => (options.client ?? client).post<SendAdminEmailTestResponses, SendAdminEmailTestErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/email-settings/test',
     ...options,
     headers: {
@@ -249,12 +370,20 @@ export const sendAdminEmailTest = <ThrowOnError extends boolean = true>(options:
     }
 });
 export const getAdminNetworkSettings = <ThrowOnError extends boolean = true>(options?: Options<GetAdminNetworkSettingsData, ThrowOnError>): RequestResult<GetAdminNetworkSettingsResponses, GetAdminNetworkSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminNetworkSettingsResponses, GetAdminNetworkSettingsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/network-settings',
     ...options
 });
 export const updateAdminNetworkSettings = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminNetworkSettingsData, ThrowOnError>): RequestResult<UpdateAdminNetworkSettingsResponses, UpdateAdminNetworkSettingsErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminNetworkSettingsResponses, UpdateAdminNetworkSettingsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/network-settings',
     ...options,
     headers: {
@@ -263,12 +392,20 @@ export const updateAdminNetworkSettings = <ThrowOnError extends boolean = true>(
     }
 });
 export const listAdminOAuthProviders = <ThrowOnError extends boolean = true>(options?: Options<ListAdminOAuthProvidersData, ThrowOnError>): RequestResult<ListAdminOAuthProvidersResponses, ListAdminOAuthProvidersErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminOAuthProvidersResponses, ListAdminOAuthProvidersErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/oauth/providers',
     ...options
 });
 export const beginAdminOAuthAuthorization = <ThrowOnError extends boolean = true>(options: Options<BeginAdminOAuthAuthorizationData, ThrowOnError>): RequestResult<BeginAdminOAuthAuthorizationResponses, BeginAdminOAuthAuthorizationErrors, ThrowOnError> => (options.client ?? client).post<BeginAdminOAuthAuthorizationResponses, BeginAdminOAuthAuthorizationErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/channels/{channel_id}/credentials/{credential_id}/oauth-authorizations',
     ...options,
     headers: {
@@ -277,7 +414,11 @@ export const beginAdminOAuthAuthorization = <ThrowOnError extends boolean = true
     }
 });
 export const completeAdminOAuthManualCallback = <ThrowOnError extends boolean = true>(options: Options<CompleteAdminOAuthManualCallbackData, ThrowOnError>): RequestResult<CompleteAdminOAuthManualCallbackResponses, CompleteAdminOAuthManualCallbackErrors, ThrowOnError> => (options.client ?? client).post<CompleteAdminOAuthManualCallbackResponses, CompleteAdminOAuthManualCallbackErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/oauth/authorizations/manual-callback',
     ...options,
     headers: {
@@ -286,12 +427,20 @@ export const completeAdminOAuthManualCallback = <ThrowOnError extends boolean = 
     }
 });
 export const getAdminBalanceAlertSettings = <ThrowOnError extends boolean = true>(options?: Options<GetAdminBalanceAlertSettingsData, ThrowOnError>): RequestResult<GetAdminBalanceAlertSettingsResponses, GetAdminBalanceAlertSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminBalanceAlertSettingsResponses, GetAdminBalanceAlertSettingsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/balance-alert-settings',
     ...options
 });
 export const updateAdminBalanceAlertSettings = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminBalanceAlertSettingsData, ThrowOnError>): RequestResult<UpdateAdminBalanceAlertSettingsResponses, UpdateAdminBalanceAlertSettingsErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminBalanceAlertSettingsResponses, UpdateAdminBalanceAlertSettingsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/balance-alert-settings',
     ...options,
     headers: {
@@ -301,12 +450,20 @@ export const updateAdminBalanceAlertSettings = <ThrowOnError extends boolean = t
 });
 export const getPublicSiteSettings = <ThrowOnError extends boolean = true>(options?: Options<GetPublicSiteSettingsData, ThrowOnError>): RequestResult<GetPublicSiteSettingsResponses, GetPublicSiteSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetPublicSiteSettingsResponses, GetPublicSiteSettingsErrors, ThrowOnError>({ url: '/api/site', ...options });
 export const getAdminSiteSettings = <ThrowOnError extends boolean = true>(options?: Options<GetAdminSiteSettingsData, ThrowOnError>): RequestResult<GetAdminSiteSettingsResponses, GetAdminSiteSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminSiteSettingsResponses, GetAdminSiteSettingsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/site-settings',
     ...options
 });
 export const updateAdminSiteSettings = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminSiteSettingsData, ThrowOnError>): RequestResult<UpdateAdminSiteSettingsResponses, UpdateAdminSiteSettingsErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminSiteSettingsResponses, UpdateAdminSiteSettingsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/site-settings',
     ...options,
     headers: {
@@ -315,17 +472,29 @@ export const updateAdminSiteSettings = <ThrowOnError extends boolean = true>(opt
     }
 });
 export const getAdminDashboard = <ThrowOnError extends boolean = true>(options?: Options<GetAdminDashboardData, ThrowOnError>): RequestResult<GetAdminDashboardResponses, GetAdminDashboardErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminDashboardResponses, GetAdminDashboardErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/dashboard',
     ...options
 });
 export const listAdminUsers = <ThrowOnError extends boolean = true>(options?: Options<ListAdminUsersData, ThrowOnError>): RequestResult<ListAdminUsersResponses, ListAdminUsersErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminUsersResponses, ListAdminUsersErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/users',
     ...options
 });
 export const createAdminUser = <ThrowOnError extends boolean = true>(options: Options<CreateAdminUserData, ThrowOnError>): RequestResult<CreateAdminUserResponses, CreateAdminUserErrors, ThrowOnError> => (options.client ?? client).post<CreateAdminUserResponses, CreateAdminUserErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/users',
     ...options,
     headers: {
@@ -334,17 +503,29 @@ export const createAdminUser = <ThrowOnError extends boolean = true>(options: Op
     }
 });
 export const deleteAdminUser = <ThrowOnError extends boolean = true>(options: Options<DeleteAdminUserData, ThrowOnError>): RequestResult<DeleteAdminUserResponses, DeleteAdminUserErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAdminUserResponses, DeleteAdminUserErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/users/{id}',
     ...options
 });
 export const getAdminUser = <ThrowOnError extends boolean = true>(options: Options<GetAdminUserData, ThrowOnError>): RequestResult<GetAdminUserResponses, GetAdminUserErrors, ThrowOnError> => (options.client ?? client).get<GetAdminUserResponses, GetAdminUserErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/users/{id}',
     ...options
 });
 export const updateAdminUser = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminUserData, ThrowOnError>): RequestResult<UpdateAdminUserResponses, UpdateAdminUserErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminUserResponses, UpdateAdminUserErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/users/{id}',
     ...options,
     headers: {
@@ -353,12 +534,20 @@ export const updateAdminUser = <ThrowOnError extends boolean = true>(options: Op
     }
 });
 export const listAdminWalletEntries = <ThrowOnError extends boolean = true>(options: Options<ListAdminWalletEntriesData, ThrowOnError>): RequestResult<ListAdminWalletEntriesResponses, ListAdminWalletEntriesErrors, ThrowOnError> => (options.client ?? client).get<ListAdminWalletEntriesResponses, ListAdminWalletEntriesErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/users/{id}/wallet/entries',
     ...options
 });
 export const adjustAdminWallet = <ThrowOnError extends boolean = true>(options: Options<AdjustAdminWalletData, ThrowOnError>): RequestResult<AdjustAdminWalletResponses, AdjustAdminWalletErrors, ThrowOnError> => (options.client ?? client).post<AdjustAdminWalletResponses, AdjustAdminWalletErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/users/{id}/wallet/adjustments',
     ...options,
     headers: {
@@ -367,12 +556,20 @@ export const adjustAdminWallet = <ThrowOnError extends boolean = true>(options: 
     }
 });
 export const listAdminGroups = <ThrowOnError extends boolean = true>(options?: Options<ListAdminGroupsData, ThrowOnError>): RequestResult<ListAdminGroupsResponses, ListAdminGroupsErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminGroupsResponses, ListAdminGroupsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/groups',
     ...options
 });
 export const createAdminGroup = <ThrowOnError extends boolean = true>(options: Options<CreateAdminGroupData, ThrowOnError>): RequestResult<CreateAdminGroupResponses, CreateAdminGroupErrors, ThrowOnError> => (options.client ?? client).post<CreateAdminGroupResponses, CreateAdminGroupErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/groups',
     ...options,
     headers: {
@@ -381,17 +578,29 @@ export const createAdminGroup = <ThrowOnError extends boolean = true>(options: O
     }
 });
 export const deleteAdminGroup = <ThrowOnError extends boolean = true>(options: Options<DeleteAdminGroupData, ThrowOnError>): RequestResult<DeleteAdminGroupResponses, DeleteAdminGroupErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAdminGroupResponses, DeleteAdminGroupErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/groups/{id}',
     ...options
 });
 export const getAdminGroup = <ThrowOnError extends boolean = true>(options: Options<GetAdminGroupData, ThrowOnError>): RequestResult<GetAdminGroupResponses, GetAdminGroupErrors, ThrowOnError> => (options.client ?? client).get<GetAdminGroupResponses, GetAdminGroupErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/groups/{id}',
     ...options
 });
 export const updateAdminGroup = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminGroupData, ThrowOnError>): RequestResult<UpdateAdminGroupResponses, UpdateAdminGroupErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminGroupResponses, UpdateAdminGroupErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/groups/{id}',
     ...options,
     headers: {
@@ -400,12 +609,20 @@ export const updateAdminGroup = <ThrowOnError extends boolean = true>(options: O
     }
 });
 export const listAdminRoutes = <ThrowOnError extends boolean = true>(options?: Options<ListAdminRoutesData, ThrowOnError>): RequestResult<ListAdminRoutesResponses, ListAdminRoutesErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminRoutesResponses, ListAdminRoutesErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/routes',
     ...options
 });
 export const createAdminRoute = <ThrowOnError extends boolean = true>(options: Options<CreateAdminRouteData, ThrowOnError>): RequestResult<CreateAdminRouteResponses, CreateAdminRouteErrors, ThrowOnError> => (options.client ?? client).post<CreateAdminRouteResponses, CreateAdminRouteErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/routes',
     ...options,
     headers: {
@@ -414,17 +631,29 @@ export const createAdminRoute = <ThrowOnError extends boolean = true>(options: O
     }
 });
 export const deleteAdminRoute = <ThrowOnError extends boolean = true>(options: Options<DeleteAdminRouteData, ThrowOnError>): RequestResult<DeleteAdminRouteResponses, DeleteAdminRouteErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAdminRouteResponses, DeleteAdminRouteErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/routes/{id}',
     ...options
 });
 export const getAdminRoute = <ThrowOnError extends boolean = true>(options: Options<GetAdminRouteData, ThrowOnError>): RequestResult<GetAdminRouteResponses, GetAdminRouteErrors, ThrowOnError> => (options.client ?? client).get<GetAdminRouteResponses, GetAdminRouteErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/routes/{id}',
     ...options
 });
 export const updateAdminRoute = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminRouteData, ThrowOnError>): RequestResult<UpdateAdminRouteResponses, UpdateAdminRouteErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminRouteResponses, UpdateAdminRouteErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/routes/{id}',
     ...options,
     headers: {
@@ -433,17 +662,29 @@ export const updateAdminRoute = <ThrowOnError extends boolean = true>(options: O
     }
 });
 export const listModels = <ThrowOnError extends boolean = true>(options?: Options<ListModelsData, ThrowOnError>): RequestResult<ListModelsResponses, ListModelsErrors, ThrowOnError> => (options?.client ?? client).get<ListModelsResponses, ListModelsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/models',
     ...options
 });
 export const listAdminModels = <ThrowOnError extends boolean = true>(options?: Options<ListAdminModelsData, ThrowOnError>): RequestResult<ListAdminModelsResponses, ListAdminModelsErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminModelsResponses, ListAdminModelsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/models',
     ...options
 });
 export const createAdminModel = <ThrowOnError extends boolean = true>(options: Options<CreateAdminModelData, ThrowOnError>): RequestResult<CreateAdminModelResponses, CreateAdminModelErrors, ThrowOnError> => (options.client ?? client).post<CreateAdminModelResponses, CreateAdminModelErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/models',
     ...options,
     headers: {
@@ -452,17 +693,29 @@ export const createAdminModel = <ThrowOnError extends boolean = true>(options: O
     }
 });
 export const deleteAdminModel = <ThrowOnError extends boolean = true>(options: Options<DeleteAdminModelData, ThrowOnError>): RequestResult<DeleteAdminModelResponses, DeleteAdminModelErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAdminModelResponses, DeleteAdminModelErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/models/{id}',
     ...options
 });
 export const getAdminModel = <ThrowOnError extends boolean = true>(options: Options<GetAdminModelData, ThrowOnError>): RequestResult<GetAdminModelResponses, GetAdminModelErrors, ThrowOnError> => (options.client ?? client).get<GetAdminModelResponses, GetAdminModelErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/models/{id}',
     ...options
 });
 export const updateAdminModel = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminModelData, ThrowOnError>): RequestResult<UpdateAdminModelResponses, UpdateAdminModelErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminModelResponses, UpdateAdminModelErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/models/{id}',
     ...options,
     headers: {
@@ -471,12 +724,20 @@ export const updateAdminModel = <ThrowOnError extends boolean = true>(options: O
     }
 });
 export const listMissingAdminModels = <ThrowOnError extends boolean = true>(options?: Options<ListMissingAdminModelsData, ThrowOnError>): RequestResult<ListMissingAdminModelsResponses, ListMissingAdminModelsErrors, ThrowOnError> => (options?.client ?? client).get<ListMissingAdminModelsResponses, ListMissingAdminModelsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/models/missing',
     ...options
 });
 export const createAdminModelSyncPreview = <ThrowOnError extends boolean = true>(options: Options<CreateAdminModelSyncPreviewData, ThrowOnError>): RequestResult<CreateAdminModelSyncPreviewResponses, CreateAdminModelSyncPreviewErrors, ThrowOnError> => (options.client ?? client).post<CreateAdminModelSyncPreviewResponses, CreateAdminModelSyncPreviewErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/models/sync-previews',
     ...options,
     headers: {
@@ -485,7 +746,11 @@ export const createAdminModelSyncPreview = <ThrowOnError extends boolean = true>
     }
 });
 export const applyAdminModelSyncPreview = <ThrowOnError extends boolean = true>(options: Options<ApplyAdminModelSyncPreviewData, ThrowOnError>): RequestResult<ApplyAdminModelSyncPreviewResponses, ApplyAdminModelSyncPreviewErrors, ThrowOnError> => (options.client ?? client).post<ApplyAdminModelSyncPreviewResponses, ApplyAdminModelSyncPreviewErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/models/sync-previews/{preview_id}/apply',
     ...options,
     headers: {
@@ -494,22 +759,38 @@ export const applyAdminModelSyncPreview = <ThrowOnError extends boolean = true>(
     }
 });
 export const listAdminModelPrices = <ThrowOnError extends boolean = true>(options?: Options<ListAdminModelPricesData, ThrowOnError>): RequestResult<ListAdminModelPricesResponses, ListAdminModelPricesErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminModelPricesResponses, ListAdminModelPricesErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/model-prices',
     ...options
 });
 export const previewAdminModelPrices = <ThrowOnError extends boolean = true>(options?: Options<PreviewAdminModelPricesData, ThrowOnError>): RequestResult<PreviewAdminModelPricesResponses, PreviewAdminModelPricesErrors, ThrowOnError> => (options?.client ?? client).post<PreviewAdminModelPricesResponses, PreviewAdminModelPricesErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/model-prices/models-dev-preview',
     ...options
 });
 export const previewAdminLiteLlmModelPrices = <ThrowOnError extends boolean = true>(options?: Options<PreviewAdminLiteLlmModelPricesData, ThrowOnError>): RequestResult<PreviewAdminLiteLlmModelPricesResponses, PreviewAdminLiteLlmModelPricesErrors, ThrowOnError> => (options?.client ?? client).post<PreviewAdminLiteLlmModelPricesResponses, PreviewAdminLiteLlmModelPricesErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/model-prices/litellm-preview',
     ...options
 });
 export const previewAdminModelPriceExpression = <ThrowOnError extends boolean = true>(options: Options<PreviewAdminModelPriceExpressionData, ThrowOnError>): RequestResult<PreviewAdminModelPriceExpressionResponses, PreviewAdminModelPriceExpressionErrors, ThrowOnError> => (options.client ?? client).post<PreviewAdminModelPriceExpressionResponses, PreviewAdminModelPriceExpressionErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/model-prices/expression-preview',
     ...options,
     headers: {
@@ -518,7 +799,11 @@ export const previewAdminModelPriceExpression = <ThrowOnError extends boolean = 
     }
 });
 export const applyAdminModelPrices = <ThrowOnError extends boolean = true>(options: Options<ApplyAdminModelPricesData, ThrowOnError>): RequestResult<ApplyAdminModelPricesResponses, ApplyAdminModelPricesErrors, ThrowOnError> => (options.client ?? client).post<ApplyAdminModelPricesResponses, ApplyAdminModelPricesErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/model-prices/batch',
     ...options,
     headers: {
@@ -527,7 +812,11 @@ export const applyAdminModelPrices = <ThrowOnError extends boolean = true>(optio
     }
 });
 export const createPlaygroundShare = <ThrowOnError extends boolean = true>(options: Options<CreatePlaygroundShareData, ThrowOnError>): RequestResult<CreatePlaygroundShareResponses, CreatePlaygroundShareErrors, ThrowOnError> => (options.client ?? client).post<CreatePlaygroundShareResponses, CreatePlaygroundShareErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/playground/shares',
     ...options,
     headers: {
@@ -536,28 +825,48 @@ export const createPlaygroundShare = <ThrowOnError extends boolean = true>(optio
     }
 });
 export const revokePlaygroundShare = <ThrowOnError extends boolean = true>(options: Options<RevokePlaygroundShareData, ThrowOnError>): RequestResult<RevokePlaygroundShareResponses, RevokePlaygroundShareErrors, ThrowOnError> => (options.client ?? client).delete<RevokePlaygroundShareResponses, RevokePlaygroundShareErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/playground/shares/{token}',
     ...options
 });
 export const getPlaygroundShare = <ThrowOnError extends boolean = true>(options: Options<GetPlaygroundShareData, ThrowOnError>): RequestResult<GetPlaygroundShareResponses, GetPlaygroundShareErrors, ThrowOnError> => (options.client ?? client).get<GetPlaygroundShareResponses, GetPlaygroundShareErrors, ThrowOnError>({ url: '/api/playground/shares/{token}', ...options });
 export const listPlaygroundConversations = <ThrowOnError extends boolean = true>(options?: Options<ListPlaygroundConversationsData, ThrowOnError>): RequestResult<ListPlaygroundConversationsResponses, ListPlaygroundConversationsErrors, ThrowOnError> => (options?.client ?? client).get<ListPlaygroundConversationsResponses, ListPlaygroundConversationsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/playground/conversations',
     ...options
 });
 export const deletePlaygroundConversation = <ThrowOnError extends boolean = true>(options: Options<DeletePlaygroundConversationData, ThrowOnError>): RequestResult<DeletePlaygroundConversationResponses, DeletePlaygroundConversationErrors, ThrowOnError> => (options.client ?? client).delete<DeletePlaygroundConversationResponses, DeletePlaygroundConversationErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/playground/conversations/{conversation_id}',
     ...options
 });
 export const getPlaygroundConversation = <ThrowOnError extends boolean = true>(options: Options<GetPlaygroundConversationData, ThrowOnError>): RequestResult<GetPlaygroundConversationResponses, GetPlaygroundConversationErrors, ThrowOnError> => (options.client ?? client).get<GetPlaygroundConversationResponses, GetPlaygroundConversationErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/playground/conversations/{conversation_id}',
     ...options
 });
 export const savePlaygroundConversation = <ThrowOnError extends boolean = true>(options: Options<SavePlaygroundConversationData, ThrowOnError>): RequestResult<SavePlaygroundConversationResponses, SavePlaygroundConversationErrors, ThrowOnError> => (options.client ?? client).put<SavePlaygroundConversationResponses, SavePlaygroundConversationErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/playground/conversations/{conversation_id}',
     ...options,
     headers: {
@@ -566,12 +875,20 @@ export const savePlaygroundConversation = <ThrowOnError extends boolean = true>(
     }
 });
 export const listUserTokens = <ThrowOnError extends boolean = true>(options?: Options<ListUserTokensData, ThrowOnError>): RequestResult<ListUserTokensResponses, ListUserTokensErrors, ThrowOnError> => (options?.client ?? client).get<ListUserTokensResponses, ListUserTokensErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/tokens',
     ...options
 });
 export const createUserToken = <ThrowOnError extends boolean = true>(options: Options<CreateUserTokenData, ThrowOnError>): RequestResult<CreateUserTokenResponses, CreateUserTokenErrors, ThrowOnError> => (options.client ?? client).post<CreateUserTokenResponses, CreateUserTokenErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/tokens',
     ...options,
     headers: {
@@ -580,17 +897,29 @@ export const createUserToken = <ThrowOnError extends boolean = true>(options: Op
     }
 });
 export const deleteUserToken = <ThrowOnError extends boolean = true>(options: Options<DeleteUserTokenData, ThrowOnError>): RequestResult<DeleteUserTokenResponses, DeleteUserTokenErrors, ThrowOnError> => (options.client ?? client).delete<DeleteUserTokenResponses, DeleteUserTokenErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/tokens/{id}',
     ...options
 });
 export const getUserToken = <ThrowOnError extends boolean = true>(options: Options<GetUserTokenData, ThrowOnError>): RequestResult<GetUserTokenResponses, GetUserTokenErrors, ThrowOnError> => (options.client ?? client).get<GetUserTokenResponses, GetUserTokenErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/tokens/{id}',
     ...options
 });
 export const updateUserToken = <ThrowOnError extends boolean = true>(options: Options<UpdateUserTokenData, ThrowOnError>): RequestResult<UpdateUserTokenResponses, UpdateUserTokenErrors, ThrowOnError> => (options.client ?? client).put<UpdateUserTokenResponses, UpdateUserTokenErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/tokens/{id}',
     ...options,
     headers: {
@@ -599,12 +928,20 @@ export const updateUserToken = <ThrowOnError extends boolean = true>(options: Op
     }
 });
 export const listAdminTokens = <ThrowOnError extends boolean = true>(options?: Options<ListAdminTokensData, ThrowOnError>): RequestResult<ListAdminTokensResponses, ListAdminTokensErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminTokensResponses, ListAdminTokensErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/tokens',
     ...options
 });
 export const createAdminToken = <ThrowOnError extends boolean = true>(options: Options<CreateAdminTokenData, ThrowOnError>): RequestResult<CreateAdminTokenResponses, CreateAdminTokenErrors, ThrowOnError> => (options.client ?? client).post<CreateAdminTokenResponses, CreateAdminTokenErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/tokens',
     ...options,
     headers: {
@@ -613,17 +950,29 @@ export const createAdminToken = <ThrowOnError extends boolean = true>(options: O
     }
 });
 export const deleteAdminToken = <ThrowOnError extends boolean = true>(options: Options<DeleteAdminTokenData, ThrowOnError>): RequestResult<DeleteAdminTokenResponses, DeleteAdminTokenErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAdminTokenResponses, DeleteAdminTokenErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/tokens/{id}',
     ...options
 });
 export const getAdminToken = <ThrowOnError extends boolean = true>(options: Options<GetAdminTokenData, ThrowOnError>): RequestResult<GetAdminTokenResponses, GetAdminTokenErrors, ThrowOnError> => (options.client ?? client).get<GetAdminTokenResponses, GetAdminTokenErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/tokens/{id}',
     ...options
 });
 export const updateAdminToken = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminTokenData, ThrowOnError>): RequestResult<UpdateAdminTokenResponses, UpdateAdminTokenErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminTokenResponses, UpdateAdminTokenErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/tokens/{id}',
     ...options,
     headers: {
@@ -632,17 +981,29 @@ export const updateAdminToken = <ThrowOnError extends boolean = true>(options: O
     }
 });
 export const listAdminUsageLogs = <ThrowOnError extends boolean = true>(options?: Options<ListAdminUsageLogsData, ThrowOnError>): RequestResult<ListAdminUsageLogsResponses, ListAdminUsageLogsErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminUsageLogsResponses, ListAdminUsageLogsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/usage-logs',
     ...options
 });
 export const listAdminChannels = <ThrowOnError extends boolean = true>(options?: Options<ListAdminChannelsData, ThrowOnError>): RequestResult<ListAdminChannelsResponses, ListAdminChannelsErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminChannelsResponses, ListAdminChannelsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/channels',
     ...options
 });
 export const createAdminChannel = <ThrowOnError extends boolean = true>(options: Options<CreateAdminChannelData, ThrowOnError>): RequestResult<CreateAdminChannelResponses, CreateAdminChannelErrors, ThrowOnError> => (options.client ?? client).post<CreateAdminChannelResponses, CreateAdminChannelErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/channels',
     ...options,
     headers: {
@@ -651,17 +1012,29 @@ export const createAdminChannel = <ThrowOnError extends boolean = true>(options:
     }
 });
 export const deleteAdminChannel = <ThrowOnError extends boolean = true>(options: Options<DeleteAdminChannelData, ThrowOnError>): RequestResult<DeleteAdminChannelResponses, DeleteAdminChannelErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAdminChannelResponses, DeleteAdminChannelErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/channels/{id}',
     ...options
 });
 export const getAdminChannel = <ThrowOnError extends boolean = true>(options: Options<GetAdminChannelData, ThrowOnError>): RequestResult<GetAdminChannelResponses, GetAdminChannelErrors, ThrowOnError> => (options.client ?? client).get<GetAdminChannelResponses, GetAdminChannelErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/channels/{id}',
     ...options
 });
 export const updateAdminChannel = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminChannelData, ThrowOnError>): RequestResult<UpdateAdminChannelResponses, UpdateAdminChannelErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminChannelResponses, UpdateAdminChannelErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/channels/{id}',
     ...options,
     headers: {
@@ -670,17 +1043,29 @@ export const updateAdminChannel = <ThrowOnError extends boolean = true>(options:
     }
 });
 export const probeAdminChannel = <ThrowOnError extends boolean = true>(options: Options<ProbeAdminChannelData, ThrowOnError>): RequestResult<ProbeAdminChannelResponses, ProbeAdminChannelErrors, ThrowOnError> => (options.client ?? client).post<ProbeAdminChannelResponses, ProbeAdminChannelErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/channels/{id}/probe',
     ...options
 });
 export const listAdminCredentials = <ThrowOnError extends boolean = true>(options: Options<ListAdminCredentialsData, ThrowOnError>): RequestResult<ListAdminCredentialsResponses, ListAdminCredentialsErrors, ThrowOnError> => (options.client ?? client).get<ListAdminCredentialsResponses, ListAdminCredentialsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/channels/{channel_id}/credentials',
     ...options
 });
 export const createAdminCredential = <ThrowOnError extends boolean = true>(options: Options<CreateAdminCredentialData, ThrowOnError>): RequestResult<CreateAdminCredentialResponses, CreateAdminCredentialErrors, ThrowOnError> => (options.client ?? client).post<CreateAdminCredentialResponses, CreateAdminCredentialErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/channels/{channel_id}/credentials',
     ...options,
     headers: {
@@ -689,17 +1074,29 @@ export const createAdminCredential = <ThrowOnError extends boolean = true>(optio
     }
 });
 export const deleteAdminCredential = <ThrowOnError extends boolean = true>(options: Options<DeleteAdminCredentialData, ThrowOnError>): RequestResult<DeleteAdminCredentialResponses, DeleteAdminCredentialErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAdminCredentialResponses, DeleteAdminCredentialErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/channels/{channel_id}/credentials/{credential_id}',
     ...options
 });
 export const getAdminCredential = <ThrowOnError extends boolean = true>(options: Options<GetAdminCredentialData, ThrowOnError>): RequestResult<GetAdminCredentialResponses, GetAdminCredentialErrors, ThrowOnError> => (options.client ?? client).get<GetAdminCredentialResponses, GetAdminCredentialErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/channels/{channel_id}/credentials/{credential_id}',
     ...options
 });
 export const updateAdminCredential = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminCredentialData, ThrowOnError>): RequestResult<UpdateAdminCredentialResponses, UpdateAdminCredentialErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminCredentialResponses, UpdateAdminCredentialErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/channels/{channel_id}/credentials/{credential_id}',
     ...options,
     headers: {
@@ -708,12 +1105,20 @@ export const updateAdminCredential = <ThrowOnError extends boolean = true>(optio
     }
 });
 export const listAdminCredentialProxies = <ThrowOnError extends boolean = true>(options?: Options<ListAdminCredentialProxiesData, ThrowOnError>): RequestResult<ListAdminCredentialProxiesResponses, ListAdminCredentialProxiesErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminCredentialProxiesResponses, ListAdminCredentialProxiesErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/proxies',
     ...options
 });
 export const createAdminCredentialProxy = <ThrowOnError extends boolean = true>(options: Options<CreateAdminCredentialProxyData, ThrowOnError>): RequestResult<CreateAdminCredentialProxyResponses, CreateAdminCredentialProxyErrors, ThrowOnError> => (options.client ?? client).post<CreateAdminCredentialProxyResponses, CreateAdminCredentialProxyErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/proxies',
     ...options,
     headers: {
@@ -722,17 +1127,29 @@ export const createAdminCredentialProxy = <ThrowOnError extends boolean = true>(
     }
 });
 export const deleteAdminCredentialProxy = <ThrowOnError extends boolean = true>(options: Options<DeleteAdminCredentialProxyData, ThrowOnError>): RequestResult<DeleteAdminCredentialProxyResponses, DeleteAdminCredentialProxyErrors, ThrowOnError> => (options.client ?? client).delete<DeleteAdminCredentialProxyResponses, DeleteAdminCredentialProxyErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/proxies/{id}',
     ...options
 });
 export const getAdminCredentialProxy = <ThrowOnError extends boolean = true>(options: Options<GetAdminCredentialProxyData, ThrowOnError>): RequestResult<GetAdminCredentialProxyResponses, GetAdminCredentialProxyErrors, ThrowOnError> => (options.client ?? client).get<GetAdminCredentialProxyResponses, GetAdminCredentialProxyErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/proxies/{id}',
     ...options
 });
 export const updateAdminCredentialProxy = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminCredentialProxyData, ThrowOnError>): RequestResult<UpdateAdminCredentialProxyResponses, UpdateAdminCredentialProxyErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminCredentialProxyResponses, UpdateAdminCredentialProxyErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/proxies/{id}',
     ...options,
     headers: {
@@ -741,12 +1158,20 @@ export const updateAdminCredentialProxy = <ThrowOnError extends boolean = true>(
     }
 });
 export const getAdminDebugTraceSettings = <ThrowOnError extends boolean = true>(options?: Options<GetAdminDebugTraceSettingsData, ThrowOnError>): RequestResult<GetAdminDebugTraceSettingsResponses, GetAdminDebugTraceSettingsErrors, ThrowOnError> => (options?.client ?? client).get<GetAdminDebugTraceSettingsResponses, GetAdminDebugTraceSettingsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/debug-trace-settings',
     ...options
 });
 export const updateAdminDebugTraceSettings = <ThrowOnError extends boolean = true>(options: Options<UpdateAdminDebugTraceSettingsData, ThrowOnError>): RequestResult<UpdateAdminDebugTraceSettingsResponses, UpdateAdminDebugTraceSettingsErrors, ThrowOnError> => (options.client ?? client).put<UpdateAdminDebugTraceSettingsResponses, UpdateAdminDebugTraceSettingsErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/debug-trace-settings',
     ...options,
     headers: {
@@ -755,12 +1180,20 @@ export const updateAdminDebugTraceSettings = <ThrowOnError extends boolean = tru
     }
 });
 export const listAdminDebugTraces = <ThrowOnError extends boolean = true>(options?: Options<ListAdminDebugTracesData, ThrowOnError>): RequestResult<ListAdminDebugTracesResponses, ListAdminDebugTracesErrors, ThrowOnError> => (options?.client ?? client).get<ListAdminDebugTracesResponses, ListAdminDebugTracesErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/debug-traces',
     ...options
 });
 export const getAdminDebugTrace = <ThrowOnError extends boolean = true>(options: Options<GetAdminDebugTraceData, ThrowOnError>): RequestResult<GetAdminDebugTraceResponses, GetAdminDebugTraceErrors, ThrowOnError> => (options.client ?? client).get<GetAdminDebugTraceResponses, GetAdminDebugTraceErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
+    security: [{
+            key: 'bearerAuth',
+            scheme: 'bearer',
+            type: 'http'
+        }],
     url: '/api/admin/debug-traces/{id}',
     ...options
 });

@@ -1,6 +1,8 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::{ChannelId, CredentialId, GroupId, Status};
+use af_domain::{
+    ChannelId, CredentialId, GroupId, ResponsesCompactMode, ResponsesCompactProbeResult, Status,
+};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::sea_query::{MysqlQueryBuilder, PostgresQueryBuilder, SqliteQueryBuilder};
 use sea_orm::{ActiveModelTrait, EntityTrait, JsonValue, Set};
@@ -82,6 +84,17 @@ async fn detail_exposes_only_validated_non_sensitive_metadata() -> Result<(), Bo
     assert_eq!(channel.param_override()["temperature"], 0);
     assert!(channel.auto_ban_rules().is_empty());
     assert!(!channel.pool_mode());
+    assert_eq!(channel.responses_compact_mode(), ResponsesCompactMode::Auto);
+    assert_eq!(
+        channel.responses_compact_model_mapping(),
+        &serde_json::json!({})
+    );
+    assert_eq!(
+        channel.responses_compact_probe_result(),
+        ResponsesCompactProbeResult::Unknown
+    );
+    assert_eq!(channel.responses_compact_probe_checked_at(), None);
+    assert_eq!(channel.responses_compact_probe_http_status(), None);
     assert_eq!(format!("{channel:?}"), "AdminChannelRecord(<redacted>)");
     assert!(matches!(
         fixture.repository.get(fixture.deleted_channel_id).await?,
@@ -234,6 +247,53 @@ async fn pool_mode_projection_accepts_boolean_and_rejects_other_values()
     Ok(())
 }
 
+#[tokio::test]
+async fn compact_projection_exposes_only_validated_capability_fields() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture().await?;
+    let model = channels::Entity::find_by_id(fixture.primary_channel_id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("测试渠道必须存在");
+    let mut active = channels::ActiveModel::from(model);
+    active.protocol = Set("openai_responses".to_owned());
+    active.settings = Set(SensitiveJson::from(serde_json::json!({
+        "responses_compact_mode": "force_on",
+        "compact_model_mapping": {"public-model": "compact-model"},
+        "responses_compact_probe_result": "supported",
+        "responses_compact_probe_checked_at": 1_700_000_000_000_i64,
+        "responses_compact_probe_http_status": 200,
+        "private_setting": "must-not-be-returned"
+    })));
+    active.update(fixture.pool.connection()).await?;
+
+    let AdminChannelLookupOutcome::Found(channel) =
+        fixture.repository.get(fixture.primary_channel_id).await?
+    else {
+        panic!("有效渠道详情必须存在");
+    };
+    assert_eq!(
+        channel.responses_compact_mode(),
+        ResponsesCompactMode::ForceOn
+    );
+    assert_eq!(
+        channel.responses_compact_model_mapping()["public-model"],
+        "compact-model"
+    );
+    assert_eq!(
+        channel.responses_compact_probe_result(),
+        ResponsesCompactProbeResult::Supported
+    );
+    assert_eq!(
+        channel.responses_compact_probe_checked_at(),
+        Some(1_700_000_000_000)
+    );
+    assert_eq!(channel.responses_compact_probe_http_status(), Some(200));
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
 #[test]
 fn read_queries_only_project_non_sensitive_channel_capabilities() {
     let channel_queries = [
@@ -245,6 +305,9 @@ fn read_queries_only_project_non_sensitive_channel_capabilities() {
         let sql = sql.to_ascii_lowercase();
         assert!(!sql.contains("header_override"));
         assert!(sql.contains("responses_websocket_enabled"));
+        assert!(sql.contains("responses_compact_mode"));
+        assert!(sql.contains("responses_compact_model_mapping"));
+        assert!(sql.contains("responses_compact_probe_result"));
         assert!(sql.contains("auto_ban_rules"));
         assert!(sql.contains("pool_mode"));
         assert!(!sql.contains("as \"settings\""));

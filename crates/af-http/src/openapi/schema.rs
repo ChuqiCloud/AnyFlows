@@ -109,6 +109,24 @@ pub(crate) fn model_mapping_write_schema() -> RefOr<Schema> {
     bounded_string_map_schema("Canonical 请求模型到上游模型的映射，序列化后最多 64 KiB。")
 }
 
+/// 生成可省略或为 null 的渠道模型映射写入 schema。
+pub(crate) fn optional_model_mapping_write_schema() -> RefOr<Schema> {
+    ObjectBuilder::new()
+        .schema_type(SchemaType::from_iter([Type::Object, Type::Null]))
+        .additional_properties(Some(Schema::Object(
+            ObjectBuilder::new()
+                .schema_type(Type::String)
+                .min_length(Some(1))
+                .max_length(Some(256))
+                .build(),
+        )))
+        .description(Some(
+            "Canonical 请求模型到上游模型的映射；省略或 null 时保留原值。",
+        ))
+        .build()
+        .into()
+}
+
 /// 生成渠道读写共用的闭合 Canonical 参数覆盖 schema。
 pub(crate) fn channel_parameter_overrides_schema() -> RefOr<Schema> {
     ObjectBuilder::new()
@@ -400,6 +418,24 @@ pub(crate) enum AdminChannelWriteProtocolSchema {
     OpenaiAudio,
     Anthropic,
     Gemini,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
+#[schema(as = ResponsesCompactMode, rename_all = "snake_case")]
+pub(crate) enum ResponsesCompactModeSchema {
+    Auto,
+    ForceOn,
+    ForceOff,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
+#[schema(as = ResponsesCompactProbeResult, rename_all = "snake_case")]
+pub(crate) enum ResponsesCompactProbeResultSchema {
+    Unknown,
+    Supported,
+    Unsupported,
 }
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]

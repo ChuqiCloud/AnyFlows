@@ -2,7 +2,8 @@ use std::fmt;
 
 use af_db::AdminChannelRecord;
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, GroupId, Protocol, Status,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, GroupId, Protocol,
+    ResponsesCompactMode, ResponsesCompactProbeResult, Status,
 };
 use serde::{Deserialize, Serialize};
 
@@ -85,6 +86,11 @@ pub struct AdminChannel {
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
     responses_websocket_enabled: bool,
+    responses_compact_mode: ResponsesCompactMode,
+    responses_compact_model_mapping: serde_json::Value,
+    responses_compact_probe_result: ResponsesCompactProbeResult,
+    responses_compact_probe_checked_at: Option<i64>,
+    responses_compact_probe_http_status: Option<u16>,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
     model_mapping: serde_json::Value,
@@ -135,6 +141,11 @@ impl AdminChannel {
             auto_ban_rules: ChannelAutoBanRules::default(),
             pool_mode: false,
             responses_websocket_enabled: false,
+            responses_compact_mode: ResponsesCompactMode::Auto,
+            responses_compact_model_mapping: serde_json::json!({}),
+            responses_compact_probe_result: ResponsesCompactProbeResult::Unknown,
+            responses_compact_probe_checked_at: None,
+            responses_compact_probe_http_status: None,
             models,
             group_ids,
             model_mapping,
@@ -213,6 +224,31 @@ impl AdminChannel {
     pub const fn responses_websocket_enabled(&self) -> bool {
         self.responses_websocket_enabled
     }
+    /// 返回 Compact 三态能力策略。
+    #[must_use]
+    pub const fn responses_compact_mode(&self) -> ResponsesCompactMode {
+        self.responses_compact_mode
+    }
+    /// 返回 Compact 专属模型映射对象。
+    #[must_use]
+    pub const fn responses_compact_model_mapping(&self) -> &serde_json::Value {
+        &self.responses_compact_model_mapping
+    }
+    /// 返回最近一次确定性 Compact 探测结论。
+    #[must_use]
+    pub const fn responses_compact_probe_result(&self) -> ResponsesCompactProbeResult {
+        self.responses_compact_probe_result
+    }
+    /// 返回最近一次确定性 Compact 探测时间（Unix 毫秒）。
+    #[must_use]
+    pub const fn responses_compact_probe_checked_at(&self) -> Option<i64> {
+        self.responses_compact_probe_checked_at
+    }
+    /// 返回最近一次 Compact 探测的受控 HTTP 状态。
+    #[must_use]
+    pub const fn responses_compact_probe_http_status(&self) -> Option<u16> {
+        self.responses_compact_probe_http_status
+    }
     /// 返回渠道声明的 Canonical 模型集合。
     #[must_use]
     pub fn models(&self) -> &[String] {
@@ -284,10 +320,33 @@ impl AdminChannel {
         .with_auto_ban_rules(record.auto_ban_rules().clone())
         .with_pool_mode(record.pool_mode())
         .with_responses_websocket_enabled(record.responses_websocket_enabled())
+        .with_responses_compact_configuration(
+            record.responses_compact_mode(),
+            record.responses_compact_model_mapping().clone(),
+            record.responses_compact_probe_result(),
+            record.responses_compact_probe_checked_at(),
+            record.responses_compact_probe_http_status(),
+        )
     }
 
     fn with_responses_websocket_enabled(mut self, enabled: bool) -> Self {
         self.responses_websocket_enabled = enabled;
+        self
+    }
+
+    fn with_responses_compact_configuration(
+        mut self,
+        mode: ResponsesCompactMode,
+        model_mapping: serde_json::Value,
+        probe_result: ResponsesCompactProbeResult,
+        probe_checked_at: Option<i64>,
+        probe_http_status: Option<u16>,
+    ) -> Self {
+        self.responses_compact_mode = mode;
+        self.responses_compact_model_mapping = model_mapping;
+        self.responses_compact_probe_result = probe_result;
+        self.responses_compact_probe_checked_at = probe_checked_at;
+        self.responses_compact_probe_http_status = probe_http_status;
         self
     }
 

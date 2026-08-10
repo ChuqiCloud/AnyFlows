@@ -195,6 +195,8 @@
       "autoBanKeywordPlaceholder": "Enter a structured error keyword",
       "poolModeHint": "Delegates channel-level failures to the upstream account pool while still isolating unusable local credentials.",
       "responsesWebsocketHint": "Reuses a connection only when the request has a stable session identifier. Failures before the first event fall back to HTTP once.",
+      "responsesCompactModeHint": "Auto mode routes only after a real probe confirms support. Force-on is still limited to native Responses channels.",
+      "responsesCompactModelMappingHint": "Optional. Applies a Compact-only upstream model mapping after the normal model mapping.",
       "tagHint": "Optional label for filtering and recognition.",
       "timeoutHint": "Controls read stalls and the full request deadline for forwarding and probes. Connection timeout remains global; blank uses each service default.",
       "timeoutPlaceholder": "Use service default",
@@ -224,6 +226,9 @@
       "autoBanKeywords": "Structured error keywords",
       "poolMode": "External account pool mode",
       "responsesWebsocket": "Enable Responses WebSocket",
+      "responsesCompactMode": "Context compaction capability",
+      "responsesCompactModelMapping": "Compact model mapping",
+      "responsesCompactProbe": "Latest probe",
       "tag": "Tag",
       "models": "Models",
       "groupIds": "Available groups",
@@ -251,8 +256,20 @@
       "source": "Client model",
       "target": "Upstream model",
       "add": "Add mapping",
+      "addCompact": "Add Compact mapping",
       "remove": "Remove mapping",
-      "empty": "No model mapping. Requests will use the original model name."
+      "empty": "No model mapping. Requests will use the original model name.",
+      "compactEmpty": "No Compact-only mapping. The normal model mapping result is used."
+    },
+    "compactMode": {
+      "auto": "Auto probe",
+      "forceOn": "Force on",
+      "forceOff": "Force off"
+    },
+    "compactProbe": {
+      "unknown": "Not confirmed",
+      "supported": "Supported",
+      "unsupported": "Unsupported"
     },
     "headers": {
       "name": "Header name",
@@ -1284,7 +1301,8 @@
     },
     "capabilities": {
       "reasoning": "Reasoning",
-      "toolCalls": "Tool calls"
+      "toolCalls": "Tool calls",
+      "responsesCompact": "Context compaction"
     },
     "visibility": {
       "public": "Public",
@@ -1998,7 +2016,8 @@
     },
     "capabilities": {
       "reasoning": "Reasoning",
-      "toolCalls": "Tool calls"
+      "toolCalls": "Tool calls",
+      "responsesCompact": "Context compaction"
     },
     "protocols": {
       "openai_chat": "OpenAI Chat",

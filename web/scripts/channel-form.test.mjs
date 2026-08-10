@@ -95,6 +95,41 @@ test('Responses WebSocket 仅允许原生 Responses 渠道开启', () => {
   assert.equal(schema.safeParse({ ...valid, protocol: 'openai_chat' }).success, false)
 })
 
+test('Responses Compact 三态能力与专属映射只允许原生 Responses 渠道', () => {
+  const schema = buildChannelFormSchema('create', messages)
+  const valid = {
+    ...defaultChannelValues(),
+    name: 'Responses Compact',
+    channelType: 'openai',
+    protocol: 'openai_responses',
+    responsesCompactMode: 'force_on',
+    responsesCompactModelMapping: [{
+      id: 'compact-mapping-1',
+      key: 'gpt-public',
+      value: 'gpt-compact',
+    }],
+  }
+
+  assert.equal(schema.safeParse(valid).success, true)
+  const request = toCreateRequest(valid)
+  assert.equal(request.responses_compact_mode, 'force_on')
+  assert.deepEqual(request.responses_compact_model_mapping, {
+    'gpt-public': 'gpt-compact',
+  })
+  assert.equal(schema.safeParse({ ...valid, protocol: 'openai_chat' }).success, false)
+  assert.equal(schema.safeParse({
+    ...valid,
+    responsesCompactModelMapping: [
+      ...valid.responsesCompactModelMapping,
+      {
+        id: 'compact-mapping-2',
+        key: 'gpt-public',
+        value: 'gpt-other',
+      },
+    ],
+  }).success, false)
+})
+
 test('渠道类型和协议错配必须失败关闭', () => {
   const values = {
     ...defaultChannelValues(),

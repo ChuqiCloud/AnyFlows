@@ -5,6 +5,7 @@ import { Controller, useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
@@ -23,6 +24,7 @@ import {
   type ChannelEditorMode,
   type ChannelFormValues,
   type ChannelProtocol,
+  type ResponsesCompactMode,
   type ChannelType,
 } from './channel-form-model'
 import { ChannelGroupSelector } from './channel-group-selector'
@@ -39,7 +41,7 @@ type ChannelFormProps = {
 }
 
 export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const createMutation = useCreateAdminChannel()
   const updateMutation = useUpdateAdminChannel()
   const schema = buildChannelFormSchema(mode, {
@@ -79,6 +81,15 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
       form.getValues('paramOverride').filter((row) => row.key !== 'stop_sequences'),
       { shouldDirty: true, shouldValidate: true },
     )
+  }
+  const resetUnsupportedResponsesOptions = (
+    nextType: ChannelType,
+    nextProtocol: ChannelProtocol,
+  ) => {
+    if (nextType === 'openai' && nextProtocol === 'openai_responses') return
+    form.setValue('responsesWebsocketEnabled', false, { shouldDirty: true })
+    form.setValue('responsesCompactMode', 'auto', { shouldDirty: true })
+    form.setValue('responsesCompactModelMapping', [], { shouldDirty: true })
   }
   const onSubmit = form.handleSubmit(async (values) => {
     try {
@@ -146,9 +157,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                       shouldDirty: true,
                       shouldValidate: true,
                     })
-                    if (nextType !== 'openai' || nextProtocol !== 'openai_responses') {
-                      form.setValue('responsesWebsocketEnabled', false, { shouldDirty: true })
-                    }
+                    resetUnsupportedResponsesOptions(nextType, nextProtocol)
                     removeUnsupportedParameters(nextProtocol)
                   }}
                 >
@@ -170,9 +179,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                     const nextProtocol = event.target.value as ChannelFormValues['protocol']
                     field.onChange(nextProtocol)
                     removeUnsupportedParameters(nextProtocol)
-                    if (nextProtocol !== 'openai_responses') {
-                      form.setValue('responsesWebsocketEnabled', false, { shouldDirty: true })
-                    }
+                    resetUnsupportedResponsesOptions(channelType, nextProtocol)
                   }}
                 >
                   {channelType === 'anthropic' ? (
@@ -240,14 +247,57 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
             </ChannelFormField>
           ) : null}
           {channelType === 'openai' && protocol === 'openai_responses' ? (
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--hairline)] px-3 py-2.5">
-              <div>
-                <Label htmlFor="channel-responses-websocket">{t('channels.fields.responsesWebsocket')}</Label>
-                <p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('channels.form.responsesWebsocketHint')}</p>
+            <div className="grid gap-4 border-l-2 border-primary/20 pl-3">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <Label htmlFor="channel-responses-websocket">{t('channels.fields.responsesWebsocket')}</Label>
+                  <p className="mt-1 text-[0.6875rem] text-muted-foreground">{t('channels.form.responsesWebsocketHint')}</p>
+                </div>
+                <Controller control={form.control} name="responsesWebsocketEnabled" render={({ field }) => (
+                  <Switch id="channel-responses-websocket" checked={field.value} onCheckedChange={field.onChange} />
+                )} />
               </div>
-              <Controller control={form.control} name="responsesWebsocketEnabled" render={({ field }) => (
-                <Switch id="channel-responses-websocket" checked={field.value} onCheckedChange={field.onChange} />
-              )} />
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)]">
+                <ChannelFormField
+                  id="channel-responses-compact-mode"
+                  label={t('channels.fields.responsesCompactMode')}
+                  hint={t('channels.form.responsesCompactModeHint')}
+                  error={form.formState.errors.responsesCompactMode?.message}
+                >
+                  <Controller control={form.control} name="responsesCompactMode" render={({ field }) => (
+                    <Select
+                      id="channel-responses-compact-mode"
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.target.value as ResponsesCompactMode)}
+                    >
+                      <option value="auto">{t('channels.compactMode.auto')}</option>
+                      <option value="force_on">{t('channels.compactMode.forceOn')}</option>
+                      <option value="force_off">{t('channels.compactMode.forceOff')}</option>
+                    </Select>
+                  )} />
+                </ChannelFormField>
+                <CompactProbeStatus channel={channel} language={i18n.language} />
+              </div>
+              <ChannelFormField
+                id="channel-responses-compact-mapping"
+                htmlFor={false}
+                label={t('channels.fields.responsesCompactModelMapping')}
+                hint={t('channels.form.responsesCompactModelMappingHint')}
+                error={form.formState.errors.responsesCompactModelMapping?.message}
+              >
+                <Controller control={form.control} name="responsesCompactModelMapping" render={({ field }) => (
+                  <ChannelKeyValueEditor
+                    rows={field.value}
+                    keyLabel={t('channels.mapping.source')}
+                    valueLabel={t('channels.mapping.target')}
+                    addLabel={t('channels.mapping.addCompact')}
+                    removeLabel={t('channels.mapping.remove')}
+                    emptyText={t('channels.mapping.compactEmpty')}
+                    createRow={() => createKeyValueRow('compact-mapping')}
+                    onChange={field.onChange}
+                  />
+                )} />
+              </ChannelFormField>
             </div>
           ) : null}
           <ChannelFormField id="channel-tag" label={t('channels.fields.tag')} hint={t('channels.form.tagHint')}>
@@ -288,5 +338,30 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
         <Button type="submit" disabled={pending}>{pending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : null}{t(mode === 'create' ? 'channels.actions.create' : 'channels.actions.save')}</Button>
       </div>
     </form>
+  )
+}
+
+function CompactProbeStatus({ channel, language }: { channel?: AdminChannel; language: string }) {
+  const { t } = useTranslation()
+  const probe = channel?.responses_compact_probe
+  const result = probe?.result ?? 'unknown'
+  const checkedAt = probe?.checked_at
+    ? new Intl.DateTimeFormat(language, { dateStyle: 'medium', timeStyle: 'short' })
+      .format(probe.checked_at)
+    : undefined
+  const tone = result === 'supported'
+    ? 'border-success/25 bg-success/10 text-success'
+    : result === 'unsupported'
+      ? 'border-destructive/25 bg-destructive/10 text-destructive'
+      : 'text-muted-foreground'
+  return (
+    <div className="grid content-start gap-2">
+      <Label>{t('channels.fields.responsesCompactProbe')}</Label>
+      <div className="flex min-h-9 flex-wrap items-center gap-2">
+        <Badge className={tone}>{t(`channels.compactProbe.${result}`)}</Badge>
+        {probe?.http_status ? <Badge>HTTP {probe.http_status}</Badge> : null}
+        {checkedAt ? <span className="text-[0.6875rem] text-muted-foreground">{checkedAt}</span> : null}
+      </div>
+    </div>
   )
 }

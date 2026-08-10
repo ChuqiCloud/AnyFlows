@@ -1,7 +1,8 @@
 use std::{fmt, str::FromStr as _, time::Duration};
 
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, GroupId, Protocol, Status,
+    ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, GroupId, Protocol,
+    ResponsesCompactMode, ResponsesCompactProbeResult, Status,
 };
 use sea_orm::{
     ConnectionTrait, DbBackend, DbErr, JsonValue, QueryResult,
@@ -16,7 +17,12 @@ use crate::{
     ChannelModelMappings, ChannelParameterOverrides, DatabasePool,
     ability_write::{AbilityWriteError, ChannelRoutingSnapshot, load_channel_routing_snapshots},
     channel_settings::{
-        AUTO_BAN_RULES_KEY, parse_auto_ban_rules_value, pool_mode, responses_websocket_enabled,
+        AUTO_BAN_RULES_KEY, RESPONSES_COMPACT_MODE_KEY, RESPONSES_COMPACT_MODEL_MAPPING_KEY,
+        RESPONSES_COMPACT_PROBE_CHECKED_AT_KEY, RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY,
+        RESPONSES_COMPACT_PROBE_RESULT_KEY, parse_auto_ban_rules_value, pool_mode,
+        responses_compact_mode, responses_compact_model_mapping, responses_compact_probe_record,
+        responses_websocket_enabled, validate_responses_compact_capability,
+        validate_responses_compact_model_mapping, validate_responses_compact_probe_result,
         validate_responses_websocket_capability,
     },
     entity::{ChannelBaseUrl, channels},
@@ -42,6 +48,11 @@ pub struct AdminChannelRecord {
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
     responses_websocket_enabled: bool,
+    responses_compact_mode: ResponsesCompactMode,
+    responses_compact_model_mapping: JsonValue,
+    responses_compact_probe_result: ResponsesCompactProbeResult,
+    responses_compact_probe_checked_at: Option<i64>,
+    responses_compact_probe_http_status: Option<u16>,
     models: Vec<String>,
     group_ids: Vec<GroupId>,
     model_mapping: JsonValue,
@@ -110,6 +121,24 @@ impl AdminChannelRecord {
                     .map(i64::from)
                     .unwrap_or(-1)
             },
+            responses_compact_mode: setting_value(&settings, RESPONSES_COMPACT_MODE_KEY),
+            responses_compact_model_mapping: setting_value(
+                &settings,
+                RESPONSES_COMPACT_MODEL_MAPPING_KEY,
+            ),
+            responses_compact_probe_result: setting_value(
+                &settings,
+                RESPONSES_COMPACT_PROBE_RESULT_KEY,
+            ),
+            responses_compact_probe_checked_at: setting_value(
+                &settings,
+                RESPONSES_COMPACT_PROBE_CHECKED_AT_KEY,
+            ),
+            responses_compact_probe_http_status: setting_value(
+                &settings,
+                RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY,
+            ),
+            settings_oversized,
             balance: model.balance,
             used_quota: model.used_quota,
             tag: model.tag,
@@ -195,6 +224,36 @@ impl AdminChannelRecord {
     #[must_use]
     pub const fn responses_websocket_enabled(&self) -> bool {
         self.responses_websocket_enabled
+    }
+
+    /// 返回 Compact 三态能力策略。
+    #[must_use]
+    pub const fn responses_compact_mode(&self) -> ResponsesCompactMode {
+        self.responses_compact_mode
+    }
+
+    /// 返回 Compact 专属模型映射对象。
+    #[must_use]
+    pub const fn responses_compact_model_mapping(&self) -> &JsonValue {
+        &self.responses_compact_model_mapping
+    }
+
+    /// 返回最近一次确定性 Compact 探测结论。
+    #[must_use]
+    pub const fn responses_compact_probe_result(&self) -> ResponsesCompactProbeResult {
+        self.responses_compact_probe_result
+    }
+
+    /// 返回最近一次确定性 Compact 探测时间（Unix 毫秒）。
+    #[must_use]
+    pub const fn responses_compact_probe_checked_at(&self) -> Option<i64> {
+        self.responses_compact_probe_checked_at
+    }
+
+    /// 返回最近一次 Compact 探测的受控 HTTP 状态。
+    #[must_use]
+    pub const fn responses_compact_probe_http_status(&self) -> Option<u16> {
+        self.responses_compact_probe_http_status
     }
 
     /// 返回按 Canonical 原文排序的渠道模型集合。
@@ -487,6 +546,12 @@ struct AdminChannelRow {
     param_override: Option<JsonValue>,
     param_override_oversized: bool,
     responses_websocket_state: i64,
+    responses_compact_mode: Option<JsonValue>,
+    responses_compact_model_mapping: Option<JsonValue>,
+    responses_compact_probe_result: Option<JsonValue>,
+    responses_compact_probe_checked_at: Option<JsonValue>,
+    responses_compact_probe_http_status: Option<JsonValue>,
+    settings_oversized: bool,
     balance: Option<i64>,
     used_quota: i64,
     tag: Option<String>,
@@ -516,6 +581,15 @@ impl AdminChannelRow {
             param_override: result.try_get("", "param_override")?,
             param_override_oversized: result.try_get("", "param_override_oversized")?,
             responses_websocket_state: result.try_get("", "responses_websocket_enabled")?,
+            responses_compact_mode: result.try_get("", "responses_compact_mode")?,
+            responses_compact_model_mapping: result
+                .try_get("", "responses_compact_model_mapping")?,
+            responses_compact_probe_result: result.try_get("", "responses_compact_probe_result")?,
+            responses_compact_probe_checked_at: result
+                .try_get("", "responses_compact_probe_checked_at")?,
+            responses_compact_probe_http_status: result
+                .try_get("", "responses_compact_probe_http_status")?,
+            settings_oversized: result.try_get("", "settings_oversized")?,
             balance: result.try_get("", "balance")?,
             used_quota: result.try_get("", "used_quota")?,
             tag: result.try_get("", "tag")?,
@@ -558,6 +632,45 @@ impl AdminChannelRow {
             1 => true,
             _ => return Err(internal_invariant()),
         };
+        if self.settings_oversized {
+            return Err(internal_invariant());
+        }
+        let settings = compact_settings_projection(
+            self.responses_compact_mode,
+            self.responses_compact_model_mapping,
+            self.responses_compact_probe_result,
+            self.responses_compact_probe_checked_at,
+            self.responses_compact_probe_http_status,
+        );
+        let responses_compact_mode =
+            responses_compact_mode(&settings).map_err(|_| internal_invariant())?;
+        let responses_compact_model_mapping =
+            responses_compact_model_mapping(&settings).map_err(|_| internal_invariant())?;
+        validate_responses_compact_capability(channel_type, protocol, responses_compact_mode)
+            .map_err(|_| internal_invariant())?;
+        validate_responses_compact_model_mapping(
+            channel_type,
+            protocol,
+            &responses_compact_model_mapping,
+        )
+        .map_err(|_| internal_invariant())?;
+        let responses_compact_model_mapping = responses_compact_model_mapping.to_projection_json();
+        let responses_compact_probe =
+            responses_compact_probe_record(&settings).map_err(|_| internal_invariant())?;
+        let responses_compact_probe_result = responses_compact_probe
+            .map_or(ResponsesCompactProbeResult::Unknown, |record| {
+                record.result()
+            });
+        validate_responses_compact_probe_result(
+            channel_type,
+            protocol,
+            responses_compact_probe_result,
+        )
+        .map_err(|_| internal_invariant())?;
+        let responses_compact_probe_checked_at =
+            responses_compact_probe.map(|record| record.checked_at());
+        let responses_compact_probe_http_status =
+            responses_compact_probe.and_then(|record| record.http_status());
         let auto_ban_rules_value = self
             .auto_ban_rules
             .as_ref()
@@ -603,6 +716,11 @@ impl AdminChannelRow {
             auto_ban_rules,
             pool_mode,
             responses_websocket_enabled,
+            responses_compact_mode,
+            responses_compact_model_mapping,
+            responses_compact_probe_result,
+            responses_compact_probe_checked_at,
+            responses_compact_probe_http_status,
             models: self.models,
             group_ids: self.group_ids,
             model_mapping,
@@ -645,8 +763,16 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
         channel_json_length(database_backend, channels::Column::ModelMapping);
     let param_override_length =
         channel_json_length(database_backend, channels::Column::ParamOverride);
+    let settings_length = channel_json_length(database_backend, channels::Column::Settings);
     let model_mapping_column = || Expr::col((channels::Entity, channels::Column::ModelMapping));
     let param_override_column = || Expr::col((channels::Entity, channels::Column::ParamOverride));
+    let bounded_setting = |key| {
+        Expr::case(
+            settings_length.clone().lte(MAX_ADMIN_CHANNEL_JSON_BYTES),
+            channel_setting_projection(database_backend, key),
+        )
+        .finally(Expr::value(Option::<JsonValue>::None))
+    };
 
     Query::select()
         .expr_as(
@@ -722,6 +848,30 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
             Alias::new("responses_websocket_enabled"),
         )
         .expr_as(
+            bounded_setting(RESPONSES_COMPACT_MODE_KEY),
+            Alias::new("responses_compact_mode"),
+        )
+        .expr_as(
+            bounded_setting(RESPONSES_COMPACT_MODEL_MAPPING_KEY),
+            Alias::new("responses_compact_model_mapping"),
+        )
+        .expr_as(
+            bounded_setting(RESPONSES_COMPACT_PROBE_RESULT_KEY),
+            Alias::new("responses_compact_probe_result"),
+        )
+        .expr_as(
+            bounded_setting(RESPONSES_COMPACT_PROBE_CHECKED_AT_KEY),
+            Alias::new("responses_compact_probe_checked_at"),
+        )
+        .expr_as(
+            bounded_setting(RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY),
+            Alias::new("responses_compact_probe_http_status"),
+        )
+        .expr_as(
+            Expr::case(settings_length.gt(MAX_ADMIN_CHANNEL_JSON_BYTES), true).finally(false),
+            Alias::new("settings_oversized"),
+        )
+        .expr_as(
             channel_auto_ban_rules_projection(database_backend),
             Alias::new("auto_ban_rules"),
         )
@@ -751,6 +901,49 @@ pub(crate) fn channel_base_query(database_backend: DbBackend) -> SelectStatement
         )
         .from(channels::Entity)
         .to_owned()
+}
+
+fn channel_setting_projection(database_backend: DbBackend, key: &str) -> SimpleExpr {
+    match database_backend {
+        DbBackend::Postgres => Expr::cust(format!(
+            r#"CASE WHEN jsonb_typeof("channels"."settings") <> 'object' THEN NULL ELSE "channels"."settings" -> '{key}' END"#,
+        )),
+        DbBackend::MySql => Expr::cust(format!(
+            "CASE WHEN JSON_TYPE(`channels`.`settings`) <> 'OBJECT' THEN NULL ELSE JSON_EXTRACT(`channels`.`settings`, '$.{key}') END",
+        )),
+        DbBackend::Sqlite => Expr::cust(format!(
+            r#"CASE WHEN json_type("channels"."settings") <> 'object' THEN NULL WHEN json_type("channels"."settings", '$.{key}') IS NULL THEN NULL ELSE json_quote(json_extract("channels"."settings", '$.{key}')) END"#,
+        )),
+    }
+}
+
+fn setting_value(settings: &JsonValue, key: &str) -> Option<JsonValue> {
+    settings
+        .as_object()
+        .and_then(|object| object.get(key))
+        .cloned()
+}
+
+fn compact_settings_projection(
+    mode: Option<JsonValue>,
+    model_mapping: Option<JsonValue>,
+    probe_result: Option<JsonValue>,
+    probe_checked_at: Option<JsonValue>,
+    probe_http_status: Option<JsonValue>,
+) -> JsonValue {
+    let mut settings = serde_json::Map::new();
+    for (key, value) in [
+        (RESPONSES_COMPACT_MODE_KEY, mode),
+        (RESPONSES_COMPACT_MODEL_MAPPING_KEY, model_mapping),
+        (RESPONSES_COMPACT_PROBE_RESULT_KEY, probe_result),
+        (RESPONSES_COMPACT_PROBE_CHECKED_AT_KEY, probe_checked_at),
+        (RESPONSES_COMPACT_PROBE_HTTP_STATUS_KEY, probe_http_status),
+    ] {
+        if let Some(value) = value {
+            settings.insert(key.to_owned(), value);
+        }
+    }
+    JsonValue::Object(settings)
 }
 
 fn channel_json_length(database_backend: DbBackend, column: channels::Column) -> SimpleExpr {
