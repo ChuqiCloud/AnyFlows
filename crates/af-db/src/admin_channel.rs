@@ -912,7 +912,7 @@ fn channel_setting_projection(database_backend: DbBackend, key: &str) -> SimpleE
             "CASE WHEN JSON_TYPE(`channels`.`settings`) <> 'OBJECT' THEN NULL ELSE JSON_EXTRACT(`channels`.`settings`, '$.{key}') END",
         )),
         DbBackend::Sqlite => Expr::cust(format!(
-            r#"CASE WHEN json_type("channels"."settings") <> 'object' THEN NULL ELSE json_quote(json_extract("channels"."settings", '$.{key}')) END"#,
+            r#"CASE WHEN json_type("channels"."settings") <> 'object' THEN NULL WHEN json_type("channels"."settings", '$.{key}') IS NULL THEN NULL ELSE json_quote(json_extract("channels"."settings", '$.{key}')) END"#,
         )),
     }
 }

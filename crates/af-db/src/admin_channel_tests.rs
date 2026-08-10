@@ -84,6 +84,17 @@ async fn detail_exposes_only_validated_non_sensitive_metadata() -> Result<(), Bo
     assert_eq!(channel.param_override()["temperature"], 0);
     assert!(channel.auto_ban_rules().is_empty());
     assert!(!channel.pool_mode());
+    assert_eq!(channel.responses_compact_mode(), ResponsesCompactMode::Auto);
+    assert_eq!(
+        channel.responses_compact_model_mapping(),
+        &serde_json::json!({})
+    );
+    assert_eq!(
+        channel.responses_compact_probe_result(),
+        ResponsesCompactProbeResult::Unknown
+    );
+    assert_eq!(channel.responses_compact_probe_checked_at(), None);
+    assert_eq!(channel.responses_compact_probe_http_status(), None);
     assert_eq!(format!("{channel:?}"), "AdminChannelRecord(<redacted>)");
     assert!(matches!(
         fixture.repository.get(fixture.deleted_channel_id).await?,
