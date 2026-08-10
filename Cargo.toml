@@ -119,16 +119,13 @@ sea-orm-migration = { version = "=1.1.20", default-features = false, features = 
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.150", features = ["raw_value"] }
 sha2 = { version = "0.10.9", default-features = false }
+# 仅启用受支持容器的时长探测能力，不额外启用 AAC/ALAC/PCM/Vorbis 解码器。
 symphonia = { version = "0.5.5", default-features = false, features = [
-    "aac",
-    "alac",
     "isomp4",
     "mkv",
     "mp1",
     "mp2",
     "mp3",
-    "pcm",
-    "vorbis",
     "wav",
 ] }
 thiserror = "2.0.18"

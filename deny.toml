@@ -51,6 +51,39 @@ allow = ["0BSD"]
 crate = "smartstring"
 allow = ["MPL-2.0"]
 
+# Symphonia 仅用于读取音频容器元数据；MPL 只约束依赖自身文件的修改，不扩散到本项目代码。
+[[licenses.exceptions]]
+crate = "symphonia"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-bundle-mp3"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-core"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-format-isomp4"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-format-mkv"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-format-riff"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-metadata"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+crate = "symphonia-utils-xiph"
+allow = ["MPL-2.0"]
+
 # Rhai 的哈希依赖通过该实现生成编译期随机种子；CC0 为公共领域式宽松许可。
 [[licenses.exceptions]]
 crate = "tiny-keccak"
