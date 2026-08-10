@@ -14,6 +14,7 @@ mod redemption;
 mod routing;
 mod subscription;
 mod subscription_window;
+mod task;
 mod token_policy;
 mod wallet;
 
@@ -55,6 +56,11 @@ pub use subscription_window::{
     MAX_SUBSCRIPTION_WINDOW_ADVANCES, SubscriptionWindow, SubscriptionWindowAdvance,
     SubscriptionWindowError,
 };
+pub use task::{
+    MAX_TASK_FAILURE_REASON_BYTES, MAX_UPSTREAM_TASK_ID_BYTES, TaskFailure, TaskFailureError,
+    TaskFailureKind, TaskIdentifierError, TaskProgress, TaskProgressError, TaskState,
+    TaskStateError, TaskStatus, TaskSubmission, UpstreamTaskId,
+};
 pub use token_policy::{
     MAX_MODEL_NAME_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_COUNT, MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES,
     TokenModelPolicy, TokenModelPolicyError,
@@ -79,6 +85,8 @@ mod quota_tests;
 mod redemption_tests;
 #[cfg(test)]
 mod subscription_tests;
+#[cfg(test)]
+mod task_tests;
 #[cfg(test)]
 mod token_policy_tests;
 #[cfg(test)]

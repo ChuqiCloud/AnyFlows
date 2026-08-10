@@ -15,6 +15,7 @@ pub mod quota_math;
 mod refund_signal_consumer;
 mod refund_signal_queue;
 mod stripe;
+mod task_billing;
 mod usage_record_consumer;
 mod usage_record_database_sink;
 mod usage_record_queue;
@@ -86,6 +87,16 @@ pub use stripe::{
     STRIPE_PAYMENT_PROVIDER, STRIPE_SIGNATURE_HEADER, StripePaymentProvider,
     StripePaymentProviderConfigError,
 };
+pub use task_billing::{
+    TaskBillingCompletion, TaskBillingError, TaskBillingLifecycle, TaskBillingPlan,
+    TaskBillingReleaseConsumer, TaskBillingReleaseConsumerError, TaskBillingReleaseDelivery,
+    TaskBillingReleaseQueue, TaskBillingReleaseQueueError, TaskBillingReleaseReceiver,
+    TaskBillingReleaseSignalOutcome, TaskBillingReleaseSignalPort, TaskBillingReleaseSink,
+    TaskBillingReleaseSinkError, TaskBillingReleaseSinkFuture, TaskBillingReserveError,
+    TaskBillingReserveFuture, TaskBillingReservePort, TaskBillingSettlementError,
+    TaskBillingSettlementFuture, TaskBillingSettlementPort, TaskBillingSettlementRequest,
+    TaskBillingState,
+};
 pub use usage_record_consumer::{
     UsageRecordConsumer, UsageRecordConsumerError, UsageRecordSink, UsageRecordSinkError,
     UsageRecordSinkFuture,
@@ -117,3 +128,5 @@ mod pricing_snapshot_tests;
 mod pricing_tests;
 #[cfg(test)]
 mod quota_math_tests;
+#[cfg(test)]
+mod task_billing_tests;
