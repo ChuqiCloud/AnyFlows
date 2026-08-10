@@ -1707,6 +1707,7 @@ impl Bootstrap<ListenerReady> {
             chat: _,
             embedding: _,
             image: _,
+            audio: _,
             _channel_index: _,
             model_catalog_reader: _,
             admin_model_sync_service: _,

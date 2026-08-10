@@ -254,7 +254,7 @@ fn normalize_duration_usage(
         return Err(AfError::Internal);
     }
     let audio_tokens = duration_tokens(duration, 0)?;
-    normalized_usage(0, audio_tokens, 0, source)
+    normalized_usage(0, audio_tokens, TokenCount::ZERO, source)
 }
 
 fn normalized_usage(
