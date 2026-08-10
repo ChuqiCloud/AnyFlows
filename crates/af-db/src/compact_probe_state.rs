@@ -145,15 +145,13 @@ impl CompactProbeStateRepository {
                 )
                 // 不修改 updated_at；自动禁用恢复租约仍绑定原始渠道状态版本。
                 .filter(channels::Column::Id.eq(channel_id.get()))
-                .filter(channels::Column::UpdatedAt.eq(expected_updated_at))
                 .filter(channels::Column::DeletedAt.is_null())
                 .exec(&transaction)
                 .await
                 .map_err(|_| CompactProbeStateRepositoryError::Query)?;
-            match update.rows_affected {
-                0 => return Ok(CompactProbeStateWriteOutcome::Stale),
-                1 => {}
-                _ => return Err(CompactProbeStateRepositoryError::Invariant),
+            // 行锁后已用数据库读回值完成 CAS，避免 SQLite 时间文本与绑定参数格式差异。
+            if update.rows_affected != 1 {
+                return Err(CompactProbeStateRepositoryError::Invariant);
             }
             enqueue_scheduler_catalog_change(
                 &transaction,
