@@ -108,6 +108,18 @@ pub(super) enum ResponseOutputItemWire {
     /// 推理摘要与加密连续上下文。
     #[serde(rename = "reasoning")]
     Reasoning(ReasoningItemWire),
+    /// 服务端返回的不透明上下文压缩 Item。
+    #[serde(rename = "compaction")]
+    Compaction(CompactionItemWire),
+}
+
+/// Responses 输出中的不透明压缩 Item。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct CompactionItemWire {
+    #[serde(default)]
+    pub(super) id: Option<String>,
+    pub(super) encrypted_content: String,
 }
 
 /// 助手输出消息 Item。

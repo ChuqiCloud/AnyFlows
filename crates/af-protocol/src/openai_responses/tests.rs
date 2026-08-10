@@ -77,6 +77,64 @@ fn accepts_ai_sdk_stateless_reasoning_contract() {
 }
 
 #[test]
+fn accepts_compaction_context_and_round_trip_item() {
+    let request = parse_json(json!({
+        "model": "gpt-5.5",
+        "context_management": [{
+            "type": "compaction",
+            "compact_threshold": 20000
+        }],
+        "input": [
+            {
+                "type": "compaction",
+                "id": "cmp_input_1",
+                "encrypted_content": "opaque-compaction"
+            },
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": "continue"}]
+            }
+        ]
+    }))
+    .unwrap();
+
+    assert!(matches!(
+        &request.messages[0].content[0],
+        ContentBlock::Compaction(item)
+            if item.as_value() == &json!({
+                "type": "compaction",
+                "id": "cmp_input_1",
+                "encrypted_content": "opaque-compaction"
+            })
+    ));
+    assert_eq!(
+        request
+            .raw_passthrough()
+            .unwrap()
+            .fields_for_protocol(Protocol::OpenAiResponses)
+            .unwrap()["context_management"],
+        json!([
+            {"type": "compaction", "compact_threshold": 20000}
+        ])
+    );
+}
+
+#[test]
+fn rejects_invalid_compaction_context() {
+    for context in [
+        json!([]),
+        json!([{"type": "compaction", "compact_threshold": 0}]),
+        json!([{"type": "compaction", "compact_threshold": 20000}, {"type": "compaction", "compact_threshold": 30000}]),
+        json!([{"type": "unknown", "compact_threshold": 20000}]),
+    ] {
+        assert_eq!(
+            parse_json(json!({"model": "gpt-test", "context_management": context})),
+            Err(ParseRequestError::InvalidValue)
+        );
+    }
+}
+
+#[test]
 fn parses_messages_tools_sampling_reasoning_continuation_and_raw_fields() {
     let request = parse_json(json!({
         "model": "gpt-test",

@@ -65,9 +65,28 @@ pub(super) struct ResponsesRequestWire {
     /// 是否请求流式响应。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) stream: Field<bool>,
+    /// 服务端自动压缩策略。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) context_management: Field<Vec<ContextManagementWire>>,
     /// 等待静态白名单校验的顶层同源字段。
     #[serde(flatten)]
     pub(super) extra: Map<String, Value>,
+}
+
+/// Responses 自动压缩策略项。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ContextManagementWire {
+    #[serde(rename = "type")]
+    pub(super) kind: ContextManagementTypeWire,
+    pub(super) compact_threshold: i64,
+}
+
+/// 自动压缩策略类型。
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum ContextManagementTypeWire {
+    Compaction,
 }
 
 /// 持久会话可以使用字符串简写或显式对象。
@@ -110,6 +129,26 @@ pub(super) enum InputItemWire {
     FunctionCall(FunctionCallItemWire),
     /// 客户端提供的函数调用结果。
     FunctionCallOutput(FunctionCallOutputItemWire),
+    /// 上一轮服务端返回的不透明压缩 Item。
+    Compaction(CompactionInputItemWire),
+}
+
+/// Responses 输入中的不透明压缩 Item。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct CompactionInputItemWire {
+    #[serde(rename = "type")]
+    pub(super) kind: CompactionItemTypeWire,
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) id: Field<String>,
+    pub(super) encrypted_content: String,
+}
+
+/// 压缩 Item 类型。
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum CompactionItemTypeWire {
+    Compaction,
 }
 
 /// 客户端回传的加密推理 Item。

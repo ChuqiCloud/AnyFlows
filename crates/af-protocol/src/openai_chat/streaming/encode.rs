@@ -160,6 +160,10 @@ impl OpenAiChatStreamEncoder {
                     self.include_usage_null,
                 )
             }
+            CanonicalStreamEvent::CompactionStart { .. }
+            | CanonicalStreamEvent::CompactionEnd { .. } => {
+                Err(EncodeStreamError::UnsupportedEvent)
+            }
             CanonicalStreamEvent::ToolCallStart {
                 choice_index,
                 tool_index,

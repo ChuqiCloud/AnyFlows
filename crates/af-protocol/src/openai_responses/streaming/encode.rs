@@ -136,6 +136,22 @@ impl OpenAiResponsesStreamEncoder {
                 self.outputs.tool_end(tool_index, &mut events)?;
                 self.encode_events(events)
             }
+            CanonicalStreamEvent::CompactionStart {
+                choice_index, item, ..
+            } => {
+                self.require_active_choice(choice_index)?;
+                let mut events = Vec::new();
+                self.outputs.compaction(item, &mut events)?;
+                self.encode_events(events)
+            }
+            CanonicalStreamEvent::CompactionEnd {
+                choice_index, item, ..
+            } => {
+                self.require_active_choice(choice_index)?;
+                let mut events = Vec::new();
+                self.outputs.compaction_end(item, &mut events)?;
+                self.encode_events(events)
+            }
             CanonicalStreamEvent::Finish {
                 choice_index,
                 reason,

@@ -227,7 +227,8 @@ fn build_content(choice: &ResponseChoice) -> Result<Vec<Value>, BuildResponseErr
             ContentBlock::Image { .. }
             | ContentBlock::Audio { .. }
             | ContentBlock::ToolResult { .. }
-            | ContentBlock::CacheControl(_) => {
+            | ContentBlock::CacheControl(_)
+            | ContentBlock::Compaction(_) => {
                 return Err(BuildResponseError::UnsupportedFeature);
             }
         });

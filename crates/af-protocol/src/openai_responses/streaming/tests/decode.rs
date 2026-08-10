@@ -145,6 +145,73 @@ fn decodes_text_stream_across_transport_chunks() {
 }
 
 #[test]
+fn decodes_compaction_item_lifecycle() {
+    let item = json!({
+        "type": "compaction",
+        "id": "cmp_stream_1",
+        "encrypted_content": "opaque-compaction"
+    });
+    let bytes = join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.in_progress",
+            1,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.output_item.added",
+            2,
+            json!({"output_index": 0, "item": item.clone()}),
+        ),
+        frame(
+            "response.output_item.done",
+            3,
+            json!({"output_index": 0, "item": item.clone()}),
+        ),
+        frame(
+            "response.completed",
+            4,
+            json!({
+                "response": response(
+                    "completed",
+                    vec![item],
+                    Some(usage_value(8, 3, 2, 1)),
+                    None,
+                    None,
+                )
+            }),
+        ),
+    ]);
+
+    let mut decoder = OpenAiResponsesStreamDecoder::new();
+    let events = decoder.push(&bytes).unwrap();
+    decoder.finish().unwrap();
+    assert!(matches!(
+        events[1],
+        CanonicalStreamEvent::CompactionStart {
+            output_index: 0,
+            ..
+        }
+    ));
+    assert!(matches!(
+        events[2],
+        CanonicalStreamEvent::CompactionEnd {
+            output_index: 0,
+            ..
+        }
+    ));
+    assert!(events.contains(&CanonicalStreamEvent::Finish {
+        choice_index: 0,
+        reason: FinishReason::Stop,
+        stop_sequence: None,
+    }));
+}
+
+#[test]
 fn terminal_snapshot_closes_message_when_done_events_are_omitted() {
     let item_id = "msg_terminal_close";
     let bytes = stream_with_terminal_message_only(item_id, "hello", "hello");

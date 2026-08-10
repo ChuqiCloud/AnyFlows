@@ -113,6 +113,10 @@ impl GeminiGenerateContentStreamEncoder {
                 choice_index,
                 tool_index,
             } => self.encode_tool_end(choice_index, tool_index),
+            CanonicalStreamEvent::CompactionStart { .. }
+            | CanonicalStreamEvent::CompactionEnd { .. } => {
+                Err(EncodeStreamError::UnsupportedEvent)
+            }
             CanonicalStreamEvent::Finish {
                 choice_index,
                 reason,

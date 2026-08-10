@@ -40,6 +40,7 @@ pub enum ResponseCapability {
     ToolResults,
     /// 提示缓存断点。
     CacheControl(CacheHint),
+    Compaction,
     /// 候选结束原因。
     FinishReason(FinishReason),
     /// 实际命中的停止序列。
@@ -87,6 +88,7 @@ impl ResponseCapability {
         Self::ToolResults,
         Self::CacheControl(CacheHint::Ephemeral5Minutes),
         Self::CacheControl(CacheHint::Ephemeral1Hour),
+        Self::Compaction,
         Self::FinishReason(FinishReason::Stop),
         Self::FinishReason(FinishReason::Length),
         Self::FinishReason(FinishReason::ToolCalls),
@@ -126,6 +128,7 @@ impl fmt::Display for ResponseCapability {
             Self::CacheControl(CacheHint::Ephemeral1Hour) => {
                 formatter.write_str("content.cache_control.1h")
             }
+            Self::Compaction => formatter.write_str("responses.compaction"),
             Self::FinishReason(reason) => {
                 write!(formatter, "finish.{}", finish_reason_name(*reason))
             }
@@ -176,6 +179,7 @@ pub(super) const OPENAI_RESPONSES: &[ResponseCapability] = &[
     ResponseCapability::Text,
     ResponseCapability::Thinking,
     ResponseCapability::ThinkingSignatures,
+    ResponseCapability::Compaction,
     ResponseCapability::ToolCalls,
     COMMON_FINISH[0],
     COMMON_FINISH[1],
@@ -297,6 +301,7 @@ fn validate_content(
             ContentBlock::CacheControl(hint) => {
                 require(protocol, ResponseCapability::CacheControl(*hint))?;
             }
+            ContentBlock::Compaction(_) => require(protocol, ResponseCapability::Compaction)?,
         }
     }
     Ok(())

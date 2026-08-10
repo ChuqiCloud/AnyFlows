@@ -233,9 +233,9 @@ fn build_content_block(
             input,
             signature,
         } => build_tool_use_part(id, name, input, signature.as_deref(), state, seen_call_ids),
-        ContentBlock::ToolResult { .. } | ContentBlock::CacheControl(_) => {
-            Err(BuildResponseError::UnsupportedFeature)
-        }
+        ContentBlock::ToolResult { .. }
+        | ContentBlock::CacheControl(_)
+        | ContentBlock::Compaction(_) => Err(BuildResponseError::UnsupportedFeature),
     }
 }
 

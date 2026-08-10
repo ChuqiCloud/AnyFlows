@@ -190,6 +190,8 @@ impl OpenAiChatUsageEstimator {
             }
             CanonicalStreamEvent::ToolCallEnd { .. }
             | CanonicalStreamEvent::ToolCallSignature { .. }
+            | CanonicalStreamEvent::CompactionStart { .. }
+            | CanonicalStreamEvent::CompactionEnd { .. }
             | CanonicalStreamEvent::Finish { .. }
             | CanonicalStreamEvent::PromptBlocked
             | CanonicalStreamEvent::Ping
@@ -359,9 +361,9 @@ fn add_input_block(
             checked_add(total, signature_tokens)?;
             checked_add(total, counter.count(text)?)
         }
-        ContentBlock::Thinking { .. } | ContentBlock::CacheControl(_) => {
-            Err(UsageResolutionError::UnsupportedContent)
-        }
+        ContentBlock::Thinking { .. }
+        | ContentBlock::CacheControl(_)
+        | ContentBlock::Compaction(_) => Err(UsageResolutionError::UnsupportedContent),
     }
 }
 
@@ -516,7 +518,8 @@ impl OutputAccumulator {
                 ContentBlock::Image { .. }
                 | ContentBlock::Audio { .. }
                 | ContentBlock::ToolResult { .. }
-                | ContentBlock::CacheControl(_) => {
+                | ContentBlock::CacheControl(_)
+                | ContentBlock::Compaction(_) => {
                     self.fail(UsageResolutionError::UnsupportedContent);
                 }
             }

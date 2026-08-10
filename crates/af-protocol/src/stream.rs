@@ -2,7 +2,7 @@ use std::fmt;
 
 use af_domain::{Role, UpstreamError};
 
-use crate::Usage;
+use crate::{ResponsesCompactionItem, Usage};
 
 /// 流式内容的增量片段。
 #[derive(Clone, Eq, PartialEq)]
@@ -140,6 +140,24 @@ pub enum CanonicalStreamEvent {
         /// 候选结果内的工具调用索引。
         tool_index: u32,
     },
+    /// Responses 压缩 Item 已开始返回。
+    CompactionStart {
+        /// 候选结果索引。
+        choice_index: u32,
+        /// Responses 输出序号。
+        output_index: u32,
+        /// 不透明压缩 Item。
+        item: ResponsesCompactionItem,
+    },
+    /// Responses 压缩 Item 已完成返回。
+    CompactionEnd {
+        /// 候选结果索引。
+        choice_index: u32,
+        /// Responses 输出序号。
+        output_index: u32,
+        /// 不透明压缩 Item。
+        item: ResponsesCompactionItem,
+    },
     /// 候选结果结束。
     Finish {
         /// 候选结果索引。
@@ -230,6 +248,24 @@ impl fmt::Debug for CanonicalStreamEvent {
                 .debug_struct("ToolCallEnd")
                 .field("choice_index", choice_index)
                 .field("tool_index", tool_index)
+                .finish(),
+            Self::CompactionStart {
+                choice_index,
+                output_index,
+                ..
+            } => formatter
+                .debug_struct("CompactionStart")
+                .field("choice_index", choice_index)
+                .field("output_index", output_index)
+                .finish(),
+            Self::CompactionEnd {
+                choice_index,
+                output_index,
+                ..
+            } => formatter
+                .debug_struct("CompactionEnd")
+                .field("choice_index", choice_index)
+                .field("output_index", output_index)
                 .finish(),
             Self::Finish {
                 choice_index,

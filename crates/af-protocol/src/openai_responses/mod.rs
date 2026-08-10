@@ -50,7 +50,6 @@ const REQUEST_JSON_LIMITS: bounded_json::JsonLimits = bounded_json::JsonLimits {
 
 const UNSUPPORTED_TOP_LEVEL_FIELDS: &[&str] = &[
     "background",
-    "context_management",
     "max_tool_calls",
     "moderation",
     "prompt",
@@ -64,7 +63,6 @@ const UNSUPPORTED_INPUT_ITEM_TYPES: &[&str] = &[
     "apply_patch_call",
     "apply_patch_call_output",
     "code_interpreter_call",
-    "compaction",
     "compaction_trigger",
     "computer_call",
     "computer_call_output",

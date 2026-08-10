@@ -10,7 +10,7 @@ use super::{
 use crate::openai_responses::{
     build_response::derive_item_id, convert::validate_tool_name, input::validate_call_id,
 };
-use crate::{ContentBlock, ContentDelta, FinishReason};
+use crate::{ContentBlock, ContentDelta, FinishReason, ResponsesCompactionItem};
 
 /// 将单候选 Canonical 生命周期重组为 Responses 输出 Item 事件。
 #[derive(Default)]
@@ -29,6 +29,84 @@ pub(super) struct OutputEncodeState {
 }
 
 impl OutputEncodeState {
+    /// 编码一个完整的不透明压缩 Item 生命周期。
+    pub(super) fn compaction(
+        &mut self,
+        item: ResponsesCompactionItem,
+        events: &mut Vec<PendingEvent>,
+    ) -> Result<(), EncodeStreamError> {
+        if self.finish_reason.is_some() || self.active.is_some() || self.phase != OutputPhase::Start
+        {
+            return Err(EncodeStreamError::InvalidSequence);
+        }
+        let object = item
+            .as_value()
+            .as_object()
+            .ok_or(EncodeStreamError::InvalidSequence)?;
+        if object.get("type").and_then(Value::as_str) != Some("compaction") {
+            return Err(EncodeStreamError::InvalidSequence);
+        }
+        let id = object
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or(EncodeStreamError::InvalidSequence)?;
+        let encrypted = object
+            .get("encrypted_content")
+            .and_then(Value::as_str)
+            .ok_or(EncodeStreamError::InvalidSequence)?;
+        validate_item_id(id).map_err(map_state_error)?;
+        if encrypted.is_empty() || encrypted.chars().any(char::is_control) {
+            return Err(EncodeStreamError::InvalidSequence);
+        }
+        self.budget.begin_content_block().map_err(map_state_error)?;
+        let output_index = self.take_output_index()?;
+        events.push(PendingEvent::new(
+            "response.output_item.added",
+            [
+                ("output_index", number(output_index)),
+                ("item", item.as_value().clone()),
+            ],
+        ));
+        self.active = Some(ActiveItem::Compaction(CompactionState {
+            output_index,
+            id: id.to_owned(),
+            item,
+        }));
+        Ok(())
+    }
+
+    /// 编码压缩 Item 的完成事件并纳入终态快照。
+    pub(super) fn compaction_end(
+        &mut self,
+        item: ResponsesCompactionItem,
+        events: &mut Vec<PendingEvent>,
+    ) -> Result<(), EncodeStreamError> {
+        let Some(ActiveItem::Compaction(active)) = self.active.take() else {
+            return Err(EncodeStreamError::InvalidSequence);
+        };
+        if active.item != item
+            || active.id
+                != item
+                    .as_value()
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+        {
+            self.active = Some(ActiveItem::Compaction(active));
+            return Err(EncodeStreamError::InvalidSequence);
+        }
+        events.push(PendingEvent::new(
+            "response.output_item.done",
+            [
+                ("output_index", number(active.output_index)),
+                ("item", item.as_value().clone()),
+            ],
+        ));
+        self.content.push(ContentBlock::Compaction(item));
+        self.item_statuses.push("completed");
+        Ok(())
+    }
+
     /// 编码普通文本增量，按需打开消息 Item 与文本 Part。
     pub(super) fn content_delta(
         &mut self,
@@ -477,6 +555,10 @@ impl OutputEncodeState {
                 self.active = Some(ActiveItem::Function(function));
                 Err(EncodeStreamError::InvalidSequence)
             }
+            Some(ActiveItem::Compaction(compaction)) => {
+                self.active = Some(ActiveItem::Compaction(compaction));
+                Err(EncodeStreamError::InvalidSequence)
+            }
             Some(ActiveItem::Reasoning(reasoning)) => {
                 if reasoning.summary_started {
                     events.push(PendingEvent::new(
@@ -570,6 +652,13 @@ enum ActiveItem {
     Reasoning(ReasoningState),
     Message(MessageState),
     Function(FunctionState),
+    Compaction(CompactionState),
+}
+
+struct CompactionState {
+    output_index: u32,
+    id: String,
+    item: ResponsesCompactionItem,
 }
 
 struct ReasoningState {

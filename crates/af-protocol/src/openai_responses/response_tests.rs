@@ -133,6 +133,60 @@ fn parses_minimal_completed_response() {
 }
 
 #[test]
+fn round_trips_compaction_output_before_message() {
+    let parsed = parse_json(response(
+        vec![
+            json!({
+                "type": "compaction",
+                "id": "cmp_output_1",
+                "encrypted_content": "opaque-compaction"
+            }),
+            message("msg_output_1", "hello", "completed"),
+        ],
+        "completed",
+    ))
+    .unwrap();
+
+    assert!(matches!(
+        &parsed.choices[0].message.content[0],
+        ContentBlock::Compaction(item)
+            if item.as_value() == &json!({
+                "type": "compaction",
+                "id": "cmp_output_1",
+                "encrypted_content": "opaque-compaction"
+            })
+    ));
+    let rebuilt = build_response(&parsed).unwrap();
+    assert_eq!(
+        rebuilt["output"][0],
+        json!({
+            "type": "compaction",
+            "id": "cmp_output_1",
+            "encrypted_content": "opaque-compaction"
+        })
+    );
+    assert_eq!(rebuilt["output"][1]["type"], "message");
+}
+
+#[test]
+fn rejects_compaction_after_regular_output() {
+    assert_eq!(
+        parse_json(response(
+            vec![
+                message("msg_output_1", "hello", "completed"),
+                json!({
+                    "type": "compaction",
+                    "id": "cmp_output_1",
+                    "encrypted_content": "opaque-compaction"
+                }),
+            ],
+            "completed",
+        )),
+        Err(ParseResponseError::UnsupportedFeature)
+    );
+}
+
+#[test]
 fn accepts_final_answer_phase_and_rejects_commentary() {
     let mut final_answer = response(
         vec![message("msg_final", "answer", "completed")],

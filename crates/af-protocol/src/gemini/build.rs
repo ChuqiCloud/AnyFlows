@@ -396,7 +396,8 @@ fn build_system_parts(
             | ContentBlock::ToolUse { .. }
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. }
-            | ContentBlock::CacheControl(_) => {
+            | ContentBlock::CacheControl(_)
+            | ContentBlock::Compaction(_) => {
                 return Err(BuildRequestError::UnsupportedFeature);
             }
         }
@@ -424,7 +425,9 @@ fn build_user_parts(
             ContentBlock::ToolUse { .. }
             | ContentBlock::ToolResult { .. }
             | ContentBlock::Thinking { .. } => return Err(BuildRequestError::InvalidValue),
-            ContentBlock::CacheControl(_) => return Err(BuildRequestError::UnsupportedFeature),
+            ContentBlock::CacheControl(_) | ContentBlock::Compaction(_) => {
+                return Err(BuildRequestError::UnsupportedFeature);
+            }
         }
     }
     Ok(parts)
@@ -463,7 +466,9 @@ fn build_assistant_parts(
                 parts.push(build_thinking_part(text, signature.as_deref(), state)?)
             }
             ContentBlock::ToolResult { .. } => return Err(BuildRequestError::InvalidValue),
-            ContentBlock::CacheControl(_) => return Err(BuildRequestError::UnsupportedFeature),
+            ContentBlock::CacheControl(_) | ContentBlock::Compaction(_) => {
+                return Err(BuildRequestError::UnsupportedFeature);
+            }
         }
     }
     Ok(parts)
