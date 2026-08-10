@@ -2,7 +2,9 @@ mod support;
 
 use std::{error::Error, time::Duration};
 
-use af_domain::{ChannelId, ChannelType, CredentialKind, GroupId, Protocol, Status};
+use af_domain::{
+    ChannelId, ChannelType, CredentialKind, GroupId, Protocol, ResponsesCompactMode, Status,
+};
 use sea_orm::{ActiveModelTrait, Set};
 
 use crate::EncryptedCredentialEnvelope;
@@ -193,6 +195,7 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     );
     responses_channel.settings = Set(SensitiveJson::from(serde_json::json!({
         "responses_websocket_enabled": true,
+        "responses_compact_mode": "force_on",
         "pool_mode": true,
         "auto_ban_rules": {
             "status_codes": [503],
@@ -324,6 +327,10 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         .find(|record| record.target().channel_id().get() == responses_channel.id)
         .unwrap();
     assert!(responses_record.target().responses_websocket_enabled());
+    assert_eq!(
+        responses_record.target().responses_compact_mode(),
+        ResponsesCompactMode::ForceOn
+    );
     assert!(responses_record.target().pool_mode());
     assert_eq!(
         responses_record.target().auto_ban_rules().server_statuses()[0].get(),
@@ -527,7 +534,27 @@ fn responses_websocket_capability_only_accepts_native_responses_target() {
         Vec::new(),
     )
     .unwrap();
-    assert!(chat.with_responses_websocket_enabled(true).is_err());
+    assert!(chat.clone().with_responses_websocket_enabled(true).is_err());
+
+    let native_compact = SchedulerRuntimeTargetRecord::new_pool(
+        ChannelId::new(2).unwrap(),
+        ChannelType::OpenAi,
+        Protocol::OpenAiResponses,
+        None,
+        vec![runtime_credential_record(2)],
+        Vec::new(),
+    )
+    .unwrap()
+    .with_responses_compact_mode(ResponsesCompactMode::ForceOn)
+    .unwrap();
+    assert_eq!(
+        native_compact.responses_compact_mode(),
+        ResponsesCompactMode::ForceOn
+    );
+    assert!(
+        chat.with_responses_compact_mode(ResponsesCompactMode::ForceOn)
+            .is_err()
+    );
 }
 
 fn runtime_credential_record(credential_id: i64) -> SchedulerRuntimeCredentialRecord {

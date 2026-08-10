@@ -1,8 +1,10 @@
-use af_domain::{ChannelAutoBanRules, ChannelType, Protocol};
+use af_domain::{ChannelAutoBanRules, ChannelType, Protocol, ResponsesCompactMode};
 use serde_json::{Map, Value, json};
 
 /// 渠道 settings 中由运行时独占管理的 Responses WebSocket 能力键。
 pub(crate) const RESPONSES_WEBSOCKET_ENABLED_KEY: &str = "responses_websocket_enabled";
+/// 渠道 settings 中控制 Responses Compact 的三态能力键。
+pub(crate) const RESPONSES_COMPACT_MODE_KEY: &str = "responses_compact_mode";
 /// 渠道 settings 中由管理与运行时共同维护的自动禁用规则键。
 pub(crate) const AUTO_BAN_RULES_KEY: &str = "auto_ban_rules";
 /// 渠道 settings 中由管理与运行时共同维护的外部账号池模式键。
@@ -20,6 +22,18 @@ pub(crate) fn responses_websocket_enabled(settings: &Value) -> Result<bool, Chan
     match object.get(RESPONSES_WEBSOCKET_ENABLED_KEY) {
         None => Ok(false),
         Some(Value::Bool(enabled)) => Ok(*enabled),
+        Some(_) => Err(ChannelSettingsError),
+    }
+}
+
+/// 从渠道 settings 读取 Compact 策略；缺失时保持探测优先的安全默认值。
+pub(crate) fn responses_compact_mode(
+    settings: &Value,
+) -> Result<ResponsesCompactMode, ChannelSettingsError> {
+    let object = settings.as_object().ok_or(ChannelSettingsError)?;
+    match object.get(RESPONSES_COMPACT_MODE_KEY) {
+        None => Ok(ResponsesCompactMode::Auto),
+        Some(Value::String(mode)) => mode.parse().map_err(|_| ChannelSettingsError),
         Some(_) => Err(ChannelSettingsError),
     }
 }
@@ -75,6 +89,20 @@ pub(crate) fn validate_responses_websocket_capability(
     Ok(())
 }
 
+/// 强制开启 Compact 时只允许原生 OpenAI Responses 渠道，其他策略保持兼容但不启用。
+pub(crate) fn validate_responses_compact_capability(
+    channel_type: ChannelType,
+    protocol: Protocol,
+    mode: ResponsesCompactMode,
+) -> Result<(), ChannelSettingsError> {
+    if mode == ResponsesCompactMode::ForceOn
+        && (channel_type != ChannelType::OpenAi || protocol != Protocol::OpenAiResponses)
+    {
+        return Err(ChannelSettingsError);
+    }
+    Ok(())
+}
+
 /// 在保留未知敏感设置的前提下写入受控能力；关闭时移除默认值。
 pub(crate) fn set_responses_websocket_enabled(
     settings: &mut Value,
@@ -88,6 +116,23 @@ pub(crate) fn set_responses_websocket_enabled(
         );
     } else {
         object.remove(RESPONSES_WEBSOCKET_ENABLED_KEY);
+    }
+    Ok(())
+}
+
+/// 写入 Compact 策略，默认的 auto 不落库以兼容旧渠道记录。
+pub(crate) fn set_responses_compact_mode(
+    settings: &mut Value,
+    mode: ResponsesCompactMode,
+) -> Result<(), ChannelSettingsError> {
+    let object = settings.as_object_mut().ok_or(ChannelSettingsError)?;
+    if mode == ResponsesCompactMode::Auto {
+        object.remove(RESPONSES_COMPACT_MODE_KEY);
+    } else {
+        object.insert(
+            RESPONSES_COMPACT_MODE_KEY.to_owned(),
+            Value::String(mode.as_str().to_owned()),
+        );
     }
     Ok(())
 }
@@ -181,6 +226,61 @@ mod tests {
         assert!(
             responses_websocket_enabled(&json!({"responses_websocket_enabled": "true"})).is_err()
         );
+    }
+
+    #[test]
+    fn compact_mode_defaults_to_auto_and_rejects_unknown_values() {
+        assert_eq!(
+            responses_compact_mode(&json!({})).unwrap(),
+            ResponsesCompactMode::Auto
+        );
+        assert_eq!(
+            responses_compact_mode(&json!({"responses_compact_mode": "force_on"})).unwrap(),
+            ResponsesCompactMode::ForceOn
+        );
+        assert!(responses_compact_mode(&json!({"responses_compact_mode": "unknown"})).is_err());
+        assert!(responses_compact_mode(&json!({"responses_compact_mode": true})).is_err());
+    }
+
+    #[test]
+    fn compact_mode_validates_native_responses_and_preserves_unknown_settings() {
+        assert!(
+            validate_responses_compact_capability(
+                ChannelType::OpenAi,
+                Protocol::OpenAiResponses,
+                ResponsesCompactMode::ForceOn,
+            )
+            .is_ok()
+        );
+        assert!(
+            validate_responses_compact_capability(
+                ChannelType::OpenAi,
+                Protocol::OpenAiChat,
+                ResponsesCompactMode::ForceOn,
+            )
+            .is_err()
+        );
+        assert!(
+            validate_responses_compact_capability(
+                ChannelType::Anthropic,
+                Protocol::Anthropic,
+                ResponsesCompactMode::Auto,
+            )
+            .is_ok()
+        );
+
+        let mut settings = json!({"private_extension": true});
+        set_responses_compact_mode(&mut settings, ResponsesCompactMode::ForceOn).unwrap();
+        assert_eq!(
+            responses_compact_mode(&settings).unwrap(),
+            ResponsesCompactMode::ForceOn
+        );
+        set_responses_compact_mode(&mut settings, ResponsesCompactMode::Auto).unwrap();
+        assert_eq!(
+            responses_compact_mode(&settings).unwrap(),
+            ResponsesCompactMode::Auto
+        );
+        assert_eq!(settings["private_extension"], true);
     }
 
     #[test]

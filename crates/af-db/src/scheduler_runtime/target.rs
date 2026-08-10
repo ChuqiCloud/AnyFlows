@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, fmt};
 
 use af_domain::{
     ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind,
-    Protocol, ProxyId,
+    Protocol, ProxyId, ResponsesCompactMode,
 };
 use sea_orm::entity::prelude::Json;
 use sha2::{Digest, Sha256};
@@ -359,6 +359,7 @@ pub struct SchedulerRuntimeTargetRecord {
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
     responses_websocket_enabled: bool,
+    responses_compact_mode: ResponsesCompactMode,
 }
 
 impl SchedulerRuntimeTargetRecord {
@@ -468,6 +469,7 @@ impl SchedulerRuntimeTargetRecord {
             auto_ban_rules: ChannelAutoBanRules::default(),
             pool_mode: false,
             responses_websocket_enabled: false,
+            responses_compact_mode: ResponsesCompactMode::Auto,
         })
     }
 
@@ -537,6 +539,21 @@ impl SchedulerRuntimeTargetRecord {
         Ok(self)
     }
 
+    /// 显式设置 Compact 策略，并拒绝非原生 Responses 渠道的强制开启。
+    pub fn with_responses_compact_mode(
+        mut self,
+        mode: ResponsesCompactMode,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if mode == ResponsesCompactMode::ForceOn
+            && (self.channel_type != ChannelType::OpenAi
+                || self.protocol != Protocol::OpenAiResponses)
+        {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        self.responses_compact_mode = mode;
+        Ok(self)
+    }
+
     /// 返回渠道级读取与完整请求超时；空值表示继承全局配置。
     #[must_use]
     pub const fn timeout(&self) -> Option<ChannelTimeout> {
@@ -559,6 +576,12 @@ impl SchedulerRuntimeTargetRecord {
     #[must_use]
     pub const fn responses_websocket_enabled(&self) -> bool {
         self.responses_websocket_enabled
+    }
+
+    /// 返回渠道的 Responses Compact 三态策略。
+    #[must_use]
+    pub const fn responses_compact_mode(&self) -> ResponsesCompactMode {
+        self.responses_compact_mode
     }
 
     /// 返回数据库声明的凭据类型。
@@ -628,6 +651,7 @@ impl fmt::Debug for SchedulerRuntimeTargetRecord {
                 "responses_websocket_enabled",
                 &self.responses_websocket_enabled,
             )
+            .field("responses_compact_mode", &self.responses_compact_mode)
             .finish()
     }
 }

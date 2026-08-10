@@ -29,8 +29,10 @@ use crate::{
     },
     admin_channel::valid_text,
     channel_settings::{
-        auto_ban_rules, pool_mode, responses_websocket_enabled, set_auto_ban_rules, set_pool_mode,
-        set_responses_websocket_enabled, validate_responses_websocket_capability,
+        auto_ban_rules, pool_mode, responses_compact_mode, responses_websocket_enabled,
+        set_auto_ban_rules, set_pool_mode, set_responses_compact_mode,
+        set_responses_websocket_enabled, validate_responses_compact_capability,
+        validate_responses_websocket_capability,
     },
     entity::{
         ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channel_groups,
@@ -532,6 +534,16 @@ impl AdminChannelRepository {
             .ok_or_else(|| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
         set_responses_websocket_enabled(&mut settings, responses_websocket_enabled)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        let responses_compact_mode = responses_compact_mode(&settings)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        validate_responses_compact_capability(
+            fields.channel_type,
+            fields.protocol,
+            responses_compact_mode,
+        )
+        .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        set_responses_compact_mode(&mut settings, responses_compact_mode)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         let auto_ban_rules = fields
             .auto_ban_rules
             .as_ref()
@@ -616,6 +628,16 @@ impl AdminChannelRepository {
         set_pool_mode(&mut settings, effective_pool_mode)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_responses_websocket_enabled(&mut settings, effective_responses_websocket_enabled)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        let responses_compact_mode = responses_compact_mode(&settings)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        validate_responses_compact_capability(
+            fields.channel_type,
+            fields.protocol,
+            responses_compact_mode,
+        )
+        .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        set_responses_compact_mode(&mut settings, responses_compact_mode)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_auto_ban_rules(&mut settings, &effective_auto_ban_rules)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;

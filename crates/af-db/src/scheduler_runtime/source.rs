@@ -1,6 +1,6 @@
 use af_domain::{
     ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind,
-    Protocol, ProxyId, Status,
+    Protocol, ProxyId, ResponsesCompactMode, Status,
 };
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 use thiserror::Error;
@@ -8,8 +8,8 @@ use thiserror::Error;
 use crate::{
     CredentialProxyScheme,
     channel_settings::{
-        auto_ban_rules, pool_mode, responses_websocket_enabled,
-        validate_responses_websocket_capability,
+        auto_ban_rules, pool_mode, responses_compact_mode, responses_websocket_enabled,
+        validate_responses_compact_capability, validate_responses_websocket_capability,
     },
     credential_probe::EncryptedCredentialEnvelope,
     entity::{channels, credentials, proxies},
@@ -37,6 +37,7 @@ pub(super) struct SchedulerRuntimeChannelSource {
     auto_ban_rules: ChannelAutoBanRules,
     pool_mode: bool,
     responses_websocket_enabled: bool,
+    responses_compact_mode: ResponsesCompactMode,
 }
 
 impl SchedulerRuntimeChannelSource {
@@ -92,6 +93,10 @@ impl SchedulerRuntimeChannelSource {
             responses_websocket_enabled,
         )
         .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let responses_compact_mode = responses_compact_mode(&settings)
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        validate_responses_compact_capability(channel_type, protocol, responses_compact_mode)
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         Ok(Some(Self {
             channel_id,
             channel_type,
@@ -104,6 +109,7 @@ impl SchedulerRuntimeChannelSource {
             auto_ban_rules,
             pool_mode,
             responses_websocket_enabled,
+            responses_compact_mode,
         }))
     }
 
@@ -160,6 +166,11 @@ impl SchedulerRuntimeChannelSource {
     /// 返回渠道显式开启的 Responses WebSocket 能力。
     pub(super) const fn responses_websocket_enabled(&self) -> bool {
         self.responses_websocket_enabled
+    }
+
+    /// 返回渠道配置的 Responses Compact 三态策略。
+    pub(super) const fn responses_compact_mode(&self) -> ResponsesCompactMode {
+        self.responses_compact_mode
     }
 }
 
