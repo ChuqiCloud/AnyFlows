@@ -39,7 +39,7 @@ impl AudioDuration {
     #[must_use]
     pub const fn ceil_seconds(self) -> u64 {
         let seconds = self.0 / NANOS_PER_SECOND;
-        if self.0 % NANOS_PER_SECOND == 0 {
+        if self.0.is_multiple_of(NANOS_PER_SECOND) {
             seconds
         } else {
             seconds + 1
@@ -234,7 +234,7 @@ fn parse_seconds_to_nanoseconds(value: &str) -> Option<u64> {
         return None;
     }
     let (whole, fraction) = match value.split_once('.') {
-        Some((whole, "")) => return None,
+        Some((_, "")) => return None,
         Some(parts) => parts,
         None => (value, ""),
     };

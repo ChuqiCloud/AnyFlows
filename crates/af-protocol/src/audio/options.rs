@@ -376,7 +376,7 @@ fn parse_unit_decimal(value: &str, fractional_digits: u32) -> Option<u64> {
         return None;
     }
     let (whole, fraction) = match value.split_once('.') {
-        Some((whole, "")) => return None,
+        Some((_, "")) => return None,
         Some(parts) => parts,
         None => (value, ""),
     };
