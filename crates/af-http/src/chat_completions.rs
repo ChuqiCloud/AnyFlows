@@ -26,7 +26,7 @@ use http::{
 
 use crate::{
     AudioService, ChatService, EmbeddingService, ImageService, OpenAiHttpError,
-    ResponsesCompactService,
+    ResponsesCompactService, SpeechService,
     streaming::{StreamDeliveryPolicy, openai_chat_body},
 };
 
@@ -37,6 +37,7 @@ pub(crate) struct HttpState {
     audio: Option<Arc<dyn AudioService>>,
     embedding: Option<Arc<dyn EmbeddingService>>,
     image: Option<Arc<dyn ImageService>>,
+    speech: Option<Arc<dyn SpeechService>>,
     responses_compact: Option<Arc<dyn ResponsesCompactService>>,
     pub(crate) session_authenticator: Arc<dyn SessionAuthenticator>,
     pub(crate) initial_setup: Option<Arc<dyn InitialSetup>>,
@@ -78,6 +79,7 @@ impl HttpState {
             audio: None,
             embedding: None,
             image: None,
+            speech: None,
             responses_compact: None,
             session_authenticator,
             initial_setup: None,
@@ -119,6 +121,12 @@ impl HttpState {
     /// 注入独立 Images 生产服务；未注入时公开端点失败关闭。
     pub(crate) fn with_image_service(mut self, service: Arc<dyn ImageService>) -> Self {
         self.image = Some(service);
+        self
+    }
+
+    /// 注入独立 Audio Speech 生产服务；未注入时公开端点失败关闭。
+    pub(crate) fn with_speech_service(mut self, service: Arc<dyn SpeechService>) -> Self {
+        self.speech = Some(service);
         self
     }
 
@@ -256,6 +264,11 @@ impl HttpState {
     /// 返回可选的独立 Audio 转录执行端口。
     pub(crate) fn audio_service(&self) -> Option<&Arc<dyn AudioService>> {
         self.audio.as_ref()
+    }
+
+    /// 返回可选的独立 Audio Speech 执行端口。
+    pub(crate) fn speech_service(&self) -> Option<&Arc<dyn SpeechService>> {
+        self.speech.as_ref()
     }
 
     /// 返回可选的独立 Embeddings 执行端口。

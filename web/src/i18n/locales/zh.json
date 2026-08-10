@@ -123,6 +123,7 @@
       "openai_embeddings": "OpenAI 向量",
       "openai_images": "OpenAI 图片",
       "openai_audio": "OpenAI 音频转录",
+      "openai_speech": "OpenAI 文本转语音",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -1901,6 +1902,7 @@
       "openai_embeddings": "OpenAI 向量",
       "openai_images": "OpenAI 图片",
       "openai_audio": "OpenAI 音频转录",
+      "openai_speech": "OpenAI 文本转语音",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -2025,6 +2027,7 @@
       "openai_embeddings": "OpenAI 向量",
       "openai_images": "OpenAI 图片",
       "openai_audio": "OpenAI 音频转录",
+      "openai_speech": "OpenAI 文本转语音",
       "anthropic": "Anthropic",
       "gemini": "Gemini"
     },
@@ -2116,6 +2119,7 @@
         "openai_embeddings": "OpenAI 向量",
         "openai_images": "OpenAI 图片",
         "openai_audio": "OpenAI 音频转录",
+        "openai_speech": "OpenAI 文本转语音",
         "anthropic": "Anthropic",
         "gemini": "Gemini",
         "unavailable": "试炼场暂不支持"

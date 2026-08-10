@@ -634,6 +634,128 @@
         ]
       }
     },
+    "/v1/audio/speech": {
+      "post": {
+        "tags": [
+          "OpenAI Audio"
+        ],
+        "summary": "将文本合成为完整音频",
+        "description": "仅接受缺失或 audio 流格式；SSE 当前失败关闭。响应 MIME 由 response_format 决定，支持 mp3、opus、aac、flac、wav 与 pcm。",
+        "operationId": "synthesizeSpeech",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AudioSpeechRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "经过格式、签名和大小校验的完整音频",
+            "content": {
+              "audio/mpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioSpeechBinary"
+                }
+              },
+              "audio/ogg": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioSpeechBinary"
+                }
+              },
+              "audio/aac": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioSpeechBinary"
+                }
+              },
+              "audio/flac": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioSpeechBinary"
+                }
+              },
+              "audio/wav": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioSpeechBinary"
+                }
+              },
+              "audio/pcm": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioSpeechBinary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求字段、字符数或格式无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioSpeechError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "API Key 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioSpeechError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "模型不存在、不可用或不在令牌允许范围内",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioSpeechError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "额度、并发或请求频率受限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioSpeechError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "音频时长或计费事实无法可信闭合",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioSpeechError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "没有可用的 Speech 候选",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AudioSpeechError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/redemption-audit": {
       "get": {
         "tags": [
@@ -10502,6 +10624,7 @@
           "openai_embeddings",
           "openai_images",
           "openai_audio",
+          "openai_speech",
           "anthropic",
           "gemini"
         ]
@@ -15844,6 +15967,154 @@
         },
         "additionalProperties": false
       },
+      "AudioSpeechBinary": {
+        "type": "string",
+        "format": "binary"
+      },
+      "AudioSpeechCustomVoice": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AudioSpeechError": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/AudioSpeechErrorBody"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AudioSpeechErrorBody": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "param",
+          "type"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "param": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AudioSpeechOutputFormat": {
+        "type": "string",
+        "enum": [
+          "mp3",
+          "opus",
+          "aac",
+          "flac",
+          "wav",
+          "pcm"
+        ]
+      },
+      "AudioSpeechRequest": {
+        "type": "object",
+        "description": "AnyFlows 当前生产支持的非 SSE Speech 请求。",
+        "required": [
+          "model",
+          "input",
+          "voice"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "input": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1
+          },
+          "voice": {
+            "$ref": "#/components/schemas/AudioSpeechVoice"
+          },
+          "instructions": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "最多 65536 个 UTF-8 字节；多字节字符会更早触发运行时字节限制。",
+            "maxLength": 65536
+          },
+          "response_format": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AudioSpeechOutputFormat"
+              }
+            ]
+          },
+          "speed": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "default": 1.0,
+            "maximum": 4,
+            "minimum": 0.25
+          },
+          "stream_format": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AudioSpeechStreamFormat"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "AudioSpeechStreamFormat": {
+        "type": "string",
+        "enum": [
+          "audio"
+        ]
+      },
+      "AudioSpeechVoice": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/components/schemas/AudioSpeechCustomVoice"
+          }
+        ],
+        "description": "Speech 内建声音名称或 custom voice 引用。"
+      },
       "IssuedAdminRedemptionBatch": {
         "type": "object",
         "description": "批次创建响应；完整兑换码只在本次响应中出现。",
@@ -16202,7 +16473,7 @@
             "items": {
               "$ref": "#/components/schemas/ModelCatalogProtocol"
             },
-            "maxItems": 7
+            "maxItems": 8
           }
         },
         "additionalProperties": false
@@ -16260,6 +16531,7 @@
           "openai_embeddings",
           "openai_images",
           "openai_audio",
+          "openai_speech",
           "anthropic",
           "gemini"
         ]
@@ -18057,6 +18329,9 @@
     },
     {
       "name": "OpenAI Responses"
+    },
+    {
+      "name": "OpenAI Audio"
     },
     {
       "name": "认证设置"

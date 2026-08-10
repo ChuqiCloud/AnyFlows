@@ -38,6 +38,7 @@ impl OpenAiAdaptorSettings {
                 | Protocol::OpenAiEmbeddings
                 | Protocol::OpenAiImages
                 | Protocol::OpenAiAudio
+                | Protocol::OpenAiSpeech
         ) {
             return Err(AdaptorError::InvalidChannelSettings {
                 channel_type: ChannelType::OpenAi,

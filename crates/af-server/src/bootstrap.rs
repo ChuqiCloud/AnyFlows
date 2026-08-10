@@ -79,8 +79,8 @@ use af_db::{
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
     HttpListener, HttpRouter, ImageService, QueryApiKeyPolicy, ReadinessHandle,
-    ResponsesCompactService, ServeError, ServeOutcome, build_payment_webhook_router, build_router,
-    serve_with_graceful_shutdown,
+    ResponsesCompactService, ServeError, ServeOutcome, SpeechService, build_payment_webhook_router,
+    build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
@@ -102,9 +102,9 @@ use crate::readiness::DatabaseReadinessProbe;
 use crate::{
     AudioRoutePlanner, BackgroundTaskSupervisor, BillingAudioService, BillingChatService,
     BillingEmbeddingService, BillingFlushReport, BillingImageService,
-    BillingResponsesCompactService, BillingRuntime, BillingRuntimeError, ChatRoutePlanner,
-    EmbeddingRoutePlanner, ImageRoutePlanner, ResponsesCompactRoutePlanner, ShutdownController,
-    SupervisorError, SupervisorShutdown,
+    BillingResponsesCompactService, BillingRuntime, BillingRuntimeError, BillingSpeechService,
+    ChatRoutePlanner, EmbeddingRoutePlanner, ImageRoutePlanner, ResponsesCompactRoutePlanner,
+    ShutdownController, SpeechRoutePlanner, SupervisorError, SupervisorShutdown,
     balance_alert_runtime::BalanceAlertRuntime,
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     concurrency_runtime::{ConcurrencyCleanupWorker, ConcurrencyReleaseWorker, ConcurrencyRuntime},
@@ -209,6 +209,7 @@ pub struct BillingReady {
     chat: Arc<dyn ChatService>,
     responses_compact: Arc<dyn ResponsesCompactService>,
     audio: Arc<dyn AudioService>,
+    speech: Arc<dyn SpeechService>,
     embedding: Arc<dyn EmbeddingService>,
     image: Arc<dyn ImageService>,
     billing: BillingRuntime,
@@ -240,6 +241,7 @@ pub struct Supervised {
     chat: Arc<dyn ChatService>,
     responses_compact: Arc<dyn ResponsesCompactService>,
     audio: Arc<dyn AudioService>,
+    speech: Arc<dyn SpeechService>,
     embedding: Arc<dyn EmbeddingService>,
     image: Arc<dyn ImageService>,
     billing: BillingRuntime,
@@ -1124,6 +1126,7 @@ impl Bootstrap<RelayReady> {
             Arc::new(route_service.clone());
         let image_route_planner: Arc<dyn ImageRoutePlanner> = Arc::new(route_service.clone());
         let audio_route_planner: Arc<dyn AudioRoutePlanner> = Arc::new(route_service.clone());
+        let speech_route_planner: Arc<dyn SpeechRoutePlanner> = Arc::new(route_service.clone());
         let responses_compact_route_planner: Arc<dyn ResponsesCompactRoutePlanner> =
             Arc::new(route_service.clone());
         let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(route_service);
@@ -1185,6 +1188,14 @@ impl Bootstrap<RelayReady> {
             Some(settlement_port.clone()),
             usage_port.clone(),
         ));
+        let speech: Arc<dyn SpeechService> = Arc::new(BillingSpeechService::new(
+            speech_route_planner,
+            pricing_source.clone(),
+            Some(precharge_port.clone()),
+            Some(refund_port.clone()),
+            Some(settlement_port.clone()),
+            usage_port.clone(),
+        ));
         let responses_compact: Arc<dyn ResponsesCompactService> =
             Arc::new(BillingResponsesCompactService::new(
                 responses_compact_route_planner,
@@ -1224,6 +1235,7 @@ impl Bootstrap<RelayReady> {
                 chat,
                 responses_compact,
                 audio,
+                speech,
                 embedding,
                 image,
                 billing,
@@ -1268,6 +1280,7 @@ impl Bootstrap<BillingReady> {
             chat,
             responses_compact,
             audio,
+            speech,
             embedding,
             image,
             billing,
@@ -1402,6 +1415,7 @@ impl Bootstrap<BillingReady> {
                 chat,
                 responses_compact,
                 audio,
+                speech,
                 embedding,
                 image,
                 billing,
@@ -1589,6 +1603,7 @@ impl Bootstrap<Supervised> {
             self.stage.audio.clone(),
             self.stage.embedding.clone(),
             self.stage.image.clone(),
+            self.stage.speech.clone(),
             self.stage.responses_compact.clone(),
             readiness.clone(),
             Arc::clone(&self.stage.infrastructure.authenticator),

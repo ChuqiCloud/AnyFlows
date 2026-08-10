@@ -20,14 +20,16 @@ use af_domain::{
 use af_http::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 use af_httpclient::HttpClientProvider;
 use af_protocol::{
-    AudioFile, AudioFileFormat, AudioTranscriptionOptions, CanonicalAudioTranscriptionRequest,
-    CanonicalEmbeddingRequest, CanonicalImageGenerationRequest, CanonicalRequest,
-    CanonicalResponsesCompactionRequest, ContentBlock, EmbeddingInput, ImageDimensions,
-    ImageGenerationOptions, ImageOutputFormat, ImageQuality, ImageSize, Message,
+    AudioFile, AudioFileFormat, AudioSpeechOptions, AudioSpeechOutputFormat, AudioSpeechVoice,
+    AudioSpeechVoiceName, AudioTranscriptionOptions, CanonicalAudioSpeechRequest,
+    CanonicalAudioTranscriptionRequest, CanonicalEmbeddingRequest, CanonicalImageGenerationRequest,
+    CanonicalRequest, CanonicalResponsesCompactionRequest, ContentBlock, EmbeddingInput,
+    ImageDimensions, ImageGenerationOptions, ImageOutputFormat, ImageQuality, ImageSize, Message,
     ResponsesCompactionInput, Sampling, TokenCount, ToolChoice, anthropic, gemini, openai_audio,
-    openai_chat, openai_embeddings, openai_images, openai_responses, openai_responses_compact,
+    openai_audio_speech, openai_chat, openai_embeddings, openai_images, openai_responses,
+    openai_responses_compact,
 };
-use af_relay::encode_openai_audio_request;
+use af_relay::{encode_openai_audio_request, encode_openai_speech_request};
 use af_scheduler::{ChannelProbe, ChannelProbeStatus};
 use tokio::time::timeout;
 
@@ -127,6 +129,7 @@ impl DatabaseChannelProbe {
         let response_body_limit = match target.protocol() {
             Protocol::OpenAiImages => Some(openai_images::MAX_RESPONSE_BODY_BYTES),
             Protocol::OpenAiAudio => Some(openai_audio::MAX_TRANSCRIPTION_RESPONSE_BODY_BYTES),
+            Protocol::OpenAiSpeech => Some(openai_audio_speech::MAX_RESPONSE_BODY_BYTES),
             _ => None,
         };
         let request = match response_body_limit {
@@ -407,7 +410,7 @@ fn probe_operation(protocol: Protocol) -> Result<Operation, ProbeFailure> {
         Protocol::OpenAiResponses => Ok(Operation::Responses),
         Protocol::OpenAiEmbeddings => Ok(Operation::Embedding),
         Protocol::OpenAiImages => Ok(Operation::Image),
-        Protocol::OpenAiAudio => Ok(Operation::Audio),
+        Protocol::OpenAiAudio | Protocol::OpenAiSpeech => Ok(Operation::Audio),
     }
 }
 
@@ -425,6 +428,10 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
     }
     if protocol == Protocol::OpenAiAudio {
         return encode_openai_audio_request(&probe_audio_request(model)?)
+            .map_err(|_| ProbeFailure::RequestBuild);
+    }
+    if protocol == Protocol::OpenAiSpeech {
+        return encode_openai_speech_request(&probe_speech_request(model)?)
             .map_err(|_| ProbeFailure::RequestBuild);
     }
     let mut request = CanonicalRequest::new(
@@ -455,7 +462,10 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
             value["store"] = false.into();
             value
         }
-        Protocol::OpenAiEmbeddings | Protocol::OpenAiImages | Protocol::OpenAiAudio => {
+        Protocol::OpenAiEmbeddings
+        | Protocol::OpenAiImages
+        | Protocol::OpenAiAudio
+        | Protocol::OpenAiSpeech => {
             unreachable!("非对话协议已在独立请求分支返回")
         }
         Protocol::Anthropic => {
@@ -503,6 +513,21 @@ fn validate_probe_response(protocol: Protocol, body: &[u8]) -> Result<(), ProbeF
         Protocol::OpenAiAudio => openai_audio::parse_transcription_response(body)
             .map(|_| ())
             .map_err(|_| ProbeFailure::InvalidResponse),
+        Protocol::OpenAiSpeech => {
+            let request = probe_speech_request("probe-model")?;
+            openai_audio_speech::parse_response(
+                request.options().effective_output_format(),
+                Bytes::copy_from_slice(body),
+            )
+            .and_then(|response| {
+                response
+                    .validate_for_request(&request)
+                    .map_err(|_| openai_audio_speech::ParseAudioSpeechResponseError::InvalidAudio)
+                    .map(|_| response)
+            })
+            .map(|_| ())
+            .map_err(|_| ProbeFailure::InvalidResponse)
+        }
         Protocol::Anthropic => anthropic::parse_response(body)
             .map(|_| ())
             .map_err(|_| ProbeFailure::InvalidResponse),
@@ -522,6 +547,7 @@ fn supported_target(target: &ChannelProbeTargetRecord) -> bool {
                 | Protocol::OpenAiEmbeddings
                 | Protocol::OpenAiImages
                 | Protocol::OpenAiAudio
+                | Protocol::OpenAiSpeech
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
             | (ChannelType::Gemini, Protocol::Gemini)
     )
@@ -559,7 +585,8 @@ fn adaptor_settings(target: &ChannelProbeTargetRecord) -> Result<AdaptorSettings
             | Protocol::OpenAiResponses
             | Protocol::OpenAiEmbeddings
             | Protocol::OpenAiImages
-            | Protocol::OpenAiAudio,
+            | Protocol::OpenAiAudio
+            | Protocol::OpenAiSpeech,
         ) => Ok(AdaptorSettings::OpenAi(
             OpenAiAdaptorSettings::for_protocol(target.protocol(), models)
                 .map_err(|_| ProbeFailure::AdapterBuild)?,
@@ -607,6 +634,17 @@ fn probe_audio_request(model: &str) -> Result<CanonicalAudioTranscriptionRequest
     let options = AudioTranscriptionOptions::new(None, None, Vec::new(), None)
         .map_err(|_| ProbeFailure::RequestBuild)?;
     CanonicalAudioTranscriptionRequest::new(model.to_owned(), file, options)
+        .map_err(|_| ProbeFailure::RequestBuild)
+}
+
+fn probe_speech_request(model: &str) -> Result<CanonicalAudioSpeechRequest, ProbeFailure> {
+    let voice = AudioSpeechVoiceName::new("alloy".to_owned())
+        .map(AudioSpeechVoice::Named)
+        .map_err(|_| ProbeFailure::RequestBuild)?;
+    let options =
+        AudioSpeechOptions::new(voice, None, Some(AudioSpeechOutputFormat::Wav), None, None)
+            .map_err(|_| ProbeFailure::RequestBuild)?;
+    CanonicalAudioSpeechRequest::new(model.to_owned(), "ping".to_owned(), options)
         .map_err(|_| ProbeFailure::RequestBuild)
 }
 

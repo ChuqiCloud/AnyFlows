@@ -10,6 +10,7 @@ mod billing_compact;
 mod billing_embedding;
 mod billing_image;
 mod billing_runtime;
+mod billing_speech;
 mod bootstrap;
 mod channel_probe;
 #[cfg(test)]
@@ -60,6 +61,10 @@ pub use billing_image::{
     PlannedImageExecutionFuture,
 };
 pub use billing_runtime::{BillingFlushReport, BillingRuntime, BillingRuntimeError};
+pub use billing_speech::{
+    BillingSpeechService, PlannedSpeechExecution, PlannedSpeechExecutionFuture,
+    SpeechRoutePlanFuture, SpeechRoutePlanner,
+};
 pub use bootstrap::{
     AuthenticationReady, BillingReady, Bootstrap, BootstrapError, Configured, DatabaseReady,
     ListenerReady, RelayReady, RouterReady, ShutdownReport, Supervised, TelemetryReady, run,

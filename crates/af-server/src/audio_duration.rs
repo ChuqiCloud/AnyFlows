@@ -1,7 +1,7 @@
 use std::io::{Cursor, ErrorKind};
 
 use af_domain::AfError;
-use af_protocol::{AudioDuration, AudioFile};
+use af_protocol::{AudioDuration, AudioFile, AudioSpeechOutputFormat};
 use symphonia::core::{
     errors::Error as SymphoniaError,
     formats::FormatOptions,
@@ -13,6 +13,8 @@ use symphonia::core::{
 
 const NANOSECONDS_PER_SECOND: u128 = 1_000_000_000;
 const MAX_DURATION_PROBE_PACKETS: usize = 2_000_000;
+const SPEECH_PCM_SAMPLE_RATE: u64 = 24_000;
+const SPEECH_PCM_BYTES_PER_SAMPLE: u64 = 2;
 
 /// 在阻塞线程中探测已通过协议签名校验的音频时长。
 pub(crate) async fn probe_audio_duration(file: &AudioFile) -> Result<AudioDuration, AfError> {
@@ -22,6 +24,37 @@ pub(crate) async fn probe_audio_duration(file: &AudioFile) -> Result<AudioDurati
         .await
         .map_err(|_| AfError::Internal)?
         .map_err(|_| AfError::InvalidRequest)
+}
+
+/// 探测已通过 Speech 协议签名校验的生成音频时长。
+pub(crate) async fn probe_speech_duration(
+    bytes: &af_adapter::Bytes,
+    format: AudioSpeechOutputFormat,
+) -> Result<AudioDuration, AfError> {
+    if format == AudioSpeechOutputFormat::Pcm {
+        return speech_pcm_duration(bytes.len()).map_err(|_| AfError::Internal);
+    }
+    let bytes = bytes.clone();
+    let extension = format.as_str();
+    tokio::task::spawn_blocking(move || probe_blocking(bytes, extension))
+        .await
+        .map_err(|_| AfError::Internal)?
+        .map_err(|_| AfError::Internal)
+}
+
+fn speech_pcm_duration(byte_length: usize) -> Result<AudioDuration, AudioDurationProbeError> {
+    let byte_length =
+        u64::try_from(byte_length).map_err(|_| AudioDurationProbeError::DurationOverflow)?;
+    let sample_count = byte_length
+        .checked_div(SPEECH_PCM_BYTES_PER_SAMPLE)
+        .ok_or(AudioDurationProbeError::DurationOverflow)?;
+    let nanoseconds = u128::from(sample_count)
+        .checked_mul(NANOSECONDS_PER_SECOND)
+        .map(|value| value.div_ceil(u128::from(SPEECH_PCM_SAMPLE_RATE)))
+        .and_then(|value| u64::try_from(value).ok())
+        .ok_or(AudioDurationProbeError::DurationOverflow)?;
+    AudioDuration::from_nanoseconds(nanoseconds)
+        .map_err(|_| AudioDurationProbeError::DurationOverflow)
 }
 
 fn probe_blocking(
@@ -125,6 +158,15 @@ mod tests {
     fn one_second_pcm_wav_has_exact_duration() {
         let duration = probe_blocking(one_second_wav(), "wav").unwrap();
         assert_eq!(duration.as_nanoseconds(), 1_000_000_000);
+    }
+
+    #[test]
+    fn speech_pcm_uses_openai_fixed_sample_contract() {
+        assert_eq!(
+            speech_pcm_duration(48_000).unwrap().as_nanoseconds(),
+            1_000_000_000
+        );
+        assert_eq!(speech_pcm_duration(2).unwrap().as_nanoseconds(), 41_667);
     }
 
     fn one_second_wav() -> Bytes {

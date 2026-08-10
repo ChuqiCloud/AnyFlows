@@ -289,6 +289,34 @@ async fn valid_openai_images_response_is_healthy_and_uses_low_cost_probe() {
 }
 
 #[tokio::test]
+async fn valid_openai_speech_response_is_healthy_and_uses_short_wav_probe() {
+    let key = [0x49; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    let database = test_database().await;
+    seed_probe_target(&database.seed, &key, Protocol::OpenAiSpeech, false, false).await;
+    let response = one_second_speech_wav();
+    let (proxy_address, captured, server) = spawn_proxy("200 OK", &response);
+    let probe = probe(&database.pool, &key, proxy_address);
+
+    assert_eq!(probe.check(channel_id()).await, ChannelProbeStatus::Healthy);
+
+    let request = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    server.join().unwrap();
+    let head = request.head.to_ascii_lowercase();
+    assert!(head.starts_with("post http://probe-upstream.example/v1/audio/speech http/1.1"));
+    assert!(head.contains("authorization: bearer probe-secret-canary"));
+    assert!(head.contains("content-type: application/json"));
+    assert!(head.contains("accept: application/octet-stream"));
+    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["model"], MODEL_CANARY);
+    assert_eq!(body["input"], "ping");
+    assert_eq!(body["voice"], "alloy");
+    assert_eq!(body["response_format"], "wav");
+    assert!(body.get("stream_format").is_none());
+
+    database.close().await;
+}
+
+#[tokio::test]
 async fn valid_anthropic_response_is_healthy_and_sends_messages_headers() {
     let key = [0x44; CREDENTIAL_ENCRYPTION_KEY_BYTES];
     let database = test_database().await;
@@ -458,7 +486,8 @@ async fn seed_probe_target(
         | Protocol::OpenAiResponses
         | Protocol::OpenAiEmbeddings
         | Protocol::OpenAiImages
-        | Protocol::OpenAiAudio => "openai",
+        | Protocol::OpenAiAudio
+        | Protocol::OpenAiSpeech => "openai",
         Protocol::Gemini => "gemini",
     };
     let channel_sql = format!(
@@ -608,6 +637,26 @@ fn channel_id() -> ChannelId {
 
 fn sql_text(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
+}
+
+fn one_second_speech_wav() -> Vec<u8> {
+    const SAMPLE_RATE: u32 = 24_000;
+    const DATA_BYTES: u32 = SAMPLE_RATE * 2;
+    let mut bytes = Vec::with_capacity((44 + DATA_BYTES) as usize);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + DATA_BYTES).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u16.to_le_bytes());
+    bytes.extend_from_slice(&1_u16.to_le_bytes());
+    bytes.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+    bytes.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes());
+    bytes.extend_from_slice(&2_u16.to_le_bytes());
+    bytes.extend_from_slice(&16_u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&DATA_BYTES.to_le_bytes());
+    bytes.resize((44 + DATA_BYTES) as usize, 0);
+    bytes
 }
 
 struct TestDatabase {

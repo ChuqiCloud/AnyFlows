@@ -69,6 +69,7 @@ impl OpenAiAdaptor {
                 | Protocol::OpenAiEmbeddings
                 | Protocol::OpenAiImages
                 | Protocol::OpenAiAudio
+                | Protocol::OpenAiSpeech
         ) {
             return Err(AdaptorError::InvalidChannelSettings {
                 channel_type: ChannelType::OpenAi,
@@ -92,6 +93,7 @@ impl OpenAiAdaptor {
             (Protocol::OpenAiEmbeddings, Operation::Embedding) => "embeddings",
             (Protocol::OpenAiImages, Operation::Image) => "images/generations",
             (Protocol::OpenAiAudio, Operation::Audio) => "audio/transcriptions",
+            (Protocol::OpenAiSpeech, Operation::Audio) => "audio/speech",
             (_, operation) => return Err(AdaptorError::UnsupportedOperation { operation }),
         };
         let base_url = context.resolve_base_url(Self::DEFAULT_BASE_URL)?;
@@ -109,6 +111,7 @@ impl OpenAiAdaptor {
                 "embeddings" => "v1/embeddings",
                 "images/generations" => "v1/images/generations",
                 "audio/transcriptions" => "v1/audio/transcriptions",
+                "audio/speech" => "v1/audio/speech",
                 _ => unreachable!("OpenAI 端点集合保持闭合"),
             }
         })
@@ -175,10 +178,12 @@ impl Adaptor for OpenAiAdaptor {
             HeaderValue::from_static("application/json")
         };
         headers.insert(HeaderName::from_static("content-type"), content_type);
-        headers.insert(
-            HeaderName::from_static("accept"),
-            HeaderValue::from_static("application/json"),
-        );
+        let accept = if self.protocol == Protocol::OpenAiSpeech {
+            HeaderValue::from_static("application/octet-stream")
+        } else {
+            HeaderValue::from_static("application/json")
+        };
+        headers.insert(HeaderName::from_static("accept"), accept);
         if let Some(request_id) = context.request_id() {
             let value =
                 HeaderValue::from_str(request_id).map_err(|_| AdaptorError::InvalidHeader)?;
@@ -420,6 +425,42 @@ mod tests {
             )
         );
         assert_eq!(headers["accept"], "application/json");
+    }
+
+    #[test]
+    fn speech_protocol_uses_native_json_endpoint_and_binary_accept_header() {
+        let adaptor = OpenAiAdaptor::with_protocol_and_supported_models(
+            Protocol::OpenAiSpeech,
+            ["gpt-speech-test"],
+        )
+        .unwrap();
+        assert_eq!(adaptor.default_protocol(), Protocol::OpenAiSpeech);
+        assert_eq!(
+            adaptor
+                .build_url(&context(), target(Operation::Audio))
+                .unwrap(),
+            "https://api.openai.com/v1/audio/speech"
+        );
+        let proxied = adaptor
+            .build_url(
+                &context()
+                    .with_base_url("https://gateway.example/proxy/openai/v1")
+                    .unwrap(),
+                target(Operation::Audio),
+            )
+            .unwrap();
+        assert!(proxied.ends_with("/proxy/openai/v1/audio/speech"));
+
+        let mut headers = HeaderMap::new();
+        adaptor
+            .setup_headers(
+                &mut headers,
+                &Credential::api_key("speech-key").unwrap(),
+                &context(),
+            )
+            .unwrap();
+        assert_eq!(headers["content-type"], "application/json");
+        assert_eq!(headers["accept"], "application/octet-stream");
     }
 
     #[test]

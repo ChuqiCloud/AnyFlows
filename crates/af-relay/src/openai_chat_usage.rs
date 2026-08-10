@@ -120,6 +120,21 @@ pub fn estimate_openai_request_upper_bound(
     .map_err(|_| UsageResolutionError::Overflow)
 }
 
+/// 使用模型对应的 OpenAI tokenizer 估算一组纯文本字段的令牌总数。
+///
+/// 未知兼容模型会取 `cl100k` 与 `o200k` 的较大值，降低第三方模型名导致少计费的风险。
+pub fn estimate_openai_text_tokens<'a>(
+    model: &str,
+    texts: impl IntoIterator<Item = &'a str>,
+) -> Result<TokenCount, UsageResolutionError> {
+    let counter = TokenCounter::for_model(model);
+    let mut total = 0_i64;
+    for text in texts {
+        checked_add(&mut total, counter.count(text)?)?;
+    }
+    TokenCount::new(total).map_err(|_| UsageResolutionError::Overflow)
+}
+
 impl OpenAiChatUsageEstimator {
     pub(crate) fn new(request: &CanonicalRequest) -> Self {
         let counter = TokenCounter::for_model(&request.model);
@@ -674,6 +689,12 @@ mod tests {
         let usage = estimator.resolve().unwrap();
         assert_eq!(usage.input_tokens().get(), 9);
         assert_eq!(usage.output_tokens().get(), 1);
+    }
+
+    #[test]
+    fn plain_text_estimator_uses_model_tokenizer_without_chat_overhead() {
+        let tokens = estimate_openai_text_tokens("gpt-4o-mini-tts", ["hello", "calm"]).unwrap();
+        assert_eq!(tokens.get(), 2);
     }
 
     #[test]
