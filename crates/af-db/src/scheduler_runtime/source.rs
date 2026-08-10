@@ -1,6 +1,6 @@
 use af_domain::{
     ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind,
-    Protocol, ProxyId, ResponsesCompactMode, Status,
+    Protocol, ProxyId, ResponsesCompactMode, ResponsesCompactProbeResult, Status,
 };
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 use thiserror::Error;
@@ -9,8 +9,9 @@ use crate::{
     CredentialProxyScheme,
     channel_settings::{
         auto_ban_rules, pool_mode, responses_compact_mode, responses_compact_model_mapping,
-        responses_websocket_enabled, validate_responses_compact_capability,
-        validate_responses_compact_model_mapping, validate_responses_websocket_capability,
+        responses_compact_probe_result, responses_websocket_enabled,
+        validate_responses_compact_capability, validate_responses_compact_model_mapping,
+        validate_responses_compact_probe_result, validate_responses_websocket_capability,
     },
     credential_probe::EncryptedCredentialEnvelope,
     entity::{channels, credentials, proxies},
@@ -39,6 +40,7 @@ pub(super) struct SchedulerRuntimeChannelSource {
     pool_mode: bool,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
+    responses_compact_probe_result: ResponsesCompactProbeResult,
     responses_compact_model_mapping: ChannelModelMappings,
 }
 
@@ -99,6 +101,14 @@ impl SchedulerRuntimeChannelSource {
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         validate_responses_compact_capability(channel_type, protocol, responses_compact_mode)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        let responses_compact_probe_result = responses_compact_probe_result(&settings)
+            .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
+        validate_responses_compact_probe_result(
+            channel_type,
+            protocol,
+            responses_compact_probe_result,
+        )
+        .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         let responses_compact_model_mapping = responses_compact_model_mapping(&settings)
             .map_err(|_| SchedulerRuntimeSourceError::Invariant)?;
         validate_responses_compact_model_mapping(
@@ -120,6 +130,7 @@ impl SchedulerRuntimeChannelSource {
             pool_mode,
             responses_websocket_enabled,
             responses_compact_mode,
+            responses_compact_probe_result,
             responses_compact_model_mapping,
         }))
     }
@@ -182,6 +193,11 @@ impl SchedulerRuntimeChannelSource {
     /// 返回渠道配置的 Responses Compact 三态策略。
     pub(super) const fn responses_compact_mode(&self) -> ResponsesCompactMode {
         self.responses_compact_mode
+    }
+
+    /// 返回最近一次确定性 Compact 探测结论。
+    pub(super) const fn responses_compact_probe_result(&self) -> ResponsesCompactProbeResult {
+        self.responses_compact_probe_result
     }
 
     /// 返回已校验的 Compact 专属上游模型映射。

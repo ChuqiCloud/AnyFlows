@@ -192,6 +192,18 @@ string_enum! {
 }
 
 string_enum! {
+    /// OpenAI Responses Compact 端点的最近一次确定性探测结论。
+    pub enum ResponsesCompactProbeResult {
+        /// 尚未完成有效探测，不能据此参与 Compact 调度。
+        Unknown => "unknown",
+        /// 上游返回并通过 `response.compaction` 完整结构校验。
+        Supported => "supported",
+        /// 上游明确不提供该端点，或成功响应不符合 Compact 协议。
+        Unsupported => "unsupported",
+    }
+}
+
+string_enum! {
     /// 渠道选择的上游适配器类型。
     pub enum ChannelType {
         /// OpenAI 及其兼容 API。

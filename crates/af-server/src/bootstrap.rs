@@ -1473,8 +1473,10 @@ fn channel_probe_config(config: &AppConfig) -> ChannelProbeSupervisorConfig {
     let settings = config.channel_probe();
     let configured_default = Duration::from_secs(settings.probe_timeout_secs());
     let maximum_channel_timeout = Duration::from_secs(af_domain::MAX_CHANNEL_TIMEOUT_SECS);
-    // 渠道覆盖由探活实现自身执行；外层只兜底失控实现和数据库读取停滞。
+    // 原生 Responses 会顺序执行普通健康请求与 Compact 能力请求，外层按两次最坏请求兜底。
     let hard_timeout = std::cmp::max(configured_default, maximum_channel_timeout)
+        .checked_mul(2)
+        .expect("渠道双请求探活硬截止必须可表示")
         .checked_add(CHANNEL_PROBE_HARD_TIMEOUT_PADDING)
         .expect("渠道探活硬截止必须可表示");
     ChannelProbeSupervisorConfig::new(

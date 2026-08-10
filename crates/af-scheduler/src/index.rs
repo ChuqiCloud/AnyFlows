@@ -554,6 +554,41 @@ impl IndexedWeightedScheduler {
             .collect())
     }
 
+    /// 返回当前快照下明确具备 Responses Compact 资格的候选渠道标识。
+    pub fn responses_compact_route_channel_ids(
+        &self,
+        group_id: GroupId,
+        model: &str,
+    ) -> Result<Vec<ChannelId>, IndexedWeightedSchedulerError> {
+        let snapshot = self.index.snapshot()?;
+        let candidates = compact_candidates(&snapshot, group_id, model)?;
+        Ok(candidates
+            .iter()
+            .map(|candidate| candidate.channel_id())
+            .collect())
+    }
+
+    /// 从同一代快照生成仅包含明确支持渠道的 Responses Compact 路由计划。
+    pub fn responses_compact_route_plan(
+        &self,
+        group_id: GroupId,
+        model: &str,
+    ) -> Result<Option<IndexedRoutePlan>, IndexedWeightedSchedulerError> {
+        self.responses_compact_route_plan_with_health(group_id, model, &BTreeMap::new())
+    }
+
+    /// 过滤 Compact 资格后再应用渠道健康和 weighted 重试顺序。
+    pub fn responses_compact_route_plan_with_health(
+        &self,
+        group_id: GroupId,
+        model: &str,
+        health: &BTreeMap<ChannelId, ChannelRoutingHealth>,
+    ) -> Result<Option<IndexedRoutePlan>, IndexedWeightedSchedulerError> {
+        let snapshot = self.index.snapshot()?;
+        let candidates = compact_candidates(&snapshot, group_id, model)?;
+        build_route_plan(&snapshot, candidates, health)
+    }
+
     /// 在同一代快照中先过滤熔断渠道，再以衰减惩罚修正 weighted 抽样票数。
     pub fn route_plan_with_health(
         &self,
@@ -562,42 +597,72 @@ impl IndexedWeightedScheduler {
         health: &BTreeMap<ChannelId, ChannelRoutingHealth>,
     ) -> Result<Option<IndexedRoutePlan>, IndexedWeightedSchedulerError> {
         let snapshot = self.index.snapshot()?;
-        let candidates = snapshot.candidates(group_id, model)?;
-        // 池模式把上游账号健康交给外部池管理，历史渠道惩罚也不能继续影响选路。
-        let effective_health = health
-            .iter()
-            .filter(|(channel_id, _)| {
-                !snapshot
-                    .runtime_targets
-                    .get(channel_id)
-                    .is_some_and(|target| target.pool_mode())
-            })
-            .map(|(channel_id, state)| (*channel_id, *state))
-            .collect();
-        let retry_order =
-            WeightedRetryPlan::new_with_health(candidates.to_vec(), &effective_health)?
-                .into_retry_order()?;
-        let Some(first) = retry_order.first() else {
-            return Ok(None);
-        };
-        let target_group_id = first.candidate().group_id();
-        let mut candidates = Vec::with_capacity(retry_order.len());
-        for selection in retry_order {
-            let runtime_target = snapshot
-                .runtime_targets
-                .get(&selection.candidate().channel_id())
-                .cloned()
-                .ok_or(IndexedWeightedSchedulerError::Cache(
-                    ChannelIndexCacheError::Snapshot(ChannelIndexSnapshotError::Invariant),
-                ))?;
-            candidates.push(IndexedRouteCandidate::new(selection, runtime_target));
-        }
-        Ok(Some(IndexedRoutePlan::new(
-            snapshot.generation(),
-            target_group_id,
-            candidates,
-        )))
+        build_route_plan(
+            &snapshot,
+            snapshot.candidates(group_id, model)?.to_vec(),
+            health,
+        )
     }
+}
+
+fn compact_candidates(
+    snapshot: &ChannelIndexSnapshot,
+    group_id: GroupId,
+    model: &str,
+) -> Result<Vec<SchedulerCandidate>, IndexedWeightedSchedulerError> {
+    let mut eligible = Vec::new();
+    for candidate in snapshot.candidates(group_id, model)? {
+        let target = snapshot
+            .runtime_targets
+            .get(&candidate.channel_id())
+            .ok_or(IndexedWeightedSchedulerError::Cache(
+                ChannelIndexCacheError::Snapshot(ChannelIndexSnapshotError::Invariant),
+            ))?;
+        if target.schedulable_responses_compact_model(model).is_some() {
+            eligible.push(*candidate);
+        }
+    }
+    Ok(eligible)
+}
+
+fn build_route_plan(
+    snapshot: &ChannelIndexSnapshot,
+    candidates: Vec<SchedulerCandidate>,
+    health: &BTreeMap<ChannelId, ChannelRoutingHealth>,
+) -> Result<Option<IndexedRoutePlan>, IndexedWeightedSchedulerError> {
+    // 池模式把上游账号健康交给外部池管理，历史渠道惩罚也不能继续影响选路。
+    let effective_health = health
+        .iter()
+        .filter(|(channel_id, _)| {
+            !snapshot
+                .runtime_targets
+                .get(channel_id)
+                .is_some_and(|target| target.pool_mode())
+        })
+        .map(|(channel_id, state)| (*channel_id, *state))
+        .collect();
+    let retry_order =
+        WeightedRetryPlan::new_with_health(candidates, &effective_health)?.into_retry_order()?;
+    let Some(first) = retry_order.first() else {
+        return Ok(None);
+    };
+    let target_group_id = first.candidate().group_id();
+    let mut candidates = Vec::with_capacity(retry_order.len());
+    for selection in retry_order {
+        let runtime_target = snapshot
+            .runtime_targets
+            .get(&selection.candidate().channel_id())
+            .cloned()
+            .ok_or(IndexedWeightedSchedulerError::Cache(
+                ChannelIndexCacheError::Snapshot(ChannelIndexSnapshotError::Invariant),
+            ))?;
+        candidates.push(IndexedRouteCandidate::new(selection, runtime_target));
+    }
+    Ok(Some(IndexedRoutePlan::new(
+        snapshot.generation(),
+        target_group_id,
+        candidates,
+    )))
 }
 
 /// 内存索引 weighted 调度失败；模型名和持久化诊断不会进入错误文本。
@@ -900,7 +965,9 @@ mod tests {
         EncryptedCredentialEnvelope, SchedulerRuntimeCredentialRecord, SchedulerRuntimeProjection,
         SchedulerRuntimeTargetRecord,
     };
-    use af_domain::{ChannelType, CredentialKind, Protocol};
+    use af_domain::{
+        ChannelType, CredentialKind, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult,
+    };
 
     use crate::{RouteWaitKind, StickyRouteOutcome, StickyWaitPolicy};
 
@@ -991,6 +1058,75 @@ mod tests {
                 .unwrap()[0]
                 .channel_id(),
             ChannelId::new(2).unwrap()
+        );
+    }
+
+    #[test]
+    fn compact_route_filters_by_native_target_mode_and_probe_fact() {
+        let snapshot = ChannelIndexSnapshot::from_records(
+            vec![
+                compact_record(
+                    7,
+                    "gpt-compact",
+                    1,
+                    4,
+                    ResponsesCompactMode::Auto,
+                    ResponsesCompactProbeResult::Supported,
+                ),
+                compact_record(
+                    7,
+                    "gpt-compact",
+                    2,
+                    3,
+                    ResponsesCompactMode::Auto,
+                    ResponsesCompactProbeResult::Unknown,
+                ),
+                compact_record(
+                    7,
+                    "gpt-compact",
+                    3,
+                    2,
+                    ResponsesCompactMode::ForceOff,
+                    ResponsesCompactProbeResult::Supported,
+                ),
+                compact_record(
+                    7,
+                    "gpt-compact",
+                    4,
+                    1,
+                    ResponsesCompactMode::ForceOn,
+                    ResponsesCompactProbeResult::Unsupported,
+                ),
+                record(7, "gpt-compact", 5, 0, 1),
+            ],
+            9,
+        )
+        .unwrap();
+        let index = InMemoryChannelIndex {
+            inner: Arc::new(InMemoryChannelIndexInner {
+                source: Arc::new(SequenceSource::new(Vec::new())),
+                snapshot: RwLock::new(Arc::new(snapshot)),
+                refresh_gate: tokio::sync::Mutex::new(()),
+            }),
+        };
+        let scheduler = IndexedWeightedScheduler::new(index);
+
+        assert_eq!(
+            scheduler
+                .responses_compact_route_channel_ids(GroupId::new(7).unwrap(), "gpt-compact",)
+                .unwrap(),
+            vec![ChannelId::new(1).unwrap(), ChannelId::new(4).unwrap()]
+        );
+        let route = scheduler
+            .responses_compact_route_plan(GroupId::new(7).unwrap(), "gpt-compact")
+            .unwrap()
+            .unwrap();
+        assert_eq!(route.candidates().len(), 2);
+        assert!(
+            route
+                .candidates()
+                .iter()
+                .all(|candidate| { matches!(candidate.channel_id().get(), 1 | 4) })
         );
     }
 
@@ -1293,6 +1429,43 @@ mod tests {
             priority,
             weight,
             Arc::new(runtime_target(channel_id).with_pool_mode(true)),
+        )
+        .unwrap()
+    }
+
+    fn compact_record(
+        group_id: i64,
+        model: &str,
+        channel_id: i64,
+        weight: u32,
+        mode: ResponsesCompactMode,
+        result: ResponsesCompactProbeResult,
+    ) -> ChannelIndexSourceRecord {
+        let credential = SchedulerRuntimeCredentialRecord::new(
+            100 + channel_id,
+            CredentialKind::ApiKey,
+            EncryptedCredentialEnvelope::new("test-key", [0x42; 24], vec![0x24; 16]).unwrap(),
+            false,
+        )
+        .unwrap();
+        let target = SchedulerRuntimeTargetRecord::new(
+            ChannelId::new(channel_id).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiResponses,
+            Some(format!("https://channel-{channel_id}.example.com")),
+            credential,
+            Vec::new(),
+        )
+        .unwrap()
+        .with_responses_compact_mode(mode)
+        .and_then(|target| target.with_responses_compact_probe_result(result))
+        .unwrap();
+        ChannelIndexSourceRecord::with_runtime_target(
+            GroupId::new(group_id).unwrap(),
+            model,
+            0,
+            weight,
+            Arc::new(target),
         )
         .unwrap()
     }

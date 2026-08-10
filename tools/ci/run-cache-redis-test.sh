@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-source "$(dirname "${BASH_SOURCE[0]}")/container-endpoint.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/container-test-runner.sh"
 
 readonly REDIS_IMAGE="docker.io/library/redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3"
 readonly SMOKE_TEST_NAME="redis_hybrid_cache_smoke"
@@ -9,15 +9,24 @@ readonly HTTP_SMOKE_TEST_TARGET="token_auth_chain"
 readonly HTTP_SMOKE_TEST_NAME="redis_rpm_admission_is_shared_across_http_instances"
 
 container_name=""
+network_name=""
+declare -a runner_names=()
 
 cleanup() {
     local status=$?
     trap - EXIT
+    local runner_name=""
+    for runner_name in "${runner_names[@]}"; do
+        docker rm --force "${runner_name}" >/dev/null 2>&1 || true
+    done
     if [[ -n "${container_name}" ]]; then
         if ((status != 0)); then
             docker logs "${container_name}" >&2 || true
         fi
         docker rm --force "${container_name}" >/dev/null 2>&1 || true
+    fi
+    if [[ -n "${network_name}" ]]; then
+        docker network rm "${network_name}" >/dev/null 2>&1 || true
     fi
     exit "${status}"
 }
@@ -37,6 +46,8 @@ wait_for_redis() {
 
 run_smoke_test() {
     local test_list=""
+    local test_binary=""
+    local runner_name=""
 
     test_list="$(cargo test --locked --package af-cache --test redis_integration -- --list)"
     if ! grep --fixed-strings --line-regexp --quiet "${SMOKE_TEST_NAME}: test" <<<"${test_list}"; then
@@ -44,14 +55,27 @@ run_smoke_test() {
         return 1
     fi
 
+    if [[ -n "${network_name}" ]]; then
+        test_binary="$(ci_build_test_binary af-cache test redis_integration)"
+        runner_name="anyflows-redis-cache-test-${BASHPID}"
+        runner_names+=("${runner_name}")
+        ci_run_test_binary "${network_name}" "${runner_name}" "${test_binary}" \
+            "AF_TEST_REDIS_URL=${redis_url}" \
+            "AF_REQUIRE_LIVE_REDIS=1" \
+            -- "${SMOKE_TEST_NAME}" --exact --include-ignored
+        return
+    fi
+
     AF_TEST_REDIS_URL="${redis_url}" \
-    AF_REQUIRE_LIVE_REDIS=1 \
-    cargo test --locked --package af-cache --test redis_integration \
-        "${SMOKE_TEST_NAME}" -- --exact --include-ignored
+        AF_REQUIRE_LIVE_REDIS=1 \
+        cargo test --locked --package af-cache --test redis_integration \
+            "${SMOKE_TEST_NAME}" -- --exact --include-ignored
 }
 
 run_http_smoke_test() {
     local test_list=""
+    local test_binary=""
+    local runner_name=""
 
     test_list="$(cargo test --locked --package af-server --test "${HTTP_SMOKE_TEST_TARGET}" -- --list)"
     if ! grep --fixed-strings --line-regexp --quiet "${HTTP_SMOKE_TEST_NAME}: test" <<<"${test_list}"; then
@@ -59,20 +83,33 @@ run_http_smoke_test() {
         return 1
     fi
 
+    if [[ -n "${network_name}" ]]; then
+        test_binary="$(ci_build_test_binary af-server test "${HTTP_SMOKE_TEST_TARGET}")"
+        runner_name="anyflows-redis-http-test-${BASHPID}"
+        runner_names+=("${runner_name}")
+        ci_run_test_binary "${network_name}" "${runner_name}" "${test_binary}" \
+            "AF_TEST_REDIS_URL=${redis_url}" \
+            "AF_REQUIRE_LIVE_REDIS=1" \
+            -- "${HTTP_SMOKE_TEST_NAME}" --exact --include-ignored
+        return
+    fi
+
     AF_TEST_REDIS_URL="${redis_url}" \
-    AF_REQUIRE_LIVE_REDIS=1 \
-    cargo test --locked --package af-server --test "${HTTP_SMOKE_TEST_TARGET}" \
-        "${HTTP_SMOKE_TEST_NAME}" -- --exact --include-ignored
+        AF_REQUIRE_LIVE_REDIS=1 \
+        cargo test --locked --package af-server --test "${HTTP_SMOKE_TEST_TARGET}" \
+            "${HTTP_SMOKE_TEST_NAME}" -- --exact --include-ignored
 }
 
 redis_url="${AF_TEST_REDIS_URL:-}"
 if [[ -z "${redis_url}" ]]; then
+    network_name="anyflows-redis-network-${BASHPID}"
     container_name="anyflows-redis-${BASHPID}"
-    docker run --detach --name "${container_name}" --publish 6379 \
+    docker network create "${network_name}" >/dev/null
+    docker run --detach --name "${container_name}" --network "${network_name}" \
+        --network-alias redis \
         "${REDIS_IMAGE}" redis-server --save '' --appendonly no >/dev/null
     wait_for_redis
-    ci_wait_for_published_endpoint "${container_name}" 6379 "Redis"
-    redis_url="redis://$(ci_url_host "${CI_SERVICE_HOST}"):${CI_SERVICE_PORT}/"
+    redis_url="redis://redis:6379/"
 fi
 
 case "${redis_url}" in

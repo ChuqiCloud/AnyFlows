@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, fmt};
 
 use af_domain::{
     ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ConcurrencyLimit, CredentialKind,
-    Protocol, ProxyId, ResponsesCompactMode,
+    Protocol, ProxyId, ResponsesCompactMode, ResponsesCompactProbeResult,
 };
 use sea_orm::entity::prelude::Json;
 use sha2::{Digest, Sha256};
@@ -360,6 +360,7 @@ pub struct SchedulerRuntimeTargetRecord {
     pool_mode: bool,
     responses_websocket_enabled: bool,
     responses_compact_mode: ResponsesCompactMode,
+    responses_compact_probe_result: ResponsesCompactProbeResult,
     responses_compact_model_mapping: ChannelModelMappings,
 }
 
@@ -502,6 +503,7 @@ impl SchedulerRuntimeTargetRecord {
             pool_mode: false,
             responses_websocket_enabled: false,
             responses_compact_mode: ResponsesCompactMode::Auto,
+            responses_compact_probe_result: ResponsesCompactProbeResult::Unknown,
             responses_compact_model_mapping,
         })
     }
@@ -587,6 +589,21 @@ impl SchedulerRuntimeTargetRecord {
         Ok(self)
     }
 
+    /// 设置最近一次确定性 Compact 探测结论，并拒绝非原生渠道携带支持事实。
+    pub fn with_responses_compact_probe_result(
+        mut self,
+        result: ResponsesCompactProbeResult,
+    ) -> Result<Self, SchedulerRuntimeTargetRecordError> {
+        if result != ResponsesCompactProbeResult::Unknown
+            && (self.channel_type != ChannelType::OpenAi
+                || self.protocol != Protocol::OpenAiResponses)
+        {
+            return Err(SchedulerRuntimeTargetRecordError);
+        }
+        self.responses_compact_probe_result = result;
+        Ok(self)
+    }
+
     /// 返回渠道级读取与完整请求超时；空值表示继承全局配置。
     #[must_use]
     pub const fn timeout(&self) -> Option<ChannelTimeout> {
@@ -615,6 +632,27 @@ impl SchedulerRuntimeTargetRecord {
     #[must_use]
     pub const fn responses_compact_mode(&self) -> ResponsesCompactMode {
         self.responses_compact_mode
+    }
+
+    /// 返回最近一次确定性 Compact 探测结论。
+    #[must_use]
+    pub const fn responses_compact_probe_result(&self) -> ResponsesCompactProbeResult {
+        self.responses_compact_probe_result
+    }
+
+    /// 按三态策略和探测事实判断该目标是否具备 Compact 调度资格。
+    #[must_use]
+    pub fn responses_compact_schedulable(&self) -> bool {
+        if self.channel_type != ChannelType::OpenAi || self.protocol != Protocol::OpenAiResponses {
+            return false;
+        }
+        match self.responses_compact_mode {
+            ResponsesCompactMode::ForceOn => true,
+            ResponsesCompactMode::ForceOff => false,
+            ResponsesCompactMode::Auto => {
+                self.responses_compact_probe_result == ResponsesCompactProbeResult::Supported
+            }
+        }
     }
 
     /// 返回数据库声明的凭据类型。
@@ -650,6 +688,16 @@ impl SchedulerRuntimeTargetRecord {
         self.responses_compact_model_mapping
             .resolve(base_model)
             .unwrap_or(base_model)
+    }
+
+    /// 仅在目标具备 Compact 调度资格时返回已验证的上游模型。
+    #[must_use]
+    pub fn schedulable_responses_compact_model<'a>(
+        &'a self,
+        requested_model: &'a str,
+    ) -> Option<&'a str> {
+        self.responses_compact_schedulable()
+            .then(|| self.mapped_responses_compact_model(requested_model))
     }
 
     /// 返回受控投影编解码使用的已验证模型映射。
@@ -701,6 +749,10 @@ impl fmt::Debug for SchedulerRuntimeTargetRecord {
                 &self.responses_websocket_enabled,
             )
             .field("responses_compact_mode", &self.responses_compact_mode)
+            .field(
+                "responses_compact_probe_result",
+                &self.responses_compact_probe_result,
+            )
             .field(
                 "responses_compact_model_mapping_count",
                 &self.responses_compact_model_mapping.len(),

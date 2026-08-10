@@ -55,6 +55,9 @@ jobs:
       - name: Test release scripts
         run: bash tools/ci/test-release-scripts.sh
 
+      - name: 测试服务容器运行脚本
+        run: bash tools/ci/test-container-test-runner.sh
+
       - name: Check OpenAPI contract
         run: cargo run --locked --package xtask -- openapi check
 

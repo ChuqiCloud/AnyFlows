@@ -103,6 +103,9 @@ fn try_runtime_target(
         target.with_responses_websocket_enabled(channel.responses_websocket_enabled())
     })
     .and_then(|target| target.with_responses_compact_mode(channel.responses_compact_mode()))
+    .and_then(|target| {
+        target.with_responses_compact_probe_result(channel.responses_compact_probe_result())
+    })
     .map(Some)
     .map_err(|_| SchedulerRuntimeSelectionError::Invariant)
 }

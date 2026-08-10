@@ -23,7 +23,7 @@ use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
     aead::{Aead as _, KeyInit as _, Payload},
 };
-use sea_orm::{ConnectionTrait as _, Database, DatabaseConnection};
+use sea_orm::{ConnectionTrait as _, Database, DatabaseBackend, DatabaseConnection, Statement};
 use serde_json::json;
 
 use crate::channel_probe::DatabaseChannelProbe;
@@ -33,6 +33,7 @@ const TEST_CREDENTIAL_ID: i64 = 73;
 const IO_TIMEOUT: Duration = Duration::from_secs(5);
 const MODEL_CANARY: &str = "probe-model-canary";
 const SECRET_CANARY: &str = "probe-secret-canary";
+const RESPONSES_PROBE_RESPONSE: &[u8] = br#"{"id":"resp_probe","object":"response","created_at":1700000000,"status":"completed","error":null,"incomplete_details":null,"model":"probe-model-canary","output":[{"id":"msg_probe","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"ok","annotations":[],"logprobs":[]}]}],"usage":{"input_tokens":1,"input_tokens_details":{"cache_write_tokens":0,"cached_tokens":0},"output_tokens":1,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":2}}"#;
 static NEXT_DATABASE: AtomicU64 = AtomicU64::new(0);
 
 #[tokio::test]
@@ -78,13 +79,25 @@ async fn valid_openai_responses_response_is_healthy_and_disables_storage() {
         false,
     )
     .await;
-    let response = br#"{"id":"resp_probe","object":"response","created_at":1700000000,"status":"completed","error":null,"incomplete_details":null,"model":"probe-model-canary","output":[{"id":"msg_probe","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"ok","annotations":[],"logprobs":[]}]}],"usage":{"input_tokens":1,"input_tokens_details":{"cache_write_tokens":0,"cached_tokens":0},"output_tokens":1,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":2}}"#;
-    let (proxy_address, captured, server) = spawn_proxy("200 OK", response);
+    database
+        .seed
+        .execute_unprepared(&format!(
+            "UPDATE channels SET status = {} WHERE id = {TEST_CHANNEL_ID}",
+            Status::Enabled.code()
+        ))
+        .await
+        .unwrap();
+    let compact_response = br#"{"id":"cmp_probe","created_at":1700000001,"object":"response.compaction","output":[{"type":"compaction","encrypted_content":"opaque-probe"}],"usage":{"input_tokens":1,"input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0},"output_tokens":1,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":2}}"#;
+    let (proxy_address, captured, server) = spawn_proxy_sequence([
+        ("200 OK", RESPONSES_PROBE_RESPONSE),
+        ("200 OK", compact_response.as_slice()),
+    ]);
     let probe = probe(&database.pool, &key, proxy_address);
 
     assert_eq!(probe.check(channel_id()).await, ChannelProbeStatus::Healthy);
 
     let request = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    let compact_request = captured.recv_timeout(IO_TIMEOUT).unwrap();
     server.join().unwrap();
     let head = request.head.to_ascii_lowercase();
     assert!(head.starts_with("post http://probe-upstream.example/v1/responses http/1.1"));
@@ -95,6 +108,120 @@ async fn valid_openai_responses_response_is_healthy_and_disables_storage() {
     assert_eq!(body["store"], false);
     assert_eq!(body["max_output_tokens"], 1);
     assert_eq!(body["input"][0]["content"][0]["text"], "ping");
+    let compact_head = compact_request.head.to_ascii_lowercase();
+    assert!(
+        compact_head
+            .starts_with("post http://probe-upstream.example/v1/responses/compact http/1.1")
+    );
+    let compact_body: serde_json::Value = serde_json::from_slice(&compact_request.body).unwrap();
+    assert_eq!(compact_body["model"], MODEL_CANARY);
+    assert_eq!(compact_body["input"], "ping");
+    assert_eq!(
+        compact_probe_fact(&database.seed).await,
+        (Some("supported".to_owned()), Some(200))
+    );
+
+    database.close().await;
+}
+
+#[tokio::test]
+async fn compact_probe_404_marks_unsupported_without_harming_responses_health() {
+    let key = [0x49; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    let database = test_database().await;
+    seed_probe_target(
+        &database.seed,
+        &key,
+        Protocol::OpenAiResponses,
+        false,
+        false,
+    )
+    .await;
+    let (proxy_address, captured, server) = spawn_proxy_sequence([
+        ("200 OK", RESPONSES_PROBE_RESPONSE),
+        ("404 Not Found", br#"{"error":"not-found"}"#.as_slice()),
+    ]);
+    let probe = probe(&database.pool, &key, proxy_address);
+
+    assert_eq!(probe.check(channel_id()).await, ChannelProbeStatus::Healthy);
+    captured.recv_timeout(IO_TIMEOUT).unwrap();
+    captured.recv_timeout(IO_TIMEOUT).unwrap();
+    server.join().unwrap();
+    assert_eq!(
+        compact_probe_fact(&database.seed).await,
+        (Some("unsupported".to_owned()), Some(404))
+    );
+
+    database.close().await;
+}
+
+#[tokio::test]
+async fn compact_probe_rejects_successful_non_compaction_response() {
+    let key = [0x4b; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    let database = test_database().await;
+    seed_probe_target(
+        &database.seed,
+        &key,
+        Protocol::OpenAiResponses,
+        false,
+        false,
+    )
+    .await;
+    let (proxy_address, captured, server) = spawn_proxy_sequence([
+        ("200 OK", RESPONSES_PROBE_RESPONSE),
+        ("200 OK", RESPONSES_PROBE_RESPONSE),
+    ]);
+    let probe = probe(&database.pool, &key, proxy_address);
+
+    assert_eq!(probe.check(channel_id()).await, ChannelProbeStatus::Healthy);
+    captured.recv_timeout(IO_TIMEOUT).unwrap();
+    captured.recv_timeout(IO_TIMEOUT).unwrap();
+    server.join().unwrap();
+    assert_eq!(
+        compact_probe_fact(&database.seed).await,
+        (Some("unsupported".to_owned()), Some(200))
+    );
+
+    database.close().await;
+}
+
+#[tokio::test]
+async fn compact_probe_transient_failure_preserves_previous_fact() {
+    let key = [0x4a; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    let database = test_database().await;
+    seed_probe_target(
+        &database.seed,
+        &key,
+        Protocol::OpenAiResponses,
+        false,
+        false,
+    )
+    .await;
+    set_channel_settings(
+        &database.seed,
+        json!({
+            "responses_compact_probe_result": "supported",
+            "responses_compact_probe_checked_at": 1_735_000_000_000_i64,
+            "responses_compact_probe_http_status": 200
+        }),
+    )
+    .await;
+    let (proxy_address, captured, server) = spawn_proxy_sequence([
+        ("200 OK", RESPONSES_PROBE_RESPONSE),
+        (
+            "503 Service Unavailable",
+            br#"{"error":"temporary"}"#.as_slice(),
+        ),
+    ]);
+    let probe = probe(&database.pool, &key, proxy_address);
+
+    assert_eq!(probe.check(channel_id()).await, ChannelProbeStatus::Healthy);
+    captured.recv_timeout(IO_TIMEOUT).unwrap();
+    captured.recv_timeout(IO_TIMEOUT).unwrap();
+    server.join().unwrap();
+    assert_eq!(
+        compact_probe_fact(&database.seed).await,
+        (Some("supported".to_owned()), Some(200))
+    );
 
     database.close().await;
 }
@@ -375,6 +502,37 @@ async fn seed_probe_target(
     database.execute_unprepared(&credential_sql).await.unwrap();
 }
 
+async fn set_channel_settings(database: &DatabaseConnection, settings: serde_json::Value) {
+    database
+        .execute_unprepared(&format!(
+            "UPDATE channels SET settings = {} WHERE id = {TEST_CHANNEL_ID}",
+            sql_text(&settings.to_string())
+        ))
+        .await
+        .unwrap();
+}
+
+async fn compact_probe_fact(database: &DatabaseConnection) -> (Option<String>, Option<u16>) {
+    let row = database
+        .query_one(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            format!(
+                "SELECT json_extract(settings, '$.responses_compact_probe_result') AS result, \
+                 json_extract(settings, '$.responses_compact_probe_http_status') AS http_status \
+                 FROM channels WHERE id = {TEST_CHANNEL_ID}"
+            ),
+        ))
+        .await
+        .unwrap()
+        .expect("测试渠道必须存在");
+    let result = row.try_get::<Option<String>>("", "result").unwrap();
+    let status = row
+        .try_get::<Option<i64>>("", "http_status")
+        .unwrap()
+        .map(|status| u16::try_from(status).unwrap());
+    (result, status)
+}
+
 fn encrypted_envelope(
     key: &[u8; CREDENTIAL_ENCRYPTION_KEY_BYTES],
     aad_credential_id: i64,
@@ -512,6 +670,38 @@ fn spawn_proxy(
     thread::JoinHandle<()>,
 ) {
     spawn_delayed_proxy(status_line, body, Duration::ZERO)
+}
+
+fn spawn_proxy_sequence<const N: usize>(
+    responses: [(&str, &[u8]); N],
+) -> (
+    SocketAddr,
+    mpsc::Receiver<CapturedRequest>,
+    thread::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let responses = responses
+        .into_iter()
+        .map(|(status, body)| (status.to_owned(), body.to_vec()))
+        .collect::<Vec<_>>();
+    let (captured_tx, captured_rx) = mpsc::channel();
+    let handle = thread::spawn(move || {
+        for (status_line, body) in responses {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(IO_TIMEOUT)).unwrap();
+            stream.set_write_timeout(Some(IO_TIMEOUT)).unwrap();
+            captured_tx.send(read_request(&mut stream)).unwrap();
+            let head = format!(
+                "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(head.as_bytes()).unwrap();
+            stream.write_all(&body).unwrap();
+            stream.flush().unwrap();
+        }
+    });
+    (address, captured_rx, handle)
 }
 
 fn spawn_delayed_proxy(
