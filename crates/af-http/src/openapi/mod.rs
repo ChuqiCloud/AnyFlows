@@ -327,8 +327,20 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 207);
+        assert_eq!(schemas.len(), 211);
         assert!(schemas.keys().is_sorted());
+        assert!(schemas.contains_key("AdminResponsesCompactProbe"));
+        assert!(schemas.contains_key("ResponsesCompactError"));
+        assert!(schemas.contains_key("ResponsesCompactErrorBody"));
+        assert!(schemas.contains_key("ResponsesCompactInput"));
+        assert!(schemas.contains_key("ResponsesCompactInputUsageDetails"));
+        assert!(schemas.contains_key("ResponsesCompactItem"));
+        assert!(schemas.contains_key("ResponsesCompactMode"));
+        assert!(schemas.contains_key("ResponsesCompactOutputUsageDetails"));
+        assert!(schemas.contains_key("ResponsesCompactProbeResult"));
+        assert!(schemas.contains_key("ResponsesCompactRequest"));
+        assert!(schemas.contains_key("ResponsesCompactResponse"));
+        assert!(schemas.contains_key("ResponsesCompactUsage"));
         assert!(schemas.contains_key("AdminChannelAutoBanRules"));
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
