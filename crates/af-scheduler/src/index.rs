@@ -619,7 +619,7 @@ fn compact_candidates(
                 ChannelIndexCacheError::Snapshot(ChannelIndexSnapshotError::Invariant),
             ))?;
         if target.schedulable_responses_compact_model(model).is_some() {
-            eligible.push(candidate.clone());
+            eligible.push(*candidate);
         }
     }
     Ok(eligible)
