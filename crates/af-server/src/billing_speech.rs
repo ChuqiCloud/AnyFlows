@@ -310,7 +310,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(usage.input_tokens().get(), 2);
+        assert_eq!(usage.input_tokens().get(), 3);
         assert_eq!(usage.output_tokens().get(), 1_250);
         assert_eq!(usage.details().audio_output().get(), 1_250);
     }

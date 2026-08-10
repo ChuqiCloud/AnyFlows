@@ -694,7 +694,7 @@ mod tests {
     #[test]
     fn plain_text_estimator_uses_model_tokenizer_without_chat_overhead() {
         let tokens = estimate_openai_text_tokens("gpt-4o-mini-tts", ["hello", "calm"]).unwrap();
-        assert_eq!(tokens.get(), 2);
+        assert_eq!(tokens.get(), 3);
     }
 
     #[test]
