@@ -224,6 +224,16 @@ fn event_kind(event: &CanonicalStreamEvent) -> &'static str {
             choice_index: _,
             tool_index: _,
         } => "tool_call_end",
+        CanonicalStreamEvent::CompactionStart {
+            choice_index: _,
+            output_index: _,
+            item: _,
+        } => "compaction_start",
+        CanonicalStreamEvent::CompactionEnd {
+            choice_index: _,
+            output_index: _,
+            item: _,
+        } => "compaction_end",
         CanonicalStreamEvent::Finish {
             choice_index: _,
             reason: _,
