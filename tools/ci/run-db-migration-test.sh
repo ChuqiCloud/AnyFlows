@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-source "$(dirname "${BASH_SOURCE[0]}")/container-endpoint.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/container-test-runner.sh"
 
 readonly DIALECT="${1:-}"
 readonly POSTGRES_IMAGE="docker.io/library/postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010"
@@ -12,15 +12,23 @@ readonly TEST_DATABASE="anyflows_migration_test_ci"
 readonly SMOKE_TEST_NAME="migration::tests::migration_runner_smoke"
 
 container_name=""
+network_name=""
+runner_name=""
 
 cleanup() {
     local status=$?
     trap - EXIT
+    if [[ -n "${runner_name}" ]]; then
+        docker rm --force "${runner_name}" >/dev/null 2>&1 || true
+    fi
     if [[ -n "${container_name}" ]]; then
         if ((status != 0)); then
             docker logs "${container_name}" >&2 || true
         fi
         docker rm --force "${container_name}" >/dev/null 2>&1 || true
+    fi
+    if [[ -n "${network_name}" ]]; then
+        docker network rm "${network_name}" >/dev/null 2>&1 || true
     fi
     exit "${status}"
 }
@@ -54,6 +62,7 @@ wait_for_mysql() {
 
 run_smoke_test() {
     local test_list=""
+    local test_binary=""
 
     test_list="$(cargo test --locked --package af-db --lib -- --list)"
     if ! grep --fixed-strings --line-regexp --quiet "${SMOKE_TEST_NAME}: test" <<<"${test_list}"; then
@@ -61,10 +70,21 @@ run_smoke_test() {
         return 1
     fi
 
+    if [[ -n "${network_name}" ]]; then
+        test_binary="$(ci_build_test_binary af-db lib)"
+        runner_name="anyflows-db-test-${BASHPID}"
+        ci_run_test_binary "${network_name}" "${runner_name}" "${test_binary}" \
+            "AF_TEST_DATABASE_URL=${database_url}" \
+            "AF_REQUIRE_LIVE_DATABASE=1" \
+            "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST=1" \
+            -- "${SMOKE_TEST_NAME}" --exact --include-ignored
+        return
+    fi
+
     AF_TEST_DATABASE_URL="${database_url}" \
-    AF_REQUIRE_LIVE_DATABASE=1 \
-    AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST=1 \
-    cargo test --locked --package af-db --lib "${SMOKE_TEST_NAME}" -- --exact --include-ignored
+        AF_REQUIRE_LIVE_DATABASE=1 \
+        AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST=1 \
+        cargo test --locked --package af-db --lib "${SMOKE_TEST_NAME}" -- --exact --include-ignored
 }
 
 database_url="${AF_TEST_DATABASE_URL:-}"
@@ -75,29 +95,31 @@ if [[ -z "${database_url}" ]]; then
             database_url="sqlite::memory:"
             ;;
         postgres)
+            network_name="anyflows-postgres-network-${BASHPID}"
             container_name="anyflows-postgres-${BASHPID}"
-            ci_prepare_service_endpoint 5432
-            docker run --detach --name "${container_name}" "${CI_SERVICE_DOCKER_ARGS[@]}" \
+            docker network create "${network_name}" >/dev/null
+            docker run --detach --name "${container_name}" --network "${network_name}" \
+                --network-alias postgres \
                 --env POSTGRES_USER="${TEST_USER}" \
                 --env POSTGRES_PASSWORD="${TEST_PASSWORD}" \
                 --env POSTGRES_DB="${TEST_DATABASE}" \
                 "${POSTGRES_IMAGE}" >/dev/null
             wait_for_postgres
-            ci_wait_for_service_endpoint "${container_name}" 5432 "PostgreSQL"
-            database_url="postgres://${TEST_USER}:${TEST_PASSWORD}@$(ci_url_host "${CI_SERVICE_HOST}"):${CI_SERVICE_PORT}/${TEST_DATABASE}"
+            database_url="postgres://${TEST_USER}:${TEST_PASSWORD}@postgres:5432/${TEST_DATABASE}"
             ;;
         mysql)
+            network_name="anyflows-mysql-network-${BASHPID}"
             container_name="anyflows-mysql-${BASHPID}"
-            ci_prepare_service_endpoint 3306
-            docker run --detach --name "${container_name}" "${CI_SERVICE_DOCKER_ARGS[@]}" \
+            docker network create "${network_name}" >/dev/null
+            docker run --detach --name "${container_name}" --network "${network_name}" \
+                --network-alias mysql \
                 --env MYSQL_USER="${TEST_USER}" \
                 --env MYSQL_PASSWORD="${TEST_PASSWORD}" \
                 --env MYSQL_ROOT_PASSWORD="root_ci" \
                 --env MYSQL_DATABASE="${TEST_DATABASE}" \
                 "${MYSQL_IMAGE}" >/dev/null
             wait_for_mysql
-            ci_wait_for_service_endpoint "${container_name}" 3306 "MySQL"
-            database_url="mysql://${TEST_USER}:${TEST_PASSWORD}@$(ci_url_host "${CI_SERVICE_HOST}"):${CI_SERVICE_PORT}/${TEST_DATABASE}?timezone=%2B08:00"
+            database_url="mysql://${TEST_USER}:${TEST_PASSWORD}@mysql:3306/${TEST_DATABASE}?timezone=%2B08:00"
             ;;
         *)
             echo "用法：$0 <sqlite|postgres|mysql>" >&2
