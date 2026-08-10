@@ -25,7 +25,7 @@ pub use auto_ban::{
 pub use concurrency::{ConcurrencyLimit, ConcurrencyLimitError};
 pub use enums::{
     ChannelType, CredentialKind, Operation, ParseEnumError, Protocol, PublicErrorCode,
-    ResponsesCompactMode, Role, Status,
+    ResponsesCompactMode, ResponsesCompactProbeResult, Role, Status,
 };
 pub use error::{
     AfError, NetworkFailureKind, QuotaWindowRetryAfter, RateLimitScope, UpstreamError,

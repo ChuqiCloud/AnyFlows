@@ -55,6 +55,9 @@ mod channel_settings;
 mod channel_state;
 #[cfg(test)]
 mod channel_state_tests;
+mod compact_probe_state;
+#[cfg(test)]
+mod compact_probe_state_tests;
 mod connection;
 mod credential_probe;
 #[cfg(test)]
@@ -258,12 +261,15 @@ pub use channel_state::{
     ChannelAutoDisableOutcome, ChannelProbeLease, ChannelProbeRecoveryOutcome,
     ChannelStateRepository, ChannelStateRepositoryError, MAX_CHANNEL_PROBE_BATCH,
 };
+pub use compact_probe_state::{
+    CompactProbeStateRepository, CompactProbeStateRepositoryError, CompactProbeStateWriteOutcome,
+};
 pub use connection::DatabasePool;
 pub(crate) use connection::connect;
 pub use credential_probe::{
     CREDENTIAL_ENVELOPE_NONCE_BYTES, CREDENTIAL_ENVELOPE_TAG_BYTES, ChannelProbeHeader,
     ChannelProbeTargetRecord, ChannelProbeTargetRepository, ChannelProbeTargetRepositoryError,
-    EncryptedCredentialEnvelope, EncryptedCredentialEnvelopeError,
+    ChannelProbeTargetRevision, EncryptedCredentialEnvelope, EncryptedCredentialEnvelopeError,
     MAX_CREDENTIAL_ENVELOPE_CIPHERTEXT_BYTES, MAX_CREDENTIAL_ENVELOPE_KEY_ID_BYTES,
 };
 pub use credential_proxy::{

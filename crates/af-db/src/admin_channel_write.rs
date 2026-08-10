@@ -29,8 +29,8 @@ use crate::{
     },
     admin_channel::valid_text,
     channel_settings::{
-        auto_ban_rules, pool_mode, responses_compact_mode, responses_websocket_enabled,
-        set_auto_ban_rules, set_pool_mode, set_responses_compact_mode,
+        auto_ban_rules, clear_responses_compact_probe_record, pool_mode, responses_compact_mode,
+        responses_websocket_enabled, set_auto_ban_rules, set_pool_mode, set_responses_compact_mode,
         set_responses_websocket_enabled, validate_responses_compact_capability,
         validate_responses_websocket_capability,
     },
@@ -544,6 +544,9 @@ impl AdminChannelRepository {
         .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_responses_compact_mode(&mut settings, responses_compact_mode)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        // 探测事实只允许运行时写入，创建接口不得通过原始 settings 伪造支持状态。
+        clear_responses_compact_probe_record(&mut settings)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         let auto_ban_rules = fields
             .auto_ban_rules
             .as_ref()
@@ -638,6 +641,9 @@ impl AdminChannelRepository {
         )
         .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_responses_compact_mode(&mut settings, responses_compact_mode)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        // 任意管理更新都使既有探测事实失效，避免旧端点或模型结论继续参与调度。
+        clear_responses_compact_probe_record(&mut settings)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_auto_ban_rules(&mut settings, &effective_auto_ban_rules)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;

@@ -1,6 +1,6 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Status};
+use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, ResponsesCompactMode, Status};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{ActiveModelTrait, Set, entity::prelude::Json};
 
@@ -102,6 +102,8 @@ async fn load_selects_stable_model_and_highest_priority_credential() -> Result<(
     assert_eq!(target.headers()[0].name(), "x-probe-header");
     assert_eq!(target.headers()[0].value(), "probe-header-value-canary");
     assert!(target.proxy_required());
+    assert_eq!(target.responses_compact_mode(), ResponsesCompactMode::Auto);
+    assert_eq!(target.responses_compact_model(), None);
 
     let rendered = format!("{target:?}");
     for secret in [
@@ -119,7 +121,63 @@ async fn load_selects_stable_model_and_highest_priority_credential() -> Result<(
 }
 
 #[tokio::test]
-async fn load_hides_ineligible_or_incomplete_targets() -> Result<(), Box<dyn Error>> {
+async fn load_resolves_compact_probe_model_through_both_mapping_layers()
+-> Result<(), Box<dyn Error>> {
+    let pool = test_pool().await?;
+    let mut channel = channel(
+        "responses-probe-target",
+        Status::AutoDisabled,
+        true,
+        "https://responses-probe.example.com/v1",
+        [],
+    );
+    channel.protocol = Set(Protocol::OpenAiResponses.as_str().to_owned());
+    channel.model_mapping = Set(serde_json::json!({
+        "public-model": "responses-upstream-model"
+    }));
+    channel.settings = Set(SensitiveJson::from(serde_json::json!({
+        "responses_compact_mode": "force_on",
+        "compact_model_mapping": {
+            "responses-upstream-model": "compact-upstream-model"
+        }
+    })));
+    let channel = channel.insert(pool.connection()).await?;
+    channel_model(channel.id, "public-model")
+        .insert(pool.connection())
+        .await?;
+    credential(
+        channel.id,
+        CredentialKind::ApiKey,
+        0,
+        true,
+        Status::Enabled,
+        None,
+        "responses-key",
+        0x66,
+    )
+    .insert(pool.connection())
+    .await?;
+
+    let target = ChannelProbeTargetRepository::new(pool.clone())
+        .load(channel_id(channel.id))
+        .await?
+        .expect("原生 Responses 渠道必须返回 Compact 探测目标");
+    assert_eq!(
+        target.responses_compact_mode(),
+        ResponsesCompactMode::ForceOn
+    );
+    assert_eq!(
+        target.responses_compact_model(),
+        Some("compact-upstream-model")
+    );
+    assert!(!format!("{target:?}").contains("compact-upstream-model"));
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn load_accepts_active_statuses_but_hides_incomplete_targets() -> Result<(), Box<dyn Error>> {
     let pool = test_pool().await?;
     let enabled = channel(
         "enabled",
@@ -168,7 +226,8 @@ async fn load_hides_ineligible_or_incomplete_targets() -> Result<(), Box<dyn Err
         .await?;
 
     let repository = ChannelProbeTargetRepository::new(pool.clone());
-    for id in [enabled.id, missing_model.id, missing_credential.id] {
+    assert!(repository.load(channel_id(enabled.id)).await?.is_some());
+    for id in [missing_model.id, missing_credential.id] {
         assert_eq!(repository.load(channel_id(id)).await?, None);
     }
 

@@ -5,7 +5,8 @@ use std::{
 };
 
 use af_domain::{
-    ChannelId, ChannelTimeout, ChannelType, CredentialKind, GroupId, Protocol, ResponsesCompactMode,
+    ChannelId, ChannelTimeout, ChannelType, CredentialKind, GroupId, Protocol,
+    ResponsesCompactMode, ResponsesCompactProbeResult,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use sea_orm::entity::prelude::Json;
@@ -181,6 +182,9 @@ struct ProjectionTargetWire {
     responses_websocket_enabled: bool,
     #[serde(default)]
     responses_compact_mode: Option<String>,
+    /// 旧投影缺少该字段时必须失败关闭为未知。
+    #[serde(default)]
+    responses_compact_probe_result: Option<String>,
     /// 旧投影缺少该字段时按空映射兼容。
     #[serde(default)]
     responses_compact_model_mapping: Option<Json>,
@@ -377,6 +381,9 @@ impl ProjectionTargetWire {
             pool_mode: target.pool_mode(),
             responses_websocket_enabled: target.responses_websocket_enabled(),
             responses_compact_mode: Some(target.responses_compact_mode().to_string()),
+            responses_compact_probe_result: Some(
+                target.responses_compact_probe_result().to_string(),
+            ),
             responses_compact_model_mapping: Some(
                 target
                     .responses_compact_model_mapping()
@@ -426,6 +433,11 @@ impl ProjectionTargetWire {
             .unwrap_or_else(|| ResponsesCompactMode::Auto.to_string())
             .parse::<ResponsesCompactMode>()
             .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        let responses_compact_probe_result = self
+            .responses_compact_probe_result
+            .unwrap_or_else(|| ResponsesCompactProbeResult::Unknown.to_string())
+            .parse::<ResponsesCompactProbeResult>()
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
         let responses_compact_model_mapping = self
             .responses_compact_model_mapping
             .unwrap_or_else(|| Json::Object(Default::default()));
@@ -449,6 +461,9 @@ impl ProjectionTargetWire {
         .with_pool_mode(self.pool_mode)
         .with_responses_websocket_enabled(self.responses_websocket_enabled)
         .and_then(|target| target.with_responses_compact_mode(responses_compact_mode))
+        .and_then(|target| {
+            target.with_responses_compact_probe_result(responses_compact_probe_result)
+        })
         .map_err(|_| SchedulerRuntimeProjectionError::Invariant)
     }
 }
@@ -627,6 +642,9 @@ mod tests {
             )
             .with_pool_mode(true)
             .with_responses_compact_mode(ResponsesCompactMode::ForceOn)
+            .and_then(|target| {
+                target.with_responses_compact_probe_result(ResponsesCompactProbeResult::Supported)
+            })
             .unwrap(),
         );
         let record = SchedulerRuntimeRecord::new(
@@ -656,6 +674,12 @@ mod tests {
         assert_eq!(
             decoded.records()[0]
                 .target()
+                .responses_compact_probe_result(),
+            ResponsesCompactProbeResult::Supported
+        );
+        assert_eq!(
+            decoded.records()[0]
+                .target()
                 .mapped_responses_compact_model("private-model"),
             "private-compact-model"
         );
@@ -676,6 +700,10 @@ mod tests {
             target
                 .as_object_mut()
                 .unwrap()
+                .remove("responses_compact_probe_result");
+            target
+                .as_object_mut()
+                .unwrap()
                 .remove("responses_compact_model_mapping");
             for credential in target["credentials"].as_array_mut().unwrap() {
                 credential.as_object_mut().unwrap().remove("concurrency");
@@ -691,6 +719,12 @@ mod tests {
         assert_eq!(
             old_decoded.records()[0].target().responses_compact_mode(),
             ResponsesCompactMode::Auto
+        );
+        assert_eq!(
+            old_decoded.records()[0]
+                .target()
+                .responses_compact_probe_result(),
+            ResponsesCompactProbeResult::Unknown
         );
         assert_eq!(
             old_decoded.records()[0]

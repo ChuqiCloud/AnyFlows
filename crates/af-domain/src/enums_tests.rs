@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use crate::{
-    ChannelType, CredentialKind, Operation, Protocol, PublicErrorCode, ResponsesCompactMode, Role,
-    Status,
+    ChannelType, CredentialKind, Operation, Protocol, PublicErrorCode, ResponsesCompactMode,
+    ResponsesCompactProbeResult, Role, Status,
 };
 
 macro_rules! assert_string_enum_contract {
@@ -60,6 +60,15 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
             (ResponsesCompactMode::Auto, "auto"),
             (ResponsesCompactMode::ForceOn, "force_on"),
             (ResponsesCompactMode::ForceOff, "force_off"),
+        ]
+    );
+    assert_string_enum_contract!(
+        ResponsesCompactProbeResult,
+        ResponsesCompactProbeResult::ALL,
+        [
+            (ResponsesCompactProbeResult::Unknown, "unknown"),
+            (ResponsesCompactProbeResult::Supported, "supported"),
+            (ResponsesCompactProbeResult::Unsupported, "unsupported"),
         ]
     );
     assert_string_enum_contract!(

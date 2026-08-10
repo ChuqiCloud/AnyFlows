@@ -3,7 +3,8 @@ mod support;
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    ChannelId, ChannelType, CredentialKind, GroupId, Protocol, ResponsesCompactMode, Status,
+    ChannelId, ChannelType, CredentialKind, GroupId, Protocol, ResponsesCompactMode,
+    ResponsesCompactProbeResult, Status,
 };
 use sea_orm::{ActiveModelTrait, Set};
 
@@ -199,6 +200,9 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
     responses_channel.settings = Set(SensitiveJson::from(serde_json::json!({
         "responses_websocket_enabled": true,
         "responses_compact_mode": "force_on",
+        "responses_compact_probe_result": "supported",
+        "responses_compact_probe_checked_at": 1735000000000_i64,
+        "responses_compact_probe_http_status": 200,
         "compact_model_mapping": {
             "gpt-responses-upstream-canary": "gpt-compact-upstream-canary"
         },
@@ -337,6 +341,11 @@ async fn repository_selects_supported_target_and_filters_incomplete_channels()
         responses_record.target().responses_compact_mode(),
         ResponsesCompactMode::ForceOn
     );
+    assert_eq!(
+        responses_record.target().responses_compact_probe_result(),
+        ResponsesCompactProbeResult::Supported
+    );
+    assert!(responses_record.target().responses_compact_schedulable());
     assert_eq!(
         responses_record.target().mapped_model("gpt-runtime-canary"),
         Some("gpt-responses-upstream-canary")
@@ -602,6 +611,33 @@ fn responses_specific_capabilities_only_accept_native_responses_target() {
         mapped_compact.mapped_responses_compact_model("gpt-unmapped"),
         "gpt-unmapped"
     );
+    assert!(!mapped_compact.responses_compact_schedulable());
+    assert_eq!(
+        mapped_compact.schedulable_responses_compact_model("gpt-public"),
+        None
+    );
+    let auto_supported = mapped_compact
+        .clone()
+        .with_responses_compact_probe_result(ResponsesCompactProbeResult::Supported)
+        .unwrap();
+    assert!(auto_supported.responses_compact_schedulable());
+    assert_eq!(
+        auto_supported.schedulable_responses_compact_model("gpt-public"),
+        Some("gpt-compact-upstream")
+    );
+    let auto_unsupported = mapped_compact
+        .clone()
+        .with_responses_compact_probe_result(ResponsesCompactProbeResult::Unsupported)
+        .unwrap();
+    assert!(!auto_unsupported.responses_compact_schedulable());
+    let forced_on = auto_unsupported
+        .with_responses_compact_mode(ResponsesCompactMode::ForceOn)
+        .unwrap();
+    assert!(forced_on.responses_compact_schedulable());
+    let forced_off = auto_supported
+        .with_responses_compact_mode(ResponsesCompactMode::ForceOff)
+        .unwrap();
+    assert!(!forced_off.responses_compact_schedulable());
     assert!(
         SchedulerRuntimeTargetRecord::new_pool_with_request_policy_and_compact_mapping(
             ChannelId::new(4).unwrap(),
@@ -617,7 +653,12 @@ fn responses_specific_capabilities_only_accept_native_responses_target() {
         .is_err()
     );
     assert!(
-        chat.with_responses_compact_mode(ResponsesCompactMode::ForceOn)
+        chat.clone()
+            .with_responses_compact_mode(ResponsesCompactMode::ForceOn)
+            .is_err()
+    );
+    assert!(
+        chat.with_responses_compact_probe_result(ResponsesCompactProbeResult::Supported)
             .is_err()
     );
 }

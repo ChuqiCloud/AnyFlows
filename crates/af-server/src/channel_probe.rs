@@ -1,22 +1,31 @@
-use std::{fmt, time::Duration};
+use std::{
+    fmt,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use af_account::CredentialDecryptor;
 use af_adapter::{
-    AdaptorError, AdaptorSendExt as _, AdaptorSettings, AdaptorTarget, AdaptorTransportError,
-    AnthropicAdaptorSettings, Bytes, GeminiAdaptorSettings, HeaderMap, HeaderName, HeaderValue,
-    Method, OpenAiAdaptorSettings, Operation, RelayContext, ResponseMode, UpstreamRequest,
-    get_adaptor,
+    Adaptor, AdaptorError, AdaptorSendExt as _, AdaptorSettings, AdaptorTarget,
+    AdaptorTransportError, AnthropicAdaptorSettings, Bytes, GeminiAdaptorSettings, HeaderMap,
+    HeaderName, HeaderValue, Method, OpenAiAdaptorSettings, Operation, RelayContext, ResponseMode,
+    UpstreamRequest, get_adaptor,
 };
-use af_db::{ChannelProbeTargetRecord, ChannelProbeTargetRepository, DatabasePool};
-use af_domain::{ChannelId, ChannelType, Protocol, Role};
+use af_db::{
+    ChannelProbeTargetRecord, ChannelProbeTargetRepository, CompactProbeStateRepository,
+    DatabasePool,
+};
+use af_domain::{
+    ChannelId, ChannelType, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult, Role,
+};
 use af_http::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 use af_httpclient::HttpClientProvider;
 use af_protocol::{
     AudioFile, AudioFileFormat, AudioTranscriptionOptions, CanonicalAudioTranscriptionRequest,
-    CanonicalEmbeddingRequest, CanonicalImageGenerationRequest, CanonicalRequest, ContentBlock,
-    EmbeddingInput, ImageDimensions, ImageGenerationOptions, ImageOutputFormat, ImageQuality,
-    ImageSize, Message, Sampling, TokenCount, ToolChoice, anthropic, gemini, openai_audio,
-    openai_chat, openai_embeddings, openai_images, openai_responses,
+    CanonicalEmbeddingRequest, CanonicalImageGenerationRequest, CanonicalRequest,
+    CanonicalResponsesCompactionRequest, ContentBlock, EmbeddingInput, ImageDimensions,
+    ImageGenerationOptions, ImageOutputFormat, ImageQuality, ImageSize, Message,
+    ResponsesCompactionInput, Sampling, TokenCount, ToolChoice, anthropic, gemini, openai_audio,
+    openai_chat, openai_embeddings, openai_images, openai_responses, openai_responses_compact,
 };
 use af_relay::encode_openai_audio_request;
 use af_scheduler::{ChannelProbe, ChannelProbeStatus};
@@ -28,6 +37,7 @@ use crate::adaptor_credential::build_adaptor_credential;
 #[derive(Clone)]
 pub(crate) struct DatabaseChannelProbe {
     targets: ChannelProbeTargetRepository,
+    compact_states: CompactProbeStateRepository,
     decryptor: CredentialDecryptor,
     clients: HttpClientProvider,
     default_timeout: Duration,
@@ -44,7 +54,8 @@ impl DatabaseChannelProbe {
     ) -> Self {
         debug_assert!(!default_timeout.is_zero());
         Self {
-            targets: ChannelProbeTargetRepository::new(database),
+            targets: ChannelProbeTargetRepository::new(database.clone()),
+            compact_states: CompactProbeStateRepository::new(database),
             decryptor,
             clients,
             default_timeout,
@@ -109,7 +120,7 @@ impl DatabaseChannelProbe {
                     ),
                 )
                 .map_err(|_| ProbeFailure::RequestBuild)?,
-            headers,
+            headers.clone(),
             Some(probe_body(target.model(), target.protocol())?),
         )
         .map_err(|_| ProbeFailure::RequestBuild)?;
@@ -138,7 +149,109 @@ impl DatabaseChannelProbe {
         }
         .map_err(map_response_read_failure)?;
         validate_probe_response(target.protocol(), &body)?;
+        self.probe_responses_compact(&target, adaptor.as_ref(), &context, headers)
+            .await;
         Ok(())
+    }
+
+    /// 在普通 Responses 健康检查成功后独立探测 Compact，不让能力失败误伤普通接口。
+    async fn probe_responses_compact(
+        &self,
+        target: &ChannelProbeTargetRecord,
+        adaptor: &dyn Adaptor,
+        context: &RelayContext,
+        headers: HeaderMap,
+    ) {
+        if target.protocol() != Protocol::OpenAiResponses
+            || target.channel_type() != ChannelType::OpenAi
+            || target.responses_compact_mode() == ResponsesCompactMode::ForceOff
+        {
+            return;
+        }
+        let Some(model) = target.responses_compact_model() else {
+            return;
+        };
+        let started_at = match probe_timestamp_millis() {
+            Ok(started_at) => started_at,
+            Err(failure) => {
+                log_compact_probe_failure(target.channel_id(), failure);
+                return;
+            }
+        };
+        let request = match compact_probe_request(adaptor, context, headers, model) {
+            Ok(request) => request,
+            Err(failure) => {
+                log_compact_probe_failure(target.channel_id(), failure);
+                return;
+            }
+        };
+        let response = match adaptor.send(request, context).await {
+            Ok(response) => response,
+            Err(error) => {
+                log_compact_probe_failure(target.channel_id(), map_transport_failure(error));
+                return;
+            }
+        };
+        let status = response.status();
+        let status_code = status.as_u16();
+        if status.as_u16() == 404 {
+            self.record_compact_fact(
+                target,
+                ResponsesCompactProbeResult::Unsupported,
+                started_at,
+                Some(status_code),
+            )
+            .await;
+            return;
+        }
+        if !status.is_success() {
+            // 认证、模型、限流和 5xx 都可能是暂态，不能覆盖既有支持事实。
+            log_compact_probe_failure(target.channel_id(), ProbeFailure::UpstreamStatus);
+            return;
+        }
+        let body = match response
+            .into_body()
+            .into_bytes_with_limit(openai_responses_compact::MAX_BODY_BYTES)
+            .await
+        {
+            Ok(body) => body,
+            Err(error) => {
+                log_compact_probe_failure(target.channel_id(), map_response_read_failure(error));
+                return;
+            }
+        };
+        let result = if openai_responses_compact::parse_response(&body).is_ok() {
+            ResponsesCompactProbeResult::Supported
+        } else {
+            // 2xx 却不是 response.compaction 是确定性协议不支持，不能由普通响应冒充。
+            ResponsesCompactProbeResult::Unsupported
+        };
+        self.record_compact_fact(target, result, started_at, Some(status_code))
+            .await;
+    }
+
+    async fn record_compact_fact(
+        &self,
+        target: &ChannelProbeTargetRecord,
+        result: ResponsesCompactProbeResult,
+        checked_at: i64,
+        http_status: Option<u16>,
+    ) {
+        if self
+            .compact_states
+            .record(
+                target.channel_id(),
+                &target.revision(),
+                result,
+                checked_at,
+                http_status,
+            )
+            .await
+            .is_err()
+        {
+            // 能力事实写入失败不能覆盖已经确认的普通渠道健康结论。
+            log_compact_probe_failure(target.channel_id(), ProbeFailure::StateWrite);
+        }
     }
 }
 
@@ -214,11 +327,63 @@ impl fmt::Debug for DatabaseChannelProbe {
         formatter
             .debug_struct("DatabaseChannelProbe")
             .field("targets", &"<受控>")
+            .field("compact_states", &"<受控>")
             .field("decryptor", &"<受控>")
             .field("clients", &"<受控>")
             .field("default_timeout", &self.default_timeout)
             .finish()
     }
+}
+
+fn compact_probe_request(
+    adaptor: &dyn Adaptor,
+    context: &RelayContext,
+    headers: HeaderMap,
+    model: &str,
+) -> Result<UpstreamRequest, ProbeFailure> {
+    let canonical = CanonicalResponsesCompactionRequest::new(
+        model.to_owned(),
+        Some(ResponsesCompactionInput::Text("ping".to_owned())),
+        None,
+        None,
+    )
+    .map_err(|_| ProbeFailure::RequestBuild)?;
+    let value = openai_responses_compact::build_request(&canonical)
+        .map_err(|_| ProbeFailure::RequestBuild)?;
+    let body = serde_json::to_vec(&value)
+        .map(Bytes::from)
+        .map_err(|_| ProbeFailure::RequestBuild)?;
+    UpstreamRequest::new(
+        Method::POST,
+        adaptor
+            .build_url(
+                context,
+                AdaptorTarget::new(model, Operation::ResponsesCompact, ResponseMode::Full),
+            )
+            .map_err(|_| ProbeFailure::RequestBuild)?,
+        headers,
+        Some(body),
+    )
+    .and_then(|request| request.with_response_body_limit(openai_responses_compact::MAX_BODY_BYTES))
+    .map_err(|_| ProbeFailure::RequestBuild)
+}
+
+fn probe_timestamp_millis() -> Result<i64, ProbeFailure> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+        .filter(|timestamp| *timestamp > 0)
+        .ok_or(ProbeFailure::Clock)
+}
+
+fn log_compact_probe_failure(channel_id: ChannelId, failure: ProbeFailure) {
+    tracing::debug!(
+        channel_id = channel_id.get(),
+        probe_result = "inconclusive",
+        error_kind = failure.as_str(),
+        "Responses Compact 专属探活未产生新的确定性事实"
+    );
 }
 
 fn apply_header_overrides(
@@ -381,7 +546,12 @@ fn map_response_read_failure(error: AdaptorError) -> ProbeFailure {
 }
 
 fn adaptor_settings(target: &ChannelProbeTargetRecord) -> Result<AdaptorSettings, ProbeFailure> {
-    let models = vec![target.model().to_owned()];
+    let mut models = vec![target.model().to_owned()];
+    if let Some(compact_model) = target.responses_compact_model()
+        && compact_model != target.model()
+    {
+        models.push(compact_model.to_owned());
+    }
     match (target.channel_type(), target.protocol()) {
         (
             ChannelType::OpenAi,
@@ -477,6 +647,8 @@ enum ProbeFailure {
     UpstreamStatus,
     ResponseRead,
     InvalidResponse,
+    Clock,
+    StateWrite,
 }
 
 impl ProbeFailure {
@@ -497,6 +669,8 @@ impl ProbeFailure {
             Self::UpstreamStatus => "probe_upstream_status",
             Self::ResponseRead => "probe_response_read",
             Self::InvalidResponse => "probe_invalid_response",
+            Self::Clock => "probe_clock",
+            Self::StateWrite => "probe_compact_state_write",
         }
     }
 }
