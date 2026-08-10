@@ -54,6 +54,7 @@ impl RuntimeModelCatalogReader {
         model_version: u64,
         runtime_status: ModelCatalogRuntimeStatus,
         available_protocols: Vec<Protocol>,
+        supports_responses_compact: bool,
     ) -> Result<ModelCatalogItem, ModelCatalogReadError> {
         let billing_mode = Self::catalog_billing_mode(billing_mode)?;
         let prices = resolver
@@ -74,6 +75,7 @@ impl RuntimeModelCatalogReader {
             model_version,
             runtime_status,
             available_protocols,
+            supports_responses_compact,
         )
     }
 
@@ -92,6 +94,7 @@ impl RuntimeModelCatalogReader {
         metadata: ModelCatalogMetadata,
         authentication: SessionAuthentication,
         available_protocols: Vec<Protocol>,
+        supports_responses_compact: bool,
         current_second: u32,
     ) -> Result<Option<ModelCatalogItem>, ModelCatalogReadError> {
         let group_id = authentication.group_id();
@@ -115,6 +118,7 @@ impl RuntimeModelCatalogReader {
             pricing.model_version(),
             ModelCatalogRuntimeStatus::Available,
             available_protocols,
+            supports_responses_compact,
         )
         .map(Some)
     }
@@ -122,6 +126,7 @@ impl RuntimeModelCatalogReader {
     fn public_catalog_item(
         metadata: ModelCatalogMetadata,
         price: ModelPrice,
+        supports_responses_compact: bool,
     ) -> Result<ModelCatalogItem, ModelCatalogReadError> {
         let ratios = PricingRatios::new(PricingRatio::ONE, PricingRatio::ONE, PricingRatio::ONE);
         // 表达式生产快照尚未接通时，公开目录也不得把它渲染成零价固定模式。
@@ -139,6 +144,7 @@ impl RuntimeModelCatalogReader {
             price.version(),
             ModelCatalogRuntimeStatus::NotEvaluated,
             Vec::new(),
+            supports_responses_compact,
         )
     }
 
@@ -179,6 +185,10 @@ impl RuntimeModelCatalogReader {
             .model_prices
             .snapshot()
             .map_err(|_| ModelCatalogReadError::Internal)?;
+        let runtime = self
+            .channel_index
+            .snapshot()
+            .map_err(|_| ModelCatalogReadError::Internal)?;
         let mut cursor = query.after().map(str::to_owned);
         let mut items = Vec::with_capacity(query.limit());
         let mut has_more = false;
@@ -197,8 +207,11 @@ impl RuntimeModelCatalogReader {
                 let Some(price) = prices.get(record.model()) else {
                     continue;
                 };
+                let supports_responses_compact = runtime
+                    .responses_compact_available_any_group(record.model())
+                    .map_err(|_| ModelCatalogReadError::Internal)?;
                 let metadata = metadata_from_record(record)?;
-                let item = Self::public_catalog_item(metadata, price)?;
+                let item = Self::public_catalog_item(metadata, price, supports_responses_compact)?;
                 if Self::append_item(&mut items, item, query) {
                     has_more = true;
                     break;
@@ -261,10 +274,14 @@ impl RuntimeModelCatalogReader {
                     continue;
                 }
                 let metadata = metadata_from_record(record)?;
+                let supports_responses_compact = runtime
+                    .responses_compact_available(authentication.group_id(), metadata.model())
+                    .map_err(|_| ModelCatalogReadError::Internal)?;
                 let Some(item) = self.group_catalog_item(
                     metadata,
                     authentication,
                     available_protocols,
+                    supports_responses_compact,
                     current_second,
                 )?
                 else {

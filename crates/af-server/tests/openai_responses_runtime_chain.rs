@@ -13,9 +13,11 @@ use af_protocol::{
 };
 use af_server::{Bootstrap, BootstrapError, ShutdownReport};
 use sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
+use serde_json::json;
 use support::{
-    CLIENT_KEY, GROUP_ID, UPSTREAM_MODEL, credential_encryption_key, sanitized_json_error_code,
-    seed_openai_responses_runtime_channel_with, send_request_with_timeout,
+    CLIENT_KEY, GROUP_ID, OPENAI_RESPONSES_CHANNEL_ID, UPSTREAM_KEY, UPSTREAM_MODEL,
+    credential_encryption_key, sanitized_json_error_code,
+    seed_openai_responses_runtime_channel_with, send_request_with_timeout, spawn_proxy,
 };
 use tokio::{sync::oneshot, time::timeout};
 
@@ -64,6 +66,82 @@ impl Drop for TestDatabase {
         }
         let _ = fs::remove_dir_all(self.billing_wal_directory());
     }
+}
+
+#[tokio::test]
+async fn compact_runtime_uses_the_dedicated_upstream_path() {
+    let upstream_body = serde_json::to_vec(&json!({
+        "id": "resp_compact_1",
+        "object": "response.compaction",
+        "created_at": 1,
+        "output": [{
+            "type": "compaction",
+            "id": "cmp_1",
+            "encrypted_content": "opaque-window"
+        }],
+        "usage": {
+            "input_tokens": 2,
+            "input_tokens_details": {
+                "cached_tokens": 1,
+                "cache_write_tokens": 0
+            },
+            "output_tokens": 1,
+            "output_tokens_details": {"reasoning_tokens": 0},
+            "total_tokens": 3
+        }
+    }))
+    .unwrap();
+    let (upstream_address, captured, upstream) = spawn_proxy(
+        "200 OK",
+        &upstream_body,
+        &[("Content-Type", "application/json")],
+    );
+    let database = TestDatabase::new();
+    seed_database(
+        &database,
+        &format!("http://{upstream_address}/v1"),
+        UPSTREAM_MODEL,
+        UPSTREAM_KEY,
+    )
+    .await;
+    enable_compact_channel(&database).await;
+    let (address, shutdown, server) = start_gateway(&database, None).await;
+
+    let response = send_request_with_timeout(
+        address,
+        "POST",
+        "/v1/responses/compact",
+        br#"{"model":"test-model","input":"compact this context"}"#,
+        &[
+            ("Content-Type", "application/json"),
+            ("Authorization", &format!("Bearer {CLIENT_KEY}")),
+        ],
+        support::IO_TIMEOUT,
+    )
+    .await;
+    stop_gateway(shutdown, server).await;
+    let captured = captured.recv_timeout(support::IO_TIMEOUT).unwrap();
+    upstream.join().unwrap();
+
+    assert_eq!(response.status, 200);
+    assert_eq!(
+        response.headers.get("content-type").map(String::as_str),
+        Some("application/json")
+    );
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body["object"], "response.compaction");
+    assert_eq!(body["usage"]["total_tokens"], 3);
+    assert!(
+        captured
+            .head
+            .starts_with("POST /v1/responses/compact HTTP/1.1\r\n")
+    );
+    let upstream_head = captured.head.to_ascii_lowercase();
+    assert!(upstream_head.contains("authorization: bearer configured-upstream-key"));
+    let request: serde_json::Value = serde_json::from_slice(&captured.body).unwrap();
+    assert_eq!(request["model"], UPSTREAM_MODEL);
+    assert_eq!(request["input"], "compact this context");
+    assert!(request.get("stream").is_none());
 }
 
 #[tokio::test]
@@ -390,6 +468,24 @@ async fn seed_database(
         Some(LIVE_OPENAI_RESPONSES_TIMEOUT_SECS),
     )
     .await;
+    connection.close().await.unwrap();
+}
+
+async fn enable_compact_channel(database: &TestDatabase) {
+    let connection = Database::connect(&database.url).await.unwrap();
+    connection
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE channels SET settings = ? WHERE id = ?",
+            vec![
+                json!({"responses_compact_mode": "force_on"})
+                    .to_string()
+                    .into(),
+                OPENAI_RESPONSES_CHANNEL_ID.into(),
+            ],
+        ))
+        .await
+        .unwrap();
     connection.close().await.unwrap();
 }
 

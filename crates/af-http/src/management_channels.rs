@@ -42,6 +42,21 @@ impl From<&ChannelAutoBanRules> for AdminChannelAutoBanRulesDto {
     }
 }
 
+/// 管理端可见的最近一次确定性 Compact 探测事实。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminResponsesCompactProbe)]
+pub(crate) struct AdminResponsesCompactProbeDto {
+    #[schema(value_type = crate::openapi::schema::ResponsesCompactProbeResultSchema)]
+    result: af_domain::ResponsesCompactProbeResult,
+    /// Unix 毫秒时间戳；尚未得到确定性结论时为空。
+    #[schema(minimum = 1, required = true)]
+    checked_at: Option<i64>,
+    /// 最近一次受控 HTTP 状态；传输错误或未探测时为空。
+    #[schema(minimum = 100, maximum = 599, required = true)]
+    http_status: Option<u16>,
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 #[schema(as = AdminChannel)]
@@ -72,6 +87,12 @@ pub(crate) struct AdminChannelResponse {
     pool_mode: bool,
     /// 是否显式允许该原生 Responses 渠道使用 WebSocket。
     responses_websocket_enabled: bool,
+    /// Compact 能力由探测决定、强制开启或强制关闭。
+    #[schema(value_type = crate::openapi::schema::ResponsesCompactModeSchema)]
+    responses_compact_mode: af_domain::ResponsesCompactMode,
+    #[schema(schema_with = crate::openapi::schema::model_mapping_schema)]
+    responses_compact_model_mapping: serde_json::Value,
+    responses_compact_probe: AdminResponsesCompactProbeDto,
     #[schema(schema_with = crate::openapi::schema::channel_models_schema)]
     models: Vec<String>,
     #[schema(schema_with = crate::openapi::schema::channel_group_ids_schema)]
@@ -170,6 +191,13 @@ impl AdminChannelResponse {
             auto_ban_rules: AdminChannelAutoBanRulesDto::from(channel.auto_ban_rules()),
             pool_mode: channel.pool_mode(),
             responses_websocket_enabled: channel.responses_websocket_enabled(),
+            responses_compact_mode: channel.responses_compact_mode(),
+            responses_compact_model_mapping: channel.responses_compact_model_mapping().clone(),
+            responses_compact_probe: AdminResponsesCompactProbeDto {
+                result: channel.responses_compact_probe_result(),
+                checked_at: channel.responses_compact_probe_checked_at(),
+                http_status: channel.responses_compact_probe_http_status(),
+            },
             models: channel.models().to_vec(),
             group_ids: channel
                 .group_ids()

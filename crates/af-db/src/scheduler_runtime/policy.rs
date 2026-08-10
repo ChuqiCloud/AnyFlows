@@ -80,7 +80,7 @@ impl ChannelModelMappings {
     }
 
     /// 为受控 Redis 投影还原已验证的持久化 JSON 形状。
-    pub(super) fn to_projection_json(&self) -> Json {
+    pub(crate) fn to_projection_json(&self) -> Json {
         Json::Object(
             self.entries
                 .iter()

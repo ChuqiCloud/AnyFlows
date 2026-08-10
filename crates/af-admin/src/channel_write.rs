@@ -11,7 +11,7 @@ use af_db::{
 };
 use af_domain::{
     ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind,
-    GroupId, Protocol, Status,
+    GroupId, Protocol, ResponsesCompactMode, Status,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -105,6 +105,18 @@ impl AdminChannelCreateCommand {
         Ok(self)
     }
 
+    /// 显式设置 Compact 三态能力与专属模型映射。
+    pub fn with_responses_compact_configuration(
+        mut self,
+        mode: ResponsesCompactMode,
+        model_mapping: serde_json::Value,
+    ) -> Result<Self, AdminChannelWriteError> {
+        self.fields = self
+            .fields
+            .with_responses_compact_configuration(mode, model_mapping)?;
+        Ok(self)
+    }
+
     /// 设置创建渠道时是否启用外部账号池模式。
     #[must_use]
     pub fn with_pool_mode(mut self, enabled: bool) -> Self {
@@ -193,6 +205,18 @@ impl AdminChannelUpdateCommand {
         Ok(self)
     }
 
+    /// 更新 Compact 三态能力与专属模型映射。
+    pub fn with_responses_compact_configuration(
+        mut self,
+        mode: ResponsesCompactMode,
+        model_mapping: serde_json::Value,
+    ) -> Result<Self, AdminChannelWriteError> {
+        self.fields = self
+            .fields
+            .with_responses_compact_configuration(mode, model_mapping)?;
+        Ok(self)
+    }
+
     /// 更新外部账号池模式；未调用时由仓储保留原值。
     #[must_use]
     pub fn with_pool_mode(mut self, enabled: bool) -> Self {
@@ -234,6 +258,8 @@ struct AdminChannelWriteFields {
     settings: Option<serde_json::Value>,
     pool_mode: Option<bool>,
     responses_websocket_enabled: Option<bool>,
+    responses_compact_mode: Option<ResponsesCompactMode>,
+    responses_compact_model_mapping: Option<serde_json::Value>,
     auto_ban_rules: Option<ChannelAutoBanRules>,
     tag: Option<String>,
 }
@@ -324,6 +350,8 @@ impl AdminChannelWriteFields {
             settings,
             pool_mode: require_sensitive_fields.then_some(false),
             responses_websocket_enabled: require_sensitive_fields.then_some(false),
+            responses_compact_mode: None,
+            responses_compact_model_mapping: None,
             auto_ban_rules: require_sensitive_fields.then_some(ChannelAutoBanRules::default()),
             tag,
         })
@@ -343,9 +371,29 @@ impl AdminChannelWriteFields {
         Ok(self)
     }
 
+    fn with_responses_compact_configuration(
+        mut self,
+        mode: ResponsesCompactMode,
+        model_mapping: serde_json::Value,
+    ) -> Result<Self, AdminChannelWriteError> {
+        validate_json_object(&model_mapping, true)?;
+        let mapping = ChannelModelMappings::parse(&model_mapping)
+            .map_err(|_| AdminChannelWriteError::InvalidInput)?;
+        let native_responses =
+            self.channel_type == ChannelType::OpenAi && self.protocol == Protocol::OpenAiResponses;
+        if (mode == ResponsesCompactMode::ForceOn || !mapping.is_empty()) && !native_responses {
+            return Err(AdminChannelWriteError::InvalidInput);
+        }
+        self.responses_compact_mode = Some(mode);
+        self.responses_compact_model_mapping = Some(model_mapping);
+        Ok(self)
+    }
+
     fn into_record(self) -> AdminChannelWriteRecord {
         let pool_mode = self.pool_mode;
         let responses_websocket_enabled = self.responses_websocket_enabled;
+        let responses_compact_mode = self.responses_compact_mode;
+        let responses_compact_model_mapping = self.responses_compact_model_mapping;
         let auto_ban_rules = self.auto_ban_rules;
         let record = AdminChannelWriteRecord::new_update(
             self.name,
@@ -372,6 +420,13 @@ impl AdminChannelWriteFields {
         let record = match responses_websocket_enabled {
             Some(enabled) => record.with_responses_websocket_enabled(enabled),
             None => record,
+        };
+        let record = match (responses_compact_mode, responses_compact_model_mapping) {
+            (Some(mode), Some(mapping)) => {
+                record.with_responses_compact_configuration(mode, mapping)
+            }
+            (None, None) => record,
+            _ => unreachable!("Compact 模式与模型映射必须成对写入"),
         };
         match auto_ban_rules {
             Some(rules) => record.with_auto_ban_rules(rules),

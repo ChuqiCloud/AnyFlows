@@ -84,6 +84,7 @@ use crate::openai_audio::openai_audio_transcription;
 use crate::openai_embeddings::openai_embeddings;
 use crate::openai_images::openai_images;
 use crate::openai_responses::openai_responses;
+use crate::openai_responses_compact::openai_responses_compact;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::password_reset::build_password_reset_router;
 use crate::playground_conversations::build_playground_conversation_router;
@@ -98,7 +99,7 @@ use crate::user_topups::build_user_topup_router;
 use crate::user_wallet::build_user_wallet_router;
 use crate::{
     AudioService, ChatService, EmbeddingService, ImageService, QueryApiKeyPolicy,
-    chat_completions::HttpState, chat_completions::chat_completions,
+    ResponsesCompactService, chat_completions::HttpState, chat_completions::chat_completions,
 };
 
 /// OpenAI Chat 业务路由的默认请求正文上限，与协议解析预算共享单一常量。
@@ -135,6 +136,7 @@ pub fn build_router(
     audio: Arc<dyn AudioService>,
     embedding: Arc<dyn EmbeddingService>,
     image: Arc<dyn ImageService>,
+    responses_compact: Arc<dyn ResponsesCompactService>,
     readiness: ReadinessHandle,
     authenticator: Arc<dyn TokenAuthenticator>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
@@ -212,6 +214,7 @@ pub fn build_router(
     .with_audio_service(audio)
     .with_embedding_service(embedding)
     .with_image_service(image)
+    .with_responses_compact_service(responses_compact)
     .with_initial_setup(initial_setup)
     .with_model_catalog_reader(model_catalog_reader)
     .with_admin_model_reader(admin_model_reader)
@@ -250,7 +253,12 @@ pub fn build_router(
         .route(
             "/v1/responses",
             // Responses 使用独立协议标记，OpenAI 错误 wire 与 Chat 保持兼容。
-            post(openai_responses).route_layer(responses_authentication),
+            post(openai_responses).route_layer(responses_authentication.clone()),
+        )
+        .route(
+            "/v1/responses/compact",
+            // Compact 使用专用调度与单次计费端口，不回退普通 Responses。
+            post(openai_responses_compact).route_layer(responses_authentication),
         )
         .route(
             "/v1/messages",

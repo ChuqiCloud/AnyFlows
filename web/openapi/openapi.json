@@ -547,6 +547,93 @@
         ]
       }
     },
+    "/v1/responses/compact": {
+      "post": {
+        "tags": [
+          "OpenAI Responses"
+        ],
+        "summary": "压缩完整 Responses 上下文窗口",
+        "description": "仅调度明确支持 Compact 的原生 OpenAI Responses 渠道；当前公开生产入口要求显式 input，不接受 previous_response_id，也不会回退普通 Responses。",
+        "operationId": "compactResponse",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResponsesCompactRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "规范压缩窗口与独立 usage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsesCompactResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求或计费输入边界无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsesCompactError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "API Key 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsesCompactError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "额度、并发或请求频率受限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsesCompactError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "用量无法按当前价格桶精确结算",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsesCompactError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "没有可用的 Compact 候选",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsesCompactError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/redemption-audit": {
       "get": {
         "tags": [
@@ -9934,6 +10021,9 @@
           "auto_ban_rules",
           "pool_mode",
           "responses_websocket_enabled",
+          "responses_compact_mode",
+          "responses_compact_model_mapping",
+          "responses_compact_probe",
           "models",
           "group_ids",
           "model_mapping",
@@ -10005,6 +10095,22 @@
           "responses_websocket_enabled": {
             "type": "boolean",
             "description": "是否显式允许该原生 Responses 渠道使用 WebSocket。"
+          },
+          "responses_compact_mode": {
+            "$ref": "#/components/schemas/ResponsesCompactMode",
+            "description": "Compact 能力由探测决定、强制开启或强制关闭。"
+          },
+          "responses_compact_model_mapping": {
+            "type": "object",
+            "description": "Canonical 请求模型到上游模型的映射。",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 256,
+              "minLength": 1
+            }
+          },
+          "responses_compact_probe": {
+            "$ref": "#/components/schemas/AdminResponsesCompactProbe"
           },
           "models": {
             "type": "array",
@@ -10235,6 +10341,19 @@
           "responses_websocket_enabled": {
             "type": "boolean",
             "description": "仅 `OpenAI + openai_responses` 可开启；省略时默认关闭。"
+          },
+          "responses_compact_mode": {
+            "$ref": "#/components/schemas/ResponsesCompactMode",
+            "description": "Compact 三态能力；默认由真实探测结论决定。"
+          },
+          "responses_compact_model_mapping": {
+            "type": "object",
+            "description": "Canonical 请求模型到上游模型的映射，序列化后最多 64 KiB。",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 256,
+              "minLength": 1
+            }
           },
           "models": {
             "type": "array",
@@ -10499,6 +10618,29 @@
               "null"
             ],
             "description": "省略或 null 表示保留原值。"
+          },
+          "responses_compact_mode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ResponsesCompactMode",
+                "description": "与专属模型映射必须同时出现；均省略时保留原值。"
+              }
+            ]
+          },
+          "responses_compact_model_mapping": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Canonical 请求模型到上游模型的映射；省略或 null 时保留原值。",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 256,
+              "minLength": 1
+            }
           },
           "models": {
             "type": "array",
@@ -14222,6 +14364,40 @@
           "disabled"
         ]
       },
+      "AdminResponsesCompactProbe": {
+        "type": "object",
+        "description": "管理端可见的最近一次确定性 Compact 探测事实。",
+        "required": [
+          "result",
+          "checked_at",
+          "http_status"
+        ],
+        "properties": {
+          "result": {
+            "$ref": "#/components/schemas/ResponsesCompactProbeResult"
+          },
+          "checked_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Unix 毫秒时间戳；尚未得到确定性结论时为空。",
+            "minimum": 1
+          },
+          "http_status": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "最近一次受控 HTTP 状态；传输错误或未探测时为空。",
+            "maximum": 599,
+            "minimum": 100
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminRoute": {
         "type": "object",
         "description": "管理端返回的智能路由规则快照。",
@@ -15914,6 +16090,7 @@
           "output_modalities",
           "supports_reasoning",
           "supports_tool_calls",
+          "supports_responses_compact",
           "lifecycle",
           "runtime_status",
           "billing_mode",
@@ -15988,6 +16165,9 @@
             "type": "boolean"
           },
           "supports_tool_calls": {
+            "type": "boolean"
+          },
+          "supports_responses_compact": {
             "type": "boolean"
           },
           "lifecycle": {
@@ -16657,6 +16837,220 @@
           },
           "email_required": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResponsesCompactError": {
+        "type": "object",
+        "description": "OpenAI 兼容错误信封。",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ResponsesCompactErrorBody"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResponsesCompactErrorBody": {
+        "type": "object",
+        "description": "OpenAI Responses 风格的稳定公开错误。",
+        "required": [
+          "code",
+          "message",
+          "param",
+          "type"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "param": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResponsesCompactInput": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResponsesCompactItem"
+            }
+          }
+        ],
+        "description": "Compact 接受的字符串简写或有序 Responses Item 窗口。"
+      },
+      "ResponsesCompactInputUsageDetails": {
+        "type": "object",
+        "required": [
+          "cached_tokens",
+          "cache_write_tokens"
+        ],
+        "properties": {
+          "cached_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "cache_write_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResponsesCompactItem": {
+        "allOf": [
+          {
+            "type": "object"
+          }
+        ],
+        "description": "Compact 输入与输出共享的已校验 Responses Item。"
+      },
+      "ResponsesCompactMode": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "force_on",
+          "force_off"
+        ]
+      },
+      "ResponsesCompactOutputUsageDetails": {
+        "type": "object",
+        "required": [
+          "reasoning_tokens"
+        ],
+        "properties": {
+          "reasoning_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResponsesCompactProbeResult": {
+        "type": "string",
+        "enum": [
+          "unknown",
+          "supported",
+          "unsupported"
+        ]
+      },
+      "ResponsesCompactRequest": {
+        "type": "object",
+        "description": "AnyFlows 当前生产支持的无状态 Compact 请求。",
+        "required": [
+          "model",
+          "input"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "input": {
+            "$ref": "#/components/schemas/ResponsesCompactInput",
+            "description": "完整上下文窗口；支持字符串简写或已建模的 Responses Item 数组。"
+          },
+          "instructions": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "本轮顶层指令；不得包含控制字符。",
+            "maxLength": 8388608
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResponsesCompactResponse": {
+        "type": "object",
+        "description": "可直接作为下一次 `/v1/responses` 输入的规范压缩窗口。",
+        "required": [
+          "id",
+          "object",
+          "created_at",
+          "output",
+          "usage"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1
+          },
+          "object": {
+            "type": "string",
+            "example": "response.compaction"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "output": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResponsesCompactItem"
+            },
+            "maxItems": 1024
+          },
+          "usage": {
+            "$ref": "#/components/schemas/ResponsesCompactUsage"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResponsesCompactUsage": {
+        "type": "object",
+        "description": "独立压缩调用的完整 token 用量。",
+        "required": [
+          "input_tokens",
+          "input_tokens_details",
+          "output_tokens",
+          "output_tokens_details",
+          "total_tokens"
+        ],
+        "properties": {
+          "input_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "input_tokens_details": {
+            "$ref": "#/components/schemas/ResponsesCompactInputUsageDetails"
+          },
+          "output_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "output_tokens_details": {
+            "$ref": "#/components/schemas/ResponsesCompactOutputUsageDetails"
+          },
+          "total_tokens": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         },
         "additionalProperties": false
@@ -17643,6 +18037,12 @@
       }
     },
     "securitySchemes": {
+      "apiKeyAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "API Key",
+        "description": "AnyFlows 网关 API Key"
+      },
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
@@ -17654,6 +18054,9 @@
   "tags": [
     {
       "name": "公开注册"
+    },
+    {
+      "name": "OpenAI Responses"
     },
     {
       "name": "认证设置"

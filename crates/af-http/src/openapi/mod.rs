@@ -21,6 +21,7 @@ mod playground_conversations;
 mod playground_shares;
 mod redemptions;
 mod registration;
+mod responses_compact;
 mod routes;
 pub(crate) mod schema;
 mod session;
@@ -48,6 +49,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(session::document());
     document.merge(setup::document());
     document.merge(registration::document());
+    document.merge(responses_compact::document());
     document.merge(redemptions::document());
     document.merge(subscriptions::document());
     document.merge(password_reset::document());
@@ -82,6 +84,7 @@ pub fn openapi_document() -> OpenApi {
 
     document.tags = Some(vec![
         Tag::new("公开注册"),
+        Tag::new("OpenAI Responses"),
         Tag::new("认证设置"),
         Tag::new("密码重置"),
         Tag::new("个人资料与安全"),
@@ -128,6 +131,19 @@ pub fn openapi_document() -> OpenApi {
             ),
         );
     document
+        .components
+        .get_or_insert_with(Components::new)
+        .add_security_scheme(
+            "apiKeyAuth",
+            SecurityScheme::Http(
+                HttpBuilder::new()
+                    .scheme(HttpAuthScheme::Bearer)
+                    .bearer_format("API Key")
+                    .description(Some("AnyFlows 网关 API Key"))
+                    .build(),
+            ),
+        );
+    document
 }
 
 #[cfg(test)]
@@ -139,7 +155,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 76);
+        assert_eq!(document.paths.paths.len(), 77);
         let operation_count = document
             .paths
             .paths
@@ -160,12 +176,18 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 116);
+        assert_eq!(operation_count, 117);
         assert!(
             document
                 .components
                 .as_ref()
                 .is_some_and(|components| components.security_schemes.contains_key("bearerAuth"))
+        );
+        assert!(
+            document
+                .components
+                .as_ref()
+                .is_some_and(|components| components.security_schemes.contains_key("apiKeyAuth"))
         );
     }
 
@@ -181,6 +203,7 @@ mod tests {
             .map(|operation_id| operation_id.as_str().unwrap().to_owned())
             .collect::<BTreeSet<_>>();
         let expected = [
+            "compactResponse",
             "createAdminChannel",
             "createAdminCredential",
             "createAdminCredentialProxy",
@@ -304,7 +327,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 199);
+        assert_eq!(schemas.len(), 207);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminChannelAutoBanRules"));
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));

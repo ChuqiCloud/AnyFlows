@@ -71,6 +71,7 @@ pub(crate) struct ModelCatalogItemResponse {
     output_modalities: Vec<AdminModelModalityValue>,
     supports_reasoning: bool,
     supports_tool_calls: bool,
+    supports_responses_compact: bool,
     lifecycle: ModelCatalogLifecycleValue,
     runtime_status: ModelCatalogRuntimeStatusValue,
     #[schema(value_type = crate::openapi::schema::ModelCatalogBillingModeSchema)]
@@ -218,6 +219,7 @@ impl ModelCatalogItemResponse {
             output_modalities: modality_values(metadata.output_modalities()),
             supports_reasoning: metadata.supports_reasoning(),
             supports_tool_calls: metadata.supports_tool_calls(),
+            supports_responses_compact: item.supports_responses_compact(),
             lifecycle: metadata.lifecycle().into(),
             runtime_status: item.runtime_status().into(),
             billing_mode: item.billing_mode(),

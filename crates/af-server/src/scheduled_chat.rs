@@ -53,6 +53,7 @@ use af_scheduler::{
 };
 
 mod audio;
+mod compact;
 mod embedding;
 mod image;
 

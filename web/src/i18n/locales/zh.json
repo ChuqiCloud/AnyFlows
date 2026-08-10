@@ -195,6 +195,8 @@
       "autoBanKeywordPlaceholder": "输入结构化错误关键词",
       "poolModeHint": "交由上游账号池处理渠道级故障；平台仍会隔离本地不可用凭据。",
       "responsesWebsocketHint": "仅在请求提供稳定会话标识时复用连接；首事件前失败会回退一次 HTTP。",
+      "responsesCompactModeHint": "自动模式只在真实测活确认支持后参与调度；强制开启仍只允许原生 Responses 渠道。",
+      "responsesCompactModelMappingHint": "可选。普通模型映射完成后，仅对 Compact 请求追加这一层上游模型映射。",
       "tagHint": "用于列表筛选与识别，可留空。",
       "timeoutHint": "同时控制生产转发和测活的读取停顿与完整请求总时限；连接超时仍继承全局。留空时分别使用转发与测活默认值。",
       "timeoutPlaceholder": "使用服务默认",
@@ -224,6 +226,9 @@
       "autoBanKeywords": "结构化错误关键词",
       "poolMode": "外部账号池模式",
       "responsesWebsocket": "启用 Responses WebSocket",
+      "responsesCompactMode": "上下文压缩能力",
+      "responsesCompactModelMapping": "压缩专属模型映射",
+      "responsesCompactProbe": "最近测活",
       "tag": "标签",
       "models": "模型",
       "groupIds": "可用分组",
@@ -251,8 +256,20 @@
       "source": "客户端模型",
       "target": "上游模型",
       "add": "添加映射",
+      "addCompact": "添加压缩映射",
       "remove": "删除映射",
-      "empty": "未配置模型映射，请求将使用原模型名。"
+      "empty": "未配置模型映射，请求将使用原模型名。",
+      "compactEmpty": "未配置压缩专属映射，将沿用普通模型映射结果。"
+    },
+    "compactMode": {
+      "auto": "自动探测",
+      "forceOn": "强制开启",
+      "forceOff": "强制关闭"
+    },
+    "compactProbe": {
+      "unknown": "尚未确认",
+      "supported": "明确支持",
+      "unsupported": "明确不支持"
     },
     "headers": {
       "name": "Header 名称",
@@ -1284,7 +1301,8 @@
     },
     "capabilities": {
       "reasoning": "推理",
-      "toolCalls": "工具调用"
+      "toolCalls": "工具调用",
+      "responsesCompact": "上下文压缩"
     },
     "visibility": {
       "public": "游客可见",
@@ -1998,7 +2016,8 @@
     },
     "capabilities": {
       "reasoning": "推理",
-      "toolCalls": "工具调用"
+      "toolCalls": "工具调用",
+      "responsesCompact": "上下文压缩"
     },
     "protocols": {
       "openai_chat": "OpenAI Chat",

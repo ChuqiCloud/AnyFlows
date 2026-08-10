@@ -346,6 +346,49 @@ impl ChannelIndexSnapshot {
             .and_then(|models| models.get(model))
             .map_or(&[], Arc::as_ref))
     }
+
+    /// 判断指定模型是否在任一有效分组中存在明确具备 Compact 资格的候选。
+    pub fn responses_compact_available_any_group(
+        &self,
+        model: &str,
+    ) -> Result<bool, ChannelIndexSnapshotError> {
+        if !is_valid_model(model) {
+            return Err(ChannelIndexSnapshotError::InvalidModel);
+        }
+        for models in self.entries.values() {
+            let Some(candidates) = models.get(model) else {
+                continue;
+            };
+            for candidate in candidates.iter() {
+                let target = self
+                    .runtime_targets
+                    .get(&candidate.channel_id())
+                    .ok_or(ChannelIndexSnapshotError::Invariant)?;
+                if target.schedulable_responses_compact_model(model).is_some() {
+                    return Ok(true);
+                }
+            }
+        }
+        Ok(false)
+    }
+
+    /// 判断指定分组与模型是否存在明确具备 Compact 资格的候选。
+    pub fn responses_compact_available(
+        &self,
+        group_id: GroupId,
+        model: &str,
+    ) -> Result<bool, ChannelIndexSnapshotError> {
+        for candidate in self.candidates(group_id, model)? {
+            let target = self
+                .runtime_targets
+                .get(&candidate.channel_id())
+                .ok_or(ChannelIndexSnapshotError::Invariant)?;
+            if target.schedulable_responses_compact_model(model).is_some() {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
 }
 
 impl fmt::Debug for ChannelIndexSnapshot {
@@ -1102,6 +1145,21 @@ mod tests {
             9,
         )
         .unwrap();
+        assert!(
+            snapshot
+                .responses_compact_available(GroupId::new(7).unwrap(), "gpt-compact")
+                .unwrap()
+        );
+        assert!(
+            snapshot
+                .responses_compact_available_any_group("gpt-compact")
+                .unwrap()
+        );
+        assert!(
+            !snapshot
+                .responses_compact_available(GroupId::new(8).unwrap(), "gpt-compact")
+                .unwrap()
+        );
         let index = InMemoryChannelIndex {
             inner: Arc::new(InMemoryChannelIndexInner {
                 source: Arc::new(SequenceSource::new(Vec::new())),

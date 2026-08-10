@@ -1,7 +1,8 @@
 use std::{error::Error, sync::Mutex, time::Duration};
 
 use af_domain::{
-    ChannelAutoBanRules, ChannelId, ChannelType, CredentialId, CredentialKind, Protocol, Status,
+    ChannelAutoBanRules, ChannelId, ChannelType, CredentialId, CredentialKind, Protocol,
+    ResponsesCompactMode, ResponsesCompactProbeResult, Status,
 };
 use sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
 
@@ -165,6 +166,108 @@ async fn responses_websocket_toggle_preserves_unknown_sensitive_settings()
             .unwrap_err(),
         AdminChannelWriteRepositoryError::InvalidInput
     );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn compact_configuration_round_trips_and_clears_stale_probe_facts()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let create = AdminChannelWriteRecord::new(
+        "compact".to_owned(),
+        ChannelType::OpenAi,
+        Protocol::OpenAiResponses,
+        Some("https://api.example.com/v1".to_owned()),
+        Some(af_domain::ChannelTimeout::new(60).unwrap()),
+        Status::Enabled,
+        10,
+        20,
+        true,
+        Vec::new(),
+        Vec::new(),
+        serde_json::json!({}),
+        serde_json::json!({}),
+        serde_json::json!({}),
+        serde_json::json!({"private_setting": "private-setting-value"}),
+        None,
+    )
+    .with_responses_compact_configuration(
+        ResponsesCompactMode::ForceOn,
+        serde_json::json!({"public-model": "compact-model"}),
+    );
+    let created = fixture.repository.create_channel(create).await?;
+    assert_eq!(
+        created.responses_compact_mode(),
+        ResponsesCompactMode::ForceOn
+    );
+    assert_eq!(
+        created.responses_compact_model_mapping()["public-model"],
+        "compact-model"
+    );
+
+    execute(
+        &fixture,
+        "UPDATE channels SET settings = ? WHERE id = ?",
+        [
+            serde_json::json!({
+                "private_setting": "private-setting-value",
+                "responses_compact_mode": "force_on",
+                "compact_model_mapping": {"public-model": "compact-model"},
+                "responses_compact_probe_result": "supported",
+                "responses_compact_probe_checked_at": 1_700_000_000_000_i64,
+                "responses_compact_probe_http_status": 200
+            })
+            .into(),
+            created.channel_id().get().into(),
+        ],
+    )
+    .await?;
+
+    let update = AdminChannelWriteRecord::new_update(
+        "compact-renamed".to_owned(),
+        ChannelType::OpenAi,
+        Protocol::OpenAiResponses,
+        Some("https://api.example.com/v1".to_owned()),
+        Some(af_domain::ChannelTimeout::new(60).unwrap()),
+        Status::Enabled,
+        10,
+        20,
+        true,
+        Vec::new(),
+        Vec::new(),
+        serde_json::json!({}),
+        serde_json::json!({}),
+        None,
+        None,
+        None,
+    );
+    let AdminChannelMutationOutcome::Mutated(updated) = fixture
+        .repository
+        .update_channel(created.channel_id(), update)
+        .await?
+    else {
+        panic!("有效 Compact 渠道必须完成更新");
+    };
+    assert_eq!(
+        updated.responses_compact_mode(),
+        ResponsesCompactMode::ForceOn
+    );
+    assert_eq!(
+        updated.responses_compact_model_mapping()["public-model"],
+        "compact-model"
+    );
+    assert_eq!(
+        updated.responses_compact_probe_result(),
+        ResponsesCompactProbeResult::Unknown
+    );
+    assert_eq!(updated.responses_compact_probe_checked_at(), None);
+    assert_eq!(updated.responses_compact_probe_http_status(), None);
+    let (_, settings) = channel_sensitive_fields(&fixture, created.channel_id()).await?;
+    let settings: serde_json::Value = serde_json::from_str(&settings)?;
+    assert_eq!(settings["private_setting"], "private-setting-value");
+    assert!(settings.get("responses_compact_probe_result").is_none());
 
     fixture.pool.close().await?;
     Ok(())

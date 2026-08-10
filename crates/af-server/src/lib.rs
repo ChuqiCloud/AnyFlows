@@ -6,6 +6,7 @@ mod auto_ban_feedback;
 mod balance_alert_runtime;
 mod billing_audio;
 mod billing_chat;
+mod billing_compact;
 mod billing_embedding;
 mod billing_image;
 mod billing_runtime;
@@ -44,6 +45,11 @@ pub use billing_audio::{
 pub use billing_chat::{
     BillingChatService, ChatRoutePlanFuture, ChatRoutePlanner, PlannedChatExecution,
     PlannedChatExecutionFuture,
+};
+pub use billing_compact::{
+    BillingResponsesCompactService, PlannedResponsesCompactExecution,
+    PlannedResponsesCompactExecutionFuture, ResponsesCompactRoutePlanFuture,
+    ResponsesCompactRoutePlanner,
 };
 pub use billing_embedding::{
     BillingEmbeddingService, EmbeddingRoutePlanFuture, EmbeddingRoutePlanner,

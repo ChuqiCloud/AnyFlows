@@ -399,6 +399,7 @@ pub struct ModelCatalogItem {
     price_version: u64,
     runtime_status: ModelCatalogRuntimeStatus,
     available_protocols: Vec<Protocol>,
+    supports_responses_compact: bool,
 }
 
 impl ModelCatalogItem {
@@ -411,6 +412,7 @@ impl ModelCatalogItem {
         price_version: u64,
         runtime_status: ModelCatalogRuntimeStatus,
         available_protocols: Vec<Protocol>,
+        supports_responses_compact: bool,
     ) -> Result<Self, ModelCatalogReadError> {
         let prices_match_mode = matches!(
             (billing_mode, prices.is_some()),
@@ -430,6 +432,7 @@ impl ModelCatalogItem {
             price_version,
             runtime_status,
             available_protocols,
+            supports_responses_compact,
         })
     }
 
@@ -480,6 +483,12 @@ impl ModelCatalogItem {
     pub fn available_protocols(&self) -> &[Protocol] {
         &self.available_protocols
     }
+
+    /// 返回当前目录范围内是否存在明确具备 Responses Compact 资格的渠道。
+    #[must_use]
+    pub const fn supports_responses_compact(&self) -> bool {
+        self.supports_responses_compact
+    }
 }
 
 impl fmt::Debug for ModelCatalogItem {
@@ -491,6 +500,10 @@ impl fmt::Debug for ModelCatalogItem {
             .field("price_version", &self.price_version)
             .field("runtime_status", &self.runtime_status)
             .field("available_protocol_count", &self.available_protocols.len())
+            .field(
+                "supports_responses_compact",
+                &self.supports_responses_compact,
+            )
             .finish_non_exhaustive()
     }
 }
@@ -611,6 +624,7 @@ mod tests {
                 1,
                 ModelCatalogRuntimeStatus::NotEvaluated,
                 Vec::new(),
+                false,
             )
             .is_err()
         );
@@ -624,6 +638,7 @@ mod tests {
                 1,
                 ModelCatalogRuntimeStatus::NotEvaluated,
                 vec![Protocol::OpenAiResponses, Protocol::OpenAiChat],
+                false,
             )
             .is_err()
         );

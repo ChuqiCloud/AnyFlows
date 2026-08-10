@@ -52,6 +52,7 @@ mod openai_audio;
 mod openai_embeddings;
 mod openai_images;
 mod openai_responses;
+mod openai_responses_compact;
 mod openapi;
 mod operations;
 mod password_reset;
@@ -60,6 +61,7 @@ mod playground_conversations;
 mod playground_shares;
 mod redemption;
 mod registration;
+mod responses_compact_service;
 mod router;
 mod serve;
 mod site_settings;
@@ -93,6 +95,7 @@ pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
 };
 pub use payment_webhook::build_payment_webhook_router;
+pub use responses_compact_service::{ResponsesCompactService, ResponsesCompactServiceFuture};
 pub use router::{DEFAULT_REQUEST_BODY_LIMIT_BYTES, HttpRouter, build_router};
 pub use serve::{HttpListener, ServeError, ServeOutcome, serve_with_graceful_shutdown};
 

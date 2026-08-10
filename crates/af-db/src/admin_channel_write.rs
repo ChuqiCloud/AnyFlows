@@ -6,7 +6,7 @@ use std::{
 
 use af_domain::{
     ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind,
-    GroupId, Protocol, Status,
+    GroupId, Protocol, ResponsesCompactMode, Status,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{
@@ -30,9 +30,10 @@ use crate::{
     admin_channel::valid_text,
     channel_settings::{
         auto_ban_rules, clear_responses_compact_probe_record, pool_mode, responses_compact_mode,
-        responses_websocket_enabled, set_auto_ban_rules, set_pool_mode, set_responses_compact_mode,
+        responses_compact_model_mapping, responses_websocket_enabled, set_auto_ban_rules,
+        set_pool_mode, set_responses_compact_mode, set_responses_compact_model_mapping,
         set_responses_websocket_enabled, validate_responses_compact_capability,
-        validate_responses_websocket_capability,
+        validate_responses_compact_model_mapping, validate_responses_websocket_capability,
     },
     entity::{
         ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channel_groups,
@@ -66,6 +67,8 @@ pub struct AdminChannelWriteRecord {
     settings: Option<serde_json::Value>,
     pool_mode: Option<bool>,
     responses_websocket_enabled: Option<bool>,
+    responses_compact_mode: Option<ResponsesCompactMode>,
+    responses_compact_model_mapping: Option<serde_json::Value>,
     tag: Option<String>,
 }
 
@@ -112,6 +115,8 @@ impl AdminChannelWriteRecord {
             settings: Some(settings),
             pool_mode: Some(false),
             responses_websocket_enabled: Some(false),
+            responses_compact_mode: None,
+            responses_compact_model_mapping: None,
             auto_ban_rules: Some(ChannelAutoBanRules::default()),
             tag,
         }
@@ -159,6 +164,8 @@ impl AdminChannelWriteRecord {
             settings,
             pool_mode: None,
             responses_websocket_enabled: None,
+            responses_compact_mode: None,
+            responses_compact_model_mapping: None,
             auto_ban_rules: None,
             tag,
         }
@@ -168,6 +175,18 @@ impl AdminChannelWriteRecord {
     #[must_use]
     pub fn with_responses_websocket_enabled(mut self, enabled: bool) -> Self {
         self.responses_websocket_enabled = Some(enabled);
+        self
+    }
+
+    /// 覆盖受控 Compact 三态能力与专属模型映射。
+    #[must_use]
+    pub fn with_responses_compact_configuration(
+        mut self,
+        mode: ResponsesCompactMode,
+        model_mapping: serde_json::Value,
+    ) -> Self {
+        self.responses_compact_mode = Some(mode);
+        self.responses_compact_model_mapping = Some(model_mapping);
         self
     }
 
@@ -536,6 +555,9 @@ impl AdminChannelRepository {
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         let responses_compact_mode = responses_compact_mode(&settings)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        let responses_compact_mode = fields
+            .responses_compact_mode
+            .unwrap_or(responses_compact_mode);
         validate_responses_compact_capability(
             fields.channel_type,
             fields.protocol,
@@ -543,6 +565,19 @@ impl AdminChannelRepository {
         )
         .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_responses_compact_mode(&mut settings, responses_compact_mode)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        let responses_compact_model_mapping = match fields.responses_compact_model_mapping {
+            Some(mapping) => mapping,
+            None => responses_compact_model_mapping(&settings)
+                .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?,
+        };
+        validate_responses_compact_model_mapping(
+            fields.channel_type,
+            fields.protocol,
+            &responses_compact_model_mapping,
+        )
+        .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        set_responses_compact_model_mapping(&mut settings, &responses_compact_model_mapping)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         // 探测事实只允许运行时写入，创建接口不得通过原始 settings 伪造支持状态。
         clear_responses_compact_probe_record(&mut settings)
@@ -634,6 +669,9 @@ impl AdminChannelRepository {
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         let responses_compact_mode = responses_compact_mode(&settings)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        let responses_compact_mode = fields
+            .responses_compact_mode
+            .unwrap_or(responses_compact_mode);
         validate_responses_compact_capability(
             fields.channel_type,
             fields.protocol,
@@ -641,6 +679,19 @@ impl AdminChannelRepository {
         )
         .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         set_responses_compact_mode(&mut settings, responses_compact_mode)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        let responses_compact_model_mapping = match fields.responses_compact_model_mapping {
+            Some(mapping) => mapping,
+            None => responses_compact_model_mapping(&settings)
+                .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?,
+        };
+        validate_responses_compact_model_mapping(
+            fields.channel_type,
+            fields.protocol,
+            &responses_compact_model_mapping,
+        )
+        .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+        set_responses_compact_model_mapping(&mut settings, &responses_compact_model_mapping)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
         // 任意管理更新都使既有探测事实失效，避免旧端点或模型结论继续参与调度。
         clear_responses_compact_probe_record(&mut settings)
@@ -1041,6 +1092,8 @@ struct ValidatedChannelFields {
     settings: Option<serde_json::Value>,
     pool_mode: Option<bool>,
     responses_websocket_enabled: Option<bool>,
+    responses_compact_mode: Option<ResponsesCompactMode>,
+    responses_compact_model_mapping: Option<ChannelModelMappings>,
     tag: Option<String>,
 }
 
@@ -1093,6 +1146,25 @@ fn validate_channel_fields(
         validate_responses_websocket_capability(record.channel_type, record.protocol, enabled)
             .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
     }
+    if let Some(mode) = record.responses_compact_mode {
+        validate_responses_compact_capability(record.channel_type, record.protocol, mode)
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+    }
+    let responses_compact_model_mapping = record
+        .responses_compact_model_mapping
+        .map(|mapping| {
+            validate_json_object(&mapping, true)?;
+            let mapping = ChannelModelMappings::parse(&mapping)
+                .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+            validate_responses_compact_model_mapping(
+                record.channel_type,
+                record.protocol,
+                &mapping,
+            )
+            .map_err(|_| AdminChannelWriteRepositoryError::InvalidInput)?;
+            Ok(mapping)
+        })
+        .transpose()?;
     let base_url = record
         .base_url
         .as_deref()
@@ -1131,6 +1203,8 @@ fn validate_channel_fields(
         settings: record.settings,
         pool_mode: record.pool_mode,
         responses_websocket_enabled: record.responses_websocket_enabled,
+        responses_compact_mode: record.responses_compact_mode,
+        responses_compact_model_mapping,
         tag: record.tag,
     })
 }

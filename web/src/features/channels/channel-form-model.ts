@@ -10,6 +10,7 @@ export type ChannelEditorMode = 'create' | 'update'
 export type SensitiveEditMode = 'preserve' | 'replace' | 'clear'
 export type ChannelType = 'openai' | 'anthropic' | 'gemini'
 export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini'
+export type ResponsesCompactMode = 'auto' | 'force_on' | 'force_off'
 export const MAX_CHANNEL_TIMEOUT_SECONDS = 900
 
 export const channelParameterNames = [
@@ -49,6 +50,8 @@ export type ChannelFormValues = {
   autoBanKeywords: string[]
   poolMode: boolean
   responsesWebsocketEnabled: boolean
+  responsesCompactMode: ResponsesCompactMode
+  responsesCompactModelMapping: KeyValueRow[]
   models: string[]
   groupIds: number[]
   modelMapping: KeyValueRow[]
@@ -99,6 +102,8 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
     autoBanKeywords: z.array(z.string()),
     poolMode: z.boolean(),
     responsesWebsocketEnabled: z.boolean(),
+    responsesCompactMode: z.enum(['auto', 'force_on', 'force_off']),
+    responsesCompactModelMapping: z.array(keyValueRowSchema),
     models: z.array(z.string()),
     groupIds: z.array(z.number()),
     modelMapping: z.array(keyValueRowSchema),
@@ -119,6 +124,14 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
     if (values.responsesWebsocketEnabled
       && (values.channelType !== 'openai' || values.protocol !== 'openai_responses')) {
       addIssue(context, 'responsesWebsocketEnabled', messages.invalidField)
+    }
+    const nativeResponses = values.channelType === 'openai'
+      && values.protocol === 'openai_responses'
+    if (!nativeResponses && (
+      values.responsesCompactMode !== 'auto'
+      || values.responsesCompactModelMapping.length > 0
+    )) {
+      addIssue(context, 'responsesCompactMode', messages.invalidField)
     }
     if (!validAutoBanRules(values.autoBanStatusCodes, values.autoBanKeywords)) {
       addIssue(context, 'autoBanKeywords', messages.invalidAutoBanRules)
@@ -144,6 +157,12 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
     if (!routingValid) addIssue(context, 'groupIds', messages.invalidRouting)
 
     validateStringRows(values.modelMapping, 'modelMapping', messages, context)
+    validateStringRows(
+      values.responsesCompactModelMapping,
+      'responsesCompactModelMapping',
+      messages,
+      context,
+    )
     validateParameterRows(values.paramOverride, values.protocol, messages, context)
     if (mode === 'create' || values.headerOverrideMode === 'replace') {
       validateHeaderRows(values.headerOverride, messages, context)
@@ -179,6 +198,11 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
     autoBanKeywords: [...(channel?.auto_ban_rules?.keywords ?? [])],
     poolMode: channel?.pool_mode ?? false,
     responsesWebsocketEnabled: channel?.responses_websocket_enabled ?? false,
+    responsesCompactMode: channel?.responses_compact_mode ?? 'auto',
+    responsesCompactModelMapping: stringMapRows(
+      channel?.responses_compact_model_mapping ?? {},
+      'compact-mapping',
+    ),
     models: [...(channel?.models ?? [])],
     groupIds: [...(channel?.group_ids ?? [])],
     modelMapping: stringMapRows(channel?.model_mapping ?? {}, 'mapping'),
@@ -237,6 +261,8 @@ function commonRequest(values: ChannelFormValues) {
     },
     pool_mode: values.poolMode,
     responses_websocket_enabled: values.responsesWebsocketEnabled,
+    responses_compact_mode: values.responsesCompactMode,
+    responses_compact_model_mapping: stringRowsObject(values.responsesCompactModelMapping),
     models: values.models,
     group_ids: values.groupIds,
     model_mapping: stringRowsObject(values.modelMapping),
@@ -305,8 +331,8 @@ function parameterRows(value: Record<string, unknown>): ParameterRow[] {
 }
 
 function validateStringRows(
-  rows: KeyValueRow[],
-  path: 'modelMapping',
+    rows: KeyValueRow[],
+  path: 'modelMapping' | 'responsesCompactModelMapping',
   messages: ValidationMessages,
   context: z.RefinementCtx,
 ) {

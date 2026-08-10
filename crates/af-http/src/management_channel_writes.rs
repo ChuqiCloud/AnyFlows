@@ -61,6 +61,14 @@ pub(crate) struct AdminChannelCreateRequest {
     /// 仅 `OpenAI + openai_responses` 可开启；省略时默认关闭。
     #[serde(default)]
     responses_websocket_enabled: bool,
+    /// Compact 三态能力；默认由真实探测结论决定。
+    #[serde(default = "default_responses_compact_mode")]
+    #[schema(value_type = crate::openapi::schema::ResponsesCompactModeSchema)]
+    responses_compact_mode: af_domain::ResponsesCompactMode,
+    /// 仅供 `/responses/compact` 使用的客户端模型到上游模型精确映射。
+    #[serde(default = "empty_json_object")]
+    #[schema(schema_with = crate::openapi::schema::model_mapping_write_schema)]
+    responses_compact_model_mapping: serde_json::Value,
     #[schema(schema_with = crate::openapi::schema::channel_write_models_schema)]
     models: Vec<String>,
     #[schema(schema_with = crate::openapi::schema::channel_write_group_ids_schema)]
@@ -115,6 +123,12 @@ pub(crate) struct AdminChannelUpdateRequest {
     pool_mode: Option<bool>,
     /// 省略或 null 表示保留原值。
     responses_websocket_enabled: Option<bool>,
+    /// 与专属模型映射必须同时出现；均省略时保留原值。
+    #[schema(value_type = Option<crate::openapi::schema::ResponsesCompactModeSchema>)]
+    responses_compact_mode: Option<af_domain::ResponsesCompactMode>,
+    /// 与三态能力必须同时出现；均省略时保留原值。
+    #[schema(schema_with = crate::openapi::schema::optional_model_mapping_write_schema)]
+    responses_compact_model_mapping: Option<serde_json::Value>,
     #[schema(schema_with = crate::openapi::schema::channel_write_models_schema)]
     models: Vec<String>,
     #[schema(schema_with = crate::openapi::schema::channel_write_group_ids_schema)]
@@ -223,6 +237,11 @@ impl AdminChannelCreateRequest {
         .map_err(map_write_error)?
         .with_pool_mode(self.pool_mode)
         .with_responses_websocket_enabled(self.responses_websocket_enabled)
+        .map_err(map_write_error)?
+        .with_responses_compact_configuration(
+            self.responses_compact_mode,
+            self.responses_compact_model_mapping,
+        )
         .map_err(map_write_error)
     }
 }
@@ -259,6 +278,16 @@ impl AdminChannelUpdateRequest {
             Some(enabled) => command.with_pool_mode(enabled),
             None => command,
         };
+        let command = match (
+            self.responses_compact_mode,
+            self.responses_compact_model_mapping,
+        ) {
+            (Some(mode), Some(mapping)) => command
+                .with_responses_compact_configuration(mode, mapping)
+                .map_err(map_write_error)?,
+            (None, None) => command,
+            _ => return Err(ManagementError::InvalidRequest),
+        };
         match self.responses_websocket_enabled {
             Some(enabled) => command
                 .with_responses_websocket_enabled(enabled)
@@ -266,6 +295,14 @@ impl AdminChannelUpdateRequest {
             None => Ok(command),
         }
     }
+}
+
+const fn default_responses_compact_mode() -> af_domain::ResponsesCompactMode {
+    af_domain::ResponsesCompactMode::Auto
+}
+
+fn empty_json_object() -> serde_json::Value {
+    serde_json::json!({})
 }
 
 fn parse_group_ids(values: Vec<i64>) -> Result<Vec<af_domain::GroupId>, ManagementError> {

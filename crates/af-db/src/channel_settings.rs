@@ -49,7 +49,6 @@ impl ResponsesCompactProbeRecord {
     }
 
     /// 返回最近一次响应的受控 HTTP 状态；传输失败不会产生本记录。
-    #[cfg(test)]
     pub(crate) const fn http_status(self) -> Option<u16> {
         self.http_status
     }
@@ -264,6 +263,23 @@ pub(crate) fn set_responses_compact_mode(
         object.insert(
             RESPONSES_COMPACT_MODE_KEY.to_owned(),
             Value::String(mode.as_str().to_owned()),
+        );
+    }
+    Ok(())
+}
+
+/// 写入 Compact 专属模型映射；空映射移除默认键并保留其他敏感设置。
+pub(crate) fn set_responses_compact_model_mapping(
+    settings: &mut Value,
+    mapping: &ChannelModelMappings,
+) -> Result<(), ChannelSettingsError> {
+    let object = settings.as_object_mut().ok_or(ChannelSettingsError)?;
+    if mapping.is_empty() {
+        object.remove(RESPONSES_COMPACT_MODEL_MAPPING_KEY);
+    } else {
+        object.insert(
+            RESPONSES_COMPACT_MODEL_MAPPING_KEY.to_owned(),
+            mapping.to_projection_json(),
         );
     }
     Ok(())
