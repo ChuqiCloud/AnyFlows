@@ -41,6 +41,7 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
         [
             (Operation::Chat, "chat"),
             (Operation::Responses, "responses"),
+            (Operation::ResponsesCompact, "responses_compact"),
             (Operation::Embedding, "embedding"),
             (Operation::Image, "image"),
             (Operation::Audio, "audio"),
