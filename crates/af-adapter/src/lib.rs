@@ -15,6 +15,7 @@ mod openai;
 mod request;
 mod responses_websocket_pool;
 mod responses_websocket_transport;
+mod task;
 mod transport_dispatcher;
 mod vertex;
 
@@ -57,6 +58,7 @@ pub use responses_websocket_pool::{
     ResponsesWebSocketPoolKey, ResponsesWebSocketTransportError, build_responses_websocket_event,
 };
 pub use responses_websocket_transport::PooledResponsesWebSocketConnector;
+pub use task::{TaskAdaptor, TaskAdaptorSendExt};
 pub use transport_dispatcher::{
     TransportDispatchOutcome, TransportDispatcher, TransportFallbackKind,
 };

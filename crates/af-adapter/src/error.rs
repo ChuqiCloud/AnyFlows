@@ -130,6 +130,9 @@ pub enum AdaptorError {
     /// 响应体超过适配层上限。
     #[error("上游响应体超过大小限制")]
     ResponseBodyTooLarge,
+    /// 任务提交或轮询响应无法归一化为闭合状态。
+    #[error("上游任务响应无效")]
+    InvalidTaskResponse,
     /// 底层传输失败；具体错误本身已完成脱敏。
     #[error("上游传输失败")]
     Transport(#[source] AdaptorTransportError),
