@@ -534,7 +534,7 @@ fn responses_websocket_capability_only_accepts_native_responses_target() {
         Vec::new(),
     )
     .unwrap();
-    assert!(chat.with_responses_websocket_enabled(true).is_err());
+    assert!(chat.clone().with_responses_websocket_enabled(true).is_err());
 
     let native_compact = SchedulerRuntimeTargetRecord::new_pool(
         ChannelId::new(2).unwrap(),
