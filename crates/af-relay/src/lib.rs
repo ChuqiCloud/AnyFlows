@@ -19,6 +19,7 @@ mod openai_chat_usage;
 mod openai_embeddings;
 mod openai_images;
 mod openai_responses;
+mod openai_responses_compact;
 mod openai_responses_request;
 mod openai_responses_stream;
 mod state_machine;
@@ -60,6 +61,10 @@ pub use openai_images::{
 };
 pub use openai_responses::{
     RelayOpenAiResponsesOutcome, relay_openai_responses, relay_openai_responses_with_report,
+};
+pub use openai_responses_compact::{
+    RelayOpenAiResponsesCompactOutcome, ResponsesCompactionResponse,
+    relay_openai_responses_compact, relay_openai_responses_compact_with_report,
 };
 pub use openai_responses_request::{
     OpenAiResponsesRequestOverrideError, OpenAiResponsesRequestOverrides,
