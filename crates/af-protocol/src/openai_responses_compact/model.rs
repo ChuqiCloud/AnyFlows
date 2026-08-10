@@ -10,7 +10,7 @@ use super::validation::{
 use crate::TokenCount;
 
 /// 一条已经完成字段和大小校验的 Responses 上下文 Item。
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ResponsesCompactionItem(pub(super) Value);
 
 impl ResponsesCompactionItem {

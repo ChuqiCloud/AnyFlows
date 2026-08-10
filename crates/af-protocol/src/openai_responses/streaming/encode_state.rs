@@ -42,21 +42,21 @@ impl OutputEncodeState {
         let object = item
             .as_value()
             .as_object()
-            .ok_or(EncodeStreamError::InvalidValue)?;
+            .ok_or(EncodeStreamError::InvalidSequence)?;
         if object.get("type").and_then(Value::as_str) != Some("compaction") {
-            return Err(EncodeStreamError::InvalidValue);
+            return Err(EncodeStreamError::InvalidSequence);
         }
         let id = object
             .get("id")
             .and_then(Value::as_str)
-            .ok_or(EncodeStreamError::InvalidValue)?;
+            .ok_or(EncodeStreamError::InvalidSequence)?;
         let encrypted = object
             .get("encrypted_content")
             .and_then(Value::as_str)
-            .ok_or(EncodeStreamError::InvalidValue)?;
+            .ok_or(EncodeStreamError::InvalidSequence)?;
         validate_item_id(id).map_err(map_state_error)?;
         if encrypted.is_empty() || encrypted.chars().any(char::is_control) {
-            return Err(EncodeStreamError::InvalidValue);
+            return Err(EncodeStreamError::InvalidSequence);
         }
         self.budget.begin_content_block().map_err(map_state_error)?;
         let output_index = self.take_output_index()?;
