@@ -87,7 +87,7 @@ export type AdminChannelAutoBanRules = {
 export type AdminChannelCreateRequest = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -128,7 +128,7 @@ export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'bedrock' | '
 export type AdminChannelUpdateRequest = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -1361,7 +1361,7 @@ export type UserWalletSummary = {
 export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -1397,7 +1397,7 @@ export type AdminChannelCreateRequestWritable = {
 export type AdminChannelUpdateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;

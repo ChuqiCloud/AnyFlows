@@ -94,6 +94,7 @@ impl BillingSpeechService {
     ) -> Result<SpeechResponse, AfError> {
         let upper_bound = speech_usage_upper_bound(&request)?;
         let model = request.model().to_owned();
+        let billing_request = request.clone();
         let planned = self
             .inner
             .plan(principal, user_concurrency, request, request_id)
@@ -128,7 +129,7 @@ impl BillingSpeechService {
                 return Err(error);
             }
         };
-        let actual = speech_usage(&request, duration, UsageSource::Estimated)?;
+        let actual = speech_usage(&billing_request, duration, UsageSource::Estimated)?;
         if !usage_within_upper_bound(&actual, &upper_bound)? {
             let dimensions = BillingUsageDimensions::with_audio_duration(duration);
             let _ = complete_with_dimensions_retries(&mut lifecycle, upper_bound, dimensions)
@@ -213,18 +214,23 @@ fn speech_usage(
 }
 
 fn speech_input_units(request: &CanonicalAudioSpeechRequest) -> Result<TokenCount, AfError> {
-    let texts = std::iter::once(request.input()).chain(request.options().instructions());
     if request.model() == "tts-1" || request.model().starts_with("tts-1-") {
         // 传统 tts-1 家族按字符计价；复用 input_tokens 字段保存该模型的官方计费单位。
-        let characters = texts.try_fold(0_usize, |total, text| {
-            total.checked_add(text.chars().count())
-        });
+        let characters = std::iter::once(request.input())
+            .chain(request.options().instructions())
+            .try_fold(0_usize, |total, text| {
+                total.checked_add(text.chars().count())
+            });
         return characters
             .and_then(|value| i64::try_from(value).ok())
             .and_then(|value| TokenCount::new(value).ok())
             .ok_or(AfError::Internal);
     }
-    estimate_openai_text_tokens(request.model(), texts).map_err(|_| AfError::Internal)
+    estimate_openai_text_tokens(
+        request.model(),
+        std::iter::once(request.input()).chain(request.options().instructions()),
+    )
+    .map_err(|_| AfError::Internal)
 }
 
 fn input_byte_upper_bound(request: &CanonicalAudioSpeechRequest) -> Result<i64, AfError> {

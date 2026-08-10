@@ -417,6 +417,7 @@ pub(crate) enum AdminChannelWriteProtocolSchema {
     OpenaiEmbeddings,
     OpenaiImages,
     OpenaiAudio,
+    OpenaiSpeech,
     Anthropic,
     Gemini,
 }

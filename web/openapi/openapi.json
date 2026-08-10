@@ -10411,12 +10411,13 @@
                   "openai_embeddings",
                   "openai_images",
                   "openai_audio",
+                  "openai_speech",
                   "anthropic",
                   "gemini"
                 ]
               }
             ],
-            "description": "当前生产写链路支持 OpenAI Chat、Responses、Embeddings、Images、Audio、Anthropic Messages 与 Gemini 协议。"
+            "description": "当前生产写链路支持 OpenAI Chat、Responses、Embeddings、Images、转录、Speech、Anthropic Messages 与 Gemini 协议。"
           },
           "base_url": {
             "type": [
@@ -10680,6 +10681,7 @@
               "openai_embeddings",
               "openai_images",
               "openai_audio",
+              "openai_speech",
               "anthropic",
               "gemini"
             ]

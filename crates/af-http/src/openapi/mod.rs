@@ -356,6 +356,15 @@ mod tests {
         assert!(schemas.contains_key("AdminChannelAutoBanRules"));
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
+        let writable_protocols =
+            schemas["AdminChannelCreateRequest"]["properties"]["protocol"]["oneOf"][0]["enum"]
+                .as_array()
+                .unwrap();
+        assert!(
+            writable_protocols
+                .iter()
+                .any(|value| value == "openai_speech")
+        );
         assert!(schemas.contains_key("AdminCredentialSecret"));
         assert!(schemas.contains_key("AdminCredentialProxy"));
         assert!(schemas.contains_key("AdminCredentialProxyListResponse"));
