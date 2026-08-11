@@ -1070,7 +1070,7 @@ mod tests {
                 "INSERT INTO users (id, username, default_group_id, aff_code, quota, settings) VALUES ({USER_ID}, 'video-runtime', {GROUP_ID}, 'video-runtime-aff', 10000000, '{{}}')"
             ),
             format!(
-                "INSERT INTO tokens (id, user_id, key_hash, key_prefix, name, group_id) VALUES ({TOKEN_ID}, {USER_ID}, '{}', 'sk-video-runtime', '视频运行时令牌', {GROUP_ID})",
+                "INSERT INTO tokens (id, user_id, key_hash, key_prefix, name, status, group_id, remain_quota) VALUES ({TOKEN_ID}, {USER_ID}, '{}', 'sk-video-runtime', '视频运行时令牌', 1, {GROUP_ID}, 10000000)",
                 "cd".repeat(32),
             ),
             format!(

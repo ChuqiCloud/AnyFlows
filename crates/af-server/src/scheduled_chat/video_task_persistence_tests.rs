@@ -74,6 +74,21 @@ async fn definite_failure_releases_claim_and_success_replay_does_not_resubmit()
     assert_eq!(released_user.try_get::<i64>("", "quota")?, 10_000_000);
     assert_eq!(released_user.try_get::<i64>("", "used_quota")?, 0);
     assert_eq!(released_user.try_get::<i64>("", "frozen_quota")?, 0);
+    let released_token = fixture
+        .database
+        .seed()
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT remain_quota, used_quota FROM tokens WHERE id = ?",
+            [fixture.principal.token_id().get().into()],
+        ))
+        .await?
+        .expect("测试令牌必须存在");
+    assert_eq!(
+        released_token.try_get::<i64>("", "remain_quota")?,
+        10_000_000
+    );
+    assert_eq!(released_token.try_get::<i64>("", "used_quota")?, 0);
     let task = match coordinator
         .submit(
             async_task_id(0x12),
@@ -220,6 +235,18 @@ async fn successful_terminal_uses_upstream_duration_and_keeps_missing_resolution
     assert_eq!(user.try_get::<i64>("", "quota")?, 9_680_000);
     assert_eq!(user.try_get::<i64>("", "used_quota")?, 320_000);
     assert_eq!(user.try_get::<i64>("", "frozen_quota")?, 0);
+    let token = fixture
+        .database
+        .seed()
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT remain_quota, used_quota FROM tokens WHERE id = ?",
+            [fixture.principal.token_id().get().into()],
+        ))
+        .await?
+        .expect("成功视频令牌必须存在");
+    assert_eq!(token.try_get::<i64>("", "remain_quota")?, 9_680_000);
+    assert_eq!(token.try_get::<i64>("", "used_quota")?, 320_000);
     let usage = fixture
         .database
         .seed()
@@ -499,7 +526,7 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
     let token_id = insert(
         database.seed(),
         format!(
-            "INSERT INTO tokens (user_id, key_hash, key_prefix, name, group_id) VALUES ({user_id}, '{}', 'sk-video-persistence', '视频持久化令牌', {group_id})",
+            "INSERT INTO tokens (user_id, key_hash, key_prefix, name, status, group_id, remain_quota) VALUES ({user_id}, '{}', 'sk-video-persistence', '视频持久化令牌', 1, {group_id}, 10000000)",
             "ab".repeat(32),
         ),
     )
