@@ -40,6 +40,50 @@ pub(in crate::migration) mod async_tasks {
     }
 }
 
+pub(in crate::migration) mod async_task_submission_claims {
+    use super::DeriveIden;
+
+    /// `async_task_submission_claims` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "async_task_submission_claims")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 异步任务提交 claim 迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        TaskKey,
+        UserId,
+        TokenId,
+        GroupId,
+        IdempotencyKey,
+        Protocol,
+        RequestedModel,
+        RequestFingerprint,
+        State,
+        AttemptKey,
+        TargetGroupId,
+        UpstreamModel,
+        ChannelId,
+        CredentialId,
+        CredentialRevision,
+        UpstreamTaskId,
+        BindingFingerprint,
+        AttemptTimeoutMillis,
+        Status,
+        ProgressBasisPoints,
+        FailureKind,
+        Version,
+        AcceptedAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod groups {
     use super::DeriveIden;
 

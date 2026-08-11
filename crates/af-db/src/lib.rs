@@ -227,6 +227,9 @@ pub use admin_user_write::{
 pub use async_task::{
     AsyncTaskCreate, AsyncTaskCreateOutcome, AsyncTaskInputError, AsyncTaskRecord,
     AsyncTaskRepository, AsyncTaskRepositoryConfigError, AsyncTaskRepositoryError,
+    AsyncTaskSubmissionAccept, AsyncTaskSubmissionBegin, AsyncTaskSubmissionClaim,
+    AsyncTaskSubmissionClaimOutcome, AsyncTaskSubmissionMutationOutcome, AsyncTaskSubmissionRecord,
+    AsyncTaskSubmissionRelease, AsyncTaskSubmissionRepository, AsyncTaskSubmissionState,
     AsyncTaskTransition, AsyncTaskTransitionOutcome,
 };
 pub use auth::{

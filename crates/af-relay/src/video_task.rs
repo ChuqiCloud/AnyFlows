@@ -1,7 +1,8 @@
 use std::{collections::BTreeSet, fmt, sync::Arc, time::Instant};
 
 use af_adapter::{
-    AdaptorError, Credential, HeaderMap, RelayContext, TransportDispatcher, VideoTaskAdaptor,
+    AdaptorError, AdaptorTransportError, Credential, HeaderMap, RelayContext, TransportDispatcher,
+    VideoTaskAdaptor,
 };
 use af_domain::{ChannelId, TaskSubmission, UpstreamError, UpstreamServerStatus, UpstreamTaskId};
 use af_protocol::{
@@ -127,6 +128,85 @@ impl fmt::Debug for VideoTaskSubmissionOutcome {
     }
 }
 
+/// 视频任务提交失败时对上游是否可能已经接受请求的闭合判断。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VideoTaskSubmissionDisposition {
+    /// 可以确定没有收到成功响应，持久化 claim 可安全释放。
+    DefinitelyNotAccepted,
+    /// 请求可能已到达上游或已经收到 2xx，禁止自动提交第二次。
+    AcceptanceUnknown,
+}
+
+/// 同时保留候选报告和上游接受确定性的任务提交错误。
+pub struct VideoTaskSubmissionError {
+    error: RelayError,
+    report: RelayAttemptReport,
+    disposition: VideoTaskSubmissionDisposition,
+}
+
+impl VideoTaskSubmissionError {
+    fn new(
+        error: RelayError,
+        failures: Vec<RelayAttemptFailure>,
+        disposition: VideoTaskSubmissionDisposition,
+    ) -> Self {
+        Self {
+            error,
+            report: RelayAttemptReport::failed(failures),
+            disposition,
+        }
+    }
+
+    /// 返回脱敏转发错误分类。
+    #[must_use]
+    pub const fn error(&self) -> RelayError {
+        self.error
+    }
+
+    /// 返回失败前已经产生的脱敏候选报告。
+    #[must_use]
+    pub const fn report(&self) -> &RelayAttemptReport {
+        &self.report
+    }
+
+    /// 返回持久化协调器必须遵守的上游接受确定性。
+    #[must_use]
+    pub const fn disposition(&self) -> VideoTaskSubmissionDisposition {
+        self.disposition
+    }
+
+    /// 消费错误并返回分类、报告和接受确定性。
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        RelayError,
+        RelayAttemptReport,
+        VideoTaskSubmissionDisposition,
+    ) {
+        (self.error, self.report, self.disposition)
+    }
+}
+
+impl fmt::Debug for VideoTaskSubmissionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("VideoTaskSubmissionError")
+            .field("error", &self.error)
+            .field("report", &self.report)
+            .field("disposition", &self.disposition)
+            .finish()
+    }
+}
+
+impl std::error::Error for VideoTaskSubmissionError {}
+
+impl fmt::Display for VideoTaskSubmissionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("视频任务提交失败")
+    }
+}
+
 /// 视频任务轮询成功及其单候选报告。
 pub struct VideoTaskPollOutcome {
     poll: CanonicalTaskPoll,
@@ -154,9 +234,14 @@ impl fmt::Debug for VideoTaskPollOutcome {
 /// 在有界候选上提交一次视频任务；只有尚未收到 2xx 的可恢复故障允许切换候选。
 pub async fn relay_video_task_submission(
     candidates: &[VideoTaskSubmissionCandidate],
-) -> Result<VideoTaskSubmissionOutcome, RelayExecutionError> {
-    validate_submission_candidates(candidates)
-        .map_err(|error| RelayExecutionError::new(RelayError::Request(error), Vec::new()))?;
+) -> Result<VideoTaskSubmissionOutcome, VideoTaskSubmissionError> {
+    validate_submission_candidates(candidates).map_err(|error| {
+        VideoTaskSubmissionError::new(
+            RelayError::Request(error),
+            Vec::new(),
+            VideoTaskSubmissionDisposition::DefinitelyNotAccepted,
+        )
+    })?;
     let mut failures = Vec::new();
     let mut last_error = None;
     let mut index = 0;
@@ -190,7 +275,13 @@ pub async fn relay_video_task_submission(
                 index += 1;
                 continue;
             }
-            Err(error) => return Err(RelayExecutionError::new(error, failures)),
+            Err(error) => {
+                return Err(VideoTaskSubmissionError::new(
+                    error,
+                    failures,
+                    VideoTaskSubmissionDisposition::DefinitelyNotAccepted,
+                ));
+            }
         };
         let response = match TransportDispatcher::http()
             .send(request, &candidate.target.context)
@@ -199,6 +290,7 @@ pub async fn relay_video_task_submission(
             Ok(response) => response,
             Err(error) => {
                 release_attempt_permit(permit).await;
+                let disposition = submission_error_disposition(error);
                 let mapped = map_adaptor_error(error);
                 failures.push(RelayAttemptFailure::new(
                     index,
@@ -206,13 +298,21 @@ pub async fn relay_video_task_submission(
                     started_at.elapsed(),
                 ));
                 last_error = Some(RelayError::Upstream(mapped));
+                if disposition == VideoTaskSubmissionDisposition::AcceptanceUnknown {
+                    return Err(VideoTaskSubmissionError::new(
+                        RelayError::Upstream(mapped),
+                        failures,
+                        disposition,
+                    ));
+                }
                 if is_retryable(mapped) {
                     index = next_candidate_index(candidates, index, mapped);
                     continue;
                 }
-                return Err(RelayExecutionError::new(
+                return Err(VideoTaskSubmissionError::new(
                     RelayError::Upstream(mapped),
                     failures,
+                    disposition,
                 ));
             }
         };
@@ -232,9 +332,10 @@ pub async fn relay_video_task_submission(
                     // 上游已经确认接收，禁止因响应异常切换候选并重复创建付费任务。
                     let error = UpstreamError::ProtocolError;
                     failures.push(RelayAttemptFailure::new(index, error, started_at.elapsed()));
-                    Err(RelayExecutionError::new(
+                    Err(VideoTaskSubmissionError::new(
                         RelayError::Upstream(error),
                         failures,
+                        VideoTaskSubmissionDisposition::AcceptanceUnknown,
                     ))
                 }
             };
@@ -256,9 +357,10 @@ pub async fn relay_video_task_submission(
                     index = next_candidate_index(candidates, index, mapped);
                     continue;
                 }
-                return Err(RelayExecutionError::new(
+                return Err(VideoTaskSubmissionError::new(
                     RelayError::Upstream(mapped),
                     failures,
+                    VideoTaskSubmissionDisposition::DefinitelyNotAccepted,
                 ));
             }
         };
@@ -278,15 +380,29 @@ pub async fn relay_video_task_submission(
             index = next_candidate_index(candidates, index, classified);
             continue;
         }
-        return Err(RelayExecutionError::new(
+        return Err(VideoTaskSubmissionError::new(
             RelayError::Upstream(classified),
             failures,
+            VideoTaskSubmissionDisposition::DefinitelyNotAccepted,
         ));
     }
-    Err(RelayExecutionError::new(
+    Err(VideoTaskSubmissionError::new(
         last_error.unwrap_or(RelayError::Upstream(UpstreamError::ModelUnsupported)),
         failures,
+        VideoTaskSubmissionDisposition::DefinitelyNotAccepted,
     ))
+}
+
+fn submission_error_disposition(error: AdaptorError) -> VideoTaskSubmissionDisposition {
+    match error {
+        AdaptorError::Transport(
+            AdaptorTransportError::ReadTimeout
+            | AdaptorTransportError::RequestTimeout
+            | AdaptorTransportError::Request
+            | AdaptorTransportError::ResponseBody,
+        ) => VideoTaskSubmissionDisposition::AcceptanceUnknown,
+        _ => VideoTaskSubmissionDisposition::DefinitelyNotAccepted,
+    }
 }
 
 /// 只在已经固化的单一目标上轮询视频任务，不执行任何跨渠道故障转移。
@@ -535,6 +651,69 @@ mod tests {
         );
         assert_eq!(error.report().failures().len(), 1);
         assert_eq!(error.report().failures()[0].candidate_index(), 0);
+        assert_eq!(
+            error.disposition(),
+            VideoTaskSubmissionDisposition::AcceptanceUnknown
+        );
+        first_server.join().unwrap();
+        assert!(!second_server.join().unwrap());
+    }
+
+    #[tokio::test]
+    async fn response_timeout_is_acceptance_unknown_and_never_tries_second_candidate() {
+        let first_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let first_address = first_listener.local_addr().unwrap();
+        let first_server = thread::spawn(move || {
+            let (mut stream, _) = first_listener.accept().unwrap();
+            let _ = read_request(&mut stream);
+            thread::sleep(Duration::from_millis(400));
+        });
+        let second_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let second_address = second_listener.local_addr().unwrap();
+        second_listener.set_nonblocking(true).unwrap();
+        let second_server = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(1);
+            while Instant::now() < deadline {
+                match second_listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let _ = read_request(&mut stream);
+                        return true;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("监听第二候选失败: {error}"),
+                }
+            }
+            false
+        });
+        let timeouts = HttpTimeouts::new(
+            Duration::from_secs(1),
+            Duration::from_millis(100),
+            Duration::from_millis(250),
+        )
+        .unwrap();
+        let candidates = vec![
+            submission_candidate(
+                proxy_context_with_timeouts(first_address, timeouts),
+                "private-key-a",
+                1,
+                request(),
+            ),
+            submission_candidate(
+                proxy_context_with_timeouts(second_address, timeouts),
+                "private-key-b",
+                2,
+                request(),
+            ),
+        ];
+
+        let error = relay_video_task_submission(&candidates).await.unwrap_err();
+        assert_eq!(
+            error.disposition(),
+            VideoTaskSubmissionDisposition::AcceptanceUnknown
+        );
+        assert_eq!(error.report().failures()[0].candidate_index(), 0);
         first_server.join().unwrap();
         assert!(!second_server.join().unwrap());
     }
@@ -620,12 +799,16 @@ mod tests {
     }
 
     fn proxy_context(address: SocketAddr) -> RelayContext {
+        proxy_context_with_timeouts(address, HttpTimeouts::default())
+    }
+
+    fn proxy_context_with_timeouts(address: SocketAddr, timeouts: HttpTimeouts) -> RelayContext {
         RelayContext::new(
             HttpClientPool::default()
                 .get(
                     &HttpClientConfig::new(
                         ProxyConfig::parse(format!("http://{address}")).unwrap(),
-                        HttpTimeouts::default(),
+                        timeouts,
                     )
                     .with_remote_dns_policy(RemoteDnsPolicy::TrustProxy),
                 )

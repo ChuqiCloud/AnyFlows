@@ -2,16 +2,18 @@ use std::{fmt, future::Future, pin::Pin, time::Duration};
 
 use af_adapter::{RelayContext, get_task_adaptor};
 use af_db::{
-    SchedulerRuntimeCredentialRecord, SchedulerRuntimeHeader, SchedulerRuntimeTargetRecord,
+    AsyncTaskRecord, AsyncTaskSubmissionRecord, SchedulerRuntimeCredentialRecord,
+    SchedulerRuntimeHeader, SchedulerRuntimeTargetRecord,
 };
 use af_domain::{
-    AfError, ChannelAutoBanRules, ChannelId, ChannelTimeout, CredentialId, GroupId, Protocol,
-    TaskSubmission, UpstreamTaskId,
+    AfError, AsyncTaskBindingFingerprint, ChannelAutoBanRules, ChannelId, ChannelTimeout,
+    CredentialId, GroupId, Protocol, TaskSubmission, UpstreamTaskId,
 };
 use af_protocol::{CanonicalTaskPoll, CanonicalVideoGenerationRequest, VideoModel};
 use af_relay::{
     RelayAttemptReport, RelayError, RelayStateMachine, VideoTaskSubmissionCandidate,
-    VideoTaskTarget, relay_video_task_poll, relay_video_task_submission,
+    VideoTaskSubmissionDisposition, VideoTaskTarget, relay_video_task_poll,
+    relay_video_task_submission,
 };
 use af_scheduler::{IndexedRoutePlan, RouteWaitKind};
 
@@ -28,9 +30,18 @@ use crate::{
 
 use super::{ScheduledChatService, header_overrides, map_scheduler_error, target_matches_protocol};
 
+mod fingerprint;
+
+use fingerprint::binding_fingerprint;
+
 /// xAI 视频任务提交计划的异步结果。
-pub type VideoTaskSubmissionFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<BoundVideoTaskSubmission, AfError>> + Send + 'a>>;
+pub type VideoTaskSubmissionFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<BoundVideoTaskSubmission, VideoTaskSubmissionRuntimeError>>
+            + Send
+            + 'a,
+    >,
+>;
 
 /// xAI 视频任务轮询的异步结果。
 pub type VideoTaskPollFuture<'a> =
@@ -56,6 +67,58 @@ pub trait VideoTaskRuntime: Send + Sync {
     ) -> VideoTaskPollFuture<'a>;
 }
 
+/// 视频运行时提交失败，并保留持久化 claim 所需的接受确定性。
+pub struct VideoTaskSubmissionRuntimeError {
+    error: AfError,
+    disposition: VideoTaskSubmissionDisposition,
+}
+
+impl VideoTaskSubmissionRuntimeError {
+    pub(super) fn new(error: AfError, disposition: VideoTaskSubmissionDisposition) -> Self {
+        Self { error, disposition }
+    }
+
+    /// 返回是否可以安全释放提交 claim。
+    #[must_use]
+    pub const fn disposition(&self) -> VideoTaskSubmissionDisposition {
+        self.disposition
+    }
+
+    /// 消费包装并返回统一业务错误。
+    #[must_use]
+    pub fn into_error(self) -> AfError {
+        self.error
+    }
+}
+
+impl fmt::Debug for VideoTaskSubmissionRuntimeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("VideoTaskSubmissionRuntimeError")
+            .field("error", &self.error)
+            .field("disposition", &self.disposition)
+            .finish()
+    }
+}
+
+impl fmt::Display for VideoTaskSubmissionRuntimeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("视频任务运行时提交失败")
+    }
+}
+
+impl std::error::Error for VideoTaskSubmissionRuntimeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.error)
+    }
+}
+
+impl From<AfError> for VideoTaskSubmissionRuntimeError {
+    fn from(error: AfError) -> Self {
+        Self::new(error, VideoTaskSubmissionDisposition::DefinitelyNotAccepted)
+    }
+}
+
 /// 提交成功后必须随任务一起保存的原目标绑定。
 #[derive(Clone)]
 pub struct VideoTaskBinding {
@@ -64,6 +127,7 @@ pub struct VideoTaskBinding {
     credential_revision: u64,
     upstream_task_id: UpstreamTaskId,
     expected_model: VideoModel,
+    binding_fingerprint: AsyncTaskBindingFingerprint,
     target_snapshot: BoundVideoTargetSnapshot,
 }
 
@@ -97,6 +161,18 @@ impl VideoTaskBinding {
     pub const fn expected_model(&self) -> &VideoModel {
         &self.expected_model
     }
+
+    /// 返回完整运行时目标的脱敏 SHA-256 绑定指纹。
+    #[must_use]
+    pub const fn binding_fingerprint(&self) -> AsyncTaskBindingFingerprint {
+        self.binding_fingerprint
+    }
+
+    /// 返回提交时固化的账号并发等待时间。
+    #[must_use]
+    pub const fn attempt_timeout(&self) -> Duration {
+        self.target_snapshot.attempt_timeout
+    }
 }
 
 impl fmt::Debug for VideoTaskBinding {
@@ -108,6 +184,7 @@ impl fmt::Debug for VideoTaskBinding {
             .field("credential_revision", &"<已脱敏>")
             .field("upstream_task_id", &self.upstream_task_id)
             .field("expected_model", &"<已脱敏>")
+            .field("binding_fingerprint", &self.binding_fingerprint)
             .finish()
     }
 }
@@ -249,15 +326,31 @@ struct SubmissionBindingTarget {
 }
 
 impl SubmissionBindingTarget {
-    fn into_binding(self, upstream_task_id: UpstreamTaskId) -> VideoTaskBinding {
+    fn into_binding(
+        self,
+        target_group_id: GroupId,
+        upstream_task_id: UpstreamTaskId,
+    ) -> VideoTaskBinding {
+        let binding_fingerprint = self.fingerprint(target_group_id);
         VideoTaskBinding {
             channel_id: self.channel_id,
             credential_id: self.credential_id,
             credential_revision: self.credential_revision,
             upstream_task_id,
             expected_model: self.snapshot.expected_model.clone(),
+            binding_fingerprint,
             target_snapshot: self.snapshot,
         }
+    }
+
+    fn fingerprint(&self, target_group_id: GroupId) -> AsyncTaskBindingFingerprint {
+        binding_fingerprint(
+            target_group_id,
+            self.channel_id,
+            self.credential_id,
+            self.credential_revision,
+            &self.snapshot,
+        )
     }
 }
 
@@ -329,7 +422,7 @@ impl ScheduledChatService {
         request_id: &str,
         account_loads: Option<&std::collections::BTreeMap<i64, CredentialLoad>>,
         credential_health: Option<&std::collections::BTreeMap<i64, RuntimeHealthState>>,
-    ) -> Result<BoundVideoTaskSubmission, AfError> {
+    ) -> Result<BoundVideoTaskSubmission, VideoTaskSubmissionRuntimeError> {
         let target_group_id = route.target_group_id();
         let mut candidates = Vec::with_capacity(
             route
@@ -447,7 +540,8 @@ impl ScheduledChatService {
                 af_domain::UpstreamError::overloaded().into()
             } else {
                 af_domain::UpstreamError::ModelUnsupported.into()
-            });
+            }
+            .into());
         }
 
         match relay_video_task_submission(&candidates).await {
@@ -460,7 +554,8 @@ impl ScheduledChatService {
                     .get(index)
                     .cloned()
                     .ok_or(AfError::Internal)?;
-                let binding = binding_target.into_binding(submission.task_id().clone());
+                let binding =
+                    binding_target.into_binding(target_group_id, submission.task_id().clone());
                 self.persist_video_feedback(&attempt_targets, &auto_ban_targets, &report)
                     .await;
                 Ok(BoundVideoTaskSubmission {
@@ -470,10 +565,13 @@ impl ScheduledChatService {
                 })
             }
             Err(error) => {
-                let (error, report) = error.into_parts();
+                let (error, report, disposition) = error.into_parts();
                 self.persist_video_feedback(&attempt_targets, &auto_ban_targets, &report)
                     .await;
-                Err(map_relay_error(error))
+                Err(VideoTaskSubmissionRuntimeError::new(
+                    map_relay_error(error),
+                    disposition,
+                ))
             }
         }
     }
@@ -565,6 +663,62 @@ impl ScheduledChatService {
         }
     }
 
+    /// 从数据库绑定事实恢复当前运行时目标；任一配置漂移都失败关闭。
+    pub(super) fn restore_video_task_binding(
+        &self,
+        task: &AsyncTaskRecord,
+        claim: &AsyncTaskSubmissionRecord,
+    ) -> Result<VideoTaskBinding, AfError> {
+        if !claim.matches_task(task) || task.protocol() != Protocol::XaiVideo {
+            return Err(AfError::Internal);
+        }
+        let target_group_id = claim.target_group_id().ok_or(AfError::Internal)?;
+        let attempt_timeout = claim.attempt_timeout().ok_or(AfError::Internal)?;
+        let expected_fingerprint = claim.binding_fingerprint().ok_or(AfError::Internal)?;
+        let target = self
+            .scheduler
+            .runtime_target(task.channel_id())
+            .map_err(map_scheduler_error)?
+            .ok_or(AfError::Internal)?;
+        if !target_matches_protocol(&target, Protocol::XaiVideo)
+            || !target.parameter_overrides().is_empty()
+        {
+            return Err(AfError::Internal);
+        }
+        let requested_model =
+            VideoModel::new(task.requested_model().to_owned()).map_err(|_| AfError::Internal)?;
+        let expected_model =
+            VideoModel::new(task.upstream_model().to_owned()).map_err(|_| AfError::Internal)?;
+        let mapped_model = target
+            .mapped_model(requested_model.as_str())
+            .unwrap_or(requested_model.as_str());
+        if mapped_model != expected_model.as_str() {
+            return Err(AfError::Internal);
+        }
+        let runtime_credential = target
+            .credentials()
+            .iter()
+            .find(|credential| credential.credential_id() == task.credential_id().get())
+            .filter(|credential| credential.credential_revision() == task.credential_revision())
+            .ok_or(AfError::Internal)?;
+        let binding_target = SubmissionBindingTarget {
+            channel_id: task.channel_id(),
+            credential_id: task.credential_id(),
+            credential_revision: task.credential_revision(),
+            snapshot: BoundVideoTargetSnapshot::new(
+                &target,
+                runtime_credential,
+                requested_model,
+                expected_model,
+                attempt_timeout,
+            ),
+        };
+        if binding_target.fingerprint(target_group_id) != expected_fingerprint {
+            return Err(AfError::Internal);
+        }
+        Ok(binding_target.into_binding(target_group_id, task.upstream_task_id().clone()))
+    }
+
     async fn persist_video_feedback(
         &self,
         attempt_targets: &[CredentialAttemptTarget],
@@ -642,11 +796,15 @@ mod tests {
     use af_account::{CredentialDecryptor, SystemSecretCipher, credential_plaintext_aad};
     use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
     use af_db::{
-        ChannelModelMappings, ChannelParameterOverrides, CredentialProxyScheme,
-        CredentialStateRepository, DatabaseOptions, EncryptedCredentialEnvelope, MigrationOptions,
+        AsyncTaskRepository, AsyncTaskSubmissionRepository, ChannelModelMappings,
+        ChannelParameterOverrides, CredentialProxyScheme, CredentialStateRepository,
+        DatabaseOptions, EncryptedCredentialEnvelope, MigrationOptions,
         SchedulerRuntimeProxyRecord, connect_and_migrate,
     };
-    use af_domain::{ChannelType, CredentialKind, ProxyId, TaskStatus};
+    use af_domain::{
+        AsyncTaskId, AsyncTaskRequestId, ChannelType, CredentialKind, GatewayPrincipal, ProxyId,
+        TaskStatus, TokenId, UserId,
+    };
     use af_httpclient::{HttpClientConfig, HttpClientProvider};
     use af_protocol::{VideoDuration, VideoPrompt, VideoResolution};
     use af_scheduler::{
@@ -658,6 +816,7 @@ mod tests {
         XChaCha20Poly1305, XNonce,
         aead::{Aead as _, KeyInit as _, Payload},
     };
+    use sea_orm::{ConnectionTrait, DbBackend, Statement};
     use serde_json::json;
 
     use super::*;
@@ -666,6 +825,8 @@ mod tests {
     const FIRST_CREDENTIAL_ID: i64 = 81;
     const SECOND_CREDENTIAL_ID: i64 = 82;
     const GROUP_ID: i64 = 7;
+    const USER_ID: i64 = 61;
+    const TOKEN_ID: i64 = 62;
     const KEY_ID: &str = "video-task-runtime-test";
     const REQUESTED_MODEL: &str = "video-public";
     const UPSTREAM_MODEL: &str = "grok-imagine-video-1.5";
@@ -694,35 +855,49 @@ mod tests {
         ];
         let (proxy_address, proxy_server) = spawn_proxy(steps);
         let source = MutableSource::new(vec![runtime_record(proxy_address, 0x31, 0x32)]);
-        let service = service(source).await;
+        let (service, pool, principal) = service(source).await;
+        let coordinator =
+            crate::scheduled_chat::video_task_persistence::PersistentVideoTaskCoordinator::new(
+                service,
+                AsyncTaskRepository::new(pool.clone(), Duration::from_secs(5)).unwrap(),
+                AsyncTaskSubmissionRepository::new(pool.clone(), Duration::from_secs(5)).unwrap(),
+            );
 
-        let submitted = service
-            .submit_video_task(
-                GroupId::new(GROUP_ID).unwrap(),
+        let submitted = coordinator
+            .submit(
+                AsyncTaskId::new([0x51; 16]).unwrap(),
+                AsyncTaskRequestId::new([0x61; 16]).unwrap(),
+                principal,
                 request(),
                 "video-submit-request",
             )
             .await
             .unwrap();
 
-        assert_eq!(
-            submitted.binding().credential_id().get(),
-            SECOND_CREDENTIAL_ID
-        );
-        assert_eq!(
-            submitted.binding().upstream_task_id().as_str(),
-            "video-task-bound"
-        );
-        let poll = service
-            .poll_video_task(submitted.binding(), "video-poll-request")
+        assert_eq!(submitted.credential_id().get(), SECOND_CREDENTIAL_ID);
+        assert_eq!(submitted.upstream_task_id().as_str(), "video-task-bound");
+        let poll = coordinator
+            .poll(
+                principal.user_id(),
+                submitted.task_id(),
+                "video-poll-request",
+            )
             .await
             .unwrap();
+        let crate::scheduled_chat::video_task_persistence::PersistentVideoTaskPollOutcome::Updated {
+            task,
+            poll,
+        } = poll
+        else {
+            panic!("首次终态轮询必须访问持久化绑定")
+        };
+        assert_eq!(task.status(), &TaskStatus::Succeeded);
         assert_eq!(poll.status(), &TaskStatus::Succeeded);
         assert_eq!(
             poll.output().unwrap().as_video().unwrap().model().as_str(),
             UPSTREAM_MODEL
         );
-        let debug = format!("{submitted:?}");
+        let debug = format!("{task:?}");
         for secret in [
             "private-key-first",
             "private-key-second",
@@ -732,6 +907,7 @@ mod tests {
             assert!(!debug.contains(secret));
         }
         proxy_server.join().unwrap();
+        pool.close().await.unwrap();
     }
 
     #[tokio::test]
@@ -748,7 +924,7 @@ mod tests {
             0x32,
             "private-key-second",
         )]);
-        let service = service(source.clone()).await;
+        let (service, pool, _) = service(source.clone()).await;
         let submitted = service
             .submit_video_task(
                 GroupId::new(GROUP_ID).unwrap(),
@@ -773,25 +949,66 @@ mod tests {
                 .await,
             Err(AfError::Internal)
         );
+        pool.close().await.unwrap();
     }
 
-    async fn service(source: MutableSource) -> ScheduledChatService {
+    async fn service(
+        source: MutableSource,
+    ) -> (ScheduledChatService, af_db::DatabasePool, GatewayPrincipal) {
         let index = InMemoryChannelIndex::load(Arc::new(source)).await.unwrap();
         let settings = encryption_settings();
-        ScheduledChatService::new(
+        let pool = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        seed_persistence_rows(&pool).await;
+        let service = ScheduledChatService::new(
             IndexedWeightedScheduler::new(index),
             CredentialDecryptor::new(&settings).unwrap(),
             HttpClientProvider::new(HttpClientConfig::default(), 4).unwrap(),
-            CredentialStateRepository::new(
-                connect_and_migrate(
-                    &DatabaseOptions::new("sqlite::memory:").unwrap(),
-                    MigrationOptions::default(),
-                )
-                .await
-                .unwrap(),
+            CredentialStateRepository::new(pool.clone()),
+        )
+        .with_proxy_cipher(SystemSecretCipher::new(&settings).unwrap());
+        (
+            service,
+            pool,
+            GatewayPrincipal::new(
+                TokenId::new(TOKEN_ID).unwrap(),
+                UserId::new(USER_ID).unwrap(),
+                GroupId::new(GROUP_ID).unwrap(),
             ),
         )
-        .with_proxy_cipher(SystemSecretCipher::new(&settings).unwrap())
+    }
+
+    async fn seed_persistence_rows(pool: &af_db::DatabasePool) {
+        for sql in [
+            format!(
+                "INSERT INTO groups (id, name, display_name, flags) VALUES ({GROUP_ID}, 'video-runtime', '视频运行时测试', '{{}}')"
+            ),
+            format!(
+                "INSERT INTO users (id, username, default_group_id, aff_code, settings) VALUES ({USER_ID}, 'video-runtime', {GROUP_ID}, 'video-runtime-aff', '{{}}')"
+            ),
+            format!(
+                "INSERT INTO tokens (id, user_id, key_hash, key_prefix, name, group_id) VALUES ({TOKEN_ID}, {USER_ID}, '{}', 'sk-video-runtime', '视频运行时令牌', {GROUP_ID})",
+                "cd".repeat(32),
+            ),
+            format!(
+                "INSERT INTO channels (id, name, \"type\", protocol, model_mapping, param_override, header_override, settings) VALUES ({CHANNEL_ID}, '视频运行时渠道', 'xai', 'xai_video', '{{}}', '{{}}', '{{}}', '{{}}')"
+            ),
+            format!(
+                "INSERT INTO credentials (id, channel_id, kind, secret) VALUES ({FIRST_CREDENTIAL_ID}, {CHANNEL_ID}, 'api_key', '{{}}')"
+            ),
+            format!(
+                "INSERT INTO credentials (id, channel_id, kind, secret) VALUES ({SECOND_CREDENTIAL_ID}, {CHANNEL_ID}, 'api_key', '{{}}')"
+            ),
+        ] {
+            pool.connection()
+                .execute(Statement::from_string(DbBackend::Sqlite, sql))
+                .await
+                .unwrap();
+        }
     }
 
     fn runtime_record(

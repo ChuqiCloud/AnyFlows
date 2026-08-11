@@ -90,6 +90,7 @@ pub use state_machine::{
     RelayExecutionError, RelayRequest, RelayResponse, RelayState, RelayStateMachine,
 };
 pub use video_task::{
-    VideoTaskPollOutcome, VideoTaskSubmissionCandidate, VideoTaskSubmissionOutcome,
-    VideoTaskTarget, relay_video_task_poll, relay_video_task_submission,
+    VideoTaskPollOutcome, VideoTaskSubmissionCandidate, VideoTaskSubmissionDisposition,
+    VideoTaskSubmissionError, VideoTaskSubmissionOutcome, VideoTaskTarget, relay_video_task_poll,
+    relay_video_task_submission,
 };

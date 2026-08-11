@@ -4,6 +4,8 @@ use thiserror::Error;
 
 const ASYNC_TASK_ID_BYTES: usize = 16;
 const ASYNC_TASK_KEY_BYTES: usize = ASYNC_TASK_ID_BYTES * 2;
+const ASYNC_TASK_FINGERPRINT_BYTES: usize = 32;
+const ASYNC_TASK_FINGERPRINT_KEY_BYTES: usize = ASYNC_TASK_FINGERPRINT_BYTES * 2;
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
 /// 上游任务标识的最大 UTF-8 字节数。
@@ -104,6 +106,79 @@ opaque_async_task_id!(
     /// 单个用户创建异步任务时复用的客户端幂等标识。
     AsyncTaskRequestId,
     "AsyncTaskRequestId"
+);
+opaque_async_task_id!(
+    /// 单次上游提交尝试的随机所有者标识，用于阻止并发请求共同消费 claim。
+    AsyncTaskAttemptId,
+    "AsyncTaskAttemptId"
+);
+
+macro_rules! opaque_async_task_fingerprint {
+    ($(#[$meta:meta])* $name:ident, $debug_name:literal) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub struct $name([u8; ASYNC_TASK_FINGERPRINT_BYTES]);
+
+        impl $name {
+            /// 使用已经由受控边界计算的 SHA-256 摘要构造指纹。
+            #[must_use]
+            pub const fn new(bytes: [u8; ASYNC_TASK_FINGERPRINT_BYTES]) -> Self {
+                Self(bytes)
+            }
+
+            /// 从数据库使用的 64 位小写十六进制键恢复指纹。
+            pub fn from_persistence_key(
+                value: &str,
+            ) -> Result<Self, AsyncTaskIdentifierError> {
+                if value.len() != ASYNC_TASK_FINGERPRINT_KEY_BYTES {
+                    return Err(AsyncTaskIdentifierError::InvalidEncoding);
+                }
+                let mut bytes = [0_u8; ASYNC_TASK_FINGERPRINT_BYTES];
+                for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+                    let high = decode_hex(pair[0])
+                        .ok_or(AsyncTaskIdentifierError::InvalidEncoding)?;
+                    let low = decode_hex(pair[1])
+                        .ok_or(AsyncTaskIdentifierError::InvalidEncoding)?;
+                    bytes[index] = (high << 4) | low;
+                }
+                Ok(Self(bytes))
+            }
+
+            /// 返回持久化边界使用的固定长度小写十六进制键。
+            #[must_use]
+            pub fn persistence_key(self) -> String {
+                let mut encoded = String::with_capacity(ASYNC_TASK_FINGERPRINT_KEY_BYTES);
+                for byte in self.0 {
+                    encoded.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+                    encoded.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+                }
+                encoded
+            }
+
+            /// 返回受控哈希组合边界使用的原始摘要。
+            #[must_use]
+            pub const fn bytes(self) -> [u8; ASYNC_TASK_FINGERPRINT_BYTES] {
+                self.0
+            }
+        }
+
+        impl fmt::Debug for $name {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str(concat!($debug_name, "(<脱敏>)"))
+            }
+        }
+    };
+}
+
+opaque_async_task_fingerprint!(
+    /// 不保存提示词原文的异步任务完整请求指纹。
+    AsyncTaskRequestFingerprint,
+    "AsyncTaskRequestFingerprint"
+);
+opaque_async_task_fingerprint!(
+    /// 不保存渠道敏感配置原值的异步任务运行时绑定指纹。
+    AsyncTaskBindingFingerprint,
+    "AsyncTaskBindingFingerprint"
 );
 
 const fn decode_hex(byte: u8) -> Option<u8> {

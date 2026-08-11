@@ -58,7 +58,8 @@ pub use subscription_window::{
     SubscriptionWindowError,
 };
 pub use task::{
-    AsyncTaskId, AsyncTaskIdentifierError, AsyncTaskRequestId, MAX_TASK_FAILURE_REASON_BYTES,
+    AsyncTaskAttemptId, AsyncTaskBindingFingerprint, AsyncTaskId, AsyncTaskIdentifierError,
+    AsyncTaskRequestFingerprint, AsyncTaskRequestId, MAX_TASK_FAILURE_REASON_BYTES,
     MAX_UPSTREAM_TASK_ID_BYTES, TaskFailure, TaskFailureError, TaskFailureKind,
     TaskIdentifierError, TaskProgress, TaskProgressError, TaskState, TaskStateError, TaskStatus,
     TaskSubmission, UpstreamTaskId,

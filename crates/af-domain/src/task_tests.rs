@@ -47,6 +47,31 @@ fn async_task_identifiers_reject_zero_and_noncanonical_keys() {
 }
 
 #[test]
+fn async_task_attempt_and_fingerprint_keys_round_trip_without_debug_disclosure() {
+    let attempt = AsyncTaskAttemptId::new([0x34; 16]).unwrap();
+    let request_fingerprint = AsyncTaskRequestFingerprint::new([0x56; 32]);
+    let binding_fingerprint = AsyncTaskBindingFingerprint::new([0x78; 32]);
+
+    assert_eq!(
+        AsyncTaskAttemptId::from_persistence_key(&attempt.persistence_key()).unwrap(),
+        attempt
+    );
+    assert_eq!(
+        AsyncTaskRequestFingerprint::from_persistence_key(&request_fingerprint.persistence_key())
+            .unwrap(),
+        request_fingerprint
+    );
+    assert_eq!(
+        AsyncTaskBindingFingerprint::from_persistence_key(&binding_fingerprint.persistence_key())
+            .unwrap(),
+        binding_fingerprint
+    );
+    assert!(!format!("{attempt:?}").contains(&attempt.persistence_key()));
+    assert!(!format!("{request_fingerprint:?}").contains(&"56".repeat(32)));
+    assert!(!format!("{binding_fingerprint:?}").contains(&"78".repeat(32)));
+}
+
+#[test]
 fn task_id_is_bounded_and_redacted() {
     let id = UpstreamTaskId::new("provider-task-123").unwrap();
     assert_eq!(id.as_str(), "provider-task-123");

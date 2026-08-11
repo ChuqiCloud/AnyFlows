@@ -2,8 +2,7 @@ use std::{fmt, str::FromStr, time::Duration};
 
 use af_domain::{
     AsyncTaskId, AsyncTaskRequestId, ChannelId, CredentialId, GatewayPrincipal, GroupId, Protocol,
-    TaskFailure, TaskFailureKind, TaskProgress, TaskState, TaskStatus, TokenId, UpstreamTaskId,
-    UserId,
+    TaskStatus, TokenId, UpstreamTaskId, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, EntityTrait,
@@ -17,6 +16,10 @@ use crate::{
     entity::{SensitiveString, async_tasks, credentials, groups, tokens},
 };
 
+use super::status::{
+    allowed_transition, same_persisted_status, state_code, status_from_persistence,
+    status_to_persistence,
+};
 use super::types::{
     AsyncTaskCreate, AsyncTaskCreateOutcome, AsyncTaskRecord, AsyncTaskRepositoryConfigError,
     AsyncTaskRepositoryError, AsyncTaskTransition, AsyncTaskTransitionOutcome,
@@ -65,6 +68,20 @@ impl AsyncTaskRepository {
         task_id: AsyncTaskId,
     ) -> Result<Option<AsyncTaskRecord>, AsyncTaskRepositoryError> {
         let operation = load_by_owner(self.pool.connection(), user_id, task_id)
+            .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal),
+            Err(_) => Err(internal(AsyncTaskRepositoryError::Timeout)),
+        }
+    }
+
+    /// 按用户与客户端幂等标识读取已经完成绑定的任务。
+    pub async fn find_by_request(
+        &self,
+        user_id: UserId,
+        request_id: AsyncTaskRequestId,
+    ) -> Result<Option<AsyncTaskRecord>, AsyncTaskRepositoryError> {
+        let operation = load_by_request(self.pool.connection(), user_id, request_id)
             .with_subscriber(NoSubscriber::default());
         match timeout(self.operation_timeout, operation).await {
             Ok(result) => result.map_err(internal),
@@ -183,8 +200,9 @@ async fn create_in_transaction(
     }
 
     let created_at = to_database_time(write.created_at)?;
+    let observed_at = to_database_time(write.observed_at)?;
     let (status, progress_basis_points, failure_kind) = status_to_persistence(&write.status);
-    let terminal_at = write.status.is_terminal().then_some(created_at);
+    let terminal_at = write.status.is_terminal().then_some(observed_at);
     let inserted = async_tasks::ActiveModel {
         task_key: Set(SensitiveString::from(write.task_id.persistence_key())),
         user_id: Set(write.principal.user_id().get()),
@@ -208,7 +226,7 @@ async fn create_in_transaction(
         version: Set(1),
         terminal_at: Set(terminal_at),
         created_at: Set(created_at),
-        updated_at: Set(created_at),
+        updated_at: Set(observed_at),
         ..Default::default()
     }
     .insert(transaction)
@@ -235,7 +253,7 @@ async fn transition_in_transaction(
         return Ok(AsyncTaskTransitionOutcome::Existing(current));
     }
     if current_version != write.expected_version
-        || !allowed_transition(current.status.state(), write.status.state())
+        || !allowed_transition(&current.status, &write.status)
         || write.observed_at < current.updated_at
     {
         return Err(AsyncTaskRepositoryError::Conflict.into());
@@ -292,23 +310,6 @@ fn classify_transition_replay(
     }
 }
 
-fn allowed_transition(current: TaskState, target: TaskState) -> bool {
-    matches!(
-        (current, target),
-        (
-            TaskState::Submitted,
-            TaskState::Queued | TaskState::Running | TaskState::Succeeded | TaskState::Failed
-        ) | (
-            TaskState::Queued,
-            TaskState::Running | TaskState::Succeeded | TaskState::Failed
-        ) | (TaskState::Running, TaskState::Succeeded | TaskState::Failed)
-    )
-}
-
-fn same_persisted_status(left: &TaskStatus, right: &TaskStatus) -> bool {
-    status_to_persistence(left) == status_to_persistence(right)
-}
-
 async fn references_match(
     transaction: &DatabaseTransaction,
     write: &AsyncTaskCreate,
@@ -344,6 +345,27 @@ where
     async_tasks::Entity::find()
         .filter(async_tasks::Column::TaskKey.eq(SensitiveString::from(task_id.persistence_key())))
         .filter(async_tasks::Column::UserId.eq(user_id.get()))
+        .one(connection)
+        .await
+        .map_err(|_| AsyncTaskRepositoryError::Query)?
+        .map(task_record)
+        .transpose()
+}
+
+async fn load_by_request<C>(
+    connection: &C,
+    user_id: UserId,
+    request_id: AsyncTaskRequestId,
+) -> Result<Option<AsyncTaskRecord>, AsyncTaskRepositoryError>
+where
+    C: ConnectionTrait,
+{
+    async_tasks::Entity::find()
+        .filter(async_tasks::Column::UserId.eq(user_id.get()))
+        .filter(
+            async_tasks::Column::IdempotencyKey
+                .eq(SensitiveString::from(request_id.persistence_key())),
+        )
         .one(connection)
         .await
         .map_err(|_| AsyncTaskRepositoryError::Query)?
@@ -474,82 +496,6 @@ fn task_record(model: async_tasks::Model) -> Result<AsyncTaskRecord, AsyncTaskRe
         created_at,
         updated_at,
     })
-}
-
-fn status_to_persistence(status: &TaskStatus) -> (i16, i16, Option<i16>) {
-    (
-        state_code(status.state()),
-        i16::try_from(status.progress().basis_points()).expect("任务进度上界必须适配 i16"),
-        status
-            .failure()
-            .map(|failure| failure_kind_code(failure.kind())),
-    )
-}
-
-fn status_from_persistence(
-    status: i16,
-    progress_basis_points: i16,
-    failure_kind: Option<i16>,
-) -> Result<TaskStatus, AsyncTaskRepositoryError> {
-    let state = state_from_code(status)?;
-    let progress_basis_points =
-        u16::try_from(progress_basis_points).map_err(|_| AsyncTaskRepositoryError::Invariant)?;
-    let progress = TaskProgress::new(progress_basis_points)
-        .map_err(|_| AsyncTaskRepositoryError::Invariant)?;
-    match (state, failure_kind) {
-        (TaskState::Submitted, None) => Ok(TaskStatus::Submitted { progress }),
-        (TaskState::Queued, None) => Ok(TaskStatus::Queued { progress }),
-        (TaskState::Running, None) => Ok(TaskStatus::Running { progress }),
-        (TaskState::Succeeded, None) if progress == TaskProgress::COMPLETE => {
-            Ok(TaskStatus::Succeeded)
-        }
-        (TaskState::Failed, Some(kind)) if progress == TaskProgress::ZERO => {
-            Ok(TaskStatus::Failed {
-                failure: TaskFailure::without_reason(failure_kind_from_code(kind)?),
-            })
-        }
-        _ => Err(AsyncTaskRepositoryError::Invariant),
-    }
-}
-
-const fn state_code(state: TaskState) -> i16 {
-    match state {
-        TaskState::Submitted => 1,
-        TaskState::Queued => 2,
-        TaskState::Running => 3,
-        TaskState::Succeeded => 4,
-        TaskState::Failed => 5,
-    }
-}
-
-fn state_from_code(code: i16) -> Result<TaskState, AsyncTaskRepositoryError> {
-    match code {
-        1 => Ok(TaskState::Submitted),
-        2 => Ok(TaskState::Queued),
-        3 => Ok(TaskState::Running),
-        4 => Ok(TaskState::Succeeded),
-        5 => Ok(TaskState::Failed),
-        _ => Err(AsyncTaskRepositoryError::Invariant),
-    }
-}
-
-const fn failure_kind_code(kind: TaskFailureKind) -> i16 {
-    match kind {
-        TaskFailureKind::Rejected => 1,
-        TaskFailureKind::Cancelled => 2,
-        TaskFailureKind::TimedOut => 3,
-        TaskFailureKind::Upstream => 4,
-    }
-}
-
-fn failure_kind_from_code(code: i16) -> Result<TaskFailureKind, AsyncTaskRepositoryError> {
-    match code {
-        1 => Ok(TaskFailureKind::Rejected),
-        2 => Ok(TaskFailureKind::Cancelled),
-        3 => Ok(TaskFailureKind::TimedOut),
-        4 => Ok(TaskFailureKind::Upstream),
-        _ => Err(AsyncTaskRepositoryError::Invariant),
-    }
 }
 
 fn credential_revision_key(revision: u64) -> String {
