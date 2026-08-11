@@ -161,7 +161,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 78);
+        assert_eq!(document.paths.paths.len(), 79);
         let operation_count = document
             .paths
             .paths
