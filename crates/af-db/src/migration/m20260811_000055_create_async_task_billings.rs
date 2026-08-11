@@ -1,3 +1,4 @@
+use sea_orm::{DbBackend, TransactionTrait};
 use sea_orm_migration::prelude::*;
 
 use super::{
@@ -43,11 +44,11 @@ impl MigrationTrait for Migration {
         if !manager.has_table("async_task_billings").await? {
             create_async_task_billings(manager).await?;
         }
-        rebuild_usage_logs_for_per_call(manager, true).await
+        rebuild_usage_logs(manager, true).await
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-        rebuild_usage_logs_for_per_call(manager, false).await?;
+        rebuild_usage_logs(manager, false).await?;
         if manager.has_table("async_task_billings").await? {
             manager
                 .drop_table(Table::drop().table(async_task_billings::Entity).to_owned())
@@ -67,5 +68,29 @@ impl MigrationTrait for Migration {
                 .await?;
         }
         Ok(())
+    }
+}
+
+async fn rebuild_usage_logs(
+    manager: &SchemaManager<'_>,
+    allow_per_call: bool,
+) -> Result<(), DbErr> {
+    if manager.get_database_backend() != DbBackend::Sqlite {
+        return rebuild_usage_logs_for_per_call(manager, allow_per_call).await;
+    }
+
+    // SQLite 文件库允许多连接时，整段表重建必须固定在同一事务连接内。
+    let transaction = manager.get_connection().begin().await?;
+    let result = {
+        let transactional_manager = SchemaManager::new(&transaction);
+        rebuild_usage_logs_for_per_call(&transactional_manager, allow_per_call).await
+    };
+    match result {
+        Ok(()) => transaction.commit().await,
+        Err(error) => {
+            // 回滚错误不能覆盖更有诊断价值的原始迁移错误。
+            let _ = transaction.rollback().await;
+            Err(error)
+        }
     }
 }
