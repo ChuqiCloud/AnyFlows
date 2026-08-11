@@ -10481,7 +10481,8 @@
                   "openai",
                   "anthropic",
                   "gemini",
-                  "jina"
+                  "jina",
+                  "cohere"
                 ]
               }
             ],
@@ -10499,6 +10500,7 @@
                   "openai_audio",
                   "openai_speech",
                   "jina_rerank",
+                  "cohere_rerank",
                   "anthropic",
                   "gemini"
                 ]
@@ -10714,6 +10716,7 @@
           "openai_audio",
           "openai_speech",
           "jina_rerank",
+          "cohere_rerank",
           "anthropic",
           "gemini"
         ]
@@ -10725,6 +10728,7 @@
           "anthropic",
           "gemini",
           "jina",
+          "cohere",
           "bedrock",
           "vertex",
           "custom"
@@ -10760,7 +10764,8 @@
               "openai",
               "anthropic",
               "gemini",
-              "jina"
+              "jina",
+              "cohere"
             ]
           },
           "protocol": {
@@ -10773,6 +10778,7 @@
               "openai_audio",
               "openai_speech",
               "jina_rerank",
+              "cohere_rerank",
               "anthropic",
               "gemini"
             ]
@@ -16566,7 +16572,7 @@
             "items": {
               "$ref": "#/components/schemas/ModelCatalogProtocol"
             },
-            "maxItems": 9
+            "maxItems": 10
           }
         },
         "additionalProperties": false
@@ -16626,6 +16632,7 @@
           "openai_audio",
           "openai_speech",
           "jina_rerank",
+          "cohere_rerank",
           "anthropic",
           "gemini"
         ]
