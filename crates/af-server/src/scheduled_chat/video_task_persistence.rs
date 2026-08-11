@@ -323,7 +323,7 @@ impl PersistentVideoTaskCoordinator {
                 attempt_id,
                 now()?,
             )
-            .map_err(Into::into)
+            .map_err(PersistentVideoTaskError::from)
         };
         match self.submissions.begin(command()?).await {
             Ok(outcome) => mutation_record(outcome),

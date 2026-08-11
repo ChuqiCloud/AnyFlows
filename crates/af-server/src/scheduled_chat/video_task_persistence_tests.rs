@@ -8,9 +8,7 @@ use std::{
     time::Duration,
 };
 
-use af_db::{
-    AsyncTaskRepository, AsyncTaskSubmissionRepository, DatabaseOptions, MigrationOptions,
-};
+use af_db::{AsyncTaskRepository, AsyncTaskSubmissionRepository};
 use af_domain::{
     AfError, AsyncTaskBindingFingerprint, AsyncTaskId, AsyncTaskRequestId, ChannelId, CredentialId,
     GatewayPrincipal, GroupId, TaskProgress, TaskStatus, TokenId, UpstreamTaskId,
@@ -20,7 +18,9 @@ use af_protocol::{
     VideoResolution,
 };
 use af_relay::VideoTaskSubmissionDisposition;
-use sea_orm::{ConnectionTrait, DbBackend, Statement};
+use sea_orm::{ConnectionTrait, DatabaseConnection};
+
+use crate::test_database::SqliteTestDatabase;
 
 use super::*;
 
@@ -91,7 +91,7 @@ async fn definite_failure_releases_claim_and_success_replay_does_not_resubmit()
     assert_eq!(poll.status(), task.status());
     assert_eq!(runtime.poll_count(), 1);
 
-    fixture.pool.close().await?;
+    fixture.database.close().await;
     Ok(())
 }
 
@@ -132,7 +132,7 @@ async fn unknown_submission_stays_claimed_by_original_attempt_and_never_resubmit
         .expect("结果未知 claim 必须保留");
     assert_eq!(claim.state(), af_db::AsyncTaskSubmissionState::Submitting);
 
-    fixture.pool.close().await?;
+    fixture.database.close().await;
     Ok(())
 }
 
@@ -204,7 +204,7 @@ impl PersistentVideoTaskRuntime for MockRuntime {
 }
 
 struct Fixture {
-    pool: af_db::DatabasePool,
+    database: SqliteTestDatabase,
     tasks: AsyncTaskRepository,
     submissions: AsyncTaskSubmissionRepository,
     principal: GatewayPrincipal,
@@ -213,25 +213,21 @@ struct Fixture {
 }
 
 async fn fixture() -> Result<Fixture, Box<dyn Error>> {
-    let pool = af_db::connect_and_migrate(
-        &DatabaseOptions::new("sqlite::memory:")?,
-        MigrationOptions::default(),
-    )
-    .await?;
+    let database = SqliteTestDatabase::new("video-persistence").await;
     let group_id = insert(
-        &pool,
+        database.seed(),
         "INSERT INTO groups (name, display_name, flags) VALUES ('video-persistence', '视频持久化测试', '{}')",
     )
     .await?;
     let user_id = insert(
-        &pool,
+        database.seed(),
         format!(
             "INSERT INTO users (username, default_group_id, aff_code, settings) VALUES ('video-persistence', {group_id}, 'video-persistence-aff', '{{}}')"
         ),
     )
     .await?;
     let token_id = insert(
-        &pool,
+        database.seed(),
         format!(
             "INSERT INTO tokens (user_id, key_hash, key_prefix, name, group_id) VALUES ({user_id}, '{}', 'sk-video-persistence', '视频持久化令牌', {group_id})",
             "ab".repeat(32),
@@ -239,21 +235,24 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
     )
     .await?;
     let channel_id = insert(
-        &pool,
+        database.seed(),
         "INSERT INTO channels (name, \"type\", protocol, model_mapping, param_override, header_override, settings) VALUES ('视频持久化渠道', 'xai', 'xai_video', '{}', '{}', '{}', '{}')",
     )
     .await?;
     let credential_id = insert(
-        &pool,
+        database.seed(),
         format!(
             "INSERT INTO credentials (channel_id, kind, secret) VALUES ({channel_id}, 'api_key', '{{}}')"
         ),
     )
     .await?;
     Ok(Fixture {
-        tasks: AsyncTaskRepository::new(pool.clone(), Duration::from_secs(5))?,
-        submissions: AsyncTaskSubmissionRepository::new(pool.clone(), Duration::from_secs(5))?,
-        pool,
+        tasks: AsyncTaskRepository::new(database.pool().clone(), Duration::from_secs(5))?,
+        submissions: AsyncTaskSubmissionRepository::new(
+            database.pool().clone(),
+            Duration::from_secs(5),
+        )?,
+        database,
         principal: GatewayPrincipal::new(
             TokenId::new(token_id)?,
             af_domain::UserId::new(user_id)?,
@@ -264,11 +263,12 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
     })
 }
 
-async fn insert(pool: &af_db::DatabasePool, sql: impl Into<String>) -> Result<i64, sea_orm::DbErr> {
-    let result = pool
-        .connection()
-        .execute(Statement::from_string(DbBackend::Sqlite, sql.into()))
-        .await?;
+async fn insert(
+    connection: &DatabaseConnection,
+    sql: impl Into<String>,
+) -> Result<i64, sea_orm::DbErr> {
+    let sql = sql.into();
+    let result = connection.execute_unprepared(&sql).await?;
     Ok(i64::try_from(result.last_insert_id()).expect("SQLite 测试标识必须适配 i64"))
 }
 

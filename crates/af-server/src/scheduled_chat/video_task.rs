@@ -536,11 +536,11 @@ impl ScheduledChatService {
             }
         }
         if candidates.is_empty() {
-            return Err(if health_filtered {
-                af_domain::UpstreamError::overloaded().into()
+            return Err(AfError::from(if health_filtered {
+                af_domain::UpstreamError::overloaded()
             } else {
-                af_domain::UpstreamError::ModelUnsupported.into()
-            }
+                af_domain::UpstreamError::ModelUnsupported
+            })
             .into());
         }
 
@@ -798,8 +798,7 @@ mod tests {
     use af_db::{
         AsyncTaskRepository, AsyncTaskSubmissionRepository, ChannelModelMappings,
         ChannelParameterOverrides, CredentialProxyScheme, CredentialStateRepository,
-        DatabaseOptions, EncryptedCredentialEnvelope, MigrationOptions,
-        SchedulerRuntimeProxyRecord, connect_and_migrate,
+        EncryptedCredentialEnvelope, SchedulerRuntimeProxyRecord,
     };
     use af_domain::{
         AsyncTaskId, AsyncTaskRequestId, ChannelType, CredentialKind, GatewayPrincipal, ProxyId,
@@ -816,8 +815,10 @@ mod tests {
         XChaCha20Poly1305, XNonce,
         aead::{Aead as _, KeyInit as _, Payload},
     };
-    use sea_orm::{ConnectionTrait, DbBackend, Statement};
+    use sea_orm::ConnectionTrait;
     use serde_json::json;
+
+    use crate::test_database::SqliteTestDatabase;
 
     use super::*;
 
@@ -855,12 +856,13 @@ mod tests {
         ];
         let (proxy_address, proxy_server) = spawn_proxy(steps);
         let source = MutableSource::new(vec![runtime_record(proxy_address, 0x31, 0x32)]);
-        let (service, pool, principal) = service(source).await;
+        let (service, database, principal) = service(source).await;
         let coordinator =
             crate::scheduled_chat::video_task_persistence::PersistentVideoTaskCoordinator::new(
                 service,
-                AsyncTaskRepository::new(pool.clone(), Duration::from_secs(5)).unwrap(),
-                AsyncTaskSubmissionRepository::new(pool.clone(), Duration::from_secs(5)).unwrap(),
+                AsyncTaskRepository::new(database.pool().clone(), Duration::from_secs(5)).unwrap(),
+                AsyncTaskSubmissionRepository::new(database.pool().clone(), Duration::from_secs(5))
+                    .unwrap(),
             );
 
         let submitted = coordinator
@@ -907,7 +909,7 @@ mod tests {
             assert!(!debug.contains(secret));
         }
         proxy_server.join().unwrap();
-        pool.close().await.unwrap();
+        database.close().await;
     }
 
     #[tokio::test]
@@ -924,7 +926,7 @@ mod tests {
             0x32,
             "private-key-second",
         )]);
-        let (service, pool, _) = service(source.clone()).await;
+        let (service, database, _) = service(source.clone()).await;
         let submitted = service
             .submit_video_task(
                 GroupId::new(GROUP_ID).unwrap(),
@@ -949,31 +951,26 @@ mod tests {
                 .await,
             Err(AfError::Internal)
         );
-        pool.close().await.unwrap();
+        database.close().await;
     }
 
     async fn service(
         source: MutableSource,
-    ) -> (ScheduledChatService, af_db::DatabasePool, GatewayPrincipal) {
+    ) -> (ScheduledChatService, SqliteTestDatabase, GatewayPrincipal) {
         let index = InMemoryChannelIndex::load(Arc::new(source)).await.unwrap();
         let settings = encryption_settings();
-        let pool = connect_and_migrate(
-            &DatabaseOptions::new("sqlite::memory:").unwrap(),
-            MigrationOptions::default(),
-        )
-        .await
-        .unwrap();
-        seed_persistence_rows(&pool).await;
+        let database = SqliteTestDatabase::new("video-runtime").await;
+        seed_persistence_rows(&database).await;
         let service = ScheduledChatService::new(
             IndexedWeightedScheduler::new(index),
             CredentialDecryptor::new(&settings).unwrap(),
             HttpClientProvider::new(HttpClientConfig::default(), 4).unwrap(),
-            CredentialStateRepository::new(pool.clone()),
+            CredentialStateRepository::new(database.pool().clone()),
         )
         .with_proxy_cipher(SystemSecretCipher::new(&settings).unwrap());
         (
             service,
-            pool,
+            database,
             GatewayPrincipal::new(
                 TokenId::new(TOKEN_ID).unwrap(),
                 UserId::new(USER_ID).unwrap(),
@@ -982,7 +979,7 @@ mod tests {
         )
     }
 
-    async fn seed_persistence_rows(pool: &af_db::DatabasePool) {
+    async fn seed_persistence_rows(database: &SqliteTestDatabase) {
         for sql in [
             format!(
                 "INSERT INTO groups (id, name, display_name, flags) VALUES ({GROUP_ID}, 'video-runtime', '视频运行时测试', '{{}}')"
@@ -1004,10 +1001,7 @@ mod tests {
                 "INSERT INTO credentials (id, channel_id, kind, secret) VALUES ({SECOND_CREDENTIAL_ID}, {CHANNEL_ID}, 'api_key', '{{}}')"
             ),
         ] {
-            pool.connection()
-                .execute(Statement::from_string(DbBackend::Sqlite, sql))
-                .await
-                .unwrap();
+            database.seed().execute_unprepared(&sql).await.unwrap();
         }
     }
 

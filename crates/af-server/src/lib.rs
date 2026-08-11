@@ -37,6 +37,8 @@ mod smtp_delivery;
 mod sticky_session;
 mod stripe_payment_intent;
 mod supervisor;
+#[cfg(test)]
+mod test_database;
 mod token_request_admission;
 mod utc_time;
 
