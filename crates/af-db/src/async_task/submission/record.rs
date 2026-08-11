@@ -17,7 +17,7 @@ use crate::{
 
 use super::types::{
     AsyncTaskSubmissionClaim, AsyncTaskSubmissionClaimOutcome, AsyncTaskSubmissionRecord,
-    AsyncTaskSubmissionState,
+    AsyncTaskSubmissionState, AsyncTaskVideoResolution,
 };
 use crate::async_task::status::status_from_persistence;
 
@@ -197,6 +197,13 @@ pub(super) fn claim_record(
         .map(u64::try_from)
         .transpose()
         .map_err(|_| AsyncTaskRepositoryError::Invariant)?;
+    let video_resolution = model
+        .video_resolution
+        .map(|value| {
+            AsyncTaskVideoResolution::from_database(value)
+                .ok_or(AsyncTaskRepositoryError::Invariant)
+        })
+        .transpose()?;
     let status = match (model.status, model.progress_basis_points) {
         (Some(status), Some(progress)) => Some(status_from_persistence(
             status,
@@ -234,6 +241,7 @@ pub(super) fn claim_record(
             && upstream_task_id.is_none()
             && binding_fingerprint.is_none()
             && attempt_timeout_millis.is_none()
+            && video_resolution.is_none()
             && status.is_none()
             && accepted_at.is_none());
     if model.id <= 0
@@ -263,6 +271,7 @@ pub(super) fn claim_record(
         upstream_task_id,
         binding_fingerprint,
         attempt_timeout_millis,
+        video_resolution,
         status,
         version,
         accepted_at,

@@ -230,7 +230,7 @@ pub use async_task::{
     AsyncTaskSubmissionAccept, AsyncTaskSubmissionBegin, AsyncTaskSubmissionClaim,
     AsyncTaskSubmissionClaimOutcome, AsyncTaskSubmissionMutationOutcome, AsyncTaskSubmissionRecord,
     AsyncTaskSubmissionRelease, AsyncTaskSubmissionRepository, AsyncTaskSubmissionState,
-    AsyncTaskTransition, AsyncTaskTransitionOutcome,
+    AsyncTaskTransition, AsyncTaskTransitionOutcome, AsyncTaskVideoResolution,
 };
 pub use auth::{
     TokenAuthLookup, TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,
@@ -452,7 +452,8 @@ pub use topup::{
 };
 pub use usage_log::{
     UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics,
-    UsageLogSource, UsageLogUsage, UsageLogWrite, UsageLogWriteError, UsageLogWriteOutcome,
+    UsageLogSource, UsageLogUsage, UsageLogVideoResolution, UsageLogWrite, UsageLogWriteError,
+    UsageLogWriteOutcome,
 };
 pub use user_profile::{
     MAX_USER_PROFILE_USERNAME_BYTES, UserNotificationPreferencesRecord, UserPasswordChangeOutcome,

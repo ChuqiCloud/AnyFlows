@@ -5,8 +5,8 @@ use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set, entity::prelud
 
 use crate::{
     DatabaseOptions, MigrationOptions, UsageLogBillingMode, UsageLogRepository,
-    UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogWrite,
-    UsageLogWriteError, UsageLogWriteOutcome,
+    UsageLogRepositoryError, UsageLogSemantics, UsageLogSource, UsageLogUsage,
+    UsageLogVideoResolution, UsageLogWrite, UsageLogWriteError, UsageLogWriteOutcome,
     entity::{TokenHash, groups, tokens, usage_logs, users},
 };
 
@@ -97,6 +97,32 @@ fn usage_log_audio_duration_keeps_missing_distinct_and_rejects_invalid_values() 
         write.with_audio_duration_nanoseconds(Some(-1)),
         Err(UsageLogWriteError::InvalidAudioDuration)
     );
+}
+
+#[test]
+fn usage_log_video_dimensions_keep_missing_distinct_and_reject_invalid_duration() {
+    let principal = GatewayPrincipal::new(
+        TokenId::new(1).unwrap(),
+        UserId::new(2).unwrap(),
+        GroupId::new(3).unwrap(),
+    );
+    let write = usage_write(principal, 10, 1)
+        .with_video_dimensions(Some(8), Some(UsageLogVideoResolution::P720))
+        .unwrap();
+    assert_eq!(write.video_duration_seconds(), Some(8));
+    assert_eq!(
+        write.video_resolution(),
+        Some(UsageLogVideoResolution::P720)
+    );
+    assert_eq!(
+        usage_write(principal, 11, 1).with_video_dimensions(Some(0), None),
+        Err(UsageLogWriteError::InvalidVideoDuration)
+    );
+    let missing = usage_write(principal, 12, 1)
+        .with_video_dimensions(None, None)
+        .unwrap();
+    assert_eq!(missing.video_duration_seconds(), None);
+    assert_eq!(missing.video_resolution(), None);
 }
 
 async fn create_principal(

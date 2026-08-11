@@ -1793,7 +1793,7 @@
   },
   "usageLogs": {
     "title": "Usage logs",
-    "subtitle": "Inspect confirmed token usage, billed quota, and measurement sources.",
+    "subtitle": "Inspect confirmed usage, media dimensions, billed quota, and measurement sources.",
     "count": "{{count}} records on this page",
     "page": "Page {{page}}",
     "loading": "Loading usage logs",
@@ -1814,6 +1814,8 @@
       "cacheCreate": "Cache create 5m {{five}} / 1h {{hour}}",
       "reasoningAudio": "Reasoning {{reasoning}} / Audio {{audio}}",
       "audioDuration": "Audio duration {{value}}s",
+      "videoDuration": "{{value}}s",
+      "videoResolution": "{{value}}",
       "quotaSemantics": "Quota {{quota}} / {{semantics}}",
       "billingMode": {
         "per_token": "Per token",

@@ -886,6 +886,8 @@ export type AdminUsageLog = {
     audio_input_tokens: number;
     audio_output_tokens: number;
     audio_duration_nanoseconds: number | null;
+    video_duration_seconds: number | null;
+    video_resolution: null | AdminUsageLogVideoResolution;
     usage_source: AdminUsageLogSource;
     usage_semantics: AdminUsageLogSemantics;
     quota: number;
@@ -898,6 +900,7 @@ export type AdminUsageLogListResponse = {
 };
 export type AdminUsageLogSemantics = 'inclusive' | 'cache_separated';
 export type AdminUsageLogSource = 'upstream' | 'estimated';
+export type AdminUsageLogVideoResolution = '480p' | '720p' | '1080p';
 export type AdminUser = {
     id: number;
     username: string;

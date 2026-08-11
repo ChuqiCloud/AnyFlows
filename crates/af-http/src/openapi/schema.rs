@@ -500,6 +500,18 @@ pub(crate) enum AdminUsageLogBillingModeSchema {
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
 #[derive(ToSchema)]
+#[schema(as = AdminUsageLogVideoResolution)]
+pub(crate) enum AdminUsageLogVideoResolutionSchema {
+    #[schema(rename = "480p")]
+    P480,
+    #[schema(rename = "720p")]
+    P720,
+    #[schema(rename = "1080p")]
+    P1080,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
 #[schema(as = ModelCatalogBillingMode, rename_all = "snake_case")]
 pub(crate) enum ModelCatalogBillingModeSchema {
     PerToken,

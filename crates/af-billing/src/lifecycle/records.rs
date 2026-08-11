@@ -1,7 +1,7 @@
 use std::fmt;
 
 use af_domain::{BillingReservationId, GatewayPrincipal, Quota};
-use af_protocol::{AudioDuration, Usage};
+use af_protocol::{AudioDuration, Usage, VideoDuration, VideoResolution};
 
 use crate::BillingMode;
 
@@ -9,6 +9,8 @@ use crate::BillingMode;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct BillingUsageDimensions {
     audio_duration: Option<AudioDuration>,
+    video_duration: Option<VideoDuration>,
+    video_resolution: Option<VideoResolution>,
 }
 
 impl BillingUsageDimensions {
@@ -17,6 +19,8 @@ impl BillingUsageDimensions {
     pub const fn empty() -> Self {
         Self {
             audio_duration: None,
+            video_duration: None,
+            video_resolution: None,
         }
     }
 
@@ -25,6 +29,23 @@ impl BillingUsageDimensions {
     pub const fn with_audio_duration(audio_duration: AudioDuration) -> Self {
         Self {
             audio_duration: Some(audio_duration),
+            video_duration: None,
+            video_resolution: None,
+        }
+    }
+
+    /// 构造来自视频成功终态的真实时长和请求明确携带的分辨率。
+    ///
+    /// 分辨率缺失表示请求交由上游选择默认值，调用方不得在审计层猜测具体档位。
+    #[must_use]
+    pub const fn with_video(
+        video_duration: VideoDuration,
+        video_resolution: Option<VideoResolution>,
+    ) -> Self {
+        Self {
+            audio_duration: None,
+            video_duration: Some(video_duration),
+            video_resolution,
         }
     }
 
@@ -32,6 +53,18 @@ impl BillingUsageDimensions {
     #[must_use]
     pub const fn audio_duration(self) -> Option<AudioDuration> {
         self.audio_duration
+    }
+
+    /// 返回可选的视频真实时长；只有成功终态返回可信输出时才存在。
+    #[must_use]
+    pub const fn video_duration(self) -> Option<VideoDuration> {
+        self.video_duration
+    }
+
+    /// 返回请求明确携带的视频分辨率；缺失时保持 `None`。
+    #[must_use]
+    pub const fn video_resolution(self) -> Option<VideoResolution> {
+        self.video_resolution
     }
 }
 

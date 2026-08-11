@@ -247,6 +247,7 @@ async fn claim_in_transaction(
         upstream_task_id: Set(None),
         binding_fingerprint: Set(None),
         attempt_timeout_millis: Set(None),
+        video_resolution: Set(None),
         status: Set(None),
         progress_basis_points: Set(None),
         failure_kind: Set(None),
@@ -466,6 +467,10 @@ async fn accept_in_transaction(
         .col_expr(
             async_task_submission_claims::Column::AttemptTimeoutMillis,
             Expr::value(Some(write.attempt_timeout_millis)),
+        )
+        .col_expr(
+            async_task_submission_claims::Column::VideoResolution,
+            Expr::value(write.video_resolution.map(|value| value.database_value())),
         )
         .col_expr(
             async_task_submission_claims::Column::Status,

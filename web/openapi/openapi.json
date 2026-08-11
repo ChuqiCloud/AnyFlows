@@ -15464,6 +15464,8 @@
           "audio_input_tokens",
           "audio_output_tokens",
           "audio_duration_nanoseconds",
+          "video_duration_seconds",
+          "video_resolution",
           "usage_source",
           "usage_semantics",
           "quota",
@@ -15550,6 +15552,27 @@
             "maximum": 86400000000000,
             "minimum": 0
           },
+          "video_duration_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "视频成功终态返回的真实时长秒数；非视频或缺少可信事实时为 null。",
+            "maximum": 86400,
+            "minimum": 1
+          },
+          "video_resolution": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminUsageLogVideoResolution"
+              }
+            ],
+            "description": "请求明确携带的视频分辨率；交由上游选择默认值时为 null。"
+          },
           "usage_source": {
             "$ref": "#/components/schemas/AdminUsageLogSource"
           },
@@ -15614,6 +15637,14 @@
         "enum": [
           "upstream",
           "estimated"
+        ]
+      },
+      "AdminUsageLogVideoResolution": {
+        "type": "string",
+        "enum": [
+          "480p",
+          "720p",
+          "1080p"
         ]
       },
       "AdminUser": {
