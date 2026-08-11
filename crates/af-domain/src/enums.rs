@@ -150,6 +150,8 @@ string_enum! {
         OpenAiAudio => "openai_audio",
         /// OpenAI Audio 非 SSE 文本转语音协议。
         OpenAiSpeech => "openai_speech",
+        /// Jina 原生 Rerank 协议。
+        JinaRerank => "jina_rerank",
         /// Anthropic Messages 协议。
         Anthropic => "anthropic",
         /// Gemini generateContent 协议。
@@ -218,6 +220,8 @@ string_enum! {
         Bedrock => "bedrock",
         /// Google Vertex AI。
         Vertex => "vertex",
+        /// Jina AI 原生 API。
+        Jina => "jina",
         /// 配置驱动的自定义适配器。
         Custom => "custom",
     }

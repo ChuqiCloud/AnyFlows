@@ -11,6 +11,7 @@ mod gemini;
 mod gemini_request;
 mod gemini_stream;
 mod generation_stream;
+mod jina_rerank;
 mod openai_audio;
 mod openai_chat;
 mod openai_chat_request;
@@ -39,6 +40,10 @@ pub use gemini_request::{GeminiRequestOverrideError, GeminiRequestOverrides};
 pub use gemini_stream::GeminiGenerateContentStream;
 pub use generation_stream::{
     GenerationCompletionFuture, GenerationCompletionHook, GenerationStream,
+};
+pub use jina_rerank::{
+    JinaRerankResponse, RelayJinaRerankOutcome, build_jina_rerank_candidate_request,
+    relay_jina_rerank, relay_jina_rerank_with_report,
 };
 pub use openai_audio::{
     AudioTranscriptionResponse, MAX_AUDIO_MULTIPART_BODY_BYTES, RelayOpenAiAudioOutcome,

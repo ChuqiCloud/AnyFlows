@@ -11,6 +11,7 @@ mod custom;
 mod error;
 mod factory;
 mod gemini;
+mod jina;
 mod openai;
 mod request;
 mod responses_websocket_pool;
@@ -37,9 +38,11 @@ pub use custom::{
 pub use error::{AdaptorError, AdaptorResult, AdaptorTransportError};
 pub use factory::{
     AdaptorSettings, AnthropicAdaptorSettings, BedrockAdaptorSettings, CustomAdaptorSettings,
-    GeminiAdaptorSettings, OpenAiAdaptorSettings, VertexAdaptorSettings, get_adaptor,
+    GeminiAdaptorSettings, JinaAdaptorSettings, OpenAiAdaptorSettings, VertexAdaptorSettings,
+    get_adaptor,
 };
 pub use gemini::GeminiAdaptor;
+pub use jina::JinaAdaptor;
 pub use openai::OpenAiAdaptor;
 pub use request::{
     MAX_UPSTREAM_REQUEST_BODY_BYTES, MAX_UPSTREAM_REQUEST_HEADER_COUNT,

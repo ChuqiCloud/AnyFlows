@@ -342,7 +342,8 @@ fn validate_downstream_request(
         | Protocol::OpenAiEmbeddings
         | Protocol::OpenAiImages
         | Protocol::OpenAiAudio
-        | Protocol::OpenAiSpeech => Err(AfError::Internal),
+        | Protocol::OpenAiSpeech
+        | Protocol::JinaRerank => Err(AfError::Internal),
     }
 }
 

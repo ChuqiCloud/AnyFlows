@@ -117,7 +117,10 @@ impl DatabaseUpstreamModelDiscoverer {
             ChannelType::Gemini => {
                 discover_gemini(&*adaptor, &context, &headers, &reverse_mappings).await?
             }
-            ChannelType::Bedrock | ChannelType::Vertex | ChannelType::Custom => {
+            ChannelType::Bedrock
+            | ChannelType::Vertex
+            | ChannelType::Jina
+            | ChannelType::Custom => {
                 return Err(UpstreamModelDiscoveryError::UnsupportedChannel);
             }
         };

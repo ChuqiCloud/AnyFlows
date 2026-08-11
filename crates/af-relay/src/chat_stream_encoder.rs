@@ -75,7 +75,8 @@ impl ChatStreamEncoder {
             | Protocol::OpenAiEmbeddings
             | Protocol::OpenAiImages
             | Protocol::OpenAiAudio
-            | Protocol::OpenAiSpeech => Err(AfError::Internal),
+            | Protocol::OpenAiSpeech
+            | Protocol::JinaRerank => Err(AfError::Internal),
         }
     }
 

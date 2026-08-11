@@ -4,7 +4,7 @@ use af_domain::{ChannelType, Protocol};
 
 use crate::{
     Adaptor, AdaptorError, AdaptorResult, AnthropicAdaptor, BedrockAdaptor, CustomAdaptor,
-    CustomAuthentication, CustomEndpointTemplate, CustomStreamEndpoint, GeminiAdaptor,
+    CustomAuthentication, CustomEndpointTemplate, CustomStreamEndpoint, GeminiAdaptor, JinaAdaptor,
     OpenAiAdaptor, VertexAdaptor,
 };
 
@@ -120,6 +120,35 @@ impl fmt::Debug for GeminiAdaptorSettings {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("GeminiAdaptorSettings")
+            .field("supported_model_count", &self.supported_models.len())
+            .finish()
+    }
+}
+
+/// Jina 原生 Rerank 适配器的强类型构造配置。
+///
+/// 模型清单由上层配置边界校验；基础地址与凭据继续由每次请求的受控上下文提供。
+#[derive(Clone, Eq, PartialEq)]
+pub struct JinaAdaptorSettings {
+    supported_models: Vec<String>,
+}
+
+impl JinaAdaptorSettings {
+    /// 使用已校验的模型清单创建 Jina 配置；空清单表示无内建模型限制。
+    #[must_use]
+    pub fn new(supported_models: Vec<String>) -> Self {
+        Self { supported_models }
+    }
+
+    fn into_supported_models(self) -> Vec<String> {
+        self.supported_models
+    }
+}
+
+impl fmt::Debug for JinaAdaptorSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("JinaAdaptorSettings")
             .field("supported_model_count", &self.supported_models.len())
             .finish()
     }
@@ -284,6 +313,8 @@ pub enum AdaptorSettings {
     Anthropic(AnthropicAdaptorSettings),
     /// Gemini Developer API 官方及原生协议兼容渠道配置。
     Gemini(GeminiAdaptorSettings),
+    /// Jina 原生 Rerank 渠道配置。
+    Jina(JinaAdaptorSettings),
     /// Amazon Bedrock Runtime SigV4 渠道配置。
     Bedrock(BedrockAdaptorSettings),
     /// Google Vertex AI Google Publisher/Gemini 渠道配置。
@@ -305,6 +336,10 @@ impl fmt::Debug for AdaptorSettings {
                 .finish(),
             Self::Gemini(settings) => formatter
                 .debug_tuple("AdaptorSettings::Gemini")
+                .field(settings)
+                .finish(),
+            Self::Jina(settings) => formatter
+                .debug_tuple("AdaptorSettings::Jina")
                 .field(settings)
                 .finish(),
             Self::Bedrock(settings) => formatter
@@ -344,6 +379,9 @@ pub fn get_adaptor(
         (ChannelType::Gemini, AdaptorSettings::Gemini(settings)) => Ok(Arc::new(
             GeminiAdaptor::with_supported_models(settings.into_supported_models()),
         )),
+        (ChannelType::Jina, AdaptorSettings::Jina(settings)) => Ok(Arc::new(
+            JinaAdaptor::with_supported_models(settings.into_supported_models()),
+        )),
         (ChannelType::Bedrock, AdaptorSettings::Bedrock(settings)) => {
             let (region, models) = settings.into_parts();
             Ok(Arc::new(BedrockAdaptor::with_supported_models(
@@ -373,6 +411,7 @@ pub fn get_adaptor(
             | ChannelType::Gemini
             | ChannelType::Bedrock
             | ChannelType::Vertex
+            | ChannelType::Jina
             | ChannelType::Custom),
             _,
         ) => Err(AdaptorError::InvalidChannelSettings { channel_type }),
@@ -401,6 +440,12 @@ mod tests {
 
     fn gemini_settings(models: &[&str]) -> AdaptorSettings {
         AdaptorSettings::Gemini(GeminiAdaptorSettings::new(
+            models.iter().map(|model| (*model).to_owned()).collect(),
+        ))
+    }
+
+    fn jina_settings(models: &[&str]) -> AdaptorSettings {
+        AdaptorSettings::Jina(JinaAdaptorSettings::new(
             models.iter().map(|model| (*model).to_owned()).collect(),
         ))
     }
@@ -523,6 +568,28 @@ mod tests {
     }
 
     #[test]
+    fn factory_builds_configured_isolated_jina_instances() {
+        let unrestricted = get_adaptor(ChannelType::Jina, jina_settings(&[])).unwrap();
+        assert!(unrestricted.supported_models().is_empty());
+
+        let configured_settings = jina_settings(&["private-reranker-a", "private-reranker-b"]);
+        let settings_debug = format!("{configured_settings:?}");
+        assert!(settings_debug.contains("supported_model_count: 2"));
+        assert!(!settings_debug.contains("private-reranker-a"));
+        assert!(!settings_debug.contains("private-reranker-b"));
+
+        let configured = get_adaptor(ChannelType::Jina, configured_settings).unwrap();
+        assert!(!Arc::ptr_eq(&unrestricted, &configured));
+        assert_eq!(configured.channel_type(), ChannelType::Jina);
+        assert_eq!(configured.default_protocol(), Protocol::JinaRerank);
+        assert_eq!(configured.default_base_url(), JinaAdaptor::DEFAULT_BASE_URL);
+        assert_eq!(
+            configured.supported_models(),
+            ["private-reranker-a", "private-reranker-b"]
+        );
+    }
+
+    #[test]
     fn factory_builds_configured_isolated_bedrock_instances() {
         let unrestricted =
             get_adaptor(ChannelType::Bedrock, bedrock_settings("us-east-1", &[])).unwrap();
@@ -639,6 +706,10 @@ mod tests {
                 gemini_settings(&["private-gemini-model-for-bedrock"]),
             ),
             (
+                ChannelType::Jina,
+                openai_settings(&["private-openai-model-for-jina"]),
+            ),
+            (
                 ChannelType::Vertex,
                 bedrock_settings("us-east-1", &["private-bedrock-model-for-vertex"]),
             ),
@@ -661,6 +732,7 @@ mod tests {
             assert!(!rendered.contains("private-gemini-model"));
             assert!(!rendered.contains("private-openai-model"));
             assert!(!rendered.contains("private-bedrock-model-for-vertex"));
+            assert!(!rendered.contains("private-openai-model-for-jina"));
             assert!(!rendered.contains("private-openai-model-for-custom"));
             assert!(!rendered.contains("private-custom-model-for-openai"));
         }
@@ -668,7 +740,8 @@ mod tests {
 
     #[test]
     fn factory_channel_enum_has_no_unimplemented_placeholders() {
-        assert_eq!(ChannelType::ALL.len(), 6);
+        assert_eq!(ChannelType::ALL.len(), 7);
+        assert!(ChannelType::ALL.contains(&ChannelType::Jina));
         assert!(ChannelType::ALL.contains(&ChannelType::Custom));
     }
 
