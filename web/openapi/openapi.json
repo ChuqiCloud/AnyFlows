@@ -15568,10 +15568,10 @@
                 "type": "null"
               },
               {
-                "$ref": "#/components/schemas/AdminUsageLogVideoResolution"
+                "$ref": "#/components/schemas/AdminUsageLogVideoResolution",
+                "description": "请求明确携带的视频分辨率；交由上游选择默认值时为 null。"
               }
-            ],
-            "description": "请求明确携带的视频分辨率；交由上游选择默认值时为 null。"
+            ]
           },
           "usage_source": {
             "$ref": "#/components/schemas/AdminUsageLogSource"

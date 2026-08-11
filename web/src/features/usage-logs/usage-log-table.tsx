@@ -79,12 +79,12 @@ function DetailedUsage({ log }: { log: AdminUsageLog }) {
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <Video className="size-3 text-muted-foreground" aria-hidden="true" />
           {log.video_duration_seconds !== null ? (
-            <Badge variant="outline" className="h-5 rounded px-1.5 text-[0.625rem] font-medium">
+            <Badge className="h-5 rounded px-1.5 text-[0.625rem] font-medium">
               {t('usageLogs.values.videoDuration', { value: number(log.video_duration_seconds) })}
             </Badge>
           ) : null}
           {log.video_resolution !== null ? (
-            <Badge variant="outline" className="h-5 rounded px-1.5 text-[0.625rem] font-medium">
+            <Badge className="h-5 rounded px-1.5 text-[0.625rem] font-medium">
               {t('usageLogs.values.videoResolution', { value: log.video_resolution })}
             </Badge>
           ) : null}
