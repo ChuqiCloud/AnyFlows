@@ -243,7 +243,6 @@ version = "0.1.0"
 dependencies = [
  "af-adapter",
  "af-domain",
- "af-httpclient",
  "af-protocol",
  "futures-core",
  "serde_json",

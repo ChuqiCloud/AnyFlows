@@ -405,9 +405,9 @@ pub use scheduler_runtime::{
     MAX_SCHEDULER_RUNTIME_CREDENTIAL_ENTRIES, MAX_SCHEDULER_RUNTIME_CREDENTIALS_PER_CHANNEL,
     MAX_SCHEDULER_RUNTIME_PROJECTION_BYTES, SchedulerRuntimeCredentialRecord,
     SchedulerRuntimeHeader, SchedulerRuntimeProjection, SchedulerRuntimeProjectionError,
-    SchedulerRuntimeRecord, SchedulerRuntimeRepository, SchedulerRuntimeRepositoryError,
-    SchedulerRuntimeTargetRecord, SchedulerRuntimeTargetRecordError,
-    validate_channel_header_overrides,
+    SchedulerRuntimeProxyRecord, SchedulerRuntimeRecord, SchedulerRuntimeRepository,
+    SchedulerRuntimeRepositoryError, SchedulerRuntimeTargetRecord,
+    SchedulerRuntimeTargetRecordError, validate_channel_header_overrides,
 };
 pub use site_settings::{
     SiteSettingsRecord, SiteSettingsRepository, SiteSettingsRepositoryConfigError,

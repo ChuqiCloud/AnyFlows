@@ -76,6 +76,6 @@ pub use xai_video::XaiVideoAdaptor;
 
 pub use af_domain::{ChannelType, CredentialKind, Operation, Protocol};
 pub use af_httpclient::{
-    Bytes, HeaderMap, HeaderName, HeaderValue, Method, PooledClient, PooledClientIdentity,
-    StatusCode,
+    Bytes, HeaderMap, HeaderName, HeaderValue, HttpClientConfig, HttpClientPool, HttpTimeouts,
+    Method, PooledClient, PooledClientIdentity, ProxyConfig, RemoteDnsPolicy, StatusCode,
 };

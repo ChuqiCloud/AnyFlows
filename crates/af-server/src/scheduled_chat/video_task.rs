@@ -1,4 +1,4 @@
-use std::{fmt, future::Future, pin::Pin, sync::Arc, time::Duration};
+use std::{fmt, future::Future, pin::Pin, time::Duration};
 
 use af_adapter::{RelayContext, get_task_adaptor};
 use af_db::{

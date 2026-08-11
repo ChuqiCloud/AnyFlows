@@ -468,8 +468,10 @@ mod tests {
         time::{Duration, Instant},
     };
 
-    use af_adapter::{Credential, XaiVideoAdaptor};
-    use af_httpclient::{HttpClientConfig, HttpClientPool, ProxyConfig, RemoteDnsPolicy};
+    use af_adapter::{
+        Credential, HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy,
+        XaiVideoAdaptor,
+    };
     use af_protocol::{VideoDuration, VideoModel, VideoPrompt, VideoResolution};
 
     use super::*;
@@ -623,7 +625,7 @@ mod tests {
                 .get(
                     &HttpClientConfig::new(
                         ProxyConfig::parse(format!("http://{address}")).unwrap(),
-                        af_httpclient::HttpTimeouts::default(),
+                        HttpTimeouts::default(),
                     )
                     .with_remote_dns_policy(RemoteDnsPolicy::TrustProxy),
                 )

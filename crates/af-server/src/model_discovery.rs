@@ -121,6 +121,7 @@ impl DatabaseUpstreamModelDiscoverer {
             | ChannelType::Vertex
             | ChannelType::Jina
             | ChannelType::Cohere
+            | ChannelType::Xai
             | ChannelType::Custom => {
                 return Err(UpstreamModelDiscoveryError::UnsupportedChannel);
             }
