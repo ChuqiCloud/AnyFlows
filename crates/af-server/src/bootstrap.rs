@@ -1760,6 +1760,7 @@ impl Bootstrap<ListenerReady> {
             responses_compact: _,
             embedding: _,
             image: _,
+            rerank: _,
             audio: _,
             speech: _,
             _channel_index: _,
