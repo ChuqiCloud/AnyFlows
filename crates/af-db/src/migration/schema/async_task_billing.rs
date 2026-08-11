@@ -9,7 +9,8 @@ use super::{table, timestamp};
 pub(in crate::migration) async fn create_async_task_billings(
     manager: &SchemaManager<'_>,
 ) -> Result<(), DbErr> {
-    let statement = table(manager, async_task_billings::Entity)
+    let mut statement = table(manager, async_task_billings::Entity);
+    statement
         .col(
             ColumnDef::new(async_task_billings::Column::TaskKey)
                 .char_len(32)
@@ -87,7 +88,6 @@ pub(in crate::migration) async fn create_async_task_billings(
         )
         .col(timestamp(manager, async_task_billings::Column::CreatedAt))
         .col(timestamp(manager, async_task_billings::Column::UpdatedAt))
-        .check(hex_check(manager.get_database_backend(), "task_key"))
         .check(hex_check(manager.get_database_backend(), "reservation_key"))
         .check(
             Expr::col(async_task_billings::Column::UpdatedAt)
@@ -129,8 +129,11 @@ pub(in crate::migration) async fn create_async_task_billings(
                 .to(groups::Entity, groups::Column::Id)
                 .on_update(ForeignKeyAction::Cascade)
                 .on_delete(ForeignKeyAction::Restrict),
-        )
-        .to_owned();
+        );
+    // MySQL 8.4 禁止 CHECK 引用带级联更新的外键列；实体与仓储仍校验任务键格式。
+    if manager.get_database_backend() != DbBackend::MySql {
+        statement.check(hex_check(manager.get_database_backend(), "task_key"));
+    }
     manager.create_table(statement).await?;
     for index in [
         Index::create()

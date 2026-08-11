@@ -472,10 +472,12 @@ impl Fixture {
             self.submissions.clone(),
             self.billings.clone(),
             self.group_pricing.clone(),
-            Arc::clone(&self.reserve),
-            settlement,
-            Arc::clone(&self.release),
-            Arc::clone(&self.usage),
+            PersistentVideoTaskBillingPorts::new(
+                Arc::clone(&self.reserve),
+                settlement,
+                Arc::clone(&self.release),
+                Arc::clone(&self.usage),
+            ),
         )
     }
 }

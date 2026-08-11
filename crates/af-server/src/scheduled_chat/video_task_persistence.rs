@@ -194,6 +194,31 @@ impl From<AsyncTaskInputError> for PersistentVideoTaskError {
     }
 }
 
+/// 视频任务持久化协调器依赖的计费端口集合。
+pub(crate) struct PersistentVideoTaskBillingPorts {
+    reserve: Arc<dyn TaskBillingReservePort>,
+    settlement: Arc<dyn TaskBillingSettlementPort>,
+    release: Arc<dyn TaskBillingReleaseSink>,
+    usage: Arc<dyn UsageRecordSink>,
+}
+
+impl PersistentVideoTaskBillingPorts {
+    /// 组合预扣、结算、释放与用量持久化端口。
+    pub(crate) fn new(
+        reserve: Arc<dyn TaskBillingReservePort>,
+        settlement: Arc<dyn TaskBillingSettlementPort>,
+        release: Arc<dyn TaskBillingReleaseSink>,
+        usage: Arc<dyn UsageRecordSink>,
+    ) -> Self {
+        Self {
+            reserve,
+            settlement,
+            release,
+            usage,
+        }
+    }
+}
+
 /// 在上游发网前持久化 claim，并在轮询时只恢复原始绑定的协调器。
 pub(crate) struct PersistentVideoTaskCoordinator {
     runtime: Arc<dyn PersistentVideoTaskRuntime>,
@@ -201,10 +226,7 @@ pub(crate) struct PersistentVideoTaskCoordinator {
     submissions: AsyncTaskSubmissionRepository,
     billings: AsyncTaskBillingRepository,
     group_pricing: GroupPricingCache,
-    reserve: Arc<dyn TaskBillingReservePort>,
-    settlement: Arc<dyn TaskBillingSettlementPort>,
-    release: Arc<dyn TaskBillingReleaseSink>,
-    usage: Arc<dyn UsageRecordSink>,
+    billing_ports: PersistentVideoTaskBillingPorts,
 }
 
 impl PersistentVideoTaskCoordinator {
@@ -215,10 +237,7 @@ impl PersistentVideoTaskCoordinator {
         submissions: AsyncTaskSubmissionRepository,
         billings: AsyncTaskBillingRepository,
         group_pricing: GroupPricingCache,
-        reserve: Arc<dyn TaskBillingReservePort>,
-        settlement: Arc<dyn TaskBillingSettlementPort>,
-        release: Arc<dyn TaskBillingReleaseSink>,
-        usage: Arc<dyn UsageRecordSink>,
+        billing_ports: PersistentVideoTaskBillingPorts,
     ) -> Self {
         Self::with_runtime(
             Arc::new(runtime),
@@ -226,10 +245,7 @@ impl PersistentVideoTaskCoordinator {
             submissions,
             billings,
             group_pricing,
-            reserve,
-            settlement,
-            release,
-            usage,
+            billing_ports,
         )
     }
 
@@ -239,10 +255,7 @@ impl PersistentVideoTaskCoordinator {
         submissions: AsyncTaskSubmissionRepository,
         billings: AsyncTaskBillingRepository,
         group_pricing: GroupPricingCache,
-        reserve: Arc<dyn TaskBillingReservePort>,
-        settlement: Arc<dyn TaskBillingSettlementPort>,
-        release: Arc<dyn TaskBillingReleaseSink>,
-        usage: Arc<dyn UsageRecordSink>,
+        billing_ports: PersistentVideoTaskBillingPorts,
     ) -> Self {
         Self {
             runtime,
@@ -250,10 +263,7 @@ impl PersistentVideoTaskCoordinator {
             submissions,
             billings,
             group_pricing,
-            reserve,
-            settlement,
-            release,
-            usage,
+            billing_ports,
         }
     }
 
@@ -292,13 +302,14 @@ impl PersistentVideoTaskCoordinator {
                     .billings
                     .find(claim.principal().user_id(), claim.task_id())
                     .await?
+                    .filter(|billing| {
+                        matches!(
+                            billing.state(),
+                            AsyncTaskBillingState::ReleasePending | AsyncTaskBillingState::Released
+                        )
+                    })
                 {
-                    if matches!(
-                        billing.state(),
-                        AsyncTaskBillingState::ReleasePending | AsyncTaskBillingState::Released
-                    ) {
-                        self.finish_pre_submission_release(&claim, billing).await?;
-                    }
+                    self.finish_pre_submission_release(&claim, billing).await?;
                 }
                 return Err(PersistentVideoTaskError::SubmissionOutcomeUnknown);
             }
@@ -521,7 +532,7 @@ impl PersistentVideoTaskCoordinator {
             billing.upper_bound(),
         )
         .map_err(|_| PersistentVideoTaskError::Billing)?;
-        plan.reserve(self.reserve.as_ref())
+        plan.reserve(self.billing_ports.reserve.as_ref())
             .await
             .map_err(|_| PersistentVideoTaskError::Billing)?;
         let command = || {
@@ -680,7 +691,8 @@ impl PersistentVideoTaskCoordinator {
                 billing.upper_bound(),
             )
             .map_err(|_| PersistentVideoTaskError::Billing)?;
-            self.settlement
+            self.billing_ports
+                .settlement
                 .settle(request)
                 .await
                 .map_err(|_| PersistentVideoTaskError::Billing)?;
@@ -709,7 +721,8 @@ impl PersistentVideoTaskCoordinator {
         if billing.state() != AsyncTaskBillingState::Settled {
             return Err(PersistentVideoTaskError::Invariant);
         }
-        self.usage
+        self.billing_ports
+            .usage
             .persist(BillingUsageRecord::for_per_call(
                 billing.reservation_id(),
                 claim.principal(),
@@ -807,7 +820,8 @@ impl PersistentVideoTaskCoordinator {
         if billing.state() != AsyncTaskBillingState::ReleasePending {
             return Err(PersistentVideoTaskError::Invariant);
         }
-        self.release
+        self.billing_ports
+            .release
             .release(billing.reservation_id())
             .await
             .map_err(|_| PersistentVideoTaskError::Billing)?;

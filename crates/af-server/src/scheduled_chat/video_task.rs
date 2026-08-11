@@ -910,6 +910,13 @@ mod tests {
         let usage = Arc::new(DatabaseUsageRecordSink::new(UsageLogRepository::new(
             database.pool().clone(),
         )));
+        let billing_ports =
+            crate::scheduled_chat::video_task_persistence::PersistentVideoTaskBillingPorts::new(
+                quota.clone(),
+                quota.clone(),
+                quota,
+                usage,
+            );
         let coordinator =
             crate::scheduled_chat::video_task_persistence::PersistentVideoTaskCoordinator::new(
                 service,
@@ -917,10 +924,7 @@ mod tests {
                 submissions.clone(),
                 billings,
                 group_pricing,
-                quota.clone(),
-                quota.clone(),
-                quota,
-                usage,
+                billing_ports,
             );
         let request_id = AsyncTaskRequestId::new([0x61; 16]).unwrap();
 

@@ -197,7 +197,7 @@ impl AdminUsageLogRecord {
             .and_then(UsageLogVideoResolution::from_database);
         if model.id <= 0
             || model.event_type != 1
-            || !matches!(model.billing_mode, 1 | 2)
+            || !matches!(model.billing_mode, 1 | 2 | 3)
             || !matches!(model.usage_source, 1 | 2)
             || !matches!(model.usage_semantics, 1 | 2)
             || model.quota < 0
