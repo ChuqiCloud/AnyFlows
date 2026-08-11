@@ -31,8 +31,8 @@ use crate::{
 use af_account::{CredentialDecryptor, SystemSecretCipher, SystemSecretKind};
 use af_adapter::{
     AdaptorSettings, AnthropicAdaptorSettings, GeminiAdaptorSettings, HeaderMap, HeaderName,
-    HeaderValue, OpenAiAdaptorSettings, RelayContext, ResponsesWebSocketPoolKey,
-    TransportDispatcher, get_adaptor,
+    HeaderValue, JinaAdaptorSettings, OpenAiAdaptorSettings, RelayContext,
+    ResponsesWebSocketPoolKey, TransportDispatcher, get_adaptor,
 };
 use af_db::{ChannelStateRepository, CredentialStateRepository};
 use af_domain::{
@@ -56,6 +56,7 @@ mod audio;
 mod compact;
 mod embedding;
 mod image;
+mod rerank;
 mod speech;
 
 /// 路由计划在同一次 Redis 快照中取得的账号负载与用户许可。
@@ -909,6 +910,7 @@ fn target_matches_protocol(
                     | Protocol::OpenAiSpeech
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
                 | (ChannelType::Gemini, Protocol::Gemini)
+                | (ChannelType::Jina, Protocol::JinaRerank)
         )
 }
 
@@ -934,6 +936,11 @@ fn adaptor_settings(
         )),
         (ChannelType::Gemini, Protocol::Gemini) => {
             Ok(AdaptorSettings::Gemini(GeminiAdaptorSettings::new(vec![
+                upstream_model,
+            ])))
+        }
+        (ChannelType::Jina, Protocol::JinaRerank) => {
+            Ok(AdaptorSettings::Jina(JinaAdaptorSettings::new(vec![
                 upstream_model,
             ])))
         }

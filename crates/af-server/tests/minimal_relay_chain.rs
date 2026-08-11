@@ -73,15 +73,16 @@ use af_domain::{
 use af_http::{
     AudioService, AudioServiceFuture, EmbeddingService, EmbeddingServiceFuture, HttpListener,
     ImageService, ImageServiceFuture, QueryApiKeyPolicy, ReadinessFuture, ReadinessHandle,
-    ReadinessProbe, ResponsesCompactService, ResponsesCompactServiceFuture, ServeOutcome,
-    SpeechService, SpeechServiceFuture, build_router, serve_with_graceful_shutdown,
+    ReadinessProbe, RerankService, RerankServiceFuture, ResponsesCompactService,
+    ResponsesCompactServiceFuture, ServeOutcome, SpeechService, SpeechServiceFuture, build_router,
+    serve_with_graceful_shutdown,
 };
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
 use af_protocol::{
     CanonicalAudioSpeechRequest, CanonicalAudioTranscriptionRequest, CanonicalEmbeddingRequest,
-    CanonicalImageGenerationRequest, CanonicalResponsesCompactionRequest, CanonicalStreamEvent,
-    ContentDelta, FinishReason, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
-    openai_responses::OpenAiResponsesStreamEncoder,
+    CanonicalImageGenerationRequest, CanonicalRerankRequest, CanonicalResponsesCompactionRequest,
+    CanonicalStreamEvent, ContentDelta, FinishReason, TokenCount, Usage, UsageDetails,
+    UsageSemantics, UsageSource, openai_responses::OpenAiResponsesStreamEncoder,
 };
 use af_relay::RelayService;
 use serde_json::{Value, json};
@@ -193,6 +194,7 @@ struct RejectAdminUsers;
 struct RejectEmbeddings;
 struct RejectImages;
 struct RejectAudio;
+struct RejectRerank;
 struct RejectSpeech;
 struct RejectResponsesCompact;
 
@@ -216,6 +218,18 @@ impl AudioService for RejectAudio {
         _request: CanonicalAudioTranscriptionRequest,
         _request_id: &'a str,
     ) -> AudioServiceFuture<'a> {
+        Box::pin(async { Err(AfError::Internal) })
+    }
+}
+
+impl RerankService for RejectRerank {
+    fn rerank<'a>(
+        &'a self,
+        _principal: &'a GatewayPrincipal,
+        _user_concurrency: Option<ConcurrencyLimit>,
+        _request: CanonicalRerankRequest,
+        _request_id: &'a str,
+    ) -> RerankServiceFuture<'a> {
         Box::pin(async { Err(AfError::Internal) })
     }
 }
@@ -1845,6 +1859,7 @@ async fn start_server(
         Arc::new(RejectAudio),
         Arc::new(RejectEmbeddings),
         Arc::new(RejectImages),
+        Arc::new(RejectRerank),
         Arc::new(RejectSpeech),
         Arc::new(RejectResponsesCompact),
         readiness,

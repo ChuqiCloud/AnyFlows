@@ -8,8 +8,8 @@ import type {
 
 export type ChannelEditorMode = 'create' | 'update'
 export type SensitiveEditMode = 'preserve' | 'replace' | 'clear'
-export type ChannelType = 'openai' | 'anthropic' | 'gemini'
-export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini'
+export type ChannelType = 'openai' | 'anthropic' | 'gemini' | 'jina'
+export type ChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini' | 'jina_rerank'
 export type ResponsesCompactMode = 'auto' | 'force_on' | 'force_off'
 export const MAX_CHANNEL_TIMEOUT_SECONDS = 900
 
@@ -91,8 +91,8 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
     name: z.string().trim().min(1, messages.invalidField).max(128, messages.invalidField),
     baseUrl: z.string().trim().max(2048, messages.invalidField),
     timeoutSeconds: z.string(),
-    channelType: z.enum(['openai', 'anthropic', 'gemini']),
-    protocol: z.enum(['openai_chat', 'openai_responses', 'openai_embeddings', 'openai_images', 'openai_audio', 'openai_speech', 'anthropic', 'gemini']),
+    channelType: z.enum(['openai', 'anthropic', 'gemini', 'jina']),
+    protocol: z.enum(['openai_chat', 'openai_responses', 'openai_embeddings', 'openai_images', 'openai_audio', 'openai_speech', 'anthropic', 'gemini', 'jina_rerank']),
     tag: z.string().trim().max(64, messages.invalidField),
     status: z.enum(['enabled', 'disabled']),
     weight: z.number().int(messages.invalidField).min(0, messages.invalidField),
@@ -115,7 +115,9 @@ export function buildChannelFormSchema(mode: ChannelEditorMode, messages: Valida
       ? values.protocol === 'anthropic'
       : values.channelType === 'gemini'
         ? values.protocol === 'gemini'
-        : values.protocol === 'openai_chat'
+        : values.channelType === 'jina'
+          ? values.protocol === 'jina_rerank'
+          : values.protocol === 'openai_chat'
           || values.protocol === 'openai_responses'
           || values.protocol === 'openai_embeddings'
           || values.protocol === 'openai_images'
@@ -178,12 +180,16 @@ export function defaultChannelValues(channel?: AdminChannel): ChannelFormValues 
     timeoutSeconds: channel?.timeout_secs == null ? '' : String(channel.timeout_secs),
     channelType: channel?.type === 'anthropic'
       ? 'anthropic'
-      : channel?.type === 'gemini' ? 'gemini' : 'openai',
+      : channel?.type === 'gemini'
+        ? 'gemini'
+        : channel?.type === 'jina' ? 'jina' : 'openai',
     protocol: channel?.protocol === 'anthropic'
       ? 'anthropic'
       : channel?.protocol === 'gemini'
         ? 'gemini'
-        : channel?.protocol === 'openai_responses'
+        : channel?.protocol === 'jina_rerank'
+          ? 'jina_rerank'
+          : channel?.protocol === 'openai_responses'
           ? 'openai_responses'
           : channel?.protocol === 'openai_embeddings'
             ? 'openai_embeddings'
@@ -369,7 +375,7 @@ function validateParameterRows(
   messages: ValidationMessages,
   context: z.RefinementCtx,
 ) {
-  if (protocol === 'openai_embeddings' || protocol === 'openai_images' || protocol === 'openai_audio' || protocol === 'openai_speech') {
+  if (protocol === 'openai_embeddings' || protocol === 'openai_images' || protocol === 'openai_audio' || protocol === 'openai_speech' || protocol === 'jina_rerank') {
     if (rows.length > 0) addIssue(context, 'paramOverride', messages.invalidParameter)
     return
   }

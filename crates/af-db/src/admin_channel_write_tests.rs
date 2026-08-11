@@ -84,6 +84,57 @@ async fn channel_create_and_update_preserve_runtime_totals() -> Result<(), Box<d
 }
 
 #[tokio::test]
+async fn jina_channel_accepts_only_api_key_credentials() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let channel = fixture
+        .repository
+        .create_channel(AdminChannelWriteRecord::new(
+            "jina-rerank".to_owned(),
+            ChannelType::Jina,
+            Protocol::JinaRerank,
+            Some("https://api.jina.ai".to_owned()),
+            Some(af_domain::ChannelTimeout::new(120).unwrap()),
+            Status::Enabled,
+            10,
+            20,
+            true,
+            Vec::new(),
+            Vec::new(),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            None,
+        ))
+        .await?;
+
+    let api_key = fixture
+        .repository
+        .create_credential(
+            channel.channel_id(),
+            credential_record(CredentialKind::ApiKey, None),
+            |_| Ok(envelope(0x61)),
+        )
+        .await?;
+    assert!(matches!(api_key, AdminCredentialCreateOutcome::Created(_)));
+    assert_eq!(
+        fixture
+            .repository
+            .create_credential(
+                channel.channel_id(),
+                oauth_credential_record("example", None),
+                |_| Ok(envelope(0x62)),
+            )
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidInput
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn responses_websocket_toggle_preserves_unknown_sensitive_settings()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;

@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use af_domain::{ChannelId, CredentialKind};
+use af_domain::{ChannelId, ChannelType, CredentialKind};
 
 use super::{
     SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord,
@@ -61,7 +61,8 @@ fn try_runtime_target(
         if !matches!(
             credential_kind,
             CredentialKind::ApiKey | CredentialKind::Oauth
-        ) {
+        ) || (channel_type == ChannelType::Jina && credential_kind != CredentialKind::ApiKey)
+        {
             continue;
         }
         let proxy_required = proxy.is_some();

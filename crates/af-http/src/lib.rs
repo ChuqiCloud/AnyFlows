@@ -62,6 +62,8 @@ mod playground_conversations;
 mod playground_shares;
 mod redemption;
 mod registration;
+mod rerank;
+mod rerank_service;
 mod responses_compact_service;
 mod router;
 mod serve;
@@ -97,6 +99,7 @@ pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
 };
 pub use payment_webhook::build_payment_webhook_router;
+pub use rerank_service::{RerankService, RerankServiceFuture};
 pub use responses_compact_service::{ResponsesCompactService, ResponsesCompactServiceFuture};
 pub use router::{DEFAULT_REQUEST_BODY_LIMIT_BYTES, HttpRouter, build_router};
 pub use serve::{HttpListener, ServeError, ServeOutcome, serve_with_graceful_shutdown};

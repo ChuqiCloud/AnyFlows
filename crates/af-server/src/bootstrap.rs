@@ -78,7 +78,7 @@ use af_db::{
 };
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
-    HttpListener, HttpRouter, ImageService, QueryApiKeyPolicy, ReadinessHandle,
+    HttpListener, HttpRouter, ImageService, QueryApiKeyPolicy, ReadinessHandle, RerankService,
     ResponsesCompactService, ServeError, ServeOutcome, SpeechService, build_payment_webhook_router,
     build_router, serve_with_graceful_shutdown,
 };
@@ -101,10 +101,11 @@ use crate::stripe_payment_intent::StripePaymentIntentProvider;
 use crate::readiness::DatabaseReadinessProbe;
 use crate::{
     AudioRoutePlanner, BackgroundTaskSupervisor, BillingAudioService, BillingChatService,
-    BillingEmbeddingService, BillingFlushReport, BillingImageService,
+    BillingEmbeddingService, BillingFlushReport, BillingImageService, BillingRerankService,
     BillingResponsesCompactService, BillingRuntime, BillingRuntimeError, BillingSpeechService,
-    ChatRoutePlanner, EmbeddingRoutePlanner, ImageRoutePlanner, ResponsesCompactRoutePlanner,
-    ShutdownController, SpeechRoutePlanner, SupervisorError, SupervisorShutdown,
+    ChatRoutePlanner, EmbeddingRoutePlanner, ImageRoutePlanner, RerankRoutePlanner,
+    ResponsesCompactRoutePlanner, ShutdownController, SpeechRoutePlanner, SupervisorError,
+    SupervisorShutdown,
     balance_alert_runtime::BalanceAlertRuntime,
     channel_probe::{BoundedAdminChannelProbe, DatabaseChannelProbe},
     concurrency_runtime::{ConcurrencyCleanupWorker, ConcurrencyReleaseWorker, ConcurrencyRuntime},
@@ -212,6 +213,7 @@ pub struct BillingReady {
     speech: Arc<dyn SpeechService>,
     embedding: Arc<dyn EmbeddingService>,
     image: Arc<dyn ImageService>,
+    rerank: Arc<dyn RerankService>,
     billing: BillingRuntime,
     usage_record_queue: UsageRecordQueue,
     usage_record_consumer: UsageRecordConsumer,
@@ -244,6 +246,7 @@ pub struct Supervised {
     speech: Arc<dyn SpeechService>,
     embedding: Arc<dyn EmbeddingService>,
     image: Arc<dyn ImageService>,
+    rerank: Arc<dyn RerankService>,
     billing: BillingRuntime,
     usage_record_queue: UsageRecordQueue,
     refund_signal_queue: RefundSignalQueue,
@@ -1125,6 +1128,7 @@ impl Bootstrap<RelayReady> {
         let embedding_route_planner: Arc<dyn EmbeddingRoutePlanner> =
             Arc::new(route_service.clone());
         let image_route_planner: Arc<dyn ImageRoutePlanner> = Arc::new(route_service.clone());
+        let rerank_route_planner: Arc<dyn RerankRoutePlanner> = Arc::new(route_service.clone());
         let audio_route_planner: Arc<dyn AudioRoutePlanner> = Arc::new(route_service.clone());
         let speech_route_planner: Arc<dyn SpeechRoutePlanner> = Arc::new(route_service.clone());
         let responses_compact_route_planner: Arc<dyn ResponsesCompactRoutePlanner> =
@@ -1174,6 +1178,14 @@ impl Bootstrap<RelayReady> {
         ));
         let image: Arc<dyn ImageService> = Arc::new(BillingImageService::new(
             image_route_planner,
+            pricing_source.clone(),
+            Some(precharge_port.clone()),
+            Some(refund_port.clone()),
+            Some(settlement_port.clone()),
+            usage_port.clone(),
+        ));
+        let rerank: Arc<dyn RerankService> = Arc::new(BillingRerankService::new(
+            rerank_route_planner,
             pricing_source.clone(),
             Some(precharge_port.clone()),
             Some(refund_port.clone()),
@@ -1238,6 +1250,7 @@ impl Bootstrap<RelayReady> {
                 speech,
                 embedding,
                 image,
+                rerank,
                 billing,
                 usage_record_queue,
                 usage_record_consumer,
@@ -1283,6 +1296,7 @@ impl Bootstrap<BillingReady> {
             speech,
             embedding,
             image,
+            rerank,
             billing,
             usage_record_queue,
             usage_record_consumer,
@@ -1418,6 +1432,7 @@ impl Bootstrap<BillingReady> {
                 speech,
                 embedding,
                 image,
+                rerank,
                 billing,
                 usage_record_queue,
                 refund_signal_queue,
@@ -1603,6 +1618,7 @@ impl Bootstrap<Supervised> {
             self.stage.audio.clone(),
             self.stage.embedding.clone(),
             self.stage.image.clone(),
+            self.stage.rerank.clone(),
             self.stage.speech.clone(),
             self.stage.responses_compact.clone(),
             readiness.clone(),

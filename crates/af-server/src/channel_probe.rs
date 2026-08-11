@@ -7,8 +7,8 @@ use af_account::CredentialDecryptor;
 use af_adapter::{
     Adaptor, AdaptorError, AdaptorSendExt as _, AdaptorSettings, AdaptorTarget,
     AdaptorTransportError, AnthropicAdaptorSettings, Bytes, GeminiAdaptorSettings, HeaderMap,
-    HeaderName, HeaderValue, Method, OpenAiAdaptorSettings, Operation, RelayContext, ResponseMode,
-    UpstreamRequest, get_adaptor,
+    HeaderName, HeaderValue, JinaAdaptorSettings, Method, OpenAiAdaptorSettings, Operation,
+    RelayContext, ResponseMode, UpstreamRequest, get_adaptor,
 };
 use af_db::{
     ChannelProbeTargetRecord, ChannelProbeTargetRepository, CompactProbeStateRepository,
@@ -23,11 +23,11 @@ use af_protocol::{
     AudioFile, AudioFileFormat, AudioSpeechOptions, AudioSpeechOutputFormat, AudioSpeechVoice,
     AudioSpeechVoiceName, AudioTranscriptionOptions, CanonicalAudioSpeechRequest,
     CanonicalAudioTranscriptionRequest, CanonicalEmbeddingRequest, CanonicalImageGenerationRequest,
-    CanonicalRequest, CanonicalResponsesCompactionRequest, ContentBlock, EmbeddingInput,
-    ImageDimensions, ImageGenerationOptions, ImageOutputFormat, ImageQuality, ImageSize, Message,
-    ResponsesCompactionInput, Sampling, TokenCount, ToolChoice, anthropic, gemini, openai_audio,
-    openai_audio_speech, openai_chat, openai_embeddings, openai_images, openai_responses,
-    openai_responses_compact,
+    CanonicalRequest, CanonicalRerankRequest, CanonicalResponsesCompactionRequest, ContentBlock,
+    EmbeddingInput, ImageDimensions, ImageGenerationOptions, ImageOutputFormat, ImageQuality,
+    ImageSize, Message, RerankDocument, ResponsesCompactionInput, Sampling, TokenCount, ToolChoice,
+    anthropic, gemini, openai_audio, openai_audio_speech, openai_chat, openai_embeddings,
+    openai_images, openai_responses, openai_responses_compact, rerank_v1,
 };
 use af_relay::{encode_openai_audio_request, encode_openai_speech_request};
 use af_scheduler::{ChannelProbe, ChannelProbeStatus};
@@ -130,6 +130,7 @@ impl DatabaseChannelProbe {
             Protocol::OpenAiImages => Some(openai_images::MAX_RESPONSE_BODY_BYTES),
             Protocol::OpenAiAudio => Some(openai_audio::MAX_TRANSCRIPTION_RESPONSE_BODY_BYTES),
             Protocol::OpenAiSpeech => Some(openai_audio_speech::MAX_RESPONSE_BODY_BYTES),
+            Protocol::JinaRerank => Some(rerank_v1::MAX_BODY_BYTES),
             _ => None,
         };
         let request = match response_body_limit {
@@ -411,7 +412,7 @@ fn probe_operation(protocol: Protocol) -> Result<Operation, ProbeFailure> {
         Protocol::OpenAiEmbeddings => Ok(Operation::Embedding),
         Protocol::OpenAiImages => Ok(Operation::Image),
         Protocol::OpenAiAudio | Protocol::OpenAiSpeech => Ok(Operation::Audio),
-        Protocol::JinaRerank => Err(ProbeFailure::UnsupportedTarget),
+        Protocol::JinaRerank => Ok(Operation::Rerank),
     }
 }
 
@@ -434,6 +435,11 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
     if protocol == Protocol::OpenAiSpeech {
         return encode_openai_speech_request(&probe_speech_request(model)?)
             .map_err(|_| ProbeFailure::RequestBuild);
+    }
+    if protocol == Protocol::JinaRerank {
+        let value = rerank_v1::build_request(&probe_rerank_request(model)?)
+            .map_err(|_| ProbeFailure::RequestBuild)?;
+        return Ok(Bytes::from(value.to_string()));
     }
     let mut request = CanonicalRequest::new(
         probe_operation(protocol)?,
@@ -466,10 +472,10 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
         Protocol::OpenAiEmbeddings
         | Protocol::OpenAiImages
         | Protocol::OpenAiAudio
-        | Protocol::OpenAiSpeech => {
+        | Protocol::OpenAiSpeech
+        | Protocol::JinaRerank => {
             unreachable!("非对话协议已在独立请求分支返回")
         }
-        Protocol::JinaRerank => return Err(ProbeFailure::UnsupportedTarget),
         Protocol::Anthropic => {
             anthropic::build_request(&request).map_err(|_| ProbeFailure::RequestBuild)?
         }
@@ -530,7 +536,18 @@ fn validate_probe_response(protocol: Protocol, body: &[u8]) -> Result<(), ProbeF
             .map(|_| ())
             .map_err(|_| ProbeFailure::InvalidResponse)
         }
-        Protocol::JinaRerank => Err(ProbeFailure::UnsupportedTarget),
+        Protocol::JinaRerank => {
+            let request = probe_rerank_request("probe-model")?;
+            rerank_v1::parse_response(body)
+                .and_then(|response| {
+                    response
+                        .validate_for_request(&request)
+                        .map_err(|_| rerank_v1::ParseRerankResponseError::InvalidValue)
+                        .map(|_| response)
+                })
+                .map(|_| ())
+                .map_err(|_| ProbeFailure::InvalidResponse)
+        }
         Protocol::Anthropic => anthropic::parse_response(body)
             .map(|_| ())
             .map_err(|_| ProbeFailure::InvalidResponse),
@@ -553,6 +570,7 @@ fn supported_target(target: &ChannelProbeTargetRecord) -> bool {
                 | Protocol::OpenAiSpeech
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
             | (ChannelType::Gemini, Protocol::Gemini)
+            | (ChannelType::Jina, Protocol::JinaRerank)
     )
 }
 
@@ -600,6 +618,9 @@ fn adaptor_settings(target: &ChannelProbeTargetRecord) -> Result<AdaptorSettings
         (ChannelType::Gemini, Protocol::Gemini) => {
             Ok(AdaptorSettings::Gemini(GeminiAdaptorSettings::new(models)))
         }
+        (ChannelType::Jina, Protocol::JinaRerank) => {
+            Ok(AdaptorSettings::Jina(JinaAdaptorSettings::new(models)))
+        }
         _ => Err(ProbeFailure::UnsupportedTarget),
     }
 }
@@ -609,6 +630,17 @@ fn probe_embedding_request(model: &str) -> Result<CanonicalEmbeddingRequest, Pro
         model.to_owned(),
         EmbeddingInput::Text("ping".to_owned()),
         None,
+    )
+    .map_err(|_| ProbeFailure::RequestBuild)
+}
+
+fn probe_rerank_request(model: &str) -> Result<CanonicalRerankRequest, ProbeFailure> {
+    CanonicalRerankRequest::new(
+        model.to_owned(),
+        "ping".to_owned(),
+        vec![RerankDocument::Text("ping".to_owned())],
+        None,
+        false,
     )
     .map_err(|_| ProbeFailure::RequestBuild)
 }
