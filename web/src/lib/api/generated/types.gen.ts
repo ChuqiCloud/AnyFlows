@@ -1053,7 +1053,7 @@ export type ModelCatalogListResponse = {
     next_cursor: string | null;
 };
 export type ModelCatalogPricingScope = 'public_base' | 'group';
-export type ModelCatalogProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini';
+export type ModelCatalogProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'anthropic' | 'gemini';
 export type ModelCatalogRatios = {
     group_micros: string;
     group_model_micros: string;
