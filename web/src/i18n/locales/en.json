@@ -124,13 +124,15 @@
       "openai_images": "OpenAI Images",
       "openai_audio": "OpenAI Audio Transcription",
       "openai_speech": "OpenAI Text to Speech",
+      "jina_rerank": "Jina Rerank",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
     "type": {
       "openai": "OpenAI",
       "anthropic": "Anthropic",
-      "gemini": "Gemini"
+      "gemini": "Gemini",
+      "jina": "Jina"
     },
     "values": {
       "defaultUrl": "Default upstream URL",
@@ -1903,6 +1905,7 @@
       "openai_images": "OpenAI Images",
       "openai_audio": "OpenAI Audio Transcription",
       "openai_speech": "OpenAI Text to Speech",
+      "jina_rerank": "Jina Rerank",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -2028,6 +2031,7 @@
       "openai_images": "OpenAI Images",
       "openai_audio": "OpenAI Audio Transcription",
       "openai_speech": "OpenAI Text to Speech",
+      "jina_rerank": "Jina Rerank",
       "anthropic": "Anthropic",
       "gemini": "Gemini"
     },
@@ -2120,6 +2124,7 @@
         "openai_images": "OpenAI Images",
         "openai_audio": "OpenAI Audio Transcription",
         "openai_speech": "OpenAI Text to Speech",
+        "jina_rerank": "Jina Rerank",
         "anthropic": "Anthropic",
         "gemini": "Gemini",
         "unavailable": "Unsupported in Playground"

@@ -21,6 +21,7 @@ mod playground_conversations;
 mod playground_shares;
 mod redemptions;
 mod registration;
+mod rerank;
 mod responses_compact;
 mod routes;
 pub(crate) mod schema;
@@ -50,6 +51,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(session::document());
     document.merge(setup::document());
     document.merge(registration::document());
+    document.merge(rerank::document());
     document.merge(responses_compact::document());
     document.merge(speech::document());
     document.merge(redemptions::document());
@@ -88,6 +90,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("公开注册"),
         Tag::new("OpenAI Responses"),
         Tag::new("OpenAI Audio"),
+        Tag::new("Rerank"),
         Tag::new("认证设置"),
         Tag::new("密码重置"),
         Tag::new("个人资料与安全"),
@@ -158,7 +161,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 78);
+        assert_eq!(document.paths.paths.len(), 79);
         let operation_count = document
             .paths
             .paths
@@ -179,7 +182,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 118);
+        assert_eq!(operation_count, 119);
         assert!(
             document
                 .components
@@ -207,6 +210,7 @@ mod tests {
             .collect::<BTreeSet<_>>();
         let expected = [
             "compactResponse",
+            "rerank",
             "synthesizeSpeech",
             "createAdminChannel",
             "createAdminCredential",
@@ -331,7 +335,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 219);
+        assert_eq!(schemas.len(), 227);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminResponsesCompactProbe"));
         assert!(schemas.contains_key("ResponsesCompactError"));
@@ -345,6 +349,14 @@ mod tests {
         assert!(schemas.contains_key("ResponsesCompactRequest"));
         assert!(schemas.contains_key("ResponsesCompactResponse"));
         assert!(schemas.contains_key("ResponsesCompactUsage"));
+        assert!(schemas.contains_key("RerankDocument"));
+        assert!(schemas.contains_key("RerankError"));
+        assert!(schemas.contains_key("RerankErrorBody"));
+        assert!(schemas.contains_key("RerankRequest"));
+        assert!(schemas.contains_key("RerankResponse"));
+        assert!(schemas.contains_key("RerankResult"));
+        assert!(schemas.contains_key("RerankTextDocument"));
+        assert!(schemas.contains_key("RerankUsage"));
         assert!(schemas.contains_key("AudioSpeechRequest"));
         assert!(schemas.contains_key("AudioSpeechVoice"));
         assert!(schemas.contains_key("AudioSpeechCustomVoice"));
@@ -364,6 +376,11 @@ mod tests {
             writable_protocols
                 .iter()
                 .any(|value| value == "openai_speech")
+        );
+        assert!(
+            writable_protocols
+                .iter()
+                .any(|value| value == "jina_rerank")
         );
         assert!(schemas.contains_key("AdminCredentialSecret"));
         assert!(schemas.contains_key("AdminCredentialProxy"));

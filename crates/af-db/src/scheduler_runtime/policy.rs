@@ -158,6 +158,7 @@ impl ChannelParameterOverrides {
                 | Protocol::OpenAiImages
                 | Protocol::OpenAiAudio
                 | Protocol::OpenAiSpeech
+                | Protocol::JinaRerank
         ) && !self.is_empty()
         {
             return Err(ChannelRequestPolicyError);
@@ -385,6 +386,11 @@ mod tests {
         assert!(
             overrides
                 .validate_for_protocol(Protocol::OpenAiSpeech)
+                .is_err()
+        );
+        assert!(
+            overrides
+                .validate_for_protocol(Protocol::JinaRerank)
                 .is_err()
         );
         assert!(

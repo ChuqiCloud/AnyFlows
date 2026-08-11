@@ -81,7 +81,7 @@ pub(crate) struct ModelCatalogItemResponse {
     ratios: ModelCatalogRatiosResponse,
     #[schema(minimum = 1)]
     price_version: u64,
-    #[schema(max_items = 8)]
+    #[schema(max_items = 9)]
     available_protocols: Vec<ModelCatalogProtocolValue>,
 }
 

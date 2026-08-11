@@ -380,6 +380,7 @@ pub(crate) enum AdminChannelTypeSchema {
     Openai,
     Anthropic,
     Gemini,
+    Jina,
     Bedrock,
     Vertex,
     Custom,
@@ -395,6 +396,7 @@ pub(crate) enum AdminChannelProtocolSchema {
     OpenaiImages,
     OpenaiAudio,
     OpenaiSpeech,
+    JinaRerank,
     Anthropic,
     Gemini,
 }
@@ -406,6 +408,7 @@ pub(crate) enum AdminChannelWriteTypeSchema {
     Openai,
     Anthropic,
     Gemini,
+    Jina,
 }
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
@@ -418,6 +421,7 @@ pub(crate) enum AdminChannelWriteProtocolSchema {
     OpenaiImages,
     OpenaiAudio,
     OpenaiSpeech,
+    JinaRerank,
     Anthropic,
     Gemini,
 }

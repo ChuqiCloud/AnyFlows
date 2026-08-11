@@ -302,6 +302,7 @@ impl AdminChannelWriteFields {
                         | Protocol::OpenAiSpeech
                 ) | (ChannelType::Anthropic, Protocol::Anthropic)
                     | (ChannelType::Gemini, Protocol::Gemini)
+                    | (ChannelType::Jina, Protocol::JinaRerank)
             )
             || base_url
                 .as_deref()

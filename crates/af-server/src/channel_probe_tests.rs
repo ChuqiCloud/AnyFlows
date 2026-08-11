@@ -261,6 +261,33 @@ async fn valid_openai_embeddings_response_is_healthy_and_uses_native_endpoint() 
 }
 
 #[tokio::test]
+async fn valid_jina_rerank_response_is_healthy_and_uses_native_endpoint() {
+    let key = [0x4a; CREDENTIAL_ENCRYPTION_KEY_BYTES];
+    let database = test_database().await;
+    seed_probe_target(&database.seed, &key, Protocol::JinaRerank, false, false).await;
+    let response = br#"{"model":"private-probe-model","object":"list","results":[{"index":0,"relevance_score":0.9}],"usage":{"total_tokens":1}}"#;
+    let (proxy_address, captured, server) = spawn_proxy("200 OK", response);
+    let probe = probe(&database.pool, &key, proxy_address);
+
+    assert_eq!(probe.check(channel_id()).await, ChannelProbeStatus::Healthy);
+
+    let request = captured.recv_timeout(IO_TIMEOUT).unwrap();
+    server.join().unwrap();
+    let head = request.head.to_ascii_lowercase();
+    assert!(head.starts_with("post http://probe-upstream.example/v1/rerank http/1.1"));
+    assert!(head.contains("authorization: bearer probe-secret-canary"));
+    assert!(head.contains("x-probe-header: probe-header-value-canary"));
+    let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body["model"], MODEL_CANARY);
+    assert_eq!(body["query"], "ping");
+    assert_eq!(body["documents"], serde_json::json!(["ping"]));
+    assert_eq!(body["return_documents"], false);
+    assert!(body.get("stream").is_none());
+
+    database.close().await;
+}
+
+#[tokio::test]
 async fn valid_openai_images_response_is_healthy_and_uses_low_cost_probe() {
     let key = [0x48; CREDENTIAL_ENCRYPTION_KEY_BYTES];
     let database = test_database().await;

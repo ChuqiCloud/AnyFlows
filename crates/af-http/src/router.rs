@@ -92,6 +92,7 @@ use crate::playground_conversations::build_playground_conversation_router;
 use crate::playground_shares::build_playground_share_router;
 use crate::redemption::build_redemption_router;
 use crate::registration::build_registration_router;
+use crate::rerank::rerank as rerank_request;
 use crate::site_settings::build_site_settings_router;
 use crate::subscriptions::build_subscription_router;
 use crate::user_profile::build_user_profile_router;
@@ -99,7 +100,7 @@ use crate::user_tokens::build_user_token_router;
 use crate::user_topups::build_user_topup_router;
 use crate::user_wallet::build_user_wallet_router;
 use crate::{
-    AudioService, ChatService, EmbeddingService, ImageService, QueryApiKeyPolicy,
+    AudioService, ChatService, EmbeddingService, ImageService, QueryApiKeyPolicy, RerankService,
     ResponsesCompactService, SpeechService, chat_completions::HttpState,
     chat_completions::chat_completions,
 };
@@ -138,6 +139,7 @@ pub fn build_router(
     audio: Arc<dyn AudioService>,
     embedding: Arc<dyn EmbeddingService>,
     image: Arc<dyn ImageService>,
+    rerank: Arc<dyn RerankService>,
     speech: Arc<dyn SpeechService>,
     responses_compact: Arc<dyn ResponsesCompactService>,
     readiness: ReadinessHandle,
@@ -194,6 +196,11 @@ pub fn build_router(
             .with_error_protocol(Protocol::OpenAiResponses),
         authenticate_api_key,
     );
+    let rerank_authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config)
+            .with_error_protocol(Protocol::JinaRerank),
+        authenticate_api_key,
+    );
     let anthropic_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config)
             .with_error_protocol(Protocol::Anthropic),
@@ -217,6 +224,7 @@ pub fn build_router(
     .with_audio_service(audio)
     .with_embedding_service(embedding)
     .with_image_service(image)
+    .with_rerank_service(rerank)
     .with_speech_service(speech)
     .with_responses_compact_service(responses_compact)
     .with_initial_setup(initial_setup)
@@ -248,6 +256,11 @@ pub fn build_router(
             "/v1/images/generations",
             // Images 共用 OpenAI 错误 wire，但使用独立的大响应非流式业务端口。
             post(openai_images).route_layer(openai_authentication.clone()),
+        )
+        .route(
+            "/v1/rerank",
+            // Rerank 使用独立非流式协议、调度与计费端口，不进入 Chat 参数链路。
+            post(rerank_request).route_layer(rerank_authentication),
         )
         .route(
             "/v1/audio/transcriptions",

@@ -38,6 +38,8 @@ export function credentialKindsForChannel(channelType: AdminChannelType): readon
     case 'gemini':
     case 'openai':
       return ['api_key', 'oauth']
+    case 'jina':
+      return ['api_key']
     case 'custom':
       return ['api_key', 'oauth']
   }

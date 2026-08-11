@@ -175,6 +175,27 @@ test('OpenAI Audio 渠道禁止携带通用 Chat 参数覆盖', () => {
   }).success, false)
 })
 
+test('Jina 渠道只允许 Rerank 协议且禁止 Chat 参数覆盖', () => {
+  const schema = buildChannelFormSchema('create', messages)
+  const values = {
+    ...defaultChannelValues(),
+    name: 'Jina Rerank',
+    channelType: 'jina',
+    protocol: 'jina_rerank',
+  }
+
+  assert.equal(schema.safeParse(values).success, true)
+  const request = toCreateRequest(values)
+  assert.equal(request.type, 'jina')
+  assert.equal(request.protocol, 'jina_rerank')
+  assert.deepEqual(request.param_override, {})
+  assert.equal(schema.safeParse({ ...values, protocol: 'openai_chat' }).success, false)
+  assert.equal(schema.safeParse({
+    ...values,
+    paramOverride: [{ id: 'temperature', key: 'temperature', value: '0.5', values: [] }],
+  }).success, false)
+})
+
 test('Anthropic 支持停止序列但温度上限为一', () => {
   const values = {
     ...defaultChannelValues(),

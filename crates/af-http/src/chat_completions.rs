@@ -25,7 +25,7 @@ use http::{
 };
 
 use crate::{
-    AudioService, ChatService, EmbeddingService, ImageService, OpenAiHttpError,
+    AudioService, ChatService, EmbeddingService, ImageService, OpenAiHttpError, RerankService,
     ResponsesCompactService, SpeechService,
     streaming::{StreamDeliveryPolicy, openai_chat_body},
 };
@@ -37,6 +37,7 @@ pub(crate) struct HttpState {
     audio: Option<Arc<dyn AudioService>>,
     embedding: Option<Arc<dyn EmbeddingService>>,
     image: Option<Arc<dyn ImageService>>,
+    rerank: Option<Arc<dyn RerankService>>,
     speech: Option<Arc<dyn SpeechService>>,
     responses_compact: Option<Arc<dyn ResponsesCompactService>>,
     pub(crate) session_authenticator: Arc<dyn SessionAuthenticator>,
@@ -79,6 +80,7 @@ impl HttpState {
             audio: None,
             embedding: None,
             image: None,
+            rerank: None,
             speech: None,
             responses_compact: None,
             session_authenticator,
@@ -121,6 +123,12 @@ impl HttpState {
     /// 注入独立 Images 生产服务；未注入时公开端点失败关闭。
     pub(crate) fn with_image_service(mut self, service: Arc<dyn ImageService>) -> Self {
         self.image = Some(service);
+        self
+    }
+
+    /// 注入独立 Rerank 生产服务；未注入时公开端点失败关闭。
+    pub(crate) fn with_rerank_service(mut self, service: Arc<dyn RerankService>) -> Self {
+        self.rerank = Some(service);
         self
     }
 
@@ -279,6 +287,11 @@ impl HttpState {
     /// 返回可选的独立 Images 执行端口。
     pub(crate) fn image_service(&self) -> Option<&Arc<dyn ImageService>> {
         self.image.as_ref()
+    }
+
+    /// 返回可选的独立 Rerank 执行端口。
+    pub(crate) fn rerank_service(&self) -> Option<&Arc<dyn RerankService>> {
+        self.rerank.as_ref()
     }
 
     /// 返回可选的独立 Responses Compact 执行端口。

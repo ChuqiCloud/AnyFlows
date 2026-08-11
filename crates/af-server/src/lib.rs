@@ -9,6 +9,7 @@ mod billing_chat;
 mod billing_compact;
 mod billing_embedding;
 mod billing_image;
+mod billing_rerank;
 mod billing_runtime;
 mod billing_speech;
 mod bootstrap;
@@ -59,6 +60,10 @@ pub use billing_embedding::{
 pub use billing_image::{
     BillingImageService, ImageRoutePlanFuture, ImageRoutePlanner, PlannedImageExecution,
     PlannedImageExecutionFuture,
+};
+pub use billing_rerank::{
+    BillingRerankService, PlannedRerankExecution, PlannedRerankExecutionFuture,
+    RerankRoutePlanFuture, RerankRoutePlanner,
 };
 pub use billing_runtime::{BillingFlushReport, BillingRuntime, BillingRuntimeError};
 pub use billing_speech::{

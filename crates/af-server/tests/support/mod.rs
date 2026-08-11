@@ -47,6 +47,8 @@ pub const OPENAI_AUDIO_CHANNEL_ID: i64 = 8_100_016;
 pub const OPENAI_AUDIO_CREDENTIAL_ID: i64 = 8_100_017;
 pub const OPENAI_SPEECH_CHANNEL_ID: i64 = 8_100_018;
 pub const OPENAI_SPEECH_CREDENTIAL_ID: i64 = 8_100_019;
+pub const JINA_RERANK_CHANNEL_ID: i64 = 8_100_020;
+pub const JINA_RERANK_CREDENTIAL_ID: i64 = 8_100_021;
 pub const RUNTIME_HEADER_NAME: &str = "x-runtime-header";
 pub const RUNTIME_HEADER_VALUE: &str = "runtime-header-value";
 const CREDENTIAL_KEY_ID: &str = "gateway-test-key";
@@ -287,6 +289,88 @@ async fn seed_openai_runtime_channel_with(
                 channel.channel_id.into(),
                 "api_key".into(),
                 encrypted_api_key_for(channel.channel_id, channel.credential_id, channel.api_key)
+                    .into(),
+                1_i16.into(),
+                10_i32.into(),
+                true.into(),
+            ],
+        ),
+    ] {
+        connection
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Sqlite,
+                sql,
+                values,
+            ))
+            .await
+            .unwrap();
+    }
+}
+
+/// 按显式地址、模型映射和凭据写入 Jina Rerank 测试渠道。
+pub async fn seed_jina_rerank_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
+    let model_mapping = if public_model == upstream_model {
+        "{}".to_owned()
+    } else {
+        serde_json::Value::Object(serde_json::Map::from_iter([(
+            public_model.to_owned(),
+            serde_json::Value::String(upstream_model.to_owned()),
+        )]))
+        .to_string()
+    };
+    for (sql, values) in [
+        (
+            "INSERT INTO channels (id, name, type, protocol, base_url, timeout_secs, status, model_mapping, param_override, header_override, settings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            vec![
+                JINA_RERANK_CHANNEL_ID.into(),
+                "runtime-jina-rerank".into(),
+                "jina".into(),
+                "jina_rerank".into(),
+                base_url.into(),
+                timeout_secs.into(),
+                1_i16.into(),
+                model_mapping.into(),
+                "{}".into(),
+                json!({"x-runtime-header": RUNTIME_HEADER_VALUE})
+                    .to_string()
+                    .into(),
+                "{}".into(),
+            ],
+        ),
+        (
+            "INSERT INTO channel_models (channel_id, model) VALUES (?, ?)",
+            vec![JINA_RERANK_CHANNEL_ID.into(), public_model.into()],
+        ),
+        (
+            "INSERT INTO channel_groups (channel_id, group_id) VALUES (?, ?)",
+            vec![JINA_RERANK_CHANNEL_ID.into(), group_id.into()],
+        ),
+        (
+            "INSERT INTO abilities (group_id, model, channel_id, enabled, priority, weight) VALUES (?, ?, ?, ?, ?, ?)",
+            vec![
+                group_id.into(),
+                public_model.into(),
+                JINA_RERANK_CHANNEL_ID.into(),
+                true.into(),
+                10_i32.into(),
+                0_i32.into(),
+            ],
+        ),
+        (
+            "INSERT INTO credentials (id, channel_id, kind, secret, status, priority, schedulable) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            vec![
+                JINA_RERANK_CREDENTIAL_ID.into(),
+                JINA_RERANK_CHANNEL_ID.into(),
+                "api_key".into(),
+                encrypted_api_key_for(JINA_RERANK_CHANNEL_ID, JINA_RERANK_CREDENTIAL_ID, api_key)
                     .into(),
                 1_i16.into(),
                 10_i32.into(),

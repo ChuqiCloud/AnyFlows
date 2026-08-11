@@ -835,9 +835,10 @@ impl AdminChannelRepository {
             return Err(AdminChannelWriteRepositoryError::InvalidInput);
         }
         let transaction = begin_transaction(self).await?;
-        if !active_channel_exists(&transaction, channel_id).await? {
+        let Some(channel) = find_active_channel(&transaction, channel_id).await? else {
             return Ok(AdminCredentialCreateOutcome::ChannelNotFound);
-        }
+        };
+        validate_credential_channel_compatibility(&channel, fields.kind)?;
         validate_parent(&transaction, channel_id, None, &fields).await?;
         validate_proxy_binding(&transaction, fields.proxy_id).await?;
         let placeholder = if oauth_token_pending {
@@ -915,9 +916,10 @@ impl AdminChannelRepository {
         let replacement_secret = replacement_secret.map(encrypted_json).transpose()?;
         let has_replacement_secret = replacement_secret.is_some();
         let transaction = begin_transaction(self).await?;
-        if !active_channel_exists(&transaction, channel_id).await? {
+        let Some(channel) = find_active_channel(&transaction, channel_id).await? else {
             return Ok(AdminCredentialMutationOutcome::ChannelNotFound);
-        }
+        };
+        validate_credential_channel_compatibility(&channel, fields.kind)?;
         let Some(current) = find_active_credential(&transaction, channel_id, credential_id).await?
         else {
             return Ok(AdminCredentialMutationOutcome::CredentialNotFound);
@@ -1116,6 +1118,7 @@ fn validate_channel_fields(
                     | Protocol::OpenAiSpeech
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
                 | (ChannelType::Gemini, Protocol::Gemini)
+                | (ChannelType::Jina, Protocol::JinaRerank)
         )
         || record
             .tag
@@ -1279,6 +1282,20 @@ fn validate_credential_fields(
         oauth_account_key: record.oauth_account_key,
         oauth_project_id: record.oauth_project_id,
     })
+}
+
+fn validate_credential_channel_compatibility(
+    channel: &channels::Model,
+    kind: CredentialKind,
+) -> Result<(), AdminChannelWriteRepositoryError> {
+    let channel_type = channel
+        .r#type
+        .parse::<ChannelType>()
+        .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+    if channel_type == ChannelType::Jina && kind != CredentialKind::ApiKey {
+        return Err(AdminChannelWriteRepositoryError::InvalidInput);
+    }
+    Ok(())
 }
 
 async fn validate_parent(
