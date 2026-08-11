@@ -341,7 +341,8 @@ const fn map_protocol(protocol: Protocol) -> Option<DebugTraceProtocol> {
         | Protocol::OpenAiImages
         | Protocol::OpenAiAudio
         | Protocol::OpenAiSpeech
-        | Protocol::JinaRerank => None,
+        | Protocol::JinaRerank
+        | Protocol::CohereRerank => None,
         Protocol::Anthropic => Some(DebugTraceProtocol::Anthropic),
         Protocol::Gemini => Some(DebugTraceProtocol::Gemini),
     }

@@ -49,6 +49,8 @@ pub const OPENAI_SPEECH_CHANNEL_ID: i64 = 8_100_018;
 pub const OPENAI_SPEECH_CREDENTIAL_ID: i64 = 8_100_019;
 pub const JINA_RERANK_CHANNEL_ID: i64 = 8_100_020;
 pub const JINA_RERANK_CREDENTIAL_ID: i64 = 8_100_021;
+pub const COHERE_RERANK_CHANNEL_ID: i64 = 8_100_022;
+pub const COHERE_RERANK_CREDENTIAL_ID: i64 = 8_100_023;
 pub const RUNTIME_HEADER_NAME: &str = "x-runtime-header";
 pub const RUNTIME_HEADER_VALUE: &str = "runtime-header-value";
 const CREDENTIAL_KEY_ID: &str = "gateway-test-key";
@@ -317,6 +319,68 @@ pub async fn seed_jina_rerank_runtime_channel_with(
     api_key: &str,
     timeout_secs: Option<i32>,
 ) {
+    seed_rerank_runtime_channel_with(
+        connection,
+        group_id,
+        JINA_RERANK_CHANNEL_ID,
+        JINA_RERANK_CREDENTIAL_ID,
+        "runtime-jina-rerank",
+        "jina",
+        "jina_rerank",
+        base_url,
+        public_model,
+        upstream_model,
+        api_key,
+        timeout_secs,
+    )
+    .await;
+}
+
+/// 按显式地址、模型映射和凭据写入 Cohere v2 Rerank 测试渠道。
+pub async fn seed_cohere_rerank_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
+    seed_rerank_runtime_channel_with(
+        connection,
+        group_id,
+        COHERE_RERANK_CHANNEL_ID,
+        COHERE_RERANK_CREDENTIAL_ID,
+        "runtime-cohere-rerank",
+        "cohere",
+        "cohere_rerank",
+        base_url,
+        public_model,
+        upstream_model,
+        api_key,
+        timeout_secs,
+    )
+    .await;
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "参数与测试渠道持久化字段一一对应"
+)]
+async fn seed_rerank_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    channel_id: i64,
+    credential_id: i64,
+    channel_name: &str,
+    channel_type: &str,
+    protocol: &str,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
     let model_mapping = if public_model == upstream_model {
         "{}".to_owned()
     } else {
@@ -330,10 +394,10 @@ pub async fn seed_jina_rerank_runtime_channel_with(
         (
             "INSERT INTO channels (id, name, type, protocol, base_url, timeout_secs, status, model_mapping, param_override, header_override, settings) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             vec![
-                JINA_RERANK_CHANNEL_ID.into(),
-                "runtime-jina-rerank".into(),
-                "jina".into(),
-                "jina_rerank".into(),
+                channel_id.into(),
+                channel_name.into(),
+                channel_type.into(),
+                protocol.into(),
                 base_url.into(),
                 timeout_secs.into(),
                 1_i16.into(),
@@ -347,18 +411,18 @@ pub async fn seed_jina_rerank_runtime_channel_with(
         ),
         (
             "INSERT INTO channel_models (channel_id, model) VALUES (?, ?)",
-            vec![JINA_RERANK_CHANNEL_ID.into(), public_model.into()],
+            vec![channel_id.into(), public_model.into()],
         ),
         (
             "INSERT INTO channel_groups (channel_id, group_id) VALUES (?, ?)",
-            vec![JINA_RERANK_CHANNEL_ID.into(), group_id.into()],
+            vec![channel_id.into(), group_id.into()],
         ),
         (
             "INSERT INTO abilities (group_id, model, channel_id, enabled, priority, weight) VALUES (?, ?, ?, ?, ?, ?)",
             vec![
                 group_id.into(),
                 public_model.into(),
-                JINA_RERANK_CHANNEL_ID.into(),
+                channel_id.into(),
                 true.into(),
                 10_i32.into(),
                 0_i32.into(),
@@ -367,11 +431,10 @@ pub async fn seed_jina_rerank_runtime_channel_with(
         (
             "INSERT INTO credentials (id, channel_id, kind, secret, status, priority, schedulable) VALUES (?, ?, ?, ?, ?, ?, ?)",
             vec![
-                JINA_RERANK_CREDENTIAL_ID.into(),
-                JINA_RERANK_CHANNEL_ID.into(),
+                credential_id.into(),
+                channel_id.into(),
                 "api_key".into(),
-                encrypted_api_key_for(JINA_RERANK_CHANNEL_ID, JINA_RERANK_CREDENTIAL_ID, api_key)
-                    .into(),
+                encrypted_api_key_for(channel_id, credential_id, api_key).into(),
                 1_i16.into(),
                 10_i32.into(),
                 true.into(),

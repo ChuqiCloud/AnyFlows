@@ -120,6 +120,7 @@ impl DatabaseUpstreamModelDiscoverer {
             ChannelType::Bedrock
             | ChannelType::Vertex
             | ChannelType::Jina
+            | ChannelType::Cohere
             | ChannelType::Custom => {
                 return Err(UpstreamModelDiscoveryError::UnsupportedChannel);
             }

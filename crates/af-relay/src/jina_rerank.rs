@@ -179,17 +179,25 @@ fn normalize_response(
     request: &CanonicalRerankRequest,
     body: &[u8],
 ) -> Result<JinaRerankResponse, ()> {
-    let upstream = rerank_v1::parse_response(body).map_err(|_| ())?;
-    upstream.validate_for_request(request).map_err(|_| ())?;
-    let public = upstream
-        .rebind_model(request.model().to_owned())
-        .map_err(|_| ())?;
+    let public = normalize_jina_canonical_response(request, body)?;
     let usage = public.usage();
     let value = rerank_v1::build_response(&public).map_err(|_| ())?;
     let body = serde_json::to_vec(&value)
         .map(Bytes::from)
         .map_err(|_| ())?;
     Ok(JinaRerankResponse::new(body, usage))
+}
+
+/// 解析 Jina 响应并完成请求关联和客户端模型重绑定。
+pub(crate) fn normalize_jina_canonical_response(
+    request: &CanonicalRerankRequest,
+    body: &[u8],
+) -> Result<af_protocol::CanonicalRerankResponse, ()> {
+    let upstream = rerank_v1::parse_response(body).map_err(|_| ())?;
+    upstream.validate_for_request(request).map_err(|_| ())?;
+    upstream
+        .rebind_model(request.model().to_owned())
+        .map_err(|_| ())
 }
 
 fn protocol_failure(mut report: RelayAttemptReport) -> RelayJinaRerankOutcome {

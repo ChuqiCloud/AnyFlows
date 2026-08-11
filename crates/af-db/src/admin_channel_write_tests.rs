@@ -135,6 +135,57 @@ async fn jina_channel_accepts_only_api_key_credentials() -> Result<(), Box<dyn E
 }
 
 #[tokio::test]
+async fn cohere_channel_accepts_only_api_key_credentials() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let channel = fixture
+        .repository
+        .create_channel(AdminChannelWriteRecord::new(
+            "cohere-rerank".to_owned(),
+            ChannelType::Cohere,
+            Protocol::CohereRerank,
+            Some("https://api.cohere.com".to_owned()),
+            Some(af_domain::ChannelTimeout::new(120).unwrap()),
+            Status::Enabled,
+            10,
+            20,
+            true,
+            Vec::new(),
+            Vec::new(),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            serde_json::json!({}),
+            None,
+        ))
+        .await?;
+
+    let api_key = fixture
+        .repository
+        .create_credential(
+            channel.channel_id(),
+            credential_record(CredentialKind::ApiKey, None),
+            |_| Ok(envelope(0x63)),
+        )
+        .await?;
+    assert!(matches!(api_key, AdminCredentialCreateOutcome::Created(_)));
+    assert_eq!(
+        fixture
+            .repository
+            .create_credential(
+                channel.channel_id(),
+                oauth_credential_record("example", None),
+                |_| Ok(envelope(0x64)),
+            )
+            .await
+            .unwrap_err(),
+        AdminChannelWriteRepositoryError::InvalidInput
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn responses_websocket_toggle_preserves_unknown_sensitive_settings()
 -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;

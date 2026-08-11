@@ -30,8 +30,8 @@ use crate::{
 };
 use af_account::{CredentialDecryptor, SystemSecretCipher, SystemSecretKind};
 use af_adapter::{
-    AdaptorSettings, AnthropicAdaptorSettings, GeminiAdaptorSettings, HeaderMap, HeaderName,
-    HeaderValue, JinaAdaptorSettings, OpenAiAdaptorSettings, RelayContext,
+    AdaptorSettings, AnthropicAdaptorSettings, CohereAdaptorSettings, GeminiAdaptorSettings,
+    HeaderMap, HeaderName, HeaderValue, JinaAdaptorSettings, OpenAiAdaptorSettings, RelayContext,
     ResponsesWebSocketPoolKey, TransportDispatcher, get_adaptor,
 };
 use af_db::{ChannelStateRepository, CredentialStateRepository};
@@ -869,7 +869,8 @@ fn candidate_request(
         | Protocol::OpenAiImages
         | Protocol::OpenAiAudio
         | Protocol::OpenAiSpeech
-        | Protocol::JinaRerank => Err(AfError::Internal),
+        | Protocol::JinaRerank
+        | Protocol::CohereRerank => Err(AfError::Internal),
         Protocol::Anthropic => AnthropicRequestOverrides::new(
             upstream_model,
             parameters.temperature(),
@@ -911,6 +912,7 @@ fn target_matches_protocol(
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
                 | (ChannelType::Gemini, Protocol::Gemini)
                 | (ChannelType::Jina, Protocol::JinaRerank)
+                | (ChannelType::Cohere, Protocol::CohereRerank)
         )
 }
 
@@ -941,6 +943,11 @@ fn adaptor_settings(
         }
         (ChannelType::Jina, Protocol::JinaRerank) => {
             Ok(AdaptorSettings::Jina(JinaAdaptorSettings::new(vec![
+                upstream_model,
+            ])))
+        }
+        (ChannelType::Cohere, Protocol::CohereRerank) => {
+            Ok(AdaptorSettings::Cohere(CohereAdaptorSettings::new(vec![
                 upstream_model,
             ])))
         }

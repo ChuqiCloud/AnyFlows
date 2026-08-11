@@ -2,11 +2,11 @@ use std::{future::Future, pin::Pin};
 
 use af_domain::{AfError, ConcurrencyLimit, GatewayPrincipal};
 use af_protocol::CanonicalRerankRequest;
-use af_relay::JinaRerankResponse;
+use af_relay::RerankResponse;
 
 /// Rerank 业务服务的一次异步调用结果。
 pub type RerankServiceFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<JinaRerankResponse, AfError>> + Send + 'a>>;
+    Pin<Box<dyn Future<Output = Result<RerankResponse, AfError>> + Send + 'a>>;
 
 /// HTTP 层依赖的对象安全 Rerank 服务端口。
 ///

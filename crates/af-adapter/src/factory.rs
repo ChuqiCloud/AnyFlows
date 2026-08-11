@@ -3,9 +3,9 @@ use std::{fmt, sync::Arc};
 use af_domain::{ChannelType, Protocol};
 
 use crate::{
-    Adaptor, AdaptorError, AdaptorResult, AnthropicAdaptor, BedrockAdaptor, CustomAdaptor,
-    CustomAuthentication, CustomEndpointTemplate, CustomStreamEndpoint, GeminiAdaptor, JinaAdaptor,
-    OpenAiAdaptor, VertexAdaptor,
+    Adaptor, AdaptorError, AdaptorResult, AnthropicAdaptor, BedrockAdaptor, CohereAdaptor,
+    CustomAdaptor, CustomAuthentication, CustomEndpointTemplate, CustomStreamEndpoint,
+    GeminiAdaptor, JinaAdaptor, OpenAiAdaptor, VertexAdaptor,
 };
 
 /// OpenAI 适配器的强类型构造配置。
@@ -149,6 +149,33 @@ impl fmt::Debug for JinaAdaptorSettings {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("JinaAdaptorSettings")
+            .field("supported_model_count", &self.supported_models.len())
+            .finish()
+    }
+}
+
+/// Cohere v2 原生 Rerank 适配器的强类型构造配置。
+#[derive(Clone, Eq, PartialEq)]
+pub struct CohereAdaptorSettings {
+    supported_models: Vec<String>,
+}
+
+impl CohereAdaptorSettings {
+    /// 使用已校验的模型清单创建 Cohere 配置；空清单表示无内建模型限制。
+    #[must_use]
+    pub fn new(supported_models: Vec<String>) -> Self {
+        Self { supported_models }
+    }
+
+    fn into_supported_models(self) -> Vec<String> {
+        self.supported_models
+    }
+}
+
+impl fmt::Debug for CohereAdaptorSettings {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("CohereAdaptorSettings")
             .field("supported_model_count", &self.supported_models.len())
             .finish()
     }
@@ -315,6 +342,8 @@ pub enum AdaptorSettings {
     Gemini(GeminiAdaptorSettings),
     /// Jina 原生 Rerank 渠道配置。
     Jina(JinaAdaptorSettings),
+    /// Cohere v2 原生 Rerank 渠道配置。
+    Cohere(CohereAdaptorSettings),
     /// Amazon Bedrock Runtime SigV4 渠道配置。
     Bedrock(BedrockAdaptorSettings),
     /// Google Vertex AI Google Publisher/Gemini 渠道配置。
@@ -340,6 +369,10 @@ impl fmt::Debug for AdaptorSettings {
                 .finish(),
             Self::Jina(settings) => formatter
                 .debug_tuple("AdaptorSettings::Jina")
+                .field(settings)
+                .finish(),
+            Self::Cohere(settings) => formatter
+                .debug_tuple("AdaptorSettings::Cohere")
                 .field(settings)
                 .finish(),
             Self::Bedrock(settings) => formatter
@@ -382,6 +415,9 @@ pub fn get_adaptor(
         (ChannelType::Jina, AdaptorSettings::Jina(settings)) => Ok(Arc::new(
             JinaAdaptor::with_supported_models(settings.into_supported_models()),
         )),
+        (ChannelType::Cohere, AdaptorSettings::Cohere(settings)) => Ok(Arc::new(
+            CohereAdaptor::with_supported_models(settings.into_supported_models()),
+        )),
         (ChannelType::Bedrock, AdaptorSettings::Bedrock(settings)) => {
             let (region, models) = settings.into_parts();
             Ok(Arc::new(BedrockAdaptor::with_supported_models(
@@ -412,6 +448,7 @@ pub fn get_adaptor(
             | ChannelType::Bedrock
             | ChannelType::Vertex
             | ChannelType::Jina
+            | ChannelType::Cohere
             | ChannelType::Custom),
             _,
         ) => Err(AdaptorError::InvalidChannelSettings { channel_type }),
@@ -446,6 +483,12 @@ mod tests {
 
     fn jina_settings(models: &[&str]) -> AdaptorSettings {
         AdaptorSettings::Jina(JinaAdaptorSettings::new(
+            models.iter().map(|model| (*model).to_owned()).collect(),
+        ))
+    }
+
+    fn cohere_settings(models: &[&str]) -> AdaptorSettings {
+        AdaptorSettings::Cohere(CohereAdaptorSettings::new(
             models.iter().map(|model| (*model).to_owned()).collect(),
         ))
     }
@@ -590,6 +633,29 @@ mod tests {
     }
 
     #[test]
+    fn factory_builds_configured_isolated_cohere_instances() {
+        let unrestricted = get_adaptor(ChannelType::Cohere, cohere_settings(&[])).unwrap();
+        assert!(unrestricted.supported_models().is_empty());
+
+        let settings = cohere_settings(&["private-reranker-a", "private-reranker-b"]);
+        let settings_debug = format!("{settings:?}");
+        assert!(settings_debug.contains("supported_model_count: 2"));
+        assert!(!settings_debug.contains("private-reranker-a"));
+
+        let configured = get_adaptor(ChannelType::Cohere, settings).unwrap();
+        assert_eq!(configured.channel_type(), ChannelType::Cohere);
+        assert_eq!(configured.default_protocol(), Protocol::CohereRerank);
+        assert_eq!(
+            configured.default_base_url(),
+            CohereAdaptor::DEFAULT_BASE_URL
+        );
+        assert_eq!(
+            configured.supported_models(),
+            ["private-reranker-a", "private-reranker-b"]
+        );
+    }
+
+    #[test]
     fn factory_builds_configured_isolated_bedrock_instances() {
         let unrestricted =
             get_adaptor(ChannelType::Bedrock, bedrock_settings("us-east-1", &[])).unwrap();
@@ -710,6 +776,10 @@ mod tests {
                 openai_settings(&["private-openai-model-for-jina"]),
             ),
             (
+                ChannelType::Cohere,
+                jina_settings(&["private-jina-model-for-cohere"]),
+            ),
+            (
                 ChannelType::Vertex,
                 bedrock_settings("us-east-1", &["private-bedrock-model-for-vertex"]),
             ),
@@ -733,6 +803,7 @@ mod tests {
             assert!(!rendered.contains("private-openai-model"));
             assert!(!rendered.contains("private-bedrock-model-for-vertex"));
             assert!(!rendered.contains("private-openai-model-for-jina"));
+            assert!(!rendered.contains("private-jina-model-for-cohere"));
             assert!(!rendered.contains("private-openai-model-for-custom"));
             assert!(!rendered.contains("private-custom-model-for-openai"));
         }
@@ -740,8 +811,9 @@ mod tests {
 
     #[test]
     fn factory_channel_enum_has_no_unimplemented_placeholders() {
-        assert_eq!(ChannelType::ALL.len(), 7);
+        assert_eq!(ChannelType::ALL.len(), 8);
         assert!(ChannelType::ALL.contains(&ChannelType::Jina));
+        assert!(ChannelType::ALL.contains(&ChannelType::Cohere));
         assert!(ChannelType::ALL.contains(&ChannelType::Custom));
     }
 

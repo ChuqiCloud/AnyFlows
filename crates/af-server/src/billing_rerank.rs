@@ -10,7 +10,7 @@ use af_protocol::{
     CanonicalRerankRequest, RerankUsage, TokenCount, Usage, UsageDetails, UsageSemantics,
     UsageSource,
 };
-use af_relay::JinaRerankResponse;
+use af_relay::RerankResponse;
 
 use crate::billing_chat::{
     complete_with_retries, map_lifecycle_error, map_snapshot_error, new_reservation_id,
@@ -19,7 +19,7 @@ use crate::billing_chat::{
 
 /// 已固定路由计划的一次 Rerank 异步执行结果。
 pub type PlannedRerankExecutionFuture =
-    Pin<Box<dyn Future<Output = Result<JinaRerankResponse, AfError>> + Send + 'static>>;
+    Pin<Box<dyn Future<Output = Result<RerankResponse, AfError>> + Send + 'static>>;
 
 /// 在计费前完成候选与目标分组装配的 Rerank 请求级计划。
 pub trait PlannedRerankExecution: Send {
@@ -83,7 +83,7 @@ impl BillingRerankService {
         user_concurrency: Option<ConcurrencyLimit>,
         request: CanonicalRerankRequest,
         request_id: &str,
-    ) -> Result<JinaRerankResponse, AfError> {
+    ) -> Result<RerankResponse, AfError> {
         let upper_bound = rerank_usage_upper_bound(&request)?;
         let model = request.model().to_owned();
         let planned = self
@@ -110,7 +110,7 @@ impl BillingRerankService {
         let _ = complete_with_retries(&mut lifecycle, settlement_usage)
             .await
             .map_err(map_lifecycle_error)?;
-        Ok(JinaRerankResponse::new(body, usage))
+        Ok(RerankResponse::new(body, usage))
     }
 }
 
@@ -177,7 +177,7 @@ fn rerank_usage_upper_bound(request: &CanonicalRerankRequest) -> Result<Usage, A
     .map_err(|_| AfError::Internal)
 }
 
-/// Jina 缺少 token usage 时保留公开空值，但结算使用已冻结的 UTF-8 字节上界。
+/// 上游缺少真实 token usage 时保留公开空值，但结算使用已冻结的 UTF-8 字节上界。
 fn rerank_settlement_usage(usage: Option<RerankUsage>, upper_bound: Usage) -> Usage {
     usage
         .and_then(RerankUsage::token_usage)
