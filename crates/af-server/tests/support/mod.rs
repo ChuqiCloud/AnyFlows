@@ -45,6 +45,8 @@ pub const OPENAI_IMAGES_CHANNEL_ID: i64 = 8_100_014;
 pub const OPENAI_IMAGES_CREDENTIAL_ID: i64 = 8_100_015;
 pub const OPENAI_AUDIO_CHANNEL_ID: i64 = 8_100_016;
 pub const OPENAI_AUDIO_CREDENTIAL_ID: i64 = 8_100_017;
+pub const OPENAI_SPEECH_CHANNEL_ID: i64 = 8_100_018;
+pub const OPENAI_SPEECH_CREDENTIAL_ID: i64 = 8_100_019;
 pub const RUNTIME_HEADER_NAME: &str = "x-runtime-header";
 pub const RUNTIME_HEADER_VALUE: &str = "runtime-header-value";
 const CREDENTIAL_KEY_ID: &str = "gateway-test-key";
@@ -188,6 +190,34 @@ pub async fn seed_openai_audio_runtime_channel_with(
             credential_id: OPENAI_AUDIO_CREDENTIAL_ID,
             name: "runtime-openai-audio",
             protocol: "openai_audio",
+            base_url,
+            public_model,
+            upstream_model,
+            api_key,
+            timeout_secs,
+        },
+    )
+    .await;
+}
+
+/// 按显式地址、模型映射和凭据写入 OpenAI Speech 测试渠道。
+pub async fn seed_openai_speech_runtime_channel_with(
+    connection: &DatabaseConnection,
+    group_id: i64,
+    base_url: &str,
+    public_model: &str,
+    upstream_model: &str,
+    api_key: &str,
+    timeout_secs: Option<i32>,
+) {
+    seed_openai_runtime_channel_with(
+        connection,
+        group_id,
+        OpenAiRuntimeChannel {
+            channel_id: OPENAI_SPEECH_CHANNEL_ID,
+            credential_id: OPENAI_SPEECH_CREDENTIAL_ID,
+            name: "runtime-openai-speech",
+            protocol: "openai_speech",
             base_url,
             public_model,
             upstream_model,

@@ -402,7 +402,8 @@ fn adaptor_settings(
             | Protocol::OpenAiResponses
             | Protocol::OpenAiEmbeddings
             | Protocol::OpenAiImages
-            | Protocol::OpenAiAudio,
+            | Protocol::OpenAiAudio
+            | Protocol::OpenAiSpeech,
         ) => Ok(AdaptorSettings::OpenAi(
             OpenAiAdaptorSettings::for_protocol(protocol, Vec::new())
                 .map_err(|_| UpstreamModelDiscoveryError::UnsupportedChannel)?,
@@ -427,6 +428,7 @@ fn supported_target(target: &ModelDiscoveryTargetRecord) -> bool {
                 | Protocol::OpenAiEmbeddings
                 | Protocol::OpenAiImages
                 | Protocol::OpenAiAudio
+                | Protocol::OpenAiSpeech
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
             | (ChannelType::Gemini, Protocol::Gemini)
     )

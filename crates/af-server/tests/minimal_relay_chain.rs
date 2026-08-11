@@ -74,13 +74,13 @@ use af_http::{
     AudioService, AudioServiceFuture, EmbeddingService, EmbeddingServiceFuture, HttpListener,
     ImageService, ImageServiceFuture, QueryApiKeyPolicy, ReadinessFuture, ReadinessHandle,
     ReadinessProbe, ResponsesCompactService, ResponsesCompactServiceFuture, ServeOutcome,
-    build_router, serve_with_graceful_shutdown,
+    SpeechService, SpeechServiceFuture, build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{HttpClientConfig, HttpClientPool, HttpTimeouts, ProxyConfig, RemoteDnsPolicy};
 use af_protocol::{
-    CanonicalAudioTranscriptionRequest, CanonicalEmbeddingRequest, CanonicalImageGenerationRequest,
-    CanonicalResponsesCompactionRequest, CanonicalStreamEvent, ContentDelta, FinishReason,
-    TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
+    CanonicalAudioSpeechRequest, CanonicalAudioTranscriptionRequest, CanonicalEmbeddingRequest,
+    CanonicalImageGenerationRequest, CanonicalResponsesCompactionRequest, CanonicalStreamEvent,
+    ContentDelta, FinishReason, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource,
     openai_responses::OpenAiResponsesStreamEncoder,
 };
 use af_relay::RelayService;
@@ -193,6 +193,7 @@ struct RejectAdminUsers;
 struct RejectEmbeddings;
 struct RejectImages;
 struct RejectAudio;
+struct RejectSpeech;
 struct RejectResponsesCompact;
 
 impl ResponsesCompactService for RejectResponsesCompact {
@@ -215,6 +216,18 @@ impl AudioService for RejectAudio {
         _request: CanonicalAudioTranscriptionRequest,
         _request_id: &'a str,
     ) -> AudioServiceFuture<'a> {
+        Box::pin(async { Err(AfError::Internal) })
+    }
+}
+
+impl SpeechService for RejectSpeech {
+    fn synthesize<'a>(
+        &'a self,
+        _principal: &'a GatewayPrincipal,
+        _user_concurrency: Option<ConcurrencyLimit>,
+        _request: CanonicalAudioSpeechRequest,
+        _request_id: &'a str,
+    ) -> SpeechServiceFuture<'a> {
         Box::pin(async { Err(AfError::Internal) })
     }
 }
@@ -1832,6 +1845,7 @@ async fn start_server(
         Arc::new(RejectAudio),
         Arc::new(RejectEmbeddings),
         Arc::new(RejectImages),
+        Arc::new(RejectSpeech),
         Arc::new(RejectResponsesCompact),
         readiness,
         Arc::new(AlwaysAuthenticates),

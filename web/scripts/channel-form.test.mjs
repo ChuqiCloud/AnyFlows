@@ -154,9 +154,23 @@ test('OpenAI Audio 渠道禁止携带通用 Chat 参数覆盖', () => {
   const request = toCreateRequest(values)
   assert.equal(request.type, 'openai')
   assert.equal(request.protocol, 'openai_audio')
+
+  const speechValues = {
+    ...defaultChannelValues(),
+    name: 'Speech',
+    channelType: 'openai',
+    protocol: 'openai_speech',
+  }
+  assert.equal(schema.safeParse(speechValues).success, true)
+  const speech = toCreateRequest(speechValues)
+  assert.equal(speech.protocol, 'openai_speech')
   assert.deepEqual(request.param_override, {})
   assert.equal(schema.safeParse({
     ...values,
+    paramOverride: [{ id: 'temperature', key: 'temperature', value: '0.5', values: [] }],
+  }).success, false)
+  assert.equal(schema.safeParse({
+    ...speechValues,
     paramOverride: [{ id: 'temperature', key: 'temperature', value: '0.5', values: [] }],
   }).success, false)
 })

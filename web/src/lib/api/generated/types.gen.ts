@@ -87,7 +87,7 @@ export type AdminChannelAutoBanRules = {
 export type AdminChannelCreateRequest = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -123,12 +123,12 @@ export type AdminChannelProbeResponse = {
     latency_ms: number;
 };
 export type AdminChannelProbeStatus = 'healthy' | 'unhealthy' | 'timeout';
-export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
+export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini';
 export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'bedrock' | 'vertex' | 'custom';
 export type AdminChannelUpdateRequest = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -972,6 +972,31 @@ export type AdminWalletListResponse = {
     entries: Array<AdminWalletEntry>;
     next_cursor: number | null;
 };
+export type AudioSpeechBinary = Blob | File;
+export type AudioSpeechCustomVoice = {
+    id: string;
+};
+export type AudioSpeechError = {
+    error: AudioSpeechErrorBody;
+};
+export type AudioSpeechErrorBody = {
+    code: string;
+    message: string;
+    param: string | null;
+    type: string;
+};
+export type AudioSpeechOutputFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm';
+export type AudioSpeechRequest = {
+    model: string;
+    input: string;
+    voice: AudioSpeechVoice;
+    instructions?: string | null;
+    response_format?: null | AudioSpeechOutputFormat;
+    speed?: number | null;
+    stream_format?: null | AudioSpeechStreamFormat;
+};
+export type AudioSpeechStreamFormat = 'audio';
+export type AudioSpeechVoice = string | AudioSpeechCustomVoice;
 export type IssuedAdminRedemptionBatch = {
     batch: AdminRedemptionBatch;
     codes: Array<string>;
@@ -1028,7 +1053,7 @@ export type ModelCatalogListResponse = {
     next_cursor: string | null;
 };
 export type ModelCatalogPricingScope = 'public_base' | 'group';
-export type ModelCatalogProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
+export type ModelCatalogProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini';
 export type ModelCatalogRatios = {
     group_micros: string;
     group_model_micros: string;
@@ -1336,7 +1361,7 @@ export type UserWalletSummary = {
 export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -1372,7 +1397,7 @@ export type AdminChannelCreateRequestWritable = {
 export type AdminChannelUpdateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'anthropic' | 'gemini';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -1684,6 +1709,25 @@ export type CompactResponseResponses = {
     200: ResponsesCompactResponse;
 };
 export type CompactResponseResponse = CompactResponseResponses[keyof CompactResponseResponses];
+export type SynthesizeSpeechData = {
+    body: AudioSpeechRequest;
+    path?: never;
+    query?: never;
+    url: '/v1/audio/speech';
+};
+export type SynthesizeSpeechErrors = {
+    400: AudioSpeechError;
+    401: AudioSpeechError;
+    404: AudioSpeechError;
+    429: AudioSpeechError;
+    500: AudioSpeechError;
+    503: AudioSpeechError;
+};
+export type SynthesizeSpeechError = SynthesizeSpeechErrors[keyof SynthesizeSpeechErrors];
+export type SynthesizeSpeechResponses = {
+    200: AudioSpeechBinary;
+};
+export type SynthesizeSpeechResponse = SynthesizeSpeechResponses[keyof SynthesizeSpeechResponses];
 export type ListAdminRedemptionAuditData = {
     body?: never;
     path?: never;

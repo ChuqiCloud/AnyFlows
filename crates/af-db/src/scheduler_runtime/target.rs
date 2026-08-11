@@ -33,6 +33,7 @@ pub(super) const fn is_supported_runtime_target(
                 | Protocol::OpenAiEmbeddings
                 | Protocol::OpenAiImages
                 | Protocol::OpenAiAudio
+                | Protocol::OpenAiSpeech
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
             | (ChannelType::Gemini, Protocol::Gemini)
     )

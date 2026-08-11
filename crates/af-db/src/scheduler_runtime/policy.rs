@@ -154,7 +154,10 @@ impl ChannelParameterOverrides {
     ) -> Result<(), ChannelRequestPolicyError> {
         if matches!(
             protocol,
-            Protocol::OpenAiEmbeddings | Protocol::OpenAiImages | Protocol::OpenAiAudio
+            Protocol::OpenAiEmbeddings
+                | Protocol::OpenAiImages
+                | Protocol::OpenAiAudio
+                | Protocol::OpenAiSpeech
         ) && !self.is_empty()
         {
             return Err(ChannelRequestPolicyError);
@@ -377,6 +380,11 @@ mod tests {
         assert!(
             overrides
                 .validate_for_protocol(Protocol::OpenAiAudio)
+                .is_err()
+        );
+        assert!(
+            overrides
+                .validate_for_protocol(Protocol::OpenAiSpeech)
                 .is_err()
         );
         assert!(

@@ -85,6 +85,7 @@ use crate::openai_embeddings::openai_embeddings;
 use crate::openai_images::openai_images;
 use crate::openai_responses::openai_responses;
 use crate::openai_responses_compact::openai_responses_compact;
+use crate::openai_speech::openai_speech;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::password_reset::build_password_reset_router;
 use crate::playground_conversations::build_playground_conversation_router;
@@ -99,7 +100,8 @@ use crate::user_topups::build_user_topup_router;
 use crate::user_wallet::build_user_wallet_router;
 use crate::{
     AudioService, ChatService, EmbeddingService, ImageService, QueryApiKeyPolicy,
-    ResponsesCompactService, chat_completions::HttpState, chat_completions::chat_completions,
+    ResponsesCompactService, SpeechService, chat_completions::HttpState,
+    chat_completions::chat_completions,
 };
 
 /// OpenAI Chat 业务路由的默认请求正文上限，与协议解析预算共享单一常量。
@@ -136,6 +138,7 @@ pub fn build_router(
     audio: Arc<dyn AudioService>,
     embedding: Arc<dyn EmbeddingService>,
     image: Arc<dyn ImageService>,
+    speech: Arc<dyn SpeechService>,
     responses_compact: Arc<dyn ResponsesCompactService>,
     readiness: ReadinessHandle,
     authenticator: Arc<dyn TokenAuthenticator>,
@@ -214,6 +217,7 @@ pub fn build_router(
     .with_audio_service(audio)
     .with_embedding_service(embedding)
     .with_image_service(image)
+    .with_speech_service(speech)
     .with_responses_compact_service(responses_compact)
     .with_initial_setup(initial_setup)
     .with_model_catalog_reader(model_catalog_reader)
@@ -248,7 +252,12 @@ pub fn build_router(
         .route(
             "/v1/audio/transcriptions",
             // Audio 使用独立 multipart 入口和非流式计费端口，不进入通用 Chat 参数链路。
-            post(openai_audio_transcription).route_layer(openai_authentication),
+            post(openai_audio_transcription).route_layer(openai_authentication.clone()),
+        )
+        .route(
+            "/v1/audio/speech",
+            // Speech 使用独立 JSON 入站与二进制响应链路，不进入转录或 Chat 参数路径。
+            post(openai_speech).route_layer(openai_authentication),
         )
         .route(
             "/v1/responses",

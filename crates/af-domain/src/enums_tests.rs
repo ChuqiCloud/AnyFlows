@@ -34,6 +34,7 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
             (Protocol::OpenAiEmbeddings, "openai_embeddings"),
             (Protocol::OpenAiImages, "openai_images"),
             (Protocol::OpenAiAudio, "openai_audio"),
+            (Protocol::OpenAiSpeech, "openai_speech"),
             (Protocol::Anthropic, "anthropic"),
             (Protocol::Gemini, "gemini"),
         ]

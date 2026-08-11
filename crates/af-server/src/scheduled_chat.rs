@@ -56,6 +56,7 @@ mod audio;
 mod compact;
 mod embedding;
 mod image;
+mod speech;
 
 /// 路由计划在同一次 Redis 快照中取得的账号负载与用户许可。
 struct PreparedConcurrencyPlan<'a> {
@@ -863,9 +864,10 @@ fn candidate_request(
             .map(Some)
             .map_err(|_| AfError::Internal)
         }
-        Protocol::OpenAiEmbeddings | Protocol::OpenAiImages | Protocol::OpenAiAudio => {
-            Err(AfError::Internal)
-        }
+        Protocol::OpenAiEmbeddings
+        | Protocol::OpenAiImages
+        | Protocol::OpenAiAudio
+        | Protocol::OpenAiSpeech => Err(AfError::Internal),
         Protocol::Anthropic => AnthropicRequestOverrides::new(
             upstream_model,
             parameters.temperature(),
@@ -903,6 +905,7 @@ fn target_matches_protocol(
                     | Protocol::OpenAiEmbeddings
                     | Protocol::OpenAiImages
                     | Protocol::OpenAiAudio
+                    | Protocol::OpenAiSpeech
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
                 | (ChannelType::Gemini, Protocol::Gemini)
         )
@@ -919,7 +922,8 @@ fn adaptor_settings(
             | Protocol::OpenAiResponses
             | Protocol::OpenAiEmbeddings
             | Protocol::OpenAiImages
-            | Protocol::OpenAiAudio,
+            | Protocol::OpenAiAudio
+            | Protocol::OpenAiSpeech,
         ) => Ok(AdaptorSettings::OpenAi(
             OpenAiAdaptorSettings::for_protocol(target.protocol(), vec![upstream_model])
                 .map_err(|_| AfError::Internal)?,

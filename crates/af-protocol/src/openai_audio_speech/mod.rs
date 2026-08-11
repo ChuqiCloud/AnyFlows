@@ -1,9 +1,9 @@
 //! OpenAI Audio Speech 非 SSE 协议转换。
 //!
 //! 首切片按 `POST /v1/audio/speech` endpoint reference 处理 JSON 请求和完整二进制响应。
-//! `stream_format: "sse"`、生产调度与计费由后续切片接入。官方 TTS 指南的 custom
-//! voice 示例还使用了当前 endpoint reference 未声明的 `language`/`format` 别名；这里
-//! 继续按未知字段失败关闭，避免在契约未稳定前静默改写语义。
+//! `stream_format: "sse"` 仍未进入当前生产范围；公开路由、调度与计费由上层独立服务
+//! 闭合。官方 TTS 指南的 custom voice 示例还使用了当前 endpoint reference 未声明的
+//! `language`/`format` 别名；这里继续按未知字段失败关闭，避免在契约未稳定前静默改写语义。
 
 use std::{error::Error, fmt, str::FromStr};
 

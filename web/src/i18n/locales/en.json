@@ -123,6 +123,7 @@
       "openai_embeddings": "OpenAI Embeddings",
       "openai_images": "OpenAI Images",
       "openai_audio": "OpenAI Audio Transcription",
+      "openai_speech": "OpenAI Text to Speech",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -1901,6 +1902,7 @@
       "openai_embeddings": "OpenAI Embeddings",
       "openai_images": "OpenAI Images",
       "openai_audio": "OpenAI Audio Transcription",
+      "openai_speech": "OpenAI Text to Speech",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -2025,6 +2027,7 @@
       "openai_embeddings": "OpenAI Embeddings",
       "openai_images": "OpenAI Images",
       "openai_audio": "OpenAI Audio Transcription",
+      "openai_speech": "OpenAI Text to Speech",
       "anthropic": "Anthropic",
       "gemini": "Gemini"
     },
@@ -2116,6 +2119,7 @@
         "openai_embeddings": "OpenAI Embeddings",
         "openai_images": "OpenAI Images",
         "openai_audio": "OpenAI Audio Transcription",
+        "openai_speech": "OpenAI Text to Speech",
         "anthropic": "Anthropic",
         "gemini": "Gemini",
         "unavailable": "Unsupported in Playground"

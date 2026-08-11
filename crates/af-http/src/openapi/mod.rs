@@ -27,6 +27,7 @@ pub(crate) mod schema;
 mod session;
 mod setup;
 mod site_settings;
+mod speech;
 mod subscriptions;
 mod tokens;
 mod usage_logs;
@@ -50,6 +51,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(setup::document());
     document.merge(registration::document());
     document.merge(responses_compact::document());
+    document.merge(speech::document());
     document.merge(redemptions::document());
     document.merge(subscriptions::document());
     document.merge(password_reset::document());
@@ -85,6 +87,7 @@ pub fn openapi_document() -> OpenApi {
     document.tags = Some(vec![
         Tag::new("公开注册"),
         Tag::new("OpenAI Responses"),
+        Tag::new("OpenAI Audio"),
         Tag::new("认证设置"),
         Tag::new("密码重置"),
         Tag::new("个人资料与安全"),
@@ -155,7 +158,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 77);
+        assert_eq!(document.paths.paths.len(), 78);
         let operation_count = document
             .paths
             .paths
@@ -176,7 +179,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 117);
+        assert_eq!(operation_count, 118);
         assert!(
             document
                 .components
@@ -204,6 +207,7 @@ mod tests {
             .collect::<BTreeSet<_>>();
         let expected = [
             "compactResponse",
+            "synthesizeSpeech",
             "createAdminChannel",
             "createAdminCredential",
             "createAdminCredentialProxy",
@@ -327,7 +331,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 211);
+        assert_eq!(schemas.len(), 219);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminResponsesCompactProbe"));
         assert!(schemas.contains_key("ResponsesCompactError"));
@@ -341,9 +345,26 @@ mod tests {
         assert!(schemas.contains_key("ResponsesCompactRequest"));
         assert!(schemas.contains_key("ResponsesCompactResponse"));
         assert!(schemas.contains_key("ResponsesCompactUsage"));
+        assert!(schemas.contains_key("AudioSpeechRequest"));
+        assert!(schemas.contains_key("AudioSpeechVoice"));
+        assert!(schemas.contains_key("AudioSpeechCustomVoice"));
+        assert!(schemas.contains_key("AudioSpeechOutputFormat"));
+        assert!(schemas.contains_key("AudioSpeechStreamFormat"));
+        assert!(schemas.contains_key("AudioSpeechBinary"));
+        assert!(schemas.contains_key("AudioSpeechErrorBody"));
+        assert!(schemas.contains_key("AudioSpeechError"));
         assert!(schemas.contains_key("AdminChannelAutoBanRules"));
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));
+        let writable_protocols =
+            schemas["AdminChannelCreateRequest"]["properties"]["protocol"]["oneOf"][0]["enum"]
+                .as_array()
+                .unwrap();
+        assert!(
+            writable_protocols
+                .iter()
+                .any(|value| value == "openai_speech")
+        );
         assert!(schemas.contains_key("AdminCredentialSecret"));
         assert!(schemas.contains_key("AdminCredentialProxy"));
         assert!(schemas.contains_key("AdminCredentialProxyListResponse"));

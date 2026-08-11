@@ -22,6 +22,7 @@ mod openai_responses;
 mod openai_responses_compact;
 mod openai_responses_request;
 mod openai_responses_stream;
+mod openai_speech;
 mod state_machine;
 
 pub use anthropic::{RelayAnthropicOutcome, relay_anthropic, relay_anthropic_with_report};
@@ -50,7 +51,7 @@ pub use openai_chat_request::{OpenAiChatRequestOverrideError, OpenAiChatRequestO
 pub use openai_chat_stream::OpenAiChatStream;
 pub use openai_chat_usage::{
     OpenAiChatUsageHandle, UsageResolutionError, estimate_openai_chat_request_upper_bound,
-    estimate_openai_request_upper_bound,
+    estimate_openai_request_upper_bound, estimate_openai_text_tokens,
 };
 pub use openai_embeddings::{
     EmbeddingResponse, RelayOpenAiEmbeddingsOutcome, relay_openai_embeddings,
@@ -70,6 +71,10 @@ pub use openai_responses_request::{
     OpenAiResponsesRequestOverrideError, OpenAiResponsesRequestOverrides,
 };
 pub use openai_responses_stream::OpenAiResponsesStream;
+pub use openai_speech::{
+    RelayOpenAiSpeechOutcome, SpeechResponse, encode_openai_speech_request, relay_openai_speech,
+    relay_openai_speech_with_report,
+};
 pub use state_machine::{
     RelayAttemptFailure, RelayAttemptReport, RelayCandidate, RelayCandidateRequest,
     RelayExecutionError, RelayRequest, RelayResponse, RelayState, RelayStateMachine,

@@ -108,7 +108,7 @@ impl CustomAdaptor {
             Protocol::OpenAiResponses => Operation::Responses,
             Protocol::OpenAiEmbeddings => Operation::Embedding,
             Protocol::OpenAiImages => Operation::Image,
-            Protocol::OpenAiAudio => Operation::Audio,
+            Protocol::OpenAiAudio | Protocol::OpenAiSpeech => Operation::Audio,
             Protocol::OpenAiChat | Protocol::Anthropic | Protocol::Gemini => Operation::Chat,
         }
     }

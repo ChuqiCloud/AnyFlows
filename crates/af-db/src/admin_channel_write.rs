@@ -1113,6 +1113,7 @@ fn validate_channel_fields(
                     | Protocol::OpenAiEmbeddings
                     | Protocol::OpenAiImages
                     | Protocol::OpenAiAudio
+                    | Protocol::OpenAiSpeech
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
                 | (ChannelType::Gemini, Protocol::Gemini)
         )

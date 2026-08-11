@@ -53,6 +53,7 @@ mod openai_embeddings;
 mod openai_images;
 mod openai_responses;
 mod openai_responses_compact;
+mod openai_speech;
 mod openapi;
 mod operations;
 mod password_reset;
@@ -65,6 +66,7 @@ mod responses_compact_service;
 mod router;
 mod serve;
 mod site_settings;
+mod speech_service;
 mod streaming;
 mod subscriptions;
 mod user_profile;
@@ -98,6 +100,7 @@ pub use payment_webhook::build_payment_webhook_router;
 pub use responses_compact_service::{ResponsesCompactService, ResponsesCompactServiceFuture};
 pub use router::{DEFAULT_REQUEST_BODY_LIMIT_BYTES, HttpRouter, build_router};
 pub use serve::{HttpListener, ServeError, ServeOutcome, serve_with_graceful_shutdown};
+pub use speech_service::{SpeechService, SpeechServiceFuture};
 
 #[cfg(test)]
 mod authentication_tests;
