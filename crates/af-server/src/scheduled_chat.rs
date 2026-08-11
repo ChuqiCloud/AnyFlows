@@ -58,6 +58,12 @@ mod embedding;
 mod image;
 mod rerank;
 mod speech;
+mod video_task;
+
+pub use video_task::{
+    BoundVideoTaskSubmission, VideoTaskBinding, VideoTaskPollFuture, VideoTaskRuntime,
+    VideoTaskSubmissionFuture,
+};
 
 /// 路由计划在同一次 Redis 快照中取得的账号负载与用户许可。
 struct PreparedConcurrencyPlan<'a> {
@@ -870,7 +876,8 @@ fn candidate_request(
         | Protocol::OpenAiAudio
         | Protocol::OpenAiSpeech
         | Protocol::JinaRerank
-        | Protocol::CohereRerank => Err(AfError::Internal),
+        | Protocol::CohereRerank
+        | Protocol::XaiVideo => Err(AfError::Internal),
         Protocol::Anthropic => AnthropicRequestOverrides::new(
             upstream_model,
             parameters.temperature(),
@@ -913,6 +920,7 @@ fn target_matches_protocol(
                 | (ChannelType::Gemini, Protocol::Gemini)
                 | (ChannelType::Jina, Protocol::JinaRerank)
                 | (ChannelType::Cohere, Protocol::CohereRerank)
+                | (ChannelType::Xai, Protocol::XaiVideo)
         )
 }
 

@@ -38,6 +38,7 @@ pub(super) const fn is_supported_runtime_target(
             | (ChannelType::Gemini, Protocol::Gemini)
             | (ChannelType::Jina, Protocol::JinaRerank)
             | (ChannelType::Cohere, Protocol::CohereRerank)
+            | (ChannelType::Xai, Protocol::XaiVideo)
     )
 }
 

@@ -10482,7 +10482,8 @@
                   "anthropic",
                   "gemini",
                   "jina",
-                  "cohere"
+                  "cohere",
+                  "xai"
                 ]
               }
             ],
@@ -10501,6 +10502,7 @@
                   "openai_speech",
                   "jina_rerank",
                   "cohere_rerank",
+                  "xai_video",
                   "anthropic",
                   "gemini"
                 ]
@@ -10717,6 +10719,7 @@
           "openai_speech",
           "jina_rerank",
           "cohere_rerank",
+          "xai_video",
           "anthropic",
           "gemini"
         ]
@@ -10729,6 +10732,7 @@
           "gemini",
           "jina",
           "cohere",
+          "xai",
           "bedrock",
           "vertex",
           "custom"
@@ -10765,7 +10769,8 @@
               "anthropic",
               "gemini",
               "jina",
-              "cohere"
+              "cohere",
+              "xai"
             ]
           },
           "protocol": {
@@ -10779,6 +10784,7 @@
               "openai_speech",
               "jina_rerank",
               "cohere_rerank",
+              "xai_video",
               "anthropic",
               "gemini"
             ]
@@ -16633,6 +16639,7 @@
           "openai_speech",
           "jina_rerank",
           "cohere_rerank",
+          "xai_video",
           "anthropic",
           "gemini"
         ]

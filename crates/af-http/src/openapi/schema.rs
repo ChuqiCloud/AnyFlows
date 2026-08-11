@@ -382,6 +382,7 @@ pub(crate) enum AdminChannelTypeSchema {
     Gemini,
     Jina,
     Cohere,
+    Xai,
     Bedrock,
     Vertex,
     Custom,
@@ -399,6 +400,7 @@ pub(crate) enum AdminChannelProtocolSchema {
     OpenaiSpeech,
     JinaRerank,
     CohereRerank,
+    XaiVideo,
     Anthropic,
     Gemini,
 }
@@ -412,6 +414,7 @@ pub(crate) enum AdminChannelWriteTypeSchema {
     Gemini,
     Jina,
     Cohere,
+    Xai,
 }
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
@@ -426,6 +429,7 @@ pub(crate) enum AdminChannelWriteProtocolSchema {
     OpenaiSpeech,
     JinaRerank,
     CohereRerank,
+    XaiVideo,
     Anthropic,
     Gemini,
 }

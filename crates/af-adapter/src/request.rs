@@ -101,6 +101,13 @@ impl UpstreamRequest {
         Ok(self)
     }
 
+    /// 合并已经由渠道配置边界校验的非认证请求头并重新检查总预算。
+    pub fn with_header_overrides(mut self, overrides: HeaderMap) -> AdaptorResult<Self> {
+        self.headers.extend(overrides);
+        validate_headers(&self.headers)?;
+        Ok(self)
+    }
+
     /// 返回请求方法。
     #[must_use]
     pub const fn method(&self) -> &Method {

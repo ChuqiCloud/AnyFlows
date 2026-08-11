@@ -413,6 +413,7 @@ fn probe_operation(protocol: Protocol) -> Result<Operation, ProbeFailure> {
         Protocol::OpenAiImages => Ok(Operation::Image),
         Protocol::OpenAiAudio | Protocol::OpenAiSpeech => Ok(Operation::Audio),
         Protocol::JinaRerank | Protocol::CohereRerank => Ok(Operation::Rerank),
+        Protocol::XaiVideo => Err(ProbeFailure::UnsupportedTarget),
     }
 }
 
@@ -444,6 +445,10 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
     if protocol == Protocol::CohereRerank {
         let value = cohere_rerank_v2::build_request(&probe_rerank_request(model)?);
         return Ok(Bytes::from(value.to_string()));
+    }
+    if protocol == Protocol::XaiVideo {
+        // 视频生成探活会产生真实付费任务，未设计低成本专用探针前保持不支持。
+        return Err(ProbeFailure::UnsupportedTarget);
     }
     let mut request = CanonicalRequest::new(
         probe_operation(protocol)?,
@@ -478,7 +483,8 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
         | Protocol::OpenAiAudio
         | Protocol::OpenAiSpeech
         | Protocol::JinaRerank
-        | Protocol::CohereRerank => {
+        | Protocol::CohereRerank
+        | Protocol::XaiVideo => {
             unreachable!("非对话协议已在独立请求分支返回")
         }
         Protocol::Anthropic => {
@@ -565,6 +571,7 @@ fn validate_probe_response(protocol: Protocol, body: &[u8]) -> Result<(), ProbeF
                 .map(|_| ())
                 .map_err(|_| ProbeFailure::InvalidResponse)
         }
+        Protocol::XaiVideo => Err(ProbeFailure::UnsupportedTarget),
         Protocol::Anthropic => anthropic::parse_response(body)
             .map(|_| ())
             .map_err(|_| ProbeFailure::InvalidResponse),

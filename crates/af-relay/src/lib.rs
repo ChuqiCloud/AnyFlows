@@ -27,6 +27,7 @@ mod openai_responses_stream;
 mod openai_speech;
 mod rerank;
 mod state_machine;
+mod video_task;
 
 pub use anthropic::{RelayAnthropicOutcome, relay_anthropic, relay_anthropic_with_report};
 pub use anthropic_request::{AnthropicRequestOverrideError, AnthropicRequestOverrides};
@@ -87,4 +88,8 @@ pub use rerank::{RelayRerankOutcome, RerankResponse, relay_rerank_with_report};
 pub use state_machine::{
     RelayAttemptFailure, RelayAttemptReport, RelayCandidate, RelayCandidateRequest,
     RelayExecutionError, RelayRequest, RelayResponse, RelayState, RelayStateMachine,
+};
+pub use video_task::{
+    VideoTaskPollOutcome, VideoTaskSubmissionCandidate, VideoTaskSubmissionOutcome,
+    VideoTaskTarget, relay_video_task_poll, relay_video_task_submission,
 };

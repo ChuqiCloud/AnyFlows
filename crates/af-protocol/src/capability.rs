@@ -93,6 +93,12 @@ const COHERE_RERANK_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {
     response: &[],
     stream: &[],
 };
+const XAI_VIDEO_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {
+    protocol: Protocol::XaiVideo,
+    request: &[],
+    response: &[],
+    stream: &[],
+};
 const ANTHROPIC_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {
     protocol: Protocol::Anthropic,
     request: request::ANTHROPIC,
@@ -118,6 +124,7 @@ pub const fn protocol_capabilities(protocol: Protocol) -> &'static ProtocolCapab
         Protocol::OpenAiSpeech => &OPENAI_SPEECH_CAPABILITIES,
         Protocol::JinaRerank => &JINA_RERANK_CAPABILITIES,
         Protocol::CohereRerank => &COHERE_RERANK_CAPABILITIES,
+        Protocol::XaiVideo => &XAI_VIDEO_CAPABILITIES,
         Protocol::Anthropic => &ANTHROPIC_CAPABILITIES,
         Protocol::Gemini => &GEMINI_CAPABILITIES,
     }

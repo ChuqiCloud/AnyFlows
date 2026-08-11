@@ -110,6 +110,7 @@ impl CustomAdaptor {
             Protocol::OpenAiImages => Operation::Image,
             Protocol::OpenAiAudio | Protocol::OpenAiSpeech => Operation::Audio,
             Protocol::JinaRerank | Protocol::CohereRerank => Operation::Rerank,
+            Protocol::XaiVideo => Operation::Video,
             Protocol::OpenAiChat | Protocol::Anthropic | Protocol::Gemini => Operation::Chat,
         }
     }

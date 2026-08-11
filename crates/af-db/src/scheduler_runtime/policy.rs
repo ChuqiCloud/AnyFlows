@@ -160,6 +160,7 @@ impl ChannelParameterOverrides {
                 | Protocol::OpenAiSpeech
                 | Protocol::JinaRerank
                 | Protocol::CohereRerank
+                | Protocol::XaiVideo
         ) && !self.is_empty()
         {
             return Err(ChannelRequestPolicyError);

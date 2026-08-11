@@ -99,8 +99,8 @@
   },
   "channels": {
     "title": "Channels",
-    "subtitle": "Maintain routing, credentials, and request policies for native OpenAI, Anthropic, and Gemini upstreams, then run a real probe when needed.",
-    "scope": "OpenAI Chat / Responses, Anthropic Messages, and Gemini generateContent",
+    "subtitle": "Maintain routing, credentials, and request policies for chat, multimodal, rerank, and asynchronous video upstreams.",
+    "scope": "Native OpenAI, Anthropic, Gemini, Jina, Cohere, and xAI protocols",
     "count_one": "{{count}} channel",
     "count_other": "{{count}} channels",
     "loading": "Loading channels",
@@ -126,6 +126,7 @@
       "openai_speech": "OpenAI Text to Speech",
       "jina_rerank": "Jina Rerank",
       "cohere_rerank": "Cohere Rerank",
+      "xai_video": "xAI Video",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -134,7 +135,8 @@
       "anthropic": "Anthropic",
       "gemini": "Gemini",
       "jina": "Jina",
-      "cohere": "Cohere"
+      "cohere": "Cohere",
+      "xai": "xAI"
     },
     "values": {
       "defaultUrl": "Default upstream URL",
@@ -1909,6 +1911,7 @@
       "openai_speech": "OpenAI Text to Speech",
       "jina_rerank": "Jina Rerank",
       "cohere_rerank": "Cohere Rerank",
+      "xai_video": "xAI Video",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -2036,6 +2039,7 @@
       "openai_speech": "OpenAI Text to Speech",
       "jina_rerank": "Jina Rerank",
       "cohere_rerank": "Cohere Rerank",
+      "xai_video": "xAI Video",
       "anthropic": "Anthropic",
       "gemini": "Gemini"
     },
@@ -2130,6 +2134,7 @@
         "openai_speech": "OpenAI Text to Speech",
         "jina_rerank": "Jina Rerank",
         "cohere_rerank": "Cohere Rerank",
+        "xai_video": "xAI Video",
         "anthropic": "Anthropic",
         "gemini": "Gemini",
         "unavailable": "Unsupported in Playground"

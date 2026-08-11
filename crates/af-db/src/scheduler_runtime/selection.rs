@@ -61,8 +61,10 @@ fn try_runtime_target(
         if !matches!(
             credential_kind,
             CredentialKind::ApiKey | CredentialKind::Oauth
-        ) || (matches!(channel_type, ChannelType::Jina | ChannelType::Cohere)
-            && credential_kind != CredentialKind::ApiKey)
+        ) || (matches!(
+            channel_type,
+            ChannelType::Jina | ChannelType::Cohere | ChannelType::Xai
+        ) && credential_kind != CredentialKind::ApiKey)
         {
             continue;
         }

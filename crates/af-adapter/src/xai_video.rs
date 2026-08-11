@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use crate::credential::clear_authentication_headers;
 use crate::{
     AdaptorError, AdaptorResult, Credential, MAX_UPSTREAM_REQUEST_TARGET_BYTES, RelayContext,
-    TaskAdaptor, TaskAdaptorSendExt, UpstreamRequest, UpstreamResponse,
+    TaskAdaptor, TaskAdaptorSendExt, UpstreamRequest, UpstreamResponse, VideoTaskAdaptor,
 };
 
 /// xAI Grok Imagine Video 异步任务适配器。
@@ -46,6 +46,7 @@ impl XaiVideoAdaptor {
             self.headers(credential, true)?,
             Some(body.into()),
         )
+        .and_then(|request| request.with_response_body_limit(xai_video::MAX_BODY_BYTES))
     }
 
     /// 构造与给定任务标识严格绑定的官方轮询请求。
@@ -57,6 +58,7 @@ impl XaiVideoAdaptor {
     ) -> AdaptorResult<UpstreamRequest> {
         let target = self.poll_target(task_id, context)?;
         UpstreamRequest::new(Method::GET, target, self.headers(credential, false)?, None)
+            .and_then(|request| request.with_response_body_limit(xai_video::MAX_BODY_BYTES))
     }
 
     /// 通过统一 dispatcher 提交任务并归一化官方句柄。
@@ -156,6 +158,26 @@ impl XaiVideoAdaptor {
 impl Default for XaiVideoAdaptor {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl VideoTaskAdaptor for XaiVideoAdaptor {
+    fn build_video_submission_request(
+        &self,
+        request: &CanonicalVideoGenerationRequest,
+        credential: &Credential,
+        context: &RelayContext,
+    ) -> AdaptorResult<UpstreamRequest> {
+        self.build_submission_request(request, credential, context)
+    }
+
+    fn build_video_poll_request(
+        &self,
+        task_id: &UpstreamTaskId,
+        credential: &Credential,
+        context: &RelayContext,
+    ) -> AdaptorResult<UpstreamRequest> {
+        self.build_poll_request(task_id, credential, context)
     }
 }
 

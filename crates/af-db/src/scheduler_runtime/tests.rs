@@ -508,6 +508,33 @@ fn gemini_runtime_target_accepts_native_pair_and_rejects_mismatch() {
 }
 
 #[test]
+fn xai_runtime_target_accepts_video_pair_and_rejects_mismatch() {
+    let credential = runtime_credential_record(1);
+    assert!(
+        SchedulerRuntimeTargetRecord::new_pool(
+            ChannelId::new(1).unwrap(),
+            ChannelType::Xai,
+            Protocol::XaiVideo,
+            None,
+            vec![credential.clone()],
+            Vec::new(),
+        )
+        .is_ok()
+    );
+    assert!(
+        SchedulerRuntimeTargetRecord::new_pool(
+            ChannelId::new(1).unwrap(),
+            ChannelType::Xai,
+            Protocol::OpenAiImages,
+            None,
+            vec![credential],
+            Vec::new(),
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn credential_revision_changes_with_every_envelope_component() {
     let baseline = runtime_credential_record(1);
     let changed_nonce = SchedulerRuntimeCredentialRecord::new(

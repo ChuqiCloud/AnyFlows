@@ -344,7 +344,8 @@ fn validate_downstream_request(
         | Protocol::OpenAiAudio
         | Protocol::OpenAiSpeech
         | Protocol::JinaRerank
-        | Protocol::CohereRerank => Err(AfError::Internal),
+        | Protocol::CohereRerank
+        | Protocol::XaiVideo => Err(AfError::Internal),
     }
 }
 

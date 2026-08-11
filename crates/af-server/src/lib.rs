@@ -75,6 +75,10 @@ pub use bootstrap::{
     ListenerReady, RelayReady, RouterReady, ShutdownReport, Supervised, TelemetryReady, run,
 };
 pub use oauth_connection::OAuthRuntimeConfigError;
+pub use scheduled_chat::{
+    BoundVideoTaskSubmission, VideoTaskBinding, VideoTaskPollFuture, VideoTaskRuntime,
+    VideoTaskSubmissionFuture,
+};
 pub use scheduler_invalidation::SchedulerInvalidationRuntimeError;
 pub use shutdown::{ShutdownController, system_shutdown_signal};
 pub use smtp_delivery::SmtpEmailDelivery;

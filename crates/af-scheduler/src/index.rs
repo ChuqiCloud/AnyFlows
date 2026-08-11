@@ -540,6 +540,15 @@ impl IndexedWeightedScheduler {
         self.index.refresh().await.map(|_| ()).map_err(Into::into)
     }
 
+    /// 按渠道标识取得当前快照中的运行时目标，用于异步任务校验原目标绑定。
+    pub fn runtime_target(
+        &self,
+        channel_id: ChannelId,
+    ) -> Result<Option<Arc<SchedulerRuntimeTargetRecord>>, IndexedWeightedSchedulerError> {
+        let snapshot = self.index.snapshot()?;
+        Ok(snapshot.runtime_targets.get(&channel_id).cloned())
+    }
+
     /// 查询一个分组与 Canonical 模型的可用渠道，并从最高优先级层加权选择。
     pub fn select(
         &self,
