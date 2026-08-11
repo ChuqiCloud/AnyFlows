@@ -4,6 +4,7 @@ use rust_decimal::Decimal;
 use crate::quota_math::{
     QUOTA_PER_USD, QuotaClampKind, QuotaFactorError, QuotaMathError, QuotaMathOperation,
     checked_mul_quota, checked_mul_quota_with_limit, quota_from_tokens, quota_from_usd,
+    quota_from_usd_with_ratios,
 };
 
 #[test]
@@ -24,6 +25,14 @@ fn usd_conversion_uses_fixed_units_and_explicit_rounding() {
         Ok(Quota::new(1).unwrap())
     );
     assert_eq!(quota_from_usd(Decimal::new(999_999, 12)), Ok(Quota::ZERO));
+}
+
+#[test]
+fn usd_ratio_conversion_preserves_the_dollar_scale() {
+    assert_eq!(
+        quota_from_usd_with_ratios(Decimal::ONE, [1_500_000_i64, 800_000_i64, 1_250_000_i64],),
+        Ok(Quota::new(750_000).unwrap())
+    );
 }
 
 #[test]

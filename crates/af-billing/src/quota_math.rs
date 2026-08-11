@@ -303,7 +303,11 @@ pub(crate) fn quota_from_usd_with_ratios(
     if usd < Decimal::ZERO || ratio_micros.into_iter().any(|ratio| ratio < 0) {
         return Err(QuotaError::Negative.into());
     }
-    let effective = apply_pricing_ratios(usd, ratio_micros)?;
+    // 公共倍率函数会在末尾消除一次百万尺度；美元金额必须先补齐同一固定点尺度。
+    let weighted = Decimal::from(TOKENS_PER_MILLION)
+        .checked_mul(usd)
+        .ok_or_else(pricing_overflow)?;
+    let effective = apply_pricing_ratios(weighted, ratio_micros)?;
     quota_from_usd_for(effective, QuotaMathOperation::PricingResolution)
 }
 
