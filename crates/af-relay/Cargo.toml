@@ -16,5 +16,8 @@ tiktoken-rs.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
+[dev-dependencies]
+af-httpclient = { path = "../af-httpclient", version = "0.1.0" }
+
 [lints]
 workspace = true
