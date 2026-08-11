@@ -29,7 +29,7 @@ fn parses_mixed_text_documents_and_rebuilds_stable_request() {
     assert!(!debug.contains("jina-reranker"));
 
     let rebuilt = build_request(&request).unwrap();
-    insta::assert_json_snapshot!(rebuilt, @r###"
+    insta::assert_snapshot!(serde_json::to_string_pretty(&rebuilt).unwrap(), @r###"
     {
       "documents": [
         "first private document",
@@ -135,7 +135,7 @@ fn parses_ranked_response_with_token_and_search_unit_facts() {
     assert!(!debug.contains("second"));
 
     let rebuilt = build_response(&response).unwrap();
-    insta::assert_json_snapshot!(rebuilt, @r###"
+    insta::assert_snapshot!(serde_json::to_string_pretty(&rebuilt).unwrap(), @r###"
     {
       "id": "rerank-private-id",
       "meta": {
