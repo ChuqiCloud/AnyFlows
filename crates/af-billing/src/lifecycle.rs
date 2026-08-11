@@ -25,7 +25,10 @@ pub use records::{BillingCompletion, BillingUsageDimensions, BillingUsageRecord}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PlanMode {
     Free,
-    PerToken { precharge: Quota },
+    Metered {
+        billing_mode: BillingMode,
+        precharge: Quota,
+    },
 }
 
 /// 使用同一不可变定价解析器准备的一次请求计费计划。
@@ -50,7 +53,8 @@ impl BillingRequestPlan {
         let estimated = resolver.resolve(&PricingContext::new(estimated_usage))?;
         let mode = match estimated.billing_mode() {
             BillingMode::Free => PlanMode::Free,
-            BillingMode::PerToken => PlanMode::PerToken {
+            BillingMode::PerToken | BillingMode::PerCall => PlanMode::Metered {
+                billing_mode: estimated.billing_mode(),
                 precharge: if estimated.quota().is_zero() {
                     Quota::new(1).expect("1 必须始终是合法的最小正额度")
                 } else {
@@ -66,7 +70,7 @@ impl BillingRequestPlan {
     pub const fn billing_mode(&self) -> BillingMode {
         match self.mode {
             PlanMode::Free => BillingMode::Free,
-            PlanMode::PerToken { .. } => BillingMode::PerToken,
+            PlanMode::Metered { billing_mode, .. } => billing_mode,
         }
     }
 
@@ -75,7 +79,7 @@ impl BillingRequestPlan {
     pub const fn precharge_quota(&self) -> Option<Quota> {
         match self.mode {
             PlanMode::Free => None,
-            PlanMode::PerToken { precharge } => Some(precharge),
+            PlanMode::Metered { precharge, .. } => Some(precharge),
         }
     }
 
@@ -110,14 +114,15 @@ impl BillingRequestPlan {
         settlement_port: Arc<dyn BillingSettlementPort>,
         usage_port: Arc<dyn UsageRecordPort>,
     ) -> Result<BillingRequestLifecycle, BillingLifecycleError> {
-        if !matches!(self.mode, PlanMode::PerToken { .. }) {
+        let PlanMode::Metered { billing_mode, .. } = self.mode else {
             return Err(BillingLifecycleError::InvalidActivation);
-        }
+        };
         Ok(BillingRequestLifecycle {
             principal,
             event_id: reservation_id,
             resolver: self.resolver,
             state: LifecycleState::Metered {
+                billing_mode,
                 session: BillingSession::from_reserved(reservation_id, refund_port),
                 pending_completion: None,
             },
@@ -139,6 +144,7 @@ impl fmt::Debug for BillingRequestPlan {
 enum LifecycleState {
     Free,
     Metered {
+        billing_mode: BillingMode,
         session: BillingSession,
         pending_completion: Option<BillingCompletion>,
     },
@@ -256,9 +262,10 @@ impl BillingRequestLifecycle {
         let settlement = match &mut self.state {
             LifecycleState::Free if completion.billing_mode() == BillingMode::Free => None,
             LifecycleState::Metered {
+                billing_mode,
                 session,
                 pending_completion,
-            } if completion.billing_mode() == BillingMode::PerToken => {
+            } if completion.billing_mode() == *billing_mode => {
                 let settlement_port = settlement_port
                     .as_ref()
                     .cloned()
@@ -281,6 +288,7 @@ impl BillingRequestLifecycle {
             let LifecycleState::Metered {
                 session,
                 pending_completion: Some(pending_completion),
+                ..
             } = &mut self.state
             else {
                 return Err(BillingLifecycleError::InvalidActivation);

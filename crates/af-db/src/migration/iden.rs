@@ -74,12 +74,49 @@ pub(in crate::migration) mod async_task_submission_claims {
         UpstreamTaskId,
         BindingFingerprint,
         AttemptTimeoutMillis,
+        VideoDurationSeconds,
         VideoResolution,
         Status,
         ProgressBasisPoints,
         FailureKind,
         Version,
         AcceptedAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod async_task_billings {
+    use super::DeriveIden;
+
+    /// `async_task_billings` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "async_task_billings")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 异步任务计费迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        TaskKey,
+        UserId,
+        ReservationKey,
+        TargetGroupId,
+        State,
+        PriceCardVersion,
+        BillingResolution,
+        GroupRatioMicros,
+        GroupModelRatioMicros,
+        PeakRatioMicros,
+        UpperBound,
+        RateMicrousd,
+        FallbackQuota,
+        ActualQuota,
+        ActualDurationSeconds,
+        Version,
         CreatedAt,
         UpdatedAt,
     }

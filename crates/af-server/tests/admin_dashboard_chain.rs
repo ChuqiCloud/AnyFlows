@@ -129,6 +129,7 @@ async fn admin_dashboard_uses_real_aggregates_and_role_boundary() {
     assert_eq!(body["upstream_usage_count"], 1);
     assert_eq!(body["estimated_usage_count"], 1);
     assert_eq!(body["per_token_request_count"], 1);
+    assert_eq!(body["per_call_request_count"], 0);
     assert_eq!(body["free_request_count"], 1);
     assert_eq!(body["enabled_channel_count"], 1);
     assert_eq!(body["disabled_channel_count"], 1);

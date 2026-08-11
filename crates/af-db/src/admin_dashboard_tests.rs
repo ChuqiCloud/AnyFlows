@@ -28,7 +28,14 @@ async fn snapshot_uses_half_open_window_and_excludes_deleted_channels() -> Resul
             2,
             20,
         ),
-        (3, end, 1, 1, 30),
+        (
+            3,
+            TimeDateTimeWithTimeZone::from_unix_timestamp(1_750)?,
+            1,
+            3,
+            30,
+        ),
+        (4, end, 1, 1, 40),
     ] {
         usage_logs::ActiveModel {
             id: Set(id),
@@ -95,11 +102,12 @@ async fn snapshot_uses_half_open_window_and_excludes_deleted_channels() -> Resul
 
     let repository = AdminDashboardRepository::new(pool.clone(), Duration::from_secs(2))?;
     let snapshot = repository.snapshot(1_000, 2_000).await?;
-    assert_eq!(snapshot.request_count(), 2);
-    assert_eq!(snapshot.quota_consumed(), 30);
-    assert_eq!(snapshot.upstream_usage_count(), 1);
+    assert_eq!(snapshot.request_count(), 3);
+    assert_eq!(snapshot.quota_consumed(), 60);
+    assert_eq!(snapshot.upstream_usage_count(), 2);
     assert_eq!(snapshot.estimated_usage_count(), 1);
     assert_eq!(snapshot.per_token_request_count(), 1);
+    assert_eq!(snapshot.per_call_request_count(), 1);
     assert_eq!(snapshot.free_request_count(), 1);
     assert_eq!(snapshot.enabled_channel_count(), 1);
     assert_eq!(snapshot.disabled_channel_count(), 1);

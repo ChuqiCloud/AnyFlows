@@ -33,6 +33,8 @@ pub(crate) struct AdminDashboardResponse {
     #[schema(minimum = 0)]
     per_token_request_count: i64,
     #[schema(minimum = 0)]
+    per_call_request_count: i64,
+    #[schema(minimum = 0)]
     free_request_count: i64,
     #[schema(minimum = 0)]
     enabled_channel_count: i64,
@@ -71,6 +73,7 @@ impl AdminDashboardResponse {
             upstream_usage_count: dashboard.upstream_usage_count(),
             estimated_usage_count: dashboard.estimated_usage_count(),
             per_token_request_count: dashboard.per_token_request_count(),
+            per_call_request_count: dashboard.per_call_request_count(),
             free_request_count: dashboard.free_request_count(),
             enabled_channel_count: dashboard.enabled_channel_count(),
             disabled_channel_count: dashboard.disabled_channel_count(),

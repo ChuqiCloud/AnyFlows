@@ -18,6 +18,7 @@ use af_domain::{
 };
 
 pub(crate) mod abilities;
+pub(crate) mod async_task_billings;
 pub(crate) mod async_task_submission_claims;
 pub(crate) mod async_tasks;
 pub(crate) mod auth_challenge_rate_limits;

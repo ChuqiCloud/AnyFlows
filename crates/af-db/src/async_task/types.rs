@@ -323,6 +323,9 @@ pub enum AsyncTaskInputError {
     /// 已接受 claim 缺少恢复任务所需的完整绑定。
     #[error("异步任务提交绑定无效")]
     InvalidBinding,
+    /// 任务计费快照、额度、价目或状态参数无效。
+    #[error("异步任务计费输入无效")]
+    InvalidBilling,
 }
 
 /// 异步任务仓储构造错误。

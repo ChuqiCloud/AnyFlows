@@ -143,6 +143,14 @@ pub(super) fn claim_record(
     let request_fingerprint =
         AsyncTaskRequestFingerprint::from_persistence_key(model.request_fingerprint.as_str())
             .map_err(|_| AsyncTaskRepositoryError::Invariant)?;
+    let video_duration_seconds = model
+        .video_duration_seconds
+        .map(u8::try_from)
+        .transpose()
+        .map_err(|_| AsyncTaskRepositoryError::Invariant)?;
+    if video_duration_seconds.is_some_and(|value| !(1..=15).contains(&value)) {
+        return Err(AsyncTaskRepositoryError::Invariant);
+    }
     let state = claim_state_from_code(model.state)?;
     let attempt_id = model
         .attempt_key
@@ -261,6 +269,7 @@ pub(super) fn claim_record(
         protocol,
         requested_model,
         request_fingerprint,
+        video_duration_seconds,
         state,
         attempt_id,
         target_group_id,

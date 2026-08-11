@@ -78,6 +78,7 @@
       "billing": {
         "title": "计费模式",
         "perToken": "按 token 计费",
+        "perCall": "按次计费",
         "free": "免费请求"
       }
     },
@@ -1819,6 +1820,7 @@
       "quotaSemantics": "额度 {{quota}} / {{semantics}}",
       "billingMode": {
         "per_token": "按 token",
+        "per_call": "按次计费",
         "free": "免费"
       },
       "source": {

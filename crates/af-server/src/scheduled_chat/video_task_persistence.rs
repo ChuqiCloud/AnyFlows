@@ -6,21 +6,31 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use af_billing::BillingUsageDimensions;
+use af_billing::{
+    BillingUsageDimensions, BillingUsageRecord, GroupPricingCache, PricingRatio, PricingRatios,
+    TaskBillingPlan, TaskBillingReleaseSink, TaskBillingReservePort, TaskBillingSettlementPort,
+    TaskBillingSettlementRequest, UsageRecordSink, XAI_VIDEO_PRICE_CARD_VERSION,
+    XaiVideoPricingSnapshot,
+};
 use af_db::{
-    AsyncTaskCreateOutcome, AsyncTaskInputError, AsyncTaskRecord, AsyncTaskRepository,
-    AsyncTaskRepositoryError, AsyncTaskSubmissionAccept, AsyncTaskSubmissionBegin,
-    AsyncTaskSubmissionClaim, AsyncTaskSubmissionClaimOutcome, AsyncTaskSubmissionMutationOutcome,
-    AsyncTaskSubmissionRecord, AsyncTaskSubmissionRelease, AsyncTaskSubmissionRepository,
-    AsyncTaskSubmissionState, AsyncTaskTransition, AsyncTaskTransitionOutcome,
-    AsyncTaskVideoResolution,
+    AsyncTaskBillingAccept, AsyncTaskBillingClear, AsyncTaskBillingMark,
+    AsyncTaskBillingMutationOutcome, AsyncTaskBillingPlan, AsyncTaskBillingPlanOutcome,
+    AsyncTaskBillingRecord, AsyncTaskBillingRepository, AsyncTaskBillingResolution,
+    AsyncTaskBillingSettlement, AsyncTaskBillingState, AsyncTaskCreateOutcome, AsyncTaskInputError,
+    AsyncTaskRecord, AsyncTaskRepository, AsyncTaskRepositoryError, AsyncTaskSubmissionAccept,
+    AsyncTaskSubmissionBegin, AsyncTaskSubmissionClaim, AsyncTaskSubmissionClaimOutcome,
+    AsyncTaskSubmissionMutationOutcome, AsyncTaskSubmissionRecord, AsyncTaskSubmissionRelease,
+    AsyncTaskSubmissionRepository, AsyncTaskSubmissionState, AsyncTaskTransition,
+    AsyncTaskTransitionOutcome, AsyncTaskVideoResolution,
 };
 use af_domain::{
     AfError, AsyncTaskAttemptId, AsyncTaskBindingFingerprint, AsyncTaskId,
-    AsyncTaskRequestFingerprint, AsyncTaskRequestId, ChannelId, CredentialId, GatewayPrincipal,
-    GroupId, Protocol, TaskStatus, TaskSubmission, UserId,
+    AsyncTaskRequestFingerprint, AsyncTaskRequestId, BillingReservationId, ChannelId, CredentialId,
+    GatewayPrincipal, GroupId, Protocol, TaskStatus, TaskSubmission, UserId,
 };
-use af_protocol::{CanonicalTaskPoll, CanonicalVideoGenerationRequest, VideoResolution};
+use af_protocol::{
+    CanonicalTaskPoll, CanonicalVideoGenerationRequest, VideoDuration, VideoResolution,
+};
 use af_relay::VideoTaskSubmissionDisposition;
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
@@ -39,12 +49,21 @@ type PersistentSubmissionFuture<'a> = Pin<
 >;
 type PersistentPollFuture<'a> =
     Pin<Box<dyn Future<Output = Result<CanonicalTaskPoll, AfError>> + Send + 'a>>;
+type PersistentTargetGroupFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<GroupId, AfError>> + Send + 'a>>;
 
 /// 持久化协调器实际需要的最小视频运行时端口。
 trait PersistentVideoTaskRuntime: Send + Sync {
+    fn target_group<'a>(
+        &'a self,
+        group_id: GroupId,
+        model: &'a str,
+    ) -> PersistentTargetGroupFuture<'a>;
+
     fn submit<'a>(
         &'a self,
         group_id: GroupId,
+        expected_target_group_id: GroupId,
         request: CanonicalVideoGenerationRequest,
         request_id: &'a str,
     ) -> PersistentSubmissionFuture<'a>;
@@ -58,16 +77,34 @@ trait PersistentVideoTaskRuntime: Send + Sync {
 }
 
 impl PersistentVideoTaskRuntime for ScheduledChatService {
+    fn target_group<'a>(
+        &'a self,
+        group_id: GroupId,
+        model: &'a str,
+    ) -> PersistentTargetGroupFuture<'a> {
+        Box::pin(async move {
+            self.video_route(group_id, model)
+                .await
+                .map(|route| route.target_group_id())
+        })
+    }
+
     fn submit<'a>(
         &'a self,
         group_id: GroupId,
+        expected_target_group_id: GroupId,
         request: CanonicalVideoGenerationRequest,
         request_id: &'a str,
     ) -> PersistentSubmissionFuture<'a> {
         Box::pin(async move {
-            self.submit_video_task(group_id, request, request_id)
-                .await
-                .map(PersistentSubmission::from_bound)
+            self.submit_video_task_to_target(
+                group_id,
+                expected_target_group_id,
+                request,
+                request_id,
+            )
+            .await
+            .map(PersistentSubmission::from_bound)
         })
     }
 
@@ -141,6 +178,8 @@ pub(crate) enum PersistentVideoTaskError {
     Entropy,
     #[error("视频任务持久化内容违反不变量")]
     Invariant,
+    #[error("视频任务计费操作失败")]
+    Billing,
 }
 
 impl From<AsyncTaskRepositoryError> for PersistentVideoTaskError {
@@ -160,6 +199,12 @@ pub(crate) struct PersistentVideoTaskCoordinator {
     runtime: Arc<dyn PersistentVideoTaskRuntime>,
     tasks: AsyncTaskRepository,
     submissions: AsyncTaskSubmissionRepository,
+    billings: AsyncTaskBillingRepository,
+    group_pricing: GroupPricingCache,
+    reserve: Arc<dyn TaskBillingReservePort>,
+    settlement: Arc<dyn TaskBillingSettlementPort>,
+    release: Arc<dyn TaskBillingReleaseSink>,
+    usage: Arc<dyn UsageRecordSink>,
 }
 
 impl PersistentVideoTaskCoordinator {
@@ -168,19 +213,47 @@ impl PersistentVideoTaskCoordinator {
         runtime: ScheduledChatService,
         tasks: AsyncTaskRepository,
         submissions: AsyncTaskSubmissionRepository,
+        billings: AsyncTaskBillingRepository,
+        group_pricing: GroupPricingCache,
+        reserve: Arc<dyn TaskBillingReservePort>,
+        settlement: Arc<dyn TaskBillingSettlementPort>,
+        release: Arc<dyn TaskBillingReleaseSink>,
+        usage: Arc<dyn UsageRecordSink>,
     ) -> Self {
-        Self::with_runtime(Arc::new(runtime), tasks, submissions)
+        Self::with_runtime(
+            Arc::new(runtime),
+            tasks,
+            submissions,
+            billings,
+            group_pricing,
+            reserve,
+            settlement,
+            release,
+            usage,
+        )
     }
 
     fn with_runtime(
         runtime: Arc<dyn PersistentVideoTaskRuntime>,
         tasks: AsyncTaskRepository,
         submissions: AsyncTaskSubmissionRepository,
+        billings: AsyncTaskBillingRepository,
+        group_pricing: GroupPricingCache,
+        reserve: Arc<dyn TaskBillingReservePort>,
+        settlement: Arc<dyn TaskBillingSettlementPort>,
+        release: Arc<dyn TaskBillingReleaseSink>,
+        usage: Arc<dyn UsageRecordSink>,
     ) -> Self {
         Self {
             runtime,
             tasks,
             submissions,
+            billings,
+            group_pricing,
+            reserve,
+            settlement,
+            release,
+            usage,
         }
     }
 
@@ -194,6 +267,7 @@ impl PersistentVideoTaskCoordinator {
         relay_request_id: &str,
     ) -> Result<AsyncTaskRecord, PersistentVideoTaskError> {
         let request_fingerprint = request_fingerprint(&request);
+        let requested_duration_seconds = request.duration().map(|value| value.seconds());
         let requested_resolution = request.resolution().map(map_video_resolution);
         let claim = self
             .claim(AsyncTaskSubmissionClaim::new(
@@ -203,34 +277,67 @@ impl PersistentVideoTaskCoordinator {
                 Protocol::XaiVideo,
                 request.model().as_str().to_owned(),
                 request_fingerprint,
+                requested_duration_seconds,
                 now()?,
             )?)
             .await?;
         match claim.state() {
-            AsyncTaskSubmissionState::Accepted => return self.ensure_task(&claim).await,
+            AsyncTaskSubmissionState::Accepted => {
+                let billing = self.load_billing(&claim).await?;
+                self.ensure_billing_submitted(&claim, billing).await?;
+                return self.ensure_task(&claim).await;
+            }
             AsyncTaskSubmissionState::Submitting => {
+                if let Some(billing) = self
+                    .billings
+                    .find(claim.principal().user_id(), claim.task_id())
+                    .await?
+                {
+                    if matches!(
+                        billing.state(),
+                        AsyncTaskBillingState::ReleasePending | AsyncTaskBillingState::Released
+                    ) {
+                        self.finish_pre_submission_release(&claim, billing).await?;
+                    }
+                }
                 return Err(PersistentVideoTaskError::SubmissionOutcomeUnknown);
             }
             AsyncTaskSubmissionState::Claimed => {}
         }
 
+        let target_group_id = self
+            .runtime
+            .target_group(claim.principal().group_id(), claim.requested_model())
+            .await
+            .map_err(PersistentVideoTaskError::Runtime)?;
+        let billing = self
+            .prepare_billing(&claim, target_group_id, request.resolution())
+            .await?;
+        let billing = self.reserve_billing(&claim, billing).await?;
         let attempt_id = random_attempt_id()?;
         let begun = self.begin(&claim, attempt_id).await?;
         let submission = self
             .runtime
-            .submit(claim.principal().group_id(), request, relay_request_id)
+            .submit(
+                claim.principal().group_id(),
+                billing.target_group_id(),
+                request,
+                relay_request_id,
+            )
             .await;
         match submission {
             Ok(submission) => {
                 let accepted = self
                     .accept(&begun, attempt_id, submission, requested_resolution)
                     .await?;
+                self.ensure_billing_submitted(&accepted, billing).await?;
                 self.ensure_task(&accepted).await
             }
             Err(error)
                 if error.disposition() == VideoTaskSubmissionDisposition::DefinitelyNotAccepted =>
             {
-                self.release(&begun, attempt_id).await?;
+                self.release_pre_submission(&begun, attempt_id, billing)
+                    .await?;
                 Err(PersistentVideoTaskError::Runtime(error.into_error()))
             }
             Err(_) => Err(PersistentVideoTaskError::SubmissionOutcomeUnknown),
@@ -259,7 +366,19 @@ impl PersistentVideoTaskCoordinator {
         if !claim.matches_task(&task) {
             return Err(PersistentVideoTaskError::Invariant);
         }
+        let billing = self.load_billing(&claim).await?;
+        let billing = self.ensure_billing_submitted(&claim, billing).await?;
         if task.status().is_terminal() {
+            let expected_billing_state = match task.status() {
+                TaskStatus::Succeeded => AsyncTaskBillingState::Settled,
+                TaskStatus::Failed { .. } => AsyncTaskBillingState::Released,
+                TaskStatus::Submitted { .. }
+                | TaskStatus::Queued { .. }
+                | TaskStatus::Running { .. } => return Err(PersistentVideoTaskError::Invariant),
+            };
+            if billing.state() != expected_billing_state {
+                return Err(PersistentVideoTaskError::Invariant);
+            }
             return Ok(PersistentVideoTaskPollOutcome::Terminal(task));
         }
         let poll = self
@@ -269,6 +388,19 @@ impl PersistentVideoTaskCoordinator {
             .map_err(PersistentVideoTaskError::Runtime)?;
         let billing_dimensions = video_billing_dimensions(&claim, &poll)?;
         let expected_status = poll.status().clone();
+        match &expected_status {
+            TaskStatus::Succeeded => {
+                let dimensions = billing_dimensions.ok_or(PersistentVideoTaskError::Invariant)?;
+                self.complete_success_billing(&claim, billing, dimensions)
+                    .await?;
+            }
+            TaskStatus::Failed { .. } => {
+                self.complete_failure_billing(&claim, billing).await?;
+            }
+            TaskStatus::Submitted { .. }
+            | TaskStatus::Queued { .. }
+            | TaskStatus::Running { .. } => {}
+        }
         let updated = self
             .transition(
                 &task,
@@ -287,6 +419,476 @@ impl PersistentVideoTaskCoordinator {
             poll,
             billing_dimensions,
         })
+    }
+
+    async fn prepare_billing(
+        &self,
+        claim: &AsyncTaskSubmissionRecord,
+        target_group_id: GroupId,
+        requested_resolution: Option<VideoResolution>,
+    ) -> Result<AsyncTaskBillingRecord, PersistentVideoTaskError> {
+        if let Some(existing) = self
+            .billings
+            .find(claim.principal().user_id(), claim.task_id())
+            .await?
+        {
+            if existing.target_group_id() != target_group_id {
+                return Err(PersistentVideoTaskError::Invariant);
+            }
+            if existing.state() != AsyncTaskBillingState::Released {
+                return Ok(existing);
+            }
+            self.clear_released_billing(existing).await?;
+        }
+
+        let pricing = self.capture_pricing(claim, target_group_id, requested_resolution)?;
+        let ratios = pricing.ratios();
+        let write = AsyncTaskBillingPlan::new(
+            claim.task_id(),
+            claim.principal().user_id(),
+            random_reservation_id()?,
+            target_group_id,
+            XAI_VIDEO_PRICE_CARD_VERSION,
+            map_billing_resolution(pricing.resolution()),
+            [
+                ratios.group().micros(),
+                ratios.group_model().micros(),
+                ratios.applied_peak().micros(),
+            ],
+            pricing
+                .maximum_upper_bound()
+                .map_err(|_| PersistentVideoTaskError::Billing)?,
+            now()?,
+        )?;
+        let task_id = claim.task_id();
+        let user_id = claim.principal().user_id();
+        match self.billings.plan(write).await {
+            Ok(
+                AsyncTaskBillingPlanOutcome::Created(record)
+                | AsyncTaskBillingPlanOutcome::Existing(record),
+            ) => Ok(record),
+            Ok(AsyncTaskBillingPlanOutcome::NotFound) => Err(PersistentVideoTaskError::NotFound),
+            Err(AsyncTaskRepositoryError::OutcomeUnknown) => self
+                .billings
+                .find(user_id, task_id)
+                .await?
+                .ok_or(PersistentVideoTaskError::SubmissionOutcomeUnknown),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn capture_pricing(
+        &self,
+        claim: &AsyncTaskSubmissionRecord,
+        target_group_id: GroupId,
+        requested_resolution: Option<VideoResolution>,
+    ) -> Result<XaiVideoPricingSnapshot, PersistentVideoTaskError> {
+        if self.group_pricing.is_stale() {
+            return Err(PersistentVideoTaskError::Billing);
+        }
+        let snapshot = self
+            .group_pricing
+            .snapshot()
+            .map_err(|_| PersistentVideoTaskError::Billing)?;
+        let ratios = snapshot
+            .ratios_for_request(
+                claim.principal().group_id(),
+                target_group_id,
+                crate::utc_time::current_utc_day_second()
+                    .ok_or(PersistentVideoTaskError::Invariant)?,
+            )
+            .map_err(|_| PersistentVideoTaskError::Billing)?;
+        if self.group_pricing.is_stale() {
+            return Err(PersistentVideoTaskError::Billing);
+        }
+        Ok(XaiVideoPricingSnapshot::new(requested_resolution, ratios))
+    }
+
+    async fn reserve_billing(
+        &self,
+        claim: &AsyncTaskSubmissionRecord,
+        mut billing: AsyncTaskBillingRecord,
+    ) -> Result<AsyncTaskBillingRecord, PersistentVideoTaskError> {
+        if billing.state() == AsyncTaskBillingState::Reserved {
+            return Ok(billing);
+        }
+        if billing.state() != AsyncTaskBillingState::Planned {
+            return Err(PersistentVideoTaskError::Invariant);
+        }
+        let plan = TaskBillingPlan::new(
+            billing.reservation_id(),
+            claim.principal(),
+            billing.upper_bound(),
+        )
+        .map_err(|_| PersistentVideoTaskError::Billing)?;
+        plan.reserve(self.reserve.as_ref())
+            .await
+            .map_err(|_| PersistentVideoTaskError::Billing)?;
+        let command = || {
+            AsyncTaskBillingMark::new(
+                billing.task_id(),
+                billing.user_id(),
+                billing.version(),
+                now()?,
+            )
+            .map_err(PersistentVideoTaskError::from)
+        };
+        billing = match self.billings.mark_reserved(command()?).await {
+            Ok(outcome) => billing_mutation_record(outcome)?,
+            Err(AsyncTaskRepositoryError::OutcomeUnknown) => {
+                let current = self.load_billing(claim).await?;
+                if current.state() == AsyncTaskBillingState::Reserved {
+                    current
+                } else if current.state() == AsyncTaskBillingState::Planned
+                    && current.version() == billing.version()
+                {
+                    billing_mutation_record(self.billings.mark_reserved(command()?).await?)?
+                } else {
+                    return Err(PersistentVideoTaskError::SubmissionOutcomeUnknown);
+                }
+            }
+            Err(error) => return Err(error.into()),
+        };
+        Ok(billing)
+    }
+
+    async fn ensure_billing_submitted(
+        &self,
+        claim: &AsyncTaskSubmissionRecord,
+        billing: AsyncTaskBillingRecord,
+    ) -> Result<AsyncTaskBillingRecord, PersistentVideoTaskError> {
+        if billing.target_group_id()
+            != claim
+                .target_group_id()
+                .ok_or(PersistentVideoTaskError::Invariant)?
+        {
+            return Err(PersistentVideoTaskError::Invariant);
+        }
+        if matches!(
+            billing.state(),
+            AsyncTaskBillingState::Submitted
+                | AsyncTaskBillingState::SettlementPending
+                | AsyncTaskBillingState::Settled
+                | AsyncTaskBillingState::ReleasePending
+                | AsyncTaskBillingState::Released
+        ) {
+            return Ok(billing);
+        }
+        if billing.state() != AsyncTaskBillingState::Reserved {
+            return Err(PersistentVideoTaskError::Invariant);
+        }
+        let pricing = restore_pricing(&billing)?;
+        let rate_microusd = pricing
+            .rate_microusd(
+                claim
+                    .upstream_model()
+                    .ok_or(PersistentVideoTaskError::Invariant)?,
+            )
+            .map_err(|_| PersistentVideoTaskError::Billing)?;
+        let requested_duration = claim
+            .video_duration_seconds()
+            .map(VideoDuration::new)
+            .transpose()
+            .map_err(|_| PersistentVideoTaskError::Invariant)?;
+        let fallback_quota = pricing
+            .fallback_quota(rate_microusd, requested_duration)
+            .map_err(|_| PersistentVideoTaskError::Billing)?;
+        let command = || {
+            AsyncTaskBillingAccept::new(
+                billing.task_id(),
+                billing.user_id(),
+                billing.version(),
+                rate_microusd,
+                fallback_quota,
+                now()?,
+            )
+            .map_err(PersistentVideoTaskError::from)
+        };
+        match self.billings.accept(command()?).await {
+            Ok(outcome) => billing_mutation_record(outcome),
+            Err(AsyncTaskRepositoryError::OutcomeUnknown) => {
+                let current = self.load_billing(claim).await?;
+                if current.state() == AsyncTaskBillingState::Submitted
+                    && current.rate_microusd() == Some(rate_microusd)
+                    && current.fallback_quota() == Some(fallback_quota)
+                {
+                    Ok(current)
+                } else {
+                    billing_mutation_record(self.billings.accept(command()?).await?)
+                }
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    async fn complete_success_billing(
+        &self,
+        claim: &AsyncTaskSubmissionRecord,
+        mut billing: AsyncTaskBillingRecord,
+        dimensions: BillingUsageDimensions,
+    ) -> Result<(), PersistentVideoTaskError> {
+        let duration = dimensions
+            .video_duration()
+            .ok_or(PersistentVideoTaskError::Invariant)?;
+        let pricing = restore_pricing(&billing)?;
+        let rate_microusd = billing
+            .rate_microusd()
+            .ok_or(PersistentVideoTaskError::Invariant)?;
+        let actual_quota = pricing
+            .actual_quota(rate_microusd, duration)
+            .map_err(|_| PersistentVideoTaskError::Billing)?;
+        if billing.state() == AsyncTaskBillingState::Submitted {
+            let command = || {
+                AsyncTaskBillingSettlement::new(
+                    billing.task_id(),
+                    billing.user_id(),
+                    billing.version(),
+                    actual_quota,
+                    duration.seconds(),
+                    now()?,
+                )
+                .map_err(PersistentVideoTaskError::from)
+            };
+            billing = match self.billings.begin_settlement(command()?).await {
+                Ok(outcome) => billing_mutation_record(outcome)?,
+                Err(AsyncTaskRepositoryError::OutcomeUnknown) => {
+                    let current = self.load_billing(claim).await?;
+                    if current.state() == AsyncTaskBillingState::SettlementPending
+                        && current.actual_quota() == Some(actual_quota)
+                        && current.actual_duration_seconds() == Some(duration.seconds())
+                    {
+                        current
+                    } else {
+                        billing_mutation_record(self.billings.begin_settlement(command()?).await?)?
+                    }
+                }
+                Err(error) => return Err(error.into()),
+            };
+        }
+        if !matches!(
+            billing.state(),
+            AsyncTaskBillingState::SettlementPending | AsyncTaskBillingState::Settled
+        ) || billing.actual_quota() != Some(actual_quota)
+            || billing.actual_duration_seconds() != Some(duration.seconds())
+        {
+            return Err(PersistentVideoTaskError::Invariant);
+        }
+        if billing.state() == AsyncTaskBillingState::SettlementPending {
+            let request = TaskBillingSettlementRequest::new(
+                billing.reservation_id(),
+                actual_quota,
+                billing.upper_bound(),
+            )
+            .map_err(|_| PersistentVideoTaskError::Billing)?;
+            self.settlement
+                .settle(request)
+                .await
+                .map_err(|_| PersistentVideoTaskError::Billing)?;
+            let command = || {
+                AsyncTaskBillingMark::new(
+                    billing.task_id(),
+                    billing.user_id(),
+                    billing.version(),
+                    now()?,
+                )
+                .map_err(PersistentVideoTaskError::from)
+            };
+            billing = match self.billings.mark_settled(command()?).await {
+                Ok(outcome) => billing_mutation_record(outcome)?,
+                Err(AsyncTaskRepositoryError::OutcomeUnknown) => {
+                    let current = self.load_billing(claim).await?;
+                    if current.state() == AsyncTaskBillingState::Settled {
+                        current
+                    } else {
+                        billing_mutation_record(self.billings.mark_settled(command()?).await?)?
+                    }
+                }
+                Err(error) => return Err(error.into()),
+            };
+        }
+        if billing.state() != AsyncTaskBillingState::Settled {
+            return Err(PersistentVideoTaskError::Invariant);
+        }
+        self.usage
+            .persist(BillingUsageRecord::for_per_call(
+                billing.reservation_id(),
+                claim.principal(),
+                dimensions,
+                actual_quota,
+            ))
+            .await
+            .map_err(|_| PersistentVideoTaskError::Billing)
+    }
+
+    async fn complete_failure_billing(
+        &self,
+        claim: &AsyncTaskSubmissionRecord,
+        billing: AsyncTaskBillingRecord,
+    ) -> Result<(), PersistentVideoTaskError> {
+        let billing = self.begin_billing_release(claim, billing).await?;
+        self.persist_billing_release(claim, billing)
+            .await
+            .map(|_| ())
+    }
+
+    async fn release_pre_submission(
+        &self,
+        claim: &AsyncTaskSubmissionRecord,
+        attempt_id: AsyncTaskAttemptId,
+        billing: AsyncTaskBillingRecord,
+    ) -> Result<(), PersistentVideoTaskError> {
+        let billing = self.begin_billing_release(claim, billing).await?;
+        let billing = self.persist_billing_release(claim, billing).await?;
+        self.release(claim, attempt_id).await?;
+        self.clear_released_billing(billing).await
+    }
+
+    async fn finish_pre_submission_release(
+        &self,
+        claim: &AsyncTaskSubmissionRecord,
+        billing: AsyncTaskBillingRecord,
+    ) -> Result<(), PersistentVideoTaskError> {
+        let attempt_id = claim
+            .attempt_id()
+            .ok_or(PersistentVideoTaskError::Invariant)?;
+        let billing = self.persist_billing_release(claim, billing).await?;
+        self.release(claim, attempt_id).await?;
+        self.clear_released_billing(billing).await
+    }
+
+    async fn begin_billing_release(
+        &self,
+        claim: &AsyncTaskSubmissionRecord,
+        billing: AsyncTaskBillingRecord,
+    ) -> Result<AsyncTaskBillingRecord, PersistentVideoTaskError> {
+        if matches!(
+            billing.state(),
+            AsyncTaskBillingState::ReleasePending | AsyncTaskBillingState::Released
+        ) {
+            return Ok(billing);
+        }
+        if !matches!(
+            billing.state(),
+            AsyncTaskBillingState::Reserved | AsyncTaskBillingState::Submitted
+        ) {
+            return Err(PersistentVideoTaskError::Invariant);
+        }
+        let command = || {
+            AsyncTaskBillingMark::new(
+                billing.task_id(),
+                billing.user_id(),
+                billing.version(),
+                now()?,
+            )
+            .map_err(PersistentVideoTaskError::from)
+        };
+        match self.billings.begin_release(command()?).await {
+            Ok(outcome) => billing_mutation_record(outcome),
+            Err(AsyncTaskRepositoryError::OutcomeUnknown) => {
+                let current = self.load_billing(claim).await?;
+                if current.state() == AsyncTaskBillingState::ReleasePending {
+                    Ok(current)
+                } else {
+                    billing_mutation_record(self.billings.begin_release(command()?).await?)
+                }
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    async fn persist_billing_release(
+        &self,
+        claim: &AsyncTaskSubmissionRecord,
+        billing: AsyncTaskBillingRecord,
+    ) -> Result<AsyncTaskBillingRecord, PersistentVideoTaskError> {
+        if billing.state() == AsyncTaskBillingState::Released {
+            return Ok(billing);
+        }
+        if billing.state() != AsyncTaskBillingState::ReleasePending {
+            return Err(PersistentVideoTaskError::Invariant);
+        }
+        self.release
+            .release(billing.reservation_id())
+            .await
+            .map_err(|_| PersistentVideoTaskError::Billing)?;
+        let command = || {
+            AsyncTaskBillingMark::new(
+                billing.task_id(),
+                billing.user_id(),
+                billing.version(),
+                now()?,
+            )
+            .map_err(PersistentVideoTaskError::from)
+        };
+        match self.billings.mark_released(command()?).await {
+            Ok(outcome) => billing_mutation_record(outcome),
+            Err(AsyncTaskRepositoryError::OutcomeUnknown) => {
+                let current = self.load_billing(claim).await?;
+                if current.state() == AsyncTaskBillingState::Released {
+                    Ok(current)
+                } else {
+                    billing_mutation_record(self.billings.mark_released(command()?).await?)
+                }
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    async fn clear_released_billing(
+        &self,
+        billing: AsyncTaskBillingRecord,
+    ) -> Result<(), PersistentVideoTaskError> {
+        if billing.state() != AsyncTaskBillingState::Released {
+            return Err(PersistentVideoTaskError::Invariant);
+        }
+        let command = || {
+            AsyncTaskBillingClear::new(
+                billing.task_id(),
+                billing.user_id(),
+                billing.version(),
+                billing.reservation_id(),
+                now()?,
+            )
+            .map_err(PersistentVideoTaskError::from)
+        };
+        match self.billings.clear_released(command()?).await {
+            Ok(
+                AsyncTaskBillingMutationOutcome::Applied(_)
+                | AsyncTaskBillingMutationOutcome::NotFound,
+            ) => Ok(()),
+            Ok(AsyncTaskBillingMutationOutcome::Existing(_)) => {
+                Err(PersistentVideoTaskError::Invariant)
+            }
+            Err(AsyncTaskRepositoryError::OutcomeUnknown) => {
+                if self
+                    .billings
+                    .find(billing.user_id(), billing.task_id())
+                    .await?
+                    .is_none()
+                {
+                    Ok(())
+                } else {
+                    match self.billings.clear_released(command()?).await? {
+                        AsyncTaskBillingMutationOutcome::Applied(_)
+                        | AsyncTaskBillingMutationOutcome::NotFound => Ok(()),
+                        AsyncTaskBillingMutationOutcome::Existing(_) => {
+                            Err(PersistentVideoTaskError::Invariant)
+                        }
+                    }
+                }
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    async fn load_billing(
+        &self,
+        claim: &AsyncTaskSubmissionRecord,
+    ) -> Result<AsyncTaskBillingRecord, PersistentVideoTaskError> {
+        self.billings
+            .find(claim.principal().user_id(), claim.task_id())
+            .await?
+            .ok_or(PersistentVideoTaskError::Invariant)
     }
 
     async fn claim(
@@ -521,6 +1123,34 @@ fn mutation_record(
     }
 }
 
+fn billing_mutation_record(
+    outcome: AsyncTaskBillingMutationOutcome,
+) -> Result<AsyncTaskBillingRecord, PersistentVideoTaskError> {
+    match outcome {
+        AsyncTaskBillingMutationOutcome::Applied(record)
+        | AsyncTaskBillingMutationOutcome::Existing(record) => Ok(record),
+        AsyncTaskBillingMutationOutcome::NotFound => Err(PersistentVideoTaskError::NotFound),
+    }
+}
+
+fn restore_pricing(
+    billing: &AsyncTaskBillingRecord,
+) -> Result<XaiVideoPricingSnapshot, PersistentVideoTaskError> {
+    if billing.price_card_version() != XAI_VIDEO_PRICE_CARD_VERSION {
+        return Err(PersistentVideoTaskError::Billing);
+    }
+    let [group, group_model, peak] = billing.ratios();
+    let ratios = PricingRatios::new(
+        PricingRatio::new(group).map_err(|_| PersistentVideoTaskError::Billing)?,
+        PricingRatio::new(group_model).map_err(|_| PersistentVideoTaskError::Billing)?,
+        PricingRatio::new(peak).map_err(|_| PersistentVideoTaskError::Billing)?,
+    );
+    Ok(XaiVideoPricingSnapshot::restore(
+        restore_billing_resolution(billing.resolution()),
+        ratios,
+    ))
+}
+
 fn video_billing_dimensions(
     claim: &AsyncTaskSubmissionRecord,
     poll: &CanonicalTaskPoll,
@@ -544,6 +1174,22 @@ const fn map_video_resolution(resolution: VideoResolution) -> AsyncTaskVideoReso
         VideoResolution::P480 => AsyncTaskVideoResolution::P480,
         VideoResolution::P720 => AsyncTaskVideoResolution::P720,
         VideoResolution::P1080 => AsyncTaskVideoResolution::P1080,
+    }
+}
+
+const fn map_billing_resolution(resolution: VideoResolution) -> AsyncTaskBillingResolution {
+    match resolution {
+        VideoResolution::P480 => AsyncTaskBillingResolution::P480,
+        VideoResolution::P720 => AsyncTaskBillingResolution::P720,
+        VideoResolution::P1080 => AsyncTaskBillingResolution::P1080,
+    }
+}
+
+const fn restore_billing_resolution(resolution: AsyncTaskBillingResolution) -> VideoResolution {
+    match resolution {
+        AsyncTaskBillingResolution::P480 => VideoResolution::P480,
+        AsyncTaskBillingResolution::P720 => VideoResolution::P720,
+        AsyncTaskBillingResolution::P1080 => VideoResolution::P1080,
     }
 }
 
@@ -611,6 +1257,17 @@ fn random_attempt_id() -> Result<AsyncTaskAttemptId, PersistentVideoTaskError> {
         let mut bytes = [0_u8; 16];
         getrandom::fill(&mut bytes).map_err(|_| PersistentVideoTaskError::Entropy)?;
         if let Ok(value) = AsyncTaskAttemptId::new(bytes) {
+            return Ok(value);
+        }
+    }
+    Err(PersistentVideoTaskError::Entropy)
+}
+
+fn random_reservation_id() -> Result<BillingReservationId, PersistentVideoTaskError> {
+    for _ in 0..2 {
+        let mut bytes = [0_u8; 16];
+        getrandom::fill(&mut bytes).map_err(|_| PersistentVideoTaskError::Entropy)?;
+        if let Ok(value) = BillingReservationId::new(bytes) {
             return Ok(value);
         }
     }

@@ -60,6 +60,7 @@ mod m20260810_000051_add_usage_audio_duration;
 mod m20260811_000052_create_async_tasks;
 mod m20260811_000053_create_async_task_submission_claims;
 mod m20260811_000054_add_usage_video_dimensions;
+mod m20260811_000055_create_async_task_billings;
 mod schema;
 
 #[cfg(test)]
@@ -157,6 +158,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260811_000052_create_async_tasks::Migration),
             Box::new(m20260811_000053_create_async_task_submission_claims::Migration),
             Box::new(m20260811_000054_add_usage_video_dimensions::Migration),
+            Box::new(m20260811_000055_create_async_task_billings::Migration),
         ]
     }
 }

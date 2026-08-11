@@ -11955,6 +11955,7 @@
           "upstream_usage_count",
           "estimated_usage_count",
           "per_token_request_count",
+          "per_call_request_count",
           "free_request_count",
           "enabled_channel_count",
           "disabled_channel_count",
@@ -11994,6 +11995,11 @@
             "minimum": 0
           },
           "per_token_request_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "per_call_request_count": {
             "type": "integer",
             "format": "int64",
             "minimum": 0
@@ -15597,6 +15603,7 @@
         "type": "string",
         "enum": [
           "per_token",
+          "per_call",
           "free"
         ]
       },

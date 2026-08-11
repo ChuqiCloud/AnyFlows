@@ -37,6 +37,20 @@ function SourceBadge({ log }: { log: AdminUsageLog }) {
   )
 }
 
+function BillingModeBadge({ log }: { log: AdminUsageLog }) {
+  const { t } = useTranslation()
+  const tone = log.billing_mode === 'free'
+    ? 'bg-success/10 text-success'
+    : log.billing_mode === 'per_call'
+      ? 'bg-primary/10 text-primary'
+      : 'bg-info/10 text-info'
+  return (
+    <Badge className={cn('border-transparent', tone)}>
+      {t('usageLogs.values.billingMode.' + log.billing_mode)}
+    </Badge>
+  )
+}
+
 function CoreUsage({ log }: { log: AdminUsageLog }) {
   const { t } = useTranslation()
   const { number } = useFormatters()
@@ -100,7 +114,7 @@ function BillingValue({ log }: { log: AdminUsageLog }) {
   return (
     <>
       <div className="flex items-center gap-2">
-        <span>{t('usageLogs.values.billingMode.' + log.billing_mode)}</span>
+        <BillingModeBadge log={log} />
         <SourceBadge log={log} />
       </div>
       <div className="mt-1 text-[0.6875rem] text-muted-foreground">

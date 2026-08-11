@@ -24,6 +24,7 @@ pub struct AdminDashboardRecord {
     upstream_usage_count: i64,
     estimated_usage_count: i64,
     per_token_request_count: i64,
+    per_call_request_count: i64,
     free_request_count: i64,
     enabled_channel_count: i64,
     disabled_channel_count: i64,
@@ -59,6 +60,12 @@ impl AdminDashboardRecord {
     #[must_use]
     pub const fn per_token_request_count(self) -> i64 {
         self.per_token_request_count
+    }
+
+    /// 返回按次计费的请求数。
+    #[must_use]
+    pub const fn per_call_request_count(self) -> i64 {
+        self.per_call_request_count
     }
 
     /// 返回免费请求数。
@@ -198,6 +205,7 @@ struct UsageAggregateRow {
     upstream_usage_count: i64,
     estimated_usage_count: i64,
     per_token_request_count: i64,
+    per_call_request_count: i64,
     free_request_count: i64,
 }
 
@@ -212,6 +220,7 @@ impl UsageAggregateRow {
             upstream_usage_count: get_count(&result, "upstream_usage_count", backend)?,
             estimated_usage_count: get_count(&result, "estimated_usage_count", backend)?,
             per_token_request_count: get_count(&result, "per_token_request_count", backend)?,
+            per_call_request_count: get_count(&result, "per_call_request_count", backend)?,
             free_request_count: get_count(&result, "free_request_count", backend)?,
         })
     }
@@ -254,6 +263,7 @@ impl AdminDashboardRecord {
             usage.upstream_usage_count,
             usage.estimated_usage_count,
             usage.per_token_request_count,
+            usage.per_call_request_count,
             usage.free_request_count,
         ];
         let channel_values = [
@@ -267,7 +277,8 @@ impl AdminDashboardRecord {
             .checked_add(usage.estimated_usage_count);
         let billing_count = usage
             .per_token_request_count
-            .checked_add(usage.free_request_count);
+            .checked_add(usage.per_call_request_count)
+            .and_then(|count| count.checked_add(usage.free_request_count));
         let status_count = channels
             .enabled_channel_count
             .checked_add(channels.disabled_channel_count)
@@ -288,6 +299,7 @@ impl AdminDashboardRecord {
             upstream_usage_count: usage.upstream_usage_count,
             estimated_usage_count: usage.estimated_usage_count,
             per_token_request_count: usage.per_token_request_count,
+            per_call_request_count: usage.per_call_request_count,
             free_request_count: usage.free_request_count,
             enabled_channel_count: channels.enabled_channel_count,
             disabled_channel_count: channels.disabled_channel_count,
@@ -320,6 +332,10 @@ fn usage_query(
         .expr_as(
             conditional_count(usage_logs::Column::BillingMode, 1_i16),
             Alias::new("per_token_request_count"),
+        )
+        .expr_as(
+            conditional_count(usage_logs::Column::BillingMode, 3_i16),
+            Alias::new("per_call_request_count"),
         )
         .expr_as(
             conditional_count(usage_logs::Column::BillingMode, 2_i16),
@@ -452,6 +468,7 @@ mod tests {
             upstream_usage_count: 2,
             estimated_usage_count: 1,
             per_token_request_count: 1,
+            per_call_request_count: 0,
             free_request_count: 1,
         };
         let channels = ChannelAggregateRow {

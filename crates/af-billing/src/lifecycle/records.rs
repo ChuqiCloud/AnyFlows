@@ -1,7 +1,10 @@
 use std::fmt;
 
 use af_domain::{BillingReservationId, GatewayPrincipal, Quota};
-use af_protocol::{AudioDuration, Usage, VideoDuration, VideoResolution};
+use af_protocol::{
+    AudioDuration, TokenCount, Usage, UsageDetails, UsageSemantics, UsageSource, VideoDuration,
+    VideoResolution,
+};
 
 use crate::BillingMode;
 
@@ -114,6 +117,42 @@ impl BillingUsageRecord {
             billing_mode,
             quota,
         }
+    }
+
+    /// 为已经完成持久化结算的按次任务构造零 token 用量记录。
+    ///
+    /// 直接美元计费的任务不能伪装成 token 用量；真实视频时长和请求分辨率由
+    /// `dimensions` 独立承载，事件标识必须与冻结和结算使用同一预留标识。
+    #[must_use]
+    pub fn for_per_call(
+        event_id: BillingReservationId,
+        principal: GatewayPrincipal,
+        dimensions: BillingUsageDimensions,
+        quota: Quota,
+    ) -> Self {
+        let usage = Usage::new(
+            TokenCount::ZERO,
+            TokenCount::ZERO,
+            UsageDetails::new(
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+                TokenCount::ZERO,
+            ),
+            UsageSource::Upstream,
+            UsageSemantics::Inclusive,
+        )
+        .expect("全零按次用量必须始终满足规范化约束");
+        Self::new_with_dimensions(
+            event_id,
+            principal,
+            usage,
+            dimensions,
+            BillingMode::PerCall,
+            quota,
+        )
     }
 
     /// 返回用量存储重放必须复用的请求幂等标识。

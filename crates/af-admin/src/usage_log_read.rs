@@ -61,6 +61,8 @@ pub enum AdminUsageLogBillingMode {
     PerToken,
     /// 显式免费。
     Free,
+    /// 按请求次数或视频时长等业务维度直接计费。
+    PerCall,
 }
 
 impl AdminUsageLogBillingMode {
@@ -68,6 +70,7 @@ impl AdminUsageLogBillingMode {
         match value {
             1 => Ok(Self::PerToken),
             2 => Ok(Self::Free),
+            3 => Ok(Self::PerCall),
             _ => Err(AdminUsageLogReadError::Internal),
         }
     }

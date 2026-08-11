@@ -2,6 +2,7 @@ use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 
 mod async_task;
+mod async_task_billing;
 mod async_task_submission;
 mod auth_challenge;
 mod auth_challenge_rate_limit;
@@ -36,6 +37,7 @@ mod usage;
 mod wallet;
 
 pub(super) use async_task::create_async_tasks;
+pub(super) use async_task_billing::create_async_task_billings;
 pub(super) use async_task_submission::create_async_task_submission_claims;
 pub(super) use auth_challenge::{create_auth_challenge_indexes, create_auth_challenges};
 pub(super) use auth_challenge_rate_limit::create_auth_challenge_rate_limits;
@@ -142,7 +144,9 @@ pub(super) use registration::create_registration_rate_limits;
 pub(super) use site::{create_authentication_settings, create_site_settings};
 pub(super) use subscription::create_subscription_storage;
 pub(super) use subscription_alert::create_subscription_balance_alert_storage;
-pub(super) use usage::{create_usage_logs, create_usage_logs_indexes};
+pub(super) use usage::{
+    create_usage_logs, create_usage_logs_indexes, rebuild_usage_logs_for_per_call,
+};
 pub(super) use wallet::create_wallet_ledger;
 pub(super) use wallet::rebuild_wallet_ledger_for_invite_rebate;
 pub(super) use wallet::rebuild_wallet_ledger_for_redemption;

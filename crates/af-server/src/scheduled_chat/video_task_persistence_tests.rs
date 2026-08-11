@@ -8,7 +8,15 @@ use std::{
     time::Duration,
 };
 
-use af_db::{AsyncTaskRepository, AsyncTaskSubmissionRepository};
+use af_billing::{
+    DatabaseUsageRecordSink, GroupPricingCache, TaskBillingReleaseSink, TaskBillingReservePort,
+    TaskBillingSettlementError, TaskBillingSettlementFuture, TaskBillingSettlementPort,
+    TaskBillingSettlementRequest, UsageRecordSink,
+};
+use af_db::{
+    AsyncTaskBillingRepository, AsyncTaskRepository, AsyncTaskSubmissionRepository,
+    QuotaRepository, UsageLogRepository,
+};
 use af_domain::{
     AfError, AsyncTaskBindingFingerprint, AsyncTaskId, AsyncTaskRequestId, ChannelId, CredentialId,
     GatewayPrincipal, GroupId, TaskProgress, TaskStatus, TokenId, UpstreamTaskId,
@@ -38,11 +46,7 @@ async fn definite_failure_releases_claim_and_success_replay_does_not_resubmit()
         )),
         Ok(successful_submission(&fixture)),
     ]));
-    let coordinator = PersistentVideoTaskCoordinator::with_runtime(
-        runtime.clone(),
-        fixture.tasks.clone(),
-        fixture.submissions.clone(),
-    );
+    let coordinator = fixture.coordinator(runtime.clone());
     let request_id = async_request_id(0x21);
 
     assert!(matches!(
@@ -57,6 +61,19 @@ async fn definite_failure_releases_claim_and_success_replay_does_not_resubmit()
             .await,
         Err(PersistentVideoTaskError::Runtime(AfError::Internal))
     ));
+    let released_user = fixture
+        .database
+        .seed()
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT quota, used_quota, frozen_quota FROM users WHERE id = ?",
+            [fixture.principal.user_id().get().into()],
+        ))
+        .await?
+        .expect("测试用户必须存在");
+    assert_eq!(released_user.try_get::<i64>("", "quota")?, 10_000_000);
+    assert_eq!(released_user.try_get::<i64>("", "used_quota")?, 0);
+    assert_eq!(released_user.try_get::<i64>("", "frozen_quota")?, 0);
     let task = match coordinator
         .submit(
             async_task_id(0x12),
@@ -127,11 +144,7 @@ async fn unknown_submission_stays_claimed_by_original_attempt_and_never_resubmit
         AfError::Upstream(af_domain::UpstreamError::ProtocolError),
         VideoTaskSubmissionDisposition::AcceptanceUnknown,
     ))]));
-    let coordinator = PersistentVideoTaskCoordinator::with_runtime(
-        runtime.clone(),
-        fixture.tasks.clone(),
-        fixture.submissions.clone(),
-    );
+    let coordinator = fixture.coordinator(runtime.clone());
     let request_id = async_request_id(0x31);
 
     for marker in [0x31, 0x32] {
@@ -167,11 +180,7 @@ async fn successful_terminal_uses_upstream_duration_and_keeps_missing_resolution
     let runtime = Arc::new(
         MockRuntime::new(vec![Ok(successful_submission(&fixture))]).with_poll(successful_poll(8)),
     );
-    let coordinator = PersistentVideoTaskCoordinator::with_runtime(
-        runtime,
-        fixture.tasks.clone(),
-        fixture.submissions.clone(),
-    );
+    let coordinator = fixture.coordinator(runtime);
     let task = coordinator
         .submit(
             async_task_id(0x41),
@@ -198,9 +207,158 @@ async fn successful_terminal_uses_upstream_duration_and_keeps_missing_resolution
     let dimensions = billing_dimensions.expect("成功终态必须返回计费审计维度");
     assert_eq!(dimensions.video_duration().unwrap().seconds(), 8);
     assert_eq!(dimensions.video_resolution(), None);
+    let user = fixture
+        .database
+        .seed()
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT quota, used_quota, frozen_quota FROM users WHERE id = ?",
+            [fixture.principal.user_id().get().into()],
+        ))
+        .await?
+        .expect("测试用户必须存在");
+    assert_eq!(user.try_get::<i64>("", "quota")?, 9_680_000);
+    assert_eq!(user.try_get::<i64>("", "used_quota")?, 320_000);
+    assert_eq!(user.try_get::<i64>("", "frozen_quota")?, 0);
+    let usage = fixture
+        .database
+        .seed()
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT billing_mode, quota, video_duration_seconds, video_resolution FROM usage_logs WHERE user_id = ?",
+            [fixture.principal.user_id().get().into()],
+        ))
+        .await?
+        .expect("成功视频必须写入用量日志");
+    assert_eq!(usage.try_get::<i16>("", "billing_mode")?, 3);
+    assert_eq!(usage.try_get::<i64>("", "quota")?, 320_000);
+    assert_eq!(usage.try_get::<i64>("", "video_duration_seconds")?, 8);
+    assert_eq!(usage.try_get::<Option<i16>>("", "video_resolution")?, None);
+    assert!(matches!(
+        coordinator
+            .poll(
+                fixture.principal.user_id(),
+                task.task_id(),
+                "video-success-terminal-replay",
+            )
+            .await?,
+        PersistentVideoTaskPollOutcome::Terminal(_)
+    ));
+    let usage_count = fixture
+        .database
+        .seed()
+        .query_one(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT COUNT(*) AS usage_count FROM usage_logs WHERE user_id = ?",
+            [fixture.principal.user_id().get().into()],
+        ))
+        .await?
+        .expect("用量计数必须返回一行");
+    assert_eq!(usage_count.try_get::<i64>("", "usage_count")?, 1);
 
     fixture.database.close().await;
     Ok(())
+}
+
+#[tokio::test]
+async fn unknown_settlement_result_replays_same_reservation_before_task_terminal()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let runtime = Arc::new(
+        MockRuntime::new(vec![Ok(successful_submission(&fixture))]).with_poll(successful_poll(8)),
+    );
+    let settlement = Arc::new(UnknownOnceSettlementPort::new(fixture.quota.clone()));
+    let coordinator = fixture.coordinator_with_settlement(runtime.clone(), settlement.clone());
+    let task = coordinator
+        .submit(
+            async_task_id(0x45),
+            async_request_id(0x45),
+            fixture.principal,
+            request_without_resolution(5),
+            "video-settlement-unknown-submit",
+        )
+        .await?;
+
+    assert!(matches!(
+        coordinator
+            .poll(
+                fixture.principal.user_id(),
+                task.task_id(),
+                "video-settlement-unknown-first",
+            )
+            .await,
+        Err(PersistentVideoTaskError::Billing)
+    ));
+    let stored = fixture
+        .tasks
+        .find(fixture.principal.user_id(), task.task_id())
+        .await?
+        .expect("结算结果未知时任务必须保留");
+    assert!(!stored.status().is_terminal());
+    let billing = fixture
+        .billings
+        .find(fixture.principal.user_id(), task.task_id())
+        .await?
+        .expect("结算参数必须持久化");
+    assert_eq!(
+        billing.state(),
+        af_db::AsyncTaskBillingState::SettlementPending
+    );
+    assert_eq!(
+        billing.actual_quota().map(af_domain::Quota::units),
+        Some(320_000)
+    );
+
+    let replay = coordinator
+        .poll(
+            fixture.principal.user_id(),
+            task.task_id(),
+            "video-settlement-unknown-replay",
+        )
+        .await?;
+    let PersistentVideoTaskPollOutcome::Updated { task, .. } = replay else {
+        panic!("结算重放完成后必须推进任务终态")
+    };
+    assert_eq!(task.status(), &TaskStatus::Succeeded);
+    assert_eq!(settlement.calls(), 2);
+    assert_eq!(runtime.poll_count(), 2);
+
+    fixture.database.close().await;
+    Ok(())
+}
+
+struct UnknownOnceSettlementPort {
+    inner: Arc<QuotaRepository>,
+    calls: AtomicUsize,
+}
+
+impl UnknownOnceSettlementPort {
+    fn new(inner: Arc<QuotaRepository>) -> Self {
+        Self {
+            inner,
+            calls: AtomicUsize::new(0),
+        }
+    }
+
+    fn calls(&self) -> usize {
+        self.calls.load(Ordering::SeqCst)
+    }
+}
+
+impl TaskBillingSettlementPort for UnknownOnceSettlementPort {
+    fn settle<'a>(
+        &'a self,
+        request: TaskBillingSettlementRequest,
+    ) -> TaskBillingSettlementFuture<'a> {
+        Box::pin(async move {
+            TaskBillingSettlementPort::settle(self.inner.as_ref(), request).await?;
+            if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                Err(TaskBillingSettlementError::OutcomeUnknown)
+            } else {
+                Ok(())
+            }
+        })
+    }
 }
 
 struct MockRuntime {
@@ -238,9 +396,18 @@ impl MockRuntime {
 }
 
 impl PersistentVideoTaskRuntime for MockRuntime {
+    fn target_group<'a>(
+        &'a self,
+        group_id: GroupId,
+        _model: &'a str,
+    ) -> PersistentTargetGroupFuture<'a> {
+        Box::pin(async move { Ok(group_id) })
+    }
+
     fn submit<'a>(
         &'a self,
         _group_id: GroupId,
+        _expected_target_group_id: GroupId,
         _request: CanonicalVideoGenerationRequest,
         _request_id: &'a str,
     ) -> PersistentSubmissionFuture<'a> {
@@ -274,9 +441,43 @@ struct Fixture {
     database: SqliteTestDatabase,
     tasks: AsyncTaskRepository,
     submissions: AsyncTaskSubmissionRepository,
+    billings: AsyncTaskBillingRepository,
+    group_pricing: GroupPricingCache,
+    quota: Arc<QuotaRepository>,
+    reserve: Arc<dyn TaskBillingReservePort>,
+    settlement: Arc<dyn TaskBillingSettlementPort>,
+    release: Arc<dyn TaskBillingReleaseSink>,
+    usage: Arc<dyn UsageRecordSink>,
     principal: GatewayPrincipal,
     channel_id: ChannelId,
     credential_id: CredentialId,
+}
+
+impl Fixture {
+    fn coordinator(
+        &self,
+        runtime: Arc<dyn PersistentVideoTaskRuntime>,
+    ) -> PersistentVideoTaskCoordinator {
+        self.coordinator_with_settlement(runtime, Arc::clone(&self.settlement))
+    }
+
+    fn coordinator_with_settlement(
+        &self,
+        runtime: Arc<dyn PersistentVideoTaskRuntime>,
+        settlement: Arc<dyn TaskBillingSettlementPort>,
+    ) -> PersistentVideoTaskCoordinator {
+        PersistentVideoTaskCoordinator::with_runtime(
+            runtime,
+            self.tasks.clone(),
+            self.submissions.clone(),
+            self.billings.clone(),
+            self.group_pricing.clone(),
+            Arc::clone(&self.reserve),
+            settlement,
+            Arc::clone(&self.release),
+            Arc::clone(&self.usage),
+        )
+    }
 }
 
 async fn fixture() -> Result<Fixture, Box<dyn Error>> {
@@ -289,7 +490,7 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
     let user_id = insert(
         database.seed(),
         format!(
-            "INSERT INTO users (username, default_group_id, aff_code, settings) VALUES ('video-persistence', {group_id}, 'video-persistence-aff', '{{}}')"
+            "INSERT INTO users (username, default_group_id, aff_code, quota, settings) VALUES ('video-persistence', {group_id}, 'video-persistence-aff', 10000000, '{{}}')"
         ),
     )
     .await?;
@@ -315,12 +516,27 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
         ),
     )
     .await?;
+    let pool = database.pool().clone();
+    let quota = Arc::new(QuotaRepository::new(pool.clone()));
+    let reserve: Arc<dyn TaskBillingReservePort> = quota.clone();
+    let settlement: Arc<dyn TaskBillingSettlementPort> = quota.clone();
+    let release: Arc<dyn TaskBillingReleaseSink> = quota;
+    let usage: Arc<dyn UsageRecordSink> = Arc::new(DatabaseUsageRecordSink::new(
+        UsageLogRepository::new(pool.clone()),
+    ));
     Ok(Fixture {
         tasks: AsyncTaskRepository::new(database.pool().clone(), Duration::from_secs(5))?,
         submissions: AsyncTaskSubmissionRepository::new(
             database.pool().clone(),
             Duration::from_secs(5),
         )?,
+        billings: AsyncTaskBillingRepository::new(pool.clone(), Duration::from_secs(5))?,
+        group_pricing: GroupPricingCache::load_from_database(pool).await?,
+        quota: quota.clone(),
+        reserve,
+        settlement,
+        release,
+        usage,
         database,
         principal: GatewayPrincipal::new(
             TokenId::new(token_id)?,
