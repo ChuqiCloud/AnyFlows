@@ -37,6 +37,8 @@ mod smtp_delivery;
 mod sticky_session;
 mod stripe_payment_intent;
 mod supervisor;
+#[cfg(test)]
+mod test_database;
 mod token_request_admission;
 mod utc_time;
 
@@ -77,7 +79,7 @@ pub use bootstrap::{
 pub use oauth_connection::OAuthRuntimeConfigError;
 pub use scheduled_chat::{
     BoundVideoTaskSubmission, VideoTaskBinding, VideoTaskPollFuture, VideoTaskRuntime,
-    VideoTaskSubmissionFuture,
+    VideoTaskSubmissionFuture, VideoTaskSubmissionRuntimeError,
 };
 pub use scheduler_invalidation::SchedulerInvalidationRuntimeError;
 pub use shutdown::{ShutdownController, system_shutdown_signal};

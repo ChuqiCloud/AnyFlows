@@ -1,9 +1,9 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    AsyncTaskId, AsyncTaskRequestId, ChannelId, CredentialId, GatewayPrincipal, GroupId, Protocol,
-    TaskFailure, TaskFailureKind, TaskProgress, TaskState, TaskStatus, TokenId, UpstreamTaskId,
-    UserId,
+    AsyncTaskAttemptId, AsyncTaskBindingFingerprint, AsyncTaskId, AsyncTaskRequestFingerprint,
+    AsyncTaskRequestId, ChannelId, CredentialId, GatewayPrincipal, GroupId, Protocol, TaskFailure,
+    TaskFailureKind, TaskProgress, TaskState, TaskStatus, TokenId, UpstreamTaskId, UserId,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{ActiveModelTrait, Set, entity::prelude::Json};
@@ -18,6 +18,9 @@ use crate::{
 
 use super::{
     AsyncTaskCreate, AsyncTaskCreateOutcome, AsyncTaskRepository, AsyncTaskRepositoryError,
+    AsyncTaskSubmissionAccept, AsyncTaskSubmissionBegin, AsyncTaskSubmissionClaim,
+    AsyncTaskSubmissionClaimOutcome, AsyncTaskSubmissionMutationOutcome,
+    AsyncTaskSubmissionRelease, AsyncTaskSubmissionRepository, AsyncTaskSubmissionState,
     AsyncTaskTransition, AsyncTaskTransitionOutcome,
 };
 
@@ -321,6 +324,183 @@ async fn public_debug_output_hides_models_and_upstream_task_identifiers()
     Ok(())
 }
 
+#[tokio::test]
+async fn submission_claim_serializes_attempts_and_recovers_accepted_binding()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let first = fixture
+        .submissions
+        .claim(submission_claim(&fixture, 0xb1, 0xc1, 0xd1)?)
+        .await?;
+    let AsyncTaskSubmissionClaimOutcome::Created(first) = first else {
+        panic!("首次提交必须创建 claim")
+    };
+    assert_eq!(first.state(), AsyncTaskSubmissionState::Claimed);
+
+    let replay = fixture
+        .submissions
+        .claim(submission_claim(&fixture, 0xb2, 0xc1, 0xd1)?)
+        .await?;
+    let AsyncTaskSubmissionClaimOutcome::Existing(replay) = replay else {
+        panic!("相同幂等请求必须复用原 claim")
+    };
+    assert_eq!(replay.task_id(), first.task_id());
+    assert!(matches!(
+        fixture
+            .submissions
+            .claim(submission_claim(&fixture, 0xb3, 0xc1, 0xd2)?)
+            .await,
+        Err(AsyncTaskRepositoryError::Conflict)
+    ));
+
+    let first_attempt = AsyncTaskAttemptId::new([0xe1; 16])?;
+    let begun = fixture
+        .submissions
+        .begin(AsyncTaskSubmissionBegin::new(
+            first.task_id(),
+            first.principal().user_id(),
+            first.version(),
+            first_attempt,
+            UPDATED_AT,
+        )?)
+        .await?;
+    let AsyncTaskSubmissionMutationOutcome::Applied(begun) = begun else {
+        panic!("claim 必须被首个尝试所有者领取")
+    };
+    assert_eq!(begun.state(), AsyncTaskSubmissionState::Submitting);
+    assert!(matches!(
+        fixture
+            .submissions
+            .begin(AsyncTaskSubmissionBegin::new(
+                begun.task_id(),
+                begun.principal().user_id(),
+                begun.version(),
+                AsyncTaskAttemptId::new([0xe2; 16])?,
+                UPDATED_AT + 1,
+            )?)
+            .await,
+        Err(AsyncTaskRepositoryError::Conflict)
+    ));
+
+    let released = fixture
+        .submissions
+        .release(AsyncTaskSubmissionRelease::new(
+            begun.task_id(),
+            begun.principal().user_id(),
+            begun.version(),
+            first_attempt,
+            UPDATED_AT + 1,
+        )?)
+        .await?;
+    let AsyncTaskSubmissionMutationOutcome::Applied(released) = released else {
+        panic!("确定未提交后必须释放 claim")
+    };
+    let second_attempt = AsyncTaskAttemptId::new([0xe2; 16])?;
+    let begun = fixture
+        .submissions
+        .begin(AsyncTaskSubmissionBegin::new(
+            released.task_id(),
+            released.principal().user_id(),
+            released.version(),
+            second_attempt,
+            UPDATED_AT + 2,
+        )?)
+        .await?;
+    let AsyncTaskSubmissionMutationOutcome::Applied(begun) = begun else {
+        panic!("释放后的 claim 必须允许新尝试领取")
+    };
+
+    let accept = AsyncTaskSubmissionAccept::new(
+        begun.task_id(),
+        begun.principal().user_id(),
+        begun.version(),
+        second_attempt,
+        begun.principal().group_id(),
+        "grok-video".to_owned(),
+        fixture.channel_id,
+        fixture.credential_id,
+        u64::MAX - 7,
+        UpstreamTaskId::new("upstream-task-accepted")?,
+        AsyncTaskBindingFingerprint::new([0xf1; 32]),
+        Duration::from_secs(5),
+        submitted(),
+        UPDATED_AT + 3,
+    )?;
+    let accepted = fixture.submissions.accept(accept).await?;
+    let AsyncTaskSubmissionMutationOutcome::Applied(accepted) = accepted else {
+        panic!("上游接受事实必须持久化")
+    };
+    assert_eq!(accepted.state(), AsyncTaskSubmissionState::Accepted);
+    let task_create = accepted
+        .task_create()?
+        .expect("已接受 claim 必须可恢复任务写入");
+    let task = fixture.repository.create(task_create).await?;
+    let AsyncTaskCreateOutcome::Created(task) = task else {
+        panic!("恢复绑定必须创建最终任务")
+    };
+    assert!(accepted.matches_task(&task));
+    assert_eq!(
+        fixture
+            .repository
+            .find_by_request(task.principal().user_id(), accepted.request_id())
+            .await?
+            .expect("必须可按幂等键读取最终任务")
+            .task_id(),
+        task.task_id()
+    );
+    let debug = format!("{accepted:?}");
+    for secret in ["grok-video", "upstream-task-accepted", &"f1".repeat(32)] {
+        assert!(!debug.contains(secret));
+    }
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn state_machine_allows_only_monotonic_progress_within_active_state()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    fixture
+        .repository
+        .create(fixture.task(&fixture.first, 0xd1, 0xe1, "gpt-video", "grok-video")?)
+        .await?;
+    let progressed = fixture
+        .repository
+        .transition(transition(
+            0xd1,
+            fixture.first.principal.user_id(),
+            1,
+            TaskStatus::Submitted {
+                progress: TaskProgress::new(250)?,
+            },
+            UPDATED_AT,
+        )?)
+        .await?;
+    let AsyncTaskTransitionOutcome::Applied(progressed) = progressed else {
+        panic!("同状态进度增长必须写入")
+    };
+    assert_eq!(progressed.status().progress().basis_points(), 250);
+    assert!(matches!(
+        fixture
+            .repository
+            .transition(transition(
+                0xd1,
+                fixture.first.principal.user_id(),
+                progressed.version(),
+                TaskStatus::Submitted {
+                    progress: TaskProgress::new(249)?,
+                },
+                UPDATED_AT + 1,
+            )?)
+            .await,
+        Err(AsyncTaskRepositoryError::Conflict)
+    ));
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
 struct Owner {
     principal: GatewayPrincipal,
 }
@@ -328,6 +508,7 @@ struct Owner {
 struct Fixture {
     pool: crate::DatabasePool,
     repository: AsyncTaskRepository,
+    submissions: AsyncTaskSubmissionRepository,
     first: Owner,
     second: Owner,
     channel_id: ChannelId,
@@ -392,12 +573,30 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
     .await?;
     Ok(Fixture {
         repository: AsyncTaskRepository::new(pool.clone(), Duration::from_secs(5))?,
+        submissions: AsyncTaskSubmissionRepository::new(pool.clone(), Duration::from_secs(5))?,
         pool,
         first,
         second,
         channel_id: ChannelId::new(channel.id)?,
         credential_id: CredentialId::new(credential.id)?,
     })
+}
+
+fn submission_claim(
+    fixture: &Fixture,
+    task_marker: u8,
+    request_marker: u8,
+    fingerprint_marker: u8,
+) -> Result<AsyncTaskSubmissionClaim, crate::AsyncTaskInputError> {
+    AsyncTaskSubmissionClaim::new(
+        task_id(task_marker),
+        request_id(request_marker),
+        fixture.first.principal,
+        Protocol::XaiVideo,
+        "gpt-video".to_owned(),
+        AsyncTaskRequestFingerprint::new([fingerprint_marker; 32]),
+        CREATED_AT,
+    )
 }
 
 async fn insert_owner(

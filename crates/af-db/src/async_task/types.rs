@@ -20,6 +20,7 @@ pub struct AsyncTaskCreate {
     pub(super) upstream_task_id: UpstreamTaskId,
     pub(super) status: TaskStatus,
     pub(super) created_at: u64,
+    pub(super) observed_at: u64,
 }
 
 impl AsyncTaskCreate {
@@ -42,10 +43,51 @@ impl AsyncTaskCreate {
         status: TaskStatus,
         created_at: u64,
     ) -> Result<Self, AsyncTaskInputError> {
+        Self::new_with_observed_at(
+            task_id,
+            request_id,
+            principal,
+            protocol,
+            requested_model,
+            upstream_model,
+            channel_id,
+            credential_id,
+            credential_revision,
+            upstream_task_id,
+            status,
+            created_at,
+            created_at,
+        )
+    }
+
+    /// 分别固化 claim 创建时间和上游初始状态观察时间。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与任务不可变绑定事实及初始状态审计一一对应"
+    )]
+    pub fn new_with_observed_at(
+        task_id: AsyncTaskId,
+        request_id: AsyncTaskRequestId,
+        principal: GatewayPrincipal,
+        protocol: Protocol,
+        requested_model: String,
+        upstream_model: String,
+        channel_id: ChannelId,
+        credential_id: CredentialId,
+        credential_revision: u64,
+        upstream_task_id: UpstreamTaskId,
+        status: TaskStatus,
+        created_at: u64,
+        observed_at: u64,
+    ) -> Result<Self, AsyncTaskInputError> {
         if !valid_model_name(&requested_model) || !valid_model_name(&upstream_model) {
             return Err(AsyncTaskInputError::InvalidModel);
         }
         validate_time(created_at)?;
+        validate_time(observed_at)?;
+        if observed_at < created_at {
+            return Err(AsyncTaskInputError::InvalidTiming);
+        }
         Ok(Self {
             task_id,
             request_id,
@@ -59,6 +101,7 @@ impl AsyncTaskCreate {
             upstream_task_id,
             status,
             created_at,
+            observed_at,
         })
     }
 }
@@ -135,6 +178,12 @@ impl AsyncTaskRecord {
     #[must_use]
     pub const fn task_id(&self) -> AsyncTaskId {
         self.task_id
+    }
+
+    /// 返回客户端创建任务时使用的幂等标识。
+    #[must_use]
+    pub const fn request_id(&self) -> AsyncTaskRequestId {
+        self.request_id
     }
 
     /// 返回创建任务时通过鉴权的主体快照。
@@ -268,6 +317,12 @@ pub enum AsyncTaskInputError {
     /// CAS 版本不是可递增的正整数。
     #[error("异步任务版本无效")]
     InvalidVersion,
+    /// 提交尝试等待时间无法安全持久化或超出渠道硬上限。
+    #[error("异步任务提交超时无效")]
+    InvalidAttemptTimeout,
+    /// 已接受 claim 缺少恢复任务所需的完整绑定。
+    #[error("异步任务提交绑定无效")]
+    InvalidBinding,
 }
 
 /// 异步任务仓储构造错误。

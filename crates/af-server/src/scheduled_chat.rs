@@ -59,10 +59,12 @@ mod image;
 mod rerank;
 mod speech;
 mod video_task;
+#[allow(dead_code, reason = "公开任务 API 接线前由回归测试验证持久化协调器")]
+mod video_task_persistence;
 
 pub use video_task::{
     BoundVideoTaskSubmission, VideoTaskBinding, VideoTaskPollFuture, VideoTaskRuntime,
-    VideoTaskSubmissionFuture,
+    VideoTaskSubmissionFuture, VideoTaskSubmissionRuntimeError,
 };
 
 /// 路由计划在同一次 Redis 快照中取得的账号负载与用户许可。

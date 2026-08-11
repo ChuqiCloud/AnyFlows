@@ -229,7 +229,7 @@ fn task_state_shape() -> SimpleExpr {
             .and(Expr::col(async_tasks::Column::TerminalAt).is_not_null()))
 }
 
-fn hex_check(
+pub(super) fn hex_check(
     database_backend: DbBackend,
     column: &str,
     length: usize,
