@@ -411,6 +411,7 @@ fn probe_operation(protocol: Protocol) -> Result<Operation, ProbeFailure> {
         Protocol::OpenAiEmbeddings => Ok(Operation::Embedding),
         Protocol::OpenAiImages => Ok(Operation::Image),
         Protocol::OpenAiAudio | Protocol::OpenAiSpeech => Ok(Operation::Audio),
+        Protocol::JinaRerank => Err(ProbeFailure::UnsupportedTarget),
     }
 }
 
@@ -468,6 +469,7 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
         | Protocol::OpenAiSpeech => {
             unreachable!("非对话协议已在独立请求分支返回")
         }
+        Protocol::JinaRerank => return Err(ProbeFailure::UnsupportedTarget),
         Protocol::Anthropic => {
             anthropic::build_request(&request).map_err(|_| ProbeFailure::RequestBuild)?
         }
@@ -528,6 +530,7 @@ fn validate_probe_response(protocol: Protocol, body: &[u8]) -> Result<(), ProbeF
             .map(|_| ())
             .map_err(|_| ProbeFailure::InvalidResponse)
         }
+        Protocol::JinaRerank => Err(ProbeFailure::UnsupportedTarget),
         Protocol::Anthropic => anthropic::parse_response(body)
             .map(|_| ())
             .map_err(|_| ProbeFailure::InvalidResponse),

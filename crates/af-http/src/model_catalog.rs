@@ -96,6 +96,7 @@ pub(crate) enum ModelCatalogProtocolValue {
     OpenaiImages,
     OpenaiAudio,
     OpenaiSpeech,
+    JinaRerank,
     Anthropic,
     Gemini,
 }
@@ -109,6 +110,7 @@ impl From<Protocol> for ModelCatalogProtocolValue {
             Protocol::OpenAiImages => Self::OpenaiImages,
             Protocol::OpenAiAudio => Self::OpenaiAudio,
             Protocol::OpenAiSpeech => Self::OpenaiSpeech,
+            Protocol::JinaRerank => Self::JinaRerank,
             Protocol::Anthropic => Self::Anthropic,
             Protocol::Gemini => Self::Gemini,
         }

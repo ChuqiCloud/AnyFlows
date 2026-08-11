@@ -867,7 +867,8 @@ fn candidate_request(
         Protocol::OpenAiEmbeddings
         | Protocol::OpenAiImages
         | Protocol::OpenAiAudio
-        | Protocol::OpenAiSpeech => Err(AfError::Internal),
+        | Protocol::OpenAiSpeech
+        | Protocol::JinaRerank => Err(AfError::Internal),
         Protocol::Anthropic => AnthropicRequestOverrides::new(
             upstream_model,
             parameters.temperature(),

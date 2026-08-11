@@ -81,6 +81,12 @@ const OPENAI_SPEECH_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {
     response: &[],
     stream: &[],
 };
+const JINA_RERANK_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {
+    protocol: Protocol::JinaRerank,
+    request: &[],
+    response: &[],
+    stream: &[],
+};
 const ANTHROPIC_CAPABILITIES: ProtocolCapabilities = ProtocolCapabilities {
     protocol: Protocol::Anthropic,
     request: request::ANTHROPIC,
@@ -104,6 +110,7 @@ pub const fn protocol_capabilities(protocol: Protocol) -> &'static ProtocolCapab
         Protocol::OpenAiImages => &OPENAI_IMAGES_CAPABILITIES,
         Protocol::OpenAiAudio => &OPENAI_AUDIO_CAPABILITIES,
         Protocol::OpenAiSpeech => &OPENAI_SPEECH_CAPABILITIES,
+        Protocol::JinaRerank => &JINA_RERANK_CAPABILITIES,
         Protocol::Anthropic => &ANTHROPIC_CAPABILITIES,
         Protocol::Gemini => &GEMINI_CAPABILITIES,
     }
