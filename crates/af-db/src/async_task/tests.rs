@@ -532,7 +532,7 @@ async fn billing_state_machine_replays_same_facts_and_clears_released_plans()
             1,
             AsyncTaskBillingResolution::P720,
             [1_000_000; 3],
-            Quota::new(1_050_000)?,
+            Quota::new(1_050_000).expect("测试冻结上界必须有效"),
             CREATED_AT,
         )
     };
