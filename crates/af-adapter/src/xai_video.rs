@@ -4,15 +4,12 @@ use af_domain::{CredentialKind, TaskSubmission, UpstreamTaskId};
 use af_httpclient::{HeaderMap, HeaderName, HeaderValue, Method};
 use af_protocol::{CanonicalTaskPoll, CanonicalVideoGenerationRequest, xai_video};
 use async_trait::async_trait;
-use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 
 use crate::credential::clear_authentication_headers;
 use crate::{
-    AdaptorError, AdaptorResult, Credential, RelayContext, TaskAdaptor, TaskAdaptorSendExt,
-    UpstreamRequest, UpstreamResponse,
+    AdaptorError, AdaptorResult, Credential, MAX_UPSTREAM_REQUEST_TARGET_BYTES, RelayContext,
+    TaskAdaptor, TaskAdaptorSendExt, UpstreamRequest, UpstreamResponse,
 };
-
-const TASK_ID_ENCODE_SET: &AsciiSet = &CONTROLS.add(b'/').add(b'?').add(b'#').add(b'%');
 
 /// xAI Grok Imagine Video 异步任务适配器。
 ///
@@ -92,22 +89,33 @@ impl XaiVideoAdaptor {
         })
     }
 
-    fn versioned_prefix(&self, context: &RelayContext) -> AdaptorResult<&'static str> {
-        Ok(if self.has_v1_suffix(context)? {
-            ""
-        } else {
-            "v1/"
-        })
-    }
-
     fn poll_target(
         &self,
         task_id: &UpstreamTaskId,
         context: &RelayContext,
     ) -> AdaptorResult<String> {
-        let encoded = utf8_percent_encode(task_id.as_str(), TASK_ID_ENCODE_SET).to_string();
-        let prefix = self.versioned_prefix(context)?;
-        context.append_path(Self::DEFAULT_BASE_URL, &format!("{prefix}videos/{encoded}"))
+        let mut target = context.resolve_base_url(Self::DEFAULT_BASE_URL)?;
+        let has_v1_suffix = target
+            .path_segments()
+            .and_then(|mut segments| segments.rfind(|segment| !segment.is_empty()))
+            .is_some_and(|segment| segment == "v1");
+        {
+            // 任务标识作为单一路径段编码，避免斜杠或保留字符注入轮询路径。
+            let mut segments = target
+                .path_segments_mut()
+                .map_err(|_| AdaptorError::InvalidBaseUrl)?;
+            segments.pop_if_empty();
+            if !has_v1_suffix {
+                segments.push("v1");
+            }
+            segments.push("videos");
+            segments.push(task_id.as_str());
+        }
+        let target = String::from(target);
+        if target.len() > MAX_UPSTREAM_REQUEST_TARGET_BYTES {
+            return Err(AdaptorError::InvalidRequestTarget);
+        }
+        Ok(target)
     }
 
     fn has_v1_suffix(&self, context: &RelayContext) -> AdaptorResult<bool> {
