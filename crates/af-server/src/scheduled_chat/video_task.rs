@@ -857,24 +857,44 @@ mod tests {
         let (proxy_address, proxy_server) = spawn_proxy(steps);
         let source = MutableSource::new(vec![runtime_record(proxy_address, 0x31, 0x32)]);
         let (service, database, principal) = service(source).await;
+        let tasks =
+            AsyncTaskRepository::new(database.pool().clone(), Duration::from_secs(5)).unwrap();
+        let submissions =
+            AsyncTaskSubmissionRepository::new(database.pool().clone(), Duration::from_secs(5))
+                .unwrap();
         let coordinator =
             crate::scheduled_chat::video_task_persistence::PersistentVideoTaskCoordinator::new(
                 service,
-                AsyncTaskRepository::new(database.pool().clone(), Duration::from_secs(5)).unwrap(),
-                AsyncTaskSubmissionRepository::new(database.pool().clone(), Duration::from_secs(5))
-                    .unwrap(),
+                tasks.clone(),
+                submissions.clone(),
             );
+        let request_id = AsyncTaskRequestId::new([0x61; 16]).unwrap();
 
-        let submitted = coordinator
+        let submitted = match coordinator
             .submit(
                 AsyncTaskId::new([0x51; 16]).unwrap(),
-                AsyncTaskRequestId::new([0x61; 16]).unwrap(),
+                request_id,
                 principal,
                 request(),
                 "video-submit-request",
             )
             .await
-            .unwrap();
+        {
+            Ok(submitted) => submitted,
+            Err(error) => {
+                let claim_state = submissions
+                    .find_by_request(principal.user_id(), request_id)
+                    .await
+                    .map(|record| record.map(|record| record.state()));
+                let task_exists = tasks
+                    .find_by_request(principal.user_id(), request_id)
+                    .await
+                    .map(|record| record.is_some());
+                panic!(
+                    "视频代理持久化未闭合：error={error:?}, claim_state={claim_state:?}, task_exists={task_exists:?}"
+                );
+            }
+        };
 
         assert_eq!(submitted.credential_id().get(), SECOND_CREDENTIAL_ID);
         assert_eq!(submitted.upstream_task_id().as_str(), "video-task-bound");

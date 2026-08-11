@@ -57,7 +57,7 @@ async fn definite_failure_releases_claim_and_success_replay_does_not_resubmit()
             .await,
         Err(PersistentVideoTaskError::Runtime(AfError::Internal))
     ));
-    let task = coordinator
+    let task = match coordinator
         .submit(
             async_task_id(0x12),
             request_id,
@@ -65,7 +65,25 @@ async fn definite_failure_releases_claim_and_success_replay_does_not_resubmit()
             request(),
             "video-definite-second",
         )
-        .await?;
+        .await
+    {
+        Ok(task) => task,
+        Err(error) => {
+            let claim_state = fixture
+                .submissions
+                .find_by_request(fixture.principal.user_id(), request_id)
+                .await
+                .map(|record| record.map(|record| record.state()));
+            let task_exists = fixture
+                .tasks
+                .find_by_request(fixture.principal.user_id(), request_id)
+                .await
+                .map(|record| record.is_some());
+            panic!(
+                "确定失败重试未闭合：error={error:?}, claim_state={claim_state:?}, task_exists={task_exists:?}"
+            );
+        }
+    };
     assert_eq!(runtime.submission_count(), 2);
     assert_eq!(task.status().state(), af_domain::TaskState::Submitted);
 
