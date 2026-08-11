@@ -1,4 +1,5 @@
-use af_domain::{TaskStatus, TaskSubmission, UpstreamTaskId};
+use af_domain::{TaskSubmission, UpstreamTaskId};
+use af_protocol::CanonicalTaskPoll;
 use async_trait::async_trait;
 
 use crate::{
@@ -12,18 +13,31 @@ use crate::{
 /// `RelayContext`，因此不能从归一化钩子绕过统一代理、超时、响应预算或错误边界。
 #[async_trait]
 pub trait TaskAdaptor: Send + Sync {
+    /// 在发起网络请求前校验轮询目标与任务标识的关联。
+    ///
+    /// 无法由响应回显任务标识的供应商必须覆盖该方法，避免调用方把任务 A 的标识与
+    /// 任务 B 的轮询 URL 组合后发送。默认实现只供尚无专用 URL 规则的通用适配器使用。
+    fn validate_poll_request(
+        &self,
+        _task_id: &UpstreamTaskId,
+        _request: &UpstreamRequest,
+        _context: &RelayContext,
+    ) -> AdaptorResult<()> {
+        Ok(())
+    }
+
     /// 将提交响应归一化为脱敏任务标识和初始状态。
     async fn normalize_submission(
         &self,
         response: UpstreamResponse,
     ) -> AdaptorResult<TaskSubmission>;
 
-    /// 将轮询响应归一化为闭合状态；实现方必须校验响应属于预期任务。
+    /// 将轮询响应归一化为闭合状态和可选成功输出。
     async fn normalize_poll(
         &self,
         task_id: &UpstreamTaskId,
         response: UpstreamResponse,
-    ) -> AdaptorResult<TaskStatus>;
+    ) -> AdaptorResult<CanonicalTaskPoll>;
 }
 
 /// 任务提交与轮询的统一受控发送扩展。
@@ -45,7 +59,7 @@ pub trait TaskAdaptorSendExt: TaskAdaptor {
         task_id: &UpstreamTaskId,
         request: UpstreamRequest,
         context: &RelayContext,
-    ) -> AdaptorResult<TaskStatus>;
+    ) -> AdaptorResult<CanonicalTaskPoll>;
 }
 
 #[async_trait]
@@ -68,7 +82,8 @@ where
         task_id: &UpstreamTaskId,
         request: UpstreamRequest,
         context: &RelayContext,
-    ) -> AdaptorResult<TaskStatus> {
+    ) -> AdaptorResult<CanonicalTaskPoll> {
+        self.validate_poll_request(task_id, &request, context)?;
         ensure_full_response(&request)?;
         let response = TransportDispatcher::http().send(request, context).await?;
         self.normalize_poll(task_id, response).await
@@ -96,6 +111,7 @@ mod tests {
     use af_httpclient::{
         Bytes, HeaderMap, HttpClientConfig, HttpClientPool, Method, ProxyConfig, RemoteDnsPolicy,
     };
+    use af_protocol::CanonicalTaskPoll;
     use async_trait::async_trait;
 
     use super::*;
@@ -125,16 +141,20 @@ mod tests {
             &self,
             task_id: &UpstreamTaskId,
             response: UpstreamResponse,
-        ) -> AdaptorResult<TaskStatus> {
+        ) -> AdaptorResult<CanonicalTaskPoll> {
             assert_eq!(task_id.as_str(), "task-test-1");
             assert_eq!(response.status(), af_httpclient::StatusCode::OK);
             assert_eq!(
                 response.into_body().into_bytes().await?,
                 Bytes::from_static(br#"{"status":"running"}"#)
             );
-            Ok(TaskStatus::Running {
-                progress: TaskProgress::new(2_500).unwrap(),
-            })
+            CanonicalTaskPoll::new(
+                TaskStatus::Running {
+                    progress: TaskProgress::new(2_500).unwrap(),
+                },
+                None,
+            )
+            .map_err(|_| AdaptorError::InvalidTaskResponse)
         }
     }
 
@@ -184,7 +204,7 @@ mod tests {
         assert_eq!(submission.status().state(), TaskState::Queued);
         let task_id = submission.task_id().clone();
         let status = adaptor.poll(&task_id, request(), &context).await.unwrap();
-        assert_eq!(status.state(), TaskState::Running);
+        assert_eq!(status.status().state(), TaskState::Running);
         server.join().unwrap();
     }
 

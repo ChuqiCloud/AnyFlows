@@ -133,6 +133,9 @@ pub enum AdaptorError {
     /// 任务提交或轮询响应无法归一化为闭合状态。
     #[error("上游任务响应无效")]
     InvalidTaskResponse,
+    /// 任务请求无法构造成供应商支持的闭合正文。
+    #[error("上游任务请求无效")]
+    InvalidTaskRequest,
     /// 底层传输失败；具体错误本身已完成脱敏。
     #[error("上游传输失败")]
     Transport(#[source] AdaptorTransportError),

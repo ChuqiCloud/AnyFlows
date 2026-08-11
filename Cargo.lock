@@ -44,6 +44,7 @@ version = "0.1.0"
 dependencies = [
  "af-domain",
  "af-httpclient",
+ "af-protocol",
  "async-trait",
  "aws-credential-types",
  "aws-sigv4",

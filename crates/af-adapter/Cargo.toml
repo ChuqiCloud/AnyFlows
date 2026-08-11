@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 af-domain = { path = "../af-domain", version = "0.1.0" }
 af-httpclient = { path = "../af-httpclient", version = "0.1.0" }
+af-protocol = { path = "../af-protocol", version = "0.1.0" }
 async-trait.workspace = true
 aws-credential-types.workspace = true
 aws-sigv4.workspace = true
