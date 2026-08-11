@@ -108,7 +108,7 @@ opaque_async_task_id!(
     "AsyncTaskRequestId"
 );
 opaque_async_task_id!(
-    /// 单次上游提交尝试的随机所有者标识，用于阻止并发请求共同消费 claim。
+    /// 单次上游提交尝试的非零随机所有者标识，用于阻止并发请求共同消费 claim。
     AsyncTaskAttemptId,
     "AsyncTaskAttemptId"
 );
@@ -171,12 +171,12 @@ macro_rules! opaque_async_task_fingerprint {
 }
 
 opaque_async_task_fingerprint!(
-    /// 不保存提示词原文的异步任务完整请求指纹。
+    /// 不保存提示词原文的异步任务完整请求 SHA-256 指纹。
     AsyncTaskRequestFingerprint,
     "AsyncTaskRequestFingerprint"
 );
 opaque_async_task_fingerprint!(
-    /// 不保存渠道敏感配置原值的异步任务运行时绑定指纹。
+    /// 不保存渠道敏感配置原值的异步任务运行时绑定 SHA-256 指纹。
     AsyncTaskBindingFingerprint,
     "AsyncTaskBindingFingerprint"
 );

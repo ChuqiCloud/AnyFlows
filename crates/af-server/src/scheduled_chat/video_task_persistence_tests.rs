@@ -520,7 +520,7 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
     let quota = Arc::new(QuotaRepository::new(pool.clone()));
     let reserve: Arc<dyn TaskBillingReservePort> = quota.clone();
     let settlement: Arc<dyn TaskBillingSettlementPort> = quota.clone();
-    let release: Arc<dyn TaskBillingReleaseSink> = quota;
+    let release: Arc<dyn TaskBillingReleaseSink> = quota.clone();
     let usage: Arc<dyn UsageRecordSink> = Arc::new(DatabaseUsageRecordSink::new(
         UsageLogRepository::new(pool.clone()),
     ));
