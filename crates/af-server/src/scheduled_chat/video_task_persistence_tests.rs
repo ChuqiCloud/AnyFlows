@@ -381,7 +381,7 @@ fn request() -> CanonicalVideoGenerationRequest {
     )
 }
 
-fn request_without_resolution(seconds: u32) -> CanonicalVideoGenerationRequest {
+fn request_without_resolution(seconds: u8) -> CanonicalVideoGenerationRequest {
     CanonicalVideoGenerationRequest::new(
         VideoModel::new(REQUESTED_MODEL).expect("测试模型必须有效"),
         VideoPrompt::new("private prompt").expect("测试提示词必须有效"),
@@ -401,7 +401,7 @@ fn running_poll() -> CanonicalTaskPoll {
     .expect("测试运行态必须有效")
 }
 
-fn successful_poll(seconds: u32) -> CanonicalTaskPoll {
+fn successful_poll(seconds: u8) -> CanonicalTaskPoll {
     let output = CanonicalVideoOutput::new(
         VideoOutputUrl::new("https://video.example/result.mp4?signature=private")
             .expect("测试结果地址必须有效"),
