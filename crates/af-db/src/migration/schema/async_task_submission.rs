@@ -186,7 +186,6 @@ pub(in crate::migration) async fn create_async_task_submission_claims(
             64,
             false,
         ))
-        .check(claim_state_shape())
         .check(
             Expr::col(async_task_submission_claims::Column::UpdatedAt)
                 .gte(Expr::col(async_task_submission_claims::Column::CreatedAt)),
@@ -263,6 +262,10 @@ pub(in crate::migration) async fn create_async_task_submission_claims(
                 .on_update(ForeignKeyAction::Cascade)
                 .on_delete(ForeignKeyAction::Restrict),
         );
+    // MySQL 8.4 禁止 CHECK 引用带级联更新的外键列；仓储写入和读取边界会校验同一状态形状。
+    if manager.get_database_backend() != DbBackend::MySql {
+        statement.check(claim_state_shape());
+    }
     manager.create_table(statement).await?;
 
     for index in [
