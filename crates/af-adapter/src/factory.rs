@@ -5,7 +5,7 @@ use af_domain::{ChannelType, Protocol};
 use crate::{
     Adaptor, AdaptorError, AdaptorResult, AnthropicAdaptor, BedrockAdaptor, CohereAdaptor,
     CustomAdaptor, CustomAuthentication, CustomEndpointTemplate, CustomStreamEndpoint,
-    GeminiAdaptor, JinaAdaptor, OpenAiAdaptor, VertexAdaptor,
+    GeminiAdaptor, JinaAdaptor, OpenAiAdaptor, VertexAdaptor, VideoTaskAdaptor, XaiVideoAdaptor,
 };
 
 /// OpenAI 适配器的强类型构造配置。
@@ -449,9 +449,23 @@ pub fn get_adaptor(
             | ChannelType::Vertex
             | ChannelType::Jina
             | ChannelType::Cohere
+            | ChannelType::Xai
             | ChannelType::Custom),
             _,
         ) => Err(AdaptorError::InvalidChannelSettings { channel_type }),
+    }
+}
+
+/// 按渠道和协议创建独立异步任务适配器。
+///
+/// 任务适配器与普通请求适配器使用不同工厂，避免异步提交/轮询被误当成一次性响应。
+pub fn get_task_adaptor(
+    channel_type: ChannelType,
+    protocol: Protocol,
+) -> AdaptorResult<Arc<dyn VideoTaskAdaptor>> {
+    match (channel_type, protocol) {
+        (ChannelType::Xai, Protocol::XaiVideo) => Ok(Arc::new(XaiVideoAdaptor::new())),
+        (channel_type, _) => Err(AdaptorError::InvalidChannelSettings { channel_type }),
     }
 }
 
@@ -780,6 +794,10 @@ mod tests {
                 jina_settings(&["private-jina-model-for-cohere"]),
             ),
             (
+                ChannelType::Xai,
+                openai_settings(&["private-openai-model-for-xai"]),
+            ),
+            (
                 ChannelType::Vertex,
                 bedrock_settings("us-east-1", &["private-bedrock-model-for-vertex"]),
             ),
@@ -804,6 +822,7 @@ mod tests {
             assert!(!rendered.contains("private-bedrock-model-for-vertex"));
             assert!(!rendered.contains("private-openai-model-for-jina"));
             assert!(!rendered.contains("private-jina-model-for-cohere"));
+            assert!(!rendered.contains("private-openai-model-for-xai"));
             assert!(!rendered.contains("private-openai-model-for-custom"));
             assert!(!rendered.contains("private-custom-model-for-openai"));
         }
@@ -811,10 +830,27 @@ mod tests {
 
     #[test]
     fn factory_channel_enum_has_no_unimplemented_placeholders() {
-        assert_eq!(ChannelType::ALL.len(), 8);
+        assert_eq!(ChannelType::ALL.len(), 9);
         assert!(ChannelType::ALL.contains(&ChannelType::Jina));
         assert!(ChannelType::ALL.contains(&ChannelType::Cohere));
+        assert!(ChannelType::ALL.contains(&ChannelType::Xai));
         assert!(ChannelType::ALL.contains(&ChannelType::Custom));
+    }
+
+    #[test]
+    fn task_factory_only_accepts_the_native_xai_video_pair() {
+        assert!(get_task_adaptor(ChannelType::Xai, Protocol::XaiVideo).is_ok());
+        for (channel_type, protocol) in [
+            (ChannelType::Xai, Protocol::OpenAiImages),
+            (ChannelType::OpenAi, Protocol::XaiVideo),
+        ] {
+            assert_eq!(
+                get_task_adaptor(channel_type, protocol)
+                    .err()
+                    .expect("错配任务协议必须拒绝"),
+                AdaptorError::InvalidChannelSettings { channel_type }
+            );
+        }
     }
 
     #[test]

@@ -217,6 +217,27 @@ test('Cohere 渠道只允许 v2 Rerank 协议且禁止 Chat 参数覆盖', () =>
   }).success, false)
 })
 
+test('xAI 渠道只允许视频任务协议且禁止 Chat 参数覆盖', () => {
+  const schema = buildChannelFormSchema('create', messages)
+  const values = {
+    ...defaultChannelValues(),
+    name: 'xAI Video',
+    channelType: 'xai',
+    protocol: 'xai_video',
+  }
+
+  assert.equal(schema.safeParse(values).success, true)
+  const request = toCreateRequest(values)
+  assert.equal(request.type, 'xai')
+  assert.equal(request.protocol, 'xai_video')
+  assert.deepEqual(request.param_override, {})
+  assert.equal(schema.safeParse({ ...values, protocol: 'openai_images' }).success, false)
+  assert.equal(schema.safeParse({
+    ...values,
+    paramOverride: [{ id: 'temperature', key: 'temperature', value: '0.5', values: [] }],
+  }).success, false)
+})
+
 test('Anthropic 支持停止序列但温度上限为一', () => {
   const values = {
     ...defaultChannelValues(),

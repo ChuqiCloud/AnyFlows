@@ -42,7 +42,7 @@ pub use error::{AdaptorError, AdaptorResult, AdaptorTransportError};
 pub use factory::{
     AdaptorSettings, AnthropicAdaptorSettings, BedrockAdaptorSettings, CohereAdaptorSettings,
     CustomAdaptorSettings, GeminiAdaptorSettings, JinaAdaptorSettings, OpenAiAdaptorSettings,
-    VertexAdaptorSettings, get_adaptor,
+    VertexAdaptorSettings, get_adaptor, get_task_adaptor,
 };
 pub use gemini::GeminiAdaptor;
 pub use jina::JinaAdaptor;
@@ -64,7 +64,7 @@ pub use responses_websocket_pool::{
     ResponsesWebSocketPoolKey, ResponsesWebSocketTransportError, build_responses_websocket_event,
 };
 pub use responses_websocket_transport::PooledResponsesWebSocketConnector;
-pub use task::{TaskAdaptor, TaskAdaptorSendExt};
+pub use task::{TaskAdaptor, TaskAdaptorSendExt, VideoTaskAdaptor};
 pub use transport_dispatcher::{
     TransportDispatchOutcome, TransportDispatcher, TransportFallbackKind,
 };
@@ -76,6 +76,6 @@ pub use xai_video::XaiVideoAdaptor;
 
 pub use af_domain::{ChannelType, CredentialKind, Operation, Protocol};
 pub use af_httpclient::{
-    Bytes, HeaderMap, HeaderName, HeaderValue, Method, PooledClient, PooledClientIdentity,
-    StatusCode,
+    Bytes, HeaderMap, HeaderName, HeaderValue, HttpClientConfig, HttpClientPool, HttpTimeouts,
+    Method, PooledClient, PooledClientIdentity, ProxyConfig, RemoteDnsPolicy, StatusCode,
 };

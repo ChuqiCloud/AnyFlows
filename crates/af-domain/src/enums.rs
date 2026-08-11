@@ -154,6 +154,8 @@ string_enum! {
         JinaRerank => "jina_rerank",
         /// Cohere v2 原生 Rerank 协议。
         CohereRerank => "cohere_rerank",
+        /// xAI Grok Imagine Video 异步任务协议。
+        XaiVideo => "xai_video",
         /// Anthropic Messages 协议。
         Anthropic => "anthropic",
         /// Gemini generateContent 协议。
@@ -226,6 +228,8 @@ string_enum! {
         Jina => "jina",
         /// Cohere 原生 API。
         Cohere => "cohere",
+        /// xAI 原生 API。
+        Xai => "xai",
         /// 配置驱动的自定义适配器。
         Custom => "custom",
     }

@@ -67,7 +67,8 @@ pub(crate) fn encode_full_response(
         | Protocol::OpenAiAudio
         | Protocol::OpenAiSpeech
         | Protocol::JinaRerank
-        | Protocol::CohereRerank => {
+        | Protocol::CohereRerank
+        | Protocol::XaiVideo => {
             return Err(AfError::Internal);
         }
     };
@@ -91,7 +92,8 @@ pub(crate) fn encode_full_response(
         | Protocol::OpenAiAudio
         | Protocol::OpenAiSpeech
         | Protocol::JinaRerank
-        | Protocol::CohereRerank => {
+        | Protocol::CohereRerank
+        | Protocol::XaiVideo => {
             unreachable!("协议分支已在上方闭合")
         }
     };

@@ -49,6 +49,8 @@ function ProtocolBadge({ protocol }: { protocol: AdminChannel['protocol'] }) {
                   ? 'bg-success/10 text-success'
                   : protocol === 'cohere_rerank'
                     ? 'bg-warning/10 text-warning'
+                    : protocol === 'xai_video'
+                      ? 'bg-info/10 text-info'
                   : 'bg-info/10 text-info'
   return <Badge className={cn('border-transparent', tone)}>{t(`channels.protocol.${protocol}`)}</Badge>
 }

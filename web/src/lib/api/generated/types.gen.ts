@@ -86,8 +86,8 @@ export type AdminChannelAutoBanRules = {
 };
 export type AdminChannelCreateRequest = {
     name: string;
-    type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'anthropic' | 'gemini';
+    type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -123,12 +123,12 @@ export type AdminChannelProbeResponse = {
     latency_ms: number;
 };
 export type AdminChannelProbeStatus = 'healthy' | 'unhealthy' | 'timeout';
-export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'anthropic' | 'gemini';
-export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'bedrock' | 'vertex' | 'custom';
+export type AdminChannelProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
+export type AdminChannelType = 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai' | 'bedrock' | 'vertex' | 'custom';
 export type AdminChannelUpdateRequest = {
     name: string;
-    type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'anthropic' | 'gemini';
+    type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -1053,7 +1053,7 @@ export type ModelCatalogListResponse = {
     next_cursor: string | null;
 };
 export type ModelCatalogPricingScope = 'public_base' | 'group';
-export type ModelCatalogProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'anthropic' | 'gemini';
+export type ModelCatalogProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
 export type ModelCatalogRatios = {
     group_micros: string;
     group_model_micros: string;
@@ -1397,8 +1397,8 @@ export type UserWalletSummary = {
 };
 export type AdminChannelCreateRequestWritable = {
     name: string;
-    type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'anthropic' | 'gemini';
+    type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;
@@ -1433,8 +1433,8 @@ export type AdminChannelCreateRequestWritable = {
 };
 export type AdminChannelUpdateRequestWritable = {
     name: string;
-    type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere';
-    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'anthropic' | 'gemini';
+    type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
+    protocol: 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
     base_url: string | null;
     timeout_secs?: number | null;
     status: AdminRoutingWriteStatus;

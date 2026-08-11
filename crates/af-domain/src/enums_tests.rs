@@ -37,6 +37,7 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
             (Protocol::OpenAiSpeech, "openai_speech"),
             (Protocol::JinaRerank, "jina_rerank"),
             (Protocol::CohereRerank, "cohere_rerank"),
+            (Protocol::XaiVideo, "xai_video"),
             (Protocol::Anthropic, "anthropic"),
             (Protocol::Gemini, "gemini"),
         ]
@@ -85,6 +86,7 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
             (ChannelType::Vertex, "vertex"),
             (ChannelType::Jina, "jina"),
             (ChannelType::Cohere, "cohere"),
+            (ChannelType::Xai, "xai"),
             (ChannelType::Custom, "custom"),
         ]
     );

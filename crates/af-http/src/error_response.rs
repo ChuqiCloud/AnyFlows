@@ -109,7 +109,8 @@ fn protocol_error_response(protocol: Protocol, mapped: MappedError) -> axum::res
         | Protocol::OpenAiAudio
         | Protocol::OpenAiSpeech
         | Protocol::JinaRerank
-        | Protocol::CohereRerank => openai_chat::encode_error(mapped.code, mapped.message()),
+        | Protocol::CohereRerank
+        | Protocol::XaiVideo => openai_chat::encode_error(mapped.code, mapped.message()),
     };
     let mut response = (mapped.status(), Json(body)).into_response();
     if let Some(retry_after) = mapped.retry_after {

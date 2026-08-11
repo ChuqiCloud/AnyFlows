@@ -99,8 +99,8 @@
   },
   "channels": {
     "title": "渠道管理",
-    "subtitle": "维护 OpenAI、Anthropic 与 Gemini 原生上游的路由参数、凭据和请求策略，并按需执行真实测活。",
-    "scope": "支持 OpenAI Chat / Responses、Anthropic Messages 与 Gemini generateContent",
+    "subtitle": "维护对话、多模态、重排序与异步视频上游的路由参数、凭据和请求策略。",
+    "scope": "支持 OpenAI、Anthropic、Gemini、Jina、Cohere 与 xAI 原生协议",
     "count_one": "共 {{count}} 个渠道",
     "count_other": "共 {{count}} 个渠道",
     "loading": "正在加载渠道",
@@ -126,6 +126,7 @@
       "openai_speech": "OpenAI 文本转语音",
       "jina_rerank": "Jina Rerank",
       "cohere_rerank": "Cohere Rerank",
+      "xai_video": "xAI 视频",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -134,7 +135,8 @@
       "anthropic": "Anthropic",
       "gemini": "Gemini",
       "jina": "Jina",
-      "cohere": "Cohere"
+      "cohere": "Cohere",
+      "xai": "xAI"
     },
     "values": {
       "defaultUrl": "默认上游地址",
@@ -1909,6 +1911,7 @@
       "openai_speech": "OpenAI 文本转语音",
       "jina_rerank": "Jina Rerank",
       "cohere_rerank": "Cohere Rerank",
+      "xai_video": "xAI 视频",
       "anthropic": "Anthropic Messages",
       "gemini": "Gemini"
     },
@@ -2036,6 +2039,7 @@
       "openai_speech": "OpenAI 文本转语音",
       "jina_rerank": "Jina Rerank",
       "cohere_rerank": "Cohere Rerank",
+      "xai_video": "xAI 视频",
       "anthropic": "Anthropic",
       "gemini": "Gemini"
     },
@@ -2130,6 +2134,7 @@
         "openai_speech": "OpenAI 文本转语音",
         "jina_rerank": "Jina Rerank",
         "cohere_rerank": "Cohere Rerank",
+        "xai_video": "xAI 视频",
         "anthropic": "Anthropic",
         "gemini": "Gemini",
         "unavailable": "试炼场暂不支持"

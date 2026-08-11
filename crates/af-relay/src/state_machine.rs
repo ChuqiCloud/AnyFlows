@@ -154,7 +154,7 @@ pub struct RelayAttemptFailure {
 }
 
 impl RelayAttemptFailure {
-    fn new(candidate_index: usize, error: UpstreamError, elapsed: Duration) -> Self {
+    pub(crate) fn new(candidate_index: usize, error: UpstreamError, elapsed: Duration) -> Self {
         Self {
             candidate_index,
             error,
@@ -164,7 +164,7 @@ impl RelayAttemptFailure {
         }
     }
 
-    fn with_evidence(
+    pub(crate) fn with_evidence(
         candidate_index: usize,
         error: UpstreamError,
         server_status: Option<UpstreamServerStatus>,
@@ -220,7 +220,7 @@ pub struct RelayAttemptReport {
 }
 
 impl RelayAttemptReport {
-    fn succeeded(
+    pub(crate) fn succeeded(
         successful_candidate_index: usize,
         successful_elapsed: Duration,
         failures: Vec<RelayAttemptFailure>,
@@ -232,7 +232,7 @@ impl RelayAttemptReport {
         }
     }
 
-    fn failed(failures: Vec<RelayAttemptFailure>) -> Self {
+    pub(crate) fn failed(failures: Vec<RelayAttemptFailure>) -> Self {
         Self {
             successful_candidate_index: None,
             successful_elapsed: None,
@@ -429,7 +429,7 @@ pub struct RelayExecutionError {
 }
 
 impl RelayExecutionError {
-    fn new(error: RelayError, failures: Vec<RelayAttemptFailure>) -> Self {
+    pub(crate) fn new(error: RelayError, failures: Vec<RelayAttemptFailure>) -> Self {
         Self {
             error,
             report: RelayAttemptReport::failed(failures),
@@ -731,7 +731,7 @@ impl RelayStateMachine {
     }
 }
 
-async fn release_attempt_permit(permit: Option<Box<dyn RelayAttemptPermit>>) {
+pub(crate) async fn release_attempt_permit(permit: Option<Box<dyn RelayAttemptPermit>>) {
     if let Some(permit) = permit {
         permit.release().await;
     }
@@ -774,7 +774,7 @@ fn channel_groups_are_contiguous(candidates: &[RelayCandidate]) -> bool {
     true
 }
 
-const fn is_credential_scoped(error: UpstreamError) -> bool {
+pub(crate) const fn is_credential_scoped(error: UpstreamError) -> bool {
     matches!(
         error,
         UpstreamError::AuthExpired

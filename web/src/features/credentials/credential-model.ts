@@ -40,6 +40,7 @@ export function credentialKindsForChannel(channelType: AdminChannelType): readon
       return ['api_key', 'oauth']
     case 'jina':
     case 'cohere':
+    case 'xai':
       return ['api_key']
     case 'custom':
       return ['api_key', 'oauth']

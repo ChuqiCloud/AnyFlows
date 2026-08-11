@@ -98,6 +98,7 @@ pub(crate) enum ModelCatalogProtocolValue {
     OpenaiSpeech,
     JinaRerank,
     CohereRerank,
+    XaiVideo,
     Anthropic,
     Gemini,
 }
@@ -113,6 +114,7 @@ impl From<Protocol> for ModelCatalogProtocolValue {
             Protocol::OpenAiSpeech => Self::OpenaiSpeech,
             Protocol::JinaRerank => Self::JinaRerank,
             Protocol::CohereRerank => Self::CohereRerank,
+            Protocol::XaiVideo => Self::XaiVideo,
             Protocol::Anthropic => Self::Anthropic,
             Protocol::Gemini => Self::Gemini,
         }

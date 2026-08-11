@@ -1,10 +1,10 @@
 use af_domain::{TaskSubmission, UpstreamTaskId};
-use af_protocol::CanonicalTaskPoll;
+use af_protocol::{CanonicalTaskPoll, CanonicalVideoGenerationRequest};
 use async_trait::async_trait;
 
 use crate::{
-    AdaptorError, AdaptorResult, RelayContext, ResponseMode, TransportDispatcher, UpstreamRequest,
-    UpstreamResponse,
+    AdaptorError, AdaptorResult, Credential, RelayContext, ResponseMode, TransportDispatcher,
+    UpstreamRequest, UpstreamResponse,
 };
 
 /// 异步任务适配器的响应归一化契约。
@@ -38,6 +38,28 @@ pub trait TaskAdaptor: Send + Sync {
         task_id: &UpstreamTaskId,
         response: UpstreamResponse,
     ) -> AdaptorResult<CanonicalTaskPoll>;
+}
+
+/// 视频任务适配器的请求构造契约。
+///
+/// 供应商实现只负责把已校验 Canonical 请求和绑定任务标识编码为官方请求；发送、
+/// 故障转移和提交后目标固化仍由上层任务状态机统一负责。
+pub trait VideoTaskAdaptor: TaskAdaptor {
+    /// 构造一次视频任务提交请求。
+    fn build_video_submission_request(
+        &self,
+        request: &CanonicalVideoGenerationRequest,
+        credential: &Credential,
+        context: &RelayContext,
+    ) -> AdaptorResult<UpstreamRequest>;
+
+    /// 构造与给定上游任务标识绑定的轮询请求。
+    fn build_video_poll_request(
+        &self,
+        task_id: &UpstreamTaskId,
+        credential: &Credential,
+        context: &RelayContext,
+    ) -> AdaptorResult<UpstreamRequest>;
 }
 
 /// 任务提交与轮询的统一受控发送扩展。
