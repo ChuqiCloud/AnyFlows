@@ -26,6 +26,8 @@ mod response;
 mod sse;
 mod stream;
 mod usage;
+mod video_task;
+pub mod xai_video;
 
 pub use audio::{
     AudioDuration, AudioDurationError, AudioFile, AudioFileError, AudioFileFormat,
@@ -96,6 +98,12 @@ pub use rerank::{
 pub use response::{CanonicalResponse, ResponseChoice};
 pub use stream::{CanonicalStreamEvent, ContentDelta, FinishReason};
 pub use usage::{TokenCount, Usage, UsageDetails, UsageError, UsageSemantics, UsageSource};
+pub use video_task::{
+    CanonicalTaskOutput, CanonicalTaskPoll, CanonicalVideoGenerationRequest, CanonicalVideoOutput,
+    MAX_VIDEO_DURATION_SECONDS, MAX_VIDEO_MODEL_BYTES, MAX_VIDEO_OUTPUT_URL_BYTES,
+    MAX_VIDEO_PROMPT_BYTES, MIN_VIDEO_DURATION_SECONDS, VideoAspectRatio, VideoDuration,
+    VideoModel, VideoOutputUrl, VideoPrompt, VideoResolution, VideoTaskError,
+};
 
 #[cfg(test)]
 mod canonical_tests;

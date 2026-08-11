@@ -20,6 +20,7 @@ mod responses_websocket_transport;
 mod task;
 mod transport_dispatcher;
 mod vertex;
+mod xai_video;
 
 pub use adaptor::{Adaptor, AdaptorSendExt, AdaptorTarget};
 pub use anthropic::AnthropicAdaptor;
@@ -71,6 +72,7 @@ pub use vertex::{
     MAX_VERTEX_LOCATION_BYTES, MAX_VERTEX_PROJECT_ID_BYTES, MAX_VERTEX_TOKEN_RESPONSE_BYTES,
     VertexAdaptor,
 };
+pub use xai_video::XaiVideoAdaptor;
 
 pub use af_domain::{ChannelType, CredentialKind, Operation, Protocol};
 pub use af_httpclient::{
