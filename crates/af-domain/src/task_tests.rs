@@ -3,6 +3,50 @@ use std::str::FromStr;
 use super::*;
 
 #[test]
+fn async_task_identifiers_round_trip_without_debug_disclosure() {
+    let task_id = AsyncTaskId::new([0x12; 16]).unwrap();
+    let request_id = AsyncTaskRequestId::new([0x34; 16]).unwrap();
+
+    for (key, rendered) in [
+        (task_id.persistence_key(), format!("{task_id:?}")),
+        (request_id.persistence_key(), format!("{request_id:?}")),
+    ] {
+        assert_eq!(key.len(), 32);
+        assert!(
+            key.bytes()
+                .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+        );
+        assert!(rendered.contains("<脱敏>"));
+        assert!(!rendered.contains(&key));
+    }
+    assert_eq!(
+        AsyncTaskId::from_persistence_key(&task_id.persistence_key()).unwrap(),
+        task_id
+    );
+    assert_eq!(
+        AsyncTaskRequestId::from_persistence_key(&request_id.persistence_key()).unwrap(),
+        request_id
+    );
+}
+
+#[test]
+fn async_task_identifiers_reject_zero_and_noncanonical_keys() {
+    assert_eq!(
+        AsyncTaskId::new([0; 16]),
+        Err(AsyncTaskIdentifierError::AllZero)
+    );
+    for invalid in [
+        "0".repeat(32),
+        "A".repeat(32),
+        "g".repeat(32),
+        "a".repeat(31),
+        "a".repeat(33),
+    ] {
+        assert!(AsyncTaskRequestId::from_persistence_key(&invalid).is_err());
+    }
+}
+
+#[test]
 fn task_id_is_bounded_and_redacted() {
     let id = UpstreamTaskId::new("provider-task-123").unwrap();
     assert_eq!(id.as_str(), "provider-task-123");

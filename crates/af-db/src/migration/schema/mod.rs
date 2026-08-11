@@ -1,6 +1,7 @@
 use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 
+mod async_task;
 mod auth_challenge;
 mod auth_challenge_rate_limit;
 mod balance_alert;
@@ -33,6 +34,7 @@ mod subscription_alert;
 mod usage;
 mod wallet;
 
+pub(super) use async_task::create_async_tasks;
 pub(super) use auth_challenge::{create_auth_challenge_indexes, create_auth_challenges};
 pub(super) use auth_challenge_rate_limit::create_auth_challenge_rate_limits;
 pub(super) use balance_alert::create_balance_alert_storage;

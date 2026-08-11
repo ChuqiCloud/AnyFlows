@@ -57,6 +57,7 @@ mod m20260808_000048_add_credential_oauth_pending;
 mod m20260809_000049_create_token_window_reservations;
 mod m20260809_000050_create_group_window_reservations;
 mod m20260810_000051_add_usage_audio_duration;
+mod m20260811_000052_create_async_tasks;
 mod schema;
 
 #[cfg(test)]
@@ -151,6 +152,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260809_000049_create_token_window_reservations::Migration),
             Box::new(m20260809_000050_create_group_window_reservations::Migration),
             Box::new(m20260810_000051_add_usage_audio_duration::Migration),
+            Box::new(m20260811_000052_create_async_tasks::Migration),
         ]
     }
 }

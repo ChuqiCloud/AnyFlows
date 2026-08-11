@@ -58,9 +58,10 @@ pub use subscription_window::{
     SubscriptionWindowError,
 };
 pub use task::{
-    MAX_TASK_FAILURE_REASON_BYTES, MAX_UPSTREAM_TASK_ID_BYTES, TaskFailure, TaskFailureError,
-    TaskFailureKind, TaskIdentifierError, TaskProgress, TaskProgressError, TaskState,
-    TaskStateError, TaskStatus, TaskSubmission, UpstreamTaskId,
+    AsyncTaskId, AsyncTaskIdentifierError, AsyncTaskRequestId, MAX_TASK_FAILURE_REASON_BYTES,
+    MAX_UPSTREAM_TASK_ID_BYTES, TaskFailure, TaskFailureError, TaskFailureKind,
+    TaskIdentifierError, TaskProgress, TaskProgressError, TaskState, TaskStateError, TaskStatus,
+    TaskSubmission, UpstreamTaskId,
 };
 pub use token_policy::{
     MAX_MODEL_NAME_BYTES, MAX_TOKEN_MODEL_ALLOWLIST_COUNT, MAX_TOKEN_MODEL_ALLOWLIST_TEXT_BYTES,

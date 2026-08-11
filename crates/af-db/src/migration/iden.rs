@@ -2,6 +2,44 @@
 
 use sea_orm_migration::prelude::DeriveIden;
 
+pub(in crate::migration) mod async_tasks {
+    use super::DeriveIden;
+
+    /// `async_tasks` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "async_tasks")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 异步任务持久化迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        TaskKey,
+        UserId,
+        TokenId,
+        GroupId,
+        IdempotencyKey,
+        Protocol,
+        RequestedModel,
+        UpstreamModel,
+        ChannelId,
+        CredentialId,
+        CredentialRevision,
+        UpstreamTaskId,
+        Status,
+        ProgressBasisPoints,
+        FailureKind,
+        Version,
+        TerminalAt,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod groups {
     use super::DeriveIden;
 
