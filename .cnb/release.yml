@@ -37,7 +37,9 @@
 .release-binary-stage: &release-binary-stage
   name: 构建 release 二进制
   timeout: 40m
-  script: cargo build --release --locked --package af-server
+  script: |
+    cargo clean --release --workspace
+    cargo build --release --locked --package af-server
 
 .release-package-stage: &release-package-stage
   name: 归档并校验摘要

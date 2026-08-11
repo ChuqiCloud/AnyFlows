@@ -19,6 +19,8 @@ pub mod openai_responses_compact;
 mod reasoning_suffix;
 mod request;
 mod request_envelope;
+mod rerank;
+pub mod rerank_v1;
 mod response;
 mod sse;
 mod stream;
@@ -82,6 +84,14 @@ pub use request::{
     RequestMetadata, Sampling, SamplingError, StreamOptions, ToolChoice, ToolDef,
 };
 pub use request_envelope::{CanonicalRequestEnvelope, SameProtocolDecision, SameProtocolRequest};
+pub use rerank::{
+    CanonicalRerankRequest, CanonicalRerankRequestError, CanonicalRerankResponse,
+    CanonicalRerankResponseError, MAX_RERANK_DOCUMENT_BYTES, MAX_RERANK_DOCUMENTS,
+    MAX_RERANK_QUERY_BYTES, MAX_RERANK_RESPONSE_ID_BYTES, MAX_TOTAL_RERANK_TEXT_BYTES,
+    RerankDocument, RerankRelevanceScore, RerankRelevanceScoreError, RerankResult,
+    RerankSearchUnits, RerankSearchUnitsError, RerankTopN, RerankTopNError, RerankUsage,
+    RerankUsageError,
+};
 pub use response::{CanonicalResponse, ResponseChoice};
 pub use stream::{CanonicalStreamEvent, ContentDelta, FinishReason};
 pub use usage::{TokenCount, Usage, UsageDetails, UsageError, UsageSemantics, UsageSource};
