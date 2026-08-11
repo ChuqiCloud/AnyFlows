@@ -152,6 +152,8 @@ string_enum! {
         OpenAiSpeech => "openai_speech",
         /// Jina 原生 Rerank 协议。
         JinaRerank => "jina_rerank",
+        /// Cohere v2 原生 Rerank 协议。
+        CohereRerank => "cohere_rerank",
         /// Anthropic Messages 协议。
         Anthropic => "anthropic",
         /// Gemini generateContent 协议。
@@ -222,6 +224,8 @@ string_enum! {
         Vertex => "vertex",
         /// Jina AI 原生 API。
         Jina => "jina",
+        /// Cohere 原生 API。
+        Cohere => "cohere",
         /// 配置驱动的自定义适配器。
         Custom => "custom",
     }

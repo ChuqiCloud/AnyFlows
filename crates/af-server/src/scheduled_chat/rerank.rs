@@ -4,8 +4,9 @@ use af_adapter::{RelayContext, get_adaptor};
 use af_domain::{AfError, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, Protocol};
 use af_protocol::CanonicalRerankRequest;
 use af_relay::{
-    RelayCandidate, RelayCandidateRequest, RelayStateMachine, build_jina_rerank_candidate_request,
-    relay_jina_rerank_with_report,
+    RelayCandidate, RelayCandidateRequest, RelayStateMachine,
+    build_cohere_rerank_candidate_request, build_jina_rerank_candidate_request,
+    relay_rerank_with_report,
 };
 use af_scheduler::{IndexedRoutePlan, RouteWaitKind};
 
@@ -57,12 +58,19 @@ impl RerankRoutePlanner for ScheduledChatService {
                     .map_err(map_scheduler_error)?
                     .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?
             };
-            let protocol = Protocol::JinaRerank;
-            let credential_health = self.load_credential_health(&route, protocol).await?;
+            let (jina_health, cohere_health) = tokio::join!(
+                self.load_credential_health(&route, Protocol::JinaRerank),
+                self.load_credential_health(&route, Protocol::CohereRerank),
+            );
+            let credential_health = merge_optional_maps(jina_health?, cohere_health?);
             let user_permit = self
                 .acquire_user_permit(*principal, user_concurrency)
                 .await?;
-            let account_loads = self.load_account_concurrency(&route, protocol).await?;
+            let (jina_loads, cohere_loads) = tokio::join!(
+                self.load_account_concurrency(&route, Protocol::JinaRerank),
+                self.load_account_concurrency(&route, Protocol::CohereRerank),
+            );
+            let account_loads = merge_optional_maps(jina_loads?, cohere_loads?);
             let plan = self.build_rerank_plan(
                 route,
                 request,
@@ -101,11 +109,13 @@ impl ScheduledChatService {
         );
         let mut attempt_targets = Vec::with_capacity(relay_candidates.capacity());
         let mut auto_ban_targets = Vec::with_capacity(relay_candidates.capacity());
+        let mut candidate_protocols = Vec::with_capacity(relay_candidates.capacity());
         let mut health_filtered = false;
         'channels: for candidate in route.candidates() {
             let target = candidate.runtime_target();
             let wait_plan = candidate.wait_plan();
-            if !target_matches_protocol(target, Protocol::JinaRerank) {
+            let protocol = target.protocol();
+            if !is_rerank_protocol(protocol) || !target_matches_protocol(target, protocol) {
                 continue;
             }
             let upstream_model = target.mapped_model(&model).unwrap_or(&model).to_owned();
@@ -116,7 +126,7 @@ impl ScheduledChatService {
                 adaptor_settings(target, upstream_model)?,
             )
             .map_err(|_| AfError::Internal)?;
-            if adaptor.default_protocol() != Protocol::JinaRerank {
+            if adaptor.default_protocol() != protocol {
                 return Err(AfError::Internal);
             }
             let headers = header_overrides(target)?;
@@ -170,6 +180,7 @@ impl ScheduledChatService {
                     relay_candidate = relay_candidate.with_request(candidate_request.clone());
                 }
                 relay_candidates.push(relay_candidate);
+                candidate_protocols.push(protocol);
                 attempt_targets.push(CredentialAttemptTarget::new(
                     target.channel_id(),
                     runtime_credential.credential_id(),
@@ -195,6 +206,7 @@ impl ScheduledChatService {
         Ok(ScheduledRerankExecution {
             target_group_id,
             machine,
+            candidate_protocols,
             attempt_targets,
             auto_ban_targets,
             credential_states: self.credential_states.clone(),
@@ -210,6 +222,7 @@ impl ScheduledChatService {
 struct ScheduledRerankExecution {
     target_group_id: GroupId,
     machine: RelayStateMachine,
+    candidate_protocols: Vec<Protocol>,
     attempt_targets: Vec<CredentialAttemptTarget>,
     auto_ban_targets: Vec<ChannelAutoBanAttemptTarget>,
     credential_states: af_db::CredentialStateRepository,
@@ -229,6 +242,7 @@ impl PlannedRerankExecution for ScheduledRerankExecution {
         let Self {
             target_group_id: _,
             machine,
+            candidate_protocols,
             attempt_targets,
             auto_ban_targets,
             credential_states,
@@ -239,9 +253,10 @@ impl PlannedRerankExecution for ScheduledRerankExecution {
             channel_states,
         } = *self;
         Box::pin(async move {
-            let (result, report) = relay_jina_rerank_with_report(&machine, request)
-                .await
-                .into_parts();
+            let (result, report) =
+                relay_rerank_with_report(&machine, request, &candidate_protocols)
+                    .await
+                    .into_parts();
             let ((), (), ()) = tokio::join!(
                 persist_credential_feedback(
                     &credential_states,
@@ -274,10 +289,34 @@ fn rerank_candidate_request(
     if !target.parameter_overrides().is_empty() {
         return Err(AfError::Internal);
     }
-    if upstream_model == requested_model {
-        return Ok(None);
+    match target.protocol() {
+        Protocol::JinaRerank if upstream_model == requested_model => Ok(None),
+        Protocol::JinaRerank => {
+            build_jina_rerank_candidate_request(request, upstream_model.to_owned()).map(Some)
+        }
+        Protocol::CohereRerank => {
+            build_cohere_rerank_candidate_request(request, upstream_model.to_owned()).map(Some)
+        }
+        _ => Err(AfError::Internal),
     }
-    build_jina_rerank_candidate_request(request, upstream_model.to_owned()).map(Some)
+}
+
+fn is_rerank_protocol(protocol: Protocol) -> bool {
+    matches!(protocol, Protocol::JinaRerank | Protocol::CohereRerank)
+}
+
+fn merge_optional_maps<T>(
+    first: Option<BTreeMap<i64, T>>,
+    second: Option<BTreeMap<i64, T>>,
+) -> Option<BTreeMap<i64, T>> {
+    match (first, second) {
+        (None, None) => None,
+        (Some(values), None) | (None, Some(values)) => Some(values),
+        (Some(mut first), Some(second)) => {
+            first.extend(second);
+            Some(first)
+        }
+    }
 }
 
 fn ordered_credentials<'a>(

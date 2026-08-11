@@ -6,9 +6,9 @@ use std::{
 use af_account::CredentialDecryptor;
 use af_adapter::{
     Adaptor, AdaptorError, AdaptorSendExt as _, AdaptorSettings, AdaptorTarget,
-    AdaptorTransportError, AnthropicAdaptorSettings, Bytes, GeminiAdaptorSettings, HeaderMap,
-    HeaderName, HeaderValue, JinaAdaptorSettings, Method, OpenAiAdaptorSettings, Operation,
-    RelayContext, ResponseMode, UpstreamRequest, get_adaptor,
+    AdaptorTransportError, AnthropicAdaptorSettings, Bytes, CohereAdaptorSettings,
+    GeminiAdaptorSettings, HeaderMap, HeaderName, HeaderValue, JinaAdaptorSettings, Method,
+    OpenAiAdaptorSettings, Operation, RelayContext, ResponseMode, UpstreamRequest, get_adaptor,
 };
 use af_db::{
     ChannelProbeTargetRecord, ChannelProbeTargetRepository, CompactProbeStateRepository,
@@ -26,8 +26,8 @@ use af_protocol::{
     CanonicalRequest, CanonicalRerankRequest, CanonicalResponsesCompactionRequest, ContentBlock,
     EmbeddingInput, ImageDimensions, ImageGenerationOptions, ImageOutputFormat, ImageQuality,
     ImageSize, Message, RerankDocument, ResponsesCompactionInput, Sampling, TokenCount, ToolChoice,
-    anthropic, gemini, openai_audio, openai_audio_speech, openai_chat, openai_embeddings,
-    openai_images, openai_responses, openai_responses_compact, rerank_v1,
+    anthropic, cohere_rerank_v2, gemini, openai_audio, openai_audio_speech, openai_chat,
+    openai_embeddings, openai_images, openai_responses, openai_responses_compact, rerank_v1,
 };
 use af_relay::{encode_openai_audio_request, encode_openai_speech_request};
 use af_scheduler::{ChannelProbe, ChannelProbeStatus};
@@ -130,7 +130,7 @@ impl DatabaseChannelProbe {
             Protocol::OpenAiImages => Some(openai_images::MAX_RESPONSE_BODY_BYTES),
             Protocol::OpenAiAudio => Some(openai_audio::MAX_TRANSCRIPTION_RESPONSE_BODY_BYTES),
             Protocol::OpenAiSpeech => Some(openai_audio_speech::MAX_RESPONSE_BODY_BYTES),
-            Protocol::JinaRerank => Some(rerank_v1::MAX_BODY_BYTES),
+            Protocol::JinaRerank | Protocol::CohereRerank => Some(rerank_v1::MAX_BODY_BYTES),
             _ => None,
         };
         let request = match response_body_limit {
@@ -412,7 +412,7 @@ fn probe_operation(protocol: Protocol) -> Result<Operation, ProbeFailure> {
         Protocol::OpenAiEmbeddings => Ok(Operation::Embedding),
         Protocol::OpenAiImages => Ok(Operation::Image),
         Protocol::OpenAiAudio | Protocol::OpenAiSpeech => Ok(Operation::Audio),
-        Protocol::JinaRerank => Ok(Operation::Rerank),
+        Protocol::JinaRerank | Protocol::CohereRerank => Ok(Operation::Rerank),
     }
 }
 
@@ -439,6 +439,10 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
     if protocol == Protocol::JinaRerank {
         let value = rerank_v1::build_request(&probe_rerank_request(model)?)
             .map_err(|_| ProbeFailure::RequestBuild)?;
+        return Ok(Bytes::from(value.to_string()));
+    }
+    if protocol == Protocol::CohereRerank {
+        let value = cohere_rerank_v2::build_request(&probe_rerank_request(model)?);
         return Ok(Bytes::from(value.to_string()));
     }
     let mut request = CanonicalRequest::new(
@@ -473,7 +477,8 @@ fn probe_body(model: &str, protocol: Protocol) -> Result<Bytes, ProbeFailure> {
         | Protocol::OpenAiImages
         | Protocol::OpenAiAudio
         | Protocol::OpenAiSpeech
-        | Protocol::JinaRerank => {
+        | Protocol::JinaRerank
+        | Protocol::CohereRerank => {
             unreachable!("非对话协议已在独立请求分支返回")
         }
         Protocol::Anthropic => {
@@ -548,6 +553,18 @@ fn validate_probe_response(protocol: Protocol, body: &[u8]) -> Result<(), ProbeF
                 .map(|_| ())
                 .map_err(|_| ProbeFailure::InvalidResponse)
         }
+        Protocol::CohereRerank => {
+            let request = probe_rerank_request("probe-model")?;
+            cohere_rerank_v2::parse_response(body)
+                .and_then(|response| {
+                    response
+                        .validate_for_request(&request)
+                        .map_err(|_| cohere_rerank_v2::ParseCohereRerankError::InvalidValue)
+                        .map(|_| response)
+                })
+                .map(|_| ())
+                .map_err(|_| ProbeFailure::InvalidResponse)
+        }
         Protocol::Anthropic => anthropic::parse_response(body)
             .map(|_| ())
             .map_err(|_| ProbeFailure::InvalidResponse),
@@ -571,6 +588,7 @@ fn supported_target(target: &ChannelProbeTargetRecord) -> bool {
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
             | (ChannelType::Gemini, Protocol::Gemini)
             | (ChannelType::Jina, Protocol::JinaRerank)
+            | (ChannelType::Cohere, Protocol::CohereRerank)
     )
 }
 
@@ -620,6 +638,9 @@ fn adaptor_settings(target: &ChannelProbeTargetRecord) -> Result<AdaptorSettings
         }
         (ChannelType::Jina, Protocol::JinaRerank) => {
             Ok(AdaptorSettings::Jina(JinaAdaptorSettings::new(models)))
+        }
+        (ChannelType::Cohere, Protocol::CohereRerank) => {
+            Ok(AdaptorSettings::Cohere(CohereAdaptorSettings::new(models)))
         }
         _ => Err(ProbeFailure::UnsupportedTarget),
     }

@@ -5,6 +5,7 @@
 mod adaptor;
 mod anthropic;
 mod bedrock;
+mod cohere;
 mod context;
 mod credential;
 mod custom;
@@ -23,6 +24,7 @@ mod vertex;
 pub use adaptor::{Adaptor, AdaptorSendExt, AdaptorTarget};
 pub use anthropic::AnthropicAdaptor;
 pub use bedrock::{BedrockAdaptor, MAX_AWS_REGION_BYTES, MAX_BEDROCK_MODEL_ID_BYTES};
+pub use cohere::CohereAdaptor;
 pub use context::{MAX_REQUEST_ID_BYTES, MAX_UPSTREAM_BASE_URL_BYTES, RelayContext};
 pub use credential::{
     Credential, MAX_AWS_ACCESS_KEY_ID_BYTES, MAX_AWS_SECRET_ACCESS_KEY_BYTES,
@@ -37,9 +39,9 @@ pub use custom::{
 };
 pub use error::{AdaptorError, AdaptorResult, AdaptorTransportError};
 pub use factory::{
-    AdaptorSettings, AnthropicAdaptorSettings, BedrockAdaptorSettings, CustomAdaptorSettings,
-    GeminiAdaptorSettings, JinaAdaptorSettings, OpenAiAdaptorSettings, VertexAdaptorSettings,
-    get_adaptor,
+    AdaptorSettings, AnthropicAdaptorSettings, BedrockAdaptorSettings, CohereAdaptorSettings,
+    CustomAdaptorSettings, GeminiAdaptorSettings, JinaAdaptorSettings, OpenAiAdaptorSettings,
+    VertexAdaptorSettings, get_adaptor,
 };
 pub use gemini::GeminiAdaptor;
 pub use jina::JinaAdaptor;

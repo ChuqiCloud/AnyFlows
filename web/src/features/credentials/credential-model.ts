@@ -39,6 +39,7 @@ export function credentialKindsForChannel(channelType: AdminChannelType): readon
     case 'openai':
       return ['api_key', 'oauth']
     case 'jina':
+    case 'cohere':
       return ['api_key']
     case 'custom':
       return ['api_key', 'oauth']

@@ -37,6 +37,7 @@ pub(super) const fn is_supported_runtime_target(
         ) | (ChannelType::Anthropic, Protocol::Anthropic)
             | (ChannelType::Gemini, Protocol::Gemini)
             | (ChannelType::Jina, Protocol::JinaRerank)
+            | (ChannelType::Cohere, Protocol::CohereRerank)
     )
 }
 

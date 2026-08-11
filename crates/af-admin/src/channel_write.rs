@@ -303,6 +303,7 @@ impl AdminChannelWriteFields {
                 ) | (ChannelType::Anthropic, Protocol::Anthropic)
                     | (ChannelType::Gemini, Protocol::Gemini)
                     | (ChannelType::Jina, Protocol::JinaRerank)
+                    | (ChannelType::Cohere, Protocol::CohereRerank)
             )
             || base_url
                 .as_deref()

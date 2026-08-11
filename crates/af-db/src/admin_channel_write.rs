@@ -1119,6 +1119,7 @@ fn validate_channel_fields(
             ) | (ChannelType::Anthropic, Protocol::Anthropic)
                 | (ChannelType::Gemini, Protocol::Gemini)
                 | (ChannelType::Jina, Protocol::JinaRerank)
+                | (ChannelType::Cohere, Protocol::CohereRerank)
         )
         || record
             .tag
@@ -1292,7 +1293,9 @@ fn validate_credential_channel_compatibility(
         .r#type
         .parse::<ChannelType>()
         .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
-    if channel_type == ChannelType::Jina && kind != CredentialKind::ApiKey {
+    if matches!(channel_type, ChannelType::Jina | ChannelType::Cohere)
+        && kind != CredentialKind::ApiKey
+    {
         return Err(AdminChannelWriteRepositoryError::InvalidInput);
     }
     Ok(())

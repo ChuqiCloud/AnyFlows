@@ -5,6 +5,7 @@ mod audio;
 mod bounded_json;
 mod canonical;
 mod capability;
+pub mod cohere_rerank_v2;
 mod embedding;
 mod error_evidence;
 pub mod gemini;

@@ -71,7 +71,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
   const autoBan = form.watch('autoBan')
   const poolMode = form.watch('poolMode')
   const removeUnsupportedParameters = (nextProtocol: ChannelProtocol) => {
-    if (nextProtocol === 'openai_embeddings' || nextProtocol === 'openai_images' || nextProtocol === 'openai_audio' || nextProtocol === 'openai_speech' || nextProtocol === 'jina_rerank') {
+    if (nextProtocol === 'openai_embeddings' || nextProtocol === 'openai_images' || nextProtocol === 'openai_audio' || nextProtocol === 'openai_speech' || nextProtocol === 'jina_rerank' || nextProtocol === 'cohere_rerank') {
       form.setValue('paramOverride', [], { shouldDirty: true, shouldValidate: true })
       return
     }
@@ -147,6 +147,8 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                         ? 'gemini'
                         : nextType === 'jina'
                           ? 'jina_rerank'
+                          : nextType === 'cohere'
+                            ? 'cohere_rerank'
                           : currentProtocol === 'openai_chat'
                           || currentProtocol === 'openai_responses'
                           || currentProtocol === 'openai_embeddings'
@@ -168,6 +170,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                   <option value="anthropic">{t('channels.type.anthropic')}</option>
                   <option value="gemini">{t('channels.type.gemini')}</option>
                   <option value="jina">{t('channels.type.jina')}</option>
+                  <option value="cohere">{t('channels.type.cohere')}</option>
                 </Select>
               )} />
             </ChannelFormField>
@@ -192,6 +195,8 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
                     <option value="gemini">{t('channels.protocol.gemini')}</option>
                   ) : channelType === 'jina' ? (
                     <option value="jina_rerank">{t('channels.protocol.jina_rerank')}</option>
+                  ) : channelType === 'cohere' ? (
+                    <option value="cohere_rerank">{t('channels.protocol.cohere_rerank')}</option>
                   ) : (
                     <>
                       <option value="openai_chat">{t('channels.protocol.openai_chat')}</option>
@@ -329,7 +334,7 @@ export function ChannelForm({ mode, channel, onCancel, onSaved }: ChannelFormPro
               <ChannelKeyValueEditor rows={field.value} keyLabel={t('channels.mapping.source')} valueLabel={t('channels.mapping.target')} addLabel={t('channels.mapping.add')} removeLabel={t('channels.mapping.remove')} emptyText={t('channels.mapping.empty')} createRow={() => createKeyValueRow('mapping')} onChange={field.onChange} />
             )} />
           </ChannelFormField>
-          {protocol !== 'openai_embeddings' && protocol !== 'openai_images' && protocol !== 'openai_audio' && protocol !== 'openai_speech' && protocol !== 'jina_rerank' ? (
+          {protocol !== 'openai_embeddings' && protocol !== 'openai_images' && protocol !== 'openai_audio' && protocol !== 'openai_speech' && protocol !== 'jina_rerank' && protocol !== 'cohere_rerank' ? (
             <ChannelFormField id="channel-params" htmlFor={false} label={t('channels.fields.paramOverride')} error={form.formState.errors.paramOverride?.message} hint={t('channels.form.parametersHint')}>
               <Controller control={form.control} name="paramOverride" render={({ field }) => <ChannelParameterEditor protocol={protocol} rows={field.value} onChange={field.onChange} />} />
             </ChannelFormField>

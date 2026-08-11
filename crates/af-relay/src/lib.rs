@@ -6,6 +6,7 @@ mod anthropic_stream;
 mod attempt_gate;
 mod chat_response;
 mod chat_stream_encoder;
+mod cohere_rerank;
 mod error;
 mod gemini;
 mod gemini_request;
@@ -24,6 +25,7 @@ mod openai_responses_compact;
 mod openai_responses_request;
 mod openai_responses_stream;
 mod openai_speech;
+mod rerank;
 mod state_machine;
 
 pub use anthropic::{RelayAnthropicOutcome, relay_anthropic, relay_anthropic_with_report};
@@ -34,6 +36,7 @@ pub use attempt_gate::{
     RelayAttemptReleaseFuture,
 };
 pub use chat_response::ChatResponse;
+pub use cohere_rerank::build_cohere_rerank_candidate_request;
 pub use error::{RelayBuildError, RelayError};
 pub use gemini::{RelayGeminiOutcome, relay_gemini, relay_gemini_with_report};
 pub use gemini_request::{GeminiRequestOverrideError, GeminiRequestOverrides};
@@ -80,6 +83,7 @@ pub use openai_speech::{
     RelayOpenAiSpeechOutcome, SpeechResponse, encode_openai_speech_request, relay_openai_speech,
     relay_openai_speech_with_report,
 };
+pub use rerank::{RelayRerankOutcome, RerankResponse, relay_rerank_with_report};
 pub use state_machine::{
     RelayAttemptFailure, RelayAttemptReport, RelayCandidate, RelayCandidateRequest,
     RelayExecutionError, RelayRequest, RelayResponse, RelayState, RelayStateMachine,
