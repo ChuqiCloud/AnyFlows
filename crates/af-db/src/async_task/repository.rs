@@ -229,8 +229,7 @@ async fn transition_in_transaction(
     };
     let current_version =
         i64::try_from(current.version).map_err(|_| AsyncTaskRepositoryError::Invariant)?;
-    if (current_version == write.expected_version
-        || current_version == write.expected_version + 1)
+    if (current_version == write.expected_version || current_version == write.expected_version + 1)
         && same_persisted_status(&current.status, &write.status)
     {
         return Ok(AsyncTaskTransitionOutcome::Existing(current));

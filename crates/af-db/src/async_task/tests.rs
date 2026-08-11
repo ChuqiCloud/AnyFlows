@@ -261,7 +261,7 @@ async fn state_machine_rejects_version_conflicts_and_normalizes_terminal_failure
         Err(AsyncTaskRepositoryError::Conflict)
     ));
 
-    let failed = fixture
+    let failed_outcome = fixture
         .repository
         .transition(transition(
             0x71,
@@ -271,7 +271,10 @@ async fn state_machine_rejects_version_conflicts_and_normalizes_terminal_failure
             UPDATED_AT + 2,
         )?)
         .await?;
-    assert!(matches!(failed, AsyncTaskTransitionOutcome::Applied(_)));
+    assert!(matches!(
+        failed_outcome,
+        AsyncTaskTransitionOutcome::Applied(_)
+    ));
 
     let replay = fixture
         .repository
