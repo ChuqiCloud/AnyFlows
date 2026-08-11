@@ -65,7 +65,7 @@ lettre = { version = "0.11.22", default-features = false, features = [
     "smtp-transport",
     "tokio1-rustls-tls",
 ] }
-lru = { version = "0.18.1", default-features = false }
+lru = { version = "0.18.2", default-features = false }
 metrics = "0.24.6"
 metrics-exporter-prometheus = { version = "0.18.3", default-features = false }
 mime_guess = "2.0.5"
