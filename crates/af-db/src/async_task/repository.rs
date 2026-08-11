@@ -2,7 +2,7 @@ use std::{fmt, str::FromStr, time::Duration};
 
 use af_domain::{
     AsyncTaskId, AsyncTaskRequestId, ChannelId, CredentialId, GatewayPrincipal, GroupId, Protocol,
-    TaskStatus, TokenId, UpstreamTaskId, UserId,
+    TokenId, UpstreamTaskId, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, EntityTrait,

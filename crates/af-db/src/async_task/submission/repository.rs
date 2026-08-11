@@ -15,9 +15,9 @@ use crate::{
 };
 
 use super::record::{
-    classify_claim_collision, credential_revision_key, expected_version, load_by_database_id,
-    load_by_owner, load_by_request, load_claim_collision, next_version, state_code_for_claim,
-    to_database_time,
+    claim_record, classify_claim_collision, credential_revision_key, expected_version,
+    load_by_database_id, load_by_owner, load_by_request, load_claim_collision, next_version,
+    state_code_for_claim, to_database_time,
 };
 use super::types::{
     AsyncTaskSubmissionAccept, AsyncTaskSubmissionBegin, AsyncTaskSubmissionClaim,

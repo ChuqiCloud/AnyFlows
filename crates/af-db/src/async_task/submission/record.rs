@@ -124,7 +124,7 @@ where
         .transpose()
 }
 
-fn claim_record(
+pub(super) fn claim_record(
     model: async_task_submission_claims::Model,
 ) -> Result<AsyncTaskSubmissionRecord, AsyncTaskRepositoryError> {
     let task_id = AsyncTaskId::from_persistence_key(model.task_key.as_str())
