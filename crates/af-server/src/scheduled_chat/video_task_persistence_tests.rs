@@ -18,9 +18,9 @@ use af_protocol::{
     VideoResolution,
 };
 use af_relay::VideoTaskSubmissionDisposition;
-use sea_orm::{ConnectionTrait, DatabaseConnection};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 
-use crate::test_database::SqliteTestDatabase;
+use crate::test_database::{SqliteTestDatabase, test_encrypted_envelope_json};
 
 use super::*;
 
@@ -257,10 +257,12 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
         "INSERT INTO channels (name, \"type\", protocol, model_mapping, param_override, header_override, settings) VALUES ('视频持久化渠道', 'xai', 'xai_video', '{}', '{}', '{}', '{}')",
     )
     .await?;
-    let credential_id = insert(
+    let credential_id = insert_statement(
         database.seed(),
-        format!(
-            "INSERT INTO credentials (channel_id, kind, secret) VALUES ({channel_id}, 'api_key', '{{}}')"
+        Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "INSERT INTO credentials (channel_id, kind, secret) VALUES (?, 'api_key', ?)",
+            [channel_id.into(), test_encrypted_envelope_json(0x51).into()],
         ),
     )
     .await?;
@@ -287,7 +289,19 @@ async fn insert(
 ) -> Result<i64, sea_orm::DbErr> {
     let sql = sql.into();
     let result = connection.execute_unprepared(&sql).await?;
-    Ok(i64::try_from(result.last_insert_id()).expect("SQLite 测试标识必须适配 i64"))
+    Ok(inserted_id(result))
+}
+
+async fn insert_statement(
+    connection: &DatabaseConnection,
+    statement: Statement,
+) -> Result<i64, sea_orm::DbErr> {
+    let result = connection.execute(statement).await?;
+    Ok(inserted_id(result))
+}
+
+fn inserted_id(result: sea_orm::ExecResult) -> i64 {
+    i64::try_from(result.last_insert_id()).expect("SQLite 测试标识必须适配 i64")
 }
 
 fn successful_submission(fixture: &Fixture) -> PersistentSubmission {

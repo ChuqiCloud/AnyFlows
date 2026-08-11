@@ -815,10 +815,10 @@ mod tests {
         XChaCha20Poly1305, XNonce,
         aead::{Aead as _, KeyInit as _, Payload},
     };
-    use sea_orm::ConnectionTrait;
+    use sea_orm::{ConnectionTrait, DbBackend, Statement};
     use serde_json::json;
 
-    use crate::test_database::SqliteTestDatabase;
+    use crate::test_database::{SqliteTestDatabase, test_encrypted_envelope_json};
 
     use super::*;
 
@@ -1014,14 +1014,23 @@ mod tests {
             format!(
                 "INSERT INTO channels (id, name, \"type\", protocol, model_mapping, param_override, header_override, settings) VALUES ({CHANNEL_ID}, '视频运行时渠道', 'xai', 'xai_video', '{{}}', '{{}}', '{{}}', '{{}}')"
             ),
-            format!(
-                "INSERT INTO credentials (id, channel_id, kind, secret) VALUES ({FIRST_CREDENTIAL_ID}, {CHANNEL_ID}, 'api_key', '{{}}')"
-            ),
-            format!(
-                "INSERT INTO credentials (id, channel_id, kind, secret) VALUES ({SECOND_CREDENTIAL_ID}, {CHANNEL_ID}, 'api_key', '{{}}')"
-            ),
         ] {
             database.seed().execute_unprepared(&sql).await.unwrap();
+        }
+        for (credential_id, marker) in [(FIRST_CREDENTIAL_ID, 0x31), (SECOND_CREDENTIAL_ID, 0x32)] {
+            database
+                .seed()
+                .execute(Statement::from_sql_and_values(
+                    DbBackend::Sqlite,
+                    "INSERT INTO credentials (id, channel_id, kind, secret) VALUES (?, ?, 'api_key', ?)",
+                    [
+                        credential_id.into(),
+                        CHANNEL_ID.into(),
+                        test_encrypted_envelope_json(marker).into(),
+                    ],
+                ))
+                .await
+                .unwrap();
         }
     }
 

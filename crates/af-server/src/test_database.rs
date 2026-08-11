@@ -5,7 +5,9 @@ use std::{
 };
 
 use af_db::{DatabaseOptions, DatabasePool, MigrationOptions, connect_and_migrate};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{Database, DatabaseConnection};
+use serde_json::json;
 
 static NEXT_DATABASE: AtomicU64 = AtomicU64::new(1);
 
@@ -48,6 +50,18 @@ impl SqliteTestDatabase {
         self.pool.close().await.expect("SQLite 测试连接池必须关闭");
         drop(self.files);
     }
+}
+
+/// 构造只用于实体反序列化与外键测试的合法密文封套 JSON。
+pub(crate) fn test_encrypted_envelope_json(marker: u8) -> String {
+    json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": "video-task-test",
+        "nonce": URL_SAFE_NO_PAD.encode([marker; 24]),
+        "ciphertext": URL_SAFE_NO_PAD.encode([marker; 32]),
+    })
+    .to_string()
 }
 
 struct SqliteTestDatabaseFiles {
