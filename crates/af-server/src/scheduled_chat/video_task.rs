@@ -909,12 +909,16 @@ mod tests {
         let crate::scheduled_chat::video_task_persistence::PersistentVideoTaskPollOutcome::Updated {
             task,
             poll,
+            billing_dimensions,
         } = poll
         else {
             panic!("首次终态轮询必须访问持久化绑定")
         };
         assert_eq!(task.status(), &TaskStatus::Succeeded);
         assert_eq!(poll.status(), &TaskStatus::Succeeded);
+        let dimensions = billing_dimensions.expect("成功视频终态必须产生计费审计维度");
+        assert_eq!(dimensions.video_duration().unwrap().seconds(), 8);
+        assert_eq!(dimensions.video_resolution(), Some(VideoResolution::P720));
         assert_eq!(
             poll.output().unwrap().as_video().unwrap().model().as_str(),
             UPSTREAM_MODEL

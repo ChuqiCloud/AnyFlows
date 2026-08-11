@@ -2,7 +2,7 @@ use std::{fmt, future::Future, pin::Pin};
 
 use af_db::{
     AdminUsageLogRecord, AdminUsageLogRepository, AdminUsageLogRepositoryError,
-    MAX_ADMIN_USAGE_LOG_PAGE_SIZE,
+    MAX_ADMIN_USAGE_LOG_PAGE_SIZE, UsageLogVideoResolution,
 };
 use af_domain::{GroupId, TokenId, UserId};
 use serde::{Deserialize, Serialize};
@@ -113,6 +113,30 @@ impl AdminUsageLogSemantics {
     }
 }
 
+/// 管理 API 使用的稳定视频分辨率档位。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AdminUsageLogVideoResolution {
+    /// 480p 输出。
+    #[serde(rename = "480p")]
+    P480,
+    /// 720p 输出。
+    #[serde(rename = "720p")]
+    P720,
+    /// 1080p 输出。
+    #[serde(rename = "1080p")]
+    P1080,
+}
+
+impl From<UsageLogVideoResolution> for AdminUsageLogVideoResolution {
+    fn from(value: UsageLogVideoResolution) -> Self {
+        match value {
+            UsageLogVideoResolution::P480 => Self::P480,
+            UsageLogVideoResolution::P720 => Self::P720,
+            UsageLogVideoResolution::P1080 => Self::P1080,
+        }
+    }
+}
+
 /// 管理 API 可读取的规范化 token 用量明细。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AdminUsageLogUsage {
@@ -188,6 +212,8 @@ pub struct AdminUsageLog {
     source: AdminUsageLogSource,
     semantics: AdminUsageLogSemantics,
     audio_duration_nanoseconds: Option<i64>,
+    video_duration_seconds: Option<i64>,
+    video_resolution: Option<AdminUsageLogVideoResolution>,
     quota: i64,
     created_at: i64,
 }
@@ -253,6 +279,18 @@ impl AdminUsageLog {
         self.audio_duration_nanoseconds
     }
 
+    /// 返回可选的视频真实时长秒数。
+    #[must_use]
+    pub const fn video_duration_seconds(&self) -> Option<i64> {
+        self.video_duration_seconds
+    }
+
+    /// 返回可选的视频分辨率档位。
+    #[must_use]
+    pub const fn video_resolution(&self) -> Option<AdminUsageLogVideoResolution> {
+        self.video_resolution
+    }
+
     /// 返回最终扣减额度单位数。
     #[must_use]
     pub const fn quota(&self) -> i64 {
@@ -287,6 +325,8 @@ impl AdminUsageLog {
             source: AdminUsageLogSource::from_database(record.usage_source())?,
             semantics: AdminUsageLogSemantics::from_database(record.usage_semantics())?,
             audio_duration_nanoseconds: record.audio_duration_nanoseconds(),
+            video_duration_seconds: record.video_duration_seconds(),
+            video_resolution: record.video_resolution().map(Into::into),
             quota: record.quota(),
             created_at: record.created_at(),
         })

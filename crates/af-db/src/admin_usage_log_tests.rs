@@ -9,7 +9,8 @@ use sea_orm::{
 use super::{
     AdminUsageLogRecord, AdminUsageLogRepository, AdminUsageLogRepositoryConfigError,
     AdminUsageLogRepositoryError, DatabaseOptions, MigrationOptions, UsageLogBillingMode,
-    UsageLogRepository, UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogWrite,
+    UsageLogRepository, UsageLogSemantics, UsageLogSource, UsageLogUsage, UsageLogVideoResolution,
+    UsageLogWrite,
 };
 use crate::entity::{TokenHash, groups, tokens, usage_logs, users};
 
@@ -40,6 +41,11 @@ async fn list_uses_newest_first_cursor_and_preserves_usage_dimensions() -> Resul
     assert_eq!(newest.usage().audio_input_tokens(), 0);
     assert_eq!(newest.usage().audio_output_tokens(), 0);
     assert_eq!(newest.audio_duration_nanoseconds(), Some(3_500_000_000));
+    assert_eq!(newest.video_duration_seconds(), Some(8));
+    assert_eq!(
+        newest.video_resolution(),
+        Some(UsageLogVideoResolution::P720)
+    );
     assert_eq!(newest.event_id().len(), 32);
     assert!(newest.created_at() > 0);
     assert_eq!(format!("{newest:?}"), "AdminUsageLogRecord(<redacted>)");
@@ -205,7 +211,9 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
             Quota::new(i64::from(marker) * 100)?,
         );
         let write = if marker == 3 {
-            write.with_audio_duration_nanoseconds(Some(3_500_000_000))?
+            write
+                .with_audio_duration_nanoseconds(Some(3_500_000_000))?
+                .with_video_dimensions(Some(8), Some(UsageLogVideoResolution::P720))?
         } else {
             write
         };

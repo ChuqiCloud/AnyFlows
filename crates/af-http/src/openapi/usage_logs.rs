@@ -9,6 +9,7 @@ use crate::{
     management_usage_logs::{AdminUsageLogListResponse, AdminUsageLogResponse},
     openapi::schema::{
         AdminUsageLogBillingModeSchema, AdminUsageLogSemanticsSchema, AdminUsageLogSourceSchema,
+        AdminUsageLogVideoResolutionSchema,
     },
 };
 
@@ -40,6 +41,7 @@ fn list_admin_usage_logs() {}
         AdminUsageLogBillingModeSchema,
         AdminUsageLogSourceSchema,
         AdminUsageLogSemanticsSchema,
+        AdminUsageLogVideoResolutionSchema,
         AdminUsageLogResponse,
         AdminUsageLogListResponse,
         ManagementErrorBody

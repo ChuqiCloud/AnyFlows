@@ -46,6 +46,15 @@ pub(crate) struct AdminUsageLogResponse {
     /// 音频文件时长纳秒；非 Audio 请求或无真实事实时为 null。
     #[schema(minimum = 0, maximum = 86400000000000_i64, required = true)]
     audio_duration_nanoseconds: Option<i64>,
+    /// 视频成功终态返回的真实时长秒数；非视频或缺少可信事实时为 null。
+    #[schema(minimum = 1, maximum = 86400_i64, required = true)]
+    video_duration_seconds: Option<i64>,
+    /// 请求明确携带的视频分辨率；交由上游选择默认值时为 null。
+    #[schema(
+        value_type = Option<crate::openapi::schema::AdminUsageLogVideoResolutionSchema>,
+        required = true
+    )]
+    video_resolution: Option<af_admin::AdminUsageLogVideoResolution>,
     #[schema(value_type = crate::openapi::schema::AdminUsageLogSourceSchema)]
     usage_source: af_admin::AdminUsageLogSource,
     #[schema(value_type = crate::openapi::schema::AdminUsageLogSemanticsSchema)]
@@ -117,6 +126,8 @@ impl AdminUsageLogResponse {
             audio_input_tokens: usage.audio_input_tokens(),
             audio_output_tokens: usage.audio_output_tokens(),
             audio_duration_nanoseconds: log.audio_duration_nanoseconds(),
+            video_duration_seconds: log.video_duration_seconds(),
+            video_resolution: log.video_resolution(),
             usage_source: log.source(),
             usage_semantics: log.semantics(),
             quota: log.quota(),

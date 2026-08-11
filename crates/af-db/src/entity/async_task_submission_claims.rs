@@ -42,6 +42,7 @@ pub struct Model {
     #[sea_orm(column_type = "Char(Some(64))")]
     pub binding_fingerprint: Option<SensitiveString>,
     pub attempt_timeout_millis: Option<i64>,
+    pub video_resolution: Option<i16>,
     pub status: Option<i16>,
     pub progress_basis_points: Option<i16>,
     pub failure_kind: Option<i16>,
@@ -173,6 +174,10 @@ impl ActiveModelBehavior for ActiveModel {
                 .is_some_and(Option::is_some)
             || self
                 .attempt_timeout_millis
+                .try_as_ref()
+                .is_some_and(Option::is_some)
+            || self
+                .video_resolution
                 .try_as_ref()
                 .is_some_and(Option::is_some)
             || self.status.try_as_ref().is_some_and(Option::is_some)

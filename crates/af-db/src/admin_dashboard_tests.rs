@@ -49,6 +49,8 @@ async fn snapshot_uses_half_open_window_and_excludes_deleted_channels() -> Resul
             audio_input_tokens: Set(0),
             audio_output_tokens: Set(0),
             audio_duration_nanoseconds: Set(None),
+            video_duration_seconds: Set(None),
+            video_resolution: Set(None),
             usage_source: Set(source),
             usage_semantics: Set(1),
             quota: Set(quota),

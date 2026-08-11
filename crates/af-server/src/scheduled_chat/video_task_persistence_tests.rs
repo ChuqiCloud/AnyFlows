@@ -14,8 +14,8 @@ use af_domain::{
     GatewayPrincipal, GroupId, TaskProgress, TaskStatus, TokenId, UpstreamTaskId,
 };
 use af_protocol::{
-    CanonicalTaskPoll, CanonicalVideoGenerationRequest, VideoDuration, VideoModel, VideoPrompt,
-    VideoResolution,
+    CanonicalTaskOutput, CanonicalTaskPoll, CanonicalVideoGenerationRequest, CanonicalVideoOutput,
+    VideoDuration, VideoModel, VideoOutputUrl, VideoPrompt, VideoResolution,
 };
 use af_relay::VideoTaskSubmissionDisposition;
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
@@ -102,11 +102,17 @@ async fn definite_failure_releases_claim_and_success_replay_does_not_resubmit()
     let polled = coordinator
         .poll(fixture.principal.user_id(), task.task_id(), "video-poll")
         .await?;
-    let PersistentVideoTaskPollOutcome::Updated { task, poll } = polled else {
+    let PersistentVideoTaskPollOutcome::Updated {
+        task,
+        poll,
+        billing_dimensions,
+    } = polled
+    else {
         panic!("活动任务必须访问轮询端口")
     };
     assert_eq!(task.status().progress().basis_points(), 2_500);
     assert_eq!(poll.status(), task.status());
+    assert_eq!(billing_dimensions, None);
     assert_eq!(runtime.poll_count(), 1);
 
     fixture.database.close().await;
@@ -154,11 +160,55 @@ async fn unknown_submission_stays_claimed_by_original_attempt_and_never_resubmit
     Ok(())
 }
 
+#[tokio::test]
+async fn successful_terminal_uses_upstream_duration_and_keeps_missing_resolution()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let runtime = Arc::new(
+        MockRuntime::new(vec![Ok(successful_submission(&fixture))]).with_poll(successful_poll(8)),
+    );
+    let coordinator = PersistentVideoTaskCoordinator::with_runtime(
+        runtime,
+        fixture.tasks.clone(),
+        fixture.submissions.clone(),
+    );
+    let task = coordinator
+        .submit(
+            async_task_id(0x41),
+            async_request_id(0x41),
+            fixture.principal,
+            request_without_resolution(5),
+            "video-success-without-resolution",
+        )
+        .await?;
+
+    let polled = coordinator
+        .poll(
+            fixture.principal.user_id(),
+            task.task_id(),
+            "video-success-poll",
+        )
+        .await?;
+    let PersistentVideoTaskPollOutcome::Updated {
+        billing_dimensions, ..
+    } = polled
+    else {
+        panic!("成功终态必须更新持久化任务")
+    };
+    let dimensions = billing_dimensions.expect("成功终态必须返回计费审计维度");
+    assert_eq!(dimensions.video_duration().unwrap().seconds(), 8);
+    assert_eq!(dimensions.video_resolution(), None);
+
+    fixture.database.close().await;
+    Ok(())
+}
+
 struct MockRuntime {
     submissions:
         Mutex<VecDeque<Result<PersistentSubmission, (AfError, VideoTaskSubmissionDisposition)>>>,
     submission_count: AtomicUsize,
     poll_count: AtomicUsize,
+    poll: Mutex<CanonicalTaskPoll>,
 }
 
 impl MockRuntime {
@@ -169,7 +219,13 @@ impl MockRuntime {
             submissions: Mutex::new(submissions.into()),
             submission_count: AtomicUsize::new(0),
             poll_count: AtomicUsize::new(0),
+            poll: Mutex::new(running_poll()),
         }
+    }
+
+    fn with_poll(mut self, poll: CanonicalTaskPoll) -> Self {
+        self.poll = Mutex::new(poll);
+        self
     }
 
     fn submission_count(&self) -> usize {
@@ -209,15 +265,8 @@ impl PersistentVideoTaskRuntime for MockRuntime {
         _request_id: &'a str,
     ) -> PersistentPollFuture<'a> {
         self.poll_count.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async move {
-            CanonicalTaskPoll::new(
-                TaskStatus::Running {
-                    progress: TaskProgress::new(2_500).expect("测试进度必须有效"),
-                },
-                None,
-            )
-            .map_err(|_| AfError::Internal)
-        })
+        let poll = self.poll.lock().expect("模拟轮询结果锁不能中毒").clone();
+        Box::pin(async move { Ok(poll) })
     }
 }
 
@@ -330,6 +379,40 @@ fn request() -> CanonicalVideoGenerationRequest {
         None,
         Some(VideoResolution::P720),
     )
+}
+
+fn request_without_resolution(seconds: u8) -> CanonicalVideoGenerationRequest {
+    CanonicalVideoGenerationRequest::new(
+        VideoModel::new(REQUESTED_MODEL).expect("测试模型必须有效"),
+        VideoPrompt::new("private prompt").expect("测试提示词必须有效"),
+        Some(VideoDuration::new(seconds).expect("测试时长必须有效")),
+        None,
+        None,
+    )
+}
+
+fn running_poll() -> CanonicalTaskPoll {
+    CanonicalTaskPoll::new(
+        TaskStatus::Running {
+            progress: TaskProgress::new(2_500).expect("测试进度必须有效"),
+        },
+        None,
+    )
+    .expect("测试运行态必须有效")
+}
+
+fn successful_poll(seconds: u8) -> CanonicalTaskPoll {
+    let output = CanonicalVideoOutput::new(
+        VideoOutputUrl::new("https://video.example/result.mp4?signature=private")
+            .expect("测试结果地址必须有效"),
+        VideoDuration::new(seconds).expect("测试输出时长必须有效"),
+        VideoModel::new(UPSTREAM_MODEL).expect("测试上游模型必须有效"),
+    );
+    CanonicalTaskPoll::new(
+        TaskStatus::Succeeded,
+        Some(CanonicalTaskOutput::Video(output)),
+    )
+    .expect("测试成功终态必须有效")
 }
 
 fn async_task_id(marker: u8) -> AsyncTaskId {

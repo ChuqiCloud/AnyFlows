@@ -335,7 +335,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 227);
+        assert_eq!(schemas.len(), 228);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminResponsesCompactProbe"));
         assert!(schemas.contains_key("ResponsesCompactError"));
@@ -408,6 +408,7 @@ mod tests {
         assert!(schemas.contains_key("AdminWalletEntryType"));
         assert!(schemas.contains_key("AdminWalletListResponse"));
         assert!(schemas.contains_key("AdminWalletAdjustmentRequest"));
+        assert!(schemas.contains_key("AdminUsageLogVideoResolution"));
         assert!(schemas.contains_key("AdminRedemptionAuditBatch"));
         assert!(schemas.contains_key("AdminRedemptionAuditListResponse"));
         assert!(schemas.contains_key("AdminRedemptionAuditStatus"));

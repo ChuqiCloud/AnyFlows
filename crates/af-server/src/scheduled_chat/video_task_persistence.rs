@@ -6,19 +6,21 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use af_billing::BillingUsageDimensions;
 use af_db::{
     AsyncTaskCreateOutcome, AsyncTaskInputError, AsyncTaskRecord, AsyncTaskRepository,
     AsyncTaskRepositoryError, AsyncTaskSubmissionAccept, AsyncTaskSubmissionBegin,
     AsyncTaskSubmissionClaim, AsyncTaskSubmissionClaimOutcome, AsyncTaskSubmissionMutationOutcome,
     AsyncTaskSubmissionRecord, AsyncTaskSubmissionRelease, AsyncTaskSubmissionRepository,
     AsyncTaskSubmissionState, AsyncTaskTransition, AsyncTaskTransitionOutcome,
+    AsyncTaskVideoResolution,
 };
 use af_domain::{
     AfError, AsyncTaskAttemptId, AsyncTaskBindingFingerprint, AsyncTaskId,
     AsyncTaskRequestFingerprint, AsyncTaskRequestId, ChannelId, CredentialId, GatewayPrincipal,
-    GroupId, Protocol, TaskSubmission, UserId,
+    GroupId, Protocol, TaskStatus, TaskSubmission, UserId,
 };
-use af_protocol::{CanonicalTaskPoll, CanonicalVideoGenerationRequest};
+use af_protocol::{CanonicalTaskPoll, CanonicalVideoGenerationRequest, VideoResolution};
 use af_relay::VideoTaskSubmissionDisposition;
 use sha2::{Digest as _, Sha256};
 use thiserror::Error;
@@ -117,6 +119,8 @@ pub(crate) enum PersistentVideoTaskPollOutcome {
     Updated {
         task: AsyncTaskRecord,
         poll: CanonicalTaskPoll,
+        /// 成功终态可用于计费审计的真实视频维度；非终态保持缺失。
+        billing_dimensions: Option<BillingUsageDimensions>,
     },
 }
 
@@ -190,6 +194,7 @@ impl PersistentVideoTaskCoordinator {
         relay_request_id: &str,
     ) -> Result<AsyncTaskRecord, PersistentVideoTaskError> {
         let request_fingerprint = request_fingerprint(&request);
+        let requested_resolution = request.resolution().map(map_video_resolution);
         let claim = self
             .claim(AsyncTaskSubmissionClaim::new(
                 task_id,
@@ -217,7 +222,9 @@ impl PersistentVideoTaskCoordinator {
             .await;
         match submission {
             Ok(submission) => {
-                let accepted = self.accept(&begun, attempt_id, submission).await?;
+                let accepted = self
+                    .accept(&begun, attempt_id, submission, requested_resolution)
+                    .await?;
                 self.ensure_task(&accepted).await
             }
             Err(error)
@@ -260,6 +267,7 @@ impl PersistentVideoTaskCoordinator {
             .poll(&task, &claim, relay_request_id)
             .await
             .map_err(PersistentVideoTaskError::Runtime)?;
+        let billing_dimensions = video_billing_dimensions(&claim, &poll)?;
         let expected_status = poll.status().clone();
         let updated = self
             .transition(
@@ -277,6 +285,7 @@ impl PersistentVideoTaskCoordinator {
         Ok(PersistentVideoTaskPollOutcome::Updated {
             task: updated,
             poll,
+            billing_dimensions,
         })
     }
 
@@ -379,6 +388,7 @@ impl PersistentVideoTaskCoordinator {
         claim: &AsyncTaskSubmissionRecord,
         attempt_id: AsyncTaskAttemptId,
         submission: PersistentSubmission,
+        video_resolution: Option<AsyncTaskVideoResolution>,
     ) -> Result<AsyncTaskSubmissionRecord, PersistentVideoTaskError> {
         let command = || {
             AsyncTaskSubmissionAccept::new(
@@ -394,6 +404,7 @@ impl PersistentVideoTaskCoordinator {
                 submission.submission.task_id().clone(),
                 submission.binding_fingerprint,
                 submission.attempt_timeout,
+                video_resolution,
                 submission.submission.status().clone(),
                 now()?,
             )
@@ -507,6 +518,40 @@ fn mutation_record(
         AsyncTaskSubmissionMutationOutcome::Applied(record)
         | AsyncTaskSubmissionMutationOutcome::Existing(record) => Ok(record),
         AsyncTaskSubmissionMutationOutcome::NotFound => Err(PersistentVideoTaskError::NotFound),
+    }
+}
+
+fn video_billing_dimensions(
+    claim: &AsyncTaskSubmissionRecord,
+    poll: &CanonicalTaskPoll,
+) -> Result<Option<BillingUsageDimensions>, PersistentVideoTaskError> {
+    if !matches!(poll.status(), TaskStatus::Succeeded) {
+        return Ok(None);
+    }
+    let output = poll
+        .output()
+        .and_then(|output| output.as_video())
+        .ok_or(PersistentVideoTaskError::Invariant)?;
+    let resolution = claim.video_resolution().map(restore_video_resolution);
+    Ok(Some(BillingUsageDimensions::with_video(
+        output.duration(),
+        resolution,
+    )))
+}
+
+const fn map_video_resolution(resolution: VideoResolution) -> AsyncTaskVideoResolution {
+    match resolution {
+        VideoResolution::P480 => AsyncTaskVideoResolution::P480,
+        VideoResolution::P720 => AsyncTaskVideoResolution::P720,
+        VideoResolution::P1080 => AsyncTaskVideoResolution::P1080,
+    }
+}
+
+const fn restore_video_resolution(resolution: AsyncTaskVideoResolution) -> VideoResolution {
+    match resolution {
+        AsyncTaskVideoResolution::P480 => VideoResolution::P480,
+        AsyncTaskVideoResolution::P720 => VideoResolution::P720,
+        AsyncTaskVideoResolution::P1080 => VideoResolution::P1080,
     }
 }
 

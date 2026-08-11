@@ -23,6 +23,7 @@ use crate::{
 const DEFAULT_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 const CONSUME_EVENT_TYPE: i16 = 1;
 const MAX_AUDIO_DURATION_NANOSECONDS: i64 = 24 * 60 * 60 * 1_000_000_000;
+const MAX_VIDEO_DURATION_SECONDS: i64 = 24 * 60 * 60;
 
 /// 用量日志持久化使用的计费模式。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -74,6 +75,46 @@ impl UsageLogSemantics {
         match self {
             Self::Inclusive => 1,
             Self::CacheSeparated => 2,
+        }
+    }
+}
+
+/// 用量审计使用的闭合视频分辨率档位。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UsageLogVideoResolution {
+    /// 480p 输出。
+    P480,
+    /// 720p 输出。
+    P720,
+    /// 1080p 输出。
+    P1080,
+}
+
+impl UsageLogVideoResolution {
+    const fn database_value(self) -> i16 {
+        match self {
+            Self::P480 => 1,
+            Self::P720 => 2,
+            Self::P1080 => 3,
+        }
+    }
+
+    pub(crate) const fn from_database(value: i16) -> Option<Self> {
+        match value {
+            1 => Some(Self::P480),
+            2 => Some(Self::P720),
+            3 => Some(Self::P1080),
+            _ => None,
+        }
+    }
+
+    /// 返回管理 API 使用的稳定分辨率文本。
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::P480 => "480p",
+            Self::P720 => "720p",
+            Self::P1080 => "1080p",
         }
     }
 }
@@ -143,6 +184,8 @@ pub struct UsageLogWrite {
     semantics: UsageLogSemantics,
     quota: Quota,
     audio_duration_nanoseconds: Option<i64>,
+    video_duration_seconds: Option<i64>,
+    video_resolution: Option<UsageLogVideoResolution>,
 }
 
 impl UsageLogWrite {
@@ -166,6 +209,8 @@ impl UsageLogWrite {
             semantics,
             quota,
             audio_duration_nanoseconds: None,
+            video_duration_seconds: None,
+            video_resolution: None,
         }
     }
 
@@ -181,6 +226,34 @@ impl UsageLogWrite {
         }
         self.audio_duration_nanoseconds = audio_duration_nanoseconds;
         Ok(self)
+    }
+
+    /// 附加可选视频时长与分辨率事实；缺失值保持 `NULL`，不得猜测上游默认值。
+    pub fn with_video_dimensions(
+        mut self,
+        video_duration_seconds: Option<i64>,
+        video_resolution: Option<UsageLogVideoResolution>,
+    ) -> Result<Self, UsageLogWriteError> {
+        if video_duration_seconds
+            .is_some_and(|value| !(1..=MAX_VIDEO_DURATION_SECONDS).contains(&value))
+        {
+            return Err(UsageLogWriteError::InvalidVideoDuration);
+        }
+        self.video_duration_seconds = video_duration_seconds;
+        self.video_resolution = video_resolution;
+        Ok(self)
+    }
+
+    /// 返回可选的视频真实时长，供幂等写入与回归验证使用。
+    #[must_use]
+    pub const fn video_duration_seconds(&self) -> Option<i64> {
+        self.video_duration_seconds
+    }
+
+    /// 返回可选的视频分辨率档位，供幂等写入与回归验证使用。
+    #[must_use]
+    pub const fn video_resolution(&self) -> Option<UsageLogVideoResolution> {
+        self.video_resolution
     }
 }
 
@@ -204,6 +277,9 @@ pub enum UsageLogWriteError {
     /// 音频时长为负数或超过 24 小时固定边界。
     #[error("用量日志音频时长无效")]
     InvalidAudioDuration,
+    /// 视频时长不是正整数或超过 24 小时固定边界。
+    #[error("用量日志视频时长无效")]
+    InvalidVideoDuration,
 }
 
 /// 幂等写入用量日志后的闭合结果。
@@ -336,6 +412,10 @@ impl UsageLogRepository {
             audio_input_tokens: Set(usage.audio_input_tokens),
             audio_output_tokens: Set(usage.audio_output_tokens),
             audio_duration_nanoseconds: Set(write.audio_duration_nanoseconds),
+            video_duration_seconds: Set(write.video_duration_seconds),
+            video_resolution: Set(write
+                .video_resolution
+                .map(UsageLogVideoResolution::database_value)),
             usage_source: Set(write.source.database_value()),
             usage_semantics: Set(write.semantics.database_value()),
             quota: Set(write.quota.units()),
@@ -398,6 +478,11 @@ fn matches_write(existing: &usage_logs::Model, write: &UsageLogWrite) -> bool {
         && existing.audio_input_tokens == usage.audio_input_tokens
         && existing.audio_output_tokens == usage.audio_output_tokens
         && existing.audio_duration_nanoseconds == write.audio_duration_nanoseconds
+        && existing.video_duration_seconds == write.video_duration_seconds
+        && existing.video_resolution
+            == write
+                .video_resolution
+                .map(UsageLogVideoResolution::database_value)
         && existing.usage_source == write.source.database_value()
         && existing.usage_semantics == write.semantics.database_value()
         && existing.quota == write.quota.units()

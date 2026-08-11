@@ -8,6 +8,7 @@ pub use submission::{
     AsyncTaskSubmissionAccept, AsyncTaskSubmissionBegin, AsyncTaskSubmissionClaim,
     AsyncTaskSubmissionClaimOutcome, AsyncTaskSubmissionMutationOutcome, AsyncTaskSubmissionRecord,
     AsyncTaskSubmissionRelease, AsyncTaskSubmissionRepository, AsyncTaskSubmissionState,
+    AsyncTaskVideoResolution,
 };
 pub use types::{
     AsyncTaskCreate, AsyncTaskCreateOutcome, AsyncTaskInputError, AsyncTaskRecord,

@@ -1793,7 +1793,7 @@
   },
   "usageLogs": {
     "title": "用量日志",
-    "subtitle": "查看已经确认并落库的 token 用量、计费额度和统计来源。",
+    "subtitle": "查看已经确认并落库的用量、媒体维度、计费额度和统计来源。",
     "count": "本页 {{count}} 条记录",
     "page": "第 {{page}} 页",
     "loading": "正在加载用量日志",
@@ -1814,6 +1814,8 @@
       "cacheCreate": "缓存创建 5m {{five}} / 1h {{hour}}",
       "reasoningAudio": "推理 {{reasoning}} / 音频 {{audio}}",
       "audioDuration": "音频时长 {{value}} 秒",
+      "videoDuration": "{{value}} 秒",
+      "videoResolution": "{{value}}",
       "quotaSemantics": "额度 {{quota}} / {{semantics}}",
       "billingMode": {
         "per_token": "按 token",

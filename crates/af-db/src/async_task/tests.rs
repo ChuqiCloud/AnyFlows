@@ -21,7 +21,7 @@ use super::{
     AsyncTaskSubmissionAccept, AsyncTaskSubmissionBegin, AsyncTaskSubmissionClaim,
     AsyncTaskSubmissionClaimOutcome, AsyncTaskSubmissionMutationOutcome,
     AsyncTaskSubmissionRelease, AsyncTaskSubmissionRepository, AsyncTaskSubmissionState,
-    AsyncTaskTransition, AsyncTaskTransitionOutcome,
+    AsyncTaskTransition, AsyncTaskTransitionOutcome, AsyncTaskVideoResolution,
 };
 
 const CREATED_AT: u64 = 1_800_000_000;
@@ -423,6 +423,7 @@ async fn submission_claim_serializes_attempts_and_recovers_accepted_binding()
         UpstreamTaskId::new("upstream-task-accepted")?,
         AsyncTaskBindingFingerprint::new([0xf1; 32]),
         Duration::from_secs(5),
+        Some(AsyncTaskVideoResolution::P720),
         submitted(),
         UPDATED_AT + 3,
     )?;
@@ -431,6 +432,10 @@ async fn submission_claim_serializes_attempts_and_recovers_accepted_binding()
         panic!("上游接受事实必须持久化")
     };
     assert_eq!(accepted.state(), AsyncTaskSubmissionState::Accepted);
+    assert_eq!(
+        accepted.video_resolution(),
+        Some(AsyncTaskVideoResolution::P720)
+    );
     let task_create = accepted
         .task_create()?
         .expect("已接受 claim 必须可恢复任务写入");

@@ -21,6 +21,46 @@ pub enum AsyncTaskSubmissionState {
     Accepted,
 }
 
+/// 异步视频任务提交时明确携带并可在轮询阶段恢复的分辨率档位。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AsyncTaskVideoResolution {
+    /// 480p 输出。
+    P480,
+    /// 720p 输出。
+    P720,
+    /// 1080p 输出。
+    P1080,
+}
+
+impl AsyncTaskVideoResolution {
+    pub(super) const fn database_value(self) -> i16 {
+        match self {
+            Self::P480 => 1,
+            Self::P720 => 2,
+            Self::P1080 => 3,
+        }
+    }
+
+    pub(super) const fn from_database(value: i16) -> Option<Self> {
+        match value {
+            1 => Some(Self::P480),
+            2 => Some(Self::P720),
+            3 => Some(Self::P1080),
+            _ => None,
+        }
+    }
+
+    /// 返回跨数据库与协议边界稳定的分辨率文本。
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::P480 => "480p",
+            Self::P720 => "720p",
+            Self::P1080 => "1080p",
+        }
+    }
+}
+
 /// 创建异步任务提交 claim 时固化的幂等事实。
 pub struct AsyncTaskSubmissionClaim {
     pub(super) task_id: AsyncTaskId,
@@ -160,6 +200,7 @@ pub struct AsyncTaskSubmissionAccept {
     pub(super) upstream_task_id: UpstreamTaskId,
     pub(super) binding_fingerprint: AsyncTaskBindingFingerprint,
     pub(super) attempt_timeout_millis: i64,
+    pub(super) video_resolution: Option<AsyncTaskVideoResolution>,
     pub(super) status: TaskStatus,
     pub(super) observed_at: u64,
 }
@@ -180,6 +221,7 @@ impl AsyncTaskSubmissionAccept {
         upstream_task_id: UpstreamTaskId,
         binding_fingerprint: AsyncTaskBindingFingerprint,
         attempt_timeout: Duration,
+        video_resolution: Option<AsyncTaskVideoResolution>,
         status: TaskStatus,
         observed_at: u64,
     ) -> Result<Self, AsyncTaskInputError> {
@@ -202,6 +244,7 @@ impl AsyncTaskSubmissionAccept {
             upstream_task_id,
             binding_fingerprint,
             attempt_timeout_millis,
+            video_resolution,
             status,
             observed_at: validate_time(observed_at)?,
         })
@@ -234,6 +277,7 @@ pub struct AsyncTaskSubmissionRecord {
     pub(super) upstream_task_id: Option<UpstreamTaskId>,
     pub(super) binding_fingerprint: Option<AsyncTaskBindingFingerprint>,
     pub(super) attempt_timeout_millis: Option<u64>,
+    pub(super) video_resolution: Option<AsyncTaskVideoResolution>,
     pub(super) status: Option<TaskStatus>,
     pub(super) version: u64,
     pub(super) accepted_at: Option<u64>,
@@ -320,6 +364,12 @@ impl AsyncTaskSubmissionRecord {
     #[must_use]
     pub fn attempt_timeout(&self) -> Option<Duration> {
         self.attempt_timeout_millis.map(Duration::from_millis)
+    }
+
+    /// 返回提交请求明确携带的分辨率；缺失表示没有可靠档位事实。
+    #[must_use]
+    pub const fn video_resolution(&self) -> Option<AsyncTaskVideoResolution> {
+        self.video_resolution
     }
 
     #[must_use]
@@ -417,6 +467,7 @@ impl AsyncTaskSubmissionRecord {
             && self.upstream_task_id.as_ref() == Some(&write.upstream_task_id)
             && self.binding_fingerprint == Some(write.binding_fingerprint)
             && self.attempt_timeout_millis == u64::try_from(write.attempt_timeout_millis).ok()
+            && self.video_resolution == write.video_resolution
             && self.status.as_ref() == Some(&write.status)
     }
 }
