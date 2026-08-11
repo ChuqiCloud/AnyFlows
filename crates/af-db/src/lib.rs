@@ -40,6 +40,7 @@ mod admin_user;
 #[cfg(test)]
 mod admin_user_tests;
 mod admin_user_write;
+mod async_task;
 mod auth;
 mod auth_challenge;
 mod auth_challenge_rate_limit;
@@ -222,6 +223,11 @@ pub use admin_user::{
 pub use admin_user_write::{
     AdminUserCreateRecord, AdminUserDeleteOutcome, AdminUserMutationOutcome,
     AdminUserRegistrationCreateOutcome, AdminUserUpdateRecord, AdminUserVerifiedCreateOutcome,
+};
+pub use async_task::{
+    AsyncTaskCreate, AsyncTaskCreateOutcome, AsyncTaskInputError, AsyncTaskRecord,
+    AsyncTaskRepository, AsyncTaskRepositoryConfigError, AsyncTaskRepositoryError,
+    AsyncTaskTransition, AsyncTaskTransitionOutcome,
 };
 pub use auth::{
     TokenAuthLookup, TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,

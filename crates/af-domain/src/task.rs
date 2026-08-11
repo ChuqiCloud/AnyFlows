@@ -2,10 +2,117 @@ use std::{fmt, str::FromStr};
 
 use thiserror::Error;
 
+const ASYNC_TASK_ID_BYTES: usize = 16;
+const ASYNC_TASK_KEY_BYTES: usize = ASYNC_TASK_ID_BYTES * 2;
+const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
+
 /// 上游任务标识的最大 UTF-8 字节数。
 pub const MAX_UPSTREAM_TASK_ID_BYTES: usize = 512;
 /// 归一化失败原因的最大 UTF-8 字节数。
 pub const MAX_TASK_FAILURE_REASON_BYTES: usize = 2_048;
+
+/// 异步任务本地标识构造错误；不保留外部输入。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum AsyncTaskIdentifierError {
+    /// 全零标识无法形成有效任务或幂等边界。
+    #[error("异步任务标识不能全为零")]
+    AllZero,
+    /// 持久化键不是固定长度的小写十六进制编码。
+    #[error("异步任务持久化键格式无效")]
+    InvalidEncoding,
+}
+
+macro_rules! opaque_async_task_id {
+    ($(#[$meta:meta])* $name:ident, $debug_name:literal) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub struct $name([u8; ASYNC_TASK_ID_BYTES]);
+
+        impl $name {
+            /// 校验并构造非零的 128 位标识。
+            pub const fn new(
+                bytes: [u8; ASYNC_TASK_ID_BYTES],
+            ) -> Result<Self, AsyncTaskIdentifierError> {
+                let mut index = 0;
+                while index < bytes.len() {
+                    if bytes[index] != 0 {
+                        return Ok(Self(bytes));
+                    }
+                    index += 1;
+                }
+                Err(AsyncTaskIdentifierError::AllZero)
+            }
+
+            /// 从数据库使用的 32 位小写十六进制键恢复标识。
+            pub fn from_persistence_key(
+                value: &str,
+            ) -> Result<Self, AsyncTaskIdentifierError> {
+                if value.len() != ASYNC_TASK_KEY_BYTES {
+                    return Err(AsyncTaskIdentifierError::InvalidEncoding);
+                }
+                let mut bytes = [0_u8; ASYNC_TASK_ID_BYTES];
+                for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+                    let high = decode_hex(pair[0])
+                        .ok_or(AsyncTaskIdentifierError::InvalidEncoding)?;
+                    let low = decode_hex(pair[1])
+                        .ok_or(AsyncTaskIdentifierError::InvalidEncoding)?;
+                    bytes[index] = (high << 4) | low;
+                }
+                Self::new(bytes)
+            }
+
+            /// 返回持久化边界使用的固定长度小写十六进制键。
+            #[must_use]
+            pub fn persistence_key(self) -> String {
+                let mut encoded = String::with_capacity(ASYNC_TASK_KEY_BYTES);
+                for byte in self.0 {
+                    encoded.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+                    encoded.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+                }
+                encoded
+            }
+
+            /// 返回生成器和受控适配边界使用的原始 128 位值。
+            #[must_use]
+            pub const fn bytes(self) -> [u8; ASYNC_TASK_ID_BYTES] {
+                self.0
+            }
+        }
+
+        impl TryFrom<[u8; ASYNC_TASK_ID_BYTES]> for $name {
+            type Error = AsyncTaskIdentifierError;
+
+            fn try_from(bytes: [u8; ASYNC_TASK_ID_BYTES]) -> Result<Self, Self::Error> {
+                Self::new(bytes)
+            }
+        }
+
+        impl fmt::Debug for $name {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str(concat!($debug_name, "(<脱敏>)"))
+            }
+        }
+    };
+}
+
+opaque_async_task_id!(
+    /// 异步任务面向后续公开接口的稳定本地标识。
+    AsyncTaskId,
+    "AsyncTaskId"
+);
+opaque_async_task_id!(
+    /// 单个用户创建异步任务时复用的客户端幂等标识。
+    AsyncTaskRequestId,
+    "AsyncTaskRequestId"
+);
+
+const fn decode_hex(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        _ => None,
+    }
+}
 
 /// 上游任务标识校验错误；不保留原始标识。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]

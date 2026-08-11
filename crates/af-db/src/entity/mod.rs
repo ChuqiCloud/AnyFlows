@@ -18,6 +18,7 @@ use af_domain::{
 };
 
 pub(crate) mod abilities;
+pub(crate) mod async_tasks;
 pub(crate) mod auth_challenge_rate_limits;
 pub(crate) mod auth_challenges;
 pub(crate) mod authentication_settings;
