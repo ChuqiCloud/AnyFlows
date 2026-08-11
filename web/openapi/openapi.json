@@ -16534,6 +16534,7 @@
           "openai_images",
           "openai_audio",
           "openai_speech",
+          "jina_rerank",
           "anthropic",
           "gemini"
         ]
