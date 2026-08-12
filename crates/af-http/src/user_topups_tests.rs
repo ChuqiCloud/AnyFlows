@@ -138,12 +138,18 @@ async fn configuration_requires_a_session_and_exposes_only_client_material() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
     let body = response_json(response).await;
-    assert_eq!(body["methods"][0]["provider"], "epay");
-    assert_eq!(body["methods"][0]["payment_method"], "alipay");
-    assert_eq!(body["methods"][0]["currency"], "CNY");
-    assert_eq!(body["methods"][1]["provider"], "stripe");
-    assert_eq!(body["methods"][1]["payment_method"], "card");
-    assert_eq!(body["methods"][1]["publishable_key"], "pk_test_public");
+    let methods = body["methods"].as_array().unwrap();
+    assert_eq!(methods.len(), 2);
+    let epay = methods
+        .iter()
+        .find(|method| method["provider"] == "epay" && method["payment_method"] == "alipay")
+        .expect("充值配置必须包含易支付支付宝方式");
+    assert_eq!(epay["currency"], "CNY");
+    let stripe = methods
+        .iter()
+        .find(|method| method["provider"] == "stripe" && method["payment_method"] == "card")
+        .expect("充值配置必须包含 Stripe 银行卡方式");
+    assert_eq!(stripe["publishable_key"], "pk_test_public");
     assert!(body.get("secret_key").is_none());
     assert!(body.get("webhook_secret").is_none());
 }
