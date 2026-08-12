@@ -13999,6 +13999,7 @@
           "source_model",
           "source_name",
           "last_updated",
+          "context_window",
           "source_deprecation_date",
           "costs",
           "has_tiered_pricing",
@@ -14036,6 +14037,15 @@
               "null"
             ],
             "maxLength": 32
+          },
+          "context_window": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "maximum": 2147483647,
+            "minimum": 1
           },
           "source_deprecation_date": {
             "type": [
@@ -14200,6 +14210,7 @@
         "required": [
           "model",
           "expected_version",
+          "context_window",
           "billing_mode",
           "prices"
         ],
@@ -14215,6 +14226,16 @@
               "null"
             ],
             "format": "int64",
+            "minimum": 1
+          },
+          "context_window": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "空值保持当前模型上下文；正整数与价格在同一事务中更新。",
+            "maximum": 2147483647,
             "minimum": 1
           },
           "billing_mode": {

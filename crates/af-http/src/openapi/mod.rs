@@ -555,8 +555,14 @@ mod tests {
             schemas["AdminModelPriceWriteItem"]["required"]
                 .as_array()
                 .is_some_and(|required| {
-                    required.iter().all(|field| field != "billing_expression")
+                    required.iter().any(|field| field == "context_window")
+                        && required.iter().all(|field| field != "billing_expression")
                 })
+        );
+        assert!(
+            schemas["AdminModelPriceSourceCandidate"]["required"]
+                .as_array()
+                .is_some_and(|required| required.iter().any(|field| field == "context_window"))
         );
         assert!(schemas.contains_key("PlaygroundShareCreateRequest"));
         assert!(schemas.contains_key("PlaygroundShareReadResponse"));

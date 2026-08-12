@@ -1545,7 +1545,8 @@
         "cacheRead": "Cache read",
         "cacheCreation5m": "5m cache creation",
         "cacheCreation1h": "1h cache creation",
-        "cacheWriteEvidence": "Generic cache write evidence"
+        "cacheWriteEvidence": "Generic cache write evidence",
+        "contextWindow": "Context window"
       },
       "form": {
         "billingMode": "Billing mode",
@@ -1578,7 +1579,8 @@
         "editPrice": "Edit price",
         "setPrice": "Set price",
         "expressionReadOnly": "Edit expression billing",
-        "useCurrentVersion": "Use current version"
+        "useCurrentVersion": "Use current version",
+        "useAllEvidence": "Fill all"
       },
       "preview": {
         "loaded_one": "Matched {{count}} public reference price",
@@ -1595,6 +1597,8 @@
         "tieredWarning": "The source includes tiered, priority, flex, batch, or long-context pricing that the current billing engine cannot represent equivalently. Direct application is blocked.",
         "missing": "Not provided",
         "use": "Use the {{field}} reference",
+        "useContext": "Use the source context window",
+        "staged": "Added to draft",
         "cacheWriteBoundary": "This cannot map equivalently to 5m or 1h. Confirm both formal prices manually.",
         "source": "Source entry {{name}} · {{model}}, updated {{updated}}",
         "unknownDate": "unknown"
@@ -1682,7 +1686,7 @@
         "createVersion": "Create new price",
         "updateVersion": "Update from v{{version}}",
         "expression": "Expression source",
-        "boundary": "Every price is written in one transaction. Any missing model or version conflict fails the whole batch. Success refreshes the runtime snapshot immediately and affects subsequent new requests.",
+        "boundary": "Every price and explicitly adopted context window is written in one transaction. Any missing model or version conflict fails the whole batch. Success refreshes the runtime snapshot immediately and affects subsequent new requests.",
         "success_one": "Applied pricing for {{count}} model and refreshed the model catalog.",
         "success_other": "Applied pricing for {{count}} models and refreshed the model catalog."
       },

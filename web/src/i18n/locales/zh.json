@@ -1545,7 +1545,8 @@
         "cacheRead": "缓存读取",
         "cacheCreation5m": "5m 缓存创建",
         "cacheCreation1h": "1h 缓存创建",
-        "cacheWriteEvidence": "通用缓存写证据"
+        "cacheWriteEvidence": "通用缓存写证据",
+        "contextWindow": "上下文长度"
       },
       "form": {
         "billingMode": "计费模式",
@@ -1578,7 +1579,8 @@
         "editPrice": "编辑价格",
         "setPrice": "设置价格",
         "expressionReadOnly": "编辑表达式计费",
-        "useCurrentVersion": "采用当前版本"
+        "useCurrentVersion": "采用当前版本",
+        "useAllEvidence": "一键填入"
       },
       "preview": {
         "loaded_one": "匹配 {{count}} 条公开参考价",
@@ -1595,6 +1597,8 @@
         "tieredWarning": "来源包含分层、优先级、Flex、Batch 或长上下文价格，当前计费引擎不能等价表达，禁止直接套用。",
         "missing": "未提供",
         "use": "采用{{field}}参考值",
+        "useContext": "采用来源上下文长度",
+        "staged": "已加入草稿",
         "cacheWriteBoundary": "不能等价映射到 5m 或 1h，必须分别人工确认。",
         "source": "来源条目 {{name}} · {{model}}，更新日期 {{updated}}",
         "unknownDate": "未知"
@@ -1682,7 +1686,7 @@
         "createVersion": "创建新价格",
         "updateVersion": "基于 v{{version}} 更新",
         "expression": "表达式正文",
-        "boundary": "全部价格会在同一事务中写入；任一模型或版本冲突都会整体失败。成功后立即刷新运行时快照，并影响后续新请求。",
+        "boundary": "全部价格和明确采用的上下文长度会在同一事务中写入；任一模型或版本冲突都会整体失败。成功后立即刷新运行时快照，并影响后续新请求。",
         "success_one": "已应用 {{count}} 个模型价格，模型广场已刷新。",
         "success_other": "已应用 {{count}} 个模型价格，模型广场已刷新。"
       },

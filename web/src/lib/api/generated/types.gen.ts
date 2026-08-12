@@ -548,6 +548,7 @@ export type AdminModelPriceSourceCandidate = {
     source_model: string;
     source_name: string;
     last_updated: string | null;
+    context_window: number | null;
     source_deprecation_date: string | null;
     costs: AdminModelPriceSourceCosts;
     has_tiered_pricing: boolean;
@@ -577,6 +578,7 @@ export type AdminModelPriceValues = {
 export type AdminModelPriceWriteItem = {
     model: string;
     expected_version: number | null;
+    context_window: number | null;
     billing_mode: AdminModelPriceBillingMode;
     prices: AdminModelPriceValues;
     billing_expression?: string | null;

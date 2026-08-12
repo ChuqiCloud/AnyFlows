@@ -229,6 +229,25 @@ impl AdminModelPriceWriteCommand {
         prices: [Decimal; 5],
         billing_expression: Option<String>,
     ) -> Result<Self, AdminModelPriceError> {
+        Self::new_with_metadata(
+            model,
+            expected_version,
+            None,
+            billing_mode,
+            prices,
+            billing_expression,
+        )
+    }
+
+    /// 校验并构造包含可选模型上下文长度的正式价格写入命令。
+    pub fn new_with_metadata(
+        model: String,
+        expected_version: Option<u64>,
+        context_window: Option<i64>,
+        billing_mode: AdminModelPriceBillingMode,
+        prices: [Decimal; 5],
+        billing_expression: Option<String>,
+    ) -> Result<Self, AdminModelPriceError> {
         if billing_mode == AdminModelPriceBillingMode::Expression {
             let source = billing_expression
                 .as_deref()
@@ -239,9 +258,10 @@ impl AdminModelPriceWriteCommand {
         } else if billing_expression.is_some() {
             return Err(AdminModelPriceError::InvalidInput);
         }
-        let record = ModelPriceWriteRecord::new_with_expression(
+        let record = ModelPriceWriteRecord::new_with_metadata(
             model,
             expected_version,
+            context_window,
             billing_mode.into(),
             prices,
             billing_expression,
@@ -486,6 +506,7 @@ pub struct ModelPriceSourceCandidate {
     source_model: String,
     source_name: String,
     last_updated: Option<String>,
+    context_window: Option<i64>,
     costs: [Option<Decimal>; 4],
     cache_creation_prices: [Option<Decimal>; 2],
     source_deprecation_date: Option<String>,
@@ -502,6 +523,7 @@ impl ModelPriceSourceCandidate {
         source_model: String,
         source_name: String,
         last_updated: Option<String>,
+        context_window: Option<i64>,
         costs: [Option<Decimal>; 4],
         has_tiered_pricing: bool,
         source_deprecated: bool,
@@ -514,6 +536,8 @@ impl ModelPriceSourceCandidate {
             || last_updated
                 .as_deref()
                 .is_some_and(|value| !valid_text(value, 32))
+            || context_window
+                .is_some_and(|value| !(1..=af_db::MAX_ADMIN_MODEL_CONTEXT_WINDOW).contains(&value))
             || costs.iter().flatten().any(|cost| *cost < Decimal::ZERO)
         {
             return Err(ModelPriceSourceDiscoveryError::InvalidResponse);
@@ -525,6 +549,7 @@ impl ModelPriceSourceCandidate {
             source_model,
             source_name,
             last_updated,
+            context_window,
             costs,
             cache_creation_prices: [None; 2],
             source_deprecation_date: None,
@@ -561,6 +586,12 @@ impl ModelPriceSourceCandidate {
     #[must_use]
     pub fn last_updated(&self) -> Option<&str> {
         self.last_updated.as_deref()
+    }
+
+    /// 返回来源明确声明的最大上下文长度。
+    #[must_use]
+    pub const fn context_window(&self) -> Option<i64> {
+        self.context_window
     }
 
     /// 返回输入、输出、缓存读取和通用缓存写公开成本。
@@ -621,6 +652,7 @@ impl fmt::Debug for ModelPriceSourceCandidate {
         formatter
             .debug_struct("ModelPriceSourceCandidate")
             .field("has_input", &self.costs[0].is_some())
+            .field("has_context_window", &self.context_window.is_some())
             .field("has_output", &self.costs[1].is_some())
             .field("has_cache_read", &self.costs[2].is_some())
             .field("has_cache_write", &self.costs[3].is_some())

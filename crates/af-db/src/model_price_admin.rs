@@ -11,7 +11,8 @@ use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
-    ModelPriceBillingMode, ModelPriceRecord, ModelPriceRepository, ModelPriceRepositoryError,
+    MAX_ADMIN_MODEL_CONTEXT_WINDOW, ModelPriceBillingMode, ModelPriceRecord, ModelPriceRepository,
+    ModelPriceRepositoryError,
     entity::{SensitiveDecimal, SensitiveString, model_prices, models},
     model_price::{is_valid_model_name, is_valid_model_price_decimal},
 };
@@ -49,6 +50,7 @@ impl fmt::Debug for ModelPricePageRecord {
 pub struct ModelPriceWriteRecord {
     model: String,
     expected_version: Option<u64>,
+    context_window: Option<i64>,
     billing_mode: ModelPriceBillingMode,
     prices: [Decimal; 5],
     billing_expression: Option<String>,
@@ -73,8 +75,29 @@ impl ModelPriceWriteRecord {
         prices: [Decimal; 5],
         billing_expression: Option<String>,
     ) -> Result<Self, ModelPriceWriteError> {
+        Self::new_with_metadata(
+            model,
+            expected_version,
+            None,
+            billing_mode,
+            prices,
+            billing_expression,
+        )
+    }
+
+    /// 校验并构造可选上下文长度与正式价格的同事务写入记录。
+    pub fn new_with_metadata(
+        model: String,
+        expected_version: Option<u64>,
+        context_window: Option<i64>,
+        billing_mode: ModelPriceBillingMode,
+        prices: [Decimal; 5],
+        billing_expression: Option<String>,
+    ) -> Result<Self, ModelPriceWriteError> {
         if !is_valid_model_name(&model)
             || expected_version == Some(0)
+            || context_window
+                .is_some_and(|value| !(1..=MAX_ADMIN_MODEL_CONTEXT_WINDOW).contains(&value))
             || prices
                 .iter()
                 .any(|price| !is_valid_model_price_decimal(*price))
@@ -89,6 +112,7 @@ impl ModelPriceWriteRecord {
         Ok(Self {
             model,
             expected_version,
+            context_window,
             billing_mode,
             prices,
             billing_expression,
@@ -103,6 +127,12 @@ impl ModelPriceWriteRecord {
     #[must_use]
     pub const fn expected_version(&self) -> Option<u64> {
         self.expected_version
+    }
+
+    /// 返回管理员明确采用的上下文长度；空值表示保持模型元数据现状。
+    #[must_use]
+    pub const fn context_window(&self) -> Option<i64> {
+        self.context_window
     }
 
     #[must_use]
@@ -250,6 +280,10 @@ impl ModelPriceRepository {
         if active_models.len() != names.len() {
             return Err(ModelPriceWriteError::ModelNotFound);
         }
+        let model_ids = active_models
+            .into_iter()
+            .map(|model| (model.model.clone(), model.id))
+            .collect::<BTreeMap<_, _>>();
 
         let mut price_query =
             model_prices::Entity::find().filter(model_prices::Column::Model.is_in(names.clone()));
@@ -278,6 +312,23 @@ impl ModelPriceRepository {
                 .transpose()?;
             if current_version != write.expected_version {
                 return Err(ModelPriceWriteError::Conflict);
+            }
+            if let Some(context_window) = write.context_window {
+                let model_id = model_ids
+                    .get(&name)
+                    .copied()
+                    .ok_or(ModelPriceWriteError::Invariant)?;
+                let updated = models::Entity::update_many()
+                    .filter(models::Column::Id.eq(model_id))
+                    .filter(models::Column::DeletedAt.is_null())
+                    .col_expr(models::Column::ContextWindow, Expr::value(context_window))
+                    .exec(&transaction)
+                    .with_subscriber(NoSubscriber::default())
+                    .await
+                    .map_err(|_| ModelPriceWriteError::Query)?;
+                if updated.rows_affected != 1 {
+                    return Err(ModelPriceWriteError::Invariant);
+                }
             }
             let next_version = current_version
                 .unwrap_or(0)

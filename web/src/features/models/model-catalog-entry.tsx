@@ -111,26 +111,30 @@ export function ModelCatalogMobileEntry({ item, pricingScope, expanded, onToggle
   const detailsId = `model-details-mobile-${encodeURIComponent(item.model)}`
   return (
     <article className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-3 transition-colors duration-150 hover:border-info/25">
-      <ModelCatalogIdentity item={item} />
-      <ModelCapabilitySummary item={item} />
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3">
-        <ModelStateBadges item={item} />
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-expanded={expanded}
-          aria-controls={detailsId}
-          onClick={onToggle}
-        >
-          {t('models.actions.details')}
-          <ChevronDown className={cn('size-3.5 transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
-        </Button>
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--hairline)] pt-3">
-        <ModelPriceValue label={t('models.columns.input')} value={item.prices?.input} />
-        <ModelPriceValue label={t('models.columns.output')} value={item.prices?.output} />
-        <ModelPriceValue label={t('models.columns.cacheRead')} value={item.prices?.cache_read} muted />
+      <div className="grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-5">
+        <div className="min-w-0 flex-1">
+          <ModelCatalogIdentity item={item} />
+          <ModelCapabilitySummary item={item} />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 lg:justify-end">
+          <ModelStateBadges item={item} />
+          <div className="grid min-w-44 grid-cols-2 gap-4">
+            <ModelPriceValue label={t('models.columns.input')} value={item.prices?.input} showLabel />
+            <ModelPriceValue label={t('models.columns.output')} value={item.prices?.output} showLabel />
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="shrink-0"
+            aria-expanded={expanded}
+            aria-controls={detailsId}
+            onClick={onToggle}
+          >
+            {t('models.actions.details')}
+            <ChevronDown className={cn('size-3.5 transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
+          </Button>
+        </div>
       </div>
       {expanded ? (
         <div id={detailsId} className="mt-3 border-t border-[var(--hairline)] pt-3">
