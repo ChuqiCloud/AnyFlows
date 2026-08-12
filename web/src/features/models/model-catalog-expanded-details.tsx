@@ -21,9 +21,9 @@ export function ModelCatalogExpandedDetails({ item, pricingScope }: ExpandedDeta
   ] as const
   const capabilities = [
     item.supports_reasoning ? 'reasoning' : undefined,
-    item.supports_tool_calls ? 'toolCalls' : undefined,
-    item.supports_responses_compact ? 'responsesCompact' : undefined,
-  ].filter((value): value is 'reasoning' | 'toolCalls' | 'responsesCompact' => value !== undefined)
+    item.supports_tool_calls ? 'tool_calls' : undefined,
+    item.supports_responses_compact ? 'responses_compact' : undefined,
+  ].filter((value): value is 'reasoning' | 'tool_calls' | 'responses_compact' => value !== undefined)
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]">

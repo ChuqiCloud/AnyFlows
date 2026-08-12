@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { useModelCatalog } from '@/features/models/model-api'
+import { EMPTY_MODEL_CATALOG_FILTERS, useModelCatalog } from '@/features/models/model-api'
 import {
   clearPlaygroundApiKey,
   getPlaygroundApiKey,
@@ -30,7 +30,7 @@ export function usePlaygroundConfiguration() {
   const [maxOutputTokensEnabled, setMaxOutputTokensEnabled] = useState(false)
   const [maxOutputTokens, setMaxOutputTokens] = useState(DEFAULT_MAX_OUTPUT_TOKENS)
 
-  const catalogQuery = useModelCatalog(modelSearch, 'all', true)
+  const catalogQuery = useModelCatalog(modelSearch, EMPTY_MODEL_CATALOG_FILTERS, true)
   const models = useMemo(
     () => catalogQuery.data?.pages.flatMap((page) => page.models) ?? [],
     [catalogQuery.data],

@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { BrainCircuit, ChevronDown, Gauge, Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
@@ -48,13 +48,33 @@ function ModelStateBadges({ item }: { item: ModelCatalogItem }) {
   )
 }
 
+function ModelCapabilitySummary({ item }: { item: ModelCatalogItem }) {
+  const { t } = useTranslation()
+  return (
+    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[0.6875rem] text-muted-foreground">
+      <span className="inline-flex items-center gap-1">
+        <Gauge className="size-3" aria-hidden="true" />
+        {item.context_window === null
+          ? t('models.values.contextUnknownShort')
+          : t('models.values.contextShort', { value: new Intl.NumberFormat().format(item.context_window) })}
+      </span>
+      {item.supports_reasoning ? (
+        <span className="inline-flex items-center gap-1"><BrainCircuit className="size-3" aria-hidden="true" />{t('models.capabilities.reasoning')}</span>
+      ) : null}
+      {item.supports_tool_calls ? (
+        <span className="inline-flex items-center gap-1"><Wrench className="size-3" aria-hidden="true" />{t('models.capabilities.tool_calls')}</span>
+      ) : null}
+    </div>
+  )
+}
+
 export function ModelCatalogDesktopEntry({ item, pricingScope, expanded, onToggle }: EntryProps) {
   const { t } = useTranslation()
   const detailsId = `model-details-${encodeURIComponent(item.model)}`
   return (
     <>
-      <tr className="hover:bg-surface-2/35">
-        <td className="px-3 py-2.5"><ModelCatalogIdentity item={item} /></td>
+      <tr className="transition-colors duration-150 hover:bg-surface-2/35">
+        <td className="px-3 py-3"><ModelCatalogIdentity item={item} /><ModelCapabilitySummary item={item} /></td>
         <td className="px-3 py-2.5"><ModelPriceValue label={t('models.columns.input')} value={item.prices?.input} /></td>
         <td className="px-3 py-2.5"><ModelPriceValue label={t('models.columns.output')} value={item.prices?.output} /></td>
         <td className="px-3 py-2.5"><ModelPriceValue label={t('models.columns.cacheRead')} value={item.prices?.cache_read} muted /></td>
@@ -90,8 +110,9 @@ export function ModelCatalogMobileEntry({ item, pricingScope, expanded, onToggle
   const { t } = useTranslation()
   const detailsId = `model-details-mobile-${encodeURIComponent(item.model)}`
   return (
-    <article className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
+    <article className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-3 transition-colors duration-150 hover:border-info/25">
       <ModelCatalogIdentity item={item} />
+      <ModelCapabilitySummary item={item} />
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3">
         <ModelStateBadges item={item} />
         <Button

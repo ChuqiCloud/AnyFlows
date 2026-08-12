@@ -1,7 +1,8 @@
-import { Boxes, SearchX } from 'lucide-react'
+import { Boxes, CircleDollarSign, EyeOff, SearchX, Settings2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ModelCatalogItem, ModelCatalogPricingScope } from '@/lib/api/generated/types.gen'
 import { ModelCatalogDesktopEntry, ModelCatalogMobileEntry } from './model-catalog-entry'
@@ -11,6 +12,7 @@ type ModelCatalogListProps = {
   loading: boolean
   filtered: boolean
   pricingScope?: ModelCatalogPricingScope
+  admin: boolean
 }
 
 function LoadingRows() {
@@ -21,7 +23,7 @@ function LoadingRows() {
   )
 }
 
-function EmptyCatalog({ filtered }: { filtered: boolean }) {
+function EmptyCatalog({ admin, filtered }: { admin: boolean; filtered: boolean }) {
   const { t } = useTranslation()
   const Icon = filtered ? SearchX : Boxes
   return (
@@ -36,7 +38,31 @@ function EmptyCatalog({ filtered }: { filtered: boolean }) {
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
           {t(filtered ? 'models.empty.filteredBody' : 'models.empty.body')}
         </p>
+        {!filtered && admin ? (
+          <div className="mt-5 text-left">
+            <div className="grid gap-2 rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
+              <PublishingRequirement icon={EyeOff} text={t('models.empty.admin.visibility')} />
+              <PublishingRequirement icon={Settings2} text={t('models.empty.admin.lifecycle')} />
+              <PublishingRequirement icon={CircleDollarSign} text={t('models.empty.admin.pricing')} />
+            </div>
+            <Button type="button" size="sm" className="mt-3 w-full" asChild>
+              <a href="#/console/system-settings/models">{t('models.empty.admin.action')}</a>
+            </Button>
+          </div>
+        ) : null}
       </div>
+    </div>
+  )
+}
+
+function PublishingRequirement({ icon: Icon, text }: {
+  icon: typeof EyeOff
+  text: string
+}) {
+  return (
+    <div className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+      <Icon className="mt-0.5 size-3.5 shrink-0 text-info" aria-hidden="true" />
+      <span>{text}</span>
     </div>
   )
 }
@@ -46,6 +72,7 @@ export function ModelCatalogList({
   loading,
   filtered,
   pricingScope,
+  admin,
 }: ModelCatalogListProps) {
   const { t } = useTranslation()
   const [expandedModels, setExpandedModels] = useState<Set<string>>(() => new Set())
@@ -59,11 +86,11 @@ export function ModelCatalogList({
   }
 
   if (loading || !pricingScope) return <LoadingRows />
-  if (models.length === 0) return <EmptyCatalog filtered={filtered} />
+  if (models.length === 0) return <EmptyCatalog admin={admin} filtered={filtered} />
 
   return (
     <>
-      <div className="hidden overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1 md:block">
+      <div className="hidden overflow-hidden rounded-lg border border-[var(--hairline)] bg-surface-1 xl:block">
         <table className="w-full table-fixed text-left text-xs">
           <thead className="bg-surface-2/60 text-muted-foreground">
             <tr>
@@ -87,7 +114,7 @@ export function ModelCatalogList({
           </tbody>
         </table>
       </div>
-      <div className="grid gap-2 md:hidden">
+      <div className="grid gap-2 xl:hidden">
         {models.map((item) => (
           <ModelCatalogMobileEntry
             key={item.model}

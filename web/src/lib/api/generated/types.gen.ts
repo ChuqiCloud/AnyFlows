@@ -1078,6 +1078,7 @@ export type ManagementError = {
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
+export type ModelCatalogCapability = 'reasoning' | 'tool_calls' | 'responses_compact';
 export type ModelCatalogItem = {
     model: string;
     display_name: string;
@@ -1105,6 +1106,7 @@ export type ModelCatalogListResponse = {
     models: Array<ModelCatalogItem>;
     next_cursor: string | null;
 };
+export type ModelCatalogModality = 'text' | 'image' | 'audio' | 'video';
 export type ModelCatalogPricingScope = 'public_base' | 'group';
 export type ModelCatalogProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
 export type ModelCatalogRatios = {
@@ -3040,6 +3042,10 @@ export type ListModelsData = {
     query?: {
         q?: string;
         billing_mode?: ModelCatalogBillingMode;
+        input_modality?: Array<ModelCatalogModality>;
+        output_modality?: Array<ModelCatalogModality>;
+        capability?: Array<ModelCatalogCapability>;
+        protocol?: Array<ModelCatalogProtocol>;
         after?: string;
         limit?: number;
     };

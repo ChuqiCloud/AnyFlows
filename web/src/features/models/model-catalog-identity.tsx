@@ -26,13 +26,13 @@ export function ModelCatalogIdentity({ item }: { item: ModelCatalogItem }) {
         ) : null}
       </div>
       <div className="min-w-0">
-        <div className="truncate text-xs font-semibold text-foreground" title={item.display_name}>{item.display_name}</div>
+        <div className="truncate text-sm font-semibold text-foreground" title={item.display_name}>{item.display_name}</div>
         <div className="mt-0.5 flex min-w-0 items-center gap-0.5">
           <span className="truncate font-mono text-[0.6875rem] text-muted-foreground" title={item.model}>{item.model}</span>
           <ModelCopyButton model={item.model} size="icon-xs" />
         </div>
         <div className="mt-1.5 flex flex-wrap gap-1">
-          <Badge className="max-w-32 truncate bg-surface-2 text-muted-foreground">{item.provider}</Badge>
+          <Badge className="max-w-32 truncate border-transparent bg-info/8 text-info">{item.provider}</Badge>
           {item.tags.slice(0, 2).map((tag) => <Badge key={tag} className="max-w-32 truncate">{tag}</Badge>)}
           {item.tags.length > 2 ? <Badge>{t('models.values.moreTags', { count: item.tags.length - 2 })}</Badge> : null}
         </div>

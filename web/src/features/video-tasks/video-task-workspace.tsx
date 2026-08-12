@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { useModelCatalog } from '@/features/models/model-api'
+import { EMPTY_MODEL_CATALOG_FILTERS, useModelCatalog } from '@/features/models/model-api'
 import { VideoTaskAccessPanel } from './video-task-access-panel'
 import { VideoTaskHistoryPanel } from './video-task-history-panel'
 import { VideoTaskRequestPanel } from './video-task-request-panel'
@@ -21,7 +21,10 @@ export function VideoTaskWorkspace(props: VideoTaskWorkspaceProps) {
   const history = useVideoTaskHistory(workspace.apiKey)
   const refreshHistory = history.refresh
   const [submittedRequest, setSubmittedRequest] = useState<VideoTaskRequest>()
-  const catalogQuery = useModelCatalog('', 'all', true)
+  const catalogQuery = useModelCatalog('', {
+    ...EMPTY_MODEL_CATALOG_FILTERS,
+    protocols: ['xai_video'],
+  }, true)
   const models = useMemo(
     () => (catalogQuery.data?.pages.flatMap((page) => page.models) ?? [])
       .filter((item) => item.available_protocols.includes('xai_video')),

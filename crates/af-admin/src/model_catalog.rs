@@ -32,6 +32,32 @@ pub enum ModelCatalogBillingMode {
     Free,
 }
 
+/// 模型目录可筛选的闭合输入或输出模态。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelCatalogModality {
+    /// 文本内容。
+    Text,
+    /// 图像内容。
+    Image,
+    /// 音频内容。
+    Audio,
+    /// 视频内容。
+    Video,
+}
+
+/// 模型目录可筛选的闭合扩展能力。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelCatalogCapability {
+    /// 模型声明支持推理。
+    Reasoning,
+    /// 模型声明支持工具调用。
+    ToolCalls,
+    /// 当前运行时支持 OpenAI Responses Compact。
+    ResponsesCompact,
+}
+
 /// 模型目录价格所处的公开范围。
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -47,15 +73,27 @@ pub enum ModelCatalogPricingScope {
 pub struct ModelCatalogQuery {
     search: Option<String>,
     billing_mode: Option<ModelCatalogBillingMode>,
+    input_modalities: Vec<ModelCatalogModality>,
+    output_modalities: Vec<ModelCatalogModality>,
+    capabilities: Vec<ModelCatalogCapability>,
+    protocols: Vec<Protocol>,
     after: Option<String>,
     limit: usize,
 }
 
 impl ModelCatalogQuery {
-    /// 校验搜索文本、模型名游标和单页容量。
+    /// 校验搜索文本、闭合筛选集合、模型名游标和单页容量。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "参数与稳定模型目录查询字段一一对应"
+    )]
     pub fn new(
         search: Option<String>,
         billing_mode: Option<ModelCatalogBillingMode>,
+        input_modalities: Vec<ModelCatalogModality>,
+        output_modalities: Vec<ModelCatalogModality>,
+        capabilities: Vec<ModelCatalogCapability>,
+        protocols: Vec<Protocol>,
         after: Option<String>,
         limit: usize,
     ) -> Result<Self, ModelCatalogReadError> {
@@ -69,12 +107,20 @@ impl ModelCatalogQuery {
             || after
                 .as_deref()
                 .is_some_and(|value| !is_valid_model_name(value))
+            || !is_sorted_unique(&input_modalities)
+            || !is_sorted_unique(&output_modalities)
+            || !is_sorted_unique(&capabilities)
+            || !is_sorted_unique(&protocols)
         {
             return Err(ModelCatalogReadError::InvalidQuery);
         }
         Ok(Self {
             search,
             billing_mode,
+            input_modalities,
+            output_modalities,
+            capabilities,
+            protocols,
             after,
             limit,
         })
@@ -90,6 +136,30 @@ impl ModelCatalogQuery {
     #[must_use]
     pub const fn billing_mode(&self) -> Option<ModelCatalogBillingMode> {
         self.billing_mode
+    }
+
+    /// 返回输入模态筛选集合；集合内任一模态匹配即可。
+    #[must_use]
+    pub fn input_modalities(&self) -> &[ModelCatalogModality] {
+        &self.input_modalities
+    }
+
+    /// 返回输出模态筛选集合；集合内任一模态匹配即可。
+    #[must_use]
+    pub fn output_modalities(&self) -> &[ModelCatalogModality] {
+        &self.output_modalities
+    }
+
+    /// 返回扩展能力筛选集合；模型必须满足集合内全部能力。
+    #[must_use]
+    pub fn capabilities(&self) -> &[ModelCatalogCapability] {
+        &self.capabilities
+    }
+
+    /// 返回运行时协议筛选集合；集合内任一协议匹配即可。
+    #[must_use]
+    pub fn protocols(&self) -> &[Protocol] {
+        &self.protocols
     }
 
     /// 返回上一页最后一个模型名。
@@ -110,6 +180,10 @@ impl Default for ModelCatalogQuery {
         Self {
             search: None,
             billing_mode: None,
+            input_modalities: Vec::new(),
+            output_modalities: Vec::new(),
+            capabilities: Vec::new(),
+            protocols: Vec::new(),
             after: None,
             limit: DEFAULT_MODEL_CATALOG_PAGE_SIZE,
         }
@@ -122,6 +196,10 @@ impl fmt::Debug for ModelCatalogQuery {
             .debug_struct("ModelCatalogQuery")
             .field("has_search", &self.search.is_some())
             .field("billing_mode", &self.billing_mode)
+            .field("input_modality_count", &self.input_modalities.len())
+            .field("output_modality_count", &self.output_modalities.len())
+            .field("capability_count", &self.capabilities.len())
+            .field("protocol_count", &self.protocols.len())
             .field("has_after", &self.after.is_some())
             .field("limit", &self.limit)
             .finish()
@@ -592,6 +670,10 @@ fn is_valid_model_name(value: &str) -> bool {
         && !value.chars().any(char::is_control)
 }
 
+fn is_sorted_unique<T: Ord>(values: &[T]) -> bool {
+    values.windows(2).all(|window| window[0] < window[1])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -601,16 +683,56 @@ mod tests {
         assert_eq!(ModelCatalogQuery::default().limit(), 24);
         for search in [Some(String::new()), Some(" padded ".to_owned())] {
             assert_eq!(
-                ModelCatalogQuery::new(search, None, None, 24),
+                ModelCatalogQuery::new(
+                    search,
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                    24,
+                ),
                 Err(ModelCatalogReadError::InvalidQuery)
             );
         }
         assert_eq!(
-            ModelCatalogQuery::new(None, None, Some("bad\nmodel".to_owned()), 24),
+            ModelCatalogQuery::new(
+                None,
+                None,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Some("bad\nmodel".to_owned()),
+                24,
+            ),
             Err(ModelCatalogReadError::InvalidQuery)
         );
         assert_eq!(
-            ModelCatalogQuery::new(None, None, None, 0),
+            ModelCatalogQuery::new(
+                None,
+                None,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                None,
+                0,
+            ),
+            Err(ModelCatalogReadError::InvalidQuery)
+        );
+        assert_eq!(
+            ModelCatalogQuery::new(
+                None,
+                None,
+                vec![ModelCatalogModality::Text, ModelCatalogModality::Text],
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                None,
+                24,
+            ),
             Err(ModelCatalogReadError::InvalidQuery)
         );
 

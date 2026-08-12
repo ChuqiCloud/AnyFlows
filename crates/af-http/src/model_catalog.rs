@@ -1,6 +1,7 @@
 use af_admin::{
-    ModelCatalogBillingMode, ModelCatalogItem, ModelCatalogLifecycle, ModelCatalogPage,
-    ModelCatalogPricingScope, ModelCatalogQuery, ModelCatalogReadError, ModelCatalogRuntimeStatus,
+    ModelCatalogBillingMode, ModelCatalogCapability, ModelCatalogItem, ModelCatalogLifecycle,
+    ModelCatalogModality, ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogQuery,
+    ModelCatalogReadError, ModelCatalogRuntimeStatus,
 };
 use af_domain::Protocol;
 use axum::{
@@ -261,6 +262,10 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<ModelCatalogQuery, Manage
     validate_percent_encoding(raw_query)?;
     let mut search = None;
     let mut billing_mode = None;
+    let mut input_modalities = Vec::new();
+    let mut output_modalities = Vec::new();
+    let mut capabilities = Vec::new();
+    let mut protocols = Vec::new();
     let mut after = None;
     let mut limit = None;
     for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
@@ -272,18 +277,60 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<ModelCatalogQuery, Manage
             "billing_mode" if billing_mode.is_none() => {
                 billing_mode = Some(parse_billing_mode(&value)?)
             }
+            "input_modality" => input_modalities.push(parse_modality(&value)?),
+            "output_modality" => output_modalities.push(parse_modality(&value)?),
+            "capability" => capabilities.push(parse_capability(&value)?),
+            "protocol" => protocols.push(parse_protocol(&value)?),
             "after" if after.is_none() => after = Some(value.into_owned()),
             "limit" if limit.is_none() => limit = Some(parse_limit(&value)?),
             _ => return Err(ManagementError::InvalidRequest),
         }
     }
+    input_modalities.sort_unstable();
+    output_modalities.sort_unstable();
+    capabilities.sort_unstable();
+    protocols.sort_unstable();
+    // 重复筛选值没有额外语义，规范化后交给领域查询保持稳定缓存身份。
+    input_modalities.dedup();
+    output_modalities.dedup();
+    capabilities.dedup();
+    protocols.dedup();
     ModelCatalogQuery::new(
         search,
         billing_mode,
+        input_modalities,
+        output_modalities,
+        capabilities,
+        protocols,
         after,
         limit.unwrap_or(af_admin::DEFAULT_MODEL_CATALOG_PAGE_SIZE),
     )
     .map_err(map_read_error)
+}
+
+fn parse_modality(value: &str) -> Result<ModelCatalogModality, ManagementError> {
+    match value {
+        "text" => Ok(ModelCatalogModality::Text),
+        "image" => Ok(ModelCatalogModality::Image),
+        "audio" => Ok(ModelCatalogModality::Audio),
+        "video" => Ok(ModelCatalogModality::Video),
+        _ => Err(ManagementError::InvalidRequest),
+    }
+}
+
+fn parse_capability(value: &str) -> Result<ModelCatalogCapability, ManagementError> {
+    match value {
+        "reasoning" => Ok(ModelCatalogCapability::Reasoning),
+        "tool_calls" => Ok(ModelCatalogCapability::ToolCalls),
+        "responses_compact" => Ok(ModelCatalogCapability::ResponsesCompact),
+        _ => Err(ManagementError::InvalidRequest),
+    }
+}
+
+fn parse_protocol(value: &str) -> Result<Protocol, ManagementError> {
+    value
+        .parse::<Protocol>()
+        .map_err(|_| ManagementError::InvalidRequest)
 }
 
 fn parse_billing_mode(value: &str) -> Result<ModelCatalogBillingMode, ManagementError> {
@@ -339,8 +386,10 @@ mod tests {
 
     #[test]
     fn query_parser_rejects_duplicates_unknowns_and_unstable_values() {
-        let query =
-            parse_list_query(Some("q=gpt&billing_mode=per_token&after=gpt-4&limit=48")).unwrap();
+        let query = parse_list_query(Some(
+            "q=gpt&billing_mode=per_token&input_modality=text&output_modality=image&capability=reasoning&protocol=openai_responses&after=gpt-4&limit=48",
+        ))
+        .unwrap();
         assert_eq!(query.search(), Some("gpt"));
         assert_eq!(
             query.billing_mode(),
@@ -348,11 +397,19 @@ mod tests {
         );
         assert_eq!(query.after(), Some("gpt-4"));
         assert_eq!(query.limit(), 48);
+        assert_eq!(query.input_modalities(), &[ModelCatalogModality::Text]);
+        assert_eq!(query.output_modalities(), &[ModelCatalogModality::Image]);
+        assert_eq!(query.capabilities(), &[ModelCatalogCapability::Reasoning]);
+        assert_eq!(query.protocols(), &[Protocol::OpenAiResponses]);
 
         for raw_query in [
             "q=",
             "q=gpt&q=claude",
             "billing_mode=paid",
+            "input_modality=code",
+            "output_modality=code",
+            "capability=vision",
+            "protocol=openai",
             "after=bad%0Amodel",
             "limit=0",
             "limit=101",
@@ -366,6 +423,15 @@ mod tests {
                 "{raw_query}"
             );
         }
+        let repeated = parse_list_query(Some(
+            "input_modality=text&input_modality=text&capability=tool_calls&capability=tool_calls",
+        ))
+        .unwrap();
+        assert_eq!(repeated.input_modalities(), &[ModelCatalogModality::Text]);
+        assert_eq!(
+            repeated.capabilities(),
+            &[ModelCatalogCapability::ToolCalls]
+        );
         let oversized = format!("q={}", "a".repeat(MAX_MODEL_CATALOG_QUERY_BYTES));
         assert_eq!(
             parse_list_query(Some(&oversized)),

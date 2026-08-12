@@ -12,7 +12,10 @@ use crate::{
         ModelCatalogProtocolValue, ModelCatalogRatiosResponse, ModelCatalogRuntimeStatusValue,
         ModelCatalogTokenPricesResponse,
     },
-    openapi::schema::{ModelCatalogBillingModeSchema, ModelCatalogPricingScopeSchema},
+    openapi::schema::{
+        ModelCatalogBillingModeSchema, ModelCatalogCapabilitySchema, ModelCatalogModalitySchema,
+        ModelCatalogPricingScopeSchema,
+    },
 };
 
 #[utoipa::path(
@@ -25,6 +28,10 @@ use crate::{
     params(
         ("q" = Option<String>, Query, min_length = 1, max_length = 128, description = "匹配 Canonical 标识、展示名或厂商"),
         ("billing_mode" = Option<ModelCatalogBillingModeSchema>, Query, description = "计费模式筛选"),
+        ("input_modality" = Option<Vec<ModelCatalogModalitySchema>>, Query, description = "输入模态筛选，重复参数按任一匹配"),
+        ("output_modality" = Option<Vec<ModelCatalogModalitySchema>>, Query, description = "输出模态筛选，重复参数按任一匹配"),
+        ("capability" = Option<Vec<ModelCatalogCapabilitySchema>>, Query, description = "扩展能力筛选，重复参数必须全部满足"),
+        ("protocol" = Option<Vec<ModelCatalogProtocolValue>>, Query, description = "当前分组可调用协议筛选，重复参数按任一匹配；游客目录不承诺协议"),
         ("after" = Option<String>, Query, min_length = 1, max_length = 256, description = "上一页最后一个模型名"),
         ("limit" = Option<i32>, Query, minimum = 1, maximum = 100, description = "每页数量，默认 24")
     ),
@@ -43,6 +50,8 @@ fn list_models() {}
     paths(list_models),
     components(schemas(
         ModelCatalogBillingModeSchema,
+        ModelCatalogModalitySchema,
+        ModelCatalogCapabilitySchema,
         ModelCatalogPricingScopeSchema,
         ModelCatalogTokenPricesResponse,
         ModelCatalogRatiosResponse,

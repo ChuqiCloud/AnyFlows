@@ -2009,6 +2009,7 @@
   },
   "models": {
     "title": "模型广场",
+    "discoveryLabel": "发现与比较",
     "subtitle": "浏览公开模型定价；登录后自动切换为当前分组的可用模型与实际价格。",
     "public": {
       "scope": "模型广场",
@@ -2031,9 +2032,18 @@
     "loadedCount_one": "已加载 {{count}} 个模型",
     "loadedCount_other": "已加载 {{count}} 个模型",
     "filters": {
+      "title": "筛选模型",
+      "description": "按价格、模态、能力和当前可调用协议缩小结果范围。",
+      "action": "筛选",
+      "reset": "清空",
       "search": "搜索模型",
       "searchPlaceholder": "输入名称、Canonical 标识或厂商",
       "billingMode": "计费模式",
+      "inputModalities": "输入模态",
+      "outputModalities": "输出模态",
+      "capabilities": "模型能力",
+      "protocols": "可调用协议",
+      "protocolsLoginHint": "登录后可按当前分组真实可调用协议筛选。",
       "all": "全部模式"
     },
     "billing": {
@@ -2061,6 +2071,8 @@
       "descriptionUnknown": "暂无模型说明。",
       "context": "{{value}} tokens",
       "contextUnknown": "尚无权威上下文数据",
+      "contextShort": "{{value}} 上下文",
+      "contextUnknownShort": "上下文未知",
       "noAdditionalCapabilities": "未声明推理或工具调用",
       "protocolsUnavailable": "当前主体没有可调用协议",
       "protocolsPublicUnknown": "游客目录不承诺当前可调用协议",
@@ -2083,8 +2095,8 @@
     },
     "capabilities": {
       "reasoning": "推理",
-      "toolCalls": "工具调用",
-      "responsesCompact": "上下文压缩"
+      "tool_calls": "工具调用",
+      "responses_compact": "上下文压缩"
     },
     "protocols": {
       "openai_chat": "OpenAI Chat",
@@ -2123,9 +2135,15 @@
     },
     "empty": {
       "title": "暂无可展示模型",
-      "body": "当前价格范围内还没有模型记录。",
+      "body": "模型需要完成发布状态和定价配置后才会进入广场。",
       "filteredTitle": "没有匹配模型",
-      "filteredBody": "请调整模型名或计费模式筛选。"
+      "filteredBody": "请调整搜索词或筛选条件。",
+      "admin": {
+        "visibility": "游客目录要求模型可见性为公开；登录目录同时接受公开和登录可见。",
+        "lifecycle": "生命周期必须为活动或已弃用，隐藏草稿不会自动发布。",
+        "pricing": "必须存在有效价格；登录目录还要求当前分组有可调用渠道。",
+        "action": "前往模型管理"
+      }
     },
     "error": {
       "title": "无法读取模型目录",

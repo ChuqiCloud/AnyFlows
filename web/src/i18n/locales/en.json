@@ -2009,6 +2009,7 @@
   },
   "models": {
     "title": "Model catalog",
+    "discoveryLabel": "Discover and compare",
     "subtitle": "Browse public model pricing, or sign in for models available to your group and their effective prices.",
     "public": {
       "scope": "Model catalog",
@@ -2031,9 +2032,18 @@
     "loadedCount_one": "{{count}} model loaded",
     "loadedCount_other": "{{count}} models loaded",
     "filters": {
+      "title": "Filter models",
+      "description": "Narrow results by price, modality, capability, and currently callable protocols.",
+      "action": "Filters",
+      "reset": "Reset",
       "search": "Search models",
       "searchPlaceholder": "Enter a name, Canonical identifier, or provider",
       "billingMode": "Billing mode",
+      "inputModalities": "Input modalities",
+      "outputModalities": "Output modalities",
+      "capabilities": "Model capabilities",
+      "protocols": "Callable protocols",
+      "protocolsLoginHint": "Sign in to filter by protocols callable for your current group.",
       "all": "All modes"
     },
     "billing": {
@@ -2061,6 +2071,8 @@
       "descriptionUnknown": "No model description is available.",
       "context": "{{value}} tokens",
       "contextUnknown": "No verified context value",
+      "contextShort": "{{value}} context",
+      "contextUnknownShort": "Context unknown",
       "noAdditionalCapabilities": "No reasoning or tool-call capability declared",
       "protocolsUnavailable": "No callable protocol is available to this account",
       "protocolsPublicUnknown": "The public catalog does not promise current callable protocols",
@@ -2083,8 +2095,8 @@
     },
     "capabilities": {
       "reasoning": "Reasoning",
-      "toolCalls": "Tool calls",
-      "responsesCompact": "Context compaction"
+      "tool_calls": "Tool calls",
+      "responses_compact": "Context compaction"
     },
     "protocols": {
       "openai_chat": "OpenAI Chat",
@@ -2123,9 +2135,15 @@
     },
     "empty": {
       "title": "No models to display",
-      "body": "There are no model records in the current pricing scope.",
+      "body": "Models appear after their publishing state and pricing are configured.",
       "filteredTitle": "No matching models",
-      "filteredBody": "Adjust the model name or billing-mode filter."
+      "filteredBody": "Adjust the search term or filters.",
+      "admin": {
+        "visibility": "The guest catalog requires public visibility. Signed-in catalogs also accept authenticated visibility.",
+        "lifecycle": "Lifecycle must be active or deprecated. Hidden drafts are never published automatically.",
+        "pricing": "A valid price is required. Signed-in catalogs also require a callable channel for the current group.",
+        "action": "Open model management"
+      }
     },
     "error": {
       "title": "Model catalog unavailable",

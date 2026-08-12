@@ -1,10 +1,11 @@
 use std::{collections::BTreeSet, fmt, sync::Arc};
 
 use af_admin::{
-    AdminModelModalities, ModelCatalogBillingMode, ModelCatalogItem, ModelCatalogLifecycle,
-    ModelCatalogListFuture, ModelCatalogMetadata, ModelCatalogPage, ModelCatalogPricingScope,
-    ModelCatalogQuery, ModelCatalogRatios, ModelCatalogReadError, ModelCatalogReader,
-    ModelCatalogRuntimeStatus, ModelCatalogTokenPrices, SessionAuthentication,
+    AdminModelModalities, ModelCatalogBillingMode, ModelCatalogCapability, ModelCatalogItem,
+    ModelCatalogLifecycle, ModelCatalogListFuture, ModelCatalogMetadata, ModelCatalogModality,
+    ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogQuery, ModelCatalogRatios,
+    ModelCatalogReadError, ModelCatalogReader, ModelCatalogRuntimeStatus, ModelCatalogTokenPrices,
+    SessionAuthentication,
 };
 use af_billing::{
     BillingMode, ModelPrice, ModelPriceCache, PricingRatio, PricingRatios, RatioPricingResolver,
@@ -156,6 +157,38 @@ impl RuntimeModelCatalogReader {
         })
     }
 
+    fn metadata_matches_filters(record: &AdminModelRecord, query: &ModelCatalogQuery) -> bool {
+        modalities_match(record.input_modalities(), query.input_modalities())
+            && modalities_match(record.output_modalities(), query.output_modalities())
+            && query
+                .capabilities()
+                .iter()
+                .all(|capability| match capability {
+                    ModelCatalogCapability::Reasoning => record.supports_reasoning(),
+                    ModelCatalogCapability::ToolCalls => record.supports_tool_calls(),
+                    // Compact 属于运行时事实，需在拿到调度快照后继续判断。
+                    ModelCatalogCapability::ResponsesCompact => true,
+                })
+    }
+
+    fn runtime_matches_filters(
+        item: &ModelCatalogItem,
+        query: &ModelCatalogQuery,
+        protocols_are_known: bool,
+    ) -> bool {
+        let compact_matches = !query
+            .capabilities()
+            .contains(&ModelCatalogCapability::ResponsesCompact)
+            || item.supports_responses_compact();
+        let protocols_match = query.protocols().is_empty()
+            || (protocols_are_known
+                && query
+                    .protocols()
+                    .iter()
+                    .any(|protocol| item.available_protocols().contains(protocol)));
+        compact_matches && protocols_match
+    }
+
     fn append_item(
         items: &mut Vec<ModelCatalogItem>,
         item: ModelCatalogItem,
@@ -201,7 +234,9 @@ impl RuntimeModelCatalogReader {
                 .map_err(|_| ModelCatalogReadError::Internal)?;
             let (records, next_cursor) = page.into_parts();
             for record in records {
-                if !Self::metadata_matches_search(&record, query.search()) {
+                if !Self::metadata_matches_search(&record, query.search())
+                    || !Self::metadata_matches_filters(&record, query)
+                {
                     continue;
                 }
                 let Some(price) = prices.get(record.model()) else {
@@ -212,6 +247,9 @@ impl RuntimeModelCatalogReader {
                     .map_err(|_| ModelCatalogReadError::Internal)?;
                 let metadata = metadata_from_record(record)?;
                 let item = Self::public_catalog_item(metadata, price, supports_responses_compact)?;
+                if !Self::runtime_matches_filters(&item, query, false) {
+                    continue;
+                }
                 if Self::append_item(&mut items, item, query) {
                     has_more = true;
                     break;
@@ -265,7 +303,9 @@ impl RuntimeModelCatalogReader {
                 .map_err(|_| ModelCatalogReadError::Internal)?;
             let (records, next_cursor) = page.into_parts();
             for record in records {
-                if !Self::metadata_matches_search(&record, query.search()) {
+                if !Self::metadata_matches_search(&record, query.search())
+                    || !Self::metadata_matches_filters(&record, query)
+                {
                     continue;
                 }
                 let available_protocols =
@@ -287,6 +327,9 @@ impl RuntimeModelCatalogReader {
                 else {
                     continue;
                 };
+                if !Self::runtime_matches_filters(&item, query, true) {
+                    continue;
+                }
                 if Self::append_item(&mut items, item, query) {
                     has_more = true;
                     break;
@@ -358,6 +401,16 @@ fn metadata_from_record(
 
 const fn modalities(value: AdminModelModalitiesRecord) -> AdminModelModalities {
     AdminModelModalities::new(value.text(), value.image(), value.audio(), value.video())
+}
+
+fn modalities_match(value: AdminModelModalitiesRecord, filters: &[ModelCatalogModality]) -> bool {
+    filters.is_empty()
+        || filters.iter().any(|filter| match filter {
+            ModelCatalogModality::Text => value.text(),
+            ModelCatalogModality::Image => value.image(),
+            ModelCatalogModality::Audio => value.audio(),
+            ModelCatalogModality::Video => value.video(),
+        })
 }
 
 fn catalog_page(
@@ -550,6 +603,10 @@ mod tests {
                 &ModelCatalogQuery::new(
                     Some("GPT".to_owned()),
                     Some(ModelCatalogBillingMode::PerToken),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
                     None,
                     24,
                 )
@@ -559,6 +616,90 @@ mod tests {
             .unwrap();
         assert_eq!(filtered.items().len(), 1);
         assert_eq!(filtered.items()[0].model(), "gpt-test");
+
+        let capable = reader
+            .list(
+                None,
+                &ModelCatalogQuery::new(
+                    None,
+                    None,
+                    vec![ModelCatalogModality::Text],
+                    vec![ModelCatalogModality::Text],
+                    vec![ModelCatalogCapability::ToolCalls],
+                    Vec::new(),
+                    None,
+                    24,
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(capable.items().len(), 2);
+
+        let unavailable_protocol = reader
+            .list(
+                None,
+                &ModelCatalogQuery::new(
+                    None,
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    vec![Protocol::OpenAiChat],
+                    None,
+                    24,
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert!(unavailable_protocol.items().is_empty());
+    }
+
+    #[test]
+    fn runtime_filters_require_authoritative_protocol_and_compact_facts() {
+        let item = ModelCatalogItem::new(
+            ModelCatalogMetadata::new(
+                "gpt-test".to_owned(),
+                "Flagship Model".to_owned(),
+                "OpenAI".to_owned(),
+                None,
+                None,
+                vec!["chat".to_owned()],
+                Some(128_000),
+                AdminModelModalities::new(true, false, false, false),
+                AdminModelModalities::new(true, false, false, false),
+                false,
+                true,
+                ModelCatalogLifecycle::Active,
+            )
+            .unwrap(),
+            ModelCatalogBillingMode::Free,
+            None,
+            ModelCatalogRatios::new(1_000_000, 1_000_000, 1_000_000).unwrap(),
+            1,
+            ModelCatalogRuntimeStatus::Available,
+            vec![Protocol::OpenAiResponses],
+            true,
+        )
+        .unwrap();
+        let matching = ModelCatalogQuery::new(
+            None,
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec![ModelCatalogCapability::ResponsesCompact],
+            vec![Protocol::OpenAiResponses],
+            None,
+            24,
+        )
+        .unwrap();
+        assert!(RuntimeModelCatalogReader::runtime_matches_filters(
+            &item, &matching, true
+        ));
+        assert!(!RuntimeModelCatalogReader::runtime_matches_filters(
+            &item, &matching, false
+        ));
     }
 
     #[tokio::test]

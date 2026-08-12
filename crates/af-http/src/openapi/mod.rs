@@ -512,6 +512,8 @@ mod tests {
         assert!(schemas.contains_key("AdminRouteStrategy"));
         assert!(schemas.contains_key("ModelCatalogListResponse"));
         assert!(schemas.contains_key("ModelCatalogPricingScope"));
+        assert!(schemas.contains_key("ModelCatalogModality"));
+        assert!(schemas.contains_key("ModelCatalogCapability"));
         assert!(schemas.contains_key("ModelCatalogLifecycle"));
         assert!(schemas.contains_key("ModelCatalogProtocol"));
         assert!(schemas.contains_key("ModelCatalogRuntimeStatus"));

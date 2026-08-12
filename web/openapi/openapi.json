@@ -5879,6 +5879,54 @@
             }
           },
           {
+            "name": "input_modality",
+            "in": "query",
+            "description": "输入模态筛选，重复参数按任一匹配",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ModelCatalogModality"
+              }
+            }
+          },
+          {
+            "name": "output_modality",
+            "in": "query",
+            "description": "输出模态筛选，重复参数按任一匹配",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ModelCatalogModality"
+              }
+            }
+          },
+          {
+            "name": "capability",
+            "in": "query",
+            "description": "扩展能力筛选，重复参数必须全部满足",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ModelCatalogCapability"
+              }
+            }
+          },
+          {
+            "name": "protocol",
+            "in": "query",
+            "description": "当前分组可调用协议筛选，重复参数按任一匹配；游客目录不承诺协议",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ModelCatalogProtocol"
+              }
+            }
+          },
+          {
             "name": "after",
             "in": "query",
             "description": "上一页最后一个模型名",
@@ -17289,6 +17337,14 @@
           "free"
         ]
       },
+      "ModelCatalogCapability": {
+        "type": "string",
+        "enum": [
+          "reasoning",
+          "tool_calls",
+          "responses_compact"
+        ]
+      },
       "ModelCatalogItem": {
         "type": "object",
         "required": [
@@ -17456,6 +17512,15 @@
           }
         },
         "additionalProperties": false
+      },
+      "ModelCatalogModality": {
+        "type": "string",
+        "enum": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ]
       },
       "ModelCatalogPricingScope": {
         "type": "string",

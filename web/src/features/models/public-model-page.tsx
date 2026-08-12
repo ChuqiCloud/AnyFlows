@@ -63,7 +63,7 @@ export function PublicModelPage() {
       </header>
 
       <main className="px-4 py-5 md:px-5 md:py-7">
-        <div className="mx-auto w-full max-w-[960px]">
+        <div className="mx-auto w-full max-w-[1280px]">
           <ModelPage authenticated={hasSession} standalone />
         </div>
       </main>
