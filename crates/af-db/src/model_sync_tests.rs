@@ -8,8 +8,8 @@ use super::{
     AdminModelCreateRecord, AdminModelLifecycleRecord, AdminModelModalitiesRecord,
     AdminModelRepository, AdminModelVisibilityRecord, AdminModelWriteRecord, DatabaseOptions,
     DiscoveredModelRecord, MODEL_SYNC_PREVIEW_TTL_SECONDS, MigrationOptions,
-    ModelDiscoveryTargetLookup, ModelSyncApplyItemRecord, ModelSyncPreviewWrite,
-    ModelSyncRelationRecord, ModelSyncRepository, ModelSyncRepositoryError,
+    MissingModelImportItemRecord, ModelDiscoveryTargetLookup, ModelSyncApplyItemRecord,
+    ModelSyncPreviewWrite, ModelSyncRelationRecord, ModelSyncRepository, ModelSyncRepositoryError,
 };
 use crate::entity::{
     ChannelBaseUrl, EncryptedJson, HeaderOverrides, SensitiveJson, channel_models, channels,
@@ -242,6 +242,143 @@ async fn concurrent_model_conflict_rolls_back_every_selected_item() -> Result<()
 }
 
 #[tokio::test]
+async fn missing_import_creates_hidden_drafts_atomically() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    for model in ["missing-a", "missing-b"] {
+        attach_model(&fixture, model).await?;
+    }
+
+    let created = fixture
+        .sync
+        .import_missing_models(vec![
+            missing_import("missing-a", "Missing A")?,
+            missing_import("missing-b", "Missing B")?,
+        ])
+        .await?;
+
+    assert_eq!(created.len(), 2);
+    assert_eq!(
+        created
+            .iter()
+            .map(|model| model.model())
+            .collect::<Vec<_>>(),
+        ["missing-a", "missing-b"]
+    );
+    assert!(created.iter().all(|model| {
+        model.visibility() == AdminModelVisibilityRecord::Hidden
+            && model.lifecycle() == AdminModelLifecycleRecord::Draft
+    }));
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn missing_import_conflicts_roll_back_the_whole_batch() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    for model in ["existing-model", "rollback-model"] {
+        attach_model(&fixture, model).await?;
+    }
+    fixture
+        .models
+        .create(model_create("existing-model", "Existing"))
+        .await?;
+
+    assert_eq!(
+        fixture
+            .sync
+            .import_missing_models(vec![
+                missing_import("rollback-model", "Rollback")?,
+                missing_import("existing-model", "Existing")?,
+            ])
+            .await
+            .unwrap_err(),
+        ModelSyncRepositoryError::Conflict
+    );
+    assert_eq!(
+        models::Entity::find()
+            .filter(models::Column::Model.eq("rollback-model"))
+            .count(fixture.pool.connection())
+            .await?,
+        0
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn missing_import_rejects_stale_references_and_duplicates() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    attach_model(&fixture, "still-missing").await?;
+
+    assert_eq!(
+        fixture
+            .sync
+            .import_missing_models(vec![
+                missing_import("still-missing", "Still Missing")?,
+                missing_import("not-referenced", "Not Referenced")?,
+            ])
+            .await
+            .unwrap_err(),
+        ModelSyncRepositoryError::Conflict
+    );
+    assert_eq!(
+        models::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        0
+    );
+
+    assert_eq!(
+        fixture
+            .sync
+            .import_missing_models(vec![
+                missing_import("still-missing", "First")?,
+                missing_import("still-missing", "Duplicate")?,
+            ])
+            .await
+            .unwrap_err(),
+        ModelSyncRepositoryError::Invariant
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn missing_import_allows_replacing_soft_deleted_metadata() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    attach_model(&fixture, "deleted-model").await?;
+    let existing = fixture
+        .models
+        .create(model_create("deleted-model", "Deleted"))
+        .await?;
+    let deleted_at = sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc();
+    models::Entity::update_many()
+        .filter(models::Column::Id.eq(existing.model_id().get()))
+        .col_expr(
+            models::Column::DeletedAt,
+            sea_orm::sea_query::Expr::value(deleted_at),
+        )
+        .exec(fixture.pool.connection())
+        .await?;
+
+    let created = fixture
+        .sync
+        .import_missing_models(vec![missing_import("deleted-model", "Replacement")?])
+        .await?;
+    assert_eq!(created.len(), 1);
+    assert_ne!(created[0].model_id(), existing.model_id());
+    assert_eq!(
+        models::Entity::find()
+            .filter(models::Column::Model.eq("deleted-model"))
+            .count(fixture.pool.connection())
+            .await?,
+        2
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn discovery_target_excludes_pending_oauth_credentials() -> Result<(), Box<dyn Error>> {
     let fixture = fixture().await?;
     let pending = credentials::ActiveModel {
@@ -425,6 +562,13 @@ fn draft_fields(display_name: &str) -> AdminModelWriteRecord {
         AdminModelVisibilityRecord::Hidden,
         AdminModelLifecycleRecord::Draft,
     )
+}
+
+fn missing_import(
+    model: &str,
+    display_name: &str,
+) -> Result<MissingModelImportItemRecord, ModelSyncRepositoryError> {
+    MissingModelImportItemRecord::new(model.to_owned(), draft_fields(display_name))
 }
 
 fn current_unix() -> i64 {

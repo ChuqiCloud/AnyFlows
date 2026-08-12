@@ -347,11 +347,11 @@ pub use model_sync::{
     DiscoveredModelRecord, MAX_MISSING_MODEL_CHANNELS, MAX_MISSING_MODEL_PAGE_SIZE,
     MAX_MODEL_SYNC_APPLY_ITEMS, MAX_MODEL_SYNC_CANDIDATES, MAX_MODEL_SYNC_METHOD_BYTES,
     MAX_MODEL_SYNC_METHODS, MODEL_SYNC_PREVIEW_ID_BYTES, MODEL_SYNC_PREVIEW_TTL_SECONDS,
-    MissingModelChannelRecord, MissingModelPageRecord, MissingModelRecord,
-    ModelDiscoveryHeaderRecord, ModelDiscoveryMappingRecord, ModelDiscoveryTargetLookup,
-    ModelDiscoveryTargetRecord, ModelSyncApplyItemRecord, ModelSyncItemRecord,
-    ModelSyncPreviewRecord, ModelSyncPreviewWrite, ModelSyncRelationRecord, ModelSyncRepository,
-    ModelSyncRepositoryConfigError, ModelSyncRepositoryError,
+    MissingModelChannelRecord, MissingModelImportItemRecord, MissingModelPageRecord,
+    MissingModelRecord, ModelDiscoveryHeaderRecord, ModelDiscoveryMappingRecord,
+    ModelDiscoveryTargetLookup, ModelDiscoveryTargetRecord, ModelSyncApplyItemRecord,
+    ModelSyncItemRecord, ModelSyncPreviewRecord, ModelSyncPreviewWrite, ModelSyncRelationRecord,
+    ModelSyncRepository, ModelSyncRepositoryConfigError, ModelSyncRepositoryError,
 };
 pub use network_settings::{
     NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,

@@ -59,7 +59,8 @@ use crate::management_model_prices::{
     preview_admin_model_price_expression, preview_admin_model_prices,
 };
 use crate::management_model_sync::{
-    apply_admin_model_sync_preview, create_admin_model_sync_preview, list_missing_admin_models,
+    apply_admin_model_sync_preview, create_admin_model_sync_preview, import_missing_admin_models,
+    list_missing_admin_models,
 };
 use crate::management_model_writes::{create_admin_model, delete_admin_model, update_admin_model};
 use crate::management_models::{get_admin_model, list_admin_models};
@@ -559,6 +560,7 @@ pub fn build_router(
         .route(
             "/api/admin/models/missing",
             get(list_missing_admin_models)
+                .post(import_missing_admin_models)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(model_management_collection_authentication.clone()),
         )

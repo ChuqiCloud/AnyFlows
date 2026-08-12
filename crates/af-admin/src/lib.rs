@@ -157,13 +157,14 @@ pub use model_price::{
     ModelPriceSourceTarget,
 };
 pub use model_sync::{
-    AdminModelSyncApplyCommand, AdminModelSyncApplyItemCommand, AdminModelSyncError,
-    AdminModelSyncService, DEFAULT_MISSING_MODEL_PAGE_SIZE, DatabaseAdminModelSyncService,
-    MAX_MISSING_MODEL_PAGE_SIZE, MAX_MODEL_SYNC_APPLY_ITEMS, MissingModelChannelRecord,
-    MissingModelListFuture, MissingModelPageRecord, MissingModelQuery, MissingModelRecord,
-    ModelSyncApplyFuture, ModelSyncItemRecord, ModelSyncPreviewFuture, ModelSyncPreviewRecord,
-    ModelSyncRelationRecord, UpstreamModelDiscoverer, UpstreamModelDiscovery,
-    UpstreamModelDiscoveryError, UpstreamModelDiscoveryFuture,
+    AdminMissingModelImportCommand, AdminMissingModelImportItemCommand, AdminModelSyncApplyCommand,
+    AdminModelSyncApplyItemCommand, AdminModelSyncError, AdminModelSyncService,
+    DEFAULT_MISSING_MODEL_PAGE_SIZE, DatabaseAdminModelSyncService, MAX_MISSING_MODEL_PAGE_SIZE,
+    MAX_MODEL_SYNC_APPLY_ITEMS, MissingModelChannelRecord, MissingModelListFuture,
+    MissingModelPageRecord, MissingModelQuery, MissingModelRecord, ModelSyncApplyFuture,
+    ModelSyncItemRecord, ModelSyncPreviewFuture, ModelSyncPreviewRecord, ModelSyncRelationRecord,
+    UpstreamModelDiscoverer, UpstreamModelDiscovery, UpstreamModelDiscoveryError,
+    UpstreamModelDiscoveryFuture,
 };
 pub use network_settings::{
     AdminNetworkSettings, AdminNetworkSettingsCommand, AdminNetworkSettingsError,

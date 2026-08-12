@@ -188,7 +188,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 124);
+        assert_eq!(operation_count, 125);
         assert!(
             document
                 .components
@@ -238,6 +238,7 @@ mod tests {
             "getUserProfile",
             "getUserTopupConfiguration",
             "getUserWallet",
+            "importMissingAdminModels",
             "getUserInvitations",
             "updateUserProfile",
             "changeUserPassword",
@@ -346,7 +347,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 244);
+        assert_eq!(schemas.len(), 247);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminResponsesCompactProbe"));
         assert!(schemas.contains_key("ResponsesCompactError"));
@@ -520,6 +521,9 @@ mod tests {
         assert!(schemas.contains_key("AdminModelVisibility"));
         assert!(schemas.contains_key("AdminModelLifecycle"));
         assert!(schemas.contains_key("AdminModelModality"));
+        assert!(schemas.contains_key("AdminMissingModelImportItemRequest"));
+        assert!(schemas.contains_key("AdminMissingModelImportRequest"));
+        assert!(schemas.contains_key("AdminMissingModelImportResponse"));
         assert!(schemas.contains_key("AdminMissingModelListResponse"));
         assert!(schemas.contains_key("AdminModelSyncPreview"));
         assert!(schemas.contains_key("AdminModelSyncApplyRequest"));

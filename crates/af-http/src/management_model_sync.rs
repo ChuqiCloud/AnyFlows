@@ -1,7 +1,7 @@
 use af_admin::{
-    AdminModelSyncApplyCommand, AdminModelSyncApplyItemCommand, AdminModelSyncError,
-    MissingModelPageRecord, MissingModelQuery, ModelSyncItemRecord, ModelSyncPreviewRecord,
-    ModelSyncRelationRecord,
+    AdminMissingModelImportCommand, AdminMissingModelImportItemCommand, AdminModelSyncApplyCommand,
+    AdminModelSyncApplyItemCommand, AdminModelSyncError, MissingModelPageRecord, MissingModelQuery,
+    ModelSyncItemRecord, ModelSyncPreviewRecord, ModelSyncRelationRecord,
 };
 use af_domain::{ChannelId, ModelId};
 use axum::{
@@ -173,6 +173,48 @@ pub(crate) struct AdminModelSyncApplyResponse {
     models: Vec<AdminModelResponse>,
 }
 
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminMissingModelImportItemRequest)]
+pub(crate) struct AdminMissingModelImportItemRequest {
+    #[schema(min_length = 1, max_length = 256)]
+    model: String,
+    #[schema(min_length = 1, max_length = 128)]
+    display_name: String,
+    #[schema(min_length = 1, max_length = 64)]
+    provider: String,
+    #[schema(max_length = 4096)]
+    description: Option<String>,
+    #[schema(max_length = 2048)]
+    icon_url: Option<String>,
+    #[schema(max_items = 32)]
+    tags: Vec<String>,
+    #[schema(minimum = 1, maximum = 2147483647)]
+    context_window: Option<i64>,
+    #[schema(min_items = 1, max_items = 4)]
+    input_modalities: Vec<AdminModelModalityValue>,
+    #[schema(min_items = 1, max_items = 4)]
+    output_modalities: Vec<AdminModelModalityValue>,
+    supports_reasoning: bool,
+    supports_tool_calls: bool,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminMissingModelImportRequest)]
+pub(crate) struct AdminMissingModelImportRequest {
+    #[schema(min_items = 1, max_items = 100)]
+    items: Vec<AdminMissingModelImportItemRequest>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminMissingModelImportResponse)]
+pub(crate) struct AdminMissingModelImportResponse {
+    #[schema(min_items = 1, max_items = 100)]
+    models: Vec<AdminModelResponse>,
+}
+
 /// 按稳定 Canonical 游标列出活动渠道引用但缺少元数据的模型。
 pub(crate) async fn list_missing_admin_models(
     State(state): State<HttpState>,
@@ -191,6 +233,37 @@ pub(crate) async fn list_missing_admin_models(
     Ok(no_store_json(AdminMissingModelListResponse::from_page(
         page,
     )))
+}
+
+/// 原子导入明确选择的缺失 Canonical，并固定创建为隐藏草稿。
+pub(crate) async fn import_missing_admin_models(
+    State(state): State<HttpState>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    request: Result<Json<AdminMissingModelImportRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let request = request.map_err(|_| ManagementError::InvalidRequest)?.0;
+    let command = AdminMissingModelImportCommand::new(
+        request
+            .items
+            .into_iter()
+            .map(AdminMissingModelImportItemRequest::into_command)
+            .collect::<Result<Vec<_>, _>>()?,
+    )
+    .map_err(map_sync_error)?;
+    let service = state
+        .admin_model_sync_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let models = service
+        .import_missing(authentication.principal(), command)
+        .await
+        .map_err(map_sync_error)?;
+    Ok(status_json(
+        StatusCode::CREATED,
+        AdminMissingModelImportResponse {
+            models: models.iter().map(AdminModelResponse::from_model).collect(),
+        },
+    ))
 }
 
 /// 对单个真实渠道执行受控上游枚举，并保存十五分钟固定预览。
@@ -313,6 +386,27 @@ impl AdminModelSyncApplyItemRequest {
         let output_modalities = parse_modalities(self.output_modalities)?;
         AdminModelSyncApplyItemCommand::new(
             self.item_id,
+            self.display_name,
+            self.provider,
+            self.description,
+            self.icon_url,
+            self.tags,
+            self.context_window,
+            input_modalities,
+            output_modalities,
+            self.supports_reasoning,
+            self.supports_tool_calls,
+        )
+        .map_err(map_sync_error)
+    }
+}
+
+impl AdminMissingModelImportItemRequest {
+    fn into_command(self) -> Result<AdminMissingModelImportItemCommand, ManagementError> {
+        let input_modalities = parse_modalities(self.input_modalities)?;
+        let output_modalities = parse_modalities(self.output_modalities)?;
+        AdminMissingModelImportItemCommand::new(
+            self.model,
             self.display_name,
             self.provider,
             self.description,
@@ -468,6 +562,45 @@ mod tests {
         let invalid = AdminModelSyncApplyItemRequest {
             item_id: 1,
             display_name: "Model".to_owned(),
+            provider: "provider".to_owned(),
+            description: None,
+            icon_url: None,
+            tags: Vec::new(),
+            context_window: None,
+            input_modalities: Vec::new(),
+            output_modalities: vec![AdminModelModalityValue::Text],
+            supports_reasoning: false,
+            supports_tool_calls: false,
+        };
+        assert!(matches!(
+            invalid.into_command(),
+            Err(ManagementError::InvalidRequest)
+        ));
+    }
+
+    #[test]
+    fn missing_import_request_rejects_visibility_and_empty_modalities() {
+        let raw = serde_json::json!({
+            "items": [{
+                "model": "model-a",
+                "display_name": "Model A",
+                "provider": "provider",
+                "description": null,
+                "icon_url": null,
+                "tags": [],
+                "context_window": null,
+                "input_modalities": ["text"],
+                "output_modalities": ["text"],
+                "supports_reasoning": false,
+                "supports_tool_calls": false,
+                "visibility": "public"
+            }]
+        });
+        assert!(serde_json::from_value::<AdminMissingModelImportRequest>(raw).is_err());
+
+        let invalid = AdminMissingModelImportItemRequest {
+            model: "model-a".to_owned(),
+            display_name: "Model A".to_owned(),
             provider: "provider".to_owned(),
             description: None,
             icon_url: None,

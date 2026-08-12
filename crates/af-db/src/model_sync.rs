@@ -13,8 +13,10 @@ use crate::{
 
 mod apply;
 mod missing;
+mod missing_import;
 mod preview;
 mod target;
+mod write;
 
 pub use preview::MODEL_SYNC_PREVIEW_TTL_SECONDS;
 
@@ -609,6 +611,35 @@ impl fmt::Debug for ModelSyncPreviewWrite {
 pub struct ModelSyncApplyItemRecord {
     item_id: i64,
     fields: AdminModelWriteRecord,
+}
+
+/// 管理员从缺失模型清单中选择的 Canonical 与隐藏草稿字段。
+pub struct MissingModelImportItemRecord {
+    model: String,
+    fields: AdminModelWriteRecord,
+}
+
+impl MissingModelImportItemRecord {
+    /// 组装已经由应用层完成字段校验的缺失模型导入项。
+    pub fn new(
+        model: String,
+        fields: AdminModelWriteRecord,
+    ) -> Result<Self, ModelSyncRepositoryError> {
+        if !valid_model(&model) {
+            return Err(ModelSyncRepositoryError::Invariant);
+        }
+        Ok(Self { model, fields })
+    }
+}
+
+impl fmt::Debug for MissingModelImportItemRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("MissingModelImportItemRecord")
+            .field("model", &self.model)
+            .field("fields", &"<已脱敏>")
+            .finish()
+    }
 }
 
 impl ModelSyncApplyItemRecord {
