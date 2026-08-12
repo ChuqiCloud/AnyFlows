@@ -869,9 +869,8 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "format": "int32",
-              "minimum": 1,
-              "maximum": 100
+              "maximum": 100,
+              "minimum": 1
             }
           }
         ],
