@@ -32,7 +32,10 @@ test('AI 动效只使用合成器属性并提供减少动态效果降级', () =>
 
 test('本地前端通过同源代理连接独立后端', () => {
   assert.match(viteConfig, /VITE_API_PROXY_TARGET/)
-  assert.match(viteConfig, /'\/api': apiProxyTarget/)
-  assert.match(viteConfig, /'\/v1': apiProxyTarget/)
+  assert.match(viteConfig, /const apiProxyOrigin = new URL\(apiProxyTarget\)\.origin/)
+  assert.match(viteConfig, /changeOrigin: true/)
+  assert.match(viteConfig, /Origin: apiProxyOrigin/)
+  assert.match(viteConfig, /'\/api': createApiProxy\(\)/)
+  assert.match(viteConfig, /'\/v1': createApiProxy\(\)/)
   assert.match(viteConfig, /127\.0\.0\.1:8085/)
 })
