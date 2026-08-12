@@ -99,7 +99,7 @@ use crate::user_profile::build_user_profile_router;
 use crate::user_tokens::build_user_token_router;
 use crate::user_topups::build_user_topup_router;
 use crate::user_wallet::build_user_wallet_router;
-use crate::xai_video::{poll_video_task, submit_video_task};
+use crate::xai_video::{list_video_tasks, poll_video_task, submit_video_task};
 use crate::{
     AudioService, ChatService, EmbeddingService, ImageService, QueryApiKeyPolicy, RerankService,
     ResponsesCompactService, SpeechService, VideoTaskService, chat_completions::HttpState,
@@ -274,6 +274,11 @@ pub fn build_router(
             "/v1/videos/generations",
             // 视频提交必须携带客户端幂等键，服务端只公开稳定本地任务标识。
             post(submit_video_task).route_layer(video_authentication.clone()),
+        )
+        .route(
+            "/v1/videos",
+            // 历史列表只读取当前用户持久化摘要，不触发上游轮询或返回签名地址。
+            get(list_video_tasks).route_layer(video_authentication.clone()),
         )
         .route(
             "/v1/videos/{task_id}",

@@ -6,7 +6,8 @@ use af_domain::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DatabaseTransaction, EntityTrait,
-    QueryFilter, Set, TransactionTrait, entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
+    QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
+    entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
 };
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
@@ -21,9 +22,13 @@ use super::status::{
     status_to_persistence,
 };
 use super::types::{
-    AsyncTaskCreate, AsyncTaskCreateOutcome, AsyncTaskRecord, AsyncTaskRepositoryConfigError,
-    AsyncTaskRepositoryError, AsyncTaskTransition, AsyncTaskTransitionOutcome,
+    AsyncTaskCreate, AsyncTaskCreateOutcome, AsyncTaskPageCursor, AsyncTaskPageRecord,
+    AsyncTaskRecord, AsyncTaskRepositoryConfigError, AsyncTaskRepositoryError, AsyncTaskTransition,
+    AsyncTaskTransitionOutcome,
 };
+
+/// 单次异步任务历史读取的最大页容量。
+pub const MAX_ASYNC_TASK_PAGE_SIZE: usize = 100;
 
 /// 原子维护异步任务幂等创建与前向状态迁移的数据库仓储。
 #[derive(Clone)]
@@ -82,6 +87,25 @@ impl AsyncTaskRepository {
         request_id: AsyncTaskRequestId,
     ) -> Result<Option<AsyncTaskRecord>, AsyncTaskRepositoryError> {
         let operation = load_by_request(self.pool.connection(), user_id, request_id)
+            .with_subscriber(NoSubscriber::default());
+        match timeout(self.operation_timeout, operation).await {
+            Ok(result) => result.map_err(internal),
+            Err(_) => Err(internal(AsyncTaskRepositoryError::Timeout)),
+        }
+    }
+
+    /// 按用户和协议从新到旧读取持久化任务，不访问任何上游服务。
+    pub async fn list(
+        &self,
+        user_id: UserId,
+        protocol: Protocol,
+        before: Option<AsyncTaskPageCursor>,
+        limit: usize,
+    ) -> Result<AsyncTaskPageRecord, AsyncTaskRepositoryError> {
+        if !(1..=MAX_ASYNC_TASK_PAGE_SIZE).contains(&limit) {
+            return Err(internal(AsyncTaskRepositoryError::Invariant));
+        }
+        let operation = list_by_owner(self.pool.connection(), user_id, protocol, before, limit)
             .with_subscriber(NoSubscriber::default());
         match timeout(self.operation_timeout, operation).await {
             Ok(result) => result.map_err(internal),
@@ -386,6 +410,71 @@ where
         .map_err(|_| AsyncTaskRepositoryError::Query)?
         .map(task_record)
         .transpose()
+}
+
+async fn list_by_owner<C>(
+    connection: &C,
+    user_id: UserId,
+    protocol: Protocol,
+    before: Option<AsyncTaskPageCursor>,
+    limit: usize,
+) -> Result<AsyncTaskPageRecord, AsyncTaskRepositoryError>
+where
+    C: ConnectionTrait,
+{
+    let mut query = async_tasks::Entity::find()
+        .filter(async_tasks::Column::UserId.eq(user_id.get()))
+        .filter(async_tasks::Column::Protocol.eq(protocol.as_str()))
+        .order_by_desc(async_tasks::Column::CreatedAt)
+        .order_by_desc(async_tasks::Column::Id)
+        .limit((limit + 1) as u64);
+    if let Some(before) = before {
+        let Some(anchor) = async_tasks::Entity::find()
+            .filter(async_tasks::Column::UserId.eq(user_id.get()))
+            .filter(async_tasks::Column::Protocol.eq(protocol.as_str()))
+            .filter(
+                async_tasks::Column::TaskKey
+                    .eq(SensitiveString::from(before.task_id.persistence_key())),
+            )
+            .one(connection)
+            .await
+            .map_err(|_| AsyncTaskRepositoryError::Query)?
+        else {
+            return Ok(AsyncTaskPageRecord {
+                tasks: Vec::new(),
+                next_cursor: None,
+            });
+        };
+        query = query.filter(
+            Condition::any()
+                .add(async_tasks::Column::CreatedAt.lt(anchor.created_at))
+                .add(
+                    Condition::all()
+                        .add(async_tasks::Column::CreatedAt.eq(anchor.created_at))
+                        .add(async_tasks::Column::Id.lt(anchor.id)),
+                ),
+        );
+    }
+    let mut models = query
+        .all(connection)
+        .await
+        .map_err(|_| AsyncTaskRepositoryError::Query)?;
+    let has_more = models.len() > limit;
+    if has_more {
+        models.truncate(limit);
+    }
+    let tasks = models
+        .into_iter()
+        .map(task_record)
+        .collect::<Result<Vec<_>, _>>()?;
+    let next_cursor = has_more.then(|| tasks.last().map(page_cursor)).flatten();
+    Ok(AsyncTaskPageRecord { tasks, next_cursor })
+}
+
+fn page_cursor(record: &AsyncTaskRecord) -> AsyncTaskPageCursor {
+    AsyncTaskPageCursor {
+        task_id: record.task_id,
+    }
 }
 
 async fn load_create_collision<C>(

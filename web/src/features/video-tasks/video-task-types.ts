@@ -2,6 +2,8 @@ import type {
   VideoFailureCode as GeneratedVideoFailureCode,
   VideoGenerationRequest,
   VideoPollResponse,
+  VideoTaskListItem as GeneratedVideoTaskListItem,
+  VideoTaskListResponse as GeneratedVideoTaskListResponse,
   VideoTaskStatus as GeneratedVideoTaskStatus,
 } from '@/lib/api/generated/types.gen'
 
@@ -15,4 +17,9 @@ export type VideoTaskApiError = {
   code: string
   message: string
   status: number
+}
+
+export type VideoTaskListItem = GeneratedVideoTaskListItem
+export type VideoTaskListPage = Omit<GeneratedVideoTaskListResponse, 'next_cursor'> & {
+  next_cursor?: string
 }

@@ -3,11 +3,14 @@ import type {
   VideoTaskApiError,
   VideoTaskPollResponse,
   VideoTaskRequest,
+  VideoTaskListItem,
+  VideoTaskListPage,
   VideoTaskStatus,
 } from './video-task-types'
 
 const MAX_RESPONSE_BYTES = 1024 * 1024
 const taskIdPattern = /^[0-9a-f]{32}$/
+const historyCursorPattern = taskIdPattern
 
 class VideoTaskRequestError extends Error {
   readonly detail: VideoTaskApiError
@@ -62,6 +65,27 @@ export async function pollVideoTask(
   const payload = await readJson(response)
   if (!response.ok) throw requestError(response.status, payload)
   return parsePollResponse(payload)
+}
+
+/** 列表只读取 owner-scoped 持久化摘要，不会触发上游轮询。 */
+export async function listVideoTasks(
+  apiKey: string,
+  before?: string,
+  signal?: AbortSignal,
+): Promise<VideoTaskListPage> {
+  if (before !== undefined && !historyCursorPattern.test(before)) {
+    throw requestError(400, undefined)
+  }
+  const query = new URLSearchParams({ limit: '20' })
+  if (before) query.set('before', before)
+  const response = await fetch(`/v1/videos?${query.toString()}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    cache: 'no-store',
+    signal,
+  })
+  const payload = await readJson(response)
+  if (!response.ok) throw requestError(response.status, payload)
+  return parseListPage(payload)
 }
 
 export function videoTaskError(error: unknown): VideoTaskApiError {
@@ -127,6 +151,57 @@ function parsePollResponse(payload: unknown): VideoTaskPollResponse {
     }
   }
   return { status }
+}
+
+function parseListPage(payload: unknown): VideoTaskListPage {
+  if (!isRecord(payload) || !Array.isArray(payload.data) || payload.data.length > 20) {
+    throw requestError(503, undefined)
+  }
+  const nextCursor = payload.next_cursor
+  if (nextCursor !== null && nextCursor !== undefined
+    && (typeof nextCursor !== 'string' || !historyCursorPattern.test(nextCursor))) {
+    throw requestError(503, undefined)
+  }
+  return {
+    data: payload.data.map(parseListItem),
+    next_cursor: typeof nextCursor === 'string' ? nextCursor : undefined,
+  }
+}
+
+function parseListItem(value: unknown): VideoTaskListItem {
+  if (!isRecord(value)) throw requestError(503, undefined)
+  const id = readString(value, 'id')
+  const model = readString(value, 'model')
+  const rawStatus = value.status
+  const progress = value.progress_basis_points
+  const createdAt = value.created_at
+  const updatedAt = value.updated_at
+  if (
+    !taskIdPattern.test(id)
+    || model.length > 256
+    || typeof rawStatus !== 'string'
+    || !['pending', 'done', 'expired', 'failed'].includes(rawStatus)
+    || !Number.isInteger(progress)
+    || Number(progress) < 0
+    || Number(progress) > 10_000
+    || !validTimestamp(createdAt)
+    || !validTimestamp(updatedAt)
+    || Number(updatedAt) < Number(createdAt)
+  ) {
+    throw requestError(503, undefined)
+  }
+  return {
+    id,
+    model,
+    status: rawStatus as VideoTaskStatus,
+    progress_basis_points: Number(progress),
+    created_at: Number(createdAt),
+    updated_at: Number(updatedAt),
+  }
+}
+
+function validTimestamp(value: unknown) {
+  return Number.isSafeInteger(value) && Number(value) >= 0
 }
 
 function requestError(status: number, payload: unknown) {

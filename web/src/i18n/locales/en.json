@@ -2124,6 +2124,15 @@
       "refresh": "Refresh model catalog",
       "loadMore": "Load more"
     },
+    "history": {
+      "title": "Task history",
+      "description": "Persisted tasks for the user who owns the current API key.",
+      "apiKey": "Save an API key to load your task history.",
+      "empty": "This user has no video tasks yet.",
+      "refresh": "Refresh task history",
+      "loadMore": "Load more tasks",
+      "loadingMore": "Loading"
+    },
     "result": {
       "title": "Task result",
       "description": "Status comes from the owner-scoped persisted task. Temporary URLs are not stored in the browser.",

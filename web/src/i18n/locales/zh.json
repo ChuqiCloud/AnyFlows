@@ -2124,6 +2124,15 @@
       "refresh": "刷新模型目录",
       "loadMore": "加载更多"
     },
+    "history": {
+      "title": "任务历史",
+      "description": "仅显示当前 API Key 所属用户的持久化任务。",
+      "apiKey": "保存 API Key 后读取本人任务历史。",
+      "empty": "当前用户还没有视频任务。",
+      "refresh": "刷新任务历史",
+      "loadMore": "加载更多任务",
+      "loadingMore": "正在加载"
+    },
     "result": {
       "title": "任务结果",
       "description": "状态来自 owner-scoped 持久化任务，短期地址不会保存到浏览器。",

@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 81);
+        assert_eq!(document.paths.paths.len(), 82);
         let operation_count = document
             .paths
             .paths
@@ -185,7 +185,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 121);
+        assert_eq!(operation_count, 122);
         assert!(
             document
                 .components
@@ -216,6 +216,7 @@ mod tests {
             "rerank",
             "synthesizeSpeech",
             "submitVideoTask",
+            "listVideoTasks",
             "pollVideoTask",
             "createAdminChannel",
             "createAdminCredential",
@@ -340,7 +341,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 239);
+        assert_eq!(schemas.len(), 241);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminResponsesCompactProbe"));
         assert!(schemas.contains_key("ResponsesCompactError"));
@@ -379,6 +380,8 @@ mod tests {
         assert!(schemas.contains_key("VideoFailureCode"));
         assert!(schemas.contains_key("VideoFailure"));
         assert!(schemas.contains_key("VideoPollResponse"));
+        assert!(schemas.contains_key("VideoTaskListItem"));
+        assert!(schemas.contains_key("VideoTaskListResponse"));
         assert!(schemas.contains_key("VideoTaskErrorBody"));
         assert!(schemas.contains_key("VideoTaskError"));
         assert!(schemas.contains_key("AdminChannelAutoBanRules"));

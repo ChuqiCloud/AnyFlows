@@ -36,24 +36,36 @@ export function useVideoTaskWorkspace() {
   const [requestLocked, setRequestLocked] = useState(false)
   const controllerRef = useRef<AbortController | null>(null)
 
+  const resetTask = useCallback(() => {
+    controllerRef.current?.abort()
+    setIdempotencyKey(generateIdempotencyKey())
+    setTaskId(undefined)
+    setPhase('idle')
+    setResponse(undefined)
+    setError(undefined)
+    setRequestLocked(false)
+  }, [])
+
   const saveApiKey = useCallback(() => {
     if (!isPlaygroundApiKey(apiKeyDraft)) {
       setApiKeyError(t('videoTasks.apiKey.invalid'))
       return
     }
     const normalized = apiKeyDraft.trim()
+    if (normalized !== apiKey) resetTask()
     setPlaygroundApiKey(normalized)
     setApiKey(normalized)
     setApiKeyDraft(normalized)
     setApiKeyError(undefined)
-  }, [apiKeyDraft, t])
+  }, [apiKey, apiKeyDraft, resetTask, t])
 
   const clearApiKey = useCallback(() => {
     clearPlaygroundApiKey()
     setApiKey('')
     setApiKeyDraft('')
     setApiKeyError(undefined)
-  }, [])
+    resetTask()
+  }, [resetTask])
 
   const submit = useCallback(async (request: VideoTaskRequest) => {
     if (!apiKey) {
@@ -103,6 +115,28 @@ export function useVideoTaskWorkspace() {
     }
   }, [apiKey, taskId])
 
+  const openTask = useCallback(async (nextTaskId: string) => {
+    if (!apiKey) return
+    controllerRef.current?.abort()
+    const controller = new AbortController()
+    controllerRef.current = controller
+    setTaskId(nextTaskId)
+    setRequestLocked(true)
+    setResponse(undefined)
+    setPhase('polling')
+    setError(undefined)
+    try {
+      const nextResponse = await pollVideoTask(apiKey, nextTaskId, controller.signal)
+      setResponse(nextResponse)
+      setPhase(nextResponse.status)
+    } catch (cause) {
+      const detail = videoTaskError(cause)
+      if (detail.code === 'cancelled') return
+      setError(detail)
+      setPhase('error')
+    }
+  }, [apiKey])
+
   useEffect(() => {
     if (phase !== 'pending' || !taskId || !apiKey) return
     const timer = window.setTimeout(() => void poll(), POLL_INTERVAL_MS)
@@ -112,14 +146,8 @@ export function useVideoTaskWorkspace() {
   useEffect(() => () => controllerRef.current?.abort(), [])
 
   const startNew = useCallback(() => {
-    controllerRef.current?.abort()
-    setIdempotencyKey(generateIdempotencyKey())
-    setTaskId(undefined)
-    setPhase('idle')
-    setResponse(undefined)
-    setError(undefined)
-    setRequestLocked(false)
-  }, [])
+    resetTask()
+  }, [resetTask])
 
   const busy = phase === 'submitting' || phase === 'polling'
   const canRetrySubmission = phase === 'error'
@@ -138,6 +166,7 @@ export function useVideoTaskWorkspace() {
     error,
     idempotencyKey,
     phase,
+    openTask,
     poll,
     requestLocked,
     response,
@@ -160,6 +189,7 @@ export function useVideoTaskWorkspace() {
     error,
     idempotencyKey,
     phase,
+    openTask,
     poll,
     requestLocked,
     response,

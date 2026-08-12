@@ -5,15 +5,21 @@ use af_telemetry::RequestId;
 use axum::{
     Json,
     body::Bytes,
-    extract::{Extension, Path, State},
+    extract::{Extension, Path, RawQuery, State},
     response::{IntoResponse, Response},
 };
 use http::{HeaderMap, StatusCode, header::CACHE_CONTROL};
 use serde::Serialize;
 
-use crate::{OpenAiHttpError, VideoTaskSnapshot, chat_completions::HttpState};
+use crate::{
+    OpenAiHttpError, VideoTaskListCursor, VideoTaskListItem, VideoTaskPage, VideoTaskSnapshot,
+    chat_completions::HttpState,
+};
 
 const IDEMPOTENCY_KEY_HEADER: &str = "idempotency-key";
+const DEFAULT_HISTORY_LIMIT: usize = 20;
+const MAX_HISTORY_LIMIT: usize = 100;
+const MAX_HISTORY_QUERY_BYTES: usize = 1_024;
 
 /// 解析 xAI 视频请求并使用客户端幂等键提交 owner-scoped 任务。
 pub(crate) async fn submit_video_task(
@@ -78,6 +84,93 @@ pub(crate) async fn poll_video_task(
         .into_response())
 }
 
+/// 返回当前认证用户的持久化视频任务历史；列表读取不会访问上游。
+pub(crate) async fn list_video_tasks(
+    State(state): State<HttpState>,
+    Extension(authentication): Extension<TokenAuthentication>,
+    RawQuery(raw_query): RawQuery,
+) -> Result<Response, OpenAiHttpError> {
+    let (before, limit) = parse_history_query(raw_query.as_deref())?;
+    let service = state
+        .video_task_service()
+        .ok_or_else(|| OpenAiHttpError::from(AfError::Internal))?;
+    let page = service
+        .list(authentication.principal(), before, limit)
+        .await
+        .map_err(OpenAiHttpError::from)?;
+    Ok((
+        StatusCode::OK,
+        [(CACHE_CONTROL, "no-store")],
+        Json(VideoTaskListResponse::from_page(&page)),
+    )
+        .into_response())
+}
+
+fn parse_history_query(
+    raw_query: Option<&str>,
+) -> Result<(Option<VideoTaskListCursor>, usize), OpenAiHttpError> {
+    let raw_query = raw_query.unwrap_or_default();
+    if raw_query.len() > MAX_HISTORY_QUERY_BYTES {
+        return Err(OpenAiHttpError::from(AfError::InvalidRequest));
+    }
+    validate_percent_encoding(raw_query)?;
+    let mut before = None;
+    let mut limit = None;
+    for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
+        if key.contains('\u{fffd}') || value.contains('\u{fffd}') {
+            return Err(OpenAiHttpError::from(AfError::InvalidRequest));
+        }
+        match key.as_ref() {
+            "before" if before.is_none() => before = Some(decode_history_cursor(&value)?),
+            "limit" if limit.is_none() => limit = Some(parse_history_limit(&value)?),
+            _ => return Err(OpenAiHttpError::from(AfError::InvalidRequest)),
+        }
+    }
+    Ok((before, limit.unwrap_or(DEFAULT_HISTORY_LIMIT)))
+}
+
+fn parse_history_limit(value: &str) -> Result<usize, OpenAiHttpError> {
+    if value.is_empty() || value.bytes().any(|byte| !byte.is_ascii_digit()) {
+        return Err(OpenAiHttpError::from(AfError::InvalidRequest));
+    }
+    let limit = value
+        .parse::<usize>()
+        .map_err(|_| OpenAiHttpError::from(AfError::InvalidRequest))?;
+    if !(1..=MAX_HISTORY_LIMIT).contains(&limit) {
+        return Err(OpenAiHttpError::from(AfError::InvalidRequest));
+    }
+    Ok(limit)
+}
+
+fn encode_history_cursor(cursor: VideoTaskListCursor) -> String {
+    cursor.task_id().persistence_key()
+}
+
+fn decode_history_cursor(value: &str) -> Result<VideoTaskListCursor, OpenAiHttpError> {
+    let task_id = AsyncTaskId::from_persistence_key(value)
+        .map_err(|_| OpenAiHttpError::from(AfError::InvalidRequest))?;
+    Ok(VideoTaskListCursor::new(task_id))
+}
+
+fn validate_percent_encoding(raw_query: &str) -> Result<(), OpenAiHttpError> {
+    let bytes = raw_query.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len()
+                || !bytes[index + 1].is_ascii_hexdigit()
+                || !bytes[index + 2].is_ascii_hexdigit()
+            {
+                return Err(OpenAiHttpError::from(AfError::InvalidRequest));
+            }
+            index += 3;
+        } else {
+            index += 1;
+        }
+    }
+    Ok(())
+}
+
 fn parse_idempotency_key(headers: &HeaderMap) -> Result<AsyncTaskRequestId, OpenAiHttpError> {
     let mut values = headers.get_all(IDEMPOTENCY_KEY_HEADER).iter();
     let value = values
@@ -96,6 +189,59 @@ fn parse_idempotency_key(headers: &HeaderMap) -> Result<AsyncTaskRequestId, Open
 #[derive(Serialize)]
 struct VideoSubmissionResponse {
     request_id: String,
+}
+
+#[derive(Serialize)]
+struct VideoTaskListResponse {
+    data: Vec<VideoTaskListItemResponse>,
+    next_cursor: Option<String>,
+}
+
+impl VideoTaskListResponse {
+    fn from_page(page: &VideoTaskPage) -> Self {
+        Self {
+            data: page
+                .items()
+                .iter()
+                .map(VideoTaskListItemResponse::from_item)
+                .collect(),
+            next_cursor: page.next_cursor().map(encode_history_cursor),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct VideoTaskListItemResponse {
+    id: String,
+    model: String,
+    status: &'static str,
+    progress_basis_points: u16,
+    created_at: u64,
+    updated_at: u64,
+}
+
+impl VideoTaskListItemResponse {
+    fn from_item(item: &VideoTaskListItem) -> Self {
+        Self {
+            id: item.task_id().persistence_key(),
+            model: item.model().to_owned(),
+            status: public_task_status(item.status()),
+            progress_basis_points: item.status().progress().basis_points(),
+            created_at: item.created_at(),
+            updated_at: item.updated_at(),
+        }
+    }
+}
+
+fn public_task_status(status: &TaskStatus) -> &'static str {
+    match status {
+        TaskStatus::Submitted { .. } | TaskStatus::Queued { .. } | TaskStatus::Running { .. } => {
+            "pending"
+        }
+        TaskStatus::Succeeded => "done",
+        TaskStatus::Failed { failure } if failure.kind() == TaskFailureKind::TimedOut => "expired",
+        TaskStatus::Failed { .. } => "failed",
+    }
 }
 
 #[derive(Serialize)]
@@ -221,6 +367,52 @@ mod tests {
             );
             assert!(parse_idempotency_key(&headers).is_err());
         }
+    }
+
+    #[test]
+    fn history_query_uses_strict_opaque_cursor_and_bounded_limit() {
+        let cursor = VideoTaskListCursor::new(AsyncTaskId::new([0x42; 16]).unwrap());
+        let encoded = encode_history_cursor(cursor);
+        assert_eq!(decode_history_cursor(&encoded).unwrap(), cursor);
+        assert_eq!(
+            parse_history_query(Some(&format!("before={encoded}&limit=50"))).unwrap(),
+            (Some(cursor), 50)
+        );
+        assert_eq!(parse_history_query(None).unwrap(), (None, 20));
+
+        for invalid in [
+            "before=bad",
+            "before=00000000000000000000000000000000",
+            "limit=0",
+            "limit=101",
+            "limit=+1",
+            "limit=1&limit=2",
+            "unknown=1",
+            "before=%",
+        ] {
+            assert!(parse_history_query(Some(invalid)).is_err(), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn history_response_does_not_include_temporary_output_or_private_binding() {
+        let item = VideoTaskListItem::new(
+            AsyncTaskId::new([0x33; 16]).unwrap(),
+            "gpt-video".to_owned(),
+            TaskStatus::Running {
+                progress: TaskProgress::new(2_500).unwrap(),
+            },
+            1_800_000_000,
+            1_800_000_030,
+        );
+        let response = VideoTaskListResponse::from_page(&VideoTaskPage::new(vec![item], None));
+        let value = serde_json::to_value(response).unwrap();
+        assert_eq!(value["data"][0]["status"], "pending");
+        assert_eq!(value["data"][0]["progress_basis_points"], 2_500);
+        assert!(value["data"][0].get("video").is_none());
+        assert!(value["data"][0].get("channel_id").is_none());
+        assert!(value["data"][0].get("credential_id").is_none());
+        assert!(value["data"][0].get("idempotency_key").is_none());
     }
 
     #[test]

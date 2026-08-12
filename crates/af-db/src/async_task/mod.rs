@@ -12,9 +12,9 @@ pub use submission::{
     AsyncTaskVideoResolution,
 };
 pub use types::{
-    AsyncTaskCreate, AsyncTaskCreateOutcome, AsyncTaskInputError, AsyncTaskRecord,
-    AsyncTaskRepositoryConfigError, AsyncTaskRepositoryError, AsyncTaskTransition,
-    AsyncTaskTransitionOutcome,
+    AsyncTaskCreate, AsyncTaskCreateOutcome, AsyncTaskInputError, AsyncTaskPageCursor,
+    AsyncTaskPageRecord, AsyncTaskRecord, AsyncTaskRepositoryConfigError, AsyncTaskRepositoryError,
+    AsyncTaskTransition, AsyncTaskTransitionOutcome,
 };
 
 #[cfg(test)]
