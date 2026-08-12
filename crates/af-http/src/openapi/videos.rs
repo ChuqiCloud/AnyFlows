@@ -114,6 +114,41 @@ struct VideoPollResponseSchema {
 }
 
 #[derive(Serialize, ToSchema)]
+#[schema(as = VideoTaskListItem)]
+struct VideoTaskListItemSchema {
+    #[schema(
+        min_length = 32,
+        max_length = 32,
+        pattern = "^[0-9a-f]{32}$",
+        example = "4f42f8a5d17445a397955d22f1b47eb8"
+    )]
+    id: String,
+    #[schema(min_length = 1, max_length = 256)]
+    model: String,
+    status: VideoTaskStatusSchema,
+    #[schema(minimum = 0, maximum = 10000)]
+    progress_basis_points: u16,
+    #[schema(minimum = 0)]
+    created_at: u64,
+    #[schema(minimum = 0)]
+    updated_at: u64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[schema(as = VideoTaskListResponse)]
+struct VideoTaskListResponseSchema {
+    #[schema(max_items = 100)]
+    data: Vec<VideoTaskListItemSchema>,
+    #[schema(
+        required = true,
+        min_length = 32,
+        max_length = 32,
+        pattern = "^[0-9a-f]{32}$"
+    )]
+    next_cursor: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
 #[schema(as = VideoTaskErrorBody)]
 struct VideoTaskErrorBodySchema {
     code: String,
@@ -162,6 +197,40 @@ fn submit_video_task() {}
 
 #[utoipa::path(
     get,
+    path = "/v1/videos",
+    operation_id = "listVideoTasks",
+    tag = "视频任务",
+    summary = "列出视频生成任务",
+    description = "只读取当前 API Key 所属用户已经持久化的视频任务摘要。列表不会访问上游，也不返回幂等键、渠道、凭据、上游任务标识或短期结果地址。",
+    params(
+        (
+            "before" = Option<String>,
+            Query,
+            min_length = 32,
+            max_length = 32,
+            pattern = "^[0-9a-f]{32}$",
+            description = "上一页返回的不透明倒序游标"
+        ),
+        (
+            "limit" = Option<usize>,
+            Query,
+            minimum = 1,
+            maximum = 100,
+            description = "页面容量，默认 20"
+        )
+    ),
+    responses(
+        (status = 200, description = "当前用户的视频任务历史", body = VideoTaskListResponseSchema),
+        (status = 400, description = "分页参数无效", body = VideoTaskErrorSchema),
+        (status = 401, description = "API Key 无效", body = VideoTaskErrorSchema),
+        (status = 500, description = "任务持久化状态异常", body = VideoTaskErrorSchema)
+    ),
+    security(("apiKeyAuth" = []))
+)]
+fn list_video_tasks() {}
+
+#[utoipa::path(
+    get,
     path = "/v1/videos/{task_id}",
     operation_id = "pollVideoTask",
     tag = "视频任务",
@@ -188,7 +257,7 @@ fn poll_video_task() {}
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(submit_video_task, poll_video_task),
+    paths(list_video_tasks, submit_video_task, poll_video_task),
     components(schemas(
         VideoGenerationRequestSchema,
         VideoAspectRatioSchema,
@@ -199,6 +268,8 @@ fn poll_video_task() {}
         VideoFailureCodeSchema,
         VideoFailureSchema,
         VideoPollResponseSchema,
+        VideoTaskListItemSchema,
+        VideoTaskListResponseSchema,
         VideoTaskErrorBodySchema,
         VideoTaskErrorSchema
     ))

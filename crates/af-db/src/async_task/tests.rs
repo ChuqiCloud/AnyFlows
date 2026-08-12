@@ -22,7 +22,7 @@ use super::{
     AsyncTaskBillingMutationOutcome, AsyncTaskBillingPlan, AsyncTaskBillingPlanOutcome,
     AsyncTaskBillingRecord, AsyncTaskBillingRepository, AsyncTaskBillingResolution,
     AsyncTaskBillingSettlement, AsyncTaskBillingState, AsyncTaskCreate, AsyncTaskCreateOutcome,
-    AsyncTaskRepository, AsyncTaskRepositoryError, AsyncTaskSubmissionAccept,
+    AsyncTaskPageCursor, AsyncTaskRepository, AsyncTaskRepositoryError, AsyncTaskSubmissionAccept,
     AsyncTaskSubmissionBegin, AsyncTaskSubmissionClaim, AsyncTaskSubmissionClaimOutcome,
     AsyncTaskSubmissionMutationOutcome, AsyncTaskSubmissionRelease, AsyncTaskSubmissionRepository,
     AsyncTaskSubmissionState, AsyncTaskTransition, AsyncTaskTransitionOutcome,
@@ -31,6 +31,126 @@ use super::{
 
 const CREATED_AT: u64 = 1_800_000_000;
 const UPDATED_AT: u64 = CREATED_AT + 30;
+
+#[tokio::test]
+async fn owner_page_is_newest_first_stable_and_protocol_scoped() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    for (task_marker, request_marker, created_at) in [
+        (0x11, 0x21, CREATED_AT),
+        (0x12, 0x22, CREATED_AT + 1),
+        (0x13, 0x23, CREATED_AT + 1),
+    ] {
+        fixture
+            .repository
+            .create(AsyncTaskCreate::new(
+                task_id(task_marker),
+                request_id(request_marker),
+                fixture.first.principal,
+                Protocol::XaiVideo,
+                "gpt-video".to_owned(),
+                "grok-video".to_owned(),
+                fixture.channel_id,
+                fixture.credential_id,
+                u64::MAX - 7,
+                UpstreamTaskId::new(format!("upstream-{task_marker}"))?,
+                submitted(),
+                created_at,
+            )?)
+            .await?;
+    }
+    fixture
+        .repository
+        .create(fixture.task(&fixture.second, 0x14, 0x24, "gpt-video", "grok-video")?)
+        .await?;
+    fixture
+        .repository
+        .create(AsyncTaskCreate::new(
+            task_id(0x15),
+            request_id(0x25),
+            fixture.first.principal,
+            Protocol::OpenAiChat,
+            "gpt-chat".to_owned(),
+            "gpt-chat-upstream".to_owned(),
+            fixture.channel_id,
+            fixture.credential_id,
+            u64::MAX - 7,
+            UpstreamTaskId::new("upstream-chat-task")?,
+            submitted(),
+            CREATED_AT + 2,
+        )?)
+        .await?;
+
+    let first = fixture
+        .repository
+        .list(
+            fixture.first.principal.user_id(),
+            Protocol::XaiVideo,
+            None,
+            2,
+        )
+        .await?;
+    let (tasks, cursor) = first.into_parts();
+    assert_eq!(
+        tasks.iter().map(|task| task.task_id()).collect::<Vec<_>>(),
+        vec![task_id(0x13), task_id(0x12)]
+    );
+    let cursor = cursor.expect("仍有第三个 owner-scoped 任务时必须返回游标");
+    assert_eq!(cursor.task_id(), task_id(0x12));
+
+    let second = fixture
+        .repository
+        .list(
+            fixture.first.principal.user_id(),
+            Protocol::XaiVideo,
+            Some(cursor),
+            2,
+        )
+        .await?;
+    let (tasks, cursor) = second.into_parts();
+    assert_eq!(
+        tasks.iter().map(|task| task.task_id()).collect::<Vec<_>>(),
+        vec![task_id(0x11)]
+    );
+    assert!(cursor.is_none());
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn owner_page_rejects_invalid_limits_and_cursor_positions() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    for limit in [0, super::repository::MAX_ASYNC_TASK_PAGE_SIZE + 1] {
+        assert!(matches!(
+            fixture
+                .repository
+                .list(
+                    fixture.first.principal.user_id(),
+                    Protocol::XaiVideo,
+                    None,
+                    limit,
+                )
+                .await,
+            Err(AsyncTaskRepositoryError::Invariant)
+        ));
+    }
+    let forged = AsyncTaskPageCursor::new(task_id(0xfe));
+    let (tasks, cursor) = fixture
+        .repository
+        .list(
+            fixture.first.principal.user_id(),
+            Protocol::XaiVideo,
+            Some(forged),
+            20,
+        )
+        .await?
+        .into_parts();
+    assert!(tasks.is_empty());
+    assert!(cursor.is_none());
+
+    fixture.pool.close().await?;
+    Ok(())
+}
 
 #[tokio::test]
 async fn create_is_idempotent_per_owner_and_rejects_payload_conflicts() -> Result<(), Box<dyn Error>>

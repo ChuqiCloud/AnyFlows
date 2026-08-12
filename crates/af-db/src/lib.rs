@@ -229,12 +229,12 @@ pub use async_task::{
     AsyncTaskBillingMutationOutcome, AsyncTaskBillingPlan, AsyncTaskBillingPlanOutcome,
     AsyncTaskBillingRecord, AsyncTaskBillingRepository, AsyncTaskBillingResolution,
     AsyncTaskBillingSettlement, AsyncTaskBillingState, AsyncTaskCreate, AsyncTaskCreateOutcome,
-    AsyncTaskInputError, AsyncTaskRecord, AsyncTaskRepository, AsyncTaskRepositoryConfigError,
-    AsyncTaskRepositoryError, AsyncTaskSubmissionAccept, AsyncTaskSubmissionBegin,
-    AsyncTaskSubmissionClaim, AsyncTaskSubmissionClaimOutcome, AsyncTaskSubmissionMutationOutcome,
-    AsyncTaskSubmissionRecord, AsyncTaskSubmissionRelease, AsyncTaskSubmissionRepository,
-    AsyncTaskSubmissionState, AsyncTaskTransition, AsyncTaskTransitionOutcome,
-    AsyncTaskVideoResolution,
+    AsyncTaskInputError, AsyncTaskPageCursor, AsyncTaskPageRecord, AsyncTaskRecord,
+    AsyncTaskRepository, AsyncTaskRepositoryConfigError, AsyncTaskRepositoryError,
+    AsyncTaskSubmissionAccept, AsyncTaskSubmissionBegin, AsyncTaskSubmissionClaim,
+    AsyncTaskSubmissionClaimOutcome, AsyncTaskSubmissionMutationOutcome, AsyncTaskSubmissionRecord,
+    AsyncTaskSubmissionRelease, AsyncTaskSubmissionRepository, AsyncTaskSubmissionState,
+    AsyncTaskTransition, AsyncTaskTransitionOutcome, AsyncTaskVideoResolution,
 };
 pub use auth::{
     TokenAuthLookup, TokenAuthLookupError, TokenAuthLookupOutcome, TokenAuthRepository,

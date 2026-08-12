@@ -841,6 +841,88 @@
         ]
       }
     },
+    "/v1/videos": {
+      "get": {
+        "tags": [
+          "视频任务"
+        ],
+        "summary": "列出视频生成任务",
+        "description": "只读取当前 API Key 所属用户已经持久化的视频任务摘要。列表不会访问上游，也不返回幂等键、渠道、凭据、上游任务标识或短期结果地址。",
+        "operationId": "listVideoTasks",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "description": "上一页返回的不透明倒序游标",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "minLength": 32,
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "页面容量，默认 20",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前用户的视频任务历史",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "分页参数无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "API Key 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "任务持久化状态异常",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ]
+      }
+    },
     "/v1/videos/generations": {
       "post": {
         "tags": [
@@ -19036,6 +19118,75 @@
           },
           "type": {
             "type": "string"
+          }
+        }
+      },
+      "VideoTaskListItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "model",
+          "status",
+          "progress_basis_points",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "4f42f8a5d17445a397955d22f1b47eb8",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/VideoTaskStatus"
+          },
+          "progress_basis_points": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 10000,
+            "minimum": 0
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "VideoTaskListResponse": {
+        "type": "object",
+        "required": [
+          "data",
+          "next_cursor"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VideoTaskListItem"
+            },
+            "maxItems": 100
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
           }
         }
       },

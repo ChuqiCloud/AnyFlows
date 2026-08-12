@@ -173,6 +173,46 @@ pub struct AsyncTaskRecord {
     pub(super) updated_at: u64,
 }
 
+/// 异步任务倒序分页游标，只携带稳定排序所需的非敏感位置。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AsyncTaskPageCursor {
+    pub(super) task_id: AsyncTaskId,
+}
+
+impl AsyncTaskPageCursor {
+    /// 使用已经校验的公开任务标识构造游标。
+    #[must_use]
+    pub const fn new(task_id: AsyncTaskId) -> Self {
+        Self { task_id }
+    }
+
+    /// 返回分页锚点的公开任务标识。
+    #[must_use]
+    pub const fn task_id(self) -> AsyncTaskId {
+        self.task_id
+    }
+}
+
+/// 一页 owner-scoped 异步任务，只包含仓储内已持久化的状态快照。
+pub struct AsyncTaskPageRecord {
+    pub(super) tasks: Vec<AsyncTaskRecord>,
+    pub(super) next_cursor: Option<AsyncTaskPageCursor>,
+}
+
+impl AsyncTaskPageRecord {
+    /// 消费页面并返回任务快照和下一页游标。
+    #[must_use]
+    pub fn into_parts(self) -> (Vec<AsyncTaskRecord>, Option<AsyncTaskPageCursor>) {
+        (self.tasks, self.next_cursor)
+    }
+}
+
+impl fmt::Debug for AsyncTaskPageRecord {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AsyncTaskPageRecord(<脱敏>)")
+    }
+}
+
 impl AsyncTaskRecord {
     /// 返回任务公开标识。
     #[must_use]

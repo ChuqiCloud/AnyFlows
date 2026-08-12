@@ -17,11 +17,12 @@ use af_db::{
     AsyncTaskBillingMutationOutcome, AsyncTaskBillingPlan, AsyncTaskBillingPlanOutcome,
     AsyncTaskBillingRecord, AsyncTaskBillingRepository, AsyncTaskBillingResolution,
     AsyncTaskBillingSettlement, AsyncTaskBillingState, AsyncTaskCreateOutcome, AsyncTaskInputError,
-    AsyncTaskRecord, AsyncTaskRepository, AsyncTaskRepositoryError, AsyncTaskSubmissionAccept,
-    AsyncTaskSubmissionBegin, AsyncTaskSubmissionClaim, AsyncTaskSubmissionClaimOutcome,
-    AsyncTaskSubmissionMutationOutcome, AsyncTaskSubmissionRecord, AsyncTaskSubmissionRelease,
-    AsyncTaskSubmissionRepository, AsyncTaskSubmissionState, AsyncTaskTransition,
-    AsyncTaskTransitionOutcome, AsyncTaskVideoResolution,
+    AsyncTaskPageCursor, AsyncTaskPageRecord, AsyncTaskRecord, AsyncTaskRepository,
+    AsyncTaskRepositoryError, AsyncTaskSubmissionAccept, AsyncTaskSubmissionBegin,
+    AsyncTaskSubmissionClaim, AsyncTaskSubmissionClaimOutcome, AsyncTaskSubmissionMutationOutcome,
+    AsyncTaskSubmissionRecord, AsyncTaskSubmissionRelease, AsyncTaskSubmissionRepository,
+    AsyncTaskSubmissionState, AsyncTaskTransition, AsyncTaskTransitionOutcome,
+    AsyncTaskVideoResolution,
 };
 use af_domain::{
     AfError, AsyncTaskAttemptId, AsyncTaskBindingFingerprint, AsyncTaskId,
@@ -267,6 +268,19 @@ impl PersistentVideoTaskCoordinator {
             group_pricing,
             billing_ports,
         }
+    }
+
+    /// 只读取 owner-scoped 视频任务历史，不解析运行时绑定或访问上游。
+    pub(crate) async fn list(
+        &self,
+        user_id: UserId,
+        before: Option<AsyncTaskPageCursor>,
+        limit: usize,
+    ) -> Result<AsyncTaskPageRecord, PersistentVideoTaskError> {
+        self.tasks
+            .list(user_id, Protocol::XaiVideo, before, limit)
+            .await
+            .map_err(Into::into)
     }
 
     /// 幂等提交视频任务；`Submitting` 状态永远不会自动发起第二次上游请求。

@@ -1,8 +1,11 @@
 use std::{fmt, sync::Arc};
 
-use af_db::AsyncTaskRepositoryError;
+use af_db::{AsyncTaskPageCursor, AsyncTaskRepositoryError};
 use af_domain::{AfError, AsyncTaskId, AsyncTaskRequestId, GatewayPrincipal, UpstreamError};
-use af_http::{VideoTaskService, VideoTaskServiceFuture, VideoTaskSnapshot};
+use af_http::{
+    VideoTaskListCursor, VideoTaskListFuture, VideoTaskListItem, VideoTaskPage, VideoTaskService,
+    VideoTaskServiceFuture, VideoTaskSnapshot,
+};
 use af_protocol::CanonicalVideoGenerationRequest;
 
 use crate::scheduled_chat::{
@@ -25,6 +28,38 @@ impl DatabaseVideoTaskService {
 }
 
 impl VideoTaskService for DatabaseVideoTaskService {
+    fn list<'a>(
+        &'a self,
+        principal: GatewayPrincipal,
+        before: Option<VideoTaskListCursor>,
+        limit: usize,
+    ) -> VideoTaskListFuture<'a> {
+        Box::pin(async move {
+            let before = before.map(|cursor| AsyncTaskPageCursor::new(cursor.task_id()));
+            let page = self
+                .coordinator
+                .list(principal.user_id(), before, limit)
+                .await
+                .map_err(map_list_error)?;
+            let (tasks, next_cursor) = page.into_parts();
+            Ok(VideoTaskPage::new(
+                tasks
+                    .into_iter()
+                    .map(|task| {
+                        VideoTaskListItem::new(
+                            task.task_id(),
+                            task.requested_model().to_owned(),
+                            task.status().clone(),
+                            task.created_at(),
+                            task.updated_at(),
+                        )
+                    })
+                    .collect(),
+                next_cursor.map(|cursor| VideoTaskListCursor::new(cursor.task_id())),
+            ))
+        })
+    }
+
     fn submit<'a>(
         &'a self,
         principal: GatewayPrincipal,
@@ -155,6 +190,26 @@ fn map_poll_error(error: PersistentVideoTaskError) -> AfError {
         )
         | PersistentVideoTaskError::Entropy
         | PersistentVideoTaskError::Invariant
+        | PersistentVideoTaskError::Billing => AfError::Internal,
+    }
+}
+
+fn map_list_error(error: PersistentVideoTaskError) -> AfError {
+    match error {
+        PersistentVideoTaskError::Repository(
+            AsyncTaskRepositoryError::Query
+            | AsyncTaskRepositoryError::Timeout
+            | AsyncTaskRepositoryError::OutcomeUnknown
+            | AsyncTaskRepositoryError::Conflict
+            | AsyncTaskRepositoryError::Invariant,
+        )
+        | PersistentVideoTaskError::Input
+        | PersistentVideoTaskError::SubmissionOutcomeUnknown
+        | PersistentVideoTaskError::NotFound
+        | PersistentVideoTaskError::Entropy
+        | PersistentVideoTaskError::Invariant
+        | PersistentVideoTaskError::ResultUnavailable
+        | PersistentVideoTaskError::Runtime(_)
         | PersistentVideoTaskError::Billing => AfError::Internal,
     }
 }

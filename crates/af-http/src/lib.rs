@@ -106,7 +106,10 @@ pub use responses_compact_service::{ResponsesCompactService, ResponsesCompactSer
 pub use router::{DEFAULT_REQUEST_BODY_LIMIT_BYTES, HttpRouter, build_router};
 pub use serve::{HttpListener, ServeError, ServeOutcome, serve_with_graceful_shutdown};
 pub use speech_service::{SpeechService, SpeechServiceFuture};
-pub use video_task_service::{VideoTaskService, VideoTaskServiceFuture, VideoTaskSnapshot};
+pub use video_task_service::{
+    VideoTaskListCursor, VideoTaskListFuture, VideoTaskListItem, VideoTaskPage, VideoTaskService,
+    VideoTaskServiceFuture, VideoTaskSnapshot,
+};
 
 #[cfg(test)]
 mod authentication_tests;

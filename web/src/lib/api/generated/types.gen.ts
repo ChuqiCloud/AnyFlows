@@ -1436,6 +1436,18 @@ export type VideoTaskErrorBody = {
     param: string | null;
     type: string;
 };
+export type VideoTaskListItem = {
+    id: string;
+    model: string;
+    status: VideoTaskStatus;
+    progress_basis_points: number;
+    created_at: number;
+    updated_at: number;
+};
+export type VideoTaskListResponse = {
+    data: Array<VideoTaskListItem>;
+    next_cursor: string | null;
+};
 export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
 export type AdminChannelCreateRequestWritable = {
     name: string;
@@ -1825,6 +1837,25 @@ export type SynthesizeSpeechResponses = {
     200: AudioSpeechBinary;
 };
 export type SynthesizeSpeechResponse = SynthesizeSpeechResponses[keyof SynthesizeSpeechResponses];
+export type ListVideoTasksData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: string;
+        limit?: number;
+    };
+    url: '/v1/videos';
+};
+export type ListVideoTasksErrors = {
+    400: VideoTaskError;
+    401: VideoTaskError;
+    500: VideoTaskError;
+};
+export type ListVideoTasksError = ListVideoTasksErrors[keyof ListVideoTasksErrors];
+export type ListVideoTasksResponses = {
+    200: VideoTaskListResponse;
+};
+export type ListVideoTasksResponse = ListVideoTasksResponses[keyof ListVideoTasksResponses];
 export type SubmitVideoTaskData = {
     body: VideoGenerationRequest;
     headers: {

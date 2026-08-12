@@ -1,16 +1,19 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useModelCatalog } from '@/features/models/model-api'
 import type { VideoTaskRequest } from './video-task-types'
 import { VideoTaskAccessPanel } from './video-task-access-panel'
+import { VideoTaskHistoryPanel } from './video-task-history-panel'
 import { VideoTaskRequestPanel } from './video-task-request-panel'
 import { VideoTaskResultPanel } from './video-task-result-panel'
 import { useVideoTaskWorkspace } from './use-video-task-workspace'
+import { useVideoTaskHistory } from './use-video-task-history'
 
 export function VideoTaskPage() {
   const { t } = useTranslation()
   const workspace = useVideoTaskWorkspace()
+  const history = useVideoTaskHistory(workspace.apiKey)
   const [submittedRequest, setSubmittedRequest] = useState<VideoTaskRequest>()
   const catalogQuery = useModelCatalog('', 'all', true)
   const models = useMemo(
@@ -20,6 +23,10 @@ export function VideoTaskPage() {
   )
   const pricingScope = catalogQuery.data?.pages[0]?.pricing_scope
   const modelError = catalogQuery.isError || (pricingScope !== undefined && pricingScope !== 'group')
+
+  useEffect(() => {
+    if (workspace.taskId) history.refresh()
+  }, [history.refresh, workspace.taskId])
 
   const submit = (request: VideoTaskRequest) => {
     setSubmittedRequest(request)
@@ -64,6 +71,18 @@ export function VideoTaskPage() {
             onRefreshModels={() => void catalogQuery.refetch()}
             onSubmit={submit}
           />
+          <div className="border-t border-[var(--hairline)]">
+            <VideoTaskHistoryPanel
+              activeTaskId={workspace.taskId}
+              error={history.error}
+              hasMore={Boolean(history.nextCursor)}
+              items={history.items}
+              phase={history.phase}
+              onLoadMore={history.loadMore}
+              onOpen={(taskId) => void workspace.openTask(taskId)}
+              onRefresh={history.refresh}
+            />
+          </div>
         </aside>
 
         <VideoTaskResultPanel
