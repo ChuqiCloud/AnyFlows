@@ -23,6 +23,7 @@ import {
 
 type MissingModelImportSheetProps = {
   displayNames: Record<string, string>
+  errorCode?: string
   models: AdminMissingModel[]
   open: boolean
   pending: boolean
@@ -123,9 +124,18 @@ export function MissingModelImportSheet(props: MissingModelImportSheetProps) {
               {t('modelManagement.missing.import.boundary')}
             </p>
           </div>
-          <div className="flex justify-end gap-2 border-t border-[var(--hairline)] p-4">
-            <Button type="button" variant="secondary" disabled={props.pending} onClick={() => props.onOpenChange(false)}>{t('modelManagement.actions.cancel')}</Button>
-            <Button type="submit" disabled={props.pending || !namesValid || !form.formState.isValid}>{t(props.pending ? 'modelManagement.missing.import.importing' : 'modelManagement.missing.import.submit')}</Button>
+          <div className="grid gap-3 border-t border-[var(--hairline)] p-4">
+            {props.errorCode ? (
+              <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                {t(`modelManagement.missing.import.errors.${props.errorCode}`, {
+                  defaultValue: t('modelManagement.missing.import.errors.unknown'),
+                })}
+              </p>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" disabled={props.pending} onClick={() => props.onOpenChange(false)}>{t('modelManagement.actions.cancel')}</Button>
+              <Button type="submit" disabled={props.pending || !namesValid || !form.formState.isValid}>{t(props.pending ? 'modelManagement.missing.import.importing' : 'modelManagement.missing.import.submit')}</Button>
+            </div>
           </div>
         </form>
       </SheetContent>

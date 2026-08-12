@@ -1374,7 +1374,14 @@
         "submit": "确认导入",
         "importing": "正在导入",
         "success_one": "已创建 {{count}} 个隐藏模型草稿，请到模型目录继续复核。",
-        "success_other": "已创建 {{count}} 个隐藏模型草稿，请到模型目录继续复核。"
+        "success_other": "已创建 {{count}} 个隐藏模型草稿，请到模型目录继续复核。",
+        "errors": {
+          "invalid_request": "导入内容无效，请检查展示名、厂商和输入输出模态。",
+          "forbidden": "当前会话没有导入模型的权限。",
+          "model_sync_conflict": "所选模型已被并发添加或不再被活动渠道引用，请刷新列表后重试。",
+          "internal_error": "未添加模型导入暂时不可用，请稍后重试。",
+          "unknown": "未添加模型导入请求未完成，请确认后端已更新并重试。"
+        }
       }
     },
     "sync": {
