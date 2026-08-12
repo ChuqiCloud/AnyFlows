@@ -2,6 +2,7 @@ import { MessageSquareText, Square } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { AiActivity } from '@/components/ai/ai-activity'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PlaygroundMessageItem } from './playground-message'
@@ -26,8 +27,8 @@ export function PlaygroundSessionColumn({ session, onStop }: PlaygroundSessionCo
   const status = session.requestState === 'idle' ? 'ready' : session.requestState
 
   return (
-    <article className="grid h-full min-h-0 grid-rows-[3.25rem_minmax(0,1fr)] bg-surface-1">
-      <header className="flex min-w-0 items-center gap-2 border-b border-[var(--hairline)] px-3">
+    <article className="grid h-full min-h-0 grid-rows-[3.75rem_minmax(0,1fr)] bg-surface-1">
+      <header className="flex min-w-0 items-center gap-2 border-b border-dashed border-[var(--hairline)] bg-surface-1/90 px-3.5">
         <div className="min-w-0 flex-1">
           <p className="truncate font-mono text-xs font-medium" title={session.model}>{session.model}</p>
           <p className="mt-0.5 truncate text-[0.625rem] text-muted-foreground tabular-nums">
@@ -39,9 +40,13 @@ export function PlaygroundSessionColumn({ session, onStop }: PlaygroundSessionCo
               : t('playground.usage.pending')}
           </p>
         </div>
-        <Badge className={playgroundStatusClassName(status)}>
-          {t(`playground.status.${status}`)}
-        </Badge>
+        {session.requestState === 'streaming' ? (
+          <AiActivity active label={t('playground.status.streaming')} size="compact" />
+        ) : (
+          <Badge className={playgroundStatusClassName(status)}>
+            {t(`playground.status.${status}`)}
+          </Badge>
+        )}
         {session.requestState === 'streaming' ? (
           <Button
             type="button"
@@ -57,7 +62,7 @@ export function PlaygroundSessionColumn({ session, onStop }: PlaygroundSessionCo
       </header>
       <div
         ref={transcriptRef}
-        className="min-h-0 overflow-y-auto"
+        className="min-h-0 overflow-y-auto bg-background/18"
         aria-label={t('playground.comparison.transcript', { model: session.model })}
         onScroll={(event) => {
           const element = event.currentTarget
@@ -65,9 +70,9 @@ export function PlaygroundSessionColumn({ session, onStop }: PlaygroundSessionCo
         }}
       >
         {session.messages.length === 0 ? (
-          <div className="grid min-h-full place-items-center px-6 py-12 text-center">
+          <div className="ai-workbench-surface grid min-h-full place-items-center overflow-hidden px-6 py-12 text-center">
             <div className="max-w-xs">
-              <div className="mx-auto grid size-10 place-items-center rounded-xl bg-surface-2 text-muted-foreground">
+              <div className="mx-auto grid size-10 place-items-center rounded-xl border border-[var(--hairline)] bg-surface-1 text-muted-foreground shadow-subtle">
                 <MessageSquareText className="size-4" aria-hidden="true" />
               </div>
               <h3 className="mt-3 text-sm font-semibold">{t('playground.empty.title')}</h3>
@@ -80,7 +85,7 @@ export function PlaygroundSessionColumn({ session, onStop }: PlaygroundSessionCo
               <PlaygroundMessageItem key={message.id} message={message} />
             ))}
             {session.errorKind ? (
-              <p role="alert" className="m-3 rounded-lg bg-destructive/8 px-2.5 py-2 text-xs text-destructive">
+              <p role="alert" className="m-3 rounded-lg border border-destructive/20 bg-destructive/8 px-2.5 py-2 text-xs text-destructive">
                 {t(`playground.errors.${session.errorKind}`)}
               </p>
             ) : null}

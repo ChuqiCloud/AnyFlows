@@ -2,6 +2,7 @@ import { Copy, ExternalLink, Film, RefreshCw, RotateCcw, TriangleAlert } from 'l
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { AiActivity } from '@/components/ai/ai-activity'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -38,8 +39,8 @@ export function VideoTaskResultPanel(props: VideoTaskResultPanelProps) {
   }
 
   return (
-    <section className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1">
-      <header className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-[var(--hairline)] px-4 py-3">
+    <section className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1 shadow-sm">
+      <header className="flex min-h-14 flex-wrap items-center justify-between gap-3 border-b border-dashed border-[var(--hairline)] px-4 py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Film className="size-4 text-brand" aria-hidden="true" />
@@ -51,7 +52,7 @@ export function VideoTaskResultPanel(props: VideoTaskResultPanelProps) {
         <div className="flex items-center gap-1.5">
           {props.canPoll ? (
             <Button type="button" size="sm" variant="secondary" disabled={props.busy} onClick={props.onPoll}>
-              <RefreshCw className={props.busy ? 'animate-spin' : undefined} aria-hidden="true" />
+              <RefreshCw aria-hidden="true" />
               {t('videoTasks.actions.refresh')}
             </Button>
           ) : null}
@@ -129,13 +130,17 @@ function PendingState({ polling }: { polling: boolean }) {
   const { t } = useTranslation()
   return (
     <div className="w-full max-w-2xl">
-      <Skeleton className="aspect-video w-full rounded-lg" />
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <div>
-          <h4 className="text-sm font-semibold">{t(polling ? 'videoTasks.pending.polling' : 'videoTasks.pending.title')}</h4>
-          <p className="mt-1 text-xs text-muted-foreground">{t('videoTasks.pending.body')}</p>
+      <div className="relative overflow-hidden rounded-xl border border-[var(--hairline)] bg-[var(--surface-sunken)] shadow-subtle">
+        <Skeleton className="aspect-video w-full rounded-none opacity-45" />
+        <div className="absolute inset-0 grid place-items-center bg-background/24 backdrop-blur-[2px]">
+          <AiActivity
+            active
+            className="max-w-[80%]"
+            detail={t('videoTasks.pending.body')}
+            label={t(polling ? 'videoTasks.pending.polling' : 'videoTasks.pending.title')}
+            size="panel"
+          />
         </div>
-        <RefreshCw className="size-4 animate-spin text-brand" aria-hidden="true" />
       </div>
     </div>
   )

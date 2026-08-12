@@ -44,8 +44,8 @@ export function PlaygroundSettings(props: PlaygroundSettingsProps) {
   }
 
   return (
-    <div className="grid gap-4 p-3">
-      <section className="grid gap-2.5">
+    <div className="grid p-4">
+      <section className="grid gap-2.5 border-b border-dashed border-[var(--hairline)] pb-4">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-xs font-semibold">{t('playground.settings.access')}</h2>
           <Badge className={props.apiKeySaved ? 'bg-success/12 text-success' : 'bg-warning/12 text-warning'}>
@@ -92,16 +92,12 @@ export function PlaygroundSettings(props: PlaygroundSettingsProps) {
         </form>
       </section>
 
-      <div className="h-px bg-[var(--hairline)]" />
-
-      <section className="grid gap-2.5">
+      <section className="grid gap-2.5 border-b border-dashed border-[var(--hairline)] py-4">
         <h2 className="text-xs font-semibold">{t('playground.settings.model')}</h2>
         {props.modelPicker}
       </section>
 
-      <div className="h-px bg-[var(--hairline)]" />
-
-      <section className="grid gap-2.5">
+      <section className="grid gap-2.5 border-b border-dashed border-[var(--hairline)] py-4">
         <label className="grid gap-1.5 text-[0.6875rem] font-medium text-muted-foreground" htmlFor={systemId}>
           <span>{t('playground.settings.systemPrompt')}</span>
           <Textarea
@@ -115,9 +111,7 @@ export function PlaygroundSettings(props: PlaygroundSettingsProps) {
         </label>
       </section>
 
-      <div className="h-px bg-[var(--hairline)]" />
-
-      <section className="grid gap-3">
+      <section className="grid gap-3 pt-4">
         <h2 className="text-xs font-semibold">{t('playground.settings.parameters')}</h2>
         <div className="grid gap-2">
           <div className="flex items-center justify-between gap-2">
