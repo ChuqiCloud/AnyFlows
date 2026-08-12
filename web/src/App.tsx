@@ -23,6 +23,7 @@ import { LandingPage } from '@/features/landing/landing-page'
 import { ModelPage } from '@/features/models/model-page'
 import { ModelManagementPage } from '@/features/model-management/model-management-page'
 import { NetworkSettingsPage } from '@/features/network-settings/network-settings-page'
+import { PaymentSettingsPage } from '@/features/payment-settings/payment-settings-page'
 import { PublicModelPage } from '@/features/models/public-model-page'
 import { PlaygroundPage } from '@/features/playground/playground-page'
 import { PublicPlaygroundSharePage } from '@/features/playground/public-playground-share-page'
@@ -139,6 +140,8 @@ function ManagementEntry({
           ? 'emailSettings.title'
           : view === 'network-settings'
             ? 'networkSettings.title'
+          : view === 'payment-settings'
+            ? 'paymentSettings.title'
           : view === 'billing-settings'
             ? 'billingSettings.title'
           : view === 'group-settings'
@@ -190,6 +193,8 @@ function ManagementEntry({
           ? <EmailSettingsPage />
           : view === 'network-settings'
             ? <NetworkSettingsPage />
+          : view === 'payment-settings'
+            ? <PaymentSettingsPage />
           : view === 'billing-settings'
             ? <BillingSettingsPage />
           : view === 'group-settings'

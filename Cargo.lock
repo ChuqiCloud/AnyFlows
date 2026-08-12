@@ -102,6 +102,7 @@ dependencies = [
  "af-protocol",
  "fs2",
  "futures-util",
+ "md-5",
  "rhai",
  "rust_decimal",
  "serde_json",
@@ -109,6 +110,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "url",
  "uuid",
  "zeroize",
 ]

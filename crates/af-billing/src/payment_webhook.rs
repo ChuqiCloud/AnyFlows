@@ -126,6 +126,9 @@ pub struct VerifiedTopupPaymentEvent {
     provider_event_id: String,
     trade_no: Option<String>,
     event_type: TopupPaymentEventType,
+    amount_minor: u64,
+    currency: String,
+    payment_method: String,
     signature_key_fingerprint: [u8; 32],
 }
 
@@ -136,6 +139,9 @@ impl VerifiedTopupPaymentEvent {
         provider_event_id: String,
         trade_no: Option<String>,
         event_type: TopupPaymentEventType,
+        amount_minor: u64,
+        currency: String,
+        payment_method: String,
         signature_key_fingerprint: [u8; 32],
     ) -> Result<Self, PaymentWebhookVerificationError> {
         if provider_event_id.is_empty()
@@ -149,6 +155,11 @@ impl VerifiedTopupPaymentEvent {
                     || value.chars().any(char::is_control)
             })
             || (event_type == TopupPaymentEventType::Succeeded && trade_no.is_none())
+            || amount_minor > i64::MAX as u64
+            || (event_type == TopupPaymentEventType::Succeeded && amount_minor == 0)
+            || currency.len() != 3
+            || !currency.bytes().all(|byte| byte.is_ascii_uppercase())
+            || !valid_payment_method(&payment_method)
         {
             return Err(PaymentWebhookVerificationError::InvalidEvent);
         }
@@ -157,8 +168,29 @@ impl VerifiedTopupPaymentEvent {
             provider_event_id,
             trade_no,
             event_type,
+            amount_minor,
+            currency,
+            payment_method,
             signature_key_fingerprint,
         })
+    }
+
+    /// 返回 Provider 已验签的支付金额，单位为币种最小单位。
+    #[must_use]
+    pub const fn amount_minor(&self) -> u64 {
+        self.amount_minor
+    }
+
+    /// 返回 Provider 已验签并规范化为大写的三位币种代码。
+    #[must_use]
+    pub fn currency(&self) -> &str {
+        &self.currency
+    }
+
+    /// 返回 Provider 已验签并规范化的支付方式标识。
+    #[must_use]
+    pub fn payment_method(&self) -> &str {
+        &self.payment_method
     }
 }
 
@@ -166,6 +198,14 @@ impl fmt::Debug for VerifiedTopupPaymentEvent {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("VerifiedTopupPaymentEvent(<redacted>)")
     }
+}
+
+fn valid_payment_method(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 32
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_' | b'-')
+        })
 }
 
 /// Provider 专属 webhook 验签与解析边界。
@@ -296,6 +336,9 @@ impl TopupWebhookProcessor {
             self.verifier.provider().to_owned(),
             verified.provider_event_id,
             verified.trade_no,
+            verified.amount_minor,
+            verified.currency,
+            verified.payment_method,
             verified.event_type,
             verified.signature_key_fingerprint,
             payload_sha256,

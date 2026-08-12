@@ -993,6 +993,41 @@ pub(in crate::migration) mod network_settings {
     }
 }
 
+pub(in crate::migration) mod payment_settings {
+    use super::DeriveIden;
+
+    /// `payment_settings` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "payment_settings")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 在线支付 Provider 设置迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        Initialized,
+        StripeEnabled,
+        StripePublishableKey,
+        StripeSecretKey,
+        StripeWebhookSecret,
+        StripeSignatureToleranceSeconds,
+        EpayEnabled,
+        EpayGatewayUrl,
+        EpayMerchantId,
+        EpayMerchantKey,
+        EpayAlipayEnabled,
+        EpayWxpayEnabled,
+        EpayQuotaPerCny,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
 pub(in crate::migration) mod site_settings {
     use super::DeriveIden;
 
@@ -1097,6 +1132,7 @@ pub(in crate::migration) mod topup_orders {
         OrderKey,
         UserId,
         Provider,
+        PaymentMethod,
         ProviderOrderId,
         TradeNo,
         Status,
@@ -1134,6 +1170,9 @@ pub(in crate::migration) mod topup_payment_events {
         Provider,
         ProviderEventId,
         TradeNo,
+        AmountMinor,
+        Currency,
+        PaymentMethod,
         EventType,
         SignatureKeyFingerprint,
         PayloadSha256,

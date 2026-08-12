@@ -6,7 +6,7 @@ use std::sync::{
 use af_admin::{
     LoginCredentials, SessionAuthentication, SessionAuthenticationError,
     SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
-    SessionRole, UserTopupConfiguration, UserTopupError, UserTopupOrder,
+    SessionRole, UserTopupConfiguration, UserTopupError, UserTopupMethod, UserTopupOrder,
     UserTopupOrderCreateCommand, UserTopupOrderCreateFuture, UserTopupPaymentSession,
     UserTopupService,
 };
@@ -67,14 +67,18 @@ impl FakeUserTopupService {
     fn new() -> Self {
         Self {
             calls: AtomicUsize::new(0),
-            configuration: UserTopupConfiguration::new("pk_test_public".to_owned()).unwrap(),
+            configuration: UserTopupConfiguration::new(vec![
+                UserTopupMethod::stripe("pk_test_public".to_owned()).unwrap(),
+                UserTopupMethod::epay("alipay").unwrap(),
+            ])
+            .unwrap(),
         }
     }
 }
 
 impl UserTopupService for FakeUserTopupService {
-    fn configuration(&self) -> &UserTopupConfiguration {
-        &self.configuration
+    fn configuration(&self) -> Result<UserTopupConfiguration, UserTopupError> {
+        Ok(self.configuration.clone())
     }
 
     fn create<'a>(
@@ -89,6 +93,8 @@ impl UserTopupService for FakeUserTopupService {
                 IDEMPOTENCY_KEY
             );
             assert_eq!(command.amount_minor(), 500);
+            assert_eq!(command.provider(), "stripe");
+            assert_eq!(command.payment_method(), "card");
             let replayed = match principal.user_id().get() {
                 1 => true,
                 2 => false,
@@ -101,6 +107,7 @@ impl UserTopupService for FakeUserTopupService {
             Ok(UserTopupOrder::from_parts(
                 TopupOrderId::new([0x42; 16]).unwrap(),
                 "stripe".to_owned(),
+                "card".to_owned(),
                 TopupOrderStatus::Pending,
                 500,
                 "USD".to_owned(),
@@ -131,11 +138,18 @@ async fn configuration_requires_a_session_and_exposes_only_client_material() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
     let body = response_json(response).await;
-    assert_eq!(body["provider"], "stripe");
-    assert_eq!(body["currency"], "USD");
-    assert_eq!(body["min_amount_minor"], 50);
-    assert_eq!(body["max_amount_minor"], 99_999_999);
-    assert_eq!(body["publishable_key"], "pk_test_public");
+    let methods = body["methods"].as_array().unwrap();
+    assert_eq!(methods.len(), 2);
+    let epay = methods
+        .iter()
+        .find(|method| method["provider"] == "epay" && method["payment_method"] == "alipay")
+        .expect("充值配置必须包含易支付支付宝方式");
+    assert_eq!(epay["currency"], "CNY");
+    let stripe = methods
+        .iter()
+        .find(|method| method["provider"] == "stripe" && method["payment_method"] == "card")
+        .expect("充值配置必须包含 Stripe 银行卡方式");
+    assert_eq!(stripe["publishable_key"], "pk_test_public");
     assert!(body.get("secret_key").is_none());
     assert!(body.get("webhook_secret").is_none());
 }
@@ -154,12 +168,14 @@ async fn create_uses_only_the_authenticated_user_and_preserves_replay_status() {
     assert_eq!(created.headers()[CACHE_CONTROL], "no-store");
     let created = response_json(created).await;
     assert_eq!(created["provider"], "stripe");
+    assert_eq!(created["payment_method"], "card");
     assert_eq!(created["status"], "pending");
     assert_eq!(created["amount_minor"], 500);
     assert_eq!(created["currency"], "USD");
     assert_eq!(created["quota_amount"], 2_500_000);
     assert_eq!(created["replayed"], false);
     assert_eq!(created["payment"]["payment_intent_id"], "pi_test_123");
+    assert_eq!(created["payment"]["kind"], "stripe");
     assert_eq!(
         created["payment"]["client_secret"],
         "pi_test_123_secret_client"
@@ -189,9 +205,9 @@ async fn invalid_session_and_request_fail_before_the_topup_service() {
     assert_management_error(unauthorized, StatusCode::UNAUTHORIZED, "invalid_session").await;
 
     for body in [
-        r#"{"idempotency_key":"invalid","amount_minor":500}"#.to_owned(),
-        format!(r#"{{"idempotency_key":"{IDEMPOTENCY_KEY}","amount_minor":49}}"#),
-        format!(r#"{{"idempotency_key":"{IDEMPOTENCY_KEY}","amount_minor":500,"user_id":9}}"#),
+        r#"{"idempotency_key":"invalid","provider":"stripe","payment_method":"card","amount_minor":500}"#.to_owned(),
+        format!(r#"{{"idempotency_key":"{IDEMPOTENCY_KEY}","provider":"Stripe","payment_method":"card","amount_minor":500}}"#),
+        format!(r#"{{"idempotency_key":"{IDEMPOTENCY_KEY}","provider":"stripe","payment_method":"card","amount_minor":500,"user_id":9}}"#),
     ] {
         let response = app
             .clone()
@@ -244,7 +260,7 @@ fn router(service: Option<Arc<FakeUserTopupService>>) -> Router {
 }
 
 fn valid_body() -> &'static str {
-    r#"{"idempotency_key":"1234567890abcdef1234567890abcdef","amount_minor":500}"#
+    r#"{"idempotency_key":"1234567890abcdef1234567890abcdef","provider":"stripe","payment_method":"card","amount_minor":500}"#
 }
 
 fn topup_request(token: &str, body: &str) -> Request<Body> {

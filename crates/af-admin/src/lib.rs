@@ -25,6 +25,9 @@ mod model_price;
 mod model_sync;
 mod network_settings;
 mod password_reset;
+mod payment_settings;
+#[cfg(test)]
+mod payment_settings_tests;
 mod playground_conversation;
 mod playground_share;
 mod playground_share_snapshot;
@@ -175,6 +178,12 @@ pub use password_reset::{
     PasswordResetRequestFuture, PasswordResetRequestResult, PasswordResetService,
     PasswordResetServiceConfigError,
 };
+pub use payment_settings::{
+    AdminPaymentSettings, AdminPaymentSettingsCommand, AdminPaymentSettingsError,
+    AdminPaymentSettingsReadFuture, AdminPaymentSettingsService, AdminPaymentSettingsUpdateFuture,
+    DatabaseAdminPaymentSettingsService, PaymentSettingsApplyFuture, PaymentSettingsRuntimeApplier,
+    PaymentSettingsRuntimeError,
+};
 pub use playground_conversation::{
     DatabasePlaygroundConversationService, PlaygroundConversation,
     PlaygroundConversationDeleteFuture, PlaygroundConversationError, PlaygroundConversationId,
@@ -289,10 +298,12 @@ pub use user_token::{
     UserTokenService, UserTokenStatus, UserTokenUpdateFuture, UserTokenWriteCommand,
 };
 pub use user_topup::{
-    DatabaseUserTopupService, MAX_STRIPE_TOPUP_AMOUNT_MINOR, MIN_STRIPE_TOPUP_AMOUNT_MINOR,
-    STRIPE_TOPUP_CURRENCY, UserTopupConfiguration, UserTopupError, UserTopupOrder,
+    DatabaseUserTopupService, EPAY_ALIPAY_PAYMENT_METHOD, EPAY_TOPUP_CURRENCY,
+    EPAY_WXPAY_PAYMENT_METHOD, MAX_EPAY_TOPUP_AMOUNT_MINOR, MAX_STRIPE_TOPUP_AMOUNT_MINOR,
+    MIN_EPAY_TOPUP_AMOUNT_MINOR, MIN_STRIPE_TOPUP_AMOUNT_MINOR, STRIPE_CARD_PAYMENT_METHOD,
+    STRIPE_TOPUP_CURRENCY, UserTopupConfiguration, UserTopupError, UserTopupMethod, UserTopupOrder,
     UserTopupOrderCreateCommand, UserTopupOrderCreateFuture, UserTopupPaymentSession,
-    UserTopupService,
+    UserTopupProviderRoute, UserTopupService,
 };
 pub use user_wallet::{
     DEFAULT_USER_WALLET_PAGE_SIZE, DatabaseUserWalletService, UserWalletEntry, UserWalletEntryType,

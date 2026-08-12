@@ -30,7 +30,7 @@ use utoipa::OpenApi;
     responses(
         (status = 200, description = "事件已验签并完成幂等确认"),
         (status = 400, description = "请求正文或签名无效"),
-        (status = 404, description = "Provider 不受支持"),
+        (status = 405, description = "请求方法不受支持"),
         (status = 409, description = "支付事件与已有记录发生冲突"),
         (status = 503, description = "回调未启用或持久化暂不可用"),
         (status = 500, description = "服务内部状态异常")

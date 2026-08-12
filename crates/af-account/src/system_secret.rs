@@ -20,6 +20,12 @@ pub enum SystemSecretKind {
     SmtpPassword,
     /// 系统出站代理认证密码。
     ProxyPassword,
+    /// Stripe 服务端密钥。
+    StripeSecretKey,
+    /// Stripe webhook 签名密钥。
+    StripeWebhookSecret,
+    /// 易支付商户密钥。
+    EpayMerchantKey,
     /// 凭据专属代理认证密码；记录标识参与 AAD，禁止密文跨代理搬用。
     CredentialProxyPassword(af_domain::ProxyId),
 }
@@ -29,6 +35,9 @@ impl SystemSecretKind {
         match self {
             Self::SmtpPassword => "smtp_password",
             Self::ProxyPassword => "proxy_password",
+            Self::StripeSecretKey => "stripe_secret_key",
+            Self::StripeWebhookSecret => "stripe_webhook_secret",
+            Self::EpayMerchantKey => "epay_merchant_key",
             Self::CredentialProxyPassword(_) => "credential_proxy_password",
         }
     }
@@ -203,19 +212,21 @@ impl fmt::Debug for SystemSecretCipher {
 }
 
 fn system_secret_aad(kind: SystemSecretKind) -> Vec<u8> {
-    match kind {
-        SystemSecretKind::CredentialProxyPassword(proxy_id) => format!(
-            "anyflows:system-secret:v1:record=proxies:{}:kind={}",
-            proxy_id.get(),
-            kind.as_str()
-        )
-        .into_bytes(),
-        _ => format!(
-            "anyflows:system-secret:v1:record=email_settings:1:kind={}",
-            kind.as_str()
-        )
-        .into_bytes(),
-    }
+    let record = match kind {
+        SystemSecretKind::SmtpPassword => "email_settings:1".to_owned(),
+        SystemSecretKind::ProxyPassword => "network_settings:1".to_owned(),
+        SystemSecretKind::StripeSecretKey
+        | SystemSecretKind::StripeWebhookSecret
+        | SystemSecretKind::EpayMerchantKey => "payment_settings:1".to_owned(),
+        SystemSecretKind::CredentialProxyPassword(proxy_id) => {
+            format!("proxies:{}", proxy_id.get())
+        }
+    };
+    format!(
+        "anyflows:system-secret:v1:record={record}:kind={}",
+        kind.as_str()
+    )
+    .into_bytes()
 }
 
 fn valid_plaintext(value: &str) -> bool {
@@ -294,6 +305,51 @@ mod tests {
                 .unwrap_err(),
             SystemSecretError::Decrypt
         );
+    }
+
+    #[test]
+    fn system_secrets_use_their_own_record_aad_domains() {
+        assert_eq!(
+            system_secret_aad(SystemSecretKind::SmtpPassword),
+            b"anyflows:system-secret:v1:record=email_settings:1:kind=smtp_password"
+        );
+        assert_eq!(
+            system_secret_aad(SystemSecretKind::ProxyPassword),
+            b"anyflows:system-secret:v1:record=network_settings:1:kind=proxy_password"
+        );
+        assert_eq!(
+            system_secret_aad(SystemSecretKind::StripeSecretKey),
+            b"anyflows:system-secret:v1:record=payment_settings:1:kind=stripe_secret_key"
+        );
+        assert_eq!(
+            system_secret_aad(SystemSecretKind::StripeWebhookSecret),
+            b"anyflows:system-secret:v1:record=payment_settings:1:kind=stripe_webhook_secret"
+        );
+        assert_eq!(
+            system_secret_aad(SystemSecretKind::EpayMerchantKey),
+            b"anyflows:system-secret:v1:record=payment_settings:1:kind=epay_merchant_key"
+        );
+    }
+
+    #[test]
+    fn payment_secrets_cannot_be_moved_between_fields() {
+        let cipher = SystemSecretCipher::new(&settings()).unwrap();
+        let secret = PlainSystemSecret::new("payment-secret".to_owned()).unwrap();
+        let envelope = cipher
+            .encrypt(SystemSecretKind::StripeSecretKey, &secret)
+            .unwrap();
+
+        for wrong_kind in [
+            SystemSecretKind::StripeWebhookSecret,
+            SystemSecretKind::EpayMerchantKey,
+            SystemSecretKind::ProxyPassword,
+            SystemSecretKind::SmtpPassword,
+        ] {
+            assert_eq!(
+                cipher.decrypt(wrong_kind, &envelope).unwrap_err(),
+                SystemSecretError::Decrypt
+            );
+        }
     }
 
     fn settings() -> CredentialEncryptionSettings {

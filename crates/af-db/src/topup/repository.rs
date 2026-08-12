@@ -31,7 +31,7 @@ use super::types::{
     TopupOrderCreate, TopupOrderCreateOutcome, TopupOrderRecord, TopupOrderSubmission,
     TopupOrderSubmitOutcome, TopupPaymentEventOutcome, TopupPaymentEventRejection,
     TopupPaymentEventWrite, TopupRepositoryConfigError, TopupRepositoryError, valid_currency,
-    valid_provider, valid_provider_value,
+    valid_payment_method, valid_provider, valid_provider_value,
 };
 
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
@@ -256,6 +256,7 @@ async fn create_order_in_transaction(
         order_key: Set(write.order_id.persistence_key()),
         user_id: Set(write.user_id.get()),
         provider: Set(write.provider.clone()),
+        payment_method: Set(Some(write.payment_method.clone())),
         provider_order_id: Set(None),
         trade_no: Set(None),
         status: Set(TopupOrderStatus::Created.code()),
@@ -359,6 +360,9 @@ async fn accept_event_in_transaction(
         provider: Set(write.provider.clone()),
         provider_event_id: Set(SensitiveString::from(write.provider_event_id.clone())),
         trade_no: Set(write.trade_no.clone().map(SensitiveString::from)),
+        amount_minor: Set(Some(write.amount_minor)),
+        currency: Set(Some(write.currency.clone())),
+        payment_method: Set(Some(write.payment_method.clone())),
         event_type: Set(write.event_type.code()),
         signature_key_fingerprint: Set(SensitiveString::from(hex_digest(
             write.signature_key_fingerprint,
@@ -383,6 +387,24 @@ async fn accept_event_in_transaction(
         return Ok(unprocessed(
             order,
             TopupPaymentEventRejection::ProviderMismatch,
+        ));
+    }
+    if write.amount_minor as u64 != order.amount_minor {
+        return Ok(unprocessed(
+            order,
+            TopupPaymentEventRejection::AmountMismatch,
+        ));
+    }
+    if write.currency != order.currency {
+        return Ok(unprocessed(
+            order,
+            TopupPaymentEventRejection::CurrencyMismatch,
+        ));
+    }
+    if order.payment_method.as_deref() != Some(write.payment_method.as_str()) {
+        return Ok(unprocessed(
+            order,
+            TopupPaymentEventRejection::PaymentMethodMismatch,
         ));
     }
     if write.received_at < order.created_at {
@@ -711,6 +733,9 @@ struct StoredPaymentEvent {
     provider: String,
     provider_event_id: String,
     trade_no: Option<String>,
+    amount_minor: Option<i64>,
+    currency: Option<String>,
+    payment_method: Option<String>,
     event_type: TopupPaymentEventType,
     signature_key_fingerprint: String,
     payload_sha256: String,
@@ -726,6 +751,9 @@ impl StoredPaymentEvent {
             provider: model.provider,
             provider_event_id: model.provider_event_id.as_str().to_owned(),
             trade_no: model.trade_no.map(|value| value.as_str().to_owned()),
+            amount_minor: model.amount_minor,
+            currency: model.currency,
+            payment_method: model.payment_method,
             event_type: TopupPaymentEventType::try_from(model.event_type)
                 .map_err(|_| TopupRepositoryError::Invariant)?,
             signature_key_fingerprint: model.signature_key_fingerprint.as_str().to_owned(),
@@ -738,6 +766,9 @@ impl StoredPaymentEvent {
             && self.provider == write.provider
             && self.provider_event_id == write.provider_event_id
             && self.trade_no == write.trade_no
+            && self.amount_minor == Some(write.amount_minor)
+            && self.currency.as_deref() == Some(write.currency.as_str())
+            && self.payment_method.as_deref() == Some(write.payment_method.as_str())
             && self.event_type == write.event_type
             && self.signature_key_fingerprint == hex_digest(write.signature_key_fingerprint)
             && self.payload_sha256 == hex_digest(write.payload_sha256)
@@ -798,6 +829,7 @@ fn load_order_snapshot(order: &TopupOrderRecord) -> TopupOrderRecord {
         request_id: order.request_id,
         user_id: order.user_id,
         provider: order.provider.clone(),
+        payment_method: order.payment_method.clone(),
         provider_order_id: order.provider_order_id.clone(),
         trade_no: order.trade_no.clone(),
         status: order.status,
@@ -854,6 +886,11 @@ fn order_record(model: topup_orders::Model) -> Result<TopupOrderRecord, TopupRep
         || quota_amount.is_zero()
         || version == 0
         || !valid_provider(&model.provider)
+        || model
+            .payment_method
+            .as_deref()
+            .is_some_and(|value| !valid_payment_method(value))
+        || (model.payment_method.is_none() && model.version > 1)
         || !valid_currency(&model.currency)
         || provider_order_id.as_deref().is_some_and(|value| {
             !valid_provider_value(value, super::types::MAX_PROVIDER_ORDER_ID_BYTES)
@@ -873,6 +910,7 @@ fn order_record(model: topup_orders::Model) -> Result<TopupOrderRecord, TopupRep
         request_id,
         user_id,
         provider: model.provider,
+        payment_method: model.payment_method,
         provider_order_id,
         trade_no,
         status,

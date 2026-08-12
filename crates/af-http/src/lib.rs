@@ -57,6 +57,7 @@ mod openai_speech;
 mod openapi;
 mod operations;
 mod password_reset;
+mod payment_settings;
 mod payment_webhook;
 mod playground_conversations;
 mod playground_shares;
@@ -100,7 +101,7 @@ pub use openapi::openapi_document;
 pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
 };
-pub use payment_webhook::build_payment_webhook_router;
+pub use payment_webhook::{PaymentWebhookProcessorRegistry, build_payment_webhook_router};
 pub use rerank_service::{RerankService, RerankServiceFuture};
 pub use responses_compact_service::{ResponsesCompactService, ResponsesCompactServiceFuture};
 pub use router::{DEFAULT_REQUEST_BODY_LIMIT_BYTES, HttpRouter, build_router};
@@ -145,6 +146,8 @@ mod oauth_connections_tests;
 mod operations_tests;
 #[cfg(test)]
 mod password_reset_tests;
+#[cfg(test)]
+mod payment_settings_tests;
 #[cfg(test)]
 mod payment_webhook_tests;
 #[cfg(test)]

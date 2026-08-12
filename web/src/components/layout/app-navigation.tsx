@@ -13,6 +13,7 @@ import {
   MessageSquareText,
   Network,
   PanelsTopLeft,
+  Landmark,
   PackageSearch,
   ScrollText,
   ServerCog,
@@ -46,7 +47,7 @@ type AppNavigationProps = {
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'videoTasks' | 'apiKeys' | 'wallet' | 'subscriptions' | 'invitations' | 'profile' | 'users' | 'subscriptionManagement' | 'redemptionCodes' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'credentials' | 'credentialProxies' | 'routes' | 'keys' | 'usage' | 'debugTraces'
+  key: 'overview' | 'models' | 'playground' | 'videoTasks' | 'apiKeys' | 'wallet' | 'subscriptions' | 'invitations' | 'profile' | 'users' | 'subscriptionManagement' | 'redemptionCodes' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'paymentSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'credentials' | 'credentialProxies' | 'routes' | 'keys' | 'usage' | 'debugTraces'
   icon: LucideIcon
   href: `#/console${string}`
 }
@@ -90,6 +91,7 @@ const navGroups: readonly NavGroup[] = [
       { key: 'authenticationSettings', icon: Fingerprint, href: '#/console/system-settings/authentication' },
       { key: 'emailSettings', icon: Mail, href: '#/console/system-settings/email' },
       { key: 'networkSettings', icon: Network, href: '#/console/system-settings/network' },
+      { key: 'paymentSettings', icon: Landmark, href: '#/console/system-settings/payment' },
       { key: 'billingSettings', icon: CircleDollarSign, href: '#/console/system-settings/billing' },
       { key: 'groupSettings', icon: Layers3, href: '#/console/system-settings/groups' },
       { key: 'modelSettings', icon: PackageSearch, href: '#/console/system-settings/models' },
@@ -121,6 +123,7 @@ const activeKeyByView: Partial<Record<AppView, NavItem['key']>> = {
   'authentication-settings': 'authenticationSettings',
   'email-settings': 'emailSettings',
   'network-settings': 'networkSettings',
+  'payment-settings': 'paymentSettings',
   'billing-settings': 'billingSettings',
   'group-settings': 'groupSettings',
   'model-settings': 'modelSettings',

@@ -3,6 +3,7 @@
 mod batch;
 mod billing_session;
 mod database_sink;
+mod easypay;
 mod expression_pricing;
 mod group_pricing_cache;
 mod lifecycle;
@@ -35,6 +36,10 @@ pub use billing_session::{
     RefundSignalPort, SettlementRequest,
 };
 pub use database_sink::DatabaseBillingBatchSink;
+pub use easypay::{
+    EASYPAY_PAYMENT_PROVIDER, EasyPayPaymentMethod, EasyPayPaymentProvider,
+    EasyPayPaymentProviderConfigError, EasyPaySigningError, easy_pay_signature,
+};
 pub use expression_pricing::{
     BillingExpression, BillingExpressionDefinition, BillingExpressionError,
     BillingExpressionResult, BillingExpressionUsage, BillingExpressionUsageSemantics,
@@ -63,9 +68,10 @@ pub use multimodal::{
     MultimodalBillingError, MultimodalDimensionError,
 };
 pub use payment_order::{
-    MAX_PAYMENT_CLIENT_SECRET_BYTES, PaymentClientSecret, PaymentOrderFuture,
-    PaymentOrderInputError, PaymentOrderProvider, PaymentOrderProviderError,
-    PaymentOrderRecoveryRequest, PaymentOrderRequest, PaymentOrderSession,
+    MAX_PAYMENT_CLIENT_SECRET_BYTES, MAX_PAYMENT_REDIRECT_URL_BYTES, PaymentCheckoutAction,
+    PaymentClientSecret, PaymentOrderFuture, PaymentOrderInputError, PaymentOrderProvider,
+    PaymentOrderProviderError, PaymentOrderRecoveryRequest, PaymentOrderRequest,
+    PaymentOrderSession, PaymentRedirectUrl,
 };
 pub use payment_webhook::{
     MAX_PAYMENT_WEBHOOK_HEADER_NAME_BYTES, MAX_PAYMENT_WEBHOOK_HEADER_VALUE_BYTES,
@@ -83,6 +89,7 @@ pub use pricing_snapshot::{
     CachedRequestPricingSnapshotSource, RequestPricingSnapshot, RequestPricingSnapshotError,
     RequestPricingSnapshotSource,
 };
+pub use quota_math::quota_from_cny_minor;
 pub use refund_signal_consumer::{
     RefundSignalConsumer, RefundSignalConsumerError, RefundSignalSink, RefundSignalSinkError,
     RefundSignalSinkFuture,

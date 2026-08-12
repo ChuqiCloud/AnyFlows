@@ -113,6 +113,9 @@ fn request_and_verified_event_debug_output_are_redacted() {
         "provider-event-secret".to_owned(),
         Some("trade-secret".to_owned()),
         TopupPaymentEventType::Succeeded,
+        1234,
+        "CNY".to_owned(),
+        "alipay".to_owned(),
         [0xaa; 32],
     )
     .unwrap();
@@ -188,6 +191,9 @@ impl PaymentWebhookVerifier for FakeVerifier {
             "evt-paid".to_owned(),
             Some("trade-paid".to_owned()),
             TopupPaymentEventType::Succeeded,
+            1234,
+            "USD".to_owned(),
+            "card".to_owned(),
             [0xbb; 32],
         )
     }

@@ -368,7 +368,10 @@ mod tests {
         let session = parse_response(valid, &request, Some("pi_test_123")).unwrap();
         assert_eq!(session.provider_order_id(), "pi_test_123");
         assert_eq!(
-            session.client_secret().expose(),
+            session
+                .client_secret()
+                .expect("Stripe 支付会话必须返回客户端密钥")
+                .expose(),
             "pi_test_123_secret_client"
         );
 
@@ -396,6 +399,7 @@ mod tests {
             TopupOrderId::new([0x42; 16]).unwrap(),
             500,
             "USD".to_owned(),
+            "card".to_owned(),
         )
         .unwrap()
     }

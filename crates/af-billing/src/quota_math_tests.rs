@@ -3,8 +3,8 @@ use rust_decimal::Decimal;
 
 use crate::quota_math::{
     QUOTA_PER_USD, QuotaClampKind, QuotaFactorError, QuotaMathError, QuotaMathOperation,
-    checked_mul_quota, checked_mul_quota_with_limit, quota_from_tokens, quota_from_usd,
-    quota_from_usd_with_ratios,
+    checked_mul_quota, checked_mul_quota_with_limit, quota_from_cny_minor, quota_from_tokens,
+    quota_from_usd, quota_from_usd_with_ratios,
 };
 
 #[test]
@@ -32,6 +32,33 @@ fn usd_ratio_conversion_preserves_the_dollar_scale() {
     assert_eq!(
         quota_from_usd_with_ratios(Decimal::ONE, [1_500_000_i64, 800_000_i64, 1_250_000_i64],),
         Ok(Quota::new(750_000).unwrap())
+    );
+}
+
+#[test]
+fn cny_minor_conversion_uses_checked_integer_rounding() {
+    assert_eq!(quota_from_cny_minor(0, 500_000), Ok(Quota::ZERO));
+    assert_eq!(
+        quota_from_cny_minor(100, 500_000),
+        Ok(Quota::new(500_000).unwrap())
+    );
+    assert_eq!(quota_from_cny_minor(1, 50), Ok(Quota::new(1).unwrap()));
+    assert_eq!(quota_from_cny_minor(1, 49), Ok(Quota::ZERO));
+    assert_eq!(
+        quota_from_cny_minor(1234, 500_000),
+        Ok(Quota::new(6_170_000).unwrap())
+    );
+}
+
+#[test]
+fn cny_minor_conversion_rejects_negative_rate_and_overflow() {
+    assert_eq!(
+        quota_from_cny_minor(100, -1),
+        Err(QuotaMathError::Quota(QuotaError::Negative))
+    );
+    assert_clamp(
+        quota_from_cny_minor(u64::MAX, i64::MAX).unwrap_err(),
+        QuotaMathOperation::CnyMinorConversion,
     );
 }
 

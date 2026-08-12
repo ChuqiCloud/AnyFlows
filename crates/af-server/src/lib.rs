@@ -27,6 +27,7 @@ mod model_catalog;
 mod model_discovery;
 mod model_price_source;
 mod oauth_connection;
+mod payment_runtime;
 mod readiness;
 mod request_rate_limit;
 mod responses_websocket_runtime;

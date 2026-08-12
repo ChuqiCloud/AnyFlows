@@ -36,17 +36,17 @@ test('当前用户钱包契约不接受或返回其他主体标识', () => {
   assert.equal(properties.event_id, undefined)
 })
 
-test('当前用户充值建单只接受幂等键和整数美分金额', () => {
+test('当前用户充值建单不接受用户或额度等越权字段', () => {
   assert.equal(
     openapi.paths['/api/account/wallet/topups'].post.operationId,
     'createUserTopupOrder',
   )
   const request = openapi.components.schemas.UserTopupOrderCreateRequest.properties
-  assert.deepEqual(Object.keys(request).sort(), ['amount_minor', 'idempotency_key'])
+  assert.equal(request.amount_minor.type, 'integer')
+  assert.equal(request.idempotency_key.type, 'string')
   assert.equal(request.user_id, undefined)
   assert.equal(request.quota_amount, undefined)
   assert.equal(request.currency, undefined)
-  assert.equal(request.provider, undefined)
 
   const response = openapi.components.schemas.UserTopupOrder.properties
   assert.equal(response.user_id, undefined)
@@ -55,21 +55,14 @@ test('当前用户充值建单只接受幂等键和整数美分金额', () => {
   assert.equal(response.trade_no, undefined)
 })
 
-test('当前用户充值配置只公开 Stripe.js 客户端材料', () => {
+test('当前用户充值配置不公开任何服务端支付密钥', () => {
   assert.equal(
     openapi.paths['/api/account/wallet/topups/config'].get.operationId,
     'getUserTopupConfiguration',
   )
-  const properties = openapi.components.schemas.UserTopupConfiguration.properties
-  assert.deepEqual(Object.keys(properties).sort(), [
-    'currency',
-    'max_amount_minor',
-    'min_amount_minor',
-    'provider',
-    'publishable_key',
-  ])
-  assert.equal(properties.secret_key, undefined)
-  assert.equal(properties.webhook_secret, undefined)
+  const schema = openapi.components.schemas.UserTopupConfiguration
+  const serialized = JSON.stringify(schema)
+  assert.doesNotMatch(serialized, /secret_key|webhook_secret|merchant_key|pkey/i)
 })
 
 test('充值金额转换与幂等恢复不经过浮点金额', () => {
@@ -79,10 +72,12 @@ test('充值金额转换与幂等恢复不经过浮点金额', () => {
   assert.equal(topupAmountMinor('10.001', bounds), undefined)
   assert.equal(topupAmountMinor('0.49', bounds), undefined)
 
-  const attempt = createTopupAttempt(1_009, (buffer) => buffer.fill(0xab))
+  const attempt = createTopupAttempt(1_009, 'stripe', 'card', (buffer) => buffer.fill(0xab))
   assert.deepEqual(attempt, {
     amountMinor: 1_009,
     idempotencyKey: 'abababababababababababababababab',
+    paymentMethod: 'card',
+    provider: 'stripe',
   })
   assert.deepEqual(parseStoredTopupAttempt(JSON.stringify(attempt), bounds), attempt)
   assert.equal(parseStoredTopupAttempt('{"amountMinor":1009,"idempotencyKey":"invalid"}', bounds), undefined)

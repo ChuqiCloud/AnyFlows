@@ -18,6 +18,39 @@ const SUBMITTED_AT: u64 = CREATED_AT + 10;
 const EXPIRES_AT: u64 = CREATED_AT + 3_600;
 const RECEIVED_AT: u64 = CREATED_AT + 60;
 
+#[test]
+fn payment_method_and_event_payment_facts_are_required() -> Result<(), Box<dyn Error>> {
+    let order = TopupOrderCreate::new(
+        topup_order_id(0x01),
+        topup_request_id(0x02),
+        UserId::new(1)?,
+        "stripe".to_owned(),
+        "Card".to_owned(),
+        1_000,
+        "USD".to_owned(),
+        Quota::new(10_000)?,
+        CREATED_AT,
+    );
+    assert_eq!(order.unwrap_err(), TopupInputError::InvalidPaymentMethod);
+
+    let event = TopupPaymentEventWrite::new(
+        topup_event_id(0x03),
+        topup_order_id(0x01),
+        "stripe".to_owned(),
+        "evt-invalid-payment-facts".to_owned(),
+        Some("trade-invalid-payment-facts".to_owned()),
+        0,
+        "USD".to_owned(),
+        "card".to_owned(),
+        TopupPaymentEventType::Succeeded,
+        [0x11; 32],
+        [0x12; 32],
+        RECEIVED_AT,
+    );
+    assert_eq!(event.unwrap_err(), TopupInputError::InvalidAmount);
+    Ok(())
+}
+
 #[tokio::test]
 async fn create_and_submit_are_idempotent_and_version_guarded() -> Result<(), Box<dyn Error>> {
     let fixture = fixture(0).await?;
@@ -30,6 +63,7 @@ async fn create_and_submit_are_idempotent_and_version_guarded() -> Result<(), Bo
     };
     assert_eq!(created.status(), TopupOrderStatus::Created);
     assert_eq!(created.version(), 1);
+    assert_eq!(created.payment_method(), Some("card"));
     assert_eq!(created.created_at(), CREATED_AT);
 
     assert!(matches!(
@@ -44,6 +78,7 @@ async fn create_and_submit_are_idempotent_and_version_guarded() -> Result<(), Bo
         topup_request_id(0x21),
         fixture.user_id,
         "stripe".to_owned(),
+        "card".to_owned(),
         1_000,
         "USD".to_owned(),
         Quota::new(10_000)?,
@@ -72,6 +107,7 @@ async fn create_and_submit_are_idempotent_and_version_guarded() -> Result<(), Bo
         panic!("Created 订单必须首次进入 Pending")
     };
     assert_eq!(submitted.status(), TopupOrderStatus::Pending);
+    assert_eq!(submitted.payment_method(), Some("card"));
     assert_eq!(submitted.version(), 2);
     assert_eq!(submitted.provider_order_id(), Some("provider-order-a"));
     assert_eq!(submitted.expires_at(), Some(EXPIRES_AT));
@@ -97,6 +133,7 @@ async fn create_and_submit_are_idempotent_and_version_guarded() -> Result<(), Bo
         topup_request_id(0x23),
         UserId::new(i64::MAX)?,
         "stripe".to_owned(),
+        "card".to_owned(),
         1_000,
         "USD".to_owned(),
         Quota::new(1_000)?,
@@ -294,6 +331,50 @@ async fn rejected_and_terminal_events_remain_auditable_without_credit() -> Resul
 }
 
 #[tokio::test]
+async fn mismatched_payment_facts_are_audited_without_credit() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(100).await?;
+    fixture.create_pending(0x86, 0x96, 50).await?;
+
+    for (event_marker, event, expected_reason) in [
+        (
+            0xa6,
+            fixture.event_with_payment_facts(0xa6, 0x86, 999, "USD", "card")?,
+            TopupPaymentEventRejection::AmountMismatch,
+        ),
+        (
+            0xa7,
+            fixture.event_with_payment_facts(0xa7, 0x86, 1_000, "CNY", "card")?,
+            TopupPaymentEventRejection::CurrencyMismatch,
+        ),
+        (
+            0xa8,
+            fixture.event_with_payment_facts(0xa8, 0x86, 1_000, "USD", "alipay")?,
+            TopupPaymentEventRejection::PaymentMethodMismatch,
+        ),
+    ] {
+        let outcome = fixture.repository.accept_verified_event(event).await?;
+        assert!(matches!(
+            outcome,
+            TopupPaymentEventOutcome::RecordedUnprocessed { reason, .. }
+                if reason == expected_reason
+        ));
+        let stored = topup_payment_events::Entity::find()
+            .filter(
+                topup_payment_events::Column::EventKey
+                    .eq(topup_event_id(event_marker).persistence_key()),
+            )
+            .one(fixture.pool.connection())
+            .await?
+            .expect("被拒绝的支付事实仍必须可审计");
+        assert!(stored.processed_at.is_none());
+    }
+
+    assert_eq!(fixture.balance().await?, 100);
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn concurrent_success_events_acknowledge_once_and_credit_once() -> Result<(), Box<dyn Error>>
 {
     let fixture = fixture(0).await?;
@@ -377,6 +458,7 @@ impl Fixture {
             topup_request_id(request_marker),
             self.user_id,
             "stripe".to_owned(),
+            "card".to_owned(),
             amount_minor,
             "USD".to_owned(),
             Quota::new(quota_amount).expect("测试到账额度必须非负"),
@@ -416,9 +498,36 @@ impl Fixture {
             provider.to_owned(),
             provider_event_id.to_owned(),
             trade_no.map(str::to_owned),
+            1_000,
+            "USD".to_owned(),
+            "card".to_owned(),
             event_type,
             [0xd1; 32],
             [payload_marker; 32],
+            RECEIVED_AT,
+        )
+    }
+
+    fn event_with_payment_facts(
+        &self,
+        event_marker: u8,
+        order_marker: u8,
+        amount_minor: u64,
+        currency: &str,
+        payment_method: &str,
+    ) -> Result<TopupPaymentEventWrite, TopupInputError> {
+        TopupPaymentEventWrite::new(
+            topup_event_id(event_marker),
+            topup_order_id(order_marker),
+            "stripe".to_owned(),
+            format!("evt-payment-fact-{event_marker}"),
+            Some(format!("trade-payment-fact-{event_marker}")),
+            amount_minor,
+            currency.to_owned(),
+            payment_method.to_owned(),
+            TopupPaymentEventType::Succeeded,
+            [0xd1; 32],
+            [event_marker; 32],
             RECEIVED_AT,
         )
     }

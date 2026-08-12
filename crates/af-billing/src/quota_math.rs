@@ -16,6 +16,8 @@ const TOKENS_PER_MILLION: i64 = 1_000_000;
 pub enum QuotaMathOperation {
     /// 美元金额换算为内部额度。
     UsdConversion,
+    /// 人民币整数分按每元额度换算为内部额度。
+    CnyMinorConversion,
     /// 按 token 数和每百万 token 单价换算额度。
     TokenConversion,
     /// 按多个 token 分项和倍率解析最终定价。
@@ -30,6 +32,7 @@ impl QuotaMathOperation {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::UsdConversion => "quota_from_usd",
+            Self::CnyMinorConversion => "quota_from_cny_minor",
             Self::TokenConversion => "quota_from_tokens",
             Self::PricingResolution => "pricing_resolution",
             Self::Multiplication => "checked_mul_quota",
@@ -138,6 +141,31 @@ impl QuotaMathError {
 /// Decimal 中间运算或最终 `i64` 转换越界返回带审计标记的 [`QuotaMathError::Clamp`]。
 pub fn quota_from_usd(usd: Decimal) -> Result<Quota, QuotaMathError> {
     quota_from_usd_for(usd, QuotaMathOperation::UsdConversion)
+}
+
+/// 将人民币整数分按每元额度换算为内部额度。
+///
+/// 公式为 `amount_minor * quota_per_cny / 100`，只使用 checked 整数运算；结果按中点远离零
+/// 舍入。负的每元额度违反非负额度约束，任何中间值或最终 `i64` 越界都返回可审计的溢出错误。
+pub fn quota_from_cny_minor(
+    amount_minor: u64,
+    quota_per_cny: i64,
+) -> Result<Quota, QuotaMathError> {
+    if quota_per_cny < 0 {
+        return Err(QuotaError::Negative.into());
+    }
+
+    let operation = QuotaMathOperation::CnyMinorConversion;
+    let weighted = i128::from(amount_minor)
+        .checked_mul(i128::from(quota_per_cny))
+        .ok_or_else(|| QuotaClamp::overflow(operation))?;
+    // 输入均非负，中点远离零等价于除法前增加半个分母。
+    let rounded = weighted
+        .checked_add(50)
+        .ok_or_else(|| QuotaClamp::overflow(operation))?
+        / 100;
+    let units = i64::try_from(rounded).map_err(|_| QuotaClamp::overflow(operation))?;
+    Quota::new(units).map_err(Into::into)
 }
 
 fn quota_from_usd_for(
