@@ -97,6 +97,14 @@ export function usePlaygroundConfiguration() {
     setApiKeyError(undefined)
   }, [])
 
+  /** 从当前标签页存储重新载入共享凭据，用于不同试炼模式返回时同步状态。 */
+  const reloadApiKey = useCallback(() => {
+    const current = getPlaygroundApiKey() ?? ''
+    setApiKey(current)
+    setApiKeyDraft(current)
+    setApiKeyError(undefined)
+  }, [])
+
   const updateSelectedModels = useCallback((modelsToSelect: string[]) => {
     setSelectedModels(normalizePlaygroundModels(modelsToSelect))
   }, [])
@@ -132,6 +140,7 @@ export function usePlaygroundConfiguration() {
     modelSearchDraft,
     models,
     protocolByModel,
+    reloadApiKey,
     restoreConversationConfiguration,
     routableModels,
     saveApiKey,

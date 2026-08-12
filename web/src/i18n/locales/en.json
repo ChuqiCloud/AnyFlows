@@ -12,7 +12,7 @@
     },
     "overview": "Operations overview",
     "models": "Models",
-    "playground": "Playground",
+    "playground": "Multimodal playground",
     "videoTasks": "Video tasks",
     "apiKeys": "My API keys",
     "wallet": "My wallet",
@@ -2195,7 +2195,12 @@
     }
   },
   "playground": {
-    "title": "Playground",
+    "title": "Multimodal playground",
+    "modes": {
+      "label": "Playground mode",
+      "chat": "Chat",
+      "video": "Video"
+    },
     "status": {
       "ready": "Ready",
       "streaming": "Generating",

@@ -1,5 +1,9 @@
+import { useState } from 'react'
+
+import { VideoTaskWorkspace } from '@/features/video-tasks/video-task-workspace'
 import { PlaygroundComparisonPanel } from './playground-comparison-panel'
 import { PlaygroundModelPicker } from './playground-model-picker'
+import { PlaygroundModeSwitcher, type PlaygroundMode } from './playground-mode-switcher'
 import { PlaygroundPageHeader } from './playground-page-header'
 import { PlaygroundHistoryControl } from './playground-history-control'
 import { restorePlaygroundSessions } from './playground-history-snapshot'
@@ -11,6 +15,7 @@ import { usePlaygroundConfiguration } from './use-playground-configuration'
 import { usePlaygroundHistory } from './use-playground-history'
 
 export function PlaygroundPage() {
+  const [mode, setMode] = useState<PlaygroundMode>('chat')
   const configuration = usePlaygroundConfiguration()
   const comparison = usePlaygroundComparison(
     configuration.sharedSettings,
@@ -97,6 +102,25 @@ export function PlaygroundPage() {
     && !history.saving,
   )
 
+  const changeMode = (nextMode: PlaygroundMode) => {
+    if (nextMode === 'chat') configuration.reloadApiKey()
+    setMode(nextMode)
+  }
+
+  if (mode === 'video') {
+    return (
+      <VideoTaskWorkspace
+        renderHeaderControls={({ modeSwitchDisabled }) => (
+          <PlaygroundModeSwitcher
+            disabled={modeSwitchDisabled}
+            mode={mode}
+            onChange={changeMode}
+          />
+        )}
+      />
+    )
+  }
+
   return (
     <div className="flex min-h-[calc(100dvh-5.75rem)] min-w-0 flex-col gap-3">
       <PlaygroundPageHeader
@@ -113,6 +137,13 @@ export function PlaygroundPage() {
           />
         )}
         mobileSettings={renderSettings('playground-mobile')}
+        modeControl={(
+          <PlaygroundModeSwitcher
+            disabled={comparison.streaming}
+            mode={mode}
+            onChange={changeMode}
+          />
+        )}
         modelCount={configuration.selectedModels.length}
         shareControl={(
           <PlaygroundShareControl
