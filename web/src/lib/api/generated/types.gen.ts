@@ -427,6 +427,25 @@ export type AdminMissingModelChannel = {
     channel_id: number;
     channel_name: string;
 };
+export type AdminMissingModelImportItemRequest = {
+    model: string;
+    display_name: string;
+    provider: string;
+    description?: string | null;
+    icon_url?: string | null;
+    tags: Array<string>;
+    context_window?: number | null;
+    input_modalities: Array<AdminModelModality>;
+    output_modalities: Array<AdminModelModality>;
+    supports_reasoning: boolean;
+    supports_tool_calls: boolean;
+};
+export type AdminMissingModelImportRequest = {
+    items: Array<AdminMissingModelImportItemRequest>;
+};
+export type AdminMissingModelImportResponse = {
+    models: Array<AdminModel>;
+};
 export type AdminMissingModelListResponse = {
     models: Array<AdminMissingModel>;
     next_cursor: string | null;
@@ -561,25 +580,6 @@ export type AdminModelPriceWriteItem = {
     billing_mode: AdminModelPriceBillingMode;
     prices: AdminModelPriceValues;
     billing_expression?: string | null;
-};
-export type AdminMissingModelImportItemRequest = {
-    model: string;
-    display_name: string;
-    provider: string;
-    description?: string | null;
-    icon_url?: string | null;
-    tags: Array<string>;
-    context_window?: number | null;
-    input_modalities: Array<AdminModelModality>;
-    output_modalities: Array<AdminModelModality>;
-    supports_reasoning: boolean;
-    supports_tool_calls: boolean;
-};
-export type AdminMissingModelImportRequest = {
-    items: Array<AdminMissingModelImportItemRequest>;
-};
-export type AdminMissingModelImportResponse = {
-    models: Array<AdminModel>;
 };
 export type AdminModelSyncApplyItemRequest = {
     item_id: number;
