@@ -36,8 +36,11 @@ const fn anthropic_error_type(code: PublicErrorCode) -> &'static str {
         PublicErrorCode::InvalidRequest => "invalid_request_error",
         PublicErrorCode::InvalidApiKey => "authentication_error",
         PublicErrorCode::InsufficientQuota => "billing_error",
-        PublicErrorCode::ModelNotFound => "not_found_error",
-        PublicErrorCode::UpstreamUnavailable => "overloaded_error",
+        PublicErrorCode::ModelNotFound | PublicErrorCode::TaskNotFound => "not_found_error",
+        PublicErrorCode::IdempotencyConflict => "invalid_request_error",
+        PublicErrorCode::RequestOutcomeUnknown | PublicErrorCode::UpstreamUnavailable => {
+            "overloaded_error"
+        }
         PublicErrorCode::RateLimited => "rate_limit_error",
         PublicErrorCode::InternalError => "api_error",
     }

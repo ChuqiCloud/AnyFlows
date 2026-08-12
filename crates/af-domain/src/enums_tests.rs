@@ -121,6 +121,12 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
             (PublicErrorCode::InvalidApiKey, "invalid_api_key"),
             (PublicErrorCode::InsufficientQuota, "insufficient_quota"),
             (PublicErrorCode::ModelNotFound, "model_not_found"),
+            (PublicErrorCode::TaskNotFound, "task_not_found"),
+            (PublicErrorCode::IdempotencyConflict, "idempotency_conflict"),
+            (
+                PublicErrorCode::RequestOutcomeUnknown,
+                "request_outcome_unknown"
+            ),
             (PublicErrorCode::UpstreamUnavailable, "upstream_unavailable"),
             (PublicErrorCode::RateLimited, "rate_limited"),
             (PublicErrorCode::InternalError, "internal_error"),

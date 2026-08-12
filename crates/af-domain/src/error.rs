@@ -250,6 +250,15 @@ pub enum AfError {
     /// 请求模型未被当前下游令牌策略允许。
     #[error("下游令牌不允许请求的模型")]
     ModelNotAllowed,
+    /// 当前认证用户范围内不存在指定异步任务。
+    #[error("异步任务不存在")]
+    TaskNotFound,
+    /// 相同幂等键已经绑定到不同请求载荷。
+    #[error("幂等键与已有请求冲突")]
+    IdempotencyConflict,
+    /// 提交或持久化结果未知，调用方必须使用相同幂等键重试。
+    #[error("请求结果未知")]
+    RequestOutcomeUnknown,
     /// 用户钱包或下游令牌额度不足，无法继续发送请求。
     #[error("下游可用额度不足")]
     InsufficientQuota,

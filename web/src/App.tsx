@@ -36,6 +36,7 @@ import { SubscriptionManagementPage } from '@/features/subscriptions/subscriptio
 import { TokenPage } from '@/features/tokens/token-page'
 import { UsageLogPage } from '@/features/usage-logs/usage-log-page'
 import { UserPage } from '@/features/users/user-page'
+import { VideoTaskPage } from '@/features/video-tasks/video-task-page'
 import { WalletPage } from '@/features/wallet/wallet-page'
 import { SetupGateLoading, SetupGateUnavailable } from '@/features/setup/setup-gate-state'
 import { SetupPage } from '@/features/setup/setup-page'
@@ -156,6 +157,8 @@ function ManagementEntry({
                 ? 'models.title'
                 : view === 'playground'
                   ? 'playground.title'
+                  : view === 'video-tasks'
+                    ? 'videoTasks.title'
                   : view === 'profile'
                     ? 'profile.title'
                     : view === 'tokens'
@@ -205,6 +208,8 @@ function ManagementEntry({
                 ? <ModelPage authenticated />
                 : view === 'playground'
                   ? <PlaygroundPage />
+                  : view === 'video-tasks'
+                    ? <VideoTaskPage />
                   : view === 'profile'
                     ? <ProfilePage onPasswordChanged={onPasswordChanged} />
                     : view === 'tokens'
@@ -221,6 +226,7 @@ function ManagementEntry({
     && view !== 'invitations'
     && view !== 'models'
     && view !== 'playground'
+    && view !== 'video-tasks'
     && view !== 'profile'
 
   return (

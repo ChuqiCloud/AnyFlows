@@ -60,6 +60,27 @@ fn error_cases() -> Vec<ErrorCase> {
             message: "The requested model was not found or is unavailable.",
         },
         ErrorCase {
+            error: AfError::TaskNotFound,
+            status: StatusCode::NOT_FOUND,
+            code: PublicErrorCode::TaskNotFound,
+            kind: "invalid_request_error",
+            message: "The requested task was not found.",
+        },
+        ErrorCase {
+            error: AfError::IdempotencyConflict,
+            status: StatusCode::CONFLICT,
+            code: PublicErrorCode::IdempotencyConflict,
+            kind: "invalid_request_error",
+            message: "The idempotency key is already associated with a different request.",
+        },
+        ErrorCase {
+            error: AfError::RequestOutcomeUnknown,
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            code: PublicErrorCode::RequestOutcomeUnknown,
+            kind: "server_error",
+            message: "The request outcome is unknown. Retry with the same idempotency key.",
+        },
+        ErrorCase {
             error: AfError::InsufficientQuota,
             status: StatusCode::TOO_MANY_REQUESTS,
             code: PublicErrorCode::InsufficientQuota,
@@ -178,6 +199,21 @@ fn public_error_metadata_covers_every_stable_code() {
             "The requested model was not found or is unavailable.",
         ),
         (
+            PublicErrorCode::TaskNotFound,
+            StatusCode::NOT_FOUND,
+            "The requested task was not found.",
+        ),
+        (
+            PublicErrorCode::IdempotencyConflict,
+            StatusCode::CONFLICT,
+            "The idempotency key is already associated with a different request.",
+        ),
+        (
+            PublicErrorCode::RequestOutcomeUnknown,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "The request outcome is unknown. Retry with the same idempotency key.",
+        ),
+        (
             PublicErrorCode::UpstreamUnavailable,
             StatusCode::SERVICE_UNAVAILABLE,
             "The service is temporarily unavailable. Please retry later.",
@@ -273,8 +309,11 @@ async fn maps_every_current_domain_error_to_anthropic_wire() {
             PublicErrorCode::InvalidRequest => "invalid_request_error",
             PublicErrorCode::InvalidApiKey => "authentication_error",
             PublicErrorCode::InsufficientQuota => "billing_error",
-            PublicErrorCode::ModelNotFound => "not_found_error",
-            PublicErrorCode::UpstreamUnavailable => "overloaded_error",
+            PublicErrorCode::ModelNotFound | PublicErrorCode::TaskNotFound => "not_found_error",
+            PublicErrorCode::IdempotencyConflict => "invalid_request_error",
+            PublicErrorCode::RequestOutcomeUnknown | PublicErrorCode::UpstreamUnavailable => {
+                "overloaded_error"
+            }
             PublicErrorCode::RateLimited => "rate_limit_error",
             PublicErrorCode::InternalError => "api_error",
         };
@@ -305,8 +344,11 @@ async fn maps_every_current_domain_error_to_google_json_api_wire() {
             PublicErrorCode::InsufficientQuota | PublicErrorCode::RateLimited => {
                 "RESOURCE_EXHAUSTED"
             }
-            PublicErrorCode::ModelNotFound => "NOT_FOUND",
-            PublicErrorCode::UpstreamUnavailable => "UNAVAILABLE",
+            PublicErrorCode::ModelNotFound | PublicErrorCode::TaskNotFound => "NOT_FOUND",
+            PublicErrorCode::IdempotencyConflict => "ALREADY_EXISTS",
+            PublicErrorCode::RequestOutcomeUnknown | PublicErrorCode::UpstreamUnavailable => {
+                "UNAVAILABLE"
+            }
             PublicErrorCode::InternalError => "INTERNAL",
         };
         assert_eq!(

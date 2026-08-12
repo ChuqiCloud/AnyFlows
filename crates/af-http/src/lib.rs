@@ -75,7 +75,9 @@ mod user_profile;
 mod user_tokens;
 mod user_topups;
 mod user_wallet;
+mod video_task_service;
 mod wallet_query;
+mod xai_video;
 
 pub use audio_service::{AudioService, AudioServiceFuture};
 pub use channel_probe::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
@@ -104,6 +106,7 @@ pub use responses_compact_service::{ResponsesCompactService, ResponsesCompactSer
 pub use router::{DEFAULT_REQUEST_BODY_LIMIT_BYTES, HttpRouter, build_router};
 pub use serve::{HttpListener, ServeError, ServeOutcome, serve_with_graceful_shutdown};
 pub use speech_service::{SpeechService, SpeechServiceFuture};
+pub use video_task_service::{VideoTaskService, VideoTaskServiceFuture, VideoTaskSnapshot};
 
 #[cfg(test)]
 mod authentication_tests;

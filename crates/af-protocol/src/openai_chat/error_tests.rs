@@ -10,6 +10,12 @@ fn error_encoder_covers_every_public_code_with_openai_shape() {
         (PublicErrorCode::InvalidApiKey, "invalid_request_error"),
         (PublicErrorCode::InsufficientQuota, "insufficient_quota"),
         (PublicErrorCode::ModelNotFound, "invalid_request_error"),
+        (PublicErrorCode::TaskNotFound, "invalid_request_error"),
+        (
+            PublicErrorCode::IdempotencyConflict,
+            "invalid_request_error",
+        ),
+        (PublicErrorCode::RequestOutcomeUnknown, "server_error"),
         (PublicErrorCode::UpstreamUnavailable, "server_error"),
         (PublicErrorCode::RateLimited, "rate_limit_error"),
         (PublicErrorCode::InternalError, "server_error"),

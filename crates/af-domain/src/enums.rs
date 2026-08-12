@@ -280,6 +280,12 @@ string_enum! {
         InsufficientQuota => "insufficient_quota",
         /// 请求的模型不存在或不可用。
         ModelNotFound => "model_not_found",
+        /// 当前认证用户范围内不存在指定异步任务。
+        TaskNotFound => "task_not_found",
+        /// 相同幂等键已经绑定到不同请求载荷。
+        IdempotencyConflict => "idempotency_conflict",
+        /// 提交或持久化结果未知，调用方必须使用相同幂等键重试。
+        RequestOutcomeUnknown => "request_outcome_unknown",
         /// 当前没有可用上游。
         UpstreamUnavailable => "upstream_unavailable",
         /// 请求受到网关或上游限流。

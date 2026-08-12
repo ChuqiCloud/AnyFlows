@@ -27,6 +27,7 @@ export type AppView =
   | 'tokens'
   | 'usage-logs'
   | 'users'
+  | 'video-tasks'
   | 'wallet'
   | 'overview'
   | 'login'
@@ -96,6 +97,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/wallet')) return { view: 'wallet' }
   if (hash.startsWith('#/console/models')) return { view: 'models' }
   if (hash.startsWith('#/console/playground')) return { view: 'playground' }
+  if (hash.startsWith('#/console/video-tasks')) return { view: 'video-tasks' }
   if (hash.startsWith('#/console/invitations')) return { view: 'invitations' }
   if (hash.startsWith('#/console/profile')) return { view: 'profile' }
   if (hash.startsWith('#/console/tokens')) return { view: 'tokens' }

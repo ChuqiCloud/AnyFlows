@@ -37,9 +37,13 @@ fn openai_error_type(code: PublicErrorCode) -> &'static str {
     match code {
         PublicErrorCode::InvalidRequest
         | PublicErrorCode::InvalidApiKey
-        | PublicErrorCode::ModelNotFound => "invalid_request_error",
+        | PublicErrorCode::ModelNotFound
+        | PublicErrorCode::TaskNotFound
+        | PublicErrorCode::IdempotencyConflict => "invalid_request_error",
         PublicErrorCode::InsufficientQuota => "insufficient_quota",
-        PublicErrorCode::UpstreamUnavailable | PublicErrorCode::InternalError => "server_error",
+        PublicErrorCode::RequestOutcomeUnknown
+        | PublicErrorCode::UpstreamUnavailable
+        | PublicErrorCode::InternalError => "server_error",
         PublicErrorCode::RateLimited => "rate_limit_error",
     }
 }
