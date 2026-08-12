@@ -60,7 +60,13 @@ impl VideoTaskService for DatabaseVideoTaskService {
                 .await
                 .map_err(map_poll_error)?;
             match outcome {
-                PersistentVideoTaskPollOutcome::Updated { task, poll, .. } => {
+                PersistentVideoTaskPollOutcome::Updated {
+                    task,
+                    poll,
+                    billing_dimensions,
+                } => {
+                    // 维度已经由协调器完成结算与审计，公开响应只返回上游视频事实。
+                    let _ = billing_dimensions;
                     Ok(VideoTaskSnapshot::new(
                         task.task_id(),
                         task.status().clone(),
