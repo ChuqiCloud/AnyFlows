@@ -1,4 +1,5 @@
 import type {
+  VideoFailureCode as GeneratedVideoFailureCode,
   VideoGenerationRequest,
   VideoPollResponse,
   VideoTaskStatus as GeneratedVideoTaskStatus,
@@ -8,6 +9,7 @@ import type {
 export type VideoTaskRequest = VideoGenerationRequest
 export type VideoTaskPollResponse = VideoPollResponse
 export type VideoTaskStatus = GeneratedVideoTaskStatus
+export type VideoFailureCode = GeneratedVideoFailureCode
 
 export type VideoTaskApiError = {
   code: string
