@@ -1,7 +1,8 @@
-import { Eraser, Settings2 } from 'lucide-react'
+import { Eraser, MessagesSquare, Settings2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { AiActivity } from '@/components/ai/ai-activity'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -27,24 +28,39 @@ type PlaygroundPageHeaderProps = {
 
 export function PlaygroundPageHeader(props: PlaygroundPageHeaderProps) {
   const { t } = useTranslation()
+  const active = props.status === 'streaming' || props.status === 'loadingModels'
 
   return (
-    <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div className="min-w-0">
-        <h2 className="text-lg font-semibold">{t('playground.title')}</h2>
-        <p className="mt-1 truncate text-xs text-muted-foreground">
-          {props.modelCount > 0
-            ? t('playground.comparison.summary', { count: props.modelCount })
-            : t('playground.model.pending')}
-        </p>
+    <header className="flex flex-col gap-2.5 rounded-xl border border-[var(--hairline)] bg-surface-1/88 px-3 py-2.5 shadow-subtle backdrop-blur-xl sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-[var(--hairline)] bg-surface-2/70 text-info shadow-subtle">
+          <MessagesSquare className="size-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold">{t('playground.title')}</h2>
+          <p className="mt-0.5 truncate text-[0.6875rem] text-muted-foreground">
+            {props.modelCount > 0
+              ? t('playground.comparison.summary', { count: props.modelCount })
+              : t('playground.model.pending')}
+          </p>
+        </div>
       </div>
-      <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5 sm:justify-end">
         {props.modeControl}
         {props.historyControl}
         {props.shareControl}
-        <Badge className={playgroundStatusClassName(props.status)}>
-          {t(`playground.status.${props.status}`)}
-        </Badge>
+        {active ? (
+          <AiActivity
+            active
+            className="hidden h-8 rounded-lg border border-info/15 bg-info/6 px-2.5 sm:flex"
+            label={t(`playground.status.${props.status}`)}
+            size="compact"
+          />
+        ) : (
+          <Badge className={`hidden sm:inline-flex ${playgroundStatusClassName(props.status)}`}>
+            {t(`playground.status.${props.status}`)}
+          </Badge>
+        )}
         <Sheet>
           <SheetTrigger asChild>
             <Button

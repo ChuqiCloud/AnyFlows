@@ -88,6 +88,10 @@
   --shadow-glow-info: 0 0 0 4px rgba(0, 122, 255, 0.2);
   --hairline-strong: rgb(0 0 0 / 0.12);
 
+  /* AI 工作区：短促反馈使用强 ease-out，空间移动使用对称曲线。 */
+  --ease-ai-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-ai-move: cubic-bezier(0.77, 0, 0.175, 1);
+
   /* ── 动效字体关键帧（仅公开页 / 品牌时刻） ─────────────── */
   /* 兜底时长与 LogoMarquee 的默认 prop 保持一致，避免不传 duration 时突然变快 */
   --animate-marquee: marquee 88s linear infinite;
@@ -204,6 +208,118 @@
       opacity: 1;
       transform: translateY(0);
     }
+  }
+}
+
+/* AI 活动状态只动画 transform 与 opacity，避免流式输出期间触发布局计算。 */
+.ai-activity-pixel {
+  opacity: 0.16;
+  transform: scale(0.92);
+}
+
+[data-ai-active='true'] .ai-activity-pixel {
+  animation: ai-pixel-on 720ms var(--ease-ai-out) infinite alternate;
+}
+
+[data-ai-active='true'] .ai-activity-pixel:nth-child(2),
+[data-ai-active='true'] .ai-activity-pixel:nth-child(4) {
+  animation-delay: 90ms;
+}
+
+[data-ai-active='true'] .ai-activity-pixel:nth-child(3),
+[data-ai-active='true'] .ai-activity-pixel:nth-child(5),
+[data-ai-active='true'] .ai-activity-pixel:nth-child(7) {
+  animation-delay: 180ms;
+}
+
+[data-ai-active='true'] .ai-activity-pixel:nth-child(6),
+[data-ai-active='true'] .ai-activity-pixel:nth-child(8) {
+  animation-delay: 270ms;
+}
+
+[data-ai-active='true'] .ai-activity-pixel:nth-child(9) {
+  animation-delay: 360ms;
+}
+
+.ai-message-enter {
+  animation: ai-message-enter 180ms var(--ease-ai-out) both;
+}
+
+.ai-streaming-copy::after {
+  display: inline-block;
+  width: 0.42em;
+  height: 1em;
+  margin-left: 0.18em;
+  vertical-align: -0.14em;
+  border-radius: 2px;
+  background: var(--info);
+  content: '';
+  animation: ai-cursor-pulse 820ms ease-in-out infinite;
+}
+
+.ai-workbench-surface {
+  position: relative;
+  isolation: isolate;
+}
+
+.ai-workbench-surface::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, var(--hairline) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--hairline) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.16;
+  content: '';
+  mask-image: linear-gradient(to bottom, black, transparent 72%);
+}
+
+:root[data-motion='reduced'] [data-ai-active='true'] .ai-activity-pixel,
+:root[data-motion='reduced'] .ai-streaming-copy::after,
+:root[data-motion='reduced'] .ai-message-enter {
+  animation: none !important;
+  transform: none !important;
+}
+
+:root[data-motion='reduced'] [data-ai-motion='move'] {
+  transition-duration: 0s !important;
+}
+
+:root[data-motion='reduced'] [data-slot='button']:active {
+  transform: none !important;
+}
+
+@keyframes ai-pixel-on {
+  from {
+    opacity: 0.16;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 0.92;
+    transform: scale(1);
+  }
+}
+
+@keyframes ai-message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ai-cursor-pulse {
+  0%,
+  100% {
+    opacity: 0.24;
+  }
+  50% {
+    opacity: 0.9;
   }
 }
 
@@ -621,6 +737,21 @@
   }
 
   :root:not([data-motion='full']) [data-kinetic-char]:hover {
+    transform: none !important;
+  }
+
+  :root:not([data-motion='full']) [data-ai-active='true'] .ai-activity-pixel,
+  :root:not([data-motion='full']) .ai-streaming-copy::after,
+  :root:not([data-motion='full']) .ai-message-enter {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  :root:not([data-motion='full']) [data-ai-motion='move'] {
+    transition-duration: 0s !important;
+  }
+
+  :root:not([data-motion='full']) [data-slot='button']:active {
     transform: none !important;
   }
 }
