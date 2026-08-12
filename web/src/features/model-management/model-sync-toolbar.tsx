@@ -1,6 +1,7 @@
-import { RefreshCw, ScanSearch } from 'lucide-react'
+import { ScanSearch } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { AiActivity } from '@/components/ai/ai-activity'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
@@ -49,10 +50,20 @@ export function ModelSyncToolbar(props: ModelSyncToolbarProps) {
           </Select>
         </label>
         <Button type="button" size="sm" disabled={!selected || selected.status !== 'enabled' || props.previewing} onClick={props.onPreview}>
-          {props.previewing ? <RefreshCw className="animate-spin" aria-hidden="true" /> : <ScanSearch aria-hidden="true" />}
+          {props.previewing ? null : <ScanSearch aria-hidden="true" />}
           {t(props.previewing ? 'modelManagement.sync.actions.previewing' : 'modelManagement.sync.actions.preview')}
         </Button>
       </div>
+
+      {props.previewing ? (
+        <AiActivity
+          active
+          className="rounded-lg border border-info/15 bg-info/6 px-2.5 py-2"
+          detail={selected?.name}
+          label={t('modelManagement.sync.actions.previewing')}
+          size="compact"
+        />
+      ) : null}
 
       {selected ? (
         <div className="flex flex-wrap gap-1.5">

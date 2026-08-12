@@ -1,7 +1,7 @@
 import { MessageSquareText, Video } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 export type PlaygroundMode = 'chat' | 'video'
 
@@ -17,34 +17,46 @@ export function PlaygroundModeSwitcher(props: PlaygroundModeSwitcherProps) {
 
   return (
     <div
-      className="flex items-center rounded-lg border border-[var(--hairline)] bg-surface-2/45 p-0.5"
+      className="relative grid h-9 grid-cols-2 items-center rounded-lg border border-[var(--hairline)] bg-surface-2/55 p-0.5"
       role="tablist"
       aria-label={t('playground.modes.label')}
     >
-      <Button
+      <span
+        className="pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-0.125rem)] rounded-md bg-surface-1 shadow-subtle transition-transform duration-200 ease-[var(--ease-ai-out)]"
+        data-ai-motion="move"
+        style={{ transform: props.mode === 'video' ? 'translateX(100%)' : 'translateX(0)' }}
+        aria-hidden="true"
+      />
+      <button
         type="button"
-        size="sm"
-        variant={props.mode === 'chat' ? 'secondary' : 'ghost'}
         role="tab"
         aria-selected={props.mode === 'chat'}
         disabled={props.disabled}
+        className={cn(
+          'relative z-10 flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium outline-none transition-colors duration-150',
+          'focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-40',
+          props.mode === 'chat' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+        )}
         onClick={() => props.onChange('chat')}
       >
-        <MessageSquareText aria-hidden="true" />
+        <MessageSquareText className="size-3.5" aria-hidden="true" />
         {t('playground.modes.chat')}
-      </Button>
-      <Button
+      </button>
+      <button
         type="button"
-        size="sm"
-        variant={props.mode === 'video' ? 'secondary' : 'ghost'}
         role="tab"
         aria-selected={props.mode === 'video'}
         disabled={props.disabled}
+        className={cn(
+          'relative z-10 flex h-8 items-center justify-center gap-1.5 rounded-md px-2.5 text-xs font-medium outline-none transition-colors duration-150',
+          'focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-40',
+          props.mode === 'video' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
+        )}
         onClick={() => props.onChange('video')}
       >
-        <Video aria-hidden="true" />
+        <Video className="size-3.5" aria-hidden="true" />
         {t('playground.modes.video')}
-      </Button>
+      </button>
     </div>
   )
 }

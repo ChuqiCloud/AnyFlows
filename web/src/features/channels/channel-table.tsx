@@ -1,6 +1,7 @@
 import { Activity, KeyRound, Network, Pencil, Timer } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { AiActivity } from '@/components/ai/ai-activity'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -55,8 +56,9 @@ function ProtocolBadge({ protocol }: { protocol: AdminChannel['protocol'] }) {
   return <Badge className={cn('border-transparent', tone)}>{t(`channels.protocol.${protocol}`)}</Badge>
 }
 
-function ProbeState({ value }: { value?: ProbeDisplay }) {
+function ProbeState({ probing, value }: { probing?: boolean; value?: ProbeDisplay }) {
   const { t } = useTranslation()
+  if (probing) return <AiActivity active label={t('channels.actions.probe')} size="compact" />
   if (!value) return <span className="text-muted-foreground">{t('channels.probe.notTested')}</span>
   if (value.failed) return <span className="text-destructive">{t('channels.probe.failed')}</span>
   const tone = value.status === 'healthy' ? 'text-success' : value.status === 'timeout' ? 'text-warning' : 'text-destructive'
@@ -112,7 +114,7 @@ function RowActions({ channel, probing, onCredentials, onEdit, onProbe }: {
       <Tooltip>
         <TooltipTrigger asChild>
           <Button type="button" size="icon-sm" variant="ghost" className="size-10 md:size-8" disabled={probing} aria-label={t('channels.actions.probe')} onClick={() => onProbe(channel.id)}>
-            <Activity className={cn(probing && 'animate-pulse')} aria-hidden="true" />
+            <Activity aria-hidden="true" />
           </Button>
         </TooltipTrigger>
         <TooltipContent>{t('channels.actions.probe')}</TooltipContent>
@@ -164,7 +166,7 @@ export function ChannelTable({ channels, probeResults, probingId, onCredentials,
                 <td className="px-3 py-2.5"><div className="flex items-center gap-2"><span className="truncate font-medium">{channel.name}</span><StatusBadge status={channel.status} /><ProtocolBadge protocol={channel.protocol} />{channel.tag ? <Badge className="max-w-28 truncate">{channel.tag}</Badge> : null}</div><div className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</div></td>
                 <td className="px-3 py-2.5"><RoutingBadges channel={channel} /></td>
                 <td className="px-3 py-2.5"><ScheduleBadges channel={channel} /></td>
-                <td className="px-3 py-2.5 text-[0.6875rem]"><ProbeState value={probeResults[channel.id]} /></td>
+                <td className="px-3 py-2.5 text-[0.6875rem]"><ProbeState probing={probingId === channel.id} value={probeResults[channel.id]} /></td>
                 <td className="px-2 py-2.5"><RowActions channel={channel} probing={probingId === channel.id} onCredentials={onCredentials} onEdit={onEdit} onProbe={onProbe} /></td>
               </tr>
             ))}
@@ -177,7 +179,7 @@ export function ChannelTable({ channels, probeResults, probingId, onCredentials,
           <article key={channel.id} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
             <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-sm font-semibold">{channel.name}</h2><StatusBadge status={channel.status} /><ProtocolBadge protocol={channel.protocol} />{channel.tag ? <Badge className="max-w-32 truncate">{channel.tag}</Badge> : null}</div><p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</p></div><RowActions channel={channel} probing={probingId === channel.id} onCredentials={onCredentials} onEdit={onEdit} onProbe={onProbe} /></div>
             <div className="mt-3 grid gap-2 border-t border-[var(--hairline)] pt-3"><RoutingBadges channel={channel} /><ScheduleBadges channel={channel} /></div>
-            <div className="mt-3 text-xs"><ProbeState value={probeResults[channel.id]} /></div>
+            <div className="mt-3 text-xs"><ProbeState probing={probingId === channel.id} value={probeResults[channel.id]} /></div>
           </article>
         ))}
       </div>

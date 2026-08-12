@@ -122,7 +122,7 @@ export function PlaygroundPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100dvh-5.75rem)] min-w-0 flex-col gap-3">
+    <div className="flex min-h-[calc(100dvh-5.75rem)] min-w-0 flex-col gap-2.5">
       <PlaygroundPageHeader
         clearDisabled={!comparison.hasConversation && !comparison.draft}
         historyControl={(
@@ -154,8 +154,8 @@ export function PlaygroundPage() {
         status={status}
         onClear={clearConversation}
       />
-      <div className="grid min-h-0 min-w-0 flex-1 gap-3 lg:grid-cols-[15rem_minmax(0,1fr)]">
-        <aside className="hidden min-h-0 overflow-y-auto rounded-xl border border-[var(--hairline)] bg-surface-1 lg:block">
+      <div className="grid min-h-0 min-w-0 flex-1 gap-2.5 lg:grid-cols-[17.5rem_minmax(0,1fr)]">
+        <aside className="hidden min-h-0 overflow-y-auto rounded-xl border border-dashed border-[var(--hairline)] bg-surface-1/82 shadow-subtle backdrop-blur-xl lg:block">
           {renderSettings('playground-desktop')}
         </aside>
         <PlaygroundComparisonPanel
