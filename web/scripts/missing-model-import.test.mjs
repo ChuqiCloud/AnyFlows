@@ -65,3 +65,15 @@ test('OpenAPI 只在缺失模型资源暴露批量导入操作', () => {
     '#/components/schemas/AdminMissingModelImportRequest',
   )
 })
+
+test('导入错误在复核面板内显示且不复用上游同步文案', () => {
+  const workspace = readFileSync(new URL('../src/features/model-management/missing-model-workspace.tsx', import.meta.url), 'utf8')
+  const sheet = readFileSync(new URL('../src/features/model-management/missing-model-import-sheet.tsx', import.meta.url), 'utf8')
+  const zh = JSON.parse(readFileSync(new URL('../src/i18n/locales/zh.json', import.meta.url), 'utf8'))
+
+  assert.match(workspace, /errorCode=\{errorCode\}/)
+  assert.doesNotMatch(workspace, /<ModelSyncError code=\{errorCode\}/)
+  assert.match(sheet, /modelManagement\.missing\.import\.errors\.\$\{props\.errorCode\}/)
+  assert.equal(zh.modelManagement.missing.import.errors.unknown.includes('未添加模型导入'), true)
+  assert.equal(zh.modelManagement.missing.import.errors.unknown.includes('模型同步请求失败'), false)
+})

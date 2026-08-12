@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
-import { ModelSyncError } from './model-sync-status'
 import { modelSyncErrorCode, useImportMissingAdminModels, useMissingAdminModels } from './model-sync-api'
 import { MissingModelImportSheet } from './missing-model-import-sheet'
 import { toMissingModelImportRequest, type MissingModelImportDraft } from './missing-model-form-model'
@@ -98,6 +97,11 @@ export function MissingModelWorkspace() {
     }
   }
 
+  const openImportSheet = () => {
+    mutation.reset()
+    setSheetOpen(true)
+  }
+
   const errorCode = mutation.error ? modelSyncErrorCode(mutation.error) ?? 'unknown' : undefined
 
   return (
@@ -115,7 +119,7 @@ export function MissingModelWorkspace() {
           <Button type="button" size="sm" variant="ghost" disabled={query.isFetching} onClick={() => void query.refetch()}>
             <RefreshCw className={query.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />{t('modelManagement.actions.refresh')}
           </Button>
-          <Button type="button" size="sm" disabled={selected.size === 0} onClick={() => setSheetOpen(true)}>
+          <Button type="button" size="sm" disabled={selected.size === 0} onClick={openImportSheet}>
             <ListPlus aria-hidden="true" />{t('modelManagement.missing.import.action', { count: selected.size })}
           </Button>
         </div>
@@ -127,8 +131,6 @@ export function MissingModelWorkspace() {
           <span>{t('modelManagement.missing.import.success', { count: lastImportedCount })}</span>
         </div>
       ) : null}
-      {errorCode ? <ModelSyncError code={errorCode} /> : null}
-
       <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,0.35fr)]">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
@@ -164,6 +166,7 @@ export function MissingModelWorkspace() {
 
       <MissingModelImportSheet
         displayNames={displayNames}
+        errorCode={errorCode}
         models={selectedModels}
         open={sheetOpen}
         pending={mutation.isPending}
