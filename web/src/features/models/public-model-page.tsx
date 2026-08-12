@@ -1,11 +1,8 @@
-import { LayoutDashboard, LogIn } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { BrandMark } from '@/components/layout/brand-mark'
-import { LanguageToggle } from '@/components/language-toggle'
-import { ThemeToggle } from '@/components/theme-toggle'
-import { Button } from '@/components/ui/button'
+import { PublicSiteHeader } from '@/components/layout/public-site-header'
+import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 import {
   getManagementSessionToken,
   subscribeManagementSessionInvalidated,
@@ -30,39 +27,15 @@ function useOptionalSessionPresence() {
 export function PublicModelPage() {
   const { t } = useTranslation()
   const hasSession = useOptionalSessionPresence()
-  const AccountIcon = hasSession ? LayoutDashboard : LogIn
+  const siteQuery = usePublicSiteSettings()
+  const site = siteQuery.data
+  const siteName = site?.site_name ?? t('brand.name')
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
-      <header className="sticky top-0 z-30 border-b border-[var(--hairline)] bg-background/85 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-[1040px] items-center justify-between gap-3 px-3 sm:px-5">
-          <a
-            href="#/"
-            className="flex min-w-0 items-center gap-2.5 rounded-lg focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
-          >
-            <BrandMark />
-            <div className="hidden min-w-0 sm:block">
-              <div className="truncate text-sm font-semibold">{t('brand.name')}</div>
-              <div className="truncate text-[0.625rem] text-muted-foreground">
-                {t('models.public.scope')}
-              </div>
-            </div>
-          </a>
+      <PublicSiteHeader siteName={siteName} logoUrl={site?.brand.logo_url} />
 
-          <div className="flex shrink-0 items-center gap-1.5">
-            <LanguageToggle />
-            <ThemeToggle />
-            <Button size="sm" asChild>
-              <a href={hasSession ? '#/console/models' : '#/login'}>
-                <AccountIcon className="size-3.5" aria-hidden="true" />
-                {t(hasSession ? 'models.public.console' : 'models.public.login')}
-              </a>
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <main className="px-4 py-5 md:px-5 md:py-7">
+      <main className="px-4 pt-19 pb-5 md:px-5 md:pt-21 md:pb-7">
         <div className="mx-auto w-full max-w-[1280px]">
           <ModelPage authenticated={hasSession} standalone />
         </div>
