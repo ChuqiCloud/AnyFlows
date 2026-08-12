@@ -18,6 +18,7 @@ type PlaygroundPageHeaderProps = {
   clearDisabled: boolean
   historyControl: ReactNode
   mobileSettings: ReactNode
+  modeControl: ReactNode
   modelCount: number
   shareControl: ReactNode
   status: PlaygroundDisplayStatus
@@ -28,7 +29,7 @@ export function PlaygroundPageHeader(props: PlaygroundPageHeaderProps) {
   const { t } = useTranslation()
 
   return (
-    <header className="flex items-end justify-between gap-3">
+    <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         <h2 className="text-lg font-semibold">{t('playground.title')}</h2>
         <p className="mt-1 truncate text-xs text-muted-foreground">
@@ -37,7 +38,8 @@ export function PlaygroundPageHeader(props: PlaygroundPageHeaderProps) {
             : t('playground.model.pending')}
         </p>
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        {props.modeControl}
         {props.historyControl}
         {props.shareControl}
         <Badge className={playgroundStatusClassName(props.status)}>

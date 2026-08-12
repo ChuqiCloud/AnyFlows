@@ -95,7 +95,7 @@ include:
         volumes:
           - rust-cargo:/usr/local/cargo/registry:copy-on-write
           - rust-cargo:/usr/local/cargo/git:copy-on-write
-          - rust-msrv-1.95.0:./target:copy-on-write
+          # MSRV 目标产物不跨构建复用，避免并发流水线留下缺失本地 crate 的陈旧元数据。
       env:
         CARGO_TERM_COLOR: always
         RUST_BACKTRACE: "1"
@@ -243,7 +243,7 @@ include:
         volumes:
           - rust-cargo:/usr/local/cargo/registry:copy-on-write-read-only
           - rust-cargo:/usr/local/cargo/git:copy-on-write-read-only
-          - rust-msrv-1.95.0:./target:copy-on-write-read-only
+          # MSRV 目标产物不跨构建复用，避免并发流水线留下缺失本地 crate 的陈旧元数据。
       env:
         CARGO_TERM_COLOR: always
         RUST_BACKTRACE: "1"
@@ -408,7 +408,7 @@ $:
         volumes:
           - rust-cargo:/usr/local/cargo/registry:copy-on-write-read-only
           - rust-cargo:/usr/local/cargo/git:copy-on-write-read-only
-          - rust-msrv-1.95.0:./target:copy-on-write-read-only
+          # MSRV 目标产物不跨构建复用，避免并发流水线留下缺失本地 crate 的陈旧元数据。
       env:
         CARGO_TERM_COLOR: always
         RUST_BACKTRACE: "1"
