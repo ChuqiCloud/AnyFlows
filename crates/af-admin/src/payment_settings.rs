@@ -352,6 +352,7 @@ impl AdminPaymentSettingsService for DatabaseAdminPaymentSettingsService {
                 };
                 if !reconciled {
                     tracing::error!("支付设置运行时切换失败且无法与数据库快照重新同步");
+                    return Err(AdminPaymentSettingsError::Internal);
                 }
                 return Err(match runtime_error {
                     PaymentSettingsRuntimeError::InvalidConfiguration => {
