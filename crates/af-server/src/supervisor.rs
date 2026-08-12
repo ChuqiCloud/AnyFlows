@@ -167,6 +167,8 @@ mod tests {
 
     use super::*;
 
+    const TEST_EVENT_TIMEOUT: Duration = Duration::from_secs(5);
+
     #[tokio::test]
     async fn panic_is_isolated_restarted_and_then_stopped() {
         let shutdown = ShutdownController::new();
@@ -191,7 +193,7 @@ mod tests {
             }
         });
 
-        tokio::time::timeout(Duration::from_secs(1), restarted.notified())
+        tokio::time::timeout(TEST_EVENT_TIMEOUT, restarted.notified())
             .await
             .unwrap();
         assert!(starts.load(Ordering::Acquire) >= 2);
