@@ -50,6 +50,8 @@ pub trait PricingResolver: Send + Sync + 'static {
 pub enum BillingMode {
     /// 按互斥 token 分项及其每百万 token 单价计费。
     PerToken,
+    /// 按请求次数或已校验业务维度直接计费。
+    PerCall,
     /// 显式免费；上层仍须记录 usage，但跳过预扣和结算。
     Free,
 }
@@ -259,7 +261,7 @@ impl PricingRatios {
         self.applied_peak
     }
 
-    const fn micros(self) -> [i64; 3] {
+    pub(crate) const fn micros(self) -> [i64; 3] {
         [
             self.group.micros(),
             self.group_model.micros(),

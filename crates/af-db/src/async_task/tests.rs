@@ -2,8 +2,9 @@ use std::{error::Error, time::Duration};
 
 use af_domain::{
     AsyncTaskAttemptId, AsyncTaskBindingFingerprint, AsyncTaskId, AsyncTaskRequestFingerprint,
-    AsyncTaskRequestId, ChannelId, CredentialId, GatewayPrincipal, GroupId, Protocol, TaskFailure,
-    TaskFailureKind, TaskProgress, TaskState, TaskStatus, TokenId, UpstreamTaskId, UserId,
+    AsyncTaskRequestId, BillingReservationId, ChannelId, CredentialId, GatewayPrincipal, GroupId,
+    Protocol, Quota, TaskFailure, TaskFailureKind, TaskProgress, TaskState, TaskStatus, TokenId,
+    UpstreamTaskId, UserId,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{ActiveModelTrait, Set, entity::prelude::Json};
@@ -17,11 +18,15 @@ use crate::{
 };
 
 use super::{
-    AsyncTaskCreate, AsyncTaskCreateOutcome, AsyncTaskRepository, AsyncTaskRepositoryError,
-    AsyncTaskSubmissionAccept, AsyncTaskSubmissionBegin, AsyncTaskSubmissionClaim,
-    AsyncTaskSubmissionClaimOutcome, AsyncTaskSubmissionMutationOutcome,
-    AsyncTaskSubmissionRelease, AsyncTaskSubmissionRepository, AsyncTaskSubmissionState,
-    AsyncTaskTransition, AsyncTaskTransitionOutcome, AsyncTaskVideoResolution,
+    AsyncTaskBillingAccept, AsyncTaskBillingClear, AsyncTaskBillingMark,
+    AsyncTaskBillingMutationOutcome, AsyncTaskBillingPlan, AsyncTaskBillingPlanOutcome,
+    AsyncTaskBillingRecord, AsyncTaskBillingRepository, AsyncTaskBillingResolution,
+    AsyncTaskBillingSettlement, AsyncTaskBillingState, AsyncTaskCreate, AsyncTaskCreateOutcome,
+    AsyncTaskRepository, AsyncTaskRepositoryError, AsyncTaskSubmissionAccept,
+    AsyncTaskSubmissionBegin, AsyncTaskSubmissionClaim, AsyncTaskSubmissionClaimOutcome,
+    AsyncTaskSubmissionMutationOutcome, AsyncTaskSubmissionRelease, AsyncTaskSubmissionRepository,
+    AsyncTaskSubmissionState, AsyncTaskTransition, AsyncTaskTransitionOutcome,
+    AsyncTaskVideoResolution,
 };
 
 const CREATED_AT: u64 = 1_800_000_000;
@@ -506,6 +511,198 @@ async fn state_machine_allows_only_monotonic_progress_within_active_state()
     Ok(())
 }
 
+#[tokio::test]
+async fn billing_state_machine_replays_same_facts_and_clears_released_plans()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    assert!(matches!(
+        fixture
+            .submissions
+            .claim(submission_claim(&fixture, 0xe1, 0xe1, 0xe1)?)
+            .await?,
+        AsyncTaskSubmissionClaimOutcome::Created(_)
+    ));
+    let reservation_id = BillingReservationId::new([0x51; 16])?;
+    let plan = || {
+        AsyncTaskBillingPlan::new(
+            task_id(0xe1),
+            fixture.first.principal.user_id(),
+            reservation_id,
+            fixture.first.principal.group_id(),
+            1,
+            AsyncTaskBillingResolution::P720,
+            [1_000_000; 3],
+            Quota::new(1_050_000).expect("测试冻结上界必须有效"),
+            CREATED_AT,
+        )
+    };
+    let AsyncTaskBillingPlanOutcome::Created(planned) = fixture.billings.plan(plan()?).await?
+    else {
+        panic!("首次计费计划必须创建")
+    };
+    assert_eq!(planned.state(), AsyncTaskBillingState::Planned);
+    assert!(matches!(
+        fixture.billings.plan(plan()?).await?,
+        AsyncTaskBillingPlanOutcome::Existing(_)
+    ));
+
+    let reserved = billing_record(
+        fixture
+            .billings
+            .mark_reserved(AsyncTaskBillingMark::new(
+                planned.task_id(),
+                planned.user_id(),
+                planned.version(),
+                CREATED_AT + 1,
+            )?)
+            .await?,
+    )?;
+    assert_eq!(reserved.state(), AsyncTaskBillingState::Reserved);
+    assert!(matches!(
+        fixture
+            .billings
+            .mark_reserved(AsyncTaskBillingMark::new(
+                planned.task_id(),
+                planned.user_id(),
+                planned.version(),
+                CREATED_AT + 1,
+            )?)
+            .await?,
+        AsyncTaskBillingMutationOutcome::Existing(_)
+    ));
+
+    let submitted = billing_record(
+        fixture
+            .billings
+            .accept(AsyncTaskBillingAccept::new(
+                reserved.task_id(),
+                reserved.user_id(),
+                reserved.version(),
+                140_000,
+                Quota::new(560_000)?,
+                CREATED_AT + 2,
+            )?)
+            .await?,
+    )?;
+    let pending = billing_record(
+        fixture
+            .billings
+            .begin_settlement(AsyncTaskBillingSettlement::new(
+                submitted.task_id(),
+                submitted.user_id(),
+                submitted.version(),
+                Quota::new(560_000)?,
+                8,
+                CREATED_AT + 3,
+            )?)
+            .await?,
+    )?;
+    assert_eq!(pending.state(), AsyncTaskBillingState::SettlementPending);
+    assert_eq!(pending.actual_duration_seconds(), Some(8));
+    let settled = billing_record(
+        fixture
+            .billings
+            .mark_settled(AsyncTaskBillingMark::new(
+                pending.task_id(),
+                pending.user_id(),
+                pending.version(),
+                CREATED_AT + 4,
+            )?)
+            .await?,
+    )?;
+    assert_eq!(settled.state(), AsyncTaskBillingState::Settled);
+
+    assert!(matches!(
+        fixture
+            .submissions
+            .claim(submission_claim(&fixture, 0xe2, 0xe2, 0xe2)?)
+            .await?,
+        AsyncTaskSubmissionClaimOutcome::Created(_)
+    ));
+    let release_plan = AsyncTaskBillingPlan::new(
+        task_id(0xe2),
+        fixture.first.principal.user_id(),
+        BillingReservationId::new([0x52; 16])?,
+        fixture.first.principal.group_id(),
+        1,
+        AsyncTaskBillingResolution::P480,
+        [1_000_000; 3],
+        Quota::new(600_000)?,
+        CREATED_AT,
+    )?;
+    let AsyncTaskBillingPlanOutcome::Created(release_planned) =
+        fixture.billings.plan(release_plan).await?
+    else {
+        panic!("释放路径计费计划必须创建")
+    };
+    let release_reserved = billing_record(
+        fixture
+            .billings
+            .mark_reserved(AsyncTaskBillingMark::new(
+                release_planned.task_id(),
+                release_planned.user_id(),
+                release_planned.version(),
+                CREATED_AT + 1,
+            )?)
+            .await?,
+    )?;
+    let release_pending = billing_record(
+        fixture
+            .billings
+            .begin_release(AsyncTaskBillingMark::new(
+                release_reserved.task_id(),
+                release_reserved.user_id(),
+                release_reserved.version(),
+                CREATED_AT + 2,
+            )?)
+            .await?,
+    )?;
+    let released = billing_record(
+        fixture
+            .billings
+            .mark_released(AsyncTaskBillingMark::new(
+                release_pending.task_id(),
+                release_pending.user_id(),
+                release_pending.version(),
+                CREATED_AT + 3,
+            )?)
+            .await?,
+    )?;
+    assert!(matches!(
+        fixture
+            .billings
+            .clear_released(AsyncTaskBillingClear::new(
+                released.task_id(),
+                released.user_id(),
+                released.version(),
+                released.reservation_id(),
+                CREATED_AT + 4,
+            )?)
+            .await?,
+        AsyncTaskBillingMutationOutcome::Applied(_)
+    ));
+    assert!(
+        fixture
+            .billings
+            .find(fixture.first.principal.user_id(), task_id(0xe2))
+            .await?
+            .is_none()
+    );
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+fn billing_record(
+    outcome: AsyncTaskBillingMutationOutcome,
+) -> Result<AsyncTaskBillingRecord, AsyncTaskRepositoryError> {
+    match outcome {
+        AsyncTaskBillingMutationOutcome::Applied(record)
+        | AsyncTaskBillingMutationOutcome::Existing(record) => Ok(record),
+        AsyncTaskBillingMutationOutcome::NotFound => Err(AsyncTaskRepositoryError::Invariant),
+    }
+}
+
 struct Owner {
     principal: GatewayPrincipal,
 }
@@ -514,6 +711,7 @@ struct Fixture {
     pool: crate::DatabasePool,
     repository: AsyncTaskRepository,
     submissions: AsyncTaskSubmissionRepository,
+    billings: AsyncTaskBillingRepository,
     first: Owner,
     second: Owner,
     channel_id: ChannelId,
@@ -579,6 +777,7 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
     Ok(Fixture {
         repository: AsyncTaskRepository::new(pool.clone(), Duration::from_secs(5))?,
         submissions: AsyncTaskSubmissionRepository::new(pool.clone(), Duration::from_secs(5))?,
+        billings: AsyncTaskBillingRepository::new(pool.clone(), Duration::from_secs(5))?,
         pool,
         first,
         second,
@@ -600,6 +799,7 @@ fn submission_claim(
         Protocol::XaiVideo,
         "gpt-video".to_owned(),
         AsyncTaskRequestFingerprint::new([fingerprint_marker; 32]),
+        None,
         CREATED_AT,
     )
 }

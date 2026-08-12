@@ -29,7 +29,7 @@ async fn list_uses_newest_first_cursor_and_preserves_usage_dimensions() -> Resul
     assert_eq!(newest.user_id(), fixture.user_id);
     assert_eq!(newest.token_id(), fixture.token_id);
     assert_eq!(newest.group_id(), fixture.group_id);
-    assert_eq!(newest.billing_mode(), 1);
+    assert_eq!(newest.billing_mode(), 3);
     assert_eq!(newest.usage_source(), 1);
     assert_eq!(newest.usage_semantics(), 2);
     assert_eq!(newest.usage().input_tokens(), 30);
@@ -192,10 +192,10 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
         let write = UsageLogWrite::new(
             BillingReservationId::new(event_id)?,
             principal,
-            if marker == 2 {
-                UsageLogBillingMode::Free
-            } else {
-                UsageLogBillingMode::PerToken
+            match marker {
+                2 => UsageLogBillingMode::Free,
+                3 => UsageLogBillingMode::PerCall,
+                _ => UsageLogBillingMode::PerToken,
             },
             usage,
             if marker == 2 {

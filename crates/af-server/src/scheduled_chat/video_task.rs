@@ -1,6 +1,7 @@
 use std::{fmt, future::Future, pin::Pin, time::Duration};
 
 use af_adapter::{RelayContext, get_task_adaptor};
+use af_billing::{PricingRatio, PricingRatios, XaiVideoPricingSnapshot};
 use af_db::{
     AsyncTaskRecord, AsyncTaskSubmissionRecord, SchedulerRuntimeCredentialRecord,
     SchedulerRuntimeHeader, SchedulerRuntimeTargetRecord,
@@ -390,7 +391,7 @@ impl VideoTaskRuntime for ScheduledChatService {
 }
 
 impl ScheduledChatService {
-    async fn video_route(
+    pub(super) async fn video_route(
         &self,
         group_id: GroupId,
         model: &str,
@@ -415,6 +416,34 @@ impl ScheduledChatService {
             .ok_or_else(|| af_domain::UpstreamError::ModelUnsupported.into())
     }
 
+    /// 只在当前路由仍命中冻结目标分组时提交视频任务。
+    pub(super) async fn submit_video_task_to_target(
+        &self,
+        group_id: GroupId,
+        expected_target_group_id: GroupId,
+        request: CanonicalVideoGenerationRequest,
+        request_id: &str,
+    ) -> Result<BoundVideoTaskSubmission, VideoTaskSubmissionRuntimeError> {
+        let route = self.video_route(group_id, request.model().as_str()).await?;
+        if route.target_group_id() != expected_target_group_id {
+            return Err(AfError::Internal.into());
+        }
+        let credential_health = self
+            .load_credential_health(&route, Protocol::XaiVideo)
+            .await?;
+        let account_loads = self
+            .load_account_concurrency(&route, Protocol::XaiVideo)
+            .await?;
+        self.execute_video_submission(
+            route,
+            request,
+            request_id,
+            account_loads.as_ref(),
+            credential_health.as_ref(),
+        )
+        .await
+    }
+
     async fn execute_video_submission(
         &self,
         route: IndexedRoutePlan,
@@ -434,6 +463,10 @@ impl ScheduledChatService {
         let mut attempt_targets = Vec::with_capacity(candidates.capacity());
         let mut auto_ban_targets = Vec::with_capacity(candidates.capacity());
         let mut health_filtered = false;
+        let pricing = XaiVideoPricingSnapshot::new(
+            request.resolution(),
+            PricingRatios::new(PricingRatio::ONE, PricingRatio::ONE, PricingRatio::ONE),
+        );
 
         'channels: for candidate in route.candidates() {
             let target = candidate.runtime_target();
@@ -447,6 +480,9 @@ impl ScheduledChatService {
                 .unwrap_or(request.model().as_str());
             let upstream_model =
                 VideoModel::new(upstream_model.to_owned()).map_err(|_| AfError::Internal)?;
+            if pricing.rate_microusd(upstream_model.as_str()).is_err() {
+                continue;
+            }
             let mapped_request = CanonicalVideoGenerationRequest::new(
                 upstream_model.clone(),
                 request.prompt().clone(),
@@ -794,11 +830,13 @@ mod tests {
     };
 
     use af_account::{CredentialDecryptor, SystemSecretCipher, credential_plaintext_aad};
+    use af_billing::{DatabaseUsageRecordSink, GroupPricingCache};
     use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
     use af_db::{
-        AsyncTaskRepository, AsyncTaskSubmissionRepository, ChannelModelMappings,
-        ChannelParameterOverrides, CredentialProxyScheme, CredentialStateRepository,
-        EncryptedCredentialEnvelope, SchedulerRuntimeProxyRecord,
+        AsyncTaskBillingRepository, AsyncTaskRepository, AsyncTaskSubmissionRepository,
+        ChannelModelMappings, ChannelParameterOverrides, CredentialProxyScheme,
+        CredentialStateRepository, EncryptedCredentialEnvelope, QuotaRepository,
+        SchedulerRuntimeProxyRecord, UsageLogRepository,
     };
     use af_domain::{
         AsyncTaskId, AsyncTaskRequestId, ChannelType, CredentialKind, GatewayPrincipal, ProxyId,
@@ -862,11 +900,31 @@ mod tests {
         let submissions =
             AsyncTaskSubmissionRepository::new(database.pool().clone(), Duration::from_secs(5))
                 .unwrap();
+        let billings =
+            AsyncTaskBillingRepository::new(database.pool().clone(), Duration::from_secs(5))
+                .unwrap();
+        let group_pricing = GroupPricingCache::load_from_database(database.pool().clone())
+            .await
+            .unwrap();
+        let quota = Arc::new(QuotaRepository::new(database.pool().clone()));
+        let usage = Arc::new(DatabaseUsageRecordSink::new(UsageLogRepository::new(
+            database.pool().clone(),
+        )));
+        let billing_ports =
+            crate::scheduled_chat::video_task_persistence::PersistentVideoTaskBillingPorts::new(
+                quota.clone(),
+                quota.clone(),
+                quota,
+                usage,
+            );
         let coordinator =
             crate::scheduled_chat::video_task_persistence::PersistentVideoTaskCoordinator::new(
                 service,
                 tasks.clone(),
                 submissions.clone(),
+                billings,
+                group_pricing,
+                billing_ports,
             );
         let request_id = AsyncTaskRequestId::new([0x61; 16]).unwrap();
 
@@ -1009,10 +1067,10 @@ mod tests {
                 "INSERT INTO groups (id, name, display_name, flags) VALUES ({GROUP_ID}, 'video-runtime', '视频运行时测试', '{{}}')"
             ),
             format!(
-                "INSERT INTO users (id, username, default_group_id, aff_code, settings) VALUES ({USER_ID}, 'video-runtime', {GROUP_ID}, 'video-runtime-aff', '{{}}')"
+                "INSERT INTO users (id, username, default_group_id, aff_code, quota, settings) VALUES ({USER_ID}, 'video-runtime', {GROUP_ID}, 'video-runtime-aff', 10000000, '{{}}')"
             ),
             format!(
-                "INSERT INTO tokens (id, user_id, key_hash, key_prefix, name, group_id) VALUES ({TOKEN_ID}, {USER_ID}, '{}', 'sk-video-runtime', '视频运行时令牌', {GROUP_ID})",
+                "INSERT INTO tokens (id, user_id, key_hash, key_prefix, name, status, group_id, remain_quota) VALUES ({TOKEN_ID}, {USER_ID}, '{}', 'sk-video-runtime', '视频运行时令牌', 1, {GROUP_ID}, 10000000)",
                 "cd".repeat(32),
             ),
             format!(

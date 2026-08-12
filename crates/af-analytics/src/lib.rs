@@ -33,6 +33,7 @@ pub struct AdminDashboard {
     upstream_usage_count: i64,
     estimated_usage_count: i64,
     per_token_request_count: i64,
+    per_call_request_count: i64,
     free_request_count: i64,
     enabled_channel_count: i64,
     disabled_channel_count: i64,
@@ -82,6 +83,12 @@ impl AdminDashboard {
         self.per_token_request_count
     }
 
+    /// 返回按次计费的请求数。
+    #[must_use]
+    pub const fn per_call_request_count(self) -> i64 {
+        self.per_call_request_count
+    }
+
     /// 返回免费请求数。
     #[must_use]
     pub const fn free_request_count(self) -> i64 {
@@ -115,6 +122,7 @@ impl AdminDashboard {
             upstream_usage_count: record.upstream_usage_count(),
             estimated_usage_count: record.estimated_usage_count(),
             per_token_request_count: record.per_token_request_count(),
+            per_call_request_count: record.per_call_request_count(),
             free_request_count: record.free_request_count(),
             enabled_channel_count: record.enabled_channel_count(),
             disabled_channel_count: record.disabled_channel_count(),

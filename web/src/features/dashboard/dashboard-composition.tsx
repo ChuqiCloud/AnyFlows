@@ -15,7 +15,7 @@ type CompositionRowProps = {
   total: number
   formatNumber: (value: number) => string
   formatPercent: (value: number) => string
-  tone: 'primary' | 'muted'
+  tone: 'primary' | 'info' | 'muted'
 }
 
 function CompositionRow({ label, count, total, formatNumber, formatPercent, tone }: CompositionRowProps) {
@@ -37,7 +37,11 @@ function CompositionRow({ label, count, total, formatNumber, formatPercent, tone
         className="h-1.5 overflow-hidden rounded-full bg-surface-2"
       >
         <div
-          className={tone === 'primary' ? 'h-full bg-primary' : 'h-full bg-muted-foreground/45'}
+          className={tone === 'primary'
+            ? 'h-full bg-primary'
+            : tone === 'info'
+              ? 'h-full bg-info'
+              : 'h-full bg-muted-foreground/45'}
           style={{ width: `${ratio * 100}%` }}
         />
       </div>
@@ -83,6 +87,14 @@ export function DashboardComposition({ dashboard, formatNumber, formatPercent }:
             formatNumber={formatNumber}
             formatPercent={formatPercent}
             tone="primary"
+          />
+          <CompositionRow
+            label={t('dashboard.composition.billing.perCall')}
+            count={dashboard.per_call_request_count}
+            total={dashboard.request_count}
+            formatNumber={formatNumber}
+            formatPercent={formatPercent}
+            tone="info"
           />
           <CompositionRow
             label={t('dashboard.composition.billing.free')}

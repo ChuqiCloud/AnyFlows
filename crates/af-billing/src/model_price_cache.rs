@@ -67,6 +67,7 @@ impl ModelPriceSourceRecord {
     ) -> Result<Self, ModelPriceCacheError> {
         if !is_valid_model_name(&model)
             || version == 0
+            || billing_mode == BillingMode::PerCall
             || (billing_mode == BillingMode::Free && !prices_are_zero(prices))
         {
             return Err(ModelPriceCacheError::InvalidRecord);
@@ -77,6 +78,7 @@ impl ModelPriceSourceRecord {
                 definition: match billing_mode {
                     BillingMode::PerToken => ModelPriceDefinition::PerToken(prices),
                     BillingMode::Free => ModelPriceDefinition::Free,
+                    BillingMode::PerCall => return Err(ModelPriceCacheError::InvalidRecord),
                 },
                 version,
             },

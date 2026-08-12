@@ -495,6 +495,7 @@ pub(crate) enum AdminCredentialQuotaDimensionSchema {
 #[schema(as = AdminUsageLogBillingMode, rename_all = "snake_case")]
 pub(crate) enum AdminUsageLogBillingModeSchema {
     PerToken,
+    PerCall,
     Free,
 }
 

@@ -54,7 +54,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 54;
+const EXPECTED_MIGRATION_COUNT: usize = 55;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -72,7 +72,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 46] = [
+const CORE_TABLES: [&str; 47] = [
     "groups",
     "users",
     "channels",
@@ -119,6 +119,7 @@ const CORE_TABLES: [&str; 46] = [
     "proxies",
     "async_tasks",
     "async_task_submission_claims",
+    "async_task_billings",
 ];
 
 struct SlowMigrator;
@@ -905,7 +906,8 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     let pool = connect(&options).await?;
     assert_database_session(pool.connection()).await?;
 
-    run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
+    Migrator::up(pool.connection(), Some(54)).await?;
+    exercise_usage_per_call_migration_upgrade(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
 
     assert_core_schema(pool.connection()).await?;
@@ -952,6 +954,84 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_core_tables_absent(pool.connection()).await?;
 
     pool.close().await?;
+    Ok(())
+}
+
+/// 从第 54 号历史 schema 升级，验证旧用量保留、按次模式放行及自增序列连续。
+async fn exercise_usage_per_call_migration_upgrade(
+    pool: &DatabasePool,
+) -> Result<(), Box<dyn Error>> {
+    let group = group_active_model("usage-v55-upgrade-group", "按次迁移升级分组")
+        .insert(pool.connection())
+        .await?;
+    let mut user = user_active_model(
+        group.id,
+        "usage-v55-upgrade-user",
+        "usage-v55-upgrade@example.com",
+        "invite-usage-v55-upgrade",
+    );
+    user.status = Set(1);
+    let user = user.insert(pool.connection()).await?;
+    let mut token = token_active_model(user.id, group.id, TOKEN_HASH_E, "usage-v55-upgrade-token");
+    token.status = Set(1);
+    let token = token.insert(pool.connection()).await?;
+    let principal = GatewayPrincipal::new(
+        TokenId::new(token.id)?,
+        UserId::new(user.id)?,
+        GroupId::new(group.id)?,
+    );
+    let repository = UsageLogRepository::new(pool.clone());
+    let token_write = UsageLogWrite::new(
+        BillingReservationId::new([0xd1; 16])?,
+        principal,
+        UsageLogBillingMode::PerToken,
+        UsageLogUsage::new(1, 1, 0, 0, 0, 0, 0, 0)?,
+        UsageLogSource::Upstream,
+        UsageLogSemantics::Inclusive,
+        Quota::new(2)?,
+    );
+    assert_eq!(
+        repository.record(&token_write).await?,
+        UsageLogWriteOutcome::Applied
+    );
+
+    Migrator::up(pool.connection(), None).await?;
+    let per_call_write = UsageLogWrite::new(
+        BillingReservationId::new([0xd2; 16])?,
+        principal,
+        UsageLogBillingMode::PerCall,
+        UsageLogUsage::new(0, 0, 0, 0, 0, 0, 0, 0)?,
+        UsageLogSource::Upstream,
+        UsageLogSemantics::Inclusive,
+        Quota::new(320_000)?,
+    )
+    .with_video_dimensions(Some(8), None)?;
+    assert_eq!(
+        repository.record(&per_call_write).await?,
+        UsageLogWriteOutcome::Applied
+    );
+    let ids = usage_logs::Entity::find()
+        .filter(usage_logs::Column::UserId.eq(user.id))
+        .all(pool.connection())
+        .await?;
+    assert_eq!(ids.len(), 2);
+    let minimum_id = ids.iter().map(|record| record.id).min().unwrap_or_default();
+    let maximum_id = ids.iter().map(|record| record.id).max().unwrap_or_default();
+    assert!(maximum_id > minimum_id, "迁移后自增主键必须继续递增");
+
+    usage_logs::Entity::delete_many()
+        .filter(usage_logs::Column::UserId.eq(user.id))
+        .exec(pool.connection())
+        .await?;
+    tokens::Entity::delete_by_id(token.id)
+        .exec(pool.connection())
+        .await?;
+    users::Entity::delete_by_id(user.id)
+        .exec(pool.connection())
+        .await?;
+    groups::Entity::delete_by_id(group.id)
+        .exec(pool.connection())
+        .await?;
     Ok(())
 }
 
@@ -1261,6 +1341,24 @@ async fn exercise_usage_log_repository(pool: &DatabasePool) -> Result<(), Box<dy
     assert_eq!(
         repository.record(&conflicting_write).await,
         Err(UsageLogRepositoryError::Conflict)
+    );
+    let per_call_write = UsageLogWrite::new(
+        BillingReservationId::new([0xc2; 16])?,
+        principal,
+        UsageLogBillingMode::PerCall,
+        UsageLogUsage::new(0, 0, 0, 0, 0, 0, 0, 0)?,
+        UsageLogSource::Upstream,
+        UsageLogSemantics::Inclusive,
+        Quota::new(320_000)?,
+    )
+    .with_video_dimensions(Some(8), None)?;
+    assert_eq!(
+        repository.record(&per_call_write).await?,
+        UsageLogWriteOutcome::Applied
+    );
+    assert_eq!(
+        usage_logs::Entity::find().count(pool.connection()).await?,
+        2
     );
 
     usage_logs::Entity::delete_many()

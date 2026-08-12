@@ -290,6 +290,7 @@ export type AdminDashboardResponse = {
     upstream_usage_count: number;
     estimated_usage_count: number;
     per_token_request_count: number;
+    per_call_request_count: number;
     free_request_count: number;
     enabled_channel_count: number;
     disabled_channel_count: number;
@@ -893,7 +894,7 @@ export type AdminUsageLog = {
     quota: number;
     created_at: number;
 };
-export type AdminUsageLogBillingMode = 'per_token' | 'free';
+export type AdminUsageLogBillingMode = 'per_token' | 'per_call' | 'free';
 export type AdminUsageLogListResponse = {
     logs: Array<AdminUsageLog>;
     next_cursor: number | null;

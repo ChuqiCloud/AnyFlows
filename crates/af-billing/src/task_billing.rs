@@ -102,6 +102,21 @@ pub struct TaskBillingSettlementRequest {
 }
 
 impl TaskBillingSettlementRequest {
+    /// 从持久化任务事实恢复待结算请求，并在执行 IO 前校验冻结上界。
+    pub fn new(
+        reservation_id: BillingReservationId,
+        actual_quota: Quota,
+        upper_bound: Quota,
+    ) -> Result<Self, TaskBillingError> {
+        if actual_quota > upper_bound {
+            return Err(TaskBillingError::ActualExceedsUpperBound);
+        }
+        Ok(Self {
+            reservation_id,
+            actual_quota,
+        })
+    }
+
     /// 返回冻结、结算和结果未知重放共用的标识。
     #[must_use]
     pub const fn reservation_id(self) -> BillingReservationId {
@@ -355,10 +370,7 @@ impl TaskBillingLifecycle {
             actual_quota,
             used_submission_fallback,
         };
-        Ok(TaskBillingSettlementRequest {
-            reservation_id: self.reservation_id,
-            actual_quota,
-        })
+        TaskBillingSettlementRequest::new(self.reservation_id, actual_quota, self.upper_bound)
     }
 
     fn ensure_completion_replay(

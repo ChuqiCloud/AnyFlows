@@ -1,3 +1,4 @@
+mod billing;
 mod repository;
 mod status;
 mod submission;
@@ -18,3 +19,9 @@ pub use types::{
 
 #[cfg(test)]
 mod tests;
+pub use billing::{
+    AsyncTaskBillingAccept, AsyncTaskBillingClear, AsyncTaskBillingMark,
+    AsyncTaskBillingMutationOutcome, AsyncTaskBillingPlan, AsyncTaskBillingPlanOutcome,
+    AsyncTaskBillingRecord, AsyncTaskBillingRepository, AsyncTaskBillingResolution,
+    AsyncTaskBillingSettlement, AsyncTaskBillingState,
+};

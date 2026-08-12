@@ -20,6 +20,7 @@ mod task_billing;
 mod usage_record_consumer;
 mod usage_record_database_sink;
 mod usage_record_queue;
+mod video_pricing;
 
 /// 已通过 webhook 处理器校验的持久化事件写入值。
 pub use af_db::TopupPaymentEventWrite;
@@ -112,6 +113,10 @@ pub use usage_record_database_sink::DatabaseUsageRecordSink;
 pub use usage_record_queue::{
     UsageRecordDelivery, UsageRecordQueue, UsageRecordQueueError, UsageRecordReceiver,
 };
+pub use video_pricing::{
+    DEFAULT_XAI_VIDEO_DURATION_SECONDS, XAI_VIDEO_PRICE_CARD_VERSION, XaiVideoPricingError,
+    XaiVideoPricingSnapshot,
+};
 
 #[cfg(test)]
 mod batch_tests;
@@ -139,3 +144,5 @@ mod pricing_tests;
 mod quota_math_tests;
 #[cfg(test)]
 mod task_billing_tests;
+#[cfg(test)]
+mod video_pricing_tests;

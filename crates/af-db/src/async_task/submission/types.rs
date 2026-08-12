@@ -69,6 +69,7 @@ pub struct AsyncTaskSubmissionClaim {
     pub(super) protocol: Protocol,
     pub(super) requested_model: String,
     pub(super) request_fingerprint: AsyncTaskRequestFingerprint,
+    pub(super) video_duration_seconds: Option<u8>,
     pub(super) created_at: u64,
 }
 
@@ -81,10 +82,14 @@ impl AsyncTaskSubmissionClaim {
         protocol: Protocol,
         requested_model: String,
         request_fingerprint: AsyncTaskRequestFingerprint,
+        video_duration_seconds: Option<u8>,
         created_at: u64,
     ) -> Result<Self, AsyncTaskInputError> {
         validate_model(&requested_model)?;
         validate_time(created_at)?;
+        if video_duration_seconds.is_some_and(|value| !(1..=15).contains(&value)) {
+            return Err(AsyncTaskInputError::InvalidBilling);
+        }
         Ok(Self {
             task_id,
             request_id,
@@ -92,6 +97,7 @@ impl AsyncTaskSubmissionClaim {
             protocol,
             requested_model,
             request_fingerprint,
+            video_duration_seconds,
             created_at,
         })
     }
@@ -109,6 +115,12 @@ impl AsyncTaskSubmissionClaim {
     #[must_use]
     pub const fn request_fingerprint(&self) -> AsyncTaskRequestFingerprint {
         self.request_fingerprint
+    }
+
+    /// 返回请求明确携带的视频时长；缺失时由计费快照采用上游默认值。
+    #[must_use]
+    pub const fn video_duration_seconds(&self) -> Option<u8> {
+        self.video_duration_seconds
     }
 }
 
@@ -267,6 +279,7 @@ pub struct AsyncTaskSubmissionRecord {
     pub(super) protocol: Protocol,
     pub(super) requested_model: String,
     pub(super) request_fingerprint: AsyncTaskRequestFingerprint,
+    pub(super) video_duration_seconds: Option<u8>,
     pub(super) state: AsyncTaskSubmissionState,
     pub(super) attempt_id: Option<AsyncTaskAttemptId>,
     pub(super) target_group_id: Option<GroupId>,
@@ -314,6 +327,12 @@ impl AsyncTaskSubmissionRecord {
     #[must_use]
     pub const fn request_fingerprint(&self) -> AsyncTaskRequestFingerprint {
         self.request_fingerprint
+    }
+
+    /// 返回请求明确携带的视频时长。
+    #[must_use]
+    pub const fn video_duration_seconds(&self) -> Option<u8> {
+        self.video_duration_seconds
     }
 
     #[must_use]
@@ -454,6 +473,7 @@ impl AsyncTaskSubmissionRecord {
             && self.protocol == write.protocol
             && self.requested_model == write.requested_model
             && self.request_fingerprint == write.request_fingerprint
+            && self.video_duration_seconds == write.video_duration_seconds
     }
 
     pub(super) fn matches_accept(&self, write: &AsyncTaskSubmissionAccept) -> bool {

@@ -61,6 +61,7 @@ fn to_usage_log_write(record: BillingUsageRecord) -> Result<UsageLogWrite, Usage
     .map_err(|_| UsageRecordSinkError::Invariant)?;
     let billing_mode = match record.billing_mode() {
         BillingMode::PerToken => UsageLogBillingMode::PerToken,
+        BillingMode::PerCall => UsageLogBillingMode::PerCall,
         BillingMode::Free => UsageLogBillingMode::Free,
     };
     let source = match usage_source(record.usage()) {

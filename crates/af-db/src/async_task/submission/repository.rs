@@ -237,6 +237,7 @@ async fn claim_in_transaction(
         request_fingerprint: Set(SensitiveString::from(
             write.request_fingerprint.persistence_key(),
         )),
+        video_duration_seconds: Set(write.video_duration_seconds.map(i16::from)),
         state: Set(state_code_for_claim(AsyncTaskSubmissionState::Claimed)),
         attempt_key: Set(None),
         target_group_id: Set(None),

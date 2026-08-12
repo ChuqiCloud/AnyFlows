@@ -78,6 +78,7 @@
       "billing": {
         "title": "Billing mode",
         "perToken": "Per-token billing",
+        "perCall": "Per-call billing",
         "free": "Free requests"
       }
     },
@@ -1819,6 +1820,7 @@
       "quotaSemantics": "Quota {{quota}} / {{semantics}}",
       "billingMode": {
         "per_token": "Per token",
+        "per_call": "Per call",
         "free": "Free"
       },
       "source": {

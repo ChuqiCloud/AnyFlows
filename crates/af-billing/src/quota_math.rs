@@ -295,6 +295,22 @@ fn apply_pricing_ratios(
         .ok_or_else(|| pricing_overflow().into())
 }
 
+/// 把已经过业务边界校验的美元金额应用三层请求倍率并转换为额度。
+pub(crate) fn quota_from_usd_with_ratios(
+    usd: Decimal,
+    ratio_micros: [i64; 3],
+) -> Result<Quota, QuotaMathError> {
+    if usd < Decimal::ZERO || ratio_micros.into_iter().any(|ratio| ratio < 0) {
+        return Err(QuotaError::Negative.into());
+    }
+    // 公共倍率函数会在末尾消除一次百万尺度；美元金额必须先补齐同一固定点尺度。
+    let weighted = Decimal::from(TOKENS_PER_MILLION)
+        .checked_mul(usd)
+        .ok_or_else(pricing_overflow)?;
+    let effective = apply_pricing_ratios(weighted, ratio_micros)?;
+    quota_from_usd_for(effective, QuotaMathOperation::PricingResolution)
+}
+
 const fn pricing_overflow() -> QuotaClamp {
     QuotaClamp::overflow(QuotaMathOperation::PricingResolution)
 }

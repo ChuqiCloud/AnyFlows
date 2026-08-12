@@ -18,6 +18,7 @@ use af_domain::{
 };
 
 pub(crate) mod abilities;
+pub(crate) mod async_task_billings;
 pub(crate) mod async_task_submission_claims;
 pub(crate) mod async_tasks;
 pub(crate) mod auth_challenge_rate_limits;
@@ -582,7 +583,7 @@ where
     if !insert {
         return Err(DbErr::Custom("用量日志不允许更新".to_owned()));
     }
-    let valid_modes = matches!(model.billing_mode.try_as_ref(), Some(1 | 2));
+    let valid_modes = matches!(model.billing_mode.try_as_ref(), Some(1..=3));
     let valid_event_type = matches!(model.event_type.try_as_ref(), Some(1));
     let valid_source = matches!(model.usage_source.try_as_ref(), Some(1 | 2));
     let valid_semantics = matches!(model.usage_semantics.try_as_ref(), Some(1 | 2));

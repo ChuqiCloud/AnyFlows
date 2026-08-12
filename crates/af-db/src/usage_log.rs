@@ -32,6 +32,8 @@ pub enum UsageLogBillingMode {
     PerToken,
     /// 显式免费，仍保留用量事实。
     Free,
+    /// 按请求次数或已校验业务维度直接计费。
+    PerCall,
 }
 
 impl UsageLogBillingMode {
@@ -39,6 +41,7 @@ impl UsageLogBillingMode {
         match self {
             Self::PerToken => 1,
             Self::Free => 2,
+            Self::PerCall => 3,
         }
     }
 }
