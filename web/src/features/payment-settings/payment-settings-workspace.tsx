@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Check, Copy, CreditCard, KeyRound, Landmark, LoaderCircle, ShieldCheck } from 'lucide-react'
+import { Check, Copy, CreditCard, KeyRound, Landmark, LoaderCircle, Settings2, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Controller, useForm, type FieldError, type UseFormReturn } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -13,6 +13,7 @@ import { Switch } from '@/components/ui/switch'
 import { useUpdateAdminPaymentSettings } from './payment-settings-api'
 import {
   buildPaymentSettingsSchema,
+  paymentCallbackUrls,
   paymentSettingsValues,
   toPaymentSettingsRequest,
   type PaymentSettingsValues,
@@ -20,11 +21,12 @@ import {
 import type { AdminPaymentSettings } from './payment-settings-types'
 
 type PaymentSettingsWorkspaceProps = {
+  publicBaseUrl?: string | null
   settings: AdminPaymentSettings
 }
 
 /** 集中管理支付 Provider、脱敏密钥更新和固定回调入口。 */
-export function PaymentSettingsWorkspace({ settings }: PaymentSettingsWorkspaceProps) {
+export function PaymentSettingsWorkspace({ publicBaseUrl, settings }: PaymentSettingsWorkspaceProps) {
   const { t } = useTranslation()
   const mutation = useUpdateAdminPaymentSettings()
   const form = useForm<PaymentSettingsValues>({
@@ -34,12 +36,13 @@ export function PaymentSettingsWorkspace({ settings }: PaymentSettingsWorkspaceP
       epayMerchantId: t('paymentSettings.validation.epayMerchantId'),
       epayMerchantKey: t('paymentSettings.validation.epayMerchantKey'),
       epayPaymentMethod: t('paymentSettings.validation.epayPaymentMethod'),
+      epayPublicBaseUrl: t('paymentSettings.validation.epayPublicBaseUrl'),
       epayQuota: t('paymentSettings.validation.epayQuota'),
       stripePublishableKey: t('paymentSettings.validation.stripePublishableKey'),
       stripeSecretKey: t('paymentSettings.validation.stripeSecretKey'),
       stripeTolerance: t('paymentSettings.validation.stripeTolerance'),
       stripeWebhookSecret: t('paymentSettings.validation.stripeWebhookSecret'),
-    })),
+    }, publicBaseUrl)),
   })
 
   useEffect(() => {
@@ -54,6 +57,7 @@ export function PaymentSettingsWorkspace({ settings }: PaymentSettingsWorkspaceP
       // 保留管理员输入，错误只展示固定文案，避免泄露支付服务响应。
     }
   })
+  const epayNeedsPublicBaseUrl = form.watch('epayEnabled') && !publicBaseUrl
 
   return (
     <form className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]" onSubmit={onSubmit} noValidate>
@@ -85,6 +89,18 @@ export function PaymentSettingsWorkspace({ settings }: PaymentSettingsWorkspaceP
           statusLabel={t(form.watch('epayEnabled') ? 'paymentSettings.status.enabled' : 'paymentSettings.status.disabled')}
           last
         >
+          {epayNeedsPublicBaseUrl ? (
+            <div role="alert" className="flex flex-wrap items-start gap-2.5 rounded-lg border border-warning/25 bg-warning/8 p-3 sm:col-span-2 sm:flex-nowrap">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium">{t('paymentSettings.epay.publicBaseUrlRequired')}</p>
+                <p className="mt-1 text-[0.6875rem] leading-4 text-muted-foreground">{t('paymentSettings.epay.publicBaseUrlHint')}</p>
+              </div>
+              <Button asChild type="button" size="xs" variant="secondary">
+                <a href="#/console/system-settings/site"><Settings2 aria-hidden="true" />{t('paymentSettings.actions.configureSite')}</a>
+              </Button>
+            </div>
+          ) : null}
           <TextField form={form} name="epayGatewayUrl" id="payment-epay-gateway" label={t('paymentSettings.fields.epayGatewayUrl')} placeholder="https://pay.example.com" />
           <TextField form={form} name="epayMerchantId" id="payment-epay-merchant" label={t('paymentSettings.fields.epayMerchantId')} />
           <SecretField form={form} name="epayMerchantKey" clearName="clearEpayMerchantKey" configured={settings.epay_merchant_key_configured} id="payment-epay-key" label={t('paymentSettings.fields.epayMerchantKey')} />
@@ -101,7 +117,7 @@ export function PaymentSettingsWorkspace({ settings }: PaymentSettingsWorkspaceP
               <span className="inline-flex items-center gap-1.5 text-success"><Check className="size-3.5" aria-hidden="true" />{t('paymentSettings.state.saved')}</span>
             ) : form.formState.isDirty ? <span className="text-muted-foreground">{t('paymentSettings.state.unsaved')}</span> : <span className="text-muted-foreground">{t('paymentSettings.state.synced', { version: settings.version })}</span>}
           </div>
-          <Button type="submit" disabled={!form.formState.isDirty || mutation.isPending}>
+          <Button type="submit" disabled={!form.formState.isDirty || mutation.isPending || epayNeedsPublicBaseUrl}>
             {mutation.isPending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : null}
             {t(mutation.isPending ? 'paymentSettings.actions.saving' : 'paymentSettings.actions.save')}
           </Button>
@@ -109,7 +125,7 @@ export function PaymentSettingsWorkspace({ settings }: PaymentSettingsWorkspaceP
       </div>
 
       <aside className="grid gap-4">
-        <CallbackPanel />
+        <CallbackPanel publicBaseUrl={publicBaseUrl} />
         <section className="rounded-xl border border-info/20 bg-info/8 p-4">
           <div className="flex items-start gap-2.5">
             <ShieldCheck className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />
@@ -178,7 +194,7 @@ function SecretField({ clearName, configured, form, id, label, name }: { clearNa
 type NumberName = 'epayQuotaPerCny' | 'stripeSignatureToleranceSeconds'
 function NumberField({ form, id, label, name, suffix }: { form: UseFormReturn<PaymentSettingsValues>; id: string; label: string; name: NumberName; suffix: string }) {
   const error = form.formState.errors[name] as FieldError | undefined
-  return <div className="grid gap-1.5"><Label htmlFor={id}>{label}</Label><div className="relative"><Input id={id} type="number" min={1} className="pr-16 tabular-nums" aria-invalid={!!error} {...form.register(name, { valueAsNumber: true })} /><span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground">{suffix}</span></div>{error ? <p className="text-xs text-destructive">{error.message}</p> : null}</div>
+  return <div className="grid gap-1.5"><Label htmlFor={id}>{label}</Label><div className="relative"><Input id={id} type="number" min={1} className="pr-16 tabular-nums" aria-invalid={!!error} {...form.register(name, { valueAsNumber: true })} /><span data-input-suffix className="pointer-events-none absolute right-3 top-0 grid h-8 place-items-center text-xs leading-none text-muted-foreground">{suffix}</span></div>{error ? <p className="text-xs text-destructive">{error.message}</p> : null}</div>
 }
 
 type ToggleName = 'epayAlipayEnabled' | 'epayWxpayEnabled'
@@ -186,16 +202,16 @@ function ToggleField({ form, id, label, name }: { form: UseFormReturn<PaymentSet
   return <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--hairline)] px-3 py-2.5"><Label htmlFor={id}>{label}</Label><Controller control={form.control} name={name} render={({ field }) => <Switch id={id} checked={field.value} onCheckedChange={field.onChange} />} /></div>
 }
 
-/** 回调地址由部署域名和固定路由生成，只允许复制，不参与配置提交。 */
-function CallbackPanel() {
+/** 回调地址由站点公开基址和固定路由生成，只允许复制，不参与配置提交。 */
+function CallbackPanel({ publicBaseUrl }: { publicBaseUrl?: string | null }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState<string>()
-  const origin = window.location.origin
-  const callbacks = [
-    ['stripe', `${origin}/api/payment/webhook/stripe`],
-    ['epay', `${origin}/api/payment/webhook/epay`],
-    ['return', `${origin}/#/console/wallet`],
-  ] as const
+  const resolved = paymentCallbackUrls(publicBaseUrl)
+  const callbacks = resolved ? [
+    ['stripe', resolved.stripe],
+    ['epay', resolved.epay],
+    ['return', resolved.return],
+  ] as const : []
 
   const copy = async (key: string, value: string) => {
     try {
@@ -211,9 +227,9 @@ function CallbackPanel() {
     <section className="rounded-xl border border-[var(--hairline)] bg-surface-1/45 p-4">
       <h3 className="text-sm font-semibold">{t('paymentSettings.callbacks.title')}</h3>
       <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('paymentSettings.callbacks.description')}</p>
-      <div className="mt-3 grid gap-3">
+      {callbacks.length ? <div className="mt-3 grid gap-3">
         {callbacks.map(([key, value]) => <div key={key} className="grid gap-1"><Label htmlFor={`payment-callback-${key}`} className="text-xs">{t(`paymentSettings.callbacks.${key}`)}</Label><div className="flex gap-1.5"><Input id={`payment-callback-${key}`} readOnly value={value} className="min-w-0 text-xs" /><Button type="button" size="icon" variant="secondary" aria-label={t('paymentSettings.actions.copy')} onClick={() => void copy(key, value)}>{copied === key ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}</Button></div></div>)}
-      </div>
+      </div> : <div className="mt-3 rounded-lg border border-dashed border-[var(--hairline)] bg-surface-2/30 p-3 text-xs leading-5 text-muted-foreground">{t('paymentSettings.callbacks.missingPublicBaseUrl')}</div>}
     </section>
   )
 }

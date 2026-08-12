@@ -175,7 +175,7 @@ impl PaymentRuntime {
             .map_err(|_| runtime_failed("site_settings"))?;
         let public_base_url = site
             .public_base_url()
-            .ok_or_else(|| runtime_failed("epay_public_base_url"))?;
+            .ok_or_else(|| invalid_runtime_configuration("epay_public_base_url"))?;
         let (notify_url, return_url) = epay_callback_urls(public_base_url)?;
         let mut methods = Vec::with_capacity(2);
         if record.epay_alipay_enabled() {
@@ -325,6 +325,15 @@ fn runtime_failed(error_kind: &'static str) -> PaymentSettingsRuntimeError {
         "支付运行时快照装配失败"
     );
     PaymentSettingsRuntimeError::Failed
+}
+
+fn invalid_runtime_configuration(error_kind: &'static str) -> PaymentSettingsRuntimeError {
+    tracing::warn!(
+        target: "af_server::payment_runtime",
+        error_kind,
+        "支付运行时配置无效"
+    );
+    PaymentSettingsRuntimeError::InvalidConfiguration
 }
 
 #[cfg(test)]

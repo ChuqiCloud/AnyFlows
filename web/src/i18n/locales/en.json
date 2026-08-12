@@ -3451,21 +3451,26 @@
     "subtitle": "Configure Stripe and Epay collection methods, wallet credit conversion, and fixed callback endpoints.",
     "loading": "Loading payment settings",
     "stripe": { "title": "Stripe", "description": "Accept card payments with Payment Element and confirm credit through signed webhooks." },
-    "epay": { "title": "Epay", "description": "Connect an Epay-compatible gateway and enable Alipay or WeChat Pay independently." },
+    "epay": {
+      "title": "Epay",
+      "description": "Connect an Epay-compatible gateway and enable Alipay or WeChat Pay independently.",
+      "publicBaseUrlRequired": "Set the public base URL before enabling Epay",
+      "publicBaseUrlHint": "Webhook and return URLs require a stable externally accessible address, not the current local preview URL."
+    },
     "fields": {
       "stripeEnabled": "Enable Stripe", "stripePublishableKey": "Publishable Key", "stripeSecretKey": "Secret Key", "stripeWebhookSecret": "Webhook Secret", "stripeTolerance": "Signature tolerance",
       "epayEnabled": "Enable Epay", "epayGatewayUrl": "Gateway URL", "epayMerchantId": "Merchant PID", "epayMerchantKey": "Merchant PKey", "epayQuotaPerCny": "Quota per CNY", "alipay": "Alipay", "wxpay": "WeChat Pay"
     },
     "status": { "enabled": "Enabled", "disabled": "Disabled" },
     "secrets": { "configured": "Configured", "missing": "Not configured", "replacePlaceholder": "Enter a value to replace the stored secret", "createPlaceholder": "Enter a new secret", "clear": "Clear the stored secret when saving", "neverShown": "The plaintext is never shown again after saving." },
-    "callbacks": { "title": "Callback URLs", "description": "URLs are derived from the current deployment origin, read-only, and excluded from the settings request.", "stripe": "Stripe webhook", "epay": "Epay notification", "return": "Synchronous return" },
+    "callbacks": { "title": "Callback URLs", "description": "URLs are derived from the site public base URL, read-only, and excluded from the payment settings request.", "missingPublicBaseUrl": "Set the site public base URL to reveal the production callback URLs to enter in payment providers.", "stripe": "Stripe webhook", "epay": "Epay notification", "return": "Synchronous return" },
     "security": { "title": "Secret handling", "description": "Read requests expose configured state only. Blank means keep; an explicit clear selection removes a stored secret." },
     "validation": {
       "stripePublishableKey": "Enter a valid pk_test_ or pk_live_ publishable key.", "stripeSecretKey": "Enter a valid secret; replacement and clearing cannot be combined.", "stripeWebhookSecret": "Enter a valid webhook secret; replacement and clearing cannot be combined.", "stripeTolerance": "Signature tolerance must be an integer from 30 to 900 seconds.",
-      "epayGatewayUrl": "Enter an HTTPS gateway URL without credentials, query, or fragment.", "epayMerchantId": "Enter a merchant PID without spaces or control characters.", "epayMerchantKey": "Enter a valid merchant PKey; replacement and clearing cannot be combined.", "epayPaymentMethod": "Enable at least one payment method when Epay is active.", "epayQuota": "Quota per CNY must be a positive integer."
+      "epayGatewayUrl": "Enter an HTTPS gateway URL without credentials, query, or fragment.", "epayMerchantId": "Enter a merchant PID without spaces or control characters.", "epayMerchantKey": "Enter a valid merchant PKey; replacement and clearing cannot be combined.", "epayPaymentMethod": "Enable at least one payment method when Epay is active.", "epayPublicBaseUrl": "Set the public base URL in site settings before enabling Epay.", "epayQuota": "Quota per CNY must be a positive integer."
     },
     "units": { "seconds": "sec", "quota": "quota" },
-    "actions": { "refresh": "Refresh", "retry": "Try again", "save": "Save settings", "saving": "Saving", "copy": "Copy URL" },
+    "actions": { "refresh": "Refresh", "retry": "Try again", "save": "Save settings", "saving": "Saving", "copy": "Copy URL", "configureSite": "Open site settings" },
     "state": { "saved": "Payment settings saved.", "unsaved": "There are unsaved changes.", "synced": "Synced with server version {{version}}." },
     "errors": { "title": "Payment settings could not be loaded", "load": "The service did not return reliable payment configuration. Try again shortly.", "save": "Payment settings could not be saved. Check the fields or refresh and retry." }
   },

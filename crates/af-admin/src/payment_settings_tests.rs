@@ -35,6 +35,30 @@ impl PaymentSettingsRuntimeApplier for FailingRuntime {
     }
 }
 
+struct InvalidConfigurationRuntime {
+    versions: Arc<Mutex<Vec<i64>>>,
+    restore_succeeds: bool,
+}
+
+impl PaymentSettingsRuntimeApplier for InvalidConfigurationRuntime {
+    fn apply<'a>(
+        &'a self,
+        record: &'a PaymentSettingsRecord,
+        _cipher: &'a SystemSecretCipher,
+    ) -> PaymentSettingsApplyFuture<'a> {
+        self.versions.lock().unwrap().push(record.version());
+        Box::pin(async move {
+            if record.version() == 2 {
+                Err(PaymentSettingsRuntimeError::InvalidConfiguration)
+            } else if self.restore_succeeds {
+                Ok(())
+            } else {
+                Err(PaymentSettingsRuntimeError::Failed)
+            }
+        })
+    }
+}
+
 struct ConcurrentRuntime {
     repository: PaymentSettingsRepository,
     versions: Arc<Mutex<Vec<i64>>>,
@@ -91,6 +115,63 @@ async fn failed_runtime_switch_restores_previous_database_snapshot() -> Result<(
     let restored = repository.settings().await?;
     assert!(!restored.initialized());
     assert_eq!(restored.version(), 3);
+    assert_eq!(*versions.lock().unwrap(), [2, 1]);
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn invalid_runtime_configuration_restores_snapshot_and_returns_input_error()
+-> Result<(), Box<dyn Error>> {
+    let (pool, repository) = installed_repository().await?;
+    let versions = Arc::new(Mutex::new(Vec::new()));
+    let service = DatabaseAdminPaymentSettingsService::new(
+        repository.clone(),
+        cipher(),
+        Arc::new(InvalidConfigurationRuntime {
+            versions: Arc::clone(&versions),
+            restore_succeeds: true,
+        }),
+    );
+
+    assert_eq!(
+        service
+            .update(admin(), disabled_command(1, 500_000))
+            .await
+            .unwrap_err(),
+        AdminPaymentSettingsError::InvalidInput
+    );
+    let restored = repository.settings().await?;
+    assert!(!restored.initialized());
+    assert_eq!(restored.version(), 3);
+    assert_eq!(*versions.lock().unwrap(), [2, 1]);
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn invalid_configuration_returns_internal_error_when_snapshot_recovery_fails()
+-> Result<(), Box<dyn Error>> {
+    let (pool, repository) = installed_repository().await?;
+    let versions = Arc::new(Mutex::new(Vec::new()));
+    let service = DatabaseAdminPaymentSettingsService::new(
+        repository,
+        cipher(),
+        Arc::new(InvalidConfigurationRuntime {
+            versions: Arc::clone(&versions),
+            restore_succeeds: false,
+        }),
+    );
+
+    assert_eq!(
+        service
+            .update(admin(), disabled_command(1, 500_000))
+            .await
+            .unwrap_err(),
+        AdminPaymentSettingsError::Internal
+    );
     assert_eq!(*versions.lock().unwrap(), [2, 1]);
 
     pool.close().await?;

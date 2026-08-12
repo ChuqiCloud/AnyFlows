@@ -236,6 +236,8 @@ pub type PaymentSettingsApplyFuture<'a> =
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum PaymentSettingsRuntimeError {
+    #[error("支付运行时配置无效")]
+    InvalidConfiguration,
     #[error("支付运行时设置应用失败")]
     Failed,
 }
@@ -333,7 +335,7 @@ impl AdminPaymentSettingsService for DatabaseAdminPaymentSettingsService {
                 .update(command.into_record(&self.cipher)?)
                 .await
                 .map_err(map_repository_error)?;
-            if self.runtime.apply(&saved, &self.cipher).await.is_err() {
+            if let Err(runtime_error) = self.runtime.apply(&saved, &self.cipher).await {
                 let restore = self
                     .repository
                     .restore_if_version(saved.version(), &previous)
@@ -350,8 +352,14 @@ impl AdminPaymentSettingsService for DatabaseAdminPaymentSettingsService {
                 };
                 if !reconciled {
                     tracing::error!("支付设置运行时切换失败且无法与数据库快照重新同步");
+                    return Err(AdminPaymentSettingsError::Internal);
                 }
-                return Err(AdminPaymentSettingsError::Internal);
+                return Err(match runtime_error {
+                    PaymentSettingsRuntimeError::InvalidConfiguration => {
+                        AdminPaymentSettingsError::InvalidInput
+                    }
+                    PaymentSettingsRuntimeError::Failed => AdminPaymentSettingsError::Internal,
+                });
             }
             Ok(AdminPaymentSettings::from_record(saved))
         })
