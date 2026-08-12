@@ -1806,6 +1806,7 @@ impl Bootstrap<ListenerReady> {
             admin_channel_probe: _,
             debug_trace_repository: _,
             debug_trace_runtime: _,
+            video_task: _,
             upstream_clients: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);

@@ -195,7 +195,7 @@ async fn successful_terminal_uses_upstream_duration_and_keeps_missing_resolution
     let runtime = Arc::new(
         MockRuntime::new(vec![Ok(successful_submission(&fixture))]).with_poll(successful_poll(8)),
     );
-    let coordinator = fixture.coordinator(runtime);
+    let coordinator = fixture.coordinator(runtime.clone());
     let task = coordinator
         .submit(
             async_task_id(0x41),

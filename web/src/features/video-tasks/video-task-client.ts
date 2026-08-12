@@ -1,4 +1,5 @@
 import type {
+  VideoFailureCode,
   VideoTaskApiError,
   VideoTaskPollResponse,
   VideoTaskRequest,
@@ -38,6 +39,7 @@ export async function submitVideoTask(
   })
   const payload = await readJson(response)
   if (!response.ok) throw requestError(response.status, payload)
+  if (!isRecord(payload)) throw requestError(503, undefined)
   const requestId = readString(payload, 'request_id')
   if (!taskIdPattern.test(requestId)) {
     throw requestError(503, undefined)
@@ -112,10 +114,14 @@ function parsePollResponse(payload: unknown): VideoTaskPollResponse {
   }
   if (status === 'failed') {
     if (!isRecord(payload.error)) throw requestError(503, undefined)
+    const code = readString(payload.error, 'code')
+    if (!['invalid_argument', 'failed_precondition', 'service_unavailable'].includes(code)) {
+      throw requestError(503, undefined)
+    }
     return {
       status,
       error: {
-        code: readString(payload.error, 'code'),
+        code: code as VideoFailureCode,
         message: readString(payload.error, 'message'),
       },
     }
