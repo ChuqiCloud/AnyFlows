@@ -1,4 +1,4 @@
-import { BadgeDollarSign, Boxes, ScanSearch } from 'lucide-react'
+import { BadgeDollarSign, Boxes, ListPlus, ScanSearch } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -7,11 +7,13 @@ import { cn } from '@/lib/utils'
 import { ModelManagementCatalogWorkspace } from './model-management-catalog-workspace'
 import { ModelPriceWorkspace } from './model-price-workspace'
 import { ModelSyncWorkspace } from './model-sync-workspace'
+import { MissingModelWorkspace } from './missing-model-workspace'
 
-type ModelManagementView = 'catalog' | 'sync' | 'prices'
+type ModelManagementView = 'catalog' | 'missing' | 'sync' | 'prices'
 
 const views = [
   { id: 'catalog', Icon: Boxes },
+  { id: 'missing', Icon: ListPlus },
   { id: 'sync', Icon: ScanSearch },
   { id: 'prices', Icon: BadgeDollarSign },
 ] as const
@@ -31,7 +33,7 @@ export function ModelManagementPage() {
       <div
         role="group"
         aria-label={t('modelManagement.views.label')}
-        className="inline-flex w-fit max-w-full items-center gap-1 rounded-lg border border-[var(--hairline)] bg-surface-2/55 p-1"
+        className="grid w-full grid-cols-2 items-center gap-1 rounded-lg border border-[var(--hairline)] bg-surface-2/55 p-1 sm:inline-flex sm:w-fit sm:max-w-full"
       >
         {views.map(({ id, Icon }) => (
           <Button
@@ -40,7 +42,7 @@ export function ModelManagementPage() {
             size="sm"
             variant="ghost"
             aria-pressed={view === id}
-            className={cn('min-w-28', view === id && 'bg-surface-1 text-foreground shadow-sm hover:bg-surface-1')}
+            className={cn('min-w-0 sm:min-w-28', view === id && 'bg-surface-1 text-foreground shadow-sm hover:bg-surface-1')}
             onClick={() => setView(id)}
           >
             <Icon aria-hidden="true" />
@@ -51,6 +53,8 @@ export function ModelManagementPage() {
 
       {view === 'catalog'
         ? <ModelManagementCatalogWorkspace />
+        : view === 'missing'
+          ? <MissingModelWorkspace />
         : view === 'sync'
           ? <ModelSyncWorkspace />
           : <ModelPriceWorkspace />}

@@ -4,9 +4,13 @@ import { apiClient, ApiError } from '@/lib/api'
 import {
   applyAdminModelSyncPreview,
   createAdminModelSyncPreview,
+  importMissingAdminModels,
   listMissingAdminModels,
 } from '@/lib/api/generated/sdk.gen'
-import type { AdminModelSyncApplyRequest } from '@/lib/api/generated/types.gen'
+import type {
+  AdminMissingModelImportRequest,
+  AdminModelSyncApplyRequest,
+} from '@/lib/api/generated/types.gen'
 import { adminModelMetadataQueryKey } from './model-management-api'
 
 export const adminMissingModelsQueryKey = ['admin-model-metadata-missing'] as const
@@ -52,6 +56,23 @@ export function useApplyModelSyncPreview() {
         client: apiClient,
         path: { preview_id: previewId },
       })
+      return data
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: adminMissingModelsQueryKey }),
+        queryClient.invalidateQueries({ queryKey: adminModelMetadataQueryKey }),
+        queryClient.invalidateQueries({ queryKey: ['model-catalog'] }),
+      ])
+    },
+  })
+}
+
+export function useImportMissingAdminModels() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (body: AdminMissingModelImportRequest) => {
+      const { data } = await importMissingAdminModels({ body, client: apiClient })
       return data
     },
     onSuccess: async () => {

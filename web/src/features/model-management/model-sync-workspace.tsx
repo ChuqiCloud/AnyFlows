@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, RefreshCw, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
@@ -10,7 +10,6 @@ import {
   modelSyncErrorCode,
   useApplyModelSyncPreview,
   useCreateModelSyncPreview,
-  useMissingAdminModels,
 } from './model-sync-api'
 import { ModelSyncApplyDialog } from './model-sync-apply-dialog'
 import {
@@ -20,14 +19,12 @@ import {
   type ModelSyncDraft,
 } from './model-sync-form-model'
 import { ModelSyncItemSheet } from './model-sync-item-sheet'
-import { ModelSyncMissingList } from './model-sync-missing-list'
 import { ModelSyncPreviewList } from './model-sync-preview-list'
 import { currentUnix, formatModelSyncExpiry, ModelSyncError } from './model-sync-status'
 import { ModelSyncToolbar } from './model-sync-toolbar'
 
 export function ModelSyncWorkspace() {
   const { t } = useTranslation()
-  const missingQuery = useMissingAdminModels()
   const channelsQuery = useAdminChannels()
   const previewMutation = useCreateModelSyncPreview()
   const applyMutation = useApplyModelSyncPreview()
@@ -40,7 +37,6 @@ export function ModelSyncWorkspace() {
   const [lastAppliedCount, setLastAppliedCount] = useState<number>()
   const [now, setNow] = useState(() => currentUnix())
 
-  const missing = useMemo(() => missingQuery.data?.pages.flatMap((page) => page.models) ?? [], [missingQuery.data])
   const channels = useMemo(() => channelsQuery.data?.pages.flatMap((page) => page.channels) ?? [], [channelsQuery.data])
   const complete = useMemo(() => new Set([...selected].filter((itemId) => modelSyncDraftIsComplete(drafts[itemId]))), [drafts, selected])
   const expired = preview !== undefined && now >= preview.expires_at
@@ -135,28 +131,6 @@ export function ModelSyncWorkspace() {
           <span>{t('modelManagement.sync.apply.success', { count: lastAppliedCount })}</span>
         </div>
       ) : null}
-
-      <section className="grid gap-3" aria-labelledby="model-sync-missing-title">
-        <header className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--hairline)] pb-2">
-          <div>
-            <h3 id="model-sync-missing-title" className="text-sm font-semibold">{t('modelManagement.sync.missing.title')}</h3>
-            <p className="mt-1 text-xs text-muted-foreground">{t('modelManagement.sync.missing.loaded', { count: missing.length })}</p>
-          </div>
-          <Button type="button" size="sm" variant="ghost" disabled={missingQuery.isFetching} onClick={() => void missingQuery.refetch()}>
-            <RefreshCw className={missingQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />{t('modelManagement.actions.refresh')}
-          </Button>
-        </header>
-        <ModelSyncMissingList
-          error={missingQuery.isError && missingQuery.data === undefined}
-          fetchMore={() => void missingQuery.fetchNextPage()}
-          loading={missingQuery.isPending}
-          loadingMore={missingQuery.isFetchingNextPage}
-          models={missing}
-          moreError={missingQuery.isFetchNextPageError}
-          refresh={() => void missingQuery.refetch()}
-          showMore={Boolean(missingQuery.hasNextPage)}
-        />
-      </section>
 
       {preview ? (
         <section className="grid gap-3 border-t border-[var(--hairline)] pt-5" aria-labelledby="model-sync-preview-title">

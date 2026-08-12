@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fmt,
     future::Future,
     pin::Pin,
@@ -7,8 +8,8 @@ use std::{
 };
 
 use af_db::{
-    DiscoveredModelRecord, MODEL_SYNC_PREVIEW_TTL_SECONDS, ModelSyncApplyItemRecord,
-    ModelSyncPreviewWrite, ModelSyncRepository, ModelSyncRepositoryError,
+    DiscoveredModelRecord, MODEL_SYNC_PREVIEW_TTL_SECONDS, MissingModelImportItemRecord,
+    ModelSyncApplyItemRecord, ModelSyncPreviewWrite, ModelSyncRepository, ModelSyncRepositoryError,
 };
 use af_domain::{ChannelId, ChannelType, Protocol};
 use thiserror::Error;
@@ -236,6 +237,100 @@ impl fmt::Debug for AdminModelSyncApplyCommand {
     }
 }
 
+/// 管理员为一个渠道已引用但缺少元数据的 Canonical 补齐结构化字段。
+pub struct AdminMissingModelImportItemCommand {
+    model: String,
+    metadata: AdminModelUpdateCommand,
+}
+
+impl AdminMissingModelImportItemCommand {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与缺失模型快速导入表单一一对应"
+    )]
+    pub fn new(
+        model: String,
+        display_name: String,
+        provider: String,
+        description: Option<String>,
+        icon_url: Option<String>,
+        tags: Vec<String>,
+        context_window: Option<i64>,
+        input_modalities: AdminModelModalities,
+        output_modalities: AdminModelModalities,
+        supports_reasoning: bool,
+        supports_tool_calls: bool,
+    ) -> Result<Self, AdminModelSyncError> {
+        if !valid_model(&model) {
+            return Err(AdminModelSyncError::InvalidInput);
+        }
+        let metadata = AdminModelUpdateCommand::new(
+            display_name,
+            provider,
+            description,
+            icon_url,
+            tags,
+            context_window,
+            input_modalities,
+            output_modalities,
+            supports_reasoning,
+            supports_tool_calls,
+            AdminModelVisibility::Hidden,
+            AdminModelLifecycle::Draft,
+        )
+        .map_err(|_| AdminModelSyncError::InvalidInput)?;
+        Ok(Self { model, metadata })
+    }
+
+    fn into_record(self) -> Result<MissingModelImportItemRecord, AdminModelSyncError> {
+        MissingModelImportItemRecord::new(self.model, self.metadata.into_record())
+            .map_err(|_| AdminModelSyncError::InvalidInput)
+    }
+}
+
+impl fmt::Debug for AdminMissingModelImportItemCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AdminMissingModelImportItemCommand")
+            .field("model", &self.model)
+            .field("metadata", &"<已脱敏>")
+            .finish()
+    }
+}
+
+/// 一次缺失模型快速导入的明确选择，拒绝重复 Canonical 和超大批次。
+pub struct AdminMissingModelImportCommand {
+    items: Vec<AdminMissingModelImportItemCommand>,
+}
+
+impl AdminMissingModelImportCommand {
+    pub fn new(
+        items: Vec<AdminMissingModelImportItemCommand>,
+    ) -> Result<Self, AdminModelSyncError> {
+        if items.is_empty()
+            || items.len() > MAX_MODEL_SYNC_APPLY_ITEMS
+            || items
+                .iter()
+                .map(|item| item.model.as_str())
+                .collect::<BTreeSet<_>>()
+                .len()
+                != items.len()
+        {
+            return Err(AdminModelSyncError::InvalidInput);
+        }
+        Ok(Self { items })
+    }
+}
+
+impl fmt::Debug for AdminMissingModelImportCommand {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AdminMissingModelImportCommand")
+            .field("item_count", &self.items.len())
+            .finish()
+    }
+}
+
 /// 模型同步管理用例的稳定失败分类。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum AdminModelSyncError {
@@ -275,6 +370,8 @@ pub type ModelSyncPreviewFuture<'a> =
     Pin<Box<dyn Future<Output = Result<ModelSyncPreviewRecord, AdminModelSyncError>> + Send + 'a>>;
 pub type ModelSyncApplyFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Vec<AdminModel>, AdminModelSyncError>> + Send + 'a>>;
+pub type MissingModelImportFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Vec<AdminModel>, AdminModelSyncError>> + Send + 'a>>;
 
 /// 管理员缺失检测、真实预览与原子应用的组合端口。
 pub trait AdminModelSyncService: Send + Sync {
@@ -295,6 +392,12 @@ pub trait AdminModelSyncService: Send + Sync {
         principal: SessionPrincipal,
         command: AdminModelSyncApplyCommand,
     ) -> ModelSyncApplyFuture<'a>;
+
+    fn import_missing<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: AdminMissingModelImportCommand,
+    ) -> MissingModelImportFuture<'a>;
 }
 
 /// 使用数据库审计仓储和受控网络端口实现模型同步管理用例。
@@ -382,6 +485,28 @@ impl AdminModelSyncService for DatabaseAdminModelSyncService {
                 .collect::<Result<Vec<_>, _>>()?;
             self.repository
                 .apply_preview(&command.preview_id, principal.user_id(), now, items)
+                .await
+                .map_err(map_repository_error)?
+                .into_iter()
+                .map(|record| Ok(AdminModel::from_record(record)))
+                .collect()
+        })
+    }
+
+    fn import_missing<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        command: AdminMissingModelImportCommand,
+    ) -> MissingModelImportFuture<'a> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            let items = command
+                .items
+                .into_iter()
+                .map(AdminMissingModelImportItemCommand::into_record)
+                .collect::<Result<Vec<_>, _>>()?;
+            self.repository
+                .import_missing_models(items)
                 .await
                 .map_err(map_repository_error)?
                 .into_iter()
@@ -509,6 +634,46 @@ mod tests {
         )
         .unwrap();
         assert!(!format!("{item:?}").contains("provider"));
+
+        let missing = AdminMissingModelImportItemCommand::new(
+            "model-a".to_owned(),
+            "Model A".to_owned(),
+            "provider".to_owned(),
+            None,
+            None,
+            Vec::new(),
+            None,
+            AdminModelModalities::new(true, false, false, false),
+            AdminModelModalities::new(true, false, false, false),
+            false,
+            false,
+        )
+        .unwrap();
+        assert!(!format!("{missing:?}").contains("provider"));
+    }
+
+    #[test]
+    fn missing_import_rejects_duplicate_canonical_models() {
+        let item = || {
+            AdminMissingModelImportItemCommand::new(
+                "model-a".to_owned(),
+                "Model A".to_owned(),
+                "provider".to_owned(),
+                None,
+                None,
+                Vec::new(),
+                None,
+                AdminModelModalities::new(true, false, false, false),
+                AdminModelModalities::new(true, false, false, false),
+                false,
+                false,
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            AdminMissingModelImportCommand::new(vec![item(), item()]).unwrap_err(),
+            AdminModelSyncError::InvalidInput
+        );
     }
 
     #[test]

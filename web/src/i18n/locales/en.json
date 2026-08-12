@@ -1224,7 +1224,8 @@
     "views": {
       "label": "Model management view",
       "catalog": "Model catalog",
-      "sync": "Sync models",
+      "missing": "Missing models",
+      "sync": "Upstream sync",
       "prices": "Model prices"
     },
     "columns": {
@@ -1262,6 +1263,8 @@
       "identity": "Product identity",
       "capabilities": "Verified capabilities",
       "operation": "Operational state",
+      "inputModalities": "Input modalities",
+      "outputModalities": "Output modalities",
       "modelCreateHint": "Use the gateway's Canonical model identifier. It cannot be changed after creation.",
       "modelImmutableHint": "The Canonical identifier is locked to protect pricing, capabilities, and mapping references.",
       "providerHint": "Choose a common provider suggestion or enter a custom provider identifier.",
@@ -1333,6 +1336,46 @@
       "updated": "Updated {{value}}",
       "input": "Input",
       "output": "Output"
+    },
+    "missing": {
+      "title": "Missing models",
+      "description": "These Canonical models are declared by active channels but are not in the model catalog. Import them as hidden drafts in one batch.",
+      "loaded_one": "{{count}} model to add",
+      "loaded_other": "{{count}} models to add",
+      "selected_one": "{{count}} selected",
+      "selected_other": "{{count}} selected",
+      "loading": "Loading missing models",
+      "search": "Search Canonical model identifiers",
+      "channelFilter": "Filter by source channel",
+      "allChannels": "All source channels",
+      "selectFiltered_one": "Select current {{count}} item",
+      "selectFiltered_other": "Select current {{count}} items",
+      "selectItem": "Select model {{model}}",
+      "limit": "Import up to {{count}} at once",
+      "channelCount_one": "Referenced by {{count}} channel",
+      "channelCount_other": "Referenced by {{count}} channels",
+      "emptyTitle": "No missing models",
+      "emptyBody": "Every Canonical model declared by an active channel already has model metadata.",
+      "errorTitle": "Missing models could not be loaded",
+      "errorBody": "The service did not return a reliable difference between channel declarations and the model catalog.",
+      "moreError": "More results could not be loaded. Existing results remain available.",
+      "import": {
+        "action_one": "Import {{count}}",
+        "action_other": "Import {{count}}",
+        "title": "Import hidden drafts",
+        "description_one": "Review the display name, provider, and verified capabilities for the selected {{count}} model.",
+        "description_other": "Review the display names, provider, and verified capabilities for the selected {{count}} models.",
+        "identities": "Model identities",
+        "identityHint": "Canonical identifiers stay fixed. Display names can be adjusted individually.",
+        "displayNameFor": "Display name for {{model}}",
+        "shared": "Shared batch fields",
+        "sharedHint": "Provider and capabilities apply to the entire batch. Nothing is inferred from model names.",
+        "boundary": "Models are always created as management-only drafts. Pricing, public visibility, and channel mappings are not changed. Any conflict fails the whole batch.",
+        "submit": "Confirm import",
+        "importing": "Importing",
+        "success_one": "Created {{count}} hidden model draft. Continue its review in the model catalog.",
+        "success_other": "Created {{count}} hidden model drafts. Continue their review in the model catalog."
+      }
     },
     "sync": {
       "channel": {

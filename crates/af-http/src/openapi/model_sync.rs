@@ -7,10 +7,11 @@ use utoipa::OpenApi;
 use crate::{
     management_error::ManagementErrorBody,
     management_model_sync::{
-        AdminMissingModelChannelResponse, AdminMissingModelListResponse, AdminMissingModelResponse,
-        AdminModelSyncApplyItemRequest, AdminModelSyncApplyRequest, AdminModelSyncApplyResponse,
-        AdminModelSyncPreviewItemResponse, AdminModelSyncPreviewRequest,
-        AdminModelSyncPreviewResponse, AdminModelSyncRelationValue,
+        AdminMissingModelChannelResponse, AdminMissingModelImportItemRequest,
+        AdminMissingModelImportRequest, AdminMissingModelImportResponse,
+        AdminMissingModelListResponse, AdminMissingModelResponse, AdminModelSyncApplyItemRequest,
+        AdminModelSyncApplyRequest, AdminModelSyncApplyResponse, AdminModelSyncPreviewItemResponse,
+        AdminModelSyncPreviewRequest, AdminModelSyncPreviewResponse, AdminModelSyncRelationValue,
     },
     management_models::{AdminModelModalityValue, AdminModelResponse},
     openapi::schema::{AdminChannelProtocolSchema, AdminChannelTypeSchema},
@@ -36,6 +37,25 @@ use crate::{
     security(("bearerAuth" = []))
 )]
 fn list_missing_admin_models() {}
+
+#[utoipa::path(
+    post,
+    path = "/api/admin/models/missing",
+    operation_id = "importMissingAdminModels",
+    tag = "模型管理",
+    summary = "批量导入渠道已引用但缺少元数据的模型",
+    request_body = AdminMissingModelImportRequest,
+    responses(
+        (status = 201, description = "所选模型已创建为隐藏草稿", body = AdminMissingModelImportResponse),
+        (status = 400, description = "批次或结构化元数据无效", body = ManagementErrorBody),
+        (status = 401, description = "会话无效", body = ManagementErrorBody),
+        (status = 403, description = "需要管理员权限", body = ManagementErrorBody),
+        (status = 409, description = "模型已被创建或已不再被活动渠道引用", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn import_missing_admin_models() {}
 
 #[utoipa::path(
     post,
@@ -88,6 +108,7 @@ fn apply_admin_model_sync_preview() {}
 #[openapi(
     paths(
         list_missing_admin_models,
+        import_missing_admin_models,
         create_admin_model_sync_preview,
         apply_admin_model_sync_preview
     ),
@@ -95,6 +116,9 @@ fn apply_admin_model_sync_preview() {}
         AdminMissingModelChannelResponse,
         AdminMissingModelResponse,
         AdminMissingModelListResponse,
+        AdminMissingModelImportItemRequest,
+        AdminMissingModelImportRequest,
+        AdminMissingModelImportResponse,
         AdminModelSyncPreviewRequest,
         AdminModelSyncPreviewItemResponse,
         AdminModelSyncPreviewResponse,

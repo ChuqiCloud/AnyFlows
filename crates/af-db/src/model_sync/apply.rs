@@ -1,9 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use af_domain::{ModelId, UserId};
+use af_domain::UserId;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
+    ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, LockType},
 };
@@ -12,13 +12,14 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::{
     AdminModelLifecycleRecord, AdminModelRecord, AdminModelVisibilityRecord,
-    admin_model_write::{active_model_from_write, map_write_db_error, valid_write_fields},
+    admin_model_write::valid_write_fields,
     entity::{model_sync_items, model_sync_runs, models},
 };
 
 use super::{
     MAX_MODEL_SYNC_APPLY_ITEMS, ModelSyncApplyItemRecord, ModelSyncRelationRecord,
     ModelSyncRepository, ModelSyncRepositoryError, record_internal_error, valid_preview_id,
+    write::insert_model_draft,
 };
 
 impl ModelSyncRepository {
@@ -127,23 +128,8 @@ impl ModelSyncRepository {
             let fields = commands
                 .remove(&item.id)
                 .ok_or(ModelSyncRepositoryError::Invariant)?;
-            let inserted = active_model_from_write(item.canonical_model, fields)
-                .map_err(|_| ModelSyncRepositoryError::Invariant)?
-                .insert(&transaction)
-                .with_subscriber(NoSubscriber::default())
-                .await
-                .map_err(|error| match map_write_db_error(error) {
-                    crate::AdminModelRepositoryError::Conflict => {
-                        ModelSyncRepositoryError::Conflict
-                    }
-                    crate::AdminModelRepositoryError::Query
-                    | crate::AdminModelRepositoryError::Timeout
-                    | crate::AdminModelRepositoryError::Invariant => {
-                        ModelSyncRepositoryError::Query
-                    }
-                })?;
-            let model_id =
-                ModelId::new(inserted.id).map_err(|_| ModelSyncRepositoryError::Invariant)?;
+            let (model_id, snapshot) =
+                insert_model_draft(&transaction, item.canonical_model, fields).await?;
             let updated = model_sync_items::Entity::update_many()
                 .filter(model_sync_items::Column::Id.eq(item.id))
                 .filter(model_sync_items::Column::RunId.eq(run.id))
@@ -159,10 +145,7 @@ impl ModelSyncRepository {
             if updated.rows_affected != 1 {
                 return Err(ModelSyncRepositoryError::Conflict);
             }
-            created.push(
-                AdminModelRecord::try_from_model(inserted)
-                    .map_err(|_| ModelSyncRepositoryError::Invariant)?,
-            );
+            created.push(snapshot);
         }
         if !commands.is_empty() {
             return Err(ModelSyncRepositoryError::Invariant);

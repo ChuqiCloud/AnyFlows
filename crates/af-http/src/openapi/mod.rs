@@ -188,7 +188,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 124);
+        assert_eq!(operation_count, 125);
         assert!(
             document
                 .components
@@ -238,6 +238,7 @@ mod tests {
             "getUserProfile",
             "getUserTopupConfiguration",
             "getUserWallet",
+            "importMissingAdminModels",
             "getUserInvitations",
             "updateUserProfile",
             "changeUserPassword",

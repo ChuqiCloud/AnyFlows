@@ -562,6 +562,25 @@ export type AdminModelPriceWriteItem = {
     prices: AdminModelPriceValues;
     billing_expression?: string | null;
 };
+export type AdminMissingModelImportItemRequest = {
+    model: string;
+    display_name: string;
+    provider: string;
+    description?: string | null;
+    icon_url?: string | null;
+    tags: Array<string>;
+    context_window?: number | null;
+    input_modalities: Array<AdminModelModality>;
+    output_modalities: Array<AdminModelModality>;
+    supports_reasoning: boolean;
+    supports_tool_calls: boolean;
+};
+export type AdminMissingModelImportRequest = {
+    items: Array<AdminMissingModelImportItemRequest>;
+};
+export type AdminMissingModelImportResponse = {
+    models: Array<AdminModel>;
+};
 export type AdminModelSyncApplyItemRequest = {
     item_id: number;
     display_name: string;
@@ -3154,6 +3173,24 @@ export type ListMissingAdminModelsResponses = {
     200: AdminMissingModelListResponse;
 };
 export type ListMissingAdminModelsResponse = ListMissingAdminModelsResponses[keyof ListMissingAdminModelsResponses];
+export type ImportMissingAdminModelsData = {
+    body: AdminMissingModelImportRequest;
+    path?: never;
+    query?: never;
+    url: '/api/admin/models/missing';
+};
+export type ImportMissingAdminModelsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ImportMissingAdminModelsError = ImportMissingAdminModelsErrors[keyof ImportMissingAdminModelsErrors];
+export type ImportMissingAdminModelsResponses = {
+    201: AdminMissingModelImportResponse;
+};
+export type ImportMissingAdminModelsResponse = ImportMissingAdminModelsResponses[keyof ImportMissingAdminModelsResponses];
 export type CreateAdminModelSyncPreviewData = {
     body: AdminModelSyncPreviewRequest;
     path?: never;
