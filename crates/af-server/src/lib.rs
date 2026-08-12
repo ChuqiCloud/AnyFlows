@@ -41,6 +41,7 @@ mod supervisor;
 mod test_database;
 mod token_request_admission;
 mod utc_time;
+mod video_task_service;
 
 pub use billing_audio::{
     AudioRoutePlanFuture, AudioRoutePlanner, BillingAudioService, PlannedAudioExecution,

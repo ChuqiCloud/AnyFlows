@@ -13,6 +13,7 @@
     "overview": "Operations overview",
     "models": "Models",
     "playground": "Playground",
+    "videoTasks": "Video tasks",
     "apiKeys": "My API keys",
     "wallet": "My wallet",
     "subscriptions": "My subscriptions",
@@ -2079,6 +2080,109 @@
       "title": "Model catalog unavailable",
       "body": "The service did not return a reliable model and pricing snapshot. Try again shortly.",
       "moreBody": "More models could not be loaded. The catalog already shown remains available."
+    }
+  },
+  "videoTasks": {
+    "title": "Video tasks",
+    "subtitle": "Submit asynchronous generations to xAI video models available to the current group and query them within the same owner scope.",
+    "access": {
+      "title": "Access credential",
+      "description": "Shares the current-tab API key with the chat playground."
+    },
+    "apiKey": {
+      "label": "AnyFlows API key",
+      "ready": "Saved in this tab",
+      "missing": "Not configured",
+      "show": "Show API key",
+      "hide": "Hide API key",
+      "save": "Save",
+      "clear": "Clear",
+      "invalid": "Enter a valid sk-af- API key.",
+      "required": "Save a valid API key first."
+    },
+    "request": {
+      "title": "Generation settings",
+      "description": "Settings and the idempotency key lock after submission to prevent a second paid task.",
+      "model": "Video model",
+      "modelPlaceholder": "Select or enter a Canonical model name",
+      "prompt": "Prompt",
+      "promptPlaceholder": "Describe the shot, subject, motion, and visual style",
+      "duration": "Duration",
+      "aspectRatio": "Aspect ratio",
+      "resolution": "Resolution",
+      "upstreamDefault": "Upstream default",
+      "seconds_one": "{{count}} second",
+      "seconds_other": "{{count}} seconds",
+      "idempotencyKey": "Idempotency key",
+      "idempotencyHint": "Reuse it unchanged when the outcome is unknown. New tasks receive a new key.",
+      "required": "Select a model and enter a prompt."
+    },
+    "models": {
+      "loading": "Loading video models",
+      "error": "Model catalog unavailable",
+      "count": "{{count}} video models loaded",
+      "refresh": "Refresh model catalog",
+      "loadMore": "Load more"
+    },
+    "result": {
+      "title": "Task result",
+      "description": "Status comes from the owner-scoped persisted task. Temporary URLs are not stored in the browser.",
+      "taskId": "Task ID",
+      "complete": "Generation complete",
+      "duration_one": "{{count}} second",
+      "duration_other": "{{count}} seconds",
+      "temporaryUrl": "The video URL is a short-lived upstream signature. Querying again safely refreshes it from the same upstream task.",
+      "videoUnsupported": "This browser cannot play the video."
+    },
+    "status": {
+      "idle": "Ready",
+      "submitting": "Submitting",
+      "pending": "Processing",
+      "polling": "Polling",
+      "done": "Complete",
+      "expired": "Expired",
+      "failed": "Failed",
+      "error": "Request error"
+    },
+    "empty": {
+      "title": "No video task yet",
+      "body": "Configure the model and generation settings, then submit. Accepted tasks are polled automatically without retrying the paid submission."
+    },
+    "pending": {
+      "title": "The upstream is generating the video",
+      "polling": "Refreshing task status",
+      "body": "The page queries the same task every 3 seconds and never creates another billed request."
+    },
+    "failed": {
+      "title": "Video task failed",
+      "body": "The upstream ended the task and the reserved quota follows the task billing release state machine."
+    },
+    "expired": {
+      "title": "Video task expired",
+      "body": "The upstream did not complete the task within its validity period."
+    },
+    "error": {
+      "title": "The task request could not be completed",
+      "codes": {
+        "invalid_api_key": "The API key is invalid, expired, or disabled.",
+        "task_not_found": "The task does not exist within the current user scope.",
+        "idempotency_conflict": "This idempotency key belongs to a different request. Start a new task.",
+        "request_outcome_unknown": "The submission outcome is unknown. Keep the settings unchanged and retry with the same idempotency key.",
+        "upstream_unavailable": "The upstream is unavailable. Poll the task again later.",
+        "network_error": "The service could not be reached. Check the local preview or network connection.",
+        "internal_error": "The service is in an invalid internal state. Try again later."
+      }
+    },
+    "actions": {
+      "submit": "Submit video task",
+      "submitting": "Submitting",
+      "refresh": "Refresh status",
+      "newTask": "New task",
+      "retrySameKey": "Retry with the same key",
+      "copyTaskId": "Copy task ID",
+      "copyUrl": "Copy video URL",
+      "openVideo": "Open video",
+      "copied": "Copied"
     }
   },
   "playground": {

@@ -159,8 +159,11 @@ impl MappedError {
             PublicErrorCode::InsufficientQuota | PublicErrorCode::RateLimited => {
                 StatusCode::TOO_MANY_REQUESTS
             }
-            PublicErrorCode::ModelNotFound => StatusCode::NOT_FOUND,
-            PublicErrorCode::UpstreamUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+            PublicErrorCode::ModelNotFound | PublicErrorCode::TaskNotFound => StatusCode::NOT_FOUND,
+            PublicErrorCode::IdempotencyConflict => StatusCode::CONFLICT,
+            PublicErrorCode::RequestOutcomeUnknown | PublicErrorCode::UpstreamUnavailable => {
+                StatusCode::SERVICE_UNAVAILABLE
+            }
             PublicErrorCode::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -172,6 +175,13 @@ impl MappedError {
             PublicErrorCode::InsufficientQuota => "Insufficient quota.",
             PublicErrorCode::ModelNotFound => {
                 "The requested model was not found or is unavailable."
+            }
+            PublicErrorCode::TaskNotFound => "The requested task was not found.",
+            PublicErrorCode::IdempotencyConflict => {
+                "The idempotency key is already associated with a different request."
+            }
+            PublicErrorCode::RequestOutcomeUnknown => {
+                "The request outcome is unknown. Retry with the same idempotency key."
             }
             PublicErrorCode::UpstreamUnavailable => {
                 "The service is temporarily unavailable. Please retry later."
@@ -194,6 +204,14 @@ fn classify_error(error: AfError) -> MappedError {
         AfError::ModelNotAllowed => {
             MappedError::new(PublicErrorCode::ModelNotFound, "token_model_not_allowed")
         }
+        AfError::TaskNotFound => MappedError::new(PublicErrorCode::TaskNotFound, "task_not_found"),
+        AfError::IdempotencyConflict => {
+            MappedError::new(PublicErrorCode::IdempotencyConflict, "idempotency_conflict")
+        }
+        AfError::RequestOutcomeUnknown => MappedError::new(
+            PublicErrorCode::RequestOutcomeUnknown,
+            "request_outcome_unknown",
+        ),
         AfError::InsufficientQuota => {
             MappedError::new(PublicErrorCode::InsufficientQuota, "insufficient_quota")
         }

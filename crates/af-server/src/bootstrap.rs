@@ -37,8 +37,9 @@ use af_billing::{
     DatabaseUsageRecordSink, GroupPricingCache, GroupPricingCacheError, ModelPriceCache,
     ModelPriceCacheError, RefundSignalConsumer, RefundSignalConsumerError, RefundSignalPort,
     RefundSignalQueue, RefundSignalQueueError, RefundSignalSink, StripePaymentProvider,
+    TaskBillingReleaseSink, TaskBillingReservePort, TaskBillingSettlementPort,
     TopupWebhookProcessor, UsageRecordConsumer, UsageRecordConsumerError, UsageRecordPort,
-    UsageRecordQueue, UsageRecordQueueError,
+    UsageRecordQueue, UsageRecordQueueError, UsageRecordSink,
 };
 use af_cache::{
     CacheError, RedisConcurrencyConfig, RedisConcurrencyStore, RedisConfig, RedisHealthConfig,
@@ -52,7 +53,8 @@ use af_db::{
     AdminModelRepository, AdminModelRepositoryConfigError, AdminRouteRepository,
     AdminRouteRepositoryConfigError, AdminTokenRepository, AdminTokenRepositoryConfigError,
     AdminUsageLogRepository, AdminUsageLogRepositoryConfigError, AdminUserRepository,
-    AdminUserRepositoryConfigError, AuthChallengeRateLimitRepository,
+    AdminUserRepositoryConfigError, AsyncTaskBillingRepository, AsyncTaskRepository,
+    AsyncTaskSubmissionRepository, AuthChallengeRateLimitRepository,
     AuthChallengeRateLimitRepositoryConfigError, AuthChallengeRepository,
     AuthChallengeRepositoryConfigError, BalanceAlertRepository, BalanceAlertRepositoryConfigError,
     BalanceAlertSettingsRepository, BalanceAlertSettingsRepositoryConfigError,
@@ -79,8 +81,8 @@ use af_db::{
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
     HttpListener, HttpRouter, ImageService, QueryApiKeyPolicy, ReadinessHandle, RerankService,
-    ResponsesCompactService, ServeError, ServeOutcome, SpeechService, build_payment_webhook_router,
-    build_router, serve_with_graceful_shutdown,
+    ResponsesCompactService, ServeError, ServeOutcome, SpeechService, VideoTaskService,
+    build_payment_webhook_router, build_router, serve_with_graceful_shutdown,
 };
 use af_httpclient::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
@@ -128,6 +130,7 @@ use crate::{
     smtp_delivery::SmtpEmailDelivery,
     system_shutdown_signal,
     token_request_admission::TokenRequestAdmissionAuthenticator,
+    video_task_service::DatabaseVideoTaskService,
 };
 
 const BILLING_QUEUE_RETRY_DELAY: Duration = Duration::from_millis(100);
@@ -214,6 +217,7 @@ pub struct BillingReady {
     embedding: Arc<dyn EmbeddingService>,
     image: Arc<dyn ImageService>,
     rerank: Arc<dyn RerankService>,
+    video_task: Arc<dyn VideoTaskService>,
     billing: BillingRuntime,
     usage_record_queue: UsageRecordQueue,
     usage_record_consumer: UsageRecordConsumer,
@@ -247,6 +251,7 @@ pub struct Supervised {
     embedding: Arc<dyn EmbeddingService>,
     image: Arc<dyn ImageService>,
     rerank: Arc<dyn RerankService>,
+    video_task: Arc<dyn VideoTaskService>,
     billing: BillingRuntime,
     usage_record_queue: UsageRecordQueue,
     refund_signal_queue: RefundSignalQueue,
@@ -1133,10 +1138,11 @@ impl Bootstrap<RelayReady> {
         let speech_route_planner: Arc<dyn SpeechRoutePlanner> = Arc::new(route_service.clone());
         let responses_compact_route_planner: Arc<dyn ResponsesCompactRoutePlanner> =
             Arc::new(route_service.clone());
+        let video_task_runtime = route_service.clone();
         let route_planner: Arc<dyn ChatRoutePlanner> = Arc::new(route_service);
         let pricing_source = Arc::new(CachedRequestPricingSnapshotSource::new(
             model_prices.clone(),
-            group_pricing,
+            group_pricing.clone(),
         ));
         let model_catalog_reader: Arc<dyn ModelCatalogReader> =
             Arc::new(RuntimeModelCatalogReader::new(
@@ -1150,14 +1156,18 @@ impl Bootstrap<RelayReady> {
         ));
         let precharge_port: Arc<dyn BillingPrechargePort> = quota_repository.clone();
         let settlement_port: Arc<dyn BillingSettlementPort> = quota_repository.clone();
+        let task_reserve_port: Arc<dyn TaskBillingReservePort> = quota_repository.clone();
+        let task_settlement_port: Arc<dyn TaskBillingSettlementPort> = quota_repository.clone();
+        let task_release_sink: Arc<dyn TaskBillingReleaseSink> = quota_repository.clone();
         let refund_sink: Arc<dyn RefundSignalSink> = quota_repository.clone();
         let refund_port: Arc<dyn RefundSignalPort> = Arc::new(refund_signal_queue.clone());
         let usage_port: Arc<dyn UsageRecordPort> = Arc::new(usage_record_queue.clone());
+        let usage_record_sink: Arc<dyn UsageRecordSink> = Arc::new(DatabaseUsageRecordSink::new(
+            UsageLogRepository::new(self.stage.infrastructure.infrastructure.database.clone()),
+        ));
         let usage_record_consumer = UsageRecordConsumer::new(
             usage_record_receiver,
-            Arc::new(DatabaseUsageRecordSink::new(UsageLogRepository::new(
-                self.stage.infrastructure.infrastructure.database.clone(),
-            ))),
+            Arc::clone(&usage_record_sink),
             BILLING_QUEUE_RETRY_DELAY,
         )
         .map_err(BootstrapError::UsageRecordConsumer)?;
@@ -1168,6 +1178,26 @@ impl Bootstrap<RelayReady> {
         )
         .map_err(BootstrapError::RefundSignalConsumer)?;
         let usage_record_worker_count = self.config.billing().usage_record_worker_count();
+        let task_operation_timeout = Duration::from_secs(self.config.auth().lookup_timeout_secs());
+        let task_database = self.stage.infrastructure.infrastructure.database.clone();
+        let video_task: Arc<dyn VideoTaskService> = Arc::new(DatabaseVideoTaskService::new(
+            crate::scheduled_chat::PersistentVideoTaskCoordinator::new(
+                video_task_runtime,
+                AsyncTaskRepository::new(task_database.clone(), task_operation_timeout)
+                    .expect("认证查询超时已校验为正数，异步任务仓储必须可装配"),
+                AsyncTaskSubmissionRepository::new(task_database.clone(), task_operation_timeout)
+                    .expect("认证查询超时已校验为正数，异步任务提交仓储必须可装配"),
+                AsyncTaskBillingRepository::new(task_database, task_operation_timeout)
+                    .expect("认证查询超时已校验为正数，异步任务计费仓储必须可装配"),
+                group_pricing,
+                crate::scheduled_chat::PersistentVideoTaskBillingPorts::new(
+                    task_reserve_port,
+                    task_settlement_port,
+                    task_release_sink,
+                    usage_record_sink,
+                ),
+            ),
+        ));
         let embedding: Arc<dyn EmbeddingService> = Arc::new(BillingEmbeddingService::new(
             embedding_route_planner,
             pricing_source.clone(),
@@ -1251,6 +1281,7 @@ impl Bootstrap<RelayReady> {
                 embedding,
                 image,
                 rerank,
+                video_task,
                 billing,
                 usage_record_queue,
                 usage_record_consumer,
@@ -1297,6 +1328,7 @@ impl Bootstrap<BillingReady> {
             embedding,
             image,
             rerank,
+            video_task,
             billing,
             usage_record_queue,
             usage_record_consumer,
@@ -1433,6 +1465,7 @@ impl Bootstrap<BillingReady> {
                 embedding,
                 image,
                 rerank,
+                video_task,
                 billing,
                 usage_record_queue,
                 refund_signal_queue,
@@ -1619,6 +1652,7 @@ impl Bootstrap<Supervised> {
             self.stage.embedding.clone(),
             self.stage.image.clone(),
             self.stage.rerank.clone(),
+            Some(self.stage.video_task.clone()),
             self.stage.speech.clone(),
             self.stage.responses_compact.clone(),
             readiness.clone(),
@@ -1772,6 +1806,7 @@ impl Bootstrap<ListenerReady> {
             admin_channel_probe: _,
             debug_trace_repository: _,
             debug_trace_runtime: _,
+            video_task: _,
             upstream_clients: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);

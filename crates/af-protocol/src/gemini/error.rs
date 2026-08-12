@@ -37,8 +37,11 @@ const fn google_status(code: PublicErrorCode) -> (u16, &'static str) {
         PublicErrorCode::InsufficientQuota | PublicErrorCode::RateLimited => {
             (429, "RESOURCE_EXHAUSTED")
         }
-        PublicErrorCode::ModelNotFound => (404, "NOT_FOUND"),
-        PublicErrorCode::UpstreamUnavailable => (503, "UNAVAILABLE"),
+        PublicErrorCode::ModelNotFound | PublicErrorCode::TaskNotFound => (404, "NOT_FOUND"),
+        PublicErrorCode::IdempotencyConflict => (409, "ALREADY_EXISTS"),
+        PublicErrorCode::RequestOutcomeUnknown | PublicErrorCode::UpstreamUnavailable => {
+            (503, "UNAVAILABLE")
+        }
         PublicErrorCode::InternalError => (500, "INTERNAL"),
     }
 }

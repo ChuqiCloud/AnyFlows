@@ -841,6 +841,208 @@
         ]
       }
     },
+    "/v1/videos/generations": {
+      "post": {
+        "tags": [
+          "视频任务"
+        ],
+        "summary": "提交视频生成任务",
+        "description": "客户端必须生成并在结果未知重试时复用同一个 128 位小写十六进制幂等键；同用户同载荷返回同一本地任务标识，不同载荷返回冲突。",
+        "operationId": "submitVideoTask",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "description": "客户端生成的非零 128 位幂等键",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "minLength": 32,
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoGenerationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "任务已提交或按相同幂等载荷安全重放",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoSubmissionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求或幂等键格式无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "API Key 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "模型不存在或不在令牌允许范围内",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等键已绑定到不同请求载荷",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "额度、并发或请求频率受限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "任务持久化或计费状态异常",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "上游或提交结果暂不可确认；必须复用原幂等键重试",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/videos/{task_id}": {
+      "get": {
+        "tags": [
+          "视频任务"
+        ],
+        "summary": "查询视频生成任务",
+        "description": "只允许当前 API Key 所属用户查询本人任务。成功终态会轮询原上游任务重新取得短期结果地址，但不会重新提交、冻结或结算。",
+        "operationId": "pollVideoTask",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "description": "提交接口返回的本地任务标识",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 32,
+              "minLength": 32,
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "xAI 兼容的 pending、done、expired 或 failed 状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoPollResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "API Key 无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "当前用户范围内不存在该任务",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "任务持久化或计费状态异常",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "任务结果未知或短期结果当前无法重新取得",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VideoTaskError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "apiKeyAuth": []
+          }
+        ]
+      }
+    },
     "/api/admin/redemption-audit": {
       "get": {
         "tags": [
@@ -18629,6 +18831,222 @@
           }
         },
         "additionalProperties": false
+      },
+      "VideoAspectRatio": {
+        "type": "string",
+        "enum": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4",
+          "3:2",
+          "2:3"
+        ]
+      },
+      "VideoFailure": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/VideoFailureCode"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "VideoFailureCode": {
+        "type": "string",
+        "enum": [
+          "invalid_argument",
+          "failed_precondition",
+          "service_unavailable"
+        ]
+      },
+      "VideoGenerationRequest": {
+        "type": "object",
+        "required": [
+          "model",
+          "prompt"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "example": "grok-imagine-video-1.5",
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 32768,
+            "minLength": 1
+          },
+          "duration": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "maximum": 15,
+            "minimum": 1
+          },
+          "aspect_ratio": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/VideoAspectRatio"
+              }
+            ]
+          },
+          "resolution": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/VideoResolution"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "VideoOutput": {
+        "type": "object",
+        "required": [
+          "url",
+          "duration",
+          "respect_moderation"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 8192
+          },
+          "duration": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 15,
+            "minimum": 1
+          },
+          "respect_moderation": {
+            "type": "boolean"
+          }
+        }
+      },
+      "VideoPollResponse": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/VideoTaskStatus"
+          },
+          "video": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/VideoOutput"
+              }
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/VideoFailure"
+              }
+            ]
+          }
+        }
+      },
+      "VideoResolution": {
+        "type": "string",
+        "enum": [
+          "480p",
+          "720p",
+          "1080p"
+        ]
+      },
+      "VideoSubmissionResponse": {
+        "type": "object",
+        "required": [
+          "request_id"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "example": "4f42f8a5d17445a397955d22f1b47eb8",
+            "maxLength": 32,
+            "minLength": 32,
+            "pattern": "^[0-9a-f]{32}$"
+          }
+        }
+      },
+      "VideoTaskError": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/VideoTaskErrorBody"
+          }
+        }
+      },
+      "VideoTaskErrorBody": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "param",
+          "type"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "param": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "VideoTaskStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "done",
+          "expired",
+          "failed"
+        ]
       }
     },
     "securitySchemes": {
@@ -18655,6 +19073,9 @@
     },
     {
       "name": "OpenAI Audio"
+    },
+    {
+      "name": "视频任务"
     },
     {
       "name": "Rerank"

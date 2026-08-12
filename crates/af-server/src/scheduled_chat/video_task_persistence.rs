@@ -178,6 +178,8 @@ pub(crate) enum PersistentVideoTaskError {
     Entropy,
     #[error("视频任务持久化内容违反不变量")]
     Invariant,
+    #[error("视频任务成功结果当前无法重新取得")]
+    ResultUnavailable,
     #[error("视频任务计费操作失败")]
     Billing,
 }
@@ -430,6 +432,46 @@ impl PersistentVideoTaskCoordinator {
             poll,
             billing_dimensions,
         })
+    }
+
+    /// 为已成功任务从原绑定重新取得短期结果，不推进状态或重复计费。
+    pub(crate) async fn fetch_succeeded_output(
+        &self,
+        user_id: UserId,
+        task_id: AsyncTaskId,
+        relay_request_id: &str,
+    ) -> Result<CanonicalTaskPoll, PersistentVideoTaskError> {
+        let claim = self
+            .submissions
+            .find(user_id, task_id)
+            .await?
+            .ok_or(PersistentVideoTaskError::NotFound)?;
+        if claim.state() != AsyncTaskSubmissionState::Accepted {
+            return Err(PersistentVideoTaskError::SubmissionOutcomeUnknown);
+        }
+        let task = self
+            .tasks
+            .find(user_id, task_id)
+            .await?
+            .ok_or(PersistentVideoTaskError::NotFound)?;
+        if !claim.matches_task(&task) || !matches!(task.status(), TaskStatus::Succeeded) {
+            return Err(PersistentVideoTaskError::Invariant);
+        }
+        let billing = self.load_billing(&claim).await?;
+        if billing.state() != AsyncTaskBillingState::Settled {
+            return Err(PersistentVideoTaskError::Invariant);
+        }
+
+        // 只轮询已经固化的上游任务标识；这里绝不进入提交、冻结或结算路径。
+        let poll = self
+            .runtime
+            .poll(&task, &claim, relay_request_id)
+            .await
+            .map_err(PersistentVideoTaskError::Runtime)?;
+        if !matches!(poll.status(), TaskStatus::Succeeded) || poll.output().is_none() {
+            return Err(PersistentVideoTaskError::ResultUnavailable);
+        }
+        Ok(poll)
     }
 
     async fn prepare_billing(

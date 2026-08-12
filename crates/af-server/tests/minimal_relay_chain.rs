@@ -1860,6 +1860,7 @@ async fn start_server(
         Arc::new(RejectEmbeddings),
         Arc::new(RejectImages),
         Arc::new(RejectRerank),
+        None,
         Arc::new(RejectSpeech),
         Arc::new(RejectResponsesCompact),
         readiness,

@@ -195,7 +195,7 @@ async fn successful_terminal_uses_upstream_duration_and_keeps_missing_resolution
     let runtime = Arc::new(
         MockRuntime::new(vec![Ok(successful_submission(&fixture))]).with_poll(successful_poll(8)),
     );
-    let coordinator = fixture.coordinator(runtime);
+    let coordinator = fixture.coordinator(runtime.clone());
     let task = coordinator
         .submit(
             async_task_id(0x41),
@@ -271,6 +271,20 @@ async fn successful_terminal_uses_upstream_duration_and_keeps_missing_resolution
             .await?,
         PersistentVideoTaskPollOutcome::Terminal(_)
     ));
+    assert_eq!(runtime.poll_count(), 1);
+    let refreshed = coordinator
+        .fetch_succeeded_output(
+            fixture.principal.user_id(),
+            task.task_id(),
+            "video-success-result-refresh",
+        )
+        .await?;
+    let refreshed_video = refreshed
+        .output()
+        .and_then(|output| output.as_video())
+        .expect("成功终态重取必须返回原任务的临时视频结果");
+    assert_eq!(refreshed_video.duration().seconds(), 8);
+    assert_eq!(runtime.poll_count(), 2);
     let usage_count = fixture
         .database
         .seed()

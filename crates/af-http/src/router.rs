@@ -99,9 +99,10 @@ use crate::user_profile::build_user_profile_router;
 use crate::user_tokens::build_user_token_router;
 use crate::user_topups::build_user_topup_router;
 use crate::user_wallet::build_user_wallet_router;
+use crate::xai_video::{poll_video_task, submit_video_task};
 use crate::{
     AudioService, ChatService, EmbeddingService, ImageService, QueryApiKeyPolicy, RerankService,
-    ResponsesCompactService, SpeechService, chat_completions::HttpState,
+    ResponsesCompactService, SpeechService, VideoTaskService, chat_completions::HttpState,
     chat_completions::chat_completions,
 };
 
@@ -140,6 +141,7 @@ pub fn build_router(
     embedding: Arc<dyn EmbeddingService>,
     image: Arc<dyn ImageService>,
     rerank: Arc<dyn RerankService>,
+    video_task: Option<Arc<dyn VideoTaskService>>,
     speech: Arc<dyn SpeechService>,
     responses_compact: Arc<dyn ResponsesCompactService>,
     readiness: ReadinessHandle,
@@ -201,6 +203,11 @@ pub fn build_router(
             .with_error_protocol(Protocol::JinaRerank),
         authenticate_api_key,
     );
+    let video_authentication = middleware::from_fn_with_state(
+        AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config)
+            .with_error_protocol(Protocol::XaiVideo),
+        authenticate_api_key,
+    );
     let anthropic_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config)
             .with_error_protocol(Protocol::Anthropic),
@@ -225,6 +232,7 @@ pub fn build_router(
     .with_embedding_service(embedding)
     .with_image_service(image)
     .with_rerank_service(rerank)
+    .with_video_task_service(video_task)
     .with_speech_service(speech)
     .with_responses_compact_service(responses_compact)
     .with_initial_setup(initial_setup)
@@ -261,6 +269,16 @@ pub fn build_router(
             "/v1/rerank",
             // Rerank 使用独立非流式协议、调度与计费端口，不进入 Chat 参数链路。
             post(rerank_request).route_layer(rerank_authentication),
+        )
+        .route(
+            "/v1/videos/generations",
+            // 视频提交必须携带客户端幂等键，服务端只公开稳定本地任务标识。
+            post(submit_video_task).route_layer(video_authentication.clone()),
+        )
+        .route(
+            "/v1/videos/{task_id}",
+            // 查询只在认证用户范围内恢复原绑定，成功结果不会触发第二次付费提交。
+            get(poll_video_task).route_layer(video_authentication),
         )
         .route(
             "/v1/audio/transcriptions",
@@ -759,6 +777,7 @@ fn cors_layer(config: &ServerConfig) -> Option<CorsLayer> {
                 CONTENT_TYPE,
                 HeaderName::from_static("x-api-key"),
                 HeaderName::from_static("x-goog-api-key"),
+                HeaderName::from_static("idempotency-key"),
             ])
             .expose_headers([request_id_header()]),
     )

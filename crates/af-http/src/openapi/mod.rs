@@ -37,6 +37,7 @@ mod user_tokens;
 mod user_topups;
 mod user_wallet;
 mod users;
+mod videos;
 mod wallet;
 
 use utoipa::openapi::{
@@ -54,6 +55,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(rerank::document());
     document.merge(responses_compact::document());
     document.merge(speech::document());
+    document.merge(videos::document());
     document.merge(redemptions::document());
     document.merge(subscriptions::document());
     document.merge(password_reset::document());
@@ -90,6 +92,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("公开注册"),
         Tag::new("OpenAI Responses"),
         Tag::new("OpenAI Audio"),
+        Tag::new("视频任务"),
         Tag::new("Rerank"),
         Tag::new("认证设置"),
         Tag::new("密码重置"),
@@ -161,7 +164,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 79);
+        assert_eq!(document.paths.paths.len(), 81);
         let operation_count = document
             .paths
             .paths
@@ -182,7 +185,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 119);
+        assert_eq!(operation_count, 121);
         assert!(
             document
                 .components
@@ -212,6 +215,8 @@ mod tests {
             "compactResponse",
             "rerank",
             "synthesizeSpeech",
+            "submitVideoTask",
+            "pollVideoTask",
             "createAdminChannel",
             "createAdminCredential",
             "createAdminCredentialProxy",
@@ -335,7 +340,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 228);
+        assert_eq!(schemas.len(), 239);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminResponsesCompactProbe"));
         assert!(schemas.contains_key("ResponsesCompactError"));
@@ -365,6 +370,17 @@ mod tests {
         assert!(schemas.contains_key("AudioSpeechBinary"));
         assert!(schemas.contains_key("AudioSpeechErrorBody"));
         assert!(schemas.contains_key("AudioSpeechError"));
+        assert!(schemas.contains_key("VideoGenerationRequest"));
+        assert!(schemas.contains_key("VideoAspectRatio"));
+        assert!(schemas.contains_key("VideoResolution"));
+        assert!(schemas.contains_key("VideoSubmissionResponse"));
+        assert!(schemas.contains_key("VideoTaskStatus"));
+        assert!(schemas.contains_key("VideoOutput"));
+        assert!(schemas.contains_key("VideoFailureCode"));
+        assert!(schemas.contains_key("VideoFailure"));
+        assert!(schemas.contains_key("VideoPollResponse"));
+        assert!(schemas.contains_key("VideoTaskErrorBody"));
+        assert!(schemas.contains_key("VideoTaskError"));
         assert!(schemas.contains_key("AdminChannelAutoBanRules"));
         assert!(schemas.contains_key("AdminCredentialCreateRequest"));
         assert!(schemas.contains_key("AdminCredentialUpdateRequest"));

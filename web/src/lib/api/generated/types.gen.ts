@@ -1399,6 +1399,44 @@ export type UserWalletSummary = {
     used_quota: number;
     frozen_quota: number;
 };
+export type VideoAspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4' | '3:2' | '2:3';
+export type VideoFailure = {
+    code: VideoFailureCode;
+    message: string;
+};
+export type VideoFailureCode = 'invalid_argument' | 'failed_precondition' | 'service_unavailable';
+export type VideoGenerationRequest = {
+    model: string;
+    prompt: string;
+    duration?: number | null;
+    aspect_ratio?: null | VideoAspectRatio;
+    resolution?: null | VideoResolution;
+};
+export type VideoOutput = {
+    url: string;
+    duration: number;
+    respect_moderation: boolean;
+};
+export type VideoPollResponse = {
+    status: VideoTaskStatus;
+    video?: null | VideoOutput;
+    model?: string | null;
+    error?: null | VideoFailure;
+};
+export type VideoResolution = '480p' | '720p' | '1080p';
+export type VideoSubmissionResponse = {
+    request_id: string;
+};
+export type VideoTaskError = {
+    error: VideoTaskErrorBody;
+};
+export type VideoTaskErrorBody = {
+    code: string;
+    message: string;
+    param: string | null;
+    type: string;
+};
+export type VideoTaskStatus = 'pending' | 'done' | 'expired' | 'failed';
 export type AdminChannelCreateRequestWritable = {
     name: string;
     type: 'openai' | 'anthropic' | 'gemini' | 'jina' | 'cohere' | 'xai';
@@ -1787,6 +1825,48 @@ export type SynthesizeSpeechResponses = {
     200: AudioSpeechBinary;
 };
 export type SynthesizeSpeechResponse = SynthesizeSpeechResponses[keyof SynthesizeSpeechResponses];
+export type SubmitVideoTaskData = {
+    body: VideoGenerationRequest;
+    headers: {
+        'Idempotency-Key': string;
+    };
+    path?: never;
+    query?: never;
+    url: '/v1/videos/generations';
+};
+export type SubmitVideoTaskErrors = {
+    400: VideoTaskError;
+    401: VideoTaskError;
+    404: VideoTaskError;
+    409: VideoTaskError;
+    429: VideoTaskError;
+    500: VideoTaskError;
+    503: VideoTaskError;
+};
+export type SubmitVideoTaskError = SubmitVideoTaskErrors[keyof SubmitVideoTaskErrors];
+export type SubmitVideoTaskResponses = {
+    200: VideoSubmissionResponse;
+};
+export type SubmitVideoTaskResponse = SubmitVideoTaskResponses[keyof SubmitVideoTaskResponses];
+export type PollVideoTaskData = {
+    body?: never;
+    path: {
+        task_id: string;
+    };
+    query?: never;
+    url: '/v1/videos/{task_id}';
+};
+export type PollVideoTaskErrors = {
+    401: VideoTaskError;
+    404: VideoTaskError;
+    500: VideoTaskError;
+    503: VideoTaskError;
+};
+export type PollVideoTaskError = PollVideoTaskErrors[keyof PollVideoTaskErrors];
+export type PollVideoTaskResponses = {
+    200: VideoPollResponse;
+};
+export type PollVideoTaskResponse = PollVideoTaskResponses[keyof PollVideoTaskResponses];
 export type ListAdminRedemptionAuditData = {
     body?: never;
     path?: never;

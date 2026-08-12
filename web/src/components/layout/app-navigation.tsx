@@ -21,6 +21,7 @@ import {
   Ticket,
   UserRound,
   UsersRound,
+  Video,
   WalletCards,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -45,7 +46,7 @@ type AppNavigationProps = {
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'apiKeys' | 'wallet' | 'subscriptions' | 'invitations' | 'profile' | 'users' | 'subscriptionManagement' | 'redemptionCodes' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'credentials' | 'credentialProxies' | 'routes' | 'keys' | 'usage' | 'debugTraces'
+  key: 'overview' | 'models' | 'playground' | 'videoTasks' | 'apiKeys' | 'wallet' | 'subscriptions' | 'invitations' | 'profile' | 'users' | 'subscriptionManagement' | 'redemptionCodes' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'credentials' | 'credentialProxies' | 'routes' | 'keys' | 'usage' | 'debugTraces'
   icon: LucideIcon
   href: `#/console${string}`
 }
@@ -63,6 +64,7 @@ const navGroups: readonly NavGroup[] = [
     items: [
       { key: 'models', icon: Boxes, href: '#/console/models' },
       { key: 'playground', icon: MessageSquareText, href: '#/console/playground' },
+      { key: 'videoTasks', icon: Video, href: '#/console/video-tasks' },
     ],
   },
   {
@@ -106,6 +108,7 @@ const activeKeyByView: Partial<Record<AppView, NavItem['key']>> = {
   overview: 'overview',
   models: 'models',
   playground: 'playground',
+  'video-tasks': 'videoTasks',
   'api-keys': 'apiKeys',
   wallet: 'wallet',
   subscriptions: 'subscriptions',
