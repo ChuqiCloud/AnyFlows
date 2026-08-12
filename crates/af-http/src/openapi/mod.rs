@@ -347,7 +347,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 247);
+        assert_eq!(schemas.len(), 249);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("AdminResponsesCompactProbe"));
         assert!(schemas.contains_key("ResponsesCompactError"));
