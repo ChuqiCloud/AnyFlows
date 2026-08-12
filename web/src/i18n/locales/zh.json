@@ -3448,7 +3448,9 @@
     },
     "epay": {
       "title": "易支付",
-      "description": "连接兼容易支付协议的聚合网关，可分别开放支付宝与微信支付。"
+      "description": "连接兼容易支付协议的聚合网关，可分别开放支付宝与微信支付。",
+      "publicBaseUrlRequired": "启用易支付前需要配置站点公开基址",
+      "publicBaseUrlHint": "异步通知和支付返回地址必须使用外部可访问的稳定地址，不能使用当前本地预览地址。"
     },
     "fields": {
       "stripeEnabled": "启用 Stripe",
@@ -3475,7 +3477,8 @@
     },
     "callbacks": {
       "title": "回调地址",
-      "description": "地址由当前部署域名生成，只读且不参与设置保存。",
+      "description": "地址由站点公开基址生成，只读且不参与支付设置保存。",
+      "missingPublicBaseUrl": "配置站点公开基址后，这里会显示可填写到支付平台的真实回调地址。",
       "stripe": "Stripe Webhook",
       "epay": "易支付异步通知",
       "return": "支付同步返回"
@@ -3493,6 +3496,7 @@
       "epayMerchantId": "请输入不含空格和控制字符的商户 PID。",
       "epayMerchantKey": "请输入有效商户 PKey；替换与清除不能同时选择。",
       "epayPaymentMethod": "启用易支付时至少开放一种支付方式。",
+      "epayPublicBaseUrl": "启用易支付前必须在站点设置中配置公开基址。",
       "epayQuota": "每人民币到账额度必须是正整数。"
     },
     "units": { "seconds": "秒", "quota": "额度" },
@@ -3501,7 +3505,8 @@
       "retry": "重试",
       "save": "保存设置",
       "saving": "正在保存",
-      "copy": "复制地址"
+      "copy": "复制地址",
+      "configureSite": "前往站点设置"
     },
     "state": {
       "saved": "支付设置已保存。",

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useAdminSiteSettings } from '@/features/site-settings/site-settings-api'
 import { useAdminPaymentSettings } from './payment-settings-api'
 import { PaymentSettingsWorkspace } from './payment-settings-workspace'
 
@@ -10,6 +11,12 @@ import { PaymentSettingsWorkspace } from './payment-settings-workspace'
 export function PaymentSettingsPage() {
   const { t } = useTranslation()
   const settingsQuery = useAdminPaymentSettings()
+  const siteSettingsQuery = useAdminSiteSettings()
+  const isFetching = settingsQuery.isFetching || siteSettingsQuery.isFetching
+  const refresh = () => {
+    void settingsQuery.refetch()
+    void siteSettingsQuery.refetch()
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -18,13 +25,13 @@ export function PaymentSettingsPage() {
           <h2 className="text-lg font-semibold">{t('paymentSettings.title')}</h2>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">{t('paymentSettings.subtitle')}</p>
         </div>
-        <Button type="button" size="sm" variant="secondary" disabled={settingsQuery.isFetching} onClick={() => void settingsQuery.refetch()}>
-          <RefreshCw className={settingsQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />
+        <Button type="button" size="sm" variant="secondary" disabled={isFetching} onClick={refresh}>
+          <RefreshCw className={isFetching ? 'animate-spin' : undefined} aria-hidden="true" />
           {t('paymentSettings.actions.refresh')}
         </Button>
       </header>
 
-      {settingsQuery.isPending ? (
+      {settingsQuery.isPending || siteSettingsQuery.isPending ? (
         <div className="grid gap-4 lg:grid-cols-2" aria-label={t('paymentSettings.loading')}>
           {[0, 1].map((item) => (
             <div key={item} className="overflow-hidden rounded-xl border border-[var(--hairline)]">
@@ -33,13 +40,18 @@ export function PaymentSettingsPage() {
             </div>
           ))}
         </div>
-      ) : settingsQuery.isError ? (
+      ) : settingsQuery.isError || siteSettingsQuery.isError ? (
         <div role="alert" className="rounded-xl border border-destructive/25 bg-destructive/8 p-4">
           <h3 className="text-sm font-semibold text-destructive">{t('paymentSettings.errors.title')}</h3>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('paymentSettings.errors.load')}</p>
-          <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void settingsQuery.refetch()}>{t('paymentSettings.actions.retry')}</Button>
+          <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={refresh}>{t('paymentSettings.actions.retry')}</Button>
         </div>
-      ) : settingsQuery.data ? <PaymentSettingsWorkspace settings={settingsQuery.data} /> : null}
+      ) : settingsQuery.data && siteSettingsQuery.data ? (
+        <PaymentSettingsWorkspace
+          settings={settingsQuery.data}
+          publicBaseUrl={siteSettingsQuery.data.public_base_url}
+        />
+      ) : null}
     </div>
   )
 }

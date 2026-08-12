@@ -28,6 +28,7 @@ type ValidationMessages = {
   epayMerchantId: string
   epayMerchantKey: string
   epayPaymentMethod: string
+  epayPublicBaseUrl: string
   epayQuota: string
   stripePublishableKey: string
   stripeSecretKey: string
@@ -60,6 +61,7 @@ export function paymentSettingsValues(settings: AdminPaymentSettings): PaymentSe
 export function buildPaymentSettingsSchema(
   settings: AdminPaymentSettings,
   messages: ValidationMessages,
+  publicBaseUrl?: string | null,
 ) {
   return z.object({
     clearEpayMerchantKey: z.boolean(),
@@ -118,6 +120,7 @@ export function buildPaymentSettingsSchema(
       addIssue(context, 'epayMerchantKey', messages.epayMerchantKey)
     }
     if (values.epayEnabled) {
+      if (!publicBaseUrl) addIssue(context, 'epayEnabled', messages.epayPublicBaseUrl)
       if (!values.epayGatewayUrl) addIssue(context, 'epayGatewayUrl', messages.epayGatewayUrl)
       if (!values.epayMerchantId) addIssue(context, 'epayMerchantId', messages.epayMerchantId)
       if ((!settings.epay_merchant_key_configured || values.clearEpayMerchantKey) && !values.epayMerchantKey) {
@@ -128,6 +131,38 @@ export function buildPaymentSettingsSchema(
       }
     }
   })
+}
+
+export type PaymentCallbackUrls = {
+  epay: string
+  return: string
+  stripe: string
+}
+
+/** 回调地址只从服务端公开基址派生，避免本地预览地址被误配到支付平台。 */
+export function paymentCallbackUrls(publicBaseUrl?: string | null): PaymentCallbackUrls | undefined {
+  if (!publicBaseUrl) return undefined
+  try {
+    const base = new URL(publicBaseUrl)
+    base.search = ''
+    base.hash = ''
+    const prefix = base.pathname.replace(/\/+$/u, '')
+    const callback = (path: string) => {
+      const url = new URL(base)
+      url.pathname = `${prefix}${path}`
+      return url.toString()
+    }
+    const returnUrl = new URL(base)
+    returnUrl.pathname = `${prefix}/`
+    returnUrl.hash = '/console/wallet?epay_return=1'
+    return {
+      epay: callback('/api/payment/webhook/epay'),
+      return: returnUrl.toString(),
+      stripe: callback('/api/payment/webhook/stripe'),
+    }
+  } catch {
+    return undefined
+  }
 }
 
 /** 空密钥转换为 null，让服务端保留已有密文。 */
