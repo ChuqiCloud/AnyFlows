@@ -29,7 +29,7 @@ export function VideoTaskHistoryPanel(props: VideoTaskHistoryPanelProps) {
           <div className="flex items-center gap-2">
             <History className="size-3.5 text-brand" aria-hidden="true" />
             <h3 className="text-xs font-semibold">{t('videoTasks.history.title')}</h3>
-            {props.items.length > 0 ? <Badge variant="secondary">{props.items.length}</Badge> : null}
+            {props.items.length > 0 ? <Badge className="bg-surface-2 text-muted-foreground">{props.items.length}</Badge> : null}
           </div>
           <p className="mt-0.5 truncate text-[0.6875rem] text-muted-foreground">
             {t('videoTasks.history.description')}

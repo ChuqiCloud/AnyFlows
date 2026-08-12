@@ -257,7 +257,7 @@ fn poll_video_task() {}
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(submit_video_task, list_video_tasks, poll_video_task),
+    paths(list_video_tasks, submit_video_task, poll_video_task),
     components(schemas(
         VideoGenerationRequestSchema,
         VideoAspectRatioSchema,
