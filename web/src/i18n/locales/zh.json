@@ -26,6 +26,7 @@
     "authenticationSettings": "认证设置",
     "emailSettings": "邮件设置",
     "networkSettings": "网络与代理",
+    "paymentSettings": "支付设置",
     "billingSettings": "计费设置",
     "groupSettings": "分组管理",
     "modelSettings": "模型管理",
@@ -3394,6 +3395,82 @@
       "outcomeUnknown": "服务暂时无法确认提交结果，请保留当前页面并重试同一操作。"
     }
   },
+  "paymentSettings": {
+    "title": "支付设置",
+    "subtitle": "配置 Stripe 与易支付收款渠道、钱包到账倍率和固定回调入口。",
+    "loading": "正在加载支付设置",
+    "stripe": {
+      "title": "Stripe",
+      "description": "使用 Payment Element 接受银行卡支付，并通过签名 webhook 确认到账。"
+    },
+    "epay": {
+      "title": "易支付",
+      "description": "连接兼容易支付协议的聚合网关，可分别开放支付宝与微信支付。"
+    },
+    "fields": {
+      "stripeEnabled": "启用 Stripe",
+      "stripePublishableKey": "Publishable Key",
+      "stripeSecretKey": "Secret Key",
+      "stripeWebhookSecret": "Webhook Secret",
+      "stripeTolerance": "签名时间容差",
+      "epayEnabled": "启用易支付",
+      "epayGatewayUrl": "网关地址",
+      "epayMerchantId": "商户 PID",
+      "epayMerchantKey": "商户 PKey",
+      "epayQuotaPerCny": "每人民币到账额度",
+      "alipay": "支付宝",
+      "wxpay": "微信支付"
+    },
+    "status": { "enabled": "已启用", "disabled": "已停用" },
+    "secrets": {
+      "configured": "已配置",
+      "missing": "未配置",
+      "replacePlaceholder": "输入后替换现有密钥",
+      "createPlaceholder": "输入新的密钥",
+      "clear": "保存时清除已配置密钥",
+      "neverShown": "保存后不再显示明文。"
+    },
+    "callbacks": {
+      "title": "回调地址",
+      "description": "地址由当前部署域名生成，只读且不参与设置保存。",
+      "stripe": "Stripe Webhook",
+      "epay": "易支付异步通知",
+      "return": "支付同步返回"
+    },
+    "security": {
+      "title": "密钥安全",
+      "description": "读取接口只返回是否已配置。留空表示保留，勾选清除才会删除已有密钥。"
+    },
+    "validation": {
+      "stripePublishableKey": "请输入 pk_test_ 或 pk_live_ 开头的有效 Publishable Key。",
+      "stripeSecretKey": "请输入有效密钥；替换与清除不能同时选择。",
+      "stripeWebhookSecret": "请输入有效 Webhook Secret；替换与清除不能同时选择。",
+      "stripeTolerance": "签名容差必须是 30 到 900 秒的整数。",
+      "epayGatewayUrl": "请输入不含账号、查询串和片段的 HTTPS 网关地址。",
+      "epayMerchantId": "请输入不含空格和控制字符的商户 PID。",
+      "epayMerchantKey": "请输入有效商户 PKey；替换与清除不能同时选择。",
+      "epayPaymentMethod": "启用易支付时至少开放一种支付方式。",
+      "epayQuota": "每人民币到账额度必须是正整数。"
+    },
+    "units": { "seconds": "秒", "quota": "额度" },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "save": "保存设置",
+      "saving": "正在保存",
+      "copy": "复制地址"
+    },
+    "state": {
+      "saved": "支付设置已保存。",
+      "unsaved": "存在尚未保存的修改。",
+      "synced": "已同步服务端版本 {{version}}。"
+    },
+    "errors": {
+      "title": "无法读取支付设置",
+      "load": "服务暂时没有返回可靠的支付配置，请稍后重试。",
+      "save": "支付设置保存失败，请检查字段或刷新后重试。"
+    }
+  },
   "wallet": {
     "eyebrow": "账户额度",
     "title": "钱包与账本",
@@ -3417,7 +3494,17 @@
     },
     "topup": {
       "title": "在线充值",
-      "description": "通过 Stripe 为当前账户充值额度。",
+      "description": "选择可用支付方式，为当前账户充值额度。",
+      "methods": {
+        "label": "支付方式",
+        "card": "银行卡",
+        "alipay": "支付宝",
+        "wxpay": "微信支付"
+      },
+      "providers": {
+        "stripe": "Stripe",
+        "epay": "易支付"
+      },
       "unavailable": {
         "title": "在线充值暂不可用",
         "retryable": "支付配置暂时无法读取，请稍后重试。",
@@ -3443,21 +3530,23 @@
         "readyTitle": "准备创建支付订单",
         "readyBody": "服务端将在确认金额后返回精确到账额度。",
         "creatingTitle": "正在准备支付",
-        "creatingBody": "正在创建或恢复同一笔 Stripe 支付订单。",
+        "creatingBody": "正在创建或恢复同一笔支付订单。",
         "resumeTitle": "发现未完成的充值",
         "resumeBody": "保留了 {{amount}} 的原订单，可继续恢复支付。",
-        "confirmedTitle": "支付已由 Stripe 确认",
+        "confirmedTitle": "支付已确认",
         "processingTitle": "支付正在处理中",
         "confirmedBody": "正在等待支付回调完成钱包入账，请勿重复支付。",
         "paidTitle": "充值已经到账",
         "paidBody": "{{amount}} 额度已写入钱包与充值账本。",
         "failedTitle": "支付未完成",
-        "failedBody": "Stripe 已关闭本次支付订单，请重新发起充值。",
+        "failedBody": "支付服务已关闭本次订单，请重新发起充值。",
         "canceledTitle": "支付已取消",
         "canceledBody": "本次支付订单已取消，不会产生钱包入账。",
         "expiredTitle": "支付订单已过期",
         "expiredBody": "订单已超过有效期，请重新选择金额发起充值。",
-        "errorTitle": "暂时无法准备支付"
+        "errorTitle": "暂时无法准备支付",
+        "redirectTitle": "订单已准备完成",
+        "redirectBody": "确认后将前往支付网关。支付完成返回本页后，钱包只依据服务端异步通知入账。"
       },
       "actions": {
         "continue": "继续支付",
@@ -3466,12 +3555,13 @@
         "retrySame": "重试原订单",
         "refreshStatus": "刷新到账状态",
         "newAttempt": "重新充值",
-        "done": "完成"
+        "done": "完成",
+        "openPayment": "前往支付"
       },
       "errors": {
         "unavailable": "充值服务暂不可用，请保留当前页面后重试。",
-        "providerRejected": "Stripe 拒绝创建支付订单，请稍后重新发起。",
-        "conflict": "原幂等键已绑定其他金额，请重新选择金额。",
+        "providerRejected": "支付渠道拒绝创建订单，请稍后重新发起。",
+        "conflict": "原幂等键已绑定其他金额或支付方式，请重新选择。",
         "outcomeUnknown": "服务暂时无法确认订单结果，请重试同一订单。",
         "invalid": "充值金额或订单参数无效，请重新选择金额。",
         "unknown": "支付服务暂时没有返回可靠结果，请重试原订单。"

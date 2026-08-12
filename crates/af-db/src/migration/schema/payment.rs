@@ -1,9 +1,181 @@
 use sea_orm::DbBackend;
 use sea_orm_migration::prelude::*;
 
-use crate::migration::iden::{topup_orders, topup_payment_events, users};
+use crate::migration::iden::{payment_settings, topup_orders, topup_payment_events, users};
 
 use super::{auto_id, nullable_timestamp, table, timestamp};
+
+/// 创建固定主键的在线支付 Provider 设置表。
+pub(in crate::migration) async fn create_payment_settings(
+    manager: &SchemaManager<'_>,
+) -> Result<(), DbErr> {
+    let mut statement = table(manager, payment_settings::Entity);
+    statement
+        .col(
+            ColumnDef::new(payment_settings::Column::Id)
+                .small_integer()
+                .not_null()
+                .primary_key()
+                .check(Expr::col(payment_settings::Column::Id).eq(1_i16)),
+        )
+        .col(
+            ColumnDef::new(payment_settings::Column::Initialized)
+                .boolean()
+                .not_null()
+                .default(false),
+        )
+        .col(
+            ColumnDef::new(payment_settings::Column::StripeEnabled)
+                .boolean()
+                .not_null()
+                .default(false),
+        )
+        .col(ColumnDef::new(payment_settings::Column::StripePublishableKey).string_len(512))
+        .col(ColumnDef::new(payment_settings::Column::StripeSecretKey).json_binary())
+        .col(ColumnDef::new(payment_settings::Column::StripeWebhookSecret).json_binary())
+        .col(
+            ColumnDef::new(payment_settings::Column::StripeSignatureToleranceSeconds)
+                .integer()
+                .not_null()
+                .default(300_i32)
+                .check(
+                    Expr::col(payment_settings::Column::StripeSignatureToleranceSeconds)
+                        .between(30_i32, 900_i32),
+                ),
+        )
+        .col(
+            ColumnDef::new(payment_settings::Column::EpayEnabled)
+                .boolean()
+                .not_null()
+                .default(false),
+        )
+        .col(ColumnDef::new(payment_settings::Column::EpayGatewayUrl).string_len(2048))
+        .col(ColumnDef::new(payment_settings::Column::EpayMerchantId).string_len(128))
+        .col(ColumnDef::new(payment_settings::Column::EpayMerchantKey).json_binary())
+        .col(
+            ColumnDef::new(payment_settings::Column::EpayAlipayEnabled)
+                .boolean()
+                .not_null()
+                .default(true),
+        )
+        .col(
+            ColumnDef::new(payment_settings::Column::EpayWxpayEnabled)
+                .boolean()
+                .not_null()
+                .default(true),
+        )
+        .col(
+            ColumnDef::new(payment_settings::Column::EpayQuotaPerCny)
+                .big_integer()
+                .not_null()
+                .default(500_000_i64)
+                .check(Expr::col(payment_settings::Column::EpayQuotaPerCny).gt(0_i64)),
+        )
+        .col(
+            ColumnDef::new(payment_settings::Column::Version)
+                .big_integer()
+                .not_null()
+                .default(1_i64)
+                .check(Expr::col(payment_settings::Column::Version).gte(1_i64)),
+        )
+        .col(timestamp(manager, payment_settings::Column::CreatedAt))
+        .col(timestamp(manager, payment_settings::Column::UpdatedAt))
+        .check(
+            Expr::col(payment_settings::Column::StripeEnabled)
+                .eq(false)
+                .or(Expr::col(payment_settings::Column::StripePublishableKey)
+                    .is_not_null()
+                    .and(Expr::col(payment_settings::Column::StripeSecretKey).is_not_null())
+                    .and(Expr::col(payment_settings::Column::StripeWebhookSecret).is_not_null())),
+        )
+        .check(
+            Expr::col(payment_settings::Column::EpayEnabled)
+                .eq(false)
+                .or(Expr::col(payment_settings::Column::EpayGatewayUrl)
+                    .is_not_null()
+                    .and(Expr::col(payment_settings::Column::EpayMerchantId).is_not_null())
+                    .and(Expr::col(payment_settings::Column::EpayMerchantKey).is_not_null())
+                    .and(
+                        Expr::col(payment_settings::Column::EpayAlipayEnabled)
+                            .eq(true)
+                            .or(Expr::col(payment_settings::Column::EpayWxpayEnabled).eq(true)),
+                    )),
+        );
+    manager.create_table(statement).await?;
+
+    // 固定行作为跨数据库并发更新锁锚，同时区分尚未接管旧 TOML 的初始状态。
+    manager
+        .exec_stmt(
+            Query::insert()
+                .into_table(payment_settings::Entity)
+                .columns([
+                    payment_settings::Column::Id,
+                    payment_settings::Column::Initialized,
+                    payment_settings::Column::StripeEnabled,
+                    payment_settings::Column::StripeSignatureToleranceSeconds,
+                    payment_settings::Column::EpayEnabled,
+                    payment_settings::Column::EpayAlipayEnabled,
+                    payment_settings::Column::EpayWxpayEnabled,
+                    payment_settings::Column::EpayQuotaPerCny,
+                    payment_settings::Column::Version,
+                ])
+                .values_panic([
+                    1_i16.into(),
+                    false.into(),
+                    false.into(),
+                    300_i32.into(),
+                    false.into(),
+                    true.into(),
+                    true.into(),
+                    500_000_i64.into(),
+                    1_i64.into(),
+                ])
+                .to_owned(),
+        )
+        .await
+}
+
+/// 为充值订单和支付事件补齐支付方式、金额与币种审计事实。
+pub(in crate::migration) async fn extend_topup_payment_facts(
+    manager: &SchemaManager<'_>,
+) -> Result<(), DbErr> {
+    manager
+        .alter_table(
+            Table::alter()
+                .table(topup_orders::Entity)
+                .add_column(ColumnDef::new(topup_orders::Column::PaymentMethod).string_len(32))
+                .to_owned(),
+        )
+        .await?;
+    // SQLite 每条 ALTER TABLE 只支持新增一列，逐列执行避免迁移在本地预览库失败。
+    manager
+        .alter_table(
+            Table::alter()
+                .table(topup_payment_events::Entity)
+                .add_column(ColumnDef::new(topup_payment_events::Column::AmountMinor).big_integer())
+                .to_owned(),
+        )
+        .await?;
+    manager
+        .alter_table(
+            Table::alter()
+                .table(topup_payment_events::Entity)
+                .add_column(ColumnDef::new(topup_payment_events::Column::Currency).char_len(3))
+                .to_owned(),
+        )
+        .await?;
+    manager
+        .alter_table(
+            Table::alter()
+                .table(topup_payment_events::Entity)
+                .add_column(
+                    ColumnDef::new(topup_payment_events::Column::PaymentMethod).string_len(32),
+                )
+                .to_owned(),
+        )
+        .await?;
+    Ok(())
+}
 
 /// 创建充值订单与支付 webhook 审计表；本迁移只固化状态机和幂等边界，不接任何 Provider。
 pub(in crate::migration) async fn create_topup_payment_audit(

@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use af_admin::{
     SessionAuthentication, SessionAuthenticator, UserTopupConfiguration, UserTopupError,
-    UserTopupOrder, UserTopupOrderCreateCommand, UserTopupPaymentSession, UserTopupService,
+    UserTopupMethod, UserTopupOrder, UserTopupOrderCreateCommand, UserTopupPaymentSession,
+    UserTopupService,
 };
+use af_billing::PaymentCheckoutAction;
 use af_domain::TopupOrderStatus;
 use axum::{
     Extension, Json, Router,
@@ -34,25 +36,40 @@ struct UserTopupHttpState {
 pub(crate) struct UserTopupOrderCreateRequest {
     #[schema(min_length = 32, max_length = 32, pattern = "^[0-9a-f]{32}$")]
     idempotency_key: String,
-    #[schema(minimum = 50, maximum = 99_999_999)]
+    #[schema(min_length = 1, max_length = 64)]
+    provider: String,
+    #[schema(min_length = 1, max_length = 64)]
+    payment_method: String,
+    #[schema(minimum = 1, maximum = 99_999_999)]
     amount_minor: i64,
 }
 
-/// 当前登录用户可读取的 Stripe.js 充值配置。
+/// 当前登录用户可读取的充值支付方式目录。
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 #[schema(as = UserTopupConfiguration)]
 pub(crate) struct UserTopupConfigurationResponse {
-    #[schema(value_type = String, example = "stripe")]
-    provider: &'static str,
+    methods: Vec<UserTopupMethodResponse>,
+}
+
+/// 单个可选支付方式的公开客户端材料。
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserTopupMethod)]
+pub(crate) struct UserTopupMethodResponse {
+    #[schema(min_length = 1, max_length = 64)]
+    provider: String,
+    #[schema(min_length = 1, max_length = 64)]
+    payment_method: String,
     #[schema(min_length = 3, max_length = 3, pattern = "^[A-Z]{3}$")]
-    currency: &'static str,
-    #[schema(minimum = 50)]
+    currency: String,
+    #[schema(minimum = 1)]
     min_amount_minor: i64,
     #[schema(maximum = 99_999_999)]
     max_amount_minor: i64,
-    #[schema(min_length = 9, max_length = 512, pattern = "^pk_(test|live)_[!-~]+$")]
-    publishable_key: String,
+    #[schema(min_length = 9, max_length = 512)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    publishable_key: Option<String>,
 }
 
 /// 当前用户可见的闭合充值订单状态。
@@ -77,8 +94,10 @@ pub(crate) struct UserTopupOrderResponse {
     order_id: String,
     #[schema(min_length = 1, max_length = 64)]
     provider: String,
+    #[schema(min_length = 1, max_length = 64)]
+    payment_method: String,
     status: UserTopupOrderStatusResponse,
-    #[schema(minimum = 50, maximum = 99_999_999)]
+    #[schema(minimum = 1, maximum = 99_999_999)]
     amount_minor: i64,
     #[schema(min_length = 3, max_length = 3, pattern = "^[A-Z]{3}$")]
     currency: String,
@@ -93,15 +112,21 @@ pub(crate) struct UserTopupOrderResponse {
     payment: Option<UserTopupPaymentSessionResponse>,
 }
 
-/// 当前用户可交给 Stripe SDK 的短生命周期支付会话。
+/// 当前用户继续支付所需的闭合动作。
 #[derive(Serialize, ToSchema)]
-#[serde(deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[schema(as = UserTopupPaymentSession)]
-pub(crate) struct UserTopupPaymentSessionResponse {
-    #[schema(min_length = 4, max_length = 128, pattern = "^pi_[A-Za-z0-9_]+$")]
-    payment_intent_id: String,
-    #[schema(min_length = 1, max_length = 4096, read_only = true)]
-    client_secret: String,
+pub(crate) enum UserTopupPaymentSessionResponse {
+    Stripe {
+        #[schema(min_length = 4, max_length = 128, pattern = "^pi_[A-Za-z0-9_]+$")]
+        payment_intent_id: String,
+        #[schema(min_length = 1, max_length = 4096, read_only = true)]
+        client_secret: String,
+    },
+    Redirect {
+        #[schema(min_length = 1, max_length = 16384)]
+        redirect_url: String,
+    },
 }
 
 /// 构建只允许有效登录会话创建本人充值订单的路由。
@@ -133,7 +158,9 @@ async fn get_user_topup_configuration(
         .ok_or(ManagementError::TopupUnavailable)?;
     Ok(status_json(
         StatusCode::OK,
-        UserTopupConfigurationResponse::from_configuration(service.configuration()),
+        UserTopupConfigurationResponse::from_configuration(
+            &service.configuration().map_err(map_topup_error)?,
+        ),
     ))
 }
 
@@ -148,8 +175,13 @@ async fn create_user_topup_order(
         .as_ref()
         .ok_or(ManagementError::TopupUnavailable)?;
     let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let command = UserTopupOrderCreateCommand::new(&request.idempotency_key, request.amount_minor)
-        .map_err(map_topup_error)?;
+    let command = UserTopupOrderCreateCommand::new(
+        &request.idempotency_key,
+        request.provider,
+        request.payment_method,
+        request.amount_minor,
+    )
+    .map_err(map_topup_error)?;
     let order = service
         .create(authentication.principal(), command)
         .await
@@ -170,6 +202,7 @@ impl UserTopupOrderResponse {
         Ok(Self {
             order_id: order.order_id().persistence_key(),
             provider: order.provider().to_owned(),
+            payment_method: order.payment_method().to_owned(),
             status: match order.status() {
                 TopupOrderStatus::Created => UserTopupOrderStatusResponse::Created,
                 TopupOrderStatus::Pending => UserTopupOrderStatusResponse::Pending,
@@ -196,21 +229,45 @@ impl UserTopupOrderResponse {
 impl UserTopupConfigurationResponse {
     fn from_configuration(configuration: &UserTopupConfiguration) -> Self {
         Self {
-            provider: configuration.provider(),
-            currency: configuration.currency(),
-            min_amount_minor: configuration.min_amount_minor(),
-            max_amount_minor: configuration.max_amount_minor(),
-            publishable_key: configuration.publishable_key().to_owned(),
+            methods: configuration
+                .methods()
+                .iter()
+                .map(UserTopupMethodResponse::from_method)
+                .collect(),
+        }
+    }
+}
+
+impl UserTopupMethodResponse {
+    fn from_method(method: &UserTopupMethod) -> Self {
+        Self {
+            provider: method.provider().to_owned(),
+            payment_method: method.payment_method().to_owned(),
+            currency: method.currency().to_owned(),
+            min_amount_minor: method.min_amount_minor(),
+            max_amount_minor: method.max_amount_minor(),
+            publishable_key: method.publishable_key().map(str::to_owned),
         }
     }
 }
 
 impl UserTopupPaymentSessionResponse {
     fn from_session(session: &UserTopupPaymentSession) -> Result<Self, ManagementError> {
-        Ok(Self {
-            payment_intent_id: session.payment_intent_id().to_owned(),
-            client_secret: session.client_secret().to_owned(),
-        })
+        match session.action() {
+            PaymentCheckoutAction::ClientSecret(_) => Ok(Self::Stripe {
+                payment_intent_id: session.payment_intent_id().to_owned(),
+                client_secret: session
+                    .client_secret()
+                    .ok_or(ManagementError::Internal)?
+                    .to_owned(),
+            }),
+            PaymentCheckoutAction::RedirectUrl(_) => Ok(Self::Redirect {
+                redirect_url: session
+                    .redirect_url()
+                    .ok_or(ManagementError::Internal)?
+                    .to_owned(),
+            }),
+        }
     }
 }
 

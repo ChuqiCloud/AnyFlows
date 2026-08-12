@@ -129,6 +129,7 @@ pub(super) use model::create_models;
 pub(super) use model_sync::create_model_sync_audit;
 pub(super) use network::create_network_settings;
 pub(super) use payment::create_topup_payment_audit;
+pub(super) use payment::{create_payment_settings, extend_topup_payment_facts};
 pub(super) use playground::{create_playground_shares, create_playground_shares_indexes};
 pub(super) use playground_conversation::{
     create_playground_conversation_indexes, create_playground_conversations,

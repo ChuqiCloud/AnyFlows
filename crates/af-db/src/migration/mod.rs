@@ -61,6 +61,7 @@ mod m20260811_000052_create_async_tasks;
 mod m20260811_000053_create_async_task_submission_claims;
 mod m20260811_000054_add_usage_video_dimensions;
 mod m20260811_000055_create_async_task_billings;
+mod m20260812_000056_create_payment_settings;
 mod schema;
 
 #[cfg(test)]
@@ -159,6 +160,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260811_000053_create_async_task_submission_claims::Migration),
             Box::new(m20260811_000054_add_usage_video_dimensions::Migration),
             Box::new(m20260811_000055_create_async_task_billings::Migration),
+            Box::new(m20260812_000056_create_payment_settings::Migration),
         ]
     }
 }

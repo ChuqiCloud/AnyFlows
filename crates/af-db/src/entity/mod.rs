@@ -48,6 +48,7 @@ pub(crate) mod model_sync_runs;
 pub(crate) mod models;
 pub(crate) mod network_settings;
 pub(crate) mod options;
+pub(crate) mod payment_settings;
 pub(crate) mod playground_conversations;
 pub(crate) mod playground_shares;
 pub(crate) mod proxies;

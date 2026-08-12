@@ -16,6 +16,7 @@ mod models;
 mod network_settings;
 mod oauth_connections;
 mod password_reset;
+mod payment_settings;
 mod payment_webhook;
 mod playground_conversations;
 mod playground_shares;
@@ -65,6 +66,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(invitations::document());
     document.merge(email_settings::document());
     document.merge(network_settings::document());
+    document.merge(payment_settings::document());
     document.merge(oauth_connections::document());
     document.merge(balance_alert_settings::document());
     document.merge(site_settings::document());
@@ -104,6 +106,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("站点设置"),
         Tag::new("邮件设置"),
         Tag::new("网络与代理"),
+        Tag::new("支付设置"),
         Tag::new("OAuth 连接"),
         Tag::new("余额预警"),
         Tag::new("管理会话"),
@@ -263,6 +266,7 @@ mod tests {
             "getAdminDebugTraceSettings",
             "getAdminEmailSettings",
             "getAdminNetworkSettings",
+            "getAdminPaymentSettings",
             "getAdminGroup",
             "getAdminRoute",
             "getAdminModel",
@@ -325,6 +329,7 @@ mod tests {
             "updateAdminModel",
             "updateAdminEmailSettings",
             "updateAdminNetworkSettings",
+            "updateAdminPaymentSettings",
             "updateAdminAuthenticationSettings",
             "updateAdminSiteSettings",
             "updateAdminToken",
@@ -493,6 +498,8 @@ mod tests {
         assert!(schemas.contains_key("AdminNetworkSettings"));
         assert!(schemas.contains_key("AdminNetworkSettingsRequest"));
         assert!(schemas.contains_key("AdminNetworkSettingsMode"));
+        assert!(schemas.contains_key("AdminPaymentSettings"));
+        assert!(schemas.contains_key("AdminPaymentSettingsRequest"));
         assert!(schemas.contains_key("AdminBalanceAlertSettings"));
         assert!(schemas.contains_key("AdminBalanceAlertSettingsRequest"));
         assert!(schemas.contains_key("AdminRoute"));

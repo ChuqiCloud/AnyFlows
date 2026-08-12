@@ -18,6 +18,11 @@ pub struct Model {
     pub provider_event_id: SensitiveString,
     #[sea_orm(column_type = "String(StringLen::N(128))", nullable)]
     pub trade_no: Option<SensitiveString>,
+    pub amount_minor: Option<i64>,
+    #[sea_orm(column_type = "Char(Some(3))", nullable)]
+    pub currency: Option<String>,
+    #[sea_orm(column_type = "String(StringLen::N(32))", nullable)]
+    pub payment_method: Option<String>,
     pub event_type: i16,
     #[sea_orm(column_type = "Char(Some(64))")]
     pub signature_key_fingerprint: SensitiveString,

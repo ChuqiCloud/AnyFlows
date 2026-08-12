@@ -396,6 +396,7 @@ mod tests {
             TopupOrderId::new([0x42; 16]).unwrap(),
             500,
             "USD".to_owned(),
+            "card".to_owned(),
         )
         .unwrap()
     }

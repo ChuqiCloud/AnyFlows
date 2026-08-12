@@ -14,6 +14,8 @@ pub struct Model {
     pub user_id: i64,
     #[sea_orm(column_type = "String(StringLen::N(64))")]
     pub provider: String,
+    #[sea_orm(column_type = "String(StringLen::N(32))", nullable)]
+    pub payment_method: Option<String>,
     #[sea_orm(column_type = "String(StringLen::N(128))", nullable)]
     pub provider_order_id: Option<SensitiveString>,
     #[sea_orm(column_type = "String(StringLen::N(128))", nullable)]

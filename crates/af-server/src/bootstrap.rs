@@ -2,7 +2,8 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{
     CredentialDecryptionError, CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
-    OAuthProviderProfile, OAuthRefreshSupervisor, SystemSecretCipher, SystemSecretError,
+    OAuthProviderProfile, OAuthRefreshSupervisor, PlainSystemSecret, SystemSecretCipher,
+    SystemSecretError, SystemSecretKind,
 };
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
@@ -14,32 +15,31 @@ use af_admin::{
     DatabaseAdminChannelWriter, DatabaseAdminCredentialProxyService,
     DatabaseAdminEmailSettingsService, DatabaseAdminGroupReader, DatabaseAdminGroupWriter,
     DatabaseAdminModelPriceService, DatabaseAdminModelReader, DatabaseAdminModelSyncService,
-    DatabaseAdminModelWriter, DatabaseAdminNetworkSettingsService, DatabaseAdminRouteReader,
-    DatabaseAdminRouteWriter, DatabaseAdminTokenReader, DatabaseAdminTokenWriter,
-    DatabaseAdminUsageLogReader, DatabaseAdminUserReader, DatabaseAdminUserWriter,
-    DatabaseAdminWalletService, DatabaseInitialSetup, DatabasePasswordResetService,
-    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
-    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
-    DatabaseUserInvitationService, DatabaseUserProfileService, DatabaseUserTokenService,
-    DatabaseUserTopupService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
+    DatabaseAdminModelWriter, DatabaseAdminNetworkSettingsService,
+    DatabaseAdminPaymentSettingsService, DatabaseAdminRouteReader, DatabaseAdminRouteWriter,
+    DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
+    DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseAdminWalletService,
+    DatabaseInitialSetup, DatabasePasswordResetService, DatabasePlaygroundConversationService,
+    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
+    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
+    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserProfileService,
+    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
     ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
     PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
     PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
     RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
     SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
-    UserProfileService, UserTokenService, UserTopupConfiguration, UserTopupService,
-    UserWalletService,
+    UserProfileService, UserTokenService, UserTopupService, UserWalletService,
 };
 use af_analytics::{AdminDashboardReader, DatabaseAdminDashboardReader};
 use af_billing::{
     BillingPrechargePort, BillingSettlementPort, CachedRequestPricingSnapshotSource,
     DatabaseUsageRecordSink, GroupPricingCache, GroupPricingCacheError, ModelPriceCache,
     ModelPriceCacheError, RefundSignalConsumer, RefundSignalConsumerError, RefundSignalPort,
-    RefundSignalQueue, RefundSignalQueueError, RefundSignalSink, StripePaymentProvider,
-    TaskBillingReleaseSink, TaskBillingReservePort, TaskBillingSettlementPort,
-    TopupWebhookProcessor, UsageRecordConsumer, UsageRecordConsumerError, UsageRecordPort,
-    UsageRecordQueue, UsageRecordQueueError, UsageRecordSink,
+    RefundSignalQueue, RefundSignalQueueError, RefundSignalSink, TaskBillingReleaseSink,
+    TaskBillingReservePort, TaskBillingSettlementPort, UsageRecordConsumer,
+    UsageRecordConsumerError, UsageRecordPort, UsageRecordQueue, UsageRecordQueueError,
+    UsageRecordSink,
 };
 use af_cache::{
     CacheError, RedisConcurrencyConfig, RedisConcurrencyStore, RedisConfig, RedisHealthConfig,
@@ -65,7 +65,9 @@ use af_db::{
     InitialSetupRepositoryConfigError, MigrationOptions, ModelPriceRepository, ModelSyncRepository,
     NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
     NetworkSettingsRepositoryConfigError, PasswordResetRepository,
-    PasswordResetRepositoryConfigError, PlaygroundConversationRepository,
+    PasswordResetRepositoryConfigError, PaymentSecretUpdate, PaymentSettingsRepository,
+    PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
+    PaymentSettingsWriteRecord, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RegistrationRepository, RegistrationRepositoryConfigError,
@@ -73,16 +75,18 @@ use af_db::{
     SubscriptionBalanceAlertRepositoryConfigError, SubscriptionRepository,
     SubscriptionRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
     TokenRequestAdmissionRepository, TokenRequestAdmissionRepositoryConfigError, TopupRepository,
-    UsageLogRepository, UserInvitationRepository, UserInvitationRepositoryConfigError,
-    UserProfileRepository, UserProfileRepositoryConfigError, UserSessionRepository,
-    UserSessionRepositoryConfigError, UserTokenRepository, UserTokenRepositoryConfigError,
-    WalletLedgerRepository, WalletLedgerRepositoryConfigError, connect_and_migrate,
+    TopupRepositoryConfigError, UsageLogRepository, UserInvitationRepository,
+    UserInvitationRepositoryConfigError, UserProfileRepository, UserProfileRepositoryConfigError,
+    UserSessionRepository, UserSessionRepositoryConfigError, UserTokenRepository,
+    UserTokenRepositoryConfigError, WalletLedgerRepository, WalletLedgerRepositoryConfigError,
+    connect_and_migrate,
 };
 use af_http::{
     AdminChannelProbe, AdminOAuthConnectionService, AudioService, ChatService, EmbeddingService,
-    HttpListener, HttpRouter, ImageService, QueryApiKeyPolicy, ReadinessHandle, RerankService,
-    ResponsesCompactService, ServeError, ServeOutcome, SpeechService, VideoTaskService,
-    build_payment_webhook_router, build_router, serve_with_graceful_shutdown,
+    HttpListener, HttpRouter, ImageService, PaymentWebhookProcessorRegistry, QueryApiKeyPolicy,
+    ReadinessHandle, RerankService, ResponsesCompactService, ServeError, ServeOutcome,
+    SpeechService, VideoTaskService, build_payment_webhook_router, build_router,
+    serve_with_graceful_shutdown,
 };
 use af_httpclient::{
     DEFAULT_CONNECT_TIMEOUT, DEFAULT_MAX_CACHED_CLIENTS, DEFAULT_READ_TIMEOUT,
@@ -97,8 +101,6 @@ use af_scheduler::{
 };
 use af_telemetry::{MetricsHandle, TelemetryError, TracingHandle, init_metrics, init_tracing};
 use thiserror::Error;
-
-use crate::stripe_payment_intent::StripePaymentIntentProvider;
 
 use crate::readiness::DatabaseReadinessProbe;
 use crate::{
@@ -121,6 +123,7 @@ use crate::{
         OAuthRuntimeConfigError, PreparedOAuthLoopbackServer, initialize_oauth_refresh_supervisor,
         initialize_oauth_runtime, register_oauth_loopback_servers,
     },
+    payment_runtime::PaymentRuntime,
     request_rate_limit::{RequestRateLimitStore, RuntimeTokenAuthenticator},
     scheduled_chat::ScheduledChatService,
     scheduler_invalidation::{
@@ -170,9 +173,11 @@ pub struct AuthenticationReady {
     subscription_repository: SubscriptionRepository,
     user_invitation_service: Arc<dyn UserInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
+    site_settings_repository: SiteSettingsRepository,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     admin_credential_proxy_service: Arc<dyn AdminCredentialProxyService>,
     network_settings_repository: NetworkSettingsRepository,
+    payment_settings_repository: PaymentSettingsRepository,
     system_secret_cipher: SystemSecretCipher,
     admin_balance_alert_settings_service: Arc<dyn AdminBalanceAlertSettingsService>,
     balance_alert_task: BalanceAlertTask,
@@ -234,6 +239,8 @@ pub struct BillingReady {
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     admin_model_sync_service: Arc<dyn AdminModelSyncService>,
     admin_model_price_service: Arc<dyn AdminModelPriceService>,
+    payment_runtime: Arc<PaymentRuntime>,
+    admin_payment_settings_service: Arc<dyn af_admin::AdminPaymentSettingsService>,
     concurrency_release_worker: Option<ConcurrencyReleaseWorker>,
     concurrency_cleanup_worker: Option<ConcurrencyCleanupWorker>,
     debug_trace_repository: DebugTraceRepository,
@@ -255,11 +262,12 @@ pub struct Supervised {
     billing: BillingRuntime,
     usage_record_queue: UsageRecordQueue,
     refund_signal_queue: RefundSignalQueue,
-    upstream_clients: HttpClientProvider,
     _channel_index: InMemoryChannelIndex,
     model_catalog_reader: Arc<dyn ModelCatalogReader>,
     admin_model_sync_service: Arc<dyn AdminModelSyncService>,
     admin_model_price_service: Arc<dyn AdminModelPriceService>,
+    payment_runtime: Arc<PaymentRuntime>,
+    admin_payment_settings_service: Arc<dyn af_admin::AdminPaymentSettingsService>,
     admin_network_settings_service: Arc<DatabaseAdminNetworkSettingsService>,
     admin_oauth_connection_service: Arc<dyn AdminOAuthConnectionService>,
     admin_channel_probe: Arc<dyn AdminChannelProbe>,
@@ -376,6 +384,12 @@ pub enum BootstrapError {
     /// 全局网络设置仓储的启动参数无效。
     #[error("网络设置仓储启动参数无效")]
     NetworkSettingsRepository(#[source] NetworkSettingsRepositoryConfigError),
+    /// 在线支付设置仓储的启动参数无效。
+    #[error("支付设置仓储启动参数无效")]
+    PaymentSettingsRepository(#[source] PaymentSettingsRepositoryConfigError),
+    /// 充值订单与支付事件仓储的启动参数无效。
+    #[error("充值仓储启动参数无效")]
+    TopupRepository(#[source] TopupRepositoryConfigError),
     /// 凭据专属代理目录仓储的启动参数无效。
     #[error("专属代理目录仓储启动参数无效")]
     CredentialProxyRepository(#[source] CredentialProxyRepositoryConfigError),
@@ -454,6 +468,9 @@ pub enum BootstrapError {
     /// 数据库网络设置无法应用到当前 HTTP Client。
     #[error("应用运行时网络设置失败")]
     NetworkSettingsRuntime(#[source] AdminNetworkSettingsError),
+    /// 启动期支付设置导入、读取或运行时应用失败。
+    #[error("初始化支付运行时失败")]
+    PaymentRuntime,
     /// 上游账号 OAuth profile、会话或 loopback 合约无法安全装配。
     #[error("初始化上游账号 OAuth 运行时失败")]
     OAuthRuntime(#[source] OAuthRuntimeConfigError),
@@ -639,6 +656,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::NetworkSettingsRepository)?;
+        let payment_settings_repository = PaymentSettingsRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::PaymentSettingsRepository)?;
         let credential_proxy_repository = CredentialProxyRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -844,11 +866,13 @@ impl Bootstrap<DatabaseReady> {
                     user_invitation_repository,
                 )),
                 site_settings_service: Arc::new(DatabaseSiteSettingsService::new(
-                    site_settings_repository,
+                    site_settings_repository.clone(),
                 )),
+                site_settings_repository,
                 admin_email_settings_service: Arc::new(admin_email_settings_service),
                 admin_credential_proxy_service,
                 network_settings_repository,
+                payment_settings_repository,
                 system_secret_cipher,
                 admin_balance_alert_settings_service: Arc::new(
                     admin_balance_alert_settings_service,
@@ -976,6 +1000,44 @@ impl Bootstrap<RelayReady> {
         let admin_model_sync_service: Arc<dyn AdminModelSyncService> = Arc::new(
             DatabaseAdminModelSyncService::new(model_sync_repository, model_discoverer),
         );
+        let request_timeout = self
+            .stage
+            .upstream_clients
+            .base_config()
+            .map_err(BootstrapError::HttpClient)?
+            .timeouts()
+            .request();
+        let topup_repository = TopupRepository::new(
+            self.stage.infrastructure.infrastructure.database.clone(),
+            Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::TopupRepository)?;
+        import_legacy_stripe_payment_settings(
+            &self.stage.infrastructure.payment_settings_repository,
+            &self.stage.infrastructure.system_secret_cipher,
+            self.config.payment(),
+        )
+        .await?;
+        let payment_runtime = Arc::new(PaymentRuntime::new(
+            topup_repository,
+            self.stage.infrastructure.site_settings_repository.clone(),
+            self.stage.upstream_clients.clone(),
+            request_timeout,
+        ));
+        let admin_payment_settings_service = Arc::new(DatabaseAdminPaymentSettingsService::new(
+            self.stage
+                .infrastructure
+                .payment_settings_repository
+                .clone(),
+            self.stage.infrastructure.system_secret_cipher.clone(),
+            payment_runtime.clone(),
+        ));
+        admin_payment_settings_service
+            .apply_current()
+            .await
+            .map_err(|_| BootstrapError::PaymentRuntime)?;
+        let admin_payment_settings_service: Arc<dyn af_admin::AdminPaymentSettingsService> =
+            admin_payment_settings_service;
         let billing = BillingRuntime::open(
             self.config.billing(),
             self.stage.infrastructure.infrastructure.database.clone(),
@@ -1298,6 +1360,8 @@ impl Bootstrap<RelayReady> {
                 model_catalog_reader,
                 admin_model_sync_service,
                 admin_model_price_service,
+                payment_runtime,
+                admin_payment_settings_service,
                 concurrency_release_worker,
                 concurrency_cleanup_worker,
                 debug_trace_repository,
@@ -1345,6 +1409,8 @@ impl Bootstrap<BillingReady> {
             model_catalog_reader,
             admin_model_sync_service,
             admin_model_price_service,
+            payment_runtime,
+            admin_payment_settings_service,
             concurrency_release_worker,
             concurrency_cleanup_worker,
             debug_trace_repository,
@@ -1469,11 +1535,12 @@ impl Bootstrap<BillingReady> {
                 billing,
                 usage_record_queue,
                 refund_signal_queue,
-                upstream_clients,
                 _channel_index: channel_index,
                 model_catalog_reader,
                 admin_model_sync_service,
                 admin_model_price_service,
+                payment_runtime,
+                admin_payment_settings_service,
                 admin_network_settings_service,
                 admin_oauth_connection_service,
                 admin_channel_probe,
@@ -1578,6 +1645,89 @@ fn subscription_cycle_config(config: &AppConfig) -> SubscriptionCycleSupervisorC
     .expect("已校验的订阅周期配置必须满足调度层边界")
 }
 
+/// 首次升级时把旧 TOML Stripe 配置加密导入数据库；初始化后绝不再读取旧值。
+async fn import_legacy_stripe_payment_settings(
+    repository: &PaymentSettingsRepository,
+    cipher: &SystemSecretCipher,
+    legacy: &af_config::PaymentSettings,
+) -> Result<(), BootstrapError> {
+    let current = repository
+        .settings()
+        .await
+        .map_err(|_| BootstrapError::PaymentRuntime)?;
+    if current.initialized() {
+        return Ok(());
+    }
+    let stripe_secret_key = legacy
+        .stripe_secret_key()
+        .map(|secret| {
+            encrypt_legacy_payment_secret(
+                cipher,
+                SystemSecretKind::StripeSecretKey,
+                secret.expose(),
+            )
+        })
+        .transpose()?;
+    let stripe_webhook_secret = legacy
+        .stripe_webhook_secret()
+        .map(|secret| {
+            encrypt_legacy_payment_secret(
+                cipher,
+                SystemSecretKind::StripeWebhookSecret,
+                secret.expose(),
+            )
+        })
+        .transpose()?;
+    let stripe_enabled = stripe_secret_key.is_some()
+        && stripe_webhook_secret.is_some()
+        && legacy.stripe_publishable_key().is_some();
+    let update = repository
+        .update(PaymentSettingsWriteRecord::new(
+            current.version(),
+            stripe_enabled,
+            legacy.stripe_publishable_key().map(str::to_owned),
+            stripe_secret_key.map_or(PaymentSecretUpdate::Keep, PaymentSecretUpdate::Replace),
+            stripe_webhook_secret.map_or(PaymentSecretUpdate::Keep, PaymentSecretUpdate::Replace),
+            u16::try_from(legacy.stripe_signature_tolerance_secs())
+                .map_err(|_| BootstrapError::PaymentRuntime)?,
+            false,
+            None,
+            None,
+            PaymentSecretUpdate::Keep,
+            true,
+            true,
+            500_000,
+        ))
+        .await;
+    match update {
+        Ok(_) => Ok(()),
+        Err(PaymentSettingsRepositoryError::ConcurrentUpdate) => {
+            // 多副本首次启动时允许另一实例先完成接管，但不能吞掉未初始化的异常竞争。
+            let current = repository
+                .settings()
+                .await
+                .map_err(|_| BootstrapError::PaymentRuntime)?;
+            if current.initialized() {
+                Ok(())
+            } else {
+                Err(BootstrapError::PaymentRuntime)
+            }
+        }
+        Err(_) => Err(BootstrapError::PaymentRuntime),
+    }
+}
+
+fn encrypt_legacy_payment_secret(
+    cipher: &SystemSecretCipher,
+    kind: SystemSecretKind,
+    value: &str,
+) -> Result<af_db::EncryptedCredentialEnvelope, BootstrapError> {
+    let secret = PlainSystemSecret::new(value.to_owned()).map_err(BootstrapError::SystemSecret)?;
+    cipher
+        .encrypt(kind, &secret)
+        .map_err(BootstrapError::SystemSecret)
+}
+
 impl Bootstrap<Supervised> {
     /// 构建完整 HTTP Router；此后只允许进入监听阶段。
     #[must_use]
@@ -1592,59 +1742,10 @@ impl Bootstrap<Supervised> {
                     self.stage.debug_trace_runtime.clone(),
                 )),
             ));
-        let topup_repository = self.config.payment().stripe_webhook_secret().map(|_| {
-            TopupRepository::new(
-                self.stage.infrastructure.infrastructure.database.clone(),
-                Duration::from_secs(self.config.auth().lookup_timeout_secs()),
-            )
-            .expect("认证查询超时已校验为正数，充值仓储必须可装配")
-        });
-        let payment_webhook_processor = self
-            .config
-            .payment()
-            .stripe_webhook_secret()
-            .zip(topup_repository.as_ref())
-            .map(|(secret, repository)| {
-                let provider = StripePaymentProvider::new(
-                    secret.expose(),
-                    self.config.payment().stripe_signature_tolerance_secs(),
-                )
-                .expect("已校验的 Stripe webhook 配置必须满足 Provider 边界");
-                Arc::new(TopupWebhookProcessor::new(
-                    Arc::new(provider),
-                    Arc::new(repository.clone()),
-                ))
-            });
-        let user_topup_service = self
-            .config
-            .payment()
-            .stripe_secret_key()
-            .zip(self.config.payment().stripe_publishable_key())
-            .zip(topup_repository)
-            .map(|((secret, publishable_key), repository)| {
-                let request_timeout = self
-                    .stage
-                    .upstream_clients
-                    .base_config()
-                    .expect("已装配的全局 HTTP Client 基线必须可读")
-                    .timeouts()
-                    .request();
-                let provider = StripePaymentIntentProvider::new(
-                    secret.expose(),
-                    self.stage.upstream_clients.clone(),
-                    request_timeout,
-                )
-                .expect("已校验的 Stripe API 配置必须满足 Provider 边界");
-                let service: Arc<dyn UserTopupService> = Arc::new(DatabaseUserTopupService::new(
-                    repository,
-                    Arc::new(provider),
-                    UserTopupConfiguration::new(publishable_key.to_owned())
-                        .expect("已校验的 Stripe publishable key 必须满足应用边界"),
-                ));
-                service
-            });
-        let payment_webhook_routes =
-            build_payment_webhook_router("stripe", payment_webhook_processor);
+        let user_topup_service: Arc<dyn UserTopupService> = self.stage.payment_runtime.clone();
+        let payment_webhook_registry: Arc<dyn PaymentWebhookProcessorRegistry> =
+            self.stage.payment_runtime.clone();
+        let payment_webhook_routes = build_payment_webhook_router(payment_webhook_registry);
         let router = build_router(
             self.config.server(),
             self.stage.chat.clone(),
@@ -1667,13 +1768,14 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.password_reset_service),
             Arc::clone(&self.stage.infrastructure.user_profile_service),
             Arc::clone(&self.stage.infrastructure.user_wallet_service),
-            user_topup_service,
+            Some(user_topup_service),
             Arc::clone(&self.stage.infrastructure.redemption_service),
             Arc::clone(&self.stage.infrastructure.subscription_service),
             Arc::clone(&self.stage.infrastructure.user_invitation_service),
             Arc::clone(&self.stage.infrastructure.site_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_email_settings_service),
             self.stage.admin_network_settings_service.clone(),
+            Arc::clone(&self.stage.admin_payment_settings_service),
             Arc::clone(&self.stage.infrastructure.admin_credential_proxy_service),
             Some(Arc::clone(&self.stage.admin_oauth_connection_service)),
             Arc::clone(
@@ -1801,13 +1903,14 @@ impl Bootstrap<ListenerReady> {
             model_catalog_reader: _,
             admin_model_sync_service: _,
             admin_model_price_service: _,
+            payment_runtime: _,
+            admin_payment_settings_service: _,
             admin_network_settings_service: _,
             admin_oauth_connection_service: _,
             admin_channel_probe: _,
             debug_trace_repository: _,
             debug_trace_runtime: _,
             video_task: _,
-            upstream_clients: _,
         } = runtime;
         let shutdown_signal = begin_draining_on_signal(shutdown_signal, readiness);
         let http =

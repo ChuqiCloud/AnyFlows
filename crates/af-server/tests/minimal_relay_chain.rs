@@ -27,36 +27,38 @@ use af_admin::{
     AdminGroupListFuture, AdminGroupListQuery, AdminGroupReadError, AdminGroupReader,
     AdminGroupUpdateCommand, AdminGroupUpdateFuture, AdminGroupWriteError, AdminGroupWriter,
     AdminNetworkSettingsCommand, AdminNetworkSettingsError, AdminNetworkSettingsReadFuture,
-    AdminNetworkSettingsService, AdminNetworkSettingsUpdateFuture, AdminSiteSettingsReadFuture,
-    AdminSiteSettingsUpdateFuture, AdminTokenCreateCommand, AdminTokenCreateFuture,
-    AdminTokenDeleteFuture, AdminTokenGetFuture, AdminTokenListFuture, AdminTokenListQuery,
-    AdminTokenReadError, AdminTokenReader, AdminTokenUpdateCommand, AdminTokenUpdateFuture,
-    AdminTokenWriteError, AdminTokenWriter, AdminUsageLogListFuture, AdminUsageLogListQuery,
-    AdminUsageLogReadError, AdminUsageLogReader, AdminUserCreateCommand, AdminUserCreateFuture,
-    AdminUserDeleteFuture, AdminUserGetFuture, AdminUserListFuture, AdminUserListQuery,
-    AdminUserReadError, AdminUserReader, AdminUserUpdateCommand, AdminUserUpdateFuture,
-    AdminUserWriteError, AdminUserWriter, ApiKeyDigest, InitialSetup, InitialSetupCommand,
-    InitialSetupError, InitialSetupFuture, InitialSetupStatusFuture, LoginCredentials,
-    ModelCatalogQuery, ModelCatalogReadError, ModelCatalogReader, PasswordResetConfirmCommand,
-    PasswordResetConfirmFuture, PasswordResetError, PasswordResetRequestCommand,
-    PasswordResetRequestFuture, PasswordResetService, PlaygroundConversationDeleteFuture,
-    PlaygroundConversationError, PlaygroundConversationListFuture,
-    PlaygroundConversationReadFuture, PlaygroundConversationSaveCommand,
-    PlaygroundConversationSaveFuture, PlaygroundConversationService, PlaygroundShareCreateCommand,
-    PlaygroundShareCreateFuture, PlaygroundShareError, PlaygroundShareReadFuture,
-    PlaygroundShareRevokeFuture, PlaygroundShareService, PublicSiteSettingsFuture,
-    RedemptionCreateFuture, RedemptionDisableFuture, RedemptionListFuture, RedemptionRedeemFuture,
-    RedemptionService, RedemptionServiceError, RegistrationCommand,
-    RegistrationEmailVerificationCommand, RegistrationEmailVerificationFuture, RegistrationError,
-    RegistrationFuture, RegistrationPolicyCommand, RegistrationPolicyFuture,
-    RegistrationPolicyUpdateFuture, RegistrationService, RegistrationStatusFuture,
-    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
-    SessionLoginFuture, SessionPrincipal, SiteSettingsCommand, SiteSettingsError,
-    SiteSettingsService, SubscriptionService, SubscriptionServiceError, TokenAuthentication,
-    TokenAuthenticationFuture, TokenAuthenticator, UserInvitationError, UserInvitationReadFuture,
-    UserInvitationService, UserNotificationPreferencesCommand, UserNotificationUpdateFuture,
-    UserPasswordChangeCommand, UserPasswordChangeFuture, UserProfileError, UserProfileReadFuture,
-    UserProfileService, UserProfileUpdateCommand, UserProfileUpdateFuture, UserTokenCreateFuture,
+    AdminNetworkSettingsService, AdminNetworkSettingsUpdateFuture, AdminPaymentSettingsCommand,
+    AdminPaymentSettingsError, AdminPaymentSettingsReadFuture, AdminPaymentSettingsService,
+    AdminPaymentSettingsUpdateFuture, AdminSiteSettingsReadFuture, AdminSiteSettingsUpdateFuture,
+    AdminTokenCreateCommand, AdminTokenCreateFuture, AdminTokenDeleteFuture, AdminTokenGetFuture,
+    AdminTokenListFuture, AdminTokenListQuery, AdminTokenReadError, AdminTokenReader,
+    AdminTokenUpdateCommand, AdminTokenUpdateFuture, AdminTokenWriteError, AdminTokenWriter,
+    AdminUsageLogListFuture, AdminUsageLogListQuery, AdminUsageLogReadError, AdminUsageLogReader,
+    AdminUserCreateCommand, AdminUserCreateFuture, AdminUserDeleteFuture, AdminUserGetFuture,
+    AdminUserListFuture, AdminUserListQuery, AdminUserReadError, AdminUserReader,
+    AdminUserUpdateCommand, AdminUserUpdateFuture, AdminUserWriteError, AdminUserWriter,
+    ApiKeyDigest, InitialSetup, InitialSetupCommand, InitialSetupError, InitialSetupFuture,
+    InitialSetupStatusFuture, LoginCredentials, ModelCatalogQuery, ModelCatalogReadError,
+    ModelCatalogReader, PasswordResetConfirmCommand, PasswordResetConfirmFuture,
+    PasswordResetError, PasswordResetRequestCommand, PasswordResetRequestFuture,
+    PasswordResetService, PlaygroundConversationDeleteFuture, PlaygroundConversationError,
+    PlaygroundConversationListFuture, PlaygroundConversationReadFuture,
+    PlaygroundConversationSaveCommand, PlaygroundConversationSaveFuture,
+    PlaygroundConversationService, PlaygroundShareCreateCommand, PlaygroundShareCreateFuture,
+    PlaygroundShareError, PlaygroundShareReadFuture, PlaygroundShareRevokeFuture,
+    PlaygroundShareService, PublicSiteSettingsFuture, RedemptionCreateFuture,
+    RedemptionDisableFuture, RedemptionListFuture, RedemptionRedeemFuture, RedemptionService,
+    RedemptionServiceError, RegistrationCommand, RegistrationEmailVerificationCommand,
+    RegistrationEmailVerificationFuture, RegistrationError, RegistrationFuture,
+    RegistrationPolicyCommand, RegistrationPolicyFuture, RegistrationPolicyUpdateFuture,
+    RegistrationService, RegistrationStatusFuture, SessionAuthenticationError,
+    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
+    SiteSettingsCommand, SiteSettingsError, SiteSettingsService, SubscriptionService,
+    SubscriptionServiceError, TokenAuthentication, TokenAuthenticationFuture, TokenAuthenticator,
+    UserInvitationError, UserInvitationReadFuture, UserInvitationService,
+    UserNotificationPreferencesCommand, UserNotificationUpdateFuture, UserPasswordChangeCommand,
+    UserPasswordChangeFuture, UserProfileError, UserProfileReadFuture, UserProfileService,
+    UserProfileUpdateCommand, UserProfileUpdateFuture, UserTokenCreateFuture,
     UserTokenDeleteFuture, UserTokenError, UserTokenGetFuture, UserTokenListFuture,
     UserTokenListQuery, UserTokenService, UserTokenUpdateFuture, UserTokenWriteCommand,
     UserWalletError, UserWalletListFuture, UserWalletListQuery, UserWalletService,
@@ -100,6 +102,7 @@ use tokio::{
 struct AlwaysReadyProbe;
 
 struct RejectAdminNetworkSettings;
+struct RejectAdminPaymentSettings;
 
 struct RejectAdminCredentialProxies;
 
@@ -157,6 +160,20 @@ impl AdminNetworkSettingsService for RejectAdminNetworkSettings {
         _command: AdminNetworkSettingsCommand,
     ) -> AdminNetworkSettingsUpdateFuture<'a> {
         Box::pin(async { Err(AdminNetworkSettingsError::Internal) })
+    }
+}
+
+impl AdminPaymentSettingsService for RejectAdminPaymentSettings {
+    fn settings<'a>(&'a self, _principal: SessionPrincipal) -> AdminPaymentSettingsReadFuture<'a> {
+        Box::pin(async { Err(AdminPaymentSettingsError::Internal) })
+    }
+
+    fn update<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
+        _command: AdminPaymentSettingsCommand,
+    ) -> AdminPaymentSettingsUpdateFuture<'a> {
+        Box::pin(async { Err(AdminPaymentSettingsError::Internal) })
     }
 }
 
@@ -1882,6 +1899,7 @@ async fn start_server(
         Arc::new(RejectSiteSettings),
         Arc::new(RejectAdminEmailSettings),
         Arc::new(RejectAdminNetworkSettings),
+        Arc::new(RejectAdminPaymentSettings),
         Arc::new(RejectAdminCredentialProxies),
         None,
         Arc::new(RejectAdminBalanceAlertSettings),

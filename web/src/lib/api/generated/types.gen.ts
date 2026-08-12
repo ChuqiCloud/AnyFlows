@@ -668,6 +668,36 @@ export type AdminOAuthProviderStatus = {
     loopback_listener_ready: boolean;
     manual_callback_supported: boolean;
 };
+export type AdminPaymentSettings = {
+    stripe_enabled: boolean;
+    stripe_publishable_key?: string | null;
+    stripe_secret_key_configured: boolean;
+    stripe_webhook_secret_configured: boolean;
+    stripe_signature_tolerance_seconds: number;
+    epay_enabled: boolean;
+    epay_gateway_url?: string | null;
+    epay_merchant_id?: string | null;
+    epay_merchant_key_configured: boolean;
+    epay_alipay_enabled: boolean;
+    epay_wxpay_enabled: boolean;
+    epay_quota_per_cny: number;
+    version: number;
+};
+export type AdminPaymentSettingsRequest = {
+    expected_version: number;
+    stripe_enabled: boolean;
+    stripe_publishable_key?: string | null;
+    clear_stripe_secret_key: boolean;
+    clear_stripe_webhook_secret: boolean;
+    stripe_signature_tolerance_seconds: number;
+    epay_enabled: boolean;
+    epay_gateway_url?: string | null;
+    epay_merchant_id?: string | null;
+    clear_epay_merchant_key: boolean;
+    epay_alipay_enabled: boolean;
+    epay_wxpay_enabled: boolean;
+    epay_quota_per_cny: number;
+};
 export type AdminRedemptionAuditBatch = {
     batch_id: string;
     name: string;
@@ -1353,15 +1383,20 @@ export type UserTokenWriteRequest = {
     allow_ips: Array<string> | null;
 };
 export type UserTopupConfiguration = {
+    methods: Array<UserTopupMethod>;
+};
+export type UserTopupMethod = {
     provider: string;
+    payment_method: string;
     currency: string;
     min_amount_minor: number;
     max_amount_minor: number;
-    publishable_key: string;
+    publishable_key?: string | null;
 };
 export type UserTopupOrder = {
     order_id: string;
     provider: string;
+    payment_method: string;
     status: UserTopupOrderStatus;
     amount_minor: number;
     currency: string;
@@ -1373,12 +1408,18 @@ export type UserTopupOrder = {
 };
 export type UserTopupOrderCreateRequest = {
     idempotency_key: string;
+    provider: string;
+    payment_method: string;
     amount_minor: number;
 };
 export type UserTopupOrderStatus = 'created' | 'pending' | 'paid' | 'failed' | 'canceled' | 'expired';
 export type UserTopupPaymentSession = {
     payment_intent_id: string;
     readonly client_secret: string;
+    kind: 'stripe';
+} | {
+    redirect_url: string;
+    kind: 'redirect';
 };
 export type UserWalletEntry = {
     id: number;
@@ -1608,6 +1649,24 @@ export type AdminOAuthManualCallbackRequestWritable = {
     provider: AdminOAuthProvider;
     callback_url: string;
 };
+export type AdminPaymentSettingsRequestWritable = {
+    expected_version: number;
+    stripe_enabled: boolean;
+    stripe_publishable_key?: string | null;
+    stripe_secret_key?: string | null;
+    clear_stripe_secret_key: boolean;
+    stripe_webhook_secret?: string | null;
+    clear_stripe_webhook_secret: boolean;
+    stripe_signature_tolerance_seconds: number;
+    epay_enabled: boolean;
+    epay_gateway_url?: string | null;
+    epay_merchant_id?: string | null;
+    epay_merchant_key?: string | null;
+    clear_epay_merchant_key: boolean;
+    epay_alipay_enabled: boolean;
+    epay_wxpay_enabled: boolean;
+    epay_quota_per_cny: number;
+};
 export type RegistrationRequestWritable = {
     username: string;
     email?: string | null;
@@ -1624,6 +1683,7 @@ export type SetupRequestWritable = {
 export type UserTopupOrderWritable = {
     order_id: string;
     provider: string;
+    payment_method: string;
     status: UserTopupOrderStatus;
     amount_minor: number;
     currency: string;
@@ -1635,6 +1695,10 @@ export type UserTopupOrderWritable = {
 };
 export type UserTopupPaymentSessionWritable = {
     payment_intent_id: string;
+    kind: 'stripe';
+} | {
+    redirect_url: string;
+    kind: 'redirect';
 };
 export type LoginManagementSessionData = {
     body: LoginRequest;
@@ -2416,6 +2480,39 @@ export type UpdateAdminNetworkSettingsResponses = {
     200: AdminNetworkSettings;
 };
 export type UpdateAdminNetworkSettingsResponse = UpdateAdminNetworkSettingsResponses[keyof UpdateAdminNetworkSettingsResponses];
+export type GetAdminPaymentSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/admin/payment-settings';
+};
+export type GetAdminPaymentSettingsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type GetAdminPaymentSettingsError = GetAdminPaymentSettingsErrors[keyof GetAdminPaymentSettingsErrors];
+export type GetAdminPaymentSettingsResponses = {
+    200: AdminPaymentSettings;
+};
+export type GetAdminPaymentSettingsResponse = GetAdminPaymentSettingsResponses[keyof GetAdminPaymentSettingsResponses];
+export type UpdateAdminPaymentSettingsData = {
+    body: AdminPaymentSettingsRequestWritable;
+    path?: never;
+    query?: never;
+    url: '/api/admin/payment-settings';
+};
+export type UpdateAdminPaymentSettingsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    500: ManagementError;
+};
+export type UpdateAdminPaymentSettingsError = UpdateAdminPaymentSettingsErrors[keyof UpdateAdminPaymentSettingsErrors];
+export type UpdateAdminPaymentSettingsResponses = {
+    200: AdminPaymentSettings;
+};
+export type UpdateAdminPaymentSettingsResponse = UpdateAdminPaymentSettingsResponses[keyof UpdateAdminPaymentSettingsResponses];
 export type ListAdminOAuthProvidersData = {
     body?: never;
     path?: never;
@@ -3938,7 +4035,7 @@ export type ReceivePaymentWebhookData = {
 };
 export type ReceivePaymentWebhookErrors = {
     400: unknown;
-    404: unknown;
+    405: unknown;
     409: unknown;
     500: unknown;
     503: unknown;

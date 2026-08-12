@@ -163,6 +163,12 @@ impl StripePaymentProvider {
             "payment_intent.canceled" => (TopupPaymentEventType::Failed, object_id),
             _ => return Err(PaymentWebhookVerificationError::UnsupportedEvent),
         };
+        let amount_minor = stripe_amount_minor(object)?;
+        let currency = string_field(object, &["currency"])
+            .filter(|value| value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_lowercase()))
+            .map(str::to_ascii_uppercase)
+            .ok_or(PaymentWebhookVerificationError::InvalidPayload)?;
+        let payment_method = stripe_payment_method(object)?;
 
         VerifiedTopupPaymentEvent::new(
             TopupOrderId::from_persistence_key(
@@ -173,6 +179,9 @@ impl StripePaymentProvider {
             event_id.to_owned(),
             trade_no.map(str::to_owned),
             kind,
+            amount_minor,
+            currency,
+            payment_method.to_owned(),
             self.secret_fingerprint,
         )
     }
@@ -295,6 +304,32 @@ fn checkout_trade_no(value: &Value) -> Option<&str> {
         .or_else(|| value.get("id").and_then(Value::as_str))
 }
 
+fn stripe_amount_minor(value: &Value) -> Result<u64, PaymentWebhookVerificationError> {
+    ["amount_received", "amount_total", "amount"]
+        .into_iter()
+        .find_map(|field| value.get(field).and_then(Value::as_u64))
+        .filter(|amount| *amount <= i64::MAX as u64)
+        .ok_or(PaymentWebhookVerificationError::InvalidPayload)
+}
+
+fn stripe_payment_method(value: &Value) -> Result<&str, PaymentWebhookVerificationError> {
+    value
+        .get("payment_method_types")
+        .and_then(Value::as_array)
+        .and_then(|methods| methods.first())
+        .and_then(Value::as_str)
+        .filter(|method| {
+            !method.is_empty()
+                && method.len() <= 32
+                && method.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'.' | b'_' | b'-')
+                })
+        })
+        .ok_or(PaymentWebhookVerificationError::InvalidPayload)
+}
+
 const fn hex_digit(value: u8) -> Option<u8> {
     match value {
         b'0'..=b'9' => Some(value - b'0'),
@@ -314,7 +349,7 @@ mod tests {
 
     #[test]
     fn verifies_signature_and_payment_intent_event() {
-        let payload = r#"{"id":"evt_123","type":"payment_intent.succeeded","data":{"object":{"id":"pi_123","metadata":{"anyflows_order_id":"ORDER_ID"}}}}"#
+        let payload = r#"{"id":"evt_123","type":"payment_intent.succeeded","data":{"object":{"id":"pi_123","amount_received":1234,"currency":"usd","payment_method_types":["card"],"metadata":{"anyflows_order_id":"ORDER_ID"}}}}"#
             .replace("ORDER_ID", ORDER_ID);
         let provider = StripePaymentProvider::new("whsec_test", 300).unwrap();
         let signature = signature_header(&provider, payload.as_bytes(), RECEIVED_AT);
@@ -329,7 +364,7 @@ mod tests {
 
     #[test]
     fn rejects_tampering_and_replayed_timestamps() {
-        let payload = r#"{"id":"evt_123","type":"payment_intent.succeeded","data":{"object":{"id":"pi_123","metadata":{"anyflows_order_id":"ORDER_ID"}}}}"#
+        let payload = r#"{"id":"evt_123","type":"payment_intent.succeeded","data":{"object":{"id":"pi_123","amount_received":1234,"currency":"usd","payment_method_types":["card"],"metadata":{"anyflows_order_id":"ORDER_ID"}}}}"#
             .replace("ORDER_ID", ORDER_ID);
         let provider = StripePaymentProvider::new("whsec_test", 300).unwrap();
         let signature = signature_header(&provider, payload.as_bytes(), RECEIVED_AT + 301);

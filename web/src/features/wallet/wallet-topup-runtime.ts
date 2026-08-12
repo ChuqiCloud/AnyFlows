@@ -10,6 +10,17 @@ const stripeReturnParameters = [
   'payment_intent_client_secret',
   'redirect_status',
 ] as const
+const epayReturnParameters = [
+  'pid',
+  'trade_no',
+  'out_trade_no',
+  'type',
+  'name',
+  'money',
+  'trade_status',
+  'sign',
+  'sign_type',
+] as const
 
 export const publicTopupAmountBounds = { min: 50, max: 99_999_999 } as const
 export type TopupConfirmationPhase = 'succeeded' | 'processing' | 'failed'
@@ -26,7 +37,7 @@ export function readStoredTopupAttempt() {
   }
 }
 
-/** 仅持久化金额与幂等键，绝不保存 Stripe client secret。 */
+/** 仅持久化金额、支付方式与幂等键，绝不保存支付会话密钥。 */
 export function storeTopupAttempt(attempt: TopupAttempt) {
   try {
     sessionStorage.setItem(topupAttemptStorageKey, JSON.stringify(attempt))
@@ -44,11 +55,13 @@ export function clearStoredTopupAttempt() {
   }
 }
 
-/** 消费 Stripe 跳转结果并立即从地址栏移除客户端密钥参数。 */
-export function useStripeRedirectStatus() {
+/** 消费支付跳转结果并移除签名材料；易支付结果只触发本地订单状态恢复。 */
+export function usePaymentRedirectStatus() {
   const [status] = useState<TopupConfirmationPhase | undefined>(() => {
-    const value = new URLSearchParams(window.location.search).get('redirect_status')
+    const parameters = paymentReturnParameters(new URL(window.location.href))
+    const value = parameters.get('redirect_status')
     if (value === 'succeeded' || value === 'processing' || value === 'failed') return value
+    if (epayReturnParameters.some((parameter) => parameters.has(parameter))) return 'processing'
     return undefined
   })
   useEffect(() => {
@@ -59,17 +72,46 @@ export function useStripeRedirectStatus() {
       url.searchParams.delete(parameter)
       changed = true
     }
+    for (const parameter of epayReturnParameters) {
+      if (!url.searchParams.has(parameter)) continue
+      url.searchParams.delete(parameter)
+      changed = true
+    }
+    const hashQueryStart = url.hash.indexOf('?')
+    if (hashQueryStart >= 0) {
+      const hashPath = url.hash.slice(0, hashQueryStart)
+      const hashParameters = new URLSearchParams(url.hash.slice(hashQueryStart + 1))
+      for (const parameter of [...stripeReturnParameters, ...epayReturnParameters]) {
+        if (!hashParameters.has(parameter)) continue
+        hashParameters.delete(parameter)
+        changed = true
+      }
+      const remaining = hashParameters.toString()
+      url.hash = remaining ? `${hashPath}?${remaining}` : hashPath
+    }
     if (changed) window.history.replaceState(window.history.state, '', url)
   }, [])
   return status
 }
 
-/** 返回 Stripe 跳转支付完成后回到本人钱包的地址。 */
-export function stripeTopupReturnUrl() {
+/** 返回支付完成后回到本人钱包的固定地址。 */
+export function topupReturnUrl() {
   const url = new URL(window.location.href)
   for (const parameter of stripeReturnParameters) url.searchParams.delete(parameter)
+  for (const parameter of epayReturnParameters) url.searchParams.delete(parameter)
   url.hash = '#/console/wallet'
   return url.toString()
+}
+
+/** 合并普通查询串和 hash 查询串，兼容聚合支付网关的返回地址拼接方式。 */
+function paymentReturnParameters(url: URL) {
+  const parameters = new URLSearchParams(url.search)
+  const hashQueryStart = url.hash.indexOf('?')
+  if (hashQueryStart < 0) return parameters
+  for (const [key, value] of new URLSearchParams(url.hash.slice(hashQueryStart + 1))) {
+    parameters.append(key, value)
+  }
+  return parameters
 }
 
 /** 跟随全局主题切换 Stripe iframe 外观，不复制站内主题状态。 */

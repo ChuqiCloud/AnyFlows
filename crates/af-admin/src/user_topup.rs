@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     fmt,
     future::Future,
     pin::Pin,
@@ -8,9 +9,10 @@ use std::{
 };
 
 use af_billing::{
-    PaymentClientSecret, PaymentOrderProvider, PaymentOrderProviderError,
-    PaymentOrderRecoveryRequest, PaymentOrderRequest, PaymentOrderSession, STRIPE_PAYMENT_PROVIDER,
-    quota_math::quota_from_usd,
+    EASYPAY_PAYMENT_PROVIDER, PaymentCheckoutAction, PaymentClientSecret, PaymentOrderProvider,
+    PaymentOrderProviderError, PaymentOrderRecoveryRequest, PaymentOrderRequest,
+    PaymentOrderSession, PaymentRedirectUrl, STRIPE_PAYMENT_PROVIDER,
+    quota_math::{quota_from_cny_minor, quota_from_usd},
 };
 use af_db::{
     TopupOrderCreate, TopupOrderCreateOutcome, TopupOrderRecord, TopupOrderSubmission,
@@ -29,6 +31,18 @@ pub const STRIPE_TOPUP_CURRENCY: &str = "USD";
 pub const MIN_STRIPE_TOPUP_AMOUNT_MINOR: i64 = 50;
 /// 为兼容 Stripe 非银行卡支付方式而采用的八位最小单位上限。
 pub const MAX_STRIPE_TOPUP_AMOUNT_MINOR: i64 = 99_999_999;
+/// 易支付首版允许的最小人民币金额，单位为分。
+pub const MIN_EPAY_TOPUP_AMOUNT_MINOR: i64 = 1;
+/// 易支付人民币金额上限，保持与订单整数边界一致。
+pub const MAX_EPAY_TOPUP_AMOUNT_MINOR: i64 = 99_999_999;
+/// Stripe 当前公开的支付方式。
+pub const STRIPE_CARD_PAYMENT_METHOD: &str = "card";
+/// 易支付首版支持的支付宝方式。
+pub const EPAY_ALIPAY_PAYMENT_METHOD: &str = "alipay";
+/// 易支付首版支持的微信支付方式。
+pub const EPAY_WXPAY_PAYMENT_METHOD: &str = "wxpay";
+/// 易支付固定使用人民币结算。
+pub const EPAY_TOPUP_CURRENCY: &str = "CNY";
 
 const USD_MINOR_UNITS: i64 = 100;
 const TOPUP_IDENTIFIER_BYTES: usize = 16;
@@ -38,36 +52,56 @@ const ORDER_ID_DOMAIN: &[u8] = b"anyflows:topup-order:v1";
 const STRIPE_TOPUP_ORDER_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// 当前用户创建充值订单的结构化命令。
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct UserTopupOrderCreateCommand {
     client_request_id: TopupRequestId,
+    provider: String,
+    payment_method: String,
     amount_minor: u64,
 }
 
 impl UserTopupOrderCreateCommand {
-    /// 校验固定长度幂等键和 Stripe/USD 整数最小单位边界。
-    pub fn new(idempotency_key: &str, amount_minor: i64) -> Result<Self, UserTopupError> {
-        if !(MIN_STRIPE_TOPUP_AMOUNT_MINOR..=MAX_STRIPE_TOPUP_AMOUNT_MINOR).contains(&amount_minor)
-        {
+    /// 校验固定长度幂等键、Provider、支付方式和整数最小单位边界。
+    pub fn new(
+        idempotency_key: &str,
+        provider: String,
+        payment_method: String,
+        amount_minor: i64,
+    ) -> Result<Self, UserTopupError> {
+        if amount_minor <= 0 || !valid_route_part(&provider) || !valid_route_part(&payment_method) {
             return Err(UserTopupError::InvalidInput);
         }
         let client_request_id = TopupRequestId::from_persistence_key(idempotency_key)
             .map_err(|_| UserTopupError::InvalidInput)?;
         Ok(Self {
             client_request_id,
+            provider,
+            payment_method,
             amount_minor: u64::try_from(amount_minor).map_err(|_| UserTopupError::InvalidInput)?,
         })
     }
 
     /// 返回客户端为失败重试复用的原始幂等标识。
     #[must_use]
-    pub const fn client_request_id(self) -> TopupRequestId {
+    pub const fn client_request_id(&self) -> TopupRequestId {
         self.client_request_id
+    }
+
+    /// 返回客户端选择的支付 Provider。
+    #[must_use]
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+
+    /// 返回客户端选择的支付方式。
+    #[must_use]
+    pub fn payment_method(&self) -> &str {
+        &self.payment_method
     }
 
     /// 返回待支付的整数美分金额。
     #[must_use]
-    pub const fn amount_minor(self) -> u64 {
+    pub const fn amount_minor(&self) -> u64 {
         self.amount_minor
     }
 }
@@ -102,6 +136,18 @@ impl UserTopupPaymentSession {
         Ok(Self::new(session))
     }
 
+    /// 供替代服务实现和传输层测试构造托管收银台跳转。
+    pub fn from_redirect_parts(
+        provider_order_id: String,
+        redirect_url: String,
+    ) -> Result<Self, UserTopupError> {
+        let redirect =
+            PaymentRedirectUrl::new(redirect_url).map_err(|_| UserTopupError::Internal)?;
+        let session = PaymentOrderSession::with_redirect_url(provider_order_id, redirect)
+            .map_err(|_| UserTopupError::Internal)?;
+        Ok(Self::new(session))
+    }
+
     /// 返回 Stripe PaymentIntent 标识；调用方不得写入日志。
     #[must_use]
     pub fn payment_intent_id(&self) -> &str {
@@ -110,8 +156,22 @@ impl UserTopupPaymentSession {
 
     /// 返回仅供支付 SDK 使用的客户端密钥。
     #[must_use]
-    pub fn client_secret(&self) -> &str {
-        self.session.client_secret().expose()
+    pub fn client_secret(&self) -> Option<&str> {
+        self.session
+            .client_secret()
+            .map(PaymentClientSecret::expose)
+    }
+
+    /// 返回托管收银台跳转地址。
+    #[must_use]
+    pub fn redirect_url(&self) -> Option<&str> {
+        self.session.redirect_url().map(PaymentRedirectUrl::expose)
+    }
+
+    /// 返回闭合支付动作，传输层据此生成带判别字段的响应。
+    #[must_use]
+    pub const fn action(&self) -> &PaymentCheckoutAction {
+        self.session.action()
     }
 }
 
@@ -121,14 +181,20 @@ impl fmt::Debug for UserTopupPaymentSession {
     }
 }
 
-/// 当前用户可读取的 Stripe.js 充值配置，不包含任何服务端密钥。
-pub struct UserTopupConfiguration {
-    publishable_key: String,
+/// 当前用户可选择的单个充值支付方式，不包含任何服务端密钥。
+#[derive(Clone, Eq, PartialEq)]
+pub struct UserTopupMethod {
+    provider: String,
+    payment_method: String,
+    currency: String,
+    min_amount_minor: i64,
+    max_amount_minor: i64,
+    publishable_key: Option<String>,
 }
 
-impl UserTopupConfiguration {
-    /// 校验 Stripe publishable key，并组合固定 Provider、币种与金额边界。
-    pub fn new(publishable_key: String) -> Result<Self, UserTopupError> {
+impl UserTopupMethod {
+    /// 构造 Stripe.js 银行卡方式。
+    pub fn stripe(publishable_key: String) -> Result<Self, UserTopupError> {
         if publishable_key.is_empty()
             || publishable_key.len() > MAX_STRIPE_PUBLISHABLE_KEY_BYTES
             || !publishable_key
@@ -138,37 +204,82 @@ impl UserTopupConfiguration {
         {
             return Err(UserTopupError::InvalidInput);
         }
-        Ok(Self { publishable_key })
+        Ok(Self {
+            provider: STRIPE_PAYMENT_PROVIDER.to_owned(),
+            payment_method: STRIPE_CARD_PAYMENT_METHOD.to_owned(),
+            currency: STRIPE_TOPUP_CURRENCY.to_owned(),
+            min_amount_minor: MIN_STRIPE_TOPUP_AMOUNT_MINOR,
+            max_amount_minor: MAX_STRIPE_TOPUP_AMOUNT_MINOR,
+            publishable_key: Some(publishable_key),
+        })
     }
 
-    /// 返回固定 Stripe Provider 标识。
+    /// 构造易支付人民币方式。
+    pub fn epay(payment_method: &str) -> Result<Self, UserTopupError> {
+        if !matches!(
+            payment_method,
+            EPAY_ALIPAY_PAYMENT_METHOD | EPAY_WXPAY_PAYMENT_METHOD
+        ) {
+            return Err(UserTopupError::InvalidInput);
+        }
+        Ok(Self {
+            provider: EASYPAY_PAYMENT_PROVIDER.to_owned(),
+            payment_method: payment_method.to_owned(),
+            currency: EPAY_TOPUP_CURRENCY.to_owned(),
+            min_amount_minor: MIN_EPAY_TOPUP_AMOUNT_MINOR,
+            max_amount_minor: MAX_EPAY_TOPUP_AMOUNT_MINOR,
+            publishable_key: None,
+        })
+    }
+
     #[must_use]
-    pub fn provider(&self) -> &'static str {
-        STRIPE_PAYMENT_PROVIDER
+    pub fn provider(&self) -> &str {
+        &self.provider
     }
 
-    /// 返回固定美元结算币种。
     #[must_use]
-    pub const fn currency(&self) -> &'static str {
-        STRIPE_TOPUP_CURRENCY
+    pub fn payment_method(&self) -> &str {
+        &self.payment_method
     }
 
-    /// 返回 Stripe/USD 允许创建的最小整数美分金额。
+    #[must_use]
+    pub fn currency(&self) -> &str {
+        &self.currency
+    }
+
     #[must_use]
     pub const fn min_amount_minor(&self) -> i64 {
-        MIN_STRIPE_TOPUP_AMOUNT_MINOR
+        self.min_amount_minor
     }
 
-    /// 返回 Stripe/USD 允许创建的最大整数美分金额。
     #[must_use]
     pub const fn max_amount_minor(&self) -> i64 {
-        MAX_STRIPE_TOPUP_AMOUNT_MINOR
+        self.max_amount_minor
     }
 
-    /// 返回仅供 Stripe.js 初始化使用的 publishable key。
     #[must_use]
-    pub fn publishable_key(&self) -> &str {
-        &self.publishable_key
+    pub fn publishable_key(&self) -> Option<&str> {
+        self.publishable_key.as_deref()
+    }
+}
+
+/// 当前用户可读取的充值方式目录。
+#[derive(Clone, Eq, PartialEq)]
+pub struct UserTopupConfiguration {
+    methods: Vec<UserTopupMethod>,
+}
+
+impl UserTopupConfiguration {
+    pub fn new(methods: Vec<UserTopupMethod>) -> Result<Self, UserTopupError> {
+        if methods.is_empty() {
+            return Err(UserTopupError::InvalidInput);
+        }
+        Ok(Self { methods })
+    }
+
+    #[must_use]
+    pub fn methods(&self) -> &[UserTopupMethod] {
+        &self.methods
     }
 }
 
@@ -182,6 +293,7 @@ impl fmt::Debug for UserTopupConfiguration {
 pub struct UserTopupOrder {
     order_id: TopupOrderId,
     provider: String,
+    payment_method: String,
     status: TopupOrderStatus,
     amount_minor: u64,
     currency: String,
@@ -202,6 +314,7 @@ impl UserTopupOrder {
     pub fn from_parts(
         order_id: TopupOrderId,
         provider: String,
+        payment_method: String,
         status: TopupOrderStatus,
         amount_minor: u64,
         currency: String,
@@ -214,6 +327,7 @@ impl UserTopupOrder {
         Self {
             order_id,
             provider,
+            payment_method,
             status,
             amount_minor,
             currency,
@@ -235,6 +349,12 @@ impl UserTopupOrder {
     #[must_use]
     pub fn provider(&self) -> &str {
         &self.provider
+    }
+
+    /// 返回订单锁定的支付方式。
+    #[must_use]
+    pub fn payment_method(&self) -> &str {
+        &self.payment_method
     }
 
     /// 返回当前闭合订单状态。
@@ -293,6 +413,7 @@ impl UserTopupOrder {
         Self {
             order_id: record.order_id(),
             provider: record.provider().to_owned(),
+            payment_method: record.payment_method().unwrap_or_default().to_owned(),
             status: record.status(),
             amount_minor: record.amount_minor(),
             currency: record.currency().to_owned(),
@@ -343,8 +464,8 @@ pub type UserTopupOrderCreateFuture<'a> =
 
 /// 当前用户充值订单应用端口；订单所有权只能从会话主体推导。
 pub trait UserTopupService: Send + Sync {
-    /// 返回当前用户可读取的 Stripe.js 充值配置。
-    fn configuration(&self) -> &UserTopupConfiguration;
+    /// 返回当前用户可读取的支付方式目录。
+    fn configuration(&self) -> Result<UserTopupConfiguration, UserTopupError>;
 
     /// 为当前会话用户幂等创建本地 Stripe 充值订单。
     fn create<'a>(
@@ -357,31 +478,112 @@ pub trait UserTopupService: Send + Sync {
 /// 使用原子充值仓储和支付 Provider 实现订单创建与提交。
 pub struct DatabaseUserTopupService {
     repository: TopupRepository,
-    provider: Arc<dyn PaymentOrderProvider>,
+    routes: HashMap<String, UserTopupProviderRoute>,
     configuration: UserTopupConfiguration,
     order_ttl: Duration,
 }
 
+/// 单个公开充值方式绑定的 Provider 和额度换算策略。
+pub struct UserTopupProviderRoute {
+    method: UserTopupMethod,
+    provider: Arc<dyn PaymentOrderProvider>,
+    quota_per_cny: Option<i64>,
+}
+
+impl UserTopupProviderRoute {
+    /// 绑定 Stripe 银行卡 Provider。
+    pub fn stripe(
+        publishable_key: String,
+        provider: Arc<dyn PaymentOrderProvider>,
+    ) -> Result<Self, UserTopupError> {
+        Ok(Self {
+            method: UserTopupMethod::stripe(publishable_key)?,
+            provider,
+            quota_per_cny: None,
+        })
+    }
+
+    /// 绑定易支付方式和每人民币额度换算基数。
+    pub fn epay(
+        payment_method: &str,
+        quota_per_cny: i64,
+        provider: Arc<dyn PaymentOrderProvider>,
+    ) -> Result<Self, UserTopupError> {
+        if quota_per_cny <= 0 {
+            return Err(UserTopupError::InvalidInput);
+        }
+        Ok(Self {
+            method: UserTopupMethod::epay(payment_method)?,
+            provider,
+            quota_per_cny: Some(quota_per_cny),
+        })
+    }
+
+    /// 使用已校验公开方式和 Provider 构造运行时路由。
+    pub fn from_method(
+        method: UserTopupMethod,
+        provider: Arc<dyn PaymentOrderProvider>,
+        quota_per_cny: Option<i64>,
+    ) -> Result<Self, UserTopupError> {
+        if provider.provider() != method.provider()
+            || (method.provider() == EASYPAY_PAYMENT_PROVIDER
+                && quota_per_cny.is_none_or(|value| value <= 0))
+            || (method.provider() == STRIPE_PAYMENT_PROVIDER && quota_per_cny.is_some())
+        {
+            return Err(UserTopupError::InvalidInput);
+        }
+        Ok(Self {
+            method,
+            provider,
+            quota_per_cny,
+        })
+    }
+
+    fn key(&self) -> String {
+        route_key(self.method.provider(), self.method.payment_method())
+    }
+}
+
+impl fmt::Debug for UserTopupProviderRoute {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("UserTopupProviderRoute(<已脱敏>)")
+    }
+}
+
 impl DatabaseUserTopupService {
-    /// 绑定充值仓储、Stripe Provider 与固定本地订单有效期。
-    #[must_use]
+    /// 绑定充值仓储、支付方式目录与固定本地订单有效期。
     pub fn new(
         repository: TopupRepository,
-        provider: Arc<dyn PaymentOrderProvider>,
-        configuration: UserTopupConfiguration,
-    ) -> Self {
-        Self {
-            repository,
-            provider,
-            configuration,
-            order_ttl: STRIPE_TOPUP_ORDER_TTL,
+        routes: Vec<UserTopupProviderRoute>,
+    ) -> Result<Self, UserTopupError> {
+        let mut route_map = HashMap::with_capacity(routes.len());
+        let mut methods = Vec::with_capacity(routes.len());
+        for route in routes {
+            if route.provider.provider() != route.method.provider()
+                || route_map.insert(route.key(), route).is_some()
+            {
+                return Err(UserTopupError::InvalidInput);
+            }
         }
+        for route in route_map.values() {
+            methods.push(route.method.clone());
+        }
+        methods.sort_by(|left, right| {
+            (left.provider(), left.payment_method())
+                .cmp(&(right.provider(), right.payment_method()))
+        });
+        Ok(Self {
+            repository,
+            routes: route_map,
+            configuration: UserTopupConfiguration::new(methods)?,
+            order_ttl: STRIPE_TOPUP_ORDER_TTL,
+        })
     }
 }
 
 impl UserTopupService for DatabaseUserTopupService {
-    fn configuration(&self) -> &UserTopupConfiguration {
-        &self.configuration
+    fn configuration(&self) -> Result<UserTopupConfiguration, UserTopupError> {
+        Ok(self.configuration.clone())
     }
 
     fn create<'a>(
@@ -390,16 +592,30 @@ impl UserTopupService for DatabaseUserTopupService {
         command: UserTopupOrderCreateCommand,
     ) -> UserTopupOrderCreateFuture<'a> {
         Box::pin(async move {
-            let (request_id, order_id) =
-                scoped_identifiers(principal.user_id(), command.client_request_id())?;
-            let quota_amount = quota_for_amount_minor(command.amount_minor())?;
+            let route = self
+                .routes
+                .get(&route_key(command.provider(), command.payment_method()))
+                .ok_or(UserTopupError::InvalidInput)?;
+            if command.amount_minor() < route.method.min_amount_minor() as u64
+                || command.amount_minor() > route.method.max_amount_minor() as u64
+            {
+                return Err(UserTopupError::InvalidInput);
+            }
+            let (request_id, order_id) = scoped_identifiers(
+                principal.user_id(),
+                command.client_request_id(),
+                command.provider(),
+                command.payment_method(),
+            )?;
+            let quota_amount = quota_for_route(route, command.amount_minor())?;
             let write = TopupOrderCreate::new(
                 order_id,
                 request_id,
                 principal.user_id(),
-                STRIPE_PAYMENT_PROVIDER.to_owned(),
+                command.provider().to_owned(),
+                command.payment_method().to_owned(),
                 command.amount_minor(),
-                STRIPE_TOPUP_CURRENCY.to_owned(),
+                route.method.currency().to_owned(),
                 quota_amount,
                 unix_now()?,
             )
@@ -414,7 +630,7 @@ impl UserTopupService for DatabaseUserTopupService {
                 TopupOrderCreateOutcome::Existing(record) => (record, true),
                 TopupOrderCreateOutcome::NotFound => return Err(UserTopupError::InvalidSession),
             };
-            self.prepare_payment(record, replayed).await
+            self.prepare_payment(route, record, replayed).await
         })
     }
 }
@@ -422,15 +638,18 @@ impl UserTopupService for DatabaseUserTopupService {
 impl DatabaseUserTopupService {
     async fn prepare_payment(
         &self,
+        route: &UserTopupProviderRoute,
         record: TopupOrderRecord,
         replayed: bool,
     ) -> Result<UserTopupOrder, UserTopupError> {
-        if record.provider() != self.provider.provider() {
+        if record.provider() != route.provider.provider()
+            || record.payment_method() != Some(route.method.payment_method())
+        {
             return Err(UserTopupError::Internal);
         }
         match record.status() {
-            TopupOrderStatus::Created => self.submit_created_order(record, replayed).await,
-            TopupOrderStatus::Pending => self.recover_pending_order(record, replayed).await,
+            TopupOrderStatus::Created => self.submit_created_order(route, record, replayed).await,
+            TopupOrderStatus::Pending => self.recover_pending_order(route, record, replayed).await,
             TopupOrderStatus::Paid
             | TopupOrderStatus::Failed
             | TopupOrderStatus::Canceled
@@ -440,6 +659,7 @@ impl DatabaseUserTopupService {
 
     async fn submit_created_order(
         &self,
+        route: &UserTopupProviderRoute,
         record: TopupOrderRecord,
         replayed: bool,
     ) -> Result<UserTopupOrder, UserTopupError> {
@@ -452,7 +672,7 @@ impl DatabaseUserTopupService {
             return Err(UserTopupError::Conflict);
         }
         let request = payment_request(&record)?;
-        let session = self
+        let session = route
             .provider
             .create(request)
             .await
@@ -493,6 +713,7 @@ impl DatabaseUserTopupService {
 
     async fn recover_pending_order(
         &self,
+        route: &UserTopupProviderRoute,
         record: TopupOrderRecord,
         replayed: bool,
     ) -> Result<UserTopupOrder, UserTopupError> {
@@ -504,7 +725,7 @@ impl DatabaseUserTopupService {
         let request =
             PaymentOrderRecoveryRequest::new(payment_request(&record)?, provider_order_id)
                 .map_err(|_| UserTopupError::Internal)?;
-        let session = self
+        let session = route
             .provider
             .recover(request)
             .await
@@ -526,9 +747,23 @@ impl fmt::Debug for DatabaseUserTopupService {
 fn scoped_identifiers(
     user_id: UserId,
     client_request_id: TopupRequestId,
+    provider: &str,
+    payment_method: &str,
 ) -> Result<(TopupRequestId, TopupOrderId), UserTopupError> {
-    let request_bytes = derive_identifier(REQUEST_ID_DOMAIN, user_id, client_request_id);
-    let order_bytes = derive_identifier(ORDER_ID_DOMAIN, user_id, client_request_id);
+    let request_bytes = derive_identifier(
+        REQUEST_ID_DOMAIN,
+        user_id,
+        client_request_id,
+        provider,
+        payment_method,
+    );
+    let order_bytes = derive_identifier(
+        ORDER_ID_DOMAIN,
+        user_id,
+        client_request_id,
+        provider,
+        payment_method,
+    );
     Ok((
         TopupRequestId::new(request_bytes).map_err(|_| UserTopupError::Internal)?,
         TopupOrderId::new(order_bytes).map_err(|_| UserTopupError::Internal)?,
@@ -539,18 +774,34 @@ fn derive_identifier(
     domain: &[u8],
     user_id: UserId,
     client_request_id: TopupRequestId,
+    provider: &str,
+    payment_method: &str,
 ) -> [u8; TOPUP_IDENTIFIER_BYTES] {
     let mut digest = Sha256::new();
     digest.update(domain);
     digest.update(user_id.get().to_be_bytes());
     digest.update(client_request_id.bytes());
+    digest.update([0]);
+    digest.update(provider.as_bytes());
+    digest.update([0]);
+    digest.update(payment_method.as_bytes());
     let digest = digest.finalize();
     let mut identifier = [0_u8; TOPUP_IDENTIFIER_BYTES];
     identifier.copy_from_slice(&digest[..TOPUP_IDENTIFIER_BYTES]);
     identifier
 }
 
-fn quota_for_amount_minor(amount_minor: u64) -> Result<Quota, UserTopupError> {
+fn quota_for_route(
+    route: &UserTopupProviderRoute,
+    amount_minor: u64,
+) -> Result<Quota, UserTopupError> {
+    if let Some(quota_per_cny) = route.quota_per_cny {
+        let quota = quota_from_cny_minor(amount_minor, quota_per_cny)
+            .map_err(|_| UserTopupError::Internal)?;
+        return (!quota.is_zero())
+            .then_some(quota)
+            .ok_or(UserTopupError::Internal);
+    }
     let usd = Decimal::from(amount_minor)
         .checked_div(Decimal::from(USD_MINOR_UNITS))
         .ok_or(UserTopupError::Internal)?;
@@ -566,8 +817,24 @@ fn payment_request(record: &TopupOrderRecord) -> Result<PaymentOrderRequest, Use
         record.order_id(),
         record.amount_minor(),
         record.currency().to_owned(),
+        record
+            .payment_method()
+            .ok_or(UserTopupError::Internal)?
+            .to_owned(),
     )
     .map_err(|_| UserTopupError::Internal)
+}
+
+fn route_key(provider: &str, payment_method: &str) -> String {
+    format!("{provider}\0{payment_method}")
+}
+
+fn valid_route_part(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
+        })
 }
 
 fn unix_now() -> Result<u64, UserTopupError> {
@@ -613,64 +880,78 @@ mod tests {
     const IDEMPOTENCY_KEY: &str = "1234567890abcdef1234567890abcdef";
 
     #[test]
-    fn command_rejects_invalid_key_and_stripe_amount_boundaries() {
+    fn command_rejects_invalid_key_route_and_non_positive_amount() {
         assert_eq!(
-            UserTopupOrderCreateCommand::new("invalid", 500),
+            UserTopupOrderCreateCommand::new(
+                "invalid",
+                "stripe".to_owned(),
+                "card".to_owned(),
+                500,
+            ),
             Err(UserTopupError::InvalidInput)
         );
         assert_eq!(
-            UserTopupOrderCreateCommand::new(IDEMPOTENCY_KEY, 49),
+            UserTopupOrderCreateCommand::new(
+                IDEMPOTENCY_KEY,
+                "Stripe".to_owned(),
+                "card".to_owned(),
+                500,
+            ),
             Err(UserTopupError::InvalidInput)
         );
         assert_eq!(
-            UserTopupOrderCreateCommand::new(IDEMPOTENCY_KEY, MAX_STRIPE_TOPUP_AMOUNT_MINOR + 1,),
+            UserTopupOrderCreateCommand::new(
+                IDEMPOTENCY_KEY,
+                "stripe".to_owned(),
+                "card".to_owned(),
+                0,
+            ),
             Err(UserTopupError::InvalidInput)
         );
         assert_eq!(
-            UserTopupOrderCreateCommand::new(IDEMPOTENCY_KEY, 500)
-                .unwrap()
-                .amount_minor(),
+            UserTopupOrderCreateCommand::new(
+                IDEMPOTENCY_KEY,
+                "stripe".to_owned(),
+                "card".to_owned(),
+                500,
+            )
+            .unwrap()
+            .amount_minor(),
             500
         );
     }
 
     #[test]
-    fn public_configuration_accepts_only_stripe_publishable_keys() {
-        let configuration = UserTopupConfiguration::new("pk_test_public".to_owned()).unwrap();
-        assert_eq!(configuration.provider(), STRIPE_PAYMENT_PROVIDER);
-        assert_eq!(configuration.currency(), STRIPE_TOPUP_CURRENCY);
+    fn public_configuration_exposes_only_client_material() {
+        let stripe = UserTopupMethod::stripe("pk_test_public".to_owned()).unwrap();
+        let epay = UserTopupMethod::epay(EPAY_ALIPAY_PAYMENT_METHOD).unwrap();
+        let configuration = UserTopupConfiguration::new(vec![stripe, epay]).unwrap();
+        assert_eq!(configuration.methods().len(), 2);
         assert_eq!(
-            configuration.min_amount_minor(),
-            MIN_STRIPE_TOPUP_AMOUNT_MINOR
+            configuration.methods()[0].publishable_key(),
+            Some("pk_test_public")
         );
-        assert_eq!(
-            configuration.max_amount_minor(),
-            MAX_STRIPE_TOPUP_AMOUNT_MINOR
-        );
-        assert_eq!(configuration.publishable_key(), "pk_test_public");
+        assert_eq!(configuration.methods()[1].publishable_key(), None);
         assert!(matches!(
-            UserTopupConfiguration::new("sk_test_secret".to_owned()),
+            UserTopupMethod::stripe("sk_test_secret".to_owned()),
             Err(UserTopupError::InvalidInput)
         ));
         assert!(!format!("{configuration:?}").contains("pk_test_public"));
     }
 
     #[test]
-    fn usd_minor_units_use_the_shared_quota_conversion() {
-        assert_eq!(quota_for_amount_minor(50).unwrap().units(), 250_000);
-        assert_eq!(quota_for_amount_minor(1_000).unwrap().units(), 5_000_000);
-    }
-
-    #[test]
-    fn idempotency_identifiers_are_stable_and_scoped_by_user() {
+    fn idempotency_identifiers_include_provider_and_payment_method() {
         let client = TopupRequestId::from_persistence_key(IDEMPOTENCY_KEY).unwrap();
-        let first = scoped_identifiers(UserId::new(1).unwrap(), client).unwrap();
-        let replay = scoped_identifiers(UserId::new(1).unwrap(), client).unwrap();
-        let other_user = scoped_identifiers(UserId::new(2).unwrap(), client).unwrap();
+        let stripe = scoped_identifiers(UserId::new(1).unwrap(), client, "stripe", "card").unwrap();
+        let replay = scoped_identifiers(UserId::new(1).unwrap(), client, "stripe", "card").unwrap();
+        let alipay = scoped_identifiers(UserId::new(1).unwrap(), client, "epay", "alipay").unwrap();
+        let other_user =
+            scoped_identifiers(UserId::new(2).unwrap(), client, "stripe", "card").unwrap();
 
-        assert_eq!(first, replay);
-        assert_ne!(first, other_user);
-        assert_ne!(first.0.bytes(), first.1.bytes());
+        assert_eq!(stripe, replay);
+        assert_ne!(stripe, alipay);
+        assert_ne!(stripe, other_user);
+        assert_ne!(stripe.0.bytes(), stripe.1.bytes());
     }
 
     #[tokio::test]
@@ -695,13 +976,20 @@ mod tests {
         let repository = TopupRepository::new(pool, Duration::from_secs(5))?;
         let service = DatabaseUserTopupService::new(
             repository,
-            provider.clone(),
-            UserTopupConfiguration::new("pk_test_public".to_owned())?,
-        );
+            vec![UserTopupProviderRoute::stripe(
+                "pk_test_public".to_owned(),
+                provider.clone(),
+            )?],
+        )?;
         let principal = SessionPrincipal::new(user_id, crate::SessionRole::Admin);
-        let command = UserTopupOrderCreateCommand::new(IDEMPOTENCY_KEY, 500)?;
+        let command = UserTopupOrderCreateCommand::new(
+            IDEMPOTENCY_KEY,
+            "stripe".to_owned(),
+            "card".to_owned(),
+            500,
+        )?;
 
-        let created = service.create(principal, command).await?;
+        let created = service.create(principal, command.clone()).await?;
         assert_eq!(created.status(), TopupOrderStatus::Pending);
         assert!(!created.replayed());
         assert_eq!(
@@ -714,7 +1002,7 @@ mod tests {
         assert!(replay.replayed());
         assert_eq!(
             replay.payment().unwrap().client_secret(),
-            "pi_test_123_secret_client"
+            Some("pi_test_123_secret_client")
         );
         assert_eq!(provider.create_calls.load(Ordering::Acquire), 1);
         assert_eq!(provider.recover_calls.load(Ordering::Acquire), 1);
@@ -736,6 +1024,7 @@ mod tests {
             self.create_calls.fetch_add(1, Ordering::AcqRel);
             assert_eq!(request.amount_minor(), 500);
             assert_eq!(request.currency(), STRIPE_TOPUP_CURRENCY);
+            assert_eq!(request.payment_method(), STRIPE_CARD_PAYMENT_METHOD);
             Box::pin(async {
                 payment_session().map_err(|_| PaymentOrderProviderError::InvalidResponse)
             })

@@ -8,6 +8,8 @@ use thiserror::Error;
 
 /// 支付 Provider 规范标识允许的最大 UTF-8 字节数。
 pub const MAX_PAYMENT_PROVIDER_BYTES: usize = 64;
+/// 支付方式规范标识允许的最大 UTF-8 字节数。
+pub const MAX_PAYMENT_METHOD_BYTES: usize = 32;
 /// Provider 订单标识允许的最大 UTF-8 字节数。
 pub const MAX_PROVIDER_ORDER_ID_BYTES: usize = 128;
 /// Provider webhook 事件标识允许的最大 UTF-8 字节数。
@@ -23,6 +25,7 @@ pub struct TopupOrderCreate {
     pub(super) request_id: TopupRequestId,
     pub(super) user_id: UserId,
     pub(super) provider: String,
+    pub(super) payment_method: String,
     pub(super) amount_minor: i64,
     pub(super) currency: String,
     pub(super) quota_amount: Quota,
@@ -40,6 +43,7 @@ impl TopupOrderCreate {
         request_id: TopupRequestId,
         user_id: UserId,
         provider: String,
+        payment_method: String,
         amount_minor: u64,
         currency: String,
         quota_amount: Quota,
@@ -47,6 +51,9 @@ impl TopupOrderCreate {
     ) -> Result<Self, TopupInputError> {
         if !valid_provider(&provider) {
             return Err(TopupInputError::InvalidProvider);
+        }
+        if !valid_payment_method(&payment_method) {
+            return Err(TopupInputError::InvalidPaymentMethod);
         }
         let amount_minor =
             i64::try_from(amount_minor).map_err(|_| TopupInputError::InvalidAmount)?;
@@ -65,6 +72,7 @@ impl TopupOrderCreate {
             request_id,
             user_id,
             provider,
+            payment_method,
             amount_minor,
             currency,
             quota_amount,
@@ -133,6 +141,9 @@ pub struct TopupPaymentEventWrite {
     pub(super) provider: String,
     pub(super) provider_event_id: String,
     pub(super) trade_no: Option<String>,
+    pub(super) amount_minor: i64,
+    pub(super) currency: String,
+    pub(super) payment_method: String,
     pub(super) event_type: TopupPaymentEventType,
     pub(super) signature_key_fingerprint: [u8; 32],
     pub(super) payload_sha256: [u8; 32],
@@ -148,6 +159,9 @@ impl TopupPaymentEventWrite {
         provider: String,
         provider_event_id: String,
         trade_no: Option<String>,
+        amount_minor: u64,
+        currency: String,
+        payment_method: String,
         event_type: TopupPaymentEventType,
         signature_key_fingerprint: [u8; 32],
         payload_sha256: [u8; 32],
@@ -169,6 +183,17 @@ impl TopupPaymentEventWrite {
         {
             return Err(TopupInputError::InvalidTradeNo);
         }
+        let amount_minor =
+            i64::try_from(amount_minor).map_err(|_| TopupInputError::InvalidAmount)?;
+        if amount_minor == 0 {
+            return Err(TopupInputError::InvalidAmount);
+        }
+        if !valid_currency(&currency) {
+            return Err(TopupInputError::InvalidCurrency);
+        }
+        if !valid_payment_method(&payment_method) {
+            return Err(TopupInputError::InvalidPaymentMethod);
+        }
         validate_time(received_at)?;
         Ok(Self {
             event_id,
@@ -176,6 +201,9 @@ impl TopupPaymentEventWrite {
             provider,
             provider_event_id,
             trade_no,
+            amount_minor,
+            currency,
+            payment_method,
             event_type,
             signature_key_fingerprint,
             payload_sha256,
@@ -197,6 +225,7 @@ pub struct TopupOrderRecord {
     pub(super) request_id: TopupRequestId,
     pub(super) user_id: UserId,
     pub(super) provider: String,
+    pub(super) payment_method: Option<String>,
     pub(super) provider_order_id: Option<String>,
     pub(super) trade_no: Option<String>,
     pub(super) status: TopupOrderStatus,
@@ -228,6 +257,12 @@ impl TopupOrderRecord {
     #[must_use]
     pub fn provider(&self) -> &str {
         &self.provider
+    }
+
+    /// 返回订单绑定的支付方式；旧迁移订单可能尚无该事实。
+    #[must_use]
+    pub fn payment_method(&self) -> Option<&str> {
+        self.payment_method.as_deref()
     }
 
     /// 返回当前闭合订单状态。
@@ -307,6 +342,7 @@ impl TopupOrderRecord {
             && self.request_id == write.request_id
             && self.user_id == write.user_id
             && self.provider == write.provider
+            && self.payment_method.as_deref() == Some(write.payment_method.as_str())
             && self.amount_minor == write.amount_minor as u64
             && self.currency == write.currency
             && self.quota_amount == write.quota_amount
@@ -350,6 +386,12 @@ pub enum TopupOrderSubmitOutcome {
 pub enum TopupPaymentEventRejection {
     /// 事件来自与订单不一致的 Provider。
     ProviderMismatch,
+    /// 回调金额与订单金额不一致。
+    AmountMismatch,
+    /// 回调币种与订单币种不一致。
+    CurrencyMismatch,
+    /// 回调支付方式与订单支付方式不一致。
+    PaymentMethodMismatch,
     /// 事件接收时间早于订单创建时间。
     TimingConflict,
     /// Provider 流水号与订单已经绑定的流水号冲突。
@@ -385,6 +427,9 @@ pub enum TopupInputError {
     /// Provider 标识不符合规范。
     #[error("支付 Provider 标识无效")]
     InvalidProvider,
+    /// 支付方式标识不符合规范。
+    #[error("支付方式标识无效")]
+    InvalidPaymentMethod,
     /// Provider 订单标识不符合边界。
     #[error("Provider 订单标识无效")]
     InvalidProviderOrderId,
@@ -490,6 +535,14 @@ impl fmt::Debug for TopupPaymentEventOutcome {
 pub(super) fn valid_provider(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= MAX_PAYMENT_PROVIDER_BYTES
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
+        })
+}
+
+pub(super) fn valid_payment_method(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_PAYMENT_METHOD_BYTES
         && value.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
         })

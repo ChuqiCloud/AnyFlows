@@ -2908,7 +2908,7 @@
         "operationId": "getUserTopupConfiguration",
         "responses": {
           "200": {
-            "description": "Stripe.js 客户端配置与固定金额边界",
+            "description": "可用支付方式、客户端材料与金额边界",
             "content": {
               "application/json": {
                 "schema": {
@@ -2928,7 +2928,7 @@
             }
           },
           "503": {
-            "description": "Stripe 未完整配置",
+            "description": "没有可用的在线支付方式",
             "content": {
               "application/json": {
                 "schema": {
@@ -2964,7 +2964,7 @@
         },
         "responses": {
           "200": {
-            "description": "相同幂等键和金额对应的订单已恢复；待支付时携带同一 PaymentIntent 会话",
+            "description": "相同幂等事实的订单已恢复并返回同一支付动作",
             "content": {
               "application/json": {
                 "schema": {
@@ -2974,7 +2974,7 @@
             }
           },
           "201": {
-            "description": "本地订单首次创建并已绑定 Stripe PaymentIntent",
+            "description": "本地订单首次创建并已绑定支付动作",
             "content": {
               "application/json": {
                 "schema": {
@@ -2984,7 +2984,7 @@
             }
           },
           "400": {
-            "description": "幂等键或 Stripe/USD 金额无效",
+            "description": "幂等键、支付方式或金额无效",
             "content": {
               "application/json": {
                 "schema": {
@@ -3024,7 +3024,7 @@
             }
           },
           "502": {
-            "description": "Stripe 确定拒绝服务端支付请求",
+            "description": "支付 Provider 确定拒绝服务端请求",
             "content": {
               "application/json": {
                 "schema": {
@@ -3034,7 +3034,7 @@
             }
           },
           "503": {
-            "description": "Stripe 未配置、数据库暂不可用或提交结果未知",
+            "description": "支付方式未配置、数据库暂不可用或提交结果未知",
             "content": {
               "application/json": {
                 "schema": {
@@ -3430,6 +3430,136 @@
           },
           "500": {
             "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/admin/payment-settings": {
+      "get": {
+        "tags": [
+          "支付设置"
+        ],
+        "summary": "读取在线支付设置",
+        "operationId": "getAdminPaymentSettings",
+        "responses": {
+          "200": {
+            "description": "密钥保持脱敏的支付设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPaymentSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "支付设置"
+        ],
+        "summary": "更新在线支付设置",
+        "operationId": "updateAdminPaymentSettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPaymentSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "更新并热生效后的支付设置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPaymentSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求正文或支付设置字段无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "登录会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前用户不是管理员",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "运行时切换失败或服务内部错误",
             "content": {
               "application/json": {
                 "schema": {
@@ -10262,8 +10392,8 @@
           "400": {
             "description": "请求正文或签名无效"
           },
-          "404": {
-            "description": "Provider 不受支持"
+          "405": {
+            "description": "请求方法不受支持"
           },
           "409": {
             "description": "支付事件与已有记录发生冲突"
@@ -14502,6 +14632,190 @@
         },
         "additionalProperties": false
       },
+      "AdminPaymentSettings": {
+        "type": "object",
+        "description": "管理员读取的在线支付设置，所有服务端密钥保持脱敏。",
+        "required": [
+          "stripe_enabled",
+          "stripe_secret_key_configured",
+          "stripe_webhook_secret_configured",
+          "stripe_signature_tolerance_seconds",
+          "epay_enabled",
+          "epay_merchant_key_configured",
+          "epay_alipay_enabled",
+          "epay_wxpay_enabled",
+          "epay_quota_per_cny",
+          "version"
+        ],
+        "properties": {
+          "stripe_enabled": {
+            "type": "boolean"
+          },
+          "stripe_publishable_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 512
+          },
+          "stripe_secret_key_configured": {
+            "type": "boolean"
+          },
+          "stripe_webhook_secret_configured": {
+            "type": "boolean"
+          },
+          "stripe_signature_tolerance_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 900,
+            "minimum": 30
+          },
+          "epay_enabled": {
+            "type": "boolean"
+          },
+          "epay_gateway_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048
+          },
+          "epay_merchant_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "epay_merchant_key_configured": {
+            "type": "boolean"
+          },
+          "epay_alipay_enabled": {
+            "type": "boolean"
+          },
+          "epay_wxpay_enabled": {
+            "type": "boolean"
+          },
+          "epay_quota_per_cny": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminPaymentSettingsRequest": {
+        "type": "object",
+        "description": "管理员完整保存在线支付设置；空密钥保留旧值，清除操作必须显式声明。",
+        "required": [
+          "expected_version",
+          "stripe_enabled",
+          "clear_stripe_secret_key",
+          "clear_stripe_webhook_secret",
+          "stripe_signature_tolerance_seconds",
+          "epay_enabled",
+          "clear_epay_merchant_key",
+          "epay_alipay_enabled",
+          "epay_wxpay_enabled",
+          "epay_quota_per_cny"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "stripe_enabled": {
+            "type": "boolean"
+          },
+          "stripe_publishable_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 512
+          },
+          "stripe_secret_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          },
+          "clear_stripe_secret_key": {
+            "type": "boolean"
+          },
+          "stripe_webhook_secret": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          },
+          "clear_stripe_webhook_secret": {
+            "type": "boolean"
+          },
+          "stripe_signature_tolerance_seconds": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 900,
+            "minimum": 30
+          },
+          "epay_enabled": {
+            "type": "boolean"
+          },
+          "epay_gateway_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048
+          },
+          "epay_merchant_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 128
+          },
+          "epay_merchant_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "password",
+            "writeOnly": true,
+            "maxLength": 4096,
+            "minLength": 1
+          },
+          "clear_epay_merchant_key": {
+            "type": "boolean"
+          },
+          "epay_alipay_enabled": {
+            "type": "boolean"
+          },
+          "epay_wxpay_enabled": {
+            "type": "boolean"
+          },
+          "epay_quota_per_cny": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
       "AdminRedemptionAuditBatch": {
         "type": "object",
         "description": "管理员可见的单批次兑换码运营统计，不包含明文码或摘要。",
@@ -18635,18 +18949,40 @@
       },
       "UserTopupConfiguration": {
         "type": "object",
-        "description": "当前登录用户可读取的 Stripe.js 充值配置。",
+        "description": "当前登录用户可读取的充值支付方式目录。",
+        "required": [
+          "methods"
+        ],
+        "properties": {
+          "methods": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserTopupMethod"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "UserTopupMethod": {
+        "type": "object",
+        "description": "单个可选支付方式的公开客户端材料。",
         "required": [
           "provider",
+          "payment_method",
           "currency",
           "min_amount_minor",
-          "max_amount_minor",
-          "publishable_key"
+          "max_amount_minor"
         ],
         "properties": {
           "provider": {
             "type": "string",
-            "example": "stripe"
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "payment_method": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
           },
           "currency": {
             "type": "string",
@@ -18657,7 +18993,7 @@
           "min_amount_minor": {
             "type": "integer",
             "format": "int64",
-            "minimum": 50
+            "minimum": 1
           },
           "max_amount_minor": {
             "type": "integer",
@@ -18665,10 +19001,12 @@
             "maximum": 99999999
           },
           "publishable_key": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "maxLength": 512,
-            "minLength": 9,
-            "pattern": "^pk_(test|live)_[!-~]+$"
+            "minLength": 9
           }
         },
         "additionalProperties": false
@@ -18679,6 +19017,7 @@
         "required": [
           "order_id",
           "provider",
+          "payment_method",
           "status",
           "amount_minor",
           "currency",
@@ -18699,6 +19038,11 @@
             "maxLength": 64,
             "minLength": 1
           },
+          "payment_method": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
           "status": {
             "$ref": "#/components/schemas/UserTopupOrderStatus"
           },
@@ -18706,7 +19050,7 @@
             "type": "integer",
             "format": "int64",
             "maximum": 99999999,
-            "minimum": 50
+            "minimum": 1
           },
           "currency": {
             "type": "string",
@@ -18750,6 +19094,8 @@
         "description": "当前用户创建本地充值订单的结构化请求。",
         "required": [
           "idempotency_key",
+          "provider",
+          "payment_method",
           "amount_minor"
         ],
         "properties": {
@@ -18759,11 +19105,21 @@
             "minLength": 32,
             "pattern": "^[0-9a-f]{32}$"
           },
+          "provider": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "payment_method": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
           "amount_minor": {
             "type": "integer",
             "format": "int64",
             "maximum": 99999999,
-            "minimum": 50
+            "minimum": 1
           }
         },
         "additionalProperties": false
@@ -18781,27 +19137,57 @@
         ]
       },
       "UserTopupPaymentSession": {
-        "type": "object",
-        "description": "当前用户可交给 Stripe SDK 的短生命周期支付会话。",
-        "required": [
-          "payment_intent_id",
-          "client_secret"
-        ],
-        "properties": {
-          "payment_intent_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 4,
-            "pattern": "^pi_[A-Za-z0-9_]+$"
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "payment_intent_id",
+              "client_secret",
+              "kind"
+            ],
+            "properties": {
+              "payment_intent_id": {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 4,
+                "pattern": "^pi_[A-Za-z0-9_]+$"
+              },
+              "client_secret": {
+                "type": "string",
+                "readOnly": true,
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "stripe"
+                ]
+              }
+            }
           },
-          "client_secret": {
-            "type": "string",
-            "readOnly": true,
-            "maxLength": 4096,
-            "minLength": 1
+          {
+            "type": "object",
+            "required": [
+              "redirect_url",
+              "kind"
+            ],
+            "properties": {
+              "redirect_url": {
+                "type": "string",
+                "maxLength": 16384,
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "redirect"
+                ]
+              }
+            }
           }
-        },
-        "additionalProperties": false
+        ],
+        "description": "当前用户继续支付所需的闭合动作。"
       },
       "UserWalletEntry": {
         "type": "object",
@@ -19260,6 +19646,9 @@
     },
     {
       "name": "网络与代理"
+    },
+    {
+      "name": "支付设置"
     },
     {
       "name": "OAuth 连接"

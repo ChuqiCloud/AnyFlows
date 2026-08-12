@@ -4,12 +4,13 @@ use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
     AdminCredentialProxyService, AdminDebugTraceService, AdminEmailSettingsService,
     AdminGroupReader, AdminGroupWriter, AdminModelPriceService, AdminModelReader,
-    AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsService, AdminRouteReader,
-    AdminRouteWriter, AdminTokenReader, AdminTokenWriter, AdminUsageLogReader, AdminUserReader,
-    AdminUserWriter, AdminWalletService, InitialSetup, ModelCatalogReader, PasswordResetService,
-    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
-    SessionAuthenticator, SiteSettingsService, SubscriptionService, TokenAuthenticator,
-    UserInvitationService, UserTopupService, UserWalletService,
+    AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsService,
+    AdminPaymentSettingsService, AdminRouteReader, AdminRouteWriter, AdminTokenReader,
+    AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
+    InitialSetup, ModelCatalogReader, PasswordResetService, PlaygroundConversationService,
+    PlaygroundShareService, RedemptionService, RegistrationService, SessionAuthenticator,
+    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
+    UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -88,6 +89,7 @@ use crate::openai_responses_compact::openai_responses_compact;
 use crate::openai_speech::openai_speech;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::password_reset::build_password_reset_router;
+use crate::payment_settings::build_payment_settings_router;
 use crate::playground_conversations::build_playground_conversation_router;
 use crate::playground_shares::build_playground_share_router;
 use crate::redemption::build_redemption_router;
@@ -163,6 +165,7 @@ pub fn build_router(
     site_settings_service: Arc<dyn SiteSettingsService>,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
     admin_network_settings_service: Arc<dyn AdminNetworkSettingsService>,
+    admin_payment_settings_service: Arc<dyn AdminPaymentSettingsService>,
     admin_credential_proxy_service: Arc<dyn AdminCredentialProxyService>,
     admin_oauth_connection_service: Option<Arc<dyn AdminOAuthConnectionService>>,
     admin_balance_alert_settings_service: Arc<dyn AdminBalanceAlertSettingsService>,
@@ -451,6 +454,10 @@ pub fn build_router(
         admin_network_settings_service,
         Arc::clone(&http_state.session_authenticator),
     );
+    let payment_settings_routes = build_payment_settings_router(
+        admin_payment_settings_service,
+        Arc::clone(&http_state.session_authenticator),
+    );
     let credential_proxy_routes = build_credential_proxy_router(
         admin_credential_proxy_service,
         Arc::clone(&http_state.session_authenticator),
@@ -675,6 +682,7 @@ pub fn build_router(
         .merge(site_settings_routes)
         .merge(email_settings_routes)
         .merge(network_settings_routes)
+        .merge(payment_settings_routes)
         .merge(credential_proxy_routes)
         .merge(balance_alert_settings_routes);
     let management_routes = management_routes.merge(debug_trace_routes);

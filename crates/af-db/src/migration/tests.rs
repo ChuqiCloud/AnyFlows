@@ -28,8 +28,8 @@ use crate::entity::{
     billing_reservations, billing_subscription_reservations, billing_token_window_reservations,
     channel_groups, channel_models, channels, credentials, email_settings, group_model_ratios,
     groups, invite_rebate_events, model_prices, model_sync_items, model_sync_runs, models, options,
-    playground_conversations, playground_shares, redemption_batches, redemption_codes,
-    registration_rate_limits, scheduler_outbox_events, site_settings,
+    payment_settings, playground_conversations, playground_shares, redemption_batches,
+    redemption_codes, registration_rate_limits, scheduler_outbox_events, site_settings,
     subscription_balance_alert_events, subscription_plans, tokens, topup_orders,
     topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
 };
@@ -54,7 +54,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 55;
+const EXPECTED_MIGRATION_COUNT: usize = 56;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -72,7 +72,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 47] = [
+const CORE_TABLES: [&str; 48] = [
     "groups",
     "users",
     "channels",
@@ -106,6 +106,7 @@ const CORE_TABLES: [&str; 47] = [
     "wallet_ledger_entries",
     "topup_orders",
     "topup_payment_events",
+    "payment_settings",
     "redemption_batches",
     "redemption_codes",
     "subscription_plans",
@@ -816,6 +817,7 @@ async fn generated_active_models_redact_sensitive_payloads() {
         order_key: Set(TOPUP_ORDER_KEY_A.to_owned()),
         user_id: Set(1),
         provider: Set("stripe".to_owned()),
+        payment_method: Set(Some("card".to_owned())),
         provider_order_id: Set(Some(SensitiveString::from("provider-order-secret"))),
         trade_no: Set(Some(SensitiveString::from("trade-no-secret"))),
         status: Set(1),
@@ -835,6 +837,9 @@ async fn generated_active_models_redact_sensitive_payloads() {
         provider: Set("stripe".to_owned()),
         provider_event_id: Set(SensitiveString::from(TOPUP_PROVIDER_EVENT_ID_A)),
         trade_no: Set(Some(SensitiveString::from("event-trade-no-secret"))),
+        amount_minor: Set(Some(100)),
+        currency: Set(Some("USD".to_owned())),
+        payment_method: Set(Some("card".to_owned())),
         event_type: Set(1),
         signature_key_fingerprint: Set(SensitiveString::from(signature_fingerprint_secret.clone())),
         payload_sha256: Set(SensitiveString::from(payload_hash_secret.clone())),
@@ -2232,6 +2237,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         .await?;
     assert_entity_columns::<topup_orders::Column>(&manager, "topup_orders").await?;
     assert_entity_columns::<topup_payment_events::Column>(&manager, "topup_payment_events").await?;
+    assert_entity_columns::<payment_settings::Column>(&manager, "payment_settings").await?;
     assert_entity_columns::<redemption_batches::Column>(&manager, "redemption_batches").await?;
     assert_entity_columns::<redemption_codes::Column>(&manager, "redemption_codes").await?;
     assert_entity_columns::<subscription_plans::Column>(&manager, "subscription_plans").await?;
@@ -2705,6 +2711,17 @@ async fn exercise_core_schema(connection: &DatabaseConnection) -> Result<(), DbE
     assert_eq!(reservation.finalized_at, None);
     assert_debug_redacted(&reservation, RESERVATION_KEY_A);
     assert_billing_reservation_constraints(connection, user.id, token.id, group.id).await?;
+
+    let payment = payment_settings::Entity::find_by_id(1_i16)
+        .one(connection)
+        .await?
+        .expect("支付设置固定行必须存在");
+    assert!(!payment.initialized);
+    assert!(!payment.stripe_enabled);
+    assert!(!payment.epay_enabled);
+    assert_eq!(payment.stripe_signature_tolerance_seconds, 300);
+    assert_eq!(payment.epay_quota_per_cny, 500_000);
+    assert_eq!(payment.version, 1);
 
     let topup_order = topup_order_active_model(user.id, TOPUP_ORDER_KEY_A, TOPUP_IDEMPOTENCY_KEY_A)
         .insert(connection)
@@ -3891,6 +3908,7 @@ fn topup_order_active_model(
         order_key: Set(order_key.to_owned()),
         user_id: Set(user_id),
         provider: Set("stripe".to_owned()),
+        payment_method: Set(Some("card".to_owned())),
         provider_order_id: Set(None),
         trade_no: Set(None),
         status: Set(1),
@@ -3918,6 +3936,9 @@ fn topup_payment_event_active_model(
         provider: Set("stripe".to_owned()),
         provider_event_id: Set(SensitiveString::from(provider_event_id)),
         trade_no: Set(Some(SensitiveString::from("trade-event-a"))),
+        amount_minor: Set(Some(1_000)),
+        currency: Set(Some("USD".to_owned())),
+        payment_method: Set(Some("card".to_owned())),
         event_type: Set(1),
         signature_key_fingerprint: Set(SensitiveString::from("e".repeat(64))),
         payload_sha256: Set(SensitiveString::from("f".repeat(64))),

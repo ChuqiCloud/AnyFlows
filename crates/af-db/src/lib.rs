@@ -107,6 +107,9 @@ mod oauth_credential;
 mod oauth_credential_tests;
 mod options;
 mod password_reset;
+mod payment_settings;
+#[cfg(test)]
+mod payment_settings_tests;
 mod playground_conversation;
 #[cfg(test)]
 mod playground_conversation_tests;
@@ -367,6 +370,11 @@ pub use password_reset::{
     PasswordResetOutcome, PasswordResetRepository, PasswordResetRepositoryConfigError,
     PasswordResetRepositoryError, PasswordResetTargetOutcome,
 };
+pub use payment_settings::{
+    PaymentSecretUpdate, PaymentSettingsRecord, PaymentSettingsRepository,
+    PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
+    PaymentSettingsWriteRecord,
+};
 pub use playground_conversation::{
     MAX_PLAYGROUND_CONVERSATIONS_PER_USER, PlaygroundConversationDeleteOutcome,
     PlaygroundConversationRecord, PlaygroundConversationRepository,
@@ -448,10 +456,10 @@ pub use token_request_admission::{
     TokenRequestAdmissionRepositoryConfigError, TokenRequestAdmissionRepositoryError,
 };
 pub use topup::{
-    MAX_PAYMENT_PROVIDER_BYTES, MAX_PROVIDER_EVENT_ID_BYTES, MAX_PROVIDER_ORDER_ID_BYTES,
-    MAX_PROVIDER_TRADE_NO_BYTES, TopupInputError, TopupOrderCreate, TopupOrderCreateOutcome,
-    TopupOrderRecord, TopupOrderSubmission, TopupOrderSubmitOutcome, TopupPaymentEventOutcome,
-    TopupPaymentEventRejection, TopupPaymentEventWrite, TopupRepository,
+    MAX_PAYMENT_METHOD_BYTES, MAX_PAYMENT_PROVIDER_BYTES, MAX_PROVIDER_EVENT_ID_BYTES,
+    MAX_PROVIDER_ORDER_ID_BYTES, MAX_PROVIDER_TRADE_NO_BYTES, TopupInputError, TopupOrderCreate,
+    TopupOrderCreateOutcome, TopupOrderRecord, TopupOrderSubmission, TopupOrderSubmitOutcome,
+    TopupPaymentEventOutcome, TopupPaymentEventRejection, TopupPaymentEventWrite, TopupRepository,
     TopupRepositoryConfigError, TopupRepositoryError,
 };
 pub use usage_log::{

@@ -1,3 +1,5 @@
+import type { PaymentMethod, PaymentProvider } from '@/features/payment-settings/payment-settings-types'
+
 export type TopupAmountBounds = Readonly<{
   min: number
   max: number
@@ -6,6 +8,8 @@ export type TopupAmountBounds = Readonly<{
 export type TopupAttempt = Readonly<{
   idempotencyKey: string
   amountMinor: number
+  paymentMethod: PaymentMethod
+  provider: PaymentProvider
 }>
 
 type RandomValues = (buffer: Uint8Array<ArrayBuffer>) => Uint8Array<ArrayBuffer>
@@ -37,11 +41,15 @@ export function createTopupIdempotencyKey(
 /** 为一次明确金额创建可跨失败重试复用的充值尝试。 */
 export function createTopupAttempt(
   amountMinor: number,
+  provider: PaymentProvider,
+  paymentMethod: PaymentMethod,
   randomValues?: RandomValues,
 ): TopupAttempt {
   return {
     amountMinor,
     idempotencyKey: createTopupIdempotencyKey(randomValues),
+    paymentMethod,
+    provider,
   }
 }
 
@@ -57,6 +65,8 @@ export function parseStoredTopupAttempt(
       typeof parsed.idempotencyKey !== 'string'
       || !idempotencyKeyPattern.test(parsed.idempotencyKey)
       || !Number.isSafeInteger(parsed.amountMinor)
+      || !validPaymentProvider(parsed.provider)
+      || !validPaymentMethod(parsed.paymentMethod)
       || (parsed.amountMinor ?? 0) < bounds.min
       || (parsed.amountMinor ?? 0) > bounds.max
     ) {
@@ -65,10 +75,20 @@ export function parseStoredTopupAttempt(
     return {
       idempotencyKey: parsed.idempotencyKey,
       amountMinor: parsed.amountMinor as number,
+      paymentMethod: parsed.paymentMethod,
+      provider: parsed.provider,
     }
   } catch {
     return undefined
   }
+}
+
+function validPaymentProvider(value: unknown): value is PaymentProvider {
+  return value === 'stripe' || value === 'epay'
+}
+
+function validPaymentMethod(value: unknown): value is PaymentMethod {
+  return value === 'card' || value === 'alipay' || value === 'wxpay'
 }
 
 /** 将整数美分还原为金额输入框需要的两位小数文本。 */

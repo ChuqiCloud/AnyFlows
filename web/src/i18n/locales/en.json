@@ -26,6 +26,7 @@
     "authenticationSettings": "Authentication",
     "emailSettings": "Email settings",
     "networkSettings": "Network & proxy",
+    "paymentSettings": "Payment settings",
     "billingSettings": "Billing settings",
     "groupSettings": "Group management",
     "modelSettings": "Model management",
@@ -3395,6 +3396,29 @@
       "outcomeUnknown": "The service cannot confirm the result yet. Keep this page open and retry the same action."
     }
   },
+  "paymentSettings": {
+    "title": "Payment settings",
+    "subtitle": "Configure Stripe and Epay collection methods, wallet credit conversion, and fixed callback endpoints.",
+    "loading": "Loading payment settings",
+    "stripe": { "title": "Stripe", "description": "Accept card payments with Payment Element and confirm credit through signed webhooks." },
+    "epay": { "title": "Epay", "description": "Connect an Epay-compatible gateway and enable Alipay or WeChat Pay independently." },
+    "fields": {
+      "stripeEnabled": "Enable Stripe", "stripePublishableKey": "Publishable Key", "stripeSecretKey": "Secret Key", "stripeWebhookSecret": "Webhook Secret", "stripeTolerance": "Signature tolerance",
+      "epayEnabled": "Enable Epay", "epayGatewayUrl": "Gateway URL", "epayMerchantId": "Merchant PID", "epayMerchantKey": "Merchant PKey", "epayQuotaPerCny": "Quota per CNY", "alipay": "Alipay", "wxpay": "WeChat Pay"
+    },
+    "status": { "enabled": "Enabled", "disabled": "Disabled" },
+    "secrets": { "configured": "Configured", "missing": "Not configured", "replacePlaceholder": "Enter a value to replace the stored secret", "createPlaceholder": "Enter a new secret", "clear": "Clear the stored secret when saving", "neverShown": "The plaintext is never shown again after saving." },
+    "callbacks": { "title": "Callback URLs", "description": "URLs are derived from the current deployment origin, read-only, and excluded from the settings request.", "stripe": "Stripe webhook", "epay": "Epay notification", "return": "Synchronous return" },
+    "security": { "title": "Secret handling", "description": "Read requests expose configured state only. Blank means keep; an explicit clear selection removes a stored secret." },
+    "validation": {
+      "stripePublishableKey": "Enter a valid pk_test_ or pk_live_ publishable key.", "stripeSecretKey": "Enter a valid secret; replacement and clearing cannot be combined.", "stripeWebhookSecret": "Enter a valid webhook secret; replacement and clearing cannot be combined.", "stripeTolerance": "Signature tolerance must be an integer from 30 to 900 seconds.",
+      "epayGatewayUrl": "Enter an HTTPS gateway URL without credentials, query, or fragment.", "epayMerchantId": "Enter a merchant PID without spaces or control characters.", "epayMerchantKey": "Enter a valid merchant PKey; replacement and clearing cannot be combined.", "epayPaymentMethod": "Enable at least one payment method when Epay is active.", "epayQuota": "Quota per CNY must be a positive integer."
+    },
+    "units": { "seconds": "sec", "quota": "quota" },
+    "actions": { "refresh": "Refresh", "retry": "Try again", "save": "Save settings", "saving": "Saving", "copy": "Copy URL" },
+    "state": { "saved": "Payment settings saved.", "unsaved": "There are unsaved changes.", "synced": "Synced with server version {{version}}." },
+    "errors": { "title": "Payment settings could not be loaded", "load": "The service did not return reliable payment configuration. Try again shortly.", "save": "Payment settings could not be saved. Check the fields or refresh and retry." }
+  },
   "wallet": {
     "eyebrow": "Account quota",
     "title": "Wallet and ledger",
@@ -3418,7 +3442,9 @@
     },
     "topup": {
       "title": "Online top-up",
-      "description": "Add quota to this account through Stripe.",
+      "description": "Choose an available payment method to add quota to this account.",
+      "methods": { "label": "Payment method", "card": "Card", "alipay": "Alipay", "wxpay": "WeChat Pay" },
+      "providers": { "stripe": "Stripe", "epay": "Epay" },
       "unavailable": {
         "title": "Online top-up is unavailable",
         "retryable": "Payment configuration could not be loaded. Try again shortly.",
@@ -3444,21 +3470,23 @@
         "readyTitle": "Ready to create a payment",
         "readyBody": "The server returns the exact quota credit after confirming the amount.",
         "creatingTitle": "Preparing payment",
-        "creatingBody": "Creating or recovering the same Stripe payment order.",
+        "creatingBody": "Creating or recovering the same payment order.",
         "resumeTitle": "An unfinished top-up was found",
         "resumeBody": "The original {{amount}} order is available to resume.",
-        "confirmedTitle": "Payment confirmed by Stripe",
+        "confirmedTitle": "Payment confirmed",
         "processingTitle": "Payment is processing",
         "confirmedBody": "Waiting for the payment webhook to credit the wallet. Do not pay again.",
         "paidTitle": "Top-up credited",
         "paidBody": "{{amount}} quota was written to the wallet and top-up ledger.",
         "failedTitle": "Payment was not completed",
-        "failedBody": "Stripe closed this payment order. Start a new top-up to try again.",
+        "failedBody": "The payment service closed this order. Start a new top-up to try again.",
         "canceledTitle": "Payment canceled",
         "canceledBody": "This payment order was canceled and no quota will be credited.",
         "expiredTitle": "Payment order expired",
         "expiredBody": "The order passed its validity window. Choose an amount and start again.",
-        "errorTitle": "Payment could not be prepared"
+        "errorTitle": "Payment could not be prepared",
+        "redirectTitle": "Payment order is ready",
+        "redirectBody": "You will leave for the payment gateway after confirmation. Returning here never credits the wallet without a verified server notification."
       },
       "actions": {
         "continue": "Continue to payment",
@@ -3467,12 +3495,13 @@
         "retrySame": "Retry original order",
         "refreshStatus": "Refresh credit status",
         "newAttempt": "Start another top-up",
-        "done": "Done"
+        "done": "Done",
+        "openPayment": "Open payment"
       },
       "errors": {
         "unavailable": "The top-up service is unavailable. Keep this page open and retry.",
-        "providerRejected": "Stripe rejected the payment order. Start again shortly.",
-        "conflict": "The idempotency key is bound to another amount. Choose the amount again.",
+        "providerRejected": "The payment provider rejected the order. Start again shortly.",
+        "conflict": "The idempotency key is bound to another amount or payment method. Choose again.",
         "outcomeUnknown": "The order result cannot be confirmed yet. Retry the same order.",
         "invalid": "The top-up amount or order data is invalid. Choose the amount again.",
         "unknown": "The payment service did not return a reliable result. Retry the original order."
