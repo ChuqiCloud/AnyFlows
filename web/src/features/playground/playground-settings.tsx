@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 
 type PlaygroundSettingsProps = {
   idPrefix: string
-  modelPicker: ReactNode
+  modelPicker?: ReactNode
   apiKeyDraft: string
   apiKeySaved: boolean
   apiKeyError?: string
@@ -92,10 +92,12 @@ export function PlaygroundSettings(props: PlaygroundSettingsProps) {
         </form>
       </section>
 
-      <section className="grid gap-2.5 border-b border-dashed border-[var(--hairline)] py-4">
-        <h2 className="text-xs font-semibold">{t('playground.settings.model')}</h2>
-        {props.modelPicker}
-      </section>
+      {props.modelPicker ? (
+        <section className="grid gap-2.5 border-b border-dashed border-[var(--hairline)] py-4">
+          <h2 className="text-xs font-semibold">{t('playground.settings.model')}</h2>
+          {props.modelPicker}
+        </section>
+      ) : null}
 
       <section className="grid gap-2.5 border-b border-dashed border-[var(--hairline)] py-4">
         <label className="grid gap-1.5 text-[0.6875rem] font-medium text-muted-foreground" htmlFor={systemId}>

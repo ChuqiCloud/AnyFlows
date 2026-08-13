@@ -21,6 +21,7 @@ import { playgroundProtocolForModel, type PlaygroundProtocol } from './playgroun
 import { MAX_PLAYGROUND_MODELS } from './playground-types'
 
 type PlaygroundModelPickerProps = {
+  compact?: boolean
   values: string[]
   search: string
   models: ModelCatalogItem[]
@@ -63,7 +64,7 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
             : <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
         </Button>
       </SheetTrigger>
-      {props.values.length > 0 ? (
+      {!props.compact && props.values.length > 0 ? (
         <div className="flex flex-wrap gap-1.5" aria-label={t('playground.model.selectedLabel')}>
           {props.values.map((model) => (
             <Badge key={model} className="max-w-full bg-surface-2 font-mono text-muted-foreground">
@@ -77,7 +78,7 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
           ))}
         </div>
       ) : null}
-      {props.locked ? (
+      {!props.compact && props.locked ? (
         <p className="flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground">
           <LockKeyhole className="size-3" aria-hidden="true" />
           {t('playground.model.locked')}

@@ -1,6 +1,6 @@
 import type { PlaygroundProtocol } from './playground-protocol'
 
-export type PlaygroundMessageStatus = 'complete' | 'streaming' | 'cancelled' | 'error'
+export type PlaygroundMessageStatus = 'complete' | 'streaming' | 'cancelled' | 'interrupted' | 'error'
 
 export type PlaygroundMessage = {
   id: string
@@ -24,7 +24,7 @@ export type PlaygroundErrorKind =
   | 'upstream_unavailable'
   | 'unknown'
 
-export type PlaygroundRequestState = 'idle' | 'streaming' | 'complete' | 'cancelled' | 'error'
+export type PlaygroundRequestState = 'idle' | 'streaming' | 'complete' | 'cancelled' | 'interrupted' | 'error'
 
 export type PlaygroundOverallState = PlaygroundRequestState | 'partial'
 

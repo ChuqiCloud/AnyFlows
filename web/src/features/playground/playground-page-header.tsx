@@ -1,4 +1,4 @@
-import { Eraser, MessagesSquare, Settings2 } from 'lucide-react'
+import { Eraser, MessagesSquare, PanelRightOpen, Settings2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -23,7 +23,9 @@ type PlaygroundPageHeaderProps = {
   modelCount: number
   shareControl: ReactNode
   status: PlaygroundDisplayStatus
+  desktopSettingsOpen: boolean
   onClear: () => void
+  onDesktopSettingsToggle: () => void
 }
 
 export function PlaygroundPageHeader(props: PlaygroundPageHeaderProps) {
@@ -83,6 +85,18 @@ export function PlaygroundPageHeader(props: PlaygroundPageHeaderProps) {
             {props.mobileSettings}
           </SheetContent>
         </Sheet>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant={props.desktopSettingsOpen ? 'secondary' : 'ghost'}
+          className="hidden lg:inline-flex"
+          title={t(props.desktopSettingsOpen ? 'playground.settings.collapse' : 'playground.settings.expand')}
+          aria-label={t(props.desktopSettingsOpen ? 'playground.settings.collapse' : 'playground.settings.expand')}
+          aria-pressed={props.desktopSettingsOpen}
+          onClick={props.onDesktopSettingsToggle}
+        >
+          <PanelRightOpen aria-hidden="true" />
+        </Button>
         <Button
           type="button"
           size="icon-sm"

@@ -1,5 +1,5 @@
-import { MessageSquareText, Square } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { ArrowDown, MessageSquareText, Square, TriangleAlert } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { AiActivity } from '@/components/ai/ai-activity'
@@ -18,6 +18,7 @@ export function PlaygroundSessionColumn({ session, onStop }: PlaygroundSessionCo
   const { t } = useTranslation()
   const transcriptRef = useRef<HTMLDivElement>(null)
   const pinnedToBottomRef = useRef(true)
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false)
 
   useEffect(() => {
     const transcript = transcriptRef.current
@@ -60,15 +61,18 @@ export function PlaygroundSessionColumn({ session, onStop }: PlaygroundSessionCo
           </Button>
         ) : null}
       </header>
-      <div
-        ref={transcriptRef}
-        className="min-h-0 overflow-y-auto bg-background/18"
-        aria-label={t('playground.comparison.transcript', { model: session.model })}
-        onScroll={(event) => {
-          const element = event.currentTarget
-          pinnedToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 96
-        }}
-      >
+      <div className="relative min-h-0">
+        <div
+          ref={transcriptRef}
+          className="h-full min-h-0 overflow-y-auto scroll-smooth bg-background/18"
+          aria-label={t('playground.comparison.transcript', { model: session.model })}
+          onScroll={(event) => {
+            const element = event.currentTarget
+            const pinned = element.scrollHeight - element.scrollTop - element.clientHeight < 96
+            pinnedToBottomRef.current = pinned
+            setShowScrollToBottom(!pinned)
+          }}
+        >
         {session.messages.length === 0 ? (
           <div className="ai-workbench-surface grid min-h-full place-items-center overflow-hidden px-6 py-12 text-center">
             <div className="max-w-xs">
@@ -84,13 +88,38 @@ export function PlaygroundSessionColumn({ session, onStop }: PlaygroundSessionCo
             {session.messages.map((message) => (
               <PlaygroundMessageItem key={message.id} message={message} />
             ))}
-            {session.errorKind ? (
-              <p role="alert" className="m-3 rounded-lg border border-destructive/20 bg-destructive/8 px-2.5 py-2 text-xs text-destructive">
+            {session.requestState === 'interrupted' ? (
+              <div role="status" className="playground-notice-enter mx-3 mb-4 mt-1 flex gap-2 rounded-lg border border-warning/20 bg-warning/8 px-3 py-2.5 text-xs leading-5 text-warning">
+                <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                <span>{t('playground.errors.interrupted')}</span>
+              </div>
+            ) : session.errorKind ? (
+              <p role="alert" className="playground-notice-enter m-3 rounded-lg border border-destructive/20 bg-destructive/8 px-2.5 py-2 text-xs text-destructive">
                 {t(`playground.errors.${session.errorKind}`)}
               </p>
             ) : null}
           </>
         )}
+        </div>
+        {showScrollToBottom ? (
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="secondary"
+            className="playground-notice-enter absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-surface-1/94 shadow-lg backdrop-blur-xl"
+            title={t('playground.actions.scrollToBottom')}
+            aria-label={t('playground.actions.scrollToBottom')}
+            onClick={() => {
+              const transcript = transcriptRef.current
+              if (!transcript) return
+              pinnedToBottomRef.current = true
+              setShowScrollToBottom(false)
+              transcript.scrollTo({ top: transcript.scrollHeight, behavior: 'smooth' })
+            }}
+          >
+            <ArrowDown aria-hidden="true" />
+          </Button>
+        ) : null}
       </div>
     </article>
   )

@@ -2276,6 +2276,7 @@
       "copyUrl": "复制视频地址",
       "openVideo": "打开视频",
       "copied": "已复制"
+      ,"scrollToBottom": "回到最新消息"
     }
   },
   "playground": {
@@ -2290,6 +2291,7 @@
       "streaming": "生成中",
       "complete": "已完成",
       "partial": "部分完成",
+      "interrupted": "响应中断",
       "error": "请求失败",
       "cancelled": "已停止",
       "loadingModels": "加载模型",
@@ -2299,6 +2301,8 @@
     "settings": {
       "title": "会话设置",
       "description": "配置访问凭据、模型和生成参数。",
+      "expand": "展开会话设置",
+      "collapse": "收起会话设置",
       "access": "访问凭据",
       "model": "模型",
       "systemPrompt": "系统提示词",
@@ -2352,6 +2356,7 @@
       "assistant": "助手",
       "generating": "正在等待首段响应",
       "cancelled": "已停止",
+      "interrupted": "部分响应",
       "error": "未完成",
       "emptyResponse": "上游没有返回文本内容。"
     },
@@ -2396,6 +2401,7 @@
       "rate_limited": "请求已达到令牌限流上限，请稍后再试。",
       "model_unavailable": "当前 Key 无权使用该模型，或模型暂不可用。",
       "invalid_request": "请求参数或会话内容不受当前模型支持。",
+      "interrupted": "已保留上游返回的部分内容，但响应在完成前中断；本轮不会保存或带入下一轮上下文。",
       "upstream_unavailable": "上游服务暂不可用，请稍后重新发送。",
       "unknown": "请求未完成，服务未返回可识别的错误。"
     },

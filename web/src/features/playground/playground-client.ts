@@ -9,6 +9,7 @@ import type {
 } from './playground-types'
 import type { PlaygroundProtocol } from './playground-protocol'
 import { playgroundRequestContext } from './playground-comparison-state'
+import { resolvePlaygroundStreamResult } from './playground-stream-result'
 
 type PlaygroundStreamRequest = Omit<PlaygroundGenerationSettings, 'protocol'> & {
   messages: PlaygroundMessage[]
@@ -19,6 +20,7 @@ type PlaygroundStreamRequest = Omit<PlaygroundGenerationSettings, 'protocol'> & 
 
 export type PlaygroundStreamResult = {
   finishReason: string
+  interrupted: boolean
   usage: PlaygroundUsage
 }
 
@@ -50,6 +52,7 @@ export async function streamPlaygroundChat(
   const messages: ModelMessage[] = playgroundRequestContext(request.messages)
     .map((message) => ({ role: message.role, content: message.content }))
   let streamError: unknown
+  let textReceived = false
 
   const result = streamText({
     model: request.protocol === 'openai_responses'
@@ -70,18 +73,23 @@ export async function streamPlaygroundChat(
     },
   })
 
-  for await (const delta of result.textStream) {
-    request.onText(delta)
+  try {
+    for await (const delta of result.textStream) {
+      textReceived ||= delta.length > 0
+      request.onText(delta)
+    }
+  } catch (error) {
+    // AI SDK 可能在正文已到达后才从迭代器抛出协议尾帧错误，交给统一降级判定。
+    streamError ??= error
   }
-  if (streamError) throw streamError
-
-  const [usage, finishReason] = await Promise.all([result.usage, result.finishReason])
-  return {
-    finishReason,
-    usage: {
+  return resolvePlaygroundStreamResult({
+    finishReason: result.finishReason,
+    streamError,
+    textReceived,
+    usage: Promise.resolve(result.usage).then((usage) => ({
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
       totalTokens: usage.totalTokens,
-    },
-  }
+    })),
+  })
 }
