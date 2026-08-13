@@ -140,6 +140,7 @@ fn usage_log_audio_duration_keeps_missing_distinct_and_rejects_invalid_values() 
     let write = usage_write(principal, 9, 1);
     assert!(
         write
+            .clone()
             .with_audio_duration_nanoseconds(Some(1_500_000_000))
             .is_ok()
     );
