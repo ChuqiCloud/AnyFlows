@@ -54,7 +54,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 56;
+const EXPECTED_MIGRATION_COUNT: usize = 57;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -985,22 +985,35 @@ async fn exercise_usage_per_call_migration_upgrade(
         UserId::new(user.id)?,
         GroupId::new(group.id)?,
     );
-    let repository = UsageLogRepository::new(pool.clone());
-    let token_write = UsageLogWrite::new(
-        BillingReservationId::new([0xd1; 16])?,
-        principal,
-        UsageLogBillingMode::PerToken,
-        UsageLogUsage::new(1, 1, 0, 0, 0, 0, 0, 0)?,
-        UsageLogSource::Upstream,
-        UsageLogSemantics::Inclusive,
-        Quota::new(2)?,
-    );
-    assert_eq!(
-        repository.record(&token_write).await?,
-        UsageLogWriteOutcome::Applied
-    );
+    // 迁移前只能写入第 54 版已有列，不能通过当前实体提前触碰新字段。
+    let legacy_event_id = BillingReservationId::new([0xd1; 16])?;
+    let legacy_key = BillingReservationKey::parse(&legacy_event_id.persistence_key())?;
+    usage_logs::ActiveModel {
+        event_id: Set(legacy_key),
+        event_type: Set(1),
+        user_id: Set(principal.user_id().get()),
+        token_id: Set(principal.token_id().get()),
+        group_id: Set(principal.group_id().get()),
+        billing_mode: Set(1),
+        input_tokens: Set(1),
+        output_tokens: Set(1),
+        cache_read: Set(0),
+        cache_creation_5m: Set(0),
+        cache_creation_1h: Set(0),
+        reasoning_tokens: Set(0),
+        audio_input_tokens: Set(0),
+        audio_output_tokens: Set(0),
+        usage_source: Set(1),
+        usage_semantics: Set(1),
+        quota: Set(2),
+        created_at: Set(TimeDateTimeWithTimeZone::now_utc()),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
 
     Migrator::up(pool.connection(), None).await?;
+    let repository = UsageLogRepository::new(pool.clone());
     let per_call_write = UsageLogWrite::new(
         BillingReservationId::new([0xd2; 16])?,
         principal,
