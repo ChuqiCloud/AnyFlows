@@ -2276,7 +2276,6 @@
       "copyUrl": "复制视频地址",
       "openVideo": "打开视频",
       "copied": "已复制"
-      ,"scrollToBottom": "回到最新消息"
     }
   },
   "playground": {
@@ -2334,7 +2333,7 @@
       "selectedCount": "已选 {{count}} 个模型",
       "selectionCount": "已选择 {{count}} / {{max}} 个模型",
       "selectedLabel": "已选择的比较模型",
-      "locked": "会话开始后模型集合已锁定",
+      "locked": "当前会话正在生成或保存，完成后可切换模型",
       "protocols": {
         "openai_chat": "OpenAI Chat",
         "openai_responses": "OpenAI Responses",
@@ -2376,7 +2375,8 @@
       "clearConversation": "清空会话",
       "copyMessage": "复制消息",
       "copyCode": "复制代码",
-      "copied": "已复制"
+      "copied": "已复制",
+      "scrollToBottom": "回到最新消息"
     },
     "usage": {
       "summary": "输入 {{input}} / 输出 {{output}}",

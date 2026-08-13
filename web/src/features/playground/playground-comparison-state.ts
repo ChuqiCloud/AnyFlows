@@ -16,6 +16,7 @@ export type PlaygroundTurnSeed = {
 export type PlaygroundSessionAction =
   | { type: 'sync'; models: string[] }
   | { type: 'begin'; turns: PlaygroundTurnSeed[] }
+  | { type: 'retry'; model: string; assistantId: string }
   | { type: 'append'; model: string; assistantId: string; delta: string }
   | { type: 'complete'; model: string; assistantId: string; usage: PlaygroundUsage }
   | { type: 'interrupt'; model: string; assistantId: string }
@@ -33,6 +34,16 @@ export function createPlaygroundSession(model: string): PlaygroundSession {
   return { model, messages: [], requestState: 'idle' }
 }
 
+/** 把被替换模型的已完成上下文交给新模型继续对话，错误残留与旧模型用量不随之迁移。 */
+function replacePlaygroundSessionModel(session: PlaygroundSession, model: string): PlaygroundSession {
+  const messages = playgroundRequestContext(session.messages).map((message) => ({ ...message }))
+  return {
+    model,
+    messages,
+    requestState: messages.length > 0 ? 'complete' : 'idle',
+  }
+}
+
 function updateAssistant(
   messages: PlaygroundMessage[],
   assistantId: string,
@@ -47,9 +58,19 @@ export function playgroundSessionReducer(
   action: PlaygroundSessionAction,
 ): PlaygroundSession[] {
   if (action.type === 'sync') {
-    return normalizePlaygroundModels(action.models).map((model) => (
-      sessions.find((session) => session.model === model) ?? createPlaygroundSession(model)
-    ))
+    const models = normalizePlaygroundModels(action.models)
+    const selected = new Set(models)
+    const replacements = sessions.filter((session) => !selected.has(session.model))
+    let replacementIndex = 0
+    return models.map((model) => {
+      const current = sessions.find((session) => session.model === model)
+      if (current) return current
+      const replacement = replacements[replacementIndex]
+      replacementIndex += 1
+      return replacement
+        ? replacePlaygroundSessionModel(replacement, model)
+        : createPlaygroundSession(model)
+    })
   }
   if (action.type === 'clear') {
     return normalizePlaygroundModels(action.models).map(createPlaygroundSession)
@@ -76,6 +97,19 @@ export function playgroundSessionReducer(
 
   return sessions.map((session) => {
     if (session.model !== action.model) return session
+    if (action.type === 'retry') {
+      return {
+        ...session,
+        messages: updateAssistant(session.messages, action.assistantId, (message) => (
+          message.status === 'error'
+            ? { ...message, content: '', status: 'streaming' }
+            : message
+        )),
+        requestState: 'streaming',
+        errorKind: undefined,
+        usage: undefined,
+      }
+    }
     if (action.type === 'append') {
       return {
         ...session,
@@ -121,6 +155,28 @@ export function playgroundSessionReducer(
       usage: undefined,
     }
   })
+}
+
+/** 找到当前失败轮次；重试复用原用户消息，不向会话重复插入一条提问。 */
+export function playgroundRetryTurn(session: PlaygroundSession) {
+  if (session.requestState !== 'error') return undefined
+
+  for (let index = session.messages.length - 1; index > 0; index -= 1) {
+    const assistant = session.messages[index]
+    const user = session.messages[index - 1]
+    if (
+      assistant.role === 'assistant'
+      && assistant.status === 'error'
+      && user.role === 'user'
+      && user.status === 'complete'
+    ) {
+      return {
+        assistantId: assistant.id,
+        requestMessages: session.messages.slice(0, index),
+      }
+    }
+  }
+  return undefined
 }
 
 export function hasPlaygroundConversation(sessions: PlaygroundSession[]) {

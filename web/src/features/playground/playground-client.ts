@@ -9,6 +9,7 @@ import type {
 } from './playground-types'
 import type { PlaygroundProtocol } from './playground-protocol'
 import { playgroundRequestContext } from './playground-comparison-state'
+import { normalizePlaygroundInstructions } from './playground-instructions'
 import { resolvePlaygroundStreamResult } from './playground-stream-result'
 
 type PlaygroundStreamRequest = Omit<PlaygroundGenerationSettings, 'protocol'> & {
@@ -58,7 +59,7 @@ export async function streamPlaygroundChat(
     model: request.protocol === 'openai_responses'
       ? responsesProvider.responses(request.model)
       : provider.chatModel(request.model),
-    instructions: request.systemPrompt.trim() || undefined,
+    instructions: normalizePlaygroundInstructions(request.systemPrompt),
     messages,
     temperature: request.temperature,
     maxOutputTokens: request.maxOutputTokens,

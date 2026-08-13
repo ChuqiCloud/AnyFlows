@@ -5,6 +5,7 @@ import {
   createPlaygroundSession,
   hasPlaygroundConversation,
   playgroundOverallState,
+  playgroundRetryTurn,
   playgroundSessionReducer,
   type PlaygroundTurnSeed,
 } from './playground-comparison-state'
@@ -63,6 +64,53 @@ export function usePlaygroundComparison(
     dispatch({ type: 'restore', sessions: restoredSessions })
   }, [stopAll])
 
+  const runRequest = useCallback(async (input: {
+    assistantId: string
+    controller: AbortController
+    model: string
+    protocol: PlaygroundProtocol
+    requestMessages: PlaygroundMessage[]
+    sequence: number
+  }) => {
+    const { assistantId, controller, model, protocol, requestMessages, sequence } = input
+    try {
+      const result = await streamPlaygroundChat({
+        ...settings,
+        model,
+        protocol,
+        messages: requestMessages,
+        signal: controller.signal,
+        onText: (delta) => {
+          if (requestSequenceRef.current !== sequence || controller.signal.aborted) return
+          dispatch({ type: 'append', model, assistantId, delta })
+        },
+      })
+      if (requestSequenceRef.current !== sequence) return
+      if (controller.signal.aborted) {
+        dispatch({ type: 'fail', model, assistantId, cancelled: true })
+        return
+      }
+      if (result.interrupted) {
+        dispatch({ type: 'interrupt', model, assistantId })
+        return
+      }
+      dispatch({ type: 'complete', model, assistantId, usage: result.usage })
+    } catch (error) {
+      if (requestSequenceRef.current !== sequence) return
+      dispatch({
+        type: 'fail',
+        model,
+        assistantId,
+        cancelled: controller.signal.aborted,
+        errorKind: controller.signal.aborted ? undefined : classifyPlaygroundError(error),
+      })
+    } finally {
+      if (controllersRef.current.get(model) === controller) {
+        controllersRef.current.delete(model)
+      }
+    }
+  }, [settings])
+
   const send = useCallback(async () => {
     const content = draft.trim()
     const targets = resolvePlaygroundTargets(models, protocolByModel)
@@ -104,65 +152,39 @@ export function usePlaygroundComparison(
     setDraft('')
     dispatch({ type: 'begin', turns })
 
-    await Promise.allSettled(requests.map(async ({ turn, controller }) => {
-      try {
-        const result = await streamPlaygroundChat({
-          ...settings,
-          model: turn.model,
-          protocol: turn.protocol,
-          messages: turn.requestMessages,
-          signal: controller.signal,
-          onText: (delta) => {
-            if (requestSequenceRef.current !== sequence || controller.signal.aborted) return
-            dispatch({
-              type: 'append',
-              model: turn.model,
-              assistantId: turn.assistantMessage.id,
-              delta,
-            })
-          },
-        })
-        if (requestSequenceRef.current !== sequence) return
-        if (controller.signal.aborted) {
-          dispatch({
-            type: 'fail',
-            model: turn.model,
-            assistantId: turn.assistantMessage.id,
-            cancelled: true,
-          })
-          return
-        }
-        if (result.interrupted) {
-          dispatch({
-            type: 'interrupt',
-            model: turn.model,
-            assistantId: turn.assistantMessage.id,
-          })
-          return
-        }
-        dispatch({
-          type: 'complete',
-          model: turn.model,
-          assistantId: turn.assistantMessage.id,
-          usage: result.usage,
-        })
-      } catch (error) {
-        if (requestSequenceRef.current !== sequence) return
-        dispatch({
-          type: 'fail',
-          model: turn.model,
-          assistantId: turn.assistantMessage.id,
-          cancelled: controller.signal.aborted,
-          errorKind: controller.signal.aborted ? undefined : classifyPlaygroundError(error),
-        })
-      } finally {
-        if (controllersRef.current.get(turn.model) === controller) {
-          controllersRef.current.delete(turn.model)
-        }
-      }
-    }))
+    await Promise.allSettled(requests.map(({ turn, controller }) => runRequest({
+      assistantId: turn.assistantMessage.id,
+      controller,
+      model: turn.model,
+      protocol: turn.protocol,
+      requestMessages: turn.requestMessages,
+      sequence,
+    })))
     return true
-  }, [draft, models, protocolByModel, sessions, settings])
+  }, [draft, models, protocolByModel, runRequest, sessions, settings.apiKey])
+
+  const retry = useCallback(async (model: string) => {
+    if (!settings.apiKey || controllersRef.current.size > 0) return false
+    const session = sessions.find((candidate) => candidate.model === model)
+    const target = resolvePlaygroundTargets([model], protocolByModel)?.[0]
+    if (!session || !target) return false
+    const turn = playgroundRetryTurn(session)
+    if (!turn) return false
+
+    const sequence = ++requestSequenceRef.current
+    const controller = new AbortController()
+    controllersRef.current.set(model, controller)
+    dispatch({ type: 'retry', model, assistantId: turn.assistantId })
+    await runRequest({
+      assistantId: turn.assistantId,
+      controller,
+      model,
+      protocol: target.protocol,
+      requestMessages: turn.requestMessages,
+      sequence,
+    })
+    return true
+  }, [protocolByModel, runRequest, sessions, settings.apiKey])
 
   useEffect(() => () => {
     requestSequenceRef.current += 1
@@ -175,6 +197,7 @@ export function usePlaygroundComparison(
     draft,
     hasConversation: hasPlaygroundConversation(sessions),
     overallState: playgroundOverallState(sessions),
+    retry,
     restore,
     send,
     sessions,

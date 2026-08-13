@@ -2276,7 +2276,6 @@
       "copyUrl": "Copy video URL",
       "openVideo": "Open video",
       "copied": "Copied"
-      ,"scrollToBottom": "Jump to latest message"
     }
   },
   "playground": {
@@ -2334,7 +2333,7 @@
       "selectedCount": "{{count}} models selected",
       "selectionCount": "{{count}} of {{max}} models selected",
       "selectedLabel": "Selected comparison models",
-      "locked": "The model set is locked after the conversation starts",
+      "locked": "Models can be changed after the current conversation finishes generating or saving",
       "protocols": {
         "openai_chat": "OpenAI Chat",
         "openai_responses": "OpenAI Responses",
@@ -2376,7 +2375,8 @@
       "clearConversation": "Clear conversation",
       "copyMessage": "Copy message",
       "copyCode": "Copy code",
-      "copied": "Copied"
+      "copied": "Copied",
+      "scrollToBottom": "Jump to latest message"
     },
     "usage": {
       "summary": "Input {{input}} / output {{output}}",

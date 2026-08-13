@@ -43,6 +43,10 @@ export function PlaygroundPage() {
     history.bindRestoredConversation(conversation)
   }
 
+  const changeModels = (models: string[]) => {
+    configuration.setSelectedModels(models)
+  }
+
   const renderModelPicker = (compact = false) => (
     <PlaygroundModelPicker
       compact={compact}
@@ -54,8 +58,8 @@ export function PlaygroundPage() {
       error={configuration.catalogInvalid}
       loadingMore={configuration.catalogQuery.isFetchingNextPage}
       hasMore={Boolean(configuration.catalogQuery.hasNextPage)}
-      locked={comparison.hasConversation}
-      onChange={configuration.setSelectedModels}
+      locked={comparison.streaming || history.saving}
+      onChange={changeModels}
       onLoadMore={() => void configuration.catalogQuery.fetchNextPage()}
       onRefresh={() => void configuration.catalogQuery.refetch()}
       onSearch={configuration.setModelSearchDraft}
@@ -128,7 +132,7 @@ export function PlaygroundPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100dvh-5.75rem)] min-w-0 flex-col gap-2.5">
+    <div className="flex h-[calc(100dvh-5.75rem)] min-h-[36rem] min-w-0 flex-col gap-2.5">
       <PlaygroundPageHeader
         clearDisabled={!comparison.hasConversation && !comparison.draft}
         historyControl={(
@@ -178,6 +182,7 @@ export function PlaygroundPage() {
             status={status}
             streaming={comparison.streaming}
             onDraftChange={comparison.setDraft}
+            onRetry={comparison.retry}
             onSend={comparison.send}
             onStopAll={comparison.stopAll}
             onStopModel={comparison.stopModel}
