@@ -1009,7 +1009,7 @@ async fn exercise_usage_per_call_migration_upgrade(
         created_at: Set(TimeDateTimeWithTimeZone::now_utc()),
         ..Default::default()
     }
-    .insert(pool.connection())
+    .exec_without_returning(pool.connection())
     .await?;
 
     Migrator::up(pool.connection(), None).await?;
