@@ -176,9 +176,18 @@ impl OutputEncodeState {
         signature: Option<String>,
         events: &mut Vec<PendingEvent>,
     ) -> Result<(), EncodeStreamError> {
-        if self.finish_reason.is_some()
-            || !matches!(self.phase, OutputPhase::Start | OutputPhase::AfterReasoning)
+        if self.finish_reason.is_some() {
+            return Err(EncodeStreamError::InvalidSequence);
+        }
+        if matches!(self.active, Some(ActiveItem::Message(_)))
+            && self.phase == OutputPhase::AfterMessage
+            && text.is_empty()
+            && let Some(signature) = signature.as_deref()
         {
+            self.close_active("completed", None, events)?;
+            return self.replace_closed_reasoning_signature(content_index, signature);
+        }
+        if !matches!(self.phase, OutputPhase::Start | OutputPhase::AfterReasoning) {
             return Err(EncodeStreamError::InvalidSequence);
         }
         if self.active.is_none() {
@@ -234,7 +243,7 @@ impl OutputEncodeState {
                 return Err(EncodeStreamError::InvalidSequence);
             }
             self.budget
-                .add_signature(signature, reasoning.signature.len())
+                .add_signature(signature, 0)
                 .map_err(map_state_error)?;
         }
         let reasoning = match self.active.as_mut() {
@@ -255,8 +264,33 @@ impl OutputEncodeState {
             reasoning.text.push_str(&text);
         }
         if let Some(signature) = signature {
-            reasoning.signature.push_str(&signature);
+            reasoning.signature = signature;
         }
+        Ok(())
+    }
+
+    fn replace_closed_reasoning_signature(
+        &mut self,
+        content_index: u32,
+        signature: &str,
+    ) -> Result<(), EncodeStreamError> {
+        if signature.is_empty() {
+            return Err(EncodeStreamError::InvalidSequence);
+        }
+        let content = self
+            .content
+            .get_mut(content_index as usize)
+            .ok_or(EncodeStreamError::InvalidSequence)?;
+        let ContentBlock::Thinking {
+            signature: current, ..
+        } = content
+        else {
+            return Err(EncodeStreamError::InvalidSequence);
+        };
+        self.budget
+            .add_signature(signature, 0)
+            .map_err(map_state_error)?;
+        *current = Some(signature.to_owned());
         Ok(())
     }
 

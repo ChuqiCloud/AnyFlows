@@ -500,6 +500,78 @@ fn decodes_current_responses_stream_echoes_and_omitted_reasoning_status() {
 }
 
 #[test]
+fn accepts_terminal_reasoning_signature_rotation() {
+    let reasoning_id = "rs_rotated_signature";
+    let reasoning_done = json!({
+        "id": reasoning_id,
+        "type": "reasoning",
+        "summary": [],
+        "encrypted_content": "done-signature",
+    });
+    let reasoning_terminal = json!({
+        "id": reasoning_id,
+        "type": "reasoning",
+        "summary": [],
+        "encrypted_content": "terminal-signature",
+    });
+    let bytes = join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.in_progress",
+            1,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.output_item.added",
+            2,
+            json!({
+                "output_index": 0,
+                "item": {
+                    "id": reasoning_id,
+                    "type": "reasoning",
+                    "status": "in_progress",
+                    "summary": [],
+                    "encrypted_content": "initial-signature",
+                }
+            }),
+        ),
+        frame(
+            "response.output_item.done",
+            3,
+            json!({"output_index": 0, "item": reasoning_done.clone()}),
+        ),
+        frame(
+            "response.completed",
+            4,
+            json!({
+                "response": response(
+                    "completed",
+                    vec![reasoning_terminal],
+                    Some(usage_value(2, 1, 0, 1)),
+                    None,
+                    None,
+                )
+            }),
+        ),
+    ]);
+
+    let mut decoder = OpenAiResponsesStreamDecoder::new();
+    let events = decoder.push(&bytes).unwrap();
+    decoder.finish().unwrap();
+    assert!(events.contains(&CanonicalStreamEvent::ReasoningDelta {
+        choice_index: 0,
+        content_index: 0,
+        text: String::new(),
+        signature: Some("terminal-signature".to_owned()),
+    }));
+    assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+}
+
+#[test]
 fn decodes_reasoning_signature_and_function_call() {
     let reasoning_id = "rs_stream_1";
     let function_id = "fc_stream_1";
@@ -764,6 +836,44 @@ fn maps_structured_error_without_preserving_message() {
 }
 
 #[test]
+fn accepts_error_terminal_reusing_previous_sequence() {
+    let bytes = join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.in_progress",
+            1,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "error",
+            1,
+            json!({
+                "code": "server_error",
+                "message": "secret upstream detail",
+                "param": null,
+            }),
+        ),
+    ]);
+    let mut decoder = OpenAiResponsesStreamDecoder::new();
+    let events = decoder.push(&bytes).unwrap();
+    decoder.finish().unwrap();
+
+    assert!(matches!(
+        events.as_slice(),
+        [
+            CanonicalStreamEvent::MessageStart { .. },
+            CanonicalStreamEvent::Error(UpstreamError::ServerError { .. }),
+            CanonicalStreamEvent::StreamEnd,
+        ]
+    ));
+    assert!(!format!("{events:?}").contains("secret upstream detail"));
+}
+
+#[test]
 fn maps_only_deterministic_auth_and_account_death_as_permanent() {
     for (code, expected) in [
         ("invalid_api_key", UpstreamError::AuthRevoked),
@@ -958,6 +1068,216 @@ fn rejects_eof_before_terminal() {
         ))
         .unwrap();
     assert_eq!(decoder.finish(), Err(ParseStreamError::UnexpectedEof));
+}
+
+#[test]
+fn accepts_shared_sequence_for_adjacent_text_delta_and_done() {
+    let item_id = "msg_shared_sequence";
+    let terminal_item = message_item(item_id, "completed", "hello");
+    let bytes = join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.in_progress",
+            1,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.output_item.added",
+            2,
+            json!({
+                "output_index": 0,
+                "item": {
+                    "id": item_id,
+                    "type": "message",
+                    "status": "in_progress",
+                    "role": "assistant",
+                    "content": [],
+                }
+            }),
+        ),
+        frame(
+            "response.content_part.added",
+            3,
+            json!({
+                "item_id": item_id,
+                "output_index": 0,
+                "content_index": 0,
+                "part": output_text(""),
+            }),
+        ),
+        frame(
+            "response.output_text.delta",
+            4,
+            json!({
+                "item_id": item_id,
+                "output_index": 0,
+                "content_index": 0,
+                "delta": "hello",
+                "logprobs": [],
+            }),
+        ),
+        frame(
+            "response.output_text.done",
+            4,
+            json!({
+                "item_id": item_id,
+                "output_index": 0,
+                "content_index": 0,
+                "text": "hello",
+                "logprobs": [],
+            }),
+        ),
+        frame(
+            "response.content_part.done",
+            5,
+            json!({
+                "item_id": item_id,
+                "output_index": 0,
+                "content_index": 0,
+                "part": output_text("hello"),
+            }),
+        ),
+        frame(
+            "response.output_item.done",
+            6,
+            json!({"output_index": 0, "item": terminal_item.clone()}),
+        ),
+        frame(
+            "response.completed",
+            7,
+            json!({
+                "response": response(
+                    "completed",
+                    vec![terminal_item],
+                    None,
+                    None,
+                    None,
+                )
+            }),
+        ),
+    ]);
+
+    let mut decoder = OpenAiResponsesStreamDecoder::new();
+    let events = decoder.push(&bytes).unwrap();
+    decoder.finish().unwrap();
+    assert!(events.contains(&CanonicalStreamEvent::ContentDelta {
+        choice_index: 0,
+        content_index: 0,
+        delta: ContentDelta::Text("hello".to_owned()),
+    }));
+    assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+}
+
+#[test]
+fn fills_terminal_message_identity_omitted_by_compatible_provider() {
+    let item_id = "msg_omitted_terminal_identity";
+    let mut terminal_item = message_item(item_id, "completed", "hello");
+    terminal_item["phase"] = json!("final_answer");
+    let mut terminal_without_identity = terminal_item.clone();
+    terminal_without_identity
+        .as_object_mut()
+        .expect("消息必须是对象")
+        .remove("id");
+    terminal_without_identity
+        .as_object_mut()
+        .expect("消息必须是对象")
+        .remove("status");
+    let bytes = join([
+        frame(
+            "response.created",
+            0,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.in_progress",
+            1,
+            json!({"response": initial_response()}),
+        ),
+        frame(
+            "response.output_item.added",
+            2,
+            json!({
+                "output_index": 0,
+                "item": {
+                    "id": item_id,
+                    "type": "message",
+                    "status": "in_progress",
+                    "role": "assistant",
+                    "content": [],
+                    "phase": "final_answer",
+                }
+            }),
+        ),
+        frame(
+            "response.content_part.added",
+            3,
+            json!({
+                "item_id": item_id,
+                "output_index": 0,
+                "content_index": 0,
+                "part": output_text(""),
+            }),
+        ),
+        frame(
+            "response.output_text.delta",
+            4,
+            json!({
+                "item_id": item_id,
+                "output_index": 0,
+                "content_index": 0,
+                "delta": "hello",
+                "logprobs": [],
+            }),
+        ),
+        frame(
+            "response.output_text.done",
+            5,
+            json!({
+                "item_id": item_id,
+                "output_index": 0,
+                "content_index": 0,
+                "text": "hello",
+                "logprobs": [],
+            }),
+        ),
+        frame(
+            "response.content_part.done",
+            6,
+            json!({
+                "item_id": item_id,
+                "output_index": 0,
+                "content_index": 0,
+                "part": output_text("hello"),
+            }),
+        ),
+        frame(
+            "response.output_item.done",
+            7,
+            json!({"output_index": 0, "item": terminal_item}),
+        ),
+        frame(
+            "response.completed",
+            8,
+            json!({
+                "response": response(
+                    "completed",
+                    vec![terminal_without_identity],
+                    Some(usage_value(2, 1, 0, 0)),
+                    None,
+                    None,
+                )
+            }),
+        ),
+    ]);
+
+    let mut decoder = OpenAiResponsesStreamDecoder::new();
+    let events = decoder.push(&bytes).unwrap();
+    decoder.finish().unwrap();
+    assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
 }
 
 #[test]

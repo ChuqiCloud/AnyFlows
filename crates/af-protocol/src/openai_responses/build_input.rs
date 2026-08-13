@@ -77,7 +77,7 @@ fn build_text_message(
             return Err(BuildRequestError::UnsupportedFeature);
         };
         state.add_text(text)?;
-        parts.push(text_part(text));
+        parts.push(input_text_part(text));
     }
     Ok(message_item(role, parts))
 }
@@ -92,7 +92,7 @@ fn build_user_message(
         parts.push(match block {
             ContentBlock::Text(text) => {
                 state.add_text(text)?;
-                text_part(text)
+                input_text_part(text)
             }
             ContentBlock::Image { source, mime_type } => {
                 image_part(source, mime_type.as_deref(), state)?
@@ -133,7 +133,7 @@ fn build_assistant_items(
             ContentBlock::Text(text) if !saw_call => {
                 saw_non_reasoning = true;
                 state.add_text(text)?;
-                text_parts.push(text_part(text));
+                text_parts.push(output_text_part(text));
             }
             ContentBlock::ToolUse {
                 id,
@@ -305,7 +305,7 @@ fn build_function_output(
             parts.push(match block {
                 ContentBlock::Text(text) => {
                     state.add_text(text)?;
-                    text_part(text)
+                    input_text_part(text)
                 }
                 ContentBlock::Image { source, mime_type } => {
                     image_part(source, mime_type.as_deref(), state)?
@@ -341,9 +341,16 @@ fn message_item(role: &str, content: Vec<Value>) -> Value {
     ]))
 }
 
-fn text_part(text: &str) -> Value {
+fn input_text_part(text: &str) -> Value {
     Value::Object(Map::from_iter([
         ("type".to_owned(), Value::String("input_text".to_owned())),
+        ("text".to_owned(), Value::String(text.to_owned())),
+    ]))
+}
+
+fn output_text_part(text: &str) -> Value {
+    Value::Object(Map::from_iter([
+        ("type".to_owned(), Value::String("output_text".to_owned())),
         ("text".to_owned(), Value::String(text.to_owned())),
     ]))
 }

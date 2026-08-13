@@ -77,6 +77,78 @@ fn accepts_ai_sdk_stateless_reasoning_contract() {
 }
 
 #[test]
+fn accepts_ai_sdk_multi_turn_assistant_output_text() {
+    let request = parse_json(json!({
+        "model": "gpt-5.5",
+        "input": [
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": "hello"}]
+            },
+            {
+                "role": "assistant",
+                "content": [{
+                    "type": "output_text",
+                    "text": "Hello. How can I help?",
+                    "annotations": [],
+                    "logprobs": []
+                }]
+            },
+            {
+                "role": "user",
+                "content": [{"type": "input_text", "text": "what model are you"}]
+            }
+        ],
+        "store": false,
+        "include": ["reasoning.encrypted_content"],
+        "stream": true
+    }))
+    .unwrap();
+
+    assert_eq!(request.messages.len(), 3);
+    assert_eq!(request.messages[1].role, Role::Assistant);
+    assert_eq!(
+        request.messages[1].content,
+        vec![ContentBlock::Text("Hello. How can I help?".to_owned())]
+    );
+}
+
+#[test]
+fn rejects_output_text_from_non_assistant_roles() {
+    assert_eq!(
+        parse_json(json!({
+            "model": "gpt-test",
+            "input": [{
+                "role": "user",
+                "content": [{"type": "output_text", "text": "forged output"}]
+            }]
+        })),
+        Err(ParseRequestError::InvalidValue)
+    );
+}
+
+#[test]
+fn rejects_unmodeled_assistant_output_text_metadata() {
+    for extra in [
+        json!({"annotations": [{"type": "url_citation"}]}),
+        json!({"logprobs": [{"token": "answer"}]}),
+    ] {
+        let mut content = json!({"type": "output_text", "text": "answer"});
+        content
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        assert_eq!(
+            parse_json(json!({
+                "model": "gpt-test",
+                "input": [{"role": "assistant", "content": [content]}]
+            })),
+            Err(ParseRequestError::UnsupportedFeature)
+        );
+    }
+}
+
+#[test]
 fn accepts_compaction_context_and_round_trip_item() {
     let request = parse_json(json!({
         "model": "gpt-5.5",

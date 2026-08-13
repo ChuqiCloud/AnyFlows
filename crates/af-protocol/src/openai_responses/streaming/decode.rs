@@ -31,6 +31,9 @@ pub struct OpenAiResponsesStreamDecoder {
     identity: Option<StreamIdentity>,
     outputs: OutputDecodeState,
     last_sequence: Option<u64>,
+    last_sequence_event: Option<String>,
+    current_event: Option<String>,
+    current_stage: &'static str,
     done: bool,
     compatibility_done_seen: bool,
     failed: bool,
@@ -51,6 +54,9 @@ impl OpenAiResponsesStreamDecoder {
             identity: None,
             outputs: OutputDecodeState::default(),
             last_sequence: None,
+            last_sequence_event: None,
+            current_event: None,
+            current_stage: "idle",
             done: false,
             compatibility_done_seen: false,
             failed: false,
@@ -150,7 +156,8 @@ impl OpenAiResponsesStreamDecoder {
         }
         let event: StreamEventWire =
             serde_json::from_value(value).map_err(|_| ParseStreamError::InvalidValue)?;
-        self.accept_sequence(event.sequence_number())?;
+        self.current_event = Some(kind.clone());
+        self.accept_sequence(event.sequence_number(), &kind)?;
         self.decode_event(event, output)
     }
 
@@ -353,19 +360,42 @@ impl OpenAiResponsesStreamDecoder {
 
     fn decode_terminal(
         &mut self,
-        response: Value,
+        mut response: Value,
         incomplete: bool,
         output: &mut Vec<CanonicalStreamEvent>,
     ) -> Result<(), ParseStreamError> {
+        self.current_stage = "terminal_phase";
         self.require_in_progress()?;
         if self.outputs.has_active_item() {
             // 部分兼容供应商直接以终态完整快照收束消息，省略三层 done 事件。
+            self.current_stage = "terminal_active_item";
             self.outputs
                 .complete_active_message_from_terminal(&response, output)?;
         }
+        self.current_stage = "terminal_item_identity";
+        self.outputs
+            .fill_missing_terminal_item_identity(&mut response)?;
+        self.current_stage = "terminal_item_ids";
         self.outputs.validate_terminal_item_ids(&response)?;
-        let canonical = parse_terminal_response(&response)?;
+        self.current_stage = "terminal_reasoning_signature";
+        self.outputs
+            .reconcile_terminal_reasoning_signatures(&response, output)?;
+        self.current_stage = "terminal_response_parse";
+        let canonical = match parse_terminal_response(&response) {
+            Ok(canonical) => canonical,
+            Err(error) => {
+                self.current_stage = match error {
+                    ParseStreamError::InvalidValue => "terminal_parse_invalid_value",
+                    ParseStreamError::UnsupportedFeature => "terminal_parse_unsupported",
+                    ParseStreamError::StructureLimitExceeded => "terminal_parse_limit",
+                    _ => "terminal_parse_other",
+                };
+                return Err(error);
+            }
+        };
+        self.current_stage = "terminal_canonical";
         self.validate_terminal_canonical(&canonical)?;
+        self.current_stage = "terminal_finish_reason";
         let choice = canonical
             .choices
             .first()
@@ -417,13 +447,14 @@ impl OpenAiResponsesStreamDecoder {
     }
 
     fn validate_terminal_canonical(
-        &self,
+        &mut self,
         response: &CanonicalResponse,
     ) -> Result<(), ParseStreamError> {
         let identity = self
             .identity
             .as_ref()
             .ok_or(ParseStreamError::InvalidSequence)?;
+        self.current_stage = "terminal_identity";
         if response.operation != Operation::Responses
             || response.id != identity.id
             || response.model != identity.model
@@ -431,16 +462,22 @@ impl OpenAiResponsesStreamDecoder {
         {
             return Err(ParseStreamError::InvalidSequence);
         }
+        self.current_stage = "terminal_choice_count";
         let [choice] = response.choices.as_slice() else {
             return Err(ParseStreamError::InvalidSequence);
         };
+        self.current_stage = "terminal_choice_metadata";
         if choice.index != 0
             || choice.message.role != Role::Assistant
             || choice.stop_sequence.is_some()
-            || choice.message.content != self.outputs.content()
         {
             return Err(ParseStreamError::InvalidSequence);
         }
+        self.current_stage = "terminal_choice_content";
+        if choice.message.content != self.outputs.content() {
+            return Err(ParseStreamError::InvalidSequence);
+        }
+        self.current_stage = "terminal_raw";
         let raw = response
             .raw_passthrough()
             .map(|raw| raw.fields_for_protocol(Protocol::OpenAiResponses))
@@ -480,15 +517,28 @@ impl OpenAiResponsesStreamDecoder {
         }
     }
 
-    fn accept_sequence(&mut self, sequence: Option<u64>) -> Result<(), ParseStreamError> {
+    fn accept_sequence(
+        &mut self,
+        sequence: Option<u64>,
+        event_kind: &str,
+    ) -> Result<(), ParseStreamError> {
         let Some(sequence) = sequence else {
             return Ok(());
         };
         // 序号是可选的兼容提示；出现时只要求严格递增，允许供应商插入事件造成跳号。
-        if self.last_sequence.is_some_and(|last| sequence <= last) {
+        if self.last_sequence.is_some_and(|last| sequence < last)
+            || self.last_sequence.is_some_and(|last| {
+                sequence == last
+                    && !allows_shared_terminal_sequence(
+                        self.last_sequence_event.as_deref(),
+                        event_kind,
+                    )
+            })
+        {
             return Err(ParseStreamError::InvalidSequence);
         }
         self.last_sequence = Some(sequence);
+        self.last_sequence_event = Some(event_kind.to_owned());
         Ok(())
     }
 }
@@ -501,6 +551,9 @@ impl Default for OpenAiResponsesStreamDecoder {
             identity: None,
             outputs: OutputDecodeState::default(),
             last_sequence: None,
+            last_sequence_event: None,
+            current_event: None,
+            current_stage: "idle",
             done: false,
             compatibility_done_seen: false,
             failed: false,
@@ -514,10 +567,32 @@ impl fmt::Debug for OpenAiResponsesStreamDecoder {
             .debug_struct("OpenAiResponsesStreamDecoder")
             .field("has_identity", &self.identity.is_some())
             .field("last_sequence", &self.last_sequence)
+            .field("current_event", &self.current_event)
+            .field("current_stage", &self.current_stage)
             .field("done", &self.done)
             .field("failed", &self.failed)
             .finish()
     }
+}
+
+fn allows_shared_terminal_sequence(previous: Option<&str>, current: &str) -> bool {
+    // 兼容供应商可能把错误终态挂在触发失败的上一事件序号上；错误仍会立即关闭整个流。
+    if previous.is_some() && current == "error" {
+        return true;
+    }
+    matches!(
+        (previous, current),
+        (
+            Some("response.output_text.delta"),
+            "response.output_text.done"
+        ) | (
+            Some("response.function_call_arguments.delta"),
+            "response.function_call_arguments.done"
+        ) | (
+            Some("response.reasoning_summary_text.delta"),
+            "response.reasoning_summary_text.done"
+        )
+    )
 }
 
 #[derive(Clone, Copy, Default, Eq, PartialEq)]

@@ -198,7 +198,7 @@ fn round_trips_messages_tools_sampling_continuation_and_raw_fields() {
             {
                 "type": "message",
                 "role": "assistant",
-                "content": [{"type": "input_text", "text": "finished"}]
+                "content": [{"type": "output_text", "text": "finished"}]
             }
         ],
         "tools": [{
@@ -319,6 +319,7 @@ fn splits_assistant_text_and_function_calls_into_ordered_items() {
 
     let value = build_request(&request).unwrap();
     assert_eq!(value["input"][0]["role"], "assistant");
+    assert_eq!(value["input"][0]["content"][0]["type"], "output_text");
     assert_eq!(value["input"][1]["type"], "function_call");
     assert_eq!(value["input"][2]["type"], "function_call_output");
 }

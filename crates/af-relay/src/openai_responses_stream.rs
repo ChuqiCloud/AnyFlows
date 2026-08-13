@@ -92,10 +92,16 @@ impl OpenAiResponsesStream {
     }
 
     fn transform(&mut self, bytes: &[u8]) -> Result<Option<Bytes>, UpstreamError> {
-        let events = self
-            .decoder
-            .push(bytes)
-            .map_err(|_| UpstreamError::ProtocolError)?;
+        let events = self.decoder.push(bytes).map_err(|error| {
+            // 只记录脱敏错误分类与流阶段，避免把上游帧、提示词或凭据写入日志。
+            tracing::warn!(
+                error_kind = ?error,
+                decoder_state = ?self.decoder,
+                delivered_chunk = self.has_delivered_chunk,
+                "OpenAI Responses 上游流解码失败"
+            );
+            UpstreamError::ProtocolError
+        })?;
         let mut output = Vec::new();
         let mut completed = false;
         let mut interrupted = false;
@@ -250,7 +256,12 @@ impl Stream for OpenAiResponsesStream {
                 }
                 Poll::Ready(None) => {
                     self.source = None;
-                    if self.decoder.finish().is_err() {
+                    if let Err(error) = self.decoder.finish() {
+                        tracing::warn!(
+                            error_kind = ?error,
+                            delivered_chunk = self.has_delivered_chunk,
+                            "OpenAI Responses 上游流终态校验失败"
+                        );
                         return self.fail(UpstreamError::ProtocolError, context);
                     }
                     self.terminated = true;
