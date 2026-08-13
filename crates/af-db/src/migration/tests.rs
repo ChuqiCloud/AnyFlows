@@ -988,7 +988,7 @@ async fn exercise_usage_per_call_migration_upgrade(
     // 迁移前只能写入第 54 版已有列，不能通过当前实体提前触碰新字段。
     let legacy_event_id = BillingReservationId::new([0xd1; 16])?;
     let legacy_key = BillingReservationKey::parse(&legacy_event_id.persistence_key())?;
-    usage_logs::ActiveModel {
+    usage_logs::Entity::insert(usage_logs::ActiveModel {
         event_id: Set(legacy_key),
         event_type: Set(1),
         user_id: Set(principal.user_id().get()),
@@ -1008,7 +1008,7 @@ async fn exercise_usage_per_call_migration_upgrade(
         quota: Set(2),
         created_at: Set(TimeDateTimeWithTimeZone::now_utc()),
         ..Default::default()
-    }
+    })
     .exec_without_returning(pool.connection())
     .await?;
 
