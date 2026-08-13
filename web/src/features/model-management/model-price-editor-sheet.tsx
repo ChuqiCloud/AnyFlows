@@ -20,7 +20,7 @@ export type ModelPriceEditorTarget = {
 
 type ModelPriceEditorSheetProps = {
   onOpenChange: (open: boolean) => void
-  onStage: (model: string, draft: ModelPriceDraft, expectedVersion: number | null) => void
+  onStage: (model: string, draft: ModelPriceDraft, expectedVersion: number | null, contextWindow: number | null) => void
   target?: ModelPriceEditorTarget
 }
 
@@ -47,7 +47,7 @@ export function ModelPriceEditorSheet(props: ModelPriceEditorSheetProps) {
             source={target.source}
             staged={target.staged}
             onCancel={() => props.onOpenChange(false)}
-            onStage={(draft, expectedVersion) => props.onStage(target.model.model, draft, expectedVersion)}
+            onStage={(draft, expectedVersion, contextWindow) => props.onStage(target.model.model, draft, expectedVersion, contextWindow)}
           />
         ) : null}
       </SheetContent>

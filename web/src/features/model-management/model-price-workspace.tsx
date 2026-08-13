@@ -82,10 +82,10 @@ export function ModelPriceWorkspace() {
     previewMutation.reset()
     setPriceSource(source)
   }
-  const stageDraft = (model: string, draft: ModelPriceDraft, expectedVersion: number | null) => {
+  const stageDraft = (model: string, draft: ModelPriceDraft, expectedVersion: number | null, contextWindow: number | null) => {
     setStaged((current) => ({
       ...current,
-      [model]: { draft, expectedVersion },
+      [model]: { draft, expectedVersion, contextWindow },
     }))
     setSelected((current) => new Set(current).add(model))
     setEditingModel(undefined)

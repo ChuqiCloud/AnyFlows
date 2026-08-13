@@ -20,6 +20,7 @@ export type ModelPriceDraft = {
 export type StagedModelPriceDraft = {
   draft: ModelPriceDraft
   expectedVersion: number | null
+  contextWindow: number | null
 }
 
 export type ModelPriceValidationMessages = {
@@ -130,6 +131,7 @@ export function toModelPriceWriteItem(
   return {
     model,
     expected_version: staged.expectedVersion,
+    context_window: staged.contextWindow,
     billing_mode: draft.billingMode,
     prices: {
       input: draft.input,
@@ -157,6 +159,21 @@ export function applyModelPriceEvidence(
   } as const
   const value = candidate.costs[sourceKey[field]]
   return value === null ? draft : { ...draft, [field]: value }
+}
+
+/** 一次采用来源中可等价映射的价格字段，未提供的维度保持当前草稿。 */
+export function applyAllModelPriceEvidence(
+  draft: ModelPriceDraft,
+  candidate: AdminModelPriceSourceCandidate,
+): ModelPriceDraft {
+  return {
+    ...draft,
+    input: candidate.costs.input ?? draft.input,
+    output: candidate.costs.output ?? draft.output,
+    cacheRead: candidate.costs.cache_read ?? draft.cacheRead,
+    cacheCreation5m: candidate.costs.cache_creation_5m ?? draft.cacheCreation5m,
+    cacheCreation1h: candidate.costs.cache_creation_1h ?? draft.cacheCreation1h,
+  }
 }
 
 export function modelPriceCandidateNeedsReview(candidate?: AdminModelPriceSourceCandidate) {

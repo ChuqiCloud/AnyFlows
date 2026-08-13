@@ -229,9 +229,11 @@ fn parse_models_dev(
         if model.id.as_deref().is_some_and(|id| id != target.model()) {
             return Err(ModelPriceSourceDiscoveryError::InvalidResponse);
         }
-        let Some(cost) = model.cost.as_ref() else {
+        let context_window = model.limit.as_ref().and_then(|limit| limit.context);
+        if model.cost.is_none() && context_window.is_none() {
             continue;
-        };
+        }
+        let cost = model.cost.as_ref();
         candidates.push(ModelPriceSourceCandidate::new(
             target.model().to_owned(),
             target.provider().to_owned(),
@@ -242,13 +244,16 @@ fn parse_models_dev(
                 .unwrap_or_else(|| target.model().to_owned()),
             model.name.clone(),
             model.last_updated.clone(),
+            context_window,
             [
-                parse_decimal(cost.input.as_deref())?,
-                parse_decimal(cost.output.as_deref())?,
-                parse_decimal(cost.cache_read.as_deref())?,
-                parse_decimal(cost.cache_write.as_deref())?,
+                parse_decimal(cost.and_then(|value| value.input.as_deref()))?,
+                parse_decimal(cost.and_then(|value| value.output.as_deref()))?,
+                parse_decimal(cost.and_then(|value| value.cache_read.as_deref()))?,
+                parse_decimal(cost.and_then(|value| value.cache_write.as_deref()))?,
             ],
-            cost.tiers.as_ref().is_some_and(nonempty_json) || cost.context_over_200k.is_some(),
+            cost.is_some_and(|value| {
+                value.tiers.as_ref().is_some_and(nonempty_json) || value.context_over_200k.is_some()
+            }),
             model.status.as_deref() == Some("deprecated"),
         )?);
     }
@@ -327,7 +332,13 @@ struct ModelsDevModel {
     name: String,
     last_updated: Option<String>,
     status: Option<String>,
+    limit: Option<ModelsDevLimit>,
     cost: Option<ModelsDevCost>,
+}
+
+#[derive(Deserialize)]
+struct ModelsDevLimit {
+    context: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -356,6 +367,7 @@ mod tests {
                     "id": "gpt-test",
                     "name": "GPT Test",
                     "last_updated": "2026-07-31",
+                    "limit": {"context": 400000},
                     "cost": {
                       "input": 1.234567890123456789,
                       "output": 9.5,
@@ -378,6 +390,7 @@ mod tests {
         assert_eq!(preview.candidates().len(), 1);
         let candidate = &preview.candidates()[0];
         assert_eq!(candidate.provider(), "openai");
+        assert_eq!(candidate.context_window(), Some(400_000));
         assert_eq!(
             candidate.costs()[0],
             Some(Decimal::from_str_exact("1.234567890123456789").unwrap())

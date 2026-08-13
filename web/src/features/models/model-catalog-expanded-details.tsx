@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import type { ModelCatalogItem, ModelCatalogPricingScope } from '@/lib/api/generated/types.gen'
+import { formatContextWindow, formatExactContextWindow } from './model-context-window'
 import { ModelPriceValue } from './model-price-value'
 
 type ExpandedDetailsProps = {
@@ -11,9 +12,14 @@ type ExpandedDetailsProps = {
 
 /** 展开后集中呈现权威能力与定价快照，避免把高密度主行撑高。 */
 export function ModelCatalogExpandedDetails({ item, pricingScope }: ExpandedDetailsProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const prices = item.prices ?? undefined
   const availableProtocols = item.available_protocols ?? []
+  const exactContext = item.context_window === null
+    ? undefined
+    : t('models.values.context', {
+        value: formatExactContextWindow(item.context_window, i18n.resolvedLanguage),
+      })
   const ratios = [
     ['group', item.ratios.group_micros],
     ['groupModel', item.ratios.group_model_micros],
@@ -21,9 +27,9 @@ export function ModelCatalogExpandedDetails({ item, pricingScope }: ExpandedDeta
   ] as const
   const capabilities = [
     item.supports_reasoning ? 'reasoning' : undefined,
-    item.supports_tool_calls ? 'toolCalls' : undefined,
-    item.supports_responses_compact ? 'responsesCompact' : undefined,
-  ].filter((value): value is 'reasoning' | 'toolCalls' | 'responsesCompact' => value !== undefined)
+    item.supports_tool_calls ? 'tool_calls' : undefined,
+    item.supports_responses_compact ? 'responses_compact' : undefined,
+  ].filter((value): value is 'reasoning' | 'tool_calls' | 'responses_compact' => value !== undefined)
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)]">
@@ -36,7 +42,11 @@ export function ModelCatalogExpandedDetails({ item, pricingScope }: ExpandedDeta
           <DetailGroup label={t('models.details.context')}>
             {item.context_window === null
               ? t('models.values.contextUnknown')
-              : t('models.values.context', { value: new Intl.NumberFormat().format(item.context_window) })}
+              : (
+                  <span title={exactContext}>
+                    {t('models.values.context', { value: formatContextWindow(item.context_window) })}
+                  </span>
+                )}
           </DetailGroup>
           <DetailGroup label={t('models.details.inputModalities')}>
             <BadgeList values={item.input_modalities.map((value) => t(`models.modalities.${value}`))} />

@@ -60,6 +60,7 @@ pub(super) fn parse(
             target.model().to_owned(),
             "LiteLLM".to_owned(),
             None,
+            None,
             costs,
             has_tiered_pricing(&entry.extra),
             false,

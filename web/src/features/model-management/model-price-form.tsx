@@ -17,6 +17,7 @@ import type { ModelPriceSource } from './model-price-api'
 import { ModelPriceExpressionEditor } from './model-price-expression-editor'
 import {
   applyModelPriceEvidence,
+  applyAllModelPriceEvidence,
   buildModelPriceDraftSchema,
   defaultModelPriceDraft,
   expressionModelPriceDraft,
@@ -30,7 +31,7 @@ type ModelPriceFormProps = {
   candidate?: AdminModelPriceSourceCandidate
   model: AdminModel
   onCancel: () => void
-  onStage: (draft: ModelPriceDraft, expectedVersion: number | null) => void
+  onStage: (draft: ModelPriceDraft, expectedVersion: number | null, contextWindow: number | null) => void
   price?: AdminModelPrice
   source?: ModelPriceSource
   staged?: StagedModelPriceDraft
@@ -68,6 +69,7 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
     resolver: zodResolver(schema),
   })
   const [expectedVersion, setExpectedVersion] = useState(props.staged?.expectedVersion ?? props.price?.version ?? null)
+  const [contextWindow, setContextWindow] = useState<number | null>(props.staged?.contextWindow ?? null)
 
   useEffect(() => {
     const next = props.staged?.draft ?? defaultModelPriceDraft(props.price)
@@ -75,6 +77,7 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
     if (next.billingMode === 'expression') expressionDraft.current = next
     form.reset(next)
     setExpectedVersion(props.staged?.expectedVersion ?? props.price?.version ?? null)
+    setContextWindow(props.staged?.contextWindow ?? null)
   }, [form, props.model.model, props.price, props.staged])
 
   const billingMode = form.watch('billingMode')
@@ -104,9 +107,22 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
     perTokenDraft.current = next
     form.reset(next, { keepDefaultValues: true })
   }
+  const useAllEvidence = () => {
+    if (!props.candidate) return
+    const current = form.getValues()
+    const base = current.billingMode === 'free'
+      ? { ...perTokenDraft.current, billingMode: 'per_token' as const }
+      : current
+    const next = applyAllModelPriceEvidence(base, props.candidate)
+    perTokenDraft.current = next
+    form.reset(next, { keepDefaultValues: true })
+    if (props.candidate.context_window != null) {
+      setContextWindow(props.candidate.context_window)
+    }
+  }
   const expression = form.watch('expression')
   const versionChanged = props.price !== undefined && expectedVersion !== props.price.version
-  const submit = form.handleSubmit((draft) => props.onStage(draft, expectedVersion))
+  const submit = form.handleSubmit((draft) => props.onStage(draft, expectedVersion, contextWindow))
 
   return (
     <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit} noValidate>
@@ -203,7 +219,14 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
               </div>
             </section>
 
-            <PriceEvidence candidate={props.candidate} source={props.source} onUse={useEvidence} />
+            <PriceEvidence
+              candidate={props.candidate}
+              contextWindow={contextWindow}
+              source={props.source}
+              onUse={useEvidence}
+              onUseAll={useAllEvidence}
+              onUseContext={() => setContextWindow(props.candidate?.context_window ?? null)}
+            />
           </>
         )}
       </div>
@@ -218,7 +241,10 @@ export function ModelPriceForm(props: ModelPriceFormProps) {
 
 function PriceEvidence(props: {
   candidate?: AdminModelPriceSourceCandidate
+  contextWindow: number | null
   onUse: (field: ModelPriceEvidenceField) => void
+  onUseAll: () => void
+  onUseContext: () => void
   source?: ModelPriceSource
 }) {
   const { t } = useTranslation()
@@ -250,6 +276,10 @@ function PriceEvidence(props: {
           {candidate.has_tiered_pricing ? <Badge className="border-transparent bg-warning/10 text-warning">{t('modelManagement.prices.status.review')}</Badge> : null}
           {candidate.source_deprecated ? <Badge className="border-transparent bg-destructive/10 text-destructive">{t('modelManagement.prices.evidence.deprecated')}</Badge> : null}
           {candidate.source_deprecation_date ? <Badge className="border-transparent bg-warning/10 text-warning">{t('modelManagement.prices.evidence.deprecationDate', { date: candidate.source_deprecation_date })}</Badge> : null}
+          <Button type="button" size="sm" variant="secondary" className="ml-auto" onClick={props.onUseAll}>
+            <ArrowDownToLine aria-hidden="true" />
+            {t('modelManagement.prices.actions.useAllEvidence')}
+          </Button>
         </div>
         <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('modelManagement.prices.evidence.disclaimer')}</p>
       </div>
@@ -260,6 +290,20 @@ function PriceEvidence(props: {
         </div>
       ) : null}
       <dl className="grid gap-2 sm:grid-cols-2">
+        {candidate.context_window != null ? (
+          <div className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-[var(--hairline)] px-3 py-2 sm:col-span-2">
+            <div className="min-w-0">
+              <dt className="text-[0.6875rem] text-muted-foreground">{t('modelManagement.prices.fields.contextWindow')}</dt>
+              <dd className="mt-1 truncate font-mono text-xs tabular-nums">
+                {new Intl.NumberFormat().format(candidate.context_window)} tokens
+                {props.contextWindow === candidate.context_window ? ` · ${t('modelManagement.prices.evidence.staged')}` : ''}
+              </dd>
+            </div>
+            <Button type="button" size="icon-sm" variant="ghost" aria-label={t('modelManagement.prices.evidence.useContext')} onClick={props.onUseContext}>
+              <ArrowDownToLine aria-hidden="true" />
+            </Button>
+          </div>
+        ) : null}
         {evidence.map(({ field, label, value }) => (
           <div key={field} className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-[var(--hairline)] px-3 py-2">
             <div className="min-w-0">

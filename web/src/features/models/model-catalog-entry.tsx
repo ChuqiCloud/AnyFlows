@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { BrainCircuit, ChevronDown, Gauge, Wrench } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
@@ -7,6 +7,7 @@ import type { ModelCatalogItem, ModelCatalogPricingScope } from '@/lib/api/gener
 import { cn } from '@/lib/utils'
 import { ModelCatalogExpandedDetails } from './model-catalog-expanded-details'
 import { ModelCatalogIdentity } from './model-catalog-identity'
+import { formatContextWindow, formatExactContextWindow } from './model-context-window'
 import { ModelPriceValue } from './model-price-value'
 
 type EntryProps = {
@@ -14,6 +15,11 @@ type EntryProps = {
   pricingScope: ModelCatalogPricingScope
   expanded: boolean
   onToggle: () => void
+}
+
+type SummaryProps = {
+  className?: string
+  item: ModelCatalogItem
 }
 
 const lifecycleStyles = {
@@ -26,11 +32,11 @@ const runtimeStyles = {
   not_evaluated: 'bg-surface-2 text-muted-foreground',
 } as const
 
-function ModelStateBadges({ item }: { item: ModelCatalogItem }) {
+function ModelStateBadges({ className, item }: SummaryProps) {
   const { t } = useTranslation()
   const availableProtocols = item.available_protocols ?? []
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1">
+    <div className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
       <Badge className={cn(
         'whitespace-nowrap border-transparent',
         item.billing_mode === 'free' ? 'bg-success/10 text-success' : 'bg-info/10 text-info',
@@ -48,13 +54,54 @@ function ModelStateBadges({ item }: { item: ModelCatalogItem }) {
   )
 }
 
+function ModelCapabilitySummary({ className, item }: SummaryProps) {
+  const { t, i18n } = useTranslation()
+  const exactContext = item.context_window === null
+    ? undefined
+    : t('models.values.context', {
+        value: formatExactContextWindow(item.context_window, i18n.resolvedLanguage),
+      })
+  return (
+    <div className={cn('flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-[0.6875rem] text-muted-foreground', className)}>
+      <span className="inline-flex items-center gap-1" title={exactContext}>
+        <Gauge className="size-3" aria-hidden="true" />
+        {item.context_window === null
+          ? t('models.values.contextUnknownShort')
+          : t('models.values.contextShort', { value: formatContextWindow(item.context_window) })}
+      </span>
+      {item.supports_reasoning ? (
+        <span className="inline-flex items-center gap-1"><BrainCircuit className="size-3" aria-hidden="true" />{t('models.capabilities.reasoning')}</span>
+      ) : null}
+      {item.supports_tool_calls ? (
+        <span className="inline-flex items-center gap-1"><Wrench className="size-3" aria-hidden="true" />{t('models.capabilities.tool_calls')}</span>
+      ) : null}
+    </div>
+  )
+}
+
+function ModelDescription({ className, item }: SummaryProps) {
+  if (!item.description) return null
+  return (
+    <p
+      className={cn('line-clamp-2 break-words text-xs leading-5 text-muted-foreground', className)}
+      title={item.description}
+    >
+      {item.description}
+    </p>
+  )
+}
+
 export function ModelCatalogDesktopEntry({ item, pricingScope, expanded, onToggle }: EntryProps) {
   const { t } = useTranslation()
   const detailsId = `model-details-${encodeURIComponent(item.model)}`
   return (
     <>
-      <tr className="hover:bg-surface-2/35">
-        <td className="px-3 py-2.5"><ModelCatalogIdentity item={item} /></td>
+      <tr className="transition-colors duration-150 hover:bg-surface-2/35">
+        <td className="px-3 py-3">
+          <ModelCatalogIdentity item={item} />
+          <ModelDescription item={item} className="mt-2" />
+          <ModelCapabilitySummary item={item} className="mt-2" />
+        </td>
         <td className="px-3 py-2.5"><ModelPriceValue label={t('models.columns.input')} value={item.prices?.input} /></td>
         <td className="px-3 py-2.5"><ModelPriceValue label={t('models.columns.output')} value={item.prices?.output} /></td>
         <td className="px-3 py-2.5"><ModelPriceValue label={t('models.columns.cacheRead')} value={item.prices?.cache_read} muted /></td>
@@ -90,14 +137,14 @@ export function ModelCatalogMobileEntry({ item, pricingScope, expanded, onToggle
   const { t } = useTranslation()
   const detailsId = `model-details-mobile-${encodeURIComponent(item.model)}`
   return (
-    <article className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
-      <ModelCatalogIdentity item={item} />
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--hairline)] pt-3">
-        <ModelStateBadges item={item} />
+    <article className="@container rounded-lg border border-[var(--hairline)] bg-surface-1 p-3 transition-colors duration-150 hover:border-info/25">
+      <div className="flex min-w-0 items-start gap-3">
+        <div className="min-w-0 flex-1"><ModelCatalogIdentity item={item} /></div>
         <Button
           type="button"
           variant="ghost"
           size="sm"
+          className="shrink-0"
           aria-expanded={expanded}
           aria-controls={detailsId}
           onClick={onToggle}
@@ -106,10 +153,16 @@ export function ModelCatalogMobileEntry({ item, pricingScope, expanded, onToggle
           <ChevronDown className={cn('size-3.5 transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
         </Button>
       </div>
-      <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--hairline)] pt-3">
-        <ModelPriceValue label={t('models.columns.input')} value={item.prices?.input} />
-        <ModelPriceValue label={t('models.columns.output')} value={item.prices?.output} />
-        <ModelPriceValue label={t('models.columns.cacheRead')} value={item.prices?.cache_read} muted />
+      <ModelDescription item={item} className="mt-2" />
+      <div className="mt-2.5 grid gap-2.5 @min-[48rem]:grid-cols-[minmax(0,1fr)_auto] @min-[48rem]:items-end @min-[48rem]:gap-5">
+        <div className="grid min-w-0 gap-2 @min-[48rem]:flex @min-[48rem]:flex-wrap @min-[48rem]:items-center @min-[48rem]:gap-x-3">
+          <ModelCapabilitySummary item={item} />
+          <ModelStateBadges item={item} />
+        </div>
+        <div className="grid w-full grid-cols-2 gap-4 @min-[48rem]:w-48">
+          <ModelPriceValue label={t('models.columns.input')} value={item.prices?.input} showLabel />
+          <ModelPriceValue label={t('models.columns.output')} value={item.prices?.output} showLabel />
+        </div>
       </div>
       {expanded ? (
         <div id={detailsId} className="mt-3 border-t border-[var(--hairline)] pt-3">

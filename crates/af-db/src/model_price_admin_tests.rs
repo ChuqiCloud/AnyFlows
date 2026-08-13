@@ -49,6 +49,81 @@ async fn batch_insert_and_update_enforce_optimistic_versions() -> Result<(), Box
 }
 
 #[tokio::test]
+async fn batch_updates_context_window_with_price_in_the_same_transaction()
+-> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let models = AdminModelRepository::new(pool.clone(), std::time::Duration::from_secs(1))?;
+    let created = models
+        .create(AdminModelCreateRecord::new(
+            "gpt-test".to_owned(),
+            model_fields(),
+        ))
+        .await?;
+    let prices = ModelPriceRepository::new(pool.clone());
+
+    let write = ModelPriceWriteRecord::new_with_metadata(
+        "gpt-test".to_owned(),
+        None,
+        Some(400_000),
+        ModelPriceBillingMode::PerToken,
+        [Decimal::ONE; 5],
+        None,
+    )?;
+    prices.apply_batch(vec![write]).await?;
+
+    let updated = models.get(created.model_id()).await?;
+    let crate::AdminModelLookupOutcome::Found(updated) = updated else {
+        panic!("模型应保持存在");
+    };
+    assert_eq!(updated.context_window(), Some(400_000));
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn price_version_conflict_rolls_back_context_window_update() -> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let models = AdminModelRepository::new(pool.clone(), std::time::Duration::from_secs(1))?;
+    let created = models
+        .create(AdminModelCreateRecord::new(
+            "gpt-test".to_owned(),
+            model_fields(),
+        ))
+        .await?;
+    let prices = ModelPriceRepository::new(pool.clone());
+    prices.apply_batch(vec![write(None, Decimal::ONE)]).await?;
+
+    let conflicting = ModelPriceWriteRecord::new_with_metadata(
+        "gpt-test".to_owned(),
+        None,
+        Some(400_000),
+        ModelPriceBillingMode::PerToken,
+        [Decimal::new(2, 0); 5],
+        None,
+    )?;
+    assert_eq!(
+        prices.apply_batch(vec![conflicting]).await,
+        Err(ModelPriceWriteError::Conflict)
+    );
+
+    let updated = models.get(created.model_id()).await?;
+    let crate::AdminModelLookupOutcome::Found(updated) = updated else {
+        panic!("模型应保持存在");
+    };
+    assert_eq!(updated.context_window(), Some(128_000));
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn expression_price_round_trips_and_is_cleared_when_switching_mode()
 -> Result<(), Box<dyn Error>> {
     let pool = crate::connect_and_migrate(

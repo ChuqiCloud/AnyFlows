@@ -160,6 +160,8 @@ pub(crate) struct AdminModelPriceSourceCandidateResponse {
     source_name: String,
     #[schema(max_length = 32, required = true)]
     last_updated: Option<String>,
+    #[schema(minimum = 1, maximum = 2147483647_i64, required = true)]
+    context_window: Option<i64>,
     #[schema(max_length = 10, required = true)]
     source_deprecation_date: Option<String>,
     costs: AdminModelPriceSourceCostsResponse,
@@ -189,6 +191,9 @@ pub(crate) struct AdminModelPriceWriteItemRequest {
     model: String,
     #[schema(minimum = 1, required = true)]
     expected_version: Option<u64>,
+    /// 空值保持当前模型上下文；正整数与价格在同一事务中更新。
+    #[schema(minimum = 1, maximum = 2147483647_i64, required = true)]
+    context_window: Option<i64>,
     billing_mode: AdminModelPriceBillingModeValue,
     prices: AdminModelPriceValues,
     #[schema(max_length = 8192)]
@@ -461,6 +466,7 @@ impl AdminModelPriceSourceCandidateResponse {
             source_model: candidate.source_model().to_owned(),
             source_name: candidate.source_name().to_owned(),
             last_updated: candidate.last_updated().map(str::to_owned),
+            context_window: candidate.context_window(),
             source_deprecation_date: candidate.source_deprecation_date().map(str::to_owned),
             costs: AdminModelPriceSourceCostsResponse {
                 input: input.map(decimal_text),
@@ -478,9 +484,10 @@ impl AdminModelPriceSourceCandidateResponse {
 
 impl AdminModelPriceWriteItemRequest {
     fn into_command(self) -> Result<AdminModelPriceWriteCommand, ManagementError> {
-        AdminModelPriceWriteCommand::new_with_expression(
+        AdminModelPriceWriteCommand::new_with_metadata(
             self.model,
             self.expected_version,
+            self.context_window,
             self.billing_mode.into(),
             self.prices.into_prices()?,
             self.billing_expression,

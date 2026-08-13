@@ -14,7 +14,7 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useModelCatalog } from '@/features/models/model-api'
+import { EMPTY_MODEL_CATALOG_FILTERS, useModelCatalog } from '@/features/models/model-api'
 import { cn } from '@/lib/utils'
 
 const MAX_SELECTED_MODELS = 512
@@ -31,7 +31,7 @@ export function ApiKeyModelSelector({ values, error, onChange }: ApiKeyModelSele
   const [open, setOpen] = useState(false)
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
-  const catalogQuery = useModelCatalog(search, 'all', true)
+  const catalogQuery = useModelCatalog(search, EMPTY_MODEL_CATALOG_FILTERS, true)
   const models = useMemo(
     () => catalogQuery.data?.pages.flatMap((page) => page.models) ?? [],
     [catalogQuery.data],

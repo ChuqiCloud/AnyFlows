@@ -1545,7 +1545,8 @@
         "cacheRead": "Cache read",
         "cacheCreation5m": "5m cache creation",
         "cacheCreation1h": "1h cache creation",
-        "cacheWriteEvidence": "Generic cache write evidence"
+        "cacheWriteEvidence": "Generic cache write evidence",
+        "contextWindow": "Context window"
       },
       "form": {
         "billingMode": "Billing mode",
@@ -1578,7 +1579,8 @@
         "editPrice": "Edit price",
         "setPrice": "Set price",
         "expressionReadOnly": "Edit expression billing",
-        "useCurrentVersion": "Use current version"
+        "useCurrentVersion": "Use current version",
+        "useAllEvidence": "Fill all"
       },
       "preview": {
         "loaded_one": "Matched {{count}} public reference price",
@@ -1595,6 +1597,8 @@
         "tieredWarning": "The source includes tiered, priority, flex, batch, or long-context pricing that the current billing engine cannot represent equivalently. Direct application is blocked.",
         "missing": "Not provided",
         "use": "Use the {{field}} reference",
+        "useContext": "Use the source context window",
+        "staged": "Added to draft",
         "cacheWriteBoundary": "This cannot map equivalently to 5m or 1h. Confirm both formal prices manually.",
         "source": "Source entry {{name}} · {{model}}, updated {{updated}}",
         "unknownDate": "unknown"
@@ -1682,7 +1686,7 @@
         "createVersion": "Create new price",
         "updateVersion": "Update from v{{version}}",
         "expression": "Expression source",
-        "boundary": "Every price is written in one transaction. Any missing model or version conflict fails the whole batch. Success refreshes the runtime snapshot immediately and affects subsequent new requests.",
+        "boundary": "Every price and explicitly adopted context window is written in one transaction. Any missing model or version conflict fails the whole batch. Success refreshes the runtime snapshot immediately and affects subsequent new requests.",
         "success_one": "Applied pricing for {{count}} model and refreshed the model catalog.",
         "success_other": "Applied pricing for {{count}} models and refreshed the model catalog."
       },
@@ -2009,6 +2013,7 @@
   },
   "models": {
     "title": "Model catalog",
+    "discoveryLabel": "Discover and compare",
     "subtitle": "Browse public model pricing, or sign in for models available to your group and their effective prices.",
     "public": {
       "scope": "Model catalog",
@@ -2031,13 +2036,33 @@
     "loadedCount_one": "{{count}} model loaded",
     "loadedCount_other": "{{count}} models loaded",
     "filters": {
+      "title": "Filter models",
+      "description": "Narrow results by provider, price, model features, and currently callable protocols.",
+      "action": "Filters",
+      "reset": "Reset",
+      "sidebarHint": "Start with a provider, then refine by features",
       "search": "Search models",
       "searchPlaceholder": "Enter a name, Canonical identifier, or provider",
       "billingMode": "Billing mode",
+      "allShort": "All",
+      "providers": "Providers",
+      "allProviders": "All providers",
+      "providersLoading": "Loading providers",
+      "providersError": "Providers are temporarily unavailable. Other filters still work.",
+      "retryProviders": "Retry",
+      "selectedCount_one": "{{count}} selected",
+      "selectedCount_other": "{{count}} selected",
+      "features": "Model features",
+      "inputModalities": "Input modalities",
+      "outputModalities": "Output modalities",
+      "capabilities": "Model capabilities",
+      "protocols": "Callable protocols",
+      "protocolsLoginHint": "Sign in to filter by protocols callable for your current group.",
       "all": "All modes"
     },
     "billing": {
       "per_token": "Per token",
+      "per_token_short": "Usage",
       "free": "Free"
     },
     "columns": {
@@ -2061,6 +2086,8 @@
       "descriptionUnknown": "No model description is available.",
       "context": "{{value}} tokens",
       "contextUnknown": "No verified context value",
+      "contextShort": "{{value}} context",
+      "contextUnknownShort": "Context unknown",
       "noAdditionalCapabilities": "No reasoning or tool-call capability declared",
       "protocolsUnavailable": "No callable protocol is available to this account",
       "protocolsPublicUnknown": "The public catalog does not promise current callable protocols",
@@ -2083,8 +2110,8 @@
     },
     "capabilities": {
       "reasoning": "Reasoning",
-      "toolCalls": "Tool calls",
-      "responsesCompact": "Context compaction"
+      "tool_calls": "Tool calls",
+      "responses_compact": "Context compaction"
     },
     "protocols": {
       "openai_chat": "OpenAI Chat",
@@ -2123,9 +2150,15 @@
     },
     "empty": {
       "title": "No models to display",
-      "body": "There are no model records in the current pricing scope.",
+      "body": "Models appear after their publishing state and pricing are configured.",
       "filteredTitle": "No matching models",
-      "filteredBody": "Adjust the model name or billing-mode filter."
+      "filteredBody": "Adjust the search term or filters.",
+      "admin": {
+        "visibility": "The guest catalog requires public visibility. Signed-in catalogs also accept authenticated visibility.",
+        "lifecycle": "Lifecycle must be active or deprecated. Hidden drafts are never published automatically.",
+        "pricing": "A valid price is required. Signed-in catalogs also require a callable channel for the current group.",
+        "action": "Open model management"
+      }
     },
     "error": {
       "title": "Model catalog unavailable",

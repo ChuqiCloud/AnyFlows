@@ -1,6 +1,5 @@
 import {
   ArrowRight,
-  Boxes,
   Gauge,
   KeyRound,
   Layers,
@@ -18,9 +17,7 @@ import { LogoMarquee } from '@/components/brand/logo-marquee'
 import { ParticleField } from '@/components/brand/particle-field'
 import { RibbonBeam } from '@/components/brand/ribbon-beam'
 import { KineticText } from '@/components/kinetic/kinetic-text'
-import { LanguageToggle } from '@/components/language-toggle'
-import { MotionToggle } from '@/components/motion-toggle'
-import { ThemeToggle } from '@/components/theme-toggle'
+import { PublicSiteHeader } from '@/components/layout/public-site-header'
 import { Button } from '@/components/ui/button'
 import { InView } from '@/components/ui/in-view'
 import { SpotlightCard } from '@/components/ui/spotlight-card'
@@ -28,7 +25,6 @@ import { BillingVisual } from '@/features/landing/billing-visual'
 import { ApiConsole } from '@/features/landing/api-console'
 import { ProtocolMatrix } from '@/features/landing/protocol-matrix'
 import { RouteVisual } from '@/features/landing/route-visual'
-import { SiteBrandMark } from '@/features/site-settings/site-brand-mark'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
 
 /** 三种部署形态，顺序对应 design/00-overview.md 里的场景编号 */
@@ -45,10 +41,6 @@ const secondaryFeatures = [
   { key: 'pool', icon: Radio },
   { key: 'observability', icon: ShieldCheck },
 ] as const
-
-const openConsole = () => {
-  window.location.hash = '#/console'
-}
 
 export function LandingPage() {
   const { t } = useTranslation()
@@ -76,31 +68,7 @@ export function LandingPage() {
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-[var(--hairline)] bg-background/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-[1120px] items-center justify-between px-3 sm:px-6">
-          <div className="flex items-center gap-2.5">
-            <SiteBrandMark siteName={siteName} logoUrl={site?.brand.logo_url} />
-            <span className="hidden text-[0.9375rem] font-semibold sm:inline">
-              {siteName}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Button variant="ghost" size="sm" asChild>
-              <a href="#/models" title={t('landing.nav.models')}>
-                <Boxes className="size-4" aria-hidden="true" />
-                <span className="hidden md:inline">{t('landing.nav.models')}</span>
-                <span className="sr-only md:hidden">{t('landing.nav.models')}</span>
-              </a>
-            </Button>
-            <LanguageToggle />
-            <MotionToggle />
-            <ThemeToggle />
-            <Button size="sm" onClick={openConsole}>
-              {t('landing.nav.console')}
-            </Button>
-          </div>
-        </div>
-      </header>
+      <PublicSiteHeader siteName={siteName} logoUrl={site?.brand.logo_url} />
 
       <main>
         {/*

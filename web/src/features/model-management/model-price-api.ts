@@ -69,6 +69,7 @@ export function useApplyAdminModelPrices() {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: adminModelPriceQueryKey }),
+        queryClient.invalidateQueries({ queryKey: ['admin-model-metadata'] }),
         queryClient.invalidateQueries({ queryKey: ['model-catalog'] }),
       ])
     },

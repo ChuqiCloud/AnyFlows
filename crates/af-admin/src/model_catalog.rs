@@ -32,6 +32,32 @@ pub enum ModelCatalogBillingMode {
     Free,
 }
 
+/// 模型目录可筛选的闭合输入或输出模态。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelCatalogModality {
+    /// 文本内容。
+    Text,
+    /// 图像内容。
+    Image,
+    /// 音频内容。
+    Audio,
+    /// 视频内容。
+    Video,
+}
+
+/// 模型目录可筛选的闭合扩展能力。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelCatalogCapability {
+    /// 模型声明支持推理。
+    Reasoning,
+    /// 模型声明支持工具调用。
+    ToolCalls,
+    /// 当前运行时支持 OpenAI Responses Compact。
+    ResponsesCompact,
+}
+
 /// 模型目录价格所处的公开范围。
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -47,15 +73,29 @@ pub enum ModelCatalogPricingScope {
 pub struct ModelCatalogQuery {
     search: Option<String>,
     billing_mode: Option<ModelCatalogBillingMode>,
+    providers: Vec<String>,
+    input_modalities: Vec<ModelCatalogModality>,
+    output_modalities: Vec<ModelCatalogModality>,
+    capabilities: Vec<ModelCatalogCapability>,
+    protocols: Vec<Protocol>,
     after: Option<String>,
     limit: usize,
 }
 
 impl ModelCatalogQuery {
-    /// 校验搜索文本、模型名游标和单页容量。
+    /// 校验搜索文本、闭合筛选集合、模型名游标和单页容量。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "参数与稳定模型目录查询字段一一对应"
+    )]
     pub fn new(
         search: Option<String>,
         billing_mode: Option<ModelCatalogBillingMode>,
+        providers: Vec<String>,
+        input_modalities: Vec<ModelCatalogModality>,
+        output_modalities: Vec<ModelCatalogModality>,
+        capabilities: Vec<ModelCatalogCapability>,
+        protocols: Vec<Protocol>,
         after: Option<String>,
         limit: usize,
     ) -> Result<Self, ModelCatalogReadError> {
@@ -69,12 +109,23 @@ impl ModelCatalogQuery {
             || after
                 .as_deref()
                 .is_some_and(|value| !is_valid_model_name(value))
+            || !is_sorted_unique(&providers)
+            || providers.iter().any(|value| !is_valid_provider(value))
+            || !is_sorted_unique(&input_modalities)
+            || !is_sorted_unique(&output_modalities)
+            || !is_sorted_unique(&capabilities)
+            || !is_sorted_unique(&protocols)
         {
             return Err(ModelCatalogReadError::InvalidQuery);
         }
         Ok(Self {
             search,
             billing_mode,
+            providers,
+            input_modalities,
+            output_modalities,
+            capabilities,
+            protocols,
             after,
             limit,
         })
@@ -90,6 +141,36 @@ impl ModelCatalogQuery {
     #[must_use]
     pub const fn billing_mode(&self) -> Option<ModelCatalogBillingMode> {
         self.billing_mode
+    }
+
+    /// 返回权威供应商标识筛选集合；集合内任一供应商匹配即可。
+    #[must_use]
+    pub fn providers(&self) -> &[String] {
+        &self.providers
+    }
+
+    /// 返回输入模态筛选集合；集合内任一模态匹配即可。
+    #[must_use]
+    pub fn input_modalities(&self) -> &[ModelCatalogModality] {
+        &self.input_modalities
+    }
+
+    /// 返回输出模态筛选集合；集合内任一模态匹配即可。
+    #[must_use]
+    pub fn output_modalities(&self) -> &[ModelCatalogModality] {
+        &self.output_modalities
+    }
+
+    /// 返回扩展能力筛选集合；模型必须满足集合内全部能力。
+    #[must_use]
+    pub fn capabilities(&self) -> &[ModelCatalogCapability] {
+        &self.capabilities
+    }
+
+    /// 返回运行时协议筛选集合；集合内任一协议匹配即可。
+    #[must_use]
+    pub fn protocols(&self) -> &[Protocol] {
+        &self.protocols
     }
 
     /// 返回上一页最后一个模型名。
@@ -110,6 +191,11 @@ impl Default for ModelCatalogQuery {
         Self {
             search: None,
             billing_mode: None,
+            providers: Vec::new(),
+            input_modalities: Vec::new(),
+            output_modalities: Vec::new(),
+            capabilities: Vec::new(),
+            protocols: Vec::new(),
             after: None,
             limit: DEFAULT_MODEL_CATALOG_PAGE_SIZE,
         }
@@ -122,6 +208,11 @@ impl fmt::Debug for ModelCatalogQuery {
             .debug_struct("ModelCatalogQuery")
             .field("has_search", &self.search.is_some())
             .field("billing_mode", &self.billing_mode)
+            .field("provider_count", &self.providers.len())
+            .field("input_modality_count", &self.input_modalities.len())
+            .field("output_modality_count", &self.output_modalities.len())
+            .field("capability_count", &self.capabilities.len())
+            .field("protocol_count", &self.protocols.len())
             .field("has_after", &self.after.is_some())
             .field("limit", &self.limit)
             .finish()
@@ -515,6 +606,91 @@ pub struct ModelCatalogPage {
     next_cursor: Option<String>,
 }
 
+/// 当前目录访问范围内的一项供应商聚合。
+#[derive(Clone, Eq, PartialEq)]
+pub struct ModelCatalogProvider {
+    name: String,
+    model_count: u64,
+}
+
+impl ModelCatalogProvider {
+    /// 构造经过权威目录扫描得到的非空供应商与正模型数量。
+    pub fn new(name: String, model_count: u64) -> Result<Self, ModelCatalogReadError> {
+        if !is_valid_provider(&name) || model_count == 0 {
+            return Err(ModelCatalogReadError::Internal);
+        }
+        Ok(Self { name, model_count })
+    }
+
+    /// 返回模型元数据中的权威供应商标识。
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// 返回当前目录访问范围内属于该供应商的模型数量。
+    #[must_use]
+    pub const fn model_count(&self) -> u64 {
+        self.model_count
+    }
+}
+
+impl fmt::Debug for ModelCatalogProvider {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ModelCatalogProvider")
+            .field("model_count", &self.model_count)
+            .finish_non_exhaustive()
+    }
+}
+
+/// 当前访问主体完整可见范围内的供应商聚合。
+pub struct ModelCatalogProviderSummary {
+    pricing_scope: ModelCatalogPricingScope,
+    providers: Vec<ModelCatalogProvider>,
+}
+
+impl ModelCatalogProviderSummary {
+    /// 组合权威价格范围和按供应商标识稳定排序的聚合项。
+    pub fn new(
+        pricing_scope: ModelCatalogPricingScope,
+        providers: Vec<ModelCatalogProvider>,
+    ) -> Result<Self, ModelCatalogReadError> {
+        if providers
+            .windows(2)
+            .any(|window| window[0].name() >= window[1].name())
+        {
+            return Err(ModelCatalogReadError::Internal);
+        }
+        Ok(Self {
+            pricing_scope,
+            providers,
+        })
+    }
+
+    /// 返回供应商聚合对应的目录价格范围。
+    #[must_use]
+    pub const fn pricing_scope(&self) -> ModelCatalogPricingScope {
+        self.pricing_scope
+    }
+
+    /// 返回完整、稳定排序的供应商聚合项。
+    #[must_use]
+    pub fn providers(&self) -> &[ModelCatalogProvider] {
+        &self.providers
+    }
+}
+
+impl fmt::Debug for ModelCatalogProviderSummary {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ModelCatalogProviderSummary")
+            .field("pricing_scope", &self.pricing_scope)
+            .field("provider_count", &self.providers.len())
+            .finish()
+    }
+}
+
 impl ModelCatalogPage {
     /// 组合价格范围、本页条目与可选的下一页模型名游标。
     #[must_use]
@@ -575,6 +751,13 @@ pub enum ModelCatalogReadError {
 pub type ModelCatalogListFuture<'a> =
     Pin<Box<dyn Future<Output = Result<ModelCatalogPage, ModelCatalogReadError>> + Send + 'a>>;
 
+/// 模型目录供应商聚合异步读取结果。
+pub type ModelCatalogProvidersFuture<'a> = Pin<
+    Box<
+        dyn Future<Output = Result<ModelCatalogProviderSummary, ModelCatalogReadError>> + Send + 'a,
+    >,
+>;
+
 /// 游客与登录用户共用的模型目录异步只读端口。
 pub trait ModelCatalogReader: Send + Sync {
     /// 无会话时读取公开基础目录，有会话时按数据库回查分组读取可用模型。
@@ -583,6 +766,12 @@ pub trait ModelCatalogReader: Send + Sync {
         authentication: Option<SessionAuthentication>,
         query: &'a ModelCatalogQuery,
     ) -> ModelCatalogListFuture<'a>;
+
+    /// 返回与模型目录相同权限范围内的完整供应商及模型数量。
+    fn providers(
+        &self,
+        authentication: Option<SessionAuthentication>,
+    ) -> ModelCatalogProvidersFuture<'_>;
 }
 
 fn is_valid_model_name(value: &str) -> bool {
@@ -590,6 +779,14 @@ fn is_valid_model_name(value: &str) -> bool {
         && value.len() <= MAX_MODEL_NAME_BYTES
         && value.trim() == value
         && !value.chars().any(char::is_control)
+}
+
+fn is_valid_provider(value: &str) -> bool {
+    validate_text(value, MAX_ADMIN_MODEL_PROVIDER_BYTES).is_ok()
+}
+
+fn is_sorted_unique<T: Ord>(values: &[T]) -> bool {
+    values.windows(2).all(|window| window[0] < window[1])
 }
 
 #[cfg(test)]
@@ -601,16 +798,74 @@ mod tests {
         assert_eq!(ModelCatalogQuery::default().limit(), 24);
         for search in [Some(String::new()), Some(" padded ".to_owned())] {
             assert_eq!(
-                ModelCatalogQuery::new(search, None, None, 24),
+                ModelCatalogQuery::new(
+                    search,
+                    None,
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                    24,
+                ),
                 Err(ModelCatalogReadError::InvalidQuery)
             );
         }
         assert_eq!(
-            ModelCatalogQuery::new(None, None, Some("bad\nmodel".to_owned()), 24),
+            ModelCatalogQuery::new(
+                None,
+                None,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Some("bad\nmodel".to_owned()),
+                24,
+            ),
             Err(ModelCatalogReadError::InvalidQuery)
         );
         assert_eq!(
-            ModelCatalogQuery::new(None, None, None, 0),
+            ModelCatalogQuery::new(
+                None,
+                None,
+                vec!["OpenAI".to_owned(), "OpenAI".to_owned()],
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                None,
+                24,
+            ),
+            Err(ModelCatalogReadError::InvalidQuery)
+        );
+        assert_eq!(
+            ModelCatalogQuery::new(
+                None,
+                None,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                None,
+                0,
+            ),
+            Err(ModelCatalogReadError::InvalidQuery)
+        );
+        assert_eq!(
+            ModelCatalogQuery::new(
+                None,
+                None,
+                Vec::new(),
+                vec![ModelCatalogModality::Text, ModelCatalogModality::Text],
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                None,
+                24,
+            ),
             Err(ModelCatalogReadError::InvalidQuery)
         );
 

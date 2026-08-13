@@ -505,6 +505,13 @@ impl ModelCatalogReader for RejectModelCatalog {
     ) -> af_admin::ModelCatalogListFuture<'a> {
         Box::pin(async { Err(ModelCatalogReadError::Internal) })
     }
+
+    fn providers(
+        &self,
+        _authentication: Option<af_admin::SessionAuthentication>,
+    ) -> af_admin::ModelCatalogProvidersFuture<'_> {
+        Box::pin(async { Err(ModelCatalogReadError::Internal) })
+    }
 }
 
 impl PlaygroundShareService for RejectPlaygroundShares {

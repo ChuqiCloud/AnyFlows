@@ -468,6 +468,8 @@
 
   html {
     @apply font-sans;
+    overflow-y: scroll;
+    scrollbar-gutter: stable;
     /* -apple-system 不支持 OpenType 特性标志，但 kern/liga 在浏览器端无害 */
     font-feature-settings: "kern" 1, "liga" 1;
   }

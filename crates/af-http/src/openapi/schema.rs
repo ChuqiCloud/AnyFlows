@@ -521,6 +521,25 @@ pub(crate) enum ModelCatalogBillingModeSchema {
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
 #[derive(ToSchema)]
+#[schema(as = ModelCatalogModality, rename_all = "snake_case")]
+pub(crate) enum ModelCatalogModalitySchema {
+    Text,
+    Image,
+    Audio,
+    Video,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
+#[schema(as = ModelCatalogCapability, rename_all = "snake_case")]
+pub(crate) enum ModelCatalogCapabilitySchema {
+    Reasoning,
+    ToolCalls,
+    ResponsesCompact,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
 #[schema(as = ModelCatalogPricingScope, rename_all = "snake_case")]
 pub(crate) enum ModelCatalogPricingScopeSchema {
     PublicBase,

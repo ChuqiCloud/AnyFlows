@@ -548,6 +548,7 @@ export type AdminModelPriceSourceCandidate = {
     source_model: string;
     source_name: string;
     last_updated: string | null;
+    context_window: number | null;
     source_deprecation_date: string | null;
     costs: AdminModelPriceSourceCosts;
     has_tiered_pricing: boolean;
@@ -577,6 +578,7 @@ export type AdminModelPriceValues = {
 export type AdminModelPriceWriteItem = {
     model: string;
     expected_version: number | null;
+    context_window: number | null;
     billing_mode: AdminModelPriceBillingMode;
     prices: AdminModelPriceValues;
     billing_expression?: string | null;
@@ -1078,6 +1080,7 @@ export type ManagementError = {
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
+export type ModelCatalogCapability = 'reasoning' | 'tool_calls' | 'responses_compact';
 export type ModelCatalogItem = {
     model: string;
     display_name: string;
@@ -1105,8 +1108,17 @@ export type ModelCatalogListResponse = {
     models: Array<ModelCatalogItem>;
     next_cursor: string | null;
 };
+export type ModelCatalogModality = 'text' | 'image' | 'audio' | 'video';
 export type ModelCatalogPricingScope = 'public_base' | 'group';
 export type ModelCatalogProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
+export type ModelCatalogProvider = {
+    name: string;
+    model_count: number;
+};
+export type ModelCatalogProviderListResponse = {
+    pricing_scope: ModelCatalogPricingScope;
+    providers: Array<ModelCatalogProvider>;
+};
 export type ModelCatalogRatios = {
     group_micros: string;
     group_model_micros: string;
@@ -3040,6 +3052,11 @@ export type ListModelsData = {
     query?: {
         q?: string;
         billing_mode?: ModelCatalogBillingMode;
+        provider?: Array<string>;
+        input_modality?: Array<ModelCatalogModality>;
+        output_modality?: Array<ModelCatalogModality>;
+        capability?: Array<ModelCatalogCapability>;
+        protocol?: Array<ModelCatalogProtocol>;
         after?: string;
         limit?: number;
     };
@@ -3055,6 +3072,21 @@ export type ListModelsResponses = {
     200: ModelCatalogListResponse;
 };
 export type ListModelsResponse = ListModelsResponses[keyof ListModelsResponses];
+export type ListModelProvidersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/model-providers';
+};
+export type ListModelProvidersErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListModelProvidersError = ListModelProvidersErrors[keyof ListModelProvidersErrors];
+export type ListModelProvidersResponses = {
+    200: ModelCatalogProviderListResponse;
+};
+export type ListModelProvidersResponse = ListModelProvidersResponses[keyof ListModelProvidersResponses];
 export type ListAdminModelsData = {
     body?: never;
     path?: never;

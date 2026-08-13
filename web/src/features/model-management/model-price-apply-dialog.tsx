@@ -47,6 +47,12 @@ export function ModelPriceApplyDialog(props: ModelPriceApplyDialogProps) {
                 </span>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[0.6875rem] sm:grid-cols-5">
+                {staged.contextWindow !== null ? (
+                  <div className="col-span-2 sm:col-span-5">
+                    <span className="text-muted-foreground">{t('modelManagement.prices.fields.contextWindow')}</span>{' '}
+                    <span className="font-mono tabular-nums">{new Intl.NumberFormat().format(staged.contextWindow)} tokens</span>
+                  </div>
+                ) : null}
                 {staged.draft.billingMode === 'expression' ? (
                   <div className="col-span-2 grid gap-1 sm:col-span-5">
                     <span className="text-muted-foreground">{t('modelManagement.prices.apply.expression')}</span>

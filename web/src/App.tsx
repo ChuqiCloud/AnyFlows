@@ -171,7 +171,7 @@ function ManagementEntry({
                         : view === 'debug-traces'
                           ? 'debugTraces.title'
                         : 'dashboard.title'
-  const content = view === 'channels'
+  const content = (admin: boolean) => view === 'channels'
     ? <ChannelPage />
     : view === 'credentials'
       ? <CredentialPage initialChannelId={credentialChannelId} />
@@ -210,7 +210,7 @@ function ManagementEntry({
               : view === 'invitations'
                 ? <InvitationPage />
               : view === 'models'
-                ? <ModelPage authenticated />
+                ? <ModelPage authenticated admin={admin} />
                 : view === 'playground'
                   ? <PlaygroundPage />
                   : view === 'video-tasks'
@@ -242,7 +242,7 @@ function ManagementEntry({
     >
       {(session) => (
         <AppShell title={t(titleKey)} currentUser={session.user} onLogout={onLogout}>
-          {content}
+          {content(session.user.role === 'admin')}
         </AppShell>
       )}
     </SessionBoundary>
