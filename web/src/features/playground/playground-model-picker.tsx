@@ -40,12 +40,19 @@ type PlaygroundModelPickerProps = {
 export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
+  const [draftValues, setDraftValues] = useState(props.values)
   const summary = props.values.length === 1
     ? props.values[0]
     : t('playground.model.selectedCount', { count: props.values.length })
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) setDraftValues(props.values)
+        setOpen(nextOpen)
+      }}
+    >
       <SheetTrigger asChild>
         <Button
           type="button"
@@ -89,7 +96,7 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
           <SheetTitle>{t('playground.model.title')}</SheetTitle>
           <SheetDescription>
             {t('playground.model.selectionCount', {
-              count: props.values.length,
+              count: draftValues.length,
               max: MAX_PLAYGROUND_MODELS,
             })}
           </SheetDescription>
@@ -133,11 +140,11 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
           ) : (
             <div className="grid gap-0.5">
               {props.models.map((item) => {
-                const selected = props.values.includes(item.model)
+                const selected = draftValues.includes(item.model)
                 const protocol = playgroundProtocolForModel(item)
                 const availableProtocols = item.available_protocols ?? []
-                const disabled = (selected && props.values.length === 1)
-                  || (!selected && props.values.length >= MAX_PLAYGROUND_MODELS)
+                const disabled = (selected && draftValues.length === 1)
+                  || (!selected && draftValues.length >= MAX_PLAYGROUND_MODELS)
                   || protocol === undefined
                 return (
                   <button
@@ -151,7 +158,7 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
                       'hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50',
                       selected && 'bg-surface-2',
                     )}
-                    onClick={() => props.onChange(togglePlaygroundModel(props.values, item.model))}
+                    onClick={() => setDraftValues(togglePlaygroundModel(draftValues, item.model))}
                   >
                     <Check className={cn('size-3.5 shrink-0 text-info', !selected && 'opacity-0')} aria-hidden="true" />
                     <span className="min-w-0 flex-1 truncate font-mono text-xs">{item.model}</span>
@@ -189,7 +196,14 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
           )}
         </div>
         <div className="border-t border-[var(--hairline)] p-3">
-          <Button type="button" className="w-full" onClick={() => setOpen(false)}>
+          <Button
+            type="button"
+            className="w-full"
+            onClick={() => {
+              props.onChange(draftValues)
+              setOpen(false)
+            }}
+          >
             <Check aria-hidden="true" />{t('playground.model.done')}
           </Button>
         </div>

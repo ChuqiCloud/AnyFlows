@@ -34,6 +34,16 @@ export function createPlaygroundSession(model: string): PlaygroundSession {
   return { model, messages: [], requestState: 'idle' }
 }
 
+/** 把被替换模型的已完成上下文交给新模型继续对话，错误残留与旧模型用量不随之迁移。 */
+function replacePlaygroundSessionModel(session: PlaygroundSession, model: string): PlaygroundSession {
+  const messages = playgroundRequestContext(session.messages).map((message) => ({ ...message }))
+  return {
+    model,
+    messages,
+    requestState: messages.length > 0 ? 'complete' : 'idle',
+  }
+}
+
 function updateAssistant(
   messages: PlaygroundMessage[],
   assistantId: string,
@@ -48,9 +58,19 @@ export function playgroundSessionReducer(
   action: PlaygroundSessionAction,
 ): PlaygroundSession[] {
   if (action.type === 'sync') {
-    return normalizePlaygroundModels(action.models).map((model) => (
-      sessions.find((session) => session.model === model) ?? createPlaygroundSession(model)
-    ))
+    const models = normalizePlaygroundModels(action.models)
+    const selected = new Set(models)
+    const replacements = sessions.filter((session) => !selected.has(session.model))
+    let replacementIndex = 0
+    return models.map((model) => {
+      const current = sessions.find((session) => session.model === model)
+      if (current) return current
+      const replacement = replacements[replacementIndex]
+      replacementIndex += 1
+      return replacement
+        ? replacePlaygroundSessionModel(replacement, model)
+        : createPlaygroundSession(model)
+    })
   }
   if (action.type === 'clear') {
     return normalizePlaygroundModels(action.models).map(createPlaygroundSession)

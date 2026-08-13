@@ -44,11 +44,6 @@ export function PlaygroundPage() {
   }
 
   const changeModels = (models: string[]) => {
-    // 已结束的比较结果属于原模型集合；切换时开启新会话，避免新模型伪装成旧轮次参与者。
-    if (comparison.hasConversation) {
-      history.startNewConversation()
-      comparison.clear()
-    }
     configuration.setSelectedModels(models)
   }
 

@@ -111,6 +111,47 @@ test('清空比较会话保留模型顺序并移除所有运行状态', () => {
   assert.equal(playgroundOverallState(cleared), 'idle')
 })
 
+test('替换模型时保留已完成上下文并继续使用当前会话', () => {
+  const sessions = [{
+    model: 'model-a',
+    requestState: 'complete',
+    usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+    messages: [
+      message('user-a', 'user', 'hello'),
+      message('assistant-a', 'assistant', 'world'),
+    ],
+  }]
+  const switched = playgroundSessionReducer(sessions, {
+    type: 'sync',
+    models: ['model-b'],
+  })
+
+  assert.equal(switched[0].model, 'model-b')
+  assert.deepEqual(switched[0].messages.map((item) => item.content), ['hello', 'world'])
+  assert.equal(switched[0].requestState, 'complete')
+  assert.equal(switched[0].usage, undefined)
+})
+
+test('增加比较模型时保留原列并让新增列从当前轮开始', () => {
+  const original = {
+    model: 'model-a',
+    requestState: 'complete',
+    messages: [
+      message('user-a', 'user', 'hello'),
+      message('assistant-a', 'assistant', 'world'),
+    ],
+  }
+  const expanded = playgroundSessionReducer([original], {
+    type: 'sync',
+    models: ['model-a', 'model-b'],
+  })
+
+  assert.equal(expanded[0], original)
+  assert.equal(expanded[1].model, 'model-b')
+  assert.equal(expanded[1].messages.length, 0)
+  assert.equal(expanded[1].requestState, 'idle')
+})
+
 test('下一轮上下文成对剔除失败或取消的旧往返', () => {
   const context = playgroundRequestContext([
     message('user-a', 'user', 'failed prompt'),
