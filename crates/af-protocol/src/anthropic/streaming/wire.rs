@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use super::super::response_wire::{
     AssistantRoleWire, MessageObjectWire, OutputTokensDetailsWire, RefusalStopDetailsWire,
-    ServerToolUsageWire, StopReasonWire, ToolCallerWire, UsageWire,
+    ServerToolUsageWire, ServiceTierWire, StopReasonWire, ToolCallerWire, UsageWire,
 };
 
 /// Anthropic Messages 的单个流式 data 事件。
@@ -138,6 +138,8 @@ pub(super) struct MessageDeltaUsageWire {
     pub(super) output_tokens_details: Option<OutputTokensDetailsWire>,
     #[serde(default)]
     pub(super) server_tool_use: Option<ServerToolUsageWire>,
+    #[serde(default)]
+    pub(super) service_tier: Option<ServiceTierWire>,
 }
 
 /// Anthropic 流内错误；正文只用于结构校验，不进入 Canonical 或 Debug。
