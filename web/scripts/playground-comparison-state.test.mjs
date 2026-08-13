@@ -14,6 +14,14 @@ import {
   normalizePlaygroundModels,
   togglePlaygroundModel,
 } from '../src/features/playground/playground-model-selection.ts'
+import {
+  filterPlaygroundModels,
+  playgroundModelProviderCategories,
+} from '../src/features/playground/playground-model-filter.ts'
+import {
+  preferredPlaygroundProtocol,
+  resolvePlaygroundTargets,
+} from '../src/features/playground/playground-protocol.ts'
 
 function message(id, role, content, status = 'complete') {
   return { id, role, content, status }
@@ -202,4 +210,37 @@ test('空白系统提示词不会注入请求', () => {
   assert.equal(normalizePlaygroundInstructions(''), undefined)
   assert.equal(normalizePlaygroundInstructions('  \n\t  '), undefined)
   assert.equal(normalizePlaygroundInstructions('  请简洁回答  '), '请简洁回答')
+})
+
+test('Anthropic-only 模型使用 Messages 协议进入试炼场', () => {
+  assert.equal(preferredPlaygroundProtocol(['anthropic']), 'anthropic')
+  assert.deepEqual(resolvePlaygroundTargets(
+    ['gpt-5.5', 'deepseek-v4-flash'],
+    { 'gpt-5.5': 'openai_responses', 'deepseek-v4-flash': 'anthropic' },
+  ), [
+    { model: 'gpt-5.5', protocol: 'openai_responses' },
+    { model: 'deepseek-v4-flash', protocol: 'anthropic' },
+  ])
+})
+
+test('模型选择分类组合供应商与协议过滤', () => {
+  const models = [
+    { model: 'gpt-5.5', provider: 'openai', available_protocols: ['openai_responses'] },
+    { model: 'deepseek-v4-flash', provider: 'deepseek', available_protocols: ['anthropic'] },
+    { model: 'deepseek-v4-pro', provider: 'deepseek', available_protocols: ['anthropic'] },
+  ]
+  assert.deepEqual(playgroundModelProviderCategories(models), [
+    { value: 'all', count: 3 },
+    { value: 'deepseek', count: 2 },
+    { value: 'openai', count: 1 },
+  ])
+  assert.deepEqual(
+    filterPlaygroundModels(models, { provider: 'deepseek', protocol: 'anthropic' })
+      .map((item) => item.model),
+    ['deepseek-v4-flash', 'deepseek-v4-pro'],
+  )
+  assert.deepEqual(
+    filterPlaygroundModels(models, { provider: 'openai', protocol: 'anthropic' }),
+    [],
+  )
 })

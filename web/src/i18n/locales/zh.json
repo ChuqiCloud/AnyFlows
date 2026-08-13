@@ -2332,8 +2332,13 @@
       "empty": "没有匹配的可用模型",
       "selectedCount": "已选 {{count}} 个模型",
       "selectionCount": "已选择 {{count}} / {{max}} 个模型",
+      "catalogCount": "{{count}} 个可见模型",
       "selectedLabel": "已选择的比较模型",
       "locked": "当前会话正在生成或保存，完成后可切换模型",
+      "providers": "供应商",
+      "allModels": "全部模型",
+      "protocolsLabel": "协议筛选",
+      "allProtocols": "全部协议",
       "protocols": {
         "openai_chat": "OpenAI Chat",
         "openai_responses": "OpenAI Responses",
@@ -2344,7 +2349,7 @@
         "jina_rerank": "Jina Rerank",
         "cohere_rerank": "Cohere Rerank",
         "xai_video": "xAI 视频",
-        "anthropic": "Anthropic",
+        "anthropic": "Anthropic Messages",
         "gemini": "Gemini",
         "unavailable": "试炼场暂不支持"
       },
