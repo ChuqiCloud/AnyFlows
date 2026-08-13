@@ -128,7 +128,7 @@ export function PlaygroundPage() {
   }
 
   return (
-    <div className="flex min-h-[calc(100dvh-5.75rem)] min-w-0 flex-col gap-2.5">
+    <div className="flex h-[calc(100dvh-5.75rem)] min-h-[36rem] min-w-0 flex-col gap-2.5">
       <PlaygroundPageHeader
         clearDisabled={!comparison.hasConversation && !comparison.draft}
         historyControl={(
@@ -178,6 +178,7 @@ export function PlaygroundPage() {
             status={status}
             streaming={comparison.streaming}
             onDraftChange={comparison.setDraft}
+            onRetry={comparison.retry}
             onSend={comparison.send}
             onStopAll={comparison.stopAll}
             onStopModel={comparison.stopModel}

@@ -5,8 +5,10 @@ import {
   createPlaygroundSession,
   playgroundOverallState,
   playgroundRequestContext,
+  playgroundRetryTurn,
   playgroundSessionReducer,
 } from '../src/features/playground/playground-comparison-state.ts'
+import { isPlaygroundTranscriptNearBottom } from '../src/features/playground/playground-scroll.ts'
 import {
   normalizePlaygroundModels,
   togglePlaygroundModel,
@@ -119,4 +121,37 @@ test('下一轮上下文成对剔除失败或取消的旧往返', () => {
   ])
 
   assert.deepEqual(context.map((item) => item.id), ['user-b', 'assistant-b', 'user-c'])
+})
+
+test('失败轮次重试复用原用户消息并清空助手残留正文', () => {
+  const failedSession = {
+    model: 'model-a',
+    requestState: 'error',
+    errorKind: 'upstream_unavailable',
+    messages: [
+      message('user-a', 'user', 'first'),
+      message('assistant-a', 'assistant', 'answer'),
+      message('user-b', 'user', 'retry me'),
+      message('assistant-b', 'assistant', 'partial', 'error'),
+    ],
+  }
+  const turn = playgroundRetryTurn(failedSession)
+  assert.equal(turn.assistantId, 'assistant-b')
+  assert.deepEqual(turn.requestMessages.map((item) => item.id), ['user-a', 'assistant-a', 'user-b'])
+
+  const retried = playgroundSessionReducer([failedSession], {
+    type: 'retry',
+    model: 'model-a',
+    assistantId: 'assistant-b',
+  })[0]
+  assert.equal(retried.requestState, 'streaming')
+  assert.equal(retried.errorKind, undefined)
+  assert.equal(retried.messages[3].status, 'streaming')
+  assert.equal(retried.messages[3].content, '')
+})
+
+test('仅在对话视口贴近底部时保持流式跟随', () => {
+  assert.equal(isPlaygroundTranscriptNearBottom({ scrollHeight: 1000, scrollTop: 428, clientHeight: 500 }), true)
+  assert.equal(isPlaygroundTranscriptNearBottom({ scrollHeight: 1000, scrollTop: 300, clientHeight: 500 }), false)
+  assert.equal(isPlaygroundTranscriptNearBottom({ scrollHeight: 400, scrollTop: 0, clientHeight: 500 }), true)
 })

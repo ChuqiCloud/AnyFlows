@@ -27,6 +27,7 @@ type PlaygroundComparisonPanelProps = {
   status: PlaygroundDisplayStatus
   streaming: boolean
   onDraftChange: (value: string) => void
+  onRetry: (model: string) => Promise<boolean>
   onSend: () => Promise<boolean>
   onStopAll: () => void
   onStopModel: (model: string) => void
@@ -68,7 +69,7 @@ export function PlaygroundComparisonPanel(props: PlaygroundComparisonPanelProps)
   } as CSSProperties
 
   return (
-    <section className="grid min-h-[36rem] min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1 shadow-sm transition-[border-color,box-shadow] duration-200 ease-[var(--ease-ai-out)]">
+    <section className="grid h-full min-h-[36rem] min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1 shadow-sm transition-[border-color,box-shadow] duration-200 ease-[var(--ease-ai-out)]">
       {columnCount === 0 ? (
         <div className="ai-workbench-surface grid min-h-0 place-items-center overflow-hidden px-6 py-12 text-center">
           <div className="max-w-sm">
@@ -125,7 +126,12 @@ export function PlaygroundComparisonPanel(props: PlaygroundComparisonPanelProps)
                   )}
                   role={columnCount > 1 ? 'tabpanel' : undefined}
                 >
-                  <PlaygroundSessionColumn session={session} onStop={props.onStopModel} />
+                  <PlaygroundSessionColumn
+                    session={session}
+                    retryDisabled={props.streaming}
+                    onRetry={props.onRetry}
+                    onStop={props.onStopModel}
+                  />
                 </div>
               ))}
             </div>

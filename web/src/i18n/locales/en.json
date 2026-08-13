@@ -2276,7 +2276,6 @@
       "copyUrl": "Copy video URL",
       "openVideo": "Open video",
       "copied": "Copied"
-      ,"scrollToBottom": "Jump to latest message"
     }
   },
   "playground": {
@@ -2376,7 +2375,8 @@
       "clearConversation": "Clear conversation",
       "copyMessage": "Copy message",
       "copyCode": "Copy code",
-      "copied": "Copied"
+      "copied": "Copied",
+      "scrollToBottom": "Jump to latest message"
     },
     "usage": {
       "summary": "Input {{input}} / output {{output}}",

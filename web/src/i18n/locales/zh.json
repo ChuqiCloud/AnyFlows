@@ -2276,7 +2276,6 @@
       "copyUrl": "复制视频地址",
       "openVideo": "打开视频",
       "copied": "已复制"
-      ,"scrollToBottom": "回到最新消息"
     }
   },
   "playground": {
@@ -2376,7 +2375,8 @@
       "clearConversation": "清空会话",
       "copyMessage": "复制消息",
       "copyCode": "复制代码",
-      "copied": "已复制"
+      "copied": "已复制",
+      "scrollToBottom": "回到最新消息"
     },
     "usage": {
       "summary": "输入 {{input}} / 输出 {{output}}",

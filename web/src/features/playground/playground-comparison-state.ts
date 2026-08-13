@@ -16,6 +16,7 @@ export type PlaygroundTurnSeed = {
 export type PlaygroundSessionAction =
   | { type: 'sync'; models: string[] }
   | { type: 'begin'; turns: PlaygroundTurnSeed[] }
+  | { type: 'retry'; model: string; assistantId: string }
   | { type: 'append'; model: string; assistantId: string; delta: string }
   | { type: 'complete'; model: string; assistantId: string; usage: PlaygroundUsage }
   | { type: 'interrupt'; model: string; assistantId: string }
@@ -76,6 +77,19 @@ export function playgroundSessionReducer(
 
   return sessions.map((session) => {
     if (session.model !== action.model) return session
+    if (action.type === 'retry') {
+      return {
+        ...session,
+        messages: updateAssistant(session.messages, action.assistantId, (message) => (
+          message.status === 'error'
+            ? { ...message, content: '', status: 'streaming' }
+            : message
+        )),
+        requestState: 'streaming',
+        errorKind: undefined,
+        usage: undefined,
+      }
+    }
     if (action.type === 'append') {
       return {
         ...session,
@@ -121,6 +135,28 @@ export function playgroundSessionReducer(
       usage: undefined,
     }
   })
+}
+
+/** 找到当前失败轮次；重试复用原用户消息，不向会话重复插入一条提问。 */
+export function playgroundRetryTurn(session: PlaygroundSession) {
+  if (session.requestState !== 'error') return undefined
+
+  for (let index = session.messages.length - 1; index > 0; index -= 1) {
+    const assistant = session.messages[index]
+    const user = session.messages[index - 1]
+    if (
+      assistant.role === 'assistant'
+      && assistant.status === 'error'
+      && user.role === 'user'
+      && user.status === 'complete'
+    ) {
+      return {
+        assistantId: assistant.id,
+        requestMessages: session.messages.slice(0, index),
+      }
+    }
+  }
+  return undefined
 }
 
 export function hasPlaygroundConversation(sessions: PlaygroundSession[]) {
