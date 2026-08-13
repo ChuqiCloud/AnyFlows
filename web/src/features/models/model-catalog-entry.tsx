@@ -7,6 +7,7 @@ import type { ModelCatalogItem, ModelCatalogPricingScope } from '@/lib/api/gener
 import { cn } from '@/lib/utils'
 import { ModelCatalogExpandedDetails } from './model-catalog-expanded-details'
 import { ModelCatalogIdentity } from './model-catalog-identity'
+import { formatContextWindow, formatExactContextWindow } from './model-context-window'
 import { ModelPriceValue } from './model-price-value'
 
 type EntryProps = {
@@ -54,14 +55,19 @@ function ModelStateBadges({ className, item }: SummaryProps) {
 }
 
 function ModelCapabilitySummary({ className, item }: SummaryProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const exactContext = item.context_window === null
+    ? undefined
+    : t('models.values.context', {
+        value: formatExactContextWindow(item.context_window, i18n.resolvedLanguage),
+      })
   return (
     <div className={cn('flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-[0.6875rem] text-muted-foreground', className)}>
-      <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-1" title={exactContext}>
         <Gauge className="size-3" aria-hidden="true" />
         {item.context_window === null
           ? t('models.values.contextUnknownShort')
-          : t('models.values.contextShort', { value: new Intl.NumberFormat().format(item.context_window) })}
+          : t('models.values.contextShort', { value: formatContextWindow(item.context_window) })}
       </span>
       {item.supports_reasoning ? (
         <span className="inline-flex items-center gap-1"><BrainCircuit className="size-3" aria-hidden="true" />{t('models.capabilities.reasoning')}</span>
