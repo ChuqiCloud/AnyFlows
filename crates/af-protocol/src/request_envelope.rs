@@ -3,7 +3,7 @@ use std::fmt;
 use af_domain::Protocol;
 use bytes::Bytes;
 
-use crate::CanonicalRequest;
+use crate::{CanonicalRequest, Sampling, TokenCount};
 
 /// Canonical 请求及其可选的已验证源协议正文。
 ///
@@ -56,6 +56,25 @@ impl CanonicalRequestEnvelope {
     #[must_use]
     pub const fn canonical(&self) -> &CanonicalRequest {
         &self.canonical
+    }
+
+    /// 在客户端未声明输出上限时注入网关默认值，并取消原始正文直通资格。
+    ///
+    /// 默认值必须同时进入计费预估与上游重建正文，禁止只降低预扣额度却保留无界上游请求。
+    #[must_use]
+    pub fn with_default_max_output_tokens(mut self, default: TokenCount) -> Self {
+        if self.canonical.sampling.max_output_tokens().is_some() {
+            return self;
+        }
+        self.canonical.sampling = Sampling::new(
+            self.canonical.sampling.temperature(),
+            self.canonical.sampling.top_p(),
+            Some(default),
+            self.canonical.sampling.stop_sequences().to_vec(),
+        )
+        .expect("已验证的采样参数补充输出上限后必须仍然有效");
+        self.source = None;
+        self
     }
 
     /// 返回已验证源正文所属协议；程序内部构造的请求返回 `None`。
@@ -203,5 +222,53 @@ impl fmt::Debug for SameProtocolRequest {
             .field("body_bytes", &self.body.len())
             .field("has_requested_model_alias", &self.requested_model.is_some())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+
+    use super::*;
+    use crate::openai_responses;
+
+    fn responses_request(body: &'static [u8]) -> CanonicalRequestEnvelope {
+        openai_responses::parse_request_envelope(Bytes::from_static(body)).unwrap()
+    }
+
+    #[test]
+    fn missing_output_limit_uses_default_and_drops_source_passthrough() {
+        let request = responses_request(br#"{"model":"gpt-test","input":"hi","store":false}"#)
+            .with_default_max_output_tokens(TokenCount::new(8_192).unwrap());
+
+        assert_eq!(
+            request
+                .canonical()
+                .sampling
+                .max_output_tokens()
+                .unwrap()
+                .get(),
+            8_192
+        );
+        assert_eq!(request.source_protocol(), None);
+    }
+
+    #[test]
+    fn explicit_output_limit_is_preserved_with_source_passthrough() {
+        let request = responses_request(
+            br#"{"model":"gpt-test","input":"hi","store":false,"max_output_tokens":2048}"#,
+        )
+        .with_default_max_output_tokens(TokenCount::new(8_192).unwrap());
+
+        assert_eq!(
+            request
+                .canonical()
+                .sampling
+                .max_output_tokens()
+                .unwrap()
+                .get(),
+            2_048
+        );
+        assert_eq!(request.source_protocol(), Some(Protocol::OpenAiResponses));
     }
 }
