@@ -43,6 +43,15 @@ export function PlaygroundPage() {
     history.bindRestoredConversation(conversation)
   }
 
+  const changeModels = (models: string[]) => {
+    // 已结束的比较结果属于原模型集合；切换时开启新会话，避免新模型伪装成旧轮次参与者。
+    if (comparison.hasConversation) {
+      history.startNewConversation()
+      comparison.clear()
+    }
+    configuration.setSelectedModels(models)
+  }
+
   const renderModelPicker = (compact = false) => (
     <PlaygroundModelPicker
       compact={compact}
@@ -54,8 +63,8 @@ export function PlaygroundPage() {
       error={configuration.catalogInvalid}
       loadingMore={configuration.catalogQuery.isFetchingNextPage}
       hasMore={Boolean(configuration.catalogQuery.hasNextPage)}
-      locked={comparison.hasConversation}
-      onChange={configuration.setSelectedModels}
+      locked={comparison.streaming || history.saving}
+      onChange={changeModels}
       onLoadMore={() => void configuration.catalogQuery.fetchNextPage()}
       onRefresh={() => void configuration.catalogQuery.refetch()}
       onSearch={configuration.setModelSearchDraft}

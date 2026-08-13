@@ -2333,7 +2333,7 @@
       "selectedCount": "已选 {{count}} 个模型",
       "selectionCount": "已选择 {{count}} / {{max}} 个模型",
       "selectedLabel": "已选择的比较模型",
-      "locked": "会话开始后模型集合已锁定",
+      "locked": "当前会话正在生成或保存，完成后可切换模型",
       "protocols": {
         "openai_chat": "OpenAI Chat",
         "openai_responses": "OpenAI Responses",

@@ -2333,7 +2333,7 @@
       "selectedCount": "{{count}} models selected",
       "selectionCount": "{{count}} of {{max}} models selected",
       "selectedLabel": "Selected comparison models",
-      "locked": "The model set is locked after the conversation starts",
+      "locked": "Models can be changed after the current conversation finishes generating or saving",
       "protocols": {
         "openai_chat": "OpenAI Chat",
         "openai_responses": "OpenAI Responses",
