@@ -130,6 +130,102 @@ pub enum AdminUsageLogVideoResolution {
     P1080,
 }
 
+/// 调用日志公开的客户端入口协议。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageLogProtocol {
+    OpenAiChat,
+    OpenAiResponses,
+    OpenAiEmbeddings,
+    OpenAiImages,
+    OpenAiAudio,
+    OpenAiSpeech,
+    JinaRerank,
+    CohereRerank,
+    XaiVideo,
+    Anthropic,
+    Gemini,
+}
+
+impl UsageLogProtocol {
+    fn from_database(value: i16) -> Result<Self, AdminUsageLogReadError> {
+        match value {
+            1 => Ok(Self::OpenAiChat),
+            2 => Ok(Self::OpenAiResponses),
+            3 => Ok(Self::OpenAiEmbeddings),
+            4 => Ok(Self::OpenAiImages),
+            5 => Ok(Self::OpenAiAudio),
+            6 => Ok(Self::OpenAiSpeech),
+            7 => Ok(Self::JinaRerank),
+            8 => Ok(Self::CohereRerank),
+            9 => Ok(Self::XaiVideo),
+            10 => Ok(Self::Anthropic),
+            11 => Ok(Self::Gemini),
+            _ => Err(AdminUsageLogReadError::Internal),
+        }
+    }
+}
+
+/// 调用日志公开的规范化操作类型。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageLogOperation {
+    Chat,
+    Responses,
+    ResponsesCompact,
+    Embedding,
+    Image,
+    Audio,
+    Rerank,
+    Video,
+    CountTokens,
+}
+
+impl UsageLogOperation {
+    fn from_database(value: i16) -> Result<Self, AdminUsageLogReadError> {
+        match value {
+            1 => Ok(Self::Chat),
+            2 => Ok(Self::Responses),
+            3 => Ok(Self::ResponsesCompact),
+            4 => Ok(Self::Embedding),
+            5 => Ok(Self::Image),
+            6 => Ok(Self::Audio),
+            7 => Ok(Self::Rerank),
+            8 => Ok(Self::Video),
+            9 => Ok(Self::CountTokens),
+            _ => Err(AdminUsageLogReadError::Internal),
+        }
+    }
+}
+
+/// 调用日志公开的规范化思考等级。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageLogReasoningEffort {
+    None,
+    Minimal,
+    Low,
+    Medium,
+    High,
+    ExtraHigh,
+    Max,
+}
+
+impl UsageLogReasoningEffort {
+    fn from_database(value: i16) -> Result<Self, AdminUsageLogReadError> {
+        match value {
+            1 => Ok(Self::None),
+            2 => Ok(Self::Minimal),
+            3 => Ok(Self::Low),
+            4 => Ok(Self::Medium),
+            5 => Ok(Self::High),
+            6 => Ok(Self::ExtraHigh),
+            7 => Ok(Self::Max),
+            _ => Err(AdminUsageLogReadError::Internal),
+        }
+    }
+}
+
 impl From<UsageLogVideoResolution> for AdminUsageLogVideoResolution {
     fn from(value: UsageLogVideoResolution) -> Self {
         match value {
@@ -217,6 +313,15 @@ pub struct AdminUsageLog {
     audio_duration_nanoseconds: Option<i64>,
     video_duration_seconds: Option<i64>,
     video_resolution: Option<AdminUsageLogVideoResolution>,
+    request_id: Option<String>,
+    model: Option<String>,
+    protocol: Option<UsageLogProtocol>,
+    operation: Option<UsageLogOperation>,
+    is_stream: Option<bool>,
+    reasoning_effort: Option<UsageLogReasoningEffort>,
+    reasoning_budget_tokens: Option<i64>,
+    first_token_ms: Option<i64>,
+    duration_ms: Option<i64>,
     quota: i64,
     created_at: i64,
 }
@@ -294,6 +399,60 @@ impl AdminUsageLog {
         self.video_resolution
     }
 
+    /// 返回公开请求标识。
+    #[must_use]
+    pub fn request_id(&self) -> Option<&str> {
+        self.request_id.as_deref()
+    }
+
+    /// 返回客户端请求模型。
+    #[must_use]
+    pub fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+
+    /// 返回客户端入口协议。
+    #[must_use]
+    pub const fn protocol(&self) -> Option<UsageLogProtocol> {
+        self.protocol
+    }
+
+    /// 返回规范化操作类型。
+    #[must_use]
+    pub const fn operation(&self) -> Option<UsageLogOperation> {
+        self.operation
+    }
+
+    /// 返回客户端是否请求流式响应。
+    #[must_use]
+    pub const fn is_stream(&self) -> Option<bool> {
+        self.is_stream
+    }
+
+    /// 返回规范化思考等级。
+    #[must_use]
+    pub const fn reasoning_effort(&self) -> Option<UsageLogReasoningEffort> {
+        self.reasoning_effort
+    }
+
+    /// 返回思考 token 预算。
+    #[must_use]
+    pub const fn reasoning_budget_tokens(&self) -> Option<i64> {
+        self.reasoning_budget_tokens
+    }
+
+    /// 返回流式首个可交付事件耗时。
+    #[must_use]
+    pub const fn first_token_ms(&self) -> Option<i64> {
+        self.first_token_ms
+    }
+
+    /// 返回取得成功终态的总耗时。
+    #[must_use]
+    pub const fn duration_ms(&self) -> Option<i64> {
+        self.duration_ms
+    }
+
     /// 返回最终扣减额度单位数。
     #[must_use]
     pub const fn quota(&self) -> i64 {
@@ -330,6 +489,24 @@ impl AdminUsageLog {
             audio_duration_nanoseconds: record.audio_duration_nanoseconds(),
             video_duration_seconds: record.video_duration_seconds(),
             video_resolution: record.video_resolution().map(Into::into),
+            request_id: record.request_id().map(str::to_owned),
+            model: record.model().map(str::to_owned),
+            protocol: record
+                .protocol()
+                .map(UsageLogProtocol::from_database)
+                .transpose()?,
+            operation: record
+                .operation()
+                .map(UsageLogOperation::from_database)
+                .transpose()?,
+            is_stream: record.is_stream(),
+            reasoning_effort: record
+                .reasoning_effort()
+                .map(UsageLogReasoningEffort::from_database)
+                .transpose()?,
+            reasoning_budget_tokens: record.reasoning_budget_tokens(),
+            first_token_ms: record.first_token_ms(),
+            duration_ms: record.duration_ms(),
             quota: record.quota(),
             created_at: record.created_at(),
         })
@@ -400,6 +577,13 @@ pub trait AdminUsageLogReader: Send + Sync {
         principal: SessionPrincipal,
         query: AdminUsageLogListQuery,
     ) -> AdminUsageLogListFuture<'a>;
+
+    /// 读取当前会话用户自己的最新调用日志；管理员调用时同样只返回本人。
+    fn list_own<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        query: AdminUsageLogListQuery,
+    ) -> AdminUsageLogListFuture<'a>;
 }
 
 /// 使用数据库仓储实现管理员用量日志读取。
@@ -436,6 +620,32 @@ impl AdminUsageLogReader for DatabaseAdminUsageLogReader {
             Ok(AdminUsageLogPage::from_parts(logs, next_cursor))
         })
     }
+
+    fn list_own<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        query: AdminUsageLogListQuery,
+    ) -> AdminUsageLogListFuture<'a> {
+        Box::pin(async move {
+            let page = self
+                .repository
+                .list_for_user(principal.user_id(), query.before(), query.limit())
+                .await
+                .map_err(map_repository_error)?;
+            map_page(page)
+        })
+    }
+}
+
+fn map_page(
+    page: af_db::AdminUsageLogPageRecord,
+) -> Result<AdminUsageLogPage, AdminUsageLogReadError> {
+    let (records, next_cursor) = page.into_parts();
+    let logs = records
+        .into_iter()
+        .map(AdminUsageLog::from_record)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(AdminUsageLogPage::from_parts(logs, next_cursor))
 }
 
 impl fmt::Debug for DatabaseAdminUsageLogReader {

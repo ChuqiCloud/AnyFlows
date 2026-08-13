@@ -940,6 +940,15 @@ export type AdminUsageLog = {
     audio_duration_nanoseconds: number | null;
     video_duration_seconds: number | null;
     video_resolution: null | AdminUsageLogVideoResolution;
+    request_id: string | null;
+    model: string | null;
+    protocol: null | UsageLogProtocol;
+    operation: null | UsageLogOperation;
+    is_stream: boolean | null;
+    reasoning_effort: null | UsageLogReasoningEffort;
+    reasoning_budget_tokens: number | null;
+    first_token_ms: number | null;
+    duration_ms: number | null;
     usage_source: AdminUsageLogSource;
     usage_semantics: AdminUsageLogSemantics;
     quota: number;
@@ -1313,6 +1322,9 @@ export type SetupStatusResponse = {
 };
 export type SubscriptionCycle = 'daily' | 'weekly' | 'monthly' | 'yearly';
 export type SubscriptionPlanStatus = 'active' | 'disabled';
+export type UsageLogOperation = 'chat' | 'responses' | 'responses_compact' | 'embedding' | 'image' | 'audio' | 'rerank' | 'video' | 'count_tokens';
+export type UsageLogProtocol = 'open_ai_chat' | 'open_ai_responses' | 'open_ai_embeddings' | 'open_ai_images' | 'open_ai_audio' | 'open_ai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
+export type UsageLogReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'extra_high' | 'max';
 export type UserInvitationRebateResponse = {
     quota_amount: number;
     credited_at: number;
@@ -1451,6 +1463,32 @@ export type UserTopupPaymentSession = {
 } | {
     redirect_url: string;
     kind: 'redirect';
+};
+export type UserUsageLog = {
+    id: number;
+    token_id: number;
+    request_id: string | null;
+    model: string | null;
+    protocol: null | UsageLogProtocol;
+    operation: null | UsageLogOperation;
+    is_stream: boolean | null;
+    reasoning_effort: null | UsageLogReasoningEffort;
+    reasoning_budget_tokens: number | null;
+    first_token_ms: number | null;
+    duration_ms: number | null;
+    billing_mode: AdminUsageLogBillingMode;
+    input_tokens: number;
+    output_tokens: number;
+    cache_read: number;
+    cache_creation_5m: number;
+    cache_creation_1h: number;
+    reasoning_tokens: number;
+    quota: number;
+    created_at: number;
+};
+export type UserUsageLogListResponse = {
+    logs: Array<UserUsageLog>;
+    next_cursor: number | null;
 };
 export type UserWalletEntry = {
     id: number;
@@ -3694,6 +3732,25 @@ export type ListAdminUsageLogsResponses = {
     200: AdminUsageLogListResponse;
 };
 export type ListAdminUsageLogsResponse = ListAdminUsageLogsResponses[keyof ListAdminUsageLogsResponses];
+export type ListUserUsageLogsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/account/usage-logs';
+};
+export type ListUserUsageLogsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListUserUsageLogsError = ListUserUsageLogsErrors[keyof ListUserUsageLogsErrors];
+export type ListUserUsageLogsResponses = {
+    200: UserUsageLogListResponse;
+};
+export type ListUserUsageLogsResponse = ListUserUsageLogsResponses[keyof ListUserUsageLogsResponses];
 export type ListAdminChannelsData = {
     body?: never;
     path?: never;

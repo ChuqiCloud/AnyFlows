@@ -4,7 +4,7 @@ use af_db::{
     UsageLogBillingMode, UsageLogRepository, UsageLogRepositoryError, UsageLogSemantics,
     UsageLogSource, UsageLogUsage, UsageLogVideoResolution, UsageLogWrite,
 };
-use af_protocol::{UsageSemantics, UsageSource, VideoResolution};
+use af_protocol::{ReasoningEffort, UsageSemantics, UsageSource, VideoResolution};
 
 use crate::{
     BillingMode, BillingUsageRecord, UsageRecordSink, UsageRecordSinkError, UsageRecordSinkFuture,
@@ -95,8 +95,27 @@ fn to_usage_log_write(record: BillingUsageRecord) -> Result<UsageLogWrite, Usage
         .video_duration()
         .map(|duration| i64::from(duration.seconds()));
     let video_resolution = dimensions.video_resolution().map(map_video_resolution);
-    write
+    let write = write
         .with_video_dimensions(video_duration_seconds, video_resolution)
+        .map_err(|_| UsageRecordSinkError::Invariant)?;
+    let observation = record.observation();
+    let (Some(context), Some(timing)) = (observation.context(), observation.timing()) else {
+        return Ok(write);
+    };
+    write
+        .with_call_observation(
+            context.request_id(),
+            context.model(),
+            context.protocol(),
+            context.operation(),
+            context.stream(),
+            context
+                .reasoning_effort()
+                .map(reasoning_effort_database_value),
+            context.reasoning_budget_tokens().map(|value| value.get()),
+            timing.first_token_ms(),
+            timing.duration_ms(),
+        )
         .map_err(|_| UsageRecordSinkError::Invariant)
 }
 
@@ -105,6 +124,18 @@ const fn map_video_resolution(resolution: VideoResolution) -> UsageLogVideoResol
         VideoResolution::P480 => UsageLogVideoResolution::P480,
         VideoResolution::P720 => UsageLogVideoResolution::P720,
         VideoResolution::P1080 => UsageLogVideoResolution::P1080,
+    }
+}
+
+const fn reasoning_effort_database_value(effort: ReasoningEffort) -> i16 {
+    match effort {
+        ReasoningEffort::None => 1,
+        ReasoningEffort::Minimal => 2,
+        ReasoningEffort::Low => 3,
+        ReasoningEffort::Medium => 4,
+        ReasoningEffort::High => 5,
+        ReasoningEffort::ExtraHigh => 6,
+        ReasoningEffort::Max => 7,
     }
 }
 

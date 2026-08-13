@@ -109,7 +109,7 @@ struct RejectAdminCredentialProxies;
 impl AdminCredentialProxyService for RejectAdminCredentialProxies {
     fn list<'a>(
         &'a self,
-        _principal: SessionPrincipal,
+        _principal: af_admin::SessionPrincipal,
         _query: AdminCredentialProxyListQuery,
     ) -> AdminCredentialProxyPageFuture<'a> {
         Box::pin(async { Err(AdminCredentialProxyError::Internal) })
@@ -892,6 +892,14 @@ impl AdminUsageLogReader for RejectAdminUsageLogs {
     fn list<'a>(
         &'a self,
         _principal: af_admin::SessionPrincipal,
+        _query: AdminUsageLogListQuery,
+    ) -> AdminUsageLogListFuture<'a> {
+        Box::pin(async { Err(AdminUsageLogReadError::Internal) })
+    }
+
+    fn list_own<'a>(
+        &'a self,
+        _principal: SessionPrincipal,
         _query: AdminUsageLogListQuery,
     ) -> AdminUsageLogListFuture<'a> {
         Box::pin(async { Err(AdminUsageLogReadError::Internal) })

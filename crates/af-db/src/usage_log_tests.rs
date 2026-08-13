@@ -72,6 +72,56 @@ async fn outcome_unknown_replays_the_same_persisted_usage_fact() -> Result<(), B
     Ok(())
 }
 
+#[tokio::test]
+async fn call_observation_participates_in_idempotency_comparison() -> Result<(), Box<dyn Error>> {
+    let pool = crate::connect_and_migrate(
+        &DatabaseOptions::new("sqlite::memory:")?,
+        MigrationOptions::default(),
+    )
+    .await?;
+    let principal = create_principal(&pool, 3).await?;
+    let repository = UsageLogRepository::new(pool.clone());
+    let base = usage_write(principal, 3, 9);
+    let first = base.clone().with_call_observation(
+        "request-3",
+        "gpt-test",
+        af_domain::Protocol::OpenAiResponses,
+        af_domain::Operation::Responses,
+        true,
+        Some(5),
+        Some(4_096),
+        Some(80),
+        320,
+    )?;
+    let changed = base.with_call_observation(
+        "request-3",
+        "gpt-test",
+        af_domain::Protocol::OpenAiResponses,
+        af_domain::Operation::Responses,
+        true,
+        Some(5),
+        Some(4_096),
+        Some(81),
+        320,
+    )?;
+
+    assert_eq!(
+        repository.record(&first).await?,
+        UsageLogWriteOutcome::Applied
+    );
+    assert_eq!(
+        repository.record(&first).await?,
+        UsageLogWriteOutcome::Existing
+    );
+    assert_eq!(
+        repository.record(&changed).await,
+        Err(UsageLogRepositoryError::Conflict)
+    );
+
+    pool.close().await?;
+    Ok(())
+}
+
 #[test]
 fn usage_log_usage_rejects_negative_token_dimension() {
     assert_eq!(

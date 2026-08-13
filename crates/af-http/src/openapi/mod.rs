@@ -301,6 +301,7 @@ mod tests {
             "listMissingAdminModels",
             "listAdminTokens",
             "listAdminUsageLogs",
+            "listUserUsageLogs",
             "listAdminUsers",
             "listModels",
             "listModelProviders",

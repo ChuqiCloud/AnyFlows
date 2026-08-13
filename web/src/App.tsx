@@ -220,7 +220,7 @@ function ManagementEntry({
                     : view === 'tokens'
                       ? <TokenPage />
                       : view === 'usage-logs'
-                        ? <UsageLogPage />
+                        ? <UsageLogPage admin={admin} />
                         : view === 'debug-traces'
                           ? <DebugTracePage />
                         : <DashboardPage />
@@ -232,6 +232,7 @@ function ManagementEntry({
     && view !== 'models'
     && view !== 'playground'
     && view !== 'video-tasks'
+    && view !== 'usage-logs'
     && view !== 'profile'
 
   return (

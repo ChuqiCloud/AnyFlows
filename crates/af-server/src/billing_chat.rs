@@ -1,8 +1,14 @@
-use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use af_billing::{
     BillingLifecycleError, BillingPrechargeError, BillingPrechargePort, BillingRequestLifecycle,
-    BillingRequestPlan, BillingSettlementPort, RefundSignalPort, RequestPricingSnapshotError,
+    BillingRequestPlan, BillingSettlementPort, BillingUsageContext, BillingUsageDimensions,
+    BillingUsageObservation, BillingUsageTiming, RefundSignalPort, RequestPricingSnapshotError,
     RequestPricingSnapshotSource, UsageRecordPort,
 };
 use af_domain::{
@@ -95,6 +101,19 @@ impl BillingChatService {
         response_protocol: Protocol,
         request_id: &str,
     ) -> Result<ChatResponse, AfError> {
+        let started_at = Instant::now();
+        let canonical = request.canonical();
+        let reasoning = canonical.reasoning;
+        let observation_context = BillingUsageContext::new(
+            request_id,
+            request.requested_model(),
+            response_protocol,
+            canonical.operation,
+            canonical.stream,
+            reasoning.and_then(|value| value.effort()),
+            reasoning.and_then(|value| value.budget_tokens()),
+        )
+        .map_err(|_| AfError::Internal)?;
         // 缺省值必须同时约束预扣和上游输出，避免预留额度低于平台真实成本。
         let request = request.with_default_max_output_tokens(
             TokenCount::new(DEFAULT_MAX_OUTPUT_TOKENS).expect("网关默认输出上限必须是合法正整数"),
@@ -155,9 +174,15 @@ impl BillingChatService {
         match response {
             ChatResponse::Full { body, usage } => {
                 let usage = usage.map_err(|_| AfError::Internal)?;
-                let _ = complete_with_retries(&mut lifecycle, usage)
-                    .await
-                    .map_err(map_lifecycle_error)?;
+                let observation = call_observation(observation_context, None, started_at.elapsed());
+                let _ = complete_with_observation_retries(
+                    &mut lifecycle,
+                    usage,
+                    BillingUsageDimensions::empty(),
+                    observation,
+                )
+                .await
+                .map_err(map_lifecycle_error)?;
                 Ok(ChatResponse::Full {
                     body,
                     usage: Ok(usage),
@@ -166,6 +191,9 @@ impl BillingChatService {
             ChatResponse::Stream { body, usage } => {
                 let hook = BillingStreamCompletionHook {
                     lifecycle: Some(lifecycle),
+                    context: observation_context,
+                    started_at,
+                    first_token: started_at.elapsed(),
                 };
                 let body = body.with_completion_hook(Box::new(hook));
                 Ok(ChatResponse::Stream { body, usage })
@@ -196,6 +224,9 @@ impl ChatService for BillingChatService {
 /// 流式 usage 完成回调持有唯一计费生命周期；流提前结束时生命周期析构会触发既有退款兜底。
 struct BillingStreamCompletionHook {
     lifecycle: Option<BillingRequestLifecycle>,
+    context: BillingUsageContext,
+    started_at: Instant,
+    first_token: Duration,
 }
 
 impl GenerationCompletionHook for BillingStreamCompletionHook {
@@ -211,7 +242,20 @@ impl GenerationCompletionHook for BillingStreamCompletionHook {
                 drop(lifecycle);
                 return;
             };
-            if complete_with_retries(&mut lifecycle, usage).await.is_err() {
+            let observation = call_observation(
+                self.context,
+                Some(self.first_token),
+                self.started_at.elapsed(),
+            );
+            if complete_with_observation_retries(
+                &mut lifecycle,
+                usage,
+                BillingUsageDimensions::empty(),
+                observation,
+            )
+            .await
+            .is_err()
+            {
                 tracing::error!(
                     error_kind = "billing_stream_completion_failed",
                     "流式响应结束后的计费完成失败"
@@ -257,9 +301,27 @@ pub(crate) async fn complete_with_dimensions_retries(
     usage: Usage,
     dimensions: af_billing::BillingUsageDimensions,
 ) -> Result<af_billing::BillingCompletion, BillingLifecycleError> {
+    complete_with_observation_retries(
+        lifecycle,
+        usage,
+        dimensions,
+        BillingUsageObservation::default(),
+    )
+    .await
+}
+
+pub(crate) async fn complete_with_observation_retries(
+    lifecycle: &mut BillingRequestLifecycle,
+    usage: Usage,
+    dimensions: BillingUsageDimensions,
+    observation: BillingUsageObservation,
+) -> Result<af_billing::BillingCompletion, BillingLifecycleError> {
     let mut attempts = 0;
     loop {
-        match lifecycle.complete_with_dimensions(usage, dimensions).await {
+        match lifecycle
+            .complete_with_observation(usage, dimensions, observation)
+            .await
+        {
             Ok(completion) => return Ok(completion),
             Err(error)
                 if retryable_completion_error(error) && attempts + 1 < MAX_COMPLETION_ATTEMPTS =>
@@ -270,6 +332,21 @@ pub(crate) async fn complete_with_dimensions_retries(
             Err(error) => return Err(error),
         }
     }
+}
+
+fn call_observation(
+    context: BillingUsageContext,
+    first_token: Option<Duration>,
+    duration: Duration,
+) -> BillingUsageObservation {
+    let Ok(timing) = BillingUsageTiming::new(first_token, duration) else {
+        tracing::error!(
+            error_kind = "billing_usage_timing_overflow",
+            "调用日志耗时无法安全持久化，本次计费继续完成"
+        );
+        return BillingUsageObservation::default();
+    };
+    BillingUsageObservation::new(context, timing)
 }
 
 fn retryable_completion_error(error: BillingLifecycleError) -> bool {
