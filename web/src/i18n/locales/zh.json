@@ -2037,12 +2037,22 @@
     "loadedCount_other": "已加载 {{count}} 个模型",
     "filters": {
       "title": "筛选模型",
-      "description": "按价格、模态、能力和当前可调用协议缩小结果范围。",
+      "description": "按供应商、价格、模型特性和当前可调用协议缩小结果范围。",
       "action": "筛选",
       "reset": "清空",
+      "sidebarHint": "先选择供应商，再按特性精确筛选",
       "search": "搜索模型",
       "searchPlaceholder": "输入名称、Canonical 标识或厂商",
       "billingMode": "计费模式",
+      "allShort": "全部",
+      "providers": "供应商",
+      "allProviders": "全部供应商",
+      "providersLoading": "正在加载供应商",
+      "providersError": "供应商暂时无法读取，其他筛选仍可使用。",
+      "retryProviders": "重试",
+      "selectedCount_one": "已选 {{count}} 项",
+      "selectedCount_other": "已选 {{count}} 项",
+      "features": "模型特性",
       "inputModalities": "输入模态",
       "outputModalities": "输出模态",
       "capabilities": "模型能力",
@@ -2052,6 +2062,7 @@
     },
     "billing": {
       "per_token": "按 token 计费",
+      "per_token_short": "按量",
       "free": "免费"
     },
     "columns": {

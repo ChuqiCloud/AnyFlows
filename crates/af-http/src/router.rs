@@ -79,7 +79,7 @@ use crate::middleware::{
     AllowedOrigins, LogHttpResponse, MakeHttpSpan, assign_request_id, enforce_allowed_origin,
     request_id_header,
 };
-use crate::model_catalog::list_models;
+use crate::model_catalog::{list_model_providers, list_models};
 use crate::network_settings::build_network_settings_router;
 use crate::oauth_connections::{AdminOAuthConnectionService, build_admin_oauth_connection_router};
 use crate::openai_audio::openai_audio_transcription;
@@ -483,7 +483,11 @@ pub fn build_router(
         )
         .route(
             "/api/models",
-            get(list_models).route_layer(model_catalog_authentication),
+            get(list_models).route_layer(model_catalog_authentication.clone()),
+        )
+        .route(
+            "/api/model-providers",
+            get(list_model_providers).route_layer(model_catalog_authentication),
         )
         .route(
             "/api/admin/users",

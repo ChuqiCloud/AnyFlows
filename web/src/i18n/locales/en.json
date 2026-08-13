@@ -2037,12 +2037,22 @@
     "loadedCount_other": "{{count}} models loaded",
     "filters": {
       "title": "Filter models",
-      "description": "Narrow results by price, modality, capability, and currently callable protocols.",
+      "description": "Narrow results by provider, price, model features, and currently callable protocols.",
       "action": "Filters",
       "reset": "Reset",
+      "sidebarHint": "Start with a provider, then refine by features",
       "search": "Search models",
       "searchPlaceholder": "Enter a name, Canonical identifier, or provider",
       "billingMode": "Billing mode",
+      "allShort": "All",
+      "providers": "Providers",
+      "allProviders": "All providers",
+      "providersLoading": "Loading providers",
+      "providersError": "Providers are temporarily unavailable. Other filters still work.",
+      "retryProviders": "Retry",
+      "selectedCount_one": "{{count}} selected",
+      "selectedCount_other": "{{count}} selected",
+      "features": "Model features",
       "inputModalities": "Input modalities",
       "outputModalities": "Output modalities",
       "capabilities": "Model capabilities",
@@ -2052,6 +2062,7 @@
     },
     "billing": {
       "per_token": "Per token",
+      "per_token_short": "Usage",
       "free": "Free"
     },
     "columns": {

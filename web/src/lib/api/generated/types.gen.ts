@@ -1111,6 +1111,14 @@ export type ModelCatalogListResponse = {
 export type ModelCatalogModality = 'text' | 'image' | 'audio' | 'video';
 export type ModelCatalogPricingScope = 'public_base' | 'group';
 export type ModelCatalogProtocol = 'openai_chat' | 'openai_responses' | 'openai_embeddings' | 'openai_images' | 'openai_audio' | 'openai_speech' | 'jina_rerank' | 'cohere_rerank' | 'xai_video' | 'anthropic' | 'gemini';
+export type ModelCatalogProvider = {
+    name: string;
+    model_count: number;
+};
+export type ModelCatalogProviderListResponse = {
+    pricing_scope: ModelCatalogPricingScope;
+    providers: Array<ModelCatalogProvider>;
+};
 export type ModelCatalogRatios = {
     group_micros: string;
     group_model_micros: string;
@@ -3044,6 +3052,7 @@ export type ListModelsData = {
     query?: {
         q?: string;
         billing_mode?: ModelCatalogBillingMode;
+        provider?: Array<string>;
         input_modality?: Array<ModelCatalogModality>;
         output_modality?: Array<ModelCatalogModality>;
         capability?: Array<ModelCatalogCapability>;
@@ -3063,6 +3072,21 @@ export type ListModelsResponses = {
     200: ModelCatalogListResponse;
 };
 export type ListModelsResponse = ListModelsResponses[keyof ListModelsResponses];
+export type ListModelProvidersData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/model-providers';
+};
+export type ListModelProvidersErrors = {
+    401: ManagementError;
+    500: ManagementError;
+};
+export type ListModelProvidersError = ListModelProvidersErrors[keyof ListModelProvidersErrors];
+export type ListModelProvidersResponses = {
+    200: ModelCatalogProviderListResponse;
+};
+export type ListModelProvidersResponse = ListModelProvidersResponses[keyof ListModelProvidersResponses];
 export type ListAdminModelsData = {
     body?: never;
     path?: never;

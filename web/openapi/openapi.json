@@ -5879,6 +5879,20 @@
             }
           },
           {
+            "name": "provider",
+            "in": "query",
+            "description": "供应商筛选，重复参数按任一匹配",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              }
+            }
+          },
+          {
             "name": "input_modality",
             "in": "query",
             "description": "输入模态筛选，重复参数按任一匹配",
@@ -5967,6 +5981,54 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "运行时目录或定价快照不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/model-providers": {
+      "get": {
+        "tags": [
+          "模型目录"
+        ],
+        "summary": "读取当前模型目录的完整供应商聚合",
+        "description": "无 Authorization 时统计公开基础目录；携带 Bearer JWT 时严格认证并统计当前默认分组真实可用目录。",
+        "operationId": "listModelProviders",
+        "responses": {
+          "200": {
+            "description": "当前访问范围内的供应商与模型数量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalogProviderListResponse"
                 }
               }
             }
@@ -17566,6 +17628,46 @@
           "anthropic",
           "gemini"
         ]
+      },
+      "ModelCatalogProvider": {
+        "type": "object",
+        "required": [
+          "name",
+          "model_count"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "model_count": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "ModelCatalogProviderListResponse": {
+        "type": "object",
+        "required": [
+          "pricing_scope",
+          "providers"
+        ],
+        "properties": {
+          "pricing_scope": {
+            "$ref": "#/components/schemas/ModelCatalogPricingScope"
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelCatalogProvider"
+            },
+            "maxItems": 10000
+          }
+        },
+        "additionalProperties": false
       },
       "ModelCatalogRatios": {
         "type": "object",

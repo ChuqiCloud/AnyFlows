@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ModelCatalogDesktopFilters, ModelCatalogMobileFilters, countModelCatalogFilters } from './model-catalog-filters'
 import { ModelCatalogList } from './model-catalog-list'
-import { EMPTY_MODEL_CATALOG_FILTERS, useModelCatalog } from './model-api'
+import { EMPTY_MODEL_CATALOG_FILTERS, useModelCatalog, useModelCatalogProviders } from './model-api'
 
 type ModelPageProps = {
   authenticated: boolean
@@ -28,6 +28,7 @@ export function ModelPage({ authenticated, admin = false, standalone = false }: 
   }, [searchInput])
 
   const catalogQuery = useModelCatalog(search, filters, authenticated)
+  const providersQuery = useModelCatalogProviders(authenticated)
   const models = useMemo(
     () => catalogQuery.data?.pages.flatMap((page) => page.models) ?? [],
     [catalogQuery.data],
@@ -36,6 +37,16 @@ export function ModelPage({ authenticated, admin = false, standalone = false }: 
   const filtered = search.length > 0 || activeFilterCount > 0
   const initialError = catalogQuery.isError && models.length === 0
   const pricingScope = catalogQuery.data?.pages[0]?.pricing_scope
+  const providers = providersQuery.data?.providers ?? []
+  const filterProps = {
+    authenticated,
+    filters,
+    providers,
+    providersLoading: providersQuery.isPending,
+    providersError: providersQuery.isError,
+    onChange: setFilters,
+    onRetryProviders: () => { void providersQuery.refetch() },
+  }
   const Heading = standalone ? 'h1' : 'h2'
 
   return (
@@ -65,7 +76,7 @@ export function ModelPage({ authenticated, admin = false, standalone = false }: 
       </header>
 
       <div className="flex items-start gap-0">
-        <ModelCatalogDesktopFilters authenticated={authenticated} filters={filters} onChange={setFilters} />
+        <ModelCatalogDesktopFilters {...filterProps} />
 
         <section className="min-w-0 flex-1 lg:border-l lg:border-[var(--hairline)] lg:pl-5">
           <div className="flex flex-col gap-3 border-b border-[var(--hairline)] pb-4 sm:flex-row sm:items-center">
@@ -80,7 +91,7 @@ export function ModelPage({ authenticated, admin = false, standalone = false }: 
                 onChange={(event) => setSearchInput(event.target.value)}
               />
             </label>
-            <ModelCatalogMobileFilters authenticated={authenticated} filters={filters} onChange={setFilters} />
+            <ModelCatalogMobileFilters {...filterProps} />
           </div>
 
           <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">

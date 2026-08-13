@@ -129,6 +129,7 @@ pub use model_catalog::{
     DEFAULT_MODEL_CATALOG_PAGE_SIZE, MAX_MODEL_CATALOG_PAGE_SIZE, ModelCatalogBillingMode,
     ModelCatalogCapability, ModelCatalogItem, ModelCatalogLifecycle, ModelCatalogListFuture,
     ModelCatalogMetadata, ModelCatalogModality, ModelCatalogPage, ModelCatalogPricingScope,
+    ModelCatalogProvider, ModelCatalogProviderSummary, ModelCatalogProvidersFuture,
     ModelCatalogQuery, ModelCatalogRatios, ModelCatalogReadError, ModelCatalogReader,
     ModelCatalogRuntimeStatus, ModelCatalogTokenPrices,
 };

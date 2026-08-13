@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 83);
+        assert_eq!(document.paths.paths.len(), 84);
         let operation_count = document
             .paths
             .paths
@@ -188,7 +188,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 125);
+        assert_eq!(operation_count, 126);
         assert!(
             document
                 .components
@@ -303,6 +303,7 @@ mod tests {
             "listAdminUsageLogs",
             "listAdminUsers",
             "listModels",
+            "listModelProviders",
             "listPlaygroundConversations",
             "listUserTokens",
             "receivePaymentWebhook",
@@ -347,8 +348,10 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 249);
+        assert_eq!(schemas.len(), 251);
         assert!(schemas.keys().is_sorted());
+        assert!(schemas.contains_key("ModelCatalogProvider"));
+        assert!(schemas.contains_key("ModelCatalogProviderListResponse"));
         assert!(schemas.contains_key("AdminResponsesCompactProbe"));
         assert!(schemas.contains_key("ResponsesCompactError"));
         assert!(schemas.contains_key("ResponsesCompactErrorBody"));
@@ -588,6 +591,10 @@ mod tests {
         );
         assert_eq!(
             document["paths"]["/api/models"]["get"]["security"],
+            serde_json::json!([{}, { "bearerAuth": [] }])
+        );
+        assert_eq!(
+            document["paths"]["/api/model-providers"]["get"]["security"],
             serde_json::json!([{}, { "bearerAuth": [] }])
         );
         assert!(

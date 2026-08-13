@@ -18,6 +18,8 @@ use af_db::{
 use af_domain::{GroupId, Protocol};
 use af_scheduler::{ChannelIndexSnapshot, InMemoryChannelIndex};
 
+mod providers;
+
 type CatalogClock = Arc<dyn Fn() -> Option<u32> + Send + Sync>;
 const MAX_METADATA_SCAN_PAGES: usize = 100;
 
@@ -158,7 +160,12 @@ impl RuntimeModelCatalogReader {
     }
 
     fn metadata_matches_filters(record: &AdminModelRecord, query: &ModelCatalogQuery) -> bool {
-        modalities_match(record.input_modalities(), query.input_modalities())
+        (query.providers().is_empty()
+            || query
+                .providers()
+                .iter()
+                .any(|provider| provider == record.provider()))
+            && modalities_match(record.input_modalities(), query.input_modalities())
             && modalities_match(record.output_modalities(), query.output_modalities())
             && query
                 .capabilities()
@@ -368,6 +375,18 @@ impl ModelCatalogReader for RuntimeModelCatalogReader {
             match authentication {
                 Some(authentication) => self.list_group(authentication, query).await,
                 None => self.list_public(query).await,
+            }
+        })
+    }
+
+    fn providers(
+        &self,
+        authentication: Option<SessionAuthentication>,
+    ) -> af_admin::ModelCatalogProvidersFuture<'_> {
+        Box::pin(async move {
+            match authentication {
+                Some(authentication) => self.list_group_providers(authentication).await,
+                None => self.list_public_providers().await,
             }
         })
     }
@@ -607,6 +626,7 @@ mod tests {
                     Vec::new(),
                     Vec::new(),
                     Vec::new(),
+                    Vec::new(),
                     None,
                     24,
                 )
@@ -617,12 +637,48 @@ mod tests {
         assert_eq!(filtered.items().len(), 1);
         assert_eq!(filtered.items()[0].model(), "gpt-test");
 
+        let provider_filtered = reader
+            .list(
+                None,
+                &ModelCatalogQuery::new(
+                    None,
+                    None,
+                    vec!["community".to_owned()],
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                    24,
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(provider_filtered.items().len(), 1);
+        assert_eq!(provider_filtered.items()[0].model(), "free-test");
+
+        let providers = reader.providers(None).await.unwrap();
+        assert_eq!(
+            providers.pricing_scope(),
+            ModelCatalogPricingScope::PublicBase
+        );
+        assert_eq!(
+            providers
+                .providers()
+                .iter()
+                .map(|provider| (provider.name(), provider.model_count()))
+                .collect::<Vec<_>>(),
+            vec![("OpenAI", 1), ("community", 1)]
+        );
+
         let capable = reader
             .list(
                 None,
                 &ModelCatalogQuery::new(
                     None,
                     None,
+                    Vec::new(),
                     vec![ModelCatalogModality::Text],
                     vec![ModelCatalogModality::Text],
                     vec![ModelCatalogCapability::ToolCalls],
@@ -642,6 +698,7 @@ mod tests {
                 &ModelCatalogQuery::new(
                     None,
                     None,
+                    Vec::new(),
                     Vec::new(),
                     Vec::new(),
                     Vec::new(),
@@ -686,6 +743,7 @@ mod tests {
         let matching = ModelCatalogQuery::new(
             None,
             None,
+            Vec::new(),
             Vec::new(),
             Vec::new(),
             vec![ModelCatalogCapability::ResponsesCompact],

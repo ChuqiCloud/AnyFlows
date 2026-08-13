@@ -1,33 +1,16 @@
-import { useInfiniteQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 
 import { apiClient } from '@/lib/api'
-import { listModels } from '@/lib/api/generated/sdk.gen'
-import type {
-  ModelCatalogBillingMode,
-  ModelCatalogCapability,
-  ModelCatalogModality,
-  ModelCatalogProtocol,
-} from '@/lib/api/generated/types.gen'
+import { listModelProviders, listModels } from '@/lib/api/generated/sdk.gen'
+import type { ModelCatalogFilters } from './model-catalog-filter-model'
+
+export {
+  EMPTY_MODEL_CATALOG_FILTERS,
+  countModelCatalogFilters,
+} from './model-catalog-filter-model'
+export type { ModelBillingFilter, ModelCatalogFilters } from './model-catalog-filter-model'
 
 const MODEL_PAGE_SIZE = 24
-
-export type ModelBillingFilter = 'all' | ModelCatalogBillingMode
-
-export type ModelCatalogFilters = {
-  billingMode: ModelBillingFilter
-  inputModalities: ModelCatalogModality[]
-  outputModalities: ModelCatalogModality[]
-  capabilities: ModelCatalogCapability[]
-  protocols: ModelCatalogProtocol[]
-}
-
-export const EMPTY_MODEL_CATALOG_FILTERS: ModelCatalogFilters = {
-  billingMode: 'all',
-  inputModalities: [],
-  outputModalities: [],
-  capabilities: [],
-  protocols: [],
-}
 
 /** 按模型名字典序游标读取游客基础目录或当前登录用户可用目录。 */
 export function useModelCatalog(
@@ -49,6 +32,7 @@ export function useModelCatalog(
           input_modality: filters.inputModalities.length > 0 ? filters.inputModalities : undefined,
           limit: MODEL_PAGE_SIZE,
           output_modality: filters.outputModalities.length > 0 ? filters.outputModalities : undefined,
+          provider: filters.providers.length > 0 ? filters.providers : undefined,
           protocol: authenticated && filters.protocols.length > 0 ? filters.protocols : undefined,
           q: search || undefined,
         },
@@ -57,6 +41,18 @@ export function useModelCatalog(
       return data
     },
     getNextPageParam: (page) => page.next_cursor ?? undefined,
+    staleTime: 15_000,
+  })
+}
+
+/** 独立读取当前目录完整供应商聚合，避免选项受模型分页截断。 */
+export function useModelCatalogProviders(authenticated: boolean) {
+  return useQuery({
+    queryKey: ['model-catalog-providers', { authenticated }],
+    queryFn: async ({ signal }) => {
+      const { data } = await listModelProviders({ client: apiClient, signal })
+      return data
+    },
     staleTime: 15_000,
   })
 }

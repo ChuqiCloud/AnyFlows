@@ -1,7 +1,7 @@
 use af_admin::{
     ModelCatalogBillingMode, ModelCatalogCapability, ModelCatalogItem, ModelCatalogLifecycle,
-    ModelCatalogModality, ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogQuery,
-    ModelCatalogReadError, ModelCatalogRuntimeStatus,
+    ModelCatalogModality, ModelCatalogPage, ModelCatalogPricingScope, ModelCatalogProviderSummary,
+    ModelCatalogQuery, ModelCatalogReadError, ModelCatalogRuntimeStatus,
 };
 use af_domain::Protocol;
 use axum::{
@@ -170,6 +170,26 @@ pub(crate) struct ModelCatalogListResponse {
     next_cursor: Option<String>,
 }
 
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = ModelCatalogProvider)]
+pub(crate) struct ModelCatalogProviderResponse {
+    #[schema(min_length = 1, max_length = 64)]
+    name: String,
+    #[schema(minimum = 1)]
+    model_count: u64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = ModelCatalogProviderListResponse)]
+pub(crate) struct ModelCatalogProviderListResponse {
+    #[schema(value_type = crate::openapi::schema::ModelCatalogPricingScopeSchema)]
+    pricing_scope: ModelCatalogPricingScope,
+    #[schema(max_items = 10000)]
+    providers: Vec<ModelCatalogProviderResponse>,
+}
+
 /// 返回游客公开基础目录或当前登录用户默认分组的可用目录。
 pub(crate) async fn list_models(
     State(state): State<HttpState>,
@@ -189,6 +209,40 @@ pub(crate) async fn list_models(
         .await
         .map_err(map_read_error)?;
     Ok(no_store_json(ModelCatalogListResponse::from_page(page)))
+}
+
+/// 返回与模型目录相同访问范围内的完整供应商聚合。
+pub(crate) async fn list_model_providers(
+    State(state): State<HttpState>,
+    authentication: Option<Extension<af_admin::SessionAuthentication>>,
+) -> Result<Response, ManagementError> {
+    let reader = state
+        .model_catalog_reader
+        .as_deref()
+        .ok_or(ManagementError::Internal)?;
+    let summary = reader
+        .providers(authentication.map(|Extension(authentication)| authentication))
+        .await
+        .map_err(map_read_error)?;
+    Ok(no_store_json(
+        ModelCatalogProviderListResponse::from_summary(summary),
+    ))
+}
+
+impl ModelCatalogProviderListResponse {
+    fn from_summary(summary: ModelCatalogProviderSummary) -> Self {
+        Self {
+            pricing_scope: summary.pricing_scope(),
+            providers: summary
+                .providers()
+                .iter()
+                .map(|provider| ModelCatalogProviderResponse {
+                    name: provider.name().to_owned(),
+                    model_count: provider.model_count(),
+                })
+                .collect(),
+        }
+    }
 }
 
 impl ModelCatalogListResponse {
@@ -262,6 +316,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<ModelCatalogQuery, Manage
     validate_percent_encoding(raw_query)?;
     let mut search = None;
     let mut billing_mode = None;
+    let mut providers = Vec::new();
     let mut input_modalities = Vec::new();
     let mut output_modalities = Vec::new();
     let mut capabilities = Vec::new();
@@ -277,6 +332,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<ModelCatalogQuery, Manage
             "billing_mode" if billing_mode.is_none() => {
                 billing_mode = Some(parse_billing_mode(&value)?)
             }
+            "provider" => providers.push(value.into_owned()),
             "input_modality" => input_modalities.push(parse_modality(&value)?),
             "output_modality" => output_modalities.push(parse_modality(&value)?),
             "capability" => capabilities.push(parse_capability(&value)?),
@@ -286,11 +342,13 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<ModelCatalogQuery, Manage
             _ => return Err(ManagementError::InvalidRequest),
         }
     }
+    providers.sort_unstable();
     input_modalities.sort_unstable();
     output_modalities.sort_unstable();
     capabilities.sort_unstable();
     protocols.sort_unstable();
     // 重复筛选值没有额外语义，规范化后交给领域查询保持稳定缓存身份。
+    providers.dedup();
     input_modalities.dedup();
     output_modalities.dedup();
     capabilities.dedup();
@@ -298,6 +356,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<ModelCatalogQuery, Manage
     ModelCatalogQuery::new(
         search,
         billing_mode,
+        providers,
         input_modalities,
         output_modalities,
         capabilities,
@@ -383,11 +442,12 @@ fn map_read_error(error: ModelCatalogReadError) -> ManagementError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use af_admin::{ModelCatalogProvider, ModelCatalogProviderSummary};
 
     #[test]
     fn query_parser_rejects_duplicates_unknowns_and_unstable_values() {
         let query = parse_list_query(Some(
-            "q=gpt&billing_mode=per_token&input_modality=text&output_modality=image&capability=reasoning&protocol=openai_responses&after=gpt-4&limit=48",
+            "q=gpt&billing_mode=per_token&provider=OpenAI&input_modality=text&output_modality=image&capability=reasoning&protocol=openai_responses&after=gpt-4&limit=48",
         ))
         .unwrap();
         assert_eq!(query.search(), Some("gpt"));
@@ -397,6 +457,7 @@ mod tests {
         );
         assert_eq!(query.after(), Some("gpt-4"));
         assert_eq!(query.limit(), 48);
+        assert_eq!(query.providers(), &["OpenAI"]);
         assert_eq!(query.input_modalities(), &[ModelCatalogModality::Text]);
         assert_eq!(query.output_modalities(), &[ModelCatalogModality::Image]);
         assert_eq!(query.capabilities(), &[ModelCatalogCapability::Reasoning]);
@@ -406,6 +467,8 @@ mod tests {
             "q=",
             "q=gpt&q=claude",
             "billing_mode=paid",
+            "provider=",
+            "provider=%20padded%20",
             "input_modality=code",
             "output_modality=code",
             "capability=vision",
@@ -424,9 +487,10 @@ mod tests {
             );
         }
         let repeated = parse_list_query(Some(
-            "input_modality=text&input_modality=text&capability=tool_calls&capability=tool_calls",
+            "provider=OpenAI&provider=OpenAI&input_modality=text&input_modality=text&capability=tool_calls&capability=tool_calls",
         ))
         .unwrap();
+        assert_eq!(repeated.providers(), &["OpenAI"]);
         assert_eq!(repeated.input_modalities(), &[ModelCatalogModality::Text]);
         assert_eq!(
             repeated.capabilities(),
@@ -450,5 +514,21 @@ mod tests {
         assert_eq!(value["pricing_scope"], "public_base");
         assert_eq!(value["models"], serde_json::json!([]));
         assert!(value["next_cursor"].is_null());
+    }
+
+    #[test]
+    fn provider_response_serializes_scope_and_authoritative_counts() {
+        let summary = ModelCatalogProviderSummary::new(
+            ModelCatalogPricingScope::PublicBase,
+            vec![ModelCatalogProvider::new("OpenAI".to_owned(), 2).unwrap()],
+        )
+        .unwrap();
+        let value =
+            serde_json::to_value(ModelCatalogProviderListResponse::from_summary(summary)).unwrap();
+        assert_eq!(value["pricing_scope"], "public_base");
+        assert_eq!(
+            value["providers"],
+            serde_json::json!([{"name": "OpenAI", "model_count": 2}])
+        );
     }
 }
