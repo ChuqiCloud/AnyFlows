@@ -315,7 +315,7 @@ async fn cumulative_token_request_limit_rejects_before_second_upstream_call() {
     );
     let server = start_token_admission_server(&database, proxy_address).await;
     let authorization = format!("Bearer {CLIENT_KEY}");
-    let inbound = br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}]}"#;
+    let inbound = br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}],"max_tokens":2048}"#;
 
     let first = send_request(
         server.0,
@@ -506,7 +506,7 @@ async fn full_chain_preserves_verified_request_and_response_bytes() {
     }
     assert!(matches!(captured.try_recv(), Err(TryRecvError::Empty)));
 
-    let inbound = br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}]}"#;
+    let inbound = br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}],"max_tokens":2048}"#;
     let unknown_authorization = format!("Bearer {UNKNOWN_CLIENT_KEY}");
     let unknown = send_request(
         address,

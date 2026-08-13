@@ -9,7 +9,7 @@ use af_domain::{
     AfError, BillingReservationId, ConcurrencyLimit, GatewayPrincipal, GroupId, Protocol,
 };
 use af_http::{ChatService, ChatServiceFuture};
-use af_protocol::{CanonicalRequestEnvelope, Usage};
+use af_protocol::{CanonicalRequestEnvelope, TokenCount, Usage};
 use af_relay::{
     ChatResponse, GenerationCompletionFuture, GenerationCompletionHook, UsageResolutionError,
     estimate_openai_request_upper_bound,
@@ -20,6 +20,7 @@ use uuid::Uuid;
 const MAX_PRECHARGE_ATTEMPTS: usize = 3;
 const MAX_COMPLETION_ATTEMPTS: usize = 3;
 const RETRY_DELAY: Duration = Duration::from_millis(20);
+const DEFAULT_MAX_OUTPUT_TOKENS: i64 = 8_192;
 
 /// 已固定路由计划的一次异步执行结果。
 pub type PlannedChatExecutionFuture =
@@ -94,6 +95,10 @@ impl BillingChatService {
         response_protocol: Protocol,
         request_id: &str,
     ) -> Result<ChatResponse, AfError> {
+        // 缺省值必须同时约束预扣和上游输出，避免预留额度低于平台真实成本。
+        let request = request.with_default_max_output_tokens(
+            TokenCount::new(DEFAULT_MAX_OUTPUT_TOKENS).expect("网关默认输出上限必须是合法正整数"),
+        );
         let upper_bound = estimate_openai_request_upper_bound(request.canonical())
             .map_err(map_upper_bound_error)?;
         let model = request.canonical().model.clone();
@@ -389,6 +394,11 @@ mod tests {
         target_group_id: GroupId,
     }
 
+    struct RequestTrackingStub {
+        requests: Arc<Mutex<Vec<(i64, Option<Protocol>)>>>,
+        target_group_id: GroupId,
+    }
+
     impl ChatRoutePlanner for ProtocolTrackingStub {
         fn plan<'a>(
             &'a self,
@@ -399,6 +409,33 @@ mod tests {
             _request_id: &'a str,
         ) -> ChatRoutePlanFuture<'a> {
             self.protocols.lock().unwrap().push(response_protocol);
+            Box::pin(async move {
+                Ok(Box::new(FullExecution {
+                    target_group_id: self.target_group_id,
+                }) as Box<dyn PlannedChatExecution>)
+            })
+        }
+    }
+
+    impl ChatRoutePlanner for RequestTrackingStub {
+        fn plan<'a>(
+            &'a self,
+            _principal: &'a GatewayPrincipal,
+            _user_concurrency: Option<ConcurrencyLimit>,
+            request: CanonicalRequestEnvelope,
+            _response_protocol: Protocol,
+            _request_id: &'a str,
+        ) -> ChatRoutePlanFuture<'a> {
+            let max_output_tokens = request
+                .canonical()
+                .sampling
+                .max_output_tokens()
+                .expect("计费入口必须在规划前补齐输出上限")
+                .get();
+            self.requests
+                .lock()
+                .unwrap()
+                .push((max_output_tokens, request.source_protocol()));
             Box::pin(async move {
                 Ok(Box::new(FullExecution {
                     target_group_id: self.target_group_id,
@@ -587,6 +624,35 @@ mod tests {
             &[Protocol::Anthropic, Protocol::OpenAiResponses]
         );
         assert_eq!(settlement.calls.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn missing_output_limit_reaches_route_plan_as_rebuilt_default() {
+        let requests = Arc::new(Mutex::new(Vec::new()));
+        let service = BillingChatService::new(
+            Arc::new(RequestTrackingStub {
+                requests: requests.clone(),
+                target_group_id: GroupId::new(3).unwrap(),
+            }),
+            Arc::new(metered_snapshot_source().await),
+            Some(Arc::new(PrechargeStub::default())),
+            Some(Arc::new(RefundStub)),
+            Some(Arc::new(SettlementStub::default())),
+            Arc::new(UsageStub::default()),
+        );
+
+        service
+            .chat_completions(
+                &principal(),
+                None,
+                responses_request(),
+                Protocol::OpenAiResponses,
+                "request-default-output-limit",
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(requests.lock().unwrap().as_slice(), &[(8_192, None)]);
     }
 
     #[tokio::test]

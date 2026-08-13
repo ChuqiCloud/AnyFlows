@@ -521,6 +521,88 @@ impl OutputDecodeState {
         Ok(())
     }
 
+    /// 使用已验证的流内身份补齐终态快照省略的 Item `id` 与状态字段。
+    pub(super) fn fill_missing_terminal_item_identity(
+        &self,
+        response: &mut Value,
+    ) -> Result<(), ParseStreamError> {
+        let items = response
+            .as_object_mut()
+            .and_then(|root| root.get_mut("output"))
+            .and_then(Value::as_array_mut)
+            .ok_or(ParseStreamError::InvalidValue)?;
+        if items.len() != self.identities.len() {
+            return Err(ParseStreamError::InvalidSequence);
+        }
+        for (item, expected) in items.iter_mut().zip(&self.identities) {
+            let item = item.as_object_mut().ok_or(ParseStreamError::InvalidValue)?;
+            if !item.contains_key("id") {
+                item.insert("id".to_owned(), Value::String(expected.id.clone()));
+            }
+            if !item.contains_key("status") && !matches!(expected.kind, ItemKind::Compaction) {
+                item.insert("status".to_owned(), Value::String("completed".to_owned()));
+            }
+            if !item.contains_key("phase")
+                && let Some(phase) = expected.message_phase
+            {
+                item.insert("phase".to_owned(), Value::String(phase.as_str().to_owned()));
+            }
+        }
+        Ok(())
+    }
+
+    /// 以 `response.completed` 中的 reasoning 加密上下文为最终快照，并向下游补发更新。
+    pub(super) fn reconcile_terminal_reasoning_signatures(
+        &mut self,
+        response: &Value,
+        output: &mut Vec<CanonicalStreamEvent>,
+    ) -> Result<(), ParseStreamError> {
+        let items = response
+            .as_object()
+            .and_then(|root| root.get("output"))
+            .and_then(Value::as_array)
+            .ok_or(ParseStreamError::InvalidValue)?;
+        for (item, identity) in items.iter().zip(&self.identities) {
+            let Some(content_index) = identity.canonical_content_index else {
+                continue;
+            };
+            let Some(signature) = item
+                .as_object()
+                .and_then(|item| item.get("encrypted_content"))
+                .and_then(Value::as_str)
+            else {
+                continue;
+            };
+            let content = self
+                .content
+                .get_mut(content_index as usize)
+                .ok_or(ParseStreamError::InvalidSequence)?;
+            let ContentBlock::Thinking {
+                signature: current, ..
+            } = content
+            else {
+                return Err(ParseStreamError::InvalidSequence);
+            };
+            if current.as_deref() == Some(signature) {
+                continue;
+            }
+            if signature.is_empty() {
+                return Err(ParseStreamError::InvalidValue);
+            }
+            self.budget
+                .add_signature(signature, 0)
+                .map_err(map_state_error)?;
+            *current = Some(signature.to_owned());
+            output.push(CanonicalStreamEvent::ReasoningDelta {
+                choice_index: 0,
+                content_index,
+                text: String::new(),
+                signature: Some(signature.to_owned()),
+            });
+        }
+        Ok(())
+    }
+
     /// 返回最终累计的 Canonical 内容块。
     pub(super) fn content(&self) -> &[ContentBlock] {
         &self.content
@@ -712,8 +794,21 @@ impl OutputDecodeState {
         {
             return Err(ParseStreamError::InvalidSequence);
         }
-        match (&active.signature, &item.encrypted_content) {
-            (Some(expected), Some(actual)) if expected == actual => {}
+        let resolved_signature = match (&active.signature, &item.encrypted_content) {
+            (Some(expected), Some(actual)) if expected == actual => Some(expected.clone()),
+            (Some(_), Some(actual)) if !actual.is_empty() => {
+                // 部分兼容供应商会在 reasoning 完成帧替换临时加密上下文，以终态快照为准。
+                self.budget
+                    .add_signature(actual, 0)
+                    .map_err(map_state_error)?;
+                output.push(CanonicalStreamEvent::ReasoningDelta {
+                    choice_index: 0,
+                    content_index: active.canonical_index,
+                    text: String::new(),
+                    signature: Some(actual.clone()),
+                });
+                Some(actual.clone())
+            }
             (None, Some(signature)) if !signature.is_empty() => {
                 self.budget
                     .add_signature(signature, 0)
@@ -724,10 +819,11 @@ impl OutputDecodeState {
                     text: String::new(),
                     signature: Some(signature.clone()),
                 });
+                Some(signature.clone())
             }
-            (None, None) => {}
+            (None, None) => None,
             _ => return Err(ParseStreamError::InvalidSequence),
-        }
+        };
         if !active.emitted && item.encrypted_content.is_none() {
             output.push(CanonicalStreamEvent::ReasoningDelta {
                 choice_index: 0,
@@ -742,12 +838,13 @@ impl OutputDecodeState {
         };
         self.content.push(ContentBlock::Thinking {
             text: summary_text,
-            signature: item.encrypted_content,
+            signature: resolved_signature,
         });
         self.identities.push(ItemIdentity {
             kind: ItemKind::Reasoning,
             id: active.id,
             message_phase: None,
+            canonical_content_index: Some(active.canonical_index),
         });
         Ok(())
     }
@@ -796,6 +893,7 @@ impl OutputDecodeState {
             kind: ItemKind::Message,
             id: active.id,
             message_phase,
+            canonical_content_index: None,
         });
         Ok(())
     }
@@ -843,6 +941,7 @@ impl OutputDecodeState {
             kind: ItemKind::Function,
             id: active.id,
             message_phase: None,
+            canonical_content_index: None,
         });
         Ok(())
     }
@@ -874,6 +973,7 @@ impl OutputDecodeState {
             kind: ItemKind::Compaction,
             id: active.id,
             message_phase: None,
+            canonical_content_index: None,
         });
         output.push(CanonicalStreamEvent::CompactionEnd {
             choice_index: 0,
@@ -969,6 +1069,7 @@ struct ItemIdentity {
     kind: ItemKind,
     id: String,
     message_phase: Option<MessagePhaseWire>,
+    canonical_content_index: Option<u32>,
 }
 
 #[derive(Clone, Copy)]
@@ -1045,9 +1146,10 @@ fn compaction_value(id: &str, encrypted_content: &str) -> Result<Value, ParseStr
 }
 
 fn is_terminal_item_status(status: Option<ItemStatusWire>) -> bool {
+    // reasoning 的完成事件在部分 Responses 兼容实现中省略 status，事件类型本身已表达终态。
     matches!(
         status,
-        Some(ItemStatusWire::Completed | ItemStatusWire::Incomplete)
+        None | Some(ItemStatusWire::Completed | ItemStatusWire::Incomplete)
     )
 }
 

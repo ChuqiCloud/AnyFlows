@@ -2276,6 +2276,7 @@
       "copyUrl": "Copy video URL",
       "openVideo": "Open video",
       "copied": "Copied"
+      ,"scrollToBottom": "Jump to latest message"
     }
   },
   "playground": {
@@ -2290,6 +2291,7 @@
       "streaming": "Generating",
       "complete": "Complete",
       "partial": "Partially complete",
+      "interrupted": "Response interrupted",
       "error": "Request failed",
       "cancelled": "Stopped",
       "loadingModels": "Loading models",
@@ -2299,6 +2301,8 @@
     "settings": {
       "title": "Session settings",
       "description": "Configure access credentials, model, and generation parameters.",
+      "expand": "Open session settings",
+      "collapse": "Close session settings",
       "access": "Access credential",
       "model": "Model",
       "systemPrompt": "System prompt",
@@ -2352,6 +2356,7 @@
       "assistant": "Assistant",
       "generating": "Waiting for the first response chunk",
       "cancelled": "Stopped",
+      "interrupted": "Partial response",
       "error": "Incomplete",
       "emptyResponse": "The upstream returned no text content."
     },
@@ -2396,6 +2401,7 @@
       "rate_limited": "The API key has reached a request limit. Try again later.",
       "model_unavailable": "This key cannot use the selected model, or the model is unavailable.",
       "invalid_request": "The selected model does not support the request parameters or conversation content.",
+      "interrupted": "The partial upstream response is preserved, but the stream ended before completion. This turn will not be saved or included in the next request.",
       "upstream_unavailable": "The upstream service is unavailable. Send the request again later.",
       "unknown": "The request did not complete and no recognized error was returned."
     },

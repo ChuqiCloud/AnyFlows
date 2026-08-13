@@ -211,6 +211,50 @@ fn encodes_reasoning_signature_and_function_call() {
 }
 
 #[test]
+fn replaces_reasoning_signature_snapshot_after_message() {
+    let mut encoder = OpenAiResponsesStreamEncoder::new(RESPONSE_ID, MODEL, CREATED_AT).unwrap();
+    let mut bytes = Vec::new();
+    for event in [
+        CanonicalStreamEvent::MessageStart {
+            choice_index: 0,
+            role: Role::Assistant,
+        },
+        CanonicalStreamEvent::ReasoningDelta {
+            choice_index: 0,
+            content_index: 0,
+            text: String::new(),
+            signature: Some("initial-signature".to_owned()),
+        },
+        CanonicalStreamEvent::ContentDelta {
+            choice_index: 0,
+            content_index: 1,
+            delta: ContentDelta::Text("answer".to_owned()),
+        },
+        CanonicalStreamEvent::ReasoningDelta {
+            choice_index: 0,
+            content_index: 0,
+            text: String::new(),
+            signature: Some("terminal-signature".to_owned()),
+        },
+        CanonicalStreamEvent::Finish {
+            choice_index: 0,
+            reason: FinishReason::Stop,
+            stop_sequence: None,
+        },
+        CanonicalStreamEvent::StreamEnd,
+    ] {
+        bytes.extend(encoder.encode(event).unwrap());
+    }
+
+    let events = parse_encoded_events(&bytes);
+    let terminal = &events.last().unwrap().1["response"];
+    assert_eq!(
+        terminal["output"][0]["encrypted_content"],
+        "terminal-signature"
+    );
+}
+
+#[test]
 fn encodes_incomplete_terminal_with_matching_item_status() {
     let mut encoder = OpenAiResponsesStreamEncoder::new(RESPONSE_ID, MODEL, CREATED_AT).unwrap();
     let mut bytes = Vec::new();

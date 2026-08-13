@@ -12,7 +12,7 @@ import { normalizePlaygroundModels } from './playground-model-selection'
 import { playgroundProtocolForModel, type PlaygroundProtocol } from './playground-protocol'
 
 const DEFAULT_TEMPERATURE = 0.7
-const DEFAULT_MAX_OUTPUT_TOKENS = 4096
+const DEFAULT_MAX_OUTPUT_TOKENS = 8192
 
 /** 收拢当前标签页凭据、模型目录与共享生成参数。 */
 export function usePlaygroundConfiguration() {

@@ -370,7 +370,11 @@ fn validate_tools(value: Option<&Value>) -> Result<HashSet<String>, ResponseRawE
             .get("parameters")
             .ok_or(ResponseRawError::InvalidValue)?;
         validate_schema(parameters, &mut total_schema_bytes).map_err(map_request_error)?;
-        if !tool.get("strict").is_some_and(Value::is_boolean) {
+        // `strict` 在 Responses 函数工具中是可选字段；供应商回显省略值时仍属于合法协议。
+        if tool
+            .get("strict")
+            .is_some_and(|value| !value.is_null() && !value.is_boolean())
+        {
             return Err(ResponseRawError::InvalidValue);
         }
         if tool.get("description").is_some_and(|value| {

@@ -11,7 +11,12 @@ export function playgroundStatusClassName(status: PlaygroundDisplayStatus) {
   if (status === 'error' || status === 'modelUnavailable') {
     return 'bg-destructive/12 text-destructive'
   }
-  if (status === 'partial' || status === 'cancelled' || status === 'keyRequired') {
+  if (
+    status === 'partial'
+    || status === 'interrupted'
+    || status === 'cancelled'
+    || status === 'keyRequired'
+  ) {
     return 'bg-warning/12 text-warning'
   }
   if (status === 'streaming' || status === 'loadingModels') {

@@ -3,6 +3,7 @@ import {
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
+  type ReactNode,
   useEffect,
   useRef,
   useState,
@@ -21,6 +22,7 @@ type PlaygroundComparisonPanelProps = {
   apiKeyReady: boolean
   canSend: boolean
   draft: string
+  modelPicker: ReactNode
   sessions: PlaygroundSession[]
   status: PlaygroundDisplayStatus
   streaming: boolean
@@ -66,7 +68,7 @@ export function PlaygroundComparisonPanel(props: PlaygroundComparisonPanelProps)
   } as CSSProperties
 
   return (
-    <section className="grid min-h-[36rem] min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1 shadow-sm">
+    <section className="grid min-h-[36rem] min-w-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1 shadow-sm transition-[border-color,box-shadow] duration-200 ease-[var(--ease-ai-out)]">
       {columnCount === 0 ? (
         <div className="ai-workbench-surface grid min-h-0 place-items-center overflow-hidden px-6 py-12 text-center">
           <div className="max-w-sm">
@@ -131,12 +133,12 @@ export function PlaygroundComparisonPanel(props: PlaygroundComparisonPanelProps)
         </div>
       )}
 
-      <form className="border-t border-[var(--hairline)] bg-background/45 p-3 backdrop-blur-xl" onSubmit={submit}>
-        <div className="overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1 shadow-md transition-[border-color,box-shadow] duration-200 ease-[var(--ease-ai-out)] focus-within:border-info/40 focus-within:shadow-[var(--shadow-glow-info)]">
+      <form className="bg-background/45 px-3 pb-3 pt-2 backdrop-blur-xl md:px-5 md:pb-4" onSubmit={submit}>
+        <div className="mx-auto max-w-4xl overflow-hidden rounded-xl border border-[var(--hairline)] bg-surface-1 shadow-md transition-[border-color,box-shadow,transform] duration-200 ease-[var(--ease-ai-out)] focus-within:-translate-y-0.5 focus-within:border-info/40 focus-within:shadow-[var(--shadow-glow-info)]">
           <Textarea
             ref={composerRef}
             value={props.draft}
-            className="max-h-44 min-h-24 resize-y rounded-none border-0 bg-transparent px-3.5 py-3 text-sm leading-6 shadow-none focus-visible:ring-0"
+            className="max-h-44 min-h-20 resize-y rounded-none border-0 bg-transparent px-4 py-3.5 text-sm leading-6 shadow-none focus-visible:ring-0"
             maxLength={100_000}
             placeholder={t(props.apiKeyReady
               ? 'playground.composer.placeholder'
@@ -157,18 +159,23 @@ export function PlaygroundComparisonPanel(props: PlaygroundComparisonPanelProps)
                 <span className="tabular-nums">{t('playground.comparison.summary', { count: columnCount })}</span>
               ) : null}
             </div>
-            {props.streaming ? (
-              <Button type="button" size="sm" variant="secondary" onClick={props.onStopAll}>
-                <Square aria-hidden="true" />{t('playground.actions.stopAll')}
-              </Button>
-            ) : (
-              <Button type="submit" size="sm" disabled={!props.canSend}>
-                <SendHorizontal aria-hidden="true" />
-                {columnCount > 1
-                  ? t('playground.actions.sendMultiple', { count: columnCount })
-                  : t('playground.actions.send')}
-              </Button>
-            )}
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="min-w-0 max-w-[min(100%,20rem)] flex-1 md:max-w-[24rem]">
+                {props.modelPicker}
+              </div>
+              {props.streaming ? (
+                <Button type="button" size="sm" variant="secondary" onClick={props.onStopAll}>
+                  <Square aria-hidden="true" />{t('playground.actions.stopAll')}
+                </Button>
+              ) : (
+                <Button type="submit" size="sm" disabled={!props.canSend}>
+                  <SendHorizontal aria-hidden="true" />
+                  {columnCount > 1
+                    ? t('playground.actions.sendMultiple', { count: columnCount })
+                    : t('playground.actions.send')}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </form>

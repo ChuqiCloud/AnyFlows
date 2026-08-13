@@ -18,6 +18,7 @@ export type PlaygroundSessionAction =
   | { type: 'begin'; turns: PlaygroundTurnSeed[] }
   | { type: 'append'; model: string; assistantId: string; delta: string }
   | { type: 'complete'; model: string; assistantId: string; usage: PlaygroundUsage }
+  | { type: 'interrupt'; model: string; assistantId: string }
   | {
     type: 'fail'
     model: string
@@ -97,6 +98,18 @@ export function playgroundSessionReducer(
         usage: action.usage,
       }
     }
+    if (action.type === 'interrupt') {
+      return {
+        ...session,
+        messages: updateAssistant(session.messages, action.assistantId, (message) => ({
+          ...message,
+          status: 'interrupted',
+        })),
+        requestState: 'interrupted',
+        errorKind: undefined,
+        usage: undefined,
+      }
+    }
     return {
       ...session,
       messages: updateAssistant(session.messages, action.assistantId, (message) => ({
@@ -130,10 +143,12 @@ export function playgroundOverallState(sessions: PlaygroundSession[]): Playgroun
   if (sessions.some((session) => session.requestState === 'streaming')) return 'streaming'
 
   const completed = sessions.filter((session) => session.requestState === 'complete').length
+  const interrupted = sessions.filter((session) => session.requestState === 'interrupted').length
   const failed = sessions.filter((session) => session.requestState === 'error').length
   const cancelled = sessions.filter((session) => session.requestState === 'cancelled').length
   if (completed === sessions.length) return 'complete'
-  if (completed > 0) return 'partial'
+  if (interrupted === sessions.length) return 'interrupted'
+  if (completed > 0 || interrupted > 0) return 'partial'
   if (failed > 0 && cancelled > 0) return 'error'
   if (failed > 0) return 'error'
   if (cancelled > 0) return 'cancelled'

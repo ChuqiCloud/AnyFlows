@@ -132,6 +132,14 @@ export function usePlaygroundComparison(
           })
           return
         }
+        if (result.interrupted) {
+          dispatch({
+            type: 'interrupt',
+            model: turn.model,
+            assistantId: turn.assistantMessage.id,
+          })
+          return
+        }
         dispatch({
           type: 'complete',
           model: turn.model,

@@ -279,6 +279,9 @@ pub(super) enum InputContentWire {
     /// 文本输入。
     #[serde(rename = "input_text")]
     Text(InputTextWire),
+    /// 上一轮助手返回的文本输出。
+    #[serde(rename = "output_text")]
+    OutputText(OutputTextInputWire),
     /// 图片输入。
     #[serde(rename = "input_image")]
     Image(InputImageWire),
@@ -296,6 +299,20 @@ pub(super) struct InputTextWire {
     /// 显式缓存断点当前尚未进入 Canonical。
     #[serde(default, deserialize_with = "deserialize_field")]
     pub(super) prompt_cache_breakpoint: Field<Value>,
+}
+
+/// 手动回传上一轮助手输出时使用的文本块。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct OutputTextInputWire {
+    /// 助手返回的文本内容。
+    pub(super) text: String,
+    /// 官方输出 Item 可能携带的引用标注；非空标注尚未进入 Canonical。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) annotations: Field<Vec<Value>>,
+    /// 官方输出 Item 可能携带的对数概率；非空数据尚未进入 Canonical。
+    #[serde(default, deserialize_with = "deserialize_field")]
+    pub(super) logprobs: Field<Vec<Value>>,
 }
 
 /// 图片输入块。

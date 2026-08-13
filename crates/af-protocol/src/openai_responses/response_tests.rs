@@ -295,6 +295,25 @@ fn round_trips_reasoning_text_tools_usage_and_same_protocol_echoes() {
     assert_eq!(parse_json(rebuilt).unwrap(), parsed);
 }
 
+#[test]
+fn accepts_response_tool_echo_without_optional_strictness() {
+    let mut value = response(
+        vec![message("msg_optional_strict", "answer", "completed")],
+        "completed",
+    );
+    add_official_echoes(&mut value);
+    value["tools"][0]
+        .as_object_mut()
+        .expect("工具定义必须是对象")
+        .remove("strict");
+
+    let parsed = parse_json(value).expect("供应商可省略函数工具的可选 strict 字段");
+    assert_eq!(
+        parsed.choices[0].message.content[0],
+        ContentBlock::Text("answer".to_owned())
+    );
+}
+
 fn add_official_echoes(value: &mut Value) {
     value["background"] = json!(false);
     value["completed_at"] = json!(1_700_000_001_i64);

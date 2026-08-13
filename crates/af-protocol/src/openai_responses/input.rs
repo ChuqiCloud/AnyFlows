@@ -18,8 +18,8 @@ use super::{
         FunctionCallOutputItemWire, FunctionCallOutputTypeWire, FunctionCallTypeWire,
         FunctionOutputWire, ImageDetailWire, InputContentWire, InputFileWire, InputImageWire,
         InputItemWire, InputMessageWire, InputTextWire, InputWire, MessageContentWire,
-        MessageRoleWire, ReasoningInputItemWire, ReasoningInputTypeWire, ReasoningSummaryTypeWire,
-        ReasoningSummaryWire,
+        MessageRoleWire, OutputTextInputWire, ReasoningInputItemWire, ReasoningInputTypeWire,
+        ReasoningSummaryTypeWire, ReasoningSummaryWire,
     },
 };
 use crate::{
@@ -262,6 +262,18 @@ fn convert_content(
             }
             state.add_text(text)
         }
+        InputContentWire::OutputText(OutputTextInputWire {
+            text,
+            annotations,
+            logprobs,
+        }) if role == Role::Assistant => {
+            // 空数组不携带额外语义；非空标注或概率必须等 Canonical 明确建模后再接入。
+            if field_has_items(&annotations) || field_has_items(&logprobs) {
+                return Err(ParseRequestError::UnsupportedFeature);
+            }
+            state.add_text(text)
+        }
+        InputContentWire::OutputText(_) => Err(ParseRequestError::InvalidValue),
         InputContentWire::Image(image) if role == Role::User => convert_image(image, state),
         InputContentWire::Image(_) => Err(ParseRequestError::UnsupportedFeature),
         InputContentWire::File(InputFileWire {
@@ -407,6 +419,7 @@ fn convert_tool_output_content(
             }
             state.add_text(text)
         }
+        InputContentWire::OutputText(_) => Err(ParseRequestError::InvalidValue),
         InputContentWire::Image(image) => convert_image(image, state),
         InputContentWire::File(file) => {
             let InputFileWire {
@@ -556,6 +569,10 @@ fn map_argument_error(error: BoundedJsonError) -> ParseRequestError {
 
 fn field_is_present<T>(field: &Field<T>) -> bool {
     matches!(field, Field::Value(_))
+}
+
+fn field_has_items<T>(field: &Field<Vec<T>>) -> bool {
+    matches!(field, Field::Value(items) if !items.is_empty())
 }
 
 struct InputConvertState {
