@@ -9,6 +9,7 @@ import {
   playgroundSessionReducer,
 } from '../src/features/playground/playground-comparison-state.ts'
 import { isPlaygroundTranscriptNearBottom } from '../src/features/playground/playground-scroll.ts'
+import { normalizePlaygroundInstructions } from '../src/features/playground/playground-instructions.ts'
 import {
   normalizePlaygroundModels,
   togglePlaygroundModel,
@@ -195,4 +196,10 @@ test('仅在对话视口贴近底部时保持流式跟随', () => {
   assert.equal(isPlaygroundTranscriptNearBottom({ scrollHeight: 1000, scrollTop: 428, clientHeight: 500 }), true)
   assert.equal(isPlaygroundTranscriptNearBottom({ scrollHeight: 1000, scrollTop: 300, clientHeight: 500 }), false)
   assert.equal(isPlaygroundTranscriptNearBottom({ scrollHeight: 400, scrollTop: 0, clientHeight: 500 }), true)
+})
+
+test('空白系统提示词不会注入请求', () => {
+  assert.equal(normalizePlaygroundInstructions(''), undefined)
+  assert.equal(normalizePlaygroundInstructions('  \n\t  '), undefined)
+  assert.equal(normalizePlaygroundInstructions('  请简洁回答  '), '请简洁回答')
 })
