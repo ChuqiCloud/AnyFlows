@@ -2390,6 +2390,8 @@
       "empty": "没有匹配的可用模型",
       "selectedCount": "已选 {{count}} 个模型",
       "selectionCount": "已选择 {{count}} / {{max}} 个模型",
+      "singleMode": "单模型模式，切换后继续当前对话",
+      "comparisonMode": "多模型对比",
       "catalogCount": "{{count}} 个可见模型",
       "selectedLabel": "已选择的比较模型",
       "locked": "当前会话正在生成或保存，完成后可切换模型",
@@ -2446,6 +2448,7 @@
       "pending": "尚无用量"
     },
     "comparison": {
+      "singleSummary": "单模型对话",
       "summary_one": "{{count}} 个模型 · {{count}} 个独立请求",
       "summary_other": "{{count}} 个模型 · {{count}} 个独立请求",
       "modelTabs": "比较模型",

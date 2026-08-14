@@ -43,14 +43,15 @@ export function PlaygroundPage() {
     history.bindRestoredConversation(conversation)
   }
 
-  const changeModels = (models: string[]) => {
-    configuration.setSelectedModels(models)
+  const changeModels = (models: string[], comparisonEnabled: boolean) => {
+    configuration.setSelectedModels(models, comparisonEnabled)
   }
 
   const renderModelPicker = (compact = false) => (
     <PlaygroundModelPicker
       compact={compact}
       values={configuration.selectedModels}
+      comparisonEnabled={configuration.comparisonEnabled}
       search={configuration.modelSearchDraft}
       models={configuration.models}
       protocolByModel={configuration.protocolByModel}

@@ -614,6 +614,8 @@ impl OutputDecodeState {
         output_index: u32,
         output: &mut Vec<CanonicalStreamEvent>,
     ) -> Result<(), ParseStreamError> {
+        // 部分兼容上游在 added 事件中以空串占位，真实密文会在 done 事件中补齐。
+        let encrypted_content = item.encrypted_content.filter(|value| !value.is_empty());
         if self.phase != OutputPhase::Start
             || !matches!(item.status, None | Some(ItemStatusWire::InProgress))
             || !item.summary.is_empty()
@@ -628,22 +630,19 @@ impl OutputDecodeState {
         self.add_item_id(&item.id)?;
         self.budget.begin_content_block().map_err(map_state_error)?;
         let canonical_index = self.take_content_index()?;
-        if let Some(signature) = item.encrypted_content.as_deref() {
-            if signature.is_empty() {
-                return Err(ParseStreamError::InvalidValue);
-            }
+        if let Some(signature) = encrypted_content.as_deref() {
             self.budget
                 .add_signature(signature, 0)
                 .map_err(map_state_error)?;
         }
         self.phase = OutputPhase::AfterReasoning;
-        let emitted = item.encrypted_content.is_some();
+        let emitted = encrypted_content.is_some();
         if emitted {
             output.push(CanonicalStreamEvent::ReasoningDelta {
                 choice_index: 0,
                 content_index: canonical_index,
                 text: String::new(),
-                signature: item.encrypted_content.clone(),
+                signature: encrypted_content.clone(),
             });
         }
         self.active = Some(ActiveItem::Reasoning(ReasoningState {
@@ -651,7 +650,7 @@ impl OutputDecodeState {
             id: item.id,
             canonical_index,
             summary: None,
-            signature: item.encrypted_content,
+            signature: encrypted_content,
             emitted,
         }));
         Ok(())

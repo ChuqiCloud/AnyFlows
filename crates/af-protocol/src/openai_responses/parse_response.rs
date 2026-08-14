@@ -14,9 +14,9 @@ use super::{
     response_raw::{ResponseRawError, validate_raw_fields},
     response_wire::{
         AssistantRoleWire, CompactionItemWire, FunctionCallWire, IncompleteReasonWire,
-        ItemStatusWire, MessagePhaseWire, OutputContentWire, OutputMessageWire, ReasoningItemWire,
-        ResponseObjectWire, ResponseOutputItemWire, ResponseStatusWire, ResponseUsageWire,
-        ResponsesResponseWire,
+        InputTokensDetailsWire, ItemStatusWire, MessagePhaseWire, OutputContentWire,
+        OutputMessageWire, ReasoningItemWire, ResponseObjectWire, ResponseOutputItemWire,
+        ResponseStatusWire, ResponseUsageWire, ResponsesResponseWire,
     },
 };
 use crate::bounded_json::{BoundedJsonError, JsonLimits, parse_value};
@@ -514,7 +514,8 @@ fn convert_usage(usage: Option<ResponseUsageWire>) -> Result<Option<Usage>, Pars
         return Err(ParseResponseError::InvalidValue);
     }
 
-    let input_details = usage.input_tokens_details.unwrap_or_default();
+    let input_details =
+        merge_input_details(usage.input_tokens_details, usage.prompt_tokens_details)?;
     let cache_read = optional_token(input_details.cached_tokens)?;
     let cache_write = optional_token(input_details.cache_write_tokens)?;
     if cache_write != TokenCount::ZERO {
@@ -538,6 +539,33 @@ fn convert_usage(usage: Option<ResponseUsageWire>) -> Result<Option<Usage>, Pars
     )
     .map(Some)
     .map_err(|_| ParseResponseError::InvalidValue)
+}
+
+/// 合并 Responses 正式字段与第三方 Chat 风格别名，禁止冲突事实进入计费。
+fn merge_input_details(
+    input: Option<InputTokensDetailsWire>,
+    prompt: Option<InputTokensDetailsWire>,
+) -> Result<InputTokensDetailsWire, ParseResponseError> {
+    let input = input.unwrap_or_default();
+    let prompt = prompt.unwrap_or_default();
+    Ok(InputTokensDetailsWire {
+        cache_write_tokens: merge_optional_detail(
+            input.cache_write_tokens,
+            prompt.cache_write_tokens,
+        )?,
+        cached_tokens: merge_optional_detail(input.cached_tokens, prompt.cached_tokens)?,
+    })
+}
+
+fn merge_optional_detail(
+    primary: Option<i64>,
+    alias: Option<i64>,
+) -> Result<Option<i64>, ParseResponseError> {
+    match (primary, alias) {
+        (Some(primary), Some(alias)) if primary != alias => Err(ParseResponseError::InvalidValue),
+        (Some(value), _) | (_, Some(value)) => Ok(Some(value)),
+        (None, None) => Ok(None),
+    }
 }
 
 fn validate_raw(
