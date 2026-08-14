@@ -90,6 +90,15 @@ pub struct AdminUsageLogRecord {
     audio_duration_nanoseconds: Option<i64>,
     video_duration_seconds: Option<i64>,
     video_resolution: Option<UsageLogVideoResolution>,
+    request_id: Option<String>,
+    model: Option<String>,
+    protocol: Option<i16>,
+    operation: Option<i16>,
+    is_stream: Option<bool>,
+    reasoning_effort: Option<i16>,
+    reasoning_budget_tokens: Option<i64>,
+    first_token_ms: Option<i64>,
+    duration_ms: Option<i64>,
     quota: i64,
     created_at: i64,
 }
@@ -167,6 +176,60 @@ impl AdminUsageLogRecord {
         self.video_resolution
     }
 
+    /// 返回可选的公开请求标识；旧记录和异步任务可能为空。
+    #[must_use]
+    pub fn request_id(&self) -> Option<&str> {
+        self.request_id.as_deref()
+    }
+
+    /// 返回可选的客户端模型名。
+    #[must_use]
+    pub fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+
+    /// 返回数据库入口协议码。
+    #[must_use]
+    pub const fn protocol(&self) -> Option<i16> {
+        self.protocol
+    }
+
+    /// 返回数据库操作类型码。
+    #[must_use]
+    pub const fn operation(&self) -> Option<i16> {
+        self.operation
+    }
+
+    /// 返回客户端是否请求流式响应。
+    #[must_use]
+    pub const fn is_stream(&self) -> Option<bool> {
+        self.is_stream
+    }
+
+    /// 返回数据库思考等级码。
+    #[must_use]
+    pub const fn reasoning_effort(&self) -> Option<i16> {
+        self.reasoning_effort
+    }
+
+    /// 返回思考 token 预算。
+    #[must_use]
+    pub const fn reasoning_budget_tokens(&self) -> Option<i64> {
+        self.reasoning_budget_tokens
+    }
+
+    /// 返回流式首个可交付事件耗时。
+    #[must_use]
+    pub const fn first_token_ms(&self) -> Option<i64> {
+        self.first_token_ms
+    }
+
+    /// 返回模型调用取得成功终态的总耗时。
+    #[must_use]
+    pub const fn duration_ms(&self) -> Option<i64> {
+        self.duration_ms
+    }
+
     /// 返回最终扣减额度单位数。
     #[must_use]
     pub const fn quota(&self) -> i64 {
@@ -208,6 +271,30 @@ impl AdminUsageLogRecord {
                 .video_duration_seconds
                 .is_some_and(|value| !(1..=MAX_VIDEO_DURATION_SECONDS).contains(&value))
             || (model.video_resolution.is_some() && video_resolution.is_none())
+            || model
+                .request_id
+                .as_ref()
+                .is_some_and(|value| value.is_empty() || value.len() > 128)
+            || model
+                .model
+                .as_ref()
+                .is_some_and(|value| value.is_empty() || value.len() > 255)
+            || model
+                .protocol
+                .is_some_and(|value| !(1..=11).contains(&value))
+            || model
+                .operation
+                .is_some_and(|value| !(1..=9).contains(&value))
+            || model
+                .reasoning_effort
+                .is_some_and(|value| !(1..=7).contains(&value))
+            || model.reasoning_budget_tokens.is_some_and(|value| value < 0)
+            || model.first_token_ms.is_some_and(|value| value < 0)
+            || model.duration_ms.is_some_and(|value| value < 0)
+            || model
+                .first_token_ms
+                .zip(model.duration_ms)
+                .is_some_and(|(first, total)| first > total)
             || token_values.into_iter().any(|value| value < 0)
         {
             return Err(record_internal_error(
@@ -239,6 +326,15 @@ impl AdminUsageLogRecord {
             audio_duration_nanoseconds: model.audio_duration_nanoseconds,
             video_duration_seconds: model.video_duration_seconds,
             video_resolution,
+            request_id: model.request_id,
+            model: model.model,
+            protocol: model.protocol,
+            operation: model.operation,
+            is_stream: model.is_stream,
+            reasoning_effort: model.reasoning_effort,
+            reasoning_budget_tokens: model.reasoning_budget_tokens,
+            first_token_ms: model.first_token_ms,
+            duration_ms: model.duration_ms,
             quota: model.quota,
             created_at: model.created_at.unix_timestamp(),
         })
@@ -349,12 +445,66 @@ impl AdminUsageLogRepository {
         Ok(AdminUsageLogPageRecord { logs, next_cursor })
     }
 
+    /// 按日志 ID 从新到旧读取指定用户自己的已确认调用事实。
+    pub async fn list_for_user(
+        &self,
+        user_id: UserId,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<AdminUsageLogPageRecord, AdminUsageLogRepositoryError> {
+        if before.is_some_and(|value| value <= 0)
+            || !(1..=MAX_ADMIN_USAGE_LOG_PAGE_SIZE).contains(&limit)
+        {
+            return Err(record_internal_error(
+                AdminUsageLogRepositoryError::Invariant,
+            ));
+        }
+        let operation = self
+            .query_for_user(user_id, before, limit)
+            .with_subscriber(NoSubscriber::default());
+        let mut models = match timeout(self.lookup_timeout, operation).await {
+            Ok(result) => result?,
+            Err(_) => return Err(record_internal_error(AdminUsageLogRepositoryError::Timeout)),
+        };
+        let has_more = models.len() > limit;
+        if has_more {
+            models.truncate(limit);
+        }
+        let logs = models
+            .into_iter()
+            .map(AdminUsageLogRecord::try_from_model)
+            .collect::<Result<Vec<_>, _>>()?;
+        let next_cursor = has_more
+            .then(|| logs.last().map(AdminUsageLogRecord::id))
+            .flatten();
+        Ok(AdminUsageLogPageRecord { logs, next_cursor })
+    }
+
     async fn query(
         &self,
         before: Option<i64>,
         limit: usize,
     ) -> Result<Vec<usage_logs::Model>, AdminUsageLogRepositoryError> {
         let mut query = usage_logs::Entity::find()
+            .order_by_desc(usage_logs::Column::Id)
+            .limit((limit + 1) as u64);
+        if let Some(before) = before {
+            query = query.filter(usage_logs::Column::Id.lt(before));
+        }
+        query
+            .all(self.pool.connection())
+            .await
+            .map_err(|_| record_internal_error(AdminUsageLogRepositoryError::Query))
+    }
+
+    async fn query_for_user(
+        &self,
+        user_id: UserId,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<usage_logs::Model>, AdminUsageLogRepositoryError> {
+        let mut query = usage_logs::Entity::find()
+            .filter(usage_logs::Column::UserId.eq(user_id.get()))
             .order_by_desc(usage_logs::Column::Id)
             .limit((limit + 1) as u64);
         if let Some(before) = before {

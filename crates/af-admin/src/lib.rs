@@ -280,7 +280,8 @@ pub use usage_log_read::{
     AdminUsageLog, AdminUsageLogBillingMode, AdminUsageLogListFuture, AdminUsageLogListQuery,
     AdminUsageLogPage, AdminUsageLogReadError, AdminUsageLogReader, AdminUsageLogSemantics,
     AdminUsageLogSource, AdminUsageLogUsage, AdminUsageLogVideoResolution,
-    DEFAULT_ADMIN_USAGE_LOG_PAGE_SIZE, DatabaseAdminUsageLogReader,
+    DEFAULT_ADMIN_USAGE_LOG_PAGE_SIZE, DatabaseAdminUsageLogReader, UsageLogOperation,
+    UsageLogProtocol, UsageLogReasoningEffort,
 };
 pub use user_profile::{
     DatabaseUserProfileService, MAX_USER_PROFILE_PASSWORD_BYTES, MAX_USER_PROFILE_USERNAME_BYTES,

@@ -6,7 +6,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use af_domain::{BillingReservationId, GatewayPrincipal, Quota};
+use af_domain::{BillingReservationId, GatewayPrincipal, Operation, Protocol, Quota};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, QueryFilter, Set, SqlErr,
     entity::prelude::TimeDateTimeWithTimeZone,
@@ -177,7 +177,7 @@ impl UsageLogUsage {
 }
 
 /// 一条只追加用量日志的已校验写入事实。
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct UsageLogWrite {
     event_id: BillingReservationId,
     principal: GatewayPrincipal,
@@ -189,6 +189,15 @@ pub struct UsageLogWrite {
     audio_duration_nanoseconds: Option<i64>,
     video_duration_seconds: Option<i64>,
     video_resolution: Option<UsageLogVideoResolution>,
+    request_id: Option<String>,
+    model: Option<String>,
+    protocol: Option<Protocol>,
+    operation: Option<Operation>,
+    is_stream: Option<bool>,
+    reasoning_effort: Option<i16>,
+    reasoning_budget_tokens: Option<i64>,
+    first_token_ms: Option<i64>,
+    duration_ms: Option<i64>,
 }
 
 impl UsageLogWrite {
@@ -214,6 +223,15 @@ impl UsageLogWrite {
             audio_duration_nanoseconds: None,
             video_duration_seconds: None,
             video_resolution: None,
+            request_id: None,
+            model: None,
+            protocol: None,
+            operation: None,
+            is_stream: None,
+            reasoning_effort: None,
+            reasoning_budget_tokens: None,
+            first_token_ms: None,
+            duration_ms: None,
         }
     }
 
@@ -258,6 +276,43 @@ impl UsageLogWrite {
     pub const fn video_resolution(&self) -> Option<UsageLogVideoResolution> {
         self.video_resolution
     }
+
+    /// 附加已经通过计费层容量校验的模型调用观测。
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_call_observation(
+        mut self,
+        request_id: &str,
+        model: &str,
+        protocol: Protocol,
+        operation: Operation,
+        is_stream: bool,
+        reasoning_effort: Option<i16>,
+        reasoning_budget_tokens: Option<i64>,
+        first_token_ms: Option<i64>,
+        duration_ms: i64,
+    ) -> Result<Self, UsageLogWriteError> {
+        if request_id.is_empty()
+            || request_id.len() > 128
+            || model.is_empty()
+            || model.len() > 255
+            || reasoning_effort.is_some_and(|value| !(1..=7).contains(&value))
+            || reasoning_budget_tokens.is_some_and(|value| value < 0)
+            || first_token_ms.is_some_and(|value| value < 0 || value > duration_ms)
+            || duration_ms < 0
+        {
+            return Err(UsageLogWriteError::InvalidCallObservation);
+        }
+        self.request_id = Some(request_id.to_owned());
+        self.model = Some(model.to_owned());
+        self.protocol = Some(protocol);
+        self.operation = Some(operation);
+        self.is_stream = Some(is_stream);
+        self.reasoning_effort = reasoning_effort;
+        self.reasoning_budget_tokens = reasoning_budget_tokens;
+        self.first_token_ms = first_token_ms;
+        self.duration_ms = Some(duration_ms);
+        Ok(self)
+    }
 }
 
 impl fmt::Debug for UsageLogWrite {
@@ -283,6 +338,9 @@ pub enum UsageLogWriteError {
     /// 视频时长不是正整数或超过 24 小时固定边界。
     #[error("用量日志视频时长无效")]
     InvalidVideoDuration,
+    /// 调用日志的文本、枚举或延迟观测不满足闭合边界。
+    #[error("用量日志调用观测无效")]
+    InvalidCallObservation,
 }
 
 /// 幂等写入用量日志后的闭合结果。
@@ -419,6 +477,15 @@ impl UsageLogRepository {
             video_resolution: Set(write
                 .video_resolution
                 .map(UsageLogVideoResolution::database_value)),
+            request_id: Set(write.request_id.clone()),
+            model: Set(write.model.clone()),
+            protocol: Set(write.protocol.map(protocol_database_value)),
+            operation: Set(write.operation.map(operation_database_value)),
+            is_stream: Set(write.is_stream),
+            reasoning_effort: Set(write.reasoning_effort),
+            reasoning_budget_tokens: Set(write.reasoning_budget_tokens),
+            first_token_ms: Set(write.first_token_ms),
+            duration_ms: Set(write.duration_ms),
             usage_source: Set(write.source.database_value()),
             usage_semantics: Set(write.semantics.database_value()),
             quota: Set(write.quota.units()),
@@ -486,9 +553,48 @@ fn matches_write(existing: &usage_logs::Model, write: &UsageLogWrite) -> bool {
             == write
                 .video_resolution
                 .map(UsageLogVideoResolution::database_value)
+        && existing.request_id == write.request_id
+        && existing.model == write.model
+        && existing.protocol == write.protocol.map(protocol_database_value)
+        && existing.operation == write.operation.map(operation_database_value)
+        && existing.is_stream == write.is_stream
+        && existing.reasoning_effort == write.reasoning_effort
+        && existing.reasoning_budget_tokens == write.reasoning_budget_tokens
+        && existing.first_token_ms == write.first_token_ms
+        && existing.duration_ms == write.duration_ms
         && existing.usage_source == write.source.database_value()
         && existing.usage_semantics == write.semantics.database_value()
         && existing.quota == write.quota.units()
+}
+
+const fn protocol_database_value(protocol: Protocol) -> i16 {
+    match protocol {
+        Protocol::OpenAiChat => 1,
+        Protocol::OpenAiResponses => 2,
+        Protocol::OpenAiEmbeddings => 3,
+        Protocol::OpenAiImages => 4,
+        Protocol::OpenAiAudio => 5,
+        Protocol::OpenAiSpeech => 6,
+        Protocol::JinaRerank => 7,
+        Protocol::CohereRerank => 8,
+        Protocol::XaiVideo => 9,
+        Protocol::Anthropic => 10,
+        Protocol::Gemini => 11,
+    }
+}
+
+const fn operation_database_value(operation: Operation) -> i16 {
+    match operation {
+        Operation::Chat => 1,
+        Operation::Responses => 2,
+        Operation::ResponsesCompact => 3,
+        Operation::Embedding => 4,
+        Operation::Image => 5,
+        Operation::Audio => 6,
+        Operation::Rerank => 7,
+        Operation::Video => 8,
+        Operation::CountTokens => 9,
+    }
 }
 
 fn is_unique_violation(error: &DbErr) -> bool {

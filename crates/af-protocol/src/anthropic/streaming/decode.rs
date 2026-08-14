@@ -42,6 +42,7 @@ const ARGUMENT_JSON_LIMITS: JsonLimits = JsonLimits {
 pub struct AnthropicMessagesStreamDecoder {
     parser: SseParser,
     initial_usage: Option<Usage>,
+    initial_service_tier: Option<&'static str>,
     active_block: Option<ActiveBlock>,
     seen_tool_ids: HashSet<String>,
     totals: DecodeTotals,
@@ -65,6 +66,7 @@ impl AnthropicMessagesStreamDecoder {
         Ok(Self {
             parser: SseParser::with_max_event_bytes(max_event_bytes)?,
             initial_usage: None,
+            initial_service_tier: None,
             active_block: None,
             seen_tool_ids: HashSet::new(),
             totals: DecodeTotals::default(),
@@ -217,12 +219,13 @@ impl AnthropicMessagesStreamDecoder {
         }
         validate_response_id(&id).map_err(map_response_error)?;
         validate_model(&model).map_err(map_request_error)?;
-        let (usage, raw) = convert_usage(usage).map_err(map_response_error)?;
-        if !raw.is_empty() {
-            return Err(ParseStreamError::UnsupportedFeature);
-        }
+        let service_tier = usage.service_tier.as_ref().map(|tier| tier.as_str());
+        // service_tier 等字段已由 UsageWire 严格验证，但当前流式 Canonical 事件没有
+        // 对应的元数据载体；丢弃这些 raw 元数据，避免合法上游响应被误判为协议错误。
+        let (usage, _) = convert_usage(usage).map_err(map_response_error)?;
 
         self.initial_usage = Some(usage);
+        self.initial_service_tier = service_tier;
         self.started = true;
         output.push(CanonicalStreamEvent::MessageStart {
             choice_index: 0,
@@ -489,6 +492,13 @@ impl AnthropicMessagesStreamDecoder {
         }
         if delta.container.is_some() || delta.stop_details.is_some() {
             return Err(ParseStreamError::UnsupportedFeature);
+        }
+        if let (Some(initial), Some(final_tier)) = (
+            self.initial_service_tier,
+            usage.service_tier.as_ref().map(|tier| tier.as_str()),
+        ) && initial != final_tier
+        {
+            return Err(ParseStreamError::InvalidSequence);
         }
         let (reason, stop_sequence) = convert_stop(delta.stop_reason, delta.stop_sequence)?;
         if (reason == FinishReason::ToolCalls) != self.has_tool_use {

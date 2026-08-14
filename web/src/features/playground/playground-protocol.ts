@@ -4,7 +4,10 @@ import type {
 } from '@/lib/api/generated/types.gen'
 
 /** 试炼场当前可以直接发起请求的客户端协议。 */
-export type PlaygroundProtocol = Extract<ModelCatalogProtocol, 'openai_chat' | 'openai_responses'>
+export type PlaygroundProtocol = Extract<
+  ModelCatalogProtocol,
+  'openai_chat' | 'openai_responses' | 'anthropic'
+>
 
 export type PlaygroundModelTarget = {
   model: string
@@ -20,6 +23,7 @@ export function preferredPlaygroundProtocol(
 ): PlaygroundProtocol | undefined {
   if (protocols.includes('openai_chat')) return 'openai_chat'
   if (protocols.includes('openai_responses')) return 'openai_responses'
+  if (protocols.includes('anthropic')) return 'anthropic'
   return undefined
 }
 

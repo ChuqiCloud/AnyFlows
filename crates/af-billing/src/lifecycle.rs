@@ -20,7 +20,11 @@ pub use ports::{
     BillingPrechargeError, BillingPrechargeFuture, BillingPrechargePort, BillingSettlementError,
     BillingSettlementFuture, BillingSettlementPort, UsageRecordOutcome, UsageRecordPort,
 };
-pub use records::{BillingCompletion, BillingUsageDimensions, BillingUsageRecord};
+pub use records::{
+    BillingCompletion, BillingUsageContext, BillingUsageDimensions, BillingUsageObservation,
+    BillingUsageObservationError, BillingUsageRecord, BillingUsageTiming, MAX_USAGE_MODEL_BYTES,
+    MAX_USAGE_REQUEST_ID_BYTES,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PlanMode {
@@ -216,13 +220,24 @@ impl BillingRequestLifecycle {
         usage: Usage,
         dimensions: BillingUsageDimensions,
     ) -> Result<BillingCompletion, BillingLifecycleError> {
+        self.complete_with_observation(usage, dimensions, BillingUsageObservation::default())
+            .await
+    }
+
+    /// 用最终用量、多模态维度和调用观测完成同一条结算事实。
+    pub async fn complete_with_observation(
+        &mut self,
+        usage: Usage,
+        dimensions: BillingUsageDimensions,
+        observation: BillingUsageObservation,
+    ) -> Result<BillingCompletion, BillingLifecycleError> {
         match self.state {
             LifecycleState::UsagePending(completion) => {
-                ensure_same_completion(completion, usage, dimensions)?;
+                ensure_same_completion(completion, usage, dimensions, observation)?;
                 return self.try_record_usage();
             }
             LifecycleState::Completed(completion) => {
-                ensure_same_completion(completion, usage, dimensions)?;
+                ensure_same_completion(completion, usage, dimensions, observation)?;
                 return Ok(completion);
             }
             LifecycleState::Free | LifecycleState::Metered { .. } => {}
@@ -233,7 +248,7 @@ impl BillingRequestLifecycle {
                 pending_completion: Some(completion),
                 ..
             } => {
-                ensure_same_completion(completion, usage, dimensions)?;
+                ensure_same_completion(completion, usage, dimensions, observation)?;
                 Some(completion)
             }
             LifecycleState::Free
@@ -249,14 +264,17 @@ impl BillingRequestLifecycle {
             completion
         } else {
             let price = self.resolver.resolve(&PricingContext::new(&usage))?;
-            BillingCompletion::new(BillingUsageRecord::new_with_dimensions(
-                self.event_id,
-                self.principal,
-                usage,
-                dimensions,
-                price.billing_mode(),
-                price.quota(),
-            ))
+            BillingCompletion::new(
+                BillingUsageRecord::new_with_dimensions(
+                    self.event_id,
+                    self.principal,
+                    usage,
+                    dimensions,
+                    price.billing_mode(),
+                    price.quota(),
+                )
+                .with_observation(observation),
+            )
         };
         let settlement_port = self.settlement_port.clone();
         let settlement = match &mut self.state {
@@ -336,8 +354,12 @@ fn ensure_same_completion(
     completion: BillingCompletion,
     usage: Usage,
     dimensions: BillingUsageDimensions,
+    observation: BillingUsageObservation,
 ) -> Result<(), BillingLifecycleError> {
-    if completion.usage() == usage && completion.dimensions() == dimensions {
+    if completion.usage() == usage
+        && completion.dimensions() == dimensions
+        && completion.observation() == observation
+    {
         Ok(())
     } else {
         Err(BillingLifecycleError::CompletionConflict)

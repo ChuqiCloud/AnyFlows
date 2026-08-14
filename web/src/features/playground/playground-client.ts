@@ -1,3 +1,4 @@
+import { createAnthropic } from '@ai-sdk/anthropic'
 import { createOpenAI } from '@ai-sdk/openai'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { streamText, type ModelMessage } from 'ai'
@@ -50,15 +51,23 @@ export async function streamPlaygroundChat(
     baseURL: `${getApiRoot()}/v1`,
     fetch: fetchWithCredentials,
   })
+  const anthropicProvider = createAnthropic({
+    apiKey: request.apiKey,
+    baseURL: `${getApiRoot()}/v1`,
+    fetch: fetchWithCredentials,
+  })
   const messages: ModelMessage[] = playgroundRequestContext(request.messages)
     .map((message) => ({ role: message.role, content: message.content }))
   let streamError: unknown
   let textReceived = false
 
+  const model = request.protocol === 'openai_responses'
+    ? responsesProvider.responses(request.model)
+    : request.protocol === 'anthropic'
+      ? anthropicProvider.messages(request.model)
+      : provider.chatModel(request.model)
   const result = streamText({
-    model: request.protocol === 'openai_responses'
-      ? responsesProvider.responses(request.model)
-      : provider.chatModel(request.model),
+    model,
     instructions: normalizePlaygroundInstructions(request.systemPrompt),
     messages,
     temperature: request.temperature,

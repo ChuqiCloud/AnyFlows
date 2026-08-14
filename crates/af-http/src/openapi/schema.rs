@@ -513,6 +513,51 @@ pub(crate) enum AdminUsageLogVideoResolutionSchema {
 
 #[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
 #[derive(ToSchema)]
+#[schema(as = UsageLogProtocol, rename_all = "snake_case")]
+pub(crate) enum UsageLogProtocolSchema {
+    OpenAiChat,
+    OpenAiResponses,
+    OpenAiEmbeddings,
+    OpenAiImages,
+    OpenAiAudio,
+    OpenAiSpeech,
+    JinaRerank,
+    CohereRerank,
+    XaiVideo,
+    Anthropic,
+    Gemini,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
+#[schema(as = UsageLogOperation, rename_all = "snake_case")]
+pub(crate) enum UsageLogOperationSchema {
+    Chat,
+    Responses,
+    ResponsesCompact,
+    Embedding,
+    Image,
+    Audio,
+    Rerank,
+    Video,
+    CountTokens,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
+#[schema(as = UsageLogReasoningEffort, rename_all = "snake_case")]
+pub(crate) enum UsageLogReasoningEffortSchema {
+    None,
+    Minimal,
+    Low,
+    Medium,
+    High,
+    ExtraHigh,
+    Max,
+}
+
+#[allow(dead_code, reason = "仅用于生成 OpenAPI schema")]
+#[derive(ToSchema)]
 #[schema(as = ModelCatalogBillingMode, rename_all = "snake_case")]
 pub(crate) enum ModelCatalogBillingModeSchema {
     PerToken,

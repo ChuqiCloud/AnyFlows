@@ -1,21 +1,33 @@
-import { Boxes, Check, ChevronRight, LockKeyhole, RefreshCw, Search, SearchX } from 'lucide-react'
-import { useState } from 'react'
+import {
+  Boxes,
+  Check,
+  ChevronDown,
+  LockKeyhole,
+  RefreshCw,
+  Search,
+  SearchX,
+} from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { findProviderLogo } from '@/components/brand/model-logos'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { ModelCatalogItem } from '@/lib/api/generated/types.gen'
+import type {
+  ModelCatalogItem,
+  ModelCatalogProtocol,
+} from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
+import {
+  ALL_PLAYGROUND_MODEL_FILTER,
+  DEFAULT_PLAYGROUND_MODEL_FILTER,
+  filterPlaygroundModels,
+  playgroundModelProviderCategories,
+  type PlaygroundModelFilter,
+} from './playground-model-filter'
 import { togglePlaygroundModel } from './playground-model-selection'
 import { playgroundProtocolForModel, type PlaygroundProtocol } from './playground-protocol'
 import { MAX_PLAYGROUND_MODELS } from './playground-types'
@@ -37,26 +49,45 @@ type PlaygroundModelPickerProps = {
   onSearch: (value: string) => void
 }
 
+const playgroundProtocols: PlaygroundProtocol[] = ['openai_chat', 'openai_responses', 'anthropic']
+
 export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [draftValues, setDraftValues] = useState(props.values)
+  const [filter, setFilter] = useState<PlaygroundModelFilter>(DEFAULT_PLAYGROUND_MODEL_FILTER)
   const summary = props.values.length === 1
     ? props.values[0]
     : t('playground.model.selectedCount', { count: props.values.length })
+  const providerCategories = useMemo(
+    () => playgroundModelProviderCategories(props.models),
+    [props.models],
+  )
+  const availableProtocols = useMemo(() => (
+    playgroundProtocols.filter((protocol) => props.models.some((item) => (
+      item.available_protocols.includes(protocol as ModelCatalogProtocol)
+    )))
+  ), [props.models])
+  const visibleModels = useMemo(
+    () => filterPlaygroundModels(props.models, filter),
+    [filter, props.models],
+  )
+
+  const setOpenState = (nextOpen: boolean) => {
+    if (nextOpen) {
+      setDraftValues(props.values)
+      setFilter(DEFAULT_PLAYGROUND_MODEL_FILTER)
+    }
+    setOpen(nextOpen)
+  }
 
   return (
-    <Sheet
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (nextOpen) setDraftValues(props.values)
-        setOpen(nextOpen)
-      }}
-    >
-      <SheetTrigger asChild>
+    <Popover open={open} onOpenChange={setOpenState}>
+      <PopoverTrigger asChild>
         <Button
           type="button"
           variant="outline"
+          aria-expanded={open}
           className="h-auto min-h-9 w-full justify-between px-2.5 py-2 text-left"
           disabled={props.locked}
         >
@@ -68,9 +99,9 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
           </span>
           {props.locked
             ? <LockKeyhole className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-            : <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
+            : <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', open && 'rotate-180')} aria-hidden="true" />}
         </Button>
-      </SheetTrigger>
+      </PopoverTrigger>
       {!props.compact && props.values.length > 0 ? (
         <div className="flex flex-wrap gap-1.5" aria-label={t('playground.model.selectedLabel')}>
           {props.values.map((model) => (
@@ -78,7 +109,7 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
               <span className="truncate">{model}</span>
               {props.protocolByModel[model] ? (
                 <span className="ml-1 shrink-0 font-sans text-[0.625rem]">
-                  {t(`playground.protocols.${props.protocolByModel[model]}`)}
+                  {t(`playground.model.protocols.${props.protocolByModel[model]}`)}
                 </span>
               ) : null}
             </Badge>
@@ -91,123 +122,183 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
           {t('playground.model.locked')}
         </p>
       ) : null}
-      <SheetContent className="gap-0 sm:max-w-md">
-        <SheetHeader className="border-b border-[var(--hairline)]">
-          <SheetTitle>{t('playground.model.title')}</SheetTitle>
-          <SheetDescription>
-            {t('playground.model.selectionCount', {
-              count: draftValues.length,
-              max: MAX_PLAYGROUND_MODELS,
-            })}
-          </SheetDescription>
-        </SheetHeader>
-        <div className="border-b border-[var(--hairline)] p-3">
-          <label className="relative block">
-            <span className="sr-only">{t('playground.model.search')}</span>
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <Input
-              autoFocus
-              type="search"
-              className="pl-8"
-              value={props.search}
-              placeholder={t('playground.model.searchPlaceholder')}
-              onChange={(event) => props.onSearch(event.target.value)}
-            />
-          </label>
+      <PopoverContent
+        align="end"
+        side="top"
+        className="w-[calc(100vw-1rem)] max-w-[34rem] overflow-hidden p-0 sm:w-[34rem]"
+      >
+        <div className="flex items-center justify-between border-b border-[var(--hairline)] px-3 py-2.5">
+          <div className="min-w-0">
+            <h2 className="truncate text-xs font-semibold">{t('playground.model.title')}</h2>
+            <p className="mt-0.5 text-[0.6875rem] text-muted-foreground">
+              {t('playground.model.selectionCount', { count: draftValues.length, max: MAX_PLAYGROUND_MODELS })}
+            </p>
+          </div>
+          <Badge className="shrink-0 bg-info/10 text-info">
+            {t('playground.model.catalogCount', { count: props.models.length })}
+          </Badge>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-2" role="listbox" aria-label={t('playground.model.title')}>
-          {props.loading ? (
-            <div className="grid gap-1.5 p-1" aria-label={t('playground.model.loading')}>
-              {[0, 1, 2, 3, 4, 5].map((item) => <Skeleton key={item} className="h-11 rounded-lg" />)}
+        <div className="grid max-h-[min(70vh,34rem)] min-h-0 grid-cols-1 md:grid-cols-[9rem_minmax(0,1fr)]">
+          <aside className="min-w-0 border-b border-[var(--hairline)] bg-surface-2/35 p-2 md:border-b-0 md:border-r">
+            <div className="mb-1 px-1 text-[0.6875rem] font-semibold text-muted-foreground">
+              {t('playground.model.providers')}
             </div>
-          ) : props.error ? (
-            <div role="alert" className="grid min-h-56 place-items-center p-4 text-center">
-              <div>
-                <RefreshCw className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
-                <p className="mt-2 text-sm font-medium">{t('playground.model.error')}</p>
-                <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={props.onRefresh}>
-                  {t('playground.actions.retry')}
-                </Button>
-              </div>
-            </div>
-          ) : props.models.length === 0 ? (
-            <div className="grid min-h-56 place-items-center p-4 text-center">
-              <div>
-                <SearchX className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
-                <p className="mt-2 text-sm font-medium">{t('playground.model.empty')}</p>
-              </div>
-            </div>
-          ) : (
-            <div className="grid gap-0.5">
-              {props.models.map((item) => {
-                const selected = draftValues.includes(item.model)
-                const protocol = playgroundProtocolForModel(item)
-                const availableProtocols = item.available_protocols ?? []
-                const disabled = (selected && draftValues.length === 1)
-                  || (!selected && draftValues.length >= MAX_PLAYGROUND_MODELS)
-                  || protocol === undefined
+            <div className="flex gap-1 overflow-x-auto md:grid md:max-h-[min(50vh,28rem)] md:overflow-y-auto">
+              {providerCategories.map((category) => {
+                const logo = category.value === ALL_PLAYGROUND_MODEL_FILTER
+                  ? undefined
+                  : findProviderLogo(category.value)
+                const ProviderIcon = logo?.Icon ?? Boxes
+                const selected = filter.provider === category.value
                 return (
                   <button
-                    key={item.model}
+                    key={category.value}
                     type="button"
-                    role="option"
-                    aria-selected={selected}
-                    disabled={disabled}
                     className={cn(
-                      'flex min-h-11 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left outline-none transition-colors',
-                      'hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50',
-                      selected && 'bg-surface-2',
+                      'flex min-w-max items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[0.6875rem] transition-colors',
+                      'hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60',
+                      selected ? 'bg-primary/10 font-medium text-foreground' : 'text-muted-foreground',
                     )}
-                    onClick={() => setDraftValues(togglePlaygroundModel(draftValues, item.model))}
+                    onClick={() => setFilter((current) => ({ ...current, provider: category.value }))}
                   >
-                    <Check className={cn('size-3.5 shrink-0 text-info', !selected && 'opacity-0')} aria-hidden="true" />
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs">{item.model}</span>
-                    <span className="flex shrink-0 items-center gap-1">
-                      {availableProtocols.map((availableProtocol) => (
-                        <Badge key={availableProtocol} className="bg-info/10 px-1.5 text-[0.625rem] text-info">
-                          {t(`playground.protocols.${availableProtocol}`)}
-                        </Badge>
-                      ))}
-                      {protocol === undefined ? (
-                        <Badge className="bg-warning/10 text-[0.625rem] text-warning">
-                          {t('playground.protocols.unavailable')}
-                        </Badge>
-                      ) : null}
-                      <Badge className="bg-surface-2 text-muted-foreground">
-                        {t(`models.billing.${item.billing_mode}`)}
-                      </Badge>
-                    </span>
+                    <ProviderIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                    <span className="max-w-24 truncate">{category.value === ALL_PLAYGROUND_MODEL_FILTER
+                      ? t('playground.model.allModels')
+                      : category.value}</span>
+                    <span className="ml-auto tabular-nums text-[0.625rem] text-muted-foreground">{category.count}</span>
                   </button>
                 )
               })}
-              {props.hasMore ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="mt-2 justify-center"
-                  disabled={props.loadingMore}
-                  onClick={props.onLoadMore}
-                >
-                  {props.loadingMore ? t('playground.model.loadingMore') : t('playground.actions.loadMore')}
-                </Button>
-              ) : null}
             </div>
-          )}
+          </aside>
+          <div className="flex min-h-0 min-w-0 flex-col">
+            <div className="space-y-2 border-b border-[var(--hairline)] p-2">
+              <label className="relative block">
+                <span className="sr-only">{t('playground.model.search')}</span>
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                <Input
+                  autoFocus
+                  type="search"
+                  className="h-8 pl-8 text-xs"
+                  value={props.search}
+                  placeholder={t('playground.model.searchPlaceholder')}
+                  onChange={(event) => props.onSearch(event.target.value)}
+                />
+              </label>
+              <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label={t('playground.model.protocolsLabel')}>
+                {[ALL_PLAYGROUND_MODEL_FILTER, ...availableProtocols].map((protocol) => {
+                  const selected = filter.protocol === protocol
+                  return (
+                    <button
+                      key={protocol}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      className={cn(
+                        'shrink-0 rounded-md px-2 py-1 text-[0.6875rem] transition-colors',
+                        selected ? 'bg-primary text-primary-foreground' : 'bg-surface-2 text-muted-foreground hover:text-foreground',
+                      )}
+                      onClick={() => setFilter((current) => ({ ...current, protocol }))}
+                    >
+                      {protocol === ALL_PLAYGROUND_MODEL_FILTER
+                        ? t('playground.model.allProtocols')
+                        : t(`playground.model.protocols.${protocol}`)}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-1.5" role="listbox" aria-label={t('playground.model.title')}>
+              {props.loading ? (
+                <div className="grid gap-1 p-1" aria-label={t('playground.model.loading')}>
+                  {[0, 1, 2, 3, 4].map((item) => <Skeleton key={item} className="h-9 rounded-md" />)}
+                </div>
+              ) : props.error ? (
+                <div role="alert" className="grid min-h-40 place-items-center p-4 text-center">
+                  <div>
+                    <RefreshCw className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
+                    <p className="mt-2 text-xs font-medium">{t('playground.model.error')}</p>
+                    <Button type="button" size="xs" variant="secondary" className="mt-3" onClick={props.onRefresh}>
+                      {t('playground.actions.retry')}
+                    </Button>
+                  </div>
+                </div>
+              ) : visibleModels.length === 0 ? (
+                <div className="grid min-h-40 place-items-center p-4 text-center">
+                  <div>
+                    <SearchX className="mx-auto size-5 text-muted-foreground" aria-hidden="true" />
+                    <p className="mt-2 text-xs font-medium">{t('playground.model.empty')}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-0.5">
+                  {visibleModels.map((item) => {
+                    const selected = draftValues.includes(item.model)
+                    const protocol = playgroundProtocolForModel(item)
+                    const disabled = (selected && draftValues.length === 1)
+                      || (!selected && draftValues.length >= MAX_PLAYGROUND_MODELS)
+                      || protocol === undefined
+                    return (
+                      <button
+                        key={item.model}
+                        type="button"
+                        role="option"
+                        aria-selected={selected}
+                        disabled={disabled}
+                        className={cn(
+                          'flex min-h-9 w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left outline-none transition-colors',
+                          'hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50',
+                          selected && 'bg-primary/8',
+                        )}
+                        onClick={() => setDraftValues(togglePlaygroundModel(draftValues, item.model))}
+                      >
+                        <Check className={cn('size-3.5 shrink-0 text-info', !selected && 'opacity-0')} aria-hidden="true" />
+                        <span className="min-w-0 flex-1 truncate font-mono text-[0.6875rem]">{item.model}</span>
+                        <span className="flex shrink-0 items-center gap-1">
+                          {protocol ? (
+                            <Badge className="bg-info/10 px-1.5 text-[0.625rem] text-info">
+                              {t(`playground.model.protocols.${protocol}`)}
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-warning/10 text-[0.625rem] text-warning">
+                              {t('playground.model.protocols.unavailable')}
+                            </Badge>
+                          )}
+                        </span>
+                      </button>
+                    )
+                  })}
+                  {props.hasMore ? (
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="ghost"
+                      className="mt-1 justify-center"
+                      disabled={props.loadingMore}
+                      onClick={props.onLoadMore}
+                    >
+                      {props.loadingMore ? t('playground.model.loadingMore') : t('playground.actions.loadMore')}
+                    </Button>
+                  ) : null}
+                </div>
+              )}
+            </div>
+            <div className="border-t border-[var(--hairline)] p-2">
+              <Button
+                type="button"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  props.onChange(draftValues)
+                  setOpen(false)
+                }}
+              >
+                <Check aria-hidden="true" />{t('playground.model.done')}
+              </Button>
+            </div>
+          </div>
         </div>
-        <div className="border-t border-[var(--hairline)] p-3">
-          <Button
-            type="button"
-            className="w-full"
-            onClick={() => {
-              props.onChange(draftValues)
-              setOpen(false)
-            }}
-          >
-            <Check aria-hidden="true" />{t('playground.model.done')}
-          </Button>
-        </div>
-      </SheetContent>
-    </Sheet>
+      </PopoverContent>
+    </Popover>
   )
 }

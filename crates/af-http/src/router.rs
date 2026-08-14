@@ -70,7 +70,7 @@ use crate::management_session::current_session;
 use crate::management_setup::{initialize_setup, setup_status};
 use crate::management_token_writes::{create_admin_token, delete_admin_token, update_admin_token};
 use crate::management_tokens::{get_admin_token, list_admin_tokens};
-use crate::management_usage_logs::list_admin_usage_logs;
+use crate::management_usage_logs::{list_admin_usage_logs, list_user_usage_logs};
 use crate::management_users::{
     create_admin_user, delete_admin_user, get_admin_user, list_admin_users, update_admin_user,
 };
@@ -380,6 +380,10 @@ pub fn build_router(
         ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
         authenticate_management_session,
     );
+    let user_usage_log_authentication = middleware::from_fn_with_state(
+        ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
+        authenticate_management_session,
+    );
     let dashboard_authentication = middleware::from_fn_with_state(
         ManagementAuthenticationState::new(Arc::clone(&http_state.session_authenticator)),
         authenticate_management_session,
@@ -636,6 +640,10 @@ pub fn build_router(
             get(list_admin_usage_logs)
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(usage_log_collection_authentication),
+        )
+        .route(
+            "/api/account/usage-logs",
+            get(list_user_usage_logs).route_layer(user_usage_log_authentication),
         )
         .route(
             "/api/admin/channels",

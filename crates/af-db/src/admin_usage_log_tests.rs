@@ -25,6 +25,17 @@ async fn list_uses_newest_first_cursor_and_preserves_usage_dimensions() -> Resul
     assert_eq!(logs[1].quota(), 200);
     assert_eq!(next_cursor, Some(logs[1].id()));
 
+    let own = fixture
+        .repository
+        .list_for_user(fixture.user_id, None, 10)
+        .await?;
+    assert_eq!(own.into_parts().0.len(), 3);
+    let unrelated = fixture
+        .repository
+        .list_for_user(UserId::new(fixture.user_id.get() + 1_000)?, None, 10)
+        .await?;
+    assert!(unrelated.into_parts().0.is_empty());
+
     let newest = &logs[0];
     assert_eq!(newest.user_id(), fixture.user_id);
     assert_eq!(newest.token_id(), fixture.token_id);
@@ -214,6 +225,17 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
             write
                 .with_audio_duration_nanoseconds(Some(3_500_000_000))?
                 .with_video_dimensions(Some(8), Some(UsageLogVideoResolution::P720))?
+                .with_call_observation(
+                    "request-admin-3",
+                    "gpt-test",
+                    af_domain::Protocol::OpenAiResponses,
+                    af_domain::Operation::Responses,
+                    true,
+                    Some(5),
+                    Some(4_096),
+                    Some(120),
+                    640,
+                )?
         } else {
             write
         };

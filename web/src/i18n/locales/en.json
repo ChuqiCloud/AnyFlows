@@ -35,7 +35,7 @@
     "credentialProxies": "Dedicated proxies",
     "routes": "Smart routing",
     "keys": "Global keys",
-    "usage": "Global usage",
+    "usage": "Request logs",
     "debugTraces": "Debug traces",
     "billing": "Billing",
     "settings": "Settings"
@@ -1849,22 +1849,39 @@
     }
   },
   "usageLogs": {
-    "title": "Usage logs",
-    "subtitle": "Inspect confirmed usage, media dimensions, billed quota, and measurement sources.",
+    "title": "Request logs",
+    "subtitle": "Review your settled model requests, response speed, token usage, and billed quota.",
+    "adminSubtitle": "Review settled requests across the site with response speed, token usage, and billed quota.",
     "count": "{{count}} records on this page",
+    "filteredCount": "Showing {{visible}} of {{count}}",
     "page": "Page {{page}}",
     "loading": "Loading usage logs",
     "pagination": "Usage log pagination",
     "columns": {
-      "event": "Time and event",
-      "principal": "Billing principal",
-      "usage": "Input and output",
-      "details": "Cache and extras",
+      "call": "Model request",
+      "latency": "Response speed",
+      "tokens": "Token usage",
       "billing": "Billing result"
     },
+    "listLabel": "Settled request list",
+    "filters": { "model": "Model", "modelPlaceholder": "Search models on this page", "protocol": "Protocol", "allProtocols": "All protocols" },
+    "protocol": { "openai_chat": "Chat", "openai_responses": "Responses", "openai_embeddings": "Embeddings", "openai_images": "Images", "openai_audio": "Audio", "openai_speech": "Speech", "jina_rerank": "Jina Rerank", "cohere_rerank": "Cohere Rerank", "xai_video": "xAI Video", "anthropic": "Anthropic", "gemini": "Gemini" },
+    "operation": { "chat": "Chat", "responses": "Responses", "responses_compact": "Context compaction", "embedding": "Embedding", "image": "Image", "audio": "Audio", "rerank": "Rerank", "video": "Video", "count_tokens": "Token count" },
+    "reasoning": { "none": "Off", "minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High", "extra_high": "Extra high", "max": "Max" },
+    "details": { "request": "Request ID", "tokens": "Cache and reasoning tokens", "reasoning": "Reasoning effort / budget", "mode": "Billing / response mode", "principal": "Billing principal" },
     "values": {
-      "userToken": "User #{{user}} / Token #{{token}}",
-      "group": "Group #{{id}}",
+      "userTokenGroup": "User #{{user}} / API key #{{token}} / Group #{{group}}",
+      "legacy": "Historical",
+      "legacyModel": "Model not recorded",
+      "notSpecified": "Not specified",
+      "stream": "Stream",
+      "sync": "Non-stream",
+      "firstToken": "First token",
+      "duration": "Duration",
+      "inputLabel": "Input",
+      "outputLabel": "Output",
+      "quota": "Billed quota",
+      "cacheReasoning": "Cache {{cache}} / Reasoning {{reasoning}}",
       "input": "Input {{value}}",
       "output": "Output {{value}}",
       "cacheRead": "Cache read {{value}}",
@@ -1890,17 +1907,21 @@
     },
     "actions": {
       "refresh": "Refresh",
+      "reset": "Reset",
+      "details": "Expand request details",
       "retry": "Retry",
       "previous": "Previous",
       "next": "Next"
     },
     "empty": {
-      "title": "No usage logs yet",
-      "body": "Confirmed usage will appear after the first request completes its billing lifecycle."
+      "title": "No request logs yet",
+      "body": "Settled requests appear after the first model request completes its billing lifecycle.",
+      "filteredTitle": "No matches on this page",
+      "filteredBody": "Adjust the model or protocol filter, or browse another page."
     },
     "error": {
-      "title": "Unable to load usage logs",
-      "body": "The service did not return confirmed usage. Try again shortly."
+      "title": "Unable to load request logs",
+      "body": "The service did not return settled requests. Try again shortly."
     }
   },
   "debugTraces": {
@@ -2332,8 +2353,13 @@
       "empty": "No matching available models",
       "selectedCount": "{{count}} models selected",
       "selectionCount": "{{count}} of {{max}} models selected",
+      "catalogCount": "{{count}} visible models",
       "selectedLabel": "Selected comparison models",
       "locked": "Models can be changed after the current conversation finishes generating or saving",
+      "providers": "Providers",
+      "allModels": "All models",
+      "protocolsLabel": "Protocol filter",
+      "allProtocols": "All protocols",
       "protocols": {
         "openai_chat": "OpenAI Chat",
         "openai_responses": "OpenAI Responses",
@@ -2344,7 +2370,7 @@
         "jina_rerank": "Jina Rerank",
         "cohere_rerank": "Cohere Rerank",
         "xai_video": "xAI Video",
-        "anthropic": "Anthropic",
+        "anthropic": "Anthropic Messages",
         "gemini": "Gemini",
         "unavailable": "Unsupported in Playground"
       },

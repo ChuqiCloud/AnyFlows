@@ -65,6 +65,16 @@ fn event(name: &str, payload: Value) -> Vec<u8> {
     .into_bytes()
 }
 
+fn event_payload(bytes: &[u8]) -> Value {
+    serde_json::from_slice(
+        &bytes
+            .split(|byte| *byte == b'\n')
+            .find(|line| line.starts_with(b"data: "))
+            .unwrap()[6..],
+    )
+    .unwrap()
+}
+
 fn message_start(output: i64, reasoning: i64) -> Vec<u8> {
     event(
         "message_start",
@@ -394,19 +404,70 @@ fn decoder_rejects_non_cumulative_usage_and_unmodelled_cache_breakdown() {
         Err(ParseStreamError::InvalidSequence)
     );
 
-    let mut start = serde_json::from_slice::<Value>(
-        &message_start(0, 0)
-            .split(|byte| *byte == b'\n')
-            .find(|line| line.starts_with(b"data: "))
-            .unwrap()[6..],
-    )
-    .unwrap();
+    let mut start = event_payload(&message_start(0, 0));
     start["message"]["usage"]["cache_creation"] = Value::Null;
     let bytes = event("message_start", start);
     let mut decoder = AnthropicMessagesStreamDecoder::new();
     assert_eq!(
         decoder.push(&bytes),
         Err(ParseStreamError::UnsupportedFeature)
+    );
+}
+
+#[test]
+fn decoder_accepts_validated_service_tier_in_initial_usage() {
+    let mut start = event_payload(&message_start(0, 0));
+    start["message"]["usage"]["service_tier"] = json!("standard");
+
+    let mut decoder = AnthropicMessagesStreamDecoder::new();
+    assert_eq!(
+        decoder.push(&event("message_start", start)).unwrap(),
+        vec![CanonicalStreamEvent::MessageStart {
+            choice_index: 0,
+            role: Role::Assistant,
+        }]
+    );
+    assert!(decoder.initial_usage().is_some());
+}
+
+#[test]
+fn decoder_accepts_consistent_service_tier_in_final_usage() {
+    let mut start = event_payload(&message_start(0, 0));
+    start["message"]["usage"]["service_tier"] = json!("standard");
+    let mut delta = event_payload(&message_delta("end_turn", None, 1, 0));
+    delta["usage"]["service_tier"] = json!("standard");
+
+    let mut decoder = AnthropicMessagesStreamDecoder::new();
+    let events = decoder
+        .push(
+            &[
+                event("message_start", start),
+                event("message_delta", delta),
+                event("message_stop", json!({ "type": "message_stop" })),
+            ]
+            .concat(),
+        )
+        .unwrap();
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, CanonicalStreamEvent::Usage(_)))
+    );
+    assert_eq!(events.last(), Some(&CanonicalStreamEvent::StreamEnd));
+}
+
+#[test]
+fn decoder_rejects_conflicting_service_tiers() {
+    let mut start = event_payload(&message_start(0, 0));
+    start["message"]["usage"]["service_tier"] = json!("standard");
+    let mut delta = event_payload(&message_delta("end_turn", None, 1, 0));
+    delta["usage"]["service_tier"] = json!("priority");
+
+    let mut decoder = AnthropicMessagesStreamDecoder::new();
+    decoder.push(&event("message_start", start)).unwrap();
+    assert_eq!(
+        decoder.push(&event("message_delta", delta)),
+        Err(ParseStreamError::InvalidSequence)
     );
 }
 

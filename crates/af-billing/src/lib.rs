@@ -54,8 +54,10 @@ pub use group_pricing_cache::{
 pub use lifecycle::{
     BillingCompletion, BillingLifecycleError, BillingLifecycleState, BillingPrechargeError,
     BillingPrechargeFuture, BillingPrechargePort, BillingRequestLifecycle, BillingRequestPlan,
-    BillingSettlementError, BillingSettlementFuture, BillingSettlementPort, BillingUsageDimensions,
-    BillingUsageRecord, UsageRecordOutcome, UsageRecordPort,
+    BillingSettlementError, BillingSettlementFuture, BillingSettlementPort, BillingUsageContext,
+    BillingUsageDimensions, BillingUsageObservation, BillingUsageObservationError,
+    BillingUsageRecord, BillingUsageTiming, MAX_USAGE_MODEL_BYTES, MAX_USAGE_REQUEST_ID_BYTES,
+    UsageRecordOutcome, UsageRecordPort,
 };
 pub use model_price_cache::{
     ModelPrice, ModelPriceCache, ModelPriceCacheError, ModelPriceMode, ModelPriceSnapshot,

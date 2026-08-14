@@ -74,6 +74,7 @@ const navGroups: readonly NavGroup[] = [
     items: [
       { key: 'apiKeys', icon: KeyRound, href: '#/console/api-keys' },
       { key: 'wallet', icon: WalletCards, href: '#/console/wallet' },
+      { key: 'usage', icon: ScrollText, href: '#/console/usage-logs' },
       { key: 'subscriptions', icon: CalendarRange, href: '#/console/subscriptions' },
       { key: 'invitations', icon: TicketCheck, href: '#/console/invitations' },
       { key: 'profile', icon: UserRound, href: '#/console/profile' },
@@ -100,7 +101,6 @@ const navGroups: readonly NavGroup[] = [
       { key: 'credentialProxies', icon: ServerCog, href: '#/console/proxies' },
       { key: 'routes', icon: GitBranch, href: '#/console/routes' },
       { key: 'keys', icon: ShieldCheck, href: '#/console/tokens' },
-      { key: 'usage', icon: ScrollText, href: '#/console/usage-logs' },
       { key: 'debugTraces', icon: Activity, href: '#/console/debug-traces' },
     ],
   },

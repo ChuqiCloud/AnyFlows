@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 84);
+        assert_eq!(document.paths.paths.len(), 85);
         let operation_count = document
             .paths
             .paths
@@ -188,7 +188,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 126);
+        assert_eq!(operation_count, 127);
         assert!(
             document
                 .components
@@ -301,6 +301,7 @@ mod tests {
             "listMissingAdminModels",
             "listAdminTokens",
             "listAdminUsageLogs",
+            "listUserUsageLogs",
             "listAdminUsers",
             "listModels",
             "listModelProviders",
@@ -348,7 +349,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 251);
+        assert_eq!(schemas.len(), 256);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("ModelCatalogProvider"));
         assert!(schemas.contains_key("ModelCatalogProviderListResponse"));

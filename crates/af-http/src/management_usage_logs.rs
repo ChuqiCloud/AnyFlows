@@ -55,6 +55,24 @@ pub(crate) struct AdminUsageLogResponse {
         required = true
     )]
     video_resolution: Option<af_admin::AdminUsageLogVideoResolution>,
+    #[schema(min_length = 1, max_length = 128, required = true)]
+    request_id: Option<String>,
+    #[schema(min_length = 1, max_length = 255, required = true)]
+    model: Option<String>,
+    #[schema(value_type = Option<crate::openapi::schema::UsageLogProtocolSchema>, required = true)]
+    protocol: Option<af_admin::UsageLogProtocol>,
+    #[schema(value_type = Option<crate::openapi::schema::UsageLogOperationSchema>, required = true)]
+    operation: Option<af_admin::UsageLogOperation>,
+    #[schema(required = true)]
+    is_stream: Option<bool>,
+    #[schema(value_type = Option<crate::openapi::schema::UsageLogReasoningEffortSchema>, required = true)]
+    reasoning_effort: Option<af_admin::UsageLogReasoningEffort>,
+    #[schema(minimum = 0, required = true)]
+    reasoning_budget_tokens: Option<i64>,
+    #[schema(minimum = 0, required = true)]
+    first_token_ms: Option<i64>,
+    #[schema(minimum = 0, required = true)]
+    duration_ms: Option<i64>,
     #[schema(value_type = crate::openapi::schema::AdminUsageLogSourceSchema)]
     usage_source: af_admin::AdminUsageLogSource,
     #[schema(value_type = crate::openapi::schema::AdminUsageLogSemanticsSchema)]
@@ -76,6 +94,61 @@ pub(crate) struct AdminUsageLogListResponse {
     next_cursor: Option<i64>,
 }
 
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserUsageLog)]
+pub(crate) struct UserUsageLogResponse {
+    #[schema(minimum = 1)]
+    id: i64,
+    #[schema(minimum = 1)]
+    token_id: i64,
+    #[schema(min_length = 1, max_length = 128, required = true)]
+    request_id: Option<String>,
+    #[schema(min_length = 1, max_length = 255, required = true)]
+    model: Option<String>,
+    #[schema(value_type = Option<crate::openapi::schema::UsageLogProtocolSchema>, required = true)]
+    protocol: Option<af_admin::UsageLogProtocol>,
+    #[schema(value_type = Option<crate::openapi::schema::UsageLogOperationSchema>, required = true)]
+    operation: Option<af_admin::UsageLogOperation>,
+    #[schema(required = true)]
+    is_stream: Option<bool>,
+    #[schema(value_type = Option<crate::openapi::schema::UsageLogReasoningEffortSchema>, required = true)]
+    reasoning_effort: Option<af_admin::UsageLogReasoningEffort>,
+    #[schema(minimum = 0, required = true)]
+    reasoning_budget_tokens: Option<i64>,
+    #[schema(minimum = 0, required = true)]
+    first_token_ms: Option<i64>,
+    #[schema(minimum = 0, required = true)]
+    duration_ms: Option<i64>,
+    #[schema(value_type = crate::openapi::schema::AdminUsageLogBillingModeSchema)]
+    billing_mode: af_admin::AdminUsageLogBillingMode,
+    #[schema(minimum = 0)]
+    input_tokens: i64,
+    #[schema(minimum = 0)]
+    output_tokens: i64,
+    #[schema(minimum = 0)]
+    cache_read: i64,
+    #[schema(minimum = 0)]
+    cache_creation_5m: i64,
+    #[schema(minimum = 0)]
+    cache_creation_1h: i64,
+    #[schema(minimum = 0)]
+    reasoning_tokens: i64,
+    #[schema(minimum = 0)]
+    quota: i64,
+    created_at: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = UserUsageLogListResponse)]
+pub(crate) struct UserUsageLogListResponse {
+    #[schema(max_items = 100)]
+    logs: Vec<UserUsageLogResponse>,
+    #[schema(minimum = 1, required = true)]
+    next_cursor: Option<i64>,
+}
+
 /// 返回管理员可见的最新已确认用量日志。
 pub(crate) async fn list_admin_usage_logs(
     State(state): State<HttpState>,
@@ -92,6 +165,24 @@ pub(crate) async fn list_admin_usage_logs(
         .await
         .map_err(map_read_error)?;
     Ok(no_store_json(AdminUsageLogListResponse::from_page(page)))
+}
+
+/// 返回当前会话用户自己的最新已结算调用日志。
+pub(crate) async fn list_user_usage_logs(
+    State(state): State<HttpState>,
+    RawQuery(raw_query): RawQuery,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+) -> Result<Response, ManagementError> {
+    let query = parse_list_query(raw_query.as_deref())?;
+    let reader = state
+        .admin_usage_log_reader
+        .as_deref()
+        .ok_or(ManagementError::Internal)?;
+    let page = reader
+        .list_own(authentication.principal(), query)
+        .await
+        .map_err(map_read_error)?;
+    Ok(no_store_json(UserUsageLogListResponse::from_page(page)))
 }
 
 impl AdminUsageLogListResponse {
@@ -128,8 +219,58 @@ impl AdminUsageLogResponse {
             audio_duration_nanoseconds: log.audio_duration_nanoseconds(),
             video_duration_seconds: log.video_duration_seconds(),
             video_resolution: log.video_resolution(),
+            request_id: log.request_id().map(str::to_owned),
+            model: log.model().map(str::to_owned),
+            protocol: log.protocol(),
+            operation: log.operation(),
+            is_stream: log.is_stream(),
+            reasoning_effort: log.reasoning_effort(),
+            reasoning_budget_tokens: log.reasoning_budget_tokens(),
+            first_token_ms: log.first_token_ms(),
+            duration_ms: log.duration_ms(),
             usage_source: log.source(),
             usage_semantics: log.semantics(),
+            quota: log.quota(),
+            created_at: log.created_at(),
+        }
+    }
+}
+
+impl UserUsageLogListResponse {
+    fn from_page(page: AdminUsageLogPage) -> Self {
+        Self {
+            logs: page
+                .logs()
+                .iter()
+                .map(UserUsageLogResponse::from_log)
+                .collect(),
+            next_cursor: page.next_cursor(),
+        }
+    }
+}
+
+impl UserUsageLogResponse {
+    fn from_log(log: &AdminUsageLog) -> Self {
+        let usage = log.usage();
+        Self {
+            id: log.id(),
+            token_id: log.token_id().get(),
+            request_id: log.request_id().map(str::to_owned),
+            model: log.model().map(str::to_owned),
+            protocol: log.protocol(),
+            operation: log.operation(),
+            is_stream: log.is_stream(),
+            reasoning_effort: log.reasoning_effort(),
+            reasoning_budget_tokens: log.reasoning_budget_tokens(),
+            first_token_ms: log.first_token_ms(),
+            duration_ms: log.duration_ms(),
+            billing_mode: log.billing_mode(),
+            input_tokens: usage.input_tokens(),
+            output_tokens: usage.output_tokens(),
+            cache_read: usage.cache_read(),
+            cache_creation_5m: usage.cache_creation_5m(),
+            cache_creation_1h: usage.cache_creation_1h(),
+            reasoning_tokens: usage.reasoning_tokens(),
             quota: log.quota(),
             created_at: log.created_at(),
         }

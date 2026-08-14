@@ -35,7 +35,7 @@
     "credentialProxies": "专属代理",
     "routes": "智能路由",
     "keys": "全局令牌",
-    "usage": "全局用量",
+    "usage": "调用日志",
     "debugTraces": "调试追踪",
     "billing": "计费",
     "settings": "设置"
@@ -1849,22 +1849,80 @@
     }
   },
   "usageLogs": {
-    "title": "用量日志",
-    "subtitle": "查看已经确认并落库的用量、媒体维度、计费额度和统计来源。",
+    "title": "调用日志",
+    "subtitle": "查看自己的已结算模型调用、响应速度、Token 消耗和实际计费。",
+    "adminSubtitle": "查看全站已结算模型调用，按请求核对响应速度、Token 消耗和实际计费。",
     "count": "本页 {{count}} 条记录",
+    "filteredCount": "显示 {{visible}} / {{count}} 条",
     "page": "第 {{page}} 页",
     "loading": "正在加载用量日志",
     "pagination": "用量日志分页",
     "columns": {
-      "event": "时间与事件",
-      "principal": "计费主体",
-      "usage": "输入与输出",
-      "details": "缓存与扩展",
+      "call": "模型调用",
+      "latency": "响应速度",
+      "tokens": "Token 消耗",
       "billing": "计费结果"
     },
+    "listLabel": "已结算调用列表",
+    "filters": {
+      "model": "模型",
+      "modelPlaceholder": "搜索本页模型",
+      "protocol": "入口协议",
+      "allProtocols": "全部协议"
+    },
+    "protocol": {
+      "openai_chat": "Chat",
+      "openai_responses": "Responses",
+      "openai_embeddings": "Embeddings",
+      "openai_images": "Images",
+      "openai_audio": "Audio",
+      "openai_speech": "Speech",
+      "jina_rerank": "Jina Rerank",
+      "cohere_rerank": "Cohere Rerank",
+      "xai_video": "xAI Video",
+      "anthropic": "Anthropic",
+      "gemini": "Gemini"
+    },
+    "operation": {
+      "chat": "对话",
+      "responses": "响应",
+      "responses_compact": "上下文压缩",
+      "embedding": "向量",
+      "image": "图像",
+      "audio": "音频",
+      "rerank": "重排序",
+      "video": "视频",
+      "count_tokens": "Token 计数"
+    },
+    "reasoning": {
+      "none": "关闭",
+      "minimal": "极低",
+      "low": "低",
+      "medium": "中",
+      "high": "高",
+      "extra_high": "超高",
+      "max": "最大"
+    },
+    "details": {
+      "request": "请求 ID",
+      "tokens": "缓存与推理 Token",
+      "reasoning": "思考等级 / 预算",
+      "mode": "计费 / 响应模式",
+      "principal": "计费主体"
+    },
     "values": {
-      "userToken": "用户 #{{user}} / 令牌 #{{token}}",
-      "group": "分组 #{{id}}",
+      "userTokenGroup": "用户 #{{user}} / API Key #{{token}} / 分组 #{{group}}",
+      "legacy": "历史记录",
+      "legacyModel": "未记录模型",
+      "notSpecified": "未指定",
+      "stream": "流式",
+      "sync": "非流式",
+      "firstToken": "首字",
+      "duration": "耗时",
+      "inputLabel": "输入",
+      "outputLabel": "输出",
+      "quota": "扣除额度",
+      "cacheReasoning": "缓存 {{cache}} / 推理 {{reasoning}}",
       "input": "输入 {{value}}",
       "output": "输出 {{value}}",
       "cacheRead": "缓存读取 {{value}}",
@@ -1890,17 +1948,21 @@
     },
     "actions": {
       "refresh": "刷新",
+      "reset": "重置",
+      "details": "展开调用详情",
       "retry": "重试",
       "previous": "上一页",
       "next": "下一页"
     },
     "empty": {
-      "title": "还没有用量日志",
-      "body": "完成首个经过计费闭环的模型请求后，确认用量会出现在这里。"
+      "title": "还没有调用日志",
+      "body": "完成首个经过计费闭环的模型请求后，已结算调用会出现在这里。",
+      "filteredTitle": "本页没有匹配记录",
+      "filteredBody": "调整模型或协议筛选，或翻页查看其他已结算调用。"
     },
     "error": {
-      "title": "无法读取用量日志",
-      "body": "服务暂时没有返回已确认用量，请稍后重试。"
+      "title": "无法读取调用日志",
+      "body": "服务暂时没有返回已结算调用，请稍后重试。"
     }
   },
   "debugTraces": {
@@ -2332,8 +2394,13 @@
       "empty": "没有匹配的可用模型",
       "selectedCount": "已选 {{count}} 个模型",
       "selectionCount": "已选择 {{count}} / {{max}} 个模型",
+      "catalogCount": "{{count}} 个可见模型",
       "selectedLabel": "已选择的比较模型",
       "locked": "当前会话正在生成或保存，完成后可切换模型",
+      "providers": "供应商",
+      "allModels": "全部模型",
+      "protocolsLabel": "协议筛选",
+      "allProtocols": "全部协议",
       "protocols": {
         "openai_chat": "OpenAI Chat",
         "openai_responses": "OpenAI Responses",
@@ -2344,7 +2411,7 @@
         "jina_rerank": "Jina Rerank",
         "cohere_rerank": "Cohere Rerank",
         "xai_video": "xAI 视频",
-        "anthropic": "Anthropic",
+        "anthropic": "Anthropic Messages",
         "gemini": "Gemini",
         "unavailable": "试炼场暂不支持"
       },
