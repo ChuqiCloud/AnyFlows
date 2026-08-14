@@ -204,6 +204,20 @@ async fn authenticated_user_can_manage_only_principal_scoped_keys() {
     assert_eq!(created_body["token"]["name"], "created");
     assert_eq!(created_body["api_key"].as_str().unwrap().len(), 49);
 
+    let playground = app
+        .clone()
+        .oneshot(request("POST", "/api/playground/token", USER_SESSION, None))
+        .await
+        .unwrap();
+    assert_eq!(playground.status(), StatusCode::CREATED);
+    assert_eq!(
+        response_json(playground).await["api_key"]
+            .as_str()
+            .unwrap()
+            .len(),
+        49
+    );
+
     let updated = app
         .clone()
         .oneshot(request(
@@ -253,6 +267,27 @@ async fn unknown_owner_fields_and_invalid_sessions_are_rejected_before_service()
         .await
         .unwrap();
     assert_error(unknown_owner, StatusCode::BAD_REQUEST, "invalid_request").await;
+
+    let reserved_name = json!({
+        "name": af_domain::PLAYGROUND_TOKEN_NAME,
+        "status": "enabled",
+        "remain_quota": 0,
+        "unlimited_quota": true,
+        "expired_at": null,
+        "model_limits": null,
+        "allow_ips": null
+    });
+    let reserved_name = app
+        .clone()
+        .oneshot(request(
+            "POST",
+            "/api/tokens",
+            USER_SESSION,
+            Some(reserved_name),
+        ))
+        .await
+        .unwrap();
+    assert_error(reserved_name, StatusCode::BAD_REQUEST, "invalid_request").await;
 
     let invalid_query = app
         .clone()

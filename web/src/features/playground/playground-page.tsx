@@ -72,6 +72,7 @@ export function PlaygroundPage() {
       apiKeyDraft={configuration.apiKeyDraft}
       apiKeySaved={configuration.apiKey.length > 0}
       apiKeyError={configuration.apiKeyError}
+      apiKeyProvisioning={configuration.apiKeyProvisioning}
       systemPrompt={configuration.systemPrompt}
       temperatureEnabled={configuration.temperatureEnabled}
       temperature={configuration.temperature}
@@ -80,6 +81,7 @@ export function PlaygroundPage() {
       onApiKeyDraftChange={configuration.updateApiKeyDraft}
       onSaveApiKey={configuration.saveApiKey}
       onClearApiKey={configuration.clearApiKey}
+      onProvisionApiKey={configuration.provisionApiKey}
       onSystemPromptChange={configuration.setSystemPrompt}
       onTemperatureEnabledChange={configuration.setTemperatureEnabled}
       onTemperatureChange={configuration.setTemperature}

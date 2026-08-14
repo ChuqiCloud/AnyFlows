@@ -1,7 +1,7 @@
 use std::fmt;
 
 use af_db::{MAX_USER_TOKEN_PAGE_SIZE, UserTokenRecord, UserTokenWriteRecord};
-use af_domain::TokenId;
+use af_domain::{PLAYGROUND_TOKEN_NAME, TokenId};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -281,6 +281,9 @@ impl UserTokenWriteCommand {
         allow_ips: Option<Vec<String>>,
     ) -> Result<Self, UserTokenError> {
         validate_name(&name).map_err(|_| UserTokenError::InvalidInput)?;
+        if name == PLAYGROUND_TOKEN_NAME {
+            return Err(UserTokenError::InvalidInput);
+        }
         validate_non_negative(remain_quota).map_err(|_| UserTokenError::InvalidInput)?;
         if expired_at.is_some_and(|value| value < 0) {
             return Err(UserTokenError::InvalidInput);
@@ -296,6 +299,20 @@ impl UserTokenWriteCommand {
             model_limits,
             allow_ips,
         })
+    }
+
+    /// 构造服务端专用的试炼场托管 Key，调用方不能覆盖名称、额度或访问范围。
+    #[must_use]
+    pub fn playground() -> Self {
+        Self {
+            name: PLAYGROUND_TOKEN_NAME.to_owned(),
+            status: UserTokenStatus::Enabled,
+            remain_quota: 0,
+            unlimited_quota: true,
+            expired_at: None,
+            model_limits: None,
+            allow_ips: None,
+        }
     }
 
     pub(super) fn into_record(self) -> UserTokenWriteRecord {
@@ -403,5 +420,21 @@ mod tests {
             UserTokenListQuery::new(None, MAX_USER_TOKEN_PAGE_SIZE + 1),
             Err(UserTokenError::InvalidInput)
         );
+        assert_eq!(
+            UserTokenWriteCommand::new(
+                PLAYGROUND_TOKEN_NAME.to_owned(),
+                UserTokenStatus::Enabled,
+                0,
+                true,
+                None,
+                None,
+                None,
+            )
+            .unwrap_err(),
+            UserTokenError::InvalidInput
+        );
+        let playground = UserTokenWriteCommand::playground();
+        assert_eq!(playground.name, PLAYGROUND_TOKEN_NAME);
+        assert!(playground.unlimited_quota);
     }
 }

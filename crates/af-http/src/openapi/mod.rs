@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 85);
+        assert_eq!(document.paths.paths.len(), 86);
         let operation_count = document
             .paths
             .paths
@@ -188,7 +188,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 127);
+        assert_eq!(operation_count, 128);
         assert!(
             document
                 .components
@@ -245,6 +245,7 @@ mod tests {
             "updateUserNotificationPreferences",
             "createPlaygroundShare",
             "createUserToken",
+            "createPlaygroundToken",
             "createUserTopupOrder",
             "deletePlaygroundConversation",
             "deleteAdminChannel",

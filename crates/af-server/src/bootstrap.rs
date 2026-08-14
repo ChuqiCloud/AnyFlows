@@ -1176,6 +1176,13 @@ impl Bootstrap<RelayReady> {
             ),
         )
         .with_proxy_cipher(self.stage.infrastructure.system_secret_cipher.clone())
+        .with_group_repository(
+            AdminGroupRepository::new(
+                self.stage.infrastructure.infrastructure.database.clone(),
+                Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::AdminGroupRepository)?,
+        )
         .with_channel_state_repository(ChannelStateRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),
         ))

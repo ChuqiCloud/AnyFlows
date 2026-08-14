@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { EMPTY_MODEL_CATALOG_FILTERS, useModelCatalog } from '@/features/models/model-api'
+import { apiClient } from '@/lib/api'
+import { createPlaygroundToken } from '@/lib/api/generated/sdk.gen'
 import {
   clearPlaygroundApiKey,
   getPlaygroundApiKey,
@@ -14,12 +16,28 @@ import { playgroundProtocolForModel, type PlaygroundProtocol } from './playgroun
 const DEFAULT_TEMPERATURE = 0.7
 const DEFAULT_MAX_OUTPUT_TOKENS = 8192
 
+let playgroundKeyProvisioning: Promise<string> | undefined
+
+/** 在当前标签页复用同一次签发请求，避免开发模式重复挂载创建多把 Key。 */
+function provisionPlaygroundApiKey() {
+  const existing = getPlaygroundApiKey()
+  if (existing) return Promise.resolve(existing)
+  playgroundKeyProvisioning ??= createPlaygroundToken({ client: apiClient }).then(({ data }) => {
+    setPlaygroundApiKey(data.api_key)
+    return data.api_key
+  }).finally(() => {
+    playgroundKeyProvisioning = undefined
+  })
+  return playgroundKeyProvisioning
+}
+
 /** 收拢当前标签页凭据、模型目录与共享生成参数。 */
 export function usePlaygroundConfiguration() {
   const { t } = useTranslation()
   const [apiKey, setApiKey] = useState(() => getPlaygroundApiKey() ?? '')
   const [apiKeyDraft, setApiKeyDraft] = useState(apiKey)
   const [apiKeyError, setApiKeyError] = useState<string>()
+  const [apiKeyProvisioning, setApiKeyProvisioning] = useState<'idle' | 'pending' | 'failed'>('idle')
   const [selectedModels, setSelectedModels] = useState<string[]>([])
   const [protocolByModel, setProtocolByModel] = useState<Record<string, PlaygroundProtocol>>({})
   const [modelSearchDraft, setModelSearchDraft] = useState('')
@@ -62,6 +80,24 @@ export function usePlaygroundConfiguration() {
   const catalogInvalid = catalogQuery.isError
     || (pricingScope !== undefined && pricingScope !== 'group')
 
+  const provisionApiKey = useCallback(() => {
+    setApiKeyProvisioning('pending')
+    void provisionPlaygroundApiKey()
+      .then((issuedApiKey) => {
+        setApiKey(issuedApiKey)
+        setApiKeyDraft(issuedApiKey)
+        setApiKeyError(undefined)
+        setApiKeyProvisioning('idle')
+      })
+      .catch(() => {
+        setApiKeyProvisioning('failed')
+      })
+  }, [])
+
+  useEffect(() => {
+    if (!getPlaygroundApiKey()) provisionApiKey()
+  }, [provisionApiKey])
+
   useEffect(() => {
     const timer = window.setTimeout(() => setModelSearch(modelSearchDraft.trim()), 250)
     return () => window.clearTimeout(timer)
@@ -90,6 +126,7 @@ export function usePlaygroundConfiguration() {
     setApiKey('')
     setApiKeyDraft('')
     setApiKeyError(undefined)
+    setApiKeyProvisioning('idle')
   }, [])
 
   const updateApiKeyDraft = useCallback((value: string) => {
@@ -132,6 +169,7 @@ export function usePlaygroundConfiguration() {
     apiKey,
     apiKeyDraft,
     apiKeyError,
+    apiKeyProvisioning,
     catalogInvalid,
     catalogQuery,
     clearApiKey,
@@ -140,6 +178,7 @@ export function usePlaygroundConfiguration() {
     modelSearchDraft,
     models,
     protocolByModel,
+    provisionApiKey,
     reloadApiKey,
     restoreConversationConfiguration,
     routableModels,

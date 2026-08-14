@@ -2357,7 +2357,7 @@
       "cancelled": "已停止",
       "loadingModels": "加载模型",
       "modelUnavailable": "无可用模型",
-      "keyRequired": "需要 API Key"
+      "keyRequired": "会话凭据未就绪"
     },
     "settings": {
       "title": "会话设置",
@@ -2374,8 +2374,14 @@
     },
     "apiKey": {
       "label": "AnyFlows API Key",
-      "ready": "当前标签页已保存",
-      "missing": "未配置",
+      "ready": "平台会话已就绪",
+      "provisioning": "正在准备会话",
+      "failed": "自动申请失败",
+      "missing": "会话凭据未配置",
+      "platformTitle": "平台会话 · 自动分组",
+      "platformDescription": "默认使用当前账户分组，无可用渠道时按管理员配置降级，无需手动填写 API Key。",
+      "advanced": "高级 API Key 调试",
+      "retry": "重试申请",
       "show": "显示 API Key",
       "hide": "隐藏 API Key",
       "save": "保存",
@@ -2429,7 +2435,7 @@
     "composer": {
       "label": "会话消息",
       "placeholder": "输入消息",
-      "apiKeyRequired": "请先配置 API Key"
+      "apiKeyRequired": "会话凭据未就绪，请重试申请或使用高级调试"
     },
     "actions": {
       "send": "发送",

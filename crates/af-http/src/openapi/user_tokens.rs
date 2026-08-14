@@ -51,6 +51,23 @@ fn list_user_tokens() {}
 fn create_user_token() {}
 
 #[utoipa::path(
+    post,
+    path = "/api/playground/token",
+    operation_id = "createPlaygroundToken",
+    tag = "试炼场",
+    summary = "签发试炼场托管 Key",
+    description = "字段由服务端固定，完整明文仅在本次响应返回，用于当前登录用户的试炼场会话。",
+    responses(
+        (status = 201, description = "试炼场托管 Key 已签发", body = IssuedUserTokenResponse<'static>),
+        (status = 401, description = "登录会话无效", body = ManagementErrorBody),
+        (status = 409, description = "当前用户的 Key 已达到容量上限", body = ManagementErrorBody),
+        (status = 500, description = "服务内部错误", body = ManagementErrorBody)
+    ),
+    security(("bearerAuth" = []))
+)]
+fn create_playground_token() {}
+
+#[utoipa::path(
     get,
     path = "/api/tokens/{id}",
     operation_id = "getUserToken",
@@ -110,6 +127,7 @@ fn delete_user_token() {}
     paths(
         list_user_tokens,
         create_user_token,
+        create_playground_token,
         get_user_token,
         update_user_token,
         delete_user_token

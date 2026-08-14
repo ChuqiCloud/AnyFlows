@@ -189,6 +189,39 @@ async fn valid_lookup_uses_token_override_and_user_default_group() -> Result<(),
 }
 
 #[tokio::test]
+async fn playground_token_name_marks_only_the_authenticated_principal() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture(Duration::from_secs(1)).await?;
+    set_token_column(
+        &fixture,
+        tokens::Column::Name,
+        Expr::value(af_domain::PLAYGROUND_TOKEN_NAME),
+    )
+    .await?;
+
+    let TokenAuthLookupOutcome::Authenticated { principal, .. } = fixture
+        .repository
+        .lookup(&fixture.lookup, test_client_ip())
+        .await?
+    else {
+        return Err("试炼场 Token 必须返回已认证主体".into());
+    };
+    assert!(principal.is_playground());
+
+    set_token_column(&fixture, tokens::Column::Name, Expr::value("regular-token")).await?;
+    let TokenAuthLookupOutcome::Authenticated { principal, .. } = fixture
+        .repository
+        .lookup(&fixture.lookup, test_client_ip())
+        .await?
+    else {
+        return Err("普通 Token 必须返回已认证主体".into());
+    };
+    assert!(!principal.is_playground());
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn valid_lookup_carries_the_user_concurrency_snapshot() -> Result<(), Box<dyn Error>> {
     let fixture = fixture(Duration::from_secs(1)).await?;
     set_user_column(

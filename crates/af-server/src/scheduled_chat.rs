@@ -34,7 +34,10 @@ use af_adapter::{
     HeaderMap, HeaderName, HeaderValue, JinaAdaptorSettings, OpenAiAdaptorSettings, RelayContext,
     ResponsesWebSocketPoolKey, TransportDispatcher, get_adaptor,
 };
-use af_db::{ChannelStateRepository, CredentialStateRepository};
+use af_db::{
+    AdminGroupLookupOutcome, AdminGroupRepository, ChannelStateRepository,
+    CredentialStateRepository,
+};
 use af_domain::{
     AfError, ChannelType, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, Operation,
     Protocol,
@@ -61,6 +64,8 @@ mod speech;
 mod video_task;
 mod video_task_persistence;
 
+const MAX_PLAYGROUND_GROUP_DEPTH: usize = 4;
+
 pub use video_task::{
     BoundVideoTaskSubmission, VideoTaskBinding, VideoTaskPollFuture, VideoTaskRuntime,
     VideoTaskSubmissionFuture, VideoTaskSubmissionRuntimeError,
@@ -75,6 +80,12 @@ struct PreparedConcurrencyPlan<'a> {
     account_loads: Option<&'a BTreeMap<i64, CredentialLoad>>,
     credential_health: Option<&'a BTreeMap<i64, RuntimeHealthState>>,
     user_permit: Option<RuntimeConcurrencyPermit>,
+}
+
+struct PreparedRouteSelection {
+    route: IndexedRoutePlan,
+    upstream_protocol: Protocol,
+    credential_health: Option<BTreeMap<i64, RuntimeHealthState>>,
 }
 
 impl PreparedConcurrencyPlan<'_> {
@@ -103,6 +114,7 @@ pub(crate) struct ScheduledChatService {
     health: Option<Arc<dyn SchedulerHealthStore>>,
     channel_states: Option<ChannelStateRepository>,
     debug_trace: Option<DebugTraceRuntime>,
+    groups: Option<AdminGroupRepository>,
 }
 
 impl ScheduledChatService {
@@ -127,6 +139,7 @@ impl ScheduledChatService {
             health: None,
             channel_states: None,
             debug_trace: None,
+            groups: None,
         }
     }
 
@@ -171,6 +184,12 @@ impl ScheduledChatService {
     /// 注入脱敏调试追踪运行时；未注入时不执行采样或分配追踪上下文。
     pub(crate) fn with_debug_trace_runtime(mut self, runtime: DebugTraceRuntime) -> Self {
         self.debug_trace = Some(runtime);
+        self
+    }
+
+    /// 注入分组只读仓储，仅供试炼场托管主体解析显式回退链。
+    pub(crate) fn with_group_repository(mut self, repository: AdminGroupRepository) -> Self {
+        self.groups = Some(repository);
         self
     }
 
@@ -538,6 +557,106 @@ impl ScheduledChatService {
             .map(Some)
             .map_err(|_| AfError::Internal)
     }
+
+    async fn route_group_chain(
+        &self,
+        principal: GatewayPrincipal,
+    ) -> Result<Vec<GroupId>, AfError> {
+        let mut groups = vec![principal.group_id()];
+        if !principal.is_playground() {
+            return Ok(groups);
+        }
+        let repository = self.groups.as_ref().ok_or_else(|| {
+            tracing::error!(
+                target: "af_server::scheduled_chat",
+                error_kind = "playground_group_repository_missing",
+                "试炼场分组回退仓储未完成启动装配"
+            );
+            AfError::Internal
+        })?;
+        let mut visited = BTreeSet::from([principal.group_id()]);
+        let mut current = principal.group_id();
+        while groups.len() < MAX_PLAYGROUND_GROUP_DEPTH {
+            let record = match repository
+                .get(current)
+                .await
+                .map_err(|_| AfError::Internal)?
+            {
+                AdminGroupLookupOutcome::Found(record) => record,
+                AdminGroupLookupOutcome::NotFound => return Err(AfError::Internal),
+            };
+            let Some(fallback_group_id) = record.fallback_group_id() else {
+                break;
+            };
+            if !visited.insert(fallback_group_id) {
+                tracing::warn!(
+                    target: "af_server::scheduled_chat",
+                    error_kind = "playground_group_fallback_cycle",
+                    "试炼场分组回退链存在循环，已在发出上游请求前截断"
+                );
+                break;
+            }
+            groups.push(fallback_group_id);
+            current = fallback_group_id;
+        }
+        Ok(groups)
+    }
+
+    async fn prepare_route_selection(
+        &self,
+        principal: GatewayPrincipal,
+        request: &CanonicalRequestEnvelope,
+        response_protocol: Protocol,
+        request_id: &str,
+        session_scope: Option<&StableSessionScope>,
+    ) -> Result<PreparedRouteSelection, AfError> {
+        let mut configured_but_unavailable = false;
+        for group_id in self.route_group_chain(principal).await? {
+            let mut route = if self.health.is_some() {
+                let (channel_ids, channel_health) = self
+                    .load_channel_health(group_id, &request.canonical().model)
+                    .await?;
+                configured_but_unavailable |= !channel_ids.is_empty();
+                self.scheduler
+                    .route_plan_with_health(group_id, &request.canonical().model, &channel_health)
+                    .map_err(map_scheduler_error)?
+            } else {
+                self.scheduler
+                    .route_plan(group_id, &request.canonical().model)
+                    .map_err(map_scheduler_error)?
+            };
+            let Some(mut route) = route.take() else {
+                continue;
+            };
+            configured_but_unavailable = true;
+            let upstream_protocol = select_upstream_protocol(&route, request, response_protocol)?;
+            route.configure_wait_policy(self.sticky_wait_policy);
+            self.apply_sticky_binding(&mut route, upstream_protocol, session_scope)
+                .await;
+            let credential_health = self
+                .load_credential_health(&route, upstream_protocol)
+                .await?;
+            let order_scope = session_scope.map_or(request_id, StableSessionScope::as_str);
+            if !route_has_available_credentials(
+                &route,
+                upstream_protocol,
+                order_scope,
+                credential_health.as_ref(),
+            ) {
+                continue;
+            }
+            return Ok(PreparedRouteSelection {
+                route,
+                upstream_protocol,
+                credential_health,
+            });
+        }
+        Err(if configured_but_unavailable {
+            af_domain::UpstreamError::overloaded().into()
+        } else {
+            af_domain::UpstreamError::ModelUnsupported.into()
+        })
+    }
 }
 
 impl ChatRoutePlanner for ScheduledChatService {
@@ -550,31 +669,20 @@ impl ChatRoutePlanner for ScheduledChatService {
         request_id: &'a str,
     ) -> ChatRoutePlanFuture<'a> {
         Box::pin(async move {
-            let mut route = if self.health.is_some() {
-                let (channel_ids, channel_health) = self
-                    .load_channel_health(principal.group_id(), &request.canonical().model)
-                    .await?;
-                self.scheduler
-                    .route_plan_with_health(
-                        principal.group_id(),
-                        &request.canonical().model,
-                        &channel_health,
-                    )
-                    .map_err(map_scheduler_error)?
-                    .ok_or_else(|| {
-                        AfError::from(if channel_ids.is_empty() {
-                            af_domain::UpstreamError::ModelUnsupported
-                        } else {
-                            af_domain::UpstreamError::overloaded()
-                        })
-                    })?
-            } else {
-                self.scheduler
-                    .route_plan(principal.group_id(), &request.canonical().model)
-                    .map_err(map_scheduler_error)?
-                    .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?
-            };
-            let upstream_protocol = select_upstream_protocol(&route, &request, response_protocol)?;
+            let session_scope = stable_session_scope(*principal, request.canonical());
+            let PreparedRouteSelection {
+                route,
+                upstream_protocol,
+                credential_health,
+            } = self
+                .prepare_route_selection(
+                    *principal,
+                    &request,
+                    response_protocol,
+                    request_id,
+                    session_scope.as_ref(),
+                )
+                .await?;
             let debug_trace = self.debug_trace.as_ref().and_then(|runtime| {
                 runtime.capture(
                     request_id,
@@ -585,13 +693,6 @@ impl ChatRoutePlanner for ScheduledChatService {
                     request.canonical().operation,
                 )
             });
-            route.configure_wait_policy(self.sticky_wait_policy);
-            let session_scope = stable_session_scope(*principal, request.canonical());
-            self.apply_sticky_binding(&mut route, upstream_protocol, session_scope.as_ref())
-                .await;
-            let credential_health = self
-                .load_credential_health(&route, upstream_protocol)
-                .await?;
             let user_permit = self
                 .acquire_user_permit(*principal, user_concurrency)
                 .await?;
@@ -631,6 +732,7 @@ impl fmt::Debug for ScheduledChatService {
             .field("concurrency", &self.concurrency.is_some())
             .field("health", &self.health.is_some())
             .field("debug_trace", &self.debug_trace.is_some())
+            .field("groups", &self.groups.is_some())
             .finish()
     }
 }
@@ -794,6 +896,32 @@ fn collect_route_accounts(
         }
     }
     Ok(accounts)
+}
+
+fn route_has_available_credentials(
+    route: &IndexedRoutePlan,
+    upstream_protocol: Protocol,
+    order_scope: &str,
+    credential_health: Option<&BTreeMap<i64, RuntimeHealthState>>,
+) -> bool {
+    route.candidates().iter().any(|candidate| {
+        let target = candidate.runtime_target();
+        if !target_matches_protocol(target, upstream_protocol) {
+            return false;
+        }
+        credential_health.map_or_else(
+            || !target.credentials().is_empty(),
+            |health| {
+                !order_credentials_with_health(
+                    order_scope,
+                    target.channel_id(),
+                    target.credentials(),
+                    health,
+                )
+                .is_empty()
+            },
+        )
+    })
 }
 
 fn collect_route_credentials(
@@ -1020,15 +1148,16 @@ fn responses_websocket_session_scope(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{sync::Arc, time::Duration};
 
     use af_account::credential_plaintext_aad;
     use af_adapter::Bytes;
     use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
     use af_db::{
-        ChannelModelMappings, ChannelParameterOverrides, CredentialStateRepository,
-        DatabaseOptions, EncryptedCredentialEnvelope, MigrationOptions,
-        SchedulerRuntimeCredentialRecord, SchedulerRuntimeTargetRecord, connect_and_migrate,
+        AdminGroupRepository, AdminGroupWriteRecord, ChannelModelMappings,
+        ChannelParameterOverrides, CredentialStateRepository, DatabaseOptions,
+        EncryptedCredentialEnvelope, MigrationOptions, SchedulerRuntimeCredentialRecord,
+        SchedulerRuntimeTargetRecord, connect_and_migrate,
     };
     use af_domain::{ChannelId, CredentialKind, Operation, UpstreamError};
     use af_httpclient::{HttpClientConfig, HttpClientProvider};
@@ -1108,6 +1237,47 @@ mod tests {
             .unwrap();
 
         assert_eq!(plan.target_group_id(), GroupId::new(7).unwrap());
+    }
+
+    #[tokio::test]
+    async fn playground_plan_uses_configured_fallback_without_changing_regular_keys() {
+        let (service, source_group_id, fallback_group_id) =
+            service_with_group_fallback(valid_envelope()).await;
+        let playground = GatewayPrincipal::playground(
+            af_domain::TokenId::new(1).unwrap(),
+            af_domain::UserId::new(1).unwrap(),
+            source_group_id,
+        );
+
+        let plan = service
+            .plan(
+                &playground,
+                None,
+                request(),
+                Protocol::OpenAiChat,
+                "request-playground-fallback",
+            )
+            .await
+            .unwrap();
+        assert_eq!(plan.target_group_id(), fallback_group_id);
+
+        let regular = GatewayPrincipal::new(
+            af_domain::TokenId::new(2).unwrap(),
+            af_domain::UserId::new(1).unwrap(),
+            source_group_id,
+        );
+        assert!(matches!(
+            service
+                .plan(
+                    &regular,
+                    None,
+                    request(),
+                    Protocol::OpenAiChat,
+                    "request-regular-no-fallback",
+                )
+                .await,
+            Err(AfError::Upstream(UpstreamError::ModelUnsupported))
+        ));
     }
 
     #[tokio::test]
@@ -1510,6 +1680,68 @@ mod tests {
         )
     }
 
+    async fn service_with_group_fallback(
+        envelope: EncryptedCredentialEnvelope,
+    ) -> (ScheduledChatService, GroupId, GroupId) {
+        let pool = connect_and_migrate(
+            &DatabaseOptions::new("sqlite::memory:").unwrap(),
+            MigrationOptions::default(),
+        )
+        .await
+        .unwrap();
+        let repository = AdminGroupRepository::new(pool.clone(), Duration::from_secs(1)).unwrap();
+        let fallback = repository
+            .create(group_record("playground-fallback", None))
+            .await
+            .unwrap();
+        let source = repository
+            .create(group_record("playground-source", Some(fallback.group_id())))
+            .await
+            .unwrap();
+        let credential = SchedulerRuntimeCredentialRecord::new(
+            CREDENTIAL_ID,
+            CredentialKind::ApiKey,
+            envelope,
+            false,
+        )
+        .unwrap();
+        let record = record_pool_with_target_for_group(
+            fallback.group_id(),
+            vec![credential],
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+        );
+        let index = InMemoryChannelIndex::load(Arc::new(StaticSource {
+            records: vec![record],
+        }))
+        .await
+        .unwrap();
+        let service = ScheduledChatService::new(
+            IndexedWeightedScheduler::new(index),
+            decryptor(),
+            HttpClientProvider::new(HttpClientConfig::default(), 4).unwrap(),
+            CredentialStateRepository::new(pool),
+        )
+        .with_group_repository(repository);
+        (service, source.group_id(), fallback.group_id())
+    }
+
+    fn group_record(name: &str, fallback_group_id: Option<GroupId>) -> AdminGroupWriteRecord {
+        AdminGroupWriteRecord::new(
+            name.to_owned(),
+            name.to_owned(),
+            1_000_000,
+            None,
+            false,
+            None,
+            None,
+            None,
+            None,
+            fallback_group_id,
+            json!({}),
+        )
+    }
+
     fn record(
         proxy_required: bool,
         envelope: EncryptedCredentialEnvelope,
@@ -1566,6 +1798,20 @@ mod tests {
         channel_type: ChannelType,
         protocol: Protocol,
     ) -> ChannelIndexSourceRecord {
+        record_pool_with_target_for_group(
+            GroupId::new(7).unwrap(),
+            credentials,
+            channel_type,
+            protocol,
+        )
+    }
+
+    fn record_pool_with_target_for_group(
+        group_id: GroupId,
+        credentials: Vec<SchedulerRuntimeCredentialRecord>,
+        channel_type: ChannelType,
+        protocol: Protocol,
+    ) -> ChannelIndexSourceRecord {
         let target = SchedulerRuntimeTargetRecord::new_pool(
             ChannelId::new(CHANNEL_ID).unwrap(),
             channel_type,
@@ -1576,7 +1822,7 @@ mod tests {
         )
         .unwrap();
         ChannelIndexSourceRecord::with_runtime_target(
-            GroupId::new(7).unwrap(),
+            group_id,
             "gpt-scheduled",
             10,
             0,

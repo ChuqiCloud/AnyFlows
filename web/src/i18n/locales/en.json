@@ -2316,7 +2316,7 @@
       "cancelled": "Stopped",
       "loadingModels": "Loading models",
       "modelUnavailable": "No model available",
-      "keyRequired": "API key required"
+      "keyRequired": "Session credential unavailable"
     },
     "settings": {
       "title": "Session settings",
@@ -2333,8 +2333,14 @@
     },
     "apiKey": {
       "label": "AnyFlows API key",
-      "ready": "Saved in this tab",
-      "missing": "Not configured",
+      "ready": "Platform session ready",
+      "provisioning": "Preparing session",
+      "failed": "Automatic setup failed",
+      "missing": "Session credential not configured",
+      "platformTitle": "Platform session · automatic group",
+      "platformDescription": "Uses the current account group and follows administrator fallback rules when no route is available. No API key input is required.",
+      "advanced": "Advanced API key debugging",
+      "retry": "Retry setup",
       "show": "Show API key",
       "hide": "Hide API key",
       "save": "Save",
@@ -2388,7 +2394,7 @@
     "composer": {
       "label": "Session message",
       "placeholder": "Enter a message",
-      "apiKeyRequired": "Configure an API key first"
+      "apiKeyRequired": "The session credential is unavailable. Retry setup or use advanced debugging"
     },
     "actions": {
       "send": "Send",
