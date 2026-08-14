@@ -18,6 +18,7 @@ import {
 } from './usage-log-model'
 import { UsageLogSummary } from './usage-log-summary'
 import { UsageLogTable } from './usage-log-table'
+import { UsageLogUserSheet } from './usage-log-user-sheet'
 
 type UsageLogPageProps = {
   admin: boolean
@@ -30,6 +31,7 @@ export function UsageLogPage({ admin }: UsageLogPageProps) {
   const [protocolFilter, setProtocolFilter] = useState('all')
   const [modeFilter, setModeFilter] = useState<UsageLogModeFilter>('all')
   const [selectedLog, setSelectedLog] = useState<UsageLogRow>()
+  const [selectedUserId, setSelectedUserId] = useState<number>()
   const cursor = cursorStack.at(-1)
   const adminQuery = useAdminUsageLogs(admin ? cursor : undefined)
   const userQuery = useUserUsageLogs(admin ? undefined : cursor)
@@ -47,6 +49,16 @@ export function UsageLogPage({ admin }: UsageLogPageProps) {
     setModelFilter('')
     setProtocolFilter('all')
     setModeFilter('all')
+  }
+
+  const openUser = (userId: number) => {
+    setSelectedLog(undefined)
+    setSelectedUserId(userId)
+  }
+
+  const openTrace = (requestId: string) => {
+    setSelectedLog(undefined)
+    window.location.hash = `#/console/debug-traces?request_id=${encodeURIComponent(requestId)}`
   }
 
   return (
@@ -136,7 +148,7 @@ export function UsageLogPage({ admin }: UsageLogPageProps) {
             {t('usageLogs.actions.retry')}
           </Button>
         </div>
-      ) : <UsageLogTable logs={filteredLogs} admin={admin} filtered={hasFilters} onSelect={setSelectedLog} />}
+      ) : <UsageLogTable logs={filteredLogs} admin={admin} filtered={hasFilters} onSelect={setSelectedLog} onUserSelect={openUser} />}
 
       {!logsQuery.isPending && !logsQuery.isError ? (
         <footer className="flex min-h-8 flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
@@ -169,7 +181,8 @@ export function UsageLogPage({ admin }: UsageLogPageProps) {
         </footer>
       ) : null}
 
-      <UsageLogDetailsSheet log={selectedLog} admin={admin} onOpenChange={(open) => !open && setSelectedLog(undefined)} />
+      <UsageLogDetailsSheet log={selectedLog} admin={admin} onOpenChange={(open) => !open && setSelectedLog(undefined)} onTraceOpen={openTrace} onUserSelect={openUser} />
+      {admin ? <UsageLogUserSheet userId={selectedUserId} onOpenChange={(open) => !open && setSelectedUserId(undefined)} /> : null}
     </div>
   )
 }

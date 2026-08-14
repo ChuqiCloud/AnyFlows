@@ -304,6 +304,7 @@ pub struct AdminUsageLog {
     id: i64,
     event_id: String,
     user_id: UserId,
+    username: String,
     token_id: TokenId,
     group_id: GroupId,
     billing_mode: AdminUsageLogBillingMode,
@@ -343,6 +344,12 @@ impl AdminUsageLog {
     #[must_use]
     pub const fn user_id(&self) -> UserId {
         self.user_id
+    }
+
+    /// 返回调用所属用户的当前用户名。
+    #[must_use]
+    pub fn username(&self) -> &str {
+        &self.username
     }
 
     /// 返回令牌标识。
@@ -471,6 +478,7 @@ impl AdminUsageLog {
             id: record.id(),
             event_id: record.event_id().to_owned(),
             user_id: record.user_id(),
+            username: record.username().to_owned(),
             token_id: record.token_id(),
             group_id: record.group_id(),
             billing_mode: AdminUsageLogBillingMode::from_database(record.billing_mode())?,

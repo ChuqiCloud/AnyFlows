@@ -926,6 +926,7 @@ export type AdminUsageLog = {
     id: number;
     event_id: string;
     user_id: number;
+    username: string;
     token_id: number;
     group_id: number;
     billing_mode: AdminUsageLogBillingMode;
@@ -4130,6 +4131,7 @@ export type ListAdminDebugTracesData = {
         limit?: number;
         outcome?: string;
         model?: string;
+        request_id?: string;
     };
     url: '/api/admin/debug-traces';
 };

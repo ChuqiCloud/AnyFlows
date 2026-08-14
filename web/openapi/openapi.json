@@ -10532,6 +10532,17 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "request_id",
+            "in": "query",
+            "description": "按服务端请求 ID 精确筛选",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "minLength": 1
+            }
           }
         ],
         "responses": {
@@ -16526,6 +16537,7 @@
           "id",
           "event_id",
           "user_id",
+          "username",
           "token_id",
           "group_id",
           "billing_mode",
@@ -16571,6 +16583,11 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
           },
           "token_id": {
             "type": "integer",

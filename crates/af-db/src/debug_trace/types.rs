@@ -416,6 +416,7 @@ pub struct DebugTraceListQuery {
     pub(super) limit: usize,
     pub(super) outcome: Option<DebugTraceOutcome>,
     pub(super) requested_model: Option<String>,
+    pub(super) request_id: Option<String>,
 }
 
 impl DebugTraceListQuery {
@@ -424,6 +425,7 @@ impl DebugTraceListQuery {
         limit: usize,
         outcome: Option<DebugTraceOutcome>,
         requested_model: Option<String>,
+        request_id: Option<String>,
     ) -> Result<Self, DebugTraceWriteError> {
         let requested_model = requested_model.filter(|model| !model.is_empty());
         if before.is_some_and(|value| value < 1)
@@ -431,6 +433,9 @@ impl DebugTraceListQuery {
             || requested_model
                 .as_deref()
                 .is_some_and(|model| !valid_model(model))
+            || request_id
+                .as_deref()
+                .is_some_and(|value| !valid_request_id(value))
         {
             return Err(DebugTraceWriteError::InvalidInput);
         }
@@ -439,6 +444,7 @@ impl DebugTraceListQuery {
             limit,
             outcome,
             requested_model,
+            request_id,
         })
     }
 }

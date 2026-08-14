@@ -1921,6 +1921,9 @@
       "reset": "Reset",
       "details": "Expand request details",
       "openDetails": "Open {{model}} request details",
+      "copyRequestId": "Copy request ID",
+      "copiedRequestId": "Request ID copied",
+      "copyRequestIdFailed": "Copy failed. Select the request ID in details.",
       "retry": "Retry",
       "previous": "Previous",
       "next": "Next"
@@ -1934,6 +1937,17 @@
     "error": {
       "title": "Unable to load request logs",
       "body": "The service did not return settled requests. Try again shortly."
+    },
+    "userSheet": {
+      "title": "User profile",
+      "description": "Review the account, wallet balance, and request limits for this request owner.",
+      "loading": "Loading user profile",
+      "errorTitle": "Unable to load user profile",
+      "errorBody": "The user may have been deleted, or the service did not return an account snapshot.",
+      "account": "Account",
+      "traffic": "Requests and limits",
+      "requests": "Total requests",
+      "openManagement": "Open user management"
     }
   },
   "debugTraces": {
@@ -1959,7 +1973,9 @@
       "outcome": "Request outcome",
       "all": "All outcomes",
       "model": "Model name",
-      "modelPlaceholder": "Filter by exact model name"
+      "modelPlaceholder": "Filter by exact model name",
+      "requestId": "Request ID",
+      "requestIdPlaceholder": "Filter by exact request ID"
     },
     "outcome": {
       "succeeded": "Succeeded",

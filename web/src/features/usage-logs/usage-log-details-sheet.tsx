@@ -4,13 +4,15 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
-import { formatUsageDateLong, formatUsageLatency, formatUsageNumber } from './usage-log-format'
+import { formatUsageDateLong, formatUsageLatency, formatUsageNumber, usageLatencyTone, type UsageLatencyKind } from './usage-log-format'
 import { isAdminUsageLog, type UsageLogRow, usageLogCacheTokens, usageLogTotalTokens } from './usage-log-model'
 
 type UsageLogDetailsSheetProps = {
   log?: UsageLogRow
   admin: boolean
   onOpenChange: (open: boolean) => void
+  onTraceOpen: (requestId: string) => void
+  onUserSelect: (userId: number) => void
 }
 
 type DetailItem = {
@@ -18,6 +20,8 @@ type DetailItem = {
   value: string
   mono?: boolean
   wide?: boolean
+  action?: () => void
+  valueClassName?: string
 }
 
 function DetailSection({ title, icon: Icon, items }: { title: string; icon: LucideIcon; items: DetailItem[] }) {
@@ -31,8 +35,8 @@ function DetailSection({ title, icon: Icon, items }: { title: string; icon: Luci
         {items.map((item) => (
           <div key={item.label} className={cn('min-w-0', item.wide && 'col-span-2')}>
             <dt className="text-[0.6875rem] text-muted-foreground">{item.label}</dt>
-            <dd className={cn('mt-1 break-words text-sm tabular-nums', item.mono && 'font-mono text-xs')} title={item.value}>
-              {item.value}
+            <dd className={cn('mt-1 break-words text-sm tabular-nums', item.mono && 'font-mono text-xs', item.valueClassName)} title={item.value}>
+              {item.action ? <button type="button" className="text-left font-medium text-brand outline-none hover:underline focus-visible:underline" onClick={item.action}>{item.value}</button> : item.value}
             </dd>
           </div>
         ))}
@@ -42,11 +46,15 @@ function DetailSection({ title, icon: Icon, items }: { title: string; icon: Luci
 }
 
 /** 详情抽屉集中展示核账事实，主表只保留高频比较字段。 */
-export function UsageLogDetailsSheet({ log, admin, onOpenChange }: UsageLogDetailsSheetProps) {
+export function UsageLogDetailsSheet({ log, admin, onOpenChange, onTraceOpen, onUserSelect }: UsageLogDetailsSheetProps) {
   const { t, i18n } = useTranslation()
   const locale = i18n.language
   const number = (value: number) => formatUsageNumber(value, locale)
   const latency = (value: number | null) => formatUsageLatency(value, locale)
+  const latencyClass = (value: number | null, kind: UsageLatencyKind) => {
+    const tone = usageLatencyTone(value, kind)
+    return tone === 'success' ? 'text-success' : tone === 'warning' ? 'text-warning' : tone === 'destructive' ? 'text-destructive' : 'text-muted-foreground'
+  }
 
   return (
     <Sheet open={log !== undefined} onOpenChange={onOpenChange}>
@@ -75,7 +83,13 @@ export function UsageLogDetailsSheet({ log, admin, onOpenChange }: UsageLogDetai
                 title={t('usageLogs.detailSections.request')}
                 icon={Route}
                 items={[
-                  { label: t('usageLogs.details.request'), value: log.request_id ?? `#${log.id}`, mono: true, wide: true },
+                  {
+                    label: t('usageLogs.details.request'),
+                    value: log.request_id ?? `#${log.id}`,
+                    mono: true,
+                    wide: true,
+                    action: admin && log.request_id ? () => onTraceOpen(log.request_id as string) : undefined,
+                  },
                   { label: t('usageLogs.detailFields.responseMode'), value: log.is_stream === null ? t('usageLogs.values.legacy') : t(log.is_stream ? 'usageLogs.values.stream' : 'usageLogs.values.sync') },
                   { label: t('usageLogs.detailFields.protocol'), value: log.protocol ? t(`usageLogs.protocol.${log.protocol}`) : t('usageLogs.values.legacy') },
                   { label: t('usageLogs.detailFields.operation'), value: log.operation ? t(`usageLogs.operation.${log.operation}`) : t('usageLogs.values.notSpecified') },
@@ -86,8 +100,8 @@ export function UsageLogDetailsSheet({ log, admin, onOpenChange }: UsageLogDetai
                 title={t('usageLogs.detailSections.performance')}
                 icon={Gauge}
                 items={[
-                  { label: t('usageLogs.values.firstToken'), value: latency(log.first_token_ms) },
-                  { label: t('usageLogs.values.duration'), value: latency(log.duration_ms) },
+                  { label: t('usageLogs.values.firstToken'), value: latency(log.first_token_ms), valueClassName: cn('font-semibold', latencyClass(log.first_token_ms, 'first-token')) },
+                  { label: t('usageLogs.values.duration'), value: latency(log.duration_ms), valueClassName: cn('font-semibold', latencyClass(log.duration_ms, 'duration')) },
                 ]}
               />
 
@@ -131,7 +145,7 @@ export function UsageLogDetailsSheet({ log, admin, onOpenChange }: UsageLogDetai
                   title={t('usageLogs.detailSections.principal')}
                   icon={UserRound}
                   items={[
-                    { label: t('usageLogs.detailFields.user'), value: `#${log.user_id}` },
+                    { label: t('usageLogs.detailFields.user'), value: `${log.username} (#${log.user_id})`, action: () => onUserSelect(log.user_id) },
                     { label: t('usageLogs.detailFields.token'), value: `#${log.token_id}` },
                     { label: t('usageLogs.detailFields.group'), value: `#${log.group_id}` },
                   ]}

@@ -21,6 +21,8 @@ pub(crate) struct AdminUsageLogResponse {
     event_id: String,
     #[schema(minimum = 1)]
     user_id: i64,
+    #[schema(min_length = 1, max_length = 64)]
+    username: String,
     #[schema(minimum = 1)]
     token_id: i64,
     #[schema(minimum = 1)]
@@ -205,6 +207,7 @@ impl AdminUsageLogResponse {
             id: log.id(),
             event_id: log.event_id().to_owned(),
             user_id: log.user_id().get(),
+            username: log.username().to_owned(),
             token_id: log.token_id().get(),
             group_id: log.group_id().get(),
             billing_mode: log.billing_mode(),

@@ -1999,6 +1999,9 @@
       "reset": "重置",
       "details": "展开调用详情",
       "openDetails": "查看 {{model}} 调用详情",
+      "copyRequestId": "复制请求 ID",
+      "copiedRequestId": "请求 ID 已复制",
+      "copyRequestIdFailed": "复制失败，请在详情中手动选择请求 ID",
       "retry": "重试",
       "previous": "上一页",
       "next": "下一页"
@@ -2012,6 +2015,17 @@
     "error": {
       "title": "无法读取调用日志",
       "body": "服务暂时没有返回已结算调用，请稍后重试。"
+    },
+    "userSheet": {
+      "title": "用户资料",
+      "description": "查看该调用所属用户的账户、钱包余额与请求限制。",
+      "loading": "正在加载用户资料",
+      "errorTitle": "无法读取用户资料",
+      "errorBody": "用户可能已删除，或服务暂时没有返回账户快照。",
+      "account": "账户信息",
+      "traffic": "请求与限制",
+      "requests": "累计请求",
+      "openManagement": "打开用户管理"
     }
   },
   "debugTraces": {
@@ -2037,7 +2051,9 @@
       "outcome": "请求结果",
       "all": "全部结果",
       "model": "模型名称",
-      "modelPlaceholder": "按完整模型名称筛选"
+      "modelPlaceholder": "按完整模型名称筛选",
+      "requestId": "请求 ID",
+      "requestIdPlaceholder": "按完整请求 ID 精确筛选"
     },
     "outcome": {
       "succeeded": "成功",

@@ -14,6 +14,7 @@ const PAGE_SIZE = 30
 export type DebugTraceFilters = {
   outcome?: 'succeeded' | 'failed'
   model?: string
+  requestId?: string
 }
 
 export const adminDebugTraceSettingsQueryKey = ['admin-debug-trace-settings'] as const
@@ -55,6 +56,7 @@ export function useAdminDebugTraces(before: number | undefined, filters: DebugTr
           limit: PAGE_SIZE,
           outcome: filters.outcome,
           model: filters.model,
+          request_id: filters.requestId,
         },
         signal,
       })

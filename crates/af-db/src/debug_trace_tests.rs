@@ -51,7 +51,7 @@ async fn storage_round_trip_preserves_order_filters_and_cursor() -> Result<(), B
 
     let page = fixture
         .repository
-        .list(DebugTraceListQuery::new(None, 2, None, None)?)
+        .list(DebugTraceListQuery::new(None, 2, None, None, None)?)
         .await?;
     assert_eq!(
         page.traces()
@@ -63,7 +63,13 @@ async fn storage_round_trip_preserves_order_filters_and_cursor() -> Result<(), B
     assert_eq!(page.next_cursor(), Some(second.id()));
     let next = fixture
         .repository
-        .list(DebugTraceListQuery::new(page.next_cursor(), 2, None, None)?)
+        .list(DebugTraceListQuery::new(
+            page.next_cursor(),
+            2,
+            None,
+            None,
+            None,
+        )?)
         .await?;
     assert_eq!(next.traces().len(), 1);
     assert_eq!(next.traces()[0].id(), first.id());
@@ -76,10 +82,24 @@ async fn storage_round_trip_preserves_order_filters_and_cursor() -> Result<(), B
             10,
             Some(DebugTraceOutcome::Failed),
             Some("claude-opus-4-8".to_owned()),
+            None,
         )?)
         .await?;
     assert_eq!(failed.traces().len(), 1);
     assert_eq!(failed.traces()[0].id(), second.id());
+
+    let exact = fixture
+        .repository
+        .list(DebugTraceListQuery::new(
+            None,
+            10,
+            None,
+            None,
+            Some("request-c".to_owned()),
+        )?)
+        .await?;
+    assert_eq!(exact.traces().len(), 1);
+    assert_eq!(exact.traces()[0].id(), third.id());
 
     let detail = fixture.repository.detail(first.id()).await?;
     assert_eq!(detail.attempts().len(), 2);

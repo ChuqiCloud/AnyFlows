@@ -2,7 +2,11 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { formatUsageLatency } from '../src/features/usage-logs/usage-log-format.ts'
+import {
+  formatCompactRequestId,
+  formatUsageLatency,
+  usageLatencyTone,
+} from '../src/features/usage-logs/usage-log-format.ts'
 import {
   filterUsageLogs,
   summarizeUsageLogs,
@@ -76,6 +80,21 @@ test('耗时格式兼顾毫秒与秒级扫描', () => {
   assert.equal(formatUsageLatency(null, 'zh-CN'), '-')
   assert.equal(formatUsageLatency(850, 'zh-CN'), '850 ms')
   assert.equal(formatUsageLatency(2_500, 'zh-CN'), '2.5 s')
+})
+
+test('首字与总耗时按独立边界返回语义色', () => {
+  assert.equal(usageLatencyTone(null, 'first-token'), 'neutral')
+  assert.equal(usageLatencyTone(1_000, 'first-token'), 'success')
+  assert.equal(usageLatencyTone(1_001, 'first-token'), 'warning')
+  assert.equal(usageLatencyTone(5_001, 'first-token'), 'destructive')
+  assert.equal(usageLatencyTone(5_000, 'duration'), 'success')
+  assert.equal(usageLatencyTone(15_000, 'duration'), 'warning')
+  assert.equal(usageLatencyTone(15_001, 'duration'), 'destructive')
+})
+
+test('请求 ID 紧凑展示不改变可复制原值', () => {
+  assert.equal(formatCompactRequestId('request-short'), 'request-short')
+  assert.equal(formatCompactRequestId('019c1234-5678-7abc-9def-0123456789ab'), '019c1234-...6789ab')
 })
 
 test('中英文协议徽标覆盖生成客户端的全部闭合枚举', () => {

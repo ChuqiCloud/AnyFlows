@@ -233,6 +233,37 @@ fn maps_adaptive_and_disabled_thinking_without_guessing_budget() {
 }
 
 #[test]
+fn maps_output_effort_and_rejects_disabled_conflicts() {
+    for (wire, expected) in [
+        ("low", ReasoningEffort::Low),
+        ("medium", ReasoningEffort::Medium),
+        ("high", ReasoningEffort::High),
+        ("xhigh", ReasoningEffort::ExtraHigh),
+        ("max", ReasoningEffort::Max),
+    ] {
+        let mut request = minimal_request();
+        request["output_config"] = json!({"effort": wire});
+        let reasoning = parse_json(request).unwrap().reasoning.unwrap();
+        assert_eq!(reasoning.effort(), Some(expected));
+        assert_eq!(reasoning.budget_tokens(), None);
+        assert!(!reasoning.include_thinking());
+    }
+
+    let mut combined = minimal_request();
+    combined["max_tokens"] = json!(4096);
+    combined["thinking"] = json!({"type": "enabled", "budget_tokens": 1024});
+    combined["output_config"] = json!({"effort": "high"});
+    let reasoning = parse_json(combined).unwrap().reasoning.unwrap();
+    assert_eq!(reasoning.effort(), Some(ReasoningEffort::High));
+    assert_eq!(reasoning.budget_tokens().unwrap().get(), 1024);
+
+    let mut conflict = minimal_request();
+    conflict["thinking"] = json!({"type": "disabled"});
+    conflict["output_config"] = json!({"effort": "high"});
+    assert_json_error(conflict, ParseRequestError::InvalidValue);
+}
+
+#[test]
 fn rejects_duplicate_keys_and_non_single_json_documents() {
     assert_eq!(
         parse_request(

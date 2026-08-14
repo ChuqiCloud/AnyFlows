@@ -80,6 +80,7 @@ pub struct AdminDebugTraceListQuery {
     limit: usize,
     outcome: Option<AdminDebugTraceOutcome>,
     requested_model: Option<String>,
+    request_id: Option<String>,
 }
 
 impl AdminDebugTraceListQuery {
@@ -88,6 +89,7 @@ impl AdminDebugTraceListQuery {
         limit: usize,
         outcome: Option<AdminDebugTraceOutcome>,
         requested_model: Option<String>,
+        request_id: Option<String>,
     ) -> Result<Self, AdminDebugTraceError> {
         let requested_model = requested_model.filter(|model| !model.is_empty());
         DebugTraceListQuery::new(
@@ -95,6 +97,7 @@ impl AdminDebugTraceListQuery {
             limit,
             outcome.map(AdminDebugTraceOutcome::into_database),
             requested_model.clone(),
+            request_id.clone(),
         )
         .map_err(|_| AdminDebugTraceError::InvalidInput)?;
         Ok(Self {
@@ -102,6 +105,7 @@ impl AdminDebugTraceListQuery {
             limit,
             outcome,
             requested_model,
+            request_id,
         })
     }
 
@@ -111,6 +115,7 @@ impl AdminDebugTraceListQuery {
             self.limit,
             self.outcome.map(AdminDebugTraceOutcome::into_database),
             self.requested_model,
+            self.request_id,
         )
         .map_err(|_| AdminDebugTraceError::InvalidInput)
     }
@@ -123,6 +128,7 @@ impl Default for AdminDebugTraceListQuery {
             limit: DEFAULT_ADMIN_DEBUG_TRACE_PAGE_SIZE,
             outcome: None,
             requested_model: None,
+            request_id: None,
         }
     }
 }
@@ -599,11 +605,17 @@ mod tests {
     fn query_and_role_boundaries_fail_closed() {
         assert_eq!(AdminDebugTraceListQuery::default().limit, 50);
         assert_eq!(
-            AdminDebugTraceListQuery::new(Some(0), 1, None, None),
+            AdminDebugTraceListQuery::new(Some(0), 1, None, None, None),
             Err(AdminDebugTraceError::InvalidInput)
         );
         assert_eq!(
-            AdminDebugTraceListQuery::new(None, af_db::MAX_DEBUG_TRACE_PAGE_SIZE + 1, None, None,),
+            AdminDebugTraceListQuery::new(
+                None,
+                af_db::MAX_DEBUG_TRACE_PAGE_SIZE + 1,
+                None,
+                None,
+                None,
+            ),
             Err(AdminDebugTraceError::InvalidInput)
         );
         let principal = SessionPrincipal::new(UserId::new(1).unwrap(), SessionRole::User);

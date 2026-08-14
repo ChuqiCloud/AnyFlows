@@ -275,6 +275,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminDebugTraceListQuery,
     let mut limit = None;
     let mut outcome = None;
     let mut model = None;
+    let mut request_id = None;
     for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
         if key.contains('\u{fffd}') || value.contains('\u{fffd}') {
             return Err(ManagementError::InvalidRequest);
@@ -284,6 +285,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminDebugTraceListQuery,
             "limit" if limit.is_none() => limit = Some(parse_limit(&value)?),
             "outcome" if outcome.is_none() => outcome = Some(parse_outcome(&value)?),
             "model" if model.is_none() => model = Some(value.into_owned()),
+            "request_id" if request_id.is_none() => request_id = Some(value.into_owned()),
             _ => return Err(ManagementError::InvalidRequest),
         }
     }
@@ -292,6 +294,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminDebugTraceListQuery,
         limit.unwrap_or(af_admin::DEFAULT_ADMIN_DEBUG_TRACE_PAGE_SIZE),
         outcome,
         model,
+        request_id,
     )
     .map_err(map_error)
 }

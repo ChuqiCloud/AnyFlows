@@ -13,12 +13,24 @@ import { DebugTraceSettingsSheet } from './debug-trace-settings-sheet'
 
 const EMPTY_TRACES = [] as const
 
+function requestIdFromHash() {
+  const queryStart = window.location.hash.indexOf('?')
+  if (queryStart < 0) return undefined
+  const values = new URLSearchParams(window.location.hash.slice(queryStart + 1)).getAll('request_id')
+  if (values.length !== 1 || values[0].length === 0 || values[0].length > 64 || values[0].trim() !== values[0]) return undefined
+  return values[0]
+}
+
 /** 组合筛选、稳定游标、主从选择和设置入口的调试追踪工作台。 */
 export function DebugTracePage() {
   const { t } = useTranslation()
   const [cursorStack, setCursorStack] = useState<Array<number | undefined>>([undefined])
-  const [filters, setFilters] = useState<DebugTraceFilters>({})
+  const [filters, setFilters] = useState<DebugTraceFilters>(() => {
+    const requestId = requestIdFromHash()
+    return requestId ? { requestId } : {}
+  })
   const [modelDraft, setModelDraft] = useState('')
+  const [requestIdDraft, setRequestIdDraft] = useState(() => requestIdFromHash() ?? '')
   const [outcomeDraft, setOutcomeDraft] = useState('all')
   const [selectedId, setSelectedId] = useState<number>()
   const cursor = cursorStack.at(-1)
@@ -43,6 +55,7 @@ export function DebugTracePage() {
     setFilters({
       outcome: outcomeDraft === 'all' ? undefined : outcomeDraft as 'succeeded' | 'failed',
       model: modelDraft.trim() || undefined,
+      requestId: requestIdDraft.trim() || undefined,
     })
   }
 
@@ -62,7 +75,7 @@ export function DebugTracePage() {
         </div>
       </header>
 
-      <form className="grid gap-2 rounded-lg border border-[var(--hairline)] bg-surface-1/45 p-2.5 sm:grid-cols-[10rem_minmax(12rem,1fr)_auto]" onSubmit={(event) => { event.preventDefault(); applyFilters() }}>
+      <form className="grid gap-2 rounded-lg border border-[var(--hairline)] bg-surface-1/45 p-2.5 lg:grid-cols-[10rem_minmax(12rem,1fr)_minmax(14rem,1fr)_auto]" onSubmit={(event) => { event.preventDefault(); applyFilters() }}>
         <div className="relative">
           <Filter className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Select aria-label={t('debugTraces.filters.outcome')} className="pl-8" value={outcomeDraft} onChange={(event) => setOutcomeDraft(event.target.value)}>
@@ -74,6 +87,10 @@ export function DebugTracePage() {
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input aria-label={t('debugTraces.filters.model')} className="pl-8" value={modelDraft} placeholder={t('debugTraces.filters.modelPlaceholder')} onChange={(event) => setModelDraft(event.target.value)} />
+        </div>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+          <Input aria-label={t('debugTraces.filters.requestId')} className="pl-8 font-mono text-xs" value={requestIdDraft} placeholder={t('debugTraces.filters.requestIdPlaceholder')} onChange={(event) => setRequestIdDraft(event.target.value)} />
         </div>
         <Button type="submit" size="sm" variant="secondary">{t('debugTraces.actions.filter')}</Button>
       </form>

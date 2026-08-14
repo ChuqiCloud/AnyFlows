@@ -242,6 +242,9 @@ impl DebugTraceRepository {
         if let Some(model) = query.requested_model {
             select = select.filter(debug_traces::Column::RequestedModel.eq(model));
         }
+        if let Some(request_id) = query.request_id {
+            select = select.filter(debug_traces::Column::RequestId.eq(request_id));
+        }
         let mut traces = select
             .limit((query.limit + 1) as u64)
             .all(self.pool.connection())
