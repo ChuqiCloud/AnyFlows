@@ -69,18 +69,13 @@ export function PlaygroundPage() {
   const renderSettings = (idPrefix: string) => (
     <PlaygroundSettings
       idPrefix={idPrefix}
-      apiKeyDraft={configuration.apiKeyDraft}
-      apiKeySaved={configuration.apiKey.length > 0}
-      apiKeyError={configuration.apiKeyError}
+      apiKeyReady={configuration.apiKey.length > 0}
       apiKeyProvisioning={configuration.apiKeyProvisioning}
       systemPrompt={configuration.systemPrompt}
       temperatureEnabled={configuration.temperatureEnabled}
       temperature={configuration.temperature}
       maxOutputTokensEnabled={configuration.maxOutputTokensEnabled}
       maxOutputTokens={configuration.maxOutputTokens}
-      onApiKeyDraftChange={configuration.updateApiKeyDraft}
-      onSaveApiKey={configuration.saveApiKey}
-      onClearApiKey={configuration.clearApiKey}
       onProvisionApiKey={configuration.provisionApiKey}
       onSystemPromptChange={configuration.setSystemPrompt}
       onTemperatureEnabledChange={configuration.setTemperatureEnabled}

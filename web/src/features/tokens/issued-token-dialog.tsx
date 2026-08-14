@@ -13,7 +13,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { setPlaygroundApiKey } from '@/features/playground/playground-api-key'
 import type { IssuedAdminToken } from '@/lib/api/generated/types.gen'
 
 type IssuedTokenDialogProps = {
@@ -37,9 +36,8 @@ export function IssuedTokenDialog({ issued, onClose }: IssuedTokenDialogProps) {
     }
   }
 
-  const useInPlayground = () => {
+  const openPlayground = () => {
     if (!issued) return
-    setPlaygroundApiKey(issued.api_key)
     onClose()
     window.location.hash = '#/console/playground'
   }
@@ -66,7 +64,7 @@ export function IssuedTokenDialog({ issued, onClose }: IssuedTokenDialogProps) {
           </p>
         </div>
         <AlertDialogFooter>
-          <Button type="button" variant="secondary" onClick={useInPlayground}>
+          <Button type="button" variant="secondary" onClick={openPlayground}>
             <MessageSquareText aria-hidden="true" />{t('tokens.issued.playground')}
           </Button>
           <AlertDialogAction onClick={onClose}>{t('tokens.issued.done')}</AlertDialogAction>

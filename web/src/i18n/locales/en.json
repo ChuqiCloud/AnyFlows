@@ -909,7 +909,7 @@
       "copied": "Copied",
       "copyFailed": "Clipboard access failed. Select and copy the key manually.",
       "warning": "The full key is shown only once. Save it securely before closing this window.",
-      "playground": "Use in Playground",
+      "playground": "Open Playground",
       "done": "I have saved it"
     },
     "delete": {
@@ -1839,7 +1839,7 @@
       "copied": "Copied",
       "copyFailed": "Clipboard access failed. Select and copy the key manually.",
       "warning": "The full key is shown only once. Save it securely before closing this window.",
-      "playground": "Use in Playground",
+      "playground": "Open Playground",
       "done": "I have saved it"
     },
     "delete": {
@@ -2192,18 +2192,15 @@
     "subtitle": "Submit asynchronous generations to xAI video models available to the current group and query them within the same owner scope.",
     "access": {
       "title": "Access credential",
-      "description": "Shares the current-tab API key with the chat playground."
+      "summary": "Platform-managed session",
+      "description": "The signed-in account receives a managed credential automatically. No API key input or storage is required."
     },
     "apiKey": {
-      "label": "AnyFlows API key",
-      "ready": "Saved in this tab",
-      "missing": "Not configured",
-      "show": "Show API key",
-      "hide": "Hide API key",
-      "save": "Save",
-      "clear": "Clear",
-      "invalid": "Enter a valid sk-af- API key.",
-      "required": "Save a valid API key first."
+      "ready": "Platform session ready",
+      "provisioning": "Preparing session",
+      "failed": "Automatic setup failed",
+      "missing": "Session credential unavailable",
+      "retry": "Retry setup"
     },
     "request": {
       "title": "Generation settings",
@@ -2231,8 +2228,8 @@
     },
     "history": {
       "title": "Task history",
-      "description": "Persisted tasks for the user who owns the current API key.",
-      "apiKey": "Save an API key to load your task history.",
+      "description": "Persisted tasks for the signed-in user.",
+      "apiKey": "Task history loads after the platform session is ready.",
       "empty": "This user has no video tasks yet.",
       "refresh": "Refresh task history",
       "loadMore": "Load more tasks",
@@ -2320,7 +2317,7 @@
     },
     "settings": {
       "title": "Session settings",
-      "description": "Configure access credentials, model, and generation parameters.",
+      "description": "The platform prepares session access automatically. Configure the model and generation parameters.",
       "expand": "Open session settings",
       "collapse": "Close session settings",
       "access": "Access credential",
@@ -2332,20 +2329,13 @@
       "maxOutputTokens": "Maximum output tokens"
     },
     "apiKey": {
-      "label": "AnyFlows API key",
       "ready": "Platform session ready",
       "provisioning": "Preparing session",
       "failed": "Automatic setup failed",
-      "missing": "Session credential not configured",
+      "missing": "Session credential unavailable",
       "platformTitle": "Platform session · automatic group",
       "platformDescription": "Uses the current account group and follows administrator fallback rules when no route is available. No API key input is required.",
-      "advanced": "Advanced API key debugging",
-      "retry": "Retry setup",
-      "show": "Show API key",
-      "hide": "Hide API key",
-      "save": "Save",
-      "clear": "Clear",
-      "invalid": "Enter a valid sk-af- API key."
+      "retry": "Retry setup"
     },
     "model": {
       "pending": "No model selected",
@@ -2394,7 +2384,7 @@
     "composer": {
       "label": "Session message",
       "placeholder": "Enter a message",
-      "apiKeyRequired": "The session credential is unavailable. Retry setup or use advanced debugging"
+      "apiKeyRequired": "The session credential is unavailable. Retry setup in session settings"
     },
     "actions": {
       "send": "Send",

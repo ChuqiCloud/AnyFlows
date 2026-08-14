@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { afterEach, test } from 'node:test'
 
 import {
@@ -11,6 +12,10 @@ import { classifyPlaygroundError } from '../src/features/playground/playground-e
 
 const originalStorageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage')
 const validApiKey = 'sk-af-AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8'
+
+function source(relativePath) {
+  return readFileSync(new URL(relativePath, import.meta.url), 'utf8')
+}
 
 function installStorage(storage) {
   Object.defineProperty(globalThis, 'sessionStorage', {
@@ -69,19 +74,37 @@ test('API Key 可在当前标签页保存、恢复并清除', () => {
 
   setPlaygroundApiKey(`  ${validApiKey}  `)
   assert.equal(getPlaygroundApiKey(), validApiKey)
+  assert.equal(storage.getItem('anyflows.playground.managed-api-key'), validApiKey)
 
   clearPlaygroundApiKey()
   assert.equal(getPlaygroundApiKey(), undefined)
   assert.equal(storage.length, 0)
 })
 
-test('非法存储残留会被清除且不会进入页面内存', () => {
+test('旧版手动 Key 与非法托管残留都会被清除', () => {
   const storage = createMemoryStorage()
-  storage.setItem('anyflows.playground.api-key', 'not-a-key')
+  storage.setItem('anyflows.playground.api-key', validApiKey)
+  storage.setItem('anyflows.playground.managed-api-key', 'not-a-key')
   installStorage(storage)
 
   assert.equal(getPlaygroundApiKey(), undefined)
   assert.equal(storage.length, 0)
+})
+
+test('试炼场只保留托管凭据状态与重试入口', () => {
+  const settings = source('../src/features/playground/playground-settings.tsx')
+  const configuration = source('../src/features/playground/use-playground-configuration.ts')
+  const videoAccess = source('../src/features/video-tasks/video-task-access-panel.tsx')
+  const userIssuedDialog = source('../src/features/api-keys/issued-api-key-dialog.tsx')
+  const adminIssuedDialog = source('../src/features/tokens/issued-token-dialog.tsx')
+
+  assert.match(settings, /onProvisionApiKey/)
+  assert.doesNotMatch(settings, /apiKeyDraft|onSaveApiKey|onClearApiKey|sk-af-/)
+  assert.match(videoAccess, /onProvisionApiKey/)
+  assert.doesNotMatch(videoAccess, /apiKeyDraft|onSave|onClear|sk-af-/)
+  assert.doesNotMatch(configuration, /saveApiKey|clearApiKey|updateApiKeyDraft/)
+  assert.doesNotMatch(userIssuedDialog, /setPlaygroundApiKey/)
+  assert.doesNotMatch(adminIssuedDialog, /setPlaygroundApiKey/)
 })
 
 test('sessionStorage 不可用时退化到页面内存', () => {

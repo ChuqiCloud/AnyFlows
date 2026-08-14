@@ -1,16 +1,5 @@
-import type { FormEvent, ReactNode } from 'react'
-import {
-  ChevronDown,
-  Eye,
-  EyeOff,
-  KeyRound,
-  LoaderCircle,
-  RefreshCw,
-  Save,
-  ShieldCheck,
-  Trash2,
-} from 'lucide-react'
-import { useState } from 'react'
+import type { ReactNode } from 'react'
+import { LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
@@ -22,18 +11,13 @@ import { Textarea } from '@/components/ui/textarea'
 type PlaygroundSettingsProps = {
   idPrefix: string
   modelPicker?: ReactNode
-  apiKeyDraft: string
-  apiKeySaved: boolean
-  apiKeyError?: string
+  apiKeyReady: boolean
   apiKeyProvisioning: 'idle' | 'pending' | 'failed'
   systemPrompt: string
   temperatureEnabled: boolean
   temperature: number
   maxOutputTokensEnabled: boolean
   maxOutputTokens: number
-  onApiKeyDraftChange: (value: string) => void
-  onSaveApiKey: () => void
-  onClearApiKey: () => void
   onProvisionApiKey: () => void
   onSystemPromptChange: (value: string) => void
   onTemperatureEnabledChange: (value: boolean) => void
@@ -44,17 +28,11 @@ type PlaygroundSettingsProps = {
 
 export function PlaygroundSettings(props: PlaygroundSettingsProps) {
   const { t } = useTranslation()
-  const [showApiKey, setShowApiKey] = useState(false)
-  const keyId = `${props.idPrefix}-api-key`
   const systemId = `${props.idPrefix}-system`
   const temperatureId = `${props.idPrefix}-temperature`
   const maxTokensId = `${props.idPrefix}-max-tokens`
 
-  const saveKey = (event: FormEvent) => {
-    event.preventDefault()
-    props.onSaveApiKey()
-  }
-  const keyStatus = props.apiKeySaved
+  const keyStatus = props.apiKeyReady
     ? 'ready'
     : props.apiKeyProvisioning === 'pending'
       ? 'provisioning'
@@ -84,50 +62,6 @@ export function PlaygroundSettings(props: PlaygroundSettingsProps) {
             <RefreshCw aria-hidden="true" />{t('playground.apiKey.retry')}
           </Button>
         ) : null}
-        <details className="group border-t border-[var(--hairline)] pt-2">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[0.6875rem] font-medium text-muted-foreground hover:text-foreground">
-            <span className="inline-flex items-center gap-1.5"><KeyRound className="size-3.5" aria-hidden="true" />{t('playground.apiKey.advanced')}</span>
-            <ChevronDown className="size-3.5 transition-transform group-open:rotate-180" aria-hidden="true" />
-          </summary>
-          <form className="mt-2 grid gap-2" onSubmit={saveKey}>
-            <label className="grid gap-1.5 text-[0.6875rem] font-medium text-muted-foreground" htmlFor={keyId}>
-              <span>{t('playground.apiKey.label')}</span>
-              <span className="relative block">
-                <KeyRound className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" aria-hidden="true" />
-                <Input
-                  id={keyId}
-                  type={showApiKey ? 'text' : 'password'}
-                  className="px-8 font-mono text-xs"
-                  value={props.apiKeyDraft}
-                  autoComplete="off"
-                  autoCapitalize="none"
-                  maxLength={512}
-                  spellCheck={false}
-                  aria-invalid={props.apiKeyError !== undefined}
-                  placeholder="sk-af-..."
-                  onChange={(event) => props.onApiKeyDraftChange(event.target.value)}
-                />
-                <button
-                  type="button"
-                  className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground"
-                  aria-label={t(showApiKey ? 'playground.apiKey.hide' : 'playground.apiKey.show')}
-                  onClick={() => setShowApiKey((current) => !current)}
-                >
-                  {showApiKey ? <EyeOff className="size-3.5" aria-hidden="true" /> : <Eye className="size-3.5" aria-hidden="true" />}
-                </button>
-              </span>
-            </label>
-            {props.apiKeyError ? <p role="alert" className="text-xs text-destructive">{props.apiKeyError}</p> : null}
-            <div className="grid grid-cols-2 gap-2">
-              <Button type="submit" size="sm" variant="secondary">
-                <Save aria-hidden="true" />{t('playground.apiKey.save')}
-              </Button>
-              <Button type="button" size="sm" variant="ghost" disabled={!props.apiKeyDraft && !props.apiKeySaved} onClick={props.onClearApiKey}>
-                <Trash2 aria-hidden="true" />{t('playground.apiKey.clear')}
-              </Button>
-            </div>
-          </form>
-        </details>
       </section>
 
       {props.modelPicker ? (

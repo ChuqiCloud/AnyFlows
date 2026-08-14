@@ -1,12 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 
-import {
-  clearPlaygroundApiKey,
-  getPlaygroundApiKey,
-  isPlaygroundApiKey,
-  setPlaygroundApiKey,
-} from '@/features/playground/playground-api-key'
+import { usePlaygroundApiKey } from '@/features/playground/use-playground-api-key'
 import { pollVideoTask, submitVideoTask, videoTaskError } from './video-task-client'
 import type { VideoTaskApiError, VideoTaskPollResponse, VideoTaskRequest } from './video-task-types'
 
@@ -24,10 +18,8 @@ export type VideoTaskWorkspacePhase =
 
 /** 管理单个可安全重放的视频任务工作区，禁止自动重试付费提交。 */
 export function useVideoTaskWorkspace() {
-  const { t } = useTranslation()
-  const [apiKey, setApiKey] = useState(() => getPlaygroundApiKey() ?? '')
-  const [apiKeyDraft, setApiKeyDraft] = useState(apiKey)
-  const [apiKeyError, setApiKeyError] = useState<string>()
+  const managedApiKey = usePlaygroundApiKey()
+  const apiKey = managedApiKey.apiKey
   const [idempotencyKey, setIdempotencyKey] = useState(generateIdempotencyKey)
   const [taskId, setTaskId] = useState<string>()
   const [phase, setPhase] = useState<VideoTaskWorkspacePhase>('idle')
@@ -46,32 +38,8 @@ export function useVideoTaskWorkspace() {
     setRequestLocked(false)
   }, [])
 
-  const saveApiKey = useCallback(() => {
-    if (!isPlaygroundApiKey(apiKeyDraft)) {
-      setApiKeyError(t('videoTasks.apiKey.invalid'))
-      return
-    }
-    const normalized = apiKeyDraft.trim()
-    if (normalized !== apiKey) resetTask()
-    setPlaygroundApiKey(normalized)
-    setApiKey(normalized)
-    setApiKeyDraft(normalized)
-    setApiKeyError(undefined)
-  }, [apiKey, apiKeyDraft, resetTask, t])
-
-  const clearApiKey = useCallback(() => {
-    clearPlaygroundApiKey()
-    setApiKey('')
-    setApiKeyDraft('')
-    setApiKeyError(undefined)
-    resetTask()
-  }, [resetTask])
-
   const submit = useCallback(async (request: VideoTaskRequest) => {
-    if (!apiKey) {
-      setApiKeyError(t('videoTasks.apiKey.required'))
-      return
-    }
+    if (!apiKey) return
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
@@ -94,7 +62,7 @@ export function useVideoTaskWorkspace() {
       setError(detail)
       setPhase('error')
     }
-  }, [apiKey, idempotencyKey, t])
+  }, [apiKey, idempotencyKey])
 
   const poll = useCallback(async () => {
     if (!apiKey || !taskId) return
@@ -157,35 +125,28 @@ export function useVideoTaskWorkspace() {
 
   return useMemo(() => ({
     apiKey,
-    apiKeyDraft,
-    apiKeyError,
+    apiKeyProvisioning: managedApiKey.provisioning,
     busy,
     canPoll,
     canRetrySubmission,
-    clearApiKey,
     error,
     idempotencyKey,
     phase,
     openTask,
     poll,
+    provisionApiKey: managedApiKey.provision,
     requestLocked,
     response,
-    saveApiKey,
-    setApiKeyDraft: (value: string) => {
-      setApiKeyDraft(value)
-      setApiKeyError(undefined)
-    },
     startNew,
     submit,
     taskId,
   }), [
     apiKey,
-    apiKeyDraft,
-    apiKeyError,
+    managedApiKey.provision,
+    managedApiKey.provisioning,
     busy,
     canPoll,
     canRetrySubmission,
-    clearApiKey,
     error,
     idempotencyKey,
     phase,
@@ -193,7 +154,6 @@ export function useVideoTaskWorkspace() {
     poll,
     requestLocked,
     response,
-    saveApiKey,
     startNew,
     submit,
     taskId,
