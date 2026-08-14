@@ -315,6 +315,35 @@
   transform: none !important;
 }
 
+/* 模型广场水印只承担品牌氛围，渐变遮罩避免它干扰左侧信息与价格。 */
+.model-catalog-watermark {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.3) 32%, black 62%);
+  mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.3) 32%, black 62%);
+}
+
+@keyframes model-catalog-logo-breathe {
+  0%, 100% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(2.5deg) scale(1.035);
+  }
+}
+
+.model-catalog-logo-breathe {
+  animation: model-catalog-logo-breathe 6s ease-in-out infinite;
+}
+
+:root[data-motion='reduced'] .model-catalog-logo-breathe {
+  animation: none !important;
+}
+
+:root[data-motion='reduced'] [data-model-watermark-mark],
+:root[data-motion='reduced'] [data-model-details-motion],
+:root[data-motion='reduced'] [data-model-details-content] {
+  transition-duration: 0s !important;
+}
+
 @keyframes ai-pixel-on {
   from {
     opacity: 0.16;
