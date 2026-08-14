@@ -8,7 +8,11 @@ import {
   isPlaygroundApiKey,
   setPlaygroundApiKey,
 } from './playground-api-key'
-import { normalizePlaygroundModels } from './playground-model-selection'
+import {
+  DEFAULT_PLAYGROUND_COMPARISON_ENABLED,
+  modelsForPlaygroundSelectionMode,
+  normalizePlaygroundModels,
+} from './playground-model-selection'
 import { playgroundProtocolForModel, type PlaygroundProtocol } from './playground-protocol'
 
 const DEFAULT_TEMPERATURE = 0.7
@@ -21,6 +25,9 @@ export function usePlaygroundConfiguration() {
   const [apiKeyDraft, setApiKeyDraft] = useState(apiKey)
   const [apiKeyError, setApiKeyError] = useState<string>()
   const [selectedModels, setSelectedModels] = useState<string[]>([])
+  const [comparisonEnabled, setComparisonEnabled] = useState(
+    DEFAULT_PLAYGROUND_COMPARISON_ENABLED,
+  )
   const [protocolByModel, setProtocolByModel] = useState<Record<string, PlaygroundProtocol>>({})
   const [modelSearchDraft, setModelSearchDraft] = useState('')
   const [modelSearch, setModelSearch] = useState('')
@@ -105,13 +112,26 @@ export function usePlaygroundConfiguration() {
     setApiKeyError(undefined)
   }, [])
 
-  const updateSelectedModels = useCallback((modelsToSelect: string[]) => {
-    setSelectedModels(normalizePlaygroundModels(modelsToSelect))
+  const updateSelectedModels = useCallback((
+    modelsToSelect: string[],
+    comparisonEnabledToApply: boolean,
+  ) => {
+    setComparisonEnabled(comparisonEnabledToApply)
+    setSelectedModels(modelsForPlaygroundSelectionMode(
+      modelsToSelect,
+      comparisonEnabledToApply,
+    ))
   }, [])
 
   /** 恢复历史时只恢复模型，显式清空未持久化的生成设置。 */
   const restoreConversationConfiguration = useCallback((modelsToSelect: string[]) => {
-    setSelectedModels(normalizePlaygroundModels(modelsToSelect))
+    const normalizedModels = normalizePlaygroundModels(modelsToSelect)
+    const restoredComparisonEnabled = normalizedModels.length > 1
+    setComparisonEnabled(restoredComparisonEnabled)
+    setSelectedModels(modelsForPlaygroundSelectionMode(
+      normalizedModels,
+      restoredComparisonEnabled,
+    ))
     setSystemPrompt('')
     setTemperatureEnabled(false)
     setTemperature(DEFAULT_TEMPERATURE)
@@ -135,6 +155,7 @@ export function usePlaygroundConfiguration() {
     catalogInvalid,
     catalogQuery,
     clearApiKey,
+    comparisonEnabled,
     maxOutputTokens,
     maxOutputTokensEnabled,
     modelSearchDraft,

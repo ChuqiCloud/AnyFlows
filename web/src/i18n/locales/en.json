@@ -2353,6 +2353,8 @@
       "empty": "No matching available models",
       "selectedCount": "{{count}} models selected",
       "selectionCount": "{{count}} of {{max}} models selected",
+      "singleMode": "Single-model mode; switching continues this conversation",
+      "comparisonMode": "Compare models",
       "catalogCount": "{{count}} visible models",
       "selectedLabel": "Selected comparison models",
       "locked": "Models can be changed after the current conversation finishes generating or saving",
@@ -2409,6 +2411,7 @@
       "pending": "No usage yet"
     },
     "comparison": {
+      "singleSummary": "Single-model conversation",
       "summary_one": "{{count}} model · {{count}} independent request",
       "summary_other": "{{count}} models · {{count}} independent requests",
       "modelTabs": "Comparison models",

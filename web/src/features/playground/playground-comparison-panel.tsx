@@ -33,6 +33,11 @@ type PlaygroundComparisonPanelProps = {
   onStopModel: (model: string) => void
 }
 
+/** 模型替换时沿用首条消息标识，避免同一对话列被 React 重新挂载。 */
+function playgroundSessionRenderKey(session: PlaygroundSession) {
+  return session.messages[0]?.id ?? `empty:${session.model}`
+}
+
 export function PlaygroundComparisonPanel(props: PlaygroundComparisonPanelProps) {
   const { t } = useTranslation()
   const [activeModel, setActiveModel] = useState(props.sessions[0]?.model ?? '')
@@ -118,7 +123,7 @@ export function PlaygroundComparisonPanel(props: PlaygroundComparisonPanelProps)
             >
               {props.sessions.map((session, index) => (
                 <div
-                  key={session.model}
+                  key={playgroundSessionRenderKey(session)}
                   className={cn(
                     'min-h-0 min-w-0',
                     index > 0 && 'xl:border-l xl:border-dashed xl:border-[var(--hairline)]',
@@ -162,7 +167,14 @@ export function PlaygroundComparisonPanel(props: PlaygroundComparisonPanelProps)
                 <span>{t(`playground.status.${props.status}`)}</span>
               )}
               {columnCount > 0 ? (
-                <span className="tabular-nums">{t('playground.comparison.summary', { count: columnCount })}</span>
+                <span className="tabular-nums">
+                  {t(
+                    columnCount === 1
+                      ? 'playground.comparison.singleSummary'
+                      : 'playground.comparison.summary',
+                    { count: columnCount },
+                  )}
+                </span>
               ) : null}
             </div>
             <div className="flex min-w-0 items-center gap-2">

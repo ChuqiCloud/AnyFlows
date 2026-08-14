@@ -42,7 +42,12 @@ export function PlaygroundPageHeader(props: PlaygroundPageHeaderProps) {
           <h2 className="truncate text-sm font-semibold">{t('playground.title')}</h2>
           <p className="mt-0.5 truncate text-[0.6875rem] text-muted-foreground">
             {props.modelCount > 0
-              ? t('playground.comparison.summary', { count: props.modelCount })
+              ? t(
+                  props.modelCount === 1
+                    ? 'playground.comparison.singleSummary'
+                    : 'playground.comparison.summary',
+                  { count: props.modelCount },
+                )
               : t('playground.model.pending')}
           </p>
         </div>
