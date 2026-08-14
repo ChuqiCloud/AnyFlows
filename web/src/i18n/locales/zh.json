@@ -1855,28 +1855,44 @@
     "count": "本页 {{count}} 条记录",
     "filteredCount": "显示 {{visible}} / {{count}} 条",
     "page": "第 {{page}} 页",
+    "pageSummary": "第 {{page}} 页 · 本页 {{count}} 条已结算记录",
     "loading": "正在加载用量日志",
     "pagination": "用量日志分页",
     "columns": {
+      "time": "时间 / 状态",
       "call": "模型调用",
       "latency": "响应速度",
       "tokens": "Token 消耗",
       "billing": "计费结果"
     },
     "listLabel": "已结算调用列表",
+    "status": {
+      "settled": "已结算",
+      "settledOnly": "仅已结算"
+    },
+    "summary": {
+      "label": "当前筛选结果概览",
+      "requests": "已结算请求",
+      "tokens": "总 Token",
+      "averageFirstToken": "平均首字",
+      "quota": "累计额度"
+    },
     "filters": {
+      "label": "筛选当前页",
       "model": "模型",
       "modelPlaceholder": "搜索本页模型",
       "protocol": "入口协议",
-      "allProtocols": "全部协议"
+      "allProtocols": "全部协议",
+      "mode": "响应模式",
+      "allModes": "全部模式"
     },
     "protocol": {
-      "openai_chat": "Chat",
-      "openai_responses": "Responses",
-      "openai_embeddings": "Embeddings",
-      "openai_images": "Images",
-      "openai_audio": "Audio",
-      "openai_speech": "Speech",
+      "open_ai_chat": "Chat",
+      "open_ai_responses": "Responses",
+      "open_ai_embeddings": "Embeddings",
+      "open_ai_images": "Images",
+      "open_ai_audio": "Audio",
+      "open_ai_speech": "Speech",
       "jina_rerank": "Jina Rerank",
       "cohere_rerank": "Cohere Rerank",
       "xai_video": "xAI Video",
@@ -1910,11 +1926,40 @@
       "mode": "计费 / 响应模式",
       "principal": "计费主体"
     },
+    "detailSections": {
+      "request": "请求信息",
+      "performance": "响应性能",
+      "tokens": "Token 明细",
+      "billing": "计费事实",
+      "reasoning": "推理配置",
+      "principal": "计费主体"
+    },
+    "detailFields": {
+      "responseMode": "响应模式",
+      "protocol": "入口协议",
+      "operation": "调用类型",
+      "totalTokens": "总 Token",
+      "cacheRead": "缓存读取",
+      "cacheCreate5m": "缓存创建 5m",
+      "cacheCreate1h": "缓存创建 1h",
+      "cacheTotal": "缓存合计",
+      "reasoningTokens": "推理 Token",
+      "billingMode": "计费方式",
+      "usageSource": "用量来源",
+      "usageSemantics": "缓存口径",
+      "reasoningEffort": "思考等级",
+      "reasoningBudget": "推理预算",
+      "user": "用户",
+      "token": "API Key",
+      "group": "分组"
+    },
     "values": {
       "userTokenGroup": "用户 #{{user}} / API Key #{{token}} / 分组 #{{group}}",
+      "userTokenGroupCompact": "用户 #{{user}} · Key #{{token}} · 组 #{{group}}",
       "legacy": "历史记录",
       "legacyModel": "未记录模型",
       "notSpecified": "未指定",
+      "notRecorded": "未记录",
       "stream": "流式",
       "sync": "非流式",
       "firstToken": "首字",
@@ -1922,6 +1967,8 @@
       "inputLabel": "输入",
       "outputLabel": "输出",
       "quota": "扣除额度",
+      "quotaShort": "额度",
+      "inputOutputCompact": "输入 {{input}} · 输出 {{output}}",
       "cacheReasoning": "缓存 {{cache}} / 推理 {{reasoning}}",
       "input": "输入 {{value}}",
       "output": "输出 {{value}}",
@@ -1948,8 +1995,10 @@
     },
     "actions": {
       "refresh": "刷新",
+      "debugTraces": "调试追踪",
       "reset": "重置",
       "details": "展开调用详情",
+      "openDetails": "查看 {{model}} 调用详情",
       "retry": "重试",
       "previous": "上一页",
       "next": "下一页"

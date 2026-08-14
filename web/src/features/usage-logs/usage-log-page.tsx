@@ -1,13 +1,23 @@
 import { useMemo, useState } from 'react'
-import { ChevronLeft, ChevronRight, Filter, RefreshCw, X } from 'lucide-react'
+import { Activity, ChevronLeft, ChevronRight, RefreshCw, Search, SlidersHorizontal, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAdminUsageLogs, useUserUsageLogs } from './usage-log-api'
-import { UsageLogTable, type UsageLogRow } from './usage-log-table'
+import { UsageLogDetailsSheet } from './usage-log-details-sheet'
+import {
+  filterUsageLogs,
+  summarizeUsageLogs,
+  type UsageLogModeFilter,
+  type UsageLogRow,
+  usageLogProtocols,
+} from './usage-log-model'
+import { UsageLogSummary } from './usage-log-summary'
+import { UsageLogTable } from './usage-log-table'
 
 type UsageLogPageProps = {
   admin: boolean
@@ -18,119 +28,148 @@ export function UsageLogPage({ admin }: UsageLogPageProps) {
   const [cursorStack, setCursorStack] = useState<Array<number | undefined>>([undefined])
   const [modelFilter, setModelFilter] = useState('')
   const [protocolFilter, setProtocolFilter] = useState('all')
+  const [modeFilter, setModeFilter] = useState<UsageLogModeFilter>('all')
+  const [selectedLog, setSelectedLog] = useState<UsageLogRow>()
   const cursor = cursorStack.at(-1)
   const adminQuery = useAdminUsageLogs(admin ? cursor : undefined)
   const userQuery = useUserUsageLogs(admin ? undefined : cursor)
   const logsQuery = admin ? adminQuery : userQuery
+  const logs = useMemo(() => (logsQuery.data?.logs ?? []) as UsageLogRow[], [logsQuery.data?.logs])
   const nextCursor = logsQuery.data?.next_cursor
-  const filteredLogs = useMemo(() => {
-    const logs = (logsQuery.data?.logs ?? []) as UsageLogRow[]
-    const normalizedModel = modelFilter.trim().toLocaleLowerCase()
-    return logs.filter((log) => {
-      const modelMatches = !normalizedModel || log.model?.toLocaleLowerCase().includes(normalizedModel)
-      const protocolMatches = protocolFilter === 'all' || log.protocol === protocolFilter
-      return modelMatches && protocolMatches
-    })
-  }, [logsQuery.data?.logs, modelFilter, protocolFilter])
-  const logCount = logsQuery.data?.logs.length ?? 0
-  const hasFilters = modelFilter.length > 0 || protocolFilter !== 'all'
+  const filteredLogs = useMemo(
+    () => filterUsageLogs(logs, modelFilter, protocolFilter, modeFilter),
+    [logs, modeFilter, modelFilter, protocolFilter],
+  )
+  const summary = useMemo(() => summarizeUsageLogs(filteredLogs), [filteredLogs])
+  const hasFilters = modelFilter.length > 0 || protocolFilter !== 'all' || modeFilter !== 'all'
 
   const resetFilters = () => {
     setModelFilter('')
     setProtocolFilter('all')
+    setModeFilter('all')
   }
 
   return (
     <div className="flex flex-col gap-4">
       <header className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="text-lg font-semibold">{t('usageLogs.title')}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold">{t('usageLogs.title')}</h2>
+            <Badge className="border-transparent bg-success/10 text-success">{t('usageLogs.status.settledOnly')}</Badge>
+          </div>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">
             {t(admin ? 'usageLogs.adminSubtitle' : 'usageLogs.subtitle')}
           </p>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          className="self-start lg:self-auto"
-          disabled={logsQuery.isFetching}
-          onClick={() => logsQuery.refetch()}
-        >
-          <RefreshCw className={logsQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />
-          {t('usageLogs.actions.refresh')}
-        </Button>
+        <div className="flex items-center gap-2 self-start lg:self-auto">
+          {admin ? (
+            <Button asChild size="sm" variant="ghost">
+              <a href="#/console/debug-traces"><Activity aria-hidden="true" />{t('usageLogs.actions.debugTraces')}</a>
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={logsQuery.isFetching}
+            onClick={() => void logsQuery.refetch()}
+          >
+            <RefreshCw className={logsQuery.isFetching ? 'animate-spin' : undefined} aria-hidden="true" />
+            {t('usageLogs.actions.refresh')}
+          </Button>
+        </div>
       </header>
 
-      <div className="grid gap-2 border-y border-[var(--hairline)] py-3 md:grid-cols-[minmax(12rem,1fr)_12rem_auto]">
-        <label className="relative">
-          <span className="sr-only">{t('usageLogs.filters.model')}</span>
-          <Filter className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-          <Input
-            className="h-8 pl-8 text-xs"
-            value={modelFilter}
-            placeholder={t('usageLogs.filters.modelPlaceholder')}
-            onChange={(event) => setModelFilter(event.target.value)}
-          />
-        </label>
-        <label>
-          <span className="sr-only">{t('usageLogs.filters.protocol')}</span>
-          <Select className="h-8 text-xs" value={protocolFilter} onChange={(event) => setProtocolFilter(event.target.value)}>
-            <option value="all">{t('usageLogs.filters.allProtocols')}</option>
-            {['openai_chat', 'openai_responses', 'anthropic', 'gemini', 'openai_embeddings', 'openai_images', 'openai_audio', 'openai_speech', 'jina_rerank', 'cohere_rerank', 'xai_video'].map((protocol) => (
-              <option key={protocol} value={protocol}>{t(`usageLogs.protocol.${protocol}`)}</option>
-            ))}
-          </Select>
-        </label>
-        <Button type="button" size="sm" variant="ghost" disabled={!hasFilters} onClick={resetFilters}>
-          <X aria-hidden="true" />
-          {t('usageLogs.actions.reset')}
-        </Button>
-      </div>
+      {!logsQuery.isPending && !logsQuery.isError ? <UsageLogSummary summary={summary} /> : null}
 
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>{t('usageLogs.filteredCount', { visible: filteredLogs.length, count: logCount })}</span>
-        <span>{t('usageLogs.page', { page: cursorStack.length })}</span>
+      <div className="rounded-lg border border-[var(--hairline)] bg-surface-1/45 p-2.5">
+        <div className="mb-2 flex items-center justify-between gap-3 px-0.5 text-[0.6875rem] text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5"><SlidersHorizontal className="size-3.5" aria-hidden="true" />{t('usageLogs.filters.label')}</span>
+          <span>{t('usageLogs.filteredCount', { visible: filteredLogs.length, count: logs.length })}</span>
+        </div>
+        <div className="grid gap-2 md:grid-cols-[minmax(12rem,1fr)_12rem_10rem_auto]">
+          <label className="relative">
+            <span className="sr-only">{t('usageLogs.filters.model')}</span>
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <Input
+              className="h-8 pl-8 text-xs"
+              value={modelFilter}
+              placeholder={t('usageLogs.filters.modelPlaceholder')}
+              onChange={(event) => setModelFilter(event.target.value)}
+            />
+          </label>
+          <label>
+            <span className="sr-only">{t('usageLogs.filters.protocol')}</span>
+            <Select className="h-8 text-xs" value={protocolFilter} onChange={(event) => setProtocolFilter(event.target.value)}>
+              <option value="all">{t('usageLogs.filters.allProtocols')}</option>
+              {usageLogProtocols.map((protocol) => (
+                <option key={protocol} value={protocol}>{t(`usageLogs.protocol.${protocol}`)}</option>
+              ))}
+            </Select>
+          </label>
+          <label>
+            <span className="sr-only">{t('usageLogs.filters.mode')}</span>
+            <Select className="h-8 text-xs" value={modeFilter} onChange={(event) => setModeFilter(event.target.value as UsageLogModeFilter)}>
+              <option value="all">{t('usageLogs.filters.allModes')}</option>
+              <option value="stream">{t('usageLogs.values.stream')}</option>
+              <option value="sync">{t('usageLogs.values.sync')}</option>
+              <option value="legacy">{t('usageLogs.values.legacy')}</option>
+            </Select>
+          </label>
+          <Button type="button" size="sm" variant="ghost" className="justify-self-start md:justify-self-auto" disabled={!hasFilters} onClick={resetFilters}>
+            <X aria-hidden="true" />
+            {t('usageLogs.actions.reset')}
+          </Button>
+        </div>
       </div>
 
       {logsQuery.isPending ? (
-        <div className="grid gap-2" aria-label={t('usageLogs.loading')}>
-          {[0, 1, 2, 3, 4].map((item) => <Skeleton key={item} className="h-16 rounded-lg" />)}
+        <div className="overflow-hidden rounded-lg border border-[var(--hairline)]" aria-label={t('usageLogs.loading')}>
+          <Skeleton className="h-9 rounded-none" />
+          {[0, 1, 2, 3, 4, 5].map((item) => <Skeleton key={item} className="h-[4.5rem] rounded-none border-t border-[var(--hairline)]" />)}
         </div>
       ) : logsQuery.isError ? (
         <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/8 p-4">
           <h2 className="text-sm font-semibold text-destructive">{t('usageLogs.error.title')}</h2>
           <p className="mt-1 text-xs text-muted-foreground">{t('usageLogs.error.body')}</p>
-          <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => logsQuery.refetch()}>
+          <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void logsQuery.refetch()}>
             {t('usageLogs.actions.retry')}
           </Button>
         </div>
-      ) : <UsageLogTable logs={filteredLogs} admin={admin} filtered={hasFilters} />}
+      ) : <UsageLogTable logs={filteredLogs} admin={admin} filtered={hasFilters} onSelect={setSelectedLog} />}
 
-      {!logsQuery.isPending && !logsQuery.isError && (cursorStack.length > 1 || nextCursor != null) ? (
-        <nav className="flex items-center justify-center gap-2" aria-label={t('usageLogs.pagination')}>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={cursorStack.length === 1 || logsQuery.isFetching}
-            onClick={() => setCursorStack((current) => current.length > 1 ? current.slice(0, -1) : current)}
-          >
-            <ChevronLeft aria-hidden="true" />
-            {t('usageLogs.actions.previous')}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            disabled={nextCursor == null || logsQuery.isFetching}
-            onClick={() => nextCursor != null && setCursorStack((current) => [...current, nextCursor])}
-          >
-            {t('usageLogs.actions.next')}
-            <ChevronRight aria-hidden="true" />
-          </Button>
-        </nav>
+      {!logsQuery.isPending && !logsQuery.isError ? (
+        <footer className="flex min-h-8 flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <span>{t('usageLogs.pageSummary', { page: cursorStack.length, count: logs.length })}</span>
+          {cursorStack.length > 1 || nextCursor != null ? (
+            <nav className="flex items-center gap-1" aria-label={t('usageLogs.pagination')}>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t('usageLogs.actions.previous')}
+                disabled={cursorStack.length === 1 || logsQuery.isFetching}
+                onClick={() => setCursorStack((current) => current.length > 1 ? current.slice(0, -1) : current)}
+              >
+                <ChevronLeft aria-hidden="true" />
+              </Button>
+              <span className="min-w-16 text-center">{t('usageLogs.page', { page: cursorStack.length })}</span>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t('usageLogs.actions.next')}
+                disabled={nextCursor == null || logsQuery.isFetching}
+                onClick={() => nextCursor != null && setCursorStack((current) => [...current, nextCursor])}
+              >
+                <ChevronRight aria-hidden="true" />
+              </Button>
+            </nav>
+          ) : null}
+        </footer>
       ) : null}
+
+      <UsageLogDetailsSheet log={selectedLog} admin={admin} onOpenChange={(open) => !open && setSelectedLog(undefined)} />
     </div>
   )
 }
