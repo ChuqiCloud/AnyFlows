@@ -2192,6 +2192,7 @@
       "notApplicable": "Not applicable",
       "priceTitle": "{{label}}: ${{value}} per million tokens",
       "perMillion": "per million tokens",
+      "perMillionCompact": "/ 1M",
       "appliedRatios": "Applied ratios",
       "baseRatios": "Public base ratios",
       "moreTags": "+{{count}}",

@@ -26,10 +26,17 @@ export function ModelPriceValue({ label, value, muted = false, showLabel = false
       className={cn('block min-w-0 tabular-nums', muted && 'text-muted-foreground')}
     >
       {showLabel ? <span className="mb-0.5 block text-[0.625rem] text-muted-foreground">{label}</span> : null}
-      <span className="block truncate font-mono text-[0.75rem] text-foreground">${value}</span>
-      <span className="mt-0.5 block text-[0.625rem] text-muted-foreground">
-        {t('models.values.perMillion')}
-      </span>
+      {showLabel ? (
+        <span className="flex min-w-0 items-baseline gap-1">
+          <span className="min-w-0 truncate font-mono text-[0.75rem] text-foreground">${value}</span>
+          <span className="shrink-0 text-[0.625rem] text-muted-foreground">{t('models.values.perMillionCompact')}</span>
+        </span>
+      ) : (
+        <>
+          <span className="block truncate font-mono text-[0.75rem] text-foreground">${value}</span>
+          <span className="mt-0.5 block text-[0.625rem] text-muted-foreground">{t('models.values.perMillion')}</span>
+        </>
+      )}
     </span>
   )
 }

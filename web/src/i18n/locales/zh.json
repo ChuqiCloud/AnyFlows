@@ -2270,6 +2270,7 @@
       "notApplicable": "不适用",
       "priceTitle": "{{label}}：每百万 token ${{value}}",
       "perMillion": "每百万 token",
+      "perMillionCompact": "/ 1M",
       "appliedRatios": "已应用倍率",
       "baseRatios": "公开基础倍率",
       "moreTags": "+{{count}}",
