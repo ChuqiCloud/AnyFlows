@@ -350,7 +350,7 @@ fn rejects_commentary_message_phase() {
 }
 
 #[test]
-fn decodes_current_responses_stream_with_empty_reasoning_placeholder() {
+fn decodes_compatible_responses_stream_placeholders_and_usage_alias() {
     let reasoning_id = "rs_stream_current";
     let message_id = "msg_stream_current";
     let reasoning_done = json!({
@@ -362,6 +362,8 @@ fn decodes_current_responses_stream_with_empty_reasoning_placeholder() {
         "encrypted_content": "sig-current",
     });
     let terminal_item = message_item(message_id, "completed", "ok");
+    let mut terminal_usage = usage_value(5, 2, 3, 1);
+    terminal_usage["prompt_tokens_details"] = json!({"cached_tokens": 3});
     let bytes = join([
         frame(
             "response.created",
@@ -460,7 +462,7 @@ fn decodes_current_responses_stream_with_empty_reasoning_placeholder() {
                 "response": current_echo_response(
                     "completed",
                     vec![reasoning_done, terminal_item],
-                    Some(usage_value(5, 2, 0, 1)),
+                    Some(terminal_usage),
                 )
             }),
         ),
@@ -493,7 +495,7 @@ fn decodes_current_responses_stream_with_empty_reasoning_placeholder() {
                 reason: FinishReason::Stop,
                 stop_sequence: None,
             },
-            CanonicalStreamEvent::Usage(usage(5, 2, 0, 1)),
+            CanonicalStreamEvent::Usage(usage(5, 2, 3, 1)),
             CanonicalStreamEvent::StreamEnd,
         ]
     );
