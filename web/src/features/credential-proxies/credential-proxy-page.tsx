@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { DataTablePagination } from '@/components/data-table/data-table-pagination'
+import { useClientTablePagination } from '@/components/data-table/use-table-pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -31,6 +33,8 @@ export function CredentialProxyPage() {
   const [editor, setEditor] = useState<EditorState>()
   const [deleting, setDeleting] = useState<AdminCredentialProxy>()
   const proxies = query.data ?? []
+  const pagination = useClientTablePagination(proxies.length)
+  const visibleProxies = proxies.slice(pagination.startIndex, pagination.endIndex)
   const enabledCount = proxies.filter((proxy) => proxy.enabled).length
   const authenticatedCount = proxies.filter((proxy) => proxy.password_configured).length
 
@@ -80,7 +84,23 @@ export function CredentialProxyPage() {
       {query.isPending ? <div className="grid gap-2" aria-label={t('credentialProxies.loading')}>{[0, 1, 2].map((item) => <Skeleton key={item} className="h-20 rounded-lg" />)}</div>
         : query.isError ? <div role="alert" className="rounded-lg border border-destructive/25 bg-destructive/8 p-4"><h3 className="text-sm font-semibold text-destructive">{t('credentialProxies.errors.title')}</h3><p className="mt-1 text-xs text-muted-foreground">{t('credentialProxies.errors.load')}</p><Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void query.refetch()}>{t('credentialProxies.actions.retry')}</Button></div>
           : proxies.length === 0 ? <div className="grid min-h-44 place-items-center rounded-lg border border-dashed border-[var(--hairline)] p-6 text-center"><div><Network className="mx-auto size-6 text-muted-foreground" aria-hidden="true" /><h3 className="mt-3 text-sm font-semibold">{t('credentialProxies.empty.title')}</h3><p className="mt-1 text-xs text-muted-foreground">{t('credentialProxies.empty.body')}</p></div></div>
-            : <ProxyTable proxies={proxies} pendingId={updateMutation.isPending ? updateMutation.variables?.id : undefined} onEdit={setEditor} onDelete={openDelete} onToggle={(proxy) => void toggle(proxy)} />}
+            : <ProxyTable proxies={visibleProxies} pendingId={updateMutation.isPending ? updateMutation.variables?.id : undefined} onEdit={setEditor} onDelete={openDelete} onToggle={(proxy) => void toggle(proxy)} />}
+
+      {!query.isPending && !query.isError ? (
+        <DataTablePagination
+          currentPage={pagination.currentPage}
+          availablePageCount={pagination.availablePageCount}
+          pageSize={pagination.pageSize}
+          itemCount={visibleProxies.length}
+          hasNextPage={pagination.hasNextPage}
+          fetching={query.isFetching}
+          onFirstPage={pagination.goToFirstPage}
+          onPreviousPage={pagination.goToPreviousPage}
+          onPageSelect={pagination.selectPage}
+          onNextPage={pagination.goToNextPage}
+          onPageSizeChange={pagination.setPageSize}
+        />
+      ) : null}
 
       {updateMutation.isError ? <p role="alert" className="text-xs text-destructive">{t('credentialProxies.errors.toggle')}</p> : null}
       <CredentialProxyEditor open={editor !== undefined} proxy={editor === 'create' ? undefined : editor} onOpenChange={(open) => !open && setEditor(undefined)} onSaved={() => setEditor(undefined)} />

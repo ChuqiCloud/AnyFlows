@@ -20,7 +20,8 @@ use super::types::{
     DebugTraceFailureKind, DebugTraceListQuery, DebugTraceOperation, DebugTraceOutcome,
     DebugTracePageRecord, DebugTraceProtocol, DebugTraceSettingsRecord, DebugTraceSettingsWrite,
     DebugTraceSummaryRecord, DebugTraceWrite, DebugTraceWriteError,
-    MAX_DEBUG_TRACE_RETENTION_HOURS, valid_model, valid_request_id,
+    MAX_DEBUG_TRACE_RETENTION_HOURS, valid_method, valid_model, valid_path, valid_request_id,
+    valid_snapshot,
 };
 
 const DEBUG_TRACE_SETTINGS_ID: i16 = 1;
@@ -147,6 +148,9 @@ impl DebugTraceRepository {
             enabled: Set(write.enabled),
             sample_per_million: Set(write.sample_per_million),
             retention_hours: Set(write.retention_hours),
+            capture_headers: Set(write.capture_headers),
+            capture_bodies: Set(write.capture_bodies),
+            max_body_bytes: Set(write.max_body_bytes),
             version: Set(version),
             created_at: Set(existing.created_at),
             updated_at: Set(TimeDateTimeWithTimeZone::now_utc()),
@@ -179,6 +183,17 @@ impl DebugTraceRepository {
         let attempt_count = i32::try_from(write.attempts.len())
             .map_err(|_| internal_error(DebugTraceRepositoryError::Invariant))?;
         let created_at = TimeDateTimeWithTimeZone::now_utc();
+        let (downstream_method, downstream_path, downstream_headers_json, downstream_body_json) =
+            write
+                .downstream_diagnostic
+                .map_or((None, None, None, None), |diagnostic| {
+                    (
+                        Some(diagnostic.method),
+                        Some(diagnostic.path),
+                        diagnostic.headers_json,
+                        diagnostic.body_json,
+                    )
+                });
         let model = debug_traces::ActiveModel {
             id: sea_orm::NotSet,
             request_id: Set(write.request_id),
@@ -194,6 +209,10 @@ impl DebugTraceRepository {
             selected_credential_id: Set(selected.map(|target| target.1)),
             routing_elapsed_ms: Set(write.routing_elapsed_ms),
             attempt_count: Set(attempt_count),
+            downstream_method: Set(downstream_method),
+            downstream_path: Set(downstream_path),
+            downstream_headers_json: Set(downstream_headers_json),
+            downstream_body_json: Set(downstream_body_json),
             created_at: Set(created_at),
         }
         .insert(&transaction)
@@ -201,6 +220,30 @@ impl DebugTraceRepository {
         .await
         .map_err(|_| query_error("debug_trace_insert"))?;
         for attempt in write.attempts {
+            let (
+                request_method,
+                request_url,
+                request_headers_json,
+                request_body_json,
+                response_status,
+                response_headers_json,
+                response_body_json,
+                response_streamed,
+            ) = attempt.diagnostic.map_or(
+                (None, None, None, None, None, None, None, false),
+                |diagnostic| {
+                    (
+                        Some(diagnostic.request_method),
+                        Some(diagnostic.request_url),
+                        diagnostic.request_headers_json,
+                        diagnostic.request_body_json,
+                        diagnostic.response_status,
+                        diagnostic.response_headers_json,
+                        diagnostic.response_body_json,
+                        diagnostic.response_streamed,
+                    )
+                },
+            );
             debug_trace_attempts::ActiveModel {
                 id: sea_orm::NotSet,
                 trace_id: Set(model.id),
@@ -212,6 +255,14 @@ impl DebugTraceRepository {
                 upstream_status: Set(attempt.upstream_status),
                 retry_decision: Set(attempt.retry_decision),
                 elapsed_ms: Set(attempt.elapsed_ms),
+                request_method: Set(request_method),
+                request_url: Set(request_url),
+                request_headers_json: Set(request_headers_json),
+                request_body_json: Set(request_body_json),
+                response_status: Set(response_status),
+                response_headers_json: Set(response_headers_json),
+                response_body_json: Set(response_body_json),
+                response_streamed: Set(response_streamed),
                 created_at: Set(created_at),
             }
             .insert(&transaction)
@@ -241,6 +292,9 @@ impl DebugTraceRepository {
         }
         if let Some(model) = query.requested_model {
             select = select.filter(debug_traces::Column::RequestedModel.eq(model));
+        }
+        if let Some(request_id) = query.request_id {
+            select = select.filter(debug_traces::Column::RequestId.eq(request_id));
         }
         let mut traces = select
             .limit((query.limit + 1) as u64)
@@ -326,6 +380,9 @@ fn settings_from_model(
         model.enabled,
         model.sample_per_million,
         model.retention_hours,
+        model.capture_headers,
+        model.capture_bodies,
+        model.max_body_bytes,
         model.version,
     )
     .map_err(map_write_error)
@@ -345,6 +402,17 @@ fn summary_from_model(
         || model.selected_channel_id.is_some() != model.selected_credential_id.is_some()
         || model.selected_channel_id.is_some_and(|value| value < 1)
         || model.selected_credential_id.is_some_and(|value| value < 1)
+        || model.downstream_method.is_some() != model.downstream_path.is_some()
+        || model
+            .downstream_method
+            .as_deref()
+            .is_some_and(|value| !valid_method(value))
+        || model
+            .downstream_path
+            .as_deref()
+            .is_some_and(|value| !valid_path(value))
+        || !valid_snapshot(model.downstream_headers_json.as_deref())
+        || !valid_snapshot(model.downstream_body_json.as_deref())
     {
         return Err(internal_error(DebugTraceRepositoryError::Invariant));
     }
@@ -369,6 +437,10 @@ fn summary_from_model(
         selected_credential_id: model.selected_credential_id,
         routing_elapsed_ms: model.routing_elapsed_ms,
         attempt_count: model.attempt_count,
+        downstream_method: model.downstream_method,
+        downstream_path: model.downstream_path,
+        downstream_headers_json: model.downstream_headers_json,
+        downstream_body_json: model.downstream_body_json,
         created_at: model.created_at,
     })
 }
@@ -428,6 +500,22 @@ fn attempt_from_model(
         || model
             .upstream_status
             .is_some_and(|status| !(500..=599).contains(&status))
+        || model.request_method.is_some() != model.request_url.is_some()
+        || model
+            .request_method
+            .as_deref()
+            .is_some_and(|value| !valid_method(value))
+        || model
+            .request_url
+            .as_deref()
+            .is_some_and(|value| !valid_path(value))
+        || model
+            .response_status
+            .is_some_and(|status| !(100..=599).contains(&status))
+        || !valid_snapshot(model.request_headers_json.as_deref())
+        || !valid_snapshot(model.request_body_json.as_deref())
+        || !valid_snapshot(model.response_headers_json.as_deref())
+        || !valid_snapshot(model.response_body_json.as_deref())
     {
         return Err(internal_error(DebugTraceRepositoryError::Invariant));
     }
@@ -440,6 +528,14 @@ fn attempt_from_model(
         upstream_status: model.upstream_status,
         retry_decision: model.retry_decision,
         elapsed_ms: model.elapsed_ms,
+        request_method: model.request_method,
+        request_url: model.request_url,
+        request_headers_json: model.request_headers_json,
+        request_body_json: model.request_body_json,
+        response_status: model.response_status,
+        response_headers_json: model.response_headers_json,
+        response_body_json: model.response_body_json,
+        response_streamed: model.response_streamed,
     })
 }
 

@@ -22,14 +22,14 @@ export const adminUserSubscriptionsQueryKey = ['admin-user-subscriptions'] as co
 export const currentUserSubscriptionsQueryKey = ['current-user-subscriptions'] as const
 
 /** 按计划主键倒序读取管理员计划目录。 */
-export function useAdminSubscriptionPlans() {
+export function useAdminSubscriptionPlans(pageSize = 25) {
   return useInfiniteQuery({
-    queryKey: adminSubscriptionPlansQueryKey,
+    queryKey: [...adminSubscriptionPlansQueryKey, { pageSize }],
     initialPageParam: undefined as number | undefined,
     queryFn: async ({ pageParam, signal }) => {
       const { data } = await listAdminSubscriptionPlans({
         client: apiClient,
-        query: { before: pageParam, limit: 25 },
+        query: { before: pageParam, limit: pageSize },
         signal,
       })
       return data

@@ -15,7 +15,8 @@ use af_protocol::{StructuredErrorEvidence, extract_structured_error_evidence};
 use thiserror::Error;
 
 use crate::{
-    RelayAttemptGate, RelayAttemptGateError, RelayAttemptPermit, RelayBuildError, RelayError,
+    RelayAttemptDiagnostic, RelayAttemptGate, RelayAttemptGateError, RelayAttemptPermit,
+    RelayBuildError, RelayDiagnosticPolicy, RelayError,
     error::{classify_upstream_status, is_retryable, map_adaptor_error, parse_retry_after},
 };
 
@@ -151,6 +152,7 @@ pub struct RelayAttemptFailure {
     server_status: Option<UpstreamServerStatus>,
     evidence: Option<StructuredErrorEvidence>,
     elapsed: Duration,
+    diagnostic: Option<RelayAttemptDiagnostic>,
 }
 
 impl RelayAttemptFailure {
@@ -161,6 +163,7 @@ impl RelayAttemptFailure {
             server_status: None,
             evidence: None,
             elapsed,
+            diagnostic: None,
         }
     }
 
@@ -177,7 +180,13 @@ impl RelayAttemptFailure {
             server_status,
             evidence,
             elapsed,
+            diagnostic: None,
         }
+    }
+
+    fn with_diagnostic(mut self, diagnostic: Option<RelayAttemptDiagnostic>) -> Self {
+        self.diagnostic = diagnostic;
+        self
     }
 
     /// 返回失败候选在固定计划中的零基索引。
@@ -209,6 +218,12 @@ impl RelayAttemptFailure {
     pub const fn elapsed(&self) -> Duration {
         self.elapsed
     }
+
+    /// 返回已经永久脱敏的请求与响应快照。
+    #[must_use]
+    pub const fn diagnostic(&self) -> Option<&RelayAttemptDiagnostic> {
+        self.diagnostic.as_ref()
+    }
 }
 
 /// 一次转发执行产生的脱敏候选报告。
@@ -216,6 +231,7 @@ impl RelayAttemptFailure {
 pub struct RelayAttemptReport {
     successful_candidate_index: Option<usize>,
     successful_elapsed: Option<Duration>,
+    successful_diagnostic: Option<RelayAttemptDiagnostic>,
     failures: Vec<RelayAttemptFailure>,
 }
 
@@ -228,6 +244,7 @@ impl RelayAttemptReport {
         Self {
             successful_candidate_index: Some(successful_candidate_index),
             successful_elapsed: Some(successful_elapsed),
+            successful_diagnostic: None,
             failures,
         }
     }
@@ -236,8 +253,14 @@ impl RelayAttemptReport {
         Self {
             successful_candidate_index: None,
             successful_elapsed: None,
+            successful_diagnostic: None,
             failures,
         }
+    }
+
+    fn with_successful_diagnostic(mut self, diagnostic: Option<RelayAttemptDiagnostic>) -> Self {
+        self.successful_diagnostic = diagnostic;
+        self
     }
 
     /// 返回最终成功候选索引；执行失败时为空。
@@ -258,6 +281,12 @@ impl RelayAttemptReport {
         &self.failures
     }
 
+    /// 返回最终成功候选的安全诊断快照。
+    #[must_use]
+    pub const fn successful_diagnostic(&self) -> Option<&RelayAttemptDiagnostic> {
+        self.successful_diagnostic.as_ref()
+    }
+
     /// 把已经取得 HTTP 成功、但未通过协议验证的候选改记为失败。
     pub(crate) fn reject_success(&mut self, error: UpstreamError) {
         if let Some(candidate_index) = self.successful_candidate_index.take() {
@@ -265,8 +294,10 @@ impl RelayAttemptReport {
                 .successful_elapsed
                 .take()
                 .expect("成功候选索引与耗时必须同时存在");
-            self.failures
-                .push(RelayAttemptFailure::new(candidate_index, error, elapsed));
+            self.failures.push(
+                RelayAttemptFailure::new(candidate_index, error, elapsed)
+                    .with_diagnostic(self.successful_diagnostic.take()),
+            );
         }
     }
 }
@@ -464,6 +495,7 @@ impl RelayExecutionError {
 /// 有界候选列表上的转发状态机。
 pub struct RelayStateMachine {
     candidates: Vec<RelayCandidate>,
+    diagnostic_policy: Option<RelayDiagnosticPolicy>,
 }
 
 impl RelayStateMachine {
@@ -481,7 +513,17 @@ impl RelayStateMachine {
         if !channel_groups_are_contiguous(&candidates) {
             return Err(RelayBuildError::NonContiguousChannelGroup);
         }
-        Ok(Self { candidates })
+        Ok(Self {
+            candidates,
+            diagnostic_policy: None,
+        })
+    }
+
+    /// 为当前请求启用安全诊断；策略只影响永久脱敏快照，不改变转发语义。
+    #[must_use]
+    pub const fn with_diagnostic_policy(mut self, policy: RelayDiagnosticPolicy) -> Self {
+        self.diagnostic_policy = Some(policy);
+        self
     }
 
     /// 按 Routing → Credential → Sending → Classifying/Streaming → Retry 执行一次请求。
@@ -582,6 +624,9 @@ impl RelayStateMachine {
                     continue;
                 }
             };
+            let mut diagnostic = self
+                .diagnostic_policy
+                .map(|policy| RelayAttemptDiagnostic::capture_request(&upstream_request, policy));
             let permit = match candidate.attempt_gate.as_ref() {
                 Some(gate) => match gate.acquire().await {
                     Ok(permit) => Some(permit),
@@ -608,11 +653,10 @@ impl RelayStateMachine {
                 Err(error) => {
                     release_attempt_permit(permit).await;
                     let mapped = map_adaptor_error(error);
-                    failures.push(RelayAttemptFailure::new(
-                        index,
-                        mapped,
-                        attempt_started_at.elapsed(),
-                    ));
+                    failures.push(
+                        RelayAttemptFailure::new(index, mapped, attempt_started_at.elapsed())
+                            .with_diagnostic(diagnostic),
+                    );
                     last_error = Some(RelayError::Upstream(mapped));
                     if is_retryable(mapped) {
                         index = self.next_candidate_index(index, mapped);
@@ -636,6 +680,10 @@ impl RelayStateMachine {
                 );
             }
 
+            if let Some(diagnostic) = diagnostic.as_mut() {
+                diagnostic.capture_response_head(&response);
+            }
+
             if response.status().is_success() {
                 let state = if request.response_mode == ResponseMode::Stream {
                     RelayState::Streaming
@@ -651,7 +699,8 @@ impl RelayStateMachine {
                         index,
                         attempt_started_at.elapsed(),
                         failures,
-                    ),
+                    )
+                    .with_successful_diagnostic(diagnostic),
                     permit,
                 });
             }
@@ -663,11 +712,10 @@ impl RelayStateMachine {
                 Err(error) => {
                     release_attempt_permit(permit).await;
                     let mapped = map_adaptor_error(error);
-                    failures.push(RelayAttemptFailure::new(
-                        index,
-                        mapped,
-                        attempt_started_at.elapsed(),
-                    ));
+                    failures.push(
+                        RelayAttemptFailure::new(index, mapped, attempt_started_at.elapsed())
+                            .with_diagnostic(diagnostic),
+                    );
                     last_error = Some(RelayError::Upstream(mapped));
                     if is_retryable(mapped) {
                         index = self.next_candidate_index(index, mapped);
@@ -682,14 +730,20 @@ impl RelayStateMachine {
             let classified = classify_upstream_status(status, retry_after, &body);
             let server_status = UpstreamServerStatus::new(status.as_u16());
             let evidence = extract_structured_error_evidence(&body);
+            if let Some(diagnostic) = diagnostic.as_mut() {
+                diagnostic.capture_buffered_response_body(&body);
+            }
             release_attempt_permit(permit).await;
-            failures.push(RelayAttemptFailure::with_evidence(
-                index,
-                classified,
-                server_status,
-                evidence,
-                attempt_started_at.elapsed(),
-            ));
+            failures.push(
+                RelayAttemptFailure::with_evidence(
+                    index,
+                    classified,
+                    server_status,
+                    evidence,
+                    attempt_started_at.elapsed(),
+                )
+                .with_diagnostic(diagnostic),
+            );
             last_error = Some(RelayError::Upstream(classified));
             if is_retryable(classified) {
                 index = self.next_candidate_index(index, classified);

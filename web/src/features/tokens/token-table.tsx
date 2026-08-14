@@ -171,7 +171,7 @@ export function TokenTable({ tokens, onDelete, onEdit }: TokenTableProps) {
 
       <div className="grid gap-2 md:hidden">
         {tokens.map((token) => (
-          <article key={token.id} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
+          <article key={token.id} className="min-w-0 rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
             <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold">{token.name}</h2><StatusBadge token={token} /></div><p className="mt-1 truncate font-mono text-[0.6875rem] text-muted-foreground">{token.key_prefix}… · #{token.id}</p></div><RowActions token={token} onDelete={onDelete} onEdit={onEdit} /></div>
             <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--hairline)] pt-3 text-xs">
               <div><dt className="text-muted-foreground">{t('tokens.columns.owner')}</dt><dd className="mt-1">{t('tokens.values.user', { id: token.user_id })}</dd></div>

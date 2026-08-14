@@ -14,6 +14,8 @@ import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { DataTablePagination, DEFAULT_TABLE_PAGE_SIZE } from '@/components/data-table/data-table-pagination'
+import { useLoadedCursorPagination } from '@/components/data-table/use-table-pagination'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -39,28 +41,23 @@ export function RedemptionAuditPanel() {
   const { i18n, t } = useTranslation()
   const [draft, setDraft] = useState<RedemptionAuditFilterDraft>(initialDraft)
   const [filters, setFilters] = useState<RedemptionAuditFilters>({})
+  const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE)
   const validation = useMemo(() => parseRedemptionAuditFilters(draft), [draft])
-  const query = useAdminRedemptionAudit(filters)
-  const batches = query.data?.pages.flatMap((page) => page.batches) ?? []
-  const summary = useMemo(() => query.data?.pages.reduce((total, page) => ({
-    issued_count: total.issued_count + page.summary.issued_count,
-    redeemed_count: total.redeemed_count + page.summary.redeemed_count,
-    remaining_count: total.remaining_count + page.summary.remaining_count,
-    expired_count: total.expired_count + page.summary.expired_count,
-    disabled_count: total.disabled_count + page.summary.disabled_count,
-  }), {
+  const query = useAdminRedemptionAudit(filters, pageSize)
+  const pagination = useLoadedCursorPagination({
+    availablePageCount: query.data?.pages.length ?? 1,
+    pageSize,
+    onPageSizeChange: setPageSize,
+  })
+  const currentPage = query.data?.pages[pagination.pageIndex]
+  const batches = currentPage?.batches ?? []
+  const summary = currentPage?.summary ?? {
     issued_count: 0,
     redeemed_count: 0,
     remaining_count: 0,
     expired_count: 0,
     disabled_count: 0,
-  }) ?? {
-    issued_count: 0,
-    redeemed_count: 0,
-    remaining_count: 0,
-    expired_count: 0,
-    disabled_count: 0,
-  }, [query.data?.pages])
+  }
   const locale = i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US'
   const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale])
   const timeFormat = useMemo(() => new Intl.DateTimeFormat(locale, {
@@ -70,11 +67,15 @@ export function RedemptionAuditPanel() {
 
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (validation.ok) setFilters(validation.filters)
+    if (validation.ok) {
+      pagination.reset()
+      setFilters(validation.filters)
+    }
   }
 
   function resetFilters() {
     setDraft({ ...initialDraft })
+    pagination.reset()
     setFilters({})
   }
 
@@ -225,13 +226,19 @@ export function RedemptionAuditPanel() {
               </Button>
             </div>
           ) : null}
-          {query.hasNextPage && !query.isFetchNextPageError ? (
-            <div className="flex justify-center border-t border-[var(--hairline)] pt-4">
-              <Button type="button" size="sm" variant="secondary" disabled={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
-                {t(query.isFetchingNextPage ? 'redemptions.actions.loadingMore' : 'redemptions.actions.loadMore')}
-              </Button>
-            </div>
-          ) : null}
+          <DataTablePagination
+            currentPage={pagination.currentPage}
+            availablePageCount={pagination.availablePageCount}
+            pageSize={pagination.pageSize}
+            itemCount={batches.length}
+            hasNextPage={pagination.hasLoadedNextPage || Boolean(query.hasNextPage)}
+            fetching={query.isFetching}
+            onFirstPage={pagination.goToFirstPage}
+            onPreviousPage={pagination.goToPreviousPage}
+            onPageSelect={pagination.selectPage}
+            onNextPage={() => void pagination.goToNextPage(Boolean(query.hasNextPage), async () => (await query.fetchNextPage()).isSuccess)}
+            onPageSizeChange={pagination.setPageSize}
+          />
         </>
       )}
       <p className="text-[0.6875rem] leading-5 text-muted-foreground">{t('redemptions.audit.privacy')}</p>

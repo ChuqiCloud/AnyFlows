@@ -92,6 +92,7 @@ impl ChatService for UnusedChatService {
         _request: CanonicalRequestEnvelope,
         _response_protocol: af_domain::Protocol,
         _request_id: &'a str,
+        _diagnostic: af_relay::RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a> {
         Box::pin(async { Err(AfError::Internal) })
     }

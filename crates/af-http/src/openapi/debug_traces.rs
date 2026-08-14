@@ -5,7 +5,8 @@ use utoipa::OpenApi;
 
 use crate::{
     debug_traces::{
-        AdminDebugTraceAttemptResponse, AdminDebugTraceDetailResponse, AdminDebugTraceListResponse,
+        AdminDebugTraceAttemptResponse, AdminDebugTraceDetailResponse,
+        AdminDebugTraceDownstreamRequestResponse, AdminDebugTraceListResponse,
         AdminDebugTraceResponse, AdminDebugTraceSettingsRequest, AdminDebugTraceSettingsResponse,
     },
     management_error::ManagementErrorBody,
@@ -55,7 +56,8 @@ fn update_admin_debug_trace_settings() {}
         ("before" = Option<i64>, Query, minimum = 1, description = "上一页末尾的追踪 ID"),
         ("limit" = Option<i32>, Query, minimum = 1, maximum = 100, description = "每页数量，默认 50"),
         ("outcome" = Option<String>, Query, description = "succeeded 或 failed"),
-        ("model" = Option<String>, Query, description = "按请求模型精确筛选")
+        ("model" = Option<String>, Query, description = "按请求模型精确筛选"),
+        ("request_id" = Option<String>, Query, min_length = 1, max_length = 64, description = "按服务端请求 ID 精确筛选")
     ),
     responses(
         (status = 200, description = "从新到旧排列的脱敏追踪摘要", body = AdminDebugTraceListResponse),
@@ -102,6 +104,7 @@ fn get_admin_debug_trace() {}
         AdminDebugTraceDetailResponse,
         AdminDebugTraceResponse,
         AdminDebugTraceAttemptResponse,
+        AdminDebugTraceDownstreamRequestResponse,
         ManagementErrorBody
     ))
 )]

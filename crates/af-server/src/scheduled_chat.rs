@@ -46,9 +46,9 @@ use af_httpclient::{HttpClientProvider, ProxyConfig, RemoteDnsPolicy};
 use af_protocol::CanonicalRequestEnvelope;
 use af_relay::{
     AnthropicRequestOverrides, ChatResponse, GeminiRequestOverrides, OpenAiChatRequestOverrides,
-    OpenAiResponsesRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayStateMachine,
-    relay_anthropic_with_report, relay_gemini_with_report, relay_openai_chat_with_report,
-    relay_openai_responses_with_report,
+    OpenAiResponsesRequestOverrides, RelayCandidate, RelayCandidateRequest, RelayDiagnosticInput,
+    RelayStateMachine, relay_anthropic_with_report, relay_gemini_with_report,
+    relay_openai_chat_with_report, relay_openai_responses_with_report,
 };
 use af_scheduler::{
     ChannelRoutingHealth, IndexedRoutePlan, IndexedWeightedScheduler,
@@ -698,6 +698,7 @@ impl ChatRoutePlanner for ScheduledChatService {
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &'a str,
+        diagnostic: RelayDiagnosticInput,
     ) -> ChatRoutePlanFuture<'a> {
         Box::pin(async move {
             let session_scope = stable_session_scope(*principal, request.canonical());
@@ -722,6 +723,7 @@ impl ChatRoutePlanner for ScheduledChatService {
                     response_protocol,
                     upstream_protocol,
                     request.canonical().operation,
+                    diagnostic,
                 )
             });
             let user_permit = self
@@ -812,6 +814,10 @@ impl PlannedChatExecution for ScheduledChatExecution {
             debug_trace,
         } = *self;
         Box::pin(async move {
+            let machine = match debug_trace.as_ref() {
+                Some(capture) => machine.with_diagnostic_policy(capture.relay_policy()),
+                None => machine,
+            };
             let operation = request.canonical().operation;
             let routing_started_at = Instant::now();
             let (result, report) = match (operation, upstream_protocol) {
@@ -1195,7 +1201,7 @@ mod tests {
     use std::{sync::Arc, time::Duration};
 
     use af_account::credential_plaintext_aad;
-    use af_adapter::Bytes;
+    use af_adapter::{Bytes, HeaderMap};
     use af_config::{CREDENTIAL_ENCRYPTION_KEY_BYTES, CredentialEncryptionSettings};
     use af_db::{
         AdminGroupRepository, AdminGroupWriteRecord, ChannelModelMappings,
@@ -1222,6 +1228,15 @@ mod tests {
     const CHANNEL_ID: i64 = 41;
     const CREDENTIAL_ID: i64 = 51;
     const KEY_ID: &str = "scheduled-chat-test";
+
+    fn diagnostic() -> RelayDiagnosticInput {
+        RelayDiagnosticInput::capture(
+            "POST",
+            "/v1/chat/completions",
+            &HeaderMap::new(),
+            &Bytes::new(),
+        )
+    }
 
     #[test]
     fn websocket_session_scope_requires_stable_metadata_and_isolates_tokens() {
@@ -1276,6 +1291,7 @@ mod tests {
                 request(),
                 Protocol::OpenAiChat,
                 "request-plan",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -1300,6 +1316,7 @@ mod tests {
                 request(),
                 Protocol::OpenAiChat,
                 "request-playground-fallback",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -1318,6 +1335,7 @@ mod tests {
                     request(),
                     Protocol::OpenAiChat,
                     "request-regular-no-fallback",
+                    diagnostic(),
                 )
                 .await,
             Err(AfError::Upstream(UpstreamError::ModelUnsupported))
@@ -1520,6 +1538,7 @@ mod tests {
                     request(),
                     Protocol::OpenAiChat,
                     "request-openai-client",
+                    diagnostic(),
                 )
                 .await
                 .err(),
@@ -1539,6 +1558,7 @@ mod tests {
                     request(),
                     Protocol::OpenAiChat,
                     "request-openai-gemini-upstream",
+                    diagnostic(),
                 )
                 .await
                 .err(),
@@ -1588,6 +1608,7 @@ mod tests {
                     responses_request(),
                     Protocol::OpenAiResponses,
                     "request-wrong-protocol",
+                    diagnostic(),
                 )
                 .await
                 .err(),
@@ -1607,6 +1628,7 @@ mod tests {
                     request(),
                     Protocol::OpenAiChat,
                     "request-empty",
+                    diagnostic(),
                 )
                 .await
                 .err(),
@@ -1622,6 +1644,7 @@ mod tests {
                     request(),
                     Protocol::OpenAiChat,
                     "request-proxy",
+                    diagnostic(),
                 )
                 .await
                 .err(),
@@ -1638,6 +1661,7 @@ mod tests {
                     request(),
                     Protocol::OpenAiChat,
                     "request-decrypt",
+                    diagnostic(),
                 )
                 .await
                 .err(),

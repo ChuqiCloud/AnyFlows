@@ -35,6 +35,10 @@ pub(crate) struct AdminDebugTraceSettingsResponse {
     sample_per_million: i64,
     #[schema(minimum = 1, maximum = 720)]
     retention_hours: i32,
+    capture_headers: bool,
+    capture_bodies: bool,
+    #[schema(minimum = 1024, maximum = 65536)]
+    max_body_bytes: i32,
     #[schema(minimum = 1)]
     version: i64,
 }
@@ -48,6 +52,10 @@ pub(crate) struct AdminDebugTraceSettingsRequest {
     sample_per_million: i64,
     #[schema(minimum = 1, maximum = 720)]
     retention_hours: i32,
+    capture_headers: bool,
+    capture_bodies: bool,
+    #[schema(minimum = 1024, maximum = 65536)]
+    max_body_bytes: i32,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -83,6 +91,24 @@ pub(crate) struct AdminDebugTraceAttemptResponse {
     upstream_status: Option<i16>,
     retry_decision: bool,
     elapsed_ms: i64,
+    request_method: Option<String>,
+    request_url: Option<String>,
+    request_headers: Option<serde_json::Value>,
+    request_body: Option<serde_json::Value>,
+    response_status: Option<i16>,
+    response_headers: Option<serde_json::Value>,
+    response_body: Option<serde_json::Value>,
+    response_streamed: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminDebugTraceDownstreamRequest)]
+pub(crate) struct AdminDebugTraceDownstreamRequestResponse {
+    method: String,
+    path: String,
+    headers: Option<serde_json::Value>,
+    body: Option<serde_json::Value>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -100,6 +126,7 @@ pub(crate) struct AdminDebugTraceListResponse {
 #[schema(as = AdminDebugTraceDetailResponse)]
 pub(crate) struct AdminDebugTraceDetailResponse {
     trace: AdminDebugTraceResponse,
+    downstream_request: Option<AdminDebugTraceDownstreamRequestResponse>,
     attempts: Vec<AdminDebugTraceAttemptResponse>,
 }
 
@@ -148,6 +175,9 @@ async fn update_settings(
         request.enabled,
         request.sample_per_million,
         request.retention_hours,
+        request.capture_headers,
+        request.capture_bodies,
+        request.max_body_bytes,
     )
     .map_err(map_error)?;
     let settings = state
@@ -195,6 +225,9 @@ impl From<AdminDebugTraceSettings> for AdminDebugTraceSettingsResponse {
             enabled: settings.enabled(),
             sample_per_million: settings.sample_per_million(),
             retention_hours: settings.retention_hours(),
+            capture_headers: settings.capture_headers(),
+            capture_bodies: settings.capture_bodies(),
+            max_body_bytes: settings.max_body_bytes(),
             version: settings.version(),
         }
     }
@@ -217,6 +250,9 @@ impl AdminDebugTraceDetailResponse {
     fn from_detail(detail: af_admin::AdminDebugTraceDetail) -> Self {
         Self {
             trace: AdminDebugTraceResponse::from_trace(detail.trace()),
+            downstream_request: AdminDebugTraceDownstreamRequestResponse::from_trace(
+                detail.trace(),
+            ),
             attempts: detail
                 .attempts()
                 .iter()
@@ -259,8 +295,33 @@ impl AdminDebugTraceAttemptResponse {
             upstream_status: attempt.upstream_status(),
             retry_decision: attempt.retry_decision(),
             elapsed_ms: attempt.elapsed_ms(),
+            request_method: attempt.request_method().map(str::to_owned),
+            request_url: attempt.request_url().map(str::to_owned),
+            request_headers: parse_snapshot(attempt.request_headers_json()),
+            request_body: parse_snapshot(attempt.request_body_json()),
+            response_status: attempt.response_status(),
+            response_headers: parse_snapshot(attempt.response_headers_json()),
+            response_body: parse_snapshot(attempt.response_body_json()),
+            response_streamed: attempt.response_streamed(),
         }
     }
+}
+
+impl AdminDebugTraceDownstreamRequestResponse {
+    fn from_trace(trace: &AdminDebugTrace) -> Option<Self> {
+        Some(Self {
+            method: trace.downstream_method()?.to_owned(),
+            path: trace.downstream_path()?.to_owned(),
+            headers: parse_snapshot(trace.downstream_headers_json()),
+            body: parse_snapshot(trace.downstream_body_json()),
+        })
+    }
+}
+
+fn parse_snapshot(value: Option<&str>) -> Option<serde_json::Value> {
+    value.map(|value| {
+        serde_json::from_str(value).expect("数据库层已校验的调试快照必须保持合法 JSON")
+    })
 }
 
 fn parse_list_query(raw_query: Option<&str>) -> Result<AdminDebugTraceListQuery, ManagementError> {
@@ -275,6 +336,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminDebugTraceListQuery,
     let mut limit = None;
     let mut outcome = None;
     let mut model = None;
+    let mut request_id = None;
     for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
         if key.contains('\u{fffd}') || value.contains('\u{fffd}') {
             return Err(ManagementError::InvalidRequest);
@@ -284,6 +346,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminDebugTraceListQuery,
             "limit" if limit.is_none() => limit = Some(parse_limit(&value)?),
             "outcome" if outcome.is_none() => outcome = Some(parse_outcome(&value)?),
             "model" if model.is_none() => model = Some(value.into_owned()),
+            "request_id" if request_id.is_none() => request_id = Some(value.into_owned()),
             _ => return Err(ManagementError::InvalidRequest),
         }
     }
@@ -292,6 +355,7 @@ fn parse_list_query(raw_query: Option<&str>) -> Result<AdminDebugTraceListQuery,
         limit.unwrap_or(af_admin::DEFAULT_ADMIN_DEBUG_TRACE_PAGE_SIZE),
         outcome,
         model,
+        request_id,
     )
     .map_err(map_error)
 }

@@ -6,9 +6,10 @@ use sea_orm::{
 };
 
 use crate::{
-    DatabaseOptions, DebugTraceAttemptWrite, DebugTraceFailureKind, DebugTraceListQuery,
-    DebugTraceOperation, DebugTraceOutcome, DebugTraceProtocol, DebugTraceRepository,
-    DebugTraceRepositoryError, DebugTraceSettingsWrite, DebugTraceWrite, MigrationOptions,
+    DatabaseOptions, DebugTraceAttemptDiagnosticWrite, DebugTraceAttemptWrite,
+    DebugTraceFailureKind, DebugTraceListQuery, DebugTraceOperation, DebugTraceOutcome,
+    DebugTraceProtocol, DebugTraceRepository, DebugTraceRepositoryError,
+    DebugTraceRequestDiagnosticWrite, DebugTraceSettingsWrite, DebugTraceWrite, MigrationOptions,
     entity::{TokenHash, debug_trace_attempts, debug_traces, groups, tokens, users},
 };
 
@@ -19,15 +20,24 @@ async fn settings_default_to_disabled_and_increment_version() -> Result<(), Box<
     assert!(!settings.enabled());
     assert_eq!(settings.sample_per_million(), 10_000);
     assert_eq!(settings.retention_hours(), 24);
+    assert!(!settings.capture_headers());
+    assert!(!settings.capture_bodies());
+    assert_eq!(settings.max_body_bytes(), 16_384);
     assert_eq!(settings.version(), 1);
 
     let updated = fixture
         .repository
-        .update_settings(DebugTraceSettingsWrite::new(true, 250_000, 72)?)
+        .update_settings(
+            DebugTraceSettingsWrite::new(true, 250_000, 72)?
+                .with_diagnostics(true, true, 32_768)?,
+        )
         .await?;
     assert!(updated.enabled());
     assert_eq!(updated.sample_per_million(), 250_000);
     assert_eq!(updated.retention_hours(), 72);
+    assert!(updated.capture_headers());
+    assert!(updated.capture_bodies());
+    assert_eq!(updated.max_body_bytes(), 32_768);
     assert_eq!(updated.version(), 2);
     fixture.pool.close().await?;
     Ok(())
@@ -51,7 +61,7 @@ async fn storage_round_trip_preserves_order_filters_and_cursor() -> Result<(), B
 
     let page = fixture
         .repository
-        .list(DebugTraceListQuery::new(None, 2, None, None)?)
+        .list(DebugTraceListQuery::new(None, 2, None, None, None)?)
         .await?;
     assert_eq!(
         page.traces()
@@ -63,7 +73,13 @@ async fn storage_round_trip_preserves_order_filters_and_cursor() -> Result<(), B
     assert_eq!(page.next_cursor(), Some(second.id()));
     let next = fixture
         .repository
-        .list(DebugTraceListQuery::new(page.next_cursor(), 2, None, None)?)
+        .list(DebugTraceListQuery::new(
+            page.next_cursor(),
+            2,
+            None,
+            None,
+            None,
+        )?)
         .await?;
     assert_eq!(next.traces().len(), 1);
     assert_eq!(next.traces()[0].id(), first.id());
@@ -76,15 +92,59 @@ async fn storage_round_trip_preserves_order_filters_and_cursor() -> Result<(), B
             10,
             Some(DebugTraceOutcome::Failed),
             Some("claude-opus-4-8".to_owned()),
+            None,
         )?)
         .await?;
     assert_eq!(failed.traces().len(), 1);
     assert_eq!(failed.traces()[0].id(), second.id());
 
+    let exact = fixture
+        .repository
+        .list(DebugTraceListQuery::new(
+            None,
+            10,
+            None,
+            None,
+            Some("request-c".to_owned()),
+        )?)
+        .await?;
+    assert_eq!(exact.traces().len(), 1);
+    assert_eq!(exact.traces()[0].id(), third.id());
+
     let detail = fixture.repository.detail(first.id()).await?;
     assert_eq!(detail.attempts().len(), 2);
     assert_eq!(detail.attempts()[0].candidate_index(), 0);
     assert_eq!(detail.attempts()[1].candidate_index(), 1);
+    assert_eq!(detail.summary().downstream_method(), Some("POST"));
+    assert_eq!(
+        detail.summary().downstream_path(),
+        Some("/v1/chat/completions")
+    );
+    assert!(
+        detail
+            .summary()
+            .downstream_headers_json()
+            .is_some_and(|value| value.contains("<redacted>"))
+    );
+    assert!(
+        detail
+            .summary()
+            .downstream_body_json()
+            .is_some_and(|value| value.contains("gpt-5.5"))
+    );
+    let successful_attempt = &detail.attempts()[1];
+    assert_eq!(successful_attempt.request_method(), Some("POST"));
+    assert_eq!(
+        successful_attempt.request_url(),
+        Some("https://upstream.example/v1/responses")
+    );
+    assert_eq!(successful_attempt.response_status(), Some(200));
+    assert!(!successful_attempt.response_streamed());
+    assert!(
+        successful_attempt
+            .response_body_json()
+            .is_some_and(|value| value.contains("response.completed"))
+    );
     fixture.pool.close().await?;
     Ok(())
 }
@@ -228,7 +288,25 @@ fn successful_trace(
     request_id: &str,
     model: &str,
 ) -> Result<DebugTraceWrite, crate::DebugTraceWriteError> {
-    DebugTraceWrite::new(
+    let succeeded = DebugTraceAttemptWrite::succeeded(1, 12, 22, 15)?.with_diagnostic(
+        DebugTraceAttemptDiagnosticWrite::new(
+            "POST".to_owned(),
+            "https://upstream.example/v1/responses".to_owned(),
+            Some(r#"[{"name":"authorization","value":"<redacted>"}]"#.to_owned()),
+            Some(
+                r#"{"format":"json","content":"{\"model\":\"gpt-5.5\"}","original_bytes":19,"truncated":false}"#
+                    .to_owned(),
+            ),
+            Some(200),
+            Some(r#"[{"name":"content-type","value":"application/json"}]"#.to_owned()),
+            Some(
+                r#"{"format":"json","content":"{\"type\":\"response.completed\"}","original_bytes":29,"truncated":false}"#
+                    .to_owned(),
+            ),
+            false,
+        )?,
+    );
+    let write = DebugTraceWrite::new(
         request_id.to_owned(),
         fixture.user_id,
         fixture.token_id,
@@ -240,7 +318,7 @@ fn successful_trace(
         DebugTraceOutcome::Succeeded,
         35,
         vec![
-            DebugTraceAttemptWrite::succeeded(1, 12, 22, 15)?,
+            succeeded,
             DebugTraceAttemptWrite::failed(
                 0,
                 11,
@@ -251,7 +329,16 @@ fn successful_trace(
                 20,
             )?,
         ],
-    )
+    )?;
+    Ok(write.with_downstream_diagnostic(DebugTraceRequestDiagnosticWrite::new(
+        "POST".to_owned(),
+        "/v1/chat/completions".to_owned(),
+        Some(r#"[{"name":"authorization","value":"<redacted>"}]"#.to_owned()),
+        Some(
+            r#"{"format":"json","content":"{\"model\":\"gpt-5.5\"}","original_bytes":19,"truncated":false}"#
+                .to_owned(),
+        ),
+    )?))
 }
 
 fn failed_trace(

@@ -3,6 +3,19 @@
     "name": "AnyFlows",
     "scope": "Gateway"
   },
+  "tablePagination": {
+    "label": "Table pagination",
+    "pageSummary": "Page {{page}}, {{count}} records",
+    "pageNumber": "Page {{page}}",
+    "pageSize": "Per page",
+    "moreAvailable": "More records available",
+    "endReached": "Last page reached",
+    "actions": {
+      "first": "First page",
+      "previous": "Previous",
+      "next": "Next"
+    }
+  },
   "nav": {
     "label": "Primary navigation",
     "groups": {
@@ -1855,25 +1868,33 @@
     "count": "{{count}} records on this page",
     "filteredCount": "Showing {{visible}} of {{count}}",
     "page": "Page {{page}}",
+    "pageSummary": "Page {{page}} · {{count}} settled records",
     "loading": "Loading usage logs",
     "pagination": "Usage log pagination",
     "columns": {
+      "time": "Time / status",
       "call": "Model request",
       "latency": "Response speed",
       "tokens": "Token usage",
       "billing": "Billing result"
     },
     "listLabel": "Settled request list",
-    "filters": { "model": "Model", "modelPlaceholder": "Search models on this page", "protocol": "Protocol", "allProtocols": "All protocols" },
-    "protocol": { "openai_chat": "Chat", "openai_responses": "Responses", "openai_embeddings": "Embeddings", "openai_images": "Images", "openai_audio": "Audio", "openai_speech": "Speech", "jina_rerank": "Jina Rerank", "cohere_rerank": "Cohere Rerank", "xai_video": "xAI Video", "anthropic": "Anthropic", "gemini": "Gemini" },
+    "status": { "settled": "Settled", "settledOnly": "Settled only" },
+    "summary": { "label": "Current filtered results", "requests": "Settled requests", "tokens": "Total tokens", "averageFirstToken": "Average first token", "quota": "Total quota" },
+    "filters": { "label": "Filter this page", "model": "Model", "modelPlaceholder": "Search models on this page", "protocol": "Protocol", "allProtocols": "All protocols", "mode": "Response mode", "allModes": "All modes" },
+    "protocol": { "open_ai_chat": "Chat", "open_ai_responses": "Responses", "open_ai_embeddings": "Embeddings", "open_ai_images": "Images", "open_ai_audio": "Audio", "open_ai_speech": "Speech", "jina_rerank": "Jina Rerank", "cohere_rerank": "Cohere Rerank", "xai_video": "xAI Video", "anthropic": "Anthropic", "gemini": "Gemini" },
     "operation": { "chat": "Chat", "responses": "Responses", "responses_compact": "Context compaction", "embedding": "Embedding", "image": "Image", "audio": "Audio", "rerank": "Rerank", "video": "Video", "count_tokens": "Token count" },
     "reasoning": { "none": "Off", "minimal": "Minimal", "low": "Low", "medium": "Medium", "high": "High", "extra_high": "Extra high", "max": "Max" },
     "details": { "request": "Request ID", "tokens": "Cache and reasoning tokens", "reasoning": "Reasoning effort / budget", "mode": "Billing / response mode", "principal": "Billing principal" },
+    "detailSections": { "request": "Request", "performance": "Performance", "tokens": "Token details", "billing": "Billing facts", "reasoning": "Reasoning", "principal": "Billing principal" },
+    "detailFields": { "responseMode": "Response mode", "protocol": "Inbound protocol", "operation": "Operation", "totalTokens": "Total tokens", "cacheRead": "Cache read", "cacheCreate5m": "Cache create 5m", "cacheCreate1h": "Cache create 1h", "cacheTotal": "Total cache", "reasoningTokens": "Reasoning tokens", "billingMode": "Billing mode", "usageSource": "Usage source", "usageSemantics": "Cache semantics", "reasoningEffort": "Reasoning effort", "reasoningBudget": "Reasoning budget", "user": "User", "token": "API key", "group": "Group" },
     "values": {
       "userTokenGroup": "User #{{user}} / API key #{{token}} / Group #{{group}}",
+      "userTokenGroupCompact": "User #{{user}} · Key #{{token}} · Group #{{group}}",
       "legacy": "Historical",
       "legacyModel": "Model not recorded",
       "notSpecified": "Not specified",
+      "notRecorded": "Not recorded",
       "stream": "Stream",
       "sync": "Non-stream",
       "firstToken": "First token",
@@ -1881,6 +1902,8 @@
       "inputLabel": "Input",
       "outputLabel": "Output",
       "quota": "Billed quota",
+      "quotaShort": "Quota",
+      "inputOutputCompact": "Input {{input}} · Output {{output}}",
       "cacheReasoning": "Cache {{cache}} / Reasoning {{reasoning}}",
       "input": "Input {{value}}",
       "output": "Output {{value}}",
@@ -1907,8 +1930,13 @@
     },
     "actions": {
       "refresh": "Refresh",
+      "debugTraces": "Debug traces",
       "reset": "Reset",
       "details": "Expand request details",
+      "openDetails": "Open {{model}} request details",
+      "copyRequestId": "Copy request ID",
+      "copiedRequestId": "Request ID copied",
+      "copyRequestIdFailed": "Copy failed. Select the request ID in details.",
       "retry": "Retry",
       "previous": "Previous",
       "next": "Next"
@@ -1922,13 +1950,29 @@
     "error": {
       "title": "Unable to load request logs",
       "body": "The service did not return settled requests. Try again shortly."
+    },
+    "userSheet": {
+      "title": "User profile",
+      "description": "Review the account, wallet balance, and request limits for this request owner.",
+      "loading": "Loading user profile",
+      "errorTitle": "Unable to load user profile",
+      "errorBody": "The user may have been deleted, or the service did not return an account snapshot.",
+      "account": "Account",
+      "traffic": "Requests and limits",
+      "requests": "Total requests",
+      "openManagement": "Open user management"
     }
   },
   "debugTraces": {
     "title": "Debug traces",
-    "subtitle": "Inspect sanitized routing decisions and candidate attempts without storing or replaying request bodies or credentials.",
+    "subtitle": "Inspect routing decisions and safe diagnostic snapshots. Credentials are permanently redacted before persistence.",
     "count": "{{count}} traces on this page",
     "page": "Page {{page}}",
+    "pageSummary": "Page {{page}}, {{count}} records",
+    "pageNumber": "Page {{page}}",
+    "pageSize": "Per page",
+    "moreAvailable": "More records available",
+    "endReached": "Last page reached",
     "loading": "Loading debug traces",
     "pagination": "Debug trace pagination",
     "listLabel": "Debug trace list",
@@ -1938,16 +1982,22 @@
       "settings": "Trace settings",
       "filter": "Filter",
       "retry": "Try again",
+      "first": "First page",
       "previous": "Previous",
       "next": "Next",
+      "openDetails": "View trace details for {{model}}",
       "save": "Save settings",
-      "saving": "Saving"
+      "saving": "Saving",
+      "copy": "Copy content"
     },
     "filters": {
+      "label": "Filter trace records",
       "outcome": "Request outcome",
       "all": "All outcomes",
       "model": "Model name",
-      "modelPlaceholder": "Filter by exact model name"
+      "modelPlaceholder": "Filter by exact model name",
+      "requestId": "Request ID",
+      "requestIdPlaceholder": "Filter by exact request ID"
     },
     "outcome": {
       "succeeded": "Succeeded",
@@ -1955,8 +2005,22 @@
     },
     "values": {
       "attempts": "{{count}} candidate attempts",
+      "attemptsShort": "{{count}} attempts",
       "elapsed": "{{value}} ms",
-      "principal": "User #{{user}} / Token #{{token}}"
+      "principal": "User #{{user}} / Token #{{token}}",
+      "principalCompact": "#{{user}} / #{{token}}",
+      "routingCompact": "{{count}} attempts / {{value}} ms",
+      "convertedProtocol": "To {{protocol}}",
+      "user": "User #{{id}}",
+      "token": "Token #{{id}}"
+    },
+    "columns": {
+      "time": "Time",
+      "request": "Request",
+      "protocol": "Protocol",
+      "routing": "Routing",
+      "principal": "Principal",
+      "outcome": "Outcome"
     },
     "empty": {
       "title": "No debug traces yet",
@@ -1967,6 +2031,8 @@
       "body": "The service did not return a reliable trace list. Try again shortly."
     },
     "detail": {
+      "sheetTitle": "Debug trace details",
+      "sheetDescription": "Inspect sanitized request snapshots, route candidates, and upstream attempts.",
       "loading": "Loading trace details",
       "errorTitle": "Unable to load trace details",
       "errorBody": "This trace may have expired. Refresh the list and try again.",
@@ -1978,6 +2044,15 @@
       "routingElapsed": "Routing time",
       "group": "Billing group",
       "timeline": "Candidate decision timeline",
+      "downstreamRequest": "Downstream request",
+      "attempts": "Upstream attempts",
+      "requestHeaders": "Request headers",
+      "requestBody": "Request body",
+      "responseHeaders": "Response headers",
+      "responseBody": "Response body",
+      "notCaptured": "Not captured",
+      "streamNotBuffered": "Streaming response body is not buffered without limit",
+      "truncated": "Body truncated at the configured limit. Original size: {{bytes}} bytes",
       "noAttempts": "No candidate attempts were persisted for this trace.",
       "candidate": "Candidate {{index}}",
       "retried": "Retried",
@@ -2026,7 +2101,15 @@
       "sampleInvalid": "Enter a percentage from 0 to 100 with at most two decimal places.",
       "retention": "Retention period",
       "retentionValue": "{{hours}} hours",
-      "security": "Traces never store headers, bodies, prompts, raw errors, keys, proxy credentials, session keys, or upstream URLs.",
+      "diagnostics": "Diagnostic snapshots",
+      "diagnosticsDescription": "Only newly sampled requests record snapshots. Headers and bodies are controlled independently.",
+      "captureHeaders": "Capture headers",
+      "captureHeadersDescription": "Store downstream and upstream headers with authentication, cookies, and session fields redacted.",
+      "captureBodies": "Capture bodies",
+      "captureBodiesDescription": "Store request and non-streaming response bodies for short protocol compatibility investigations.",
+      "bodyLimit": "Per-body limit",
+      "bodyLimitValue": "{{value}} KiB",
+      "security": "Authorization, API keys, cookies, proxy credentials, and session material are always permanently redacted. This cannot be disabled. Streaming responses are never buffered without limit.",
       "saveError": "Settings could not be saved. The active runtime configuration is unchanged.",
       "saved": "Settings saved",
       "unsaved": "Unsaved changes"

@@ -12,7 +12,7 @@ use af_domain::{AfError, Protocol, TokenModelPolicy};
 use af_protocol::{
     CanonicalRequestEnvelope, apply_reasoning_model_suffix, openai_chat::parse_request_envelope,
 };
-use af_relay::ChatResponse;
+use af_relay::{ChatResponse, RelayDiagnosticInput};
 use af_telemetry::RequestId;
 use axum::{
     body::Bytes,
@@ -20,7 +20,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use http::{
-    HeaderValue, StatusCode,
+    HeaderMap, HeaderValue, StatusCode,
     header::{CACHE_CONTROL, CONTENT_TYPE},
 };
 
@@ -326,8 +326,10 @@ pub(crate) async fn chat_completions(
     State(state): State<HttpState>,
     Extension(request_id): Extension<RequestId>,
     Extension(authentication): Extension<TokenAuthentication>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, OpenAiHttpError> {
+    let diagnostic = RelayDiagnosticInput::capture("POST", "/v1/chat/completions", &headers, &body);
     let request = prepare_chat_request(body, authentication.model_policy())?;
     let principal = authentication.principal();
     let response = state
@@ -338,6 +340,7 @@ pub(crate) async fn chat_completions(
             request,
             Protocol::OpenAiChat,
             request_id.as_str(),
+            diagnostic,
         )
         .await
         .map_err(OpenAiHttpError::from)?;

@@ -322,10 +322,25 @@ export type AdminDebugTraceAttempt = {
     upstream_status?: number | null;
     retry_decision: boolean;
     elapsed_ms: number;
+    request_method?: string | null;
+    request_url?: string | null;
+    request_headers?: unknown;
+    request_body?: unknown;
+    response_status?: number | null;
+    response_headers?: unknown;
+    response_body?: unknown;
+    response_streamed: boolean;
 };
 export type AdminDebugTraceDetailResponse = {
     trace: AdminDebugTrace;
+    downstream_request?: null | AdminDebugTraceDownstreamRequest;
     attempts: Array<AdminDebugTraceAttempt>;
+};
+export type AdminDebugTraceDownstreamRequest = {
+    method: string;
+    path: string;
+    headers?: unknown;
+    body?: unknown;
 };
 export type AdminDebugTraceListResponse = {
     traces: Array<AdminDebugTrace>;
@@ -335,12 +350,18 @@ export type AdminDebugTraceSettings = {
     enabled: boolean;
     sample_per_million: number;
     retention_hours: number;
+    capture_headers: boolean;
+    capture_bodies: boolean;
+    max_body_bytes: number;
     version: number;
 };
 export type AdminDebugTraceSettingsRequest = {
     enabled: boolean;
     sample_per_million: number;
     retention_hours: number;
+    capture_headers: boolean;
+    capture_bodies: boolean;
+    max_body_bytes: number;
 };
 export type AdminEmailSettings = {
     enabled: boolean;
@@ -926,6 +947,7 @@ export type AdminUsageLog = {
     id: number;
     event_id: string;
     user_id: number;
+    username: string;
     token_id: number;
     group_id: number;
     billing_mode: AdminUsageLogBillingMode;
@@ -4130,6 +4152,7 @@ export type ListAdminDebugTracesData = {
         limit?: number;
         outcome?: string;
         model?: string;
+        request_id?: string;
     };
     url: '/api/admin/debug-traces';
 };

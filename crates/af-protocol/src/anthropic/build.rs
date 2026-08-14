@@ -26,6 +26,7 @@ const MODELED_FIELDS: &[&str] = &[
     "messages",
     "metadata",
     "model",
+    "output_config",
     "stop_sequences",
     "stream",
     "system",
@@ -227,26 +228,65 @@ fn insert_reasoning(
             if reasoning.budget_tokens().is_some() || reasoning.include_thinking() {
                 return Err(BuildRequestError::InvalidValue);
             }
-            thinking_value("disabled", None, true)
+            Some(thinking_value("disabled", None, true))
         }
-        Some(_) => return Err(BuildRequestError::UnsupportedFeature),
-        None => {
-            if let Some(budget) = reasoning.budget_tokens() {
-                let budget = budget.get();
-                if !(1_024..max_tokens).contains(&budget) {
-                    return Err(BuildRequestError::InvalidValue);
+        Some(effort) => {
+            let effort = match effort {
+                ReasoningEffort::Low => "low",
+                ReasoningEffort::Medium => "medium",
+                ReasoningEffort::High => "high",
+                // Anthropic 使用 max 表达 OpenAI 兼容协议中的 xhigh。
+                ReasoningEffort::ExtraHigh | ReasoningEffort::Max => "max",
+                ReasoningEffort::None | ReasoningEffort::Minimal => {
+                    return Err(BuildRequestError::UnsupportedFeature);
                 }
-                thinking_value("enabled", Some(budget), reasoning.include_thinking())
-            } else {
-                if max_tokens == 0 {
-                    return Err(BuildRequestError::InvalidValue);
-                }
-                thinking_value("adaptive", None, reasoning.include_thinking())
-            }
+            };
+            root.insert(
+                "output_config".to_owned(),
+                Value::Object(Map::from_iter([(
+                    "effort".to_owned(),
+                    Value::String(effort.to_owned()),
+                )])),
+            );
+            reasoning_thinking_value(reasoning, max_tokens)?
         }
+        None => reasoning_thinking_value(reasoning, max_tokens)?,
     };
-    root.insert("thinking".to_owned(), thinking);
+    if let Some(thinking) = thinking {
+        root.insert("thinking".to_owned(), thinking);
+    }
     Ok(())
+}
+
+/// 构造固定预算或自适应思考对象；仅配置输出强度时不额外注入思考字段。
+fn reasoning_thinking_value(
+    reasoning: crate::ReasoningConfig,
+    max_tokens: i64,
+) -> Result<Option<Value>, BuildRequestError> {
+    match reasoning.budget_tokens() {
+        Some(budget) => {
+            let budget = budget.get();
+            if !(1_024..max_tokens).contains(&budget) {
+                return Err(BuildRequestError::InvalidValue);
+            }
+            Ok(Some(thinking_value(
+                "enabled",
+                Some(budget),
+                reasoning.include_thinking(),
+            )))
+        }
+        None if reasoning.include_thinking() || reasoning.effort().is_none() => {
+            if max_tokens == 0 {
+                return Err(BuildRequestError::InvalidValue);
+            }
+            Ok(Some(thinking_value(
+                "adaptive",
+                None,
+                reasoning.include_thinking(),
+            )))
+        }
+        None => Ok(None),
+    }
 }
 
 fn thinking_value(kind: &str, budget: Option<i64>, include_thinking: bool) -> Value {

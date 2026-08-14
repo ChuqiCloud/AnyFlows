@@ -1,8 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { DataTablePagination, DEFAULT_TABLE_PAGE_SIZE } from '@/components/data-table/data-table-pagination'
+import { useLoadedCursorPagination } from '@/components/data-table/use-table-pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminChannel } from '@/lib/api/generated/types.gen'
 import { useAdminChannels, useProbeAdminChannel } from './channel-api'
@@ -13,15 +15,19 @@ type EditorState = AdminChannel | 'create' | undefined
 
 export function ChannelPage() {
   const { t } = useTranslation()
-  const channelsQuery = useAdminChannels()
+  const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE)
+  const channelsQuery = useAdminChannels(pageSize)
+  const pagination = useLoadedCursorPagination({
+    availablePageCount: channelsQuery.data?.pages.length ?? 1,
+    pageSize,
+    onPageSizeChange: setPageSize,
+  })
   const probeMutation = useProbeAdminChannel()
   const [editor, setEditor] = useState<EditorState>()
   const [probingId, setProbingId] = useState<number>()
   const [probeResults, setProbeResults] = useState<Record<number, ProbeDisplay>>({})
-  const channels = useMemo(
-    () => channelsQuery.data?.pages.flatMap((page) => page.channels) ?? [],
-    [channelsQuery.data],
-  )
+  const channels = channelsQuery.data?.pages[pagination.pageIndex]?.channels ?? []
+  const initialError = channelsQuery.isError && channelsQuery.data === undefined
 
   const probe = async (channelId: number) => {
     setProbingId(channelId)
@@ -64,7 +70,7 @@ export function ChannelPage() {
         <div className="grid gap-2" aria-label={t('channels.loading')}>
           {[0, 1, 2, 3].map((item) => <Skeleton key={item} className="h-16 rounded-xl" />)}
         </div>
-      ) : channelsQuery.isError ? (
+      ) : initialError ? (
         <div role="alert" className="rounded-xl border border-destructive/25 bg-destructive/8 p-4">
           <h2 className="text-sm font-semibold text-destructive">{t('channels.error.title')}</h2>
           <p className="mt-1 text-xs text-muted-foreground">{t('channels.error.body')}</p>
@@ -74,10 +80,21 @@ export function ChannelPage() {
         <ChannelTable channels={channels} probeResults={probeResults} probingId={probingId} onCredentials={openCredentials} onEdit={setEditor} onProbe={probe} />
       )}
 
-      {channelsQuery.hasNextPage ? (
-        <Button type="button" variant="secondary" className="self-center" disabled={channelsQuery.isFetchingNextPage} onClick={() => channelsQuery.fetchNextPage()}>
-          {t(channelsQuery.isFetchingNextPage ? 'channels.loadingMore' : 'channels.actions.loadMore')}
-        </Button>
+      {channelsQuery.isFetchNextPageError ? <p role="alert" className="text-xs text-destructive">{t('channels.error.body')}</p> : null}
+      {!channelsQuery.isPending && !initialError ? (
+        <DataTablePagination
+          currentPage={pagination.currentPage}
+          availablePageCount={pagination.availablePageCount}
+          pageSize={pagination.pageSize}
+          itemCount={channels.length}
+          hasNextPage={pagination.hasLoadedNextPage || Boolean(channelsQuery.hasNextPage)}
+          fetching={channelsQuery.isFetching}
+          onFirstPage={pagination.goToFirstPage}
+          onPreviousPage={pagination.goToPreviousPage}
+          onPageSelect={pagination.selectPage}
+          onNextPage={() => void pagination.goToNextPage(Boolean(channelsQuery.hasNextPage), async () => (await channelsQuery.fetchNextPage()).isSuccess)}
+          onPageSizeChange={pagination.setPageSize}
+        />
       ) : null}
 
       <ChannelEditorSheet

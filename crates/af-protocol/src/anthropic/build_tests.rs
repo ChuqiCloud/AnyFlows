@@ -262,6 +262,25 @@ fn preserves_tool_choice_defaults_and_reasoning_modes() {
 }
 
 #[test]
+fn builds_anthropic_output_effort_and_maps_xhigh_to_max() {
+    let mut high = minimal_request();
+    high.reasoning = Some(ReasoningConfig::new(Some(ReasoningEffort::High), None, false).unwrap());
+    let value = build_request(&high).unwrap();
+    assert_eq!(value["output_config"], json!({"effort": "high"}));
+    assert!(value.get("thinking").is_none());
+    assert_eq!(
+        parse_request(&serde_json::to_vec(&value).unwrap()).unwrap(),
+        high
+    );
+
+    let mut extra_high = minimal_request();
+    extra_high.reasoning =
+        Some(ReasoningConfig::new(Some(ReasoningEffort::ExtraHigh), None, false).unwrap());
+    let value = build_request(&extra_high).unwrap();
+    assert_eq!(value["output_config"], json!({"effort": "max"}));
+}
+
+#[test]
 fn rejects_unmapped_top_level_capabilities() {
     let mut wrong_operation = minimal_request();
     wrong_operation.operation = Operation::Responses;
@@ -414,10 +433,10 @@ fn validates_sampling_reasoning_tools_and_metadata() {
 
     let mut unsupported_effort = minimal_request();
     unsupported_effort.reasoning =
-        Some(ReasoningConfig::new(Some(ReasoningEffort::High), None, true).unwrap());
+        Some(ReasoningConfig::new(Some(ReasoningEffort::Minimal), None, false).unwrap());
     assert_unsupported_capability(
         &unsupported_effort,
-        RequestCapability::ReasoningEffort(ReasoningEffort::High),
+        RequestCapability::ReasoningEffort(ReasoningEffort::Minimal),
     );
 
     let mut invalid_budget = minimal_request();

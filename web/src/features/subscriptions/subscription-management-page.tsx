@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { DataTablePagination, DEFAULT_TABLE_PAGE_SIZE } from '@/components/data-table/data-table-pagination'
+import { useLoadedCursorPagination } from '@/components/data-table/use-table-pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminSubscriptionPlan } from '@/lib/api/generated/types.gen'
 import { useAdminSubscriptionPlans } from './subscription-api'
@@ -15,8 +17,15 @@ import { SubscriptionUserPanel } from './subscription-user-panel'
 export function SubscriptionManagementPage() {
   const { t } = useTranslation()
   const [mode, setMode] = useState<'plans' | 'users'>('plans')
-  const plansQuery = useAdminSubscriptionPlans()
-  const plans = plansQuery.data?.pages.flatMap((page) => page.plans) ?? []
+  const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE)
+  const plansQuery = useAdminSubscriptionPlans(pageSize)
+  const pagination = useLoadedCursorPagination({
+    availablePageCount: plansQuery.data?.pages.length ?? 1,
+    pageSize,
+    onPageSizeChange: setPageSize,
+  })
+  const loadedPlans = plansQuery.data?.pages.flatMap((page) => page.plans) ?? []
+  const plans = plansQuery.data?.pages[pagination.pageIndex]?.plans ?? []
   const activePlans = plans.filter((plan) => plan.status === 'active')
   const [creating, setCreating] = useState(false)
   const [disabling, setDisabling] = useState<AdminSubscriptionPlan>()
@@ -61,7 +70,7 @@ export function SubscriptionManagementPage() {
       </header>
 
       {mode === 'users' ? (
-        <SubscriptionUserPanel plans={plans} plansQuery={plansQuery} />
+        <SubscriptionUserPanel plans={loadedPlans} plansQuery={plansQuery} />
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-y border-[var(--hairline)] py-2 text-xs text-muted-foreground">
@@ -95,18 +104,20 @@ export function SubscriptionManagementPage() {
               </Button>
             </div>
           ) : null}
-          {plansQuery.hasNextPage && !plansQuery.isFetchNextPageError ? (
-            <div className="flex justify-center border-t border-[var(--hairline)] pt-4">
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={plansQuery.isFetchingNextPage}
-                onClick={() => void plansQuery.fetchNextPage()}
-              >
-                {t(plansQuery.isFetchingNextPage ? 'subscriptions.actions.loadingMorePlans' : 'subscriptions.actions.loadMorePlans')}
-              </Button>
-            </div>
+          {!plansQuery.isPending && !(plansQuery.isError && plansQuery.data === undefined) ? (
+            <DataTablePagination
+              currentPage={pagination.currentPage}
+              availablePageCount={pagination.availablePageCount}
+              pageSize={pagination.pageSize}
+              itemCount={plans.length}
+              hasNextPage={pagination.hasLoadedNextPage || Boolean(plansQuery.hasNextPage)}
+              fetching={plansQuery.isFetching}
+              onFirstPage={pagination.goToFirstPage}
+              onPreviousPage={pagination.goToPreviousPage}
+              onPageSelect={pagination.selectPage}
+              onNextPage={() => void pagination.goToNextPage(Boolean(plansQuery.hasNextPage), async () => (await plansQuery.fetchNextPage()).isSuccess)}
+              onPageSizeChange={pagination.setPageSize}
+            />
           ) : null}
         </>
       )}

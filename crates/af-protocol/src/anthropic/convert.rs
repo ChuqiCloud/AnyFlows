@@ -11,11 +11,11 @@ use super::{
         AssistantContentPartWire, AssistantContentWire, AssistantMessageWire,
         Base64ImageSourceWire, CacheControlTypeWire, CacheControlWire, CacheTtlWire, EmptyWire,
         Field, ImageBlockWire, ImageMediaTypeWire, ImageSourceWire, MessageWire,
-        MessagesRequestWire, MetadataWire, NamedToolChoiceWire, SystemTextBlockWire, SystemWire,
-        TextBlockWire, ThinkingAdaptiveWire, ThinkingDisplayWire, ThinkingEnabledWire,
-        ThinkingWire, ToolChoiceParallelWire, ToolChoiceWire, ToolResultBlockWire,
-        ToolResultContentPartWire, ToolResultContentWire, ToolUseBlockWire, ToolWire,
-        UrlImageSourceWire, UserContentPartWire, UserContentWire, UserMessageWire,
+        MessagesRequestWire, MetadataWire, NamedToolChoiceWire, OutputConfigWire, OutputEffortWire,
+        SystemTextBlockWire, SystemWire, TextBlockWire, ThinkingAdaptiveWire, ThinkingDisplayWire,
+        ThinkingEnabledWire, ThinkingWire, ToolChoiceParallelWire, ToolChoiceWire,
+        ToolResultBlockWire, ToolResultContentPartWire, ToolResultContentWire, ToolUseBlockWire,
+        ToolWire, UrlImageSourceWire, UserContentPartWire, UserContentWire, UserMessageWire,
     },
 };
 use crate::{
@@ -56,6 +56,7 @@ pub(super) fn convert_request(
         tools,
         tool_choice,
         thinking,
+        output_config,
         temperature,
         top_p,
         stop_sequences,
@@ -66,7 +67,7 @@ pub(super) fn convert_request(
     validate_model(&model)?;
     let stream = convert_stream(stream);
     let sampling = convert_sampling(max_tokens, temperature, top_p, stop_sequences)?;
-    let reasoning = convert_reasoning(thinking, max_tokens)?;
+    let reasoning = convert_reasoning(thinking, output_config, max_tokens)?;
     let metadata = convert_metadata(metadata)?;
     let (tools, tool_names) = convert_tools(tools)?;
     let tool_choice = convert_tool_choice(tool_choice, &tool_names)?;
@@ -135,12 +136,24 @@ fn convert_sampling(
 
 fn convert_reasoning(
     thinking: Field<ThinkingWire>,
+    output_config: Field<OutputConfigWire>,
     max_tokens: i64,
 ) -> Result<Option<ReasoningConfig>, ParseRequestError> {
-    let config = match thinking {
-        Field::Missing => return Ok(None),
+    let effort = match output_config {
+        Field::Missing => None,
+        Field::Value(OutputConfigWire { effort }) => Some(match effort {
+            OutputEffortWire::Low => ReasoningEffort::Low,
+            OutputEffortWire::Medium => ReasoningEffort::Medium,
+            OutputEffortWire::High => ReasoningEffort::High,
+            OutputEffortWire::ExtraHigh => ReasoningEffort::ExtraHigh,
+            OutputEffortWire::Max => ReasoningEffort::Max,
+        }),
+    };
+    let thinking_present = !matches!(&thinking, Field::Missing);
+    let (thinking_effort, budget, include) = match thinking {
+        Field::Missing => (None, None, false),
         Field::Value(ThinkingWire::Disabled(EmptyWire {})) => {
-            ReasoningConfig::new(Some(ReasoningEffort::None), None, false)
+            (Some(ReasoningEffort::None), None, false)
         }
         Field::Value(ThinkingWire::Enabled(ThinkingEnabledWire {
             budget_tokens,
@@ -151,16 +164,23 @@ fn convert_reasoning(
             }
             let budget =
                 TokenCount::new(budget_tokens).map_err(|_| ParseRequestError::InvalidValue)?;
-            ReasoningConfig::new(None, Some(budget), include_thinking(display))
+            (None, Some(budget), include_thinking(display))
         }
         Field::Value(ThinkingWire::Adaptive(ThinkingAdaptiveWire { display })) => {
             if max_tokens == 0 {
                 return Err(ParseRequestError::InvalidValue);
             }
-            ReasoningConfig::new(None, None, include_thinking(display))
+            (None, None, include_thinking(display))
         }
     };
-    config
+
+    if thinking_effort == Some(ReasoningEffort::None) && effort.is_some() {
+        return Err(ParseRequestError::InvalidValue);
+    }
+    if !thinking_present && effort.is_none() {
+        return Ok(None);
+    }
+    ReasoningConfig::new(effort.or(thinking_effort), budget, include)
         .map(Some)
         .map_err(|_| ParseRequestError::InvalidValue)
 }

@@ -146,7 +146,7 @@ export function ApiKeyTable(props: ApiKeyTableProps) {
 
       <div className="grid gap-2 md:hidden">
         {props.tokens.map((token) => (
-          <article key={token.id} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
+          <article key={token.id} className="min-w-0 rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
             <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold">{token.name}</h2><StatusBadge token={token} /></div><p className="mt-1 truncate font-mono text-[0.6875rem] text-muted-foreground">{token.key_prefix}... <span aria-hidden="true">#</span>{token.id}</p></div><RowActions token={token} toggling={props.togglingId === token.id} onDelete={props.onDelete} onEdit={props.onEdit} onToggle={props.onToggle} /></div>
             <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--hairline)] pt-3 text-xs">
               <div><dt className="text-muted-foreground">{t('apiKeys.columns.quota')}</dt><dd className="mt-1 tabular-nums"><QuotaValue token={token} /></dd></div>

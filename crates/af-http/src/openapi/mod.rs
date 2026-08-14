@@ -350,7 +350,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 256);
+        assert_eq!(schemas.len(), 257);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("ModelCatalogProvider"));
         assert!(schemas.contains_key("ModelCatalogProviderListResponse"));
@@ -420,6 +420,7 @@ mod tests {
         assert!(schemas.contains_key("AdminGroupWindow"));
         assert!(schemas.contains_key("AdminDebugTrace"));
         assert!(schemas.contains_key("AdminDebugTraceAttempt"));
+        assert!(schemas.contains_key("AdminDebugTraceDownstreamRequest"));
         assert!(schemas.contains_key("AdminDebugTraceDetailResponse"));
         assert!(schemas.contains_key("AdminDebugTraceListResponse"));
         assert!(schemas.contains_key("AdminDebugTraceSettings"));

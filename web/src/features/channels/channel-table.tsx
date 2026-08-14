@@ -176,7 +176,7 @@ export function ChannelTable({ channels, probeResults, probingId, onCredentials,
 
       <div className="grid gap-2 md:hidden">
         {channels.map((channel) => (
-          <article key={channel.id} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
+          <article key={channel.id} className="min-w-0 rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
             <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-sm font-semibold">{channel.name}</h2><StatusBadge status={channel.status} /><ProtocolBadge protocol={channel.protocol} />{channel.tag ? <Badge className="max-w-32 truncate">{channel.tag}</Badge> : null}</div><p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">#{channel.id} · {channel.base_url ?? t('channels.values.defaultUrl')}</p></div><RowActions channel={channel} probing={probingId === channel.id} onCredentials={onCredentials} onEdit={onEdit} onProbe={onProbe} /></div>
             <div className="mt-3 grid gap-2 border-t border-[var(--hairline)] pt-3"><RoutingBadges channel={channel} /><ScheduleBadges channel={channel} /></div>
             <div className="mt-3 text-xs"><ProbeState probing={probingId === channel.id} value={probeResults[channel.id]} /></div>

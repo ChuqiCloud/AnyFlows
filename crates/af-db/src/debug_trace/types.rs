@@ -7,9 +7,15 @@ use crate::DatabaseTimestamp;
 pub const MAX_DEBUG_TRACE_SAMPLE_PER_MILLION: i64 = 1_000_000;
 pub const MAX_DEBUG_TRACE_RETENTION_HOURS: i32 = 720;
 pub const MAX_DEBUG_TRACE_PAGE_SIZE: usize = 100;
+pub const DEFAULT_DEBUG_TRACE_BODY_BYTES: i32 = 16_384;
+pub const MIN_DEBUG_TRACE_BODY_BYTES: i32 = 1_024;
+pub const MAX_DEBUG_TRACE_BODY_BYTES: i32 = 65_536;
 const MAX_DEBUG_TRACE_MODEL_BYTES: usize = 255;
 const MAX_DEBUG_TRACE_REQUEST_ID_BYTES: usize = 64;
 const MAX_DEBUG_TRACE_ATTEMPTS: usize = 64;
+const MAX_DEBUG_TRACE_METHOD_BYTES: usize = 16;
+const MAX_DEBUG_TRACE_PATH_BYTES: usize = 8_192;
+const MAX_DEBUG_TRACE_SNAPSHOT_BYTES: usize = 256 * 1_024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DebugTraceProtocol {
@@ -164,6 +170,9 @@ pub struct DebugTraceSettingsRecord {
     enabled: bool,
     sample_per_million: i64,
     retention_hours: i32,
+    capture_headers: bool,
+    capture_bodies: bool,
+    max_body_bytes: i32,
     version: i64,
 }
 
@@ -184,6 +193,21 @@ impl DebugTraceSettingsRecord {
     }
 
     #[must_use]
+    pub const fn capture_headers(self) -> bool {
+        self.capture_headers
+    }
+
+    #[must_use]
+    pub const fn capture_bodies(self) -> bool {
+        self.capture_bodies
+    }
+
+    #[must_use]
+    pub const fn max_body_bytes(self) -> i32 {
+        self.max_body_bytes
+    }
+
+    #[must_use]
     pub const fn version(self) -> i64 {
         self.version
     }
@@ -192,9 +216,12 @@ impl DebugTraceSettingsRecord {
         enabled: bool,
         sample_per_million: i64,
         retention_hours: i32,
+        capture_headers: bool,
+        capture_bodies: bool,
+        max_body_bytes: i32,
         version: i64,
     ) -> Result<Self, DebugTraceWriteError> {
-        validate_settings(sample_per_million, retention_hours)?;
+        validate_settings(sample_per_million, retention_hours, max_body_bytes)?;
         if version < 1 {
             return Err(DebugTraceWriteError::Invariant);
         }
@@ -202,6 +229,9 @@ impl DebugTraceSettingsRecord {
             enabled,
             sample_per_million,
             retention_hours,
+            capture_headers,
+            capture_bodies,
+            max_body_bytes,
             version,
         })
     }
@@ -212,6 +242,9 @@ pub struct DebugTraceSettingsWrite {
     pub(super) enabled: bool,
     pub(super) sample_per_million: i64,
     pub(super) retention_hours: i32,
+    pub(super) capture_headers: bool,
+    pub(super) capture_bodies: bool,
+    pub(super) max_body_bytes: i32,
 }
 
 impl DebugTraceSettingsWrite {
@@ -220,11 +253,120 @@ impl DebugTraceSettingsWrite {
         sample_per_million: i64,
         retention_hours: i32,
     ) -> Result<Self, DebugTraceWriteError> {
-        validate_settings(sample_per_million, retention_hours)?;
+        validate_settings(
+            sample_per_million,
+            retention_hours,
+            DEFAULT_DEBUG_TRACE_BODY_BYTES,
+        )?;
         Ok(Self {
             enabled,
             sample_per_million,
             retention_hours,
+            capture_headers: false,
+            capture_bodies: false,
+            max_body_bytes: DEFAULT_DEBUG_TRACE_BODY_BYTES,
+        })
+    }
+
+    /// 设置 Header 与正文采集边界；正文开关不会隐式开启 Header。
+    pub fn with_diagnostics(
+        mut self,
+        capture_headers: bool,
+        capture_bodies: bool,
+        max_body_bytes: i32,
+    ) -> Result<Self, DebugTraceWriteError> {
+        validate_settings(
+            self.sample_per_million,
+            self.retention_hours,
+            max_body_bytes,
+        )?;
+        self.capture_headers = capture_headers;
+        self.capture_bodies = capture_bodies;
+        self.max_body_bytes = max_body_bytes;
+        Ok(self)
+    }
+}
+
+/// 下游请求在 HTTP 信任边界生成的永久脱敏快照。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DebugTraceRequestDiagnosticWrite {
+    pub(super) method: String,
+    pub(super) path: String,
+    pub(super) headers_json: Option<String>,
+    pub(super) body_json: Option<String>,
+}
+
+impl DebugTraceRequestDiagnosticWrite {
+    pub fn new(
+        method: String,
+        path: String,
+        headers_json: Option<String>,
+        body_json: Option<String>,
+    ) -> Result<Self, DebugTraceWriteError> {
+        if !valid_method(&method)
+            || !valid_path(&path)
+            || !valid_snapshot(headers_json.as_deref())
+            || !valid_snapshot(body_json.as_deref())
+        {
+            return Err(DebugTraceWriteError::InvalidInput);
+        }
+        Ok(Self {
+            method,
+            path,
+            headers_json,
+            body_json,
+        })
+    }
+}
+
+/// 单个上游 Attempt 的永久脱敏请求与响应快照。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DebugTraceAttemptDiagnosticWrite {
+    pub(super) request_method: String,
+    pub(super) request_url: String,
+    pub(super) request_headers_json: Option<String>,
+    pub(super) request_body_json: Option<String>,
+    pub(super) response_status: Option<i16>,
+    pub(super) response_headers_json: Option<String>,
+    pub(super) response_body_json: Option<String>,
+    pub(super) response_streamed: bool,
+}
+
+impl DebugTraceAttemptDiagnosticWrite {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        request_method: String,
+        request_url: String,
+        request_headers_json: Option<String>,
+        request_body_json: Option<String>,
+        response_status: Option<u16>,
+        response_headers_json: Option<String>,
+        response_body_json: Option<String>,
+        response_streamed: bool,
+    ) -> Result<Self, DebugTraceWriteError> {
+        let response_status = response_status
+            .map(i16::try_from)
+            .transpose()
+            .map_err(|_| DebugTraceWriteError::InvalidInput)?;
+        if !valid_method(&request_method)
+            || !valid_path(&request_url)
+            || response_status.is_some_and(|status| !(100..=599).contains(&status))
+            || !valid_snapshot(request_headers_json.as_deref())
+            || !valid_snapshot(request_body_json.as_deref())
+            || !valid_snapshot(response_headers_json.as_deref())
+            || !valid_snapshot(response_body_json.as_deref())
+        {
+            return Err(DebugTraceWriteError::InvalidInput);
+        }
+        Ok(Self {
+            request_method,
+            request_url,
+            request_headers_json,
+            request_body_json,
+            response_status,
+            response_headers_json,
+            response_body_json,
+            response_streamed,
         })
     }
 }
@@ -239,6 +381,7 @@ pub struct DebugTraceAttemptWrite {
     pub(super) upstream_status: Option<i16>,
     pub(super) retry_decision: bool,
     pub(super) elapsed_ms: i64,
+    pub(super) diagnostic: Option<DebugTraceAttemptDiagnosticWrite>,
 }
 
 impl DebugTraceAttemptWrite {
@@ -322,7 +465,14 @@ impl DebugTraceAttemptWrite {
             upstream_status,
             retry_decision,
             elapsed_ms,
+            diagnostic: None,
         })
+    }
+
+    #[must_use]
+    pub fn with_diagnostic(mut self, diagnostic: DebugTraceAttemptDiagnosticWrite) -> Self {
+        self.diagnostic = Some(diagnostic);
+        self
     }
 }
 
@@ -339,6 +489,7 @@ pub struct DebugTraceWrite {
     pub(super) outcome: DebugTraceOutcome,
     pub(super) routing_elapsed_ms: i64,
     pub(super) attempts: Vec<DebugTraceAttemptWrite>,
+    pub(super) downstream_diagnostic: Option<DebugTraceRequestDiagnosticWrite>,
 }
 
 impl DebugTraceWrite {
@@ -393,7 +544,17 @@ impl DebugTraceWrite {
             outcome,
             routing_elapsed_ms,
             attempts,
+            downstream_diagnostic: None,
         })
+    }
+
+    #[must_use]
+    pub fn with_downstream_diagnostic(
+        mut self,
+        diagnostic: DebugTraceRequestDiagnosticWrite,
+    ) -> Self {
+        self.downstream_diagnostic = Some(diagnostic);
+        self
     }
 
     pub(super) fn selected_target(&self) -> Option<(i64, i64)> {
@@ -416,6 +577,7 @@ pub struct DebugTraceListQuery {
     pub(super) limit: usize,
     pub(super) outcome: Option<DebugTraceOutcome>,
     pub(super) requested_model: Option<String>,
+    pub(super) request_id: Option<String>,
 }
 
 impl DebugTraceListQuery {
@@ -424,6 +586,7 @@ impl DebugTraceListQuery {
         limit: usize,
         outcome: Option<DebugTraceOutcome>,
         requested_model: Option<String>,
+        request_id: Option<String>,
     ) -> Result<Self, DebugTraceWriteError> {
         let requested_model = requested_model.filter(|model| !model.is_empty());
         if before.is_some_and(|value| value < 1)
@@ -431,6 +594,9 @@ impl DebugTraceListQuery {
             || requested_model
                 .as_deref()
                 .is_some_and(|model| !valid_model(model))
+            || request_id
+                .as_deref()
+                .is_some_and(|value| !valid_request_id(value))
         {
             return Err(DebugTraceWriteError::InvalidInput);
         }
@@ -439,6 +605,7 @@ impl DebugTraceListQuery {
             limit,
             outcome,
             requested_model,
+            request_id,
         })
     }
 }
@@ -453,6 +620,14 @@ pub struct DebugTraceAttemptRecord {
     pub(super) upstream_status: Option<i16>,
     pub(super) retry_decision: bool,
     pub(super) elapsed_ms: i64,
+    pub(super) request_method: Option<String>,
+    pub(super) request_url: Option<String>,
+    pub(super) request_headers_json: Option<String>,
+    pub(super) request_body_json: Option<String>,
+    pub(super) response_status: Option<i16>,
+    pub(super) response_headers_json: Option<String>,
+    pub(super) response_body_json: Option<String>,
+    pub(super) response_streamed: bool,
 }
 
 impl DebugTraceAttemptRecord {
@@ -488,6 +663,39 @@ impl DebugTraceAttemptRecord {
     pub const fn elapsed_ms(&self) -> i64 {
         self.elapsed_ms
     }
+
+    #[must_use]
+    pub fn request_method(&self) -> Option<&str> {
+        self.request_method.as_deref()
+    }
+    #[must_use]
+    pub fn request_url(&self) -> Option<&str> {
+        self.request_url.as_deref()
+    }
+    #[must_use]
+    pub fn request_headers_json(&self) -> Option<&str> {
+        self.request_headers_json.as_deref()
+    }
+    #[must_use]
+    pub fn request_body_json(&self) -> Option<&str> {
+        self.request_body_json.as_deref()
+    }
+    #[must_use]
+    pub const fn response_status(&self) -> Option<i16> {
+        self.response_status
+    }
+    #[must_use]
+    pub fn response_headers_json(&self) -> Option<&str> {
+        self.response_headers_json.as_deref()
+    }
+    #[must_use]
+    pub fn response_body_json(&self) -> Option<&str> {
+        self.response_body_json.as_deref()
+    }
+    #[must_use]
+    pub const fn response_streamed(&self) -> bool {
+        self.response_streamed
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -506,6 +714,10 @@ pub struct DebugTraceSummaryRecord {
     pub(super) selected_credential_id: Option<i64>,
     pub(super) routing_elapsed_ms: i64,
     pub(super) attempt_count: i32,
+    pub(super) downstream_method: Option<String>,
+    pub(super) downstream_path: Option<String>,
+    pub(super) downstream_headers_json: Option<String>,
+    pub(super) downstream_body_json: Option<String>,
     pub(super) created_at: DatabaseTimestamp,
 }
 
@@ -565,6 +777,22 @@ impl DebugTraceSummaryRecord {
     #[must_use]
     pub const fn attempt_count(&self) -> i32 {
         self.attempt_count
+    }
+    #[must_use]
+    pub fn downstream_method(&self) -> Option<&str> {
+        self.downstream_method.as_deref()
+    }
+    #[must_use]
+    pub fn downstream_path(&self) -> Option<&str> {
+        self.downstream_path.as_deref()
+    }
+    #[must_use]
+    pub fn downstream_headers_json(&self) -> Option<&str> {
+        self.downstream_headers_json.as_deref()
+    }
+    #[must_use]
+    pub fn downstream_body_json(&self) -> Option<&str> {
+        self.downstream_body_json.as_deref()
     }
     #[must_use]
     pub const fn created_at(&self) -> DatabaseTimestamp {
@@ -629,13 +857,37 @@ pub enum DebugTraceWriteError {
 fn validate_settings(
     sample_per_million: i64,
     retention_hours: i32,
+    max_body_bytes: i32,
 ) -> Result<(), DebugTraceWriteError> {
     if !(0..=MAX_DEBUG_TRACE_SAMPLE_PER_MILLION).contains(&sample_per_million)
         || !(1..=MAX_DEBUG_TRACE_RETENTION_HOURS).contains(&retention_hours)
+        || !(MIN_DEBUG_TRACE_BODY_BYTES..=MAX_DEBUG_TRACE_BODY_BYTES).contains(&max_body_bytes)
     {
         return Err(DebugTraceWriteError::InvalidInput);
     }
     Ok(())
+}
+
+pub(super) fn valid_method(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_DEBUG_TRACE_METHOD_BYTES
+        && value.trim() == value
+        && value.bytes().all(|byte| byte.is_ascii_uppercase())
+}
+
+pub(super) fn valid_path(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= MAX_DEBUG_TRACE_PATH_BYTES
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
+}
+
+pub(super) fn valid_snapshot(value: Option<&str>) -> bool {
+    value.is_none_or(|value| {
+        !value.is_empty()
+            && value.len() <= MAX_DEBUG_TRACE_SNAPSHOT_BYTES
+            && serde_json::from_str::<serde_json::Value>(value).is_ok()
+    })
 }
 
 pub(super) fn valid_request_id(value: &str) -> bool {
