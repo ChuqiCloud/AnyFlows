@@ -37,8 +37,8 @@ export function DebugTraceList({ traces, selectedId, onSelect }: DebugTraceListP
   })
 
   return (
-    <section className="overflow-hidden rounded-lg border border-[var(--hairline)] bg-surface-1" aria-label={t('debugTraces.listLabel')}>
-      <div className="hidden grid-cols-[7rem_minmax(10rem,1.35fr)_7.5rem_7.25rem_8.5rem_5.5rem_2rem] gap-3 border-b border-[var(--hairline)] bg-surface-2/60 px-4 py-2 text-[0.6875rem] font-medium text-muted-foreground lg:grid">
+    <section className="@container overflow-hidden rounded-lg border border-[var(--hairline)] bg-surface-1" aria-label={t('debugTraces.listLabel')}>
+      <div className="hidden grid-cols-[7rem_minmax(10rem,1.35fr)_7.5rem_7.25rem_8.5rem_5.5rem_2rem] gap-3 border-b border-[var(--hairline)] bg-surface-2/60 px-4 py-2 text-[0.6875rem] font-medium text-muted-foreground @min-[54rem]:grid">
         <span>{t('debugTraces.columns.time')}</span>
         <span>{t('debugTraces.columns.request')}</span>
         <span>{t('debugTraces.columns.protocol')}</span>
@@ -59,29 +59,29 @@ export function DebugTraceList({ traces, selectedId, onSelect }: DebugTraceListP
             className={cn(
               'group grid w-full gap-2 border-b border-[var(--hairline)] px-3 py-3 text-left outline-none transition-colors last:border-b-0',
               'hover:bg-surface-2/45 focus-visible:bg-surface-2 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50',
-              'lg:min-h-[4.25rem] lg:grid-cols-[7rem_minmax(10rem,1.35fr)_7.5rem_7.25rem_8.5rem_5.5rem_2rem] lg:items-center lg:gap-3 lg:px-4 lg:py-2.5',
+              '@min-[54rem]:min-h-[4.25rem] @min-[54rem]:grid-cols-[7rem_minmax(10rem,1.35fr)_7.5rem_7.25rem_8.5rem_5.5rem_2rem] @min-[54rem]:items-center @min-[54rem]:gap-3 @min-[54rem]:px-4 @min-[54rem]:py-2.5',
               selected && 'bg-brand/7 shadow-[inset_2px_0_0_var(--brand)]',
             )}
             onClick={() => onSelect(trace.id)}
           >
-            <div className="hidden text-xs tabular-nums text-muted-foreground lg:block">
+            <div className="hidden text-xs tabular-nums text-muted-foreground @min-[54rem]:block">
               {dateFormatter.format(trace.created_at * 1000)}
             </div>
 
             <div className="min-w-0">
-              <div className="flex min-w-0 items-center justify-between gap-3 lg:block">
+              <div className="flex min-w-0 items-center justify-between gap-3 @min-[54rem]:block">
                 <div className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-sm font-semibold">{trace.requested_model}</span>
-                  <span className="lg:hidden"><OutcomeBadge outcome={trace.outcome} /></span>
+                  <span className="@min-[54rem]:hidden"><OutcomeBadge outcome={trace.outcome} /></span>
                 </div>
-                <span className="shrink-0 text-[0.6875rem] tabular-nums text-muted-foreground lg:hidden">
+                <span className="shrink-0 text-[0.6875rem] tabular-nums text-muted-foreground @min-[54rem]:hidden">
                   {dateFormatter.format(trace.created_at * 1000)}
                 </span>
               </div>
               <div className="mt-1 truncate font-mono text-[0.6875rem] text-muted-foreground" title={trace.request_id}>{trace.request_id}</div>
             </div>
 
-            <div className="hidden min-w-0 text-xs lg:block">
+            <div className="hidden min-w-0 text-xs @min-[54rem]:block">
               <Badge className="max-w-full border-transparent bg-info/10 text-info">
                 <span className="truncate">{t(`debugTraces.protocol.${trace.downstream_protocol}`)}</span>
               </Badge>
@@ -90,20 +90,20 @@ export function DebugTraceList({ traces, selectedId, onSelect }: DebugTraceListP
               </div>
             </div>
 
-            <div className="hidden text-xs tabular-nums lg:block">
+            <div className="hidden text-xs tabular-nums @min-[54rem]:block">
               <div>{t('debugTraces.values.attemptsShort', { count: trace.attempt_count })}</div>
               <div className="mt-1 text-[0.6875rem] text-muted-foreground">{t('debugTraces.values.elapsed', { value: trace.routing_elapsed_ms })}</div>
             </div>
 
-            <div className="hidden min-w-0 text-xs lg:block">
+            <div className="hidden min-w-0 text-xs @min-[54rem]:block">
               <div className="truncate">{t('debugTraces.values.user', { id: trace.user_id })}</div>
               <div className="mt-1 truncate text-[0.6875rem] text-muted-foreground">{t('debugTraces.values.token', { id: trace.token_id })}</div>
             </div>
 
-            <div className="hidden lg:block"><OutcomeBadge outcome={trace.outcome} /></div>
-            <ChevronRight className="hidden size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 lg:block" aria-hidden="true" />
+            <div className="hidden @min-[54rem]:block"><OutcomeBadge outcome={trace.outcome} /></div>
+            <ChevronRight className="hidden size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 @min-[54rem]:block" aria-hidden="true" />
 
-            <div className="mt-1 grid grid-cols-3 divide-x divide-[var(--hairline)] border-t border-[var(--hairline)] pt-3 text-[0.6875rem] lg:hidden">
+            <div className="mt-1 grid grid-cols-3 divide-x divide-[var(--hairline)] border-t border-[var(--hairline)] pt-3 text-[0.6875rem] @min-[54rem]:hidden">
               <div className="min-w-0 pr-2">
                 <span className="flex items-center gap-1 text-muted-foreground"><Route className="size-3" aria-hidden="true" />{t('debugTraces.columns.protocol')}</span>
                 <span className="mt-1 block truncate font-medium">{t(`debugTraces.protocol.${trace.downstream_protocol}`)}</span>
