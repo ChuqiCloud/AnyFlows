@@ -1955,6 +1955,11 @@
     "subtitle": "Inspect routing decisions and safe diagnostic snapshots. Credentials are permanently redacted before persistence.",
     "count": "{{count}} traces on this page",
     "page": "Page {{page}}",
+    "pageSummary": "Page {{page}}, {{count}} records",
+    "pageNumber": "Page {{page}}",
+    "pageSize": "Per page",
+    "moreAvailable": "More records available",
+    "endReached": "Last page reached",
     "loading": "Loading debug traces",
     "pagination": "Debug trace pagination",
     "listLabel": "Debug trace list",
@@ -1964,13 +1969,16 @@
       "settings": "Trace settings",
       "filter": "Filter",
       "retry": "Try again",
+      "first": "First page",
       "previous": "Previous",
       "next": "Next",
+      "openDetails": "View trace details for {{model}}",
       "save": "Save settings",
       "saving": "Saving",
       "copy": "Copy content"
     },
     "filters": {
+      "label": "Filter trace records",
       "outcome": "Request outcome",
       "all": "All outcomes",
       "model": "Model name",
@@ -1984,8 +1992,22 @@
     },
     "values": {
       "attempts": "{{count}} candidate attempts",
+      "attemptsShort": "{{count}} attempts",
       "elapsed": "{{value}} ms",
-      "principal": "User #{{user}} / Token #{{token}}"
+      "principal": "User #{{user}} / Token #{{token}}",
+      "principalCompact": "#{{user}} / #{{token}}",
+      "routingCompact": "{{count}} attempts / {{value}} ms",
+      "convertedProtocol": "To {{protocol}}",
+      "user": "User #{{id}}",
+      "token": "Token #{{id}}"
+    },
+    "columns": {
+      "time": "Time",
+      "request": "Request",
+      "protocol": "Protocol",
+      "routing": "Routing",
+      "principal": "Principal",
+      "outcome": "Outcome"
     },
     "empty": {
       "title": "No debug traces yet",
@@ -1996,6 +2018,8 @@
       "body": "The service did not return a reliable trace list. Try again shortly."
     },
     "detail": {
+      "sheetTitle": "Debug trace details",
+      "sheetDescription": "Inspect sanitized request snapshots, route candidates, and upstream attempts.",
       "loading": "Loading trace details",
       "errorTitle": "Unable to load trace details",
       "errorBody": "This trace may have expired. Refresh the list and try again.",

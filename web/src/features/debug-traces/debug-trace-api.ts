@@ -9,8 +9,6 @@ import {
 } from '@/lib/api/generated/sdk.gen'
 import type { AdminDebugTraceSettingsRequest } from '@/lib/api/generated/types.gen'
 
-const PAGE_SIZE = 30
-
 export type DebugTraceFilters = {
   outcome?: 'succeeded' | 'failed'
   model?: string
@@ -45,15 +43,15 @@ export function useUpdateAdminDebugTraceSettings() {
 }
 
 /** 按稳定倒序游标读取一页脱敏追踪摘要。 */
-export function useAdminDebugTraces(before: number | undefined, filters: DebugTraceFilters) {
+export function useAdminDebugTraces(before: number | undefined, filters: DebugTraceFilters, pageSize: number) {
   return useQuery({
-    queryKey: ['admin-debug-traces', { before, ...filters }],
+    queryKey: ['admin-debug-traces', { before, pageSize, ...filters }],
     queryFn: async ({ signal }) => {
       const { data } = await listAdminDebugTraces({
         client: apiClient,
         query: {
           before,
-          limit: PAGE_SIZE,
+          limit: pageSize,
           outcome: filters.outcome,
           model: filters.model,
           request_id: filters.requestId,

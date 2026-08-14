@@ -81,8 +81,8 @@ export function DebugTraceSettingsSheet() {
           {t('debugTraces.actions.settings')}
         </Button>
       </SheetTrigger>
-      <SheetContent className="sm:max-w-md">
-        <SheetHeader className="border-b border-[var(--hairline)] pr-12">
+      <SheetContent className="gap-0 overflow-hidden data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+        <SheetHeader className="shrink-0 border-b border-[var(--hairline)] pr-12">
           <div className="flex items-center gap-2">
             <SheetTitle>{t('debugTraces.settings.title')}</SheetTitle>
             {query.data ? <Badge>{t('debugTraces.settings.version', { version: query.data.version })}</Badge> : null}
@@ -90,19 +90,20 @@ export function DebugTraceSettingsSheet() {
           <SheetDescription>{t('debugTraces.settings.description')}</SheetDescription>
         </SheetHeader>
 
-        {query.isPending ? (
-          <div className="grid gap-5 px-4" aria-label={t('debugTraces.settings.loading')}>
-            {[0, 1, 2].map((item) => <Skeleton key={item} className="h-16 rounded-lg" />)}
-          </div>
-        ) : query.isError ? (
-          <div className="mx-4 rounded-lg border border-destructive/25 bg-destructive/8 p-4" role="alert">
-            <p className="text-sm font-semibold text-destructive">{t('debugTraces.settings.loadError')}</p>
-            <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void query.refetch()}>
-              {t('debugTraces.actions.retry')}
-            </Button>
-          </div>
-        ) : (
-          <div className="grid gap-5 px-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-4">
+          {query.isPending ? (
+            <div className="grid gap-5 px-4" aria-label={t('debugTraces.settings.loading')}>
+              {[0, 1, 2].map((item) => <Skeleton key={item} className="h-16 rounded-lg" />)}
+            </div>
+          ) : query.isError ? (
+            <div className="mx-4 rounded-lg border border-destructive/25 bg-destructive/8 p-4" role="alert">
+              <p className="text-sm font-semibold text-destructive">{t('debugTraces.settings.loadError')}</p>
+              <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => void query.refetch()}>
+                {t('debugTraces.actions.retry')}
+              </Button>
+            </div>
+          ) : (
+            <div className="grid gap-5 px-4">
             <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
               <div>
                 <Label htmlFor="debug-trace-enabled">{t('debugTraces.settings.enabled')}</Label>
@@ -177,10 +178,11 @@ export function DebugTraceSettingsSheet() {
               <ShieldCheck className="mt-0.5 size-4 shrink-0 text-info" aria-hidden="true" />
               <p className="text-xs leading-5 text-muted-foreground">{t('debugTraces.settings.security')}</p>
             </div>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
 
-        <SheetFooter className="border-t border-[var(--hairline)]">
+        <SheetFooter className="mt-0 shrink-0 border-t border-[var(--hairline)]">
           <div className="min-h-5 text-xs">
             {mutation.isError ? <span role="alert" className="text-destructive">{t('debugTraces.settings.saveError')}</span>
               : mutation.isSuccess && !dirty ? <span className="inline-flex items-center gap-1.5 text-success"><Check className="size-3.5" aria-hidden="true" />{t('debugTraces.settings.saved')}</span>

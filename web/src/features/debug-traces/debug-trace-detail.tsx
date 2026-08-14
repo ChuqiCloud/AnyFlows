@@ -49,7 +49,7 @@ export function DebugTraceDetail({ detail, pending, error, onRetry }: DebugTrace
   const createdAt = new Intl.DateTimeFormat(i18n.language, { dateStyle: 'medium', timeStyle: 'medium' }).format(trace.created_at * 1000)
   return (
     <div className="min-w-0">
-      <header className="border-b border-[var(--hairline)] p-4">
+      <header className="sticky top-0 border-b border-[var(--hairline)] bg-popover/95 p-5 pr-12 supports-backdrop-filter:backdrop-blur-md">
         <div className="flex flex-wrap items-center gap-2">
           <OutcomeBadge outcome={trace.outcome} />
           <h3 className="text-sm font-semibold">{trace.requested_model}</h3>
@@ -65,7 +65,7 @@ export function DebugTraceDetail({ detail, pending, error, onRetry }: DebugTrace
         </dl>
       </header>
 
-      <div className="grid gap-5 p-4">
+      <div className="grid gap-5 p-5">
         <details className="group border border-[var(--hairline)] bg-surface-1/30" open>
           <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 outline-none hover:bg-surface-2/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50">
             <ChevronRight className="size-3.5 shrink-0 transition-transform group-open:rotate-90" aria-hidden="true" />

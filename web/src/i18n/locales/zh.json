@@ -2033,6 +2033,11 @@
     "subtitle": "按请求查看路由决策与安全诊断快照，所有凭据在写盘前永久脱敏。",
     "count": "本页 {{count}} 条追踪",
     "page": "第 {{page}} 页",
+    "pageSummary": "第 {{page}} 页，本页 {{count}} 条",
+    "pageNumber": "第 {{page}} 页",
+    "pageSize": "每页",
+    "moreAvailable": "还有更多记录",
+    "endReached": "已到最后一页",
     "loading": "正在加载调试追踪",
     "pagination": "调试追踪分页",
     "listLabel": "调试追踪列表",
@@ -2042,13 +2047,16 @@
       "settings": "追踪设置",
       "filter": "筛选",
       "retry": "重试",
+      "first": "第一页",
       "previous": "上一页",
       "next": "下一页",
+      "openDetails": "查看 {{model}} 的追踪详情",
       "save": "保存设置",
       "saving": "正在保存",
       "copy": "复制内容"
     },
     "filters": {
+      "label": "筛选追踪记录",
       "outcome": "请求结果",
       "all": "全部结果",
       "model": "模型名称",
@@ -2062,8 +2070,22 @@
     },
     "values": {
       "attempts": "{{count}} 次候选尝试",
+      "attemptsShort": "{{count}} 次尝试",
       "elapsed": "{{value}} ms",
-      "principal": "用户 #{{user}} / 令牌 #{{token}}"
+      "principal": "用户 #{{user}} / 令牌 #{{token}}",
+      "principalCompact": "#{{user}} / #{{token}}",
+      "routingCompact": "{{count}} 次 / {{value}} ms",
+      "convertedProtocol": "转为 {{protocol}}",
+      "user": "用户 #{{id}}",
+      "token": "令牌 #{{id}}"
+    },
+    "columns": {
+      "time": "时间",
+      "request": "请求",
+      "protocol": "协议",
+      "routing": "路由",
+      "principal": "调用主体",
+      "outcome": "结果"
     },
     "empty": {
       "title": "还没有调试追踪",
@@ -2074,6 +2096,8 @@
       "body": "服务暂时没有返回可靠的追踪列表，请稍后重试。"
     },
     "detail": {
+      "sheetTitle": "调试追踪详情",
+      "sheetDescription": "查看脱敏请求快照、候选路由和上游尝试。",
       "loading": "正在加载追踪详情",
       "errorTitle": "无法读取追踪详情",
       "errorBody": "这条追踪可能已过期清理，请刷新列表后重试。",
