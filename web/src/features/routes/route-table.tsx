@@ -66,7 +66,7 @@ export function RouteTable({ routes, pendingToggleId, onEdit, onDelete, onToggle
 
       <div className="grid gap-2 md:hidden">
         {routes.map((route) => (
-          <article key={route.id} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
+          <article key={route.id} className="min-w-0 rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
             <div className="flex items-start justify-between gap-3"><RouteIdentity route={route} /><RouteActions route={route} pending={pendingToggleId === route.id} onEdit={onEdit} onDelete={onDelete} onToggle={onToggle} /></div>
             <div className="mt-3 grid gap-2 border-t border-[var(--hairline)] pt-3"><StrategyBadges route={route} /><CandidateSummary route={route} /><HealthSummary route={route} language={i18n.language} /></div>
           </article>

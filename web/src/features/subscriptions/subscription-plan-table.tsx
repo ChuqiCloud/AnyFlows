@@ -67,7 +67,7 @@ export function SubscriptionPlanTable({ plans, onDisable }: SubscriptionPlanTabl
 
       <div className="grid gap-2 md:hidden">
         {plans.map((plan) => (
-          <article key={plan.plan_id} className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
+          <article key={plan.plan_id} className="min-w-0 rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
             <div className="flex items-start justify-between gap-3">
               <PlanIdentity plan={plan} />
               <PlanActions plan={plan} onDisable={onDisable} />

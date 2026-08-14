@@ -3,6 +3,8 @@ import { Plus, RefreshCw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { DataTablePagination, DEFAULT_TABLE_PAGE_SIZE } from '@/components/data-table/data-table-pagination'
+import { useLoadedCursorPagination } from '@/components/data-table/use-table-pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAdminGroupCatalog } from '@/features/groups/group-api'
 import type { AdminUser } from '@/lib/api/generated/types.gen'
@@ -17,14 +19,20 @@ type EditorState = AdminUser | 'create' | undefined
 
 export function UserPage() {
   const { t } = useTranslation()
-  const usersQuery = useAdminUsers()
+  const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE)
+  const usersQuery = useAdminUsers(pageSize)
+  const pagination = useLoadedCursorPagination({
+    availablePageCount: usersQuery.data?.pages.length ?? 1,
+    pageSize,
+    onPageSizeChange: setPageSize,
+  })
   const groupsQuery = useAdminGroupCatalog()
   const toggleMutation = useUpdateAdminUser()
   const [editor, setEditor] = useState<EditorState>()
   const [deleting, setDeleting] = useState<AdminUser>()
   const [togglingId, setTogglingId] = useState<number>()
   const [walletUserId, setWalletUserId] = useState<number>()
-  const users = useMemo(() => usersQuery.data?.pages.flatMap((page) => page.users) ?? [], [usersQuery.data])
+  const users = usersQuery.data?.pages[pagination.pageIndex]?.users ?? []
   const groupNames = useMemo(() => new Map((groupsQuery.data ?? []).map((group) => [group.id, group.display_name])), [groupsQuery.data])
   const walletUser = users.find((user) => user.id === walletUserId)
 
@@ -57,7 +65,7 @@ export function UserPage() {
 
       <div className="flex items-center justify-between border-y border-[var(--hairline)] py-2 text-xs text-muted-foreground">
         <span>{t('users.count', { count: users.length })}</span>
-        <span>{t('users.pages', { count: usersQuery.data?.pages.length ?? 1 })}</span>
+        <span>{t('users.pages', { count: pagination.currentPage })}</span>
       </div>
 
       {toggleMutation.isError ? <div role="alert" className="rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2 text-xs text-destructive">{t('users.error.toggle')}</div> : null}
@@ -74,7 +82,21 @@ export function UserPage() {
       ) : <UserTable users={users} groupNames={groupNames} togglingId={togglingId} onDelete={setDeleting} onEdit={setEditor} onToggle={(user) => void toggle(user)} onWallet={(user) => setWalletUserId(user.id)} />}
 
       {usersQuery.isFetchNextPageError ? <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/20 bg-destructive/8 px-3 py-2 text-xs text-destructive"><span>{t('users.error.more')}</span><Button type="button" size="sm" variant="ghost" onClick={() => void usersQuery.fetchNextPage()}>{t('users.actions.retry')}</Button></div> : null}
-      {usersQuery.hasNextPage && !usersQuery.isFetchNextPageError ? <Button type="button" variant="secondary" className="self-center" disabled={usersQuery.isFetchingNextPage} onClick={() => void usersQuery.fetchNextPage()}>{t(usersQuery.isFetchingNextPage ? 'users.loadingMore' : 'users.actions.loadMore')}</Button> : null}
+      {!usersQuery.isPending && !initialError ? (
+        <DataTablePagination
+          currentPage={pagination.currentPage}
+          availablePageCount={pagination.availablePageCount}
+          pageSize={pagination.pageSize}
+          itemCount={users.length}
+          hasNextPage={pagination.hasLoadedNextPage || Boolean(usersQuery.hasNextPage)}
+          fetching={usersQuery.isFetching}
+          onFirstPage={pagination.goToFirstPage}
+          onPreviousPage={pagination.goToPreviousPage}
+          onPageSelect={pagination.selectPage}
+          onNextPage={() => void pagination.goToNextPage(Boolean(usersQuery.hasNextPage), async () => (await usersQuery.fetchNextPage()).isSuccess)}
+          onPageSizeChange={pagination.setPageSize}
+        />
+      ) : null}
 
       <UserEditorSheet open={editor !== undefined} user={editor === 'create' ? undefined : editor} onOpenChange={(open) => !open && setEditor(undefined)} />
       <UserWalletSheet open={walletUser !== undefined} user={walletUser} onOpenChange={(open) => !open && setWalletUserId(undefined)} />

@@ -3,6 +3,19 @@
     "name": "AnyFlows",
     "scope": "Gateway"
   },
+  "tablePagination": {
+    "label": "Table pagination",
+    "pageSummary": "Page {{page}}, {{count}} records",
+    "pageNumber": "Page {{page}}",
+    "pageSize": "Per page",
+    "moreAvailable": "More records available",
+    "endReached": "Last page reached",
+    "actions": {
+      "first": "First page",
+      "previous": "Previous",
+      "next": "Next"
+    }
+  },
   "nav": {
     "label": "Primary navigation",
     "groups": {

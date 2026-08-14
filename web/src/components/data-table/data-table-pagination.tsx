@@ -3,13 +3,14 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/select'
-import { buildCursorPageItems } from './debug-trace-pagination-model'
+import { buildPaginationItems } from './data-table-pagination-model'
 
-const pageSizeOptions = [20, 30, 50, 100] as const
+export const DEFAULT_TABLE_PAGE_SIZE = 30
+export const TABLE_PAGE_SIZE_OPTIONS = [20, 30, 50, 100] as const
 
-type DebugTracePaginationProps = {
+export type DataTablePaginationProps = {
   currentPage: number
-  visitedPageCount: number
+  availablePageCount: number
   pageSize: number
   itemCount: number
   hasNextPage: boolean
@@ -21,10 +22,10 @@ type DebugTracePaginationProps = {
   onPageSizeChange: (pageSize: number) => void
 }
 
-/** 游标分页只开放已访问页跳转，并明确展示当前页是否仍有后续记录。 */
-export function DebugTracePagination({
+/** 统一表格分页外观，并明确区分已知可访问页与未知远端页。 */
+export function DataTablePagination({
   currentPage,
-  visitedPageCount,
+  availablePageCount,
   pageSize,
   itemCount,
   hasNextPage,
@@ -34,26 +35,26 @@ export function DebugTracePagination({
   onPageSelect,
   onNextPage,
   onPageSizeChange,
-}: DebugTracePaginationProps) {
+}: DataTablePaginationProps) {
   const { t } = useTranslation()
-  const pageItems = buildCursorPageItems(currentPage, visitedPageCount)
+  const pageItems = buildPaginationItems(currentPage, availablePageCount)
 
   return (
     <footer className="flex min-h-10 flex-col gap-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <span>{t('debugTraces.pageSummary', { page: currentPage, count: itemCount })}</span>
+        <span>{t('tablePagination.pageSummary', { page: currentPage, count: itemCount })}</span>
         <span aria-hidden="true">·</span>
         <span className={hasNextPage ? 'text-info' : undefined}>
-          {t(hasNextPage ? 'debugTraces.moreAvailable' : 'debugTraces.endReached')}
+          {t(hasNextPage ? 'tablePagination.moreAvailable' : 'tablePagination.endReached')}
         </span>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <nav className="flex items-center gap-1" aria-label={t('debugTraces.pagination')}>
-          <Button type="button" size="icon-sm" variant="ghost" aria-label={t('debugTraces.actions.first')} disabled={currentPage === 1 || fetching} onClick={onFirstPage}>
+        <nav className="flex items-center gap-1" aria-label={t('tablePagination.label')}>
+          <Button type="button" size="icon-sm" variant="ghost" aria-label={t('tablePagination.actions.first')} disabled={currentPage === 1 || fetching} onClick={onFirstPage}>
             <ChevronsLeft aria-hidden="true" />
           </Button>
-          <Button type="button" size="icon-sm" variant="ghost" aria-label={t('debugTraces.actions.previous')} disabled={currentPage === 1 || fetching} onClick={onPreviousPage}>
+          <Button type="button" size="icon-sm" variant="ghost" aria-label={t('tablePagination.actions.previous')} disabled={currentPage === 1 || fetching} onClick={onPreviousPage}>
             <ChevronLeft aria-hidden="true" />
           </Button>
           {pageItems.map((item, index) => item === 'ellipsis'
@@ -65,22 +66,22 @@ export function DebugTracePagination({
                 size="icon-sm"
                 variant={item === currentPage ? 'secondary' : 'ghost'}
                 aria-current={item === currentPage ? 'page' : undefined}
-                aria-label={t('debugTraces.pageNumber', { page: item })}
+                aria-label={t('tablePagination.pageNumber', { page: item })}
                 disabled={fetching}
                 onClick={() => onPageSelect(item)}
               >
                 {item}
               </Button>
             ))}
-          <Button type="button" size="icon-sm" variant="ghost" aria-label={t('debugTraces.actions.next')} disabled={!hasNextPage || fetching} onClick={onNextPage}>
+          <Button type="button" size="icon-sm" variant="ghost" aria-label={t('tablePagination.actions.next')} disabled={!hasNextPage || fetching} onClick={onNextPage}>
             <ChevronRight aria-hidden="true" />
           </Button>
         </nav>
 
         <label className="flex items-center gap-2 whitespace-nowrap">
-          <span>{t('debugTraces.pageSize')}</span>
+          <span>{t('tablePagination.pageSize')}</span>
           <Select className="h-8 w-20 text-xs" value={String(pageSize)} onChange={(event) => onPageSizeChange(Number(event.target.value))}>
-            {pageSizeOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+            {TABLE_PAGE_SIZE_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}
           </Select>
         </label>
       </div>

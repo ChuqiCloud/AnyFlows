@@ -17,8 +17,8 @@ export const adminRedemptionBatchesQueryKey = ['admin-redemption-batches'] as co
 export const adminRedemptionAuditQueryKey = ['admin-redemption-audit'] as const
 
 /** 按结构化条件读取管理员兑换码运营审计报表。 */
-export function useAdminRedemptionAudit(filters: RedemptionAuditFilters) {
-  const queryKey = [...adminRedemptionAuditQueryKey, filters] as const
+export function useAdminRedemptionAudit(filters: RedemptionAuditFilters, pageSize = 25) {
+  const queryKey = [...adminRedemptionAuditQueryKey, filters, { pageSize }] as const
   return useInfiniteQuery({
     queryKey,
     initialPageParam: undefined as number | undefined,
@@ -27,7 +27,7 @@ export function useAdminRedemptionAudit(filters: RedemptionAuditFilters) {
         client: apiClient,
         query: {
           before: pageParam,
-          limit: 25,
+          limit: pageSize,
           batch_id: filters.batchId || undefined,
           status: filters.status,
           redeemed_after: filters.redeemedAfter,
@@ -42,14 +42,14 @@ export function useAdminRedemptionAudit(filters: RedemptionAuditFilters) {
 }
 
 /** 按批次主键倒序加载管理列表，下一页只读取更早的批次。 */
-export function useAdminRedemptionBatches() {
+export function useAdminRedemptionBatches(pageSize = 25) {
   return useInfiniteQuery({
-    queryKey: adminRedemptionBatchesQueryKey,
+    queryKey: [...adminRedemptionBatchesQueryKey, { pageSize }],
     initialPageParam: undefined as number | undefined,
     queryFn: async ({ pageParam, signal }) => {
       const { data } = await listAdminRedemptionBatches({
         client: apiClient,
-        query: { before: pageParam, limit: 25 },
+        query: { before: pageParam, limit: pageSize },
         signal,
       })
       return data

@@ -3,6 +3,19 @@
     "name": "AnyFlows",
     "scope": "聚合网关"
   },
+  "tablePagination": {
+    "label": "表格分页",
+    "pageSummary": "第 {{page}} 页，本页 {{count}} 条",
+    "pageNumber": "第 {{page}} 页",
+    "pageSize": "每页",
+    "moreAvailable": "还有更多记录",
+    "endReached": "已到最后一页",
+    "actions": {
+      "first": "第一页",
+      "previous": "上一页",
+      "next": "下一页"
+    }
+  },
   "nav": {
     "label": "主导航",
     "groups": {

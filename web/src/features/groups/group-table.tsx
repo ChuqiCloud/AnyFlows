@@ -128,7 +128,7 @@ export function GroupTable({ groups, onDelete, onEdit }: GroupTableProps) {
 
       <div className="grid gap-2 md:hidden">
         {groups.map((group) => (
-          <article key={group.id} className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
+          <article key={group.id} className="min-w-0 rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-semibold">{group.display_name}</h2>

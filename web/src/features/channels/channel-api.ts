@@ -17,14 +17,14 @@ export const adminChannelsQueryKey = ['admin-channels'] as const
 export const adminChannelQueryKey = (channelId: number) => ['admin-channel', channelId] as const
 
 /** 按服务端游标加载渠道，页面只在用户明确请求时继续翻页。 */
-export function useAdminChannels() {
+export function useAdminChannels(pageSize = 50) {
   return useInfiniteQuery({
-    queryKey: adminChannelsQueryKey,
+    queryKey: [...adminChannelsQueryKey, { pageSize }],
     initialPageParam: undefined as number | undefined,
     queryFn: async ({ pageParam, signal }) => {
       const { data } = await listAdminChannels({
         client: apiClient,
-        query: { after: pageParam, limit: 50 },
+        query: { after: pageParam, limit: pageSize },
         signal,
       })
       return data

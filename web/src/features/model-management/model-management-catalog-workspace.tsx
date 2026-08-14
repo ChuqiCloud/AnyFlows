@@ -1,8 +1,10 @@
 import { Plus, RefreshCw } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { DataTablePagination, DEFAULT_TABLE_PAGE_SIZE } from '@/components/data-table/data-table-pagination'
+import { useLoadedCursorPagination } from '@/components/data-table/use-table-pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminModel } from '@/lib/api/generated/types.gen'
 import { useAdminModelMetadata } from './model-management-api'
@@ -15,10 +17,16 @@ type EditorState = AdminModel | 'create' | undefined
 /** 管理人工核实后的模型商品元数据及其运营状态。 */
 export function ModelManagementCatalogWorkspace() {
   const { t } = useTranslation()
-  const modelsQuery = useAdminModelMetadata()
+  const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE)
+  const modelsQuery = useAdminModelMetadata(pageSize)
+  const pagination = useLoadedCursorPagination({
+    availablePageCount: modelsQuery.data?.pages.length ?? 1,
+    pageSize,
+    onPageSizeChange: setPageSize,
+  })
   const [editor, setEditor] = useState<EditorState>()
   const [deleting, setDeleting] = useState<AdminModel>()
-  const models = useMemo(() => modelsQuery.data?.pages.flatMap((page) => page.models) ?? [], [modelsQuery.data])
+  const models = modelsQuery.data?.pages[pagination.pageIndex]?.models ?? []
   const activeCount = models.filter((model) => model.lifecycle === 'active').length
   const initialError = modelsQuery.isError && modelsQuery.data === undefined
 
@@ -56,10 +64,20 @@ export function ModelManagementCatalogWorkspace() {
           <Button type="button" size="sm" variant="ghost" onClick={() => void modelsQuery.fetchNextPage()}>{t('modelManagement.actions.retry')}</Button>
         </div>
       ) : null}
-      {modelsQuery.hasNextPage && !modelsQuery.isFetchNextPageError ? (
-        <Button type="button" variant="secondary" className="justify-self-center" disabled={modelsQuery.isFetchingNextPage} onClick={() => void modelsQuery.fetchNextPage()}>
-          {t(modelsQuery.isFetchingNextPage ? 'modelManagement.loadingMore' : 'modelManagement.actions.loadMore')}
-        </Button>
+      {!modelsQuery.isPending && !initialError ? (
+        <DataTablePagination
+          currentPage={pagination.currentPage}
+          availablePageCount={pagination.availablePageCount}
+          pageSize={pagination.pageSize}
+          itemCount={models.length}
+          hasNextPage={pagination.hasLoadedNextPage || Boolean(modelsQuery.hasNextPage)}
+          fetching={modelsQuery.isFetching}
+          onFirstPage={pagination.goToFirstPage}
+          onPreviousPage={pagination.goToPreviousPage}
+          onPageSelect={pagination.selectPage}
+          onNextPage={() => void pagination.goToNextPage(Boolean(modelsQuery.hasNextPage), async () => (await modelsQuery.fetchNextPage()).isSuccess)}
+          onPageSizeChange={pagination.setPageSize}
+        />
       ) : null}
 
       <ModelManagementEditorSheet open={editor !== undefined} model={editor === 'create' ? undefined : editor} onOpenChange={(open) => !open && setEditor(undefined)} />

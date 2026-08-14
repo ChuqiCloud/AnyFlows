@@ -133,7 +133,7 @@ export function UserTable(props: UserTableProps) {
 
       <div className="grid gap-2 md:hidden">
         {props.users.map((user) => (
-          <article key={user.id} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
+          <article key={user.id} className="min-w-0 rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
             <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="truncate text-sm font-semibold">{user.username}</h2><p className="mt-1 truncate text-[0.6875rem] text-muted-foreground">{user.email ?? t('users.values.noEmail')} · #{user.id}</p><div className="mt-2"><IdentityBadges user={user} /></div></div><RowActions user={user} toggling={props.togglingId === user.id} onDelete={props.onDelete} onEdit={props.onEdit} onToggle={props.onToggle} onWallet={props.onWallet} /></div>
             <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--hairline)] pt-3"><GroupValue user={user} groupNames={props.groupNames} /><QuotaValue user={user} /></div>
             <div className="mt-3"><TrafficValue user={user} /></div>

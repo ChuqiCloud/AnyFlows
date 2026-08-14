@@ -36,14 +36,14 @@ export function useAdminUser(userId?: number) {
 }
 
 /** 按服务端单调 ID 游标加载用户，只在管理员明确请求时读取下一页。 */
-export function useAdminUsers() {
+export function useAdminUsers(pageSize = 25) {
   return useInfiniteQuery({
-    queryKey: adminUsersQueryKey,
+    queryKey: [...adminUsersQueryKey, { pageSize }],
     initialPageParam: undefined as number | undefined,
     queryFn: async ({ pageParam, signal }) => {
       const { data } = await listAdminUsers({
         client: apiClient,
-        query: { after: pageParam, limit: 25 },
+        query: { after: pageParam, limit: pageSize },
         signal,
       })
       return data

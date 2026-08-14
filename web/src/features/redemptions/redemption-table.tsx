@@ -66,7 +66,7 @@ export function RedemptionTable({ batches, onDisable }: RedemptionTableProps) {
 
       <div className="grid gap-2 md:hidden">
         {batches.map((batch) => (
-          <article key={batch.batch_id} className="rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
+          <article key={batch.batch_id} className="min-w-0 rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
             <div className="flex items-start justify-between gap-3">
               <BatchIdentity batch={batch} />
               <BatchActions batch={batch} onDisable={onDisable} />

@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { DataTablePagination, DEFAULT_TABLE_PAGE_SIZE } from '@/components/data-table/data-table-pagination'
+import { useLoadedCursorPagination } from '@/components/data-table/use-table-pagination'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminModelPriceSourcePreview } from '@/lib/api/generated/types.gen'
@@ -29,7 +31,13 @@ import { ModelPriceTable, type ModelPriceRow } from './model-price-table'
 /** 组合权威模型、正式价格与公开来源证据，形成可批量提交的管理工作区。 */
 export function ModelPriceWorkspace() {
   const { t } = useTranslation()
-  const modelsQuery = useAdminModelMetadata()
+  const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE)
+  const modelsQuery = useAdminModelMetadata(pageSize)
+  const pagination = useLoadedCursorPagination({
+    availablePageCount: modelsQuery.data?.pages.length ?? 1,
+    pageSize,
+    onPageSizeChange: setPageSize,
+  })
   const pricesQuery = useAdminModelPrices()
   const previewMutation = usePreviewAdminModelPrices()
   const applyMutation = useApplyAdminModelPrices()
@@ -43,6 +51,10 @@ export function ModelPriceWorkspace() {
 
   const preview = previews[priceSource]
   const models = useMemo(() => modelsQuery.data?.pages.flatMap((page) => page.models) ?? [], [modelsQuery.data])
+  const currentModels = useMemo(
+    () => modelsQuery.data?.pages[pagination.pageIndex]?.models ?? [],
+    [modelsQuery.data, pagination.pageIndex],
+  )
   const prices = useMemo(() => pricesQuery.data?.pages.flatMap((page) => page.prices) ?? [], [pricesQuery.data])
   const priceByModel = useMemo(() => new Map(prices.map((price) => [price.model, price])), [prices])
   const candidateByModel = useMemo(() => new Map(preview?.candidates.map((candidate) => [candidate.model, candidate]) ?? []), [preview])
@@ -54,6 +66,10 @@ export function ModelPriceWorkspace() {
     staged: staged[model.model],
   })), [candidateByModel, models, priceByModel, priceSource, staged])
   const rowByModel = useMemo(() => new Map(rows.map((row) => [row.model.model, row])), [rows])
+  const visibleRows = useMemo(() => currentModels.flatMap((model) => {
+    const row = rowByModel.get(model.model)
+    return row ? [row] : []
+  }), [currentModels, rowByModel])
   const priceIndexComplete = !pricesQuery.hasNextPage
   const pricedCount = rows.filter((row) => row.price !== undefined).length
   const freeCount = rows.filter((row) => row.price?.billing_mode === 'free').length
@@ -193,7 +209,7 @@ export function ModelPriceWorkspace() {
       ) : (
         <ModelPriceTable
           priceIndexComplete={priceIndexComplete}
-          rows={rows}
+          rows={visibleRows}
           selected={selected}
           onEdit={(row) => setEditingModel(row.model.model)}
           onSelect={(model, checked) => setSelected((current) => {
@@ -208,10 +224,20 @@ export function ModelPriceWorkspace() {
       {(modelsQuery.isFetchNextPageError || pricesQuery.isFetchNextPageError) ? (
         <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{t('modelManagement.prices.pagination.moreError')}</p>
       ) : null}
-      {modelsQuery.hasNextPage ? (
-        <Button type="button" variant="secondary" className="justify-self-center" disabled={modelsQuery.isFetchingNextPage} onClick={() => void modelsQuery.fetchNextPage()}>
-          {t(modelsQuery.isFetchingNextPage ? 'modelManagement.loadingMore' : 'modelManagement.prices.pagination.loadMoreModels')}
-        </Button>
+      {!modelsQuery.isPending && !initialError ? (
+        <DataTablePagination
+          currentPage={pagination.currentPage}
+          availablePageCount={pagination.availablePageCount}
+          pageSize={pagination.pageSize}
+          itemCount={visibleRows.length}
+          hasNextPage={pagination.hasLoadedNextPage || Boolean(modelsQuery.hasNextPage)}
+          fetching={modelsQuery.isFetching}
+          onFirstPage={pagination.goToFirstPage}
+          onPreviousPage={pagination.goToPreviousPage}
+          onPageSelect={pagination.selectPage}
+          onNextPage={() => void pagination.goToNextPage(Boolean(modelsQuery.hasNextPage), async () => (await modelsQuery.fetchNextPage()).isSuccess)}
+          onPageSizeChange={pagination.setPageSize}
+        />
       ) : null}
 
       <ModelPriceEditorSheet

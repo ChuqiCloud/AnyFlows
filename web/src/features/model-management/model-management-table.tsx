@@ -68,7 +68,7 @@ export function ModelManagementTable({ models, onDelete, onEdit }: ModelManageme
 
       <div className="grid gap-2 md:hidden">
         {models.map((model) => (
-          <article key={model.id} className="rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
+          <article key={model.id} className="min-w-0 rounded-xl border border-[var(--hairline)] bg-surface-1 p-3">
             <div className="flex items-start justify-between gap-3">
               <ModelIdentity model={model} />
               <RowActions model={model} onDelete={onDelete} onEdit={onEdit} />

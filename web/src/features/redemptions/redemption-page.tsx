@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { DataTablePagination, DEFAULT_TABLE_PAGE_SIZE } from '@/components/data-table/data-table-pagination'
+import { useLoadedCursorPagination } from '@/components/data-table/use-table-pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminRedemptionBatch, IssuedAdminRedemptionBatch } from '@/lib/api/generated/types.gen'
 import { useAdminRedemptionBatches } from './redemption-api'
@@ -16,11 +18,17 @@ import { RedemptionAuditPanel } from './redemption-audit-panel'
 export function RedemptionPage() {
   const { t } = useTranslation()
   const [mode, setMode] = useState<'batches' | 'audit'>('batches')
-  const batchesQuery = useAdminRedemptionBatches()
+  const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE)
+  const batchesQuery = useAdminRedemptionBatches(pageSize)
+  const pagination = useLoadedCursorPagination({
+    availablePageCount: batchesQuery.data?.pages.length ?? 1,
+    pageSize,
+    onPageSizeChange: setPageSize,
+  })
   const [creating, setCreating] = useState(false)
   const [issued, setIssued] = useState<IssuedAdminRedemptionBatch>()
   const [disabling, setDisabling] = useState<AdminRedemptionBatch>()
-  const batches = batchesQuery.data?.pages.flatMap((page) => page.batches) ?? []
+  const batches = batchesQuery.data?.pages[pagination.pageIndex]?.batches ?? []
   const now = Math.floor(Date.now() / 1_000)
   const activeCount = batches.filter((batch) => (
     batch.status === 'active' && (batch.expires_at === null || batch.expires_at > now)
@@ -99,19 +107,19 @@ export function RedemptionPage() {
                   </Button>
                 </div>
               ) : null}
-              {batchesQuery.hasNextPage && !batchesQuery.isFetchNextPageError ? (
-                <div className="flex justify-center border-t border-[var(--hairline)] pt-4">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    disabled={batchesQuery.isFetchingNextPage}
-                    onClick={() => void batchesQuery.fetchNextPage()}
-                  >
-                    {t(batchesQuery.isFetchingNextPage ? 'redemptions.actions.loadingMore' : 'redemptions.actions.loadMore')}
-                  </Button>
-                </div>
-              ) : null}
+              <DataTablePagination
+                currentPage={pagination.currentPage}
+                availablePageCount={pagination.availablePageCount}
+                pageSize={pagination.pageSize}
+                itemCount={batches.length}
+                hasNextPage={pagination.hasLoadedNextPage || Boolean(batchesQuery.hasNextPage)}
+                fetching={batchesQuery.isFetching}
+                onFirstPage={pagination.goToFirstPage}
+                onPreviousPage={pagination.goToPreviousPage}
+                onPageSelect={pagination.selectPage}
+                onNextPage={() => void pagination.goToNextPage(Boolean(batchesQuery.hasNextPage), async () => (await batchesQuery.fetchNextPage()).isSuccess)}
+                onPageSizeChange={pagination.setPageSize}
+              />
             </>
           )}
         </>

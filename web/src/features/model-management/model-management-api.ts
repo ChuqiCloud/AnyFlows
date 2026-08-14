@@ -12,14 +12,14 @@ import type { AdminModelCreateRequest, AdminModelUpdateRequest } from '@/lib/api
 export const adminModelMetadataQueryKey = ['admin-model-metadata'] as const
 
 /** 按服务端单调 ID 游标加载模型元数据，避免与用户模型目录缓存混用。 */
-export function useAdminModelMetadata() {
+export function useAdminModelMetadata(pageSize = 25) {
   return useInfiniteQuery({
-    queryKey: adminModelMetadataQueryKey,
+    queryKey: [...adminModelMetadataQueryKey, { pageSize }],
     initialPageParam: undefined as number | undefined,
     queryFn: async ({ pageParam, signal }) => {
       const { data } = await listAdminModels({
         client: apiClient,
-        query: { after: pageParam, limit: 25 },
+        query: { after: pageParam, limit: pageSize },
         signal,
       })
       return data

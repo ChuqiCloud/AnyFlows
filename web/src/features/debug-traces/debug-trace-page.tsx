@@ -3,17 +3,17 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { DataTablePagination } from '@/components/data-table/data-table-pagination'
+import { useCursorPagination } from '@/components/data-table/use-table-pagination'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAdminDebugTraces, type DebugTraceFilters } from './debug-trace-api'
 import { DebugTraceDetailSheet } from './debug-trace-detail-sheet'
 import { DebugTraceList } from './debug-trace-list'
-import { DebugTracePagination } from './debug-trace-pagination'
 import { DebugTraceSettingsSheet } from './debug-trace-settings-sheet'
 
 const EMPTY_TRACES = [] as const
-const DEFAULT_PAGE_SIZE = 30
 
 function requestIdFromHash() {
   const queryStart = window.location.hash.indexOf('?')
@@ -26,9 +26,7 @@ function requestIdFromHash() {
 /** 组合服务端筛选、稳定游标分页和按需详情侧栏的调试追踪工作台。 */
 export function DebugTracePage() {
   const { t } = useTranslation()
-  const [pageCursors, setPageCursors] = useState<Array<number | undefined>>([undefined])
-  const [pageIndex, setPageIndex] = useState(0)
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
+  const pagination = useCursorPagination<number>()
   const [filters, setFilters] = useState<DebugTraceFilters>(() => {
     const requestId = requestIdFromHash()
     return requestId ? { requestId } : {}
@@ -37,35 +35,18 @@ export function DebugTracePage() {
   const [requestIdDraft, setRequestIdDraft] = useState(() => requestIdFromHash() ?? '')
   const [outcomeDraft, setOutcomeDraft] = useState('all')
   const [selectedId, setSelectedId] = useState<number>()
-  const cursor = pageCursors[pageIndex]
-  const tracesQuery = useAdminDebugTraces(cursor, filters, pageSize)
+  const tracesQuery = useAdminDebugTraces(pagination.cursor, filters, pagination.pageSize)
   const traces = tracesQuery.data?.traces ?? EMPTY_TRACES
   const nextCursor = tracesQuery.data?.next_cursor
-  const currentPage = pageIndex + 1
-
-  const resetPagination = () => {
-    setPageCursors([undefined])
-    setPageIndex(0)
-  }
 
   const applyFilters = () => {
-    resetPagination()
+    pagination.reset()
     setSelectedId(undefined)
     setFilters({
       outcome: outcomeDraft === 'all' ? undefined : outcomeDraft as 'succeeded' | 'failed',
       model: modelDraft.trim() || undefined,
       requestId: requestIdDraft.trim() || undefined,
     })
-  }
-
-  const goToNextPage = () => {
-    if (pageIndex + 1 < pageCursors.length) {
-      setPageIndex((current) => current + 1)
-      return
-    }
-    if (nextCursor == null) return
-    setPageCursors((current) => [...current, nextCursor])
-    setPageIndex((current) => current + 1)
   }
 
   return (
@@ -87,7 +68,7 @@ export function DebugTracePage() {
       <form className="rounded-lg border border-[var(--hairline)] bg-surface-1/45 p-2.5" onSubmit={(event) => { event.preventDefault(); applyFilters() }}>
         <div className="mb-2 flex items-center justify-between gap-3 px-0.5 text-[0.6875rem] text-muted-foreground">
           <span className="inline-flex items-center gap-1.5"><SlidersHorizontal className="size-3.5" aria-hidden="true" />{t('debugTraces.filters.label')}</span>
-          <span>{t('debugTraces.pageSummary', { page: currentPage, count: traces.length })}</span>
+          <span>{t('debugTraces.pageSummary', { page: pagination.currentPage, count: traces.length })}</span>
         </div>
         <div className="grid gap-2 lg:grid-cols-[10rem_minmax(12rem,1fr)_minmax(14rem,1fr)_auto]">
           <label className="relative">
@@ -127,18 +108,18 @@ export function DebugTracePage() {
       ) : <DebugTraceList traces={traces} selectedId={selectedId} onSelect={setSelectedId} />}
 
       {!tracesQuery.isPending && !tracesQuery.isError ? (
-        <DebugTracePagination
-          currentPage={currentPage}
-          visitedPageCount={pageCursors.length}
-          pageSize={pageSize}
+        <DataTablePagination
+          currentPage={pagination.currentPage}
+          availablePageCount={pagination.availablePageCount}
+          pageSize={pagination.pageSize}
           itemCount={traces.length}
-          hasNextPage={nextCursor != null || pageIndex + 1 < pageCursors.length}
+          hasNextPage={nextCursor != null || pagination.hasLoadedNextPage}
           fetching={tracesQuery.isFetching}
-          onFirstPage={() => setPageIndex(0)}
-          onPreviousPage={() => setPageIndex((current) => Math.max(0, current - 1))}
-          onPageSelect={(page) => setPageIndex(page - 1)}
-          onNextPage={goToNextPage}
-          onPageSizeChange={(value) => { setPageSize(value); resetPagination(); setSelectedId(undefined) }}
+          onFirstPage={pagination.goToFirstPage}
+          onPreviousPage={pagination.goToPreviousPage}
+          onPageSelect={pagination.selectPage}
+          onNextPage={() => pagination.goToNextPage(nextCursor)}
+          onPageSizeChange={(value) => { pagination.setPageSize(value); setSelectedId(undefined) }}
         />
       ) : null}
 

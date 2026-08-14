@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Activity, ChevronLeft, ChevronRight, RefreshCw, Search, SlidersHorizontal, X } from 'lucide-react'
+import { Activity, RefreshCw, Search, SlidersHorizontal, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { DataTablePagination } from '@/components/data-table/data-table-pagination'
+import { useCursorPagination } from '@/components/data-table/use-table-pagination'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,15 +28,14 @@ type UsageLogPageProps = {
 
 export function UsageLogPage({ admin }: UsageLogPageProps) {
   const { t } = useTranslation()
-  const [cursorStack, setCursorStack] = useState<Array<number | undefined>>([undefined])
+  const pagination = useCursorPagination<number>()
   const [modelFilter, setModelFilter] = useState('')
   const [protocolFilter, setProtocolFilter] = useState('all')
   const [modeFilter, setModeFilter] = useState<UsageLogModeFilter>('all')
   const [selectedLog, setSelectedLog] = useState<UsageLogRow>()
   const [selectedUserId, setSelectedUserId] = useState<number>()
-  const cursor = cursorStack.at(-1)
-  const adminQuery = useAdminUsageLogs(admin ? cursor : undefined)
-  const userQuery = useUserUsageLogs(admin ? undefined : cursor)
+  const adminQuery = useAdminUsageLogs(pagination.cursor, pagination.pageSize, admin)
+  const userQuery = useUserUsageLogs(pagination.cursor, pagination.pageSize, !admin)
   const logsQuery = admin ? adminQuery : userQuery
   const logs = useMemo(() => (logsQuery.data?.logs ?? []) as UsageLogRow[], [logsQuery.data?.logs])
   const nextCursor = logsQuery.data?.next_cursor
@@ -151,34 +152,19 @@ export function UsageLogPage({ admin }: UsageLogPageProps) {
       ) : <UsageLogTable logs={filteredLogs} admin={admin} filtered={hasFilters} onSelect={setSelectedLog} onUserSelect={openUser} />}
 
       {!logsQuery.isPending && !logsQuery.isError ? (
-        <footer className="flex min-h-8 flex-col gap-2 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <span>{t('usageLogs.pageSummary', { page: cursorStack.length, count: logs.length })}</span>
-          {cursorStack.length > 1 || nextCursor != null ? (
-            <nav className="flex items-center gap-1" aria-label={t('usageLogs.pagination')}>
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                aria-label={t('usageLogs.actions.previous')}
-                disabled={cursorStack.length === 1 || logsQuery.isFetching}
-                onClick={() => setCursorStack((current) => current.length > 1 ? current.slice(0, -1) : current)}
-              >
-                <ChevronLeft aria-hidden="true" />
-              </Button>
-              <span className="min-w-16 text-center">{t('usageLogs.page', { page: cursorStack.length })}</span>
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                aria-label={t('usageLogs.actions.next')}
-                disabled={nextCursor == null || logsQuery.isFetching}
-                onClick={() => nextCursor != null && setCursorStack((current) => [...current, nextCursor])}
-              >
-                <ChevronRight aria-hidden="true" />
-              </Button>
-            </nav>
-          ) : null}
-        </footer>
+        <DataTablePagination
+          currentPage={pagination.currentPage}
+          availablePageCount={pagination.availablePageCount}
+          pageSize={pagination.pageSize}
+          itemCount={logs.length}
+          hasNextPage={nextCursor != null || pagination.hasLoadedNextPage}
+          fetching={logsQuery.isFetching}
+          onFirstPage={pagination.goToFirstPage}
+          onPreviousPage={pagination.goToPreviousPage}
+          onPageSelect={pagination.selectPage}
+          onNextPage={() => pagination.goToNextPage(nextCursor)}
+          onPageSizeChange={pagination.setPageSize}
+        />
       ) : null}
 
       <UsageLogDetailsSheet log={selectedLog} admin={admin} onOpenChange={(open) => !open && setSelectedLog(undefined)} onTraceOpen={openTrace} onUserSelect={openUser} />
