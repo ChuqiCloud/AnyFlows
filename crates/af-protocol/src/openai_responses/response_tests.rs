@@ -575,6 +575,42 @@ fn validates_usage_totals_cache_writes_and_reasoning_bounds() {
         "total_tokens": 5
     }));
     assert_eq!(parse_json(reasoning), Err(ParseResponseError::InvalidValue));
+
+    let mut alias_only = response(
+        vec![message("msg_usage_alias", "ok", "completed")],
+        "completed",
+    );
+    alias_only["usage"] = json!({
+        "input_tokens": 3,
+        "prompt_tokens_details": { "cached_tokens": 2 },
+        "output_tokens": 2,
+        "total_tokens": 5
+    });
+    assert_eq!(
+        parse_json(alias_only)
+            .unwrap()
+            .usage
+            .unwrap()
+            .details()
+            .cache_read(),
+        count(2)
+    );
+
+    let mut conflicting_alias = response(
+        vec![message("msg_usage_conflict", "ok", "completed")],
+        "completed",
+    );
+    conflicting_alias["usage"] = json!({
+        "input_tokens": 3,
+        "input_tokens_details": { "cached_tokens": 1 },
+        "prompt_tokens_details": { "cached_tokens": 2 },
+        "output_tokens": 2,
+        "total_tokens": 5
+    });
+    assert_eq!(
+        parse_json(conflicting_alias),
+        Err(ParseResponseError::InvalidValue)
+    );
 }
 
 #[test]

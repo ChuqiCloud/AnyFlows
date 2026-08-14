@@ -304,6 +304,9 @@ pub(super) struct ResponseUsageWire {
     /// 输入令牌细分。
     #[serde(default)]
     pub(super) input_tokens_details: Option<InputTokensDetailsWire>,
+    /// 部分兼容上游返回的 Chat 风格输入令牌细分别名。
+    #[serde(default)]
+    pub(super) prompt_tokens_details: Option<InputTokensDetailsWire>,
     /// 输出令牌总量。
     pub(super) output_tokens: i64,
     /// 输出令牌细分。
