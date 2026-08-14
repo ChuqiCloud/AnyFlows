@@ -3,7 +3,6 @@ import {
   Boxes,
   BriefcaseBusiness,
   CalendarRange,
-  ChartNoAxesCombined,
   ChevronRight,
   CircleDollarSign,
   CircleUserRound,
@@ -41,6 +40,7 @@ import {
   activeKeyByView,
   adminNavigationItems,
   adminNavigationSections,
+  adminSystemItems,
   adminWorkspaceItems,
   type AdminSectionKey,
   type NavKey,
@@ -109,7 +109,6 @@ const sectionIcons = {
   operations: BriefcaseBusiness,
   gateway: Waypoints,
   platform: Settings2,
-  observability: ChartNoAxesCombined,
 } as const satisfies Record<AdminSectionKey, LucideIcon>
 
 function useActiveKey() {
@@ -251,7 +250,12 @@ function AdminNavigation({ activeKey }: { activeKey: NavKey }) {
       ) : null}
       <SidebarGroup className="p-0">
         <SidebarGroupLabel className="h-7 px-2 text-[0.6875rem]">{t('nav.groups.system')}</SidebarGroupLabel>
-        <SidebarGroupContent><SidebarMenu>{systemSections.map(renderSection)}</SidebarMenu></SidebarGroupContent>
+        <SidebarGroupContent>
+          <SidebarMenu>
+            {systemSections.map(renderSection)}
+            {adminSystemItems.map((item) => <NavigationItem key={item} itemKey={item} activeKey={activeKey} />)}
+          </SidebarMenu>
+        </SidebarGroupContent>
       </SidebarGroup>
     </>
   )

@@ -27,26 +27,28 @@ export type NavKey =
   | 'usage'
   | 'debugTraces'
 
-export type AdminSectionKey = 'personal' | 'operations' | 'gateway' | 'platform' | 'observability'
+export type AdminSectionKey = 'personal' | 'operations' | 'gateway' | 'platform'
 
 export const userNavigationGroups = [
   { key: 'use', items: ['models', 'playground', 'videoTasks'] },
   { key: 'account', items: ['apiKeys', 'wallet', 'usage', 'subscriptions', 'invitations', 'profile'] },
 ] as const satisfies ReadonlyArray<{ key: 'use' | 'account'; items: readonly NavKey[] }>
 
-export const adminWorkspaceItems = ['overview', 'models', 'playground', 'videoTasks'] as const satisfies readonly NavKey[]
+export const adminWorkspaceItems = ['overview', 'usage', 'models', 'playground', 'videoTasks'] as const satisfies readonly NavKey[]
 
 export const adminNavigationSections = [
   { key: 'personal', items: ['apiKeys', 'wallet', 'subscriptions', 'invitations', 'profile'] },
   { key: 'operations', items: ['users', 'subscriptionManagement', 'redemptionCodes', 'paymentSettings', 'billingSettings'] },
   { key: 'gateway', items: ['modelSettings', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes'] },
   { key: 'platform', items: ['siteSettings', 'authenticationSettings', 'emailSettings', 'networkSettings', 'keys'] },
-  { key: 'observability', items: ['usage', 'debugTraces'] },
 ] as const satisfies ReadonlyArray<{ key: AdminSectionKey; items: readonly NavKey[] }>
+
+export const adminSystemItems = ['debugTraces'] as const satisfies readonly NavKey[]
 
 export const adminNavigationItems: readonly NavKey[] = [
   ...adminWorkspaceItems,
   ...adminNavigationSections.flatMap((section) => section.items),
+  ...adminSystemItems,
 ]
 
 export const userNavigationItems: readonly NavKey[] = userNavigationGroups.flatMap((group) => group.items)

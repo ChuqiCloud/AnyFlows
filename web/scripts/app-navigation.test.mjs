@@ -6,6 +6,7 @@ import {
   activeKeyByView,
   adminNavigationItems,
   adminNavigationSections,
+  adminSystemItems,
   adminWorkspaceItems,
   userNavigationGroups,
   userNavigationItems,
@@ -26,10 +27,17 @@ test('管理员导航覆盖全部入口且没有重复项', () => {
 })
 
 test('管理员工作台和任务域保持规划顺序', () => {
-  assert.deepEqual(adminWorkspaceItems, ['overview', 'models', 'playground', 'videoTasks'])
+  assert.deepEqual(adminWorkspaceItems, ['overview', 'usage', 'models', 'playground', 'videoTasks'])
   assert.deepEqual(adminNavigationSections.map((section) => section.key), [
-    'personal', 'operations', 'gateway', 'platform', 'observability',
+    'personal', 'operations', 'gateway', 'platform',
   ])
+  assert.deepEqual(adminSystemItems, ['debugTraces'])
+})
+
+test('调用日志是角色感知的共享入口而不是管理员任务域', () => {
+  assert.ok(adminWorkspaceItems.includes('usage'))
+  assert.ok(userNavigationGroups.find((group) => group.key === 'account')?.items.includes('usage'))
+  assert.ok(adminNavigationSections.every((section) => !section.items.includes('usage')))
 })
 
 test('普通用户导航结构和权限入口保持不变', () => {

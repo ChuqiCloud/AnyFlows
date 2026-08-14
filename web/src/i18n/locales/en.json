@@ -29,8 +29,7 @@
       "personal": "Personal account",
       "operations": "Users & commerce",
       "gateway": "Models & gateway",
-      "platform": "Platform settings",
-      "observability": "Monitoring & diagnostics"
+      "platform": "Platform settings"
     },
     "overview": "Operations overview",
     "models": "Models",
