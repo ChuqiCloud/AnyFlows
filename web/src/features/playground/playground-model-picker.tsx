@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { findProviderLogo } from '@/components/brand/model-logos'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -28,13 +29,17 @@ import {
   playgroundModelProviderCategories,
   type PlaygroundModelFilter,
 } from './playground-model-filter'
-import { togglePlaygroundModel } from './playground-model-selection'
+import {
+  modelsForPlaygroundSelectionMode,
+  selectPlaygroundModel,
+} from './playground-model-selection'
 import { playgroundProtocolForModel, type PlaygroundProtocol } from './playground-protocol'
 import { MAX_PLAYGROUND_MODELS } from './playground-types'
 
 type PlaygroundModelPickerProps = {
   compact?: boolean
   values: string[]
+  comparisonEnabled: boolean
   search: string
   models: ModelCatalogItem[]
   protocolByModel: Readonly<Record<string, PlaygroundProtocol>>
@@ -43,7 +48,7 @@ type PlaygroundModelPickerProps = {
   loadingMore: boolean
   hasMore: boolean
   locked: boolean
-  onChange: (models: string[]) => void
+  onChange: (models: string[], comparisonEnabled: boolean) => void
   onLoadMore: () => void
   onRefresh: () => void
   onSearch: (value: string) => void
@@ -55,6 +60,9 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [draftValues, setDraftValues] = useState(props.values)
+  const [draftComparisonEnabled, setDraftComparisonEnabled] = useState(
+    props.comparisonEnabled,
+  )
   const [filter, setFilter] = useState<PlaygroundModelFilter>(DEFAULT_PLAYGROUND_MODEL_FILTER)
   const summary = props.values.length === 1
     ? props.values[0]
@@ -76,6 +84,7 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
   const setOpenState = (nextOpen: boolean) => {
     if (nextOpen) {
       setDraftValues(props.values)
+      setDraftComparisonEnabled(props.comparisonEnabled)
       setFilter(DEFAULT_PLAYGROUND_MODEL_FILTER)
     }
     setOpen(nextOpen)
@@ -127,16 +136,32 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
         side="top"
         className="w-[calc(100vw-1rem)] max-w-[34rem] overflow-hidden p-0 sm:w-[34rem]"
       >
-        <div className="flex items-center justify-between border-b border-[var(--hairline)] px-3 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--hairline)] px-3 py-2.5">
           <div className="min-w-0">
             <h2 className="truncate text-xs font-semibold">{t('playground.model.title')}</h2>
             <p className="mt-0.5 text-[0.6875rem] text-muted-foreground">
-              {t('playground.model.selectionCount', { count: draftValues.length, max: MAX_PLAYGROUND_MODELS })}
+              {draftComparisonEnabled
+                ? t('playground.model.selectionCount', { count: draftValues.length, max: MAX_PLAYGROUND_MODELS })
+                : t('playground.model.singleMode')}
             </p>
           </div>
-          <Badge className="shrink-0 bg-info/10 text-info">
-            {t('playground.model.catalogCount', { count: props.models.length })}
-          </Badge>
+          <div className="flex shrink-0 items-center gap-2">
+            <label className="flex cursor-pointer items-center gap-1.5 text-[0.6875rem] font-medium">
+              <Checkbox
+                checked={draftComparisonEnabled}
+                aria-label={t('playground.model.comparisonMode')}
+                onCheckedChange={(checked) => {
+                  const enabled = checked === true
+                  setDraftComparisonEnabled(enabled)
+                  setDraftValues((current) => modelsForPlaygroundSelectionMode(current, enabled))
+                }}
+              />
+              <span>{t('playground.model.comparisonMode')}</span>
+            </label>
+            <Badge className="bg-info/10 text-info">
+              {t('playground.model.catalogCount', { count: props.models.length })}
+            </Badge>
+          </div>
         </div>
         <div className="grid max-h-[min(70vh,34rem)] min-h-0 grid-cols-1 md:grid-cols-[9rem_minmax(0,1fr)]">
           <aside className="min-w-0 border-b border-[var(--hairline)] bg-surface-2/35 p-2 md:border-b-0 md:border-r">
@@ -208,7 +233,12 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
                 })}
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-1.5" role="listbox" aria-label={t('playground.model.title')}>
+            <div
+              className="min-h-0 flex-1 overflow-y-auto p-1.5"
+              role="listbox"
+              aria-label={t('playground.model.title')}
+              aria-multiselectable={draftComparisonEnabled}
+            >
               {props.loading ? (
                 <div className="grid gap-1 p-1" aria-label={t('playground.model.loading')}>
                   {[0, 1, 2, 3, 4].map((item) => <Skeleton key={item} className="h-9 rounded-md" />)}
@@ -235,8 +265,8 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
                   {visibleModels.map((item) => {
                     const selected = draftValues.includes(item.model)
                     const protocol = playgroundProtocolForModel(item)
-                    const disabled = (selected && draftValues.length === 1)
-                      || (!selected && draftValues.length >= MAX_PLAYGROUND_MODELS)
+                    const disabled = (draftComparisonEnabled && selected && draftValues.length === 1)
+                      || (draftComparisonEnabled && !selected && draftValues.length >= MAX_PLAYGROUND_MODELS)
                       || protocol === undefined
                     return (
                       <button
@@ -250,7 +280,11 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
                           'hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring/60 disabled:cursor-not-allowed disabled:opacity-50',
                           selected && 'bg-primary/8',
                         )}
-                        onClick={() => setDraftValues(togglePlaygroundModel(draftValues, item.model))}
+                        onClick={() => setDraftValues(selectPlaygroundModel(
+                          draftValues,
+                          item.model,
+                          draftComparisonEnabled,
+                        ))}
                       >
                         <Check className={cn('size-3.5 shrink-0 text-info', !selected && 'opacity-0')} aria-hidden="true" />
                         <span className="min-w-0 flex-1 truncate font-mono text-[0.6875rem]">{item.model}</span>
@@ -289,7 +323,7 @@ export function PlaygroundModelPicker(props: PlaygroundModelPickerProps) {
                 size="sm"
                 className="w-full"
                 onClick={() => {
-                  props.onChange(draftValues)
+                  props.onChange(draftValues, draftComparisonEnabled)
                   setOpen(false)
                 }}
               >

@@ -11,7 +11,10 @@ import {
 import { isPlaygroundTranscriptNearBottom } from '../src/features/playground/playground-scroll.ts'
 import { normalizePlaygroundInstructions } from '../src/features/playground/playground-instructions.ts'
 import {
+  DEFAULT_PLAYGROUND_COMPARISON_ENABLED,
+  modelsForPlaygroundSelectionMode,
   normalizePlaygroundModels,
+  selectPlaygroundModel,
   togglePlaygroundModel,
 } from '../src/features/playground/playground-model-selection.ts'
 import {
@@ -36,6 +39,24 @@ test('比较模型集合去重并限制为四个', () => {
   assert.deepEqual(togglePlaygroundModel(['a'], 'b'), ['a', 'b'])
   assert.deepEqual(togglePlaygroundModel(['a', 'b'], 'a'), ['b'])
   assert.deepEqual(togglePlaygroundModel(['a', 'b', 'c', 'd'], 'e'), ['a', 'b', 'c', 'd'])
+})
+
+test('试炼场默认使用单选且新模型直接替换当前模型', () => {
+  assert.equal(DEFAULT_PLAYGROUND_COMPARISON_ENABLED, false)
+  assert.deepEqual(selectPlaygroundModel(['model-a'], 'model-b', false), ['model-b'])
+  assert.deepEqual(
+    modelsForPlaygroundSelectionMode(['model-a', 'model-b'], false),
+    ['model-a'],
+  )
+})
+
+test('显式开启对比后才允许多选，关闭时收敛到主模型', () => {
+  assert.deepEqual(selectPlaygroundModel(['model-a'], 'model-b', true), ['model-a', 'model-b'])
+  assert.deepEqual(selectPlaygroundModel(['model-a', 'model-b'], 'model-a', true), ['model-b'])
+  assert.deepEqual(
+    modelsForPlaygroundSelectionMode(['model-b', 'model-c'], false),
+    ['model-b'],
+  )
 })
 
 test('并行流片段只写入所属模型列', () => {
