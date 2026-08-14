@@ -517,6 +517,11 @@
     letter-spacing: 0;
   }
 
+  /* html 已永久预留滚动槽，模态锁滚时不再重复补偿滚动条宽度。 */
+  html body[data-scroll-locked] {
+    margin-right: 0 !important;
+  }
+
   /* 标题：SF Pro Display 在大字号下自带光学字距，只轻收一点 */
   h1, h2, h3, h4 {
     letter-spacing: 0;
