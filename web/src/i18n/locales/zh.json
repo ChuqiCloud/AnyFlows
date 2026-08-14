@@ -909,7 +909,7 @@
       "copied": "已复制",
       "copyFailed": "无法写入剪贴板，请手动选择并复制。",
       "warning": "完整 Key 只显示这一次。关闭后无法再次查看，请先保存到安全位置。",
-      "playground": "用于试炼场",
+      "playground": "打开试炼场",
       "done": "我已保存"
     },
     "delete": {
@@ -1839,7 +1839,7 @@
       "copied": "已复制",
       "copyFailed": "无法写入剪贴板，请手动选择并复制。",
       "warning": "完整 Key 只显示这一次。关闭后无法再次查看，请先保存到安全位置。",
-      "playground": "在试炼场中使用",
+      "playground": "打开试炼场",
       "done": "我已保存"
     },
     "delete": {
@@ -2233,18 +2233,15 @@
     "subtitle": "使用当前分组可用的 xAI 视频模型提交异步生成任务，并在同一用户范围内安全查询结果。",
     "access": {
       "title": "访问凭据",
-      "description": "与对话试炼场共享当前标签页 API Key。"
+      "summary": "平台托管会话",
+      "description": "登录后自动准备当前账户的托管凭据，无需填写或保存 API Key。"
     },
     "apiKey": {
-      "label": "AnyFlows API Key",
-      "ready": "当前标签页已保存",
-      "missing": "未配置",
-      "show": "显示 API Key",
-      "hide": "隐藏 API Key",
-      "save": "保存",
-      "clear": "清除",
-      "invalid": "请输入有效的 sk-af- API Key。",
-      "required": "请先保存有效的 API Key。"
+      "ready": "平台会话已就绪",
+      "provisioning": "正在准备会话",
+      "failed": "自动申请失败",
+      "missing": "会话凭据未就绪",
+      "retry": "重试申请"
     },
     "request": {
       "title": "生成参数",
@@ -2272,8 +2269,8 @@
     },
     "history": {
       "title": "任务历史",
-      "description": "仅显示当前 API Key 所属用户的持久化任务。",
-      "apiKey": "保存 API Key 后读取本人任务历史。",
+      "description": "仅显示当前登录用户的持久化任务。",
+      "apiKey": "平台会话准备完成后读取本人任务历史。",
       "empty": "当前用户还没有视频任务。",
       "refresh": "刷新任务历史",
       "loadMore": "加载更多任务",
@@ -2357,11 +2354,11 @@
       "cancelled": "已停止",
       "loadingModels": "加载模型",
       "modelUnavailable": "无可用模型",
-      "keyRequired": "需要 API Key"
+      "keyRequired": "会话凭据未就绪"
     },
     "settings": {
       "title": "会话设置",
-      "description": "配置访问凭据、模型和生成参数。",
+      "description": "平台自动准备会话凭据，可配置模型和生成参数。",
       "expand": "展开会话设置",
       "collapse": "收起会话设置",
       "access": "访问凭据",
@@ -2373,14 +2370,13 @@
       "maxOutputTokens": "最大输出 Token"
     },
     "apiKey": {
-      "label": "AnyFlows API Key",
-      "ready": "当前标签页已保存",
-      "missing": "未配置",
-      "show": "显示 API Key",
-      "hide": "隐藏 API Key",
-      "save": "保存",
-      "clear": "清除",
-      "invalid": "请输入有效的 sk-af- API Key。"
+      "ready": "平台会话已就绪",
+      "provisioning": "正在准备会话",
+      "failed": "自动申请失败",
+      "missing": "会话凭据未就绪",
+      "platformTitle": "平台会话 · 自动分组",
+      "platformDescription": "默认使用当前账户分组，无可用渠道时按管理员配置降级，无需手动填写 API Key。",
+      "retry": "重试申请"
     },
     "model": {
       "pending": "尚未选择模型",
@@ -2431,7 +2427,7 @@
     "composer": {
       "label": "会话消息",
       "placeholder": "输入消息",
-      "apiKeyRequired": "请先配置 API Key"
+      "apiKeyRequired": "会话凭据未就绪，请在会话设置中重试申请"
     },
     "actions": {
       "send": "发送",

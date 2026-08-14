@@ -1,4 +1,5 @@
-const storageKey = 'anyflows.playground.api-key'
+const storageKey = 'anyflows.playground.managed-api-key'
+const legacyStorageKey = 'anyflows.playground.api-key'
 const apiKeyPattern = /^sk-af-[A-Za-z0-9_-]{43}$/
 
 let memoryApiKey: string | undefined
@@ -17,12 +18,13 @@ export function isPlaygroundApiKey(value: string) {
   return apiKeyPattern.test(normalized)
 }
 
-/** 读取当前标签页的 Playground API Key，非法残留值会被忽略并清理。 */
+/** 读取当前标签页的平台托管 Key，旧版手动凭据不会迁移到托管会话。 */
 export function getPlaygroundApiKey() {
   const storage = getSessionStorage()
 
   if (storage) {
     try {
+      storage.removeItem(legacyStorageKey)
       const stored = storage.getItem(storageKey)?.trim()
       if (stored && isPlaygroundApiKey(stored)) {
         memoryApiKey = stored
@@ -37,7 +39,7 @@ export function getPlaygroundApiKey() {
   return memoryApiKey
 }
 
-/** 保存 API Key 到当前标签页；存储不可用时仅保留页面内存副本。 */
+/** 保存平台签发的托管 Key 到当前标签页；存储不可用时仅保留页面内存副本。 */
 export function setPlaygroundApiKey(value: string) {
   const normalized = value.trim()
   if (!isPlaygroundApiKey(normalized)) {
@@ -52,11 +54,12 @@ export function setPlaygroundApiKey(value: string) {
   }
 }
 
-/** 清除当前标签页及页面内存中的 Playground API Key。 */
+/** 清除当前标签页及页面内存中的托管 Key。 */
 export function clearPlaygroundApiKey() {
   memoryApiKey = undefined
   try {
     getSessionStorage()?.removeItem(storageKey)
+    getSessionStorage()?.removeItem(legacyStorageKey)
   } catch {
     // 存储不可写时清理内存副本即可。
   }

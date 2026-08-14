@@ -1,7 +1,8 @@
 use std::{fmt, num::NonZeroU32, time::Duration};
 
 use af_domain::{
-    ConcurrencyLimit, GatewayPrincipal, GroupId, TokenId, TokenModelPolicy, TrustedClientIp, UserId,
+    ConcurrencyLimit, GatewayPrincipal, GroupId, PLAYGROUND_TOKEN_NAME, TokenId, TokenModelPolicy,
+    TrustedClientIp, UserId,
 };
 use sea_orm::{
     ConnectionTrait, DbBackend, DbErr, QueryResult,
@@ -176,6 +177,10 @@ fn lookup_query(database_backend: DbBackend, lookup: &TokenAuthLookup) -> Select
             Alias::new("token_id"),
         )
         .expr_as(
+            Expr::col((tokens::Entity, tokens::Column::Name)),
+            Alias::new("token_name"),
+        )
+        .expr_as(
             Expr::col((tokens::Entity, tokens::Column::Status)),
             Alias::new("token_status"),
         )
@@ -299,6 +304,7 @@ pub(crate) fn token_json_serialized_length(
 
 struct TokenAuthRow {
     token_id: i64,
+    token_name: String,
     token_status: i16,
     token_expired_at: Option<TimeDateTimeWithTimeZone>,
     token_deleted_at: Option<TimeDateTimeWithTimeZone>,
@@ -320,6 +326,7 @@ impl TokenAuthRow {
     fn try_from_query_result(result: &QueryResult) -> Result<Self, DbErr> {
         Ok(Self {
             token_id: result.try_get("", "token_id")?,
+            token_name: result.try_get("", "token_name")?,
             token_status: result.try_get("", "token_status")?,
             token_expired_at: result.try_get("", "token_expired_at")?,
             token_deleted_at: result.try_get("", "token_deleted_at")?,
@@ -367,14 +374,18 @@ impl TokenAuthRow {
             return Err(record_internal_error(TokenAuthRepositoryError::Invariant));
         };
         let group_rpm_limit = normalize_rpm_limit(self.group_rpm_limit)?;
-        let principal = GatewayPrincipal::new(
-            TokenId::new(self.token_id)
-                .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?,
-            UserId::new(user_id)
-                .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?,
-            GroupId::new(group_id)
-                .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?,
-        );
+        let token_id = TokenId::new(self.token_id)
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        let user_id = UserId::new(user_id)
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        let group_id = GroupId::new(group_id)
+            .map_err(|_| record_internal_error(TokenAuthRepositoryError::Invariant))?;
+        // 仅内部托管 Key 允许试炼场路由策略，外部 Key 保持原有单分组契约。
+        let principal = if self.token_name == PLAYGROUND_TOKEN_NAME {
+            GatewayPrincipal::playground(token_id, user_id, group_id)
+        } else {
+            GatewayPrincipal::new(token_id, user_id, group_id)
+        };
 
         if !token_enabled
             || self.token_deleted_at.is_some()

@@ -64,16 +64,14 @@ export function VideoTaskWorkspace(props: VideoTaskWorkspaceProps) {
       <div className="grid min-h-0 min-w-0 flex-1 gap-2.5 lg:grid-cols-[20rem_minmax(0,1fr)]">
         <aside className="self-start overflow-hidden rounded-xl border border-dashed border-[var(--hairline)] bg-surface-1/82 shadow-subtle backdrop-blur-xl lg:sticky lg:top-3">
           <VideoTaskAccessPanel
-            apiKeyDraft={workspace.apiKeyDraft}
             apiKeyReady={workspace.apiKey.length > 0}
-            error={workspace.apiKeyError}
-            onChange={workspace.setApiKeyDraft}
-            onClear={workspace.clearApiKey}
-            onSave={workspace.saveApiKey}
+            apiKeyProvisioning={workspace.apiKeyProvisioning}
+            onProvisionApiKey={workspace.provisionApiKey}
           />
           <VideoTaskRequestPanel
             key={workspace.idempotencyKey}
             busy={workspace.busy}
+            credentialReady={workspace.apiKey.length > 0}
             idempotencyKey={workspace.idempotencyKey}
             locked={workspace.requestLocked}
             models={models}

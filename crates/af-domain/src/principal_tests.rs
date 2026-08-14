@@ -25,6 +25,11 @@ fn gateway_principal_preserves_validated_identifiers() {
     assert_eq!(principal.token_id(), token_id);
     assert_eq!(principal.user_id(), user_id);
     assert_eq!(principal.group_id(), group_id);
+    assert!(!principal.is_playground());
+
+    let playground = GatewayPrincipal::playground(token_id, user_id, group_id);
+    assert!(playground.is_playground());
+    assert_ne!(playground, principal);
 }
 
 #[test]

@@ -18,6 +18,9 @@ mod task;
 mod token_policy;
 mod wallet;
 
+/// 试炼场自动申请的内部 Token 名称；普通用户不能通过界面主动复用该名称。
+pub const PLAYGROUND_TOKEN_NAME: &str = "__anyflows_playground__";
+
 pub use auto_ban::{
     ChannelAutoBanRules, ChannelAutoBanRulesError, MAX_CHANNEL_AUTO_BAN_KEYWORD_BYTES,
     MAX_CHANNEL_AUTO_BAN_KEYWORD_TOTAL_BYTES, MAX_CHANNEL_AUTO_BAN_RULES,

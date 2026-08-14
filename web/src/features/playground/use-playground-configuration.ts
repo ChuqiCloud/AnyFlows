@@ -1,29 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useTranslation } from 'react-i18next'
 
 import { EMPTY_MODEL_CATALOG_FILTERS, useModelCatalog } from '@/features/models/model-api'
-import {
-  clearPlaygroundApiKey,
-  getPlaygroundApiKey,
-  isPlaygroundApiKey,
-  setPlaygroundApiKey,
-} from './playground-api-key'
 import {
   DEFAULT_PLAYGROUND_COMPARISON_ENABLED,
   modelsForPlaygroundSelectionMode,
   normalizePlaygroundModels,
 } from './playground-model-selection'
 import { playgroundProtocolForModel, type PlaygroundProtocol } from './playground-protocol'
+import { usePlaygroundApiKey } from './use-playground-api-key'
 
 const DEFAULT_TEMPERATURE = 0.7
 const DEFAULT_MAX_OUTPUT_TOKENS = 8192
 
 /** 收拢当前标签页凭据、模型目录与共享生成参数。 */
 export function usePlaygroundConfiguration() {
-  const { t } = useTranslation()
-  const [apiKey, setApiKey] = useState(() => getPlaygroundApiKey() ?? '')
-  const [apiKeyDraft, setApiKeyDraft] = useState(apiKey)
-  const [apiKeyError, setApiKeyError] = useState<string>()
+  const managedApiKey = usePlaygroundApiKey()
   const [selectedModels, setSelectedModels] = useState<string[]>([])
   const [comparisonEnabled, setComparisonEnabled] = useState(
     DEFAULT_PLAYGROUND_COMPARISON_ENABLED,
@@ -80,38 +71,6 @@ export function usePlaygroundConfiguration() {
     }
   }, [catalogInvalid, routableModels, selectedModels.length])
 
-  const saveApiKey = useCallback(() => {
-    if (!isPlaygroundApiKey(apiKeyDraft)) {
-      setApiKeyError(t('playground.apiKey.invalid'))
-      return
-    }
-    const normalized = apiKeyDraft.trim()
-    setPlaygroundApiKey(normalized)
-    setApiKey(normalized)
-    setApiKeyDraft(normalized)
-    setApiKeyError(undefined)
-  }, [apiKeyDraft, t])
-
-  const clearApiKey = useCallback(() => {
-    clearPlaygroundApiKey()
-    setApiKey('')
-    setApiKeyDraft('')
-    setApiKeyError(undefined)
-  }, [])
-
-  const updateApiKeyDraft = useCallback((value: string) => {
-    setApiKeyDraft(value)
-    setApiKeyError(undefined)
-  }, [])
-
-  /** 从当前标签页存储重新载入共享凭据，用于不同试炼模式返回时同步状态。 */
-  const reloadApiKey = useCallback(() => {
-    const current = getPlaygroundApiKey() ?? ''
-    setApiKey(current)
-    setApiKeyDraft(current)
-    setApiKeyError(undefined)
-  }, [])
-
   const updateSelectedModels = useCallback((
     modelsToSelect: string[],
     comparisonEnabledToApply: boolean,
@@ -140,31 +99,29 @@ export function usePlaygroundConfiguration() {
   }, [])
 
   const sharedSettings = useMemo(() => ({
-    apiKey,
+    apiKey: managedApiKey.apiKey,
     systemPrompt,
     temperature: temperatureEnabled ? temperature : undefined,
     maxOutputTokens: maxOutputTokensEnabled ? maxOutputTokens : undefined,
-  }), [apiKey, maxOutputTokens, maxOutputTokensEnabled, systemPrompt, temperature, temperatureEnabled])
+  }), [managedApiKey.apiKey, maxOutputTokens, maxOutputTokensEnabled, systemPrompt, temperature, temperatureEnabled])
 
   const selectedProtocolsReady = selectedModels.every((model) => protocolByModel[model] !== undefined)
 
   return {
-    apiKey,
-    apiKeyDraft,
-    apiKeyError,
+    apiKey: managedApiKey.apiKey,
+    apiKeyProvisioning: managedApiKey.provisioning,
     catalogInvalid,
     catalogQuery,
-    clearApiKey,
     comparisonEnabled,
     maxOutputTokens,
     maxOutputTokensEnabled,
     modelSearchDraft,
     models,
     protocolByModel,
-    reloadApiKey,
+    provisionApiKey: managedApiKey.provision,
+    reloadApiKey: managedApiKey.reload,
     restoreConversationConfiguration,
     routableModels,
-    saveApiKey,
     selectedModels,
     selectedProtocolsReady,
     setMaxOutputTokens: (value: number) => setMaxOutputTokens(
@@ -180,6 +137,5 @@ export function usePlaygroundConfiguration() {
     systemPrompt,
     temperature,
     temperatureEnabled,
-    updateApiKeyDraft,
   }
 }

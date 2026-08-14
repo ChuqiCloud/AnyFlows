@@ -12,6 +12,7 @@ import type { VideoTaskRequest } from './video-task-types'
 
 type VideoTaskRequestPanelProps = {
   busy: boolean
+  credentialReady: boolean
   idempotencyKey: string
   locked: boolean
   models: ModelCatalogItem[]
@@ -179,7 +180,7 @@ export function VideoTaskRequestPanel(props: VideoTaskRequestPanelProps) {
 
       {validationError ? <p role="alert" className="text-xs text-destructive">{validationError}</p> : null}
 
-      <Button type="submit" size="sm" disabled={props.busy || props.locked}>
+      <Button type="submit" size="sm" disabled={!props.credentialReady || props.busy || props.locked}>
         <Send aria-hidden="true" />
         {t(props.busy ? 'videoTasks.actions.submitting' : 'videoTasks.actions.submit')}
       </Button>

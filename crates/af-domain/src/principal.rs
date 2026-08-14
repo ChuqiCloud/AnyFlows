@@ -103,6 +103,7 @@ pub struct GatewayPrincipal {
     token_id: TokenId,
     user_id: UserId,
     group_id: GroupId,
+    playground: bool,
 }
 
 impl GatewayPrincipal {
@@ -113,6 +114,18 @@ impl GatewayPrincipal {
             token_id,
             user_id,
             group_id,
+            playground: false,
+        }
+    }
+
+    /// 构造仅供登录试炼场使用的网关主体；仍然绑定真实 Token 以复用额度与审计链路。
+    #[must_use]
+    pub const fn playground(token_id: TokenId, user_id: UserId, group_id: GroupId) -> Self {
+        Self {
+            token_id,
+            user_id,
+            group_id,
+            playground: true,
         }
     }
 
@@ -132,6 +145,12 @@ impl GatewayPrincipal {
     #[must_use]
     pub const fn group_id(self) -> GroupId {
         self.group_id
+    }
+
+    /// 返回是否允许试炼场专用的分组降级策略。
+    #[must_use]
+    pub const fn is_playground(self) -> bool {
+        self.playground
     }
 }
 

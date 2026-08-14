@@ -1,6 +1,5 @@
-import type { FormEvent, ReactNode } from 'react'
-import { Eye, EyeOff, KeyRound, Save, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import type { ReactNode } from 'react'
+import { LoaderCircle, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
@@ -12,17 +11,14 @@ import { Textarea } from '@/components/ui/textarea'
 type PlaygroundSettingsProps = {
   idPrefix: string
   modelPicker?: ReactNode
-  apiKeyDraft: string
-  apiKeySaved: boolean
-  apiKeyError?: string
+  apiKeyReady: boolean
+  apiKeyProvisioning: 'idle' | 'pending' | 'failed'
   systemPrompt: string
   temperatureEnabled: boolean
   temperature: number
   maxOutputTokensEnabled: boolean
   maxOutputTokens: number
-  onApiKeyDraftChange: (value: string) => void
-  onSaveApiKey: () => void
-  onClearApiKey: () => void
+  onProvisionApiKey: () => void
   onSystemPromptChange: (value: string) => void
   onTemperatureEnabledChange: (value: boolean) => void
   onTemperatureChange: (value: number) => void
@@ -32,64 +28,40 @@ type PlaygroundSettingsProps = {
 
 export function PlaygroundSettings(props: PlaygroundSettingsProps) {
   const { t } = useTranslation()
-  const [showApiKey, setShowApiKey] = useState(false)
-  const keyId = `${props.idPrefix}-api-key`
   const systemId = `${props.idPrefix}-system`
   const temperatureId = `${props.idPrefix}-temperature`
   const maxTokensId = `${props.idPrefix}-max-tokens`
 
-  const saveKey = (event: FormEvent) => {
-    event.preventDefault()
-    props.onSaveApiKey()
-  }
+  const keyStatus = props.apiKeyReady
+    ? 'ready'
+    : props.apiKeyProvisioning === 'pending'
+      ? 'provisioning'
+      : props.apiKeyProvisioning === 'failed'
+        ? 'failed'
+        : 'missing'
 
   return (
     <div className="grid p-4">
       <section className="grid gap-2.5 border-b border-dashed border-[var(--hairline)] pb-4">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-xs font-semibold">{t('playground.settings.access')}</h2>
-          <Badge className={props.apiKeySaved ? 'bg-success/12 text-success' : 'bg-warning/12 text-warning'}>
-            {t(props.apiKeySaved ? 'playground.apiKey.ready' : 'playground.apiKey.missing')}
+          <Badge className={keyStatus === 'ready' ? 'bg-success/12 text-success' : 'bg-warning/12 text-warning'}>
+            {keyStatus === 'provisioning' ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : null}
+            {t(`playground.apiKey.${keyStatus}`)}
           </Badge>
         </div>
-        <form className="grid gap-2" onSubmit={saveKey}>
-          <label className="grid gap-1.5 text-[0.6875rem] font-medium text-muted-foreground" htmlFor={keyId}>
-            <span>{t('playground.apiKey.label')}</span>
-            <span className="relative block">
-              <KeyRound className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2" aria-hidden="true" />
-              <Input
-                id={keyId}
-                type={showApiKey ? 'text' : 'password'}
-                className="px-8 font-mono text-xs"
-                value={props.apiKeyDraft}
-                autoComplete="off"
-                autoCapitalize="none"
-                maxLength={512}
-                spellCheck={false}
-                aria-invalid={props.apiKeyError !== undefined}
-                placeholder="sk-af-..."
-                onChange={(event) => props.onApiKeyDraftChange(event.target.value)}
-              />
-              <button
-                type="button"
-                className="absolute right-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground"
-                aria-label={t(showApiKey ? 'playground.apiKey.hide' : 'playground.apiKey.show')}
-                onClick={() => setShowApiKey((current) => !current)}
-              >
-                {showApiKey ? <EyeOff className="size-3.5" aria-hidden="true" /> : <Eye className="size-3.5" aria-hidden="true" />}
-              </button>
-            </span>
-          </label>
-          {props.apiKeyError ? <p role="alert" className="text-xs text-destructive">{props.apiKeyError}</p> : null}
-          <div className="grid grid-cols-2 gap-2">
-            <Button type="submit" size="sm" variant="secondary">
-              <Save aria-hidden="true" />{t('playground.apiKey.save')}
-            </Button>
-            <Button type="button" size="sm" variant="ghost" disabled={!props.apiKeyDraft && !props.apiKeySaved} onClick={props.onClearApiKey}>
-              <Trash2 aria-hidden="true" />{t('playground.apiKey.clear')}
-            </Button>
+        <div className="flex gap-2.5 rounded-md border border-[var(--hairline)] bg-surface-2/60 p-2.5">
+          <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+          <div className="min-w-0 text-[0.6875rem] leading-5">
+            <p className="font-medium text-foreground">{t('playground.apiKey.platformTitle')}</p>
+            <p className="text-muted-foreground">{t('playground.apiKey.platformDescription')}</p>
           </div>
-        </form>
+        </div>
+        {keyStatus === 'failed' || keyStatus === 'missing' ? (
+          <Button type="button" size="sm" variant="secondary" onClick={props.onProvisionApiKey}>
+            <RefreshCw aria-hidden="true" />{t('playground.apiKey.retry')}
+          </Button>
+        ) : null}
       </section>
 
       {props.modelPicker ? (

@@ -13,7 +13,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { setPlaygroundApiKey } from '@/features/playground/playground-api-key'
 import type { IssuedUserToken } from '@/lib/api/generated/types.gen'
 import { copyText } from '@/lib/clipboard'
 
@@ -33,9 +32,8 @@ export function IssuedApiKeyDialog({ issued, onClose }: IssuedApiKeyDialogProps)
     setCopyState(await copyText(issued.api_key) ? 'copied' : 'failed')
   }
 
-  const useInPlayground = () => {
+  const openPlayground = () => {
     if (!issued) return
-    setPlaygroundApiKey(issued.api_key)
     onClose()
     window.location.hash = '#/console/playground'
   }
@@ -63,7 +61,7 @@ export function IssuedApiKeyDialog({ issued, onClose }: IssuedApiKeyDialogProps)
           </p>
         </div>
         <AlertDialogFooter>
-          <Button type="button" variant="secondary" onClick={useInPlayground}>
+          <Button type="button" variant="secondary" onClick={openPlayground}>
             <MessageSquareText aria-hidden="true" />{t('apiKeys.issued.playground')}
           </Button>
           <AlertDialogAction onClick={onClose}>{t('apiKeys.issued.done')}</AlertDialogAction>
