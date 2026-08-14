@@ -350,7 +350,7 @@ fn rejects_commentary_message_phase() {
 }
 
 #[test]
-fn decodes_current_responses_stream_echoes_and_omitted_reasoning_status() {
+fn decodes_current_responses_stream_with_empty_reasoning_placeholder() {
     let reasoning_id = "rs_stream_current";
     let message_id = "msg_stream_current";
     let reasoning_done = json!({
@@ -383,7 +383,7 @@ fn decodes_current_responses_stream_echoes_and_omitted_reasoning_status() {
                     "type": "reasoning",
                     "summary": [],
                     "content": [],
-                    "encrypted_content": "sig-current",
+                    "encrypted_content": "",
                 }
             }),
         ),
