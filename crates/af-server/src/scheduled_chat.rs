@@ -88,6 +88,14 @@ struct PreparedRouteSelection {
     credential_health: Option<BTreeMap<i64, RuntimeHealthState>>,
 }
 
+/// 区分静态能力缺失与运行时健康故障，避免向客户端返回错误的过载语义。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RouteAvailability {
+    Available,
+    Unsupported,
+    Unhealthy,
+}
+
 impl PreparedConcurrencyPlan<'_> {
     #[cfg(test)]
     const fn disabled() -> Self {
@@ -610,25 +618,42 @@ impl ScheduledChatService {
         request_id: &str,
         session_scope: Option<&StableSessionScope>,
     ) -> Result<PreparedRouteSelection, AfError> {
-        let mut configured_but_unavailable = false;
+        let mut unhealthy_route_seen = false;
         for group_id in self.route_group_chain(principal).await? {
-            let mut route = if self.health.is_some() {
+            let Some(unfiltered_route) = self
+                .scheduler
+                .route_plan(group_id, &request.canonical().model)
+                .map_err(map_scheduler_error)?
+            else {
+                continue;
+            };
+            let unfiltered_protocol =
+                select_upstream_protocol(&unfiltered_route, request, response_protocol)?;
+            if route_availability(&unfiltered_route, unfiltered_protocol, request_id, None)
+                == RouteAvailability::Unsupported
+            {
+                // 模型存在但协议不匹配或没有静态凭据时属于不支持，不能伪装成运行时过载。
+                continue;
+            }
+
+            let route = if self.health.is_some() {
                 let (channel_ids, channel_health) = self
                     .load_channel_health(group_id, &request.canonical().model)
                     .await?;
-                configured_but_unavailable |= !channel_ids.is_empty();
-                self.scheduler
+                let route = self
+                    .scheduler
                     .route_plan_with_health(group_id, &request.canonical().model, &channel_health)
-                    .map_err(map_scheduler_error)?
+                    .map_err(map_scheduler_error)?;
+                if route.is_none() && !channel_ids.is_empty() {
+                    unhealthy_route_seen = true;
+                }
+                route
             } else {
-                self.scheduler
-                    .route_plan(group_id, &request.canonical().model)
-                    .map_err(map_scheduler_error)?
+                Some(unfiltered_route)
             };
-            let Some(mut route) = route.take() else {
+            let Some(mut route) = route else {
                 continue;
             };
-            configured_but_unavailable = true;
             let upstream_protocol = select_upstream_protocol(&route, request, response_protocol)?;
             route.configure_wait_policy(self.sticky_wait_policy);
             self.apply_sticky_binding(&mut route, upstream_protocol, session_scope)
@@ -637,21 +662,27 @@ impl ScheduledChatService {
                 .load_credential_health(&route, upstream_protocol)
                 .await?;
             let order_scope = session_scope.map_or(request_id, StableSessionScope::as_str);
-            if !route_has_available_credentials(
+            match route_availability(
                 &route,
                 upstream_protocol,
                 order_scope,
                 credential_health.as_ref(),
             ) {
-                continue;
+                RouteAvailability::Available => {
+                    return Ok(PreparedRouteSelection {
+                        route,
+                        upstream_protocol,
+                        credential_health,
+                    });
+                }
+                RouteAvailability::Unhealthy => unhealthy_route_seen = true,
+                RouteAvailability::Unsupported => {
+                    // 健康过滤可能只留下其他协议；未过滤计划可用时仍应归类为健康故障。
+                    unhealthy_route_seen |= self.health.is_some();
+                }
             }
-            return Ok(PreparedRouteSelection {
-                route,
-                upstream_protocol,
-                credential_health,
-            });
         }
-        Err(if configured_but_unavailable {
+        Err(if unhealthy_route_seen {
             af_domain::UpstreamError::overloaded().into()
         } else {
             af_domain::UpstreamError::ModelUnsupported.into()
@@ -898,30 +929,43 @@ fn collect_route_accounts(
     Ok(accounts)
 }
 
-fn route_has_available_credentials(
+fn route_availability(
     route: &IndexedRoutePlan,
     upstream_protocol: Protocol,
     order_scope: &str,
     credential_health: Option<&BTreeMap<i64, RuntimeHealthState>>,
-) -> bool {
-    route.candidates().iter().any(|candidate| {
+) -> RouteAvailability {
+    let mut matching_protocol = false;
+    let mut static_credentials = false;
+    for candidate in route.candidates() {
         let target = candidate.runtime_target();
         if !target_matches_protocol(target, upstream_protocol) {
-            return false;
+            continue;
         }
-        credential_health.map_or_else(
-            || !target.credentials().is_empty(),
-            |health| {
-                !order_credentials_with_health(
-                    order_scope,
-                    target.channel_id(),
-                    target.credentials(),
-                    health,
-                )
-                .is_empty()
-            },
-        )
-    })
+        matching_protocol = true;
+        if target.credentials().is_empty() {
+            continue;
+        }
+        static_credentials = true;
+        let available = match credential_health {
+            None => true,
+            Some(health) => !order_credentials_with_health(
+                order_scope,
+                target.channel_id(),
+                target.credentials(),
+                health,
+            )
+            .is_empty(),
+        };
+        if available {
+            return RouteAvailability::Available;
+        }
+    }
+    if matching_protocol && static_credentials {
+        RouteAvailability::Unhealthy
+    } else {
+        RouteAvailability::Unsupported
+    }
 }
 
 fn collect_route_credentials(
