@@ -1541,6 +1541,9 @@ pub(in crate::migration) mod debug_trace_settings {
         Enabled,
         SamplePerMillion,
         RetentionHours,
+        CaptureHeaders,
+        CaptureBodies,
+        MaxBodyBytes,
         Version,
         CreatedAt,
         UpdatedAt,
@@ -1576,6 +1579,10 @@ pub(in crate::migration) mod debug_traces {
         SelectedCredentialId,
         RoutingElapsedMs,
         AttemptCount,
+        DownstreamMethod,
+        DownstreamPath,
+        DownstreamHeadersJson,
+        DownstreamBodyJson,
         CreatedAt,
     }
 }
@@ -1605,6 +1612,14 @@ pub(in crate::migration) mod debug_trace_attempts {
         UpstreamStatus,
         RetryDecision,
         ElapsedMs,
+        RequestMethod,
+        RequestUrl,
+        RequestHeadersJson,
+        RequestBodyJson,
+        ResponseHeadersJson,
+        ResponseBodyJson,
+        ResponseStatus,
+        ResponseStreamed,
         CreatedAt,
     }
 }

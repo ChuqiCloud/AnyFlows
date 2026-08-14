@@ -21,6 +21,9 @@ pub struct AdminDebugTraceSettings {
     enabled: bool,
     sample_per_million: i64,
     retention_hours: i32,
+    capture_headers: bool,
+    capture_bodies: bool,
+    max_body_bytes: i32,
     version: i64,
 }
 
@@ -30,6 +33,9 @@ impl AdminDebugTraceSettings {
             enabled: record.enabled(),
             sample_per_million: record.sample_per_million(),
             retention_hours: record.retention_hours(),
+            capture_headers: record.capture_headers(),
+            capture_bodies: record.capture_bodies(),
+            max_body_bytes: record.max_body_bytes(),
             version: record.version(),
         }
     }
@@ -50,6 +56,21 @@ impl AdminDebugTraceSettings {
     }
 
     #[must_use]
+    pub const fn capture_headers(self) -> bool {
+        self.capture_headers
+    }
+
+    #[must_use]
+    pub const fn capture_bodies(self) -> bool {
+        self.capture_bodies
+    }
+
+    #[must_use]
+    pub const fn max_body_bytes(self) -> i32 {
+        self.max_body_bytes
+    }
+
+    #[must_use]
     pub const fn version(self) -> i64 {
         self.version
     }
@@ -66,8 +87,14 @@ impl AdminDebugTraceSettingsCommand {
         enabled: bool,
         sample_per_million: i64,
         retention_hours: i32,
+        capture_headers: bool,
+        capture_bodies: bool,
+        max_body_bytes: i32,
     ) -> Result<Self, AdminDebugTraceError> {
         let write = DebugTraceSettingsWrite::new(enabled, sample_per_million, retention_hours)
+            .and_then(|write| {
+                write.with_diagnostics(capture_headers, capture_bodies, max_body_bytes)
+            })
             .map_err(|_| AdminDebugTraceError::InvalidInput)?;
         Ok(Self { write })
     }
@@ -221,6 +248,10 @@ pub struct AdminDebugTrace {
     selected_credential_id: Option<CredentialId>,
     routing_elapsed_ms: i64,
     attempt_count: i32,
+    downstream_method: Option<String>,
+    downstream_path: Option<String>,
+    downstream_headers_json: Option<String>,
+    downstream_body_json: Option<String>,
     created_at: i64,
 }
 
@@ -253,6 +284,10 @@ impl AdminDebugTrace {
                 .map_err(|_| AdminDebugTraceError::Internal)?,
             routing_elapsed_ms: record.routing_elapsed_ms(),
             attempt_count: record.attempt_count(),
+            downstream_method: record.downstream_method().map(str::to_owned),
+            downstream_path: record.downstream_path().map(str::to_owned),
+            downstream_headers_json: record.downstream_headers_json().map(str::to_owned),
+            downstream_body_json: record.downstream_body_json().map(str::to_owned),
             created_at: record.created_at().unix_timestamp(),
         })
     }
@@ -314,6 +349,22 @@ impl AdminDebugTrace {
         self.attempt_count
     }
     #[must_use]
+    pub fn downstream_method(&self) -> Option<&str> {
+        self.downstream_method.as_deref()
+    }
+    #[must_use]
+    pub fn downstream_path(&self) -> Option<&str> {
+        self.downstream_path.as_deref()
+    }
+    #[must_use]
+    pub fn downstream_headers_json(&self) -> Option<&str> {
+        self.downstream_headers_json.as_deref()
+    }
+    #[must_use]
+    pub fn downstream_body_json(&self) -> Option<&str> {
+        self.downstream_body_json.as_deref()
+    }
+    #[must_use]
     pub const fn created_at(&self) -> i64 {
         self.created_at
     }
@@ -336,6 +387,14 @@ pub struct AdminDebugTraceAttempt {
     upstream_status: Option<i16>,
     retry_decision: bool,
     elapsed_ms: i64,
+    request_method: Option<String>,
+    request_url: Option<String>,
+    request_headers_json: Option<String>,
+    request_body_json: Option<String>,
+    response_status: Option<i16>,
+    response_headers_json: Option<String>,
+    response_body_json: Option<String>,
+    response_streamed: bool,
 }
 
 impl AdminDebugTraceAttempt {
@@ -353,6 +412,14 @@ impl AdminDebugTraceAttempt {
             upstream_status: record.upstream_status(),
             retry_decision: record.retry_decision(),
             elapsed_ms: record.elapsed_ms(),
+            request_method: record.request_method().map(str::to_owned),
+            request_url: record.request_url().map(str::to_owned),
+            request_headers_json: record.request_headers_json().map(str::to_owned),
+            request_body_json: record.request_body_json().map(str::to_owned),
+            response_status: record.response_status(),
+            response_headers_json: record.response_headers_json().map(str::to_owned),
+            response_body_json: record.response_body_json().map(str::to_owned),
+            response_streamed: record.response_streamed(),
         })
     }
 
@@ -387,6 +454,38 @@ impl AdminDebugTraceAttempt {
     #[must_use]
     pub const fn elapsed_ms(&self) -> i64 {
         self.elapsed_ms
+    }
+    #[must_use]
+    pub fn request_method(&self) -> Option<&str> {
+        self.request_method.as_deref()
+    }
+    #[must_use]
+    pub fn request_url(&self) -> Option<&str> {
+        self.request_url.as_deref()
+    }
+    #[must_use]
+    pub fn request_headers_json(&self) -> Option<&str> {
+        self.request_headers_json.as_deref()
+    }
+    #[must_use]
+    pub fn request_body_json(&self) -> Option<&str> {
+        self.request_body_json.as_deref()
+    }
+    #[must_use]
+    pub const fn response_status(&self) -> Option<i16> {
+        self.response_status
+    }
+    #[must_use]
+    pub fn response_headers_json(&self) -> Option<&str> {
+        self.response_headers_json.as_deref()
+    }
+    #[must_use]
+    pub fn response_body_json(&self) -> Option<&str> {
+        self.response_body_json.as_deref()
+    }
+    #[must_use]
+    pub const fn response_streamed(&self) -> bool {
+        self.response_streamed
     }
 }
 

@@ -301,12 +301,14 @@ pub use credential_state::{
     CredentialStateRepositoryError, CredentialStateWriteReport, MAX_CREDENTIAL_STATE_BATCH,
 };
 pub use debug_trace::{
-    DebugTraceAttemptOutcome, DebugTraceAttemptRecord, DebugTraceAttemptWrite,
-    DebugTraceDetailRecord, DebugTraceFailureKind, DebugTraceListQuery, DebugTraceOperation,
-    DebugTraceOutcome, DebugTracePageRecord, DebugTraceProtocol, DebugTraceRepository,
-    DebugTraceRepositoryConfigError, DebugTraceRepositoryError, DebugTraceSettingsRecord,
+    DEFAULT_DEBUG_TRACE_BODY_BYTES, DebugTraceAttemptDiagnosticWrite, DebugTraceAttemptOutcome,
+    DebugTraceAttemptRecord, DebugTraceAttemptWrite, DebugTraceDetailRecord, DebugTraceFailureKind,
+    DebugTraceListQuery, DebugTraceOperation, DebugTraceOutcome, DebugTracePageRecord,
+    DebugTraceProtocol, DebugTraceRepository, DebugTraceRepositoryConfigError,
+    DebugTraceRepositoryError, DebugTraceRequestDiagnosticWrite, DebugTraceSettingsRecord,
     DebugTraceSettingsWrite, DebugTraceSummaryRecord, DebugTraceWrite, DebugTraceWriteError,
-    MAX_DEBUG_TRACE_PAGE_SIZE, MAX_DEBUG_TRACE_RETENTION_HOURS, MAX_DEBUG_TRACE_SAMPLE_PER_MILLION,
+    MAX_DEBUG_TRACE_BODY_BYTES, MAX_DEBUG_TRACE_PAGE_SIZE, MAX_DEBUG_TRACE_RETENTION_HOURS,
+    MAX_DEBUG_TRACE_SAMPLE_PER_MILLION, MIN_DEBUG_TRACE_BODY_BYTES,
 };
 pub use email_settings::{
     EmailPasswordUpdate, EmailSettingsRecord, EmailSettingsRepository,

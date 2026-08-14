@@ -1,12 +1,14 @@
 use af_admin::TokenAuthentication;
 use af_domain::{AfError, Protocol};
 use af_protocol::gemini::{parse_request_envelope, parse_stream_request_envelope};
+use af_relay::RelayDiagnosticInput;
 use af_telemetry::RequestId;
 use axum::{
     body::Bytes,
     extract::{Extension, Path, RawQuery, State},
     response::Response,
 };
+use http::HeaderMap;
 use url::form_urlencoded;
 
 use crate::{
@@ -24,8 +26,14 @@ pub(crate) async fn gemini_generate_content(
     RawQuery(query): RawQuery,
     Extension(request_id): Extension<RequestId>,
     Extension(authentication): Extension<TokenAuthentication>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Result<Response, GeminiHttpError> {
+    let diagnostic_path = query.as_deref().map_or_else(
+        || format!("/v1beta/models/{model_action}"),
+        |query| format!("/v1beta/models/{model_action}?{query}"),
+    );
+    let diagnostic = RelayDiagnosticInput::capture("POST", &diagnostic_path, &headers, &body);
     let target = parse_target(&model_action, query.as_deref())
         .map_err(|_| GeminiHttpError::from(AfError::InvalidRequest))?;
     let model_resource = format!("models/{}", target.model);
@@ -46,6 +54,7 @@ pub(crate) async fn gemini_generate_content(
             request,
             Protocol::Gemini,
             request_id.as_str(),
+            diagnostic,
         )
         .await
         .map_err(GeminiHttpError::from)?;

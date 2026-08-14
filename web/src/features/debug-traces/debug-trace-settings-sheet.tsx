@@ -21,6 +21,7 @@ import { Switch } from '@/components/ui/switch'
 import { useAdminDebugTraceSettings, useUpdateAdminDebugTraceSettings } from './debug-trace-api'
 
 const retentionOptions = [1, 6, 12, 24, 72, 168, 720] as const
+const bodyLimitOptions = [4_096, 16_384, 32_768, 65_536] as const
 
 /** 用易读百分比和保留期选项编辑底层百万分采样设置。 */
 export function DebugTraceSettingsSheet() {
@@ -30,12 +31,18 @@ export function DebugTraceSettingsSheet() {
   const [enabled, setEnabled] = useState(false)
   const [samplePercent, setSamplePercent] = useState('1')
   const [retentionHours, setRetentionHours] = useState('24')
+  const [captureHeaders, setCaptureHeaders] = useState(false)
+  const [captureBodies, setCaptureBodies] = useState(false)
+  const [maxBodyBytes, setMaxBodyBytes] = useState('16384')
 
   useEffect(() => {
     if (!query.data) return
     setEnabled(query.data.enabled)
     setSamplePercent(formatPercent(query.data.sample_per_million))
     setRetentionHours(String(query.data.retention_hours))
+    setCaptureHeaders(query.data.capture_headers)
+    setCaptureBodies(query.data.capture_bodies)
+    setMaxBodyBytes(String(query.data.max_body_bytes))
   }, [query.data])
 
   const samplePerMillion = parseSamplePercent(samplePercent)
@@ -45,7 +52,10 @@ export function DebugTraceSettingsSheet() {
     return enabled !== query.data.enabled
       || samplePerMillion !== query.data.sample_per_million
       || Number(retentionHours) !== query.data.retention_hours
-  }, [enabled, query.data, retentionHours, samplePerMillion])
+      || captureHeaders !== query.data.capture_headers
+      || captureBodies !== query.data.capture_bodies
+      || Number(maxBodyBytes) !== query.data.max_body_bytes
+  }, [captureBodies, captureHeaders, enabled, maxBodyBytes, query.data, retentionHours, samplePerMillion])
 
   const save = async () => {
     if (samplePerMillion === undefined) return
@@ -54,6 +64,9 @@ export function DebugTraceSettingsSheet() {
         enabled,
         sample_per_million: samplePerMillion,
         retention_hours: Number(retentionHours),
+        capture_headers: captureHeaders,
+        capture_bodies: captureBodies,
+        max_body_bytes: Number(maxBodyBytes),
       })
     } catch {
       // 表单值保持不变，服务端诊断不进入浏览器展示。
@@ -117,6 +130,38 @@ export function DebugTraceSettingsSheet() {
               <p className={invalid ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>
                 {t(invalid ? 'debugTraces.settings.sampleInvalid' : 'debugTraces.settings.sampleHint')}
               </p>
+            </div>
+
+            <div className="grid gap-3 border-t border-[var(--hairline)] pt-5">
+              <div>
+                <h3 className="text-sm font-semibold">{t('debugTraces.settings.diagnostics')}</h3>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('debugTraces.settings.diagnosticsDescription')}</p>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
+                <div>
+                  <Label htmlFor="debug-trace-headers">{t('debugTraces.settings.captureHeaders')}</Label>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('debugTraces.settings.captureHeadersDescription')}</p>
+                </div>
+                <Switch id="debug-trace-headers" checked={captureHeaders} onCheckedChange={setCaptureHeaders} />
+              </div>
+
+              <div className="flex items-center justify-between gap-4 rounded-lg border border-[var(--hairline)] bg-surface-1 p-3">
+                <div>
+                  <Label htmlFor="debug-trace-bodies">{t('debugTraces.settings.captureBodies')}</Label>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('debugTraces.settings.captureBodiesDescription')}</p>
+                </div>
+                <Switch id="debug-trace-bodies" checked={captureBodies} onCheckedChange={setCaptureBodies} />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="debug-trace-body-limit">{t('debugTraces.settings.bodyLimit')}</Label>
+                <Select id="debug-trace-body-limit" value={maxBodyBytes} disabled={!captureBodies} onChange={(event) => setMaxBodyBytes(event.target.value)}>
+                  {bodyLimitOptions.map((bytes) => (
+                    <option key={bytes} value={bytes}>{t('debugTraces.settings.bodyLimitValue', { value: bytes / 1_024 })}</option>
+                  ))}
+                </Select>
+              </div>
             </div>
 
             <div className="grid gap-2">

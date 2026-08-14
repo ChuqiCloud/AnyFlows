@@ -17,8 +17,8 @@ use af_domain::{
 use af_http::{ChatService, ChatServiceFuture};
 use af_protocol::{CanonicalRequestEnvelope, TokenCount, Usage};
 use af_relay::{
-    ChatResponse, GenerationCompletionFuture, GenerationCompletionHook, UsageResolutionError,
-    estimate_openai_request_upper_bound,
+    ChatResponse, GenerationCompletionFuture, GenerationCompletionHook, RelayDiagnosticInput,
+    UsageResolutionError, estimate_openai_request_upper_bound,
 };
 use tokio::time::sleep;
 use uuid::Uuid;
@@ -55,6 +55,7 @@ pub trait ChatRoutePlanner: Send + Sync {
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &'a str,
+        diagnostic: RelayDiagnosticInput,
     ) -> ChatRoutePlanFuture<'a>;
 }
 
@@ -100,6 +101,7 @@ impl BillingChatService {
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &str,
+        diagnostic: RelayDiagnosticInput,
     ) -> Result<ChatResponse, AfError> {
         let started_at = Instant::now();
         let canonical = request.canonical();
@@ -129,6 +131,7 @@ impl BillingChatService {
                 request,
                 response_protocol,
                 request_id,
+                diagnostic,
             )
             .await?;
         let source_group_id = principal.group_id();
@@ -210,6 +213,7 @@ impl ChatService for BillingChatService {
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &'a str,
+        diagnostic: RelayDiagnosticInput,
     ) -> ChatServiceFuture<'a> {
         Box::pin(self.call(
             principal,
@@ -217,6 +221,7 @@ impl ChatService for BillingChatService {
             request,
             response_protocol,
             request_id,
+            diagnostic,
         ))
     }
 }
@@ -413,7 +418,7 @@ pub(crate) fn map_lifecycle_error(error: BillingLifecycleError) -> AfError {
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use af_adapter::Bytes;
+    use af_adapter::{Bytes, HeaderMap};
     use af_billing::{
         BillingMode, BillingPrechargeFuture, BillingPrechargePort, BillingSettlementFuture,
         BillingSettlementPort, BillingUsageRecord, CachedRequestPricingSnapshotSource,
@@ -453,6 +458,7 @@ mod tests {
             _request: CanonicalRequestEnvelope,
             _response_protocol: Protocol,
             _request_id: &'a str,
+            _diagnostic: RelayDiagnosticInput,
         ) -> ChatRoutePlanFuture<'a> {
             Box::pin(async move {
                 Ok(Box::new(FullExecution {
@@ -484,6 +490,7 @@ mod tests {
             _request: CanonicalRequestEnvelope,
             response_protocol: Protocol,
             _request_id: &'a str,
+            _diagnostic: RelayDiagnosticInput,
         ) -> ChatRoutePlanFuture<'a> {
             self.protocols.lock().unwrap().push(response_protocol);
             Box::pin(async move {
@@ -502,6 +509,7 @@ mod tests {
             request: CanonicalRequestEnvelope,
             _response_protocol: Protocol,
             _request_id: &'a str,
+            _diagnostic: RelayDiagnosticInput,
         ) -> ChatRoutePlanFuture<'a> {
             let max_output_tokens = request
                 .canonical()
@@ -614,6 +622,7 @@ mod tests {
                 request(),
                 Protocol::OpenAiChat,
                 "request-1",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -646,6 +655,7 @@ mod tests {
                 request(),
                 Protocol::OpenAiChat,
                 "request-expression",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -682,6 +692,7 @@ mod tests {
                 request(),
                 Protocol::Anthropic,
                 "request-anthropic",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -692,6 +703,7 @@ mod tests {
                 responses_request(),
                 Protocol::OpenAiResponses,
                 "request-responses",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -725,6 +737,7 @@ mod tests {
                 responses_request(),
                 Protocol::OpenAiResponses,
                 "request-default-output-limit",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -754,6 +767,7 @@ mod tests {
                 encrypted_reasoning_responses_request(),
                 Protocol::OpenAiResponses,
                 "request-encrypted-reasoning",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -786,6 +800,7 @@ mod tests {
                 request(),
                 Protocol::OpenAiChat,
                 "request-target-group",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -819,6 +834,7 @@ mod tests {
                 request(),
                 Protocol::OpenAiChat,
                 "request-failover",
+                diagnostic(),
             )
             .await
             .unwrap();
@@ -842,6 +858,15 @@ mod tests {
             TokenId::new(1).unwrap(),
             UserId::new(2).unwrap(),
             GroupId::new(3).unwrap(),
+        )
+    }
+
+    fn diagnostic() -> RelayDiagnosticInput {
+        RelayDiagnosticInput::capture(
+            "POST",
+            "/v1/chat/completions",
+            &HeaderMap::new(),
+            &Bytes::new(),
         )
     }
 
@@ -1034,6 +1059,7 @@ mod tests {
             _request: CanonicalRequestEnvelope,
             _response_protocol: Protocol,
             _request_id: &'a str,
+            _diagnostic: RelayDiagnosticInput,
         ) -> ChatRoutePlanFuture<'a> {
             let target_group_id = principal.group_id();
             let attempts = self.attempts.clone();

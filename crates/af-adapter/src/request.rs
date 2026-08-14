@@ -431,6 +431,15 @@ impl UpstreamResponse {
         &mut self.headers
     }
 
+    /// 返回已完整缓冲的响应正文；流式响应必须保持背压，因而返回空。
+    #[must_use]
+    pub const fn full_body(&self) -> Option<&Bytes> {
+        match &self.body {
+            UpstreamBody::Full(body) => Some(body),
+            UpstreamBody::Stream(_) => None,
+        }
+    }
+
     /// 消费响应并返回响应体。
     #[must_use]
     pub fn into_body(self) -> UpstreamBody {

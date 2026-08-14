@@ -12873,7 +12873,8 @@
           "credential_id",
           "outcome",
           "retry_decision",
-          "elapsed_ms"
+          "elapsed_ms",
+          "response_streamed"
         ],
         "properties": {
           "candidate_index": {
@@ -12910,6 +12911,32 @@
           "elapsed_ms": {
             "type": "integer",
             "format": "int64"
+          },
+          "request_method": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_headers": {},
+          "request_body": {},
+          "response_status": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "response_headers": {},
+          "response_body": {},
+          "response_streamed": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -12924,12 +12951,40 @@
           "trace": {
             "$ref": "#/components/schemas/AdminDebugTrace"
           },
+          "downstream_request": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/AdminDebugTraceDownstreamRequest"
+              }
+            ]
+          },
           "attempts": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AdminDebugTraceAttempt"
             }
           }
+        },
+        "additionalProperties": false
+      },
+      "AdminDebugTraceDownstreamRequest": {
+        "type": "object",
+        "required": [
+          "method",
+          "path"
+        ],
+        "properties": {
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "headers": {},
+          "body": {}
         },
         "additionalProperties": false
       },
@@ -12964,6 +13019,9 @@
           "enabled",
           "sample_per_million",
           "retention_hours",
+          "capture_headers",
+          "capture_bodies",
+          "max_body_bytes",
           "version"
         ],
         "properties": {
@@ -12982,6 +13040,18 @@
             "maximum": 720,
             "minimum": 1
           },
+          "capture_headers": {
+            "type": "boolean"
+          },
+          "capture_bodies": {
+            "type": "boolean"
+          },
+          "max_body_bytes": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 65536,
+            "minimum": 1024
+          },
           "version": {
             "type": "integer",
             "format": "int64",
@@ -12995,7 +13065,10 @@
         "required": [
           "enabled",
           "sample_per_million",
-          "retention_hours"
+          "retention_hours",
+          "capture_headers",
+          "capture_bodies",
+          "max_body_bytes"
         ],
         "properties": {
           "enabled": {
@@ -13012,6 +13085,18 @@
             "format": "int32",
             "maximum": 720,
             "minimum": 1
+          },
+          "capture_headers": {
+            "type": "boolean"
+          },
+          "capture_bodies": {
+            "type": "boolean"
+          },
+          "max_body_bytes": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 65536,
+            "minimum": 1024
           }
         },
         "additionalProperties": false

@@ -5,7 +5,8 @@ use utoipa::OpenApi;
 
 use crate::{
     debug_traces::{
-        AdminDebugTraceAttemptResponse, AdminDebugTraceDetailResponse, AdminDebugTraceListResponse,
+        AdminDebugTraceAttemptResponse, AdminDebugTraceDetailResponse,
+        AdminDebugTraceDownstreamRequestResponse, AdminDebugTraceListResponse,
         AdminDebugTraceResponse, AdminDebugTraceSettingsRequest, AdminDebugTraceSettingsResponse,
     },
     management_error::ManagementErrorBody,
@@ -103,6 +104,7 @@ fn get_admin_debug_trace() {}
         AdminDebugTraceDetailResponse,
         AdminDebugTraceResponse,
         AdminDebugTraceAttemptResponse,
+        AdminDebugTraceDownstreamRequestResponse,
         ManagementErrorBody
     ))
 )]
