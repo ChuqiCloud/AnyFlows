@@ -21,7 +21,15 @@
     "groups": {
       "use": "使用",
       "account": "账户",
+      "workspace": "工作台",
+      "personal": "个人空间",
       "system": "系统管理"
+    },
+    "sections": {
+      "personal": "个人账户",
+      "operations": "用户与商业化",
+      "gateway": "模型与网关",
+      "platform": "平台配置"
     },
     "overview": "运行概览",
     "models": "模型广场",
@@ -2262,6 +2270,7 @@
       "notApplicable": "不适用",
       "priceTitle": "{{label}}：每百万 token ${{value}}",
       "perMillion": "每百万 token",
+      "perMillionCompact": "/ 1M",
       "appliedRatios": "已应用倍率",
       "baseRatios": "公开基础倍率",
       "moreTags": "+{{count}}",

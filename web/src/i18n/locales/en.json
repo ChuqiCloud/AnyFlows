@@ -21,7 +21,15 @@
     "groups": {
       "use": "Use",
       "account": "Account",
+      "workspace": "Workspace",
+      "personal": "Personal",
       "system": "System management"
+    },
+    "sections": {
+      "personal": "Personal account",
+      "operations": "Users & commerce",
+      "gateway": "Models & gateway",
+      "platform": "Platform settings"
     },
     "overview": "Operations overview",
     "models": "Models",
@@ -2184,6 +2192,7 @@
       "notApplicable": "Not applicable",
       "priceTitle": "{{label}}: ${{value}} per million tokens",
       "perMillion": "per million tokens",
+      "perMillionCompact": "/ 1M",
       "appliedRatios": "Applied ratios",
       "baseRatios": "Public base ratios",
       "moreTags": "+{{count}}",

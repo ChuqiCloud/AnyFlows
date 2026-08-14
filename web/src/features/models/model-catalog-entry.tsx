@@ -62,18 +62,18 @@ function ModelCapabilitySummary({ className, item }: SummaryProps) {
         value: formatExactContextWindow(item.context_window, i18n.resolvedLanguage),
       })
   return (
-    <div className={cn('flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-[0.6875rem] text-muted-foreground', className)}>
-      <span className="inline-flex items-center gap-1" title={exactContext}>
+    <div className={cn('flex min-w-0 flex-wrap gap-x-3 gap-y-0.5 text-[0.6875rem] leading-4 text-muted-foreground', className)}>
+      <span className="inline-flex items-center gap-1 whitespace-nowrap" title={exactContext}>
         <Gauge className="size-3" aria-hidden="true" />
         {item.context_window === null
           ? t('models.values.contextUnknownShort')
           : t('models.values.contextShort', { value: formatContextWindow(item.context_window) })}
       </span>
       {item.supports_reasoning ? (
-        <span className="inline-flex items-center gap-1"><BrainCircuit className="size-3" aria-hidden="true" />{t('models.capabilities.reasoning')}</span>
+        <span className="inline-flex items-center gap-1 whitespace-nowrap"><BrainCircuit className="size-3" aria-hidden="true" />{t('models.capabilities.reasoning')}</span>
       ) : null}
       {item.supports_tool_calls ? (
-        <span className="inline-flex items-center gap-1"><Wrench className="size-3" aria-hidden="true" />{t('models.capabilities.tool_calls')}</span>
+        <span className="inline-flex items-center gap-1 whitespace-nowrap"><Wrench className="size-3" aria-hidden="true" />{t('models.capabilities.tool_calls')}</span>
       ) : null}
     </div>
   )
@@ -83,7 +83,7 @@ function ModelDescription({ className, item }: SummaryProps) {
   if (!item.description) return null
   return (
     <p
-      className={cn('line-clamp-2 break-words text-xs leading-5 text-muted-foreground', className)}
+      className={cn('line-clamp-2 break-words text-xs leading-4 text-muted-foreground', className)}
       title={item.description}
     >
       {item.description}
@@ -137,13 +137,13 @@ export function ModelCatalogMobileEntry({ item, pricingScope, expanded, onToggle
   const { t } = useTranslation()
   const detailsId = `model-details-mobile-${encodeURIComponent(item.model)}`
   return (
-    <article className="@container rounded-lg border border-[var(--hairline)] bg-surface-1 p-3 transition-colors duration-150 hover:border-info/25">
-      <div className="flex min-w-0 items-start gap-3">
+    <article className="@container rounded-lg border border-[var(--hairline)] bg-surface-1 p-2.5 transition-colors duration-150 hover:border-info/25">
+      <div className="flex min-w-0 items-start gap-2">
         <div className="min-w-0 flex-1"><ModelCatalogIdentity item={item} /></div>
         <Button
           type="button"
           variant="ghost"
-          size="sm"
+          size="xs"
           className="shrink-0"
           aria-expanded={expanded}
           aria-controls={detailsId}
@@ -153,13 +153,13 @@ export function ModelCatalogMobileEntry({ item, pricingScope, expanded, onToggle
           <ChevronDown className={cn('size-3.5 transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
         </Button>
       </div>
-      <ModelDescription item={item} className="mt-2" />
-      <div className="mt-2.5 grid gap-2.5 @min-[48rem]:grid-cols-[minmax(0,1fr)_auto] @min-[48rem]:items-end @min-[48rem]:gap-5">
-        <div className="grid min-w-0 gap-2 @min-[48rem]:flex @min-[48rem]:flex-wrap @min-[48rem]:items-center @min-[48rem]:gap-x-3">
+      <ModelDescription item={item} className="mt-1.5" />
+      <div className="mt-2 grid gap-2 @min-[36rem]:grid-cols-[minmax(0,1fr)_auto] @min-[36rem]:items-center @min-[36rem]:gap-4">
+        <div className="grid min-w-0 gap-1.5 @min-[36rem]:flex @min-[36rem]:flex-wrap @min-[36rem]:items-center @min-[36rem]:gap-x-3">
           <ModelCapabilitySummary item={item} />
           <ModelStateBadges item={item} />
         </div>
-        <div className="grid w-full grid-cols-2 gap-4 @min-[48rem]:w-48">
+        <div className="grid w-full grid-cols-2 gap-3 @min-[36rem]:w-48">
           <ModelPriceValue label={t('models.columns.input')} value={item.prices?.input} showLabel />
           <ModelPriceValue label={t('models.columns.output')} value={item.prices?.output} showLabel />
         </div>
