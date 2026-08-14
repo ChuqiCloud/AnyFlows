@@ -1,35 +1,52 @@
 import {
   Activity,
   Boxes,
+  BriefcaseBusiness,
   CalendarRange,
+  ChartNoAxesCombined,
+  ChevronRight,
   CircleDollarSign,
+  CircleUserRound,
+  Fingerprint,
   Gauge,
   GitBranch,
-  Fingerprint,
   KeyRound,
+  Landmark,
   Layers3,
   ListChecks,
   Mail,
   MessageSquareText,
   Network,
-  PanelsTopLeft,
-  Landmark,
   PackageSearch,
+  PanelsTopLeft,
   ScrollText,
   ServerCog,
+  Settings2,
   ShieldCheck,
-  TicketCheck,
   Ticket,
+  TicketCheck,
   UserRound,
   UsersRound,
   Video,
   WalletCards,
+  Waypoints,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Collapsible } from 'radix-ui'
 
-import { routeFromHash, type AppView } from '@/app-route'
-import { cn } from '@/lib/utils'
+import { routeFromHash } from '@/app-route'
+import {
+  activeKeyByView,
+  adminNavigationItems,
+  adminNavigationSections,
+  adminWorkspaceItems,
+  type AdminSectionKey,
+  type NavKey,
+  userNavigationGroups,
+  userNavigationItems,
+} from '@/components/layout/app-navigation-model'
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -37,128 +54,220 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  useSidebar,
 } from '@/components/ui/sidebar'
+import { cn } from '@/lib/utils'
 
 type AppNavigationProps = {
   className?: string
-  /** compact 模式用于移动端横向导航条 */
+  /** compact 模式用于移动端横向导航条。 */
   compact?: boolean
   role: 'admin' | 'user'
 }
 
 type NavItem = {
-  key: 'overview' | 'models' | 'playground' | 'videoTasks' | 'apiKeys' | 'wallet' | 'subscriptions' | 'invitations' | 'profile' | 'users' | 'subscriptionManagement' | 'redemptionCodes' | 'siteSettings' | 'authenticationSettings' | 'emailSettings' | 'networkSettings' | 'paymentSettings' | 'billingSettings' | 'groupSettings' | 'modelSettings' | 'channels' | 'credentials' | 'credentialProxies' | 'routes' | 'keys' | 'usage' | 'debugTraces'
+  key: NavKey
   icon: LucideIcon
   href: `#/console${string}`
 }
 
-type NavGroup = {
-  key: 'use' | 'account' | 'system'
-  adminOnly: boolean
-  items: readonly NavItem[]
-}
+const navItems = {
+  overview: { key: 'overview', icon: Gauge, href: '#/console' },
+  models: { key: 'models', icon: Boxes, href: '#/console/models' },
+  playground: { key: 'playground', icon: MessageSquareText, href: '#/console/playground' },
+  videoTasks: { key: 'videoTasks', icon: Video, href: '#/console/video-tasks' },
+  apiKeys: { key: 'apiKeys', icon: KeyRound, href: '#/console/api-keys' },
+  wallet: { key: 'wallet', icon: WalletCards, href: '#/console/wallet' },
+  subscriptions: { key: 'subscriptions', icon: CalendarRange, href: '#/console/subscriptions' },
+  invitations: { key: 'invitations', icon: TicketCheck, href: '#/console/invitations' },
+  profile: { key: 'profile', icon: UserRound, href: '#/console/profile' },
+  users: { key: 'users', icon: UsersRound, href: '#/console/users' },
+  subscriptionManagement: { key: 'subscriptionManagement', icon: ListChecks, href: '#/console/subscription-management' },
+  redemptionCodes: { key: 'redemptionCodes', icon: Ticket, href: '#/console/redemption-codes' },
+  siteSettings: { key: 'siteSettings', icon: PanelsTopLeft, href: '#/console/system-settings/site' },
+  authenticationSettings: { key: 'authenticationSettings', icon: Fingerprint, href: '#/console/system-settings/authentication' },
+  emailSettings: { key: 'emailSettings', icon: Mail, href: '#/console/system-settings/email' },
+  networkSettings: { key: 'networkSettings', icon: Network, href: '#/console/system-settings/network' },
+  paymentSettings: { key: 'paymentSettings', icon: Landmark, href: '#/console/system-settings/payment' },
+  billingSettings: { key: 'billingSettings', icon: CircleDollarSign, href: '#/console/system-settings/billing' },
+  groupSettings: { key: 'groupSettings', icon: Layers3, href: '#/console/system-settings/groups' },
+  modelSettings: { key: 'modelSettings', icon: PackageSearch, href: '#/console/system-settings/models' },
+  channels: { key: 'channels', icon: Network, href: '#/console/channels' },
+  credentials: { key: 'credentials', icon: KeyRound, href: '#/console/credentials' },
+  credentialProxies: { key: 'credentialProxies', icon: ServerCog, href: '#/console/proxies' },
+  routes: { key: 'routes', icon: GitBranch, href: '#/console/routes' },
+  keys: { key: 'keys', icon: ShieldCheck, href: '#/console/tokens' },
+  usage: { key: 'usage', icon: ScrollText, href: '#/console/usage-logs' },
+  debugTraces: { key: 'debugTraces', icon: Activity, href: '#/console/debug-traces' },
+} as const satisfies Record<NavKey, NavItem>
 
-const navGroups: readonly NavGroup[] = [
-  {
-    key: 'use',
-    adminOnly: false,
-    items: [
-      { key: 'models', icon: Boxes, href: '#/console/models' },
-      { key: 'playground', icon: MessageSquareText, href: '#/console/playground' },
-      { key: 'videoTasks', icon: Video, href: '#/console/video-tasks' },
-    ],
-  },
-  {
-    key: 'account',
-    adminOnly: false,
-    items: [
-      { key: 'apiKeys', icon: KeyRound, href: '#/console/api-keys' },
-      { key: 'wallet', icon: WalletCards, href: '#/console/wallet' },
-      { key: 'usage', icon: ScrollText, href: '#/console/usage-logs' },
-      { key: 'subscriptions', icon: CalendarRange, href: '#/console/subscriptions' },
-      { key: 'invitations', icon: TicketCheck, href: '#/console/invitations' },
-      { key: 'profile', icon: UserRound, href: '#/console/profile' },
-    ],
-  },
-  {
-    key: 'system',
-    adminOnly: true,
-    items: [
-      { key: 'overview', icon: Gauge, href: '#/console' },
-      { key: 'users', icon: UsersRound, href: '#/console/users' },
-      { key: 'subscriptionManagement', icon: ListChecks, href: '#/console/subscription-management' },
-      { key: 'redemptionCodes', icon: Ticket, href: '#/console/redemption-codes' },
-      { key: 'siteSettings', icon: PanelsTopLeft, href: '#/console/system-settings/site' },
-      { key: 'authenticationSettings', icon: Fingerprint, href: '#/console/system-settings/authentication' },
-      { key: 'emailSettings', icon: Mail, href: '#/console/system-settings/email' },
-      { key: 'networkSettings', icon: Network, href: '#/console/system-settings/network' },
-      { key: 'paymentSettings', icon: Landmark, href: '#/console/system-settings/payment' },
-      { key: 'billingSettings', icon: CircleDollarSign, href: '#/console/system-settings/billing' },
-      { key: 'groupSettings', icon: Layers3, href: '#/console/system-settings/groups' },
-      { key: 'modelSettings', icon: PackageSearch, href: '#/console/system-settings/models' },
-      { key: 'channels', icon: Network, href: '#/console/channels' },
-      { key: 'credentials', icon: KeyRound, href: '#/console/credentials' },
-      { key: 'credentialProxies', icon: ServerCog, href: '#/console/proxies' },
-      { key: 'routes', icon: GitBranch, href: '#/console/routes' },
-      { key: 'keys', icon: ShieldCheck, href: '#/console/tokens' },
-      { key: 'debugTraces', icon: Activity, href: '#/console/debug-traces' },
-    ],
-  },
-]
-
-const activeKeyByView: Partial<Record<AppView, NavItem['key']>> = {
-  overview: 'overview',
-  models: 'models',
-  playground: 'playground',
-  'video-tasks': 'videoTasks',
-  'api-keys': 'apiKeys',
-  wallet: 'wallet',
-  subscriptions: 'subscriptions',
-  invitations: 'invitations',
-  profile: 'profile',
-  users: 'users',
-  'subscription-management': 'subscriptionManagement',
-  'redemption-codes': 'redemptionCodes',
-  'site-settings': 'siteSettings',
-  'authentication-settings': 'authenticationSettings',
-  'email-settings': 'emailSettings',
-  'network-settings': 'networkSettings',
-  'payment-settings': 'paymentSettings',
-  'billing-settings': 'billingSettings',
-  'group-settings': 'groupSettings',
-  'model-settings': 'modelSettings',
-  channels: 'channels',
-  credentials: 'credentials',
-  'credential-proxies': 'credentialProxies',
-  routes: 'routes',
-  tokens: 'keys',
-  'usage-logs': 'usage',
-  'debug-traces': 'debugTraces',
-}
+const sectionIcons = {
+  personal: CircleUserRound,
+  operations: BriefcaseBusiness,
+  gateway: Waypoints,
+  platform: Settings2,
+  observability: ChartNoAxesCombined,
+} as const satisfies Record<AdminSectionKey, LucideIcon>
 
 function useActiveKey() {
   if (typeof window === 'undefined') return 'overview'
   return activeKeyByView[routeFromHash(window.location.hash).view] ?? 'overview'
 }
 
+function NavigationItem({ itemKey, activeKey }: { itemKey: NavKey; activeKey: NavKey }) {
+  const { t } = useTranslation()
+  const item = navItems[itemKey]
+  const Icon = item.icon
+  const active = item.key === activeKey
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={active} tooltip={t(`nav.${item.key}`)} className={active ? 'text-brand' : undefined}>
+        <a href={item.href} aria-current={active ? 'page' : undefined}>
+          <Icon className={cn('shrink-0', active ? 'text-brand' : 'text-sidebar-foreground/70')} aria-hidden="true" />
+          <span>{t(`nav.${item.key}`)}</span>
+        </a>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  )
+}
+
+function NavigationGroup({ label, items, activeKey }: { label: string; items: readonly NavKey[]; activeKey: NavKey }) {
+  return (
+    <SidebarGroup className="p-0">
+      <SidebarGroupLabel className="h-7 px-2 text-[0.6875rem]">{label}</SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>{items.map((item) => <NavigationItem key={item} itemKey={item} activeKey={activeKey} />)}</SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  )
+}
+
+function CollapsibleNavigationSection({
+  sectionKey,
+  items,
+  activeKey,
+  open,
+  onOpenChange,
+}: {
+  sectionKey: AdminSectionKey
+  items: readonly NavKey[]
+  activeKey: NavKey
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { t } = useTranslation()
+  const { setOpen: setSidebarOpen, state: sidebarState } = useSidebar()
+  const Icon = sectionIcons[sectionKey]
+  const active = items.includes(activeKey)
+  const contentId = `admin-nav-${sectionKey}`
+
+  return (
+    <Collapsible.Root asChild open={open} onOpenChange={onOpenChange}>
+      <SidebarMenuItem>
+        <SidebarMenuButton
+          type="button"
+          isActive={active}
+          tooltip={t(`nav.sections.${sectionKey}`)}
+          className={active ? 'text-brand' : undefined}
+          aria-controls={contentId}
+          aria-expanded={open}
+          onClick={() => {
+            if (sidebarState === 'collapsed') setSidebarOpen(true)
+            onOpenChange(!open)
+          }}
+        >
+          <Icon className={cn('shrink-0', active ? 'text-brand' : 'text-sidebar-foreground/70')} aria-hidden="true" />
+          <span>{t(`nav.sections.${sectionKey}`)}</span>
+          <ChevronRight className={cn('ml-auto transition-transform duration-200 group-data-[collapsible=icon]:hidden', open && 'rotate-90')} aria-hidden="true" />
+        </SidebarMenuButton>
+        <Collapsible.Content
+          id={contentId}
+          forceMount
+          inert={open ? undefined : true}
+          aria-hidden={!open}
+          className={cn(
+            'grid transition-[grid-template-rows,opacity] duration-200 ease-[var(--ease-ai-out)]',
+            open ? 'grid-rows-[1fr] opacity-100' : 'pointer-events-none grid-rows-[0fr] opacity-0',
+          )}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <SidebarMenuSub className="gap-0 py-1">
+              {items.map((itemKey) => {
+                const item = navItems[itemKey]
+                const ItemIcon = item.icon
+                const itemActive = item.key === activeKey
+                return (
+                  <SidebarMenuSubItem key={item.key}>
+                    <SidebarMenuSubButton asChild size="sm" isActive={itemActive} className={itemActive ? 'text-brand' : undefined}>
+                      <a href={item.href} aria-current={itemActive ? 'page' : undefined}>
+                        <ItemIcon aria-hidden="true" />
+                        <span>{t(`nav.${item.key}`)}</span>
+                      </a>
+                    </SidebarMenuSubButton>
+                  </SidebarMenuSubItem>
+                )
+              })}
+            </SidebarMenuSub>
+          </div>
+        </Collapsible.Content>
+      </SidebarMenuItem>
+    </Collapsible.Root>
+  )
+}
+
+/** 管理员按任务域折叠低频入口，当前页面所属分组默认保持可见。 */
+function AdminNavigation({ activeKey }: { activeKey: NavKey }) {
+  const { t } = useTranslation()
+  const [sectionState, setSectionState] = useState<Partial<Record<AdminSectionKey, boolean>>>({})
+  const renderSection = (section: typeof adminNavigationSections[number]) => {
+    const items: readonly NavKey[] = section.items
+    const active = items.includes(activeKey)
+    const open = sectionState[section.key] ?? active
+    return (
+      <CollapsibleNavigationSection
+        key={section.key}
+        sectionKey={section.key}
+        items={items}
+        activeKey={activeKey}
+        open={open}
+        onOpenChange={(value) => setSectionState((current) => ({ ...current, [section.key]: value }))}
+      />
+    )
+  }
+
+  const personalSection = adminNavigationSections.find((section) => section.key === 'personal')
+  const systemSections = adminNavigationSections.filter((section) => section.key !== 'personal')
+  return (
+    <>
+      <NavigationGroup label={t('nav.groups.workspace')} items={adminWorkspaceItems} activeKey={activeKey} />
+      {personalSection ? (
+        <SidebarGroup className="p-0">
+          <SidebarGroupLabel className="h-7 px-2 text-[0.6875rem]">{t('nav.groups.personal')}</SidebarGroupLabel>
+          <SidebarGroupContent><SidebarMenu>{renderSection(personalSection)}</SidebarMenu></SidebarGroupContent>
+        </SidebarGroup>
+      ) : null}
+      <SidebarGroup className="p-0">
+        <SidebarGroupLabel className="h-7 px-2 text-[0.6875rem]">{t('nav.groups.system')}</SidebarGroupLabel>
+        <SidebarGroupContent><SidebarMenu>{systemSections.map(renderSection)}</SidebarMenu></SidebarGroupContent>
+      </SidebarGroup>
+    </>
+  )
+}
+
 export function AppNavigation({ className, compact = false, role }: AppNavigationProps) {
   const { t } = useTranslation()
   const activeKey = useActiveKey()
-  const visibleGroups = navGroups.filter((group) => role === 'admin' || !group.adminOnly)
-  const visibleItems = visibleGroups.flatMap((group) => group.items)
+  const visibleItems = role === 'admin' ? adminNavigationItems : userNavigationItems
 
-  /* ── 移动端横向导航条（compact 模式）────────────────────── */
   if (compact) {
     return (
-      <nav
-        className={cn(
-          'flex gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
-          className,
-        )}
-        aria-label={t('nav.label')}
-      >
-        {visibleItems.map((item) => {
-          const IconComponent = item.icon
+      <nav className={cn('flex gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden', className)} aria-label={t('nav.label')}>
+        {visibleItems.map((itemKey) => {
+          const item = navItems[itemKey]
+          const Icon = item.icon
           const active = item.key === activeKey
           return (
             <a
@@ -166,18 +275,11 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
               href={item.href}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'flex h-8 shrink-0 items-center gap-2 rounded-lg px-3',
-                'text-sm font-medium whitespace-nowrap transition-colors duration-150',
-                'focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none',
-                active
-                  ? 'bg-surface-2 text-foreground'
-                  : 'text-muted-foreground hover:bg-surface-2/60 hover:text-foreground',
+                'flex h-8 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium whitespace-nowrap transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none',
+                active ? 'bg-surface-2 text-foreground' : 'text-muted-foreground hover:bg-surface-2/60 hover:text-foreground',
               )}
             >
-              <IconComponent
-                className={cn('size-4 shrink-0', active ? 'text-brand' : 'text-current')}
-                aria-hidden="true"
-              />
+              <Icon className={cn('size-4 shrink-0', active ? 'text-brand' : 'text-current')} aria-hidden="true" />
               {t(`nav.${item.key}`)}
             </a>
           )
@@ -186,42 +288,13 @@ export function AppNavigation({ className, compact = false, role }: AppNavigatio
     )
   }
 
-  /* 桌面侧边栏保留角色分组，折叠时由 shadcn 隐藏分组标题。 */
   return (
     <div className={cn('flex flex-col gap-1', className)}>
-      {visibleGroups.map((group) => (
-        <SidebarGroup key={group.key} className="p-0">
-          <SidebarGroupLabel className="h-7 px-2 text-[0.6875rem]">
-            {t(`nav.groups.${group.key}`)}
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {group.items.map((item) => {
-                const IconComponent = item.icon
-                const active = item.key === activeKey
-                return (
-                  <SidebarMenuItem key={item.key}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={active}
-                      tooltip={t(`nav.${item.key}`)}
-                      className={active ? 'text-brand' : undefined}
-                    >
-                      <a href={item.href} aria-current={active ? 'page' : undefined}>
-                        <IconComponent
-                          className={cn('shrink-0', active ? 'text-brand' : 'text-sidebar-foreground/70')}
-                          aria-hidden="true"
-                        />
-                        <span>{t(`nav.${item.key}`)}</span>
-                      </a>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      ))}
+      {role === 'admin'
+        ? <AdminNavigation activeKey={activeKey} />
+        : userNavigationGroups.map((group) => (
+          <NavigationGroup key={group.key} label={t(`nav.groups.${group.key}`)} items={group.items} activeKey={activeKey} />
+        ))}
     </div>
   )
 }

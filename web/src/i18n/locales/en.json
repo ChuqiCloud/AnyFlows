@@ -21,7 +21,16 @@
     "groups": {
       "use": "Use",
       "account": "Account",
+      "workspace": "Workspace",
+      "personal": "Personal",
       "system": "System management"
+    },
+    "sections": {
+      "personal": "Personal account",
+      "operations": "Users & commerce",
+      "gateway": "Models & gateway",
+      "platform": "Platform settings",
+      "observability": "Monitoring & diagnostics"
     },
     "overview": "Operations overview",
     "models": "Models",
