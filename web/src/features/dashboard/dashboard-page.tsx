@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminDashboardResponse } from '@/lib/api/generated/types.gen'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { useAdminDashboard } from './dashboard-api'
 import { DashboardChannelStatus } from './dashboard-channel-status'
 import { DashboardComposition } from './dashboard-composition'
@@ -20,6 +21,7 @@ function isEmptyDashboard(dashboard: AdminDashboardResponse) {
 export function DashboardPage() {
   const { t, i18n } = useTranslation()
   const dashboardQuery = useAdminDashboard()
+  const { formatQuota } = useBalanceDisplay()
   const dashboard = dashboardQuery.data
   const locale = i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US'
   const formatNumber = (value: number) => new Intl.NumberFormat(locale).format(value)
@@ -93,7 +95,7 @@ export function DashboardPage() {
         </Card>
       ) : dashboard ? (
         <>
-          <DashboardSummary dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
+          <DashboardSummary dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} formatQuota={formatQuota} />
           <section className="grid gap-3 xl:grid-cols-[minmax(0,1.55fr)_minmax(15rem,0.75fr)]">
             <DashboardComposition dashboard={dashboard} formatNumber={formatNumber} formatPercent={formatPercent} />
             <DashboardChannelStatus dashboard={dashboard} formatNumber={formatNumber} />

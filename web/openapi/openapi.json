@@ -4171,6 +4171,16 @@
               }
             }
           },
+          "409": {
+            "description": "站点设置版本已变化",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
           "500": {
             "description": "服务内部错误",
             "content": {
@@ -16085,6 +16095,7 @@
         "required": [
           "site_name",
           "brand",
+          "balance_display",
           "version"
         ],
         "properties": {
@@ -16104,6 +16115,9 @@
           "brand": {
             "$ref": "#/components/schemas/PublicBrandSettings"
           },
+          "balance_display": {
+            "$ref": "#/components/schemas/BalanceDisplaySettings"
+          },
           "version": {
             "type": "integer",
             "format": "int64",
@@ -16116,7 +16130,9 @@
         "type": "object",
         "required": [
           "site_name",
-          "brand"
+          "brand",
+          "balance_display",
+          "expected_version"
         ],
         "properties": {
           "site_name": {
@@ -16134,6 +16150,14 @@
           },
           "brand": {
             "$ref": "#/components/schemas/AdminBrandSettingsRequest"
+          },
+          "balance_display": {
+            "$ref": "#/components/schemas/BalanceDisplaySettings"
+          },
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
           }
         },
         "additionalProperties": false
@@ -17513,6 +17537,61 @@
         ],
         "description": "Speech 内建声音名称或 custom voice 引用。"
       },
+      "BalanceDisplayMode": {
+        "type": "string",
+        "enum": [
+          "quota",
+          "custom_unit"
+        ]
+      },
+      "BalanceDisplaySettings": {
+        "type": "object",
+        "required": [
+          "mode",
+          "unit_name",
+          "unit_symbol",
+          "quota_units_per_display_unit",
+          "symbol_position",
+          "fraction_digits"
+        ],
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/BalanceDisplayMode"
+          },
+          "unit_name": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1
+          },
+          "unit_symbol": {
+            "type": "string",
+            "maxLength": 24,
+            "minLength": 1
+          },
+          "quota_units_per_display_unit": {
+            "type": "string",
+            "example": "10000",
+            "pattern": "^[1-9][0-9]{0,18}$"
+          },
+          "symbol_position": {
+            "$ref": "#/components/schemas/BalanceDisplaySymbolPosition"
+          },
+          "fraction_digits": {
+            "type": "integer",
+            "format": "int32",
+            "maximum": 4,
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "BalanceDisplaySymbolPosition": {
+        "type": "string",
+        "enum": [
+          "prefix",
+          "suffix"
+        ]
+      },
       "IssuedAdminRedemptionBatch": {
         "type": "object",
         "description": "批次创建响应；完整兑换码只在本次响应中出现。",
@@ -17649,6 +17728,7 @@
               "invalid_session",
               "forbidden",
               "setup_conflict",
+              "site_settings_conflict",
               "user_not_found",
               "group_not_found",
               "token_not_found",
@@ -18441,6 +18521,7 @@
         "required": [
           "site_name",
           "brand",
+          "balance_display",
           "authentication"
         ],
         "properties": {
@@ -18459,6 +18540,9 @@
           },
           "brand": {
             "$ref": "#/components/schemas/PublicBrandSettings"
+          },
+          "balance_display": {
+            "$ref": "#/components/schemas/BalanceDisplaySettings"
           },
           "authentication": {
             "$ref": "#/components/schemas/PublicAuthenticationCapabilities"

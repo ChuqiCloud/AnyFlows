@@ -160,6 +160,11 @@ async fn public_projection_exposes_only_brand_and_authentication_capabilities() 
     let body = response_json(response).await;
     assert_eq!(body["site_name"], "AnyFlows Cloud");
     assert_eq!(body["brand"]["logo_url"], "/brand.svg");
+    assert_eq!(body["balance_display"]["mode"], "quota");
+    assert_eq!(
+        body["balance_display"]["quota_units_per_display_unit"],
+        "10000"
+    );
     assert_eq!(body["authentication"]["password_login_enabled"], true);
     assert_eq!(body["authentication"]["registration_enabled"], true);
     assert!(body.get("version").is_none());
@@ -198,7 +203,16 @@ async fn admin_projection_rejects_normal_users_before_service_access() {
                     "logo_url": "/brand.svg",
                     "tagline": "统一访问模型",
                     "description": "面向团队的模型 API 工作台。"
-                }
+                },
+                "balance_display": {
+                    "mode": "custom_unit",
+                    "unit_name": "算力积分",
+                    "unit_symbol": "积分",
+                    "quota_units_per_display_unit": "10000",
+                    "symbol_position": "suffix",
+                    "fraction_digits": 2
+                },
+                "expected_version": 3
             }),
             ADMIN_TOKEN,
         ))

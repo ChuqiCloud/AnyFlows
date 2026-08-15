@@ -11,11 +11,12 @@ import { formatUsageNumber } from './usage-log-format'
 
 type UsageLogUserSheetProps = {
   userId?: number
+  formatQuota: (value: number) => string
   onOpenChange: (open: boolean) => void
 }
 
 /** 从调用日志按需读取管理员可见的用户与钱包摘要。 */
-export function UsageLogUserSheet({ userId, onOpenChange }: UsageLogUserSheetProps) {
+export function UsageLogUserSheet({ userId, formatQuota, onOpenChange }: UsageLogUserSheetProps) {
   const { i18n, t } = useTranslation()
   const query = useAdminUser(userId)
   const user = query.data
@@ -48,9 +49,9 @@ export function UsageLogUserSheet({ userId, onOpenChange }: UsageLogUserSheetPro
           ) : (
             <>
               <div className="grid grid-cols-3 divide-x divide-[var(--hairline)] border-b border-[var(--hairline)] bg-surface-2/35">
-                <Metric label={t('users.wallet.metrics.available')} value={number(user.quota)} />
-                <Metric label={t('users.wallet.metrics.used')} value={number(user.used_quota)} />
-                <Metric label={t('users.wallet.metrics.frozen')} value={number(user.frozen_quota)} />
+                <Metric label={t('users.wallet.metrics.available')} value={formatQuota(user.quota)} />
+                <Metric label={t('users.wallet.metrics.used')} value={formatQuota(user.used_quota)} />
+                <Metric label={t('users.wallet.metrics.frozen')} value={formatQuota(user.frozen_quota)} />
               </div>
 
               <section className="border-b border-[var(--hairline)] px-5 py-5">

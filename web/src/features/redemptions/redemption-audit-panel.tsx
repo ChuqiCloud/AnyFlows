@@ -19,6 +19,7 @@ import { useLoadedCursorPagination } from '@/components/data-table/use-table-pag
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import type { AdminRedemptionAuditBatch } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 import { useAdminRedemptionAudit } from './redemption-api'
@@ -39,6 +40,7 @@ const initialDraft: RedemptionAuditFilterDraft = {
 /** 管理员只读审计视图，展示批次统计而不暴露兑换码明文或摘要。 */
 export function RedemptionAuditPanel() {
   const { i18n, t } = useTranslation()
+  const { formatQuota } = useBalanceDisplay()
   const [draft, setDraft] = useState<RedemptionAuditFilterDraft>(initialDraft)
   const [filters, setFilters] = useState<RedemptionAuditFilters>({})
   const [pageSize, setPageSize] = useState(DEFAULT_TABLE_PAGE_SIZE)
@@ -217,7 +219,7 @@ export function RedemptionAuditPanel() {
         </div>
       ) : (
         <>
-          <AuditTable batches={batches} numberFormat={numberFormat} timeFormat={timeFormat} />
+          <AuditTable batches={batches} numberFormat={numberFormat} timeFormat={timeFormat} formatQuota={formatQuota} />
           {query.isFetchNextPageError ? (
             <div role="alert" className="flex items-center justify-between gap-3 rounded-lg bg-destructive/8 px-3 py-2 text-xs text-destructive">
               <span>{t('redemptions.audit.errors.more')}</span>
@@ -264,10 +266,12 @@ function AuditTable({
   batches,
   numberFormat,
   timeFormat,
+  formatQuota,
 }: {
   batches: AdminRedemptionAuditBatch[]
   numberFormat: Intl.NumberFormat
   timeFormat: Intl.DateTimeFormat
+  formatQuota: (value: number) => string
 }) {
   const { t } = useTranslation()
   const formatTime = (value: number | null) => value === null ? t('redemptions.values.never') : timeFormat.format(value * 1_000)
@@ -296,7 +300,7 @@ function AuditTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--hairline)]">
-            {batches.map((batch) => <AuditRow key={batch.batch_id} batch={batch} numberFormat={numberFormat} formatTime={formatTime} />)}
+            {batches.map((batch) => <AuditRow key={batch.batch_id} batch={batch} numberFormat={numberFormat} formatQuota={formatQuota} formatTime={formatTime} />)}
           </tbody>
         </table>
       </div>
@@ -315,11 +319,11 @@ function AuditTable({
   )
 }
 
-function AuditRow({ batch, numberFormat, formatTime }: { batch: AdminRedemptionAuditBatch; numberFormat: Intl.NumberFormat; formatTime: (value: number | null) => string }) {
+function AuditRow({ batch, numberFormat, formatQuota, formatTime }: { batch: AdminRedemptionAuditBatch; numberFormat: Intl.NumberFormat; formatQuota: (value: number) => string; formatTime: (value: number | null) => string }) {
   return (
     <tr className="hover:bg-surface-2/35">
       <td className="px-3 py-3"><AuditIdentity batch={batch} /></td>
-      <td className="px-3 py-3"><div className="font-medium tabular-nums">{numberFormat.format(batch.issued_count)}</div><div className="mt-1 text-[0.6875rem] text-muted-foreground">{numberFormat.format(batch.quota_amount)}</div></td>
+      <td className="px-3 py-3"><div className="font-medium tabular-nums">{numberFormat.format(batch.issued_count)}</div><div className="mt-1 text-[0.6875rem] text-muted-foreground">{formatQuota(batch.quota_amount)}</div></td>
       <td className="px-3 py-3"><AuditStateCounts batch={batch} numberFormat={numberFormat} /></td>
       <td className="px-3 py-3"><div className="flex items-center gap-1.5 font-medium"><Clock3 className="size-3.5 text-muted-foreground" aria-hidden="true" />{formatTime(batch.last_redeemed_at)}</div><div className="mt-1 text-[0.6875rem] text-muted-foreground">{formatTime(batch.created_at)}</div></td>
       <td className="px-3 py-3"><AuditState batch={batch} /></td>

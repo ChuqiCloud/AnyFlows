@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { useAdminUsageLogs, useUserUsageLogs } from './usage-log-api'
 import { UsageLogDetailsSheet } from './usage-log-details-sheet'
 import {
@@ -28,6 +29,7 @@ type UsageLogPageProps = {
 
 export function UsageLogPage({ admin }: UsageLogPageProps) {
   const { t } = useTranslation()
+  const { formatQuota } = useBalanceDisplay()
   const pagination = useCursorPagination<number>()
   const [modelFilter, setModelFilter] = useState('')
   const [protocolFilter, setProtocolFilter] = useState('all')
@@ -93,7 +95,7 @@ export function UsageLogPage({ admin }: UsageLogPageProps) {
         </div>
       </header>
 
-      {!logsQuery.isPending && !logsQuery.isError ? <UsageLogSummary summary={summary} /> : null}
+      {!logsQuery.isPending && !logsQuery.isError ? <UsageLogSummary summary={summary} formatQuota={formatQuota} /> : null}
 
       <div className="rounded-lg border border-[var(--hairline)] bg-surface-1/45 p-2.5">
         <div className="mb-2 flex items-center justify-between gap-3 px-0.5 text-[0.6875rem] text-muted-foreground">
@@ -149,7 +151,7 @@ export function UsageLogPage({ admin }: UsageLogPageProps) {
             {t('usageLogs.actions.retry')}
           </Button>
         </div>
-      ) : <UsageLogTable logs={filteredLogs} admin={admin} filtered={hasFilters} onSelect={setSelectedLog} onUserSelect={openUser} />}
+      ) : <UsageLogTable logs={filteredLogs} admin={admin} filtered={hasFilters} formatQuota={formatQuota} onSelect={setSelectedLog} onUserSelect={openUser} />}
 
       {!logsQuery.isPending && !logsQuery.isError ? (
         <DataTablePagination
@@ -167,8 +169,8 @@ export function UsageLogPage({ admin }: UsageLogPageProps) {
         />
       ) : null}
 
-      <UsageLogDetailsSheet log={selectedLog} admin={admin} onOpenChange={(open) => !open && setSelectedLog(undefined)} onTraceOpen={openTrace} onUserSelect={openUser} />
-      {admin ? <UsageLogUserSheet userId={selectedUserId} onOpenChange={(open) => !open && setSelectedUserId(undefined)} /> : null}
+      <UsageLogDetailsSheet log={selectedLog} admin={admin} formatQuota={formatQuota} onOpenChange={(open) => !open && setSelectedLog(undefined)} onTraceOpen={openTrace} onUserSelect={openUser} />
+      {admin ? <UsageLogUserSheet userId={selectedUserId} formatQuota={formatQuota} onOpenChange={(open) => !open && setSelectedUserId(undefined)} /> : null}
     </div>
   )
 }

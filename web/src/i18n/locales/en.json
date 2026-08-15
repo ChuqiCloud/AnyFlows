@@ -2689,6 +2689,39 @@
       "title": "Brand content",
       "description": "The logo, tagline, and description are public. Do not enter credentials or internal operations data."
     },
+    "balanceDisplay": {
+      "title": "Balance display",
+      "displayOnly": "Display only",
+      "description": "Customize the balance name, symbol, and fixed denomination. Internal quota, model pricing, settlement, and payment amounts remain unchanged.",
+      "modeLabel": "Balance display mode",
+      "mode": {
+        "quota": "Raw quota",
+        "custom_unit": "Custom unit"
+      },
+      "unitName": "Unit name",
+      "unitNameHint": "Describes the balance, such as compute credits.",
+      "unitSymbol": "Display symbol",
+      "unitSymbolHint": "Shown next to values, such as credits, points, or P.",
+      "quotaScale": "Quota per display unit",
+      "quotaScaleHint": "A positive fixed denomination. For example, 10000 means 10000 quota = 1 display unit.",
+      "symbolPosition": "Symbol position",
+      "position": {
+        "prefix": "Before the value",
+        "suffix": "After the value"
+      },
+      "fractionDigits": "Fraction digits",
+      "fractionDigitsHint": "Choose 0 to 4 digits. This only controls display rounding.",
+      "previewTitle": "Balance conversion preview",
+      "previewDescription": "Review the current draft with a fixed example",
+      "rawUnit": "Raw quota",
+      "confirm": {
+        "title": "Confirm balance display rescaling",
+        "description": "The display mode or denomination changed. All historical balances, ledger entries, and quota records will be shown using the new rule.",
+        "safety": "This does not modify stored quota, billing, payment amounts, or order facts.",
+        "cancel": "Review again",
+        "save": "Confirm and save"
+      }
+    },
     "fields": {
       "siteName": "Site name",
       "publicBaseUrl": "Public base URL",
@@ -2703,7 +2736,11 @@
       "publicBaseUrl": "Enter a valid HTTP(S) URL without credentials, query parameters, or a fragment.",
       "logoUrl": "Enter a site-relative absolute path or a valid HTTP(S) logo URL.",
       "tagline": "The tagline cannot contain control characters and is limited to 160 UTF-8 bytes.",
-      "description": "The description is limited to 500 UTF-8 bytes and cannot contain invalid control characters."
+      "description": "The description is limited to 500 UTF-8 bytes and cannot contain invalid control characters.",
+      "unitName": "Unit name is required, cannot contain control characters, and is limited to 64 UTF-8 bytes.",
+      "unitSymbol": "Display symbol is required, cannot contain control characters, and is limited to 24 UTF-8 bytes.",
+      "quotaUnitsPerDisplayUnit": "Enter a positive denomination within the i64 range.",
+      "fractionDigits": "Fraction digits must be an integer from 0 to 4."
     },
     "preview": {
       "title": "Public brand preview",
@@ -2725,7 +2762,8 @@
     "errors": {
       "title": "Site settings could not be loaded",
       "load": "The service did not return reliable site settings. Try again shortly.",
-      "save": "Site settings could not be saved. Server state is unchanged."
+      "save": "Site settings could not be saved. Server state is unchanged.",
+      "conflict": "Site settings changed in another administrator session. Refresh and review again."
     }
   },
   "authenticationSettings": {

@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import type {
   AdminUserSubscriptionLifecycleAction,
   UserSubscription,
@@ -48,8 +49,8 @@ export function SubscriptionList({
   onLifecycleAction,
 }: SubscriptionListProps) {
   const { i18n, t } = useTranslation()
+  const { formatQuota } = useBalanceDisplay()
   const locale = i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US'
-  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale])
   const timeFormat = useMemo(() => new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -113,7 +114,7 @@ export function SubscriptionList({
               <SubscriptionDesktopRow
                 key={subscription.subscription_id}
                 subscription={subscription}
-                formatQuota={numberFormat.format}
+                formatQuota={formatQuota}
                 formatTime={formatTime}
                 alertPolicy={alertPolicy}
                 onLifecycleAction={onLifecycleAction}
@@ -128,7 +129,7 @@ export function SubscriptionList({
           <SubscriptionMobileItem
             key={subscription.subscription_id}
             subscription={subscription}
-            formatQuota={numberFormat.format}
+            formatQuota={formatQuota}
             formatTime={formatTime}
             alertPolicy={alertPolicy}
             onLifecycleAction={onLifecycleAction}

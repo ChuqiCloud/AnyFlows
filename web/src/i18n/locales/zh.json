@@ -2766,6 +2766,39 @@
       "title": "品牌内容",
       "description": "Logo、标语和描述会进入公开投影，不应填写密钥或内部运维信息。"
     },
+    "balanceDisplay": {
+      "title": "余额展示",
+      "displayOnly": "仅改变显示",
+      "description": "自定义余额名称、符号和固定面额。内部 quota、模型定价、预扣结算和支付金额始终保持原值。",
+      "modeLabel": "余额展示模式",
+      "mode": {
+        "quota": "原始额度",
+        "custom_unit": "自定义单位"
+      },
+      "unitName": "单位名称",
+      "unitNameHint": "用于说明余额含义，例如算力积分。",
+      "unitSymbol": "显示符号",
+      "unitSymbolHint": "跟随数值显示，例如积分、点或 P。",
+      "quotaScale": "每单位对应 quota",
+      "quotaScaleHint": "正整数固定面额，例如 10000 表示 10000 quota = 1 个显示单位。",
+      "symbolPosition": "符号位置",
+      "position": {
+        "prefix": "数值前方",
+        "suffix": "数值后方"
+      },
+      "fractionDigits": "显示小数位",
+      "fractionDigitsHint": "可选 0 到 4 位，只影响界面舍入。",
+      "previewTitle": "余额换算预览",
+      "previewDescription": "使用固定样例核对当前草稿",
+      "rawUnit": "原始 quota",
+      "confirm": {
+        "title": "确认重新缩放余额显示",
+        "description": "展示模式或固定面额发生变化，全部历史余额、账本和额度记录会按新规则重新显示。",
+        "safety": "此操作不会修改数据库中的 quota，也不会改变计费、支付金额或真实订单事实。",
+        "cancel": "返回检查",
+        "save": "确认并保存"
+      }
+    },
     "fields": {
       "siteName": "站点名称",
       "publicBaseUrl": "公开基址",
@@ -2780,7 +2813,11 @@
       "publicBaseUrl": "请输入不含凭据、查询参数或片段的有效 HTTP(S) 地址。",
       "logoUrl": "请输入站内绝对路径或有效 HTTP(S) Logo 地址。",
       "tagline": "品牌标语不能包含控制字符，最多 160 个 UTF-8 字节。",
-      "description": "品牌描述最多 500 个 UTF-8 字节，且不能包含非法控制字符。"
+      "description": "品牌描述最多 500 个 UTF-8 字节，且不能包含非法控制字符。",
+      "unitName": "单位名称不能为空，不能包含控制字符，最多 64 个 UTF-8 字节。",
+      "unitSymbol": "显示符号不能为空，不能包含控制字符，最多 24 个 UTF-8 字节。",
+      "quotaUnitsPerDisplayUnit": "请输入 i64 范围内的正整数面额。",
+      "fractionDigits": "显示小数位必须是 0 到 4 的整数。"
     },
     "preview": {
       "title": "公开品牌预览",
@@ -2802,7 +2839,8 @@
     "errors": {
       "title": "无法读取站点设置",
       "load": "服务没有返回可靠的站点设置，请稍后重试。",
-      "save": "站点设置保存失败，服务端状态未改变。"
+      "save": "站点设置保存失败，服务端状态未改变。",
+      "conflict": "站点设置已被其他管理员更新，请刷新后重新核对。"
     }
   },
   "authenticationSettings": {

@@ -25,6 +25,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import type { UserTopupMethod, UserTopupOrder } from '@/features/payment-settings/payment-settings-types'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import {
   createTopupAttempt,
   topupAmountInput,
@@ -61,6 +62,7 @@ export function WalletTopupPanel() {
   const queryClient = useQueryClient()
   const configurationQuery = useUserTopupConfiguration()
   const orderMutation = useCreateUserTopupOrder()
+  const { formatQuota } = useBalanceDisplay()
   const createOrRecoverOrder = orderMutation.mutateAsync
   const resetOrderMutation = orderMutation.reset
   const [restoredAttempt] = useState(readStoredTopupAttempt)
@@ -83,7 +85,6 @@ export function WalletTopupPanel() {
     currency: selectedMethod?.currency ?? 'USD',
     style: 'currency',
   }), [locale, selectedMethod?.currency])
-  const quotaFormat = useMemo(() => new Intl.NumberFormat(locale), [locale])
   const stripe = useMemo(() => selectedMethod?.provider === 'stripe' && selectedMethod.publishable_key
     ? loadStripe(selectedMethod.publishable_key)
     : null, [selectedMethod])
@@ -219,11 +220,11 @@ export function WalletTopupPanel() {
               {presetAmounts.map((value) => <Button key={value} type="button" size="sm" variant={amountMinor === value ? 'secondary' : 'ghost'} disabled={amountLocked || value < bounds.min || value > bounds.max} className="px-1 tabular-nums" onClick={() => setAmountInput(topupAmountInput(value))}>{moneyFormat.format(value / 100)}</Button>)}
             </div>
             {amountMinor === undefined ? <p role="alert" className="mt-2 text-xs leading-5 text-destructive">{t('wallet.topup.amount.validation', { min: moneyFormat.format(bounds.min / 100), max: moneyFormat.format(bounds.max / 100) })}</p> : <p className="mt-2 text-[0.6875rem] leading-5 text-muted-foreground">{t('wallet.topup.amount.hint', { min: moneyFormat.format(bounds.min / 100), max: moneyFormat.format(bounds.max / 100) })}</p>}
-            {order ? <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--hairline)] pt-3 text-xs"><span className="text-muted-foreground">{t('wallet.topup.amount.quota')}</span><span className="font-semibold tabular-nums">{quotaFormat.format(order.quota_amount)}</span></div> : null}
+            {order ? <div className="mt-4 flex items-center justify-between gap-3 border-t border-[var(--hairline)] pt-3 text-xs"><span className="text-muted-foreground">{t('wallet.topup.amount.quota')}</span><span className="font-semibold tabular-nums">{formatQuota(order.quota_amount)}</span></div> : null}
           </section>
 
           <section className="min-w-0 p-4">
-            {order?.status === 'paid' ? <TopupState icon={CheckCircle2} tone="success" title={t('wallet.topup.states.paidTitle')} body={t('wallet.topup.states.paidBody', { amount: quotaFormat.format(order.quota_amount) })} action={<Button type="button" size="sm" variant="secondary" onClick={resetAttempt}>{t('wallet.topup.actions.done')}</Button>} />
+            {order?.status === 'paid' ? <TopupState icon={CheckCircle2} tone="success" title={t('wallet.topup.states.paidTitle')} body={t('wallet.topup.states.paidBody', { amount: formatQuota(order.quota_amount) })} action={<Button type="button" size="sm" variant="secondary" onClick={resetAttempt}>{t('wallet.topup.actions.done')}</Button>} />
               : confirmation === 'succeeded' || confirmation === 'processing' ? <TopupState icon={Clock3} tone="warning" title={t(confirmation === 'succeeded' ? 'wallet.topup.states.confirmedTitle' : 'wallet.topup.states.processingTitle')} body={t('wallet.topup.states.confirmedBody')} action={<Button type="button" size="sm" variant="secondary" disabled={orderMutation.isPending} onClick={retryAttempt}><RefreshCw className={orderMutation.isPending ? 'animate-spin' : undefined} aria-hidden="true" />{t('wallet.topup.actions.refreshStatus')}</Button>} />
               : activePayment?.kind === 'stripe' && stripe ? <Elements key={activePayment.payment_intent_id} stripe={stripe} options={{ appearance, clientSecret: activePayment.client_secret, locale: locale === 'zh-CN' ? 'zh' : 'en' }}><WalletStripePaymentForm amountLabel={amountLabel} returnUrl={topupReturnUrl()} onConfirmed={paymentConfirmed} /></Elements>
               : activePayment?.kind === 'redirect' && redirectUrl ? <TopupState icon={ExternalLink} tone="brand" title={t('wallet.topup.states.redirectTitle')} body={t('wallet.topup.states.redirectBody')} action={<Button type="button" size="sm" onClick={() => window.location.assign(redirectUrl)}><ExternalLink aria-hidden="true" />{t('wallet.topup.actions.openPayment')}</Button>} />

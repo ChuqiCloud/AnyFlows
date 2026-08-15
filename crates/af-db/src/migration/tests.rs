@@ -36,6 +36,7 @@ use crate::entity::{
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
     AuthChallengeIssue, AuthChallengeIssueOutcome, AuthChallengePurpose, AuthChallengeRepository,
+    BalanceDisplayModeRecord, BalanceDisplayPolicyRecord, BalanceSymbolPositionRecord,
     BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome, ChannelBillingWrite,
     DatabaseOptions, EmailPasswordUpdate, EmailSettingsRepository, EmailSettingsWriteRecord,
     EmailTlsMode, EncryptedCredentialEnvelope, GroupPricingRepository, ModelPriceBillingMode,
@@ -54,7 +55,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 58;
+const EXPECTED_MIGRATION_COUNT: usize = 59;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -2112,6 +2113,10 @@ async fn exercise_site_settings_repository(pool: &DatabasePool) -> Result<(), Bo
     let initial = repository.settings().await?;
     assert_eq!(initial.site_name(), "AnyFlows");
     assert_eq!(initial.version(), 1);
+    assert_eq!(
+        initial.balance_display().mode(),
+        BalanceDisplayModeRecord::Quota
+    );
 
     let saved = repository
         .update(SiteSettingsWriteRecord::new(
@@ -2120,10 +2125,23 @@ async fn exercise_site_settings_repository(pool: &DatabasePool) -> Result<(), Bo
             Some("/brand.svg".to_owned()),
             Some("统一访问模型".to_owned()),
             Some("三方言站点设置冒烟。".to_owned()),
+            BalanceDisplayPolicyRecord::new(
+                BalanceDisplayModeRecord::CustomUnit,
+                "算力积分".to_owned(),
+                "积分".to_owned(),
+                10_000,
+                BalanceSymbolPositionRecord::Suffix,
+                2,
+            )?,
+            initial.version(),
         ))
         .await?;
     assert_eq!(saved.version(), 2);
     assert_eq!(saved.site_name(), "AnyFlows Smoke");
+    assert_eq!(
+        saved.balance_display().mode(),
+        BalanceDisplayModeRecord::CustomUnit
+    );
     Ok(())
 }
 

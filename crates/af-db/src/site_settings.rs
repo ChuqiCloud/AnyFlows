@@ -17,6 +17,124 @@ const MAX_SITE_NAME_BYTES: usize = 80;
 const MAX_URL_BYTES: usize = 2_048;
 const MAX_BRAND_TAGLINE_BYTES: usize = 160;
 const MAX_BRAND_DESCRIPTION_BYTES: usize = 500;
+const MAX_BALANCE_UNIT_NAME_BYTES: usize = 64;
+const MAX_BALANCE_UNIT_SYMBOL_BYTES: usize = 24;
+const MAX_BALANCE_FRACTION_DIGITS: u8 = 4;
+
+/// 余额数值采用原始额度或自定义面额展示。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i16)]
+pub enum BalanceDisplayModeRecord {
+    Quota = 1,
+    CustomUnit = 2,
+}
+
+impl TryFrom<i16> for BalanceDisplayModeRecord {
+    type Error = SiteSettingsRepositoryError;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Quota),
+            2 => Ok(Self::CustomUnit),
+            _ => Err(SiteSettingsRepositoryError::Invariant),
+        }
+    }
+}
+
+/// 自定义单位符号相对数值的展示位置。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(i16)]
+pub enum BalanceSymbolPositionRecord {
+    Prefix = 1,
+    Suffix = 2,
+}
+
+impl TryFrom<i16> for BalanceSymbolPositionRecord {
+    type Error = SiteSettingsRepositoryError;
+
+    fn try_from(value: i16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Prefix),
+            2 => Ok(Self::Suffix),
+            _ => Err(SiteSettingsRepositoryError::Invariant),
+        }
+    }
+}
+
+/// 只改变界面格式化结果的余额展示策略，不参与任何计费运算。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BalanceDisplayPolicyRecord {
+    mode: BalanceDisplayModeRecord,
+    unit_name: String,
+    unit_symbol: String,
+    quota_units_per_display_unit: i64,
+    symbol_position: BalanceSymbolPositionRecord,
+    fraction_digits: u8,
+}
+
+impl BalanceDisplayPolicyRecord {
+    /// 创建并校验完整展示策略。
+    pub fn new(
+        mode: BalanceDisplayModeRecord,
+        unit_name: String,
+        unit_symbol: String,
+        quota_units_per_display_unit: i64,
+        symbol_position: BalanceSymbolPositionRecord,
+        fraction_digits: u8,
+    ) -> Result<Self, SiteSettingsRepositoryError> {
+        let policy = Self {
+            mode,
+            unit_name,
+            unit_symbol,
+            quota_units_per_display_unit,
+            symbol_position,
+            fraction_digits,
+        };
+        policy.validate()?;
+        Ok(policy)
+    }
+
+    #[must_use]
+    pub const fn mode(&self) -> BalanceDisplayModeRecord {
+        self.mode
+    }
+
+    #[must_use]
+    pub fn unit_name(&self) -> &str {
+        &self.unit_name
+    }
+
+    #[must_use]
+    pub fn unit_symbol(&self) -> &str {
+        &self.unit_symbol
+    }
+
+    #[must_use]
+    pub const fn quota_units_per_display_unit(&self) -> i64 {
+        self.quota_units_per_display_unit
+    }
+
+    #[must_use]
+    pub const fn symbol_position(&self) -> BalanceSymbolPositionRecord {
+        self.symbol_position
+    }
+
+    #[must_use]
+    pub const fn fraction_digits(&self) -> u8 {
+        self.fraction_digits
+    }
+
+    fn validate(&self) -> Result<(), SiteSettingsRepositoryError> {
+        if !valid_balance_unit(&self.unit_name, MAX_BALANCE_UNIT_NAME_BYTES)
+            || !valid_balance_unit(&self.unit_symbol, MAX_BALANCE_UNIT_SYMBOL_BYTES)
+            || self.quota_units_per_display_unit <= 0
+            || self.fraction_digits > MAX_BALANCE_FRACTION_DIGITS
+        {
+            return Err(SiteSettingsRepositoryError::InvalidSettings);
+        }
+        Ok(())
+    }
+}
 
 /// 已完成持久化校验的站点身份与公开品牌设置。
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,6 +144,7 @@ pub struct SiteSettingsRecord {
     brand_logo_url: Option<String>,
     brand_tagline: Option<String>,
     brand_description: Option<String>,
+    balance_display: BalanceDisplayPolicyRecord,
     version: i64,
 }
 
@@ -56,6 +175,11 @@ impl SiteSettingsRecord {
     }
 
     #[must_use]
+    pub const fn balance_display(&self) -> &BalanceDisplayPolicyRecord {
+        &self.balance_display
+    }
+
+    #[must_use]
     pub const fn version(&self) -> i64 {
         self.version
     }
@@ -69,6 +193,8 @@ pub struct SiteSettingsWriteRecord {
     brand_logo_url: Option<String>,
     brand_tagline: Option<String>,
     brand_description: Option<String>,
+    balance_display: BalanceDisplayPolicyRecord,
+    expected_version: i64,
 }
 
 impl SiteSettingsWriteRecord {
@@ -80,6 +206,8 @@ impl SiteSettingsWriteRecord {
         brand_logo_url: Option<String>,
         brand_tagline: Option<String>,
         brand_description: Option<String>,
+        balance_display: BalanceDisplayPolicyRecord,
+        expected_version: i64,
     ) -> Self {
         Self {
             site_name,
@@ -87,6 +215,8 @@ impl SiteSettingsWriteRecord {
             brand_logo_url,
             brand_tagline,
             brand_description,
+            balance_display,
+            expected_version,
         }
     }
 
@@ -102,9 +232,11 @@ impl SiteSettingsWriteRecord {
                 .is_some_and(|value| !valid_brand_asset_url(value))
             || !valid_optional_single_line(self.brand_tagline.as_deref(), MAX_BRAND_TAGLINE_BYTES)
             || !valid_optional_description(self.brand_description.as_deref())
+            || self.expected_version < 1
         {
             return Err(SiteSettingsRepositoryError::InvalidSettings);
         }
+        self.balance_display.validate()?;
         Ok(())
     }
 }
@@ -127,6 +259,8 @@ pub enum SiteSettingsRepositoryError {
     Invariant,
     #[error("站点设置字段无效")]
     InvalidSettings,
+    #[error("站点设置版本冲突")]
+    Conflict,
 }
 
 /// 站点身份与公开品牌配置的固定记录仓储。
@@ -195,6 +329,9 @@ impl SiteSettingsRepository {
             .await
             .map_err(|_| query_error("site_settings_begin"))?;
         let existing = lock_settings(&transaction).await?;
+        if existing.version != record.expected_version {
+            return Err(SiteSettingsRepositoryError::Conflict);
+        }
         let version = existing
             .version
             .checked_add(1)
@@ -206,6 +343,14 @@ impl SiteSettingsRepository {
             brand_logo_url: Set(record.brand_logo_url),
             brand_tagline: Set(record.brand_tagline),
             brand_description: Set(record.brand_description),
+            balance_display_mode: Set(record.balance_display.mode() as i16),
+            balance_unit_name: Set(record.balance_display.unit_name().to_owned()),
+            balance_unit_symbol: Set(record.balance_display.unit_symbol().to_owned()),
+            quota_units_per_display_unit: Set(record
+                .balance_display
+                .quota_units_per_display_unit()),
+            balance_symbol_position: Set(record.balance_display.symbol_position() as i16),
+            balance_fraction_digits: Set(i16::from(record.balance_display.fraction_digits())),
             version: Set(version),
             created_at: Set(existing.created_at),
             updated_at: Set(sea_orm::entity::prelude::TimeDateTimeWithTimeZone::now_utc()),
@@ -260,6 +405,17 @@ async fn lock_settings(
 fn record_from_model(
     model: site_settings::Model,
 ) -> Result<SiteSettingsRecord, SiteSettingsRepositoryError> {
+    let balance_display = BalanceDisplayPolicyRecord::new(
+        BalanceDisplayModeRecord::try_from(model.balance_display_mode).map_err(invariant_error)?,
+        model.balance_unit_name.clone(),
+        model.balance_unit_symbol.clone(),
+        model.quota_units_per_display_unit,
+        BalanceSymbolPositionRecord::try_from(model.balance_symbol_position)
+            .map_err(invariant_error)?,
+        u8::try_from(model.balance_fraction_digits)
+            .map_err(|_| internal_error(SiteSettingsRepositoryError::Invariant))?,
+    )
+    .map_err(invariant_error)?;
     if model.id != SITE_SETTINGS_ID
         || model.version < 1
         || !valid_site_name(&model.site_name)
@@ -282,6 +438,7 @@ fn record_from_model(
         brand_logo_url: model.brand_logo_url,
         brand_tagline: model.brand_tagline,
         brand_description: model.brand_description,
+        balance_display,
         version: model.version,
     })
 }
@@ -348,6 +505,17 @@ fn valid_optional_description(value: Option<&str>) -> bool {
                 .chars()
                 .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
     })
+}
+
+fn valid_balance_unit(value: &str, maximum_bytes: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= maximum_bytes
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
+}
+
+fn invariant_error(_: SiteSettingsRepositoryError) -> SiteSettingsRepositoryError {
+    internal_error(SiteSettingsRepositoryError::Invariant)
 }
 
 fn query_error(operation: &'static str) -> SiteSettingsRepositoryError {

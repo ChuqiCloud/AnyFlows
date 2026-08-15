@@ -433,6 +433,7 @@ pub use scheduler_runtime::{
     SchedulerRuntimeTargetRecordError, validate_channel_header_overrides,
 };
 pub use site_settings::{
+    BalanceDisplayModeRecord, BalanceDisplayPolicyRecord, BalanceSymbolPositionRecord,
     SiteSettingsRecord, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
     SiteSettingsRepositoryError, SiteSettingsWriteRecord,
 };

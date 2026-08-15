@@ -1,6 +1,7 @@
 use std::{fmt, future::Future, pin::Pin};
 
 use af_db::{
+    BalanceDisplayModeRecord, BalanceDisplayPolicyRecord, BalanceSymbolPositionRecord,
     SiteSettingsRecord, SiteSettingsRepository, SiteSettingsRepositoryError,
     SiteSettingsWriteRecord,
 };
@@ -13,6 +14,140 @@ const MAX_SITE_NAME_BYTES: usize = 80;
 const MAX_URL_BYTES: usize = 2_048;
 const MAX_BRAND_TAGLINE_BYTES: usize = 160;
 const MAX_BRAND_DESCRIPTION_BYTES: usize = 500;
+const MAX_BALANCE_UNIT_NAME_BYTES: usize = 64;
+const MAX_BALANCE_UNIT_SYMBOL_BYTES: usize = 24;
+const MAX_BALANCE_FRACTION_DIGITS: u8 = 4;
+
+/// 余额数值的公开展示模式。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BalanceDisplayMode {
+    Quota,
+    CustomUnit,
+}
+
+/// 自定义单位符号相对数值的位置。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BalanceSymbolPosition {
+    Prefix,
+    Suffix,
+}
+
+/// 余额展示策略仅负责界面换算，不进入内部计费或支付金额计算。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BalanceDisplayPolicy {
+    mode: BalanceDisplayMode,
+    unit_name: String,
+    unit_symbol: String,
+    quota_units_per_display_unit: i64,
+    symbol_position: BalanceSymbolPosition,
+    fraction_digits: u8,
+}
+
+impl BalanceDisplayPolicy {
+    /// 规范化并校验管理员提交的完整展示策略。
+    pub fn new(
+        mode: BalanceDisplayMode,
+        unit_name: String,
+        unit_symbol: String,
+        quota_units_per_display_unit: i64,
+        symbol_position: BalanceSymbolPosition,
+        fraction_digits: u8,
+    ) -> Result<Self, SiteSettingsError> {
+        let policy = Self {
+            mode,
+            unit_name: unit_name.trim().to_owned(),
+            unit_symbol: unit_symbol.trim().to_owned(),
+            quota_units_per_display_unit,
+            symbol_position,
+            fraction_digits,
+        };
+        if !valid_balance_unit(&policy.unit_name, MAX_BALANCE_UNIT_NAME_BYTES)
+            || !valid_balance_unit(&policy.unit_symbol, MAX_BALANCE_UNIT_SYMBOL_BYTES)
+            || policy.quota_units_per_display_unit <= 0
+            || policy.fraction_digits > MAX_BALANCE_FRACTION_DIGITS
+        {
+            return Err(SiteSettingsError::InvalidInput);
+        }
+        Ok(policy)
+    }
+
+    /// 返回保持历史界面行为的原始额度展示策略。
+    pub fn quota_default() -> Self {
+        Self {
+            mode: BalanceDisplayMode::Quota,
+            unit_name: "算力积分".to_owned(),
+            unit_symbol: "积分".to_owned(),
+            quota_units_per_display_unit: 10_000,
+            symbol_position: BalanceSymbolPosition::Suffix,
+            fraction_digits: 0,
+        }
+    }
+
+    #[must_use]
+    pub const fn mode(&self) -> BalanceDisplayMode {
+        self.mode
+    }
+
+    #[must_use]
+    pub fn unit_name(&self) -> &str {
+        &self.unit_name
+    }
+
+    #[must_use]
+    pub fn unit_symbol(&self) -> &str {
+        &self.unit_symbol
+    }
+
+    #[must_use]
+    pub const fn quota_units_per_display_unit(&self) -> i64 {
+        self.quota_units_per_display_unit
+    }
+
+    #[must_use]
+    pub const fn symbol_position(&self) -> BalanceSymbolPosition {
+        self.symbol_position
+    }
+
+    #[must_use]
+    pub const fn fraction_digits(&self) -> u8 {
+        self.fraction_digits
+    }
+
+    fn from_record(record: &BalanceDisplayPolicyRecord) -> Self {
+        Self {
+            mode: match record.mode() {
+                BalanceDisplayModeRecord::Quota => BalanceDisplayMode::Quota,
+                BalanceDisplayModeRecord::CustomUnit => BalanceDisplayMode::CustomUnit,
+            },
+            unit_name: record.unit_name().to_owned(),
+            unit_symbol: record.unit_symbol().to_owned(),
+            quota_units_per_display_unit: record.quota_units_per_display_unit(),
+            symbol_position: match record.symbol_position() {
+                BalanceSymbolPositionRecord::Prefix => BalanceSymbolPosition::Prefix,
+                BalanceSymbolPositionRecord::Suffix => BalanceSymbolPosition::Suffix,
+            },
+            fraction_digits: record.fraction_digits(),
+        }
+    }
+
+    fn into_record(self) -> Result<BalanceDisplayPolicyRecord, SiteSettingsError> {
+        BalanceDisplayPolicyRecord::new(
+            match self.mode {
+                BalanceDisplayMode::Quota => BalanceDisplayModeRecord::Quota,
+                BalanceDisplayMode::CustomUnit => BalanceDisplayModeRecord::CustomUnit,
+            },
+            self.unit_name,
+            self.unit_symbol,
+            self.quota_units_per_display_unit,
+            match self.symbol_position {
+                BalanceSymbolPosition::Prefix => BalanceSymbolPositionRecord::Prefix,
+                BalanceSymbolPosition::Suffix => BalanceSymbolPositionRecord::Suffix,
+            },
+            self.fraction_digits,
+        )
+        .map_err(|_| SiteSettingsError::InvalidInput)
+    }
+}
 
 /// 游客可读取的站点身份与品牌投影，不包含内部版本或管理元数据。
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -22,6 +157,7 @@ pub struct PublicSiteSettings {
     brand_logo_url: Option<String>,
     brand_tagline: Option<String>,
     brand_description: Option<String>,
+    balance_display: BalanceDisplayPolicy,
 }
 
 impl PublicSiteSettings {
@@ -39,6 +175,8 @@ impl PublicSiteSettings {
             brand_logo_url,
             brand_tagline,
             brand_description,
+            BalanceDisplayPolicy::quota_default(),
+            1,
         )?;
         Ok(Self {
             site_name: command.site_name,
@@ -46,6 +184,7 @@ impl PublicSiteSettings {
             brand_logo_url: command.brand_logo_url,
             brand_tagline: command.brand_tagline,
             brand_description: command.brand_description,
+            balance_display: command.balance_display,
         })
     }
 
@@ -74,6 +213,11 @@ impl PublicSiteSettings {
         self.brand_description.as_deref()
     }
 
+    #[must_use]
+    pub const fn balance_display(&self) -> &BalanceDisplayPolicy {
+        &self.balance_display
+    }
+
     fn from_record(record: &SiteSettingsRecord) -> Self {
         Self {
             site_name: record.site_name().to_owned(),
@@ -81,6 +225,7 @@ impl PublicSiteSettings {
             brand_logo_url: record.brand_logo_url().map(str::to_owned),
             brand_tagline: record.brand_tagline().map(str::to_owned),
             brand_description: record.brand_description().map(str::to_owned),
+            balance_display: BalanceDisplayPolicy::from_record(record.balance_display()),
         }
     }
 }
@@ -127,6 +272,11 @@ impl AdminSiteSettings {
     }
 
     #[must_use]
+    pub const fn balance_display(&self) -> &BalanceDisplayPolicy {
+        self.public.balance_display()
+    }
+
+    #[must_use]
     pub const fn version(&self) -> i64 {
         self.version
     }
@@ -147,6 +297,8 @@ pub struct SiteSettingsCommand {
     brand_logo_url: Option<String>,
     brand_tagline: Option<String>,
     brand_description: Option<String>,
+    balance_display: BalanceDisplayPolicy,
+    expected_version: i64,
 }
 
 impl SiteSettingsCommand {
@@ -157,9 +309,14 @@ impl SiteSettingsCommand {
         brand_logo_url: Option<String>,
         brand_tagline: Option<String>,
         brand_description: Option<String>,
+        balance_display: BalanceDisplayPolicy,
+        expected_version: i64,
     ) -> Result<Self, SiteSettingsError> {
         let site_name = site_name.trim().to_owned();
         if !valid_site_name(&site_name) {
+            return Err(SiteSettingsError::InvalidInput);
+        }
+        if expected_version < 1 {
             return Err(SiteSettingsError::InvalidInput);
         }
         Ok(Self {
@@ -168,17 +325,21 @@ impl SiteSettingsCommand {
             brand_logo_url: normalize_brand_asset_url(brand_logo_url)?,
             brand_tagline: normalize_optional_single_line(brand_tagline, MAX_BRAND_TAGLINE_BYTES)?,
             brand_description: normalize_optional_description(brand_description)?,
+            balance_display,
+            expected_version,
         })
     }
 
-    fn into_record(self) -> SiteSettingsWriteRecord {
-        SiteSettingsWriteRecord::new(
+    fn into_record(self) -> Result<SiteSettingsWriteRecord, SiteSettingsError> {
+        Ok(SiteSettingsWriteRecord::new(
             self.site_name,
             self.public_base_url,
             self.brand_logo_url,
             self.brand_tagline,
             self.brand_description,
-        )
+            self.balance_display.into_record()?,
+            self.expected_version,
+        ))
     }
 }
 
@@ -191,6 +352,8 @@ pub enum SiteSettingsError {
     Forbidden,
     #[error("站点设置内部失败")]
     Internal,
+    #[error("站点设置版本冲突")]
+    Conflict,
 }
 
 pub type PublicSiteSettingsFuture<'a> =
@@ -258,7 +421,7 @@ impl SiteSettingsService for DatabaseSiteSettingsService {
         Box::pin(async move {
             require_admin(principal)?;
             self.repository
-                .update(command.into_record())
+                .update(command.into_record()?)
                 .await
                 .map(|record| AdminSiteSettings::from_record(&record))
                 .map_err(map_repository_error)
@@ -282,6 +445,7 @@ fn require_admin(principal: SessionPrincipal) -> Result<(), SiteSettingsError> {
 fn map_repository_error(error: SiteSettingsRepositoryError) -> SiteSettingsError {
     match error {
         SiteSettingsRepositoryError::InvalidSettings => SiteSettingsError::InvalidInput,
+        SiteSettingsRepositoryError::Conflict => SiteSettingsError::Conflict,
         SiteSettingsRepositoryError::Query
         | SiteSettingsRepositoryError::Timeout
         | SiteSettingsRepositoryError::Invariant => SiteSettingsError::Internal,
@@ -290,6 +454,10 @@ fn map_repository_error(error: SiteSettingsRepositoryError) -> SiteSettingsError
 
 fn valid_site_name(value: &str) -> bool {
     !value.is_empty() && value.len() <= MAX_SITE_NAME_BYTES && !value.chars().any(char::is_control)
+}
+
+fn valid_balance_unit(value: &str, maximum_bytes: usize) -> bool {
+    !value.is_empty() && value.len() <= maximum_bytes && !value.chars().any(char::is_control)
 }
 
 fn normalize_public_base_url(value: Option<String>) -> Result<Option<String>, SiteSettingsError> {
@@ -391,6 +559,8 @@ mod tests {
             Some(" /brand.svg ".to_owned()),
             Some(" 统一访问模型 ".to_owned()),
             Some(" 一套面向团队的模型 API 工作台。 ".to_owned()),
+            BalanceDisplayPolicy::quota_default(),
+            3,
         )
         .unwrap();
         assert_eq!(command.site_name, "AnyFlows Cloud");
@@ -410,6 +580,8 @@ mod tests {
                 None,
                 None,
                 None,
+                BalanceDisplayPolicy::quota_default(),
+                1,
             )
             .is_err()
         );
@@ -420,6 +592,35 @@ mod tests {
                 Some("javascript:alert(1)".to_owned()),
                 None,
                 None,
+                BalanceDisplayPolicy::quota_default(),
+                1,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn balance_display_policy_normalizes_units_and_rejects_invalid_scale() {
+        let policy = BalanceDisplayPolicy::new(
+            BalanceDisplayMode::CustomUnit,
+            " 算力积分 ".to_owned(),
+            " 积分 ".to_owned(),
+            10_000,
+            BalanceSymbolPosition::Suffix,
+            2,
+        )
+        .unwrap();
+        assert_eq!(policy.unit_name(), "算力积分");
+        assert_eq!(policy.unit_symbol(), "积分");
+        assert_eq!(policy.quota_units_per_display_unit(), 10_000);
+        assert!(
+            BalanceDisplayPolicy::new(
+                BalanceDisplayMode::CustomUnit,
+                "算力积分".to_owned(),
+                "积分".to_owned(),
+                0,
+                BalanceSymbolPosition::Suffix,
+                2,
             )
             .is_err()
         );

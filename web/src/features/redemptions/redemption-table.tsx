@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import type { AdminRedemptionBatch } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 
@@ -15,8 +16,8 @@ type RedemptionTableProps = {
 
 export function RedemptionTable({ batches, onDisable }: RedemptionTableProps) {
   const { i18n, t } = useTranslation()
+  const { formatQuota } = useBalanceDisplay()
   const locale = i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US'
-  const numberFormat = useMemo(() => new Intl.NumberFormat(locale), [locale])
   const timeFormat = useMemo(() => new Intl.DateTimeFormat(locale, {
     dateStyle: 'medium',
     timeStyle: 'short',
@@ -54,7 +55,7 @@ export function RedemptionTable({ batches, onDisable }: RedemptionTableProps) {
             {batches.map((batch) => (
               <tr key={batch.batch_id} className="hover:bg-surface-2/35">
                 <td className="px-3 py-3"><BatchIdentity batch={batch} /></td>
-                <td className="px-3 py-3"><BatchValue batch={batch} formatQuota={numberFormat.format} /></td>
+                <td className="px-3 py-3"><BatchValue batch={batch} formatQuota={formatQuota} /></td>
                 <td className="px-3 py-3"><RedemptionProgress batch={batch} /></td>
                 <td className="px-3 py-3"><BatchTiming batch={batch} formatTime={formatTime} /></td>
                 <td className="px-2 py-3"><BatchActions batch={batch} onDisable={onDisable} /></td>
@@ -72,7 +73,7 @@ export function RedemptionTable({ batches, onDisable }: RedemptionTableProps) {
               <BatchActions batch={batch} onDisable={onDisable} />
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[var(--hairline)] pt-3">
-              <BatchValue batch={batch} formatQuota={numberFormat.format} />
+              <BatchValue batch={batch} formatQuota={formatQuota} />
               <BatchTiming batch={batch} formatTime={formatTime} />
             </div>
             <div className="mt-3 border-t border-[var(--hairline)] pt-3">

@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import type { UserInvitationSummaryResponse } from '@/lib/api/generated/types.gen'
 import { useUserInvitations } from './invitation-api'
 
@@ -25,6 +26,7 @@ type CopyTarget = 'code' | 'link'
 /** 展示当前用户自己的邀请码、邀请统计与脱敏返利记录。 */
 export function InvitationPage() {
   const { t, i18n } = useTranslation()
+  const { formatQuota } = useBalanceDisplay()
   const invitationsQuery = useUserInvitations()
   const [copied, setCopied] = useState<CopyTarget>()
   const [copyFailed, setCopyFailed] = useState(false)
@@ -92,10 +94,10 @@ export function InvitationPage() {
             copyFailed={copyFailed}
             onCopy={copyValue}
           />
-          <InvitationMetrics invitations={invitations} formatNumber={formatNumber.format} />
+          <InvitationMetrics invitations={invitations} formatNumber={formatNumber.format} formatQuota={formatQuota} />
           <RecentRebates
             invitations={invitations}
-            formatNumber={formatNumber.format}
+            formatQuota={formatQuota}
             formatTime={(value) => formatTime.format(value * 1_000)}
           />
         </>
@@ -198,16 +200,18 @@ function CopyField({
 function InvitationMetrics({
   invitations,
   formatNumber,
+  formatQuota,
 }: {
   invitations: UserInvitationSummaryResponse
   formatNumber: (value: number) => string
+  formatQuota: (value: number) => string
 }) {
   const { t } = useTranslation()
   const metrics = [
-    { key: 'invited', icon: UsersRound, value: invitations.invited_count },
-    { key: 'credited', icon: Check, value: invitations.credited_count },
-    { key: 'current', icon: Coins, value: invitations.current_rebate_quota },
-    { key: 'history', icon: History, value: invitations.historical_rebate_quota },
+    { key: 'invited', icon: UsersRound, value: formatNumber(invitations.invited_count) },
+    { key: 'credited', icon: Check, value: formatNumber(invitations.credited_count) },
+    { key: 'current', icon: Coins, value: formatQuota(invitations.current_rebate_quota) },
+    { key: 'history', icon: History, value: formatQuota(invitations.historical_rebate_quota) },
   ] as const
   return (
     <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label={t('invitations.metrics.label')}>
@@ -220,7 +224,7 @@ function InvitationMetrics({
                 <span className="text-xs text-muted-foreground">{t(`invitations.metrics.${metric.key}`)}</span>
                 <Icon className="size-4 text-brand" aria-hidden="true" />
               </div>
-              <p className="mt-3 text-xl font-semibold tabular-nums">{formatNumber(metric.value)}</p>
+              <p className="mt-3 text-xl font-semibold tabular-nums">{metric.value}</p>
             </CardContent>
           </Card>
         )
@@ -231,11 +235,11 @@ function InvitationMetrics({
 
 function RecentRebates({
   invitations,
-  formatNumber,
+  formatQuota,
   formatTime,
 }: {
   invitations: UserInvitationSummaryResponse
-  formatNumber: (value: number) => string
+  formatQuota: (value: number) => string
   formatTime: (value: number) => string
 }) {
   const { t } = useTranslation()
@@ -267,7 +271,7 @@ function RecentRebates({
                   <p className="mt-1 text-xs text-muted-foreground">{formatTime(rebate.credited_at)}</p>
                 </div>
                 <Badge className="shrink-0 border-success/25 bg-success/10 text-success tabular-nums">
-                  +{formatNumber(rebate.quota_amount)}
+                  +{formatQuota(rebate.quota_amount)}
                 </Badge>
               </div>
             ))}

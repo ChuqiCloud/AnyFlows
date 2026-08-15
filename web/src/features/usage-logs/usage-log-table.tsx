@@ -20,6 +20,7 @@ type UsageLogTableProps = {
   logs: UsageLogRow[]
   admin: boolean
   filtered: boolean
+  formatQuota: (value: number) => string
   onSelect: (log: UsageLogRow) => void
   onUserSelect: (userId: number) => void
 }
@@ -74,9 +75,10 @@ function RequestIdCopy({ requestId, onClick }: { requestId: string; onClick: (ev
   )
 }
 
-function UsageLogItem({ log, admin, onSelect, onUserSelect }: {
+function UsageLogItem({ log, admin, formatQuota, onSelect, onUserSelect }: {
   log: UsageLogRow
   admin: boolean
+  formatQuota: (value: number) => string
   onSelect: (log: UsageLogRow) => void
   onUserSelect: (userId: number) => void
 }) {
@@ -133,7 +135,7 @@ function UsageLogItem({ log, admin, onSelect, onUserSelect }: {
       </div>
 
       <div className="hidden text-right lg:block">
-        <div className="text-sm font-semibold tabular-nums">{number(log.quota)}</div>
+        <div className="text-sm font-semibold tabular-nums">{formatQuota(log.quota)}</div>
         <div className="mt-1 text-[0.6875rem] text-muted-foreground">{t(`usageLogs.values.billingMode.${log.billing_mode}`)}</div>
       </div>
 
@@ -164,14 +166,14 @@ function UsageLogItem({ log, admin, onSelect, onUserSelect }: {
         </div>
         <div className="min-w-0 pl-2">
           <span className="flex items-center gap-1 text-[0.6875rem] text-muted-foreground"><Coins className="size-3" aria-hidden="true" />{t('usageLogs.values.quotaShort')}</span>
-          <span className="mt-1 block truncate text-xs font-semibold tabular-nums">{number(log.quota)}</span>
+          <span className="mt-1 block truncate text-xs font-semibold tabular-nums">{formatQuota(log.quota)}</span>
         </div>
       </div>
     </article>
   )
 }
 
-export function UsageLogTable({ logs, admin, filtered, onSelect, onUserSelect }: UsageLogTableProps) {
+export function UsageLogTable({ logs, admin, filtered, formatQuota, onSelect, onUserSelect }: UsageLogTableProps) {
   const { t } = useTranslation()
   if (logs.length === 0) {
     return (
@@ -195,7 +197,7 @@ export function UsageLogTable({ logs, admin, filtered, onSelect, onUserSelect }:
         <span className="text-right">{t('usageLogs.columns.billing')}</span>
         <span />
       </div>
-      {logs.map((log) => <UsageLogItem key={log.id} log={log} admin={admin} onSelect={onSelect} onUserSelect={onUserSelect} />)}
+      {logs.map((log) => <UsageLogItem key={log.id} log={log} admin={admin} formatQuota={formatQuota} onSelect={onSelect} onUserSelect={onUserSelect} />)}
     </section>
   )
 }

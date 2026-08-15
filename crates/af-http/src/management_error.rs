@@ -21,6 +21,8 @@ pub(crate) enum ManagementError {
     Forbidden,
     /// 系统已经完成首次安装，或并发请求先完成了安装。
     SetupConflict,
+    /// 站点设置版本已被其他管理员推进。
+    SiteSettingsConflict,
     /// 用户不存在或已经被软删除。
     UserNotFound,
     /// 用户名或邮箱与当前有效用户冲突。
@@ -252,6 +254,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "setup_conflict",
                     message: "Setup already completed",
+                },
+            ),
+            Self::SiteSettingsConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "site_settings_conflict",
+                    message: "Site settings changed",
                 },
             ),
             Self::UserNotFound => (

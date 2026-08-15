@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import type { AdminUser } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
 import { userWriteErrorCode, useAdjustAdminWallet } from './user-api'
@@ -23,7 +24,8 @@ import {
 } from './wallet-form-model'
 
 export function UserWalletForm({ user }: { user: AdminUser }) {
-  const { i18n, t } = useTranslation()
+  const { t } = useTranslation()
+  const { formatQuota } = useBalanceDisplay()
   const initialValues = defaultWalletAdjustmentValues()
   const mutation = useAdjustAdminWallet(user.id)
   const attemptRef = useRef(createWalletAdjustmentAttempt(initialValues))
@@ -38,8 +40,6 @@ export function UserWalletForm({ user }: { user: AdminUser }) {
   const direction = form.watch('direction')
   const amount = form.watch('amount')
   const preview = previewWalletBalance(user.quota, direction, amount)
-  const formatQuota = (value: number) => new Intl.NumberFormat(i18n.language).format(value)
-
   const markValuesChanged = (values: WalletAdjustmentValues) => {
     attemptRef.current = walletAdjustmentAttemptForValues(attemptRef.current, values)
     setLastResult(undefined)

@@ -10,6 +10,7 @@ import { isAdminUsageLog, type UsageLogRow, usageLogCacheTokens, usageLogTotalTo
 type UsageLogDetailsSheetProps = {
   log?: UsageLogRow
   admin: boolean
+  formatQuota: (value: number) => string
   onOpenChange: (open: boolean) => void
   onTraceOpen: (requestId: string) => void
   onUserSelect: (userId: number) => void
@@ -46,7 +47,7 @@ function DetailSection({ title, icon: Icon, items }: { title: string; icon: Luci
 }
 
 /** 详情抽屉集中展示核账事实，主表只保留高频比较字段。 */
-export function UsageLogDetailsSheet({ log, admin, onOpenChange, onTraceOpen, onUserSelect }: UsageLogDetailsSheetProps) {
+export function UsageLogDetailsSheet({ log, admin, formatQuota, onOpenChange, onTraceOpen, onUserSelect }: UsageLogDetailsSheetProps) {
   const { t, i18n } = useTranslation()
   const locale = i18n.language
   const number = (value: number) => formatUsageNumber(value, locale)
@@ -124,7 +125,7 @@ export function UsageLogDetailsSheet({ log, admin, onOpenChange, onTraceOpen, on
                 title={t('usageLogs.detailSections.billing')}
                 icon={Coins}
                 items={[
-                  { label: t('usageLogs.values.quota'), value: number(log.quota) },
+                  { label: t('usageLogs.values.quota'), value: formatQuota(log.quota) },
                   { label: t('usageLogs.detailFields.billingMode'), value: t(`usageLogs.values.billingMode.${log.billing_mode}`) },
                   { label: t('usageLogs.detailFields.usageSource'), value: 'usage_source' in log ? t(`usageLogs.values.source.${log.usage_source}`) : t('usageLogs.values.notRecorded') },
                   { label: t('usageLogs.detailFields.usageSemantics'), value: 'usage_semantics' in log ? t(`usageLogs.values.semantics.${log.usage_semantics}`) : t('usageLogs.values.notRecorded') },

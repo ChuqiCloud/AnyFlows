@@ -7,6 +7,7 @@ use crate::{
     management_error::ManagementErrorBody,
     site_settings::{
         AdminBrandSettingsRequest, AdminSiteSettingsRequest, AdminSiteSettingsResponse,
+        BalanceDisplayModeDto, BalanceDisplaySettingsDto, BalanceDisplaySymbolPositionDto,
         PublicAuthenticationCapabilitiesResponse, PublicBrandSettingsResponse,
         PublicSiteSettingsResponse,
     },
@@ -53,6 +54,7 @@ fn get_admin_site_settings() {}
         (status = 400, description = "站点文本或 URL 无效", body = ManagementErrorBody),
         (status = 401, description = "登录会话无效", body = ManagementErrorBody),
         (status = 403, description = "当前用户不是管理员", body = ManagementErrorBody),
+        (status = 409, description = "站点设置版本已变化", body = ManagementErrorBody),
         (status = 500, description = "服务内部错误", body = ManagementErrorBody)
     ),
     security(("bearerAuth" = []))
@@ -69,6 +71,9 @@ fn update_admin_site_settings() {}
     components(schemas(
         PublicBrandSettingsResponse,
         PublicAuthenticationCapabilitiesResponse,
+        BalanceDisplayModeDto,
+        BalanceDisplaySymbolPositionDto,
+        BalanceDisplaySettingsDto,
         PublicSiteSettingsResponse,
         AdminBrandSettingsRequest,
         AdminSiteSettingsRequest,
