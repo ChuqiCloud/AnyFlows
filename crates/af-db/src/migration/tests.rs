@@ -922,7 +922,8 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
 
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
-    Migrator::up(pool.connection(), Some(59)).await?;
+    // `steps` 表示从当前版本继续执行的数量：54 + 5 = 第 59 号 schema。
+    Migrator::up(pool.connection(), Some(5)).await?;
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
     assert_legacy_debug_trace_snapshot_cleared(&pool, legacy_debug_trace_id).await?;
