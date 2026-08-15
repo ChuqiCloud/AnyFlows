@@ -1,6 +1,6 @@
 use std::{fmt, future::Future, time::Duration};
 
-use af_domain::{OrganizationId, OrganizationMembershipId, OrganizationTeamId};
+use af_domain::{OrganizationId, OrganizationMembershipId, OrganizationTeamId, UserId};
 use tokio::time::timeout;
 use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
@@ -12,11 +12,12 @@ mod types;
 
 pub use types::{
     MAX_ORGANIZATION_NAME_BYTES, MAX_ORGANIZATION_SLUG_BYTES,
-    MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES, MAX_ORGANIZATION_TEAM_NAME_BYTES, OrganizationCreate,
-    OrganizationCreatedRecord, OrganizationMembershipChange, OrganizationMembershipCreate,
-    OrganizationMembershipRecord, OrganizationOwnershipTransfer,
-    OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepositoryConfigError,
-    OrganizationRepositoryError, OrganizationTeamCreate, OrganizationTeamRecord,
+    MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES, MAX_ORGANIZATION_TEAM_NAME_BYTES,
+    OrganizationAccessRecord, OrganizationCreate, OrganizationCreatedRecord,
+    OrganizationMembershipChange, OrganizationMembershipCreate, OrganizationMembershipRecord,
+    OrganizationOwnershipTransfer, OrganizationOwnershipTransferRecord, OrganizationRecord,
+    OrganizationRepositoryConfigError, OrganizationRepositoryError, OrganizationTeamCreate,
+    OrganizationTeamRecord,
 };
 
 /// 企业主体、真实成员和扁平团队的事务仓储。
@@ -113,6 +114,24 @@ impl OrganizationRepository {
             expected_version,
         ))
         .await
+    }
+
+    /// 按企业路径和当前用户同时解析活动成员，禁止只凭成员或团队标识进入企业。
+    pub async fn authorized_access(
+        &self,
+        organization_id: OrganizationId,
+        user_id: UserId,
+    ) -> Result<OrganizationAccessRecord, OrganizationRepositoryError> {
+        self.run(read::authorized_access(self, organization_id, user_id))
+            .await
+    }
+
+    /// 列出当前用户可进入的活动企业及其活动成员角色。
+    pub async fn list_authorized_access(
+        &self,
+        user_id: UserId,
+    ) -> Result<Vec<OrganizationAccessRecord>, OrganizationRepositoryError> {
+        self.run(read::list_authorized_access(self, user_id)).await
     }
 
     async fn run<T>(

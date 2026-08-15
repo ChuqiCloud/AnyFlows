@@ -27,6 +27,8 @@ pub(crate) enum ManagementError {
     UserNotFound,
     /// 用户名或邮箱与当前有效用户冲突。
     UserConflict,
+    /// 企业不存在、已关闭或当前用户不是活动成员。
+    OrganizationNotFound,
     /// 钱包事件键已经绑定不同业务事实。
     WalletEventConflict,
     /// 负向调账会使用户余额低于零。
@@ -275,6 +277,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "user_conflict",
                     message: "User conflict",
+                },
+            ),
+            Self::OrganizationNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "organization_not_found",
+                    message: "Organization not found",
                 },
             ),
             Self::WalletEventConflict => (

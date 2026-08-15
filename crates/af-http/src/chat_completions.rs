@@ -62,6 +62,8 @@ pub(crate) struct HttpState {
     pub(crate) admin_user_reader: Arc<dyn AdminUserReader>,
     pub(crate) admin_user_writer: Arc<dyn AdminUserWriter>,
     pub(crate) admin_wallet_service: Option<Arc<dyn AdminWalletService>>,
+    pub(crate) organization_authorization_service:
+        Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
     stream_delivery: StreamDeliveryPolicy,
 }
 
@@ -106,6 +108,7 @@ impl HttpState {
             admin_user_reader,
             admin_user_writer,
             admin_wallet_service: None,
+            organization_authorization_service: None,
             stream_delivery: StreamDeliveryPolicy::default(),
         }
     }
@@ -188,6 +191,15 @@ impl HttpState {
         service: Option<Arc<dyn AdminWalletService>>,
     ) -> Self {
         self.admin_wallet_service = service;
+        self
+    }
+
+    /// 注入企业上下文只读授权服务；未注入时不注册企业入口。
+    pub(crate) fn with_organization_authorization_service(
+        mut self,
+        service: Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
+    ) -> Self {
+        self.organization_authorization_service = service;
         self
     }
 

@@ -273,6 +273,76 @@ async fn zero_operation_timeout_is_rejected() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[tokio::test]
+async fn authorized_access_requires_same_user_and_active_enterprise_path()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let (organization, owner) = fixture
+        .repository
+        .create(OrganizationCreate::new(
+            "Authorization Lab".to_owned(),
+            "authorization-lab".to_owned(),
+            fixture.users[0],
+        ))
+        .await?
+        .into_parts();
+    let member = fixture
+        .repository
+        .add_membership(
+            organization.id(),
+            OrganizationMembershipCreate::new(
+                fixture.users[1],
+                OrganizationRole::Viewer,
+                None,
+                Some(fixture.users[0]),
+            ),
+        )
+        .await?;
+
+    let owner_access = fixture
+        .repository
+        .authorized_access(organization.id(), fixture.users[0])
+        .await?;
+    assert_eq!(owner_access.membership().id(), owner.id());
+    assert_eq!(owner_access.organization().id(), organization.id());
+    assert_eq!(
+        fixture
+            .repository
+            .authorized_access(organization.id(), fixture.users[2])
+            .await,
+        Err(OrganizationRepositoryError::NotFound)
+    );
+
+    let member_access = fixture
+        .repository
+        .authorized_access(organization.id(), fixture.users[1])
+        .await?;
+    assert_eq!(member_access.membership().id(), member.id());
+
+    fixture
+        .repository
+        .change_membership(
+            organization.id(),
+            member.id(),
+            OrganizationMembershipChange::new(
+                OrganizationRole::Viewer,
+                OrganizationMembershipStatus::Suspended,
+                None,
+                member.version(),
+            ),
+        )
+        .await?;
+    assert_eq!(
+        fixture
+            .repository
+            .authorized_access(organization.id(), fixture.users[1])
+            .await,
+        Err(OrganizationRepositoryError::NotFound)
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
 async fn fixture() -> Result<Fixture, Box<dyn Error>> {
     let pool = crate::connect_and_migrate(
         &DatabaseOptions::new("sqlite::memory:")?,

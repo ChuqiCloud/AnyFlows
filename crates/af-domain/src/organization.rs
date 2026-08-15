@@ -127,6 +127,76 @@ pub enum OrganizationRole {
     Viewer = 5,
 }
 
+/// 企业空间内固定的权限码；与平台管理员权限保持独立。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum OrganizationPermission {
+    /// 查看企业概览与成员目录。
+    OverviewRead,
+    /// 修改企业资料。
+    ProfileWrite,
+    /// 转移企业所有权。
+    OwnershipTransfer,
+    /// 关闭企业。
+    Close,
+    /// 管理成员生命周期与角色。
+    MembersManage,
+    /// 管理团队及成员归属。
+    TeamsManage,
+    /// 查看企业钱包、订单和成本摘要。
+    WalletRead,
+    /// 充值并管理企业预算。
+    WalletManage,
+    /// 查看企业全部 API Key 脱敏目录。
+    KeysReadAll,
+    /// 创建或停用当前成员自己的企业 Key。
+    KeysManageSelf,
+    /// 查看企业完整调用日志。
+    UsageLogsReadAll,
+    /// 查看当前成员自己的调用日志。
+    UsageLogsReadSelf,
+    /// 查看企业管理审计记录。
+    AuditRead,
+}
+
+impl OrganizationPermission {
+    /// 返回对外稳定的权限码，路由和审计只依赖该文本。
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::OverviewRead => "organization.overview.read",
+            Self::ProfileWrite => "organization.profile.write",
+            Self::OwnershipTransfer => "organization.ownership.transfer",
+            Self::Close => "organization.close",
+            Self::MembersManage => "organization.members.manage",
+            Self::TeamsManage => "organization.teams.manage",
+            Self::WalletRead => "organization.wallet.read",
+            Self::WalletManage => "organization.wallet.manage",
+            Self::KeysReadAll => "organization.keys.read_all",
+            Self::KeysManageSelf => "organization.keys.manage_self",
+            Self::UsageLogsReadAll => "organization.usage_logs.read_all",
+            Self::UsageLogsReadSelf => "organization.usage_logs.read_self",
+            Self::AuditRead => "organization.audit.read",
+        }
+    }
+}
+
+/// 平台域权限；平台管理员权限不能伪装成企业角色权限。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PlatformPermission {
+    /// 跨企业读取企业目录。
+    OrganizationsReadAll,
+}
+
+impl PlatformPermission {
+    /// 返回对外稳定的平台权限码。
+    #[must_use]
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::OrganizationsReadAll => "platform.organizations.read_all",
+        }
+    }
+}
+
 impl OrganizationRole {
     /// 返回数据库使用的稳定数值。
     #[must_use]
@@ -138,6 +208,66 @@ impl OrganizationRole {
     #[must_use]
     pub const fn is_owner(self) -> bool {
         matches!(self, Self::Owner)
+    }
+
+    /// 返回固定角色权限矩阵，不读取平台角色或客户端输入。
+    #[must_use]
+    pub const fn permissions(self) -> &'static [OrganizationPermission] {
+        use OrganizationPermission as Permission;
+        match self {
+            Self::Owner => &[
+                Permission::OverviewRead,
+                Permission::ProfileWrite,
+                Permission::OwnershipTransfer,
+                Permission::Close,
+                Permission::MembersManage,
+                Permission::TeamsManage,
+                Permission::WalletRead,
+                Permission::WalletManage,
+                Permission::KeysReadAll,
+                Permission::KeysManageSelf,
+                Permission::UsageLogsReadAll,
+                Permission::UsageLogsReadSelf,
+                Permission::AuditRead,
+            ],
+            Self::Admin => &[
+                Permission::OverviewRead,
+                Permission::ProfileWrite,
+                Permission::MembersManage,
+                Permission::TeamsManage,
+                Permission::WalletRead,
+                Permission::WalletManage,
+                Permission::KeysReadAll,
+                Permission::KeysManageSelf,
+                Permission::UsageLogsReadAll,
+                Permission::UsageLogsReadSelf,
+                Permission::AuditRead,
+            ],
+            Self::Billing => &[
+                Permission::OverviewRead,
+                Permission::WalletRead,
+                Permission::WalletManage,
+                Permission::UsageLogsReadAll,
+                Permission::UsageLogsReadSelf,
+                Permission::AuditRead,
+            ],
+            Self::Member => &[
+                Permission::OverviewRead,
+                Permission::KeysManageSelf,
+                Permission::UsageLogsReadSelf,
+            ],
+            Self::Viewer => &[
+                Permission::OverviewRead,
+                Permission::UsageLogsReadSelf,
+                Permission::AuditRead,
+            ],
+        }
+    }
+
+    /// 判断固定角色是否包含指定企业权限。
+    #[must_use]
+    pub fn allows(self, permission: OrganizationPermission) -> bool {
+        self.permissions().contains(&permission)
     }
 }
 

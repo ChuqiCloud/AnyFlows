@@ -159,6 +159,12 @@ pub struct OrganizationRecord {
 }
 
 impl OrganizationRecord {
+    /// 返回企业显示名称。
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     /// 返回企业内部标识。
     #[must_use]
     pub const fn id(&self) -> OrganizationId {
@@ -181,6 +187,12 @@ impl OrganizationRecord {
     #[must_use]
     pub const fn status(&self) -> OrganizationStatus {
         self.status
+    }
+
+    /// 返回创建者用户标识。
+    #[must_use]
+    pub const fn created_by_user_id(&self) -> UserId {
+        self.created_by_user_id
     }
 
     /// 返回企业 CAS 版本。
@@ -220,6 +232,12 @@ pub struct OrganizationMembershipRecord {
 }
 
 impl OrganizationMembershipRecord {
+    /// 返回成员所属企业标识，供授权上下文做二次边界校验。
+    #[must_use]
+    pub const fn organization_id(&self) -> OrganizationId {
+        self.organization_id
+    }
+
     /// 返回成员关系内部标识。
     #[must_use]
     pub const fn id(&self) -> OrganizationMembershipId {
@@ -281,6 +299,37 @@ pub struct OrganizationTeamRecord {
     pub(super) created_at: i64,
     pub(super) updated_at: i64,
     pub(super) deleted_at: Option<i64>,
+}
+
+/// 企业与活动成员的成对快照；两者必须来自同一企业路径查询。
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrganizationAccessRecord {
+    organization: OrganizationRecord,
+    membership: OrganizationMembershipRecord,
+}
+
+impl OrganizationAccessRecord {
+    pub(super) const fn new(
+        organization: OrganizationRecord,
+        membership: OrganizationMembershipRecord,
+    ) -> Self {
+        Self {
+            organization,
+            membership,
+        }
+    }
+
+    /// 返回企业快照。
+    #[must_use]
+    pub fn organization(&self) -> &OrganizationRecord {
+        &self.organization
+    }
+
+    /// 返回活动成员快照。
+    #[must_use]
+    pub fn membership(&self) -> &OrganizationMembershipRecord {
+        &self.membership
+    }
 }
 
 impl OrganizationTeamRecord {

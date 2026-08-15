@@ -37,8 +37,9 @@ pub use error::{
 };
 pub use network::{IpCidr, IpCidrParseError, TrustedClientIp};
 pub use organization::{
-    OrganizationIdentifierError, OrganizationKey, OrganizationMembershipStatus, OrganizationRole,
-    OrganizationStateCodeError, OrganizationStatus, OrganizationTeamStatus,
+    OrganizationIdentifierError, OrganizationKey, OrganizationMembershipStatus,
+    OrganizationPermission, OrganizationRole, OrganizationStateCodeError, OrganizationStatus,
+    OrganizationTeamStatus, PlatformPermission,
 };
 pub use payment::{
     TopupIdentifierError, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,

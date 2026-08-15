@@ -56,6 +56,7 @@ mod openai_responses_compact;
 mod openai_speech;
 mod openapi;
 mod operations;
+mod organizations;
 mod password_reset;
 mod payment_settings;
 mod payment_webhook;

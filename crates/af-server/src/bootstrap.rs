@@ -64,10 +64,10 @@ use af_db::{
     DebugTraceSnapshotCipherError, EmailSettingsRepository, EmailSettingsRepositoryConfigError,
     InitialSetupRepository, InitialSetupRepositoryConfigError, MigrationOptions,
     ModelPriceRepository, ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord,
-    NetworkSettingsRepository, NetworkSettingsRepositoryConfigError, PasswordResetRepository,
-    PasswordResetRepositoryConfigError, PaymentSecretUpdate, PaymentSettingsRepository,
-    PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
-    PaymentSettingsWriteRecord, PlaygroundConversationRepository,
+    NetworkSettingsRepository, NetworkSettingsRepositoryConfigError, OrganizationRepository,
+    OrganizationRepositoryConfigError, PasswordResetRepository, PasswordResetRepositoryConfigError,
+    PaymentSecretUpdate, PaymentSettingsRepository, PaymentSettingsRepositoryConfigError,
+    PaymentSettingsRepositoryError, PaymentSettingsWriteRecord, PlaygroundConversationRepository,
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RegistrationRepository, RegistrationRepositoryConfigError,
@@ -173,6 +173,7 @@ pub struct AuthenticationReady {
     subscription_service: Arc<dyn SubscriptionService>,
     subscription_repository: SubscriptionRepository,
     user_invitation_service: Arc<dyn UserInvitationService>,
+    organization_authorization_service: Arc<dyn af_admin::OrganizationAuthorizationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     site_settings_repository: SiteSettingsRepository,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
@@ -433,6 +434,9 @@ pub enum BootstrapError {
     /// 当前用户邀请读仓储的启动参数无效。
     #[error("用户邀请仓储启动参数无效")]
     UserInvitationRepository(#[source] UserInvitationRepositoryConfigError),
+    /// 企业上下文授权仓储的启动参数无效。
+    #[error("企业授权仓储启动参数无效")]
+    OrganizationRepository(#[source] OrganizationRepositoryConfigError),
     /// 管理员分组仓储的启动参数无效。
     #[error("管理员分组仓储启动参数无效")]
     AdminGroupRepository(#[source] AdminGroupRepositoryConfigError),
@@ -743,6 +747,11 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::UserInvitationRepository)?;
+        let organization_repository = OrganizationRepository::new(
+            self.stage.database.clone(),
+            Duration::from_secs(auth.lookup_timeout_secs()),
+        )
+        .map_err(BootstrapError::OrganizationRepository)?;
         let system_secret_cipher = SystemSecretCipher::new(self.config.credential_encryption())
             .map_err(BootstrapError::SystemSecret)?;
         let admin_credential_proxy_service = Arc::new(DatabaseAdminCredentialProxyService::new(
@@ -872,6 +881,11 @@ impl Bootstrap<DatabaseReady> {
                 user_invitation_service: Arc::new(DatabaseUserInvitationService::new(
                     user_invitation_repository,
                 )),
+                organization_authorization_service: Arc::new(
+                    af_admin::DatabaseOrganizationAuthorizationService::new(Arc::new(
+                        organization_repository,
+                    )),
+                ),
                 site_settings_service: Arc::new(DatabaseSiteSettingsService::new(
                     site_settings_repository.clone(),
                 )),
@@ -1794,6 +1808,9 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.password_reset_service),
             Arc::clone(&self.stage.infrastructure.user_profile_service),
             Arc::clone(&self.stage.infrastructure.user_wallet_service),
+            Some(Arc::clone(
+                &self.stage.infrastructure.organization_authorization_service,
+            )),
             Some(user_topup_service),
             Arc::clone(&self.stage.infrastructure.redemption_service),
             Arc::clone(&self.stage.infrastructure.subscription_service),

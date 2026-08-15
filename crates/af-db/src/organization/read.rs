@@ -2,13 +2,75 @@ use af_domain::{
     OrganizationId, OrganizationKey, OrganizationMembershipId, OrganizationMembershipStatus,
     OrganizationRole, OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus, UserId,
 };
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 use crate::entity::{organization_memberships, organization_teams, organizations};
 
 use super::{
-    OrganizationMembershipRecord, OrganizationRecord, OrganizationRepositoryError,
-    OrganizationTeamRecord, record_internal_error,
+    OrganizationAccessRecord, OrganizationMembershipRecord, OrganizationRecord,
+    OrganizationRepository, OrganizationRepositoryError, OrganizationTeamRecord,
+    record_internal_error,
 };
+
+/// 按企业路径和用户主体同时解析活动授权，避免跨企业复用成员标识。
+pub(super) async fn authorized_access(
+    repository: &OrganizationRepository,
+    organization_id: OrganizationId,
+    user_id: UserId,
+) -> Result<OrganizationAccessRecord, OrganizationRepositoryError> {
+    let result = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_memberships::Column::UserId.eq(user_id.get()))
+        .filter(
+            organization_memberships::Column::Status
+                .eq(OrganizationMembershipStatus::Active.code()),
+        )
+        .find_also_related(organizations::Entity)
+        .one(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let Some((membership, Some(organization))) = result else {
+        return Err(OrganizationRepositoryError::NotFound);
+    };
+    if organization.status != OrganizationStatus::Active.code() {
+        return Err(OrganizationRepositoryError::NotFound);
+    }
+    Ok(OrganizationAccessRecord::new(
+        organization_record(organization)?,
+        membership_record(membership)?,
+    ))
+}
+
+/// 列出用户可进入的活动企业；每行都携带同一查询得到的成员角色。
+pub(super) async fn list_authorized_access(
+    repository: &OrganizationRepository,
+    user_id: UserId,
+) -> Result<Vec<OrganizationAccessRecord>, OrganizationRepositoryError> {
+    let rows = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::UserId.eq(user_id.get()))
+        .filter(
+            organization_memberships::Column::Status
+                .eq(OrganizationMembershipStatus::Active.code()),
+        )
+        .find_also_related(organizations::Entity)
+        .filter(organizations::Column::Status.eq(OrganizationStatus::Active.code()))
+        .all(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    rows.into_iter()
+        .map(|(membership, organization)| {
+            let Some(organization) = organization else {
+                return Err(record_internal_error(
+                    OrganizationRepositoryError::Invariant,
+                ));
+            };
+            Ok(OrganizationAccessRecord::new(
+                organization_record(organization)?,
+                membership_record(membership)?,
+            ))
+        })
+        .collect()
+}
 
 pub(super) fn organization_record(
     model: organizations::Model,

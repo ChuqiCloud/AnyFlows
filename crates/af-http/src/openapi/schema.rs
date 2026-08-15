@@ -648,6 +648,7 @@ pub(crate) enum ManagementErrorCodeSchema {
     PlaygroundConversationLimitReached,
     PlaygroundConversationConflict,
     UserConflict,
+    OrganizationNotFound,
     WalletEventConflict,
     WalletInsufficientQuota,
     WalletOverflow,

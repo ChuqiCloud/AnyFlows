@@ -1917,6 +1917,7 @@ async fn start_server(
         Arc::new(RejectUserProfile),
         Arc::new(RejectUserWallet),
         None,
+        None,
         Arc::new(RejectRedemptions),
         Arc::new(RejectSubscriptions),
         Arc::new(RejectUserInvitations),

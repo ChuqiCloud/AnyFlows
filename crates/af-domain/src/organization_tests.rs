@@ -1,6 +1,7 @@
 use super::organization::{
-    OrganizationIdentifierError, OrganizationKey, OrganizationMembershipStatus, OrganizationRole,
-    OrganizationStateCodeError, OrganizationStatus, OrganizationTeamStatus,
+    OrganizationIdentifierError, OrganizationKey, OrganizationMembershipStatus,
+    OrganizationPermission, OrganizationRole, OrganizationStateCodeError, OrganizationStatus,
+    OrganizationTeamStatus, PlatformPermission,
 };
 
 #[test]
@@ -47,5 +48,25 @@ fn organization_state_codes_are_closed() {
     assert_eq!(
         OrganizationRole::try_from(0),
         Err(OrganizationStateCodeError::InvalidRole)
+    );
+}
+
+#[test]
+fn organization_roles_use_the_fixed_permission_matrix() {
+    assert!(OrganizationRole::Owner.allows(OrganizationPermission::OwnershipTransfer));
+    assert!(OrganizationRole::Admin.allows(OrganizationPermission::MembersManage));
+    assert!(!OrganizationRole::Admin.allows(OrganizationPermission::OwnershipTransfer));
+    assert!(OrganizationRole::Billing.allows(OrganizationPermission::WalletManage));
+    assert!(!OrganizationRole::Billing.allows(OrganizationPermission::KeysManageSelf));
+    assert!(OrganizationRole::Member.allows(OrganizationPermission::KeysManageSelf));
+    assert!(!OrganizationRole::Member.allows(OrganizationPermission::AuditRead));
+    assert!(OrganizationRole::Viewer.allows(OrganizationPermission::AuditRead));
+    assert_eq!(
+        OrganizationPermission::MembersManage.code(),
+        "organization.members.manage"
+    );
+    assert_eq!(
+        PlatformPermission::OrganizationsReadAll.code(),
+        "platform.organizations.read_all"
     );
 }
