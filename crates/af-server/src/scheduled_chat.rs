@@ -1511,7 +1511,7 @@ mod tests {
             .plan(
                 &playground,
                 None,
-                request_for_model("smart-chat"),
+                valid_request_for_model("smart-chat"),
                 Protocol::OpenAiChat,
                 "request-playground-smart-route",
                 diagnostic(),
@@ -1531,7 +1531,7 @@ mod tests {
                 .plan(
                     &regular,
                     None,
-                    request_for_model("smart-chat"),
+                    valid_request_for_model("smart-chat"),
                     Protocol::OpenAiChat,
                     "request-regular-smart-route",
                     diagnostic(),
@@ -1555,7 +1555,7 @@ mod tests {
             .plan(
                 &playground,
                 None,
-                request_for_model("smart-chat"),
+                valid_request_for_model("smart-chat"),
                 Protocol::OpenAiChat,
                 "request-playground-smart-route-fallback",
                 diagnostic(),
@@ -2239,6 +2239,17 @@ mod tests {
 
     fn request_for_model(model: &str) -> CanonicalRequestEnvelope {
         CanonicalRequest::new(Operation::Chat, model.to_owned(), Vec::new(), false).into()
+    }
+
+    fn valid_request_for_model(model: &str) -> CanonicalRequestEnvelope {
+        openai_chat::parse_request_envelope(Bytes::from(
+            serde_json::to_vec(&json!({
+                "model": model,
+                "messages": [{"role": "user", "content": "hello"}]
+            }))
+            .unwrap(),
+        ))
+        .unwrap()
     }
 
     fn responses_request() -> CanonicalRequestEnvelope {
