@@ -51,6 +51,7 @@ pub(crate) mod model_sync_runs;
 pub(crate) mod models;
 pub(crate) mod network_settings;
 pub(crate) mod options;
+pub(crate) mod organization_entitlements;
 pub(crate) mod organization_memberships;
 pub(crate) mod organization_teams;
 pub(crate) mod organizations;
@@ -265,6 +266,73 @@ where
         if !lifecycle_valid {
             return Err(DbErr::Custom("企业成员状态与时间不一致".to_owned()));
         }
+    }
+    Ok(())
+}
+
+async fn validate_organization_entitlement<C>(
+    model: &organization_entitlements::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if insert
+        && (model.organization_id.try_as_ref().is_none()
+            || model.seat_limit.try_as_ref().is_none()
+            || model.team_limit.try_as_ref().is_none()
+            || model.organization_key_limit.try_as_ref().is_none()
+            || model.audit_retention_days.try_as_ref().is_none()
+            || model.valid_from.try_as_ref().is_none()
+            || model.valid_until.try_as_ref().is_none()
+            || model.source.try_as_ref().is_none())
+    {
+        return Err(DbErr::Custom("企业授权基础字段缺失".to_owned()));
+    }
+    let valid_from = model.valid_from.try_as_ref().copied();
+    let valid_until = model.valid_until.try_as_ref().copied();
+    let grace_until = model.grace_until.try_as_ref().copied().flatten();
+    let source = model.source.try_as_ref().map(String::as_str);
+    let external_reference = model
+        .external_reference
+        .try_as_ref()
+        .map(|value| value.as_deref());
+    if model
+        .organization_id
+        .try_as_ref()
+        .is_some_and(|value| *value <= 0)
+        || model
+            .seat_limit
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .team_limit
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .organization_key_limit
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model
+            .audit_retention_days
+            .try_as_ref()
+            .is_some_and(|value| !(1..=3_650).contains(value))
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+        || model.sso_enabled.try_as_ref().is_some_and(|value| *value)
+        || model
+            .custom_roles_enabled
+            .try_as_ref()
+            .is_some_and(|value| *value)
+        || source.is_some_and(|value| !valid_organization_text(value, 64))
+        || external_reference
+            .is_some_and(|value| value.is_some_and(|value| !valid_organization_text(value, 128)))
+        || valid_from
+            .zip(valid_until)
+            .is_some_and(|(from, until)| from >= until)
+        || grace_until.is_some_and(|grace| valid_until.is_some_and(|until| grace < until))
+    {
+        return Err(DbErr::Custom("企业授权字段无效".to_owned()));
     }
     Ok(())
 }
@@ -1455,6 +1523,21 @@ impl_updated_at_behavior!(
     topup_orders::ActiveModel => validate_topup_order,
     users::ActiveModel => validate_user,
 );
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_entitlements::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        // 授权替换必须走组织仓储的 CAS 更新，禁止通用 ActiveModel 绕过并发控制。
+        if !insert {
+            return Err(DbErr::Custom("企业授权必须通过受信仓储更新".to_owned()));
+        }
+        validate_organization_entitlement(&self, database, true).await?;
+        Ok(self)
+    }
+}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_memberships::ActiveModel {

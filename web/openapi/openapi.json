@@ -18430,6 +18430,74 @@
         },
         "additionalProperties": false
       },
+      "OrganizationEntitlementResponse": {
+        "type": "object",
+        "required": [
+          "status",
+          "team_management_enabled",
+          "seat_limit",
+          "active_seats",
+          "remaining_seats",
+          "team_limit",
+          "active_teams",
+          "remaining_teams",
+          "organization_key_limit",
+          "audit_retention_days",
+          "valid_until"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "team_management_enabled": {
+            "type": "boolean"
+          },
+          "seat_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "active_seats": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "remaining_seats": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "team_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "active_teams": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "remaining_teams": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "organization_key_limit": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "audit_retention_days": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "valid_until": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "grace_until": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
       "OrganizationListResponse": {
         "type": "object",
         "required": [
@@ -18453,7 +18521,8 @@
           "slug",
           "role",
           "membership_id",
-          "permissions"
+          "permissions",
+          "entitlement"
         ],
         "properties": {
           "id": {
@@ -18478,6 +18547,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "entitlement": {
+            "$ref": "#/components/schemas/OrganizationEntitlementResponse"
           }
         },
         "additionalProperties": false

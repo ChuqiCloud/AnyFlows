@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use af_admin::{
     OrganizationAccessSummary, OrganizationAuthorizationError, OrganizationAuthorizationService,
-    SessionAuthentication,
+    OrganizationEntitlementSummary, SessionAuthentication,
 };
 use af_domain::{OrganizationId, OrganizationPermission};
 use axum::{
@@ -69,6 +69,24 @@ pub struct OrganizationOverviewResponse {
     role: &'static str,
     membership_id: i64,
     permissions: Vec<&'static str>,
+    entitlement: OrganizationEntitlementResponse,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationEntitlementResponse {
+    status: &'static str,
+    team_management_enabled: bool,
+    seat_limit: i64,
+    active_seats: i64,
+    remaining_seats: i64,
+    team_limit: i64,
+    active_teams: i64,
+    remaining_teams: i64,
+    organization_key_limit: i64,
+    audit_retention_days: i64,
+    valid_until: i64,
+    grace_until: Option<i64>,
 }
 
 async fn list_organizations(
@@ -114,7 +132,27 @@ async fn get_organization(
             .iter()
             .map(|permission| permission.code())
             .collect(),
+        entitlement: OrganizationEntitlementResponse::from(context.entitlement()),
     }))
+}
+
+impl From<OrganizationEntitlementSummary> for OrganizationEntitlementResponse {
+    fn from(summary: OrganizationEntitlementSummary) -> Self {
+        Self {
+            status: summary.status().code(),
+            team_management_enabled: summary.team_management_enabled(),
+            seat_limit: summary.seat_limit(),
+            active_seats: summary.active_seats(),
+            remaining_seats: summary.seat_limit().saturating_sub(summary.active_seats()),
+            team_limit: summary.team_limit(),
+            active_teams: summary.active_teams(),
+            remaining_teams: summary.team_limit().saturating_sub(summary.active_teams()),
+            organization_key_limit: summary.organization_key_limit(),
+            audit_retention_days: summary.audit_retention_days(),
+            valid_until: summary.valid_until(),
+            grace_until: summary.grace_until(),
+        }
+    }
 }
 
 impl From<OrganizationAccessSummary> for OrganizationSummaryResponse {

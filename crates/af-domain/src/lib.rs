@@ -8,6 +8,7 @@ mod enums;
 mod error;
 mod network;
 mod organization;
+mod organization_entitlement;
 mod payment;
 mod principal;
 mod quota;
@@ -40,6 +41,11 @@ pub use organization::{
     OrganizationIdentifierError, OrganizationKey, OrganizationMembershipStatus,
     OrganizationPermission, OrganizationRole, OrganizationStateCodeError, OrganizationStatus,
     OrganizationTeamStatus, PlatformPermission,
+};
+pub use organization_entitlement::{
+    MAX_ORGANIZATION_AUDIT_RETENTION_DAYS, OrganizationEntitlementCapacity,
+    OrganizationEntitlementSnapshot, OrganizationEntitlementStateError,
+    OrganizationEntitlementStatus,
 };
 pub use payment::{
     TopupIdentifierError, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,

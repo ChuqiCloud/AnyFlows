@@ -1,12 +1,18 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::{OrganizationMembershipStatus, OrganizationRole, OrganizationTeamStatus, UserId};
-use sea_orm::{ActiveModelTrait, EntityTrait, PaginatorTrait, Set};
+use af_domain::{
+    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
+    OrganizationEntitlementStatus, OrganizationMembershipStatus, OrganizationRole,
+    OrganizationTeamStatus, UserId,
+};
+use sea_orm::{
+    ActiveModelTrait, EntityTrait, PaginatorTrait, Set, entity::prelude::TimeDateTimeWithTimeZone,
+};
 
 use super::{
-    DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationMembershipChange,
-    OrganizationMembershipCreate, OrganizationOwnershipTransfer, OrganizationRepository,
-    OrganizationRepositoryError, OrganizationTeamCreate,
+    DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite,
+    OrganizationMembershipChange, OrganizationMembershipCreate, OrganizationOwnershipTransfer,
+    OrganizationRepository, OrganizationRepositoryError, OrganizationTeamCreate,
 };
 use crate::entity::{groups, organization_memberships, organization_teams, organizations, users};
 
@@ -25,6 +31,7 @@ async fn create_is_atomic_and_installs_one_active_owner() -> Result<(), Box<dyn 
             "Acme Research".to_owned(),
             "acme-research".to_owned(),
             fixture.users[0],
+            active_entitlement(10, 10, None)?,
         ))
         .await?;
     let (organization, owner) = created.into_parts();
@@ -68,6 +75,7 @@ async fn last_owner_is_protected_and_transfer_is_atomic() -> Result<(), Box<dyn 
             "Ownership Lab".to_owned(),
             "ownership-lab".to_owned(),
             fixture.users[0],
+            active_entitlement(10, 10, None)?,
         ))
         .await?
         .into_parts();
@@ -157,6 +165,7 @@ async fn team_scope_uniqueness_and_active_members_block_disable() -> Result<(), 
             "First Company".to_owned(),
             "first-company".to_owned(),
             fixture.users[0],
+            active_entitlement(10, 10, None)?,
         ))
         .await?
         .into_parts();
@@ -166,6 +175,7 @@ async fn team_scope_uniqueness_and_active_members_block_disable() -> Result<(), 
             "Second Company".to_owned(),
             "second-company".to_owned(),
             fixture.users[2],
+            active_entitlement(10, 10, None)?,
         ))
         .await?
         .into_parts();
@@ -283,6 +293,7 @@ async fn authorized_access_requires_same_user_and_active_enterprise_path()
             "Authorization Lab".to_owned(),
             "authorization-lab".to_owned(),
             fixture.users[0],
+            active_entitlement(10, 10, None)?,
         ))
         .await?
         .into_parts();
@@ -341,6 +352,131 @@ async fn authorized_access_requires_same_user_and_active_enterprise_path()
     );
     fixture.pool.close().await?;
     Ok(())
+}
+
+#[tokio::test]
+async fn entitlement_enforces_capacity_and_cas() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let (organization, _) = fixture
+        .repository
+        .create(OrganizationCreate::new(
+            "Capacity Lab".to_owned(),
+            "capacity-lab".to_owned(),
+            fixture.users[0],
+            active_entitlement(1, 1, None)?,
+        ))
+        .await?
+        .into_parts();
+
+    assert_eq!(
+        fixture
+            .repository
+            .add_membership(
+                organization.id(),
+                OrganizationMembershipCreate::new(
+                    fixture.users[1],
+                    OrganizationRole::Member,
+                    None,
+                    Some(fixture.users[0]),
+                ),
+            )
+            .await,
+        Err(OrganizationRepositoryError::SeatLimitReached)
+    );
+    fixture
+        .repository
+        .create_team(
+            organization.id(),
+            OrganizationTeamCreate::new("First Team".to_owned(), None),
+        )
+        .await?;
+    assert_eq!(
+        fixture
+            .repository
+            .create_team(
+                organization.id(),
+                OrganizationTeamCreate::new("Second Team".to_owned(), None),
+            )
+            .await,
+        Err(OrganizationRepositoryError::TeamLimitReached)
+    );
+
+    let read_only = OrganizationEntitlementSnapshot::new(
+        OrganizationEntitlementCapacity::new(10, 10, 2)?,
+        true,
+        false,
+        false,
+        90,
+        946_684_800,
+        946_771_200,
+        Some(946_771_200),
+    )?;
+    let replaced = fixture
+        .repository
+        .replace_entitlement(
+            organization.id(),
+            OrganizationEntitlementWrite::new(
+                read_only,
+                "contract".to_owned(),
+                Some("agreement-redacted".to_owned()),
+                Some(1),
+            )?,
+        )
+        .await?;
+    assert_eq!(replaced.version(), 2);
+    assert_eq!(
+        replaced.snapshot().status(
+            af_domain::OrganizationStatus::Active,
+            TimeDateTimeWithTimeZone::now_utc().unix_timestamp(),
+        ),
+        OrganizationEntitlementStatus::ReadOnly
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .replace_entitlement(organization.id(), active_entitlement(10, 10, Some(1))?,)
+            .await,
+        Err(OrganizationRepositoryError::Conflict)
+    );
+    assert_eq!(
+        fixture
+            .repository
+            .add_membership(
+                organization.id(),
+                OrganizationMembershipCreate::new(
+                    fixture.users[1],
+                    OrganizationRole::Member,
+                    None,
+                    Some(fixture.users[0]),
+                ),
+            )
+            .await,
+        Err(OrganizationRepositoryError::EntitlementRestricted)
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+fn active_entitlement(
+    seat_limit: i64,
+    team_limit: i64,
+    expected_version: Option<u64>,
+) -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
+    Ok(OrganizationEntitlementWrite::new(
+        OrganizationEntitlementSnapshot::new(
+            OrganizationEntitlementCapacity::new(seat_limit, team_limit, 2)?,
+            true,
+            false,
+            false,
+            90,
+            946_684_800,
+            4_102_444_800,
+            Some(4_102_444_800),
+        )?,
+        "contract".to_owned(),
+        None,
+        expected_version,
+    )?)
 }
 
 async fn fixture() -> Result<Fixture, Box<dyn Error>> {

@@ -1,8 +1,14 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use af_db::{OrganizationAccessRecord, OrganizationRepository, OrganizationRepositoryError};
 use af_domain::{
-    OrganizationId, OrganizationMembershipId, OrganizationPermission, OrganizationRole, UserId,
+    OrganizationEntitlementStatus, OrganizationId, OrganizationMembershipId,
+    OrganizationPermission, OrganizationRole, UserId,
 };
 use thiserror::Error;
 
@@ -17,6 +23,22 @@ pub struct OrganizationContext {
     role: OrganizationRole,
     name: String,
     slug: String,
+    entitlement: OrganizationEntitlementSummary,
+}
+
+/// 企业概览中可安全展示的授权与容量投影。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationEntitlementSummary {
+    status: OrganizationEntitlementStatus,
+    team_management_enabled: bool,
+    seat_limit: i64,
+    active_seats: i64,
+    team_limit: i64,
+    active_teams: i64,
+    organization_key_limit: i64,
+    audit_retention_days: i64,
+    valid_until: i64,
+    grace_until: Option<i64>,
 }
 
 impl OrganizationContext {
@@ -29,6 +51,7 @@ impl OrganizationContext {
             role: membership.role(),
             name: access.organization().name().to_owned(),
             slug: access.organization().slug().to_owned(),
+            entitlement: OrganizationEntitlementSummary::from_access(access),
         }
     }
 
@@ -72,6 +95,86 @@ impl OrganizationContext {
     #[must_use]
     pub fn allows(&self, permission: OrganizationPermission) -> bool {
         self.role.allows(permission)
+    }
+
+    /// 返回当前企业的授权和容量投影。
+    #[must_use]
+    pub const fn entitlement(&self) -> OrganizationEntitlementSummary {
+        self.entitlement
+    }
+}
+
+impl OrganizationEntitlementSummary {
+    fn from_access(access: &OrganizationAccessRecord) -> Self {
+        let snapshot = access.entitlement();
+        let capacity = snapshot.capacity();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_secs().min(i64::MAX as u64) as i64)
+            .unwrap_or_default();
+        Self {
+            status: snapshot.status(access.organization().status(), now),
+            team_management_enabled: snapshot.team_management_enabled(),
+            seat_limit: capacity.seat_limit(),
+            active_seats: access.active_seats(),
+            team_limit: capacity.team_limit(),
+            active_teams: access.active_teams(),
+            organization_key_limit: capacity.organization_key_limit(),
+            audit_retention_days: snapshot.audit_retention_days(),
+            valid_until: snapshot.valid_until(),
+            grace_until: snapshot.grace_until(),
+        }
+    }
+
+    /// 返回授权状态。
+    #[must_use]
+    pub const fn status(&self) -> OrganizationEntitlementStatus {
+        self.status
+    }
+    /// 是否开启团队管理。
+    #[must_use]
+    pub const fn team_management_enabled(&self) -> bool {
+        self.team_management_enabled
+    }
+    /// 返回席位上限。
+    #[must_use]
+    pub const fn seat_limit(&self) -> i64 {
+        self.seat_limit
+    }
+    /// 返回活动席位数。
+    #[must_use]
+    pub const fn active_seats(&self) -> i64 {
+        self.active_seats
+    }
+    /// 返回团队上限。
+    #[must_use]
+    pub const fn team_limit(&self) -> i64 {
+        self.team_limit
+    }
+    /// 返回活动团队数。
+    #[must_use]
+    pub const fn active_teams(&self) -> i64 {
+        self.active_teams
+    }
+    /// 返回企业 Key 上限。
+    #[must_use]
+    pub const fn organization_key_limit(&self) -> i64 {
+        self.organization_key_limit
+    }
+    /// 返回审计保留天数。
+    #[must_use]
+    pub const fn audit_retention_days(&self) -> i64 {
+        self.audit_retention_days
+    }
+    /// 返回正常授权结束时间。
+    #[must_use]
+    pub const fn valid_until(&self) -> i64 {
+        self.valid_until
+    }
+    /// 返回宽限期结束时间。
+    #[must_use]
+    pub const fn grace_until(&self) -> Option<i64> {
+        self.grace_until
     }
 }
 
@@ -226,6 +329,9 @@ fn map_repository_error(error: OrganizationRepositoryError) -> OrganizationAutho
         | OrganizationRepositoryError::InvalidTransition
         | OrganizationRepositoryError::LastOwner
         | OrganizationRepositoryError::TeamHasActiveMembers
+        | OrganizationRepositoryError::EntitlementRestricted
+        | OrganizationRepositoryError::SeatLimitReached
+        | OrganizationRepositoryError::TeamLimitReached
         | OrganizationRepositoryError::EntropyUnavailable => {
             OrganizationAuthorizationError::Internal
         }

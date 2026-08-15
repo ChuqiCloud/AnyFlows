@@ -10,15 +10,18 @@ use sea_orm::{
     sea_query::{Expr, LockType},
 };
 
-use crate::entity::{organization_memberships, organization_teams, organizations, users};
+use crate::entity::{
+    organization_entitlements, organization_memberships, organization_teams, organizations, users,
+};
 
 use super::{
     MAX_ORGANIZATION_NAME_BYTES, MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES,
     MAX_ORGANIZATION_TEAM_NAME_BYTES, OrganizationCreate, OrganizationCreatedRecord,
-    OrganizationMembershipChange, OrganizationMembershipCreate, OrganizationMembershipRecord,
-    OrganizationOwnershipTransfer, OrganizationOwnershipTransferRecord, OrganizationRepository,
-    OrganizationRepositoryError, OrganizationTeamCreate, OrganizationTeamRecord,
-    record_internal_error, validate_name, validate_slug,
+    OrganizationEntitlementRecord, OrganizationEntitlementWrite, OrganizationMembershipChange,
+    OrganizationMembershipCreate, OrganizationMembershipRecord, OrganizationOwnershipTransfer,
+    OrganizationOwnershipTransferRecord, OrganizationRepository, OrganizationRepositoryError,
+    OrganizationTeamCreate, OrganizationTeamRecord, record_internal_error, validate_name,
+    validate_slug,
 };
 
 pub(super) async fn create(
@@ -58,6 +61,42 @@ pub(super) async fn create(
         }
     };
 
+    if write.entitlement.expected_version.is_some() {
+        rollback(transaction).await?;
+        return Err(OrganizationRepositoryError::InvalidInput);
+    }
+    let entitlement = write.entitlement;
+    let snapshot = entitlement.snapshot;
+    let valid_from = entitlement_time(snapshot.valid_from())?;
+    let valid_until = entitlement_time(snapshot.valid_until())?;
+    let grace_until = snapshot.grace_until().map(entitlement_time).transpose()?;
+    if let Err(error) = (organization_entitlements::ActiveModel {
+        organization_id: Set(organization.id),
+        team_management_enabled: Set(snapshot.team_management_enabled()),
+        seat_limit: Set(snapshot.capacity().seat_limit()),
+        team_limit: Set(snapshot.capacity().team_limit()),
+        organization_key_limit: Set(snapshot.capacity().organization_key_limit()),
+        audit_retention_days: Set(snapshot.audit_retention_days()),
+        sso_enabled: Set(snapshot.sso_enabled()),
+        custom_roles_enabled: Set(snapshot.custom_roles_enabled()),
+        valid_from: Set(valid_from),
+        valid_until: Set(valid_until),
+        grace_until: Set(grace_until),
+        source: Set(entitlement.source),
+        external_reference: Set(entitlement.external_reference),
+        version: Set(1),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    })
+    .insert(&transaction)
+    .await
+    {
+        let mapped = map_write_error(&error);
+        rollback(transaction).await?;
+        return Err(mapped);
+    }
+
     let owner = organization_memberships::ActiveModel {
         organization_id: Set(organization.id),
         user_id: Set(write.owner_user_id.get()),
@@ -91,6 +130,96 @@ pub(super) async fn create(
     ))
 }
 
+pub(super) async fn replace_entitlement(
+    repository: &OrganizationRepository,
+    organization_id: OrganizationId,
+    write: OrganizationEntitlementWrite,
+) -> Result<OrganizationEntitlementRecord, OrganizationRepositoryError> {
+    let expected_version = write
+        .expected_version
+        .ok_or(OrganizationRepositoryError::InvalidInput)?;
+    let transaction = begin(repository).await?;
+    let organization = lock_organization(&transaction, organization_id).await?;
+    OrganizationStatus::try_from(organization.status).map_err(|_| invariant())?;
+    let current = lock_entitlement(&transaction, organization_id).await?;
+    if current.version != expected_version {
+        rollback(transaction).await?;
+        return Err(OrganizationRepositoryError::Conflict);
+    }
+    let next_version = expected_version.checked_add(1).ok_or_else(invariant)?;
+    let snapshot = write.snapshot;
+    let result = organization_entitlements::Entity::update_many()
+        .filter(organization_entitlements::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_entitlements::Column::Version.eq(expected_version))
+        .col_expr(
+            organization_entitlements::Column::TeamManagementEnabled,
+            Expr::value(snapshot.team_management_enabled()),
+        )
+        .col_expr(
+            organization_entitlements::Column::SeatLimit,
+            Expr::value(snapshot.capacity().seat_limit()),
+        )
+        .col_expr(
+            organization_entitlements::Column::TeamLimit,
+            Expr::value(snapshot.capacity().team_limit()),
+        )
+        .col_expr(
+            organization_entitlements::Column::OrganizationKeyLimit,
+            Expr::value(snapshot.capacity().organization_key_limit()),
+        )
+        .col_expr(
+            organization_entitlements::Column::AuditRetentionDays,
+            Expr::value(snapshot.audit_retention_days()),
+        )
+        .col_expr(
+            organization_entitlements::Column::SsoEnabled,
+            Expr::value(snapshot.sso_enabled()),
+        )
+        .col_expr(
+            organization_entitlements::Column::CustomRolesEnabled,
+            Expr::value(snapshot.custom_roles_enabled()),
+        )
+        .col_expr(
+            organization_entitlements::Column::ValidFrom,
+            Expr::value(entitlement_time(snapshot.valid_from())?),
+        )
+        .col_expr(
+            organization_entitlements::Column::ValidUntil,
+            Expr::value(entitlement_time(snapshot.valid_until())?),
+        )
+        .col_expr(
+            organization_entitlements::Column::GraceUntil,
+            Expr::value(snapshot.grace_until().map(entitlement_time).transpose()?),
+        )
+        .col_expr(
+            organization_entitlements::Column::Source,
+            Expr::value(write.source),
+        )
+        .col_expr(
+            organization_entitlements::Column::ExternalReference,
+            Expr::value(write.external_reference),
+        )
+        .col_expr(
+            organization_entitlements::Column::Version,
+            Expr::value(next_version),
+        )
+        .col_expr(
+            organization_entitlements::Column::UpdatedAt,
+            Expr::value(TimeDateTimeWithTimeZone::now_utc()),
+        )
+        .exec(&transaction)
+        .await
+        .map_err(query_error)?;
+    if result.rows_affected != 1 {
+        rollback(transaction).await?;
+        return Err(OrganizationRepositoryError::Conflict);
+    }
+    let updated = lock_entitlement(&transaction, organization_id).await?;
+    let record = super::read::entitlement_record(updated)?;
+    commit(transaction).await?;
+    Ok(record)
+}
+
 pub(super) async fn add_membership(
     repository: &OrganizationRepository,
     organization_id: OrganizationId,
@@ -99,6 +228,32 @@ pub(super) async fn add_membership(
     let transaction = begin(repository).await?;
     let organization = lock_organization(&transaction, organization_id).await?;
     require_active_organization(&organization)?;
+    let entitlement = lock_entitlement(&transaction, organization_id).await?;
+    let entitlement_snapshot = super::read::entitlement_snapshot(entitlement)?;
+    if !entitlement_snapshot
+        .status(
+            OrganizationStatus::try_from(organization.status).map_err(|_| invariant())?,
+            TimeDateTimeWithTimeZone::now_utc().unix_timestamp(),
+        )
+        .allows_provisioning()
+    {
+        rollback(transaction).await?;
+        return Err(OrganizationRepositoryError::EntitlementRestricted);
+    }
+    let active_members = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+        .filter(
+            organization_memberships::Column::Status
+                .eq(OrganizationMembershipStatus::Active.code()),
+        )
+        .count(&transaction)
+        .await
+        .map_err(query_error)?;
+    let active_members = i64::try_from(active_members).map_err(|_| invariant())?;
+    if active_members >= entitlement_snapshot.capacity().seat_limit() {
+        rollback(transaction).await?;
+        return Err(OrganizationRepositoryError::SeatLimitReached);
+    }
     if !lock_active_user(&transaction, write.user_id).await? {
         rollback(transaction).await?;
         return Err(OrganizationRepositoryError::UserUnavailable);
@@ -160,6 +315,34 @@ pub(super) async fn change_membership(
     if !membership_transition_allowed(current_status, change.status) {
         rollback(transaction).await?;
         return Err(OrganizationRepositoryError::InvalidTransition);
+    }
+    if !current_status.is_active() && change.status.is_active() {
+        let entitlement = lock_entitlement(&transaction, organization_id).await?;
+        let snapshot = super::read::entitlement_snapshot(entitlement)?;
+        if !snapshot
+            .status(
+                OrganizationStatus::try_from(organization.status).map_err(|_| invariant())?,
+                TimeDateTimeWithTimeZone::now_utc().unix_timestamp(),
+            )
+            .allows_provisioning()
+        {
+            rollback(transaction).await?;
+            return Err(OrganizationRepositoryError::EntitlementRestricted);
+        }
+        let active_members = organization_memberships::Entity::find()
+            .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+            .filter(
+                organization_memberships::Column::Status
+                    .eq(OrganizationMembershipStatus::Active.code()),
+            )
+            .count(&transaction)
+            .await
+            .map_err(query_error)?;
+        let active_members = i64::try_from(active_members).map_err(|_| invariant())?;
+        if active_members >= snapshot.capacity().seat_limit() {
+            rollback(transaction).await?;
+            return Err(OrganizationRepositoryError::SeatLimitReached);
+        }
     }
     if let Some(team_id) = change.team_id {
         lock_active_team(&transaction, organization_id, team_id).await?;
@@ -272,6 +455,30 @@ pub(super) async fn create_team(
     let transaction = begin(repository).await?;
     let organization = lock_organization(&transaction, organization_id).await?;
     require_active_organization(&organization)?;
+    let entitlement = lock_entitlement(&transaction, organization_id).await?;
+    let snapshot = super::read::entitlement_snapshot(entitlement)?;
+    if !snapshot.team_management_enabled()
+        || !snapshot
+            .status(
+                OrganizationStatus::try_from(organization.status).map_err(|_| invariant())?,
+                TimeDateTimeWithTimeZone::now_utc().unix_timestamp(),
+            )
+            .allows_provisioning()
+    {
+        rollback(transaction).await?;
+        return Err(OrganizationRepositoryError::EntitlementRestricted);
+    }
+    let active_teams = organization_teams::Entity::find()
+        .filter(organization_teams::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_teams::Column::Status.eq(OrganizationTeamStatus::Active.code()))
+        .count(&transaction)
+        .await
+        .map_err(query_error)?;
+    let active_teams = i64::try_from(active_teams).map_err(|_| invariant())?;
+    if active_teams >= snapshot.capacity().team_limit() {
+        rollback(transaction).await?;
+        return Err(OrganizationRepositoryError::TeamLimitReached);
+    }
     let now = TimeDateTimeWithTimeZone::now_utc();
     let inserted = organization_teams::ActiveModel {
         organization_id: Set(organization_id.get()),
@@ -426,6 +633,22 @@ async fn lock_organization(
         .ok_or(OrganizationRepositoryError::NotFound)
 }
 
+async fn lock_entitlement(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+) -> Result<organization_entitlements::Model, OrganizationRepositoryError> {
+    let mut query = organization_entitlements::Entity::find()
+        .filter(organization_entitlements::Column::OrganizationId.eq(organization_id.get()));
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .await
+        .map_err(query_error)?
+        .ok_or(OrganizationRepositoryError::Invariant)
+}
+
 async fn lock_membership(
     transaction: &DatabaseTransaction,
     organization_id: OrganizationId,
@@ -543,6 +766,10 @@ fn generate_organization_key() -> Result<OrganizationKey, OrganizationRepository
         }
     }
     Err(OrganizationRepositoryError::EntropyUnavailable)
+}
+
+fn entitlement_time(value: i64) -> Result<TimeDateTimeWithTimeZone, OrganizationRepositoryError> {
+    TimeDateTimeWithTimeZone::from_unix_timestamp(value).map_err(|_| invariant())
 }
 
 fn map_write_error(error: &DbErr) -> OrganizationRepositoryError {

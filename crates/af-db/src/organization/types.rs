@@ -1,8 +1,9 @@
 use std::fmt;
 
 use af_domain::{
-    OrganizationId, OrganizationKey, OrganizationMembershipId, OrganizationMembershipStatus,
-    OrganizationRole, OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus, UserId,
+    OrganizationEntitlementSnapshot, OrganizationId, OrganizationKey, OrganizationMembershipId,
+    OrganizationMembershipStatus, OrganizationRole, OrganizationStatus, OrganizationTeamId,
+    OrganizationTeamStatus, UserId,
 };
 use thiserror::Error;
 
@@ -14,22 +15,33 @@ pub const MAX_ORGANIZATION_SLUG_BYTES: usize = 64;
 pub const MAX_ORGANIZATION_TEAM_NAME_BYTES: usize = 128;
 /// 企业团队说明最大 UTF-8 字节数。
 pub const MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES: usize = 2_000;
+/// 授权来源最大 UTF-8 字节数。
+pub const MAX_ORGANIZATION_ENTITLEMENT_SOURCE_BYTES: usize = 64;
+/// 授权外部引用最大 UTF-8 字节数。
+pub const MAX_ORGANIZATION_ENTITLEMENT_REFERENCE_BYTES: usize = 128;
 
 /// 创建企业时由服务端验证的基础资料和初始 Owner。
 pub struct OrganizationCreate {
     pub(super) name: String,
     pub(super) slug: String,
     pub(super) owner_user_id: UserId,
+    pub(super) entitlement: OrganizationEntitlementWrite,
 }
 
 impl OrganizationCreate {
     /// 组装企业基础资料；公开标识和 Owner 关系由仓储原子生成。
     #[must_use]
-    pub fn new(name: String, slug: String, owner_user_id: UserId) -> Self {
+    pub fn new(
+        name: String,
+        slug: String,
+        owner_user_id: UserId,
+        entitlement: OrganizationEntitlementWrite,
+    ) -> Self {
         Self {
             name,
             slug,
             owner_user_id,
+            entitlement,
         }
     }
 }
@@ -38,6 +50,107 @@ impl fmt::Debug for OrganizationCreate {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("OrganizationCreate(<redacted>)")
     }
+}
+
+/// 仅供受信订单、合同或许可证流程提交的完整授权快照。
+#[derive(Clone)]
+pub struct OrganizationEntitlementWrite {
+    pub(super) snapshot: OrganizationEntitlementSnapshot,
+    pub(super) source: String,
+    pub(super) external_reference: Option<String>,
+    pub(super) expected_version: Option<i64>,
+}
+
+impl OrganizationEntitlementWrite {
+    /// 构造完整授权写入；首次写入不带版本，替换时必须携带当前版本。
+    pub fn new(
+        snapshot: OrganizationEntitlementSnapshot,
+        source: String,
+        external_reference: Option<String>,
+        expected_version: Option<u64>,
+    ) -> Result<Self, OrganizationRepositoryError> {
+        if !valid_entitlement_text(&source, MAX_ORGANIZATION_ENTITLEMENT_SOURCE_BYTES)
+            || external_reference.as_ref().is_some_and(|value| {
+                !valid_entitlement_text(value, MAX_ORGANIZATION_ENTITLEMENT_REFERENCE_BYTES)
+            })
+        {
+            return Err(OrganizationRepositoryError::InvalidInput);
+        }
+        let expected_version = expected_version
+            .map(i64::try_from)
+            .transpose()
+            .map_err(|_| OrganizationRepositoryError::InvalidInput)?;
+        if expected_version.is_some_and(|value| value <= 0 || value == i64::MAX) {
+            return Err(OrganizationRepositoryError::InvalidInput);
+        }
+        Ok(Self {
+            snapshot,
+            source,
+            external_reference,
+            expected_version,
+        })
+    }
+}
+
+impl fmt::Debug for OrganizationEntitlementWrite {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationEntitlementWrite")
+            .field("snapshot", &self.snapshot)
+            .field("source", &self.source)
+            .field("has_external_reference", &self.external_reference.is_some())
+            .field("expected_version", &self.expected_version)
+            .finish_non_exhaustive()
+    }
+}
+
+/// 已持久化的企业授权快照。
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrganizationEntitlementRecord {
+    pub(super) organization_id: OrganizationId,
+    pub(super) snapshot: OrganizationEntitlementSnapshot,
+    pub(super) source: String,
+    pub(super) external_reference: Option<String>,
+    pub(super) version: i64,
+}
+
+impl OrganizationEntitlementRecord {
+    /// 返回授权所属企业。
+    #[must_use]
+    pub const fn organization_id(&self) -> OrganizationId {
+        self.organization_id
+    }
+
+    /// 返回授权能力、容量和时间边界。
+    #[must_use]
+    pub const fn snapshot(&self) -> OrganizationEntitlementSnapshot {
+        self.snapshot
+    }
+
+    /// 返回授权来源。
+    #[must_use]
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// 返回脱敏外部引用。
+    #[must_use]
+    pub fn external_reference(&self) -> Option<&str> {
+        self.external_reference.as_deref()
+    }
+
+    /// 返回 CAS 版本。
+    #[must_use]
+    pub const fn version(&self) -> i64 {
+        self.version
+    }
+}
+
+fn valid_entitlement_text(value: &str, maximum_bytes: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= maximum_bytes
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
 }
 
 /// 创建成员关系所需的真实用户、固定角色和可选主团队。
@@ -306,16 +419,25 @@ pub struct OrganizationTeamRecord {
 pub struct OrganizationAccessRecord {
     organization: OrganizationRecord,
     membership: OrganizationMembershipRecord,
+    entitlement: OrganizationEntitlementSnapshot,
+    active_seats: i64,
+    active_teams: i64,
 }
 
 impl OrganizationAccessRecord {
     pub(super) const fn new(
         organization: OrganizationRecord,
         membership: OrganizationMembershipRecord,
+        entitlement: OrganizationEntitlementSnapshot,
+        active_seats: i64,
+        active_teams: i64,
     ) -> Self {
         Self {
             organization,
             membership,
+            entitlement,
+            active_seats,
+            active_teams,
         }
     }
 
@@ -329,6 +451,24 @@ impl OrganizationAccessRecord {
     #[must_use]
     pub fn membership(&self) -> &OrganizationMembershipRecord {
         &self.membership
+    }
+
+    /// 返回当前企业的商业授权快照。
+    #[must_use]
+    pub const fn entitlement(&self) -> OrganizationEntitlementSnapshot {
+        self.entitlement
+    }
+
+    /// 返回当前活动成员数。
+    #[must_use]
+    pub const fn active_seats(&self) -> i64 {
+        self.active_seats
+    }
+
+    /// 返回当前活动团队数。
+    #[must_use]
+    pub const fn active_teams(&self) -> i64 {
+        self.active_teams
     }
 }
 
@@ -447,6 +587,15 @@ pub enum OrganizationRepositoryError {
     /// 团队仍有活动成员归属，不能禁用。
     #[error("团队仍有活动成员")]
     TeamHasActiveMembers,
+    /// 当前授权不允许企业继续执行该写操作。
+    #[error("企业商业授权不允许当前操作")]
+    EntitlementRestricted,
+    /// 企业席位容量已用尽。
+    #[error("企业席位容量已用尽")]
+    SeatLimitReached,
+    /// 企业团队容量已用尽。
+    #[error("企业团队容量已用尽")]
+    TeamLimitReached,
     /// 系统随机源无法生成企业公开标识。
     #[error("企业公开标识生成失败")]
     EntropyUnavailable,

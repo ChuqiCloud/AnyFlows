@@ -355,8 +355,9 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 267);
+        assert_eq!(schemas.len(), 268);
         assert!(schemas.keys().is_sorted());
+        assert!(schemas.contains_key("OrganizationEntitlementResponse"));
         assert!(schemas.contains_key("ModelCatalogProvider"));
         assert!(schemas.contains_key("ModelCatalogProviderListResponse"));
         assert!(schemas.contains_key("AdminResponsesCompactProbe"));

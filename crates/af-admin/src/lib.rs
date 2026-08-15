@@ -179,7 +179,7 @@ pub use network_settings::{
 pub use organization::{
     DatabaseOrganizationAuthorizationService, OrganizationAccessFuture, OrganizationAccessSummary,
     OrganizationAuthorizationError, OrganizationAuthorizationService, OrganizationContext,
-    OrganizationListFuture,
+    OrganizationEntitlementSummary, OrganizationListFuture,
 };
 pub use password_reset::{
     DatabasePasswordResetService, MAX_PASSWORD_RESET_PASSWORD_BYTES,
