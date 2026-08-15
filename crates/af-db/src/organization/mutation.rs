@@ -4,8 +4,8 @@ use af_domain::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
-    EntityTrait,
-    IntoActiveModel, PaginatorTrait, QueryFilter, QuerySelect, Set, SqlErr, TransactionTrait,
+    EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, QuerySelect, Set, SqlErr,
+    TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, LockType},
 };
