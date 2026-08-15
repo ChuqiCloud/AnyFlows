@@ -44,23 +44,15 @@ impl MigrationTrait for Migration {
 
 async fn create_snapshots(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
     let mut statement = table(manager, debug_trace_snapshots::Entity);
+    // MySQL 8.4 禁止级联外键列参与 CHECK；父表自增键与强类型写入共同保证 ID 和快照层级有效。
     statement
         .col(auto_id(debug_trace_snapshots::Column::Id))
         .col(
             ColumnDef::new(debug_trace_snapshots::Column::TraceId)
                 .big_integer()
-                .not_null()
-                .check(Expr::col(debug_trace_snapshots::Column::TraceId).gt(0_i64)),
+                .not_null(),
         )
-        .col(
-            ColumnDef::new(debug_trace_snapshots::Column::AttemptId)
-                .big_integer()
-                .check(
-                    Expr::col(debug_trace_snapshots::Column::AttemptId)
-                        .is_null()
-                        .or(Expr::col(debug_trace_snapshots::Column::AttemptId).gt(0_i64)),
-                ),
-        )
+        .col(ColumnDef::new(debug_trace_snapshots::Column::AttemptId).big_integer())
         .col(
             ColumnDef::new(debug_trace_snapshots::Column::Kind)
                 .small_integer()
@@ -73,14 +65,6 @@ async fn create_snapshots(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
                 .not_null(),
         )
         .col(timestamp(manager, debug_trace_snapshots::Column::CreatedAt))
-        .check(
-            Expr::col(debug_trace_snapshots::Column::Kind)
-                .between(1_i16, 2_i16)
-                .and(Expr::col(debug_trace_snapshots::Column::AttemptId).is_null())
-                .or(Expr::col(debug_trace_snapshots::Column::Kind)
-                    .between(3_i16, 6_i16)
-                    .and(Expr::col(debug_trace_snapshots::Column::AttemptId).is_not_null())),
-        )
         .foreign_key(
             ForeignKey::create()
                 .name("fk_debug_trace_snapshots_trace")
@@ -143,10 +127,7 @@ async fn create_access_audits(manager: &SchemaManager<'_>) -> Result<(), DbErr> 
         .col(
             ColumnDef::new(debug_trace_snapshot_access_audits::Column::ActorUserId)
                 .big_integer()
-                .not_null()
-                .check(
-                    Expr::col(debug_trace_snapshot_access_audits::Column::ActorUserId).gt(0_i64),
-                ),
+                .not_null(),
         )
         .col(
             ColumnDef::new(debug_trace_snapshot_access_audits::Column::Scope)
