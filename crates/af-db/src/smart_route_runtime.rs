@@ -2,9 +2,8 @@ use std::{collections::BTreeSet, fmt, time::Duration};
 
 use af_domain::{
     ChannelId, CredentialId, MAX_MODEL_NAME_BYTES, RouteChannelId, RouteId, RouteMode,
-    RouteStrategy, validate_route_model_pattern,
+    RouteStrategy, route_model_pattern_matches, validate_route_model_pattern,
 };
-use regex::Regex;
 use sea_orm::{
     ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone, sea_query::Expr,
@@ -440,20 +439,16 @@ fn match_rank(
     if pattern.trim() != pattern {
         return Err(invariant());
     }
-    validate_route_model_pattern(pattern).map_err(|_| invariant())?;
+    let matches = route_model_pattern_matches(pattern, requested_model).map_err(|_| invariant())?;
     match RouteMode::try_from(mode_code).map_err(|_| invariant())? {
         RouteMode::ExplicitGroup => {
             if pattern.starts_with("re:") {
                 return Err(invariant());
             }
-            Ok((pattern == requested_model).then_some(3))
+            Ok(matches.then_some(3))
         }
-        RouteMode::Pattern if !pattern.starts_with("re:") => {
-            Ok((pattern == requested_model).then_some(2))
-        }
-        RouteMode::Pattern => Regex::new(pattern.strip_prefix("re:").ok_or_else(invariant)?)
-            .map_err(|_| invariant())
-            .map(|expression| expression.is_match(requested_model).then_some(1)),
+        RouteMode::Pattern if !pattern.starts_with("re:") => Ok(matches.then_some(2)),
+        RouteMode::Pattern => Ok(matches.then_some(1)),
     }
 }
 

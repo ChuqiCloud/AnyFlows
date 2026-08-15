@@ -110,6 +110,14 @@ pub enum RoutePatternError {
 
 /// 校验精确模型名或 `re:` 前缀正则，不保留编译后的运行时状态。
 pub fn validate_route_model_pattern(value: &str) -> Result<(), RoutePatternError> {
+    route_model_pattern_matches(value, "").map(|_| ())
+}
+
+/// 使用与写入校验完全一致的规则匹配请求模型，避免运行时重新解释正则语义。
+pub fn route_model_pattern_matches(
+    value: &str,
+    requested_model: &str,
+) -> Result<bool, RoutePatternError> {
     if value.is_empty()
         || value.len() > MAX_ROUTE_MODEL_PATTERN_BYTES
         || value.chars().any(char::is_control)
@@ -117,12 +125,14 @@ pub fn validate_route_model_pattern(value: &str) -> Result<(), RoutePatternError
         return Err(RoutePatternError::InvalidPattern);
     }
     let Some(expression) = value.strip_prefix("re:") else {
-        return Ok(());
+        return Ok(value == requested_model);
     };
-    if expression.is_empty() || Regex::new(expression).is_err() {
+    if expression.is_empty() {
         return Err(RoutePatternError::InvalidRegex);
     }
-    Ok(())
+    Regex::new(expression)
+        .map_err(|_| RoutePatternError::InvalidRegex)
+        .map(|regex| regex.is_match(requested_model))
 }
 
 #[cfg(test)]
@@ -136,6 +146,15 @@ mod tests {
         assert_eq!(RouteStrategy::try_from(3), Ok(RouteStrategy::StableFirst));
         assert_eq!(validate_route_model_pattern("gpt-5.5"), Ok(()));
         assert_eq!(validate_route_model_pattern("re:^gpt-5\\.[0-9]+$"), Ok(()));
+        assert_eq!(route_model_pattern_matches("gpt-5.5", "gpt-5.5"), Ok(true));
+        assert_eq!(
+            route_model_pattern_matches("re:^gpt-5\\.[0-9]+$", "gpt-5.5"),
+            Ok(true)
+        );
+        assert_eq!(
+            route_model_pattern_matches("re:^gpt-5\\.[0-9]+$", "claude-opus"),
+            Ok(false)
+        );
         assert_eq!(
             validate_route_model_pattern("re:("),
             Err(RoutePatternError::InvalidRegex)
