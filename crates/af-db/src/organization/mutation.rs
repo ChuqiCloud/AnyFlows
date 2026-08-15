@@ -3,7 +3,8 @@ use af_domain::{
     OrganizationRole, OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus, UserId,
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseTransaction, DbBackend, DbErr, EntityTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, DbErr,
+    EntityTrait,
     IntoActiveModel, PaginatorTrait, QueryFilter, QuerySelect, Set, SqlErr, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, LockType},
