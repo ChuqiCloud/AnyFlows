@@ -1677,3 +1677,87 @@ pub(in crate::migration) mod debug_trace_snapshot_access_audits {
         CreatedAt,
     }
 }
+
+pub(in crate::migration) mod organizations {
+    use super::DeriveIden;
+
+    /// `organizations` 企业主体表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organizations")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业主体的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationKey,
+        Name,
+        Slug,
+        Status,
+        CreatedByUserId,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+        ClosedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_teams {
+    use super::DeriveIden;
+
+    /// `organization_teams` 企业团队表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_teams")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业团队的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        Name,
+        Description,
+        Status,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+        DeletedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_memberships {
+    use super::DeriveIden;
+
+    /// `organization_memberships` 企业成员关系表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_memberships")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业成员关系的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        UserId,
+        Role,
+        TeamId,
+        Status,
+        JoinedAt,
+        SuspendedAt,
+        RemovedAt,
+        InvitedByUserId,
+        Version,
+    }
+}
