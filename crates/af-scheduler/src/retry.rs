@@ -17,6 +17,19 @@ pub struct RetrySelection {
 }
 
 impl RetrySelection {
+    /// 从已经完成策略排序的候选构造固定尝试位置。
+    pub(crate) fn from_ordered_candidate(
+        candidate: SchedulerCandidate,
+        attempt: NonZeroUsize,
+        priority_rank: usize,
+    ) -> Self {
+        Self {
+            candidate,
+            attempt,
+            priority_rank,
+        }
+    }
+
     /// 返回本次应尝试的候选渠道。
     #[must_use]
     pub const fn candidate(self) -> SchedulerCandidate {

@@ -137,6 +137,9 @@ mod scheduler_runtime;
 mod site_settings;
 #[cfg(test)]
 mod site_settings_tests;
+mod smart_route_runtime;
+#[cfg(test)]
+mod smart_route_runtime_tests;
 mod subscription;
 mod subscription_alert;
 mod token_owner_guard;
@@ -436,6 +439,11 @@ pub use site_settings::{
     BalanceDisplayModeRecord, BalanceDisplayPolicyRecord, BalanceSymbolPositionRecord,
     SiteSettingsRecord, SiteSettingsRepository, SiteSettingsRepositoryConfigError,
     SiteSettingsRepositoryError, SiteSettingsWriteRecord,
+};
+pub use smart_route_runtime::{
+    MAX_SMART_ROUTE_RUNTIME_RULES, SmartRouteAttemptFeedback, SmartRouteRuntimeCandidate,
+    SmartRouteRuntimeRepository, SmartRouteRuntimeRepositoryConfigError,
+    SmartRouteRuntimeRepositoryError, SmartRouteRuntimeRule, validate_smart_route_model_mapping,
 };
 pub use subscription::{
     MAX_SUBSCRIPTION_PAGE_SIZE, MAX_SUBSCRIPTION_PLAN_NAME_BYTES, SubscriptionExpirationDueCursor,

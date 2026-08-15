@@ -41,6 +41,9 @@ pub trait PlannedChatExecution: Send {
     /// 返回本计划全部候选共同的实际计费分组。
     fn target_group_id(&self) -> GroupId;
 
+    /// 返回路由映射后用于定价解析的 Canonical 模型。
+    fn pricing_model(&self) -> &str;
+
     /// 在预扣成功后消费计划并执行全部候选故障转移。
     fn execute(self: Box<Self>) -> PlannedChatExecutionFuture;
 }
@@ -122,7 +125,6 @@ impl BillingChatService {
         );
         let upper_bound = estimate_openai_request_upper_bound(request.canonical())
             .map_err(map_upper_bound_error)?;
-        let model = request.canonical().model.clone();
         let planned = self
             .inner
             .plan(
@@ -136,10 +138,11 @@ impl BillingChatService {
             .await?;
         let source_group_id = principal.group_id();
         let target_group_id = planned.target_group_id();
+        let pricing_model = planned.pricing_model().to_owned();
         let snapshot = self
             .pricing_source
             .capture(
-                &model,
+                &pricing_model,
                 source_group_id,
                 target_group_id,
                 crate::utc_time::current_utc_day_second().ok_or(AfError::Internal)?,
@@ -448,6 +451,7 @@ mod tests {
 
     struct FullStub {
         target_group_id: GroupId,
+        pricing_model_override: Option<String>,
     }
 
     impl ChatRoutePlanner for FullStub {
@@ -455,7 +459,7 @@ mod tests {
             &'a self,
             _principal: &'a GatewayPrincipal,
             _user_concurrency: Option<ConcurrencyLimit>,
-            _request: CanonicalRequestEnvelope,
+            request: CanonicalRequestEnvelope,
             _response_protocol: Protocol,
             _request_id: &'a str,
             _diagnostic: RelayDiagnosticInput,
@@ -463,6 +467,10 @@ mod tests {
             Box::pin(async move {
                 Ok(Box::new(FullExecution {
                     target_group_id: self.target_group_id,
+                    pricing_model: self
+                        .pricing_model_override
+                        .clone()
+                        .unwrap_or_else(|| request.canonical().model.clone()),
                 }) as Box<dyn PlannedChatExecution>)
             })
         }
@@ -470,6 +478,7 @@ mod tests {
 
     struct FullExecution {
         target_group_id: GroupId,
+        pricing_model: String,
     }
 
     struct ProtocolTrackingStub {
@@ -487,7 +496,7 @@ mod tests {
             &'a self,
             _principal: &'a GatewayPrincipal,
             _user_concurrency: Option<ConcurrencyLimit>,
-            _request: CanonicalRequestEnvelope,
+            request: CanonicalRequestEnvelope,
             response_protocol: Protocol,
             _request_id: &'a str,
             _diagnostic: RelayDiagnosticInput,
@@ -496,6 +505,7 @@ mod tests {
             Box::pin(async move {
                 Ok(Box::new(FullExecution {
                     target_group_id: self.target_group_id,
+                    pricing_model: request.canonical().model.clone(),
                 }) as Box<dyn PlannedChatExecution>)
             })
         }
@@ -524,6 +534,7 @@ mod tests {
             Box::pin(async move {
                 Ok(Box::new(FullExecution {
                     target_group_id: self.target_group_id,
+                    pricing_model: request.canonical().model.clone(),
                 }) as Box<dyn PlannedChatExecution>)
             })
         }
@@ -532,6 +543,10 @@ mod tests {
     impl PlannedChatExecution for FullExecution {
         fn target_group_id(&self) -> GroupId {
             self.target_group_id
+        }
+
+        fn pricing_model(&self) -> &str {
+            &self.pricing_model
         }
 
         fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
@@ -608,6 +623,7 @@ mod tests {
         let service = BillingChatService::new(
             Arc::new(FullStub {
                 target_group_id: GroupId::new(3).unwrap(),
+                pricing_model_override: None,
             }),
             Arc::new(metered_snapshot_source().await),
             Some(precharge.clone()),
@@ -640,6 +656,7 @@ mod tests {
         let service = BillingChatService::new(
             Arc::new(FullStub {
                 target_group_id: GroupId::new(3).unwrap(),
+                pricing_model_override: None,
             }),
             Arc::new(expression_snapshot_source().await),
             Some(precharge.clone()),
@@ -752,6 +769,7 @@ mod tests {
         let service = BillingChatService::new(
             Arc::new(FullStub {
                 target_group_id: GroupId::new(3).unwrap(),
+                pricing_model_override: None,
             }),
             Arc::new(metered_snapshot_source().await),
             Some(precharge.clone()),
@@ -777,7 +795,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pricing_capture_uses_the_group_pinned_by_the_route_plan() {
+    async fn pricing_capture_uses_model_and_group_pinned_by_the_route_plan() {
         let pricing = Arc::new(TrackingPricingSource {
             inner: metered_snapshot_source_with_target(GroupId::new(4).unwrap()).await,
             calls: Mutex::new(Vec::new()),
@@ -785,6 +803,7 @@ mod tests {
         let service = BillingChatService::new(
             Arc::new(FullStub {
                 target_group_id: GroupId::new(4).unwrap(),
+                pricing_model_override: Some("gpt-routed".to_owned()),
             }),
             pricing.clone(),
             Some(Arc::new(PrechargeStub::default())),
@@ -807,7 +826,11 @@ mod tests {
 
         assert_eq!(
             pricing.calls.lock().unwrap().as_slice(),
-            &[(GroupId::new(3).unwrap(), GroupId::new(4).unwrap())]
+            &[(
+                "gpt-routed".to_owned(),
+                GroupId::new(3).unwrap(),
+                GroupId::new(4).unwrap(),
+            )]
         );
     }
 
@@ -1003,6 +1026,13 @@ mod tests {
                 ModelPriceSourceRecord::new(
                     "gpt-test".to_owned(),
                     BillingMode::PerToken,
+                    prices.clone(),
+                    1,
+                )
+                .unwrap(),
+                ModelPriceSourceRecord::new(
+                    "gpt-routed".to_owned(),
+                    BillingMode::PerToken,
                     prices,
                     1,
                 )
@@ -1044,7 +1074,7 @@ mod tests {
 
     struct TrackingPricingSource {
         inner: CachedRequestPricingSnapshotSource,
-        calls: Mutex<Vec<(GroupId, GroupId)>>,
+        calls: Mutex<Vec<(String, GroupId, GroupId)>>,
     }
 
     struct SimulatedFailoverStub {
@@ -1056,7 +1086,7 @@ mod tests {
             &'a self,
             principal: &'a GatewayPrincipal,
             _user_concurrency: Option<ConcurrencyLimit>,
-            _request: CanonicalRequestEnvelope,
+            request: CanonicalRequestEnvelope,
             _response_protocol: Protocol,
             _request_id: &'a str,
             _diagnostic: RelayDiagnosticInput,
@@ -1066,6 +1096,7 @@ mod tests {
             Box::pin(async move {
                 Ok(Box::new(SimulatedFailoverExecution {
                     target_group_id,
+                    pricing_model: request.canonical().model.clone(),
                     attempts,
                 }) as Box<dyn PlannedChatExecution>)
             })
@@ -1074,12 +1105,17 @@ mod tests {
 
     struct SimulatedFailoverExecution {
         target_group_id: GroupId,
+        pricing_model: String,
         attempts: Arc<Mutex<usize>>,
     }
 
     impl PlannedChatExecution for SimulatedFailoverExecution {
         fn target_group_id(&self) -> GroupId {
             self.target_group_id
+        }
+
+        fn pricing_model(&self) -> &str {
+            &self.pricing_model
         }
 
         fn execute(self: Box<Self>) -> PlannedChatExecutionFuture {
@@ -1105,7 +1141,7 @@ mod tests {
             self.calls
                 .lock()
                 .unwrap()
-                .push((source_group_id, target_group_id));
+                .push((model.to_owned(), source_group_id, target_group_id));
             self.inner
                 .capture(model, source_group_id, target_group_id, current_second)
         }

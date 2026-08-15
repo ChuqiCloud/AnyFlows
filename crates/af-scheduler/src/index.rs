@@ -18,13 +18,15 @@ use thiserror::Error;
 use tokio::time::sleep;
 
 use crate::{
-    ChannelRoutingHealth, SchedulerCandidate, WeightedRetryPlan, WeightedRetryPlanError,
-    WeightedSelection, WeightedSelectionError, WeightedStrategy,
+    ChannelRoutingHealth, SchedulerCandidate, StableFirstPlanError, WeightedRetryPlan,
+    WeightedRetryPlanError, WeightedSelection, WeightedSelectionError, WeightedStrategy,
 };
 
+mod bound_route;
 mod projection;
 mod route;
 
+pub use bound_route::{BoundRouteCandidate, BoundRouteCandidateError};
 pub use projection::ChannelIndexProjectionApplyReport;
 pub use route::{IndexedRouteCandidate, IndexedRoutePlan};
 
@@ -733,6 +735,9 @@ pub enum IndexedWeightedSchedulerError {
     /// 候选集合无法构造安全的失败重试计划。
     #[error("构造上游重试计划失败")]
     RetryPlan(#[from] WeightedRetryPlanError),
+    /// StableFirst 无法生成闭合主池计划。
+    #[error("构造 StableFirst 上游计划失败")]
+    StableFirst(#[from] StableFirstPlanError),
 }
 
 impl From<ChannelIndexSnapshotError> for IndexedWeightedSchedulerError {
@@ -1018,7 +1023,8 @@ mod tests {
         SchedulerRuntimeTargetRecord,
     };
     use af_domain::{
-        ChannelType, CredentialKind, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult,
+        ChannelType, CredentialId, CredentialKind, Protocol, ResponsesCompactMode,
+        ResponsesCompactProbeResult, RouteChannelId, RouteStrategy,
     };
 
     use crate::{RouteWaitKind, StickyRouteOutcome, StickyWaitPolicy};
@@ -1371,6 +1377,81 @@ mod tests {
     }
 
     #[test]
+    fn bound_route_plan_intersects_abilities_and_keeps_only_bound_credentials() {
+        let snapshot = ChannelIndexSnapshot::from_records(
+            vec![
+                ChannelIndexSourceRecord::with_runtime_target(
+                    GroupId::new(7).unwrap(),
+                    "gpt-routed",
+                    1,
+                    1,
+                    Arc::new(runtime_target_with_credentials(1, &[101, 102])),
+                )
+                .unwrap(),
+            ],
+            12,
+        )
+        .unwrap();
+        let index = InMemoryChannelIndex {
+            inner: Arc::new(InMemoryChannelIndexInner {
+                source: Arc::new(SequenceSource::new(Vec::new())),
+                snapshot: RwLock::new(Arc::new(snapshot)),
+                refresh_gate: tokio::sync::Mutex::new(()),
+            }),
+        };
+        let scheduler = IndexedWeightedScheduler::new(index);
+        let bindings = [BoundRouteCandidate::new(
+            RouteChannelId::new(41).unwrap(),
+            ChannelId::new(1).unwrap(),
+            CredentialId::new(102).unwrap(),
+            20,
+            5,
+            None,
+        )
+        .unwrap()];
+
+        assert!(
+            scheduler
+                .bound_route_plan(
+                    GroupId::new(8).unwrap(),
+                    "gpt-routed",
+                    RouteStrategy::Weighted,
+                    &bindings,
+                    &BTreeMap::new(),
+                )
+                .unwrap()
+                .is_none()
+        );
+
+        let plan = scheduler
+            .bound_route_plan(
+                GroupId::new(7).unwrap(),
+                "gpt-routed",
+                RouteStrategy::Weighted,
+                &bindings,
+                &BTreeMap::new(),
+            )
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(plan.target_group_id(), GroupId::new(7).unwrap());
+        assert_eq!(plan.candidates().len(), 1);
+        assert_eq!(
+            plan.candidates()[0]
+                .runtime_target()
+                .credentials()
+                .iter()
+                .map(SchedulerRuntimeCredentialRecord::credential_id)
+                .collect::<Vec<_>>(),
+            [102]
+        );
+        assert_eq!(
+            plan.candidates()[0].route_channel_id(CredentialId::new(102).unwrap()),
+            Some(RouteChannelId::new(41).unwrap())
+        );
+    }
+
+    #[test]
     fn pool_mode_ignores_channel_cooling_but_keeps_other_channels_filtered() {
         let snapshot = ChannelIndexSnapshot::from_records(
             vec![
@@ -1551,6 +1632,38 @@ mod tests {
             Protocol::OpenAiChat,
             Some(format!("https://channel-{channel_id}.example.com")),
             credential,
+            Vec::new(),
+        )
+        .unwrap()
+    }
+
+    fn runtime_target_with_credentials(
+        channel_id: i64,
+        credential_ids: &[i64],
+    ) -> SchedulerRuntimeTargetRecord {
+        let credentials = credential_ids
+            .iter()
+            .map(|credential_id| {
+                SchedulerRuntimeCredentialRecord::new(
+                    *credential_id,
+                    CredentialKind::ApiKey,
+                    EncryptedCredentialEnvelope::new(
+                        "test-key",
+                        [u8::try_from(*credential_id).unwrap_or(0x42); 24],
+                        vec![0x24; 16],
+                    )
+                    .unwrap(),
+                    false,
+                )
+                .unwrap()
+            })
+            .collect();
+        SchedulerRuntimeTargetRecord::new_pool(
+            ChannelId::new(channel_id).unwrap(),
+            ChannelType::OpenAi,
+            Protocol::OpenAiChat,
+            Some(format!("https://channel-{channel_id}.example.com")),
+            credentials,
             Vec::new(),
         )
         .unwrap()
