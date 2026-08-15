@@ -94,6 +94,12 @@ struct PreparedRouteSelection {
     credential_health: Option<BTreeMap<i64, RuntimeHealthState>>,
 }
 
+struct PreparedExecutionRoute {
+    route: IndexedRoutePlan,
+    upstream_protocol: Protocol,
+    routed_model: String,
+}
+
 /// 区分静态能力缺失与运行时健康故障，避免向客户端返回错误的过载语义。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RouteAvailability {
@@ -229,15 +235,18 @@ impl ScheduledChatService {
 
     fn build_plan(
         &self,
-        route: IndexedRoutePlan,
+        prepared_route: PreparedExecutionRoute,
         request: CanonicalRequestEnvelope,
         response_protocol: Protocol,
         request_id: &str,
-        upstream_protocol: Protocol,
-        routed_model: &str,
         session_scope: Option<StableSessionScope>,
         concurrency: PreparedConcurrencyPlan<'_>,
     ) -> Result<ScheduledChatExecution, AfError> {
+        let PreparedExecutionRoute {
+            route,
+            upstream_protocol,
+            routed_model,
+        } = prepared_route;
         let PreparedConcurrencyPlan {
             account_loads,
             credential_health,
@@ -263,8 +272,8 @@ impl ScheduledChatService {
                 continue;
             }
             let upstream_model = target
-                .mapped_model(routed_model)
-                .unwrap_or(routed_model)
+                .mapped_model(&routed_model)
+                .unwrap_or(&routed_model)
                 .to_owned();
             let candidate_request =
                 candidate_request(target, &request, &requested_model, &upstream_model)?;
@@ -400,7 +409,7 @@ impl ScheduledChatService {
         let machine = RelayStateMachine::new(relay_candidates).map_err(|_| AfError::Internal)?;
         Ok(ScheduledChatExecution {
             target_group_id,
-            pricing_model: routed_model.to_owned(),
+            pricing_model: routed_model,
             machine,
             attempt_targets,
             auto_ban_targets,
@@ -860,12 +869,14 @@ impl ChatRoutePlanner for ScheduledChatService {
                 .load_account_concurrency(&route, upstream_protocol)
                 .await?;
             let mut plan = self.build_plan(
-                route,
+                PreparedExecutionRoute {
+                    route,
+                    upstream_protocol,
+                    routed_model,
+                },
                 request,
                 response_protocol,
                 request_id,
-                upstream_protocol,
-                &routed_model,
                 session_scope,
                 PreparedConcurrencyPlan {
                     account_loads: account_loads.as_ref(),
@@ -1587,12 +1598,10 @@ mod tests {
 
         let execution = service
             .build_plan(
-                route,
+                prepared_execution_route(route, Protocol::OpenAiChat),
                 request(),
                 Protocol::OpenAiChat,
                 "request-key-pool",
-                Protocol::OpenAiChat,
-                "gpt-scheduled",
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
@@ -1620,12 +1629,10 @@ mod tests {
 
             let execution = service
                 .build_plan(
-                    route,
+                    prepared_execution_route(route, Protocol::OpenAiChat),
                     request(),
                     Protocol::OpenAiChat,
                     "request-oauth-refresh-capability",
-                    Protocol::OpenAiChat,
-                    "gpt-scheduled",
                     None,
                     PreparedConcurrencyPlan::disabled(),
                 )
@@ -1652,12 +1659,10 @@ mod tests {
 
         let execution = service
             .build_plan(
-                route,
+                prepared_execution_route(route, Protocol::Anthropic),
                 request(),
                 Protocol::Anthropic,
                 "request-anthropic",
-                Protocol::Anthropic,
-                "gpt-scheduled",
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
@@ -1679,12 +1684,10 @@ mod tests {
 
         let execution = service
             .build_plan(
-                route,
+                prepared_execution_route(route, Protocol::OpenAiChat),
                 request(),
                 Protocol::Anthropic,
                 "request-anthropic-fallback",
-                Protocol::OpenAiChat,
-                "gpt-scheduled",
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
@@ -1709,12 +1712,10 @@ mod tests {
             .unwrap();
         let execution = native
             .build_plan(
-                route,
+                prepared_execution_route(route, Protocol::Gemini),
                 request(),
                 Protocol::Gemini,
                 "request-gemini-native",
-                Protocol::Gemini,
-                "gpt-scheduled",
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
@@ -1731,12 +1732,10 @@ mod tests {
             .unwrap();
         let execution = fallback
             .build_plan(
-                route,
+                prepared_execution_route(route, Protocol::OpenAiChat),
                 request(),
                 Protocol::Gemini,
                 "request-gemini-fallback",
-                Protocol::OpenAiChat,
-                "gpt-scheduled",
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
@@ -1807,12 +1806,10 @@ mod tests {
             .unwrap();
         let execution = responses
             .build_plan(
-                route,
+                prepared_execution_route(route, Protocol::OpenAiResponses),
                 responses_request(),
                 Protocol::OpenAiResponses,
                 "request-responses",
-                Protocol::OpenAiResponses,
-                "gpt-scheduled",
                 None,
                 PreparedConcurrencyPlan::disabled(),
             )
@@ -2227,6 +2224,17 @@ mod tests {
 
     fn request() -> CanonicalRequestEnvelope {
         request_for_model("gpt-scheduled")
+    }
+
+    fn prepared_execution_route(
+        route: IndexedRoutePlan,
+        upstream_protocol: Protocol,
+    ) -> PreparedExecutionRoute {
+        PreparedExecutionRoute {
+            route,
+            upstream_protocol,
+            routed_model: "gpt-scheduled".to_owned(),
+        }
     }
 
     fn request_for_model(model: &str) -> CanonicalRequestEnvelope {

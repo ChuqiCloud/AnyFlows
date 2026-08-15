@@ -1026,7 +1026,7 @@ mod tests {
                 ModelPriceSourceRecord::new(
                     "gpt-test".to_owned(),
                     BillingMode::PerToken,
-                    prices.clone(),
+                    prices,
                     1,
                 )
                 .unwrap(),
