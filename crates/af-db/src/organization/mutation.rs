@@ -551,7 +551,7 @@ pub(super) async fn disable_team(
     Ok(record)
 }
 
-async fn begin(
+pub(super) async fn begin(
     repository: &OrganizationRepository,
 ) -> Result<DatabaseTransaction, OrganizationRepositoryError> {
     repository
@@ -562,15 +562,19 @@ async fn begin(
         .map_err(query_error)
 }
 
-async fn commit(transaction: DatabaseTransaction) -> Result<(), OrganizationRepositoryError> {
+pub(super) async fn commit(
+    transaction: DatabaseTransaction,
+) -> Result<(), OrganizationRepositoryError> {
     transaction.commit().await.map_err(query_error)
 }
 
-async fn rollback(transaction: DatabaseTransaction) -> Result<(), OrganizationRepositoryError> {
+pub(super) async fn rollback(
+    transaction: DatabaseTransaction,
+) -> Result<(), OrganizationRepositoryError> {
     transaction.rollback().await.map_err(query_error)
 }
 
-async fn lock_active_user(
+pub(super) async fn lock_active_user(
     transaction: &DatabaseTransaction,
     user_id: UserId,
 ) -> Result<bool, OrganizationRepositoryError> {
@@ -603,7 +607,37 @@ async fn lock_active_user(
         .map_err(query_error)
 }
 
-async fn lock_organization(
+/// 锁定活动用户并返回邮箱，供邀请接受事务做同一快照匹配。
+pub(super) async fn lock_active_user_model(
+    transaction: &DatabaseTransaction,
+    user_id: UserId,
+) -> Result<users::Model, OrganizationRepositoryError> {
+    if transaction.get_database_backend() == DbBackend::Sqlite {
+        let result = users::Entity::update_many()
+            .filter(users::Column::Id.eq(user_id.get()))
+            .col_expr(users::Column::Quota, Expr::col(users::Column::Quota).into())
+            .exec(transaction)
+            .await
+            .map_err(query_error)?;
+        if result.rows_affected != 1 {
+            return Err(OrganizationRepositoryError::UserUnavailable);
+        }
+    }
+    let mut query = users::Entity::find()
+        .filter(users::Column::Id.eq(user_id.get()))
+        .filter(users::Column::Status.eq(1_i16))
+        .filter(users::Column::DeletedAt.is_null());
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .await
+        .map_err(query_error)?
+        .ok_or(OrganizationRepositoryError::UserUnavailable)
+}
+
+pub(super) async fn lock_organization(
     transaction: &DatabaseTransaction,
     organization_id: OrganizationId,
 ) -> Result<organizations::Model, OrganizationRepositoryError> {
@@ -633,7 +667,7 @@ async fn lock_organization(
         .ok_or(OrganizationRepositoryError::NotFound)
 }
 
-async fn lock_entitlement(
+pub(super) async fn lock_entitlement(
     transaction: &DatabaseTransaction,
     organization_id: OrganizationId,
 ) -> Result<organization_entitlements::Model, OrganizationRepositoryError> {
@@ -666,7 +700,7 @@ async fn lock_membership(
         .ok_or(OrganizationRepositoryError::NotFound)
 }
 
-async fn lock_active_team(
+pub(super) async fn lock_active_team(
     transaction: &DatabaseTransaction,
     organization_id: OrganizationId,
     team_id: OrganizationTeamId,

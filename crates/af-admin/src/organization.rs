@@ -332,6 +332,10 @@ fn map_repository_error(error: OrganizationRepositoryError) -> OrganizationAutho
         | OrganizationRepositoryError::EntitlementRestricted
         | OrganizationRepositoryError::SeatLimitReached
         | OrganizationRepositoryError::TeamLimitReached
+        | OrganizationRepositoryError::InvitationExpired
+        | OrganizationRepositoryError::InvitationNotPending
+        | OrganizationRepositoryError::InvitationEmailMismatch
+        | OrganizationRepositoryError::InvitationBatchConflict
         | OrganizationRepositoryError::EntropyUnavailable => {
             OrganizationAuthorizationError::Internal
         }

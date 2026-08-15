@@ -64,6 +64,8 @@ pub(crate) struct HttpState {
     pub(crate) admin_wallet_service: Option<Arc<dyn AdminWalletService>>,
     pub(crate) organization_authorization_service:
         Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
+    pub(crate) organization_invitation_service:
+        Option<Arc<dyn af_admin::OrganizationInvitationService>>,
     stream_delivery: StreamDeliveryPolicy,
 }
 
@@ -109,6 +111,7 @@ impl HttpState {
             admin_user_writer,
             admin_wallet_service: None,
             organization_authorization_service: None,
+            organization_invitation_service: None,
             stream_delivery: StreamDeliveryPolicy::default(),
         }
     }
@@ -200,6 +203,15 @@ impl HttpState {
         service: Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
     ) -> Self {
         self.organization_authorization_service = service;
+        self
+    }
+
+    /// 注入企业邀请服务；只有授权服务同时存在时才注册邀请入口。
+    pub(crate) fn with_organization_invitation_service(
+        mut self,
+        service: Option<Arc<dyn af_admin::OrganizationInvitationService>>,
+    ) -> Self {
+        self.organization_invitation_service = service;
         self
     }
 

@@ -6,17 +6,22 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::DatabasePool;
 
+mod invitation;
 mod mutation;
 mod read;
 mod types;
 
 pub use types::{
     MAX_ORGANIZATION_ENTITLEMENT_REFERENCE_BYTES, MAX_ORGANIZATION_ENTITLEMENT_SOURCE_BYTES,
-    MAX_ORGANIZATION_NAME_BYTES, MAX_ORGANIZATION_SLUG_BYTES,
-    MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES, MAX_ORGANIZATION_TEAM_NAME_BYTES,
-    OrganizationAccessRecord, OrganizationCreate, OrganizationCreatedRecord,
-    OrganizationEntitlementRecord, OrganizationEntitlementWrite, OrganizationMembershipChange,
-    OrganizationMembershipCreate, OrganizationMembershipRecord, OrganizationOwnershipTransfer,
+    MAX_ORGANIZATION_INVITATION_BATCH_SIZE, MAX_ORGANIZATION_NAME_BYTES,
+    MAX_ORGANIZATION_SLUG_BYTES, MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES,
+    MAX_ORGANIZATION_TEAM_NAME_BYTES, OrganizationAccessRecord, OrganizationCreate,
+    OrganizationCreatedRecord, OrganizationEntitlementRecord, OrganizationEntitlementWrite,
+    OrganizationInvitationAcceptanceContext, OrganizationInvitationBatchRecord,
+    OrganizationInvitationCreate, OrganizationInvitationPreviewItem,
+    OrganizationInvitationPreviewRow, OrganizationInvitationPreviewSnapshot,
+    OrganizationInvitationRecord, OrganizationMembershipChange, OrganizationMembershipCreate,
+    OrganizationMembershipRecord, OrganizationOwnershipTransfer,
     OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepositoryConfigError,
     OrganizationRepositoryError, OrganizationTeamCreate, OrganizationTeamRecord,
 };
@@ -145,6 +150,101 @@ impl OrganizationRepository {
         self.run(read::list_authorized_access(self, user_id)).await
     }
 
+    /// 在企业事务锁内创建一条邀请；有效邀请会占用一个待接受席位。
+    pub async fn create_invitation(
+        &self,
+        organization_id: OrganizationId,
+        write: OrganizationInvitationCreate,
+    ) -> Result<OrganizationInvitationRecord, OrganizationRepositoryError> {
+        self.run(invitation::create(self, organization_id, write))
+            .await
+    }
+
+    /// 在企业事务锁内幂等创建最多 200 条批量邀请。
+    pub async fn create_invitation_batch(
+        &self,
+        organization_id: OrganizationId,
+        writes: Vec<OrganizationInvitationCreate>,
+    ) -> Result<OrganizationInvitationBatchRecord, OrganizationRepositoryError> {
+        self.run(invitation::create_batch(self, organization_id, writes))
+            .await
+    }
+
+    /// 在组织事务内读取批量邀请的成员、待处理邀请、团队和席位事实。
+    pub async fn preview_invitations(
+        &self,
+        organization_id: OrganizationId,
+        items: Vec<OrganizationInvitationPreviewItem>,
+    ) -> Result<OrganizationInvitationPreviewSnapshot, OrganizationRepositoryError> {
+        self.run(invitation::preview(self, organization_id, items))
+            .await
+    }
+
+    /// 列出企业邀请安全投影，不读取邮箱明文或密码学材料。
+    pub async fn list_invitations(
+        &self,
+        organization_id: OrganizationId,
+    ) -> Result<Vec<OrganizationInvitationRecord>, OrganizationRepositoryError> {
+        self.run(invitation::list(self, organization_id)).await
+    }
+
+    /// 按邀请标识读取接受事务所需的企业范围和邮箱密文。
+    pub async fn invitation_acceptance_context(
+        &self,
+        invitation_key: af_domain::OrganizationInvitationKey,
+    ) -> Result<OrganizationInvitationAcceptanceContext, OrganizationRepositoryError> {
+        self.run(invitation::acceptance_context(self, invitation_key))
+            .await
+    }
+
+    /// 锁定企业、邀请和目标用户，校验邮箱后单次创建成员关系并消费邀请。
+    pub async fn accept_invitation(
+        &self,
+        organization_id: OrganizationId,
+        invitation_key: af_domain::OrganizationInvitationKey,
+        token_digest: [u8; 32],
+        email_fingerprint: [u8; 32],
+        user_id: UserId,
+        normalized_email: String,
+    ) -> Result<OrganizationMembershipRecord, OrganizationRepositoryError> {
+        self.run(invitation::accept(
+            self,
+            organization_id,
+            invitation_key,
+            token_digest,
+            email_fingerprint,
+            user_id,
+            normalized_email,
+        ))
+        .await
+    }
+
+    /// 撤销仍待接受的邀请；已消费邀请不可逆转。
+    pub async fn revoke_invitation(
+        &self,
+        organization_id: OrganizationId,
+        invitation_key: af_domain::OrganizationInvitationKey,
+    ) -> Result<OrganizationInvitationRecord, OrganizationRepositoryError> {
+        self.run(invitation::revoke(self, organization_id, invitation_key))
+            .await
+    }
+
+    /// 以同一事务撤销旧邀请并写入新的令牌版本。
+    pub async fn resend_invitation(
+        &self,
+        organization_id: OrganizationId,
+        invitation_key: af_domain::OrganizationInvitationKey,
+        write: OrganizationInvitationCreate,
+    ) -> Result<OrganizationInvitationRecord, OrganizationRepositoryError> {
+        self.run(invitation::resend(
+            self,
+            organization_id,
+            invitation_key,
+            write,
+        ))
+        .await
+    }
+
     async fn run<T>(
         &self,
         operation: impl Future<Output = Result<T, OrganizationRepositoryError>>,
@@ -184,6 +284,10 @@ pub(super) fn record_internal_error(
         | OrganizationRepositoryError::TeamHasActiveMembers
         | OrganizationRepositoryError::EntitlementRestricted
         | OrganizationRepositoryError::SeatLimitReached
+        | OrganizationRepositoryError::InvitationExpired
+        | OrganizationRepositoryError::InvitationNotPending
+        | OrganizationRepositoryError::InvitationEmailMismatch
+        | OrganizationRepositoryError::InvitationBatchConflict
         | OrganizationRepositoryError::TeamLimitReached
         | OrganizationRepositoryError::EntropyUnavailable => return error,
         OrganizationRepositoryError::Query => "organization_query",

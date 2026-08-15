@@ -2,19 +2,28 @@ use std::{error::Error, time::Duration};
 
 use af_domain::{
     OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
-    OrganizationEntitlementStatus, OrganizationMembershipStatus, OrganizationRole,
-    OrganizationTeamStatus, UserId,
+    OrganizationEntitlementStatus, OrganizationInvitationKey, OrganizationInvitationStatus,
+    OrganizationMembershipStatus, OrganizationRole, OrganizationTeamId, OrganizationTeamStatus,
+    UserId,
 };
 use sea_orm::{
-    ActiveModelTrait, EntityTrait, PaginatorTrait, Set, entity::prelude::TimeDateTimeWithTimeZone,
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
+    entity::prelude::TimeDateTimeWithTimeZone,
 };
 
 use super::{
     DatabaseOptions, MigrationOptions, OrganizationCreate, OrganizationEntitlementWrite,
-    OrganizationMembershipChange, OrganizationMembershipCreate, OrganizationOwnershipTransfer,
-    OrganizationRepository, OrganizationRepositoryError, OrganizationTeamCreate,
+    OrganizationInvitationCreate, OrganizationInvitationPreviewItem, OrganizationMembershipChange,
+    OrganizationMembershipCreate, OrganizationOwnershipTransfer, OrganizationRepository,
+    OrganizationRepositoryError, OrganizationTeamCreate,
 };
-use crate::entity::{groups, organization_memberships, organization_teams, organizations, users};
+use crate::{
+    EncryptedCredentialEnvelope,
+    entity::{
+        groups, organization_invitations, organization_memberships, organization_teams,
+        organizations, users,
+    },
+};
 
 struct Fixture {
     pool: crate::DatabasePool,
@@ -457,6 +466,283 @@ async fn entitlement_enforces_capacity_and_cas() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[tokio::test]
+async fn invitation_resend_invalidates_old_token_and_accepts_once() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let (organization, _) = fixture
+        .repository
+        .create(OrganizationCreate::new(
+            "Invitation Lab".to_owned(),
+            "invitation-lab".to_owned(),
+            fixture.users[0],
+            active_entitlement(10, 10, None)?,
+        ))
+        .await?
+        .into_parts();
+    let email = "organization-user-1@example.com";
+    let old_key = OrganizationInvitationKey::new([1; 16])?;
+    let old_digest = [65; 32];
+    let fingerprint = [1; 32];
+    let old = invitation_write(1, email, fixture.users[0], None)?;
+    fixture
+        .repository
+        .create_invitation(organization.id(), old)
+        .await?;
+
+    let replacement_key = OrganizationInvitationKey::new([2; 16])?;
+    let replacement_digest = [66; 32];
+    let replacement = invitation_write_with_fingerprint(2, 1, email, fixture.users[0], None)?;
+    fixture
+        .repository
+        .resend_invitation(organization.id(), old_key, replacement)
+        .await?;
+    assert_eq!(
+        fixture
+            .repository
+            .accept_invitation(
+                organization.id(),
+                old_key,
+                old_digest,
+                fingerprint,
+                fixture.users[1],
+                email.to_owned(),
+            )
+            .await,
+        Err(OrganizationRepositoryError::InvitationNotPending)
+    );
+    let membership = fixture
+        .repository
+        .accept_invitation(
+            organization.id(),
+            replacement_key,
+            replacement_digest,
+            fingerprint,
+            fixture.users[1],
+            email.to_owned(),
+        )
+        .await?;
+    assert_eq!(membership.user_id(), fixture.users[1]);
+    assert_eq!(
+        fixture
+            .repository
+            .accept_invitation(
+                organization.id(),
+                replacement_key,
+                replacement_digest,
+                fingerprint,
+                fixture.users[1],
+                email.to_owned(),
+            )
+            .await,
+        Err(OrganizationRepositoryError::InvitationNotPending)
+    );
+    let invitations = fixture
+        .repository
+        .list_invitations(organization.id())
+        .await?;
+    assert_eq!(invitations.len(), 2);
+    assert!(invitations.iter().any(|record| {
+        record.invitation_key() == old_key
+            && record.status() == OrganizationInvitationStatus::Revoked
+    }));
+    assert!(invitations.iter().any(|record| {
+        record.invitation_key() == replacement_key
+            && record.status() == OrganizationInvitationStatus::Accepted
+    }));
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn invitation_batch_is_idempotent_and_binds_payload() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let (organization, _) = fixture
+        .repository
+        .create(OrganizationCreate::new(
+            "Batch Lab".to_owned(),
+            "batch-lab".to_owned(),
+            fixture.users[0],
+            active_entitlement(10, 10, None)?,
+        ))
+        .await?
+        .into_parts();
+    let batch_key = OrganizationInvitationKey::new([0x31; 16])?;
+    let batch = Some((batch_key, [0x41; 32], 2));
+    let first = fixture
+        .repository
+        .create_invitation_batch(
+            organization.id(),
+            vec![
+                invitation_write(3, "batch-one@example.com", fixture.users[0], batch)?,
+                invitation_write(4, "batch-two@example.com", fixture.users[0], batch)?,
+            ],
+        )
+        .await?;
+    assert!(!first.replayed());
+    let replay = fixture
+        .repository
+        .create_invitation_batch(
+            organization.id(),
+            vec![
+                invitation_write(5, "batch-one@example.com", fixture.users[0], batch)?,
+                invitation_write(6, "batch-two@example.com", fixture.users[0], batch)?,
+            ],
+        )
+        .await?;
+    assert!(replay.replayed());
+    assert_eq!(first.records(), replay.records());
+    let conflicting_batch = Some((batch_key, [0x42; 32], 2));
+    assert_eq!(
+        fixture
+            .repository
+            .create_invitation_batch(
+                organization.id(),
+                vec![
+                    invitation_write(
+                        7,
+                        "batch-one@example.com",
+                        fixture.users[0],
+                        conflicting_batch,
+                    )?,
+                    invitation_write(
+                        8,
+                        "batch-two@example.com",
+                        fixture.users[0],
+                        conflicting_batch,
+                    )?,
+                ],
+            )
+            .await,
+        Err(OrganizationRepositoryError::InvitationBatchConflict)
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn invitation_preview_reports_members_pending_teams_and_seats() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture().await?;
+    let (organization, _) = fixture
+        .repository
+        .create(OrganizationCreate::new(
+            "Preview Lab".to_owned(),
+            "preview-lab".to_owned(),
+            fixture.users[0],
+            active_entitlement(3, 3, None)?,
+        ))
+        .await?
+        .into_parts();
+    let team = fixture
+        .repository
+        .create_team(
+            organization.id(),
+            OrganizationTeamCreate::new("Preview Team".to_owned(), None),
+        )
+        .await?;
+    let pending_fingerprint = [9; 32];
+    let pending = invitation_write(9, "pending@example.com", fixture.users[0], None)?;
+    fixture
+        .repository
+        .create_invitation(organization.id(), pending)
+        .await?;
+    let snapshot = fixture
+        .repository
+        .preview_invitations(
+            organization.id(),
+            vec![
+                OrganizationInvitationPreviewItem::new(
+                    "organization-user-0@example.com".to_owned(),
+                    [0xa1; 32],
+                    None,
+                ),
+                OrganizationInvitationPreviewItem::new(
+                    "pending@example.com".to_owned(),
+                    pending_fingerprint,
+                    None,
+                ),
+                OrganizationInvitationPreviewItem::new(
+                    "fresh@example.com".to_owned(),
+                    [0xa3; 32],
+                    Some(team.id()),
+                ),
+                OrganizationInvitationPreviewItem::new(
+                    "wrong-team@example.com".to_owned(),
+                    [0xa4; 32],
+                    Some(OrganizationTeamId::new(9_999)?),
+                ),
+            ],
+        )
+        .await?;
+    assert_eq!(snapshot.available_seats(), 1);
+    assert!(snapshot.rows()[0].existing_member());
+    assert!(snapshot.rows()[1].pending_invitation());
+    assert!(snapshot.rows()[2].valid_team());
+    assert!(!snapshot.rows()[3].valid_team());
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn invitations_reject_existing_members_and_serialize_last_seat() -> Result<(), Box<dyn Error>>
+{
+    let fixture = fixture().await?;
+    let (organization, _) = fixture
+        .repository
+        .create(OrganizationCreate::new(
+            "Seat Lab".to_owned(),
+            "seat-lab".to_owned(),
+            fixture.users[0],
+            active_entitlement(2, 2, None)?,
+        ))
+        .await?
+        .into_parts();
+    assert_eq!(
+        fixture
+            .repository
+            .create_invitation(
+                organization.id(),
+                invitation_write(
+                    10,
+                    "organization-user-0@example.com",
+                    fixture.users[0],
+                    None,
+                )?,
+            )
+            .await,
+        Err(OrganizationRepositoryError::Conflict)
+    );
+
+    let first_repository = fixture.repository.clone();
+    let second_repository = fixture.repository.clone();
+    let first = invitation_write(11, "seat-one@example.com", fixture.users[0], None)?;
+    let second = invitation_write(12, "seat-two@example.com", fixture.users[0], None)?;
+    let (first, second) = tokio::join!(
+        first_repository.create_invitation(organization.id(), first),
+        second_repository.create_invitation(organization.id(), second),
+    );
+    let results = [first, second];
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| {
+                matches!(result, Err(OrganizationRepositoryError::SeatLimitReached))
+            })
+            .count(),
+        1
+    );
+    assert_eq!(
+        organization_invitations::Entity::find()
+            .filter(organization_invitations::Column::OrganizationId.eq(organization.id().get()),)
+            .count(fixture.pool.connection())
+            .await?,
+        1
+    );
+    fixture.pool.close().await?;
+    Ok(())
+}
+
 fn active_entitlement(
     seat_limit: i64,
     team_limit: i64,
@@ -515,4 +801,45 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
         repository,
         users: user_ids.try_into().expect("测试用户数量固定为三"),
     })
+}
+
+fn invitation_write(
+    marker: u8,
+    normalized_email: &str,
+    invited_by_user_id: UserId,
+    batch: Option<(OrganizationInvitationKey, [u8; 32], usize)>,
+) -> Result<OrganizationInvitationCreate, Box<dyn Error>> {
+    invitation_write_with_fingerprint(marker, marker, normalized_email, invited_by_user_id, batch)
+}
+
+fn invitation_write_with_fingerprint(
+    marker: u8,
+    fingerprint_marker: u8,
+    normalized_email: &str,
+    invited_by_user_id: UserId,
+    batch: Option<(OrganizationInvitationKey, [u8; 32], usize)>,
+) -> Result<OrganizationInvitationCreate, Box<dyn Error>> {
+    let (batch_key, batch_digest, batch_size) = batch
+        .map(|(key, digest, size)| (Some(key), Some(digest), Some(size)))
+        .unwrap_or((None, None, None));
+    Ok(OrganizationInvitationCreate::new(
+        OrganizationInvitationKey::new([marker; 16])?,
+        normalized_email.to_owned(),
+        [fingerprint_marker; 32],
+        EncryptedCredentialEnvelope::new(
+            "organization-test-key".to_owned(),
+            [marker; 24],
+            vec![marker; 16],
+        )?,
+        [marker.wrapping_add(64); 32],
+        OrganizationRole::Member,
+        None,
+        invited_by_user_id,
+        batch_key,
+        batch_digest,
+        batch_size,
+        TimeDateTimeWithTimeZone::now_utc()
+            .unix_timestamp()
+            .saturating_add(86_400),
+    )?)
 }

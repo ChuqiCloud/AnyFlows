@@ -1198,6 +1198,66 @@ export type OrganizationEntitlementResponse = {
     valid_until: number;
     grace_until?: number | null;
 };
+export type OrganizationInvitationAcceptRequest = {
+    token: string;
+};
+export type OrganizationInvitationAcceptResponse = {
+    organization_id: number;
+    membership_id: number;
+    user_id: number;
+    role: string;
+    team_id?: number | null;
+    status: string;
+    version: number;
+};
+export type OrganizationInvitationBatchRequest = {
+    batch_key: string;
+    items: Array<OrganizationInvitationCreateRequest>;
+};
+export type OrganizationInvitationBatchResponse = {
+    replayed: boolean;
+    invitations: Array<OrganizationInvitationResponse>;
+};
+export type OrganizationInvitationCreateRequest = {
+    email: string;
+    role: string;
+    team_id?: number | null;
+    expires_at?: number | null;
+};
+export type OrganizationInvitationIssuedResponse = {
+    invitation: OrganizationInvitationResponse;
+    token: string;
+};
+export type OrganizationInvitationListResponse = {
+    invitations: Array<OrganizationInvitationResponse>;
+};
+export type OrganizationInvitationPreviewItemResponse = {
+    index: number;
+    ready: boolean;
+    issues: Array<string>;
+};
+export type OrganizationInvitationPreviewRequest = {
+    items: Array<OrganizationInvitationCreateRequest>;
+};
+export type OrganizationInvitationPreviewResponse = {
+    ready: boolean;
+    available_seats: number;
+    items: Array<OrganizationInvitationPreviewItemResponse>;
+};
+export type OrganizationInvitationResponse = {
+    invitation_key: string;
+    organization_id: number;
+    role: string;
+    team_id?: number | null;
+    status: string;
+    invited_by_user_id: number;
+    accepted_by_user_id?: number | null;
+    batch_key?: string | null;
+    version: number;
+    created_at: number;
+    expires_at: number;
+    finalized_at?: number | null;
+};
 export type OrganizationListResponse = {
     organizations: Array<OrganizationSummaryResponse>;
 };
@@ -2755,6 +2815,148 @@ export type GetOrganizationOverviewResponses = {
     200: OrganizationOverviewResponse;
 };
 export type GetOrganizationOverviewResponse = GetOrganizationOverviewResponses[keyof GetOrganizationOverviewResponses];
+export type ListOrganizationInvitationsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/invitations';
+};
+export type ListOrganizationInvitationsErrors = {
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationInvitationsError = ListOrganizationInvitationsErrors[keyof ListOrganizationInvitationsErrors];
+export type ListOrganizationInvitationsResponses = {
+    200: OrganizationInvitationListResponse;
+};
+export type ListOrganizationInvitationsResponse = ListOrganizationInvitationsResponses[keyof ListOrganizationInvitationsResponses];
+export type CreateOrganizationInvitationData = {
+    body: OrganizationInvitationCreateRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/invitations';
+};
+export type CreateOrganizationInvitationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateOrganizationInvitationError = CreateOrganizationInvitationErrors[keyof CreateOrganizationInvitationErrors];
+export type CreateOrganizationInvitationResponses = {
+    200: OrganizationInvitationIssuedResponse;
+};
+export type CreateOrganizationInvitationResponse = CreateOrganizationInvitationResponses[keyof CreateOrganizationInvitationResponses];
+export type PreviewOrganizationInvitationsData = {
+    body: OrganizationInvitationPreviewRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/invitations/preview';
+};
+export type PreviewOrganizationInvitationsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type PreviewOrganizationInvitationsError = PreviewOrganizationInvitationsErrors[keyof PreviewOrganizationInvitationsErrors];
+export type PreviewOrganizationInvitationsResponses = {
+    200: OrganizationInvitationPreviewResponse;
+};
+export type PreviewOrganizationInvitationsResponse = PreviewOrganizationInvitationsResponses[keyof PreviewOrganizationInvitationsResponses];
+export type CreateOrganizationInvitationBatchData = {
+    body: OrganizationInvitationBatchRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/invitations/batches';
+};
+export type CreateOrganizationInvitationBatchErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateOrganizationInvitationBatchError = CreateOrganizationInvitationBatchErrors[keyof CreateOrganizationInvitationBatchErrors];
+export type CreateOrganizationInvitationBatchResponses = {
+    200: OrganizationInvitationBatchResponse;
+};
+export type CreateOrganizationInvitationBatchResponse = CreateOrganizationInvitationBatchResponses[keyof CreateOrganizationInvitationBatchResponses];
+export type RevokeOrganizationInvitationData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        invitation_key: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/invitations/{invitation_key}/revoke';
+};
+export type RevokeOrganizationInvitationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type RevokeOrganizationInvitationError = RevokeOrganizationInvitationErrors[keyof RevokeOrganizationInvitationErrors];
+export type RevokeOrganizationInvitationResponses = {
+    200: OrganizationInvitationResponse;
+};
+export type RevokeOrganizationInvitationResponse = RevokeOrganizationInvitationResponses[keyof RevokeOrganizationInvitationResponses];
+export type ResendOrganizationInvitationData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        invitation_key: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/invitations/{invitation_key}/resend';
+};
+export type ResendOrganizationInvitationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ResendOrganizationInvitationError = ResendOrganizationInvitationErrors[keyof ResendOrganizationInvitationErrors];
+export type ResendOrganizationInvitationResponses = {
+    200: OrganizationInvitationIssuedResponse;
+};
+export type ResendOrganizationInvitationResponse = ResendOrganizationInvitationResponses[keyof ResendOrganizationInvitationResponses];
+export type AcceptOrganizationInvitationData = {
+    body: OrganizationInvitationAcceptRequest;
+    path?: never;
+    query?: never;
+    url: '/api/account/organization-invitations/accept';
+};
+export type AcceptOrganizationInvitationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type AcceptOrganizationInvitationError = AcceptOrganizationInvitationErrors[keyof AcceptOrganizationInvitationErrors];
+export type AcceptOrganizationInvitationResponses = {
+    200: OrganizationInvitationAcceptResponse;
+};
+export type AcceptOrganizationInvitationResponse = AcceptOrganizationInvitationResponses[keyof AcceptOrganizationInvitationResponses];
 export type GetAdminBalanceAlertSettingsData = {
     body?: never;
     path?: never;

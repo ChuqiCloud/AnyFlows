@@ -194,6 +194,7 @@ pub fn build_router(
     query_api_key_policy: QueryApiKeyPolicy,
     frontend_assets: Option<Arc<dyn FrontendAssetSource>>,
     payment_webhook_routes: Option<Router>,
+    organization_invitation_service: Option<Arc<dyn af_admin::OrganizationInvitationService>>,
 ) -> HttpRouter {
     let openai_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config),
@@ -255,7 +256,8 @@ pub fn build_router(
     .with_admin_dashboard_reader(admin_dashboard_reader)
     .with_admin_usage_log_reader(admin_usage_log_reader)
     .with_admin_wallet_service(admin_wallet_service)
-    .with_organization_authorization_service(organization_authorization_service);
+    .with_organization_authorization_service(organization_authorization_service)
+    .with_organization_invitation_service(organization_invitation_service);
     let public_routes = Router::new()
         .route(
             "/v1/chat/completions",
@@ -703,15 +705,14 @@ pub fn build_router(
         .merge(credential_proxy_routes)
         .merge(balance_alert_settings_routes);
     let management_routes = management_routes.merge(debug_trace_routes);
-    let management_routes =
-        if let Some(service) = http_state.organization_authorization_service.clone() {
-            management_routes.merge(build_organization_router(
-                service,
-                Arc::clone(&http_state.session_authenticator),
-            ))
-        } else {
-            management_routes
-        };
+    let management_routes = match http_state.organization_authorization_service.clone() {
+        Some(authorization_service) => management_routes.merge(build_organization_router(
+            authorization_service,
+            http_state.organization_invitation_service.clone(),
+            Arc::clone(&http_state.session_authenticator),
+        )),
+        None => management_routes,
+    };
     let management_routes = match oauth_connection_routes {
         Some(routes) => management_routes.merge(routes),
         None => management_routes,

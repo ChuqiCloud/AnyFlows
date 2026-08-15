@@ -57,6 +57,8 @@ mod openai_speech;
 mod openapi;
 mod operations;
 mod organizations;
+#[cfg(test)]
+mod organizations_tests;
 mod password_reset;
 mod payment_settings;
 mod payment_webhook;

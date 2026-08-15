@@ -180,10 +180,12 @@ dependencies = [
 name = "af-http"
 version = "0.1.0"
 dependencies = [
+ "af-account",
  "af-admin",
  "af-analytics",
  "af-billing",
  "af-config",
+ "af-db",
  "af-domain",
  "af-protocol",
  "af-relay",
