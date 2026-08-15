@@ -50,7 +50,7 @@ pub use redemption::{
 };
 pub use routing::{
     MAX_ROUTE_MODEL_PATTERN_BYTES, RouteMode, RoutePatternError, RouteStrategy,
-    validate_route_model_pattern,
+    route_model_pattern_matches, validate_route_model_pattern,
 };
 pub use subscription::{
     SubscriptionCycle, SubscriptionIdentifierError, SubscriptionPlanId, SubscriptionPlanStatus,

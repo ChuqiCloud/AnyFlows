@@ -71,7 +71,8 @@ use af_db::{
     PlaygroundConversationRepositoryConfigError, PlaygroundShareRepository,
     PlaygroundShareRepositoryConfigError, QuotaRepository, RedemptionRepository,
     RedemptionRepositoryConfigError, RegistrationRepository, RegistrationRepositoryConfigError,
-    SiteSettingsRepository, SiteSettingsRepositoryConfigError, SubscriptionBalanceAlertRepository,
+    SiteSettingsRepository, SiteSettingsRepositoryConfigError, SmartRouteRuntimeRepository,
+    SmartRouteRuntimeRepositoryConfigError, SubscriptionBalanceAlertRepository,
     SubscriptionBalanceAlertRepositoryConfigError, SubscriptionRepository,
     SubscriptionRepositoryConfigError, TokenAuthRepository, TokenAuthRepositoryConfigError,
     TokenRequestAdmissionRepository, TokenRequestAdmissionRepositoryConfigError, TopupRepository,
@@ -438,6 +439,9 @@ pub enum BootstrapError {
     /// 管理员智能路由仓储的启动参数无效。
     #[error("管理员智能路由仓储启动参数无效")]
     AdminRouteRepository(#[source] AdminRouteRepositoryConfigError),
+    /// 智能路由运行时仓储的启动参数无效。
+    #[error("智能路由运行时仓储启动参数无效")]
+    SmartRouteRuntimeRepository(#[source] SmartRouteRuntimeRepositoryConfigError),
     /// 管理员模型元数据仓储的启动参数无效。
     #[error("管理员模型元数据仓储启动参数无效")]
     AdminModelRepository(#[source] AdminModelRepositoryConfigError),
@@ -1182,6 +1186,13 @@ impl Bootstrap<RelayReady> {
                 Duration::from_secs(self.config.auth().lookup_timeout_secs()),
             )
             .map_err(BootstrapError::AdminGroupRepository)?,
+        )
+        .with_smart_route_repository(
+            SmartRouteRuntimeRepository::new(
+                self.stage.infrastructure.infrastructure.database.clone(),
+                Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+            )
+            .map_err(BootstrapError::SmartRouteRuntimeRepository)?,
         )
         .with_channel_state_repository(ChannelStateRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),

@@ -3,7 +3,7 @@ use std::{fmt, future::Future, pin::Pin};
 use af_db::{
     AdminRouteChannelWriteRecord, AdminRouteDeleteOutcome, AdminRouteMutationOutcome,
     AdminRouteRepository, AdminRouteRepositoryError, AdminRouteWriteRecord,
-    MAX_ADMIN_ROUTE_CHANNELS, MAX_ADMIN_ROUTE_MAPPING_BYTES, MAX_ADMIN_ROUTE_NAME_BYTES,
+    MAX_ADMIN_ROUTE_CHANNELS, MAX_ADMIN_ROUTE_NAME_BYTES, validate_smart_route_model_mapping,
 };
 use af_domain::{
     ChannelId, CredentialId, RouteId, RouteMode, RouteStrategy, validate_route_model_pattern,
@@ -158,10 +158,9 @@ impl AdminRouteWriteFields {
             || name.len() > MAX_ADMIN_ROUTE_NAME_BYTES
             || name.chars().any(char::is_control)
             || validate_route_model_pattern(&model_pattern).is_err()
-            || !model_mapping.is_object()
-            || serde_json::to_vec(&model_mapping)
-                .map(|encoded| encoded.len() > MAX_ADMIN_ROUTE_MAPPING_BYTES)
-                .unwrap_or(true)
+            || model_pattern.trim() != model_pattern
+            || (mode == RouteMode::ExplicitGroup && model_pattern.starts_with("re:"))
+            || !validate_smart_route_model_mapping(&model_mapping)
             || channels.len() > MAX_ADMIN_ROUTE_CHANNELS
         {
             return Err(AdminRouteWriteError::InvalidInput);

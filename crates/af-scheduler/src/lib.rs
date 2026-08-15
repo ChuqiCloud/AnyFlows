@@ -37,9 +37,10 @@ pub use failure::{
 };
 pub use health::{ChannelRoutingHealth, ROUTING_HEALTH_PENALTY_SCALE};
 pub use index::{
-    ChannelIndexCacheError, ChannelIndexProjectionApplyReport, ChannelIndexRefreshConfig,
-    ChannelIndexRefreshConfigError, ChannelIndexRefreshReport, ChannelIndexRefreshSupervisor,
-    ChannelIndexSnapshot, ChannelIndexSnapshotError, ChannelIndexSource, ChannelIndexSourceError,
+    BoundRouteCandidate, BoundRouteCandidateError, ChannelIndexCacheError,
+    ChannelIndexProjectionApplyReport, ChannelIndexRefreshConfig, ChannelIndexRefreshConfigError,
+    ChannelIndexRefreshReport, ChannelIndexRefreshSupervisor, ChannelIndexSnapshot,
+    ChannelIndexSnapshotError, ChannelIndexSource, ChannelIndexSourceError,
     ChannelIndexSourceFuture, ChannelIndexSourceRecord, ChannelIndexSourceSnapshot,
     ChannelIndexVersionedSourceFuture, DEFAULT_CHANNEL_INDEX_REFRESH_INTERVAL,
     InMemoryChannelIndex, IndexedRouteCandidate, IndexedRoutePlan, IndexedWeightedScheduler,
