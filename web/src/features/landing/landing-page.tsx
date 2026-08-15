@@ -84,8 +84,8 @@ export function LandingPage() {
             className="pointer-events-none absolute top-[42%] left-1/2 -z-10 h-[34rem] w-[58rem] max-w-[130vw] -translate-x-1/2 -translate-y-1/2 animate-aurora blur-[110px]"
             style={{
               background:
-                'radial-gradient(ellipse 60% 50% at 40% 45%, rgb(255 99 99 / 0.16), transparent 70%),' +
-                'radial-gradient(ellipse 55% 45% at 65% 55%, rgb(85 179 255 / 0.12), transparent 70%)',
+                'radial-gradient(ellipse 60% 50% at 40% 45%, rgb(49 94 251 / 0.2), transparent 70%),' +
+                'radial-gradient(ellipse 55% 45% at 65% 55%, rgb(138 120 255 / 0.16), transparent 70%)',
             }}
             aria-hidden="true"
           />
@@ -307,7 +307,8 @@ export function LandingPage() {
             className="pointer-events-none absolute top-1/2 left-1/2 -z-10 h-80 w-[46rem] max-w-[130vw] -translate-x-1/2 -translate-y-1/2 animate-aurora blur-[100px]"
             style={{
               background:
-                'radial-gradient(ellipse 60% 50% at 45% 50%, rgb(255 99 99 / 0.14), transparent 70%)',
+                'radial-gradient(ellipse 60% 50% at 40% 50%, rgb(49 94 251 / 0.18), transparent 70%),' +
+                'radial-gradient(ellipse 48% 42% at 68% 56%, rgb(83 191 242 / 0.14), transparent 72%)',
             }}
             aria-hidden="true"
           />

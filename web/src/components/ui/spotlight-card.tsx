@@ -29,17 +29,27 @@ export function SpotlightCard({ className, children, ...props }: ComponentProps<
       ref={ref}
       onPointerMove={handleMove}
       className={cn(
-        'group/spot relative isolate overflow-hidden bg-background transition-colors duration-300',
+        'group/spot relative isolate overflow-hidden bg-surface-1 shadow-[var(--shadow-sm)] transition-[transform,box-shadow,border-color,background-color] duration-[350ms] ease-[var(--ease-ai-out)] hover:-translate-y-1 hover:shadow-[var(--shadow-md)] motion-reduce:transform-none motion-reduce:transition-none',
         className,
       )}
       {...props}
     >
-      {/* 微光层：默认透明，悬停时以指针为中心晕开 */}
+      {/* 固定柔光用于区分白色卡片与页面底色，位置统一在右下角，避免干扰正文。 */}
+      <div
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={{
+          background:
+            'radial-gradient(58% 52% at 88% 108%, color-mix(in oklab, var(--info) 16%, transparent), transparent 72%)',
+        }}
+        aria-hidden="true"
+      />
+
+      {/* 指针微光只在悬停时出现，用较小范围反馈当前交互位置。 */}
       <div
         className="pointer-events-none absolute inset-0 -z-10 opacity-0 transition-opacity duration-300 group-hover/spot:opacity-100"
         style={{
           background:
-            'radial-gradient(340px circle at var(--card-x, 50%) var(--card-y, 50%), rgb(255 99 99 / 0.07), transparent 62%)',
+            'radial-gradient(340px circle at var(--card-x, 50%) var(--card-y, 50%), rgb(91 95 246 / 0.11), transparent 62%)',
         }}
         aria-hidden="true"
       />

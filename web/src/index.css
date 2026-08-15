@@ -315,6 +315,35 @@
   transform: none !important;
 }
 
+/* 模型广场水印只承担品牌氛围，渐变遮罩避免它干扰左侧信息与价格。 */
+.model-catalog-watermark {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.3) 32%, black 62%);
+  mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.3) 32%, black 62%);
+}
+
+@keyframes model-catalog-logo-breathe {
+  0%, 100% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(2.5deg) scale(1.035);
+  }
+}
+
+.model-catalog-logo-breathe {
+  animation: model-catalog-logo-breathe 6s ease-in-out infinite;
+}
+
+:root[data-motion='reduced'] .model-catalog-logo-breathe {
+  animation: none !important;
+}
+
+:root[data-motion='reduced'] [data-model-watermark-mark],
+:root[data-motion='reduced'] [data-model-details-motion],
+:root[data-motion='reduced'] [data-model-details-content] {
+  transition-duration: 0s !important;
+}
+
 @keyframes ai-pixel-on {
   from {
     opacity: 0.16;
@@ -358,142 +387,155 @@
   }
 }
 
-/* ══ 深色：正统形态 ═══════════════════════════════════════ */
+/* ══ 深色：深海军蓝表面，保留钴蓝品牌识别 ═════════════════ */
 .dark,
 :root {
   color-scheme: dark;
 
-  /* ══ macOS 暗色：系统深色 #1C1C1E 暖黑调，主色换 Apple 系统蓝 ══ */
-  --background: #1c1c1e; /* macOS systemBackground dark */
-  --foreground: #f5f5f7; /* Apple primary label dark */
+  --background: #0d1424;
+  --foreground: #f4f7ff;
 
-  --surface-1: #2c2c2e; /* macOS secondarySystemBackground */
-  --surface-2: #3a3a3c; /* macOS tertiarySystemBackground */
-  --surface-sunken: #141416;
-  --surface-raised: #323234;
-  --hairline: rgb(255 255 255 / 0.1);
+  --surface-1: #151f34;
+  --surface-2: #202d47;
+  --surface-sunken: #09101e;
+  --surface-raised: #1a2740;
+  --hairline: rgb(143 171 230 / 0.16);
+  --hairline-strong: rgb(143 171 230 / 0.24);
+  --shadow-sm: 0 2px 10px rgb(2 8 23 / 0.28), 0 1px 2px rgb(2 8 23 / 0.2);
+  --shadow-md: 0 12px 32px rgb(2 8 23 / 0.32), 0 3px 8px rgb(2 8 23 / 0.18);
+  --shadow-lg: 0 22px 56px rgb(2 8 23 / 0.38), 0 6px 14px rgb(2 8 23 / 0.2);
+  --shadow-subtle: 0 1px 3px rgb(2 8 23 / 0.26), 0 1px 1px rgb(2 8 23 / 0.18);
+  --shadow-overlay: 0 22px 60px rgb(2 8 23 / 0.42), 0 8px 20px rgb(2 8 23 / 0.22),
+    0 0 0 1px var(--hairline);
+  --shadow-glow-brand: 0 0 0 4px rgb(111 130 255 / 0.22);
+  --shadow-glow-info: 0 0 0 4px rgb(154 134 255 / 0.22);
 
   /* 背景标识星座 */
   --logo-field-lit: 0.55;
 
   --card: var(--surface-1);
   --card-foreground: var(--foreground);
-  --popover: #2c2c2e;
+  --popover: #18243b;
   --popover-foreground: var(--foreground);
 
-  /* 主操作：Apple 系统蓝（深色模式为 #0A84FF） */
-  --primary: #0a84ff;
+  /* 深色模式提高主色明度，确保按钮和焦点环保持清晰。 */
+  --primary: #6f82ff;
   --primary-foreground: #ffffff;
-  --primary-hover: #3395ff;
+  --primary-hover: #8797ff;
 
   --secondary: var(--surface-2);
-  --secondary-foreground: #f5f5f7;
+  --secondary-foreground: #f4f7ff;
   --muted: var(--surface-1);
-  --muted-foreground: #98989d; /* Apple secondary label dark */
+  --muted-foreground: #a7b4d0;
   --accent: var(--surface-2);
-  --accent-foreground: #f5f5f7;
+  --accent-foreground: #f4f7ff;
 
-  /* 语义色：Apple 系统调色板 */
-  --brand: #0a84ff;         /* 系统蓝取代品牌红作为主操作色 */
+  /* 语义色与品牌蓝分工，状态色仅用于真实业务状态。 */
+  --brand: #6f82ff;
   --brand-foreground: #ffffff;
-  --info: #0a84ff;
-  --success: #32d74b;       /* Apple green */
-  --warning: #ff9f0a;       /* Apple orange */
-  --destructive: #ff453a;   /* Apple red */
+  --info: #9a86ff;
+  --success: #42d887;
+  --warning: #ffb454;
+  --destructive: #ff6b76;
 
-  --border: rgb(255 255 255 / 0.1);
-  --input: rgb(255 255 255 / 0.12);
-  --ring: #0a84ff;
+  --border: rgb(143 171 230 / 0.16);
+  --input: rgb(143 171 230 / 0.2);
+  --ring: #7d8dff;
 
-  --chart-1: #0a84ff;
-  --chart-2: #32d74b;
-  --chart-3: #ff9f0a;
-  --chart-4: #ff453a;
-  --chart-5: #bf5af2;
+  --chart-1: #6f82ff;
+  --chart-2: #4cc9f0;
+  --chart-3: #42d887;
+  --chart-4: #ffb454;
+  --chart-5: #b98cff;
 
-  /* macOS 侧边栏：半透明毛玻璃，略深于窗口底色 */
-  --sidebar: rgb(28 28 30 / 0.85);
+  /* 侧边栏略深于工作区，展开项使用低饱和品牌蓝。 */
+  --sidebar: rgb(11 18 32 / 0.9);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: rgba(255, 255, 255, 0.06);
-  --sidebar-accent-foreground: #f5f5f7;
+  --sidebar-accent: rgb(111 130 255 / 0.14);
+  --sidebar-accent-foreground: #f4f7ff;
   --sidebar-border: var(--hairline);
   --sidebar-ring: var(--ring);
 
-  --ribbon-tint: #5b8ab5;
-  --ribbon-accent: #82b4d8;
-  --ribbon-strength: 0.78;
-  --ribbon-warm: color-mix(in oklab, var(--brand) 45%, var(--ribbon-accent));
+  --ribbon-tint: #6178ff;
+  --ribbon-accent: #61c7f2;
+  --ribbon-strength: 0.92;
+  --ribbon-warm: color-mix(in oklab, #9a86ff 58%, var(--ribbon-accent));
 }
 
-/* ══ macOS 浅色：系统灰白 #F5F5F7，主色 #007AFF ═══════════ */
+/* ══ 浅色：冷白蓝底、白色表面与钴蓝主操作 ═════════════════ */
 .light {
   color-scheme: light;
 
-  --background: #f5f5f7; /* macOS systemBackground light */
-  --foreground: #1d1d1f; /* Apple primary label */
+  --background: #f7f9fd;
+  --foreground: #16203a;
 
-  --surface-1: #ffffff;  /* macOS secondarySystemBackground */
-  --surface-2: #ebebed;  /* macOS tertiarySystemBackground */
-  --surface-sunken: #e8e8ea;
+  --surface-1: #ffffff;
+  --surface-2: #edf3fc;
+  --surface-sunken: #e7f0fc;
   --surface-raised: #ffffff;
-  --hairline: rgb(0 0 0 / 0.08);
-  --hairline-strong: rgb(0 0 0 / 0.12);
-  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.04);
-  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.08), 0 2px 4px rgb(0 0 0 / 0.04);
-  --shadow-lg: 0 10px 30px rgb(0 0 0 / 0.1), 0 4px 8px rgb(0 0 0 / 0.04);
+  --hairline: rgb(30 60 130 / 0.08);
+  --hairline-strong: rgb(30 60 130 / 0.14);
+  --shadow-sm: 0 2px 10px rgb(30 60 150 / 0.06), 0 1px 2px rgb(30 60 150 / 0.04);
+  --shadow-md: 0 12px 32px rgb(30 60 150 / 0.08), 0 3px 8px rgb(30 60 150 / 0.04);
+  --shadow-lg: 0 22px 56px rgb(30 60 150 / 0.12), 0 6px 14px rgb(30 60 150 / 0.05);
+  --shadow-subtle: 0 1px 3px rgb(30 60 150 / 0.06), 0 1px 1px rgb(30 60 150 / 0.04);
+  --shadow-overlay: 0 22px 60px rgb(30 60 150 / 0.16), 0 8px 20px rgb(30 60 150 / 0.08),
+    0 0 0 1px var(--hairline);
+  --shadow-glow-brand: 0 0 0 4px rgb(49 94 251 / 0.18);
+  --shadow-glow-info: 0 0 0 4px rgb(91 95 246 / 0.18);
 
-  --logo-field-lit: 0.28;
+  --logo-field-lit: 0.38;
 
   --card: var(--surface-1);
   --card-foreground: var(--foreground);
   --popover: #ffffff;
   --popover-foreground: var(--foreground);
 
-  /* Apple 系统蓝（浅色模式） */
-  --primary: #007aff;
+  /* 钴蓝承担主操作，紫蓝仅用于信息层次与柔光。 */
+  --primary: #315efb;
   --primary-foreground: #ffffff;
-  --primary-hover: #0063d1;
+  --primary-hover: #244be7;
 
   --secondary: var(--surface-2);
-  --secondary-foreground: #1d1d1f;
-  --muted: #f0f0f2;
-  --muted-foreground: #6e6e73; /* Apple secondary label */
-  --accent: rgba(0, 122, 255, 0.08);
-  --accent-foreground: #007aff;
+  --secondary-foreground: #16203a;
+  --muted: #f0f4fb;
+  --muted-foreground: #52617d;
+  --accent: rgb(49 94 251 / 0.1);
+  --accent-foreground: #315efb;
 
-  --brand: #007aff;
+  --brand: #315efb;
   --brand-foreground: #ffffff;
-  --info: #007aff;
-  --success: #28cd41;       /* Apple green light */
-  --warning: #ff9500;       /* Apple orange light */
-  --destructive: #ff3b30;   /* Apple red light */
+  --info: #5b5ff6;
+  --success: #18a957;
+  --warning: #e88a05;
+  --destructive: #e5484d;
 
-  --border: rgb(0 0 0 / 0.1);
-  --input: rgb(0 0 0 / 0.08);
-  --ring: #007aff;
+  --border: rgb(30 60 130 / 0.1);
+  --input: rgb(30 60 130 / 0.12);
+  --ring: #315efb;
 
-  --chart-1: #007aff;
-  --chart-2: #28cd41;
-  --chart-3: #ff9500;
-  --chart-4: #ff3b30;
-  --chart-5: #af52de;
+  --chart-1: #315efb;
+  --chart-2: #2cb7e8;
+  --chart-3: #18a957;
+  --chart-4: #e88a05;
+  --chart-5: #8a78ff;
 
-  /* 浅色侧边栏：半透明毛玻璃 */
-  --sidebar: rgba(246, 246, 248, 0.8);
+  /* 浅色侧边栏保持冷白蓝，与主工作区形成轻微层次。 */
+  --sidebar: rgb(244 248 255 / 0.9);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: rgba(0, 122, 255, 0.08);
-  --sidebar-accent-foreground: #007aff;
+  --sidebar-accent: rgb(49 94 251 / 0.1);
+  --sidebar-accent-foreground: #244be7;
   --sidebar-border: var(--hairline);
   --sidebar-ring: var(--ring);
 
-  --ribbon-tint: color-mix(in oklab, #007aff 42%, #7c8ea8);
-  --ribbon-accent: color-mix(in oklab, #007aff 62%, #5b6b82);
-  --ribbon-strength: 1.1;
-  --ribbon-warm: color-mix(in oklab, #007aff 72%, var(--ribbon-accent));
+  --ribbon-tint: #315efb;
+  --ribbon-accent: #53bff2;
+  --ribbon-strength: 1.16;
+  --ribbon-warm: color-mix(in oklab, #8a78ff 62%, var(--ribbon-accent));
 }
 
 @layer base {
