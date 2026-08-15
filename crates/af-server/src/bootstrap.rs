@@ -2,8 +2,8 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{
     CredentialDecryptionError, CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
-    OAuthProviderProfile, OAuthRefreshSupervisor, PlainSystemSecret, SystemSecretCipher,
-    SystemSecretError, SystemSecretKind,
+    DiagnosticSnapshotCipher, OAuthProviderProfile, OAuthRefreshSupervisor, PlainSystemSecret,
+    SystemSecretCipher, SystemSecretError, SystemSecretKind,
 };
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
@@ -61,10 +61,10 @@ use af_db::{
     ChannelStateRepository, CredentialProxyRepository, CredentialProxyRepositoryConfigError,
     CredentialStateRepository, DatabaseError, DatabaseOptions, DatabaseOptionsError, DatabasePool,
     DebugTraceRepository, DebugTraceRepositoryConfigError, DebugTraceRepositoryError,
-    EmailSettingsRepository, EmailSettingsRepositoryConfigError, InitialSetupRepository,
-    InitialSetupRepositoryConfigError, MigrationOptions, ModelPriceRepository, ModelSyncRepository,
-    NetworkSettingsMode, NetworkSettingsRecord, NetworkSettingsRepository,
-    NetworkSettingsRepositoryConfigError, PasswordResetRepository,
+    DebugTraceSnapshotCipherError, EmailSettingsRepository, EmailSettingsRepositoryConfigError,
+    InitialSetupRepository, InitialSetupRepositoryConfigError, MigrationOptions,
+    ModelPriceRepository, ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord,
+    NetworkSettingsRepository, NetworkSettingsRepositoryConfigError, PasswordResetRepository,
     PasswordResetRepositoryConfigError, PaymentSecretUpdate, PaymentSettingsRepository,
     PaymentSettingsRepositoryConfigError, PaymentSettingsRepositoryError,
     PaymentSettingsWriteRecord, PlaygroundConversationRepository,
@@ -460,6 +460,9 @@ pub enum BootstrapError {
     /// 调试追踪仓储的启动参数无效。
     #[error("调试追踪仓储启动参数无效")]
     DebugTraceRepository(#[source] DebugTraceRepositoryConfigError),
+    /// 诊断快照加密器无法复用启动主密钥。
+    #[error("初始化诊断快照加密器失败")]
+    DebugTraceSnapshotCipher(#[source] DebugTraceSnapshotCipherError),
     /// 调试追踪初始设置无法读取或状态损坏。
     #[error("加载调试追踪初始设置失败")]
     DebugTraceSettings(#[source] DebugTraceRepositoryError),
@@ -1094,9 +1097,14 @@ impl Bootstrap<RelayReady> {
         )
         .await
         .map_err(BootstrapError::ChannelIndex)?;
+        let debug_trace_snapshot_cipher = Arc::new(
+            DiagnosticSnapshotCipher::new(self.config.credential_encryption())
+                .map_err(BootstrapError::DebugTraceSnapshotCipher)?,
+        );
         let debug_trace_repository = DebugTraceRepository::new(
             self.stage.infrastructure.infrastructure.database.clone(),
             Duration::from_secs(self.config.auth().lookup_timeout_secs()),
+            debug_trace_snapshot_cipher,
         )
         .map_err(BootstrapError::DebugTraceRepository)?;
         let debug_trace_settings = debug_trace_repository

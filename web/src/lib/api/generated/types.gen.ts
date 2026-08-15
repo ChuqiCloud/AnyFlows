@@ -324,12 +324,13 @@ export type AdminDebugTraceAttempt = {
     elapsed_ms: number;
     request_method?: string | null;
     request_url?: string | null;
-    request_headers?: unknown;
-    request_body?: unknown;
     response_status?: number | null;
-    response_headers?: unknown;
-    response_body?: unknown;
     response_streamed: boolean;
+};
+export type AdminDebugTraceAttemptSnapshot = {
+    candidate_index: number;
+    request?: unknown;
+    response?: unknown;
 };
 export type AdminDebugTraceDetailResponse = {
     trace: AdminDebugTrace;
@@ -339,8 +340,6 @@ export type AdminDebugTraceDetailResponse = {
 export type AdminDebugTraceDownstreamRequest = {
     method: string;
     path: string;
-    headers?: unknown;
-    body?: unknown;
 };
 export type AdminDebugTraceListResponse = {
     traces: Array<AdminDebugTrace>;
@@ -362,6 +361,15 @@ export type AdminDebugTraceSettingsRequest = {
     capture_headers: boolean;
     capture_bodies: boolean;
     max_body_bytes: number;
+};
+export type AdminDebugTraceSnapshotRequest = {
+    scope: AdminDebugTraceSnapshotScope;
+};
+export type AdminDebugTraceSnapshotScope = 'headers' | 'bodies';
+export type AdminDebugTraceSnapshotsResponse = {
+    scope: string;
+    downstream?: unknown;
+    attempts: Array<AdminDebugTraceAttemptSnapshot>;
 };
 export type AdminEmailSettings = {
     enabled: boolean;
@@ -4202,6 +4210,26 @@ export type GetAdminDebugTraceResponses = {
     200: AdminDebugTraceDetailResponse;
 };
 export type GetAdminDebugTraceResponse = GetAdminDebugTraceResponses[keyof GetAdminDebugTraceResponses];
+export type ReadAdminDebugTraceSnapshotsData = {
+    body: AdminDebugTraceSnapshotRequest;
+    path: {
+        id: number;
+    };
+    query?: never;
+    url: '/api/admin/debug-traces/{id}/snapshots';
+};
+export type ReadAdminDebugTraceSnapshotsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ReadAdminDebugTraceSnapshotsError = ReadAdminDebugTraceSnapshotsErrors[keyof ReadAdminDebugTraceSnapshotsErrors];
+export type ReadAdminDebugTraceSnapshotsResponses = {
+    200: AdminDebugTraceSnapshotsResponse;
+};
+export type ReadAdminDebugTraceSnapshotsResponse = ReadAdminDebugTraceSnapshotsResponses[keyof ReadAdminDebugTraceSnapshotsResponses];
 export type ReceivePaymentWebhookData = {
     body?: unknown;
     headers: {

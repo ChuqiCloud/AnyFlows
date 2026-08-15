@@ -167,7 +167,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 86);
+        assert_eq!(document.paths.paths.len(), 87);
         let operation_count = document
             .paths
             .paths
@@ -188,7 +188,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 128);
+        assert_eq!(operation_count, 129);
         assert!(
             document
                 .components
@@ -425,6 +425,10 @@ mod tests {
         assert!(schemas.contains_key("AdminDebugTraceListResponse"));
         assert!(schemas.contains_key("AdminDebugTraceSettings"));
         assert!(schemas.contains_key("AdminDebugTraceSettingsRequest"));
+        assert!(schemas.contains_key("AdminDebugTraceSnapshotScope"));
+        assert!(schemas.contains_key("AdminDebugTraceSnapshotRequest"));
+        assert!(schemas.contains_key("AdminDebugTraceAttemptSnapshot"));
+        assert!(schemas.contains_key("AdminDebugTraceSnapshotsResponse"));
         assert!(schemas.contains_key("AdminOAuthProvider"));
         assert!(schemas.contains_key("AdminOAuthProviderListResponse"));
         assert!(schemas.contains_key("AdminOAuthProviderStatus"));

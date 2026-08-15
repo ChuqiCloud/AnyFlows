@@ -1629,3 +1629,51 @@ pub(in crate::migration) mod debug_trace_attempts {
         CreatedAt,
     }
 }
+
+pub(in crate::migration) mod debug_trace_snapshots {
+    use super::DeriveIden;
+
+    /// `debug_trace_snapshots` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "debug_trace_snapshots")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 字段级密文诊断快照迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        TraceId,
+        AttemptId,
+        Kind,
+        EncryptedPayload,
+        CreatedAt,
+    }
+}
+
+pub(in crate::migration) mod debug_trace_snapshot_access_audits {
+    use super::DeriveIden;
+
+    /// `debug_trace_snapshot_access_audits` 的固定表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "debug_trace_snapshot_access_audits")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 敏感快照读取审计迁移的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        TraceId,
+        ActorUserId,
+        Scope,
+        Outcome,
+        CreatedAt,
+    }
+}

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use af_admin::{
     AdminDebugTrace, AdminDebugTraceAttempt, AdminDebugTraceError, AdminDebugTraceListQuery,
     AdminDebugTraceService, AdminDebugTraceSettings, AdminDebugTraceSettingsCommand,
+    AdminDebugTraceSnapshotScope, AdminDebugTraceSnapshots,
 };
 use axum::{
     Json, Router,
@@ -93,11 +94,7 @@ pub(crate) struct AdminDebugTraceAttemptResponse {
     elapsed_ms: i64,
     request_method: Option<String>,
     request_url: Option<String>,
-    request_headers: Option<serde_json::Value>,
-    request_body: Option<serde_json::Value>,
     response_status: Option<i16>,
-    response_headers: Option<serde_json::Value>,
-    response_body: Option<serde_json::Value>,
     response_streamed: bool,
 }
 
@@ -107,8 +104,39 @@ pub(crate) struct AdminDebugTraceAttemptResponse {
 pub(crate) struct AdminDebugTraceDownstreamRequestResponse {
     method: String,
     path: String,
-    headers: Option<serde_json::Value>,
-    body: Option<serde_json::Value>,
+}
+
+#[derive(Clone, Copy, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[schema(as = AdminDebugTraceSnapshotScope)]
+pub(crate) enum AdminDebugTraceSnapshotScopeRequest {
+    Headers,
+    Bodies,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminDebugTraceSnapshotRequest)]
+pub(crate) struct AdminDebugTraceSnapshotRequest {
+    scope: AdminDebugTraceSnapshotScopeRequest,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminDebugTraceAttemptSnapshot)]
+pub(crate) struct AdminDebugTraceAttemptSnapshotResponse {
+    candidate_index: i16,
+    request: Option<serde_json::Value>,
+    response: Option<serde_json::Value>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = AdminDebugTraceSnapshotsResponse)]
+pub(crate) struct AdminDebugTraceSnapshotsResponse {
+    scope: String,
+    downstream: Option<serde_json::Value>,
+    attempts: Vec<AdminDebugTraceAttemptSnapshotResponse>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -146,6 +174,10 @@ pub(crate) fn build_debug_trace_router(
         )
         .route("/api/admin/debug-traces", get(list_traces))
         .route("/api/admin/debug-traces/{id}", get(get_trace))
+        .route(
+            "/api/admin/debug-traces/{id}/snapshots",
+            axum::routing::post(read_snapshots),
+        )
         .route_layer(middleware::from_fn(authorize_management_admin))
         .route_layer(authentication)
         .with_state(DebugTraceHttpState { service })
@@ -217,6 +249,27 @@ async fn get_trace(
     Ok(no_store_json(AdminDebugTraceDetailResponse::from_detail(
         detail,
     )))
+}
+
+async fn read_snapshots(
+    State(state): State<DebugTraceHttpState>,
+    Path(id): Path<i64>,
+    Extension(authentication): Extension<af_admin::SessionAuthentication>,
+    request: Result<Json<AdminDebugTraceSnapshotRequest>, JsonRejection>,
+) -> Result<Response, ManagementError> {
+    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
+    let scope = match request.scope {
+        AdminDebugTraceSnapshotScopeRequest::Headers => AdminDebugTraceSnapshotScope::Headers,
+        AdminDebugTraceSnapshotScopeRequest::Bodies => AdminDebugTraceSnapshotScope::Bodies,
+    };
+    let snapshots = state
+        .service
+        .snapshots(authentication.principal(), id, scope)
+        .await
+        .map_err(map_error)?;
+    Ok(no_store_json(
+        AdminDebugTraceSnapshotsResponse::from_snapshots(&snapshots),
+    ))
 }
 
 impl From<AdminDebugTraceSettings> for AdminDebugTraceSettingsResponse {
@@ -297,11 +350,7 @@ impl AdminDebugTraceAttemptResponse {
             elapsed_ms: attempt.elapsed_ms(),
             request_method: attempt.request_method().map(str::to_owned),
             request_url: attempt.request_url().map(str::to_owned),
-            request_headers: parse_snapshot(attempt.request_headers_json()),
-            request_body: parse_snapshot(attempt.request_body_json()),
             response_status: attempt.response_status(),
-            response_headers: parse_snapshot(attempt.response_headers_json()),
-            response_body: parse_snapshot(attempt.response_body_json()),
             response_streamed: attempt.response_streamed(),
         }
     }
@@ -312,9 +361,29 @@ impl AdminDebugTraceDownstreamRequestResponse {
         Some(Self {
             method: trace.downstream_method()?.to_owned(),
             path: trace.downstream_path()?.to_owned(),
-            headers: parse_snapshot(trace.downstream_headers_json()),
-            body: parse_snapshot(trace.downstream_body_json()),
         })
+    }
+}
+
+impl AdminDebugTraceSnapshotsResponse {
+    fn from_snapshots(snapshots: &AdminDebugTraceSnapshots) -> Self {
+        Self {
+            scope: match snapshots.scope() {
+                AdminDebugTraceSnapshotScope::Headers => "headers",
+                AdminDebugTraceSnapshotScope::Bodies => "bodies",
+            }
+            .to_owned(),
+            downstream: parse_snapshot(snapshots.downstream_json()),
+            attempts: snapshots
+                .attempts()
+                .iter()
+                .map(|attempt| AdminDebugTraceAttemptSnapshotResponse {
+                    candidate_index: attempt.candidate_index(),
+                    request: parse_snapshot(attempt.request_json()),
+                    response: parse_snapshot(attempt.response_json()),
+                })
+                .collect(),
+        }
     }
 }
 

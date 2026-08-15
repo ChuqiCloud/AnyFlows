@@ -1996,7 +1996,13 @@
       "openDetails": "View trace details for {{model}}",
       "save": "Save settings",
       "saving": "Saving",
-      "copy": "Copy content"
+      "copy": "Copy content",
+      "readHeaders": "View headers",
+      "headersLoaded": "Headers loaded",
+      "readBodies": "View bodies",
+      "bodiesLoaded": "Bodies loaded",
+      "confirmReadBodies": "View bodies",
+      "cancel": "Cancel"
     },
     "filters": {
       "label": "Filter trace records",
@@ -2058,6 +2064,11 @@
       "requestBody": "Request body",
       "responseHeaders": "Response headers",
       "responseBody": "Response body",
+      "sensitiveSnapshots": "Sensitive diagnostic snapshots",
+      "sensitiveSnapshotsHint": "Content is permanently redacted. Headers and bodies are authorized separately, and every read is audited.",
+      "bodyConfirmTitle": "View request and response bodies?",
+      "bodyConfirmDescription": "Bodies may contain business content. Only bounded, permanently redacted snapshots are returned, and this administrator read will be audited.",
+      "snapshotReadError": "This snapshot scope is unavailable, expired, or cannot be safely decrypted.",
       "notCaptured": "Not captured",
       "streamNotBuffered": "Streaming response body is not buffered without limit",
       "truncated": "Body truncated at the configured limit. Original size: {{bytes}} bytes",

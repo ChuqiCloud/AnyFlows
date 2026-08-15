@@ -89,14 +89,15 @@ pub use credential_read::{
     AdminCredentialQuotaDimension,
 };
 pub use debug_trace::{
-    AdminDebugTrace, AdminDebugTraceAttempt, AdminDebugTraceAttemptOutcome, AdminDebugTraceDetail,
-    AdminDebugTraceDetailFuture, AdminDebugTraceError, AdminDebugTraceFailureKind,
-    AdminDebugTraceGetFuture, AdminDebugTraceListFuture, AdminDebugTraceListQuery,
-    AdminDebugTraceOperation, AdminDebugTraceOutcome, AdminDebugTracePage, AdminDebugTraceProtocol,
-    AdminDebugTraceService, AdminDebugTraceSettings, AdminDebugTraceSettingsCommand,
-    AdminDebugTraceSettingsFuture, AdminDebugTraceSettingsRuntimeApplier,
-    AdminDebugTraceUpdateFuture, DEFAULT_ADMIN_DEBUG_TRACE_PAGE_SIZE,
-    DatabaseAdminDebugTraceService,
+    AdminDebugTrace, AdminDebugTraceAttempt, AdminDebugTraceAttemptOutcome,
+    AdminDebugTraceAttemptSnapshot, AdminDebugTraceDetail, AdminDebugTraceDetailFuture,
+    AdminDebugTraceError, AdminDebugTraceFailureKind, AdminDebugTraceGetFuture,
+    AdminDebugTraceListFuture, AdminDebugTraceListQuery, AdminDebugTraceOperation,
+    AdminDebugTraceOutcome, AdminDebugTracePage, AdminDebugTraceProtocol, AdminDebugTraceService,
+    AdminDebugTraceSettings, AdminDebugTraceSettingsCommand, AdminDebugTraceSettingsFuture,
+    AdminDebugTraceSettingsRuntimeApplier, AdminDebugTraceSnapshotScope, AdminDebugTraceSnapshots,
+    AdminDebugTraceSnapshotsFuture, AdminDebugTraceUpdateFuture,
+    DEFAULT_ADMIN_DEBUG_TRACE_PAGE_SIZE, DatabaseAdminDebugTraceService,
 };
 pub use email_settings::{
     AdminEmailSettings, AdminEmailSettingsCommand, AdminEmailSettingsError,

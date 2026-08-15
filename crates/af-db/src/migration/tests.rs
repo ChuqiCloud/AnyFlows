@@ -26,12 +26,14 @@ use crate::entity::{
     auth_challenge_rate_limits, auth_challenges, authentication_settings, balance_alert_events,
     balance_alert_settings, billing_batch_checkpoints, billing_group_window_reservations,
     billing_reservations, billing_subscription_reservations, billing_token_window_reservations,
-    channel_groups, channel_models, channels, credentials, email_settings, group_model_ratios,
-    groups, invite_rebate_events, model_prices, model_sync_items, model_sync_runs, models, options,
-    payment_settings, playground_conversations, playground_shares, redemption_batches,
-    redemption_codes, registration_rate_limits, scheduler_outbox_events, site_settings,
-    subscription_balance_alert_events, subscription_plans, tokens, topup_orders,
-    topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
+    channel_groups, channel_models, channels, credentials, debug_trace_attempts,
+    debug_trace_snapshot_access_audits, debug_trace_snapshots, debug_traces, email_settings,
+    group_model_ratios, groups, invite_rebate_events, model_prices, model_sync_items,
+    model_sync_runs, models, options, payment_settings, playground_conversations,
+    playground_shares, redemption_batches, redemption_codes, registration_rate_limits,
+    scheduler_outbox_events, site_settings, subscription_balance_alert_events, subscription_plans,
+    tokens, topup_orders, topup_payment_events, usage_logs, user_subscriptions, users,
+    wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -55,7 +57,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 59;
+const EXPECTED_MIGRATION_COUNT: usize = 60;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -64,6 +66,7 @@ const TOKEN_HASH_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 const TOKEN_HASH_C: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const TOKEN_HASH_D: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
 const TOKEN_HASH_E: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+const TOKEN_HASH_F: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
 const RESERVATION_KEY_A: &str = "11111111111111111111111111111111";
 const RESERVATION_KEY_B: &str = "22222222222222222222222222222222";
 const RESERVATION_KEY_C: &str = "33333333333333333333333333333333";
@@ -73,7 +76,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 48] = [
+const CORE_TABLES: [&str; 53] = [
     "groups",
     "users",
     "channels",
@@ -122,6 +125,11 @@ const CORE_TABLES: [&str; 48] = [
     "async_tasks",
     "async_task_submission_claims",
     "async_task_billings",
+    "debug_trace_settings",
+    "debug_traces",
+    "debug_trace_attempts",
+    "debug_trace_snapshots",
+    "debug_trace_snapshot_access_audits",
 ];
 
 struct SlowMigrator;
@@ -914,7 +922,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
 
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
+    Migrator::up(pool.connection(), Some(59)).await?;
+    let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
+    assert_legacy_debug_trace_snapshot_cleared(&pool, legacy_debug_trace_id).await?;
 
     assert_core_schema(pool.connection()).await?;
     assert!(
@@ -960,6 +971,117 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_core_tables_absent(pool.connection()).await?;
 
     pool.close().await?;
+    Ok(())
+}
+
+/// 在第 59 号 schema 写入旧诊断明文，供第 60 号迁移验证清理而非伪加密。
+async fn insert_legacy_debug_trace_snapshot(pool: &DatabasePool) -> Result<i64, Box<dyn Error>> {
+    let group = group_active_model("debug-snapshot-upgrade-group", "诊断快照升级分组")
+        .insert(pool.connection())
+        .await?;
+    let mut user = user_active_model(
+        group.id,
+        "debug-snapshot-upgrade-user",
+        "debug-snapshot-upgrade@example.com",
+        "invite-debug-snapshot-upgrade",
+    );
+    user.status = Set(1);
+    let user = user.insert(pool.connection()).await?;
+    let mut token = token_active_model(
+        user.id,
+        group.id,
+        TOKEN_HASH_F,
+        "debug-snapshot-upgrade-token",
+    );
+    token.status = Set(1);
+    let token = token.insert(pool.connection()).await?;
+    let trace = debug_traces::ActiveModel {
+        request_id: Set("debug-snapshot-upgrade-request".to_owned()),
+        user_id: Set(user.id),
+        token_id: Set(token.id),
+        group_id: Set(group.id),
+        requested_model: Set("gpt-5.5".to_owned()),
+        downstream_protocol: Set(1),
+        upstream_protocol: Set(1),
+        operation: Set(1),
+        outcome: Set(1),
+        selected_channel_id: Set(Some(101)),
+        selected_credential_id: Set(Some(201)),
+        routing_elapsed_ms: Set(9),
+        attempt_count: Set(1),
+        downstream_method: Set(Some("POST".to_owned())),
+        downstream_path: Set(Some("/v1/chat/completions".to_owned())),
+        downstream_headers_json: Set(Some(
+            r#"[{"name":"authorization","value":"<redacted>"}]"#.to_owned(),
+        )),
+        downstream_body_json: Set(Some(r#"{"content":"legacy-body"}"#.to_owned())),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    debug_trace_attempts::ActiveModel {
+        trace_id: Set(trace.id),
+        candidate_index: Set(0),
+        channel_id: Set(101),
+        credential_id: Set(201),
+        outcome: Set(1),
+        failure_kind: Set(None),
+        upstream_status: Set(None),
+        retry_decision: Set(false),
+        elapsed_ms: Set(8),
+        request_method: Set(Some("POST".to_owned())),
+        request_url: Set(Some(
+            "https://upstream.example/v1/chat/completions".to_owned(),
+        )),
+        request_headers_json: Set(Some(
+            r#"[{"name":"authorization","value":"<redacted>"}]"#.to_owned(),
+        )),
+        request_body_json: Set(Some(r#"{"content":"legacy-request"}"#.to_owned())),
+        response_headers_json: Set(Some(
+            r#"[{"name":"content-type","value":"application/json"}]"#.to_owned(),
+        )),
+        response_body_json: Set(Some(r#"{"content":"legacy-response"}"#.to_owned())),
+        response_status: Set(Some(200)),
+        response_streamed: Set(false),
+        ..Default::default()
+    }
+    .insert(pool.connection())
+    .await?;
+    Ok(trace.id)
+}
+
+async fn assert_legacy_debug_trace_snapshot_cleared(
+    pool: &DatabasePool,
+    trace_id: i64,
+) -> Result<(), Box<dyn Error>> {
+    let trace = debug_traces::Entity::find_by_id(trace_id)
+        .one(pool.connection())
+        .await?
+        .expect("升级后必须保留调试追踪元数据");
+    assert_eq!(trace.request_id, "debug-snapshot-upgrade-request");
+    assert!(trace.downstream_headers_json.is_none());
+    assert!(trace.downstream_body_json.is_none());
+    let attempt = debug_trace_attempts::Entity::find()
+        .filter(debug_trace_attempts::Column::TraceId.eq(trace_id))
+        .one(pool.connection())
+        .await?
+        .expect("升级后必须保留候选时间线");
+    assert!(attempt.request_headers_json.is_none());
+    assert!(attempt.request_body_json.is_none());
+    assert!(attempt.response_headers_json.is_none());
+    assert!(attempt.response_body_json.is_none());
+    assert_eq!(
+        debug_trace_snapshots::Entity::find()
+            .count(pool.connection())
+            .await?,
+        0
+    );
+    assert_eq!(
+        debug_trace_snapshot_access_audits::Entity::find()
+            .count(pool.connection())
+            .await?,
+        0
+    );
     Ok(())
 }
 

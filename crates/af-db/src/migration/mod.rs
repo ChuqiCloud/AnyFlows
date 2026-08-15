@@ -65,6 +65,7 @@ mod m20260812_000056_create_payment_settings;
 mod m20260814_000057_extend_usage_call_observations;
 mod m20260814_000058_extend_debug_trace_diagnostics;
 mod m20260815_000059_add_balance_display_policy;
+mod m20260815_000060_secure_debug_trace_snapshots;
 mod schema;
 
 #[cfg(test)]
@@ -167,6 +168,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260814_000057_extend_usage_call_observations::Migration),
             Box::new(m20260814_000058_extend_debug_trace_diagnostics::Migration),
             Box::new(m20260815_000059_add_balance_display_policy::Migration),
+            Box::new(m20260815_000060_secure_debug_trace_snapshots::Migration),
         ]
     }
 }

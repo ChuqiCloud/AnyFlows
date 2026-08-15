@@ -5,9 +5,10 @@ import {
   getAdminDebugTrace,
   getAdminDebugTraceSettings,
   listAdminDebugTraces,
+  readAdminDebugTraceSnapshots,
   updateAdminDebugTraceSettings,
 } from '@/lib/api/generated/sdk.gen'
-import type { AdminDebugTraceSettingsRequest } from '@/lib/api/generated/types.gen'
+import type { AdminDebugTraceSettingsRequest, AdminDebugTraceSnapshotScope } from '@/lib/api/generated/types.gen'
 
 export type DebugTraceFilters = {
   outcome?: 'succeeded' | 'failed'
@@ -73,6 +74,21 @@ export function useAdminDebugTrace(traceId?: number) {
         client: apiClient,
         path: { id: traceId as number },
         signal,
+      })
+      return data
+    },
+  })
+}
+
+/** 敏感快照使用 mutation 显式读取，避免普通详情预取或进入长期 Query 缓存。 */
+export function useReadAdminDebugTraceSnapshots(traceId: number) {
+  return useMutation({
+    gcTime: 0,
+    mutationFn: async (scope: AdminDebugTraceSnapshotScope) => {
+      const { data } = await readAdminDebugTraceSnapshots({
+        body: { scope },
+        client: apiClient,
+        path: { id: traceId },
       })
       return data
     },
