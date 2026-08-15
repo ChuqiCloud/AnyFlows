@@ -1,15 +1,18 @@
 use af_domain::{
-    OrganizationId, OrganizationKey, OrganizationMembershipId, OrganizationMembershipStatus,
-    OrganizationRole, OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus, UserId,
+    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
+    OrganizationKey, OrganizationMembershipId, OrganizationMembershipStatus, OrganizationRole,
+    OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus, UserId,
 };
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 
-use crate::entity::{organization_memberships, organization_teams, organizations};
+use crate::entity::{
+    organization_entitlements, organization_memberships, organization_teams, organizations,
+};
 
 use super::{
-    OrganizationAccessRecord, OrganizationMembershipRecord, OrganizationRecord,
-    OrganizationRepository, OrganizationRepositoryError, OrganizationTeamRecord,
-    record_internal_error,
+    OrganizationAccessRecord, OrganizationEntitlementRecord, OrganizationMembershipRecord,
+    OrganizationRecord, OrganizationRepository, OrganizationRepositoryError,
+    OrganizationTeamRecord, record_internal_error,
 };
 
 /// 按企业路径和用户主体同时解析活动授权，避免跨企业复用成员标识。
@@ -35,9 +38,19 @@ pub(super) async fn authorized_access(
     if organization.status != OrganizationStatus::Active.code() {
         return Err(OrganizationRepositoryError::NotFound);
     }
+    let entitlement = organization_entitlements::Entity::find()
+        .filter(organization_entitlements::Column::OrganizationId.eq(organization_id.get()))
+        .one(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?
+        .ok_or(OrganizationRepositoryError::Invariant)?;
+    let (active_seats, active_teams) = capacity_counts(repository, organization_id).await?;
     Ok(OrganizationAccessRecord::new(
         organization_record(organization)?,
         membership_record(membership)?,
+        entitlement_snapshot(entitlement)?,
+        active_seats,
+        active_teams,
     ))
 }
 
@@ -57,19 +70,97 @@ pub(super) async fn list_authorized_access(
         .all(repository.pool.connection())
         .await
         .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
-    rows.into_iter()
-        .map(|(membership, organization)| {
-            let Some(organization) = organization else {
-                return Err(record_internal_error(
-                    OrganizationRepositoryError::Invariant,
-                ));
-            };
-            Ok(OrganizationAccessRecord::new(
-                organization_record(organization)?,
-                membership_record(membership)?,
-            ))
-        })
-        .collect()
+    let mut records = Vec::with_capacity(rows.len());
+    for (membership, organization) in rows {
+        let Some(organization) = organization else {
+            return Err(record_internal_error(
+                OrganizationRepositoryError::Invariant,
+            ));
+        };
+        let organization_id = OrganizationId::new(organization.id).map_err(|_| invariant())?;
+        let entitlement = organization_entitlements::Entity::find()
+            .filter(organization_entitlements::Column::OrganizationId.eq(organization.id))
+            .one(repository.pool.connection())
+            .await
+            .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?
+            .ok_or(OrganizationRepositoryError::Invariant)?;
+        let (active_seats, active_teams) = capacity_counts(repository, organization_id).await?;
+        records.push(OrganizationAccessRecord::new(
+            organization_record(organization)?,
+            membership_record(membership)?,
+            entitlement_snapshot(entitlement)?,
+            active_seats,
+            active_teams,
+        ));
+    }
+    Ok(records)
+}
+
+async fn capacity_counts(
+    repository: &OrganizationRepository,
+    organization_id: OrganizationId,
+) -> Result<(i64, i64), OrganizationRepositoryError> {
+    let active_seats = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+        .filter(
+            organization_memberships::Column::Status
+                .eq(OrganizationMembershipStatus::Active.code()),
+        )
+        .count(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let active_seats = i64::try_from(active_seats).map_err(|_| invariant())?;
+    let active_teams = organization_teams::Entity::find()
+        .filter(organization_teams::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_teams::Column::Status.eq(OrganizationTeamStatus::Active.code()))
+        .count(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let active_teams = i64::try_from(active_teams).map_err(|_| invariant())?;
+    Ok((active_seats, active_teams))
+}
+
+pub(super) fn entitlement_snapshot(
+    model: organization_entitlements::Model,
+) -> Result<OrganizationEntitlementSnapshot, OrganizationRepositoryError> {
+    let capacity = OrganizationEntitlementCapacity::new(
+        model.seat_limit,
+        model.team_limit,
+        model.organization_key_limit,
+    )
+    .map_err(|_| invariant())?;
+    OrganizationEntitlementSnapshot::new(
+        capacity,
+        model.team_management_enabled,
+        model.sso_enabled,
+        model.custom_roles_enabled,
+        model.audit_retention_days,
+        model.valid_from.unix_timestamp(),
+        model.valid_until.unix_timestamp(),
+        model.grace_until.map(|value| value.unix_timestamp()),
+    )
+    .map_err(|_| invariant())
+}
+
+pub(super) fn entitlement_record(
+    model: organization_entitlements::Model,
+) -> Result<OrganizationEntitlementRecord, OrganizationRepositoryError> {
+    if model.version <= 0
+        || model.source.is_empty()
+        || model
+            .external_reference
+            .as_ref()
+            .is_some_and(String::is_empty)
+    {
+        return Err(invariant());
+    }
+    Ok(OrganizationEntitlementRecord {
+        organization_id: OrganizationId::new(model.organization_id).map_err(|_| invariant())?,
+        snapshot: entitlement_snapshot(model.clone())?,
+        source: model.source,
+        external_reference: model.external_reference,
+        version: model.version,
+    })
 }
 
 pub(super) fn organization_record(

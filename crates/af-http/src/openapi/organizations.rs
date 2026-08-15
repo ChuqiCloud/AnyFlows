@@ -4,7 +4,9 @@ use utoipa::OpenApi;
 
 use crate::{
     management_error::ManagementErrorBody,
-    organizations::{OrganizationListResponse, OrganizationOverviewResponse},
+    organizations::{
+        OrganizationEntitlementResponse, OrganizationListResponse, OrganizationOverviewResponse,
+    },
 };
 
 #[utoipa::path(
@@ -47,6 +49,7 @@ fn get_organization_overview() {}
     components(schemas(
         OrganizationListResponse,
         OrganizationOverviewResponse,
+        OrganizationEntitlementResponse,
         ManagementErrorBody
     ))
 )]

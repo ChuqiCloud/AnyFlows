@@ -11,13 +11,14 @@ mod read;
 mod types;
 
 pub use types::{
+    MAX_ORGANIZATION_ENTITLEMENT_REFERENCE_BYTES, MAX_ORGANIZATION_ENTITLEMENT_SOURCE_BYTES,
     MAX_ORGANIZATION_NAME_BYTES, MAX_ORGANIZATION_SLUG_BYTES,
     MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES, MAX_ORGANIZATION_TEAM_NAME_BYTES,
     OrganizationAccessRecord, OrganizationCreate, OrganizationCreatedRecord,
-    OrganizationMembershipChange, OrganizationMembershipCreate, OrganizationMembershipRecord,
-    OrganizationOwnershipTransfer, OrganizationOwnershipTransferRecord, OrganizationRecord,
-    OrganizationRepositoryConfigError, OrganizationRepositoryError, OrganizationTeamCreate,
-    OrganizationTeamRecord,
+    OrganizationEntitlementRecord, OrganizationEntitlementWrite, OrganizationMembershipChange,
+    OrganizationMembershipCreate, OrganizationMembershipRecord, OrganizationOwnershipTransfer,
+    OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepositoryConfigError,
+    OrganizationRepositoryError, OrganizationTeamCreate, OrganizationTeamRecord,
 };
 
 /// 企业主体、真实成员和扁平团队的事务仓储。
@@ -48,6 +49,16 @@ impl OrganizationRepository {
         write: OrganizationCreate,
     ) -> Result<OrganizationCreatedRecord, OrganizationRepositoryError> {
         self.run(mutation::create(self, write)).await
+    }
+
+    /// 由受信订单、合同或许可证流程按 CAS 替换当前商业授权。
+    pub async fn replace_entitlement(
+        &self,
+        organization_id: OrganizationId,
+        write: OrganizationEntitlementWrite,
+    ) -> Result<OrganizationEntitlementRecord, OrganizationRepositoryError> {
+        self.run(mutation::replace_entitlement(self, organization_id, write))
+            .await
     }
 
     /// 在指定企业范围内创建一条唯一的活动成员关系。
@@ -171,6 +182,9 @@ pub(super) fn record_internal_error(
         | OrganizationRepositoryError::InvalidTransition
         | OrganizationRepositoryError::LastOwner
         | OrganizationRepositoryError::TeamHasActiveMembers
+        | OrganizationRepositoryError::EntitlementRestricted
+        | OrganizationRepositoryError::SeatLimitReached
+        | OrganizationRepositoryError::TeamLimitReached
         | OrganizationRepositoryError::EntropyUnavailable => return error,
         OrganizationRepositoryError::Query => "organization_query",
         OrganizationRepositoryError::Timeout => "organization_timeout",

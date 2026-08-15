@@ -1761,3 +1761,38 @@ pub(in crate::migration) mod organization_memberships {
         Version,
     }
 }
+
+pub(in crate::migration) mod organization_entitlements {
+    use super::DeriveIden;
+
+    /// 企业商业授权表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_entitlements")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业商业授权的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        TeamManagementEnabled,
+        SeatLimit,
+        TeamLimit,
+        OrganizationKeyLimit,
+        AuditRetentionDays,
+        SsoEnabled,
+        CustomRolesEnabled,
+        ValidFrom,
+        ValidUntil,
+        GraceUntil,
+        Source,
+        ExternalReference,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
