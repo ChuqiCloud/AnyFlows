@@ -23,7 +23,7 @@ use super::types::{
     DebugTraceSnapshotCipher, DebugTraceSnapshotContext, DebugTraceSnapshotKind,
     DebugTraceSnapshotRecord, DebugTraceSnapshotScope, DebugTraceSummaryRecord, DebugTraceWrite,
     DebugTraceWriteError, MAX_DEBUG_TRACE_RETENTION_HOURS, valid_method, valid_model, valid_path,
-    valid_request_id, valid_snapshot,
+    valid_request_id,
 };
 
 const DEBUG_TRACE_SETTINGS_ID: i16 = 1;

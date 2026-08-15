@@ -356,7 +356,7 @@ impl DebugTraceSnapshotCipher for TestSnapshotCipher {
         let marker = context_marker(context);
         let plaintext = envelope
             .ciphertext()
-            .strip_prefix(&marker)
+            .strip_prefix(marker.as_slice())
             .ok_or(DebugTraceSnapshotCipherError)?;
         let plaintext =
             String::from_utf8(plaintext.to_vec()).map_err(|_| DebugTraceSnapshotCipherError)?;
