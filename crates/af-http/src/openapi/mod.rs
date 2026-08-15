@@ -15,6 +15,7 @@ mod model_sync;
 mod models;
 mod network_settings;
 mod oauth_connections;
+mod organizations;
 mod password_reset;
 mod payment_settings;
 mod payment_webhook;
@@ -68,6 +69,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(network_settings::document());
     document.merge(payment_settings::document());
     document.merge(oauth_connections::document());
+    document.merge(organizations::document());
     document.merge(balance_alert_settings::document());
     document.merge(site_settings::document());
     document.merge(dashboard::document());
@@ -167,7 +169,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 87);
+        assert_eq!(document.paths.paths.len(), 89);
         let operation_count = document
             .paths
             .paths
@@ -188,7 +190,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 129);
+        assert_eq!(operation_count, 131);
         assert!(
             document
                 .components
@@ -236,6 +238,8 @@ mod tests {
             "confirmPasswordReset",
             "completeAdminOAuthManualCallback",
             "getUserProfile",
+            "listAccountOrganizations",
+            "getOrganizationOverview",
             "getUserTopupConfiguration",
             "getUserWallet",
             "importMissingAdminModels",
@@ -351,7 +355,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 264);
+        assert_eq!(schemas.len(), 267);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("ModelCatalogProvider"));
         assert!(schemas.contains_key("ModelCatalogProviderListResponse"));

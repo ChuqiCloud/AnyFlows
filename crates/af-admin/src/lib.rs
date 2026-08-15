@@ -24,6 +24,7 @@ mod model_metadata_write;
 mod model_price;
 mod model_sync;
 mod network_settings;
+mod organization;
 mod password_reset;
 mod payment_settings;
 #[cfg(test)]
@@ -174,6 +175,11 @@ pub use network_settings::{
     AdminNetworkSettingsReadFuture, AdminNetworkSettingsService, AdminNetworkSettingsUpdateFuture,
     DatabaseAdminNetworkSettingsService, NetworkSettingsApplyFuture, NetworkSettingsRuntimeApplier,
     NetworkSettingsRuntimeError,
+};
+pub use organization::{
+    DatabaseOrganizationAuthorizationService, OrganizationAccessFuture, OrganizationAccessSummary,
+    OrganizationAuthorizationError, OrganizationAuthorizationService, OrganizationContext,
+    OrganizationListFuture,
 };
 pub use password_reset::{
     DatabasePasswordResetService, MAX_PASSWORD_RESET_PASSWORD_BYTES,

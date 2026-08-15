@@ -379,12 +379,12 @@ pub use oauth_credential::{
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
 pub use organization::{
     MAX_ORGANIZATION_NAME_BYTES, MAX_ORGANIZATION_SLUG_BYTES,
-    MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES, MAX_ORGANIZATION_TEAM_NAME_BYTES, OrganizationCreate,
-    OrganizationCreatedRecord, OrganizationMembershipChange, OrganizationMembershipCreate,
-    OrganizationMembershipRecord, OrganizationOwnershipTransfer,
-    OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepository,
-    OrganizationRepositoryConfigError, OrganizationRepositoryError, OrganizationTeamCreate,
-    OrganizationTeamRecord,
+    MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES, MAX_ORGANIZATION_TEAM_NAME_BYTES,
+    OrganizationAccessRecord, OrganizationCreate, OrganizationCreatedRecord,
+    OrganizationMembershipChange, OrganizationMembershipCreate, OrganizationMembershipRecord,
+    OrganizationOwnershipTransfer, OrganizationOwnershipTransferRecord, OrganizationRecord,
+    OrganizationRepository, OrganizationRepositoryConfigError, OrganizationRepositoryError,
+    OrganizationTeamCreate, OrganizationTeamRecord,
 };
 pub use password_reset::{
     PasswordResetOutcome, PasswordResetRepository, PasswordResetRepositoryConfigError,

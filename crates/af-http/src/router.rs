@@ -89,6 +89,7 @@ use crate::openai_responses::openai_responses;
 use crate::openai_responses_compact::openai_responses_compact;
 use crate::openai_speech::openai_speech;
 use crate::operations::{ReadinessHandle, operations_router};
+use crate::organizations::build_organization_router;
 use crate::password_reset::build_password_reset_router;
 use crate::payment_settings::build_payment_settings_router;
 use crate::playground_conversations::build_playground_conversation_router;
@@ -159,6 +160,7 @@ pub fn build_router(
     password_reset_service: Arc<dyn PasswordResetService>,
     user_profile_service: Arc<dyn af_admin::UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
+    organization_authorization_service: Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
     user_topup_service: Option<Arc<dyn UserTopupService>>,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
@@ -252,7 +254,8 @@ pub fn build_router(
     .with_admin_channel_probe(admin_channel_probe)
     .with_admin_dashboard_reader(admin_dashboard_reader)
     .with_admin_usage_log_reader(admin_usage_log_reader)
-    .with_admin_wallet_service(admin_wallet_service);
+    .with_admin_wallet_service(admin_wallet_service)
+    .with_organization_authorization_service(organization_authorization_service);
     let public_routes = Router::new()
         .route(
             "/v1/chat/completions",
@@ -681,7 +684,7 @@ pub fn build_router(
                 .route_layer(middleware::from_fn(authorize_management_admin))
                 .route_layer(credential_item_authentication),
         )
-        .with_state(http_state)
+        .with_state(http_state.clone())
         .merge(playground_share_routes)
         .merge(playground_conversation_routes)
         .merge(user_token_routes)
@@ -700,6 +703,15 @@ pub fn build_router(
         .merge(credential_proxy_routes)
         .merge(balance_alert_settings_routes);
     let management_routes = management_routes.merge(debug_trace_routes);
+    let management_routes =
+        if let Some(service) = http_state.organization_authorization_service.clone() {
+            management_routes.merge(build_organization_router(
+                service,
+                Arc::clone(&http_state.session_authenticator),
+            ))
+        } else {
+            management_routes
+        };
     let management_routes = match oauth_connection_routes {
         Some(routes) => management_routes.merge(routes),
         None => management_routes,
