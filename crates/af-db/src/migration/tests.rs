@@ -922,8 +922,6 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
 
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
-    // 按次计费回归只升级到第 55 号；再执行四步，固定停在包含旧诊断明文列的第 59 号。
-    Migrator::up(pool.connection(), Some(4)).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
     assert_eq!(pending_migrations.len(), 1);
     assert_eq!(
@@ -1142,8 +1140,8 @@ async fn exercise_usage_per_call_migration_upgrade(
     .exec_without_returning(pool.connection())
     .await?;
 
-    // 该辅助回归只验证第 55 号按次计费迁移，不能提前应用后续待测迁移。
-    Migrator::up(pool.connection(), Some(1)).await?;
+    // 当前仓储会写入第 57 号观测列，因此升级到第 59 号，同时给第 60 号安全迁移保留旧数据入口。
+    Migrator::up(pool.connection(), Some(5)).await?;
     let repository = UsageLogRepository::new(pool.clone());
     let per_call_write = UsageLogWrite::new(
         BillingReservationId::new([0xd2; 16])?,
