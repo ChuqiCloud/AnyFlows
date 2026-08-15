@@ -94,6 +94,21 @@ principal_id! {
     RouteChannelId
 }
 
+principal_id! {
+    /// 已通过组织范围校验的企业空间内部标识。
+    OrganizationId
+}
+
+principal_id! {
+    /// 已通过组织范围校验的企业成员关系标识。
+    OrganizationMembershipId
+}
+
+principal_id! {
+    /// 已通过组织范围校验的企业团队标识。
+    OrganizationTeamId
+}
+
 /// 已完成令牌、用户与有效分组校验的网关请求主体。
 ///
 /// 该值只携带稳定标识，不包含 API Key、摘要、展示前缀或可变授权策略，且不实现

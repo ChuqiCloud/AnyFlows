@@ -7,6 +7,7 @@ mod concurrency;
 mod enums;
 mod error;
 mod network;
+mod organization;
 mod payment;
 mod principal;
 mod quota;
@@ -35,13 +36,18 @@ pub use error::{
     UpstreamRetryAfter, UpstreamServerStatus,
 };
 pub use network::{IpCidr, IpCidrParseError, TrustedClientIp};
+pub use organization::{
+    OrganizationIdentifierError, OrganizationKey, OrganizationMembershipStatus, OrganizationRole,
+    OrganizationStateCodeError, OrganizationStatus, OrganizationTeamStatus,
+};
 pub use payment::{
     TopupIdentifierError, TopupOrderId, TopupOrderStatus, TopupPaymentEventId,
     TopupPaymentEventType, TopupRequestId, TopupStateCodeError,
 };
 pub use principal::{
-    ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, PrincipalIdError, ProxyId,
-    RouteChannelId, RouteId, TokenId, UserId,
+    ChannelId, CredentialId, GatewayPrincipal, GroupId, ModelId, OrganizationId,
+    OrganizationMembershipId, OrganizationTeamId, PrincipalIdError, ProxyId, RouteChannelId,
+    RouteId, TokenId, UserId,
 };
 pub use quota::{Quota, QuotaDelta, QuotaError};
 pub use redemption::{
@@ -81,6 +87,8 @@ mod enums_tests;
 mod error_tests;
 #[cfg(test)]
 mod network_tests;
+#[cfg(test)]
+mod organization_tests;
 #[cfg(test)]
 mod payment_tests;
 #[cfg(test)]

@@ -10,11 +10,12 @@ use rust_decimal::Decimal;
 use sea_orm::{ActiveValue, EntityTrait, Set, entity::prelude::*};
 
 use af_domain::{
-    BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, Quota, QuotaDelta,
-    RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId, RedemptionCodeStatus, RouteMode,
-    RouteStrategy, SubscriptionCycle, SubscriptionPlanId, SubscriptionPlanStatus,
-    SubscriptionWindow, UserSubscriptionId, UserSubscriptionStatus, WalletEventId,
-    validate_route_model_pattern,
+    BillingReservationId, ChannelTimeout, MAX_ROUTE_MODEL_PATTERN_BYTES, OrganizationKey,
+    OrganizationMembershipStatus, OrganizationRole, OrganizationStatus, OrganizationTeamStatus,
+    Quota, QuotaDelta, RedemptionBatchId, RedemptionBatchStatus, RedemptionCodeId,
+    RedemptionCodeStatus, RouteMode, RouteStrategy, SubscriptionCycle, SubscriptionPlanId,
+    SubscriptionPlanStatus, SubscriptionWindow, UserSubscriptionId, UserSubscriptionStatus,
+    WalletEventId, validate_route_model_pattern,
 };
 
 pub(crate) mod abilities;
@@ -50,6 +51,9 @@ pub(crate) mod model_sync_runs;
 pub(crate) mod models;
 pub(crate) mod network_settings;
 pub(crate) mod options;
+pub(crate) mod organization_memberships;
+pub(crate) mod organization_teams;
+pub(crate) mod organizations;
 pub(crate) mod payment_settings;
 pub(crate) mod playground_conversations;
 pub(crate) mod playground_shares;
@@ -111,6 +115,176 @@ where
     C: ConnectionTrait,
 {
     Ok(())
+}
+
+async fn validate_organization<C>(
+    model: &organizations::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let key = model.organization_key.try_as_ref().map(String::as_str);
+    let name = model.name.try_as_ref().map(String::as_str);
+    let slug = model.slug.try_as_ref().map(String::as_str);
+    if insert
+        && (key.is_none()
+            || name.is_none()
+            || slug.is_none()
+            || model.created_by_user_id.try_as_ref().is_none())
+    {
+        return Err(DbErr::Custom("企业基础字段缺失".to_owned()));
+    }
+    if key.is_some_and(|value| OrganizationKey::from_persistence_key(value).is_err())
+        || name.is_some_and(|value| !valid_organization_text(value, 128))
+        || slug.is_some_and(|value| !valid_organization_slug(value))
+        || model
+            .status
+            .try_as_ref()
+            .is_some_and(|value| OrganizationStatus::try_from(*value).is_err())
+        || model
+            .created_by_user_id
+            .try_as_ref()
+            .is_some_and(|value| *value <= 0)
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+    {
+        return Err(DbErr::Custom("企业基础字段无效".to_owned()));
+    }
+    if let (Some(status), Some(closed_at)) = (
+        model.status.try_as_ref().copied(),
+        model.closed_at.try_as_ref(),
+    ) {
+        let is_closed = status == OrganizationStatus::Closed.code();
+        if is_closed != closed_at.is_some() {
+            return Err(DbErr::Custom("企业关闭状态与时间不一致".to_owned()));
+        }
+    }
+    Ok(())
+}
+
+async fn validate_organization_team<C>(
+    model: &organization_teams::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    let name = model.name.try_as_ref().map(String::as_str);
+    if insert && (model.organization_id.try_as_ref().is_none() || name.is_none()) {
+        return Err(DbErr::Custom("企业团队基础字段缺失".to_owned()));
+    }
+    if model
+        .organization_id
+        .try_as_ref()
+        .is_some_and(|value| *value <= 0)
+        || name.is_some_and(|value| !valid_organization_text(value, 128))
+        || model.description.try_as_ref().is_some_and(|value| {
+            value
+                .as_ref()
+                .is_some_and(|text| text.len() > 2_000 || text.contains('\0'))
+        })
+        || model
+            .status
+            .try_as_ref()
+            .is_some_and(|value| OrganizationTeamStatus::try_from(*value).is_err())
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+    {
+        return Err(DbErr::Custom("企业团队字段无效".to_owned()));
+    }
+    if let (Some(status), Some(deleted_at)) = (
+        model.status.try_as_ref().copied(),
+        model.deleted_at.try_as_ref(),
+    ) {
+        let disabled = status == OrganizationTeamStatus::Disabled.code();
+        if disabled != deleted_at.is_some() {
+            return Err(DbErr::Custom("企业团队状态与删除时间不一致".to_owned()));
+        }
+    }
+    Ok(())
+}
+
+async fn validate_organization_membership<C>(
+    model: &organization_memberships::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if insert
+        && (model.organization_id.try_as_ref().is_none()
+            || model.user_id.try_as_ref().is_none()
+            || model.role.try_as_ref().is_none()
+            || model.status.try_as_ref().is_none()
+            || model.joined_at.try_as_ref().is_none())
+    {
+        return Err(DbErr::Custom("企业成员基础字段缺失".to_owned()));
+    }
+    if model
+        .organization_id
+        .try_as_ref()
+        .is_some_and(|value| *value <= 0)
+        || model.user_id.try_as_ref().is_some_and(|value| *value <= 0)
+        || model
+            .role
+            .try_as_ref()
+            .is_some_and(|value| OrganizationRole::try_from(*value).is_err())
+        || model
+            .team_id
+            .try_as_ref()
+            .is_some_and(|value| value.is_some_and(|team_id| team_id <= 0))
+        || model
+            .status
+            .try_as_ref()
+            .is_some_and(|value| OrganizationMembershipStatus::try_from(*value).is_err())
+        || model
+            .invited_by_user_id
+            .try_as_ref()
+            .is_some_and(|value| value.is_some_and(|user_id| user_id <= 0))
+        || model.version.try_as_ref().is_some_and(|value| *value <= 0)
+    {
+        return Err(DbErr::Custom("企业成员字段无效".to_owned()));
+    }
+    if let (Some(status), Some(suspended_at), Some(removed_at)) = (
+        model.status.try_as_ref().copied(),
+        model.suspended_at.try_as_ref(),
+        model.removed_at.try_as_ref(),
+    ) {
+        let lifecycle_valid = match OrganizationMembershipStatus::try_from(status) {
+            Ok(OrganizationMembershipStatus::Active) => {
+                suspended_at.is_none() && removed_at.is_none()
+            }
+            Ok(OrganizationMembershipStatus::Suspended) => {
+                suspended_at.is_some() && removed_at.is_none()
+            }
+            Ok(OrganizationMembershipStatus::Removed) => removed_at.is_some(),
+            Err(_) => false,
+        };
+        if !lifecycle_valid {
+            return Err(DbErr::Custom("企业成员状态与时间不一致".to_owned()));
+        }
+    }
+    Ok(())
+}
+
+fn valid_organization_text(value: &str, maximum_bytes: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= maximum_bytes
+        && value.trim() == value
+        && !value.chars().any(char::is_control)
+}
+
+fn valid_organization_slug(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && !value.starts_with('-')
+        && !value.ends_with('-')
+        && !value.contains("--")
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 async fn validate_route<C>(
@@ -1271,6 +1445,8 @@ impl_updated_at_behavior!(
     models::ActiveModel => validate_default,
     network_settings::ActiveModel => validate_default,
     options::ActiveModel => validate_default,
+    organizations::ActiveModel => validate_organization,
+    organization_teams::ActiveModel => validate_organization_team,
     registration_rate_limits::ActiveModel => validate_default,
     route_channels::ActiveModel => validate_route_channel,
     routes::ActiveModel => validate_route,
@@ -1279,6 +1455,17 @@ impl_updated_at_behavior!(
     topup_orders::ActiveModel => validate_topup_order,
     users::ActiveModel => validate_user,
 );
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_memberships::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_membership(&self, database, insert).await?;
+        Ok(self)
+    }
+}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for groups::ActiveModel {

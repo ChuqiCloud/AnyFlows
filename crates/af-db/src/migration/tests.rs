@@ -4,8 +4,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use af_domain::{
-    BillingReservationId, ChannelId, CredentialKind, GatewayPrincipal, GroupId, Quota, QuotaDelta,
-    SubscriptionCycle, SubscriptionWindow, TokenId, TrustedClientIp, UserId,
+    BillingReservationId, ChannelId, CredentialKind, GatewayPrincipal, GroupId,
+    OrganizationMembershipStatus, OrganizationRole, Quota, QuotaDelta, SubscriptionCycle,
+    SubscriptionWindow, TokenId, TrustedClientIp, UserId,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rust_decimal::Decimal;
@@ -29,11 +30,11 @@ use crate::entity::{
     channel_groups, channel_models, channels, credentials, debug_trace_attempts,
     debug_trace_snapshot_access_audits, debug_trace_snapshots, debug_traces, email_settings,
     group_model_ratios, groups, invite_rebate_events, model_prices, model_sync_items,
-    model_sync_runs, models, options, payment_settings, playground_conversations,
-    playground_shares, redemption_batches, redemption_codes, registration_rate_limits,
-    scheduler_outbox_events, site_settings, subscription_balance_alert_events, subscription_plans,
-    tokens, topup_orders, topup_payment_events, usage_logs, user_subscriptions, users,
-    wallet_ledger_entries,
+    model_sync_runs, models, options, organization_memberships, organization_teams, organizations,
+    payment_settings, playground_conversations, playground_shares, redemption_batches,
+    redemption_codes, registration_rate_limits, scheduler_outbox_events, site_settings,
+    subscription_balance_alert_events, subscription_plans, tokens, topup_orders,
+    topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -42,7 +43,9 @@ use crate::{
     BillingBatchRepository, BillingBatchWrite, BillingBatchWriteOutcome, ChannelBillingWrite,
     DatabaseOptions, EmailPasswordUpdate, EmailSettingsRepository, EmailSettingsWriteRecord,
     EmailTlsMode, EncryptedCredentialEnvelope, GroupPricingRepository, ModelPriceBillingMode,
-    ModelPriceRepository, PlaygroundConversationRepository, PlaygroundConversationWrite,
+    ModelPriceRepository, OrganizationCreate, OrganizationMembershipChange,
+    OrganizationMembershipCreate, OrganizationRepository, OrganizationRepositoryError,
+    OrganizationTeamCreate, PlaygroundConversationRepository, PlaygroundConversationWrite,
     PlaygroundShareRepository, PlaygroundShareWrite, PoolOptions, QuotaMutationOutcome,
     QuotaRepository, QuotaReservationStatus, RegistrationAttemptOutcome,
     RegistrationPolicyWriteRecord, RegistrationRepository, SchedulerCatalogSubject,
@@ -57,7 +60,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 60;
+const EXPECTED_MIGRATION_COUNT: usize = 61;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -76,7 +79,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 53] = [
+const CORE_TABLES: [&str; 56] = [
     "groups",
     "users",
     "channels",
@@ -130,6 +133,9 @@ const CORE_TABLES: [&str; 53] = [
     "debug_trace_attempts",
     "debug_trace_snapshots",
     "debug_trace_snapshot_access_audits",
+    "organizations",
+    "organization_teams",
+    "organization_memberships",
 ];
 
 struct SlowMigrator;
@@ -923,10 +929,14 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 1);
+    assert_eq!(pending_migrations.len(), 2);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
+    );
+    assert_eq!(
+        pending_migrations[1].name(),
+        "m20260815_000061_create_organization_foundation"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -965,6 +975,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     exercise_email_settings_repository(&pool).await?;
     exercise_admin_dashboard_repository(&pool).await?;
     exercise_core_schema(pool.connection()).await?;
+    exercise_organization_repository(&pool).await?;
 
     Migrator::down(pool.connection(), None).await?;
     assert_core_tables_absent(pool.connection()).await?;
@@ -2345,6 +2356,10 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
 
     assert_entity_columns::<groups::Column>(&manager, "groups").await?;
     assert_entity_columns::<users::Column>(&manager, "users").await?;
+    assert_entity_columns::<organizations::Column>(&manager, "organizations").await?;
+    assert_entity_columns::<organization_teams::Column>(&manager, "organization_teams").await?;
+    assert_entity_columns::<organization_memberships::Column>(&manager, "organization_memberships")
+        .await?;
     assert_entity_columns::<channels::Column>(&manager, "channels").await?;
     assert_entity_columns::<credentials::Column>(&manager, "credentials").await?;
     assert_entity_columns::<tokens::Column>(&manager, "tokens").await?;
@@ -2526,12 +2541,119 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "subscription_balance_alert_events",
             "idx_subscription_balance_alert_user_created",
         ),
+        ("organizations", "uq_organizations_key"),
+        ("organizations", "uq_organizations_slug"),
+        ("organizations", "idx_organizations_status_id"),
+        ("organization_teams", "uq_organization_teams_scope_id"),
+        ("organization_teams", "uq_organization_teams_scope_name"),
+        ("organization_teams", "idx_organization_teams_scope_status"),
+        (
+            "organization_memberships",
+            "uq_organization_memberships_scope_user",
+        ),
+        (
+            "organization_memberships",
+            "idx_organization_memberships_scope_status",
+        ),
+        (
+            "organization_memberships",
+            "idx_organization_memberships_scope_team_status",
+        ),
     ] {
         assert!(
             manager.has_index(table, index).await?,
             "数据表 {table} 缺少索引 {index}"
         );
     }
+    Ok(())
+}
+
+/// 在当前方言上验证组织事务仓储的 Owner、团队归属和禁用保护。
+async fn exercise_organization_repository(pool: &DatabasePool) -> Result<(), Box<dyn Error>> {
+    let group = group_active_model("organization-smoke-group", "企业迁移冒烟分组")
+        .insert(pool.connection())
+        .await?;
+    let mut owner = user_active_model(
+        group.id,
+        "organization-smoke-owner",
+        "organization-smoke-owner@example.com",
+        "organization-smoke-owner-aff",
+    );
+    owner.status = Set(1);
+    let owner = owner.insert(pool.connection()).await?;
+    let mut member = user_active_model(
+        group.id,
+        "organization-smoke-member",
+        "organization-smoke-member@example.com",
+        "organization-smoke-member-aff",
+    );
+    member.status = Set(1);
+    let member = member.insert(pool.connection()).await?;
+    let owner_user_id = UserId::new(owner.id)?;
+    let member_user_id = UserId::new(member.id)?;
+    let repository = OrganizationRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let (organization, owner_membership) = repository
+        .create(OrganizationCreate::new(
+            "Organization Smoke".to_owned(),
+            "organization-smoke".to_owned(),
+            owner_user_id,
+        ))
+        .await?
+        .into_parts();
+    assert_eq!(
+        repository
+            .change_membership(
+                organization.id(),
+                owner_membership.id(),
+                OrganizationMembershipChange::new(
+                    OrganizationRole::Admin,
+                    OrganizationMembershipStatus::Active,
+                    None,
+                    owner_membership.version(),
+                ),
+            )
+            .await,
+        Err(OrganizationRepositoryError::LastOwner)
+    );
+
+    let team = repository
+        .create_team(
+            organization.id(),
+            OrganizationTeamCreate::new("Smoke Team".to_owned(), None),
+        )
+        .await?;
+    let membership = repository
+        .add_membership(
+            organization.id(),
+            OrganizationMembershipCreate::new(
+                member_user_id,
+                OrganizationRole::Member,
+                Some(team.id()),
+                Some(owner_user_id),
+            ),
+        )
+        .await?;
+    assert_eq!(
+        repository
+            .disable_team(organization.id(), team.id(), team.version())
+            .await,
+        Err(OrganizationRepositoryError::TeamHasActiveMembers)
+    );
+    repository
+        .change_membership(
+            organization.id(),
+            membership.id(),
+            OrganizationMembershipChange::new(
+                OrganizationRole::Member,
+                OrganizationMembershipStatus::Active,
+                None,
+                membership.version(),
+            ),
+        )
+        .await?;
+    repository
+        .disable_team(organization.id(), team.id(), team.version())
+        .await?;
     Ok(())
 }
 
