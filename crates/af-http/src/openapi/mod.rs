@@ -322,6 +322,7 @@ mod tests {
             "savePlaygroundConversation",
             "sendAdminEmailTest",
             "requestPasswordReset",
+            "readAdminDebugTraceSnapshots",
             "sendRegistrationEmailVerification",
             "updateAdminChannel",
             "updateAdminBalanceAlertSettings",
