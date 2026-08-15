@@ -4,6 +4,7 @@ import type {
   AdminSiteSettings,
   AdminSiteSettingsRequest,
 } from '@/lib/api/generated/types.gen'
+import type { QuotaDisplayPolicy } from '@/lib/quota-display'
 
 export type SiteSettingsValues = {
   siteName: string
@@ -11,6 +12,12 @@ export type SiteSettingsValues = {
   logoUrl: string
   tagline: string
   description: string
+  balanceMode: 'quota' | 'custom_unit'
+  unitName: string
+  unitSymbol: string
+  quotaUnitsPerDisplayUnit: string
+  symbolPosition: 'prefix' | 'suffix'
+  fractionDigits: number
 }
 
 type SiteSettingsValidationMessages = {
@@ -19,6 +26,10 @@ type SiteSettingsValidationMessages = {
   logoUrl: string
   tagline: string
   description: string
+  unitName: string
+  unitSymbol: string
+  quotaUnitsPerDisplayUnit: string
+  fractionDigits: string
 }
 
 /** 从服务端完整快照构造表单值，不在前端补写业务默认值。 */
@@ -29,6 +40,12 @@ export function siteSettingsValues(settings: AdminSiteSettings): SiteSettingsVal
     logoUrl: settings.brand.logo_url ?? '',
     tagline: settings.brand.tagline ?? '',
     description: settings.brand.description ?? '',
+    balanceMode: settings.balance_display.mode,
+    unitName: settings.balance_display.unit_name,
+    unitSymbol: settings.balance_display.unit_symbol,
+    quotaUnitsPerDisplayUnit: settings.balance_display.quota_units_per_display_unit,
+    symbolPosition: settings.balance_display.symbol_position,
+    fractionDigits: settings.balance_display.fraction_digits,
   }
 }
 
@@ -49,11 +66,26 @@ export function buildSiteSettingsSchema(messages: SiteSettingsValidationMessages
       (value) => validOptionalText(value, 500, true),
       messages.description,
     ),
+    balanceMode: z.enum(['quota', 'custom_unit']),
+    unitName: z.string().refine(
+      (value) => validRequiredText(value, 64, false),
+      messages.unitName,
+    ),
+    unitSymbol: z.string().refine(
+      (value) => validRequiredText(value, 24, false),
+      messages.unitSymbol,
+    ),
+    quotaUnitsPerDisplayUnit: z.string().refine(validPositiveI64, messages.quotaUnitsPerDisplayUnit),
+    symbolPosition: z.enum(['prefix', 'suffix']),
+    fractionDigits: z.number().int().min(0, messages.fractionDigits).max(4, messages.fractionDigits),
   })
 }
 
 /** 把空白可选字段归一化为 null，保持请求语义稳定。 */
-export function toSiteSettingsRequest(values: SiteSettingsValues): AdminSiteSettingsRequest {
+export function toSiteSettingsRequest(
+  values: SiteSettingsValues,
+  expectedVersion: number,
+): AdminSiteSettingsRequest {
   return {
     site_name: values.siteName.trim(),
     public_base_url: optionalValue(values.publicBaseUrl),
@@ -62,6 +94,20 @@ export function toSiteSettingsRequest(values: SiteSettingsValues): AdminSiteSett
       tagline: optionalValue(values.tagline),
       description: optionalValue(values.description),
     },
+    balance_display: balanceDisplayPolicy(values),
+    expected_version: expectedVersion,
+  }
+}
+
+/** 从已校验表单生成只用于展示的策略快照。 */
+export function balanceDisplayPolicy(values: SiteSettingsValues): QuotaDisplayPolicy {
+  return {
+    mode: values.balanceMode,
+    unit_name: values.unitName.trim(),
+    unit_symbol: values.unitSymbol.trim(),
+    quota_units_per_display_unit: values.quotaUnitsPerDisplayUnit,
+    symbol_position: values.symbolPosition,
+    fraction_digits: values.fractionDigits,
   }
 }
 
@@ -123,6 +169,15 @@ function validOptionalLogoUrl(value: string) {
       && !url.username
       && !url.password
       && !url.hash
+  } catch {
+    return false
+  }
+}
+
+function validPositiveI64(value: string) {
+  if (!/^[1-9][0-9]{0,18}$/.test(value)) return false
+  try {
+    return BigInt(value) <= 9_223_372_036_854_775_807n
   } catch {
     return false
   }

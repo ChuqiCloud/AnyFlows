@@ -8,6 +8,7 @@ type DashboardSummaryProps = {
   dashboard: AdminDashboardResponse
   formatNumber: (value: number) => string
   formatPercent: (value: number) => string
+  formatQuota: (value: number) => string
 }
 
 type SummaryItem = {
@@ -17,7 +18,7 @@ type SummaryItem = {
   hint: string
 }
 
-export function DashboardSummary({ dashboard, formatNumber, formatPercent }: DashboardSummaryProps) {
+export function DashboardSummary({ dashboard, formatNumber, formatPercent, formatQuota }: DashboardSummaryProps) {
   const { t } = useTranslation()
   const totalChannels = dashboard.enabled_channel_count
     + dashboard.disabled_channel_count
@@ -35,7 +36,7 @@ export function DashboardSummary({ dashboard, formatNumber, formatPercent }: Das
     {
       key: 'quota',
       icon: Coins,
-      value: formatNumber(dashboard.quota_consumed),
+      value: formatQuota(dashboard.quota_consumed),
       hint: t('dashboard.summary.quota.hint'),
     },
     {
@@ -47,7 +48,7 @@ export function DashboardSummary({ dashboard, formatNumber, formatPercent }: Das
     {
       key: 'confirmed',
       icon: BadgeCheck,
-      value: confirmedRate === null ? '—' : formatPercent(confirmedRate),
+      value: confirmedRate === null ? '--' : formatPercent(confirmedRate),
       hint: confirmedRate === null
         ? t('dashboard.summary.confirmed.empty')
         : t('dashboard.summary.confirmed.hint', {

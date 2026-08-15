@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { cn } from '@/lib/utils'
 import type { AdminGroup } from '@/lib/api/generated/types.gen'
 
@@ -12,6 +13,7 @@ const GROUP_WINDOWS = [
 
 export function GroupQuotaWindows({ group }: { group: AdminGroup }) {
   const { i18n, t } = useTranslation()
+  const { formatQuota } = useBalanceDisplay()
   const numberFormat = new Intl.NumberFormat(i18n.language)
   const resetFormat = new Intl.DateTimeFormat(i18n.language, {
     month: 'numeric',
@@ -36,10 +38,10 @@ export function GroupQuotaWindows({ group }: { group: AdminGroup }) {
             <div className="min-w-0">
               <div className={cn('truncate font-medium tabular-nums', exhausted && 'text-warning')}>
                 {limit === null
-                  ? t('groups.values.windowUsageUnlimited', { used: numberFormat.format(snapshot.usage) })
+                  ? t('groups.values.windowUsageUnlimited', { used: formatQuota(snapshot.usage) })
                   : t('groups.values.windowUsage', {
-                      used: numberFormat.format(snapshot.usage),
-                      limit: numberFormat.format(limit),
+                      used: formatQuota(snapshot.usage),
+                      limit: formatQuota(limit),
                     })}
               </div>
               <time
@@ -50,7 +52,7 @@ export function GroupQuotaWindows({ group }: { group: AdminGroup }) {
                 {remaining === null
                   ? t('groups.values.windowResetsAt', { value: resetText })
                   : t('groups.values.windowRemainingResetsAt', {
-                      remaining: numberFormat.format(remaining),
+                      remaining: formatQuota(remaining),
                       value: resetText,
                     })}
               </time>

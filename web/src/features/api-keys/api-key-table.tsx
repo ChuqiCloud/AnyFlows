@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { UserToken } from '@/lib/api/generated/types.gen'
 import { cn } from '@/lib/utils'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 
 type ApiKeyTableProps = {
   tokens: UserToken[]
@@ -38,12 +39,12 @@ function StatusBadge({ token }: { token: UserToken }) {
 }
 
 function QuotaValue({ token }: { token: UserToken }) {
-  const { i18n, t } = useTranslation()
-  const format = (value: number) => new Intl.NumberFormat(i18n.language).format(value)
+  const { t } = useTranslation()
+  const { formatQuota } = useBalanceDisplay()
   return (
     <>
-      <div>{token.unlimited_quota ? t('apiKeys.values.unlimited') : t('apiKeys.values.remaining', { value: format(token.remain_quota) })}</div>
-      <div className="mt-1 text-[0.6875rem] text-muted-foreground">{t('apiKeys.values.usedQuota', { value: format(token.used_quota) })}</div>
+      <div>{token.unlimited_quota ? t('apiKeys.values.unlimited') : t('apiKeys.values.remaining', { value: formatQuota(token.remain_quota) })}</div>
+      <div className="mt-1 text-[0.6875rem] text-muted-foreground">{t('apiKeys.values.usedQuota', { value: formatQuota(token.used_quota) })}</div>
     </>
   )
 }

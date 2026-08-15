@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
-import { apiClient } from '@/lib/api'
+import { apiClient, ApiError } from '@/lib/api'
 import {
   getAdminSiteSettings,
   getPublicSiteSettings,
@@ -8,6 +8,7 @@ import {
 } from '@/lib/api/generated/sdk.gen'
 import type {
   AdminSiteSettingsRequest,
+  ManagementError,
   PublicSiteSettings,
 } from '@/lib/api/generated/types.gen'
 
@@ -56,10 +57,21 @@ export function useUpdateAdminSiteSettings() {
               site_name: settings.site_name,
               public_base_url: settings.public_base_url,
               brand: settings.brand,
+              balance_display: settings.balance_display,
             }
           : current
       ))
       void queryClient.invalidateQueries({ queryKey: publicSiteSettingsQueryKey })
     },
   })
+}
+
+/** 提取站点设置写入的稳定管理错误码。 */
+export function siteSettingsErrorCode(error: unknown): ManagementError['code'] | undefined {
+  if (!(error instanceof ApiError) || typeof error.details !== 'object' || error.details === null) {
+    return undefined
+  }
+  return 'code' in error.details && typeof error.details.code === 'string'
+    ? error.details.code as ManagementError['code']
+    : undefined
 }

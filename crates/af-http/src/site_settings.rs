@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use af_admin::{
-    AdminSiteSettings, PublicSiteSettings, RegistrationError, RegistrationService,
-    SessionAuthenticator, SiteSettingsCommand, SiteSettingsError, SiteSettingsService,
+    AdminSiteSettings, BalanceDisplayMode, BalanceDisplayPolicy, BalanceSymbolPosition,
+    PublicSiteSettings, RegistrationError, RegistrationService, SessionAuthenticator,
+    SiteSettingsCommand, SiteSettingsError, SiteSettingsService,
 };
 use axum::{
     Extension, Json, Router,
@@ -48,6 +49,80 @@ pub(crate) struct PublicAuthenticationCapabilitiesResponse {
     registration_email_required: bool,
 }
 
+#[derive(Clone, Copy, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = BalanceDisplayMode)]
+pub(crate) enum BalanceDisplayModeDto {
+    Quota,
+    CustomUnit,
+}
+
+#[derive(Clone, Copy, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[schema(as = BalanceDisplaySymbolPosition)]
+pub(crate) enum BalanceDisplaySymbolPositionDto {
+    Prefix,
+    Suffix,
+}
+
+#[derive(Clone, Deserialize, Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+#[schema(as = BalanceDisplaySettings)]
+pub(crate) struct BalanceDisplaySettingsDto {
+    mode: BalanceDisplayModeDto,
+    #[schema(min_length = 1, max_length = 64)]
+    unit_name: String,
+    #[schema(min_length = 1, max_length = 24)]
+    unit_symbol: String,
+    #[schema(pattern = r"^[1-9][0-9]{0,18}$", example = "10000")]
+    quota_units_per_display_unit: String,
+    symbol_position: BalanceDisplaySymbolPositionDto,
+    #[schema(minimum = 0, maximum = 4)]
+    fraction_digits: u8,
+}
+
+impl From<&BalanceDisplayPolicy> for BalanceDisplaySettingsDto {
+    fn from(policy: &BalanceDisplayPolicy) -> Self {
+        Self {
+            mode: match policy.mode() {
+                BalanceDisplayMode::Quota => BalanceDisplayModeDto::Quota,
+                BalanceDisplayMode::CustomUnit => BalanceDisplayModeDto::CustomUnit,
+            },
+            unit_name: policy.unit_name().to_owned(),
+            unit_symbol: policy.unit_symbol().to_owned(),
+            quota_units_per_display_unit: policy.quota_units_per_display_unit().to_string(),
+            symbol_position: match policy.symbol_position() {
+                BalanceSymbolPosition::Prefix => BalanceDisplaySymbolPositionDto::Prefix,
+                BalanceSymbolPosition::Suffix => BalanceDisplaySymbolPositionDto::Suffix,
+            },
+            fraction_digits: policy.fraction_digits(),
+        }
+    }
+}
+
+impl BalanceDisplaySettingsDto {
+    fn into_policy(self) -> Result<BalanceDisplayPolicy, SiteSettingsError> {
+        let quota_units_per_display_unit = self
+            .quota_units_per_display_unit
+            .parse::<i64>()
+            .map_err(|_| SiteSettingsError::InvalidInput)?;
+        BalanceDisplayPolicy::new(
+            match self.mode {
+                BalanceDisplayModeDto::Quota => BalanceDisplayMode::Quota,
+                BalanceDisplayModeDto::CustomUnit => BalanceDisplayMode::CustomUnit,
+            },
+            self.unit_name,
+            self.unit_symbol,
+            quota_units_per_display_unit,
+            match self.symbol_position {
+                BalanceDisplaySymbolPositionDto::Prefix => BalanceSymbolPosition::Prefix,
+                BalanceDisplaySymbolPositionDto::Suffix => BalanceSymbolPosition::Suffix,
+            },
+            self.fraction_digits,
+        )
+    }
+}
+
 #[derive(Serialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 #[schema(as = PublicSiteSettings)]
@@ -57,6 +132,7 @@ pub(crate) struct PublicSiteSettingsResponse {
     #[schema(max_length = 2048, format = "uri")]
     public_base_url: Option<String>,
     brand: PublicBrandSettingsResponse,
+    balance_display: BalanceDisplaySettingsDto,
     authentication: PublicAuthenticationCapabilitiesResponse,
 }
 
@@ -69,6 +145,7 @@ pub(crate) struct AdminSiteSettingsResponse {
     #[schema(max_length = 2048, format = "uri")]
     public_base_url: Option<String>,
     brand: PublicBrandSettingsResponse,
+    balance_display: BalanceDisplaySettingsDto,
     #[schema(minimum = 1)]
     version: i64,
 }
@@ -83,6 +160,7 @@ impl From<AdminSiteSettings> for AdminSiteSettingsResponse {
                 tagline: settings.brand_tagline().map(str::to_owned),
                 description: settings.brand_description().map(str::to_owned),
             },
+            balance_display: BalanceDisplaySettingsDto::from(settings.balance_display()),
             version: settings.version(),
         }
     }
@@ -97,6 +175,9 @@ pub(crate) struct AdminSiteSettingsRequest {
     #[schema(max_length = 2048, format = "uri")]
     public_base_url: Option<String>,
     brand: AdminBrandSettingsRequest,
+    balance_display: BalanceDisplaySettingsDto,
+    #[schema(minimum = 1)]
+    expected_version: i64,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -173,6 +254,11 @@ async fn update_admin_site_settings(
         request.brand.logo_url,
         request.brand.tagline,
         request.brand.description,
+        request
+            .balance_display
+            .into_policy()
+            .map_err(map_site_settings_error)?,
+        request.expected_version,
     )
     .map_err(map_site_settings_error)?;
     let settings = state
@@ -195,6 +281,7 @@ fn public_response(
             tagline: site.brand_tagline().map(str::to_owned),
             description: site.brand_description().map(str::to_owned),
         },
+        balance_display: BalanceDisplaySettingsDto::from(site.balance_display()),
         authentication: PublicAuthenticationCapabilitiesResponse {
             password_login_enabled: authentication.password_login_enabled(),
             registration_enabled: authentication.enabled(),
@@ -208,6 +295,7 @@ fn map_site_settings_error(error: SiteSettingsError) -> ManagementError {
         SiteSettingsError::InvalidInput => ManagementError::InvalidRequest,
         SiteSettingsError::Forbidden => ManagementError::Forbidden,
         SiteSettingsError::Internal => ManagementError::Internal,
+        SiteSettingsError::Conflict => ManagementError::SiteSettingsConflict,
     }
 }
 

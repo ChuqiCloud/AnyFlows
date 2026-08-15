@@ -6,10 +6,11 @@ import type { UsageLogSummary as UsageLogSummaryValue } from './usage-log-model'
 
 type UsageLogSummaryProps = {
   summary: UsageLogSummaryValue
+  formatQuota: (value: number) => string
 }
 
 /** 用单条指标带呈现当前页事实，避免管理台出现重复卡片墙。 */
-export function UsageLogSummary({ summary }: UsageLogSummaryProps) {
+export function UsageLogSummary({ summary, formatQuota }: UsageLogSummaryProps) {
   const { t, i18n } = useTranslation()
   const items = [
     {
@@ -34,7 +35,7 @@ export function UsageLogSummary({ summary }: UsageLogSummaryProps) {
       key: 'quota',
       icon: Coins,
       label: t('usageLogs.summary.quota'),
-      value: formatUsageNumber(summary.quota, i18n.language),
+      value: formatQuota(summary.quota),
     },
   ]
 

@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Badge } from '@/components/ui/badge'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import type { AdminUser } from '@/lib/api/generated/types.gen'
 import { UserWalletForm } from './user-wallet-form'
 import { UserWalletHistory } from './user-wallet-history'
@@ -13,8 +14,8 @@ type UserWalletSheetProps = {
 }
 
 export function UserWalletSheet({ open, user, onOpenChange }: UserWalletSheetProps) {
-  const { i18n, t } = useTranslation()
-  const formatQuota = (value: number) => new Intl.NumberFormat(i18n.language).format(value)
+  const { t } = useTranslation()
+  const { formatQuota } = useBalanceDisplay()
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-2xl" aria-describedby="user-wallet-description">

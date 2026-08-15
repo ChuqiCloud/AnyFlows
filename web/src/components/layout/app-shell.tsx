@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SiteBrandMark } from '@/features/site-settings/site-brand-mark'
 import { usePublicSiteSettings } from '@/features/site-settings/site-settings-api'
+import { useBalanceDisplay } from '@/features/site-settings/use-balance-display'
 import { useUserWalletSummary } from '@/features/wallet/wallet-api'
 import type { SessionUser } from '@/lib/api/generated/types.gen'
 
@@ -41,23 +42,19 @@ function getDefaultOpen() {
 }
 
 export function AppShell({ title, children, currentUser, onLogout }: AppShellProps) {
-  const { i18n, t } = useTranslation()
+  const { t } = useTranslation()
   // 控制台与首页共用公开站点设置缓存，保存站点设置后可即时同步品牌展示。
   const siteQuery = usePublicSiteSettings()
   const walletQuery = useUserWalletSummary()
+  const { formatQuota } = useBalanceDisplay()
   const site = siteQuery.data
   const siteName = site?.site_name ?? t('brand.name')
   const siteScope = site?.brand.tagline ?? t('brand.scope')
-  const compactQuota = new Intl.NumberFormat(i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US', {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  })
-  const fullQuota = new Intl.NumberFormat(i18n.resolvedLanguage === 'zh' ? 'zh-CN' : 'en-US')
   const balance = walletQuery.data?.balance
-  const balanceText = balance === undefined ? '—' : compactQuota.format(balance)
+  const balanceText = balance === undefined ? '--' : formatQuota(balance)
   const balanceLabel = balance === undefined
     ? t('shell.balanceUnavailable')
-    : t('shell.balanceValue', { value: fullQuota.format(balance) })
+    : t('shell.balanceValue', { value: formatQuota(balance) })
 
   return (
     <SidebarProvider defaultOpen={getDefaultOpen()}>
@@ -112,7 +109,7 @@ export function AppShell({ title, children, currentUser, onLogout }: AppShellPro
                   aria-label={balanceLabel}
                 >
                   <WalletCards className="size-3.5 shrink-0 text-success" aria-hidden="true" />
-                  <span className="hidden max-w-16 truncate font-medium tabular-nums sm:inline">
+                  <span className="hidden max-w-24 truncate font-medium tabular-nums sm:inline">
                     {balanceText}
                   </span>
                 </a>
