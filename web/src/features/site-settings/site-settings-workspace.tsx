@@ -34,6 +34,7 @@ import {
   balanceDisplayPolicy,
   buildSiteSettingsSchema,
   previewLogoUrl,
+  siteSettingsBalanceDisplay,
   siteSettingsValues,
   toSiteSettingsRequest,
   type SiteSettingsValues,
@@ -48,6 +49,7 @@ export function SiteSettingsWorkspace({ settings }: SiteSettingsWorkspaceProps) 
   const { i18n, t } = useTranslation()
   const mutation = useUpdateAdminSiteSettings()
   const [pendingValues, setPendingValues] = useState<SiteSettingsValues>()
+  const currentBalanceDisplay = siteSettingsBalanceDisplay(settings)
   const form = useForm<SiteSettingsValues>({
     defaultValues: siteSettingsValues(settings),
     resolver: zodResolver(buildSiteSettingsSchema({
@@ -79,7 +81,7 @@ export function SiteSettingsWorkspace({ settings }: SiteSettingsWorkspaceProps) 
 
   const onSubmit = form.handleSubmit(async (values) => {
     if (balanceDisplayScaleChanged(
-      settings.balance_display,
+      currentBalanceDisplay,
       balanceDisplayPolicy(values),
     )) {
       setPendingValues(values)
@@ -99,7 +101,7 @@ export function SiteSettingsWorkspace({ settings }: SiteSettingsWorkspaceProps) 
   const previewDisplayValue = safeFormatQuota(previewQuota, previewBalancePolicy, locale)
   const currentDisplayValue = safeFormatQuota(
     previewQuota,
-    settings.balance_display,
+    currentBalanceDisplay,
     locale,
   )
 

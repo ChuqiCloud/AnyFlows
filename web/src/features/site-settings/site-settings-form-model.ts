@@ -4,7 +4,10 @@ import type {
   AdminSiteSettings,
   AdminSiteSettingsRequest,
 } from '@/lib/api/generated/types.gen'
-import type { QuotaDisplayPolicy } from '@/lib/quota-display'
+import {
+  DEFAULT_QUOTA_DISPLAY_POLICY,
+  type QuotaDisplayPolicy,
+} from '../../lib/quota-display.ts'
 
 export type SiteSettingsValues = {
   siteName: string
@@ -32,21 +35,27 @@ type SiteSettingsValidationMessages = {
   fractionDigits: string
 }
 
-/** 从服务端完整快照构造表单值，不在前端补写业务默认值。 */
+/** 从服务端快照构造表单值，仅在滚动升级缺字段时使用展示默认值。 */
 export function siteSettingsValues(settings: AdminSiteSettings): SiteSettingsValues {
+  const balanceDisplay = siteSettingsBalanceDisplay(settings)
   return {
     siteName: settings.site_name,
     publicBaseUrl: settings.public_base_url ?? '',
     logoUrl: settings.brand.logo_url ?? '',
     tagline: settings.brand.tagline ?? '',
     description: settings.brand.description ?? '',
-    balanceMode: settings.balance_display.mode,
-    unitName: settings.balance_display.unit_name,
-    unitSymbol: settings.balance_display.unit_symbol,
-    quotaUnitsPerDisplayUnit: settings.balance_display.quota_units_per_display_unit,
-    symbolPosition: settings.balance_display.symbol_position,
-    fractionDigits: settings.balance_display.fraction_digits,
+    balanceMode: balanceDisplay.mode,
+    unitName: balanceDisplay.unit_name,
+    unitSymbol: balanceDisplay.unit_symbol,
+    quotaUnitsPerDisplayUnit: balanceDisplay.quota_units_per_display_unit,
+    symbolPosition: balanceDisplay.symbol_position,
+    fractionDigits: balanceDisplay.fraction_digits,
   }
+}
+
+/** 兼容滚动升级期间缺少余额展示字段的旧响应，避免站点设置整页崩溃。 */
+export function siteSettingsBalanceDisplay(settings: AdminSiteSettings): QuotaDisplayPolicy {
+  return settings.balance_display ?? DEFAULT_QUOTA_DISPLAY_POLICY
 }
 
 /** 复现站点设置的文本和 URL 边界，最终结果仍以后端校验为准。 */

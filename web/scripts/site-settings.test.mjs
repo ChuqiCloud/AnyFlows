@@ -71,3 +71,32 @@ test('站点设置表单接受公开地址与站内 Logo 并归一化空值', ()
     expected_version: 2,
   })
 })
+
+test('旧版后端缺少余额展示字段时回退到原始额度模式', () => {
+  const values = siteSettingsValues({
+    site_name: 'AnyFlows',
+    public_base_url: null,
+    brand: {
+      logo_url: null,
+      tagline: null,
+      description: null,
+    },
+    version: 1,
+  })
+
+  assert.deepEqual({
+    mode: values.balanceMode,
+    unitName: values.unitName,
+    unitSymbol: values.unitSymbol,
+    quotaUnitsPerDisplayUnit: values.quotaUnitsPerDisplayUnit,
+    symbolPosition: values.symbolPosition,
+    fractionDigits: values.fractionDigits,
+  }, {
+    mode: 'quota',
+    unitName: '算力积分',
+    unitSymbol: '积分',
+    quotaUnitsPerDisplayUnit: '10000',
+    symbolPosition: 'suffix',
+    fractionDigits: 0,
+  })
+})
