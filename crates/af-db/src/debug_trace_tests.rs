@@ -1,7 +1,7 @@
-use std::{error::Error, time::Duration};
+use std::{error::Error, sync::Arc, time::Duration};
 
 use sea_orm::{
-    ActiveModelTrait, ConnectionTrait, EntityTrait, PaginatorTrait, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
     entity::prelude::{Json, TimeDateTimeWithTimeZone},
 };
 
@@ -9,8 +9,14 @@ use crate::{
     DatabaseOptions, DebugTraceAttemptDiagnosticWrite, DebugTraceAttemptWrite,
     DebugTraceFailureKind, DebugTraceListQuery, DebugTraceOperation, DebugTraceOutcome,
     DebugTraceProtocol, DebugTraceRepository, DebugTraceRepositoryError,
-    DebugTraceRequestDiagnosticWrite, DebugTraceSettingsWrite, DebugTraceWrite, MigrationOptions,
-    entity::{TokenHash, debug_trace_attempts, debug_traces, groups, tokens, users},
+    DebugTraceRequestDiagnosticWrite, DebugTraceSettingsWrite, DebugTraceSnapshotCipher,
+    DebugTraceSnapshotCipherError, DebugTraceSnapshotContext, DebugTraceSnapshotKind,
+    DebugTraceSnapshotPlaintext, DebugTraceSnapshotScope, DebugTraceWrite,
+    EncryptedCredentialEnvelope, MigrationOptions,
+    entity::{
+        TokenHash, debug_trace_attempts, debug_trace_snapshot_access_audits, debug_trace_snapshots,
+        debug_traces, groups, tokens, users,
+    },
 };
 
 #[tokio::test]
@@ -120,18 +126,6 @@ async fn storage_round_trip_preserves_order_filters_and_cursor() -> Result<(), B
         detail.summary().downstream_path(),
         Some("/v1/chat/completions")
     );
-    assert!(
-        detail
-            .summary()
-            .downstream_headers_json()
-            .is_some_and(|value| value.contains("<redacted>"))
-    );
-    assert!(
-        detail
-            .summary()
-            .downstream_body_json()
-            .is_some_and(|value| value.contains("gpt-5.5"))
-    );
     let successful_attempt = &detail.attempts()[1];
     assert_eq!(successful_attempt.request_method(), Some("POST"));
     assert_eq!(
@@ -140,10 +134,56 @@ async fn storage_round_trip_preserves_order_filters_and_cursor() -> Result<(), B
     );
     assert_eq!(successful_attempt.response_status(), Some(200));
     assert!(!successful_attempt.response_streamed());
+    let headers = fixture
+        .repository
+        .snapshots(
+            first.id(),
+            fixture.user_id,
+            DebugTraceSnapshotScope::Headers,
+        )
+        .await?;
     assert!(
-        successful_attempt
-            .response_body_json()
+        headers
+            .downstream_json()
+            .is_some_and(|value| value.contains("<redacted>"))
+    );
+    assert!(
+        headers.attempts()[0]
+            .response_json()
+            .is_some_and(|value| value.contains("content-type"))
+    );
+    let bodies = fixture
+        .repository
+        .snapshots(first.id(), fixture.user_id, DebugTraceSnapshotScope::Bodies)
+        .await?;
+    assert!(
+        bodies
+            .downstream_json()
+            .is_some_and(|value| value.contains("gpt-5.5"))
+    );
+    assert!(
+        bodies.attempts()[0]
+            .response_json()
             .is_some_and(|value| value.contains("response.completed"))
+    );
+    assert_eq!(
+        debug_trace_snapshot_access_audits::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        2
+    );
+    let persisted = debug_traces::Entity::find_by_id(first.id())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("追踪主记录必须存在");
+    assert!(persisted.downstream_headers_json.is_none());
+    assert!(persisted.downstream_body_json.is_none());
+    assert_eq!(
+        debug_trace_snapshots::Entity::find()
+            .filter(debug_trace_snapshots::Column::TraceId.eq(first.id()))
+            .count(fixture.pool.connection())
+            .await?,
+        6
     );
     fixture.pool.close().await?;
     Ok(())
@@ -197,6 +237,12 @@ async fn corrupted_settings_fail_closed_and_prune_cascades_attempts() -> Result<
     assert_eq!(fixture.repository.prune(1).await?, 1);
     assert_eq!(
         debug_traces::Entity::find()
+            .count(fixture.pool.connection())
+            .await?,
+        0
+    );
+    assert_eq!(
+        debug_trace_snapshots::Entity::find()
             .count(fixture.pool.connection())
             .await?,
         0
@@ -275,12 +321,63 @@ async fn fixture() -> Result<Fixture, Box<dyn Error>> {
     .insert(pool.connection())
     .await?;
     Ok(Fixture {
-        repository: DebugTraceRepository::new(pool.clone(), Duration::from_secs(2))?,
+        repository: DebugTraceRepository::new(
+            pool.clone(),
+            Duration::from_secs(2),
+            Arc::new(TestSnapshotCipher),
+        )?,
         pool,
         user_id: user.id,
         token_id: token.id,
         group_id: group.id,
     })
+}
+
+#[derive(Debug)]
+struct TestSnapshotCipher;
+
+impl DebugTraceSnapshotCipher for TestSnapshotCipher {
+    fn encrypt(
+        &self,
+        context: DebugTraceSnapshotContext,
+        plaintext: &str,
+    ) -> Result<EncryptedCredentialEnvelope, DebugTraceSnapshotCipherError> {
+        let mut ciphertext = context_marker(context);
+        ciphertext.extend_from_slice(plaintext.as_bytes());
+        EncryptedCredentialEnvelope::new("debug-trace-test-key", [0x42; 24], ciphertext)
+            .map_err(|_| DebugTraceSnapshotCipherError)
+    }
+
+    fn decrypt(
+        &self,
+        context: DebugTraceSnapshotContext,
+        envelope: &EncryptedCredentialEnvelope,
+    ) -> Result<DebugTraceSnapshotPlaintext, DebugTraceSnapshotCipherError> {
+        let marker = context_marker(context);
+        let plaintext = envelope
+            .ciphertext()
+            .strip_prefix(marker.as_slice())
+            .ok_or(DebugTraceSnapshotCipherError)?;
+        let plaintext =
+            String::from_utf8(plaintext.to_vec()).map_err(|_| DebugTraceSnapshotCipherError)?;
+        DebugTraceSnapshotPlaintext::new(plaintext)
+    }
+}
+
+fn context_marker(context: DebugTraceSnapshotContext) -> Vec<u8> {
+    let kind = match context.kind() {
+        DebugTraceSnapshotKind::DownstreamHeaders => 1_i16,
+        DebugTraceSnapshotKind::DownstreamBody => 2_i16,
+        DebugTraceSnapshotKind::AttemptRequestHeaders => 3_i16,
+        DebugTraceSnapshotKind::AttemptRequestBody => 4_i16,
+        DebugTraceSnapshotKind::AttemptResponseHeaders => 5_i16,
+        DebugTraceSnapshotKind::AttemptResponseBody => 6_i16,
+    };
+    let mut marker = Vec::with_capacity(18);
+    marker.extend_from_slice(&context.trace_id().to_be_bytes());
+    marker.extend_from_slice(&context.attempt_id().unwrap_or_default().to_be_bytes());
+    marker.extend_from_slice(&kind.to_be_bytes());
+    marker
 }
 
 fn successful_trace(

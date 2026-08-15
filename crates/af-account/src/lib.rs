@@ -3,6 +3,7 @@
 mod credential_decryption;
 mod credential_encryption;
 mod credential_secret;
+mod diagnostic_snapshot;
 mod oauth;
 mod system_secret;
 
@@ -18,6 +19,7 @@ pub use credential_secret::{
     MAX_GOOGLE_PRIVATE_KEY_BYTES, MAX_GOOGLE_PRIVATE_KEY_ID_BYTES,
     MAX_GOOGLE_SERVICE_ACCOUNT_EMAIL_BYTES, PlainCredentialSecret,
 };
+pub use diagnostic_snapshot::DiagnosticSnapshotCipher;
 pub use oauth::{
     DEFAULT_MAX_OAUTH_REFRESH_FLIGHTS, DEFAULT_MAX_PENDING_OAUTH_AUTHORIZATIONS,
     DEFAULT_OAUTH_AUTHORIZATION_SESSION_TTL, DEFAULT_OAUTH_REFRESH_RESULT_RETENTION,

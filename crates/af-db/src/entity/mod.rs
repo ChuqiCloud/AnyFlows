@@ -37,6 +37,8 @@ pub(crate) mod channels;
 pub(crate) mod credentials;
 pub(crate) mod debug_trace_attempts;
 pub(crate) mod debug_trace_settings;
+pub(crate) mod debug_trace_snapshot_access_audits;
+pub(crate) mod debug_trace_snapshots;
 pub(crate) mod debug_traces;
 pub(crate) mod email_settings;
 pub(crate) mod group_model_ratios;
@@ -1510,6 +1512,12 @@ impl ActiveModelBehavior for debug_traces::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for debug_trace_attempts::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for debug_trace_snapshots::ActiveModel {}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for debug_trace_snapshot_access_audits::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for balance_alert_events::ActiveModel {

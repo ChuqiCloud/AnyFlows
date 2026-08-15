@@ -1,8 +1,9 @@
 use std::{collections::BTreeSet, fmt};
 
 use thiserror::Error;
+use zeroize::Zeroize as _;
 
-use crate::DatabaseTimestamp;
+use crate::{DatabaseTimestamp, EncryptedCredentialEnvelope};
 
 pub const MAX_DEBUG_TRACE_SAMPLE_PER_MILLION: i64 = 1_000_000;
 pub const MAX_DEBUG_TRACE_RETENTION_HOURS: i32 = 720;
@@ -16,6 +17,170 @@ const MAX_DEBUG_TRACE_ATTEMPTS: usize = 64;
 const MAX_DEBUG_TRACE_METHOD_BYTES: usize = 16;
 const MAX_DEBUG_TRACE_PATH_BYTES: usize = 8_192;
 const MAX_DEBUG_TRACE_SNAPSHOT_BYTES: usize = 256 * 1_024;
+
+/// 字段级诊断快照的闭合存储种类；数值同时作为数据库约束和 AAD 的稳定组成部分。
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum DebugTraceSnapshotKind {
+    DownstreamHeaders,
+    DownstreamBody,
+    AttemptRequestHeaders,
+    AttemptRequestBody,
+    AttemptResponseHeaders,
+    AttemptResponseBody,
+}
+
+impl DebugTraceSnapshotKind {
+    pub(super) const fn as_i16(self) -> i16 {
+        match self {
+            Self::DownstreamHeaders => 1,
+            Self::DownstreamBody => 2,
+            Self::AttemptRequestHeaders => 3,
+            Self::AttemptRequestBody => 4,
+            Self::AttemptResponseHeaders => 5,
+            Self::AttemptResponseBody => 6,
+        }
+    }
+
+    pub(super) fn from_i16(value: i16) -> Result<Self, DebugTraceWriteError> {
+        match value {
+            1 => Ok(Self::DownstreamHeaders),
+            2 => Ok(Self::DownstreamBody),
+            3 => Ok(Self::AttemptRequestHeaders),
+            4 => Ok(Self::AttemptRequestBody),
+            5 => Ok(Self::AttemptResponseHeaders),
+            6 => Ok(Self::AttemptResponseBody),
+            _ => Err(DebugTraceWriteError::Invariant),
+        }
+    }
+
+    #[must_use]
+    pub const fn scope(self) -> DebugTraceSnapshotScope {
+        match self {
+            Self::DownstreamHeaders
+            | Self::AttemptRequestHeaders
+            | Self::AttemptResponseHeaders => DebugTraceSnapshotScope::Headers,
+            Self::DownstreamBody | Self::AttemptRequestBody | Self::AttemptResponseBody => {
+                DebugTraceSnapshotScope::Bodies
+            }
+        }
+    }
+
+    pub(super) const fn requires_attempt(self) -> bool {
+        !matches!(self, Self::DownstreamHeaders | Self::DownstreamBody)
+    }
+}
+
+/// 管理端一次敏感读取只能选择 Header 或正文，禁止隐式扩大范围。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DebugTraceSnapshotScope {
+    Headers,
+    Bodies,
+}
+
+impl DebugTraceSnapshotScope {
+    pub(super) const fn as_i16(self) -> i16 {
+        match self {
+            Self::Headers => 1,
+            Self::Bodies => 2,
+        }
+    }
+}
+
+/// 快照加解密 AAD 使用的真实持久化位置。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DebugTraceSnapshotContext {
+    trace_id: i64,
+    attempt_id: Option<i64>,
+    kind: DebugTraceSnapshotKind,
+}
+
+impl DebugTraceSnapshotContext {
+    pub fn new(
+        trace_id: i64,
+        attempt_id: Option<i64>,
+        kind: DebugTraceSnapshotKind,
+    ) -> Result<Self, DebugTraceSnapshotCipherError> {
+        if trace_id < 1
+            || attempt_id.is_some_and(|value| value < 1)
+            || attempt_id.is_some() != kind.requires_attempt()
+        {
+            return Err(DebugTraceSnapshotCipherError);
+        }
+        Ok(Self {
+            trace_id,
+            attempt_id,
+            kind,
+        })
+    }
+
+    #[must_use]
+    pub const fn trace_id(self) -> i64 {
+        self.trace_id
+    }
+
+    #[must_use]
+    pub const fn attempt_id(self) -> Option<i64> {
+        self.attempt_id
+    }
+
+    #[must_use]
+    pub const fn kind(self) -> DebugTraceSnapshotKind {
+        self.kind
+    }
+}
+
+/// 密码学边界失败；错误不携带明文、密文、密钥标识或 AAD。
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[error("调试追踪快照密码学操作失败")]
+pub struct DebugTraceSnapshotCipherError;
+
+/// 已解密的有界 JSON 快照；默认脱敏并在释放时清零。
+pub struct DebugTraceSnapshotPlaintext {
+    value: String,
+}
+
+impl DebugTraceSnapshotPlaintext {
+    /// 仅允许密码学实现把已验证的有界 JSON 交回仓储。
+    pub fn new(mut value: String) -> Result<Self, DebugTraceSnapshotCipherError> {
+        if !valid_snapshot(Some(&value)) {
+            value.zeroize();
+            return Err(DebugTraceSnapshotCipherError);
+        }
+        Ok(Self { value })
+    }
+
+    #[must_use]
+    pub fn expose(&self) -> &str {
+        &self.value
+    }
+}
+
+impl Drop for DebugTraceSnapshotPlaintext {
+    fn drop(&mut self) {
+        self.value.zeroize();
+    }
+}
+
+impl fmt::Debug for DebugTraceSnapshotPlaintext {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("DebugTraceSnapshotPlaintext(<已脱敏>)")
+    }
+}
+
+/// 诊断快照专用密码学端口；实现必须使用位置绑定 AAD。
+pub trait DebugTraceSnapshotCipher: Send + Sync {
+    fn encrypt(
+        &self,
+        context: DebugTraceSnapshotContext,
+        plaintext: &str,
+    ) -> Result<EncryptedCredentialEnvelope, DebugTraceSnapshotCipherError>;
+
+    fn decrypt(
+        &self,
+        context: DebugTraceSnapshotContext,
+        envelope: &EncryptedCredentialEnvelope,
+    ) -> Result<DebugTraceSnapshotPlaintext, DebugTraceSnapshotCipherError>;
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DebugTraceProtocol {
@@ -622,11 +787,7 @@ pub struct DebugTraceAttemptRecord {
     pub(super) elapsed_ms: i64,
     pub(super) request_method: Option<String>,
     pub(super) request_url: Option<String>,
-    pub(super) request_headers_json: Option<String>,
-    pub(super) request_body_json: Option<String>,
     pub(super) response_status: Option<i16>,
-    pub(super) response_headers_json: Option<String>,
-    pub(super) response_body_json: Option<String>,
     pub(super) response_streamed: bool,
 }
 
@@ -673,24 +834,8 @@ impl DebugTraceAttemptRecord {
         self.request_url.as_deref()
     }
     #[must_use]
-    pub fn request_headers_json(&self) -> Option<&str> {
-        self.request_headers_json.as_deref()
-    }
-    #[must_use]
-    pub fn request_body_json(&self) -> Option<&str> {
-        self.request_body_json.as_deref()
-    }
-    #[must_use]
     pub const fn response_status(&self) -> Option<i16> {
         self.response_status
-    }
-    #[must_use]
-    pub fn response_headers_json(&self) -> Option<&str> {
-        self.response_headers_json.as_deref()
-    }
-    #[must_use]
-    pub fn response_body_json(&self) -> Option<&str> {
-        self.response_body_json.as_deref()
     }
     #[must_use]
     pub const fn response_streamed(&self) -> bool {
@@ -716,8 +861,6 @@ pub struct DebugTraceSummaryRecord {
     pub(super) attempt_count: i32,
     pub(super) downstream_method: Option<String>,
     pub(super) downstream_path: Option<String>,
-    pub(super) downstream_headers_json: Option<String>,
-    pub(super) downstream_body_json: Option<String>,
     pub(super) created_at: DatabaseTimestamp,
 }
 
@@ -787,14 +930,6 @@ impl DebugTraceSummaryRecord {
         self.downstream_path.as_deref()
     }
     #[must_use]
-    pub fn downstream_headers_json(&self) -> Option<&str> {
-        self.downstream_headers_json.as_deref()
-    }
-    #[must_use]
-    pub fn downstream_body_json(&self) -> Option<&str> {
-        self.downstream_body_json.as_deref()
-    }
-    #[must_use]
     pub const fn created_at(&self) -> DatabaseTimestamp {
         self.created_at
     }
@@ -804,6 +939,86 @@ impl DebugTraceSummaryRecord {
 pub struct DebugTraceDetailRecord {
     summary: DebugTraceSummaryRecord,
     attempts: Vec<DebugTraceAttemptRecord>,
+}
+
+/// 单个 Attempt 在指定敏感读取范围内的解密快照。
+#[derive(Debug)]
+pub struct DebugTraceAttemptSnapshotRecord {
+    candidate_index: i16,
+    request: Option<DebugTraceSnapshotPlaintext>,
+    response: Option<DebugTraceSnapshotPlaintext>,
+}
+
+impl DebugTraceAttemptSnapshotRecord {
+    pub(super) fn new(
+        candidate_index: i16,
+        request: Option<DebugTraceSnapshotPlaintext>,
+        response: Option<DebugTraceSnapshotPlaintext>,
+    ) -> Self {
+        Self {
+            candidate_index,
+            request,
+            response,
+        }
+    }
+
+    #[must_use]
+    pub const fn candidate_index(&self) -> i16 {
+        self.candidate_index
+    }
+
+    #[must_use]
+    pub fn request_json(&self) -> Option<&str> {
+        self.request
+            .as_ref()
+            .map(DebugTraceSnapshotPlaintext::expose)
+    }
+
+    #[must_use]
+    pub fn response_json(&self) -> Option<&str> {
+        self.response
+            .as_ref()
+            .map(DebugTraceSnapshotPlaintext::expose)
+    }
+}
+
+/// 一次已审计的 Header 或正文读取结果。
+#[derive(Debug)]
+pub struct DebugTraceSnapshotRecord {
+    scope: DebugTraceSnapshotScope,
+    downstream: Option<DebugTraceSnapshotPlaintext>,
+    attempts: Vec<DebugTraceAttemptSnapshotRecord>,
+}
+
+impl DebugTraceSnapshotRecord {
+    pub(super) fn new(
+        scope: DebugTraceSnapshotScope,
+        downstream: Option<DebugTraceSnapshotPlaintext>,
+        attempts: Vec<DebugTraceAttemptSnapshotRecord>,
+    ) -> Self {
+        Self {
+            scope,
+            downstream,
+            attempts,
+        }
+    }
+
+    #[must_use]
+    pub const fn scope(&self) -> DebugTraceSnapshotScope {
+        self.scope
+    }
+
+    #[must_use]
+    pub fn downstream_json(&self) -> Option<&str> {
+        self.downstream
+            .as_ref()
+            .map(DebugTraceSnapshotPlaintext::expose)
+    }
+
+    #[must_use]
+    pub fn attempts(&self) -> &[DebugTraceAttemptSnapshotRecord] {
+        &self.attempts
+    }
 }
 
 impl DebugTraceDetailRecord {

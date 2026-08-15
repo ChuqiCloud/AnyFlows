@@ -24,6 +24,8 @@ export function DebugTraceDetailSheet({ traceId, onOpenChange }: DebugTraceDetai
         {traceId !== undefined ? (
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
             <DebugTraceDetail
+              key={traceId}
+              traceId={traceId}
               detail={query.data}
               pending={query.isPending}
               error={query.isError}

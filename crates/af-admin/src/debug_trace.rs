@@ -4,11 +4,13 @@ use af_db::{
     DebugTraceAttemptOutcome, DebugTraceAttemptRecord, DebugTraceDetailRecord,
     DebugTraceFailureKind, DebugTraceListQuery, DebugTraceOperation, DebugTraceOutcome,
     DebugTracePageRecord, DebugTraceProtocol, DebugTraceRepository, DebugTraceRepositoryError,
-    DebugTraceSettingsRecord, DebugTraceSettingsWrite, DebugTraceSummaryRecord,
+    DebugTraceSettingsRecord, DebugTraceSettingsWrite, DebugTraceSnapshotRecord,
+    DebugTraceSnapshotScope, DebugTraceSummaryRecord,
 };
 use af_domain::{ChannelId, CredentialId, GroupId, TokenId, UserId};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use zeroize::Zeroize as _;
 
 use crate::{SessionPrincipal, SessionRole};
 
@@ -250,8 +252,6 @@ pub struct AdminDebugTrace {
     attempt_count: i32,
     downstream_method: Option<String>,
     downstream_path: Option<String>,
-    downstream_headers_json: Option<String>,
-    downstream_body_json: Option<String>,
     created_at: i64,
 }
 
@@ -286,8 +286,6 @@ impl AdminDebugTrace {
             attempt_count: record.attempt_count(),
             downstream_method: record.downstream_method().map(str::to_owned),
             downstream_path: record.downstream_path().map(str::to_owned),
-            downstream_headers_json: record.downstream_headers_json().map(str::to_owned),
-            downstream_body_json: record.downstream_body_json().map(str::to_owned),
             created_at: record.created_at().unix_timestamp(),
         })
     }
@@ -357,14 +355,6 @@ impl AdminDebugTrace {
         self.downstream_path.as_deref()
     }
     #[must_use]
-    pub fn downstream_headers_json(&self) -> Option<&str> {
-        self.downstream_headers_json.as_deref()
-    }
-    #[must_use]
-    pub fn downstream_body_json(&self) -> Option<&str> {
-        self.downstream_body_json.as_deref()
-    }
-    #[must_use]
     pub const fn created_at(&self) -> i64 {
         self.created_at
     }
@@ -389,11 +379,7 @@ pub struct AdminDebugTraceAttempt {
     elapsed_ms: i64,
     request_method: Option<String>,
     request_url: Option<String>,
-    request_headers_json: Option<String>,
-    request_body_json: Option<String>,
     response_status: Option<i16>,
-    response_headers_json: Option<String>,
-    response_body_json: Option<String>,
     response_streamed: bool,
 }
 
@@ -414,11 +400,7 @@ impl AdminDebugTraceAttempt {
             elapsed_ms: record.elapsed_ms(),
             request_method: record.request_method().map(str::to_owned),
             request_url: record.request_url().map(str::to_owned),
-            request_headers_json: record.request_headers_json().map(str::to_owned),
-            request_body_json: record.request_body_json().map(str::to_owned),
             response_status: record.response_status(),
-            response_headers_json: record.response_headers_json().map(str::to_owned),
-            response_body_json: record.response_body_json().map(str::to_owned),
             response_streamed: record.response_streamed(),
         })
     }
@@ -464,24 +446,8 @@ impl AdminDebugTraceAttempt {
         self.request_url.as_deref()
     }
     #[must_use]
-    pub fn request_headers_json(&self) -> Option<&str> {
-        self.request_headers_json.as_deref()
-    }
-    #[must_use]
-    pub fn request_body_json(&self) -> Option<&str> {
-        self.request_body_json.as_deref()
-    }
-    #[must_use]
     pub const fn response_status(&self) -> Option<i16> {
         self.response_status
-    }
-    #[must_use]
-    pub fn response_headers_json(&self) -> Option<&str> {
-        self.response_headers_json.as_deref()
-    }
-    #[must_use]
-    pub fn response_body_json(&self) -> Option<&str> {
-        self.response_body_json.as_deref()
     }
     #[must_use]
     pub const fn response_streamed(&self) -> bool {
@@ -522,6 +488,125 @@ impl AdminDebugTracePage {
 pub struct AdminDebugTraceDetail {
     trace: AdminDebugTrace,
     attempts: Vec<AdminDebugTraceAttempt>,
+}
+
+/// 管理端显式选择的敏感快照读取范围。
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdminDebugTraceSnapshotScope {
+    Headers,
+    Bodies,
+}
+
+impl AdminDebugTraceSnapshotScope {
+    const fn into_database(self) -> DebugTraceSnapshotScope {
+        match self {
+            Self::Headers => DebugTraceSnapshotScope::Headers,
+            Self::Bodies => DebugTraceSnapshotScope::Bodies,
+        }
+    }
+
+    const fn from_database(value: DebugTraceSnapshotScope) -> Self {
+        match value {
+            DebugTraceSnapshotScope::Headers => Self::Headers,
+            DebugTraceSnapshotScope::Bodies => Self::Bodies,
+        }
+    }
+}
+
+/// 单个候选在本次授权范围内的敏感快照。
+pub struct AdminDebugTraceAttemptSnapshot {
+    candidate_index: i16,
+    request_json: Option<String>,
+    response_json: Option<String>,
+}
+
+impl AdminDebugTraceAttemptSnapshot {
+    #[must_use]
+    pub const fn candidate_index(&self) -> i16 {
+        self.candidate_index
+    }
+
+    #[must_use]
+    pub fn request_json(&self) -> Option<&str> {
+        self.request_json.as_deref()
+    }
+
+    #[must_use]
+    pub fn response_json(&self) -> Option<&str> {
+        self.response_json.as_deref()
+    }
+}
+
+impl fmt::Debug for AdminDebugTraceAttemptSnapshot {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AdminDebugTraceAttemptSnapshot(<已脱敏>)")
+    }
+}
+
+impl Drop for AdminDebugTraceAttemptSnapshot {
+    fn drop(&mut self) {
+        if let Some(value) = self.request_json.as_mut() {
+            value.zeroize();
+        }
+        if let Some(value) = self.response_json.as_mut() {
+            value.zeroize();
+        }
+    }
+}
+
+/// 一次已经写入读取审计的 Header 或正文结果。
+pub struct AdminDebugTraceSnapshots {
+    scope: AdminDebugTraceSnapshotScope,
+    downstream_json: Option<String>,
+    attempts: Vec<AdminDebugTraceAttemptSnapshot>,
+}
+
+impl AdminDebugTraceSnapshots {
+    fn from_record(record: &DebugTraceSnapshotRecord) -> Self {
+        Self {
+            scope: AdminDebugTraceSnapshotScope::from_database(record.scope()),
+            downstream_json: record.downstream_json().map(str::to_owned),
+            attempts: record
+                .attempts()
+                .iter()
+                .map(|attempt| AdminDebugTraceAttemptSnapshot {
+                    candidate_index: attempt.candidate_index(),
+                    request_json: attempt.request_json().map(str::to_owned),
+                    response_json: attempt.response_json().map(str::to_owned),
+                })
+                .collect(),
+        }
+    }
+
+    #[must_use]
+    pub const fn scope(&self) -> AdminDebugTraceSnapshotScope {
+        self.scope
+    }
+
+    #[must_use]
+    pub fn downstream_json(&self) -> Option<&str> {
+        self.downstream_json.as_deref()
+    }
+
+    #[must_use]
+    pub fn attempts(&self) -> &[AdminDebugTraceAttemptSnapshot] {
+        &self.attempts
+    }
+}
+
+impl fmt::Debug for AdminDebugTraceSnapshots {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("AdminDebugTraceSnapshots(<已脱敏>)")
+    }
+}
+
+impl Drop for AdminDebugTraceSnapshots {
+    fn drop(&mut self) {
+        if let Some(value) = self.downstream_json.as_mut() {
+            value.zeroize();
+        }
+    }
 }
 
 impl AdminDebugTraceDetail {
@@ -573,6 +658,9 @@ pub type AdminDebugTraceListFuture<'a> =
 pub type AdminDebugTraceGetFuture<'a> =
     Pin<Box<dyn Future<Output = Result<AdminDebugTraceDetail, AdminDebugTraceError>> + Send + 'a>>;
 pub type AdminDebugTraceDetailFuture<'a> = AdminDebugTraceGetFuture<'a>;
+pub type AdminDebugTraceSnapshotsFuture<'a> = Pin<
+    Box<dyn Future<Output = Result<AdminDebugTraceSnapshots, AdminDebugTraceError>> + Send + 'a>,
+>;
 
 /// 管理员调试追踪设置与只读时间线端口。
 pub trait AdminDebugTraceService: Send + Sync {
@@ -592,6 +680,12 @@ pub trait AdminDebugTraceService: Send + Sync {
         principal: SessionPrincipal,
         trace_id: i64,
     ) -> AdminDebugTraceGetFuture<'a>;
+    fn snapshots<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        trace_id: i64,
+        scope: AdminDebugTraceSnapshotScope,
+    ) -> AdminDebugTraceSnapshotsFuture<'a>;
 }
 
 /// 使用数据库仓储和当前实例快照实现管理员调试追踪用例。
@@ -676,6 +770,26 @@ impl AdminDebugTraceService for DatabaseAdminDebugTraceService {
             AdminDebugTraceDetail::from_record(detail)
         })
     }
+
+    fn snapshots<'a>(
+        &'a self,
+        principal: SessionPrincipal,
+        trace_id: i64,
+        scope: AdminDebugTraceSnapshotScope,
+    ) -> AdminDebugTraceSnapshotsFuture<'a> {
+        Box::pin(async move {
+            require_admin(principal)?;
+            if trace_id < 1 {
+                return Err(AdminDebugTraceError::InvalidInput);
+            }
+            let snapshots = self
+                .repository
+                .snapshots(trace_id, principal.user_id().get(), scope.into_database())
+                .await
+                .map_err(map_repository_error)?;
+            Ok(AdminDebugTraceSnapshots::from_record(&snapshots))
+        })
+    }
 }
 
 fn require_admin(principal: SessionPrincipal) -> Result<(), AdminDebugTraceError> {
@@ -692,7 +806,8 @@ fn map_repository_error(error: DebugTraceRepositoryError) -> AdminDebugTraceErro
         DebugTraceRepositoryError::NotFound => AdminDebugTraceError::NotFound,
         DebugTraceRepositoryError::Query
         | DebugTraceRepositoryError::Timeout
-        | DebugTraceRepositoryError::Invariant => AdminDebugTraceError::Internal,
+        | DebugTraceRepositoryError::Invariant
+        | DebugTraceRepositoryError::Decrypt => AdminDebugTraceError::Internal,
     }
 }
 

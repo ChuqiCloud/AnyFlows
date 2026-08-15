@@ -10703,6 +10703,106 @@
         ]
       }
     },
+    "/api/admin/debug-traces/{id}/snapshots": {
+      "post": {
+        "tags": [
+          "调试追踪"
+        ],
+        "summary": "审计读取调试追踪敏感快照",
+        "description": "显式读取 Header 或正文其中一个范围；每次读取都会写入独立审计。",
+        "operationId": "readAdminDebugTraceSnapshots",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "追踪记录 ID",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminDebugTraceSnapshotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "已审计并解密的指定范围快照",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDebugTraceSnapshotsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "追踪 ID 或读取范围无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "管理会话无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "需要管理员权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "追踪或指定范围快照不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "审计写入、解密或服务内部失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagementError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/api/payment/webhook/{provider}": {
       "post": {
         "tags": [
@@ -12934,8 +13034,6 @@
               "null"
             ]
           },
-          "request_headers": {},
-          "request_body": {},
           "response_status": {
             "type": [
               "integer",
@@ -12943,11 +13041,24 @@
             ],
             "format": "int32"
           },
-          "response_headers": {},
-          "response_body": {},
           "response_streamed": {
             "type": "boolean"
           }
+        },
+        "additionalProperties": false
+      },
+      "AdminDebugTraceAttemptSnapshot": {
+        "type": "object",
+        "required": [
+          "candidate_index"
+        ],
+        "properties": {
+          "candidate_index": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "request": {},
+          "response": {}
         },
         "additionalProperties": false
       },
@@ -12992,9 +13103,7 @@
           },
           "path": {
             "type": "string"
-          },
-          "headers": {},
-          "body": {}
+          }
         },
         "additionalProperties": false
       },
@@ -13107,6 +13216,45 @@
             "format": "int32",
             "maximum": 65536,
             "minimum": 1024
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminDebugTraceSnapshotRequest": {
+        "type": "object",
+        "required": [
+          "scope"
+        ],
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/AdminDebugTraceSnapshotScope"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdminDebugTraceSnapshotScope": {
+        "type": "string",
+        "enum": [
+          "headers",
+          "bodies"
+        ]
+      },
+      "AdminDebugTraceSnapshotsResponse": {
+        "type": "object",
+        "required": [
+          "scope",
+          "attempts"
+        ],
+        "properties": {
+          "scope": {
+            "type": "string"
+          },
+          "downstream": {},
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AdminDebugTraceAttemptSnapshot"
+            }
           }
         },
         "additionalProperties": false

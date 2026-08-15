@@ -2074,7 +2074,13 @@
       "openDetails": "查看 {{model}} 的追踪详情",
       "save": "保存设置",
       "saving": "正在保存",
-      "copy": "复制内容"
+      "copy": "复制内容",
+      "readHeaders": "查看 Header",
+      "headersLoaded": "Header 已载入",
+      "readBodies": "查看正文",
+      "bodiesLoaded": "正文已载入",
+      "confirmReadBodies": "确认查看",
+      "cancel": "取消"
     },
     "filters": {
       "label": "筛选追踪记录",
@@ -2136,6 +2142,11 @@
       "requestBody": "请求正文",
       "responseHeaders": "响应头",
       "responseBody": "响应正文",
+      "sensitiveSnapshots": "敏感诊断快照",
+      "sensitiveSnapshotsHint": "内容已永久脱敏；Header 与正文分开授权，每次读取都会写入审计。",
+      "bodyConfirmTitle": "查看请求与响应正文？",
+      "bodyConfirmDescription": "正文可能包含业务内容。系统只返回永久脱敏后的有限快照，并会记录本次管理员读取。",
+      "snapshotReadError": "指定范围的快照不存在、已过期或暂时无法安全解密。",
       "notCaptured": "未采集",
       "streamNotBuffered": "流式响应未缓存无限正文",
       "truncated": "正文已按上限截断，原始大小 {{bytes}} 字节",
