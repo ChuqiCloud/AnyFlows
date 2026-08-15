@@ -1184,6 +1184,20 @@ export type ModelCatalogTokenPrices = {
     cache_creation_5m: string;
     cache_creation_1h: string;
 };
+export type OrganizationEntitlementResponse = {
+    status: string;
+    team_management_enabled: boolean;
+    seat_limit: number;
+    active_seats: number;
+    remaining_seats: number;
+    team_limit: number;
+    active_teams: number;
+    remaining_teams: number;
+    organization_key_limit: number;
+    audit_retention_days: number;
+    valid_until: number;
+    grace_until?: number | null;
+};
 export type OrganizationListResponse = {
     organizations: Array<OrganizationSummaryResponse>;
 };
@@ -1194,6 +1208,7 @@ export type OrganizationOverviewResponse = {
     role: string;
     membership_id: number;
     permissions: Array<string>;
+    entitlement: OrganizationEntitlementResponse;
 };
 export type OrganizationSummaryResponse = {
     id: number;
