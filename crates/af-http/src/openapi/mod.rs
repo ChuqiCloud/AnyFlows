@@ -247,6 +247,13 @@ mod tests {
             "revokeOrganizationInvitation",
             "resendOrganizationInvitation",
             "acceptOrganizationInvitation",
+            "listOrganizationMembers",
+            "changeOrganizationMember",
+            "transferOrganizationOwnership",
+            "listOrganizationTeams",
+            "createOrganizationTeam",
+            "changeOrganizationTeam",
+            "disableOrganizationTeam",
             "getUserTopupConfiguration",
             "getUserWallet",
             "importMissingAdminModels",
@@ -362,11 +369,21 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 279);
+        assert_eq!(schemas.len(), 289);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationEntitlementResponse"));
         assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
         assert!(schemas.contains_key("OrganizationInvitationResponse"));
+        assert!(schemas.contains_key("OrganizationMembershipChangeRequest"));
+        assert!(schemas.contains_key("OrganizationMembershipListResponse"));
+        assert!(schemas.contains_key("OrganizationMembershipResponse"));
+        assert!(schemas.contains_key("OrganizationOwnershipTransferRequest"));
+        assert!(schemas.contains_key("OrganizationOwnershipTransferResponse"));
+        assert!(schemas.contains_key("OrganizationTeamChangeRequest"));
+        assert!(schemas.contains_key("OrganizationTeamCreateRequest"));
+        assert!(schemas.contains_key("OrganizationTeamDisableRequest"));
+        assert!(schemas.contains_key("OrganizationTeamListResponse"));
+        assert!(schemas.contains_key("OrganizationTeamResponse"));
         assert!(schemas.contains_key("ModelCatalogProvider"));
         assert!(schemas.contains_key("ModelCatalogProviderListResponse"));
         assert!(schemas.contains_key("AdminResponsesCompactProbe"));
