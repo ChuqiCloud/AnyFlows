@@ -1,6 +1,7 @@
 use af_domain::{
-    BillingReservationId, OrganizationBudgetPolicyId, OrganizationBudgetWindowId, OrganizationId,
-    OrganizationMembershipId, OrganizationMembershipStatus, OrganizationTeamId, Quota, UserId,
+    BillingReservationId, GroupId, OrganizationBudgetPolicyId, OrganizationBudgetWindowId,
+    OrganizationId, OrganizationMembershipId, OrganizationMembershipStatus, OrganizationTeamId,
+    Quota, TokenId, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
@@ -18,10 +19,10 @@ use crate::organization_wallet;
 use super::{
     policy,
     types::{
-        OrganizationBillingMutationOutcome, OrganizationBillingPrincipal,
-        OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
-        OrganizationBudgetAllocationRecord, OrganizationBudgetRepositoryError,
-        OrganizationBudgetScope,
+        OrganizationBillingGatewayRecord, OrganizationBillingMutationOutcome,
+        OrganizationBillingPrincipal, OrganizationBillingReservationRecord,
+        OrganizationBillingReservationStatus, OrganizationBudgetAllocationRecord,
+        OrganizationBudgetRepositoryError, OrganizationBudgetScope,
     },
     window,
 };
@@ -32,6 +33,38 @@ pub(super) async fn reserve(
     principal: OrganizationBillingPrincipal,
     amount: Quota,
     expires_at: TimeDateTimeWithTimeZone,
+) -> Result<OrganizationBillingMutationOutcome, OrganizationBudgetRepositoryError> {
+    reserve_with_gateway(transaction, id, principal, amount, expires_at, None).await
+}
+
+/// 在网关统一事务内冻结企业钱包与三层预算，并固化 Key 和平台分组主体。
+pub(crate) async fn reserve_gateway(
+    transaction: &DatabaseTransaction,
+    id: BillingReservationId,
+    principal: OrganizationBillingPrincipal,
+    token_id: TokenId,
+    group_id: GroupId,
+    amount: Quota,
+    expires_at: TimeDateTimeWithTimeZone,
+) -> Result<OrganizationBillingMutationOutcome, OrganizationBudgetRepositoryError> {
+    reserve_with_gateway(
+        transaction,
+        id,
+        principal,
+        amount,
+        expires_at,
+        Some((token_id, group_id)),
+    )
+    .await
+}
+
+async fn reserve_with_gateway(
+    transaction: &DatabaseTransaction,
+    id: BillingReservationId,
+    principal: OrganizationBillingPrincipal,
+    amount: Quota,
+    expires_at: TimeDateTimeWithTimeZone,
+    gateway: Option<(TokenId, GroupId)>,
 ) -> Result<OrganizationBillingMutationOutcome, OrganizationBudgetRepositoryError> {
     if amount.is_zero() {
         return Err(OrganizationBudgetRepositoryError::InvalidInput);
@@ -88,8 +121,12 @@ pub(super) async fn reserve(
         membership_id: Set(principal.membership_id().get()),
         team_id: Set(principal.team_id().map(OrganizationTeamId::get)),
         user_id: Set(principal.user_id().get()),
+        token_id: Set(gateway.map(|(token_id, _)| token_id.get())),
+        group_id: Set(gateway.map(|(_, group_id)| group_id.get())),
+        reservation_kind: Set(if gateway.is_some() { 2 } else { 1 }),
         status: Set(OrganizationBillingReservationStatus::Reserved.code()),
         reserved_quota: Set(amount.units()),
+        token_reserved_quota: Set(0),
         actual_quota: Set(None),
         organization_policy_id: Set(organization.map(|value| value.policy_id.get())),
         organization_window_id: Set(organization.map(|value| value.window_id.get())),
@@ -128,7 +165,40 @@ pub(super) async fn reserve(
     ))
 }
 
-pub(super) async fn settle(
+/// 有限 Key 预扣成功后同步企业预留快照，保证双表可独立校验恢复。
+pub(crate) async fn snapshot_gateway_token_reservation(
+    transaction: &DatabaseTransaction,
+    id: BillingReservationId,
+    amount: Quota,
+    now: TimeDateTimeWithTimeZone,
+) -> Result<(), OrganizationBudgetRepositoryError> {
+    let result = billing_organization_reservations::Entity::update_many()
+        .filter(billing_organization_reservations::Column::IdempotencyKey.eq(id.persistence_key()))
+        .filter(billing_organization_reservations::Column::ReservationKind.eq(2_i16))
+        .filter(
+            billing_organization_reservations::Column::Status
+                .eq(OrganizationBillingReservationStatus::Reserved.code()),
+        )
+        .filter(billing_organization_reservations::Column::ReservedQuota.eq(amount.units()))
+        .filter(billing_organization_reservations::Column::TokenReservedQuota.eq(0_i64))
+        .col_expr(
+            billing_organization_reservations::Column::TokenReservedQuota,
+            Expr::value(amount.units()),
+        )
+        .col_expr(
+            billing_organization_reservations::Column::UpdatedAt,
+            Expr::value(now),
+        )
+        .exec(transaction)
+        .await
+        .map_err(|_| OrganizationBudgetRepositoryError::Query)?;
+    if result.rows_affected != 1 {
+        return Err(OrganizationBudgetRepositoryError::Invariant);
+    }
+    Ok(())
+}
+
+pub(crate) async fn settle(
     transaction: &DatabaseTransaction,
     observed: &OrganizationBillingReservationRecord,
     actual: Quota,
@@ -232,7 +302,7 @@ pub(super) async fn settle(
     ))
 }
 
-pub(super) async fn release(
+pub(crate) async fn release(
     transaction: &DatabaseTransaction,
     observed: &OrganizationBillingReservationRecord,
 ) -> Result<OrganizationBillingMutationOutcome, OrganizationBudgetRepositoryError> {
@@ -297,7 +367,7 @@ pub(super) async fn release(
     ))
 }
 
-pub(super) async fn mark_pending_and_protect(
+pub(crate) async fn mark_pending_and_protect(
     transaction: &DatabaseTransaction,
     observed: &OrganizationBillingReservationRecord,
     actual: Quota,
@@ -370,7 +440,7 @@ pub(super) async fn mark_pending_and_protect(
     Ok(())
 }
 
-pub(super) async fn load<C>(
+pub(crate) async fn load<C>(
     connection: &C,
     id: BillingReservationId,
 ) -> Result<Option<OrganizationBillingReservationRecord>, OrganizationBudgetRepositoryError>
@@ -699,6 +769,27 @@ fn record(
         .map(Quota::new)
         .transpose()
         .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+    let gateway = match (
+        model.reservation_kind,
+        model.token_id,
+        model.group_id,
+        model.token_reserved_quota,
+    ) {
+        (1, None, None, 0) => None,
+        (2, Some(token_id), Some(group_id), token_reserved)
+            if token_reserved == 0 || token_reserved == model.reserved_quota =>
+        {
+            Some(OrganizationBillingGatewayRecord {
+                token_id: TokenId::new(token_id)
+                    .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+                group_id: GroupId::new(group_id)
+                    .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+                token_reserved_quota: Quota::new(token_reserved)
+                    .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+            })
+        }
+        _ => return Err(OrganizationBudgetRepositoryError::Invariant),
+    };
     let finalized = model.finalized_at.is_some();
     let valid_state = match status {
         OrganizationBillingReservationStatus::Reserved => actual_quota.is_none() && !finalized,
@@ -717,6 +808,7 @@ fn record(
         status,
         reserved_quota,
         actual_quota,
+        gateway,
         organization: allocation_record(
             model.organization_policy_id,
             model.organization_window_id,
@@ -785,6 +877,7 @@ fn same_snapshot(
     left.id == right.id
         && left.principal == right.principal
         && left.reserved_quota == right.reserved_quota
+        && left.gateway == right.gateway
         && left.organization == right.organization
         && left.team == right.team
         && left.member == right.member

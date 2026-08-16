@@ -1,9 +1,9 @@
 use std::fmt;
 
 use af_domain::{
-    BillingReservationId, OrganizationBudgetLimit, OrganizationBudgetPeriod,
+    BillingReservationId, GroupId, OrganizationBudgetLimit, OrganizationBudgetPeriod,
     OrganizationBudgetPolicyId, OrganizationBudgetScopeKind, OrganizationBudgetWindowId,
-    OrganizationId, OrganizationMembershipId, OrganizationTeamId, Quota, UserId,
+    OrganizationId, OrganizationMembershipId, OrganizationTeamId, Quota, TokenId, UserId,
 };
 use sea_orm::entity::prelude::TimeDateTimeWithTimeZone;
 use thiserror::Error;
@@ -309,9 +309,18 @@ pub struct OrganizationBillingReservationRecord {
     pub(crate) status: OrganizationBillingReservationStatus,
     pub(crate) reserved_quota: Quota,
     pub(crate) actual_quota: Option<Quota>,
+    pub(crate) gateway: Option<OrganizationBillingGatewayRecord>,
     pub(crate) organization: Option<OrganizationBudgetAllocationRecord>,
     pub(crate) team: Option<OrganizationBudgetAllocationRecord>,
     pub(crate) member: Option<OrganizationBudgetAllocationRecord>,
+}
+
+/// 企业预留绑定的网关 Key 快照；独立预算仓储调用不携带该主体。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct OrganizationBillingGatewayRecord {
+    pub(crate) token_id: TokenId,
+    pub(crate) group_id: GroupId,
+    pub(crate) token_reserved_quota: Quota,
 }
 
 impl OrganizationBillingReservationRecord {
@@ -338,6 +347,10 @@ impl OrganizationBillingReservationRecord {
     #[must_use]
     pub const fn actual_quota(&self) -> Option<Quota> {
         self.actual_quota
+    }
+
+    pub(crate) const fn gateway(&self) -> Option<OrganizationBillingGatewayRecord> {
+        self.gateway
     }
 
     #[must_use]

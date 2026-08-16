@@ -64,7 +64,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 65;
+const EXPECTED_MIGRATION_COUNT: usize = 66;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -957,7 +957,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 6);
+    assert_eq!(pending_migrations.len(), 7);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -981,6 +981,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[5].name(),
         "m20260816_000065_create_organization_budgets"
+    );
+    assert_eq!(
+        pending_migrations[6].name(),
+        "m20260817_000066_add_organization_tokens"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -2672,6 +2676,13 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "organization_wallet_ledger_entries",
             "idx_organization_wallet_ledger_scope_id",
         ),
+        ("tokens", "idx_tokens_organization_status_id"),
+        ("tokens", "idx_tokens_organization_owner_id"),
+        ("tokens", "idx_tokens_organization_membership_status"),
+        (
+            "billing_reservations",
+            "idx_billing_reservations_organization_status",
+        ),
     ] {
         assert!(
             manager.has_index(table, index).await?,
@@ -2763,6 +2774,46 @@ async fn exercise_organization_repository(pool: &DatabasePool) -> Result<(), Box
             ),
         )
         .await?;
+    let valid_hash = "f0".repeat(32);
+    let mut enterprise_token =
+        token_active_model(member.id, group.id, &valid_hash, "organization-smoke-token");
+    enterprise_token.group_id = Set(None);
+    enterprise_token.organization_id = Set(Some(organization.id().get()));
+    enterprise_token.organization_membership_id = Set(Some(membership.id().get()));
+    enterprise_token.organization_team_id = Set(Some(team.id().get()));
+    let enterprise_token = enterprise_token.insert(pool.connection()).await?;
+
+    let invalid_shape_hash = "f1".repeat(32);
+    let mut invalid_shape = token_active_model(
+        member.id,
+        group.id,
+        &invalid_shape_hash,
+        "organization-invalid-shape-token",
+    );
+    invalid_shape.group_id = Set(None);
+    invalid_shape.organization_id = Set(Some(organization.id().get()));
+    assert!(invalid_shape.insert(pool.connection()).await.is_err());
+
+    let (_, other_owner_membership) = repository
+        .create(OrganizationCreate::new(
+            "Other Organization Smoke".to_owned(),
+            "other-organization-smoke".to_owned(),
+            owner_user_id,
+            migration_test_entitlement()?,
+        ))
+        .await?
+        .into_parts();
+    let cross_scope_hash = "f2".repeat(32);
+    let mut cross_scope = token_active_model(
+        owner.id,
+        group.id,
+        &cross_scope_hash,
+        "organization-cross-scope-token",
+    );
+    cross_scope.group_id = Set(None);
+    cross_scope.organization_id = Set(Some(organization.id().get()));
+    cross_scope.organization_membership_id = Set(Some(other_owner_membership.id().get()));
+    assert!(cross_scope.insert(pool.connection()).await.is_err());
     assert_eq!(
         repository
             .disable_team(organization.id(), team.id(), team.version())
@@ -2781,6 +2832,14 @@ async fn exercise_organization_repository(pool: &DatabasePool) -> Result<(), Box
             ),
         )
         .await?;
+    assert_eq!(
+        tokens::Entity::find_by_id(enterprise_token.id)
+            .one(pool.connection())
+            .await?
+            .expect("调组后的企业 Key 必须保留审计事实")
+            .status,
+        2
+    );
     repository
         .disable_team(organization.id(), team.id(), team.version())
         .await?;

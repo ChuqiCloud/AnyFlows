@@ -7,10 +7,11 @@ use af_admin::{
     AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsService,
     AdminPaymentSettingsService, AdminRouteReader, AdminRouteWriter, AdminTokenReader,
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
-    InitialSetup, ModelCatalogReader, OrganizationBudgetService, OrganizationWalletService,
-    PasswordResetService, PlaygroundConversationService, PlaygroundShareService, RedemptionService,
-    RegistrationService, SessionAuthenticator, SiteSettingsService, SubscriptionService,
-    TokenAuthenticator, UserInvitationService, UserTopupService, UserWalletService,
+    InitialSetup, ModelCatalogReader, OrganizationBudgetService, OrganizationTokenService,
+    OrganizationWalletService, PasswordResetService, PlaygroundConversationService,
+    PlaygroundShareService, RedemptionService, RegistrationService, SessionAuthenticator,
+    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
+    UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -90,6 +91,7 @@ use crate::openai_responses_compact::openai_responses_compact;
 use crate::openai_speech::openai_speech;
 use crate::operations::{ReadinessHandle, operations_router};
 use crate::organization_budget::build_organization_budget_router;
+use crate::organization_tokens::build_organization_token_router;
 use crate::organization_wallet::build_organization_wallet_router;
 use crate::organizations::build_organization_router;
 use crate::password_reset::build_password_reset_router;
@@ -165,6 +167,7 @@ pub fn build_router(
     organization_authorization_service: Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
     organization_wallet_service: Option<Arc<dyn OrganizationWalletService>>,
     organization_budget_service: Option<Arc<dyn OrganizationBudgetService>>,
+    organization_token_service: Option<Arc<dyn OrganizationTokenService>>,
     user_topup_service: Option<Arc<dyn UserTopupService>>,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
@@ -729,6 +732,19 @@ pub fn build_router(
                 authorization_service,
                 wallet_service,
                 user_topup_service,
+                Arc::clone(&http_state.session_authenticator),
+            ))
+        }
+        _ => management_routes,
+    };
+    let management_routes = match (
+        http_state.organization_authorization_service.clone(),
+        organization_token_service,
+    ) {
+        (Some(authorization_service), Some(token_service)) => {
+            management_routes.merge(build_organization_token_router(
+                authorization_service,
+                token_service,
                 Arc::clone(&http_state.session_authenticator),
             ))
         }

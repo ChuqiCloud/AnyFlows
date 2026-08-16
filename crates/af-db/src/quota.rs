@@ -17,6 +17,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 use crate::DatabasePool;
 
 mod group_windows;
+mod organization;
 mod sql;
 mod state;
 pub(crate) mod subscription;
@@ -219,6 +220,9 @@ impl QuotaRepository {
         amount: Quota,
         reservation_kind: QuotaReservationKind,
     ) -> Result<QuotaMutationOutcome, QuotaRepositoryError> {
+        if principal.organization_principal().is_some() {
+            return organization::precharge(self, id, principal, amount, reservation_kind).await;
+        }
         let key = id.persistence_key();
         let (now, expires_at) = reservation_times(self.reservation_ttl)?;
         let transaction = self
@@ -394,6 +398,9 @@ impl QuotaRepository {
         }
         if !reservation_kind.allows_supplement() && actual.units() > observed.reserved_quota {
             return Err(QuotaRepositoryError::ActualExceedsReservation);
+        }
+        if observed.organization_id.is_some() {
+            return organization::settle(self, id, observed, actual, reservation_kind).await;
         }
         let transaction = self
             .pool
@@ -612,6 +619,9 @@ impl QuotaRepository {
             .ok_or(QuotaRepositoryError::NotFound)?;
         if observed.reservation_kind != reservation_kind {
             return Err(QuotaRepositoryError::Conflict);
+        }
+        if observed.organization_id.is_some() {
+            return organization::refund(self, id, observed, reservation_kind).await;
         }
         let transaction = self
             .pool
@@ -925,10 +935,34 @@ async fn lock_subject(
     let group = lock_group(transaction, group_id).await?;
     let user = lock_user(transaction, user_id).await?;
     let token = lock_token(transaction, token_id).await?;
-    if token.user_id != user_id {
+    let principal = GatewayPrincipal::new(
+        af_domain::TokenId::new(token_id).map_err(|_| QuotaRepositoryError::Invariant)?,
+        af_domain::UserId::new(user_id).map_err(|_| QuotaRepositoryError::Invariant)?,
+        af_domain::GroupId::new(group_id).map_err(|_| QuotaRepositoryError::Invariant)?,
+    );
+    if !token_matches_principal(&token, principal) {
         return Err(QuotaRepositoryError::Invariant);
     }
     Ok((group, user, token))
+}
+
+/// 核对令牌持久化主体与鉴权时固化主体完全一致，禁止个人和企业路径互相回退。
+fn token_matches_principal(token: &TokenQuotaState, principal: GatewayPrincipal) -> bool {
+    if token.user_id != principal.user_id().get() {
+        return false;
+    }
+    match principal.organization_principal() {
+        Some(organization) => {
+            token.organization_id == Some(organization.organization_id().get())
+                && token.organization_membership_id == Some(organization.membership_id().get())
+                && token.organization_team_id == organization.team_id().map(|team| team.get())
+        }
+        None => {
+            token.organization_id.is_none()
+                && token.organization_membership_id.is_none()
+                && token.organization_team_id.is_none()
+        }
+    }
 }
 
 async fn lock_group(
@@ -1113,6 +1147,7 @@ fn record_internal_error(error: QuotaRepositoryError) -> QuotaRepositoryError {
         | QuotaRepositoryError::NotFound
         | QuotaRepositoryError::Conflict
         | QuotaRepositoryError::UserQuotaInsufficient
+        | QuotaRepositoryError::OrganizationQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient
         | QuotaRepositoryError::GroupWindowQuotaInsufficient { .. }
         | QuotaRepositoryError::TokenWindowQuotaInsufficient { .. }

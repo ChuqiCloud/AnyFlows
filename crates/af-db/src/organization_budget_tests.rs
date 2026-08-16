@@ -1,12 +1,13 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    BillingReservationId, OrganizationBudgetLimit, OrganizationBudgetPeriod,
-    OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
-    OrganizationMembershipId, OrganizationRole, OrganizationTeamId, Quota, UserId, WalletEventId,
+    BillingReservationId, GatewayPrincipal, GroupId, OrganizationBudgetLimit,
+    OrganizationBudgetPeriod, OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot,
+    OrganizationGatewayPrincipal, OrganizationId, OrganizationMembershipId, OrganizationRole,
+    OrganizationTeamId, Quota, TokenId, UserId, WalletEventId,
 };
 use sea_orm::{
-    ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, TransactionTrait,
+    ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
 };
 
@@ -16,14 +17,18 @@ use super::{
     OrganizationBudgetPolicyWrite, OrganizationBudgetRepository, OrganizationBudgetRepositoryError,
     OrganizationBudgetScope, OrganizationCreate, OrganizationEntitlementWrite,
     OrganizationMembershipCreate, OrganizationRepository, OrganizationTeamCreate,
+    OrganizationTokenCreateRecord, OrganizationTokenRepository, OrganizationTokenWriteRecord,
+    QuotaRepository, QuotaRepositoryError,
 };
 use crate::{
     OrganizationWalletLedgerEntryType,
     entity::{
-        billing_organization_reservations, groups, organization_budget_windows,
-        organization_wallet_ledger_entries, organization_wallets, users,
+        BillingReservationKey, billing_organization_reservations, billing_reservations, groups,
+        organization_budget_windows, organization_wallet_ledger_entries, organization_wallets,
+        tokens, users,
     },
     organization_wallet,
+    quota::{QuotaMutationOutcome, QuotaRepositoryOperation, QuotaReservationStatus},
 };
 use sea_orm::{ActiveModelTrait, Set};
 
@@ -324,6 +329,165 @@ async fn supplemental_failure_protects_billing_until_the_original_fact_recovers(
     Ok(())
 }
 
+#[tokio::test]
+async fn gateway_quota_uses_enterprise_funds_and_replays_all_terminal_operations()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let scenario = scenario(&fixture, 7, 0, 1).await?;
+    set_personal_counters(&fixture, scenario.member_user_id, 777, 5, 11, 2).await?;
+    credit_wallet(&fixture, scenario, 500, 0x51).await?;
+    install_three_layers(&fixture, scenario, [400, 300, 200]).await?;
+    let principal = create_gateway_principal(&fixture, scenario, 150, 0x61).await?;
+    let repository = QuotaRepository::new(fixture.pool.clone());
+    let id = reservation_id(0x71)?;
+
+    repository.inject_outcome_unknown_after_commit(QuotaRepositoryOperation::Precharge);
+    assert_eq!(
+        repository.precharge(id, principal, Quota::new(80)?).await,
+        Err(QuotaRepositoryError::OutcomeUnknown)
+    );
+    assert_eq!(
+        repository.precharge(id, principal, Quota::new(80)?).await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Reserved)
+    );
+    assert_eq!(
+        personal_snapshot(&fixture, scenario.member_user_id).await?,
+        PersonalSnapshot::new(777, 5, 11, 2)
+    );
+    assert_eq!(
+        token_snapshot(&fixture, principal.token_id()).await?,
+        (70, 0)
+    );
+    assert_wallet(&fixture, scenario.organization_id, 420, 0, 80, false).await?;
+
+    repository.inject_outcome_unknown_after_commit(QuotaRepositoryOperation::Settle);
+    assert_eq!(
+        repository.settle(id, Quota::new(60)?).await,
+        Err(QuotaRepositoryError::OutcomeUnknown)
+    );
+    assert_eq!(
+        repository.settle(id, Quota::new(60)?).await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Settled)
+    );
+    assert_eq!(
+        personal_snapshot(&fixture, scenario.member_user_id).await?,
+        PersonalSnapshot::new(777, 65, 11, 3)
+    );
+    assert_eq!(
+        token_snapshot(&fixture, principal.token_id()).await?,
+        (90, 60)
+    );
+    assert_wallet(&fixture, scenario.organization_id, 440, 60, 0, false).await?;
+    assert_gateway_reservation_pair(
+        &fixture,
+        id,
+        principal,
+        80,
+        Some(60),
+        QuotaReservationStatus::Settled,
+    )
+    .await?;
+
+    let released_id = reservation_id(0x72)?;
+    repository
+        .precharge(released_id, principal, Quota::new(40)?)
+        .await?;
+    repository.inject_outcome_unknown_after_commit(QuotaRepositoryOperation::Refund);
+    assert_eq!(
+        repository.refund(released_id).await,
+        Err(QuotaRepositoryError::OutcomeUnknown)
+    );
+    assert_eq!(
+        repository.refund(released_id).await?,
+        QuotaMutationOutcome::Existing(QuotaReservationStatus::Refunded)
+    );
+    assert_eq!(
+        personal_snapshot(&fixture, scenario.member_user_id).await?,
+        PersonalSnapshot::new(777, 65, 11, 3)
+    );
+    assert_eq!(
+        token_snapshot(&fixture, principal.token_id()).await?,
+        (90, 60)
+    );
+    assert_gateway_reservation_pair(
+        &fixture,
+        released_id,
+        principal,
+        40,
+        None,
+        QuotaReservationStatus::Refunded,
+    )
+    .await?;
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn gateway_supplement_failure_protects_both_reservations_until_recovery()
+-> Result<(), Box<dyn Error>> {
+    let fixture = fixture().await?;
+    let scenario = scenario(&fixture, 8, 0, 1).await?;
+    set_personal_counters(&fixture, scenario.member_user_id, 333, 9, 7, 4).await?;
+    credit_wallet(&fixture, scenario, 100, 0x52).await?;
+    install_three_layers(&fixture, scenario, [500, 500, 500]).await?;
+    let principal = create_gateway_principal(&fixture, scenario, 100, 0x62).await?;
+    let repository = QuotaRepository::new(fixture.pool.clone());
+    let id = reservation_id(0x73)?;
+    repository.precharge(id, principal, Quota::new(80)?).await?;
+
+    assert_eq!(
+        repository.settle(id, Quota::new(120)?).await,
+        Err(QuotaRepositoryError::OrganizationQuotaInsufficient)
+    );
+    assert_eq!(
+        personal_snapshot(&fixture, scenario.member_user_id).await?,
+        PersonalSnapshot::new(333, 9, 7, 4)
+    );
+    assert_eq!(
+        token_snapshot(&fixture, principal.token_id()).await?,
+        (20, 0)
+    );
+    assert_wallet(&fixture, scenario.organization_id, 20, 0, 80, true).await?;
+    assert_gateway_reservation_pair(
+        &fixture,
+        id,
+        principal,
+        80,
+        Some(120),
+        QuotaReservationStatus::SettlementPending,
+    )
+    .await?;
+
+    credit_wallet(&fixture, scenario, 100, 0x53).await?;
+    set_token_remain(&fixture, principal.token_id(), 60).await?;
+    assert_eq!(
+        repository.settle(id, Quota::new(120)?).await?,
+        QuotaMutationOutcome::Applied
+    );
+    assert_eq!(
+        personal_snapshot(&fixture, scenario.member_user_id).await?,
+        PersonalSnapshot::new(333, 129, 7, 5)
+    );
+    assert_eq!(
+        token_snapshot(&fixture, principal.token_id()).await?,
+        (20, 120)
+    );
+    assert_wallet(&fixture, scenario.organization_id, 80, 120, 0, false).await?;
+    assert_gateway_reservation_pair(
+        &fixture,
+        id,
+        principal,
+        80,
+        Some(120),
+        QuotaReservationStatus::Settled,
+    )
+    .await?;
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
 async fn fixture() -> Result<Fixture, Box<dyn Error>> {
     let pool = crate::connect_and_migrate(
         &DatabaseOptions::new("sqlite::memory:")?,
@@ -430,6 +594,173 @@ fn active_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> 
         None,
         None,
     )?)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct PersonalSnapshot {
+    quota: i64,
+    used_quota: i64,
+    frozen_quota: i64,
+    request_count: i64,
+}
+
+impl PersonalSnapshot {
+    const fn new(quota: i64, used_quota: i64, frozen_quota: i64, request_count: i64) -> Self {
+        Self {
+            quota,
+            used_quota,
+            frozen_quota,
+            request_count,
+        }
+    }
+}
+
+async fn create_gateway_principal(
+    fixture: &Fixture,
+    scenario: OrganizationScenario,
+    remain_quota: i64,
+    marker: u8,
+) -> Result<GatewayPrincipal, Box<dyn Error>> {
+    let repository =
+        OrganizationTokenRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
+    let hash = format!("{marker:064x}");
+    let prefix = format!("sk-af-{marker:012x}");
+    let record = repository
+        .create(OrganizationTokenCreateRecord::new(
+            scenario.organization_id,
+            scenario.membership_id,
+            scenario.member_user_id,
+            hash,
+            prefix,
+            OrganizationTokenWriteRecord::new(
+                format!("enterprise-quota-token-{marker}"),
+                1,
+                remain_quota,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ),
+        ))
+        .await?;
+    let user = users::Entity::find_by_id(scenario.member_user_id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("企业计费测试用户必须存在");
+    Ok(GatewayPrincipal::organization(
+        record.token().token_id(),
+        scenario.member_user_id,
+        GroupId::new(user.default_group_id)?,
+        OrganizationGatewayPrincipal::new(
+            scenario.organization_id,
+            scenario.membership_id,
+            Some(scenario.team_id),
+        ),
+    ))
+}
+
+async fn set_personal_counters(
+    fixture: &Fixture,
+    user_id: UserId,
+    quota: i64,
+    used_quota: i64,
+    frozen_quota: i64,
+    request_count: i64,
+) -> Result<(), Box<dyn Error>> {
+    let mut user = users::Entity::find_by_id(user_id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("企业计费测试用户必须存在")
+        .into_active_model();
+    user.quota = Set(quota);
+    user.used_quota = Set(used_quota);
+    user.frozen_quota = Set(frozen_quota);
+    user.request_count = Set(request_count);
+    user.update(fixture.pool.connection()).await?;
+    Ok(())
+}
+
+async fn personal_snapshot(
+    fixture: &Fixture,
+    user_id: UserId,
+) -> Result<PersonalSnapshot, Box<dyn Error>> {
+    let user = users::Entity::find_by_id(user_id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("企业计费测试用户必须存在");
+    Ok(PersonalSnapshot::new(
+        user.quota,
+        user.used_quota,
+        user.frozen_quota,
+        user.request_count,
+    ))
+}
+
+async fn token_snapshot(
+    fixture: &Fixture,
+    token_id: TokenId,
+) -> Result<(i64, i64), Box<dyn Error>> {
+    let token = tokens::Entity::find_by_id(token_id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("企业计费测试 Key 必须存在");
+    Ok((token.remain_quota, token.used_quota))
+}
+
+async fn set_token_remain(
+    fixture: &Fixture,
+    token_id: TokenId,
+    remain_quota: i64,
+) -> Result<(), Box<dyn Error>> {
+    let mut token = tokens::Entity::find_by_id(token_id.get())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("企业计费测试 Key 必须存在")
+        .into_active_model();
+    token.remain_quota = Set(remain_quota);
+    token.update(fixture.pool.connection()).await?;
+    Ok(())
+}
+
+async fn assert_gateway_reservation_pair(
+    fixture: &Fixture,
+    id: BillingReservationId,
+    principal: GatewayPrincipal,
+    reserved_quota: i64,
+    actual_quota: Option<i64>,
+    status: QuotaReservationStatus,
+) -> Result<(), Box<dyn Error>> {
+    let key = BillingReservationKey::parse(&id.persistence_key())?;
+    let parent = billing_reservations::Entity::find_by_id(key.clone())
+        .one(fixture.pool.connection())
+        .await?
+        .expect("共享计费预留必须存在");
+    let organization = billing_organization_reservations::Entity::find_by_id(key)
+        .one(fixture.pool.connection())
+        .await?
+        .expect("企业计费预留必须存在");
+    assert_eq!(
+        parent.organization_id,
+        principal
+            .organization_principal()
+            .map(|value| value.organization_id().get())
+    );
+    let status = status as i16;
+    assert_eq!(parent.status, status);
+    assert_eq!(parent.reserved_quota, reserved_quota);
+    assert_eq!(parent.actual_quota, actual_quota);
+    assert_eq!(organization.status, status);
+    assert_eq!(organization.reservation_kind, 2);
+    assert_eq!(organization.token_id, Some(principal.token_id().get()));
+    assert_eq!(organization.group_id, Some(principal.group_id().get()));
+    assert_eq!(organization.reserved_quota, reserved_quota);
+    assert_eq!(organization.token_reserved_quota, reserved_quota);
+    assert_eq!(organization.actual_quota, actual_quota);
+    Ok(())
 }
 
 fn policy(

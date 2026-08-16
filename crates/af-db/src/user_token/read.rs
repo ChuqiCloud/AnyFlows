@@ -21,6 +21,7 @@ pub(super) async fn list(
     let mut query = base_query(repository.pool.connection().get_database_backend());
     query
         .and_where(Expr::col((tokens::Entity, tokens::Column::UserId)).eq(owner_user_id.get()))
+        .and_where(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
         .and_where(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
         .order_by((tokens::Entity, tokens::Column::Id), Order::Asc)
         .limit((limit + 1) as u64);
@@ -76,6 +77,7 @@ pub(super) fn detail_query(
     base_query(database_backend)
         .and_where(Expr::col((tokens::Entity, tokens::Column::Id)).eq(token_id.get()))
         .and_where(Expr::col((tokens::Entity, tokens::Column::UserId)).eq(owner_user_id.get()))
+        .and_where(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
         .and_where(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
         .limit(2)
         .to_owned()

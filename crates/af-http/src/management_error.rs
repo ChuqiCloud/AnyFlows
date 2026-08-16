@@ -179,6 +179,8 @@ pub(crate) enum ManagementError {
     TokenNotFound,
     /// 当前用户的未软删除 API Key 已达到容量上限。
     TokenLimitReached,
+    /// 企业 API Key 写操作提交结果未知，调用方必须查询确认。
+    TokenOutcomeUnknown,
     /// 渠道不存在或已经被软删除。
     ChannelNotFound,
     /// 凭据不存在、已经软删除或不属于指定渠道。
@@ -835,6 +837,13 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "token_limit_reached",
                     message: "Token limit reached",
+                },
+            ),
+            Self::TokenOutcomeUnknown => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "token_outcome_unknown",
+                    message: "Token write outcome unknown",
                 },
             ),
             Self::ChannelNotFound => (

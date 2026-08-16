@@ -23,6 +23,7 @@ import { LandingPage } from '@/features/landing/landing-page'
 import { ModelPage } from '@/features/models/model-page'
 import { ModelManagementPage } from '@/features/model-management/model-management-page'
 import { NetworkSettingsPage } from '@/features/network-settings/network-settings-page'
+import { OrganizationApiKeyPage } from '@/features/organization-api-keys/organization-api-key-page'
 import { OrganizationBudgetPage } from '@/features/organization-budgets/organization-budget-page'
 import { PaymentSettingsPage } from '@/features/payment-settings/payment-settings-page'
 import { PublicModelPage } from '@/features/models/public-model-page'
@@ -153,8 +154,10 @@ function ManagementEntry({
                 ? 'users.title'
             : view === 'api-keys'
               ? 'apiKeys.title'
-              : view === 'organization-budgets'
-                ? 'organizationBudgets.title'
+              : view === 'organization-api-keys'
+                ? 'organizationApiKeys.title'
+                : view === 'organization-budgets'
+                  ? 'organizationBudgets.title'
               : view === 'wallet'
                 ? 'wallet.title'
               : view === 'invitations'
@@ -208,8 +211,10 @@ function ManagementEntry({
                 ? <UserPage />
             : view === 'api-keys'
               ? <ApiKeyPage />
-              : view === 'organization-budgets'
-                ? <OrganizationBudgetPage />
+              : view === 'organization-api-keys'
+                ? <OrganizationApiKeyPage />
+                : view === 'organization-budgets'
+                  ? <OrganizationBudgetPage />
               : view === 'wallet'
                 ? <WalletPage />
               : view === 'invitations'
@@ -231,6 +236,7 @@ function ManagementEntry({
                         : <DashboardPage />
 
   const requireAdmin = view !== 'api-keys'
+    && view !== 'organization-api-keys'
     && view !== 'organization-budgets'
     && view !== 'wallet'
     && view !== 'subscriptions'

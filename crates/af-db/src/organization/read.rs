@@ -213,7 +213,7 @@ async fn capacity_counts(
     Ok((active_seats, active_teams))
 }
 
-pub(super) fn entitlement_snapshot(
+pub(crate) fn entitlement_snapshot(
     model: organization_entitlements::Model,
 ) -> Result<OrganizationEntitlementSnapshot, OrganizationRepositoryError> {
     let capacity = OrganizationEntitlementCapacity::new(

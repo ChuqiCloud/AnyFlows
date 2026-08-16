@@ -70,6 +70,9 @@ pub(super) async fn create(
         name: Set(fields.name),
         status: Set(fields.status),
         group_id: Set(None),
+        organization_id: Set(None),
+        organization_membership_id: Set(None),
+        organization_team_id: Set(None),
         remain_quota: Set(fields.remain_quota),
         unlimited_quota: Set(fields.unlimited_quota),
         expired_at: Set(fields.expired_at),
@@ -112,6 +115,7 @@ pub(super) async fn update(
     let result = tokens::Entity::update_many()
         .filter(tokens::Column::Id.eq(token_id.get()))
         .filter(tokens::Column::UserId.eq(owner_user_id.get()))
+        .filter(tokens::Column::OrganizationId.is_null())
         .filter(tokens::Column::DeletedAt.is_null())
         .col_expr(tokens::Column::Name, Expr::value(fields.name))
         .col_expr(tokens::Column::Status, Expr::value(fields.status))
@@ -172,6 +176,7 @@ pub(super) async fn delete(
     let result = tokens::Entity::update_many()
         .filter(tokens::Column::Id.eq(token_id.get()))
         .filter(tokens::Column::UserId.eq(owner_user_id.get()))
+        .filter(tokens::Column::OrganizationId.is_null())
         .filter(tokens::Column::DeletedAt.is_null())
         .col_expr(tokens::Column::DeletedAt, Expr::value(now))
         .col_expr(tokens::Column::UpdatedAt, Expr::value(now))

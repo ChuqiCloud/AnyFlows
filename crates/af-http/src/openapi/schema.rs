@@ -629,6 +629,7 @@ pub(crate) enum ManagementErrorCodeSchema {
     GroupNotFound,
     TokenNotFound,
     TokenLimitReached,
+    TokenOutcomeUnknown,
     ChannelNotFound,
     CredentialNotFound,
     ProbeUnavailable,

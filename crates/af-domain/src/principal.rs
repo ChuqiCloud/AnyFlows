@@ -128,7 +128,56 @@ pub struct GatewayPrincipal {
     token_id: TokenId,
     user_id: UserId,
     group_id: GroupId,
+    organization: Option<OrganizationGatewayPrincipal>,
     playground: bool,
+}
+
+/// 企业 API Key 在鉴权后固化的组织主体。
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub struct OrganizationGatewayPrincipal {
+    organization_id: OrganizationId,
+    membership_id: OrganizationMembershipId,
+    team_id: Option<OrganizationTeamId>,
+}
+
+impl OrganizationGatewayPrincipal {
+    /// 组合已通过同企业归属校验的组织、成员和可选团队。
+    #[must_use]
+    pub const fn new(
+        organization_id: OrganizationId,
+        membership_id: OrganizationMembershipId,
+        team_id: Option<OrganizationTeamId>,
+    ) -> Self {
+        Self {
+            organization_id,
+            membership_id,
+            team_id,
+        }
+    }
+
+    /// 返回企业内部标识。
+    #[must_use]
+    pub const fn organization_id(self) -> OrganizationId {
+        self.organization_id
+    }
+
+    /// 返回签发成员关系标识。
+    #[must_use]
+    pub const fn membership_id(self) -> OrganizationMembershipId {
+        self.membership_id
+    }
+
+    /// 返回签发时固化的主团队。
+    #[must_use]
+    pub const fn team_id(self) -> Option<OrganizationTeamId> {
+        self.team_id
+    }
+}
+
+impl fmt::Debug for OrganizationGatewayPrincipal {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OrganizationGatewayPrincipal(<redacted>)")
+    }
 }
 
 impl GatewayPrincipal {
@@ -139,6 +188,7 @@ impl GatewayPrincipal {
             token_id,
             user_id,
             group_id,
+            organization: None,
             playground: false,
         }
     }
@@ -150,7 +200,25 @@ impl GatewayPrincipal {
             token_id,
             user_id,
             group_id,
+            organization: None,
             playground: true,
+        }
+    }
+
+    /// 构造已经完成成员、授权和团队复验的企业 API Key 主体。
+    #[must_use]
+    pub const fn organization(
+        token_id: TokenId,
+        user_id: UserId,
+        group_id: GroupId,
+        organization: OrganizationGatewayPrincipal,
+    ) -> Self {
+        Self {
+            token_id,
+            user_id,
+            group_id,
+            organization: Some(organization),
+            playground: false,
         }
     }
 
@@ -170,6 +238,12 @@ impl GatewayPrincipal {
     #[must_use]
     pub const fn group_id(self) -> GroupId {
         self.group_id
+    }
+
+    /// 返回企业 API Key 的已验证组织主体；个人 Key 返回空。
+    #[must_use]
+    pub const fn organization_principal(self) -> Option<OrganizationGatewayPrincipal> {
+        self.organization
     }
 
     /// 返回是否允许试炼场专用的分组降级策略。

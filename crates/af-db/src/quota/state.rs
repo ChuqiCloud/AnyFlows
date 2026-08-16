@@ -123,6 +123,9 @@ pub enum QuotaRepositoryError {
     /// 用户钱包不足以完成预扣或结算补扣。
     #[error("用户额度不足")]
     UserQuotaInsufficient,
+    /// 企业钱包、分层预算或企业计费保护阻止本次预扣或补扣。
+    #[error("企业额度不足或暂不可用")]
+    OrganizationQuotaInsufficient,
     /// 有限令牌不足以完成预扣或结算补扣。
     #[error("令牌额度不足")]
     TokenQuotaInsufficient,
@@ -154,6 +157,7 @@ pub(crate) struct ReservationState {
     pub(crate) user_id: i64,
     pub(crate) token_id: i64,
     pub(crate) group_id: i64,
+    pub(crate) organization_id: Option<i64>,
     pub(crate) status: QuotaReservationStatus,
     pub(crate) reservation_kind: QuotaReservationKind,
     pub(crate) funding_source: QuotaFundingSource,
@@ -169,6 +173,7 @@ impl ReservationState {
             user_id: get(result, "user_id")?,
             token_id: get(result, "token_id")?,
             group_id: get(result, "group_id")?,
+            organization_id: get(result, "organization_id")?,
             status,
             reservation_kind: QuotaReservationKind::from_code(get(result, "reservation_kind")?)?,
             funding_source: QuotaFundingSource::from_code(get(result, "funding_source")?)?,
@@ -190,6 +195,10 @@ impl ReservationState {
         self.user_id == principal.user_id().get()
             && self.token_id == principal.token_id().get()
             && self.group_id == principal.group_id().get()
+            && self.organization_id
+                == principal
+                    .organization_principal()
+                    .map(|organization| organization.organization_id().get())
             && self.reservation_kind == reservation_kind
             && self.reserved_quota == amount.units()
     }
@@ -203,6 +212,7 @@ impl ReservationState {
         self.user_id == observed.user_id
             && self.token_id == observed.token_id
             && self.group_id == observed.group_id
+            && self.organization_id == observed.organization_id
             && self.reservation_kind == observed.reservation_kind
             && self.funding_source == observed.funding_source
             && self.reserved_quota == observed.reserved_quota
@@ -219,6 +229,9 @@ impl ReservationState {
         if self.user_id <= 0
             || self.token_id <= 0
             || self.group_id <= 0
+            || self
+                .organization_id
+                .is_some_and(|organization_id| organization_id <= 0)
             || self.reserved_quota <= 0
             || (self.token_reserved_quota != 0 && self.token_reserved_quota != self.reserved_quota)
             || self.actual_quota.is_some_and(|value| value < 0)
@@ -319,6 +332,9 @@ impl UserQuotaState {
 #[derive(Clone, Copy)]
 pub(crate) struct TokenQuotaState {
     pub(crate) user_id: i64,
+    pub(crate) organization_id: Option<i64>,
+    pub(crate) organization_membership_id: Option<i64>,
+    pub(crate) organization_team_id: Option<i64>,
     pub(crate) remain_quota: i64,
     pub(crate) unlimited_quota: bool,
     pub(crate) used_quota: i64,
@@ -337,6 +353,9 @@ impl TokenQuotaState {
     pub(crate) fn try_from_result(result: &QueryResult) -> Result<Self, QuotaRepositoryError> {
         let state = Self {
             user_id: get(result, "user_id")?,
+            organization_id: get(result, "organization_id")?,
+            organization_membership_id: get(result, "organization_membership_id")?,
+            organization_team_id: get(result, "organization_team_id")?,
             remain_quota: get(result, "remain_quota")?,
             unlimited_quota: get(result, "unlimited_quota")?,
             used_quota: get(result, "used_quota")?,
@@ -351,6 +370,15 @@ impl TokenQuotaState {
             window_7d_start: get(result, "window_7d_start")?,
         };
         if state.user_id <= 0
+            || state.organization_id.is_some_and(|value| value <= 0)
+            || state
+                .organization_membership_id
+                .is_some_and(|value| value <= 0)
+            || state.organization_team_id.is_some_and(|value| value <= 0)
+            || (state.organization_id.is_none()
+                && (state.organization_membership_id.is_some()
+                    || state.organization_team_id.is_some()))
+            || (state.organization_id.is_some() && state.organization_membership_id.is_none())
             || state.remain_quota < 0
             || state.used_quota < 0
             || [

@@ -19,9 +19,10 @@ import { copyText } from '@/lib/clipboard'
 type IssuedApiKeyDialogProps = {
   issued?: IssuedUserToken
   onClose: () => void
+  showPlayground?: boolean
 }
 
-export function IssuedApiKeyDialog({ issued, onClose }: IssuedApiKeyDialogProps) {
+export function IssuedApiKeyDialog({ issued, onClose, showPlayground = true }: IssuedApiKeyDialogProps) {
   const { t } = useTranslation()
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
@@ -61,9 +62,11 @@ export function IssuedApiKeyDialog({ issued, onClose }: IssuedApiKeyDialogProps)
           </p>
         </div>
         <AlertDialogFooter>
-          <Button type="button" variant="secondary" onClick={openPlayground}>
-            <MessageSquareText aria-hidden="true" />{t('apiKeys.issued.playground')}
-          </Button>
+          {showPlayground ? (
+            <Button type="button" variant="secondary" onClick={openPlayground}>
+              <MessageSquareText aria-hidden="true" />{t('apiKeys.issued.playground')}
+            </Button>
+          ) : null}
           <AlertDialogAction onClick={onClose}>{t('apiKeys.issued.done')}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
