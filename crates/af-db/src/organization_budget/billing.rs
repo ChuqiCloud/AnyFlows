@@ -199,6 +199,8 @@ pub(super) async fn settle(
     )
     .await
     .map_err(|error| {
+        #[cfg(test)]
+        eprintln!("[DEBUG-organization-budget-settle] stage=ledger-raw error={error:?}");
         settle_diagnostic(
             "ledger",
             match error {

@@ -91,6 +91,7 @@ async fn start_rpm_server(
     redis_url: &str,
     proxy_address: SocketAddr,
     instance: &str,
+    redis_namespace: &str,
 ) -> RpmServer {
     let config_path = std::env::temp_dir().join(format!(
         "anyflows-rpm-http-{}-{instance}.toml",
@@ -103,7 +104,7 @@ async fn start_rpm_server(
     fs::write(
         &config_path,
         format!(
-            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[redis]\nurl = '{redis_url}'\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'gateway-test-key'\nkey = '{credential_key}'\n[auth]\nlookup_timeout_secs = 1\nsession_signing_key = '{credential_key}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n",
+            "[server]\nbind = '127.0.0.1:0'\nshutdown_timeout_secs = 1\n[telemetry]\nlevel = 'off'\n[database]\nurl = '{}'\nhealth_check_timeout_secs = 1\n[redis]\nurl = '{redis_url}'\nnamespace = '{redis_namespace}'\n[billing]\nwal_directory = '{}'\n[credential_encryption]\nkey_id = 'gateway-test-key'\nkey = '{credential_key}'\n[auth]\nlookup_timeout_secs = 1\nsession_signing_key = '{credential_key}'\n[http_client]\nconnect_timeout_secs = 5\nread_timeout_secs = 5\nrequest_timeout_secs = 5\nproxy_url = 'http://{proxy_address}'\ntrust_proxy_dns = true\n",
             database.url,
             wal_directory.to_string_lossy().replace('\\', "/")
         ),
@@ -205,6 +206,11 @@ async fn redis_rpm_admission_is_shared_across_http_instances() {
     );
     let redis_url = env::var("AF_TEST_REDIS_URL").expect("必须设置 AF_TEST_REDIS_URL");
     let database = TestDatabase::new();
+    let redis_namespace = format!(
+        "anyflows.gateway.rpm.v1.test.{}.{}",
+        std::process::id(),
+        NEXT_DATABASE.fetch_add(1, Ordering::Relaxed)
+    );
     seed_valid_token(&database.url).await;
     execute_database_statement(
         &database.url,
@@ -222,7 +228,7 @@ async fn redis_rpm_admission_is_shared_across_http_instances() {
     let peer_store = RedisRequestRateLimitStore::connect(
         RedisRequestRateLimitConfig::new(
             RedisConfig::new(redis_url.clone()),
-            "anyflows.gateway.rpm.v1",
+            redis_namespace.clone(),
         )
         .unwrap(),
     )
@@ -249,8 +255,14 @@ async fn redis_rpm_admission_is_shared_across_http_instances() {
 
     let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
     proxy.set_nonblocking(true).unwrap();
-    let server =
-        start_rpm_server(&database, &redis_url, proxy.local_addr().unwrap(), "first").await;
+    let server = start_rpm_server(
+        &database,
+        &redis_url,
+        proxy.local_addr().unwrap(),
+        "first",
+        &redis_namespace,
+    )
+    .await;
     let authorization = format!("Bearer {CLIENT_KEY}");
     let inbound = br#"{"model":"test-model","messages":[{"role":"user","content":"hello"}]}"#;
 
