@@ -302,13 +302,13 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: postgres:17.10-bookworm@sha256:67870dd097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010
+        image: postgres:17.10-bookworm
         env:
           POSTGRES_USER: anyflows
           POSTGRES_PASSWORD: anyflows_ci
           POSTGRES_DB: anyflows_migration_test_ci
         ports:
-          - 5432:5432
+          - 15432:5432
         options: >-
           --health-cmd "pg_isready -U anyflows -d anyflows_migration_test_ci"
           --health-interval 5s
@@ -354,9 +354,18 @@ jobs:
         with:
           shared-key: database-postgres
 
-      - name: Run PostgreSQL migration smoke test
+      - name: Run PostgreSQL migration smoke test on Gitea
+        if: ${{ github.server_url != 'https://github.com' }}
         env:
-          AF_TEST_DATABASE_URL: postgres://anyflows:anyflows_ci@127.0.0.1:5432/anyflows_migration_test_ci
+          AF_TEST_DATABASE_URL: postgres://anyflows:anyflows_ci@postgres:5432/anyflows_migration_test_ci
+          AF_REQUIRE_LIVE_DATABASE: "1"
+          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
+        run: bash tools/ci/run-db-migration-test.sh postgres
+
+      - name: Run PostgreSQL migration smoke test on GitHub
+        if: ${{ github.server_url == 'https://github.com' }}
+        env:
+          AF_TEST_DATABASE_URL: postgres://anyflows:anyflows_ci@127.0.0.1:15432/anyflows_migration_test_ci
           AF_REQUIRE_LIVE_DATABASE: "1"
           AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
         run: bash tools/ci/run-db-migration-test.sh postgres
@@ -374,7 +383,7 @@ jobs:
           MYSQL_ROOT_PASSWORD: root_ci
           MYSQL_DATABASE: anyflows_migration_test_ci
         ports:
-          - 3306:3306
+          - 13306:3306
         options: >-
           --health-cmd "mysqladmin ping -h 127.0.0.1 -u root -proot_ci --silent"
           --health-interval 5s
@@ -420,9 +429,18 @@ jobs:
         with:
           shared-key: database-mysql
 
-      - name: Run MySQL migration smoke test
+      - name: Run MySQL migration smoke test on Gitea
+        if: ${{ github.server_url != 'https://github.com' }}
         env:
-          AF_TEST_DATABASE_URL: mysql://anyflows:anyflows_ci@127.0.0.1:3306/anyflows_migration_test_ci?timezone=%2B08:00
+          AF_TEST_DATABASE_URL: mysql://anyflows:anyflows_ci@mysql:3306/anyflows_migration_test_ci?timezone=%2B08:00
+          AF_REQUIRE_LIVE_DATABASE: "1"
+          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
+        run: bash tools/ci/run-db-migration-test.sh mysql
+
+      - name: Run MySQL migration smoke test on GitHub
+        if: ${{ github.server_url == 'https://github.com' }}
+        env:
+          AF_TEST_DATABASE_URL: mysql://anyflows:anyflows_ci@127.0.0.1:13306/anyflows_migration_test_ci?timezone=%2B08:00
           AF_REQUIRE_LIVE_DATABASE: "1"
           AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
         run: bash tools/ci/run-db-migration-test.sh mysql
@@ -435,7 +453,7 @@ jobs:
       redis:
         image: redis:8.2.7-bookworm@sha256:d30960f73a599496d8b2802c97758bab6b1cd421fd06337f837779c47a57e1f3
         ports:
-          - 6379:6379
+          - 16379:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s
@@ -481,8 +499,16 @@ jobs:
         with:
           shared-key: cache-redis
 
-      - name: Run Redis cache smoke test
+      - name: Run Redis cache smoke test on Gitea
+        if: ${{ github.server_url != 'https://github.com' }}
         env:
-          AF_TEST_REDIS_URL: redis://127.0.0.1:6379/
+          AF_TEST_REDIS_URL: redis://redis:6379/
+          AF_REQUIRE_LIVE_REDIS: "1"
+        run: bash tools/ci/run-cache-redis-test.sh
+
+      - name: Run Redis cache smoke test on GitHub
+        if: ${{ github.server_url == 'https://github.com' }}
+        env:
+          AF_TEST_REDIS_URL: redis://127.0.0.1:16379/
           AF_REQUIRE_LIVE_REDIS: "1"
         run: bash tools/ci/run-cache-redis-test.sh
