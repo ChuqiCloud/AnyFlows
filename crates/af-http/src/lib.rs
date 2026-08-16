@@ -82,6 +82,12 @@ mod wallet_query;
 mod xai_video;
 
 pub use audio_service::{AudioService, AudioServiceFuture};
+pub use axum::{
+    Router,
+    body::{Body, to_bytes},
+    http,
+    response::Response,
+};
 pub use channel_probe::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 pub use chat_service::{ChatService, ChatServiceFuture};
 pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presented_api_key};

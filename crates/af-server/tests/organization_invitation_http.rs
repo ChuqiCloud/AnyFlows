@@ -24,10 +24,10 @@ use af_domain::{
     GroupId, OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, OrganizationId,
     OrganizationPermission, OrganizationRole, UserId,
 };
-use axum::{
-    Router,
-    body::{Body, to_bytes},
+use af_http::{
+    Body, Response, Router, build_organization_router,
     http::{Request, StatusCode, header::AUTHORIZATION},
+    to_bytes,
 };
 use serde_json::{Value, json};
 use tower::ServiceExt as _;
@@ -402,7 +402,7 @@ fn json_request(path: &str, token: &str, body: &str) -> Request<Body> {
         .unwrap()
 }
 
-async fn response_json(response: axum::response::Response) -> Value {
+async fn response_json(response: Response) -> Value {
     serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap()
 }
 
