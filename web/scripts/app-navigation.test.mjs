@@ -15,6 +15,7 @@ import {
 const expectedAdminItems = [
   'overview', 'models', 'playground', 'videoTasks',
   'apiKeys', 'wallet', 'subscriptions', 'invitations', 'profile',
+  'organizationBudgets',
   'users', 'subscriptionManagement', 'redemptionCodes', 'paymentSettings', 'billingSettings',
   'modelSettings', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes',
   'siteSettings', 'authenticationSettings', 'emailSettings', 'networkSettings', 'keys',
@@ -29,7 +30,7 @@ test('管理员导航覆盖全部入口且没有重复项', () => {
 test('管理员工作台和任务域保持规划顺序', () => {
   assert.deepEqual(adminWorkspaceItems, ['overview', 'usage', 'models', 'playground', 'videoTasks'])
   assert.deepEqual(adminNavigationSections.map((section) => section.key), [
-    'personal', 'operations', 'gateway', 'platform',
+    'personal', 'organization', 'operations', 'gateway', 'platform',
   ])
   assert.deepEqual(adminSystemItems, ['debugTraces'])
 })
@@ -40,10 +41,11 @@ test('调用日志是角色感知的共享入口而不是管理员任务域', ()
   assert.ok(adminNavigationSections.every((section) => !section.items.includes('usage')))
 })
 
-test('普通用户导航结构和权限入口保持不变', () => {
-  assert.deepEqual(userNavigationGroups.map((group) => group.key), ['use', 'account'])
+test('普通用户导航增加独立企业空间且保留原账户入口', () => {
+  assert.deepEqual(userNavigationGroups.map((group) => group.key), ['use', 'organization', 'account'])
   assert.deepEqual(userNavigationItems, [
     'models', 'playground', 'videoTasks',
+    'organizationBudgets',
     'apiKeys', 'wallet', 'usage', 'subscriptions', 'invitations', 'profile',
   ])
 })
@@ -60,6 +62,7 @@ test('管理员导航分组具备完整中英文文案', async () => {
   for (const locale of locales) {
     assert.equal(typeof locale.nav.groups.workspace, 'string')
     assert.equal(typeof locale.nav.groups.personal, 'string')
+    assert.equal(typeof locale.nav.groups.organization, 'string')
     for (const section of adminNavigationSections) {
       assert.equal(typeof locale.nav.sections[section.key], 'string')
     }
