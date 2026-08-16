@@ -9,7 +9,10 @@ use super::iden::{
 const TOKEN_ORGANIZATION_INDEX: &str = "idx_tokens_organization_status_id";
 const TOKEN_ORGANIZATION_OWNER_INDEX: &str = "idx_tokens_organization_owner_id";
 const TOKEN_MEMBERSHIP_INDEX: &str = "idx_tokens_organization_membership_status";
+const MEMBERSHIP_SCOPE_ID_INDEX: &str = "uq_organization_memberships_scope_id";
 const BILLING_ORGANIZATION_INDEX: &str = "idx_billing_reservations_organization_status";
+const TOKEN_SUBJECT_CHECK: &str = "ck_tokens_organization_subject";
+const ORGANIZATION_BILLING_GATEWAY_CHECK: &str = "ck_billing_org_reservations_gateway_shape";
 const TOKEN_ORGANIZATION_FOREIGN_KEY: &str = "fk_tokens_organization";
 const TOKEN_MEMBERSHIP_FOREIGN_KEY: &str = "fk_tokens_organization_membership";
 const TOKEN_TEAM_FOREIGN_KEY: &str = "fk_tokens_organization_team";
@@ -50,14 +53,12 @@ impl MigrationTrait for Migration {
             ColumnDef::new(tokens::Column::OrganizationMembershipId).big_integer(),
         )
         .await?;
-        add_column(
-            manager,
-            tokens::Entity,
-            ColumnDef::new(tokens::Column::OrganizationTeamId)
-                .big_integer()
-                .check(token_subject_shape()),
-        )
-        .await?;
+        let mut organization_team_id = ColumnDef::new(tokens::Column::OrganizationTeamId);
+        organization_team_id.big_integer();
+        if manager.get_database_backend() != DbBackend::MySql {
+            organization_team_id.check(token_subject_shape());
+        }
+        add_column(manager, tokens::Entity, &mut organization_team_id).await?;
         add_column(
             manager,
             billing_reservations::Entity,
@@ -89,18 +90,29 @@ impl MigrationTrait for Migration {
                 ),
         )
         .await?;
+        let mut token_reserved_quota =
+            ColumnDef::new(billing_organization_reservations::Column::TokenReservedQuota);
+        token_reserved_quota.big_integer().not_null().default(0_i64);
+        if manager.get_database_backend() != DbBackend::MySql {
+            token_reserved_quota.check(organization_billing_gateway_shape());
+        }
         add_column(
             manager,
             billing_organization_reservations::Entity,
-            ColumnDef::new(billing_organization_reservations::Column::TokenReservedQuota)
-                .big_integer()
-                .not_null()
-                .default(0_i64)
-                .check(organization_billing_gateway_shape()),
+            &mut token_reserved_quota,
         )
         .await?;
 
+        create_mysql_table_checks(manager).await?;
+
         for index in [
+            Index::create()
+                .name(MEMBERSHIP_SCOPE_ID_INDEX)
+                .table(organization_memberships::Entity)
+                .col(organization_memberships::Column::OrganizationId)
+                .col(organization_memberships::Column::Id)
+                .unique()
+                .to_owned(),
             Index::create()
                 .name(TOKEN_ORGANIZATION_INDEX)
                 .table(tokens::Entity)
@@ -137,12 +149,14 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         drop_references(manager).await?;
+        drop_mysql_table_checks(manager).await?;
 
         for index in [
             BILLING_ORGANIZATION_INDEX,
             TOKEN_MEMBERSHIP_INDEX,
             TOKEN_ORGANIZATION_OWNER_INDEX,
             TOKEN_ORGANIZATION_INDEX,
+            MEMBERSHIP_SCOPE_ID_INDEX,
         ] {
             manager
                 .drop_index(Index::drop().name(index).to_owned())
@@ -188,6 +202,42 @@ impl MigrationTrait for Migration {
         .await?;
         drop_column(manager, tokens::Entity, tokens::Column::OrganizationId).await
     }
+}
+
+/// MySQL 不允许列级 CHECK 引用同表其他列，因此在所有列就绪后补命名表级约束。
+async fn create_mysql_table_checks(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    if manager.get_database_backend() != DbBackend::MySql {
+        return Ok(());
+    }
+    for statement in [
+        "ALTER TABLE `tokens` ADD CONSTRAINT `ck_tokens_organization_subject` CHECK ((`organization_id` IS NULL AND `organization_membership_id` IS NULL AND `organization_team_id` IS NULL) OR (`organization_id` IS NOT NULL AND `organization_membership_id` IS NOT NULL))",
+        "ALTER TABLE `billing_organization_reservations` ADD CONSTRAINT `ck_billing_org_reservations_gateway_shape` CHECK ((`reservation_kind` = 1 AND `token_id` IS NULL AND `group_id` IS NULL AND `token_reserved_quota` = 0) OR (`reservation_kind` = 2 AND `token_id` IS NOT NULL AND `group_id` IS NOT NULL AND (`token_reserved_quota` = 0 OR `token_reserved_quota` = `reserved_quota`)))",
+    ] {
+        manager
+            .get_connection()
+            .execute_unprepared(statement)
+            .await?;
+    }
+    Ok(())
+}
+
+async fn drop_mysql_table_checks(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    if manager.get_database_backend() != DbBackend::MySql {
+        return Ok(());
+    }
+    for (table, constraint) in [
+        (
+            "billing_organization_reservations",
+            ORGANIZATION_BILLING_GATEWAY_CHECK,
+        ),
+        ("tokens", TOKEN_SUBJECT_CHECK),
+    ] {
+        manager
+            .get_connection()
+            .execute_unprepared(&format!("ALTER TABLE `{table}` DROP CHECK `{constraint}`"))
+            .await?;
+    }
+    Ok(())
 }
 
 async fn create_references(manager: &SchemaManager<'_>) -> Result<(), DbErr> {

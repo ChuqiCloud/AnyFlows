@@ -2685,6 +2685,10 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "organization_wallet_ledger_entries",
             "idx_organization_wallet_ledger_scope_id",
         ),
+        (
+            "organization_memberships",
+            "uq_organization_memberships_scope_id",
+        ),
         ("tokens", "idx_tokens_organization_status_id"),
         ("tokens", "idx_tokens_organization_owner_id"),
         ("tokens", "idx_tokens_organization_membership_status"),
