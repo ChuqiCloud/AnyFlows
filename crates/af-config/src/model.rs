@@ -635,6 +635,8 @@ impl fmt::Debug for BillingSettings {
 #[serde(default, deny_unknown_fields)]
 pub struct RedisSettings {
     url: Option<SecretString>,
+    /// 请求限流使用的 Redis 键空间；缺省值由服务端保持稳定兼容命名。
+    request_rate_limit_namespace: Option<String>,
 }
 
 impl RedisSettings {
@@ -642,6 +644,12 @@ impl RedisSettings {
     #[must_use]
     pub fn url(&self) -> Option<&SecretString> {
         self.url.as_ref()
+    }
+
+    /// 返回请求限流键空间；未配置时由服务端使用默认命名。
+    #[must_use]
+    pub fn request_rate_limit_namespace(&self) -> Option<&str> {
+        self.request_rate_limit_namespace.as_deref()
     }
 }
 
