@@ -1261,6 +1261,29 @@ export type OrganizationInvitationResponse = {
 export type OrganizationListResponse = {
     organizations: Array<OrganizationSummaryResponse>;
 };
+export type OrganizationMembershipChangeRequest = {
+    role: string;
+    status: string;
+    team_id?: number | null;
+    expected_version: number;
+};
+export type OrganizationMembershipListResponse = {
+    members: Array<OrganizationMembershipResponse>;
+    next_cursor?: number | null;
+};
+export type OrganizationMembershipResponse = {
+    id: number;
+    organization_id: number;
+    user_id: number;
+    role: string;
+    team_id?: number | null;
+    status: string;
+    joined_at: number;
+    suspended_at?: number | null;
+    removed_at?: number | null;
+    invited_by_user_id?: number | null;
+    version: number;
+};
 export type OrganizationOverviewResponse = {
     id: number;
     name: string;
@@ -1270,11 +1293,47 @@ export type OrganizationOverviewResponse = {
     permissions: Array<string>;
     entitlement: OrganizationEntitlementResponse;
 };
+export type OrganizationOwnershipTransferRequest = {
+    target_membership_id: number;
+    current_owner_version: number;
+    target_expected_version: number;
+};
+export type OrganizationOwnershipTransferResponse = {
+    previous_owner: OrganizationMembershipResponse;
+    current_owner: OrganizationMembershipResponse;
+};
 export type OrganizationSummaryResponse = {
     id: number;
     name: string;
     slug: string;
     role: string;
+};
+export type OrganizationTeamChangeRequest = {
+    name: string;
+    description?: string | null;
+    expected_version: number;
+};
+export type OrganizationTeamCreateRequest = {
+    name: string;
+    description?: string | null;
+};
+export type OrganizationTeamDisableRequest = {
+    expected_version: number;
+};
+export type OrganizationTeamListResponse = {
+    teams: Array<OrganizationTeamResponse>;
+    next_cursor?: number | null;
+};
+export type OrganizationTeamResponse = {
+    id: number;
+    organization_id: number;
+    name: string;
+    description?: string | null;
+    status: string;
+    version: number;
+    created_at: number;
+    updated_at: number;
+    deleted_at?: number | null;
 };
 export type PasswordResetConfirmRequest = {
     token: string;
@@ -2957,6 +3016,160 @@ export type AcceptOrganizationInvitationResponses = {
     200: OrganizationInvitationAcceptResponse;
 };
 export type AcceptOrganizationInvitationResponse = AcceptOrganizationInvitationResponses[keyof AcceptOrganizationInvitationResponses];
+export type ListOrganizationMembersData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/members';
+};
+export type ListOrganizationMembersErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationMembersError = ListOrganizationMembersErrors[keyof ListOrganizationMembersErrors];
+export type ListOrganizationMembersResponses = {
+    200: OrganizationMembershipListResponse;
+};
+export type ListOrganizationMembersResponse = ListOrganizationMembersResponses[keyof ListOrganizationMembersResponses];
+export type ChangeOrganizationMemberData = {
+    body: OrganizationMembershipChangeRequest;
+    path: {
+        organization_id: number;
+        membership_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/members/{membership_id}';
+};
+export type ChangeOrganizationMemberErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ChangeOrganizationMemberError = ChangeOrganizationMemberErrors[keyof ChangeOrganizationMemberErrors];
+export type ChangeOrganizationMemberResponses = {
+    200: OrganizationMembershipResponse;
+};
+export type ChangeOrganizationMemberResponse = ChangeOrganizationMemberResponses[keyof ChangeOrganizationMemberResponses];
+export type TransferOrganizationOwnershipData = {
+    body: OrganizationOwnershipTransferRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/ownership-transfer';
+};
+export type TransferOrganizationOwnershipErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type TransferOrganizationOwnershipError = TransferOrganizationOwnershipErrors[keyof TransferOrganizationOwnershipErrors];
+export type TransferOrganizationOwnershipResponses = {
+    200: OrganizationOwnershipTransferResponse;
+};
+export type TransferOrganizationOwnershipResponse = TransferOrganizationOwnershipResponses[keyof TransferOrganizationOwnershipResponses];
+export type ListOrganizationTeamsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/teams';
+};
+export type ListOrganizationTeamsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationTeamsError = ListOrganizationTeamsErrors[keyof ListOrganizationTeamsErrors];
+export type ListOrganizationTeamsResponses = {
+    200: OrganizationTeamListResponse;
+};
+export type ListOrganizationTeamsResponse = ListOrganizationTeamsResponses[keyof ListOrganizationTeamsResponses];
+export type CreateOrganizationTeamData = {
+    body: OrganizationTeamCreateRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/teams';
+};
+export type CreateOrganizationTeamErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type CreateOrganizationTeamError = CreateOrganizationTeamErrors[keyof CreateOrganizationTeamErrors];
+export type CreateOrganizationTeamResponses = {
+    200: OrganizationTeamResponse;
+};
+export type CreateOrganizationTeamResponse = CreateOrganizationTeamResponses[keyof CreateOrganizationTeamResponses];
+export type ChangeOrganizationTeamData = {
+    body: OrganizationTeamChangeRequest;
+    path: {
+        organization_id: number;
+        team_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/teams/{team_id}';
+};
+export type ChangeOrganizationTeamErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type ChangeOrganizationTeamError = ChangeOrganizationTeamErrors[keyof ChangeOrganizationTeamErrors];
+export type ChangeOrganizationTeamResponses = {
+    200: OrganizationTeamResponse;
+};
+export type ChangeOrganizationTeamResponse = ChangeOrganizationTeamResponses[keyof ChangeOrganizationTeamResponses];
+export type DisableOrganizationTeamData = {
+    body: OrganizationTeamDisableRequest;
+    path: {
+        organization_id: number;
+        team_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/teams/{team_id}/disable';
+};
+export type DisableOrganizationTeamErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+};
+export type DisableOrganizationTeamError = DisableOrganizationTeamErrors[keyof DisableOrganizationTeamErrors];
+export type DisableOrganizationTeamResponses = {
+    200: OrganizationTeamResponse;
+};
+export type DisableOrganizationTeamResponse = DisableOrganizationTeamResponses[keyof DisableOrganizationTeamResponses];
 export type GetAdminBalanceAlertSettingsData = {
     body?: never;
     path?: never;
