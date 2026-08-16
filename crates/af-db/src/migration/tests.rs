@@ -311,15 +311,18 @@ async fn token_window_migration_backfills_only_active_requests() -> Result<(), B
     )
     .insert(pool.connection())
     .await?;
-    let token = token_active_model(user.id, group_id, TOKEN_HASH_A, "token-window-token")
-        .insert(pool.connection())
-        .await?;
+    let token_id = insert_legacy_token(
+        pool.connection(),
+        90_048,
+        token_active_model(user.id, group_id, TOKEN_HASH_A, "token-window-token"),
+    )
+    .await?;
     let request_key = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
-    let request = reservation_active_model(request_key, user.id, token.id, group_id, 80, 80)
+    let request = reservation_active_model(request_key, user.id, token_id, group_id, 80, 80)
         .insert(pool.connection())
         .await?;
     let batch_key = "dededededededededededededededede";
-    let mut batch = reservation_active_model(batch_key, user.id, token.id, group_id, 90, 90);
+    let mut batch = reservation_active_model(batch_key, user.id, token_id, group_id, 90, 90);
     batch.reservation_kind = Set(2);
     batch.insert(pool.connection()).await?;
 
@@ -377,15 +380,18 @@ async fn group_window_migration_backfills_state_and_only_active_requests()
     )
     .insert(pool.connection())
     .await?;
-    let token = token_active_model(user.id, group_id, TOKEN_HASH_B, "group-window-token")
-        .insert(pool.connection())
-        .await?;
+    let token_id = insert_legacy_token(
+        pool.connection(),
+        90_049,
+        token_active_model(user.id, group_id, TOKEN_HASH_B, "group-window-token"),
+    )
+    .await?;
     let request_key = "efefefefefefefefefefefefefefefef";
-    let request = reservation_active_model(request_key, user.id, token.id, group_id, 70, 70)
+    let request = reservation_active_model(request_key, user.id, token_id, group_id, 70, 70)
         .insert(pool.connection())
         .await?;
     let batch_key = "fafafafafafafafafafafafafafafafa";
-    let mut batch = reservation_active_model(batch_key, user.id, token.id, group_id, 90, 90);
+    let mut batch = reservation_active_model(batch_key, user.id, token_id, group_id, 90, 90);
     batch.reservation_kind = Set(2);
     batch.insert(pool.connection()).await?;
 
@@ -462,15 +468,18 @@ async fn billing_reservation_kind_migration_backfills_existing_rows() -> Result<
     )
     .insert(pool.connection())
     .await?;
-    let token = token_active_model(user.id, group_id, TOKEN_HASH_A, "reservation-kind-token")
-        .insert(pool.connection())
-        .await?;
+    let token_id = insert_legacy_token(
+        pool.connection(),
+        90_045,
+        token_active_model(user.id, group_id, TOKEN_HASH_A, "reservation-kind-token"),
+    )
+    .await?;
     let reservation_id = "abababababababababababababababab";
     // 旧 schema 尚无用途列，插入时不能让 ORM 返回并投影新实体。
     billing_reservations::Entity::insert(reservation_active_model(
         reservation_id,
         user.id,
-        token.id,
+        token_id,
         group_id,
         100,
         100,
@@ -1058,11 +1067,11 @@ async fn insert_legacy_debug_trace_snapshot(pool: &DatabasePool) -> Result<i64, 
         "debug-snapshot-upgrade-token",
     );
     token.status = Set(1);
-    let token = token.insert(pool.connection()).await?;
+    let token_id = insert_legacy_token(pool.connection(), 90_059, token).await?;
     let trace = debug_traces::ActiveModel {
         request_id: Set("debug-snapshot-upgrade-request".to_owned()),
         user_id: Set(user.id),
-        token_id: Set(token.id),
+        token_id: Set(token_id),
         group_id: Set(group.id),
         requested_model: Set("gpt-5.5".to_owned()),
         downstream_protocol: Set(1),
@@ -1166,9 +1175,9 @@ async fn exercise_usage_per_call_migration_upgrade(
     let user = user.insert(pool.connection()).await?;
     let mut token = token_active_model(user.id, group.id, TOKEN_HASH_E, "usage-v55-upgrade-token");
     token.status = Set(1);
-    let token = token.insert(pool.connection()).await?;
+    let token_id = insert_legacy_token(pool.connection(), 90_054, token).await?;
     let principal = GatewayPrincipal::new(
-        TokenId::new(token.id)?,
+        TokenId::new(token_id)?,
         UserId::new(user.id)?,
         GroupId::new(group.id)?,
     );
@@ -1229,7 +1238,7 @@ async fn exercise_usage_per_call_migration_upgrade(
         .filter(usage_logs::Column::UserId.eq(user.id))
         .exec(pool.connection())
         .await?;
-    tokens::Entity::delete_by_id(token.id)
+    tokens::Entity::delete_by_id(token_id)
         .exec(pool.connection())
         .await?;
     users::Entity::delete_by_id(user.id)
@@ -4365,6 +4374,19 @@ fn token_active_model(
         expired_at: Set(Some(future_expiration())),
         ..Default::default()
     }
+}
+
+/// 在历史 schema 上写入令牌时跳过当前实体的返回投影，避免提前读取尚未迁移的新列。
+async fn insert_legacy_token(
+    connection: &DatabaseConnection,
+    token_id: i64,
+    mut token: tokens::ActiveModel,
+) -> Result<i64, DbErr> {
+    token.id = Set(token_id);
+    tokens::Entity::insert(token)
+        .exec_without_returning(connection)
+        .await?;
+    Ok(token_id)
 }
 
 fn reservation_active_model(
