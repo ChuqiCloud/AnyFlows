@@ -143,6 +143,7 @@ async fn has_topup_organization_foreign_key(manager: &SchemaManager<'_>) -> Resu
 }
 
 const TOPUP_ORDERS_NEXT_TABLE: &str = "topup_orders_organization_scope_next";
+const TOPUP_ORDERS_OLD_TABLE: &str = "topup_orders_organization_scope_old";
 
 /// SQLite 无法原地补充外键，使用同一事务重建充值订单并保留支付事件引用。
 async fn rebuild_topup_orders(
@@ -162,6 +163,15 @@ async fn rebuild_topup_orders(
             )
             .await?;
     }
+    if manager.has_table(TOPUP_ORDERS_OLD_TABLE).await? {
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(Alias::new(TOPUP_ORDERS_OLD_TABLE))
+                    .to_owned(),
+            )
+            .await?;
+    }
     payment::create_topup_orders_table(
         manager,
         Alias::new(TOPUP_ORDERS_NEXT_TABLE),
@@ -169,15 +179,34 @@ async fn rebuild_topup_orders(
         include_organization,
     )
     .await?;
-    copy_topup_orders(manager, include_organization).await?;
+    // 保留子表的正式外键名称，避免旧表带 RESTRICT 子记录时 DROP TABLE 立即失败。
     manager
-        .drop_table(Table::drop().table(topup_orders::Entity).to_owned())
+        .get_connection()
+        .execute_unprepared("PRAGMA legacy_alter_table = ON")
+        .await?;
+    manager
+        .get_connection()
+        .execute_unprepared(&format!(
+            "ALTER TABLE \"topup_orders\" RENAME TO \"{TOPUP_ORDERS_OLD_TABLE}\""
+        ))
+        .await?;
+    copy_topup_orders(manager, TOPUP_ORDERS_OLD_TABLE, include_organization).await?;
+    manager
+        .drop_table(
+            Table::drop()
+                .table(Alias::new(TOPUP_ORDERS_OLD_TABLE))
+                .to_owned(),
+        )
         .await?;
     manager
         .get_connection()
         .execute_unprepared(&format!(
             "ALTER TABLE \"{TOPUP_ORDERS_NEXT_TABLE}\" RENAME TO \"topup_orders\""
         ))
+        .await?;
+    manager
+        .get_connection()
+        .execute_unprepared("PRAGMA legacy_alter_table = OFF")
         .await?;
     payment::create_topup_order_indexes(manager, topup_orders::Entity).await?;
     if include_organization {
@@ -197,6 +226,7 @@ async fn rebuild_topup_orders(
 
 async fn copy_topup_orders(
     manager: &SchemaManager<'_>,
+    source_table: &str,
     include_organization: bool,
 ) -> Result<(), DbErr> {
     let (target_scope, source_scope) = if include_organization {
@@ -213,7 +243,7 @@ async fn copy_topup_orders(
         ("", String::new())
     };
     let statement = format!(
-        "INSERT INTO \"{TOPUP_ORDERS_NEXT_TABLE}\" (\"id\", \"order_key\", \"user_id\"{target_scope}, \"provider\", \"payment_method\", \"provider_order_id\", \"trade_no\", \"status\", \"amount_minor\", \"currency\", \"quota_amount\", \"idempotency_key\", \"version\", \"expires_at\", \"paid_at\", \"closed_at\", \"created_at\", \"updated_at\") SELECT \"id\", \"order_key\", \"user_id\"{source_scope}, \"provider\", \"payment_method\", \"provider_order_id\", \"trade_no\", \"status\", \"amount_minor\", \"currency\", \"quota_amount\", \"idempotency_key\", \"version\", \"expires_at\", \"paid_at\", \"closed_at\", \"created_at\", \"updated_at\" FROM \"topup_orders\""
+        "INSERT INTO \"{TOPUP_ORDERS_NEXT_TABLE}\" (\"id\", \"order_key\", \"user_id\"{target_scope}, \"provider\", \"payment_method\", \"provider_order_id\", \"trade_no\", \"status\", \"amount_minor\", \"currency\", \"quota_amount\", \"idempotency_key\", \"version\", \"expires_at\", \"paid_at\", \"closed_at\", \"created_at\", \"updated_at\") SELECT \"id\", \"order_key\", \"user_id\"{source_scope}, \"provider\", \"payment_method\", \"provider_order_id\", \"trade_no\", \"status\", \"amount_minor\", \"currency\", \"quota_amount\", \"idempotency_key\", \"version\", \"expires_at\", \"paid_at\", \"closed_at\", \"created_at\", \"updated_at\" FROM \"{source_table}\""
     );
     manager
         .get_connection()
