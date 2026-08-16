@@ -35,7 +35,7 @@ const MEMBER_TOKEN: &str = "organization-token-member";
 
 struct TestSessions {
     group_id: GroupId,
-    member_id: UserId,
+    owner_id: UserId,
     admin_id: UserId,
     billing_id: UserId,
     member_id: UserId,
@@ -69,6 +69,7 @@ struct Fixture {
     organization_id: OrganizationId,
     other_organization_id: OrganizationId,
     owner_id: UserId,
+    member_id: UserId,
     member_membership_id: OrganizationMembershipId,
     organization_repository: OrganizationRepository,
     token_repository: Arc<OrganizationTokenRepository>,
@@ -381,7 +382,7 @@ async fn fixture() -> Result<Fixture, Box<dyn std::error::Error>> {
     )));
     let sessions = Arc::new(TestSessions {
         group_id: group.group_id(),
-        member_id: member.user_id(),
+        owner_id: owner.user_id(),
         admin_id: admin.user_id(),
         billing_id: billing.user_id(),
         member_id: member.user_id(),
@@ -392,6 +393,7 @@ async fn fixture() -> Result<Fixture, Box<dyn std::error::Error>> {
         organization_id: organization.id(),
         other_organization_id: other_organization.id(),
         owner_id: owner.user_id(),
+        member_id: member.user_id(),
         member_membership_id: member_membership.id(),
         organization_repository,
         token_repository,
