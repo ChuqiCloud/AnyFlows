@@ -18,7 +18,7 @@ use af_db::{
     TopupOrderCreate, TopupOrderCreateOutcome, TopupOrderRecord, TopupOrderSubmission,
     TopupOrderSubmitOutcome, TopupRepository, TopupRepositoryError,
 };
-use af_domain::{Quota, TopupOrderId, TopupOrderStatus, TopupRequestId, UserId};
+use af_domain::{OrganizationId, Quota, TopupOrderId, TopupOrderStatus, TopupRequestId, UserId};
 use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -55,6 +55,7 @@ const STRIPE_TOPUP_ORDER_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 #[derive(Clone, Eq, PartialEq)]
 pub struct UserTopupOrderCreateCommand {
     client_request_id: TopupRequestId,
+    organization_id: Option<OrganizationId>,
     provider: String,
     payment_method: String,
     amount_minor: u64,
@@ -75,16 +76,35 @@ impl UserTopupOrderCreateCommand {
             .map_err(|_| UserTopupError::InvalidInput)?;
         Ok(Self {
             client_request_id,
+            organization_id: None,
             provider,
             payment_method,
             amount_minor: u64::try_from(amount_minor).map_err(|_| UserTopupError::InvalidInput)?,
         })
     }
 
+    /// 构造企业收款主体的充值命令；付款人仍由服务端会话派生。
+    pub fn new_for_organization(
+        organization_id: OrganizationId,
+        idempotency_key: &str,
+        provider: String,
+        payment_method: String,
+        amount_minor: i64,
+    ) -> Result<Self, UserTopupError> {
+        let mut command = Self::new(idempotency_key, provider, payment_method, amount_minor)?;
+        command.organization_id = Some(organization_id);
+        Ok(command)
+    }
+
     /// 返回客户端为失败重试复用的原始幂等标识。
     #[must_use]
     pub const fn client_request_id(&self) -> TopupRequestId {
         self.client_request_id
+    }
+
+    #[must_use]
+    pub const fn organization_id(&self) -> Option<OrganizationId> {
+        self.organization_id
     }
 
     /// 返回客户端选择的支付 Provider。
@@ -292,6 +312,7 @@ impl fmt::Debug for UserTopupConfiguration {
 /// 当前用户可见的充值订单快照，不包含支付流水号。
 pub struct UserTopupOrder {
     order_id: TopupOrderId,
+    organization_id: Option<OrganizationId>,
     provider: String,
     payment_method: String,
     status: TopupOrderStatus,
@@ -326,6 +347,7 @@ impl UserTopupOrder {
     ) -> Self {
         Self {
             order_id,
+            organization_id: None,
             provider,
             payment_method,
             status,
@@ -343,6 +365,11 @@ impl UserTopupOrder {
     #[must_use]
     pub const fn order_id(&self) -> TopupOrderId {
         self.order_id
+    }
+
+    #[must_use]
+    pub const fn organization_id(&self) -> Option<OrganizationId> {
+        self.organization_id
     }
 
     /// 返回规范支付 Provider 标识。
@@ -412,6 +439,7 @@ impl UserTopupOrder {
     ) -> Self {
         Self {
             order_id: record.order_id(),
+            organization_id: record.organization_id(),
             provider: record.provider().to_owned(),
             payment_method: record.payment_method().unwrap_or_default().to_owned(),
             status: record.status(),
@@ -603,22 +631,39 @@ impl UserTopupService for DatabaseUserTopupService {
             }
             let (request_id, order_id) = scoped_identifiers(
                 principal.user_id(),
+                command.organization_id(),
                 command.client_request_id(),
                 command.provider(),
                 command.payment_method(),
             )?;
             let quota_amount = quota_for_route(route, command.amount_minor())?;
-            let write = TopupOrderCreate::new(
-                order_id,
-                request_id,
-                principal.user_id(),
-                command.provider().to_owned(),
-                command.payment_method().to_owned(),
-                command.amount_minor(),
-                route.method.currency().to_owned(),
-                quota_amount,
-                unix_now()?,
-            )
+            let created_at = unix_now()?;
+            let write = if let Some(organization_id) = command.organization_id() {
+                TopupOrderCreate::new_for_organization(
+                    order_id,
+                    request_id,
+                    principal.user_id(),
+                    organization_id,
+                    command.provider().to_owned(),
+                    command.payment_method().to_owned(),
+                    command.amount_minor(),
+                    route.method.currency().to_owned(),
+                    quota_amount,
+                    created_at,
+                )
+            } else {
+                TopupOrderCreate::new(
+                    order_id,
+                    request_id,
+                    principal.user_id(),
+                    command.provider().to_owned(),
+                    command.payment_method().to_owned(),
+                    command.amount_minor(),
+                    route.method.currency().to_owned(),
+                    quota_amount,
+                    created_at,
+                )
+            }
             .map_err(|_| UserTopupError::Internal)?;
             let (record, replayed) = match self
                 .repository
@@ -746,6 +791,7 @@ impl fmt::Debug for DatabaseUserTopupService {
 
 fn scoped_identifiers(
     user_id: UserId,
+    organization_id: Option<OrganizationId>,
     client_request_id: TopupRequestId,
     provider: &str,
     payment_method: &str,
@@ -753,6 +799,7 @@ fn scoped_identifiers(
     let request_bytes = derive_identifier(
         REQUEST_ID_DOMAIN,
         user_id,
+        organization_id,
         client_request_id,
         provider,
         payment_method,
@@ -760,6 +807,7 @@ fn scoped_identifiers(
     let order_bytes = derive_identifier(
         ORDER_ID_DOMAIN,
         user_id,
+        organization_id,
         client_request_id,
         provider,
         payment_method,
@@ -773,6 +821,7 @@ fn scoped_identifiers(
 fn derive_identifier(
     domain: &[u8],
     user_id: UserId,
+    organization_id: Option<OrganizationId>,
     client_request_id: TopupRequestId,
     provider: &str,
     payment_method: &str,
@@ -780,6 +829,10 @@ fn derive_identifier(
     let mut digest = Sha256::new();
     digest.update(domain);
     digest.update(user_id.get().to_be_bytes());
+    if let Some(organization_id) = organization_id {
+        digest.update(b"organization");
+        digest.update(organization_id.get().to_be_bytes());
+    }
     digest.update(client_request_id.bytes());
     digest.update([0]);
     digest.update(provider.as_bytes());
@@ -942,11 +995,14 @@ mod tests {
     #[test]
     fn idempotency_identifiers_include_provider_and_payment_method() {
         let client = TopupRequestId::from_persistence_key(IDEMPOTENCY_KEY).unwrap();
-        let stripe = scoped_identifiers(UserId::new(1).unwrap(), client, "stripe", "card").unwrap();
-        let replay = scoped_identifiers(UserId::new(1).unwrap(), client, "stripe", "card").unwrap();
-        let alipay = scoped_identifiers(UserId::new(1).unwrap(), client, "epay", "alipay").unwrap();
+        let stripe =
+            scoped_identifiers(UserId::new(1).unwrap(), None, client, "stripe", "card").unwrap();
+        let replay =
+            scoped_identifiers(UserId::new(1).unwrap(), None, client, "stripe", "card").unwrap();
+        let alipay =
+            scoped_identifiers(UserId::new(1).unwrap(), None, client, "epay", "alipay").unwrap();
         let other_user =
-            scoped_identifiers(UserId::new(2).unwrap(), client, "stripe", "card").unwrap();
+            scoped_identifiers(UserId::new(2).unwrap(), None, client, "stripe", "card").unwrap();
 
         assert_eq!(stripe, replay);
         assert_ne!(stripe, alipay);

@@ -11,7 +11,8 @@ use sea_orm::{
 };
 
 use crate::entity::{
-    organization_entitlements, organization_memberships, organization_teams, organizations, users,
+    organization_entitlements, organization_memberships, organization_teams, organization_wallets,
+    organizations, users,
 };
 
 use super::{
@@ -84,6 +85,24 @@ pub(super) async fn create(
         grace_until: Set(grace_until),
         source: Set(entitlement.source),
         external_reference: Set(entitlement.external_reference),
+        version: Set(1),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    })
+    .insert(&transaction)
+    .await
+    {
+        let mapped = map_write_error(&error);
+        rollback(transaction).await?;
+        return Err(mapped);
+    }
+
+    if let Err(error) = (organization_wallets::ActiveModel {
+        organization_id: Set(organization.id),
+        quota: Set(0),
+        used_quota: Set(0),
+        frozen_quota: Set(0),
         version: Set(1),
         created_at: Set(now),
         updated_at: Set(now),

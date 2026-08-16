@@ -187,7 +187,20 @@ pub(in crate::migration) async fn create_topup_payment_audit(
 }
 
 async fn create_orders(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
-    let mut statement = table(manager, topup_orders::Entity);
+    create_topup_orders_table(manager, topup_orders::Entity, false, false).await
+}
+
+/// 创建指定表名的当前充值订单结构，供 SQLite 迁移重建复用。
+pub(super) async fn create_topup_orders_table<T>(
+    manager: &SchemaManager<'_>,
+    table_name: T,
+    include_payment_method: bool,
+    include_organization: bool,
+) -> Result<(), DbErr>
+where
+    T: IntoTableRef + Clone,
+{
+    let mut statement = table(manager, table_name.clone());
     statement
         .col(auto_id(topup_orders::Column::Id))
         .col(
@@ -199,13 +212,20 @@ async fn create_orders(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
             ColumnDef::new(topup_orders::Column::UserId)
                 .big_integer()
                 .not_null(),
-        )
-        .col(
-            ColumnDef::new(topup_orders::Column::Provider)
-                .string_len(64)
-                .not_null()
-                .check(Expr::col(topup_orders::Column::Provider).ne("")),
-        )
+        );
+    if include_organization {
+        statement.col(ColumnDef::new(topup_orders::Column::OrganizationId).big_integer());
+    }
+    statement.col(
+        ColumnDef::new(topup_orders::Column::Provider)
+            .string_len(64)
+            .not_null()
+            .check(Expr::col(topup_orders::Column::Provider).ne("")),
+    );
+    if include_payment_method {
+        statement.col(ColumnDef::new(topup_orders::Column::PaymentMethod).string_len(32));
+    }
+    statement
         .col(ColumnDef::new(topup_orders::Column::ProviderOrderId).string_len(128))
         .col(ColumnDef::new(topup_orders::Column::TradeNo).string_len(128))
         .col(
@@ -271,11 +291,24 @@ async fn create_orders(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         .foreign_key(
             ForeignKey::create()
                 .name("fk_topup_orders_user")
-                .from(topup_orders::Entity, topup_orders::Column::UserId)
+                .from(table_name.clone(), topup_orders::Column::UserId)
                 .to(users::Entity, users::Column::Id)
                 .on_update(ForeignKeyAction::Cascade)
                 .on_delete(ForeignKeyAction::Restrict),
         );
+    if include_organization {
+        statement.foreign_key(
+            ForeignKey::create()
+                .name("fk_topup_orders_organization")
+                .from(table_name, topup_orders::Column::OrganizationId)
+                .to(
+                    crate::migration::iden::organizations::Entity,
+                    crate::migration::iden::organizations::Column::Id,
+                )
+                .on_update(ForeignKeyAction::Restrict)
+                .on_delete(ForeignKeyAction::Restrict),
+        );
+    }
     manager.create_table(statement).await
 }
 
@@ -415,38 +448,8 @@ fn hex_check(
 }
 
 async fn create_indexes(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    create_topup_order_indexes(manager, topup_orders::Entity).await?;
     for index in [
-        Index::create()
-            .name("uq_topup_orders_order_key")
-            .table(topup_orders::Entity)
-            .col(topup_orders::Column::OrderKey)
-            .unique()
-            .to_owned(),
-        Index::create()
-            .name("uq_topup_orders_idempotency_key")
-            .table(topup_orders::Entity)
-            .col(topup_orders::Column::IdempotencyKey)
-            .unique()
-            .to_owned(),
-        Index::create()
-            .name("uq_topup_orders_provider_trade_no")
-            .table(topup_orders::Entity)
-            .col(topup_orders::Column::Provider)
-            .col(topup_orders::Column::TradeNo)
-            .unique()
-            .to_owned(),
-        Index::create()
-            .name("idx_topup_orders_user_created")
-            .table(topup_orders::Entity)
-            .col(topup_orders::Column::UserId)
-            .col(topup_orders::Column::CreatedAt)
-            .to_owned(),
-        Index::create()
-            .name("idx_topup_orders_status_expires")
-            .table(topup_orders::Entity)
-            .col(topup_orders::Column::Status)
-            .col(topup_orders::Column::ExpiresAt)
-            .to_owned(),
         Index::create()
             .name("uq_topup_payment_events_event_key")
             .table(topup_payment_events::Entity)
@@ -465,6 +468,51 @@ async fn create_indexes(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
             .table(topup_payment_events::Entity)
             .col(topup_payment_events::Column::OrderId)
             .col(topup_payment_events::Column::CreatedAt)
+            .to_owned(),
+    ] {
+        manager.create_index(index).await?;
+    }
+    Ok(())
+}
+
+pub(super) async fn create_topup_order_indexes<T>(
+    manager: &SchemaManager<'_>,
+    table_name: T,
+) -> Result<(), DbErr>
+where
+    T: IntoTableRef + Clone,
+{
+    for index in [
+        Index::create()
+            .name("uq_topup_orders_order_key")
+            .table(table_name.clone())
+            .col(topup_orders::Column::OrderKey)
+            .unique()
+            .to_owned(),
+        Index::create()
+            .name("uq_topup_orders_idempotency_key")
+            .table(table_name.clone())
+            .col(topup_orders::Column::IdempotencyKey)
+            .unique()
+            .to_owned(),
+        Index::create()
+            .name("uq_topup_orders_provider_trade_no")
+            .table(table_name.clone())
+            .col(topup_orders::Column::Provider)
+            .col(topup_orders::Column::TradeNo)
+            .unique()
+            .to_owned(),
+        Index::create()
+            .name("idx_topup_orders_user_created")
+            .table(table_name.clone())
+            .col(topup_orders::Column::UserId)
+            .col(topup_orders::Column::CreatedAt)
+            .to_owned(),
+        Index::create()
+            .name("idx_topup_orders_status_expires")
+            .table(table_name)
+            .col(topup_orders::Column::Status)
+            .col(topup_orders::Column::ExpiresAt)
             .to_owned(),
     ] {
         manager.create_index(index).await?;

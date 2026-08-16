@@ -55,6 +55,8 @@ pub(crate) mod organization_entitlements;
 pub(crate) mod organization_invitations;
 pub(crate) mod organization_memberships;
 pub(crate) mod organization_teams;
+pub(crate) mod organization_wallet_ledger_entries;
+pub(crate) mod organization_wallets;
 pub(crate) mod organizations;
 pub(crate) mod payment_settings;
 pub(crate) mod playground_conversations;

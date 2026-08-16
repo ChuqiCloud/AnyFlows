@@ -1335,6 +1335,67 @@ export type OrganizationTeamResponse = {
     updated_at: number;
     deleted_at?: number | null;
 };
+export type OrganizationTopupOrderCreateRequest = {
+    idempotency_key: string;
+    provider: string;
+    payment_method: string;
+    amount_minor: number;
+};
+export type OrganizationTopupOrderResponse = {
+    order_id: string;
+    provider: string;
+    payment_method: string;
+    status: OrganizationTopupOrderStatusResponse;
+    amount_minor: number;
+    currency: string;
+    quota_amount: number;
+    version: number;
+    created_at: number;
+    replayed: boolean;
+    payment?: null | OrganizationTopupPaymentSessionResponse;
+};
+export type OrganizationTopupOrderStatusResponse = 'created' | 'pending' | 'paid' | 'failed' | 'canceled' | 'expired';
+export type OrganizationTopupPaymentSessionResponse = {
+    payment_intent_id: string;
+    readonly client_secret: string;
+    kind: 'stripe';
+} | {
+    redirect_url: string;
+    kind: 'redirect';
+};
+export type OrganizationWalletAdjustmentRequest = {
+    event_id: string;
+    quota_delta: number;
+    reason: string;
+};
+export type OrganizationWalletAdjustmentResponse = {
+    entry: OrganizationWalletEntryResponse;
+    replayed: boolean;
+};
+export type OrganizationWalletEntryResponse = {
+    id: number;
+    event_id: string;
+    actor_user_id: number | null;
+    entry_type: OrganizationWalletEntryTypeResponse;
+    quota_delta: number;
+    balance_before: number;
+    balance_after: number;
+    source: string;
+    reason: string | null;
+    created_at: number;
+};
+export type OrganizationWalletEntryTypeResponse = 'opening_balance' | 'admin_adjustment' | 'topup';
+export type OrganizationWalletListResponse = {
+    entries: Array<OrganizationWalletEntryResponse>;
+    next_cursor: number | null;
+};
+export type OrganizationWalletSummaryResponse = {
+    organization_id: number;
+    balance: number;
+    used_quota: number;
+    frozen_quota: number;
+    version: number;
+};
 export type PasswordResetConfirmRequest = {
     token: string;
     password: string;
@@ -1930,6 +1991,26 @@ export type AdminPaymentSettingsRequestWritable = {
     epay_alipay_enabled: boolean;
     epay_wxpay_enabled: boolean;
     epay_quota_per_cny: number;
+};
+export type OrganizationTopupOrderResponseWritable = {
+    order_id: string;
+    provider: string;
+    payment_method: string;
+    status: OrganizationTopupOrderStatusResponse;
+    amount_minor: number;
+    currency: string;
+    quota_amount: number;
+    version: number;
+    created_at: number;
+    replayed: boolean;
+    payment?: null | OrganizationTopupPaymentSessionResponseWritable;
+};
+export type OrganizationTopupPaymentSessionResponseWritable = {
+    payment_intent_id: string;
+    kind: 'stripe';
+} | {
+    redirect_url: string;
+    kind: 'redirect';
 };
 export type RegistrationRequestWritable = {
     username: string;
@@ -4733,3 +4814,93 @@ export type ReceivePaymentWebhookErrors = {
 export type ReceivePaymentWebhookResponses = {
     200: unknown;
 };
+export type GetOrganizationWalletData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/wallet';
+};
+export type GetOrganizationWalletErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationWalletError = GetOrganizationWalletErrors[keyof GetOrganizationWalletErrors];
+export type GetOrganizationWalletResponses = {
+    200: OrganizationWalletSummaryResponse;
+};
+export type GetOrganizationWalletResponse = GetOrganizationWalletResponses[keyof GetOrganizationWalletResponses];
+export type ListOrganizationWalletEntriesData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        before?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/wallet/entries';
+};
+export type ListOrganizationWalletEntriesErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationWalletEntriesError = ListOrganizationWalletEntriesErrors[keyof ListOrganizationWalletEntriesErrors];
+export type ListOrganizationWalletEntriesResponses = {
+    200: OrganizationWalletListResponse;
+};
+export type ListOrganizationWalletEntriesResponse = ListOrganizationWalletEntriesResponses[keyof ListOrganizationWalletEntriesResponses];
+export type AdjustOrganizationWalletData = {
+    body: OrganizationWalletAdjustmentRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/wallet/adjustments';
+};
+export type AdjustOrganizationWalletErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type AdjustOrganizationWalletError = AdjustOrganizationWalletErrors[keyof AdjustOrganizationWalletErrors];
+export type AdjustOrganizationWalletResponses = {
+    200: OrganizationWalletAdjustmentResponse;
+    201: OrganizationWalletAdjustmentResponse;
+};
+export type AdjustOrganizationWalletResponse = AdjustOrganizationWalletResponses[keyof AdjustOrganizationWalletResponses];
+export type CreateOrganizationTopupOrderData = {
+    body: OrganizationTopupOrderCreateRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/topups';
+};
+export type CreateOrganizationTopupOrderErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    502: ManagementError;
+    503: ManagementError;
+};
+export type CreateOrganizationTopupOrderError = CreateOrganizationTopupOrderErrors[keyof CreateOrganizationTopupOrderErrors];
+export type CreateOrganizationTopupOrderResponses = {
+    200: OrganizationTopupOrderResponse;
+    201: OrganizationTopupOrderResponse;
+};
+export type CreateOrganizationTopupOrderResponse = CreateOrganizationTopupOrderResponses[keyof CreateOrganizationTopupOrderResponses];

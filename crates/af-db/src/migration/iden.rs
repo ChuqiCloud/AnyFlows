@@ -1146,6 +1146,7 @@ pub(in crate::migration) mod topup_orders {
         Id,
         OrderKey,
         UserId,
+        OrganizationId,
         Provider,
         PaymentMethod,
         ProviderOrderId,
@@ -1830,5 +1831,56 @@ pub(in crate::migration) mod organization_invitations {
         CreatedAt,
         ExpiresAt,
         FinalizedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_wallets {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_wallets")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        Quota,
+        UsedQuota,
+        FrozenQuota,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_wallet_ledger_entries {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_wallet_ledger_entries")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        EventKey,
+        ActorUserId,
+        EntryType,
+        QuotaDelta,
+        BalanceBefore,
+        BalanceAfter,
+        Source,
+        Reason,
+        CreatedAt,
     }
 }

@@ -23,6 +23,7 @@ mod network;
 mod organization;
 mod organization_entitlement;
 mod organization_invitation;
+mod organization_wallet;
 mod payment;
 mod playground;
 mod playground_conversation;
@@ -134,6 +135,9 @@ pub(super) use network::create_network_settings;
 pub(super) use organization::create_organization_foundation;
 pub(super) use organization_entitlement::create_organization_entitlements;
 pub(super) use organization_invitation::create_organization_invitations;
+pub(super) use organization_wallet::{
+    create_organization_wallet_storage, drop_organization_wallet_storage,
+};
 pub(super) use payment::create_topup_payment_audit;
 pub(super) use payment::{create_payment_settings, extend_topup_payment_facts};
 pub(super) use playground::{create_playground_shares, create_playground_shares_indexes};

@@ -69,6 +69,7 @@ mod m20260815_000060_secure_debug_trace_snapshots;
 mod m20260815_000061_create_organization_foundation;
 mod m20260815_000062_create_organization_entitlements;
 mod m20260816_000063_create_organization_invitations;
+mod m20260816_000064_create_organization_wallets;
 mod schema;
 
 #[cfg(test)]
@@ -175,6 +176,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260815_000061_create_organization_foundation::Migration),
             Box::new(m20260815_000062_create_organization_entitlements::Migration),
             Box::new(m20260816_000063_create_organization_invitations::Migration),
+            Box::new(m20260816_000064_create_organization_wallets::Migration),
         ]
     }
 }
