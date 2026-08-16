@@ -12,6 +12,8 @@ const TOPUP_ORGANIZATION_INDEX: &str = "idx_topup_orders_organization";
 const WALLET_SCOPE_INDEX: &str = "uq_organization_wallets_organization";
 const LEDGER_EVENT_INDEX: &str = "uq_organization_wallet_ledger_scope_event";
 const LEDGER_SCOPE_INDEX: &str = "idx_organization_wallet_ledger_scope_id";
+const LEDGER_TABLE: &str = "organization_wallet_ledger_entries";
+const LEDGER_NEXT_TABLE: &str = "organization_wallet_ledger_entries_next";
 
 /// 创建企业共享钱包、只追加账本，并为历史企业补齐固定钱包行。
 pub(in crate::migration) async fn create_organization_wallet_storage(
@@ -309,7 +311,17 @@ async fn create_wallets(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
 }
 
 async fn create_ledger(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
-    let mut statement = table(manager, organization_wallet_ledger_entries::Entity);
+    create_ledger_table_named(manager, LEDGER_TABLE, 3, "current").await?;
+    ensure_ledger_indexes(manager).await
+}
+
+async fn create_ledger_table_named(
+    manager: &SchemaManager<'_>,
+    table_name: &'static str,
+    maximum_entry_type: i16,
+    constraint_namespace: &'static str,
+) -> Result<(), DbErr> {
+    let mut statement = table(manager, Alias::new(table_name));
     statement
         .col(auto_id(organization_wallet_ledger_entries::Column::Id))
         .col(
@@ -329,7 +341,7 @@ async fn create_ledger(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
                 .not_null()
                 .check(
                     Expr::col(organization_wallet_ledger_entries::Column::EntryType)
-                        .is_in([1_i16, 2_i16, 3_i16]),
+                        .is_in((1_i16..=maximum_entry_type).collect::<Vec<_>>()),
                 ),
         )
         .col(
@@ -383,9 +395,9 @@ async fn create_ledger(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         )
         .foreign_key(
             ForeignKey::create()
-                .name("fk_organization_wallet_ledger_organization")
+                .name(ledger_organization_foreign_key_name(constraint_namespace))
                 .from(
-                    organization_wallet_ledger_entries::Entity,
+                    Alias::new(table_name),
                     organization_wallet_ledger_entries::Column::OrganizationId,
                 )
                 .to(organizations::Entity, organizations::Column::Id)
@@ -394,34 +406,199 @@ async fn create_ledger(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
         )
         .foreign_key(
             ForeignKey::create()
-                .name("fk_organization_wallet_ledger_actor")
+                .name(ledger_actor_foreign_key_name(constraint_namespace))
                 .from(
-                    organization_wallet_ledger_entries::Entity,
+                    Alias::new(table_name),
                     organization_wallet_ledger_entries::Column::ActorUserId,
                 )
                 .to(users::Entity, users::Column::Id)
                 .on_update(ForeignKeyAction::Restrict)
                 .on_delete(ForeignKeyAction::Restrict),
         );
-    manager.create_table(statement).await?;
-    for index in [
-        Index::create()
-            .name(LEDGER_EVENT_INDEX)
-            .table(organization_wallet_ledger_entries::Entity)
-            .col(organization_wallet_ledger_entries::Column::OrganizationId)
-            .col(organization_wallet_ledger_entries::Column::EventKey)
-            .unique()
-            .to_owned(),
-        Index::create()
-            .name(LEDGER_SCOPE_INDEX)
-            .table(organization_wallet_ledger_entries::Entity)
-            .col(organization_wallet_ledger_entries::Column::OrganizationId)
-            .col(organization_wallet_ledger_entries::Column::Id)
-            .to_owned(),
-    ] {
-        manager.create_index(index).await?;
+    manager.create_table(statement).await
+}
+
+async fn ensure_ledger_indexes(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    if !manager.has_index(LEDGER_TABLE, LEDGER_EVENT_INDEX).await? {
+        manager
+            .create_index(
+                Index::create()
+                    .name(LEDGER_EVENT_INDEX)
+                    .table(organization_wallet_ledger_entries::Entity)
+                    .col(organization_wallet_ledger_entries::Column::OrganizationId)
+                    .col(organization_wallet_ledger_entries::Column::EventKey)
+                    .unique()
+                    .to_owned(),
+            )
+            .await?;
+    }
+    if !manager.has_index(LEDGER_TABLE, LEDGER_SCOPE_INDEX).await? {
+        manager
+            .create_index(
+                Index::create()
+                    .name(LEDGER_SCOPE_INDEX)
+                    .table(organization_wallet_ledger_entries::Entity)
+                    .col(organization_wallet_ledger_entries::Column::OrganizationId)
+                    .col(organization_wallet_ledger_entries::Column::Id)
+                    .to_owned(),
+            )
+            .await?;
     }
     Ok(())
+}
+
+/// 重建企业钱包账本闭合类型约束，以支持或移除调用结算事件。
+///
+/// SQLite 无法原地修改 CHECK，三方言统一复制替换；中断后保留的 next 表可在重试时恢复。
+pub(in crate::migration) async fn rebuild_organization_wallet_ledger_for_usage(
+    manager: &SchemaManager<'_>,
+    allow_usage_settlement: bool,
+) -> Result<(), DbErr> {
+    if !allow_usage_settlement {
+        ensure_no_usage_settlement(manager).await?;
+    }
+    let current_exists = manager.has_table(LEDGER_TABLE).await?;
+    let next_exists = manager.has_table(LEDGER_NEXT_TABLE).await?;
+    match (current_exists, next_exists) {
+        (true, _) => {
+            if next_exists {
+                manager
+                    .drop_table(
+                        Table::drop()
+                            .table(Alias::new(LEDGER_NEXT_TABLE))
+                            .to_owned(),
+                    )
+                    .await?;
+            }
+            create_ledger_table_named(
+                manager,
+                LEDGER_NEXT_TABLE,
+                if allow_usage_settlement { 4 } else { 3 },
+                if allow_usage_settlement {
+                    "usage"
+                } else {
+                    "base"
+                },
+            )
+            .await?;
+            copy_ledger(manager).await?;
+            manager
+                .drop_table(Table::drop().table(Alias::new(LEDGER_TABLE)).to_owned())
+                .await?;
+            rename_ledger(manager).await?;
+        }
+        (false, true) => rename_ledger(manager).await?,
+        (false, false) => {
+            return Err(DbErr::Custom("企业钱包账本重建缺少源表和恢复表".to_owned()));
+        }
+    }
+    ensure_ledger_indexes(manager).await?;
+    reset_postgres_ledger_sequence(manager).await
+}
+
+async fn ensure_no_usage_settlement(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    let table_name = if manager.has_table(LEDGER_TABLE).await? {
+        LEDGER_TABLE
+    } else {
+        LEDGER_NEXT_TABLE
+    };
+    if !manager.has_table(table_name).await? {
+        return Ok(());
+    }
+    let statement = match manager.get_database_backend() {
+        DbBackend::MySql => {
+            format!("SELECT 1 FROM `{table_name}` WHERE `entry_type` = 4 LIMIT 1")
+        }
+        DbBackend::Postgres | DbBackend::Sqlite => {
+            format!(r#"SELECT 1 FROM "{table_name}" WHERE "entry_type" = 4 LIMIT 1"#)
+        }
+    };
+    if manager
+        .get_connection()
+        .query_one(Statement::from_string(
+            manager.get_database_backend(),
+            statement,
+        ))
+        .await?
+        .is_some()
+    {
+        return Err(DbErr::Custom(
+            "存在企业调用结算账本，无法回退企业钱包账本类型".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+async fn copy_ledger(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    let statement = match manager.get_database_backend() {
+        DbBackend::MySql => format!(
+            "INSERT INTO `{LEDGER_NEXT_TABLE}` \
+(`id`, `organization_id`, `event_key`, `actor_user_id`, `entry_type`, `quota_delta`, `balance_before`, `balance_after`, `source`, `reason`, `created_at`) \
+SELECT `id`, `organization_id`, `event_key`, `actor_user_id`, `entry_type`, `quota_delta`, `balance_before`, `balance_after`, `source`, `reason`, `created_at` \
+FROM `{LEDGER_TABLE}`"
+        ),
+        DbBackend::Postgres | DbBackend::Sqlite => format!(
+            "INSERT INTO \"{LEDGER_NEXT_TABLE}\" \
+(\"id\", \"organization_id\", \"event_key\", \"actor_user_id\", \"entry_type\", \"quota_delta\", \"balance_before\", \"balance_after\", \"source\", \"reason\", \"created_at\") \
+SELECT \"id\", \"organization_id\", \"event_key\", \"actor_user_id\", \"entry_type\", \"quota_delta\", \"balance_before\", \"balance_after\", \"source\", \"reason\", \"created_at\" \
+FROM \"{LEDGER_TABLE}\""
+        ),
+    };
+    manager
+        .get_connection()
+        .execute_unprepared(&statement)
+        .await?;
+    Ok(())
+}
+
+async fn rename_ledger(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    let statement = match manager.get_database_backend() {
+        DbBackend::MySql => {
+            format!("RENAME TABLE `{LEDGER_NEXT_TABLE}` TO `{LEDGER_TABLE}`")
+        }
+        DbBackend::Postgres | DbBackend::Sqlite => {
+            format!("ALTER TABLE \"{LEDGER_NEXT_TABLE}\" RENAME TO \"{LEDGER_TABLE}\"")
+        }
+    };
+    manager
+        .get_connection()
+        .execute_unprepared(&statement)
+        .await?;
+    Ok(())
+}
+
+async fn reset_postgres_ledger_sequence(manager: &SchemaManager<'_>) -> Result<(), DbErr> {
+    if manager.get_database_backend() != DbBackend::Postgres {
+        return Ok(());
+    }
+    manager
+        .get_connection()
+        .execute_unprepared(
+            r#"
+SELECT setval(
+    pg_get_serial_sequence('"organization_wallet_ledger_entries"', 'id'),
+    COALESCE((SELECT MAX("id") FROM "organization_wallet_ledger_entries"), 1),
+    EXISTS (SELECT 1 FROM "organization_wallet_ledger_entries")
+)"#,
+        )
+        .await?;
+    Ok(())
+}
+
+fn ledger_organization_foreign_key_name(namespace: &str) -> &'static str {
+    match namespace {
+        "usage" => "fk_organization_wallet_ledger_usage_organization",
+        "base" => "fk_organization_wallet_ledger_base_organization",
+        _ => "fk_organization_wallet_ledger_organization",
+    }
+}
+
+fn ledger_actor_foreign_key_name(namespace: &str) -> &'static str {
+    match namespace {
+        "usage" => "fk_organization_wallet_ledger_usage_actor",
+        "base" => "fk_organization_wallet_ledger_base_actor",
+        _ => "fk_organization_wallet_ledger_actor",
+    }
 }
 
 fn event_key_check(database_backend: DbBackend) -> SimpleExpr {

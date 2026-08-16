@@ -1,6 +1,6 @@
 use std::{fmt, time::Duration};
 
-use af_domain::{OrganizationId, Quota, QuotaDelta, UserId, WalletEventId};
+use af_domain::{BillingReservationId, OrganizationId, Quota, QuotaDelta, UserId, WalletEventId};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
     QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
@@ -28,6 +28,7 @@ pub enum OrganizationWalletLedgerEntryType {
     OpeningBalance = 1,
     AdminAdjustment = 2,
     Topup = 3,
+    UsageSettlement = 4,
 }
 
 impl OrganizationWalletLedgerEntryType {
@@ -36,6 +37,7 @@ impl OrganizationWalletLedgerEntryType {
             1 => Some(Self::OpeningBalance),
             2 => Some(Self::AdminAdjustment),
             3 => Some(Self::Topup),
+            4 => Some(Self::UsageSettlement),
             _ => None,
         }
     }
@@ -483,6 +485,62 @@ pub(crate) async fn credit_topup_in_transaction(
     )
     .await?;
     Ok(OrganizationWalletCreditOutcome::Applied)
+}
+
+/// 在企业结算事务内追加一条不可变消费账本；零用量不制造空事件。
+pub(crate) async fn append_usage_settlement_in_transaction(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    reservation_id: BillingReservationId,
+    actual_quota: Quota,
+    balance_before: Quota,
+    balance_after: Quota,
+    created_at: TimeDateTimeWithTimeZone,
+) -> Result<(), OrganizationWalletError> {
+    if actual_quota.is_zero() {
+        return Ok(());
+    }
+    let event_id = WalletEventId::new(reservation_id.bytes())
+        .map_err(|_| OrganizationWalletError::Invariant)?;
+    let quota_delta = actual_quota
+        .units()
+        .checked_neg()
+        .and_then(|value| QuotaDelta::new(value).ok())
+        .ok_or(OrganizationWalletError::Invariant)?;
+    if balance_before.checked_apply(quota_delta) != Ok(balance_after) {
+        return Err(OrganizationWalletError::Invariant);
+    }
+    if let Some(existing) =
+        load_event(transaction, organization_id, &event_id.persistence_key()).await?
+    {
+        if existing.entry_type == OrganizationWalletLedgerEntryType::UsageSettlement
+            && existing.actor_user_id.is_none()
+            && existing.quota_delta == quota_delta
+            && existing.balance_before == balance_before
+            && existing.balance_after == balance_after
+            && existing.source == "usage_settlement"
+        {
+            return Ok(());
+        }
+        return Err(OrganizationWalletError::Conflict);
+    }
+    insert_entry(
+        transaction,
+        LedgerEntryInput {
+            organization_id,
+            event_id,
+            actor_user_id: None,
+            entry_type: OrganizationWalletLedgerEntryType::UsageSettlement,
+            quota_delta,
+            balance_before,
+            balance_after,
+            source: "usage_settlement",
+            reason: None,
+            created_at,
+        },
+    )
+    .await?;
+    Ok(())
 }
 
 async fn apply_adjustment(

@@ -107,6 +107,9 @@ mod oauth_credential;
 mod oauth_credential_tests;
 mod options;
 mod organization;
+mod organization_budget;
+#[cfg(test)]
+mod organization_budget_tests;
 #[cfg(test)]
 mod organization_tests;
 mod organization_wallet;
@@ -393,6 +396,13 @@ pub use organization::{
     OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationRepositoryError, OrganizationTeamChange,
     OrganizationTeamCreate, OrganizationTeamPageRecord, OrganizationTeamRecord,
+};
+pub use organization_budget::{
+    OrganizationBillingMutationOutcome, OrganizationBillingPrincipal,
+    OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
+    OrganizationBudgetPolicyRecord, OrganizationBudgetPolicyWrite, OrganizationBudgetRepository,
+    OrganizationBudgetRepositoryConfigError, OrganizationBudgetRepositoryError,
+    OrganizationBudgetScope,
 };
 pub use organization_wallet::{
     MAX_ORGANIZATION_WALLET_ADJUSTMENT_REASON_BYTES, MAX_ORGANIZATION_WALLET_LEDGER_PAGE_SIZE,

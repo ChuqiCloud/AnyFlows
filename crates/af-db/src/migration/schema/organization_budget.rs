@@ -17,6 +17,7 @@ const RESERVATION_STATUS_INDEX: &str = "idx_billing_organization_reservations_st
 pub(in crate::migration) async fn create_organization_budget_storage(
     manager: &SchemaManager<'_>,
 ) -> Result<(), DbErr> {
+    super::organization_wallet::rebuild_organization_wallet_ledger_for_usage(manager, true).await?;
     add_wallet_billing_protection(manager).await?;
     create_policies(manager).await?;
     create_windows(manager).await?;
@@ -28,6 +29,8 @@ pub(in crate::migration) async fn create_organization_budget_storage(
 pub(in crate::migration) async fn drop_organization_budget_storage(
     manager: &SchemaManager<'_>,
 ) -> Result<(), DbErr> {
+    super::organization_wallet::rebuild_organization_wallet_ledger_for_usage(manager, false)
+        .await?;
     manager
         .drop_table(
             Table::drop()
