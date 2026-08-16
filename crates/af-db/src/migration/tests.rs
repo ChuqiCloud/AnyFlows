@@ -2944,7 +2944,7 @@ async fn exercise_organization_activity_repository(
         OrganizationGatewayPrincipal::new(organization_id, membership_id, Some(team_id)),
     );
     let usage_write = UsageLogWrite::new(
-        BillingReservationId::new([0xd1; 16])?,
+        BillingReservationId::new([0xe1; 16])?,
         enterprise_principal,
         UsageLogBillingMode::PerToken,
         UsageLogUsage::new(12, 3, 0, 0, 0, 1, 0, 0)?,
@@ -2971,7 +2971,7 @@ async fn exercise_organization_activity_repository(
         OrganizationGatewayPrincipal::new(organization_id, membership_id, Some(other_team_id)),
     );
     let cross_team_write = UsageLogWrite::new(
-        BillingReservationId::new([0xd2; 16])?,
+        BillingReservationId::new([0xe2; 16])?,
         cross_team_principal,
         UsageLogBillingMode::PerToken,
         UsageLogUsage::new(1, 1, 0, 0, 0, 0, 0, 0)?,

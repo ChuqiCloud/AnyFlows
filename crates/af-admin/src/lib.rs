@@ -197,8 +197,9 @@ pub use organization::{
 pub use organization_activity::{
     DatabaseOrganizationActivityService, OrganizationActivityError, OrganizationActivityService,
     OrganizationActivityServiceConfigError, OrganizationAuditChangeSummary,
-    OrganizationAuditListQuery, OrganizationAuditLog, OrganizationAuditPage,
-    OrganizationAuditRequestContext, OrganizationUsageLogPage, OrganizationUsageLogRows,
+    OrganizationAuditListFuture, OrganizationAuditListQuery, OrganizationAuditLog,
+    OrganizationAuditPage, OrganizationAuditRecordFuture, OrganizationAuditRequestContext,
+    OrganizationUsageLogFuture, OrganizationUsageLogPage, OrganizationUsageLogRows,
     OrganizationUsageLogScope, OrganizationUsageLogSummary,
 };
 pub use organization_budget::{
