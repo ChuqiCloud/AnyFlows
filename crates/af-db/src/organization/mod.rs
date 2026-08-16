@@ -12,18 +12,20 @@ mod read;
 mod types;
 
 pub use types::{
-    MAX_ORGANIZATION_ENTITLEMENT_REFERENCE_BYTES, MAX_ORGANIZATION_ENTITLEMENT_SOURCE_BYTES,
-    MAX_ORGANIZATION_INVITATION_BATCH_SIZE, MAX_ORGANIZATION_NAME_BYTES,
-    MAX_ORGANIZATION_SLUG_BYTES, MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES,
-    MAX_ORGANIZATION_TEAM_NAME_BYTES, OrganizationAccessRecord, OrganizationCreate,
-    OrganizationCreatedRecord, OrganizationEntitlementRecord, OrganizationEntitlementWrite,
+    MAX_ORGANIZATION_DIRECTORY_PAGE_SIZE, MAX_ORGANIZATION_ENTITLEMENT_REFERENCE_BYTES,
+    MAX_ORGANIZATION_ENTITLEMENT_SOURCE_BYTES, MAX_ORGANIZATION_INVITATION_BATCH_SIZE,
+    MAX_ORGANIZATION_NAME_BYTES, MAX_ORGANIZATION_SLUG_BYTES,
+    MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES, MAX_ORGANIZATION_TEAM_NAME_BYTES,
+    OrganizationAccessRecord, OrganizationCreate, OrganizationCreatedRecord,
+    OrganizationEntitlementRecord, OrganizationEntitlementWrite,
     OrganizationInvitationAcceptanceContext, OrganizationInvitationBatchRecord,
     OrganizationInvitationCreate, OrganizationInvitationPreviewItem,
     OrganizationInvitationPreviewRow, OrganizationInvitationPreviewSnapshot,
     OrganizationInvitationRecord, OrganizationMembershipChange, OrganizationMembershipCreate,
-    OrganizationMembershipRecord, OrganizationOwnershipTransfer,
+    OrganizationMembershipPageRecord, OrganizationMembershipRecord, OrganizationOwnershipTransfer,
     OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepositoryConfigError,
-    OrganizationRepositoryError, OrganizationTeamCreate, OrganizationTeamRecord,
+    OrganizationRepositoryError, OrganizationTeamChange, OrganizationTeamCreate,
+    OrganizationTeamPageRecord, OrganizationTeamRecord,
 };
 
 /// 企业主体、真实成员和扁平团队的事务仓储。
@@ -92,6 +94,27 @@ impl OrganizationRepository {
         .await
     }
 
+    /// 在企业路径内读取单个成员生命周期快照。
+    pub async fn membership(
+        &self,
+        organization_id: OrganizationId,
+        membership_id: OrganizationMembershipId,
+    ) -> Result<OrganizationMembershipRecord, OrganizationRepositoryError> {
+        self.run(read::membership(self, organization_id, membership_id))
+            .await
+    }
+
+    /// 按稳定成员 ID 游标列出企业成员。
+    pub async fn list_memberships(
+        &self,
+        organization_id: OrganizationId,
+        after: Option<OrganizationMembershipId>,
+        limit: usize,
+    ) -> Result<OrganizationMembershipPageRecord, OrganizationRepositoryError> {
+        self.run(read::list_memberships(self, organization_id, after, limit))
+            .await
+    }
+
     /// 在同一事务内提升新 Owner 并降级原 Owner。
     pub async fn transfer_ownership(
         &self,
@@ -113,6 +136,33 @@ impl OrganizationRepository {
         write: OrganizationTeamCreate,
     ) -> Result<OrganizationTeamRecord, OrganizationRepositoryError> {
         self.run(mutation::create_team(self, organization_id, write))
+            .await
+    }
+
+    /// 按 CAS 更新活动团队资料。
+    pub async fn update_team(
+        &self,
+        organization_id: OrganizationId,
+        team_id: OrganizationTeamId,
+        change: OrganizationTeamChange,
+    ) -> Result<OrganizationTeamRecord, OrganizationRepositoryError> {
+        self.run(mutation::update_team(
+            self,
+            organization_id,
+            team_id,
+            change,
+        ))
+        .await
+    }
+
+    /// 按稳定团队 ID 游标列出企业团队。
+    pub async fn list_teams(
+        &self,
+        organization_id: OrganizationId,
+        after: Option<OrganizationTeamId>,
+        limit: usize,
+    ) -> Result<OrganizationTeamPageRecord, OrganizationRepositoryError> {
+        self.run(read::list_teams(self, organization_id, after, limit))
             .await
     }
 

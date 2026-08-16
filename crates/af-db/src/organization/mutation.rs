@@ -20,8 +20,8 @@ use super::{
     OrganizationEntitlementRecord, OrganizationEntitlementWrite, OrganizationMembershipChange,
     OrganizationMembershipCreate, OrganizationMembershipRecord, OrganizationOwnershipTransfer,
     OrganizationOwnershipTransferRecord, OrganizationRepository, OrganizationRepositoryError,
-    OrganizationTeamCreate, OrganizationTeamRecord, record_internal_error, validate_name,
-    validate_slug,
+    OrganizationTeamChange, OrganizationTeamCreate, OrganizationTeamRecord, record_internal_error,
+    validate_name, validate_slug,
 };
 
 pub(super) async fn create(
@@ -546,6 +546,72 @@ pub(super) async fn disable_team(
     active.updated_at = Set(now);
     active.deleted_at = Set(Some(now));
     let updated = active.update(&transaction).await.map_err(query_error)?;
+    let record = super::read::team_record(updated)?;
+    commit(transaction).await?;
+    Ok(record)
+}
+
+pub(super) async fn update_team(
+    repository: &OrganizationRepository,
+    organization_id: OrganizationId,
+    team_id: OrganizationTeamId,
+    change: OrganizationTeamChange,
+) -> Result<OrganizationTeamRecord, OrganizationRepositoryError> {
+    validate_name(&change.name, MAX_ORGANIZATION_TEAM_NAME_BYTES)?;
+    if change.expected_version <= 0
+        || change.description.as_ref().is_some_and(|description| {
+            description.is_empty()
+                || description.len() > MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES
+                || description.trim() != description
+                || description.chars().any(char::is_control)
+        })
+    {
+        return Err(OrganizationRepositoryError::InvalidInput);
+    }
+    let transaction = begin(repository).await?;
+    let organization = lock_organization(&transaction, organization_id).await?;
+    require_active_organization(&organization)?;
+    let entitlement = lock_entitlement(&transaction, organization_id).await?;
+    let snapshot = super::read::entitlement_snapshot(entitlement)?;
+    if !snapshot.team_management_enabled()
+        || !snapshot
+            .status(
+                OrganizationStatus::try_from(organization.status).map_err(|_| invariant())?,
+                TimeDateTimeWithTimeZone::now_utc().unix_timestamp(),
+            )
+            .allows_provisioning()
+    {
+        rollback(transaction).await?;
+        return Err(OrganizationRepositoryError::EntitlementRestricted);
+    }
+    let team = lock_active_team(&transaction, organization_id, team_id).await?;
+    if team.version != change.expected_version {
+        rollback(transaction).await?;
+        return Err(OrganizationRepositoryError::Conflict);
+    }
+    if team.name == change.name && team.description == change.description {
+        let record = super::read::team_record(team)?;
+        commit(transaction).await?;
+        return Ok(record);
+    }
+    let next_version = team.version.checked_add(1).ok_or_else(invariant)?;
+    let mut active = team.into_active_model();
+    active.name = Set(change.name);
+    active.description = Set(change.description);
+    active.version = Set(next_version);
+    active.updated_at = Set(TimeDateTimeWithTimeZone::now_utc());
+    let updated = match active.update(&transaction).await {
+        Ok(model) => model,
+        Err(error) => {
+            let mapped = if matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
+                OrganizationRepositoryError::Conflict
+            } else {
+                query_error(error)
+            };
+            rollback(transaction).await?;
+            return Err(mapped);
+        }
+    };
     let record = super::read::team_record(updated)?;
     commit(transaction).await?;
     Ok(record)

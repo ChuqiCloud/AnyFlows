@@ -8,11 +8,11 @@ use af_admin::{
     AdminGroupCreateCommand, AdminGroupWriter, AdminUserCreateCommand, AdminUserStatus,
     AdminUserWriter, DatabaseAdminGroupWriter, DatabaseAdminUserWriter,
     DatabaseOrganizationAuthorizationService, DatabaseOrganizationInvitationService,
-    LoginCredentials, OrganizationAccessFuture, OrganizationAuthorizationError,
-    OrganizationAuthorizationService, OrganizationInvitationError, OrganizationInvitationFuture,
-    OrganizationInvitationService, SessionAuthentication, SessionAuthenticationError,
-    SessionAuthenticationFuture, SessionAuthenticator, SessionLoginFuture, SessionPrincipal,
-    SessionRole,
+    DatabaseOrganizationManagementService, LoginCredentials, OrganizationAccessFuture,
+    OrganizationAuthorizationError, OrganizationAuthorizationService, OrganizationInvitationError,
+    OrganizationInvitationFuture, OrganizationInvitationService, SessionAuthentication,
+    SessionAuthenticationError, SessionAuthenticationFuture, SessionAuthenticator,
+    SessionLoginFuture, SessionPrincipal, SessionRole,
 };
 use af_config::CredentialEncryptionSettings;
 use af_db::{
@@ -34,12 +34,14 @@ use tower::ServiceExt as _;
 
 const OWNER_TOKEN: &str = "organization-owner-token";
 const VIEWER_TOKEN: &str = "organization-viewer-token";
+const ADMIN_TOKEN: &str = "organization-admin-token";
 const ACCEPT_TOKEN: &str = "organization-accept-token";
 
 struct TestSessions {
     group_id: GroupId,
     owner_id: UserId,
     viewer_id: UserId,
+    admin_id: UserId,
 }
 
 impl SessionAuthenticator for TestSessions {
@@ -51,6 +53,7 @@ impl SessionAuthenticator for TestSessions {
         let principal = match token {
             OWNER_TOKEN => Some(SessionPrincipal::new(self.owner_id, SessionRole::User)),
             VIEWER_TOKEN => Some(SessionPrincipal::new(self.viewer_id, SessionRole::User)),
+            ADMIN_TOKEN => Some(SessionPrincipal::new(self.admin_id, SessionRole::User)),
             ACCEPT_TOKEN => Some(SessionPrincipal::new(self.viewer_id, SessionRole::User)),
             _ => None,
         };
@@ -126,26 +129,28 @@ async fn sqlite_organization_router()
             )?,
         )
         .await?;
+    let admin = user_writer
+        .create(
+            setup_principal,
+            AdminUserCreateCommand::new(
+                "organization-http-admin".to_owned(),
+                Some("admin@example.com".to_owned()),
+                None,
+                SessionRole::User,
+                AdminUserStatus::Enabled,
+                group.group_id(),
+                0,
+                None,
+                None,
+            )?,
+        )
+        .await?;
 
     let repository = Arc::new(OrganizationRepository::new(
         pool.clone(),
         Duration::from_secs(5),
     )?);
-    let entitlement = OrganizationEntitlementWrite::new(
-        OrganizationEntitlementSnapshot::new(
-            OrganizationEntitlementCapacity::new(10, 10, 2)?,
-            true,
-            false,
-            false,
-            90,
-            946_684_800,
-            4_102_444_800,
-            Some(4_102_444_800),
-        )?,
-        "contract".to_owned(),
-        None,
-        None,
-    )?;
+    let entitlement = test_entitlement()?;
     let (organization, _) = repository
         .create(OrganizationCreate::new(
             "HTTP Test Organization".to_owned(),
@@ -166,6 +171,17 @@ async fn sqlite_organization_router()
             ),
         )
         .await?;
+    repository
+        .add_membership(
+            organization.id(),
+            OrganizationMembershipCreate::new(
+                admin.user_id(),
+                OrganizationRole::Admin,
+                None,
+                Some(owner.user_id()),
+            ),
+        )
+        .await?;
 
     let settings: CredentialEncryptionSettings = serde_json::from_value(json!({
         "key_id": "organization-http-test-key",
@@ -179,13 +195,21 @@ async fn sqlite_organization_router()
         Arc::clone(&repository),
         cipher,
     ));
+    let management_service = Arc::new(DatabaseOrganizationManagementService::new(Arc::clone(
+        &repository,
+    )));
     let sessions = Arc::new(TestSessions {
         group_id: group.group_id(),
         owner_id: owner.user_id(),
         viewer_id: viewer.user_id(),
+        admin_id: admin.user_id(),
     });
-    let router =
-        build_organization_router(authorization_service, Some(invitation_service), sessions);
+    let router = build_organization_router(
+        authorization_service,
+        Some(invitation_service),
+        Some(management_service),
+        sessions,
+    );
     Ok((router, pool, organization.id()))
 }
 
@@ -243,6 +267,358 @@ async fn invitation_routes_require_members_manage_and_batch_replay_is_redacted()
     let replayed = response_json(replayed).await;
     assert_eq!(replayed["replayed"], true);
     assert_no_invitation_token(&replayed);
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn lifecycle_routes_enforce_scope_permissions_cas_and_atomic_transfer()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (app, pool, organization_id) = sqlite_organization_router().await?;
+    let members_path = format!("/api/organizations/{}/members", organization_id.get());
+
+    let first_page = app
+        .clone()
+        .oneshot(authenticated_request(
+            &format!("{members_path}?limit=1"),
+            VIEWER_TOKEN,
+        ))
+        .await?;
+    assert_eq!(first_page.status(), StatusCode::OK);
+    let first_page = response_json(first_page).await;
+    assert_eq!(first_page["members"].as_array().unwrap().len(), 1);
+    let first_cursor = first_page["next_cursor"].as_i64().unwrap();
+    let second_page = app
+        .clone()
+        .oneshot(authenticated_request(
+            &format!("{members_path}?after={first_cursor}&limit=1"),
+            VIEWER_TOKEN,
+        ))
+        .await?;
+    assert_eq!(second_page.status(), StatusCode::OK);
+    let second_page = response_json(second_page).await;
+    assert!(second_page["members"][0]["id"].as_i64().unwrap() > first_cursor);
+
+    let directory = app
+        .clone()
+        .oneshot(authenticated_request(&members_path, OWNER_TOKEN))
+        .await?;
+    let directory = response_json(directory).await;
+    let members = directory["members"].as_array().unwrap();
+    let owner = members
+        .iter()
+        .find(|member| member["role"] == "owner")
+        .unwrap();
+    let viewer = members
+        .iter()
+        .find(|member| member["role"] == "viewer")
+        .unwrap();
+    let owner_id = owner["id"].as_i64().unwrap();
+    let owner_version = owner["version"].as_i64().unwrap();
+    let viewer_id = viewer["id"].as_i64().unwrap();
+    let viewer_version = viewer["version"].as_i64().unwrap();
+    let admin_user_id = members
+        .iter()
+        .find(|member| member["role"] == "admin")
+        .unwrap()["user_id"]
+        .as_i64()
+        .and_then(|value| UserId::new(value).ok())
+        .unwrap();
+
+    let viewer_write = app
+        .clone()
+        .oneshot(json_method_request(
+            "PATCH",
+            &format!("{members_path}/{viewer_id}"),
+            VIEWER_TOKEN,
+            &json!({
+                "role": "viewer",
+                "status": "active",
+                "team_id": null,
+                "expected_version": viewer_version
+            })
+            .to_string(),
+        ))
+        .await?;
+    assert_eq!(viewer_write.status(), StatusCode::FORBIDDEN);
+
+    let admin_owner_write = app
+        .clone()
+        .oneshot(json_method_request(
+            "PATCH",
+            &format!("{members_path}/{owner_id}"),
+            ADMIN_TOKEN,
+            &json!({
+                "role": "owner",
+                "status": "active",
+                "team_id": null,
+                "expected_version": owner_version
+            })
+            .to_string(),
+        ))
+        .await?;
+    assert_eq!(admin_owner_write.status(), StatusCode::FORBIDDEN);
+
+    let ordinary_promotion = app
+        .clone()
+        .oneshot(json_method_request(
+            "PATCH",
+            &format!("{members_path}/{viewer_id}"),
+            OWNER_TOKEN,
+            &json!({
+                "role": "owner",
+                "status": "active",
+                "team_id": null,
+                "expected_version": viewer_version
+            })
+            .to_string(),
+        ))
+        .await?;
+    assert_eq!(ordinary_promotion.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        response_json(ordinary_promotion).await["code"],
+        "organization_lifecycle_transition_invalid"
+    );
+
+    let teams_path = format!("/api/organizations/{}/teams", organization_id.get());
+    let viewer_team_write = app
+        .clone()
+        .oneshot(json_request(
+            &teams_path,
+            VIEWER_TOKEN,
+            &json!({ "name": "Forbidden" }).to_string(),
+        ))
+        .await?;
+    assert_eq!(viewer_team_write.status(), StatusCode::FORBIDDEN);
+
+    let first_team = app
+        .clone()
+        .oneshot(json_request(
+            &teams_path,
+            OWNER_TOKEN,
+            &json!({ "name": "Platform", "description": "Core APIs" }).to_string(),
+        ))
+        .await?;
+    assert_eq!(first_team.status(), StatusCode::OK);
+    let first_team = response_json(first_team).await;
+    let first_team_id = first_team["id"].as_i64().unwrap();
+    let first_team_version = first_team["version"].as_i64().unwrap();
+    let second_team = app
+        .clone()
+        .oneshot(json_request(
+            &teams_path,
+            OWNER_TOKEN,
+            &json!({ "name": "Operations" }).to_string(),
+        ))
+        .await?;
+    assert_eq!(second_team.status(), StatusCode::OK);
+
+    let team_page = app
+        .clone()
+        .oneshot(authenticated_request(
+            &format!("{teams_path}?limit=1"),
+            VIEWER_TOKEN,
+        ))
+        .await?;
+    let team_page = response_json(team_page).await;
+    assert_eq!(team_page["teams"].as_array().unwrap().len(), 1);
+    let team_cursor = team_page["next_cursor"].as_i64().unwrap();
+    let next_team_page = app
+        .clone()
+        .oneshot(authenticated_request(
+            &format!("{teams_path}?after={team_cursor}&limit=1"),
+            VIEWER_TOKEN,
+        ))
+        .await?;
+    let next_team_page = response_json(next_team_page).await;
+    assert!(next_team_page["teams"][0]["id"].as_i64().unwrap() > team_cursor);
+
+    let changed_team = app
+        .clone()
+        .oneshot(json_method_request(
+            "PATCH",
+            &format!("{teams_path}/{first_team_id}"),
+            OWNER_TOKEN,
+            &json!({
+                "name": "Platform Engineering",
+                "description": "Core APIs",
+                "expected_version": first_team_version
+            })
+            .to_string(),
+        ))
+        .await?;
+    assert_eq!(changed_team.status(), StatusCode::OK);
+    let changed_team = response_json(changed_team).await;
+    let changed_team_version = changed_team["version"].as_i64().unwrap();
+    let stale_team = app
+        .clone()
+        .oneshot(json_method_request(
+            "PATCH",
+            &format!("{teams_path}/{first_team_id}"),
+            OWNER_TOKEN,
+            &json!({
+                "name": "Stale",
+                "description": null,
+                "expected_version": first_team_version
+            })
+            .to_string(),
+        ))
+        .await?;
+    assert_eq!(stale_team.status(), StatusCode::CONFLICT);
+
+    let assigned = app
+        .clone()
+        .oneshot(json_method_request(
+            "PATCH",
+            &format!("{members_path}/{viewer_id}"),
+            OWNER_TOKEN,
+            &json!({
+                "role": "member",
+                "status": "active",
+                "team_id": first_team_id,
+                "expected_version": viewer_version
+            })
+            .to_string(),
+        ))
+        .await?;
+    assert_eq!(assigned.status(), StatusCode::OK);
+    let assigned = response_json(assigned).await;
+    let assigned_version = assigned["version"].as_i64().unwrap();
+
+    let team_in_use = app
+        .clone()
+        .oneshot(json_request(
+            &format!("{teams_path}/{first_team_id}/disable"),
+            OWNER_TOKEN,
+            &json!({ "expected_version": changed_team_version }).to_string(),
+        ))
+        .await?;
+    assert_eq!(team_in_use.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        response_json(team_in_use).await["code"],
+        "organization_team_in_use"
+    );
+
+    let unassigned = app
+        .clone()
+        .oneshot(json_method_request(
+            "PATCH",
+            &format!("{members_path}/{viewer_id}"),
+            OWNER_TOKEN,
+            &json!({
+                "role": "member",
+                "status": "active",
+                "team_id": null,
+                "expected_version": assigned_version
+            })
+            .to_string(),
+        ))
+        .await?;
+    let unassigned = response_json(unassigned).await;
+    let target_version = unassigned["version"].as_i64().unwrap();
+    let disabled = app
+        .clone()
+        .oneshot(json_request(
+            &format!("{teams_path}/{first_team_id}/disable"),
+            OWNER_TOKEN,
+            &json!({ "expected_version": changed_team_version }).to_string(),
+        ))
+        .await?;
+    assert_eq!(disabled.status(), StatusCode::OK);
+    assert_eq!(response_json(disabled).await["status"], "disabled");
+
+    let repository = OrganizationRepository::new(pool.clone(), Duration::from_secs(5))?;
+    let (other_organization, other_owner) = repository
+        .create(OrganizationCreate::new(
+            "Other Organization".to_owned(),
+            "other-organization".to_owned(),
+            admin_user_id,
+            test_entitlement()?,
+        ))
+        .await?
+        .into_parts();
+    let other_team = repository
+        .create_team(
+            other_organization.id(),
+            af_db::OrganizationTeamCreate::new("Other Team".to_owned(), None),
+        )
+        .await?;
+    let cross_member = app
+        .clone()
+        .oneshot(json_method_request(
+            "PATCH",
+            &format!("{members_path}/{}", other_owner.id().get()),
+            OWNER_TOKEN,
+            &json!({
+                "role": "owner",
+                "status": "active",
+                "team_id": null,
+                "expected_version": other_owner.version()
+            })
+            .to_string(),
+        ))
+        .await?;
+    assert_eq!(cross_member.status(), StatusCode::NOT_FOUND);
+    let cross_team = app
+        .clone()
+        .oneshot(json_method_request(
+            "PATCH",
+            &format!("{teams_path}/{}", other_team.id().get()),
+            OWNER_TOKEN,
+            &json!({
+                "name": "Cross Organization",
+                "description": null,
+                "expected_version": other_team.version()
+            })
+            .to_string(),
+        ))
+        .await?;
+    assert_eq!(cross_team.status(), StatusCode::NOT_FOUND);
+
+    let transfer = app
+        .clone()
+        .oneshot(json_request(
+            &format!(
+                "/api/organizations/{}/ownership-transfer",
+                organization_id.get()
+            ),
+            OWNER_TOKEN,
+            &json!({
+                "target_membership_id": viewer_id,
+                "current_owner_version": owner_version,
+                "target_expected_version": target_version
+            })
+            .to_string(),
+        ))
+        .await?;
+    assert_eq!(transfer.status(), StatusCode::OK);
+    let transfer = response_json(transfer).await;
+    assert_eq!(transfer["previous_owner"]["id"], owner_id);
+    assert_eq!(transfer["previous_owner"]["role"], "admin");
+    assert_eq!(transfer["current_owner"]["id"], viewer_id);
+    assert_eq!(transfer["current_owner"]["role"], "owner");
+    let current_owner_version = transfer["current_owner"]["version"].as_i64().unwrap();
+
+    let last_owner = app
+        .oneshot(json_method_request(
+            "PATCH",
+            &format!("{members_path}/{viewer_id}"),
+            VIEWER_TOKEN,
+            &json!({
+                "role": "owner",
+                "status": "suspended",
+                "team_id": null,
+                "expected_version": current_owner_version
+            })
+            .to_string(),
+        ))
+        .await?;
+    assert_eq!(last_owner.status(), StatusCode::CONFLICT);
+    assert_eq!(
+        response_json(last_owner).await["code"],
+        "organization_last_owner"
+    );
+
     pool.close().await?;
     Ok(())
 }
@@ -338,10 +714,12 @@ async fn acceptance_maps_all_rejection_facts_to_one_public_error() {
         group_id: GroupId::new(1).unwrap(),
         owner_id: UserId::new(1).unwrap(),
         viewer_id: UserId::new(2).unwrap(),
+        admin_id: UserId::new(3).unwrap(),
     });
     let app = build_organization_router(
         Arc::new(NoOrganizations),
         Some(Arc::new(RejectionInvitations)),
+        None,
         sessions,
     );
     for token in ["not-found", "conflict", "expired", "email-mismatch"] {
@@ -368,8 +746,9 @@ async fn organization_directory_remains_available_without_invitation_service() {
         group_id: GroupId::new(1).unwrap(),
         owner_id: UserId::new(1).unwrap(),
         viewer_id: UserId::new(2).unwrap(),
+        admin_id: UserId::new(3).unwrap(),
     });
-    let app = build_organization_router(Arc::new(NoOrganizations), None, sessions);
+    let app = build_organization_router(Arc::new(NoOrganizations), None, None, sessions);
     let response = app
         .oneshot(authenticated_request(
             "/api/account/organizations",
@@ -391,13 +770,35 @@ fn authenticated_request(path: &str, token: &str) -> Request<Body> {
 }
 
 fn json_request(path: &str, token: &str, body: &str) -> Request<Body> {
+    json_method_request("POST", path, token, body)
+}
+
+fn json_method_request(method: &str, path: &str, token: &str, body: &str) -> Request<Body> {
     Request::builder()
-        .method("POST")
+        .method(method)
         .uri(path)
         .header(AUTHORIZATION, format!("Bearer {token}"))
         .header("content-type", "application/json")
         .body(Body::from(body.to_owned()))
         .unwrap()
+}
+
+fn test_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn std::error::Error>> {
+    Ok(OrganizationEntitlementWrite::new(
+        OrganizationEntitlementSnapshot::new(
+            OrganizationEntitlementCapacity::new(10, 10, 2)?,
+            true,
+            false,
+            false,
+            90,
+            946_684_800,
+            4_102_444_800,
+            Some(4_102_444_800),
+        )?,
+        "contract".to_owned(),
+        None,
+        None,
+    )?)
 }
 
 async fn response_json(response: Response) -> Value {

@@ -378,19 +378,20 @@ pub use oauth_credential::{
 };
 pub use options::{DatabaseDialect, DatabaseOptions, PoolOptions};
 pub use organization::{
-    MAX_ORGANIZATION_ENTITLEMENT_REFERENCE_BYTES, MAX_ORGANIZATION_ENTITLEMENT_SOURCE_BYTES,
-    MAX_ORGANIZATION_INVITATION_BATCH_SIZE, MAX_ORGANIZATION_NAME_BYTES,
-    MAX_ORGANIZATION_SLUG_BYTES, MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES,
-    MAX_ORGANIZATION_TEAM_NAME_BYTES, OrganizationAccessRecord, OrganizationCreate,
-    OrganizationCreatedRecord, OrganizationEntitlementRecord, OrganizationEntitlementWrite,
+    MAX_ORGANIZATION_DIRECTORY_PAGE_SIZE, MAX_ORGANIZATION_ENTITLEMENT_REFERENCE_BYTES,
+    MAX_ORGANIZATION_ENTITLEMENT_SOURCE_BYTES, MAX_ORGANIZATION_INVITATION_BATCH_SIZE,
+    MAX_ORGANIZATION_NAME_BYTES, MAX_ORGANIZATION_SLUG_BYTES,
+    MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES, MAX_ORGANIZATION_TEAM_NAME_BYTES,
+    OrganizationAccessRecord, OrganizationCreate, OrganizationCreatedRecord,
+    OrganizationEntitlementRecord, OrganizationEntitlementWrite,
     OrganizationInvitationAcceptanceContext, OrganizationInvitationBatchRecord,
     OrganizationInvitationCreate, OrganizationInvitationPreviewItem,
     OrganizationInvitationPreviewRow, OrganizationInvitationPreviewSnapshot,
     OrganizationInvitationRecord, OrganizationMembershipChange, OrganizationMembershipCreate,
-    OrganizationMembershipRecord, OrganizationOwnershipTransfer,
+    OrganizationMembershipPageRecord, OrganizationMembershipRecord, OrganizationOwnershipTransfer,
     OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepository,
-    OrganizationRepositoryConfigError, OrganizationRepositoryError, OrganizationTeamCreate,
-    OrganizationTeamRecord,
+    OrganizationRepositoryConfigError, OrganizationRepositoryError, OrganizationTeamChange,
+    OrganizationTeamCreate, OrganizationTeamPageRecord, OrganizationTeamRecord,
 };
 pub use password_reset::{
     PasswordResetOutcome, PasswordResetRepository, PasswordResetRepositoryConfigError,

@@ -176,6 +176,7 @@ pub struct AuthenticationReady {
     user_invitation_service: Arc<dyn UserInvitationService>,
     organization_authorization_service: Arc<dyn af_admin::OrganizationAuthorizationService>,
     organization_invitation_service: Arc<dyn af_admin::OrganizationInvitationService>,
+    organization_management_service: Arc<dyn af_admin::OrganizationManagementService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     site_settings_repository: SiteSettingsRepository,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
@@ -757,6 +758,7 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::OrganizationRepository)?;
+        let organization_repository = Arc::new(organization_repository);
         let organization_invitation_cipher =
             OrganizationInvitationCipher::new(self.config.credential_encryption())
                 .map_err(BootstrapError::OrganizationInvitationCipher)?;
@@ -891,14 +893,19 @@ impl Bootstrap<DatabaseReady> {
                 )),
                 organization_authorization_service: Arc::new(
                     af_admin::DatabaseOrganizationAuthorizationService::new(Arc::new(
-                        organization_repository.clone(),
+                        (*organization_repository).clone(),
                     )),
                 ),
                 organization_invitation_service: Arc::new(
                     af_admin::DatabaseOrganizationInvitationService::new(
-                        Arc::new(organization_repository),
+                        Arc::clone(&organization_repository),
                         organization_invitation_cipher,
                     ),
+                ),
+                organization_management_service: Arc::new(
+                    af_admin::DatabaseOrganizationManagementService::new(Arc::clone(
+                        &organization_repository,
+                    )),
                 ),
                 site_settings_service: Arc::new(DatabaseSiteSettingsService::new(
                     site_settings_repository.clone(),
@@ -1865,6 +1872,9 @@ impl Bootstrap<Supervised> {
             Some(payment_webhook_routes),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_invitation_service,
+            )),
+            Some(Arc::clone(
+                &self.stage.infrastructure.organization_management_service,
             )),
         );
         let Bootstrap {

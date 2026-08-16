@@ -66,6 +66,8 @@ pub(crate) struct HttpState {
         Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
     pub(crate) organization_invitation_service:
         Option<Arc<dyn af_admin::OrganizationInvitationService>>,
+    pub(crate) organization_management_service:
+        Option<Arc<dyn af_admin::OrganizationManagementService>>,
     stream_delivery: StreamDeliveryPolicy,
 }
 
@@ -112,6 +114,7 @@ impl HttpState {
             admin_wallet_service: None,
             organization_authorization_service: None,
             organization_invitation_service: None,
+            organization_management_service: None,
             stream_delivery: StreamDeliveryPolicy::default(),
         }
     }
@@ -212,6 +215,15 @@ impl HttpState {
         service: Option<Arc<dyn af_admin::OrganizationInvitationService>>,
     ) -> Self {
         self.organization_invitation_service = service;
+        self
+    }
+
+    /// 注入企业成员与团队生命周期服务；未注入时不注册生命周期入口。
+    pub(crate) fn with_organization_management_service(
+        mut self,
+        service: Option<Arc<dyn af_admin::OrganizationManagementService>>,
+    ) -> Self {
+        self.organization_management_service = service;
         self
     }
 

@@ -195,6 +195,7 @@ pub fn build_router(
     frontend_assets: Option<Arc<dyn FrontendAssetSource>>,
     payment_webhook_routes: Option<Router>,
     organization_invitation_service: Option<Arc<dyn af_admin::OrganizationInvitationService>>,
+    organization_management_service: Option<Arc<dyn af_admin::OrganizationManagementService>>,
 ) -> HttpRouter {
     let openai_authentication = middleware::from_fn_with_state(
         AuthenticationState::new(Arc::clone(&authenticator), query_api_key_policy, config),
@@ -257,7 +258,8 @@ pub fn build_router(
     .with_admin_usage_log_reader(admin_usage_log_reader)
     .with_admin_wallet_service(admin_wallet_service)
     .with_organization_authorization_service(organization_authorization_service)
-    .with_organization_invitation_service(organization_invitation_service);
+    .with_organization_invitation_service(organization_invitation_service)
+    .with_organization_management_service(organization_management_service);
     let public_routes = Router::new()
         .route(
             "/v1/chat/completions",
@@ -709,6 +711,7 @@ pub fn build_router(
         Some(authorization_service) => management_routes.merge(build_organization_router(
             authorization_service,
             http_state.organization_invitation_service.clone(),
+            http_state.organization_management_service.clone(),
             Arc::clone(&http_state.session_authenticator),
         )),
         None => management_routes,
