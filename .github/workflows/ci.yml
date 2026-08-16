@@ -19,6 +19,70 @@ env:
   RUST_BACKTRACE: "1"
 
 jobs:
+  release-package:
+    name: Linux amd64 release package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+          rustc --version --verbose
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: |
+          corepack enable
+          corepack pnpm@10.33.0 --dir web install --frozen-lockfile
+
+      - name: Build frontend
+        run: corepack pnpm@10.33.0 --dir web build
+
+      - name: Build release binary
+        run: |
+          cargo clean --release --workspace
+          cargo build --release --locked --package af-server
+
+      - name: Package and verify release archive
+        shell: bash
+        run: |
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          bash tools/ci/package-release.sh auto amd64
+          archive="$(find release -maxdepth 1 -type f -name 'anyflows-v*-linux-amd64.tar.gz' -print -quit)"
+          test -n "$archive"
+          test -s "$archive"
+          test -s "$archive.sha256"
+
+  frontend-quality:
+    name: Frontend quality gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install frontend dependencies
+        shell: bash
+        run: |
+          corepack enable
+          corepack pnpm@10.33.0 --dir web install --frozen-lockfile
+
+      - name: Lint frontend
+        run: corepack pnpm@10.33.0 --dir web lint
+
+      - name: Build frontend
+        run: corepack pnpm@10.33.0 --dir web build
+
   rust-quality:
     name: Rust quality gates
     runs-on: ubuntu-24.04
@@ -32,7 +96,7 @@ jobs:
       - name: Install pinned Rust toolchain
         shell: bash
         run: |
-          toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal --component rustfmt --component clippy
           rustc --version --verbose
@@ -55,7 +119,7 @@ jobs:
       - name: Test release scripts
         run: bash tools/ci/test-release-scripts.sh
 
-      - name: 测试服务容器运行脚本
+      - name: Test service container runner
         run: bash tools/ci/test-container-test-runner.sh
 
       - name: Check OpenAPI contract
@@ -87,7 +151,7 @@ jobs:
         id: msrv
         shell: bash
         run: |
-          msrv="$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)"
+          msrv="$(sed -n 's/^rust-version = \"\(.*\)\"/\1/p' Cargo.toml | head -n 1)"
           test -n "$msrv"
           if [[ "$msrv" =~ ^[0-9]+\.[0-9]+$ ]]; then
             toolchain="${msrv}.0"
@@ -104,33 +168,44 @@ jobs:
 
       - name: Check workspace with MSRV
         shell: bash
-        run: |
-          toolchain="${{ steps.msrv.outputs.toolchain }}"
-          cargo +"$toolchain" check --workspace --all-targets --all-features --locked
+        run: cargo +"${{ steps.msrv.outputs.toolchain }}" check --workspace --all-targets --all-features --locked
 
-  database-migrations:
-    name: Database migrations (${{ matrix.dialect }})
+  sqlite-migration:
+    name: SQLite migration smoke test
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - dialect: sqlite
-            database_url: "sqlite::memory:"
-            postgres_image: ""
-            mysql_image: ""
-          - dialect: postgres
-            database_url: postgres://anyflows:anyflows_ci@127.0.0.1:5432/anyflows_migration_test_ci
-            postgres_image: postgres:17.10-bookworm@sha256:67870dc097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010
-            mysql_image: ""
-          - dialect: mysql
-            database_url: mysql://anyflows:anyflows_ci@127.0.0.1:3306/anyflows_migration_test_ci?timezone=%2B08:00
-            postgres_image: ""
-            mysql_image: mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+
+      - name: Cache database test artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: database-sqlite
+
+      - name: Run SQLite migration smoke test
+        env:
+          AF_TEST_DATABASE_URL: "sqlite::memory:"
+          AF_REQUIRE_LIVE_DATABASE: "1"
+          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
+        run: bash tools/ci/run-db-migration-test.sh sqlite
+
+  postgres-migration:
+    name: PostgreSQL migration smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     services:
       postgres:
-        image: ${{ matrix.postgres_image }}
+        image: postgres:17.10-bookworm@sha256:67870dd097790edf2bd6726658db995dcc830f799d41bb2b78ef07c9a2d5f010
         env:
           POSTGRES_USER: anyflows
           POSTGRES_PASSWORD: anyflows_ci
@@ -142,8 +217,38 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup toolchain install "$toolchain" --profile minimal
+
+      - name: Cache database test artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          shared-key: database-postgres
+
+      - name: Run PostgreSQL migration smoke test
+        env:
+          AF_TEST_DATABASE_URL: postgres://anyflows:anyflows_ci@127.0.0.1:5432/anyflows_migration_test_ci
+          AF_REQUIRE_LIVE_DATABASE: "1"
+          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
+        run: bash tools/ci/run-db-migration-test.sh postgres
+
+  mysql-migration:
+    name: MySQL migration smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
       mysql:
-        image: ${{ matrix.mysql_image }}
+        image: mysql:8.4.10@sha256:6ec1dc148edc412cce3ae27dd5b78dcd4e026976648424b3d31d9a8c6204db4e
         env:
           MYSQL_USER: anyflows
           MYSQL_PASSWORD: anyflows_ci
@@ -165,20 +270,21 @@ jobs:
       - name: Install pinned Rust toolchain
         shell: bash
         run: |
-          toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache database test artifacts
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
-          shared-key: database-${{ matrix.dialect }}
+          shared-key: database-mysql
 
-      - name: Run migration smoke test
+      - name: Run MySQL migration smoke test
         env:
-          AF_TEST_DATABASE_URL: ${{ matrix.database_url }}
+          AF_TEST_DATABASE_URL: mysql://anyflows:anyflows_ci@127.0.0.1:3306/anyflows_migration_test_ci?timezone=%2B08:00
           AF_REQUIRE_LIVE_DATABASE: "1"
-        run: bash tools/ci/run-db-migration-test.sh "${{ matrix.dialect }}"
+          AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST: "1"
+        run: bash tools/ci/run-db-migration-test.sh mysql
 
   cache-redis:
     name: Redis cache smoke test
@@ -203,7 +309,7 @@ jobs:
       - name: Install pinned Rust toolchain
         shell: bash
         run: |
-          toolchain="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
+          toolchain="$(sed -n 's/^channel = \"\(.*\)\"/\1/p' rust-toolchain.toml)"
           test -n "$toolchain"
           rustup toolchain install "$toolchain" --profile minimal
 
@@ -215,4 +321,5 @@ jobs:
       - name: Run Redis cache smoke test
         env:
           AF_TEST_REDIS_URL: redis://127.0.0.1:6379/
+          AF_REQUIRE_LIVE_REDIS: "1"
         run: bash tools/ci/run-cache-redis-test.sh
