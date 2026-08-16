@@ -318,13 +318,19 @@ async fn token_window_migration_backfills_only_active_requests() -> Result<(), B
     )
     .await?;
     let request_key = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
-    let request = reservation_active_model(request_key, user.id, token_id, group_id, 80, 80)
-        .insert(pool.connection())
+    let request_created_at = historical_audit_time();
+    let mut request = reservation_active_model(request_key, user.id, token_id, group_id, 80, 80);
+    request.created_at = Set(request_created_at);
+    // 历史 schema 尚无组织列，插入时不能让 ORM 返回并投影当前实体。
+    billing_reservations::Entity::insert(request)
+        .exec_without_returning(pool.connection())
         .await?;
     let batch_key = "dededededededededededededededede";
     let mut batch = reservation_active_model(batch_key, user.id, token_id, group_id, 90, 90);
     batch.reservation_kind = Set(2);
-    batch.insert(pool.connection()).await?;
+    billing_reservations::Entity::insert(batch)
+        .exec_without_returning(pool.connection())
+        .await?;
 
     Migrator::up(pool.connection(), None).await?;
     let manager = SchemaManager::new(pool.connection());
@@ -342,12 +348,12 @@ async fn token_window_migration_backfills_only_active_requests() -> Result<(), B
     .one(pool.connection())
     .await?
     .expect("升级前在途普通请求必须获得兼容快照");
-    assert_eq!(snapshot.reserved_quota, request.reserved_quota);
-    assert_eq!(snapshot.window_5h_start, request.created_at);
-    assert_eq!(snapshot.window_1d_start, request.created_at);
-    assert_eq!(snapshot.window_7d_start, request.created_at);
-    assert_eq!(snapshot.created_at, request.created_at);
-    assert_eq!(snapshot.updated_at, request.created_at);
+    assert_eq!(snapshot.reserved_quota, 80);
+    assert_eq!(snapshot.window_5h_start, request_created_at);
+    assert_eq!(snapshot.window_1d_start, request_created_at);
+    assert_eq!(snapshot.window_7d_start, request_created_at);
+    assert_eq!(snapshot.created_at, request_created_at);
+    assert_eq!(snapshot.updated_at, request_created_at);
     assert!(
         billing_token_window_reservations::Entity::find_by_id(BillingReservationKey::parse(
             batch_key
@@ -387,13 +393,19 @@ async fn group_window_migration_backfills_state_and_only_active_requests()
     )
     .await?;
     let request_key = "efefefefefefefefefefefefefefefef";
-    let request = reservation_active_model(request_key, user.id, token_id, group_id, 70, 70)
-        .insert(pool.connection())
+    let request_created_at = historical_audit_time();
+    let mut request = reservation_active_model(request_key, user.id, token_id, group_id, 70, 70);
+    request.created_at = Set(request_created_at);
+    // 历史 schema 尚无组织列，插入时不能让 ORM 返回并投影当前实体。
+    billing_reservations::Entity::insert(request)
+        .exec_without_returning(pool.connection())
         .await?;
     let batch_key = "fafafafafafafafafafafafafafafafa";
     let mut batch = reservation_active_model(batch_key, user.id, token_id, group_id, 90, 90);
     batch.reservation_kind = Set(2);
-    batch.insert(pool.connection()).await?;
+    billing_reservations::Entity::insert(batch)
+        .exec_without_returning(pool.connection())
+        .await?;
 
     Migrator::up(pool.connection(), None).await?;
     let manager = SchemaManager::new(pool.connection());
@@ -430,12 +442,12 @@ async fn group_window_migration_backfills_state_and_only_active_requests()
     .one(pool.connection())
     .await?
     .expect("升级前在途普通请求必须获得分组兼容快照");
-    assert_eq!(snapshot.reserved_quota, request.reserved_quota);
-    assert_eq!(snapshot.daily_window_start, request.created_at);
-    assert_eq!(snapshot.weekly_window_start, request.created_at);
-    assert_eq!(snapshot.monthly_window_start, request.created_at);
-    assert_eq!(snapshot.created_at, request.created_at);
-    assert_eq!(snapshot.updated_at, request.created_at);
+    assert_eq!(snapshot.reserved_quota, 70);
+    assert_eq!(snapshot.daily_window_start, request_created_at);
+    assert_eq!(snapshot.weekly_window_start, request_created_at);
+    assert_eq!(snapshot.monthly_window_start, request_created_at);
+    assert_eq!(snapshot.created_at, request_created_at);
+    assert_eq!(snapshot.updated_at, request_created_at);
     assert!(
         billing_group_window_reservations::Entity::find_by_id(BillingReservationKey::parse(
             batch_key
