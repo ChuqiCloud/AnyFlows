@@ -301,7 +301,8 @@ impl OrganizationTokenRepository {
         query
             .and_where(tokens::Column::OrganizationId.eq(organization_id.get()))
             .and_where(tokens::Column::DeletedAt.is_null())
-            .order_by(tokens::Column::Id, Order::Asc)
+            // 基础查询联接了用户与分组，排序列必须显式限定为令牌表。
+            .order_by((tokens::Entity, tokens::Column::Id), Order::Asc)
             .limit((limit + 1) as u64);
         if let Some(owner_user_id) = owner_user_id {
             query.and_where(tokens::Column::UserId.eq(owner_user_id.get()));
