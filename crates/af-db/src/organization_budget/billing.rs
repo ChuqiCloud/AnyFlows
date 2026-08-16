@@ -134,9 +134,7 @@ pub(super) async fn settle(
     actual: Quota,
 ) -> Result<OrganizationBillingMutationOutcome, OrganizationBudgetRepositoryError> {
     let now = TimeDateTimeWithTimeZone::now_utc();
-    let wallet = lock_wallet(transaction, observed.principal.organization_id())
-        .await
-        .map_err(|error| settle_diagnostic("lock_wallet", error))?;
+    let wallet = lock_wallet(transaction, observed.principal.organization_id()).await?;
     let supplemental = actual
         .units()
         .checked_sub(observed.reserved_quota.units())
@@ -146,27 +144,18 @@ pub(super) async fn settle(
     }
 
     if let Some(allocation) = observed.organization {
-        window::settle(transaction, allocation, actual, now)
-            .await
-            .map_err(|error| settle_diagnostic("organization_window", error))?;
+        window::settle(transaction, allocation, actual, now).await?;
     }
     if let Some(allocation) = observed.team {
-        window::settle(transaction, allocation, actual, now)
-            .await
-            .map_err(|error| settle_diagnostic("team_window", error))?;
+        window::settle(transaction, allocation, actual, now).await?;
     }
     if let Some(allocation) = observed.member {
-        window::settle(transaction, allocation, actual, now)
-            .await
-            .map_err(|error| settle_diagnostic("member_window", error))?;
+        window::settle(transaction, allocation, actual, now).await?;
     }
 
-    let current = lock_reservation(transaction, observed.id)
-        .await
-        .map_err(|error| settle_diagnostic("lock_reservation", error))?;
-    let current = record(current).map_err(|error| settle_diagnostic("record", error))?;
+    let current = lock_reservation(transaction, observed.id).await?;
+    let current = record(current)?;
     if !same_snapshot(&current, observed) {
-        settle_diagnostic("snapshot", OrganizationBudgetRepositoryError::Invariant);
         return Err(OrganizationBudgetRepositoryError::Invariant);
     }
     match current.status {
@@ -185,9 +174,7 @@ pub(super) async fn settle(
         }
     }
     let (balance_before, balance_after) =
-        update_wallet_settle(transaction, &wallet, observed.reserved_quota, actual, now)
-            .await
-            .map_err(|error| settle_diagnostic("wallet", error))?;
+        update_wallet_settle(transaction, &wallet, observed.reserved_quota, actual, now).await?;
     organization_wallet::append_usage_settlement_in_transaction(
         transaction,
         observed.principal.organization_id(),
@@ -198,24 +185,15 @@ pub(super) async fn settle(
         now,
     )
     .await
-    .map_err(|error| {
-        #[cfg(test)]
-        eprintln!("[DEBUG-organization-budget-settle] stage=ledger-raw error={error:?}");
-        settle_diagnostic(
-            "ledger",
-            match error {
-                crate::OrganizationWalletError::Query => OrganizationBudgetRepositoryError::Query,
-                crate::OrganizationWalletError::InvalidInput
-                | crate::OrganizationWalletError::Conflict
-                | crate::OrganizationWalletError::InsufficientQuota
-                | crate::OrganizationWalletError::Overflow
-                | crate::OrganizationWalletError::OutcomeUnknown
-                | crate::OrganizationWalletError::Timeout
-                | crate::OrganizationWalletError::Invariant => {
-                    OrganizationBudgetRepositoryError::Invariant
-                }
-            },
-        )
+    .map_err(|error| match error {
+        crate::OrganizationWalletError::Query => OrganizationBudgetRepositoryError::Query,
+        crate::OrganizationWalletError::InvalidInput
+        | crate::OrganizationWalletError::Conflict
+        | crate::OrganizationWalletError::InsufficientQuota
+        | crate::OrganizationWalletError::Overflow
+        | crate::OrganizationWalletError::OutcomeUnknown
+        | crate::OrganizationWalletError::Timeout
+        | crate::OrganizationWalletError::Invariant => OrganizationBudgetRepositoryError::Invariant,
     })?;
     let result = billing_organization_reservations::Entity::update_many()
         .filter(
@@ -246,35 +224,12 @@ pub(super) async fn settle(
         .await
         .map_err(|_| OrganizationBudgetRepositoryError::Query)?;
     if result.rows_affected != 1 {
-        settle_diagnostic(
-            "reservation_update",
-            OrganizationBudgetRepositoryError::Invariant,
-        );
         return Err(OrganizationBudgetRepositoryError::Invariant);
     }
-    clear_protection_if_safe(transaction, observed.principal.organization_id(), now)
-        .await
-        .map_err(|error| settle_diagnostic("clear_protection", error))?;
+    clear_protection_if_safe(transaction, observed.principal.organization_id(), now).await?;
     Ok(OrganizationBillingMutationOutcome::Applied(
         OrganizationBillingReservationStatus::Settled,
     ))
-}
-
-#[cfg(test)]
-fn settle_diagnostic(
-    stage: &'static str,
-    error: OrganizationBudgetRepositoryError,
-) -> OrganizationBudgetRepositoryError {
-    eprintln!("[DEBUG-organization-budget-settle] stage={stage} error={error:?}");
-    error
-}
-
-#[cfg(not(test))]
-const fn settle_diagnostic(
-    _stage: &'static str,
-    error: OrganizationBudgetRepositoryError,
-) -> OrganizationBudgetRepositoryError {
-    error
 }
 
 pub(super) async fn release(
@@ -565,14 +520,17 @@ async fn update_wallet_settle(
     actual: Quota,
     now: TimeDateTimeWithTimeZone,
 ) -> Result<(Quota, Quota), OrganizationBudgetRepositoryError> {
+    // 结算只在预留与实际用量的差额方向上调整钱包，另一方向必须归零。
     let released = reserved
         .units()
         .checked_sub(actual.units())
-        .unwrap_or_default();
+        .ok_or(OrganizationBudgetRepositoryError::Invariant)?
+        .max(0);
     let supplemental = actual
         .units()
         .checked_sub(reserved.units())
-        .unwrap_or_default();
+        .ok_or(OrganizationBudgetRepositoryError::Invariant)?
+        .max(0);
     let quota = wallet
         .quota
         .checked_add(released)
@@ -593,18 +551,6 @@ async fn update_wallet_settle(
         .ok_or(OrganizationBudgetRepositoryError::Invariant)?;
     let balance_after =
         Quota::new(quota).map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
-    #[cfg(test)]
-    eprintln!(
-        "[DEBUG-organization-budget-settle] wallet quota={} reserved={} actual={} released={} supplemental={} next_quota={} balance_before={} balance_after={}",
-        wallet.quota,
-        reserved.units(),
-        actual.units(),
-        released,
-        supplemental,
-        quota,
-        balance_before.units(),
-        balance_after.units()
-    );
     update_wallet(
         transaction,
         wallet,
