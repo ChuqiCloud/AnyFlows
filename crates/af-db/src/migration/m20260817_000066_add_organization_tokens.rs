@@ -151,15 +151,21 @@ impl MigrationTrait for Migration {
         drop_references(manager).await?;
         drop_mysql_table_checks(manager).await?;
 
-        for index in [
-            BILLING_ORGANIZATION_INDEX,
-            TOKEN_MEMBERSHIP_INDEX,
-            TOKEN_ORGANIZATION_OWNER_INDEX,
-            TOKEN_ORGANIZATION_INDEX,
-            MEMBERSHIP_SCOPE_ID_INDEX,
+        for (table, index) in [
+            (
+                billing_reservations::Entity.into_iden(),
+                BILLING_ORGANIZATION_INDEX,
+            ),
+            (tokens::Entity.into_iden(), TOKEN_MEMBERSHIP_INDEX),
+            (tokens::Entity.into_iden(), TOKEN_ORGANIZATION_OWNER_INDEX),
+            (tokens::Entity.into_iden(), TOKEN_ORGANIZATION_INDEX),
+            (
+                organization_memberships::Entity.into_iden(),
+                MEMBERSHIP_SCOPE_ID_INDEX,
+            ),
         ] {
             manager
-                .drop_index(Index::drop().name(index).to_owned())
+                .drop_index(Index::drop().name(index).table(table).to_owned())
                 .await?;
         }
 
