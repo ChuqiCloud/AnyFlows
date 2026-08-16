@@ -135,26 +135,8 @@ pub(super) async fn settle(
 ) -> Result<OrganizationBillingMutationOutcome, OrganizationBudgetRepositoryError> {
     let now = TimeDateTimeWithTimeZone::now_utc();
     let wallet = lock_wallet(transaction, observed.principal.organization_id()).await?;
-    let supplemental = actual
-        .units()
-        .checked_sub(observed.reserved_quota.units())
-        .unwrap_or_default();
-    if supplemental > wallet.quota {
-        return Err(OrganizationBudgetRepositoryError::SettlementPending);
-    }
-
-    if let Some(allocation) = observed.organization {
-        window::settle(transaction, allocation, actual, now).await?;
-    }
-    if let Some(allocation) = observed.team {
-        window::settle(transaction, allocation, actual, now).await?;
-    }
-    if let Some(allocation) = observed.member {
-        window::settle(transaction, allocation, actual, now).await?;
-    }
-
-    let current = lock_reservation(transaction, observed.id).await?;
-    let current = record(current)?;
+    // 先锁定并核对预留状态，避免重放请求先改写预算窗口再返回冲突。
+    let current = record(lock_reservation(transaction, observed.id).await?)?;
     if !same_snapshot(&current, observed) {
         return Err(OrganizationBudgetRepositoryError::Invariant);
     }
@@ -173,6 +155,24 @@ pub(super) async fn settle(
             return Err(OrganizationBudgetRepositoryError::Conflict);
         }
     }
+    let supplemental = actual
+        .units()
+        .checked_sub(observed.reserved_quota.units())
+        .unwrap_or_default();
+    if supplemental > wallet.quota {
+        return Err(OrganizationBudgetRepositoryError::SettlementPending);
+    }
+
+    if let Some(allocation) = observed.organization {
+        window::settle(transaction, allocation, actual, now).await?;
+    }
+    if let Some(allocation) = observed.team {
+        window::settle(transaction, allocation, actual, now).await?;
+    }
+    if let Some(allocation) = observed.member {
+        window::settle(transaction, allocation, actual, now).await?;
+    }
+
     let (balance_before, balance_after) =
         update_wallet_settle(transaction, &wallet, observed.reserved_quota, actual, now).await?;
     organization_wallet::append_usage_settlement_in_transaction(
@@ -238,15 +238,7 @@ pub(super) async fn release(
 ) -> Result<OrganizationBillingMutationOutcome, OrganizationBudgetRepositoryError> {
     let now = TimeDateTimeWithTimeZone::now_utc();
     let wallet = lock_wallet(transaction, observed.principal.organization_id()).await?;
-    if let Some(allocation) = observed.organization {
-        window::release(transaction, allocation, now).await?;
-    }
-    if let Some(allocation) = observed.team {
-        window::release(transaction, allocation, now).await?;
-    }
-    if let Some(allocation) = observed.member {
-        window::release(transaction, allocation, now).await?;
-    }
+    // 释放是终态操作，必须先确认预留仍处于可释放状态。
     let current = record(lock_reservation(transaction, observed.id).await?)?;
     if !same_snapshot(&current, observed) {
         return Err(OrganizationBudgetRepositoryError::Invariant);
@@ -262,6 +254,15 @@ pub(super) async fn release(
         | OrganizationBillingReservationStatus::Settled => {
             return Err(OrganizationBudgetRepositoryError::Conflict);
         }
+    }
+    if let Some(allocation) = observed.organization {
+        window::release(transaction, allocation, now).await?;
+    }
+    if let Some(allocation) = observed.team {
+        window::release(transaction, allocation, now).await?;
+    }
+    if let Some(allocation) = observed.member {
+        window::release(transaction, allocation, now).await?;
     }
     update_wallet_release(transaction, &wallet, observed.reserved_quota, now).await?;
     let result = billing_organization_reservations::Entity::update_many()
