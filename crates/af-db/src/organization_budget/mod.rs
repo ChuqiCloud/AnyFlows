@@ -15,9 +15,9 @@ mod window;
 pub use types::{
     OrganizationBillingMutationOutcome, OrganizationBillingPrincipal,
     OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
-    OrganizationBudgetPolicyRecord, OrganizationBudgetPolicyWrite,
-    OrganizationBudgetRepositoryConfigError, OrganizationBudgetRepositoryError,
-    OrganizationBudgetScope,
+    OrganizationBudgetAllocationRecord, OrganizationBudgetPolicyRecord,
+    OrganizationBudgetPolicyWrite, OrganizationBudgetRepositoryConfigError,
+    OrganizationBudgetRepositoryError, OrganizationBudgetScope, OrganizationBudgetWindowRecord,
 };
 
 /// 企业预算策略与钱包预留的统一持久化边界。
@@ -69,6 +69,20 @@ impl OrganizationBudgetRepository {
     ) -> Result<Vec<OrganizationBudgetPolicyRecord>, OrganizationBudgetRepositoryError> {
         let operation = self
             .list_policies_inner(organization_id, actor_user_id)
+            .with_subscriber(NoSubscriber::default());
+        timeout(self.operation_timeout, operation)
+            .await
+            .map_err(|_| OrganizationBudgetRepositoryError::Timeout)?
+    }
+
+    /// 读取当前仍有效的预算窗口快照，历史窗口不会无界返回。
+    pub async fn list_windows(
+        &self,
+        organization_id: OrganizationId,
+        actor_user_id: UserId,
+    ) -> Result<Vec<OrganizationBudgetWindowRecord>, OrganizationBudgetRepositoryError> {
+        let operation = self
+            .list_windows_inner(organization_id, actor_user_id)
             .with_subscriber(NoSubscriber::default());
         timeout(self.operation_timeout, operation)
             .await
@@ -167,6 +181,28 @@ impl OrganizationBudgetRepository {
             .await
             .map_err(|_| OrganizationBudgetRepositoryError::Query)?;
         let result = policy::list(&transaction, organization_id, actor_user_id).await;
+        let _ = transaction.rollback().await;
+        result
+    }
+
+    async fn list_windows_inner(
+        &self,
+        organization_id: OrganizationId,
+        actor_user_id: UserId,
+    ) -> Result<Vec<OrganizationBudgetWindowRecord>, OrganizationBudgetRepositoryError> {
+        let transaction = self
+            .pool
+            .connection()
+            .begin()
+            .await
+            .map_err(|_| OrganizationBudgetRepositoryError::Query)?;
+        let result = window::list_current(
+            &transaction,
+            organization_id,
+            actor_user_id,
+            TimeDateTimeWithTimeZone::now_utc(),
+        )
+        .await;
         let _ = transaction.rollback().await;
         result
     }

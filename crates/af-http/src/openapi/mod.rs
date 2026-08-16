@@ -15,6 +15,7 @@ mod model_sync;
 mod models;
 mod network_settings;
 mod oauth_connections;
+mod organization_budget;
 mod organization_wallet;
 mod organizations;
 mod password_reset;
@@ -93,6 +94,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(debug_traces::document());
     document.merge(payment_webhook::document());
     document.merge(organization_wallet::document());
+    document.merge(organization_budget::document());
 
     document.tags = Some(vec![
         Tag::new("公开注册"),

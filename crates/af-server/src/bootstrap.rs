@@ -20,15 +20,16 @@ use af_admin::{
     DatabaseAdminPaymentSettingsService, DatabaseAdminRouteReader, DatabaseAdminRouteWriter,
     DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
     DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseAdminWalletService,
-    DatabaseInitialSetup, DatabaseOrganizationWalletService, DatabasePasswordResetService,
-    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
-    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
-    DatabaseUserInvitationService, DatabaseUserProfileService, DatabaseUserTokenService,
-    DatabaseUserWalletService, EmailDelivery, InitialSetup, ModelCatalogReader,
-    NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError, OrganizationWalletService,
-    PasswordResetService, PasswordResetServiceConfigError, PlaygroundConversationService,
-    PlaygroundShareService, RedemptionService, RegistrationService, RegistrationServiceConfigError,
+    DatabaseInitialSetup, DatabaseOrganizationBudgetService, DatabaseOrganizationWalletService,
+    DatabasePasswordResetService, DatabasePlaygroundConversationService,
+    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
+    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
+    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserProfileService,
+    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
+    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    OrganizationBudgetService, OrganizationWalletService, PasswordResetService,
+    PasswordResetServiceConfigError, PlaygroundConversationService, PlaygroundShareService,
+    RedemptionService, RegistrationService, RegistrationServiceConfigError,
     RuntimeRefreshingAdminGroupWriter, SessionAuthenticator, SessionAuthenticatorConfigError,
     SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
     UserProfileService, UserTokenService, UserTopupService, UserWalletService,
@@ -66,7 +67,8 @@ use af_db::{
     DebugTraceSnapshotCipherError, EmailSettingsRepository, EmailSettingsRepositoryConfigError,
     InitialSetupRepository, InitialSetupRepositoryConfigError, MigrationOptions,
     ModelPriceRepository, ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord,
-    NetworkSettingsRepository, NetworkSettingsRepositoryConfigError, OrganizationRepository,
+    NetworkSettingsRepository, NetworkSettingsRepositoryConfigError, OrganizationBudgetRepository,
+    OrganizationBudgetRepositoryConfigError, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationWalletRepository,
     OrganizationWalletRepositoryConfigError, PasswordResetRepository,
     PasswordResetRepositoryConfigError, PaymentSecretUpdate, PaymentSettingsRepository,
@@ -174,6 +176,7 @@ pub struct AuthenticationReady {
     user_profile_service: Arc<dyn UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
     organization_wallet_service: Arc<dyn OrganizationWalletService>,
+    organization_budget_service: Arc<dyn OrganizationBudgetService>,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
     subscription_repository: SubscriptionRepository,
@@ -447,6 +450,9 @@ pub enum BootstrapError {
     /// 企业钱包仓储的启动参数无效。
     #[error("企业钱包仓储启动参数无效")]
     OrganizationWalletRepository(#[source] OrganizationWalletRepositoryConfigError),
+    /// 企业预算仓储的启动参数无效。
+    #[error("企业预算仓储启动参数无效")]
+    OrganizationBudgetRepository(#[source] OrganizationBudgetRepositoryConfigError),
     /// 企业邀请邮箱和令牌摘要密码学配置无效。
     #[error("企业邀请密码学配置无效")]
     OrganizationInvitationCipher(#[source] af_account::OrganizationInvitationCipherError),
@@ -773,6 +779,14 @@ impl Bootstrap<DatabaseReady> {
             )
             .map_err(BootstrapError::OrganizationWalletRepository)?,
         );
+        let organization_budget_repository = Arc::new(
+            OrganizationBudgetRepository::new(
+                self.stage.database.clone(),
+                Duration::from_secs(auth.lookup_timeout_secs()),
+                Duration::from_secs(15 * 60),
+            )
+            .map_err(BootstrapError::OrganizationBudgetRepository)?,
+        );
         let organization_invitation_cipher =
             OrganizationInvitationCipher::new(self.config.credential_encryption())
                 .map_err(BootstrapError::OrganizationInvitationCipher)?;
@@ -899,6 +913,9 @@ impl Bootstrap<DatabaseReady> {
                 )),
                 organization_wallet_service: Arc::new(DatabaseOrganizationWalletService::new(
                     organization_wallet_repository,
+                )),
+                organization_budget_service: Arc::new(DatabaseOrganizationBudgetService::new(
+                    organization_budget_repository,
                 )),
                 redemption_service: Arc::new(DatabaseRedemptionService::new(redemption_repository)),
                 subscription_service: Arc::new(DatabaseSubscriptionService::new(
@@ -1854,6 +1871,9 @@ impl Bootstrap<Supervised> {
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_wallet_service,
+            )),
+            Some(Arc::clone(
+                &self.stage.infrastructure.organization_budget_service,
             )),
             Some(user_topup_service),
             Arc::clone(&self.stage.infrastructure.redemption_service),

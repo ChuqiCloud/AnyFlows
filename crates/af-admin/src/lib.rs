@@ -25,6 +25,7 @@ mod model_price;
 mod model_sync;
 mod network_settings;
 mod organization;
+mod organization_budget;
 mod organization_invitation;
 mod organization_management;
 mod organization_wallet;
@@ -61,8 +62,11 @@ mod wallet;
 
 pub use af_account::PlainCredentialSecret as AdminCredentialSecret;
 pub use af_db::{
-    CredentialProxyScheme, NetworkSettingsMode, OrganizationInvitationRecord,
-    OrganizationMembershipRecord, OrganizationTeamRecord, OrganizationWalletLedgerEntryType,
+    CredentialProxyScheme, DatabaseTimestamp, NetworkSettingsMode,
+    OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
+    OrganizationBudgetAllocationRecord, OrganizationBudgetPolicyRecord, OrganizationBudgetScope,
+    OrganizationBudgetWindowRecord, OrganizationInvitationRecord, OrganizationMembershipRecord,
+    OrganizationTeamRecord, OrganizationWalletLedgerEntryType,
 };
 pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,
@@ -186,6 +190,12 @@ pub use organization::{
     DatabaseOrganizationAuthorizationService, OrganizationAccessFuture, OrganizationAccessSummary,
     OrganizationAuthorizationError, OrganizationAuthorizationService, OrganizationContext,
     OrganizationEntitlementSummary, OrganizationListFuture,
+};
+pub use organization_budget::{
+    DatabaseOrganizationBudgetService, OrganizationBudgetPoliciesFuture,
+    OrganizationBudgetPolicyCreateCommand, OrganizationBudgetPolicyFuture,
+    OrganizationBudgetReservationFuture, OrganizationBudgetService, OrganizationBudgetServiceError,
+    OrganizationBudgetWindowsFuture,
 };
 pub use organization_invitation::{
     AcceptedOrganizationInvitation, DEFAULT_ORGANIZATION_INVITATION_TTL_SECONDS,

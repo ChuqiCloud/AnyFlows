@@ -226,7 +226,7 @@ async fn lock_organization(
         .ok_or(OrganizationBudgetRepositoryError::NotFound)
 }
 
-async fn require_budget_manager(
+pub(super) async fn require_budget_manager(
     transaction: &DatabaseTransaction,
     organization_id: OrganizationId,
     actor_user_id: af_domain::UserId,
