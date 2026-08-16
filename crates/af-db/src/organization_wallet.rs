@@ -500,19 +500,20 @@ pub(crate) async fn append_usage_settlement_in_transaction(
     if actual_quota.is_zero() {
         return Ok(());
     }
-    let event_id = WalletEventId::new(reservation_id.bytes()).map_err(|_| {
-        #[cfg(test)]
-        eprintln!("[DEBUG-organization-budget-settle] ledger invariant=event_id");
-        OrganizationWalletError::Invariant
-    })?;
+    let event_id = WalletEventId::new(reservation_id.bytes())
+        .map_err(|_| OrganizationWalletError::Invariant)
+        .inspect_err(|_| {
+            #[cfg(test)]
+            eprintln!("[DEBUG-organization-budget-settle] ledger invariant=event_id");
+        })?;
     let quota_delta = actual_quota
         .units()
         .checked_neg()
         .and_then(|value| QuotaDelta::new(value).ok())
-        .ok_or_else(|| {
+        .ok_or(OrganizationWalletError::Invariant)
+        .inspect_err(|_| {
             #[cfg(test)]
             eprintln!("[DEBUG-organization-budget-settle] ledger invariant=quota_delta");
-            OrganizationWalletError::Invariant
         })?;
     if balance_before.checked_apply(quota_delta) != Ok(balance_after) {
         #[cfg(test)]
@@ -554,10 +555,9 @@ pub(crate) async fn append_usage_settlement_in_transaction(
         },
     )
     .await
-    .map_err(|error| {
+    .inspect_err(|error| {
         #[cfg(test)]
         eprintln!("[DEBUG-organization-budget-settle] ledger insert error={error:?}");
-        error
     })?;
     Ok(())
 }
