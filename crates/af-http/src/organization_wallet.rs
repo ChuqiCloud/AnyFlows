@@ -92,6 +92,7 @@ pub(crate) enum OrganizationWalletEntryTypeResponse {
     OpeningBalance,
     AdminAdjustment,
     Topup,
+    UsageSettlement,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -383,6 +384,9 @@ impl OrganizationWalletEntryResponse {
                 }
                 OrganizationWalletLedgerEntryType::Topup => {
                     OrganizationWalletEntryTypeResponse::Topup
+                }
+                OrganizationWalletLedgerEntryType::UsageSettlement => {
+                    OrganizationWalletEntryTypeResponse::UsageSettlement
                 }
             },
             quota_delta: entry.quota_delta().units(),

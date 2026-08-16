@@ -21381,7 +21381,8 @@
         "enum": [
           "opening_balance",
           "admin_adjustment",
-          "topup"
+          "topup",
+          "usage_settlement"
         ]
       },
       "OrganizationWalletListResponse": {
