@@ -555,9 +555,9 @@ pub(crate) async fn append_usage_settlement_in_transaction(
         },
     )
     .await
-    .inspect_err(|error| {
+    .inspect_err(|_error| {
         #[cfg(test)]
-        eprintln!("[DEBUG-organization-budget-settle] ledger insert error={error:?}");
+        eprintln!("[DEBUG-organization-budget-settle] ledger insert error={_error:?}");
     })?;
     Ok(())
 }
