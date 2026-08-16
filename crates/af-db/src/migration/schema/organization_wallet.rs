@@ -150,10 +150,6 @@ async fn rebuild_topup_orders(
     manager: &SchemaManager<'_>,
     include_organization: bool,
 ) -> Result<(), DbErr> {
-    manager
-        .get_connection()
-        .execute_unprepared("PRAGMA defer_foreign_keys = ON")
-        .await?;
     if manager.has_table(TOPUP_ORDERS_NEXT_TABLE).await? {
         manager
             .drop_table(
@@ -230,10 +226,7 @@ async fn copy_topup_orders(
     include_organization: bool,
 ) -> Result<(), DbErr> {
     let (target_scope, source_scope) = if include_organization {
-        let source_scope = if manager
-            .has_column("topup_orders", "organization_id")
-            .await?
-        {
+        let source_scope = if manager.has_column(source_table, "organization_id").await? {
             "\"organization_id\""
         } else {
             "NULL"

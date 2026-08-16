@@ -995,11 +995,14 @@ mod tests {
     #[test]
     fn idempotency_identifiers_include_provider_and_payment_method() {
         let client = TopupRequestId::from_persistence_key(IDEMPOTENCY_KEY).unwrap();
-        let stripe = scoped_identifiers(UserId::new(1).unwrap(), client, "stripe", "card").unwrap();
-        let replay = scoped_identifiers(UserId::new(1).unwrap(), client, "stripe", "card").unwrap();
-        let alipay = scoped_identifiers(UserId::new(1).unwrap(), client, "epay", "alipay").unwrap();
+        let stripe =
+            scoped_identifiers(UserId::new(1).unwrap(), None, client, "stripe", "card").unwrap();
+        let replay =
+            scoped_identifiers(UserId::new(1).unwrap(), None, client, "stripe", "card").unwrap();
+        let alipay =
+            scoped_identifiers(UserId::new(1).unwrap(), None, client, "epay", "alipay").unwrap();
         let other_user =
-            scoped_identifiers(UserId::new(2).unwrap(), client, "stripe", "card").unwrap();
+            scoped_identifiers(UserId::new(2).unwrap(), None, client, "stripe", "card").unwrap();
 
         assert_eq!(stripe, replay);
         assert_ne!(stripe, alipay);

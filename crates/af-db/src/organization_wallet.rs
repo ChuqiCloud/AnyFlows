@@ -468,16 +468,18 @@ pub(crate) async fn credit_topup_in_transaction(
     .await?;
     insert_entry(
         transaction,
-        organization_id,
-        event_id,
-        Some(actor_user_id),
-        OrganizationWalletLedgerEntryType::Topup,
-        delta,
-        before,
-        after,
-        "topup",
-        None,
-        created_at,
+        LedgerEntryInput {
+            organization_id,
+            event_id,
+            actor_user_id: Some(actor_user_id),
+            entry_type: OrganizationWalletLedgerEntryType::Topup,
+            quota_delta: delta,
+            balance_before: before,
+            balance_after: after,
+            source: "topup",
+            reason: None,
+            created_at,
+        },
     )
     .await?;
     Ok(OrganizationWalletCreditOutcome::Applied)
@@ -515,16 +517,18 @@ async fn apply_adjustment(
     update_wallet_quota(transaction, wallet.id, wallet.version, before, after, now).await?;
     let entry = insert_entry(
         transaction,
-        write.organization_id,
-        write.event_id,
-        Some(write.actor_user_id),
-        OrganizationWalletLedgerEntryType::AdminAdjustment,
-        write.quota_delta,
-        before,
-        after,
-        "admin_adjustment",
-        Some(write.reason.clone()),
-        now,
+        LedgerEntryInput {
+            organization_id: write.organization_id,
+            event_id: write.event_id,
+            actor_user_id: Some(write.actor_user_id),
+            entry_type: OrganizationWalletLedgerEntryType::AdminAdjustment,
+            quota_delta: write.quota_delta,
+            balance_before: before,
+            balance_after: after,
+            source: "admin_adjustment",
+            reason: Some(write.reason.clone()),
+            created_at: now,
+        },
     )
     .await?;
     Ok(OrganizationWalletAdjustmentOutcome::Applied(entry))
@@ -604,8 +608,7 @@ async fn update_wallet_quota(
     Ok(())
 }
 
-async fn insert_entry(
-    transaction: &DatabaseTransaction,
+struct LedgerEntryInput<'a> {
     organization_id: OrganizationId,
     event_id: WalletEventId,
     actor_user_id: Option<UserId>,
@@ -613,21 +616,26 @@ async fn insert_entry(
     quota_delta: QuotaDelta,
     balance_before: Quota,
     balance_after: Quota,
-    source: &str,
+    source: &'a str,
     reason: Option<String>,
     created_at: TimeDateTimeWithTimeZone,
+}
+
+async fn insert_entry(
+    transaction: &DatabaseTransaction,
+    input: LedgerEntryInput<'_>,
 ) -> Result<OrganizationWalletLedgerEntryRecord, OrganizationWalletError> {
     let model = organization_wallet_ledger_entries::ActiveModel {
-        organization_id: Set(organization_id.get()),
-        event_key: Set(event_id.persistence_key()),
-        actor_user_id: Set(actor_user_id.map(UserId::get)),
-        entry_type: Set(entry_type as i16),
-        quota_delta: Set(quota_delta.units()),
-        balance_before: Set(balance_before.units()),
-        balance_after: Set(balance_after.units()),
-        source: Set(source.to_owned()),
-        reason: Set(reason.map(SensitiveString::from)),
-        created_at: Set(created_at),
+        organization_id: Set(input.organization_id.get()),
+        event_key: Set(input.event_id.persistence_key()),
+        actor_user_id: Set(input.actor_user_id.map(UserId::get)),
+        entry_type: Set(input.entry_type as i16),
+        quota_delta: Set(input.quota_delta.units()),
+        balance_before: Set(input.balance_before.units()),
+        balance_after: Set(input.balance_after.units()),
+        source: Set(input.source.to_owned()),
+        reason: Set(input.reason.map(SensitiveString::from)),
+        created_at: Set(input.created_at),
         ..Default::default()
     }
     .insert(transaction)
