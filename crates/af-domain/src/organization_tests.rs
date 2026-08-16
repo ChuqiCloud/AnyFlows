@@ -74,4 +74,12 @@ fn organization_roles_use_the_fixed_permission_matrix() {
         PlatformPermission::OrganizationsReadAll.code(),
         "platform.organizations.read_all"
     );
+    assert_eq!(
+        PlatformPermission::OrganizationUsageLogsReadAll.code(),
+        "platform.organization_usage_logs.read_all"
+    );
+    assert_eq!(
+        PlatformPermission::OrganizationAuditReadAll.code(),
+        "platform.organization_audit.read_all"
+    );
 }

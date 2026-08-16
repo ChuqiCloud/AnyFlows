@@ -20,14 +20,15 @@ use af_admin::{
     DatabaseAdminPaymentSettingsService, DatabaseAdminRouteReader, DatabaseAdminRouteWriter,
     DatabaseAdminTokenReader, DatabaseAdminTokenWriter, DatabaseAdminUsageLogReader,
     DatabaseAdminUserReader, DatabaseAdminUserWriter, DatabaseAdminWalletService,
-    DatabaseInitialSetup, DatabaseOrganizationBudgetService, DatabaseOrganizationTokenService,
-    DatabaseOrganizationWalletService, DatabasePasswordResetService,
-    DatabasePlaygroundConversationService, DatabasePlaygroundShareService,
-    DatabaseRedemptionService, DatabaseRegistrationService, DatabaseSessionAuthenticator,
-    DatabaseSiteSettingsService, DatabaseSubscriptionService, DatabaseTokenAuthenticator,
-    DatabaseUserInvitationService, DatabaseUserProfileService, DatabaseUserTokenService,
-    DatabaseUserWalletService, EmailDelivery, InitialSetup, ModelCatalogReader,
-    NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError, OrganizationBudgetService,
+    DatabaseInitialSetup, DatabaseOrganizationActivityService, DatabaseOrganizationBudgetService,
+    DatabaseOrganizationTokenService, DatabaseOrganizationWalletService,
+    DatabasePasswordResetService, DatabasePlaygroundConversationService,
+    DatabasePlaygroundShareService, DatabaseRedemptionService, DatabaseRegistrationService,
+    DatabaseSessionAuthenticator, DatabaseSiteSettingsService, DatabaseSubscriptionService,
+    DatabaseTokenAuthenticator, DatabaseUserInvitationService, DatabaseUserProfileService,
+    DatabaseUserTokenService, DatabaseUserWalletService, EmailDelivery, InitialSetup,
+    ModelCatalogReader, NetworkSettingsRuntimeApplier, NetworkSettingsRuntimeError,
+    OrganizationActivityService, OrganizationActivityServiceConfigError, OrganizationBudgetService,
     OrganizationTokenService, OrganizationWalletService, PasswordResetService,
     PasswordResetServiceConfigError, PlaygroundConversationService, PlaygroundShareService,
     RedemptionService, RegistrationService, RegistrationServiceConfigError,
@@ -68,8 +69,8 @@ use af_db::{
     DebugTraceSnapshotCipherError, EmailSettingsRepository, EmailSettingsRepositoryConfigError,
     InitialSetupRepository, InitialSetupRepositoryConfigError, MigrationOptions,
     ModelPriceRepository, ModelSyncRepository, NetworkSettingsMode, NetworkSettingsRecord,
-    NetworkSettingsRepository, NetworkSettingsRepositoryConfigError, OrganizationBudgetRepository,
-    OrganizationBudgetRepositoryConfigError, OrganizationRepository,
+    NetworkSettingsRepository, NetworkSettingsRepositoryConfigError, OrganizationAuditRepository,
+    OrganizationBudgetRepository, OrganizationBudgetRepositoryConfigError, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationTokenRepository,
     OrganizationTokenRepositoryConfigError, OrganizationWalletRepository,
     OrganizationWalletRepositoryConfigError, PasswordResetRepository,
@@ -180,6 +181,7 @@ pub struct AuthenticationReady {
     organization_wallet_service: Arc<dyn OrganizationWalletService>,
     organization_budget_service: Arc<dyn OrganizationBudgetService>,
     organization_token_service: Arc<dyn OrganizationTokenService>,
+    organization_activity_service: Arc<dyn OrganizationActivityService>,
     redemption_service: Arc<dyn RedemptionService>,
     subscription_service: Arc<dyn SubscriptionService>,
     subscription_repository: SubscriptionRepository,
@@ -390,6 +392,9 @@ pub enum BootstrapError {
     /// 密码重置安全派生密钥缺失或无效。
     #[error("密码重置服务启动配置无效")]
     PasswordResetService(#[source] PasswordResetServiceConfigError),
+    /// 企业活动审计指纹派生密钥缺失或无效。
+    #[error("企业活动服务启动配置无效")]
+    OrganizationActivityService(#[source] OrganizationActivityServiceConfigError),
     /// 站点设置仓储的启动参数无效。
     #[error("站点设置仓储启动参数无效")]
     SiteSettingsRepository(#[source] SiteSettingsRepositoryConfigError),
@@ -879,6 +884,20 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::AdminUsageLogRepository)?;
+        let organization_authorization_service: Arc<
+            dyn af_admin::OrganizationAuthorizationService,
+        > = Arc::new(af_admin::DatabaseOrganizationAuthorizationService::new(
+            Arc::clone(&organization_repository),
+        ));
+        let organization_activity_service: Arc<dyn OrganizationActivityService> = Arc::new(
+            DatabaseOrganizationActivityService::new(
+                Arc::clone(&organization_authorization_service),
+                admin_usage_log_repository.clone(),
+                OrganizationAuditRepository::new(self.stage.database.clone()),
+                auth.session_signing_key().map(|key| key.expose()),
+            )
+            .map_err(BootstrapError::OrganizationActivityService)?,
+        );
         let admin_dashboard_repository = AdminDashboardRepository::new(
             self.stage.database.clone(),
             Duration::from_secs(auth.lookup_timeout_secs()),
@@ -933,6 +952,7 @@ impl Bootstrap<DatabaseReady> {
                 organization_token_service: Arc::new(DatabaseOrganizationTokenService::new(
                     organization_token_repository,
                 )),
+                organization_activity_service,
                 redemption_service: Arc::new(DatabaseRedemptionService::new(redemption_repository)),
                 subscription_service: Arc::new(DatabaseSubscriptionService::new(
                     subscription_repository.clone(),
@@ -941,11 +961,7 @@ impl Bootstrap<DatabaseReady> {
                 user_invitation_service: Arc::new(DatabaseUserInvitationService::new(
                     user_invitation_repository,
                 )),
-                organization_authorization_service: Arc::new(
-                    af_admin::DatabaseOrganizationAuthorizationService::new(Arc::new(
-                        (*organization_repository).clone(),
-                    )),
-                ),
+                organization_authorization_service,
                 organization_invitation_service: Arc::new(
                     af_admin::DatabaseOrganizationInvitationService::new(
                         Arc::clone(&organization_repository),
@@ -1884,6 +1900,9 @@ impl Bootstrap<Supervised> {
             Arc::clone(&self.stage.infrastructure.user_wallet_service),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_authorization_service,
+            )),
+            Some(Arc::clone(
+                &self.stage.infrastructure.organization_activity_service,
             )),
             Some(Arc::clone(
                 &self.stage.infrastructure.organization_wallet_service,

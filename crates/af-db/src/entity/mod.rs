@@ -52,6 +52,7 @@ pub(crate) mod model_sync_runs;
 pub(crate) mod models;
 pub(crate) mod network_settings;
 pub(crate) mod options;
+pub(crate) mod organization_audit_logs;
 pub(crate) mod organization_budget_policies;
 pub(crate) mod organization_budget_windows;
 pub(crate) mod organization_entitlements;
@@ -838,6 +839,15 @@ where
     let valid_event_type = matches!(model.event_type.try_as_ref(), Some(1));
     let valid_source = matches!(model.usage_source.try_as_ref(), Some(1 | 2));
     let valid_semantics = matches!(model.usage_semantics.try_as_ref(), Some(1 | 2));
+    let organization_id = model.organization_id.try_as_ref().copied().flatten();
+    let organization_team_id = model.organization_team_id.try_as_ref().copied().flatten();
+    let valid_organization = match (organization_id, organization_team_id) {
+        (None, None) => true,
+        (Some(organization_id), team_id) => {
+            organization_id > 0 && team_id.map_or(true, |team_id| team_id > 0)
+        }
+        (None, Some(_)) => false,
+    };
     let non_negative = [
         model.input_tokens.try_as_ref(),
         model.output_tokens.try_as_ref(),
@@ -859,9 +869,63 @@ where
         || !valid_modes
         || !valid_source
         || !valid_semantics
+        || !valid_organization
         || !non_negative
     {
         return Err(DbErr::Custom("用量日志状态无效".to_owned()));
+    }
+    Ok(())
+}
+
+async fn validate_organization_audit_log<C>(
+    model: &organization_audit_logs::ActiveModel,
+    _database: &C,
+    insert: bool,
+) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    // 企业管理审计只追加；ORM 写入口同时闭合平台代操作与企业角色快照形状。
+    if !insert {
+        return Err(DbErr::Custom("企业管理审计不允许更新".to_owned()));
+    }
+    let organization_id = model.organization_id.try_as_ref().copied();
+    let actor_user_id = model.actor_user_id.try_as_ref().copied();
+    let actor_role = model.actor_role.try_as_ref().copied().flatten();
+    let platform_proxy = model.platform_proxy.try_as_ref().copied();
+    let platform_reason = model
+        .platform_reason
+        .try_as_ref()
+        .and_then(Option::as_deref);
+    let valid_actor = matches!(
+        (actor_role, platform_proxy, platform_reason),
+        (Some(1..=5), Some(false), None) | (None, Some(true), Some(_))
+    );
+    let valid_text = [
+        model.permission_code.try_as_ref().map(String::as_str),
+        model.operation.try_as_ref().map(String::as_str),
+        model.target_type.try_as_ref().map(String::as_str),
+        model.target_identifier.try_as_ref().map(String::as_str),
+        model.request_id.try_as_ref().map(String::as_str),
+        model.client_fingerprint.try_as_ref().map(String::as_str),
+    ]
+    .into_iter()
+    .all(|value| {
+        value.is_some_and(|value| !value.is_empty() && !value.chars().any(char::is_control))
+    });
+    if !matches!(organization_id, Some(value) if value > 0)
+        || !matches!(actor_user_id, Some(value) if value > 0)
+        || !valid_actor
+        || !matches!(model.outcome.try_as_ref(), Some(1..=3))
+        || !valid_text
+        || platform_reason.is_some_and(|value| value.is_empty() || value.len() > 255)
+        || model
+            .change_summary
+            .try_as_ref()
+            .and_then(Option::as_deref)
+            .is_some_and(|value| value.len() > 2_048)
+    {
+        return Err(DbErr::Custom("企业管理审计状态无效".to_owned()));
     }
     Ok(())
 }
@@ -1998,6 +2062,17 @@ impl ActiveModelBehavior for usage_logs::ActiveModel {
         C: ConnectionTrait,
     {
         validate_usage_log(&self, database, insert).await?;
+        Ok(self)
+    }
+}
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_audit_logs::ActiveModel {
+    async fn before_save<C>(self, database: &C, insert: bool) -> Result<Self, DbErr>
+    where
+        C: ConnectionTrait,
+    {
+        validate_organization_audit_log(&self, database, insert).await?;
         Ok(self)
     }
 }

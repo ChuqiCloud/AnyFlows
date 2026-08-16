@@ -244,6 +244,10 @@ impl OrganizationPermission {
 pub enum PlatformPermission {
     /// 跨企业读取企业目录。
     OrganizationsReadAll,
+    /// 跨企业读取企业调用日志。
+    OrganizationUsageLogsReadAll,
+    /// 跨企业读取企业管理审计。
+    OrganizationAuditReadAll,
 }
 
 impl PlatformPermission {
@@ -252,6 +256,8 @@ impl PlatformPermission {
     pub const fn code(self) -> &'static str {
         match self {
             Self::OrganizationsReadAll => "platform.organizations.read_all",
+            Self::OrganizationUsageLogsReadAll => "platform.organization_usage_logs.read_all",
+            Self::OrganizationAuditReadAll => "platform.organization_audit.read_all",
         }
     }
 }

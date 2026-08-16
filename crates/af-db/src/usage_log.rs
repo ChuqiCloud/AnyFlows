@@ -457,12 +457,17 @@ impl UsageLogRepository {
     ) -> Result<UsageLogWriteOutcome, UsageLogRepositoryError> {
         let event_key = event_key(write)?;
         let usage = write.usage;
+        let organization = write.principal.organization_principal();
         let model = usage_logs::ActiveModel {
             event_id: Set(event_key),
             event_type: Set(CONSUME_EVENT_TYPE),
             user_id: Set(write.principal.user_id().get()),
             token_id: Set(write.principal.token_id().get()),
             group_id: Set(write.principal.group_id().get()),
+            organization_id: Set(organization.map(|value| value.organization_id().get())),
+            organization_team_id: Set(organization
+                .and_then(|value| value.team_id())
+                .map(|value| value.get())),
             billing_mode: Set(write.billing_mode.database_value()),
             input_tokens: Set(usage.input_tokens),
             output_tokens: Set(usage.output_tokens),
@@ -538,6 +543,17 @@ fn matches_write(existing: &usage_logs::Model, write: &UsageLogWrite) -> bool {
         && existing.user_id == write.principal.user_id().get()
         && existing.token_id == write.principal.token_id().get()
         && existing.group_id == write.principal.group_id().get()
+        && existing.organization_id
+            == write
+                .principal
+                .organization_principal()
+                .map(|value| value.organization_id().get())
+        && existing.organization_team_id
+            == write
+                .principal
+                .organization_principal()
+                .and_then(|value| value.team_id())
+                .map(|value| value.get())
         && existing.billing_mode == write.billing_mode.database_value()
         && existing.input_tokens == usage.input_tokens
         && existing.output_tokens == usage.output_tokens

@@ -40,6 +40,7 @@
     "apiKeys": "My API keys",
     "organizationApiKeys": "Organization API keys",
     "organizationBudgets": "Organization budgets",
+    "organizationActivity": "Organization logs & audit",
     "wallet": "My wallet",
     "subscriptions": "My subscriptions",
     "invitations": "Invitations",
@@ -3956,6 +3957,109 @@
           "body": "The service did not return a reliable result. Keep the current input and try again later."
         }
       }
+    }
+  },
+  "organizationActivity": {
+    "eyebrow": "Organization workspace",
+    "title": "Organization logs and audit",
+    "subtitle": "Review detailed calls, redacted aggregates, and management audit records allowed by your organization role. Organization traffic always uses organization funds and budgets, never personal funding.",
+    "workspace": {
+      "label": "Current organization",
+      "emptyTitle": "No organization workspace is available",
+      "emptyBody": "This account has not joined an active organization. Role-scoped usage logs and management audit records appear here after membership is granted."
+    },
+    "permission": {
+      "title": "Your role cannot read organization activity",
+      "body": "The organization role has neither usage-log nor management-audit read permission. Re-enter the workspace after a role change."
+    },
+    "summary": {
+      "membership": "Membership",
+      "role": "Current role",
+      "retention": "Audit retention",
+      "days": "{{count}} days"
+    },
+    "tabs": {
+      "label": "Organization activity view",
+      "usage": "Usage logs",
+      "audit": "Management audit"
+    },
+    "actions": {
+      "refresh": "Refresh",
+      "reset": "Reset",
+      "retry": "Retry",
+      "apply": "Apply filters"
+    },
+    "filters": {
+      "label": "Current-page filters",
+      "auditLabel": "Server-side audit filters",
+      "visible": "Showing {{visible}} of {{count}}"
+    },
+    "usage": {
+      "scopeLabel": "Usage-log scope",
+      "scopes": {
+        "organization": "Organization details",
+        "self": "My calls",
+        "summary": "Redacted aggregate"
+      },
+      "summaryLabel": "Redacted organization usage aggregate",
+      "emptyTitle": "No calls exist in this scope yet",
+      "emptyBody": "Settled organization requests appear here within the range allowed by the current role.",
+      "emptyFilteredTitle": "No calls match these filters",
+      "emptyFilteredBody": "Reset the model or protocol filters to inspect other records on this page.",
+      "columns": {
+        "call": "Model & operation",
+        "requests": "Requests",
+        "tokens": "Tokens",
+        "duration": "Average duration",
+        "quota": "Quota used"
+      }
+    },
+    "audit": {
+      "loaded": "{{count}} on this page",
+      "privacy": "Only redacted facts are shown. Raw headers, IP addresses, request bodies, and credentials never enter audit storage.",
+      "platform": "Platform proxy",
+      "platformRole": "Platform administrator",
+      "redacted": "Redacted",
+      "listLabel": "Organization management audit list",
+      "filters": {
+        "actor": "Actor",
+        "actorPlaceholder": "Actor user ID",
+        "operation": "Action",
+        "operationPlaceholder": "Exact operation code",
+        "target": "Target",
+        "targetPlaceholder": "Target type",
+        "outcome": "Outcome",
+        "allOutcomes": "All outcomes",
+        "actorInvalid": "The actor must be a positive integer user ID."
+      },
+      "outcomes": {
+        "succeeded": "Succeeded",
+        "denied": "Denied",
+        "failed": "Failed"
+      },
+      "columns": {
+        "time": "Time",
+        "actor": "Actor",
+        "action": "Action & permission",
+        "target": "Target",
+        "outcome": "Outcome"
+      },
+      "emptyTitle": "No management audit records yet",
+      "emptyBody": "Organization writes, permission denials, and authorized execution failures are recorded here as append-only facts.",
+      "emptyFilteredTitle": "No audit records match these filters",
+      "emptyFilteredBody": "Adjust the action, actor, target, or outcome and apply the filters again."
+    },
+    "errors": {
+      "directoryTitle": "Organization directory could not be loaded",
+      "directoryBody": "The service did not return this account's organization memberships. Try again shortly.",
+      "overviewTitle": "Organization context could not be loaded",
+      "overviewBody": "The role, entitlement, and permission projection for this organization is unavailable.",
+      "forbiddenTitle": "Organization activity access was denied",
+      "forbiddenBody": "The membership may be inactive, the role may have changed, or the selected scope may no longer be allowed.",
+      "usageTitle": "Organization usage logs could not be loaded",
+      "usageBody": "The usage-log service is temporarily unavailable. Keep the current scope and filters, then retry.",
+      "auditTitle": "Organization management audit could not be loaded",
+      "auditBody": "The audit service is temporarily unavailable. Keep the current filters, then retry."
     }
   },
   "wallet": {

@@ -7,11 +7,11 @@ use af_admin::{
     AdminModelSyncService, AdminModelWriter, AdminNetworkSettingsService,
     AdminPaymentSettingsService, AdminRouteReader, AdminRouteWriter, AdminTokenReader,
     AdminTokenWriter, AdminUsageLogReader, AdminUserReader, AdminUserWriter, AdminWalletService,
-    InitialSetup, ModelCatalogReader, OrganizationBudgetService, OrganizationTokenService,
-    OrganizationWalletService, PasswordResetService, PlaygroundConversationService,
-    PlaygroundShareService, RedemptionService, RegistrationService, SessionAuthenticator,
-    SiteSettingsService, SubscriptionService, TokenAuthenticator, UserInvitationService,
-    UserTopupService, UserWalletService,
+    InitialSetup, ModelCatalogReader, OrganizationActivityService, OrganizationBudgetService,
+    OrganizationTokenService, OrganizationWalletService, PasswordResetService,
+    PlaygroundConversationService, PlaygroundShareService, RedemptionService, RegistrationService,
+    SessionAuthenticator, SiteSettingsService, SubscriptionService, TokenAuthenticator,
+    UserInvitationService, UserTopupService, UserWalletService,
 };
 use af_analytics::AdminDashboardReader;
 use af_config::ServerConfig;
@@ -90,6 +90,7 @@ use crate::openai_responses::openai_responses;
 use crate::openai_responses_compact::openai_responses_compact;
 use crate::openai_speech::openai_speech;
 use crate::operations::{ReadinessHandle, operations_router};
+use crate::organization_activity::{PLATFORM_REASON_HEADER, build_organization_activity_router};
 use crate::organization_budget::build_organization_budget_router;
 use crate::organization_tokens::build_organization_token_router;
 use crate::organization_wallet::build_organization_wallet_router;
@@ -165,6 +166,7 @@ pub fn build_router(
     user_profile_service: Arc<dyn af_admin::UserProfileService>,
     user_wallet_service: Arc<dyn UserWalletService>,
     organization_authorization_service: Option<Arc<dyn af_admin::OrganizationAuthorizationService>>,
+    organization_activity_service: Option<Arc<dyn OrganizationActivityService>>,
     organization_wallet_service: Option<Arc<dyn OrganizationWalletService>>,
     organization_budget_service: Option<Arc<dyn OrganizationBudgetService>>,
     organization_token_service: Option<Arc<dyn OrganizationTokenService>>,
@@ -714,24 +716,32 @@ pub fn build_router(
         .merge(credential_proxy_routes)
         .merge(balance_alert_settings_routes);
     let management_routes = management_routes.merge(debug_trace_routes);
-    let management_routes = match http_state.organization_authorization_service.clone() {
-        Some(authorization_service) => management_routes.merge(build_organization_router(
-            authorization_service,
-            http_state.organization_invitation_service.clone(),
-            http_state.organization_management_service.clone(),
-            Arc::clone(&http_state.session_authenticator),
-        )),
-        None => management_routes,
+    let management_routes = match (
+        http_state.organization_authorization_service.clone(),
+        organization_activity_service.clone(),
+    ) {
+        (Some(authorization_service), Some(activity_service)) => {
+            management_routes.merge(build_organization_router(
+                authorization_service,
+                http_state.organization_invitation_service.clone(),
+                http_state.organization_management_service.clone(),
+                activity_service,
+                Arc::clone(&http_state.session_authenticator),
+            ))
+        }
+        _ => management_routes,
     };
     let management_routes = match (
         http_state.organization_authorization_service.clone(),
         organization_wallet_service,
+        organization_activity_service.clone(),
     ) {
-        (Some(authorization_service), Some(wallet_service)) => {
+        (Some(authorization_service), Some(wallet_service), Some(activity_service)) => {
             management_routes.merge(build_organization_wallet_router(
                 authorization_service,
                 wallet_service,
                 user_topup_service,
+                activity_service,
                 Arc::clone(&http_state.session_authenticator),
             ))
         }
@@ -740,11 +750,13 @@ pub fn build_router(
     let management_routes = match (
         http_state.organization_authorization_service.clone(),
         organization_token_service,
+        organization_activity_service.clone(),
     ) {
-        (Some(authorization_service), Some(token_service)) => {
+        (Some(authorization_service), Some(token_service), Some(activity_service)) => {
             management_routes.merge(build_organization_token_router(
                 authorization_service,
                 token_service,
+                activity_service,
                 Arc::clone(&http_state.session_authenticator),
             ))
         }
@@ -753,15 +765,24 @@ pub fn build_router(
     let management_routes = match (
         http_state.organization_authorization_service.clone(),
         organization_budget_service,
+        organization_activity_service.clone(),
     ) {
-        (Some(authorization_service), Some(budget_service)) => {
+        (Some(authorization_service), Some(budget_service), Some(activity_service)) => {
             management_routes.merge(build_organization_budget_router(
                 authorization_service,
                 budget_service,
+                activity_service,
                 Arc::clone(&http_state.session_authenticator),
             ))
         }
         _ => management_routes,
+    };
+    let management_routes = match organization_activity_service {
+        Some(service) => management_routes.merge(build_organization_activity_router(
+            service,
+            Arc::clone(&http_state.session_authenticator),
+        )),
+        None => management_routes,
     };
     let management_routes = match oauth_connection_routes {
         Some(routes) => management_routes.merge(routes),
@@ -868,6 +889,7 @@ fn cors_layer(config: &ServerConfig) -> Option<CorsLayer> {
                 HeaderName::from_static("x-api-key"),
                 HeaderName::from_static("x-goog-api-key"),
                 HeaderName::from_static("idempotency-key"),
+                HeaderName::from_static(PLATFORM_REASON_HEADER),
             ])
             .expose_headers([request_id_header()]),
     )

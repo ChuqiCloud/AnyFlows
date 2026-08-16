@@ -1,12 +1,14 @@
 use std::sync::Arc;
 
 use af_admin::{
-    IssuedOrganizationToken, OrganizationAuthorizationError, OrganizationAuthorizationService,
-    OrganizationContext, OrganizationToken, OrganizationTokenError, OrganizationTokenListQuery,
-    OrganizationTokenPage, OrganizationTokenService, OrganizationTokenStatus,
-    OrganizationTokenWriteCommand, SessionAuthentication, SessionAuthenticator,
+    IssuedOrganizationToken, OrganizationActivityService, OrganizationAuditOutcome,
+    OrganizationAuthorizationError, OrganizationAuthorizationService, OrganizationContext,
+    OrganizationToken, OrganizationTokenError, OrganizationTokenListQuery, OrganizationTokenPage,
+    OrganizationTokenService, OrganizationTokenStatus, OrganizationTokenWriteCommand,
+    SessionAuthentication, SessionAuthenticator,
 };
 use af_domain::{OrganizationId, OrganizationPermission, TokenId};
+use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
     extract::{DefaultBodyLimit, Path, RawQuery, State, rejection::JsonRejection},
@@ -14,8 +16,9 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
+use http::{HeaderMap, HeaderValue, StatusCode, header::CACHE_CONTROL};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tower_http::limit::RequestBodyLimitLayer;
 use utoipa::ToSchema;
 
@@ -23,18 +26,24 @@ use crate::{
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_error::ManagementError,
     management_tokens::parse_token_id,
+    middleware::ensure_request_id,
+    organization_activity::{
+        audit_organization_action_result, authorize_organization_action, record_organization_action,
+    },
 };
 
 #[derive(Clone)]
 struct OrganizationTokenHttpState {
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     token_service: Arc<dyn OrganizationTokenService>,
+    activity_service: Arc<dyn OrganizationActivityService>,
 }
 
 /// 构建企业 API Key 路由；组织范围与权限在每个请求中重新解析。
 pub fn build_organization_token_router(
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     token_service: Arc<dyn OrganizationTokenService>,
+    activity_service: Arc<dyn OrganizationActivityService>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
@@ -63,9 +72,11 @@ pub fn build_organization_token_router(
         .layer(DefaultBodyLimit::max(96 * 1024))
         .layer(RequestBodyLimitLayer::new(96 * 1024))
         .route_layer(authentication)
+        .layer(middleware::from_fn(ensure_request_id))
         .with_state(OrganizationTokenHttpState {
             authorization_service,
             token_service,
+            activity_service,
         })
 }
 
@@ -341,22 +352,82 @@ async fn get_self_token(
 async fn create_token(
     State(state): State<OrganizationTokenHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path(organization_id): Path<i64>,
+    headers: HeaderMap,
     request: Result<Json<OrganizationTokenWriteRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
-    let context = authorize(
-        &state,
+    let organization_id =
+        OrganizationId::new(organization_id).map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
         &authentication,
         organization_id,
         OrganizationPermission::KeysManageSelf,
+        &request_id,
+        &headers,
+        "organization.token.create",
+        "token",
+        "new".to_owned(),
     )
     .await?;
-    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let issued = state
-        .token_service
-        .create(context, request.into_command()?)
-        .await
-        .map_err(map_token_error)?;
+    let Json(request) = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::KeysManageSelf,
+        "organization.token.create",
+        "token",
+        "new".to_owned(),
+        request.map_err(|_| ManagementError::InvalidRequest),
+    )
+    .await?;
+    let command = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::KeysManageSelf,
+        "organization.token.create",
+        "token",
+        "new".to_owned(),
+        request.into_command(),
+    )
+    .await?;
+    let issued = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::KeysManageSelf,
+        "organization.token.create",
+        "token",
+        "new".to_owned(),
+        state
+            .token_service
+            .create(context.clone(), command)
+            .await
+            .map_err(map_token_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::KeysManageSelf.code(),
+        "organization.token.create",
+        "token",
+        issued.token().token_id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "status": organization_token_status_code(issued.token().status()),
+            "team": issued.token().team_id().map(|value| value.get()),
+        })),
+    )
+    .await?;
     Ok(no_store_json(
         StatusCode::CREATED,
         IssuedOrganizationTokenResponse::from_application(&issued),
@@ -366,22 +437,83 @@ async fn create_token(
 async fn update_self_token(
     State(state): State<OrganizationTokenHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path((organization_id, token_id)): Path<(i64, String)>,
+    headers: HeaderMap,
     request: Result<Json<OrganizationTokenWriteRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
-    let context = authorize(
-        &state,
+    let organization_id =
+        OrganizationId::new(organization_id).map_err(|_| ManagementError::InvalidRequest)?;
+    let token_id = parse_token_id(&token_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
         &authentication,
         organization_id,
         OrganizationPermission::KeysManageSelf,
+        &request_id,
+        &headers,
+        "organization.token.update",
+        "token",
+        token_id.get().to_string(),
     )
     .await?;
-    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let token = state
-        .token_service
-        .update_self(context, parse_token_id(&token_id)?, request.into_command()?)
-        .await
-        .map_err(map_token_error)?;
+    let Json(request) = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::KeysManageSelf,
+        "organization.token.update",
+        "token",
+        token_id.get().to_string(),
+        request.map_err(|_| ManagementError::InvalidRequest),
+    )
+    .await?;
+    let command = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::KeysManageSelf,
+        "organization.token.update",
+        "token",
+        token_id.get().to_string(),
+        request.into_command(),
+    )
+    .await?;
+    let token = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::KeysManageSelf,
+        "organization.token.update",
+        "token",
+        token_id.get().to_string(),
+        state
+            .token_service
+            .update_self(context.clone(), token_id, command)
+            .await
+            .map_err(map_token_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::KeysManageSelf.code(),
+        "organization.token.update",
+        "token",
+        token.token_id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "status": organization_token_status_code(token.status()),
+            "team": token.team_id().map(|value| value.get()),
+        })),
+    )
+    .await?;
     Ok(no_store_json(
         StatusCode::OK,
         OrganizationTokenResponse::from_application(&token),
@@ -391,20 +523,55 @@ async fn update_self_token(
 async fn disable_self_token(
     State(state): State<OrganizationTokenHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path((organization_id, token_id)): Path<(i64, String)>,
+    headers: HeaderMap,
 ) -> Result<Response, ManagementError> {
-    let context = authorize(
-        &state,
+    let organization_id =
+        OrganizationId::new(organization_id).map_err(|_| ManagementError::InvalidRequest)?;
+    let token_id = parse_token_id(&token_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
         &authentication,
         organization_id,
         OrganizationPermission::KeysManageSelf,
+        &request_id,
+        &headers,
+        "organization.token.disable_self",
+        "token",
+        token_id.get().to_string(),
     )
     .await?;
-    let token = state
-        .token_service
-        .disable_self(context, parse_token_id(&token_id)?)
-        .await
-        .map_err(map_token_error)?;
+    let token = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::KeysManageSelf,
+        "organization.token.disable_self",
+        "token",
+        token_id.get().to_string(),
+        state
+            .token_service
+            .disable_self(context.clone(), token_id)
+            .await
+            .map_err(map_token_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::KeysManageSelf.code(),
+        "organization.token.disable_self",
+        "token",
+        token.token_id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"status": organization_token_status_code(token.status())})),
+    )
+    .await?;
     Ok(no_store_json(
         StatusCode::OK,
         OrganizationTokenResponse::from_application(&token),
@@ -414,20 +581,58 @@ async fn disable_self_token(
 async fn disable_any_token(
     State(state): State<OrganizationTokenHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path((organization_id, token_id)): Path<(i64, String)>,
+    headers: HeaderMap,
 ) -> Result<Response, ManagementError> {
-    let context = authorize(
-        &state,
+    let organization_id =
+        OrganizationId::new(organization_id).map_err(|_| ManagementError::InvalidRequest)?;
+    let token_id = parse_token_id(&token_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
         &authentication,
         organization_id,
         OrganizationPermission::KeysReadAll,
+        &request_id,
+        &headers,
+        "organization.token.disable_any",
+        "token",
+        token_id.get().to_string(),
     )
     .await?;
-    let token = state
-        .token_service
-        .disable_any(context, parse_token_id(&token_id)?)
-        .await
-        .map_err(map_token_error)?;
+    let token = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::KeysReadAll,
+        "organization.token.disable_any",
+        "token",
+        token_id.get().to_string(),
+        state
+            .token_service
+            .disable_any(context.clone(), token_id)
+            .await
+            .map_err(map_token_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::KeysReadAll.code(),
+        "organization.token.disable_any",
+        "token",
+        token.token_id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "owner": token.owner_user_id().get(),
+            "status": organization_token_status_code(token.status()),
+        })),
+    )
+    .await?;
     Ok(no_store_json(
         StatusCode::OK,
         OrganizationTokenResponse::from_application(&token),
@@ -534,6 +739,13 @@ fn map_token_error(error: OrganizationTokenError) -> ManagementError {
         OrganizationTokenError::LimitReached => ManagementError::TokenLimitReached,
         OrganizationTokenError::OutcomeUnknown => ManagementError::TokenOutcomeUnknown,
         OrganizationTokenError::Internal => ManagementError::Internal,
+    }
+}
+
+fn organization_token_status_code(status: OrganizationTokenStatus) -> &'static str {
+    match status {
+        OrganizationTokenStatus::Enabled => "enabled",
+        OrganizationTokenStatus::Disabled => "disabled",
     }
 }
 

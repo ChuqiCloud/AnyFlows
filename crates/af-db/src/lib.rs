@@ -107,6 +107,7 @@ mod oauth_credential;
 mod oauth_credential_tests;
 mod options;
 mod organization;
+mod organization_audit;
 mod organization_budget;
 #[cfg(test)]
 mod organization_budget_tests;
@@ -397,6 +398,12 @@ pub use organization::{
     OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationRepositoryError, OrganizationTeamChange,
     OrganizationTeamCreate, OrganizationTeamPageRecord, OrganizationTeamRecord,
+};
+pub use organization_audit::{
+    MAX_ORGANIZATION_AUDIT_PAGE_SIZE, OrganizationAuditOutcome, OrganizationAuditPageRecord,
+    OrganizationAuditQuery, OrganizationAuditRecord, OrganizationAuditRepository,
+    OrganizationAuditRepositoryError, OrganizationAuditWrite, OrganizationAuditWriteError,
+    OrganizationAuditWriteOutcome,
 };
 pub use organization_budget::{
     OrganizationBillingMutationOutcome, OrganizationBillingPrincipal,

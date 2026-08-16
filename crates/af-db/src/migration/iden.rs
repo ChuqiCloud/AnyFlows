@@ -784,6 +784,8 @@ pub(in crate::migration) mod usage_logs {
         UserId,
         TokenId,
         GroupId,
+        OrganizationId,
+        OrganizationTeamId,
         BillingMode,
         InputTokens,
         OutputTokens,
@@ -1735,6 +1737,39 @@ pub(in crate::migration) mod organization_teams {
         CreatedAt,
         UpdatedAt,
         DeletedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_audit_logs {
+    use super::DeriveIden;
+
+    /// `organization_audit_logs` 企业管理审计表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_audit_logs")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业管理审计的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        ActorUserId,
+        ActorRole,
+        PermissionCode,
+        Operation,
+        TargetType,
+        TargetIdentifier,
+        Outcome,
+        PlatformProxy,
+        PlatformReason,
+        RequestId,
+        ClientFingerprint,
+        ChangeSummary,
+        CreatedAt,
     }
 }
 

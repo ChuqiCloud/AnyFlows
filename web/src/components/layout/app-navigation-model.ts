@@ -5,6 +5,7 @@ export type NavKey =
   | 'videoTasks'
   | 'apiKeys'
   | 'organizationApiKeys'
+  | 'organizationActivity'
   | 'organizationBudgets'
   | 'wallet'
   | 'subscriptions'
@@ -33,7 +34,7 @@ export type AdminSectionKey = 'personal' | 'organization' | 'operations' | 'gate
 
 export const userNavigationGroups = [
   { key: 'use', items: ['models', 'playground', 'videoTasks'] },
-  { key: 'organization', items: ['organizationApiKeys', 'organizationBudgets'] },
+  { key: 'organization', items: ['organizationApiKeys', 'organizationBudgets', 'organizationActivity'] },
   { key: 'account', items: ['apiKeys', 'wallet', 'usage', 'subscriptions', 'invitations', 'profile'] },
 ] as const satisfies ReadonlyArray<{ key: 'use' | 'organization' | 'account'; items: readonly NavKey[] }>
 
@@ -41,7 +42,7 @@ export const adminWorkspaceItems = ['overview', 'usage', 'models', 'playground',
 
 export const adminNavigationSections = [
   { key: 'personal', items: ['apiKeys', 'wallet', 'subscriptions', 'invitations', 'profile'] },
-  { key: 'organization', items: ['organizationApiKeys', 'organizationBudgets'] },
+  { key: 'organization', items: ['organizationApiKeys', 'organizationBudgets', 'organizationActivity'] },
   { key: 'operations', items: ['users', 'subscriptionManagement', 'redemptionCodes', 'paymentSettings', 'billingSettings'] },
   { key: 'gateway', items: ['modelSettings', 'groupSettings', 'channels', 'credentials', 'credentialProxies', 'routes'] },
   { key: 'platform', items: ['siteSettings', 'authenticationSettings', 'emailSettings', 'networkSettings', 'keys'] },
@@ -64,6 +65,7 @@ export const activeKeyByView: Readonly<Record<string, NavKey>> = {
   'video-tasks': 'videoTasks',
   'api-keys': 'apiKeys',
   'organization-api-keys': 'organizationApiKeys',
+  'organization-activity': 'organizationActivity',
   'organization-budgets': 'organizationBudgets',
   wallet: 'wallet',
   subscriptions: 'subscriptions',

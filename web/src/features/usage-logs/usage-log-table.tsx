@@ -19,10 +19,11 @@ import { isAdminUsageLog, type UsageLogRow, usageLogTotalTokens } from './usage-
 type UsageLogTableProps = {
   logs: UsageLogRow[]
   admin: boolean
+  showPrincipal?: boolean
   filtered: boolean
   formatQuota: (value: number) => string
   onSelect: (log: UsageLogRow) => void
-  onUserSelect: (userId: number) => void
+  onUserSelect?: (userId: number) => void
 }
 
 function ProtocolBadge({ log }: { log: UsageLogRow }) {
@@ -75,12 +76,12 @@ function RequestIdCopy({ requestId, onClick }: { requestId: string; onClick: (ev
   )
 }
 
-function UsageLogItem({ log, admin, formatQuota, onSelect, onUserSelect }: {
+function UsageLogItem({ log, showPrincipal, formatQuota, onSelect, onUserSelect }: {
   log: UsageLogRow
-  admin: boolean
+  showPrincipal: boolean
   formatQuota: (value: number) => string
   onSelect: (log: UsageLogRow) => void
-  onUserSelect: (userId: number) => void
+  onUserSelect?: (userId: number) => void
 }) {
   const { t, i18n } = useTranslation()
   const locale = i18n.language
@@ -110,11 +111,16 @@ function UsageLogItem({ log, admin, formatQuota, onSelect, onUserSelect }: {
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[0.6875rem] text-muted-foreground">
           <span>{log.operation ? t(`usageLogs.operation.${log.operation}`) : t('usageLogs.values.notSpecified')}</span>
           <span>{log.is_stream === null ? t('usageLogs.values.legacy') : t(log.is_stream ? 'usageLogs.values.stream' : 'usageLogs.values.sync')}</span>
-          {admin && isAdminUsageLog(log) ? (
+          {showPrincipal && isAdminUsageLog(log) ? onUserSelect ? (
             <button type="button" className="inline-flex min-w-0 items-center gap-1 font-medium text-foreground outline-none hover:text-brand focus-visible:text-brand focus-visible:underline" onClick={(event) => { stop(event); onUserSelect(log.user_id) }}>
               <UserRound className="size-3 shrink-0" aria-hidden="true" />
               <span className="truncate">{log.username}</span>
             </button>
+          ) : (
+            <span className="inline-flex min-w-0 items-center gap-1 font-medium text-foreground">
+              <UserRound className="size-3 shrink-0" aria-hidden="true" />
+              <span className="truncate">{log.username}</span>
+            </span>
           ) : null}
           {log.request_id ? <RequestIdCopy requestId={log.request_id} onClick={stop} /> : null}
         </div>
@@ -173,7 +179,7 @@ function UsageLogItem({ log, admin, formatQuota, onSelect, onUserSelect }: {
   )
 }
 
-export function UsageLogTable({ logs, admin, filtered, formatQuota, onSelect, onUserSelect }: UsageLogTableProps) {
+export function UsageLogTable({ logs, admin, showPrincipal = admin, filtered, formatQuota, onSelect, onUserSelect }: UsageLogTableProps) {
   const { t } = useTranslation()
   if (logs.length === 0) {
     return (
@@ -197,7 +203,7 @@ export function UsageLogTable({ logs, admin, filtered, formatQuota, onSelect, on
         <span className="text-right">{t('usageLogs.columns.billing')}</span>
         <span />
       </div>
-      {logs.map((log) => <UsageLogItem key={log.id} log={log} admin={admin} formatQuota={formatQuota} onSelect={onSelect} onUserSelect={onUserSelect} />)}
+      {logs.map((log) => <UsageLogItem key={log.id} log={log} showPrincipal={showPrincipal} formatQuota={formatQuota} onSelect={onSelect} onUserSelect={onUserSelect} />)}
     </section>
   )
 }

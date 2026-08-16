@@ -10,10 +10,11 @@ import { isAdminUsageLog, type UsageLogRow, usageLogCacheTokens, usageLogTotalTo
 type UsageLogDetailsSheetProps = {
   log?: UsageLogRow
   admin: boolean
+  showPrincipal?: boolean
   formatQuota: (value: number) => string
   onOpenChange: (open: boolean) => void
   onTraceOpen: (requestId: string) => void
-  onUserSelect: (userId: number) => void
+  onUserSelect?: (userId: number) => void
 }
 
 type DetailItem = {
@@ -47,7 +48,7 @@ function DetailSection({ title, icon: Icon, items }: { title: string; icon: Luci
 }
 
 /** 详情抽屉集中展示核账事实，主表只保留高频比较字段。 */
-export function UsageLogDetailsSheet({ log, admin, formatQuota, onOpenChange, onTraceOpen, onUserSelect }: UsageLogDetailsSheetProps) {
+export function UsageLogDetailsSheet({ log, admin, showPrincipal = admin, formatQuota, onOpenChange, onTraceOpen, onUserSelect }: UsageLogDetailsSheetProps) {
   const { t, i18n } = useTranslation()
   const locale = i18n.language
   const number = (value: number) => formatUsageNumber(value, locale)
@@ -141,12 +142,12 @@ export function UsageLogDetailsSheet({ log, admin, formatQuota, onOpenChange, on
                 ]}
               />
 
-              {admin && isAdminUsageLog(log) ? (
+              {showPrincipal && isAdminUsageLog(log) ? (
                 <DetailSection
                   title={t('usageLogs.detailSections.principal')}
                   icon={UserRound}
                   items={[
-                    { label: t('usageLogs.detailFields.user'), value: `${log.username} (#${log.user_id})`, action: () => onUserSelect(log.user_id) },
+                    { label: t('usageLogs.detailFields.user'), value: `${log.username} (#${log.user_id})`, action: onUserSelect ? () => onUserSelect(log.user_id) : undefined },
                     { label: t('usageLogs.detailFields.token'), value: `#${log.token_id}` },
                     { label: t('usageLogs.detailFields.group'), value: `#${log.group_id}` },
                   ]}

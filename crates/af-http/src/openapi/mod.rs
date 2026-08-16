@@ -15,6 +15,7 @@ mod model_sync;
 mod models;
 mod network_settings;
 mod oauth_connections;
+mod organization_activity;
 mod organization_budget;
 mod organization_tokens;
 mod organization_wallet;
@@ -97,6 +98,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(organization_wallet::document());
     document.merge(organization_budget::document());
     document.merge(organization_tokens::document());
+    document.merge(organization_activity::document());
 
     document.tags = Some(vec![
         Tag::new("公开注册"),
@@ -119,6 +121,8 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("企业钱包"),
         Tag::new("企业预算"),
         Tag::new("企业 API Key"),
+        Tag::new("企业活动"),
+        Tag::new("平台企业活动"),
         Tag::new("余额预警"),
         Tag::new("管理会话"),
         Tag::new("首次安装"),

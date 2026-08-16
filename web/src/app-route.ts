@@ -14,6 +14,7 @@ export type AppView =
   | 'model-settings'
   | 'network-settings'
   | 'organization-api-keys'
+  | 'organization-activity'
   | 'organization-budgets'
   | 'payment-settings'
   | 'playground'
@@ -99,6 +100,7 @@ export function routeFromHash(hash: string): AppRoute {
   if (hash.startsWith('#/console/system-settings/models')) return { view: 'model-settings' }
   if (hash.startsWith('#/console/api-keys')) return { view: 'api-keys' }
   if (hash.startsWith('#/console/organization-api-keys')) return { view: 'organization-api-keys' }
+  if (hash.startsWith('#/console/organization-activity')) return { view: 'organization-activity' }
   if (hash.startsWith('#/console/organization-budgets')) return { view: 'organization-budgets' }
   if (hash.startsWith('#/console/wallet')) return { view: 'wallet' }
   if (hash.startsWith('#/console/models')) return { view: 'models' }

@@ -1,20 +1,21 @@
 use std::sync::Arc;
 
 use af_admin::{
-    OrganizationAuthorizationError, OrganizationAuthorizationService,
+    OrganizationActivityService, OrganizationAuthorizationError, OrganizationAuthorizationService,
     OrganizationBudgetPolicyCreateCommand, OrganizationBudgetService,
     OrganizationBudgetServiceError, OrganizationContext, SessionAuthentication,
     SessionAuthenticator,
 };
 use af_admin::{
-    OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
-    OrganizationBudgetAllocationRecord, OrganizationBudgetPolicyRecord, OrganizationBudgetScope,
-    OrganizationBudgetWindowRecord,
+    OrganizationAuditOutcome, OrganizationBillingReservationRecord,
+    OrganizationBillingReservationStatus, OrganizationBudgetAllocationRecord,
+    OrganizationBudgetPolicyRecord, OrganizationBudgetScope, OrganizationBudgetWindowRecord,
 };
 use af_domain::{
     BillingReservationId, OrganizationBudgetLimit, OrganizationBudgetPeriod, OrganizationId,
     OrganizationMembershipId, OrganizationPermission, OrganizationTeamId, Quota,
 };
+use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
     extract::{Path, State, rejection::JsonRejection},
@@ -22,25 +23,32 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use http::{HeaderValue, StatusCode, header::CACHE_CONTROL};
+use http::{HeaderMap, HeaderValue, StatusCode, header::CACHE_CONTROL};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use utoipa::ToSchema;
 
 use crate::{
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_error::ManagementError,
+    middleware::ensure_request_id,
+    organization_activity::{
+        audit_organization_action_result, authorize_organization_action, record_organization_action,
+    },
 };
 
 #[derive(Clone)]
 struct OrganizationBudgetHttpState {
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     budget_service: Arc<dyn OrganizationBudgetService>,
+    activity_service: Arc<dyn OrganizationActivityService>,
 }
 
 /// 构建企业预算管理接口；路由层只负责会话认证，组织权限由服务端重新解析。
 pub fn build_organization_budget_router(
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     budget_service: Arc<dyn OrganizationBudgetService>,
+    activity_service: Arc<dyn OrganizationActivityService>,
     session_authenticator: Arc<dyn SessionAuthenticator>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
@@ -57,9 +65,11 @@ pub fn build_organization_budget_router(
             get(get_organization_budget_reservation),
         )
         .route_layer(authentication)
+        .layer(middleware::from_fn(ensure_request_id))
         .with_state(OrganizationBudgetHttpState {
             authorization_service,
             budget_service,
+            activity_service,
         })
 }
 
@@ -220,19 +230,84 @@ async fn get_organization_budgets(
 async fn create_organization_budget_policy(
     State(state): State<OrganizationBudgetHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path(organization_id): Path<i64>,
+    headers: HeaderMap,
     request: Result<Json<OrganizationBudgetPolicyCreateRequest>, JsonRejection>,
 ) -> Result<Response, ManagementError> {
-    let context = authorize(&state, &authentication, organization_id).await?;
-    let Json(request) = request.map_err(|_| ManagementError::InvalidRequest)?;
-    let command = request
-        .into_command()
-        .map_err(|_| ManagementError::InvalidRequest)?;
-    let policy = state
-        .budget_service
-        .create_policy(context, command)
-        .await
-        .map_err(map_budget_error)?;
+    let organization_id =
+        OrganizationId::new(organization_id).map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::BudgetsManage,
+        &request_id,
+        &headers,
+        "organization.budget.create",
+        "budget_policy",
+        "new".to_owned(),
+    )
+    .await?;
+    let Json(request) = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::BudgetsManage,
+        "organization.budget.create",
+        "budget_policy",
+        "new".to_owned(),
+        request.map_err(|_| ManagementError::InvalidRequest),
+    )
+    .await?;
+    let command = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::BudgetsManage,
+        "organization.budget.create",
+        "budget_policy",
+        "new".to_owned(),
+        request
+            .into_command()
+            .map_err(|_| ManagementError::InvalidRequest),
+    )
+    .await?;
+    let policy = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::BudgetsManage,
+        "organization.budget.create",
+        "budget_policy",
+        "new".to_owned(),
+        state
+            .budget_service
+            .create_policy(context.clone(), command)
+            .await
+            .map_err(map_budget_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::BudgetsManage.code(),
+        "organization.budget.create",
+        "budget_policy",
+        policy.id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "effective_from": policy.effective_from().unix_timestamp(),
+            "version": policy.version(),
+        })),
+    )
+    .await?;
     Ok(no_store_status_json(
         StatusCode::CREATED,
         OrganizationBudgetPolicyResponse::from_record(&policy)?,

@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use af_admin::{
     DEFAULT_ORGANIZATION_INVITATION_TTL_SECONDS, IssuedOrganizationInvitation,
-    OrganizationAccessSummary, OrganizationAuthorizationError, OrganizationAuthorizationService,
+    OrganizationAccessSummary, OrganizationActivityService, OrganizationAuditOutcome,
+    OrganizationAuthorizationError, OrganizationAuthorizationService,
     OrganizationEntitlementSummary, OrganizationInvitationBatchCommand,
     OrganizationInvitationBatchResult, OrganizationInvitationCommand, OrganizationInvitationError,
     OrganizationInvitationPreviewCommand, OrganizationInvitationPreviewResult,
@@ -18,6 +19,7 @@ use af_domain::{
     OrganizationMembershipId, OrganizationMembershipStatus, OrganizationPermission,
     OrganizationRole, OrganizationTeamId,
 };
+use af_telemetry::RequestId;
 use axum::{
     Extension, Json, Router,
     extract::{Path, RawQuery, State},
@@ -25,13 +27,19 @@ use axum::{
     response::Response,
     routing::{get, patch, post},
 };
+use http::HeaderMap;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use utoipa::ToSchema;
 
 use crate::{
     management_auth::{ManagementAuthenticationState, authenticate_management_session},
     management_error::ManagementError,
     management_session::no_store_json,
+    middleware::ensure_request_id,
+    organization_activity::{
+        audit_organization_action_result, authorize_organization_action, record_organization_action,
+    },
 };
 
 #[derive(Clone)]
@@ -39,6 +47,7 @@ pub(crate) struct OrganizationHttpState {
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     invitation_service: Option<Arc<dyn OrganizationInvitationService>>,
     management_service: Option<Arc<dyn OrganizationManagementService>>,
+    activity_service: Arc<dyn OrganizationActivityService>,
 }
 
 /// 构建企业目录与企业概览只读入口；所有入口都要求有效管理会话。
@@ -46,6 +55,7 @@ pub fn build_organization_router(
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     invitation_service: Option<Arc<dyn OrganizationInvitationService>>,
     management_service: Option<Arc<dyn OrganizationManagementService>>,
+    activity_service: Arc<dyn OrganizationActivityService>,
     session_authenticator: Arc<dyn af_admin::SessionAuthenticator>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
@@ -118,10 +128,12 @@ pub fn build_organization_router(
     };
     router
         .layer(authentication)
+        .layer(middleware::from_fn(ensure_request_id))
         .with_state(OrganizationHttpState {
             authorization_service,
             invitation_service,
             management_service,
+            activity_service,
         })
 }
 
@@ -387,17 +399,25 @@ async fn list_organization_members(
 async fn change_organization_member(
     State(state): State<OrganizationHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path((organization_id, membership_id)): Path<(i64, i64)>,
+    headers: HeaderMap,
     Json(request): Json<OrganizationMembershipChangeRequest>,
 ) -> Result<Response, ManagementError> {
     let organization_id = parse_organization_id(organization_id)?;
     let membership_id = OrganizationMembershipId::new(membership_id)
         .map_err(|_| ManagementError::InvalidRequest)?;
-    let context = authorize_lifecycle_context(
-        &state,
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
         &authentication,
         organization_id,
         OrganizationPermission::MembersManage,
+        &request_id,
+        &headers,
+        "organization.member.change",
+        "membership",
+        membership_id.get().to_string(),
     )
     .await?;
     let command = OrganizationMembershipChangeCommand::new(
@@ -416,30 +436,68 @@ async fn change_organization_member(
         .management_service
         .as_ref()
         .ok_or(ManagementError::Internal)?;
-    let member = service
-        .change_member(context, command)
-        .await
-        .map_err(map_management_lifecycle_error)?;
+    let member = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::MembersManage,
+        "organization.member.change",
+        "membership",
+        membership_id.get().to_string(),
+        service
+            .change_member(context.clone(), command)
+            .await
+            .map_err(map_management_lifecycle_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::MembersManage.code(),
+        "organization.member.change",
+        "membership",
+        member.id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "role": organization_role_code(member.role()),
+            "status": organization_membership_status_code(member.status()),
+            "team": member.team_id().map(OrganizationTeamId::get),
+            "version": member.version(),
+        })),
+    )
+    .await?;
     Ok(no_store_json(OrganizationMembershipResponse::from(&member)))
 }
 
 async fn transfer_organization_ownership(
     State(state): State<OrganizationHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path(organization_id): Path<i64>,
+    headers: HeaderMap,
     Json(request): Json<OrganizationOwnershipTransferRequest>,
 ) -> Result<Response, ManagementError> {
     let organization_id = parse_organization_id(organization_id)?;
-    let context = authorize_lifecycle_context(
-        &state,
+    let target_membership_id = OrganizationMembershipId::new(request.target_membership_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
         &authentication,
         organization_id,
         OrganizationPermission::OwnershipTransfer,
+        &request_id,
+        &headers,
+        "organization.ownership.transfer",
+        "membership",
+        target_membership_id.get().to_string(),
     )
     .await?;
     let command = OrganizationOwnershipTransferCommand::new(
-        OrganizationMembershipId::new(request.target_membership_id)
-            .map_err(|_| ManagementError::InvalidRequest)?,
+        target_membership_id,
         request.current_owner_version,
         request.target_expected_version,
     )
@@ -448,10 +506,37 @@ async fn transfer_organization_ownership(
         .management_service
         .as_ref()
         .ok_or(ManagementError::Internal)?;
-    let result = service
-        .transfer_ownership(context, command)
-        .await
-        .map_err(map_management_lifecycle_error)?;
+    let result = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::OwnershipTransfer,
+        "organization.ownership.transfer",
+        "membership",
+        target_membership_id.get().to_string(),
+        service
+            .transfer_ownership(context.clone(), command)
+            .await
+            .map_err(map_management_lifecycle_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::OwnershipTransfer.code(),
+        "organization.ownership.transfer",
+        "membership",
+        result.current_owner().id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "previous_owner": result.previous_owner().id().get(),
+            "current_owner": result.current_owner().id().get(),
+        })),
+    )
+    .await?;
     Ok(no_store_json(OrganizationOwnershipTransferResponse {
         previous_owner: OrganizationMembershipResponse::from(result.previous_owner()),
         current_owner: OrganizationMembershipResponse::from(result.current_owner()),
@@ -494,44 +579,84 @@ async fn list_organization_teams(
 async fn create_organization_team(
     State(state): State<OrganizationHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path(organization_id): Path<i64>,
+    headers: HeaderMap,
     Json(request): Json<OrganizationTeamCreateRequest>,
 ) -> Result<Response, ManagementError> {
     let organization_id = parse_organization_id(organization_id)?;
-    let context = authorize_lifecycle_context(
-        &state,
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
         &authentication,
         organization_id,
         OrganizationPermission::TeamsManage,
+        &request_id,
+        &headers,
+        "organization.team.create",
+        "team",
+        "new".to_owned(),
     )
     .await?;
     let service = state
         .management_service
         .as_ref()
         .ok_or(ManagementError::Internal)?;
-    let team = service
-        .create_team(
-            context,
-            OrganizationTeamCreateCommand::new(request.name, request.description),
-        )
-        .await
-        .map_err(map_management_lifecycle_error)?;
+    let team = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::TeamsManage,
+        "organization.team.create",
+        "team",
+        "new".to_owned(),
+        service
+            .create_team(
+                context.clone(),
+                OrganizationTeamCreateCommand::new(request.name, request.description),
+            )
+            .await
+            .map_err(map_management_lifecycle_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::TeamsManage.code(),
+        "organization.team.create",
+        "team",
+        team.id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"version": team.version()})),
+    )
+    .await?;
     Ok(no_store_json(OrganizationTeamResponse::from(&team)))
 }
 
 async fn change_organization_team(
     State(state): State<OrganizationHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path((organization_id, team_id)): Path<(i64, i64)>,
+    headers: HeaderMap,
     Json(request): Json<OrganizationTeamChangeRequest>,
 ) -> Result<Response, ManagementError> {
     let organization_id = parse_organization_id(organization_id)?;
     let team_id = OrganizationTeamId::new(team_id).map_err(|_| ManagementError::InvalidRequest)?;
-    let context = authorize_lifecycle_context(
-        &state,
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
         &authentication,
         organization_id,
         OrganizationPermission::TeamsManage,
+        &request_id,
+        &headers,
+        "organization.team.change",
+        "team",
+        team_id.get().to_string(),
     )
     .await?;
     let command = OrganizationTeamChangeCommand::new(
@@ -545,26 +670,58 @@ async fn change_organization_team(
         .management_service
         .as_ref()
         .ok_or(ManagementError::Internal)?;
-    let team = service
-        .change_team(context, command)
-        .await
-        .map_err(map_management_lifecycle_error)?;
+    let team = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::TeamsManage,
+        "organization.team.change",
+        "team",
+        team_id.get().to_string(),
+        service
+            .change_team(context.clone(), command)
+            .await
+            .map_err(map_management_lifecycle_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::TeamsManage.code(),
+        "organization.team.change",
+        "team",
+        team.id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"version": team.version()})),
+    )
+    .await?;
     Ok(no_store_json(OrganizationTeamResponse::from(&team)))
 }
 
 async fn disable_organization_team(
     State(state): State<OrganizationHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path((organization_id, team_id)): Path<(i64, i64)>,
+    headers: HeaderMap,
     Json(request): Json<OrganizationTeamDisableRequest>,
 ) -> Result<Response, ManagementError> {
     let organization_id = parse_organization_id(organization_id)?;
     let team_id = OrganizationTeamId::new(team_id).map_err(|_| ManagementError::InvalidRequest)?;
-    let context = authorize_lifecycle_context(
-        &state,
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
         &authentication,
         organization_id,
         OrganizationPermission::TeamsManage,
+        &request_id,
+        &headers,
+        "organization.team.disable",
+        "team",
+        team_id.get().to_string(),
     )
     .await?;
     let command = OrganizationTeamDisableCommand::new(team_id, request.expected_version)
@@ -573,10 +730,34 @@ async fn disable_organization_team(
         .management_service
         .as_ref()
         .ok_or(ManagementError::Internal)?;
-    let team = service
-        .disable_team(context, command)
-        .await
-        .map_err(map_management_lifecycle_error)?;
+    let team = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::TeamsManage,
+        "organization.team.disable",
+        "team",
+        team_id.get().to_string(),
+        service
+            .disable_team(context.clone(), command)
+            .await
+            .map_err(map_management_lifecycle_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::TeamsManage.code(),
+        "organization.team.disable",
+        "team",
+        team.id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"version": team.version()})),
+    )
+    .await?;
     Ok(no_store_json(OrganizationTeamResponse::from(&team)))
 }
 
@@ -632,8 +813,9 @@ async fn list_organization_invitations(
     Extension(authentication): Extension<SessionAuthentication>,
     Path(organization_id): Path<i64>,
 ) -> Result<Response, ManagementError> {
-    let organization_id =
-        authorize_invitation_management(&state, &authentication, organization_id).await?;
+    let organization_id = authorize_invitation_management(&state, &authentication, organization_id)
+        .await?
+        .organization_id();
     let invitation_service = state
         .invitation_service
         .as_ref()
@@ -653,23 +835,72 @@ async fn list_organization_invitations(
 async fn create_organization_invitation(
     State(state): State<OrganizationHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path(organization_id): Path<i64>,
+    headers: HeaderMap,
     Json(request): Json<OrganizationInvitationCreateRequest>,
 ) -> Result<Response, ManagementError> {
-    let organization_id =
-        authorize_invitation_management(&state, &authentication, organization_id).await?;
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::MembersManage,
+        &request_id,
+        &headers,
+        "organization.invitation.create",
+        "invitation",
+        "new".to_owned(),
+    )
+    .await?;
     let invitation_service = state
         .invitation_service
         .as_ref()
         .ok_or(ManagementError::Internal)?;
-    let issued = invitation_service
-        .create(
-            authentication.principal(),
-            organization_id,
-            request.into_command()?,
-        )
-        .await
-        .map_err(map_invitation_management_error)?;
+    let command = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::MembersManage,
+        "organization.invitation.create",
+        "invitation",
+        "new".to_owned(),
+        request.into_command(),
+    )
+    .await?;
+    let issued = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::MembersManage,
+        "organization.invitation.create",
+        "invitation",
+        "new".to_owned(),
+        invitation_service
+            .create(authentication.principal(), organization_id, command)
+            .await
+            .map_err(map_invitation_management_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::MembersManage.code(),
+        "organization.invitation.create",
+        "invitation",
+        issued.record().invitation_key().persistence_key(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "role": organization_role_code(issued.record().role()),
+            "team": issued.record().team_id().map(OrganizationTeamId::get),
+        })),
+    )
+    .await?;
     Ok(no_store_json(issued_invitation_response(issued)?))
 }
 
@@ -679,8 +910,9 @@ async fn preview_organization_invitations(
     Path(organization_id): Path<i64>,
     Json(request): Json<OrganizationInvitationPreviewRequest>,
 ) -> Result<Response, ManagementError> {
-    let organization_id =
-        authorize_invitation_management(&state, &authentication, organization_id).await?;
+    let organization_id = authorize_invitation_management(&state, &authentication, organization_id)
+        .await?
+        .organization_id();
     let invitation_service = state
         .invitation_service
         .as_ref()
@@ -705,30 +937,82 @@ async fn preview_organization_invitations(
 async fn create_organization_invitation_batch(
     State(state): State<OrganizationHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path(organization_id): Path<i64>,
+    headers: HeaderMap,
     Json(request): Json<OrganizationInvitationBatchRequest>,
 ) -> Result<Response, ManagementError> {
-    let organization_id =
-        authorize_invitation_management(&state, &authentication, organization_id).await?;
+    let organization_id = parse_organization_id(organization_id)?;
+    let batch_key = OrganizationInvitationKey::from_persistence_key(&request.batch_key)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::MembersManage,
+        &request_id,
+        &headers,
+        "organization.invitation.batch_create",
+        "invitation_batch",
+        batch_key.persistence_key(),
+    )
+    .await?;
     let invitation_service = state
         .invitation_service
         .as_ref()
         .ok_or(ManagementError::Internal)?;
-    let batch_key = OrganizationInvitationKey::from_persistence_key(&request.batch_key)
-        .map_err(|_| ManagementError::InvalidRequest)?;
-    let command = OrganizationInvitationBatchCommand::new(
-        batch_key,
-        request
-            .items
-            .into_iter()
-            .map(OrganizationInvitationCreateRequest::into_command)
-            .collect::<Result<Vec<_>, _>>()?,
+    let command = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::MembersManage,
+        "organization.invitation.batch_create",
+        "invitation_batch",
+        batch_key.persistence_key(),
+        OrganizationInvitationBatchCommand::new(
+            batch_key,
+            request
+                .items
+                .into_iter()
+                .map(OrganizationInvitationCreateRequest::into_command)
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+        .map_err(map_invitation_management_error),
     )
-    .map_err(map_invitation_management_error)?;
-    let result = invitation_service
-        .create_batch(authentication.principal(), organization_id, command)
-        .await
-        .map_err(map_invitation_management_error)?;
+    .await?;
+    let result = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::MembersManage,
+        "organization.invitation.batch_create",
+        "invitation_batch",
+        batch_key.persistence_key(),
+        invitation_service
+            .create_batch(authentication.principal(), organization_id, command)
+            .await
+            .map_err(map_invitation_management_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::MembersManage.code(),
+        "organization.invitation.batch_create",
+        "invitation_batch",
+        batch_key.persistence_key(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "count": result.invitations().len(),
+            "replayed": result.replayed(),
+        })),
+    )
+    .await?;
     Ok(no_store_json(OrganizationInvitationBatchResponse::from(
         result,
     )))
@@ -737,19 +1021,57 @@ async fn create_organization_invitation_batch(
 async fn revoke_organization_invitation(
     State(state): State<OrganizationHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path((organization_id, invitation_key)): Path<(i64, String)>,
+    headers: HeaderMap,
 ) -> Result<Response, ManagementError> {
-    let organization_id =
-        authorize_invitation_management(&state, &authentication, organization_id).await?;
+    let organization_id = parse_organization_id(organization_id)?;
+    let invitation_key = parse_invitation_key(&invitation_key)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::MembersManage,
+        &request_id,
+        &headers,
+        "organization.invitation.revoke",
+        "invitation",
+        invitation_key.persistence_key(),
+    )
+    .await?;
     let invitation_service = state
         .invitation_service
         .as_ref()
         .ok_or(ManagementError::Internal)?;
-    let invitation_key = parse_invitation_key(&invitation_key)?;
-    let invitation = invitation_service
-        .revoke(organization_id, invitation_key)
-        .await
-        .map_err(map_invitation_management_error)?;
+    let invitation = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::MembersManage,
+        "organization.invitation.revoke",
+        "invitation",
+        invitation_key.persistence_key(),
+        invitation_service
+            .revoke(organization_id, invitation_key)
+            .await
+            .map_err(map_invitation_management_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::MembersManage.code(),
+        "organization.invitation.revoke",
+        "invitation",
+        invitation.invitation_key().persistence_key(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"status": organization_invitation_status_code(invitation.status())})),
+    )
+    .await?;
     Ok(no_store_json(OrganizationInvitationResponse::from(
         &invitation,
     )))
@@ -758,28 +1080,65 @@ async fn revoke_organization_invitation(
 async fn resend_organization_invitation(
     State(state): State<OrganizationHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
     Path((organization_id, invitation_key)): Path<(i64, String)>,
+    headers: HeaderMap,
 ) -> Result<Response, ManagementError> {
-    let organization_id =
-        authorize_invitation_management(&state, &authentication, organization_id).await?;
+    let organization_id = parse_organization_id(organization_id)?;
+    let invitation_key = parse_invitation_key(&invitation_key)?;
+    let context = authorize_organization_action(
+        &state.authorization_service,
+        &state.activity_service,
+        &authentication,
+        organization_id,
+        OrganizationPermission::MembersManage,
+        &request_id,
+        &headers,
+        "organization.invitation.resend",
+        "invitation",
+        invitation_key.persistence_key(),
+    )
+    .await?;
     let invitation_service = state
         .invitation_service
         .as_ref()
         .ok_or(ManagementError::Internal)?;
-    let issued = invitation_service
-        .resend(
-            authentication.principal(),
-            organization_id,
-            parse_invitation_key(&invitation_key)?,
-        )
-        .await
-        .map_err(map_invitation_management_error)?;
+    let issued = audit_organization_action_result(
+        &state.activity_service,
+        context.clone(),
+        &request_id,
+        &headers,
+        OrganizationPermission::MembersManage,
+        "organization.invitation.resend",
+        "invitation",
+        invitation_key.persistence_key(),
+        invitation_service
+            .resend(authentication.principal(), organization_id, invitation_key)
+            .await
+            .map_err(map_invitation_management_error),
+    )
+    .await?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        OrganizationPermission::MembersManage.code(),
+        "organization.invitation.resend",
+        "invitation",
+        issued.record().invitation_key().persistence_key(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({"version": issued.record().version()})),
+    )
+    .await?;
     Ok(no_store_json(issued_invitation_response(issued)?))
 }
 
 async fn accept_organization_invitation(
     State(state): State<OrganizationHttpState>,
     Extension(authentication): Extension<SessionAuthentication>,
+    Extension(request_id): Extension<RequestId>,
+    headers: HeaderMap,
     Json(request): Json<OrganizationInvitationAcceptRequest>,
 ) -> Result<Response, ManagementError> {
     let invitation_service = state
@@ -790,6 +1149,31 @@ async fn accept_organization_invitation(
         .accept(authentication.principal(), request.token)
         .await
         .map_err(map_invitation_accept_error)?;
+    let context = state
+        .authorization_service
+        .context(
+            authentication.principal(),
+            accepted.organization_id,
+            OrganizationPermission::OverviewRead,
+        )
+        .await
+        .map_err(map_authorization_error)?;
+    record_organization_action(
+        &state.activity_service,
+        context,
+        &request_id,
+        &headers,
+        "organization.invitations.accept",
+        "organization.invitation.accept",
+        "membership",
+        accepted.membership.id().get().to_string(),
+        OrganizationAuditOutcome::Succeeded,
+        Some(json!({
+            "role": organization_role_code(accepted.membership.role()),
+            "team": accepted.membership.team_id().map(OrganizationTeamId::get),
+        })),
+    )
+    .await?;
     Ok(no_store_json(
         OrganizationInvitationAcceptResponse::from_membership(
             accepted.organization_id,
@@ -979,7 +1363,7 @@ async fn authorize_invitation_management(
     state: &OrganizationHttpState,
     authentication: &SessionAuthentication,
     organization_id: i64,
-) -> Result<OrganizationId, ManagementError> {
+) -> Result<af_admin::OrganizationContext, ManagementError> {
     let organization_id =
         OrganizationId::new(organization_id).map_err(|_| ManagementError::InvalidRequest)?;
     state
@@ -990,8 +1374,7 @@ async fn authorize_invitation_management(
             OrganizationPermission::MembersManage,
         )
         .await
-        .map_err(map_authorization_error)?;
-    Ok(organization_id)
+        .map_err(map_authorization_error)
 }
 
 async fn authorize_lifecycle_context(

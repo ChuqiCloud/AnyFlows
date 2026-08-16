@@ -1,6 +1,6 @@
 use std::{fmt, time::Duration};
 
-use af_domain::{GroupId, TokenId, UserId};
+use af_domain::{GroupId, OrganizationId, OrganizationTeamId, TokenId, UserId};
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use thiserror::Error;
 use tokio::time::timeout;
@@ -87,6 +87,8 @@ pub struct AdminUsageLogRecord {
     username: String,
     token_id: TokenId,
     group_id: GroupId,
+    organization_id: Option<OrganizationId>,
+    organization_team_id: Option<OrganizationTeamId>,
     billing_mode: i16,
     usage: AdminUsageLogUsageRecord,
     usage_source: i16,
@@ -142,6 +144,18 @@ impl AdminUsageLogRecord {
     #[must_use]
     pub const fn group_id(&self) -> GroupId {
         self.group_id
+    }
+
+    /// 返回调用固化的企业归属；个人调用为空。
+    #[must_use]
+    pub const fn organization_id(&self) -> Option<OrganizationId> {
+        self.organization_id
+    }
+
+    /// 返回调用固化的企业团队归属；无团队或个人调用为空。
+    #[must_use]
+    pub const fn organization_team_id(&self) -> Option<OrganizationTeamId> {
+        self.organization_team_id
     }
 
     /// 返回数据库计费模式码。
@@ -269,6 +283,16 @@ impl AdminUsageLogRecord {
         let video_resolution = model
             .video_resolution
             .and_then(UsageLogVideoResolution::from_database);
+        let organization_id = model
+            .organization_id
+            .map(OrganizationId::new)
+            .transpose()
+            .map_err(|_| record_internal_error(AdminUsageLogRepositoryError::Invariant))?;
+        let organization_team_id = model
+            .organization_team_id
+            .map(OrganizationTeamId::new)
+            .transpose()
+            .map_err(|_| record_internal_error(AdminUsageLogRepositoryError::Invariant))?;
         if model.id <= 0
             || model.event_type != 1
             || !matches!(model.billing_mode, 1..=3)
@@ -310,6 +334,7 @@ impl AdminUsageLogRecord {
                 .first_token_ms
                 .zip(model.duration_ms)
                 .is_some_and(|(first, total)| first > total)
+            || (organization_id.is_none() && organization_team_id.is_some())
             || token_values.into_iter().any(|value| value < 0)
         {
             return Err(record_internal_error(
@@ -326,6 +351,8 @@ impl AdminUsageLogRecord {
                 .map_err(|_| record_internal_error(AdminUsageLogRepositoryError::Invariant))?,
             group_id: GroupId::new(model.group_id)
                 .map_err(|_| record_internal_error(AdminUsageLogRepositoryError::Invariant))?,
+            organization_id,
+            organization_team_id,
             billing_mode: model.billing_mode,
             usage: AdminUsageLogUsageRecord {
                 input_tokens: model.input_tokens,
@@ -496,6 +523,64 @@ impl AdminUsageLogRepository {
         Ok(AdminUsageLogPageRecord { logs, next_cursor })
     }
 
+    /// 按企业与日志 ID 从新到旧读取已确认调用事实。
+    pub async fn list_for_organization(
+        &self,
+        organization_id: OrganizationId,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<AdminUsageLogPageRecord, AdminUsageLogRepositoryError> {
+        self.list_for_organization_subject(organization_id, None, before, limit)
+            .await
+    }
+
+    /// 按企业、用户与日志 ID 读取当前成员自己的企业调用事实。
+    pub async fn list_for_organization_user(
+        &self,
+        organization_id: OrganizationId,
+        user_id: UserId,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<AdminUsageLogPageRecord, AdminUsageLogRepositoryError> {
+        self.list_for_organization_subject(organization_id, Some(user_id), before, limit)
+            .await
+    }
+
+    async fn list_for_organization_subject(
+        &self,
+        organization_id: OrganizationId,
+        user_id: Option<UserId>,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<AdminUsageLogPageRecord, AdminUsageLogRepositoryError> {
+        if before.is_some_and(|value| value <= 0)
+            || !(1..=MAX_ADMIN_USAGE_LOG_PAGE_SIZE).contains(&limit)
+        {
+            return Err(record_internal_error(
+                AdminUsageLogRepositoryError::Invariant,
+            ));
+        }
+        let operation = self
+            .query_for_organization(organization_id, user_id, before, limit)
+            .with_subscriber(NoSubscriber::default());
+        let mut models = match timeout(self.lookup_timeout, operation).await {
+            Ok(result) => result?,
+            Err(_) => return Err(record_internal_error(AdminUsageLogRepositoryError::Timeout)),
+        };
+        let has_more = models.len() > limit;
+        if has_more {
+            models.truncate(limit);
+        }
+        let logs = models
+            .into_iter()
+            .map(joined_record)
+            .collect::<Result<Vec<_>, _>>()?;
+        let next_cursor = has_more
+            .then(|| logs.last().map(AdminUsageLogRecord::id))
+            .flatten();
+        Ok(AdminUsageLogPageRecord { logs, next_cursor })
+    }
+
     async fn query(
         &self,
         before: Option<i64>,
@@ -525,6 +610,30 @@ impl AdminUsageLogRepository {
             .filter(usage_logs::Column::UserId.eq(user_id.get()))
             .order_by_desc(usage_logs::Column::Id)
             .limit((limit + 1) as u64);
+        if let Some(before) = before {
+            query = query.filter(usage_logs::Column::Id.lt(before));
+        }
+        query
+            .all(self.pool.connection())
+            .await
+            .map_err(|_| record_internal_error(AdminUsageLogRepositoryError::Query))
+    }
+
+    async fn query_for_organization(
+        &self,
+        organization_id: OrganizationId,
+        user_id: Option<UserId>,
+        before: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<(usage_logs::Model, Option<users::Model>)>, AdminUsageLogRepositoryError> {
+        let mut query = usage_logs::Entity::find()
+            .find_also_related(users::Entity)
+            .filter(usage_logs::Column::OrganizationId.eq(organization_id.get()))
+            .order_by_desc(usage_logs::Column::Id)
+            .limit((limit + 1) as u64);
+        if let Some(user_id) = user_id {
+            query = query.filter(usage_logs::Column::UserId.eq(user_id.get()));
+        }
         if let Some(before) = before {
             query = query.filter(usage_logs::Column::Id.lt(before));
         }

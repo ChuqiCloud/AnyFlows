@@ -30,6 +30,8 @@ use af_http::{
 use serde_json::{Value, json};
 use tower::ServiceExt as _;
 
+use organization_activity_support::test_organization_activity_service;
+
 const OWNER_TOKEN: &str = "organization-budget-owner";
 const BILLING_TOKEN: &str = "organization-budget-billing";
 const MEMBER_TOKEN: &str = "organization-budget-member";
@@ -321,7 +323,12 @@ async fn sqlite_budget_router() -> Result<
     });
     let service = Arc::new(DatabaseOrganizationBudgetService::new(Arc::clone(&budget)));
     Ok((
-        build_organization_budget_router(authorization, service, sessions),
+        build_organization_budget_router(
+            authorization,
+            service,
+            test_organization_activity_service(),
+            sessions,
+        ),
         pool,
         organization.id(),
         owner.user_id(),
@@ -405,3 +412,4 @@ fn now_u64() -> u64 {
         .unwrap()
         .as_secs()
 }
+mod organization_activity_support;
