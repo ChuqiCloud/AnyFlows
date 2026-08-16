@@ -36,7 +36,7 @@ pub(crate) struct OrganizationHttpState {
 }
 
 /// 构建企业目录与企业概览只读入口；所有入口都要求有效管理会话。
-pub(crate) fn build_organization_router(
+pub fn build_organization_router(
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     invitation_service: Option<Arc<dyn OrganizationInvitationService>>,
     session_authenticator: Arc<dyn af_admin::SessionAuthenticator>,

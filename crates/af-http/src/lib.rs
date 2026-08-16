@@ -57,8 +57,6 @@ mod openai_speech;
 mod openapi;
 mod operations;
 mod organizations;
-#[cfg(test)]
-mod organizations_tests;
 mod password_reset;
 mod payment_settings;
 mod payment_webhook;
@@ -104,6 +102,7 @@ pub use openapi::openapi_document;
 pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
 };
+pub use organizations::build_organization_router;
 pub use payment_webhook::{PaymentWebhookProcessorRegistry, build_payment_webhook_router};
 pub use rerank_service::{RerankService, RerankServiceFuture};
 pub use responses_compact_service::{ResponsesCompactService, ResponsesCompactServiceFuture};

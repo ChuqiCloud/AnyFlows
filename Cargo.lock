@@ -180,12 +180,10 @@ dependencies = [
 name = "af-http"
 version = "0.1.0"
 dependencies = [
- "af-account",
  "af-admin",
  "af-analytics",
  "af-billing",
  "af-config",
- "af-db",
  "af-domain",
  "af-protocol",
  "af-relay",
@@ -292,6 +290,7 @@ dependencies = [
  "af-telemetry",
  "argon2",
  "async-trait",
+ "axum",
  "base64 0.22.1",
  "chacha20poly1305",
  "futures-util",
@@ -307,6 +306,7 @@ dependencies = [
  "symphonia",
  "thiserror",
  "tokio",
+ "tower",
  "tracing",
  "url",
  "uuid",
