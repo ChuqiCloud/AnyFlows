@@ -32,8 +32,6 @@ use af_http::{
 use serde_json::{Value, json};
 use tower::ServiceExt as _;
 
-use af_http::build_organization_router;
-
 const OWNER_TOKEN: &str = "organization-owner-token";
 const VIEWER_TOKEN: &str = "organization-viewer-token";
 const ACCEPT_TOKEN: &str = "organization-accept-token";
