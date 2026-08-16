@@ -52,6 +52,7 @@ pub(crate) mod models;
 pub(crate) mod network_settings;
 pub(crate) mod options;
 pub(crate) mod organization_entitlements;
+pub(crate) mod organization_invitations;
 pub(crate) mod organization_memberships;
 pub(crate) mod organization_teams;
 pub(crate) mod organizations;
@@ -1538,6 +1539,9 @@ impl ActiveModelBehavior for organization_entitlements::ActiveModel {
         Ok(self)
     }
 }
+
+#[async_trait::async_trait]
+impl ActiveModelBehavior for organization_invitations::ActiveModel {}
 
 #[async_trait::async_trait]
 impl ActiveModelBehavior for organization_memberships::ActiveModel {

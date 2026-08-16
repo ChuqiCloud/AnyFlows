@@ -68,6 +68,7 @@ mod m20260815_000059_add_balance_display_policy;
 mod m20260815_000060_secure_debug_trace_snapshots;
 mod m20260815_000061_create_organization_foundation;
 mod m20260815_000062_create_organization_entitlements;
+mod m20260816_000063_create_organization_invitations;
 mod schema;
 
 #[cfg(test)]
@@ -173,6 +174,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260815_000060_secure_debug_trace_snapshots::Migration),
             Box::new(m20260815_000061_create_organization_foundation::Migration),
             Box::new(m20260815_000062_create_organization_entitlements::Migration),
+            Box::new(m20260816_000063_create_organization_invitations::Migration),
         ]
     }
 }

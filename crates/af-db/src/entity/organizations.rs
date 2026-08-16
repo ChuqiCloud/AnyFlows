@@ -36,6 +36,8 @@ pub enum Relation {
     Teams,
     #[sea_orm(has_one = "super::organization_entitlements::Entity")]
     Entitlement,
+    #[sea_orm(has_many = "super::organization_invitations::Entity")]
+    Invitations,
 }
 
 impl Related<super::users::Entity> for Entity {
@@ -59,5 +61,11 @@ impl Related<super::organization_teams::Entity> for Entity {
 impl Related<super::organization_entitlements::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Entitlement.def()
+    }
+}
+
+impl Related<super::organization_invitations::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Invitations.def()
     }
 }

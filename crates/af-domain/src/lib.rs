@@ -38,9 +38,9 @@ pub use error::{
 };
 pub use network::{IpCidr, IpCidrParseError, TrustedClientIp};
 pub use organization::{
-    OrganizationIdentifierError, OrganizationKey, OrganizationMembershipStatus,
-    OrganizationPermission, OrganizationRole, OrganizationStateCodeError, OrganizationStatus,
-    OrganizationTeamStatus, PlatformPermission,
+    OrganizationIdentifierError, OrganizationInvitationKey, OrganizationInvitationStatus,
+    OrganizationKey, OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
+    OrganizationStateCodeError, OrganizationStatus, OrganizationTeamStatus, PlatformPermission,
 };
 pub use organization_entitlement::{
     MAX_ORGANIZATION_AUDIT_RETENTION_DAYS, OrganizationEntitlementCapacity,

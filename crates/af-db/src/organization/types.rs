@@ -1,11 +1,14 @@
 use std::fmt;
 
+use crate::EncryptedCredentialEnvelope;
 use af_domain::{
-    OrganizationEntitlementSnapshot, OrganizationId, OrganizationKey, OrganizationMembershipId,
+    OrganizationEntitlementSnapshot, OrganizationId, OrganizationInvitationKey,
+    OrganizationInvitationStatus, OrganizationKey, OrganizationMembershipId,
     OrganizationMembershipStatus, OrganizationRole, OrganizationStatus, OrganizationTeamId,
     OrganizationTeamStatus, UserId,
 };
 use thiserror::Error;
+use zeroize::Zeroizing;
 
 /// 企业显示名最大 UTF-8 字节数。
 pub const MAX_ORGANIZATION_NAME_BYTES: usize = 128;
@@ -19,6 +22,8 @@ pub const MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES: usize = 2_000;
 pub const MAX_ORGANIZATION_ENTITLEMENT_SOURCE_BYTES: usize = 64;
 /// 授权外部引用最大 UTF-8 字节数。
 pub const MAX_ORGANIZATION_ENTITLEMENT_REFERENCE_BYTES: usize = 128;
+/// 单批企业邀请最多允许提交的行数。
+pub const MAX_ORGANIZATION_INVITATION_BATCH_SIZE: usize = 200;
 
 /// 创建企业时由服务端验证的基础资料和初始 Owner。
 pub struct OrganizationCreate {
@@ -253,6 +258,335 @@ impl OrganizationTeamCreate {
     #[must_use]
     pub fn new(name: String, description: Option<String>) -> Self {
         Self { name, description }
+    }
+}
+
+/// 已完成邮箱规范化、摘要和密文封套的单条邀请材料。
+pub struct OrganizationInvitationCreate {
+    pub(super) invitation_key: OrganizationInvitationKey,
+    pub(super) normalized_email: Zeroizing<String>,
+    pub(super) email_fingerprint: [u8; 32],
+    pub(super) email_secret: EncryptedCredentialEnvelope,
+    pub(super) token_digest: [u8; 32],
+    pub(super) role: OrganizationRole,
+    pub(super) team_id: Option<OrganizationTeamId>,
+    pub(super) invited_by_user_id: UserId,
+    pub(super) batch_key: Option<OrganizationInvitationKey>,
+    pub(super) batch_digest: Option<[u8; 32]>,
+    pub(super) batch_size: Option<usize>,
+    pub(super) expires_at: i64,
+}
+
+impl OrganizationInvitationCreate {
+    /// 组装一条已在服务层完成密码学处理的邀请。
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        invitation_key: OrganizationInvitationKey,
+        normalized_email: String,
+        email_fingerprint: [u8; 32],
+        email_secret: EncryptedCredentialEnvelope,
+        token_digest: [u8; 32],
+        role: OrganizationRole,
+        team_id: Option<OrganizationTeamId>,
+        invited_by_user_id: UserId,
+        batch_key: Option<OrganizationInvitationKey>,
+        batch_digest: Option<[u8; 32]>,
+        batch_size: Option<usize>,
+        expires_at: i64,
+    ) -> Result<Self, OrganizationRepositoryError> {
+        if normalized_email.is_empty()
+            || normalized_email.len() > 320
+            || normalized_email.trim() != normalized_email
+            || normalized_email.bytes().any(|byte| byte.is_ascii_control())
+            || normalized_email
+                .bytes()
+                .any(|byte| byte.is_ascii_whitespace())
+            || normalized_email
+                .bytes()
+                .any(|byte| byte.is_ascii_uppercase())
+            || role.is_owner()
+            || expires_at <= 0
+            || batch_key.is_none() != batch_digest.is_none()
+            || batch_key.is_none() != batch_size.is_none()
+            || batch_size
+                .is_some_and(|size| !(1..=MAX_ORGANIZATION_INVITATION_BATCH_SIZE).contains(&size))
+        {
+            return Err(OrganizationRepositoryError::InvalidInput);
+        }
+        Ok(Self {
+            invitation_key,
+            normalized_email: Zeroizing::new(normalized_email),
+            email_fingerprint,
+            email_secret,
+            token_digest,
+            role,
+            team_id,
+            invited_by_user_id,
+            batch_key,
+            batch_digest,
+            batch_size,
+            expires_at,
+        })
+    }
+}
+
+impl fmt::Debug for OrganizationInvitationCreate {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationInvitationCreate")
+            .field("role", &self.role)
+            .field("has_team", &self.team_id.is_some())
+            .field("has_batch", &self.batch_key.is_some())
+            .field("expires_at", &self.expires_at)
+            .finish_non_exhaustive()
+    }
+}
+
+/// 已持久化企业邀请的安全投影；不包含邮箱、摘要或密文。
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrganizationInvitationRecord {
+    pub(super) id: i64,
+    pub(super) invitation_key: OrganizationInvitationKey,
+    pub(super) organization_id: OrganizationId,
+    pub(super) role: OrganizationRole,
+    pub(super) team_id: Option<OrganizationTeamId>,
+    pub(super) status: OrganizationInvitationStatus,
+    pub(super) invited_by_user_id: UserId,
+    pub(super) accepted_by_user_id: Option<UserId>,
+    pub(super) batch_key: Option<OrganizationInvitationKey>,
+    pub(super) version: i64,
+    pub(super) created_at: i64,
+    pub(super) expires_at: i64,
+    pub(super) finalized_at: Option<i64>,
+}
+
+/// 批量邀请提交结果；重放只返回已持久化事实，不重新生成投递令牌。
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrganizationInvitationBatchRecord {
+    records: Vec<OrganizationInvitationRecord>,
+    replayed: bool,
+}
+
+impl OrganizationInvitationBatchRecord {
+    pub(super) const fn new(records: Vec<OrganizationInvitationRecord>, replayed: bool) -> Self {
+        Self { records, replayed }
+    }
+
+    /// 返回批次内邀请安全投影。
+    #[must_use]
+    pub fn records(&self) -> &[OrganizationInvitationRecord] {
+        &self.records
+    }
+
+    /// 判断本次是否命中了同一批次的幂等重放。
+    #[must_use]
+    pub const fn replayed(&self) -> bool {
+        self.replayed
+    }
+}
+
+/// 邀请批量预览输入；邮箱已由服务层规范化，仓储只用它做受控匹配。
+#[derive(Clone)]
+pub struct OrganizationInvitationPreviewItem {
+    pub(super) normalized_email: String,
+    pub(super) email_fingerprint: [u8; 32],
+    pub(super) team_id: Option<OrganizationTeamId>,
+}
+
+impl OrganizationInvitationPreviewItem {
+    /// 组装一条预览匹配输入。
+    pub fn new(
+        normalized_email: String,
+        email_fingerprint: [u8; 32],
+        team_id: Option<OrganizationTeamId>,
+    ) -> Self {
+        Self {
+            normalized_email,
+            email_fingerprint,
+            team_id,
+        }
+    }
+}
+
+impl fmt::Debug for OrganizationInvitationPreviewItem {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationInvitationPreviewItem")
+            .field("has_team", &self.team_id.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+/// 单条预览匹配事实；不返回邮箱或任何密码学材料。
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct OrganizationInvitationPreviewRow {
+    existing_member: bool,
+    pending_invitation: bool,
+    valid_team: bool,
+}
+
+impl OrganizationInvitationPreviewRow {
+    pub(super) const fn new(
+        existing_member: bool,
+        pending_invitation: bool,
+        valid_team: bool,
+    ) -> Self {
+        Self {
+            existing_member,
+            pending_invitation,
+            valid_team,
+        }
+    }
+
+    #[must_use]
+    pub const fn existing_member(self) -> bool {
+        self.existing_member
+    }
+
+    #[must_use]
+    pub const fn pending_invitation(self) -> bool {
+        self.pending_invitation
+    }
+
+    #[must_use]
+    pub const fn valid_team(self) -> bool {
+        self.valid_team
+    }
+}
+
+/// 在同一组织事务中读取的批量预览快照。
+#[derive(Clone, Debug, PartialEq)]
+pub struct OrganizationInvitationPreviewSnapshot {
+    rows: Vec<OrganizationInvitationPreviewRow>,
+    available_seats: i64,
+}
+
+impl OrganizationInvitationPreviewSnapshot {
+    pub(super) const fn new(
+        rows: Vec<OrganizationInvitationPreviewRow>,
+        available_seats: i64,
+    ) -> Self {
+        Self {
+            rows,
+            available_seats,
+        }
+    }
+
+    /// 返回与输入顺序对应的成员/邀请/团队事实。
+    #[must_use]
+    pub fn rows(&self) -> &[OrganizationInvitationPreviewRow] {
+        &self.rows
+    }
+
+    /// 返回当前已扣除活动成员和待接受邀请后的席位数。
+    #[must_use]
+    pub const fn available_seats(&self) -> i64 {
+        self.available_seats
+    }
+}
+
+impl OrganizationInvitationRecord {
+    /// 返回邀请内部标识。
+    #[must_use]
+    pub const fn id(&self) -> i64 {
+        self.id
+    }
+
+    /// 返回不暴露数据库顺序的邀请标识。
+    #[must_use]
+    pub const fn invitation_key(&self) -> OrganizationInvitationKey {
+        self.invitation_key
+    }
+
+    /// 返回所属企业。
+    #[must_use]
+    pub const fn organization_id(&self) -> OrganizationId {
+        self.organization_id
+    }
+
+    /// 返回接受后使用的固定角色。
+    #[must_use]
+    pub const fn role(&self) -> OrganizationRole {
+        self.role
+    }
+
+    /// 返回接受后使用的主团队。
+    #[must_use]
+    pub const fn team_id(&self) -> Option<OrganizationTeamId> {
+        self.team_id
+    }
+
+    /// 返回邀请状态。
+    #[must_use]
+    pub const fn status(&self) -> OrganizationInvitationStatus {
+        self.status
+    }
+
+    /// 返回邀请操作者。
+    #[must_use]
+    pub const fn invited_by_user_id(&self) -> UserId {
+        self.invited_by_user_id
+    }
+
+    /// 返回接受用户（若已消费）。
+    #[must_use]
+    pub const fn accepted_by_user_id(&self) -> Option<UserId> {
+        self.accepted_by_user_id
+    }
+
+    /// 返回批次幂等标识。
+    #[must_use]
+    pub const fn batch_key(&self) -> Option<OrganizationInvitationKey> {
+        self.batch_key
+    }
+
+    /// 返回邀请生命周期 CAS 版本。
+    #[must_use]
+    pub const fn version(&self) -> i64 {
+        self.version
+    }
+
+    /// 返回创建时间。
+    #[must_use]
+    pub const fn created_at(&self) -> i64 {
+        self.created_at
+    }
+
+    /// 返回过期时间。
+    #[must_use]
+    pub const fn expires_at(&self) -> i64 {
+        self.expires_at
+    }
+
+    /// 返回最终化时间。
+    #[must_use]
+    pub const fn finalized_at(&self) -> Option<i64> {
+        self.finalized_at
+    }
+}
+
+/// 接受事务的受限上下文；仅向受控服务暴露邮箱密文。
+#[derive(Clone)]
+pub struct OrganizationInvitationAcceptanceContext {
+    pub(super) record: OrganizationInvitationRecord,
+    pub(super) email_secret: EncryptedCredentialEnvelope,
+}
+
+impl OrganizationInvitationAcceptanceContext {
+    /// 拆出安全邀请投影与密文封套。
+    #[must_use]
+    pub fn into_parts(self) -> (OrganizationInvitationRecord, EncryptedCredentialEnvelope) {
+        (self.record, self.email_secret)
+    }
+}
+
+impl fmt::Debug for OrganizationInvitationAcceptanceContext {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("OrganizationInvitationAcceptanceContext")
+            .field("record", &self.record)
+            .field("email_secret", &"<redacted>")
+            .finish()
     }
 }
 
@@ -593,6 +927,18 @@ pub enum OrganizationRepositoryError {
     /// 企业席位容量已用尽。
     #[error("企业席位容量已用尽")]
     SeatLimitReached,
+    /// 邀请已经过期或已被关闭。
+    #[error("企业邀请已过期")]
+    InvitationExpired,
+    /// 邀请不再处于可消费状态。
+    #[error("企业邀请不可消费")]
+    InvitationNotPending,
+    /// 当前接受用户邮箱与邀请不匹配。
+    #[error("企业邀请邮箱不匹配")]
+    InvitationEmailMismatch,
+    /// 同一批次幂等键对应了不同请求内容。
+    #[error("企业邀请批次幂等键冲突")]
+    InvitationBatchConflict,
     /// 企业团队容量已用尽。
     #[error("企业团队容量已用尽")]
     TeamLimitReached,

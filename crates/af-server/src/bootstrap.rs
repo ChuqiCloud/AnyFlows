@@ -2,8 +2,9 @@ use std::{future::Future, sync::Arc, time::Duration};
 
 use af_account::{
     CredentialDecryptionError, CredentialDecryptor, CredentialEncryptionError, CredentialEncryptor,
-    DiagnosticSnapshotCipher, OAuthProviderProfile, OAuthRefreshSupervisor, PlainSystemSecret,
-    SystemSecretCipher, SystemSecretError, SystemSecretKind,
+    DiagnosticSnapshotCipher, OAuthProviderProfile, OAuthRefreshSupervisor,
+    OrganizationInvitationCipher, PlainSystemSecret, SystemSecretCipher, SystemSecretError,
+    SystemSecretKind,
 };
 use af_admin::{
     AdminBalanceAlertSettingsService, AdminChannelReader, AdminChannelWriter,
@@ -174,6 +175,7 @@ pub struct AuthenticationReady {
     subscription_repository: SubscriptionRepository,
     user_invitation_service: Arc<dyn UserInvitationService>,
     organization_authorization_service: Arc<dyn af_admin::OrganizationAuthorizationService>,
+    organization_invitation_service: Arc<dyn af_admin::OrganizationInvitationService>,
     site_settings_service: Arc<dyn SiteSettingsService>,
     site_settings_repository: SiteSettingsRepository,
     admin_email_settings_service: Arc<dyn AdminEmailSettingsService>,
@@ -437,6 +439,9 @@ pub enum BootstrapError {
     /// 企业上下文授权仓储的启动参数无效。
     #[error("企业授权仓储启动参数无效")]
     OrganizationRepository(#[source] OrganizationRepositoryConfigError),
+    /// 企业邀请邮箱和令牌摘要密码学配置无效。
+    #[error("企业邀请密码学配置无效")]
+    OrganizationInvitationCipher(#[source] af_account::OrganizationInvitationCipherError),
     /// 管理员分组仓储的启动参数无效。
     #[error("管理员分组仓储启动参数无效")]
     AdminGroupRepository(#[source] AdminGroupRepositoryConfigError),
@@ -752,6 +757,9 @@ impl Bootstrap<DatabaseReady> {
             Duration::from_secs(auth.lookup_timeout_secs()),
         )
         .map_err(BootstrapError::OrganizationRepository)?;
+        let organization_invitation_cipher =
+            OrganizationInvitationCipher::new(self.config.credential_encryption())
+                .map_err(BootstrapError::OrganizationInvitationCipher)?;
         let system_secret_cipher = SystemSecretCipher::new(self.config.credential_encryption())
             .map_err(BootstrapError::SystemSecret)?;
         let admin_credential_proxy_service = Arc::new(DatabaseAdminCredentialProxyService::new(
@@ -883,8 +891,14 @@ impl Bootstrap<DatabaseReady> {
                 )),
                 organization_authorization_service: Arc::new(
                     af_admin::DatabaseOrganizationAuthorizationService::new(Arc::new(
-                        organization_repository,
+                        organization_repository.clone(),
                     )),
+                ),
+                organization_invitation_service: Arc::new(
+                    af_admin::DatabaseOrganizationInvitationService::new(
+                        Arc::new(organization_repository),
+                        organization_invitation_cipher,
+                    ),
                 ),
                 site_settings_service: Arc::new(DatabaseSiteSettingsService::new(
                     site_settings_repository.clone(),
@@ -1849,6 +1863,9 @@ impl Bootstrap<Supervised> {
             self.stage.infrastructure.query_api_key_policy,
             Some(Arc::new(EmbeddedFrontendAssets)),
             Some(payment_webhook_routes),
+            Some(Arc::clone(
+                &self.stage.infrastructure.organization_invitation_service,
+            )),
         );
         let Bootstrap {
             config,

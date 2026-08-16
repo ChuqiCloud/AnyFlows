@@ -82,6 +82,12 @@ mod wallet_query;
 mod xai_video;
 
 pub use audio_service::{AudioService, AudioServiceFuture};
+pub use axum::{
+    Router,
+    body::{Body, to_bytes},
+    http,
+    response::Response,
+};
 pub use channel_probe::{AdminChannelProbe, AdminChannelProbeFuture, AdminChannelProbeOutcome};
 pub use chat_service::{ChatService, ChatServiceFuture};
 pub use credentials::{ApiKeyExtractionError, QueryApiKeyPolicy, extract_presented_api_key};
@@ -102,6 +108,7 @@ pub use openapi::openapi_document;
 pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
 };
+pub use organizations::build_organization_router;
 pub use payment_webhook::{PaymentWebhookProcessorRegistry, build_payment_webhook_router};
 pub use rerank_service::{RerankService, RerankServiceFuture};
 pub use responses_compact_service::{ResponsesCompactService, ResponsesCompactServiceFuture};

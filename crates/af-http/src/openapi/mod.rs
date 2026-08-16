@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 89);
+        assert_eq!(document.paths.paths.len(), 95);
         let operation_count = document
             .paths
             .paths
@@ -190,7 +190,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 131);
+        assert_eq!(operation_count, 138);
         assert!(
             document
                 .components
@@ -240,6 +240,13 @@ mod tests {
             "getUserProfile",
             "listAccountOrganizations",
             "getOrganizationOverview",
+            "listOrganizationInvitations",
+            "createOrganizationInvitation",
+            "previewOrganizationInvitations",
+            "createOrganizationInvitationBatch",
+            "revokeOrganizationInvitation",
+            "resendOrganizationInvitation",
+            "acceptOrganizationInvitation",
             "getUserTopupConfiguration",
             "getUserWallet",
             "importMissingAdminModels",
@@ -355,9 +362,11 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 268);
+        assert_eq!(schemas.len(), 279);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationEntitlementResponse"));
+        assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
+        assert!(schemas.contains_key("OrganizationInvitationResponse"));
         assert!(schemas.contains_key("ModelCatalogProvider"));
         assert!(schemas.contains_key("ModelCatalogProviderListResponse"));
         assert!(schemas.contains_key("AdminResponsesCompactProbe"));

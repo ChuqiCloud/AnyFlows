@@ -4,6 +4,8 @@ use thiserror::Error;
 
 const ORGANIZATION_KEY_BYTES: usize = 16;
 const ORGANIZATION_KEY_HEX_BYTES: usize = ORGANIZATION_KEY_BYTES * 2;
+const ORGANIZATION_INVITATION_KEY_BYTES: usize = 16;
+const ORGANIZATION_INVITATION_KEY_HEX_BYTES: usize = ORGANIZATION_INVITATION_KEY_BYTES * 2;
 const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
 /// 企业公开标识构造错误；错误中不保留外部输入。
@@ -68,6 +70,57 @@ impl fmt::Debug for OrganizationKey {
     }
 }
 
+/// 不暴露数据库顺序的非零 128 位企业邀请公开标识。
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct OrganizationInvitationKey([u8; ORGANIZATION_INVITATION_KEY_BYTES]);
+
+impl OrganizationInvitationKey {
+    /// 校验并构造非零企业邀请标识。
+    pub const fn new(
+        bytes: [u8; ORGANIZATION_INVITATION_KEY_BYTES],
+    ) -> Result<Self, OrganizationIdentifierError> {
+        let mut index = 0;
+        while index < bytes.len() {
+            if bytes[index] != 0 {
+                return Ok(Self(bytes));
+            }
+            index += 1;
+        }
+        Err(OrganizationIdentifierError::AllZero)
+    }
+
+    /// 从数据库和邀请令牌使用的 32 位小写十六进制文本恢复标识。
+    pub fn from_persistence_key(value: &str) -> Result<Self, OrganizationIdentifierError> {
+        if value.len() != ORGANIZATION_INVITATION_KEY_HEX_BYTES {
+            return Err(OrganizationIdentifierError::InvalidEncoding);
+        }
+        let mut bytes = [0_u8; ORGANIZATION_INVITATION_KEY_BYTES];
+        for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+            let high = decode_hex(pair[0]).ok_or(OrganizationIdentifierError::InvalidEncoding)?;
+            let low = decode_hex(pair[1]).ok_or(OrganizationIdentifierError::InvalidEncoding)?;
+            bytes[index] = (high << 4) | low;
+        }
+        Self::new(bytes)
+    }
+
+    /// 返回数据库和邀请令牌共用的稳定持久化文本。
+    #[must_use]
+    pub fn persistence_key(self) -> String {
+        let mut encoded = String::with_capacity(ORGANIZATION_INVITATION_KEY_HEX_BYTES);
+        for byte in self.0 {
+            encoded.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
+            encoded.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));
+        }
+        encoded
+    }
+}
+
+impl fmt::Debug for OrganizationInvitationKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("OrganizationInvitationKey(<redacted>)")
+    }
+}
+
 /// 企业状态、成员角色和团队状态的持久化值错误。
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum OrganizationStateCodeError {
@@ -83,6 +136,9 @@ pub enum OrganizationStateCodeError {
     /// 团队状态不属于闭合集合。
     #[error("企业团队状态无效")]
     InvalidTeamStatus,
+    /// 邀请状态不属于闭合集合。
+    #[error("企业邀请状态无效")]
+    InvalidInvitationStatus,
 }
 
 /// 企业生命周期状态。
@@ -307,6 +363,34 @@ pub enum OrganizationTeamStatus {
     Disabled = 2,
 }
 
+/// 企业邀请生命周期状态。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(i16)]
+pub enum OrganizationInvitationStatus {
+    /// 邀请尚未消费且可能仍占用席位。
+    Pending = 1,
+    /// 邀请已经由匹配用户单次消费。
+    Accepted = 2,
+    /// 邀请由企业管理员撤销或被重发替换。
+    Revoked = 3,
+    /// 邀请超过受信过期时间后关闭。
+    Expired = 4,
+}
+
+impl OrganizationInvitationStatus {
+    /// 返回数据库使用的稳定数值。
+    #[must_use]
+    pub const fn code(self) -> i16 {
+        self as i16
+    }
+
+    /// 判断邀请是否仍可参与接受事务。
+    #[must_use]
+    pub const fn is_pending(self) -> bool {
+        matches!(self, Self::Pending)
+    }
+}
+
 impl OrganizationTeamStatus {
     /// 返回数据库使用的稳定数值。
     #[must_use]
@@ -361,6 +445,16 @@ state_code_conversion!(OrganizationTeamStatus, OrganizationStateCodeError::Inval
     1 => OrganizationTeamStatus::Active,
     2 => OrganizationTeamStatus::Disabled,
 });
+state_code_conversion!(
+    OrganizationInvitationStatus,
+    OrganizationStateCodeError::InvalidInvitationStatus,
+    {
+        1 => OrganizationInvitationStatus::Pending,
+        2 => OrganizationInvitationStatus::Accepted,
+        3 => OrganizationInvitationStatus::Revoked,
+        4 => OrganizationInvitationStatus::Expired,
+    }
+);
 
 const fn decode_hex(byte: u8) -> Option<u8> {
     match byte {

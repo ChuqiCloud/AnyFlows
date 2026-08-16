@@ -5,6 +5,7 @@ mod credential_encryption;
 mod credential_secret;
 mod diagnostic_snapshot;
 mod oauth;
+mod organization_invitation;
 mod system_secret;
 
 pub use credential_decryption::{
@@ -39,6 +40,10 @@ pub use oauth::{
     OAuthTokenExchange, OAuthTokenExchangeError, OAuthTokenPersistenceError,
     OAuthTokenPersistenceOutcome, OAuthTokenPersistenceService, OAuthTokenRefreshRequest,
     OAuthTokenRequestEncoding, OAuthTokenSet, UpstreamOAuthProvider,
+};
+pub use organization_invitation::{
+    DecryptedOrganizationInvitationEmail, OrganizationInvitationCipher,
+    OrganizationInvitationCipherError, PlainOrganizationInvitationEmail,
 };
 pub use system_secret::{
     DecryptedSystemSecret, PlainSystemSecret, SystemSecretCipher, SystemSecretError,

@@ -1796,3 +1796,39 @@ pub(in crate::migration) mod organization_entitlements {
         UpdatedAt,
     }
 }
+
+pub(in crate::migration) mod organization_invitations {
+    use super::DeriveIden;
+
+    /// `organization_invitations` 企业邀请表标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_invitations")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    /// 企业邀请的固定列标识。
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        InvitationKey,
+        OrganizationId,
+        EmailFingerprint,
+        EmailSecret,
+        TokenDigest,
+        Role,
+        TeamId,
+        Status,
+        InvitedByUserId,
+        AcceptedByUserId,
+        BatchKey,
+        BatchDigest,
+        BatchSize,
+        Version,
+        CreatedAt,
+        ExpiresAt,
+        FinalizedAt,
+    }
+}

@@ -29,6 +29,16 @@ pub(crate) enum ManagementError {
     UserConflict,
     /// 企业不存在、已关闭或当前用户不是活动成员。
     OrganizationNotFound,
+    /// 企业邀请不存在或不属于路径企业。
+    OrganizationInvitationNotFound,
+    /// 企业邀请批次、邮箱或生命周期事实发生冲突。
+    OrganizationInvitationConflict,
+    /// 企业授权下没有可供新邀请占用的席位。
+    OrganizationSeatLimitReached,
+    /// 企业邀请已经超过受信过期时间。
+    OrganizationInvitationExpired,
+    /// 邀请令牌、邮箱或当前状态不允许接受；不细分具体事实。
+    OrganizationInvitationRejected,
     /// 钱包事件键已经绑定不同业务事实。
     WalletEventConflict,
     /// 负向调账会使用户余额低于零。
@@ -284,6 +294,41 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_not_found",
                     message: "Organization not found",
+                },
+            ),
+            Self::OrganizationInvitationNotFound => (
+                StatusCode::NOT_FOUND,
+                ManagementErrorBody {
+                    code: "organization_invitation_not_found",
+                    message: "Organization invitation not found",
+                },
+            ),
+            Self::OrganizationInvitationConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_invitation_conflict",
+                    message: "Organization invitation conflict",
+                },
+            ),
+            Self::OrganizationSeatLimitReached => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_seat_limit_reached",
+                    message: "Organization seat limit reached",
+                },
+            ),
+            Self::OrganizationInvitationExpired => (
+                StatusCode::GONE,
+                ManagementErrorBody {
+                    code: "organization_invitation_expired",
+                    message: "Organization invitation expired",
+                },
+            ),
+            Self::OrganizationInvitationRejected => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_invitation_rejected",
+                    message: "Organization invitation rejected",
                 },
             ),
             Self::WalletEventConflict => (

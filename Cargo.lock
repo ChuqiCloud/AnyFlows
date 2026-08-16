@@ -305,6 +305,7 @@ dependencies = [
  "symphonia",
  "thiserror",
  "tokio",
+ "tower",
  "tracing",
  "url",
  "uuid",
