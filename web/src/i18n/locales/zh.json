@@ -20,6 +20,7 @@
     "label": "主导航",
     "groups": {
       "use": "使用",
+      "organization": "企业空间",
       "account": "账户",
       "workspace": "工作台",
       "personal": "个人空间",
@@ -27,6 +28,7 @@
     },
     "sections": {
       "personal": "个人账户",
+      "organization": "企业空间",
       "operations": "用户与商业化",
       "gateway": "模型与网关",
       "platform": "平台配置"
@@ -36,6 +38,7 @@
     "playground": "多模态试炼场",
     "videoTasks": "视频任务",
     "apiKeys": "我的 API Key",
+    "organizationBudgets": "企业预算",
     "wallet": "我的钱包",
     "subscriptions": "我的订阅",
     "invitations": "邀请中心",
@@ -3807,6 +3810,184 @@
       "title": "无法读取支付设置",
       "load": "服务暂时没有返回可靠的支付配置，请稍后重试。",
       "save": "支付设置保存失败，请检查字段或刷新后重试。"
+    }
+  },
+  "organizationBudgets": {
+    "eyebrow": "企业空间",
+    "title": "企业预算",
+    "subtitle": "为企业、团队和成员维护不可变预算策略版本，并查看当前周期内的已用、冻结和剩余额度。",
+    "workspace": {
+      "label": "当前企业",
+      "emptyTitle": "还没有可用的企业空间",
+      "emptyBody": "当前账号尚未加入任何活动企业。加入企业后，预算入口会自动显示对应工作空间。"
+    },
+    "permission": {
+      "title": "当前角色不能管理预算",
+      "body": "只有包含 organization.budgets.manage 权限的 Owner、Admin 或 Billing 角色可以读取和创建预算策略。"
+    },
+    "summary": {
+      "loaded": "已加载 {{policies}} 个策略版本，{{windows}} 个当前窗口"
+    },
+    "organization": {
+      "seats": "活动席位",
+      "teams": "活动团队",
+      "retention": "审计保留",
+      "capacity": "{{used}} / {{limit}}",
+      "days": "{{count}} 天"
+    },
+    "entitlement": {
+      "active": "授权有效",
+      "grace": "宽限期",
+      "read_only": "只读",
+      "suspended": "已暂停",
+      "closed": "已关闭"
+    },
+    "roles": {
+      "owner": "所有者",
+      "admin": "管理员",
+      "billing": "财务管理员",
+      "member": "成员",
+      "viewer": "只读成员"
+    },
+    "scope": {
+      "organization": "整个企业",
+      "team": "指定团队",
+      "member": "指定成员",
+      "organizationLabel": "整个企业",
+      "memberLabel": "成员 #{{membershipId}}（用户 #{{userId}}）",
+      "unknownTeam": "团队 #{{id}}",
+      "unknownMember": "成员 #{{id}}"
+    },
+    "memberOption": "成员 #{{membershipId}} · 用户 #{{userId}} · {{role}}",
+    "period": {
+      "utc_day": "UTC 自然日",
+      "utc_week": "UTC 自然周",
+      "utc_month": "UTC 自然月",
+      "fixed": "自定义固定周期",
+      "fixedSeconds": "固定 {{seconds}} 秒"
+    },
+    "fixedUnit": {
+      "seconds": "秒",
+      "minutes": "分钟",
+      "hours": "小时",
+      "days": "天"
+    },
+    "values": {
+      "unlimited": "不限额"
+    },
+    "metrics": {
+      "limit": "周期上限",
+      "used": "已结算",
+      "frozen": "处理中",
+      "remaining": "剩余额度"
+    },
+    "current": {
+      "title": "当前策略与窗口",
+      "subtitle": "窗口由真实企业请求按需创建，全部时间边界按 UTC 周期或策略生效锚点计算。",
+      "count": "{{count}} 项",
+      "active": "窗口活动中",
+      "scheduled": "等待生效",
+      "unlimited": "不限制",
+      "awaiting": "等待首个请求",
+      "effective": "{{value}} 生效",
+      "windowRange": "{{start}} 至 {{end}}",
+      "scheduledBody": "策略将在生效时间到达后参与预算预扣，当前不会提前创建窗口。",
+      "unlimitedBody": "该作用域显式设置为不限额，因此不会创建有限额度窗口。",
+      "awaitingBody": "首个命中该作用域的企业请求会原子创建当前窗口，现阶段没有伪造的零用量记录。",
+      "emptyTitle": "还没有当前预算策略",
+      "emptyBody": "创建首个企业、团队或成员策略后，最新版本会显示在这里。"
+    },
+    "history": {
+      "title": "策略历史",
+      "subtitle": "每次修改都会创建新版本并关闭上一版本，历史记录不会被覆盖。",
+      "emptyTitle": "还没有策略历史",
+      "emptyBody": "当前企业尚未创建任何预算策略版本。",
+      "version": "v{{version}}",
+      "current": "最新",
+      "limit": "额度上限",
+      "starts": "生效于 {{value}}",
+      "ends": "结束于 {{value}}",
+      "noEnd": "当前版本"
+    },
+    "form": {
+      "title": "创建预算策略版本",
+      "subtitle": "新版本不会改写历史；同一作用域的生效时间必须晚于上一版本。",
+      "scopeSection": "作用域",
+      "scopeKind": "策略层级",
+      "team": "团队",
+      "member": "成员",
+      "directoryLoading": "正在加载真实目录",
+      "directoryError": "目录暂时不可用，请刷新后再选择。",
+      "selectTeam": "选择活动团队",
+      "selectMember": "选择活动成员",
+      "periodSection": "周期",
+      "periodKind": "窗口周期",
+      "fixedValue": "周期长度",
+      "fixedUnit": "单位",
+      "utcHint": "自然日、周、月按 UTC 边界重置；固定周期从策略生效时间开始滚动。",
+      "limitSection": "额度",
+      "unlimited": "不限额",
+      "unlimitedHint": "开启后向服务端提交 null，不创建有限额度窗口。",
+      "quotaLimit": "周期额度上限",
+      "effectiveSection": "生效",
+      "effectiveFrom": "生效时间",
+      "effectiveHint": "显示为浏览器本地时间，提交时转换为 Unix 秒。",
+      "latestEffective": "当前作用域的上一版本生效于 {{value}}，新版本必须更晚。"
+    },
+    "validation": {
+      "scope": "请选择当前企业内的活动团队或成员。",
+      "fixedPeriod": "固定周期必须是 60 秒至 366 天内的整数。",
+      "quotaLimit": "有限额度必须是大于零的安全整数。",
+      "effectiveFrom": "请选择有效的生效时间。",
+      "effectiveConflict": "生效时间必须晚于当前作用域的上一策略版本。"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "newPolicy": "新建策略",
+      "cancel": "取消",
+      "create": "创建版本",
+      "creating": "正在创建",
+      "verify": "刷新并核对"
+    },
+    "success": {
+      "created": "预算策略 v{{version}} 已创建，策略历史和当前窗口已从服务端刷新。"
+    },
+    "errors": {
+      "directoryTitle": "无法读取企业目录",
+      "directoryBody": "服务暂时没有返回当前账号的企业成员关系，请稍后重试。",
+      "overviewTitle": "无法读取企业概览",
+      "overviewBody": "当前企业的角色、授权和权限投影暂时不可用。",
+      "forbiddenTitle": "企业预算访问被拒绝",
+      "forbiddenBody": "当前成员关系已失效或角色权限发生变化，请重新进入企业空间。",
+      "budgetsTitle": "无法读取企业预算",
+      "budgetsBody": "策略历史和当前窗口暂时不可用，现有预算执行不受页面读取失败影响。",
+      "mutation": {
+        "budget_conflict": {
+          "title": "策略状态已发生变化",
+          "body": "其他操作已创建同作用域的新版本。刷新后选择更晚的生效时间再提交。"
+        },
+        "budget_outcome_unknown": {
+          "title": "暂时无法确认创建结果",
+          "body": "写入可能已经成功。请先刷新策略历史核对结果，不要重复创建。"
+        },
+        "forbidden": {
+          "title": "没有预算管理权限",
+          "body": "当前企业角色已不再允许创建预算策略。"
+        },
+        "organization_not_found": {
+          "title": "预算作用域不存在",
+          "body": "所选企业、团队或成员已失效，请刷新真实目录后重新选择。"
+        },
+        "invalid_request": {
+          "title": "预算参数无效",
+          "body": "请检查作用域、周期、额度与生效时间。"
+        },
+        "unknown": {
+          "title": "无法创建预算策略",
+          "body": "服务没有返回可靠结果，请保留当前输入并稍后重试。"
+        }
+      }
     }
   },
   "wallet": {

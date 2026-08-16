@@ -2,6 +2,7 @@ import {
   Activity,
   Boxes,
   BriefcaseBusiness,
+  Building2,
   CalendarRange,
   ChevronRight,
   CircleDollarSign,
@@ -80,6 +81,7 @@ const navItems = {
   playground: { key: 'playground', icon: MessageSquareText, href: '#/console/playground' },
   videoTasks: { key: 'videoTasks', icon: Video, href: '#/console/video-tasks' },
   apiKeys: { key: 'apiKeys', icon: KeyRound, href: '#/console/api-keys' },
+  organizationBudgets: { key: 'organizationBudgets', icon: Building2, href: '#/console/organization-budgets' },
   wallet: { key: 'wallet', icon: WalletCards, href: '#/console/wallet' },
   subscriptions: { key: 'subscriptions', icon: CalendarRange, href: '#/console/subscriptions' },
   invitations: { key: 'invitations', icon: TicketCheck, href: '#/console/invitations' },
@@ -106,6 +108,7 @@ const navItems = {
 
 const sectionIcons = {
   personal: CircleUserRound,
+  organization: Building2,
   operations: BriefcaseBusiness,
   gateway: Waypoints,
   platform: Settings2,
