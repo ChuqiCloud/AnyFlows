@@ -57,6 +57,7 @@ fn organization_roles_use_the_fixed_permission_matrix() {
     assert!(OrganizationRole::Admin.allows(OrganizationPermission::MembersManage));
     assert!(!OrganizationRole::Admin.allows(OrganizationPermission::OwnershipTransfer));
     assert!(OrganizationRole::Billing.allows(OrganizationPermission::WalletManage));
+    assert!(OrganizationRole::Billing.allows(OrganizationPermission::BudgetsManage));
     assert!(!OrganizationRole::Billing.allows(OrganizationPermission::KeysManageSelf));
     assert!(OrganizationRole::Member.allows(OrganizationPermission::KeysManageSelf));
     assert!(!OrganizationRole::Member.allows(OrganizationPermission::AuditRead));
@@ -64,6 +65,10 @@ fn organization_roles_use_the_fixed_permission_matrix() {
     assert_eq!(
         OrganizationPermission::MembersManage.code(),
         "organization.members.manage"
+    );
+    assert_eq!(
+        OrganizationPermission::BudgetsManage.code(),
+        "organization.budgets.manage"
     );
     assert_eq!(
         PlatformPermission::OrganizationsReadAll.code(),

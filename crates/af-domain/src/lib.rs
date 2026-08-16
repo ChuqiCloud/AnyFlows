@@ -8,6 +8,7 @@ mod enums;
 mod error;
 mod network;
 mod organization;
+mod organization_budget;
 mod organization_entitlement;
 mod payment;
 mod principal;
@@ -41,6 +42,11 @@ pub use organization::{
     OrganizationIdentifierError, OrganizationInvitationKey, OrganizationInvitationStatus,
     OrganizationKey, OrganizationMembershipStatus, OrganizationPermission, OrganizationRole,
     OrganizationStateCodeError, OrganizationStatus, OrganizationTeamStatus, PlatformPermission,
+};
+pub use organization_budget::{
+    MAX_ORGANIZATION_BUDGET_FIXED_PERIOD_SECONDS, MIN_ORGANIZATION_BUDGET_FIXED_PERIOD_SECONDS,
+    OrganizationBudgetLimit, OrganizationBudgetPeriod, OrganizationBudgetPolicyError,
+    OrganizationBudgetScopeKind,
 };
 pub use organization_entitlement::{
     MAX_ORGANIZATION_AUDIT_RETENTION_DAYS, OrganizationEntitlementCapacity,
@@ -94,6 +100,8 @@ mod enums_tests;
 mod error_tests;
 #[cfg(test)]
 mod network_tests;
+#[cfg(test)]
+mod organization_budget_tests;
 #[cfg(test)]
 mod organization_tests;
 #[cfg(test)]
