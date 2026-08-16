@@ -12,8 +12,11 @@ use sea_orm::{
 
 use crate::entity::{
     organization_entitlements, organization_memberships, organization_teams, organization_wallets,
-    organizations, users,
+    organizations, tokens, users,
 };
+
+const ENABLED_TOKEN_STATUS: i16 = 1;
+const DISABLED_TOKEN_STATUS: i16 = 2;
 
 use super::{
     MAX_ORGANIZATION_NAME_BYTES, MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES,
@@ -388,6 +391,7 @@ pub(super) async fn change_membership(
 
     let next_version = current.version.checked_add(1).ok_or_else(invariant)?;
     let now = TimeDateTimeWithTimeZone::now_utc();
+    let disable_enterprise_tokens = !change.status.is_active() || current.team_id != target_team_id;
     let (suspended_at, removed_at) = membership_lifecycle_times(&current, change.status, now);
     let mut active = current.into_active_model();
     active.role = Set(change.role.code());
@@ -397,6 +401,19 @@ pub(super) async fn change_membership(
     active.removed_at = Set(removed_at);
     active.version = Set(next_version);
     let updated = active.update(&transaction).await.map_err(query_error)?;
+    if disable_enterprise_tokens {
+        // 调组与离职都让签发时团队快照失效，旧 Key 不得在恢复成员后自动复活。
+        tokens::Entity::update_many()
+            .filter(tokens::Column::OrganizationId.eq(organization_id.get()))
+            .filter(tokens::Column::OrganizationMembershipId.eq(membership_id.get()))
+            .filter(tokens::Column::DeletedAt.is_null())
+            .filter(tokens::Column::Status.eq(ENABLED_TOKEN_STATUS))
+            .col_expr(tokens::Column::Status, Expr::value(DISABLED_TOKEN_STATUS))
+            .col_expr(tokens::Column::UpdatedAt, Expr::value(now))
+            .exec(&transaction)
+            .await
+            .map_err(query_error)?;
+    }
     let record = super::read::membership_record(updated)?;
     commit(transaction).await?;
     Ok(record)

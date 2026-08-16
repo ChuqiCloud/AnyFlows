@@ -38,6 +38,7 @@
     "playground": "多模态试炼场",
     "videoTasks": "视频任务",
     "apiKeys": "我的 API Key",
+    "organizationApiKeys": "企业 API Key",
     "organizationBudgets": "企业预算",
     "wallet": "我的钱包",
     "subscriptions": "我的订阅",
@@ -3810,6 +3811,103 @@
       "title": "无法读取支付设置",
       "load": "服务暂时没有返回可靠的支付配置，请稍后重试。",
       "save": "支付设置保存失败，请检查字段或刷新后重试。"
+    }
+  },
+  "organizationApiKeys": {
+    "eyebrow": "企业空间",
+    "title": "企业 API Key",
+    "subtitle": "成员签发绑定当前企业与团队的 Key，企业管理员可查看脱敏目录并停用风险凭据。企业调用只使用企业钱包与预算，不回退个人余额。",
+    "workspace": {
+      "label": "当前企业",
+      "emptyTitle": "还没有可用的企业空间",
+      "emptyBody": "当前账号尚未加入任何活动企业。加入企业后，这里会显示本人可管理的企业 Key。"
+    },
+    "permission": {
+      "title": "当前角色不能访问企业 Key",
+      "body": "Member 可以管理本人 Key，Owner 和 Admin 还可以读取企业脱敏目录；Billing 与 Viewer 不读取企业 Key。"
+    },
+    "views": {
+      "label": "企业 Key 视图",
+      "self": "我的企业 Key",
+      "directory": "企业脱敏目录"
+    },
+    "summary": {
+      "page": "第 {{page}} 页，本页 {{count}} 把，其中 {{active}} 把可用",
+      "capacity": "企业授权上限 {{limit}} 把",
+      "membership": "当前成员关系",
+      "keyLimit": "企业 Key 上限"
+    },
+    "entitlement": {
+      "readOnly": "当前企业授权不允许签发新 Key。已有 Key、目录和停用操作仍按服务端授权状态执行。"
+    },
+    "fields": {
+      "maxRequests": "请求次数上限",
+      "rateLimit5h": "5 小时额度",
+      "rateLimit1d": "1 天额度",
+      "rateLimit7d": "7 天额度"
+    },
+    "form": {
+      "statusHint": "恢复启用仍会重新校验成员、团队和企业授权状态。",
+      "unlimitedHint": "仅表示 Key 自身不设总额度，企业钱包和企业/团队/成员预算仍然生效。",
+      "quotaHint": "企业请求不会在该额度不足时回退个人钱包或个人订阅。",
+      "optionalLimit": "留空表示不设置这一层限制。",
+      "rateLimits": "滚动额度窗口",
+      "submitError": "企业 API Key 保存失败，请保留当前输入后重试。",
+      "limitError": "企业已达到授权允许的 Key 数量上限。",
+      "outcomeUnknown": "服务暂时无法确认写入结果。请先刷新本人 Key 和企业目录，避免重复签发。",
+      "entitlementRestricted": "当前企业授权状态不允许执行此写入。"
+    },
+    "actions": {
+      "refresh": "刷新",
+      "retry": "重试",
+      "create": "签发企业 Key",
+      "disable": "停用"
+    },
+    "columns": {
+      "key": "企业 Key",
+      "owner": "成员与团队",
+      "quota": "总额度",
+      "policy": "访问策略",
+      "limits": "窗口与请求",
+      "validity": "有效期",
+      "actions": "操作"
+    },
+    "values": {
+      "owner": "用户 #{{id}}",
+      "team": "团队 #{{id}}",
+      "noTeam": "未绑定团队",
+      "windowUnlimited": "{{window}} 已用 {{used}}",
+      "windowUsage": "{{window}} {{used}} / {{limit}}",
+      "requestsUsed": "已请求 {{used}} 次，不设上限",
+      "requestsRatio": "请求 {{used}} / {{limit}}"
+    },
+    "empty": {
+      "selfTitle": "还没有本人企业 Key",
+      "selfBody": "签发后，Key 会固定绑定当前企业、成员和签发时团队。",
+      "directoryTitle": "企业目录暂无 Key",
+      "directoryBody": "当前企业尚未签发任何可见的企业 Key。"
+    },
+    "editor": {
+      "createTitle": "签发企业 API Key",
+      "createDescription": "为你在 {{organization}} 的当前成员关系签发一把只显示一次的企业 Key。",
+      "editTitle": "编辑企业 API Key",
+      "editDescription": "更新 {{organization}} 中本人 Key 的状态、额度与访问策略；组织和团队归属不会被静默改写。"
+    },
+    "disable": {
+      "title": "停用企业 API Key",
+      "selfDescription": "确定停用 {{organization}} 中的“{{name}}”吗？停用后不会自动恢复，个人 Key 和其他企业 Key 不受影响。",
+      "directoryDescription": "确定停用 {{organization}} 中用户 #{{owner}} 的“{{name}}”吗？管理员只能执行停用，无法查看完整明文。",
+      "failed": "企业 API Key 停用失败，请刷新目录后重试。"
+    },
+    "errors": {
+      "directoryTitle": "无法读取企业目录",
+      "directoryBody": "服务暂时没有返回当前账号的企业成员关系，请稍后重试。",
+      "overviewTitle": "无法读取企业上下文",
+      "overviewBody": "当前企业的角色、授权和权限投影暂时不可用。",
+      "forbiddenTitle": "企业 Key 访问已被拒绝",
+      "forbiddenBody": "成员关系可能已停用、角色已变更或企业授权不再允许当前操作。",
+      "tokensTitle": "无法读取企业 API Key",
+      "tokensBody": "本人 Key 或企业脱敏目录暂时不可用，已有 Key 的服务端状态不受本次读取失败影响。"
     }
   },
   "organizationBudgets": {

@@ -81,6 +81,7 @@ const navItems = {
   playground: { key: 'playground', icon: MessageSquareText, href: '#/console/playground' },
   videoTasks: { key: 'videoTasks', icon: Video, href: '#/console/video-tasks' },
   apiKeys: { key: 'apiKeys', icon: KeyRound, href: '#/console/api-keys' },
+  organizationApiKeys: { key: 'organizationApiKeys', icon: KeyRound, href: '#/console/organization-api-keys' },
   organizationBudgets: { key: 'organizationBudgets', icon: Building2, href: '#/console/organization-budgets' },
   wallet: { key: 'wallet', icon: WalletCards, href: '#/console/wallet' },
   subscriptions: { key: 'subscriptions', icon: CalendarRange, href: '#/console/subscriptions' },

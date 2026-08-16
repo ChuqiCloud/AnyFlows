@@ -7,7 +7,7 @@ use tracing::{instrument::WithSubscriber as _, subscriber::NoSubscriber};
 
 use crate::DatabasePool;
 
-mod billing;
+pub(crate) mod billing;
 mod policy;
 mod types;
 mod window;

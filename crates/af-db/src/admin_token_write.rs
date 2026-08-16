@@ -249,6 +249,9 @@ impl AdminTokenRepository {
             name: Set(fields.name),
             status: Set(fields.status),
             group_id: Set(fields.group_id.map(GroupId::get)),
+            organization_id: Set(None),
+            organization_membership_id: Set(None),
+            organization_team_id: Set(None),
             remain_quota: Set(fields.remain_quota),
             unlimited_quota: Set(fields.unlimited_quota),
             expired_at: Set(fields.expired_at),
@@ -294,6 +297,7 @@ impl AdminTokenRepository {
         let now = TimeDateTimeWithTimeZone::now_utc();
         let result = tokens::Entity::update_many()
             .filter(Expr::col((tokens::Entity, tokens::Column::Id)).eq(token_id.get()))
+            .filter(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
             .filter(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
             .col_expr(tokens::Column::Name, Expr::value(fields.name))
             .col_expr(tokens::Column::Status, Expr::value(fields.status))
@@ -357,6 +361,7 @@ impl AdminTokenRepository {
         let now = TimeDateTimeWithTimeZone::now_utc();
         let result = tokens::Entity::update_many()
             .filter(Expr::col((tokens::Entity, tokens::Column::Id)).eq(token_id.get()))
+            .filter(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
             .filter(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
             .col_expr(tokens::Column::DeletedAt, Expr::value(now))
             .col_expr(tokens::Column::UpdatedAt, Expr::value(now))
@@ -530,6 +535,7 @@ async fn active_token_owner(
         )
         .from(tokens::Entity)
         .and_where(Expr::col((tokens::Entity, tokens::Column::Id)).eq(token_id.get()))
+        .and_where(Expr::col((tokens::Entity, tokens::Column::OrganizationId)).is_null())
         .and_where(Expr::col((tokens::Entity, tokens::Column::DeletedAt)).is_null())
         .limit(2)
         .to_owned();

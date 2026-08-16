@@ -112,6 +112,7 @@ mod organization_budget;
 mod organization_budget_tests;
 #[cfg(test)]
 mod organization_tests;
+mod organization_token;
 mod organization_wallet;
 mod password_reset;
 mod payment_settings;
@@ -404,6 +405,12 @@ pub use organization_budget::{
     OrganizationBudgetPolicyWrite, OrganizationBudgetRepository,
     OrganizationBudgetRepositoryConfigError, OrganizationBudgetRepositoryError,
     OrganizationBudgetScope, OrganizationBudgetWindowRecord,
+};
+pub use organization_token::{
+    MAX_ORGANIZATION_TOKEN_PAGE_SIZE, OrganizationTokenCreateRecord,
+    OrganizationTokenLookupOutcome, OrganizationTokenMutationOutcome, OrganizationTokenPageRecord,
+    OrganizationTokenRecord, OrganizationTokenRepository, OrganizationTokenRepositoryConfigError,
+    OrganizationTokenRepositoryError, OrganizationTokenWriteRecord,
 };
 pub use organization_wallet::{
     MAX_ORGANIZATION_WALLET_ADJUSTMENT_REASON_BYTES, MAX_ORGANIZATION_WALLET_LEDGER_PAGE_SIZE,

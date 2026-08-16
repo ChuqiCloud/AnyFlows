@@ -16,6 +16,7 @@ mod models;
 mod network_settings;
 mod oauth_connections;
 mod organization_budget;
+mod organization_tokens;
 mod organization_wallet;
 mod organizations;
 mod password_reset;
@@ -95,6 +96,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(payment_webhook::document());
     document.merge(organization_wallet::document());
     document.merge(organization_budget::document());
+    document.merge(organization_tokens::document());
 
     document.tags = Some(vec![
         Tag::new("公开注册"),
@@ -116,6 +118,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("OAuth 连接"),
         Tag::new("企业钱包"),
         Tag::new("企业预算"),
+        Tag::new("企业 API Key"),
         Tag::new("余额预警"),
         Tag::new("管理会话"),
         Tag::new("首次安装"),
@@ -175,7 +178,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 107);
+        assert_eq!(document.paths.paths.len(), 111);
         let operation_count = document
             .paths
             .paths
@@ -196,7 +199,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 152);
+        assert_eq!(operation_count, 159);
         assert!(
             document
                 .components
@@ -250,6 +253,13 @@ mod tests {
             "getOrganizationBudgets",
             "createOrganizationBudgetPolicy",
             "getOrganizationBudgetReservation",
+            "listOrganizationTokens",
+            "createOrganizationToken",
+            "listOrganizationTokenDirectory",
+            "getOrganizationToken",
+            "updateOrganizationToken",
+            "disableOwnOrganizationToken",
+            "disableOrganizationToken",
             "listOrganizationInvitations",
             "createOrganizationInvitation",
             "previewOrganizationInvitations",
@@ -382,7 +392,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 310);
+        assert_eq!(schemas.len(), 315);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationEntitlementResponse"));
         assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
@@ -414,6 +424,11 @@ mod tests {
         assert!(schemas.contains_key("OrganizationBudgetScopeRequest"));
         assert!(schemas.contains_key("OrganizationBudgetScopeResponse"));
         assert!(schemas.contains_key("OrganizationBudgetWindowResponse"));
+        assert!(schemas.contains_key("OrganizationTokenStatusDto"));
+        assert!(schemas.contains_key("OrganizationTokenWriteRequest"));
+        assert!(schemas.contains_key("OrganizationTokenResponse"));
+        assert!(schemas.contains_key("OrganizationTokenListResponse"));
+        assert!(schemas.contains_key("IssuedOrganizationTokenResponse"));
         assert!(schemas.contains_key("OrganizationTopupOrderCreateRequest"));
         assert!(schemas.contains_key("OrganizationTopupOrderStatusResponse"));
         assert!(schemas.contains_key("OrganizationTopupPaymentSessionResponse"));

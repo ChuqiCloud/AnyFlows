@@ -130,6 +130,7 @@ impl BillingSettlementPort for QuotaRepository {
 const fn map_quota_repository_error(error: QuotaRepositoryError) -> BillingSettlementError {
     match error {
         QuotaRepositoryError::UserQuotaInsufficient
+        | QuotaRepositoryError::OrganizationQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient
         | QuotaRepositoryError::GroupWindowQuotaInsufficient { .. }
         | QuotaRepositoryError::TokenWindowQuotaInsufficient { .. } => {
@@ -156,6 +157,7 @@ const fn map_quota_repository_precharge_error(
 ) -> BillingPrechargeError {
     match error {
         QuotaRepositoryError::UserQuotaInsufficient
+        | QuotaRepositoryError::OrganizationQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient => BillingPrechargeError::InsufficientQuota,
         QuotaRepositoryError::GroupWindowQuotaInsufficient {
             retry_after: Some(retry_after),

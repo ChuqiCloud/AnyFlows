@@ -8,7 +8,7 @@ use crate::DatabasePool;
 
 mod invitation;
 mod mutation;
-mod read;
+pub(crate) mod read;
 mod types;
 
 pub use types::{

@@ -64,7 +64,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 65;
+const EXPECTED_MIGRATION_COUNT: usize = 66;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -311,17 +311,26 @@ async fn token_window_migration_backfills_only_active_requests() -> Result<(), B
     )
     .insert(pool.connection())
     .await?;
-    let token = token_active_model(user.id, group_id, TOKEN_HASH_A, "token-window-token")
-        .insert(pool.connection())
-        .await?;
+    let token_id = insert_legacy_token(
+        pool.connection(),
+        90_048,
+        token_active_model(user.id, group_id, TOKEN_HASH_A, "token-window-token"),
+    )
+    .await?;
     let request_key = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
-    let request = reservation_active_model(request_key, user.id, token.id, group_id, 80, 80)
-        .insert(pool.connection())
+    let request_created_at = historical_audit_time();
+    let mut request = reservation_active_model(request_key, user.id, token_id, group_id, 80, 80);
+    request.created_at = Set(request_created_at);
+    // 历史 schema 尚无组织列，插入时不能让 ORM 返回并投影当前实体。
+    billing_reservations::Entity::insert(request)
+        .exec_without_returning(pool.connection())
         .await?;
     let batch_key = "dededededededededededededededede";
-    let mut batch = reservation_active_model(batch_key, user.id, token.id, group_id, 90, 90);
+    let mut batch = reservation_active_model(batch_key, user.id, token_id, group_id, 90, 90);
     batch.reservation_kind = Set(2);
-    batch.insert(pool.connection()).await?;
+    billing_reservations::Entity::insert(batch)
+        .exec_without_returning(pool.connection())
+        .await?;
 
     Migrator::up(pool.connection(), None).await?;
     let manager = SchemaManager::new(pool.connection());
@@ -339,12 +348,12 @@ async fn token_window_migration_backfills_only_active_requests() -> Result<(), B
     .one(pool.connection())
     .await?
     .expect("升级前在途普通请求必须获得兼容快照");
-    assert_eq!(snapshot.reserved_quota, request.reserved_quota);
-    assert_eq!(snapshot.window_5h_start, request.created_at);
-    assert_eq!(snapshot.window_1d_start, request.created_at);
-    assert_eq!(snapshot.window_7d_start, request.created_at);
-    assert_eq!(snapshot.created_at, request.created_at);
-    assert_eq!(snapshot.updated_at, request.created_at);
+    assert_eq!(snapshot.reserved_quota, 80);
+    assert_eq!(snapshot.window_5h_start, request_created_at);
+    assert_eq!(snapshot.window_1d_start, request_created_at);
+    assert_eq!(snapshot.window_7d_start, request_created_at);
+    assert_eq!(snapshot.created_at, request_created_at);
+    assert_eq!(snapshot.updated_at, request_created_at);
     assert!(
         billing_token_window_reservations::Entity::find_by_id(BillingReservationKey::parse(
             batch_key
@@ -377,17 +386,26 @@ async fn group_window_migration_backfills_state_and_only_active_requests()
     )
     .insert(pool.connection())
     .await?;
-    let token = token_active_model(user.id, group_id, TOKEN_HASH_B, "group-window-token")
-        .insert(pool.connection())
-        .await?;
+    let token_id = insert_legacy_token(
+        pool.connection(),
+        90_049,
+        token_active_model(user.id, group_id, TOKEN_HASH_B, "group-window-token"),
+    )
+    .await?;
     let request_key = "efefefefefefefefefefefefefefefef";
-    let request = reservation_active_model(request_key, user.id, token.id, group_id, 70, 70)
-        .insert(pool.connection())
+    let request_created_at = historical_audit_time();
+    let mut request = reservation_active_model(request_key, user.id, token_id, group_id, 70, 70);
+    request.created_at = Set(request_created_at);
+    // 历史 schema 尚无组织列，插入时不能让 ORM 返回并投影当前实体。
+    billing_reservations::Entity::insert(request)
+        .exec_without_returning(pool.connection())
         .await?;
     let batch_key = "fafafafafafafafafafafafafafafafa";
-    let mut batch = reservation_active_model(batch_key, user.id, token.id, group_id, 90, 90);
+    let mut batch = reservation_active_model(batch_key, user.id, token_id, group_id, 90, 90);
     batch.reservation_kind = Set(2);
-    batch.insert(pool.connection()).await?;
+    billing_reservations::Entity::insert(batch)
+        .exec_without_returning(pool.connection())
+        .await?;
 
     Migrator::up(pool.connection(), None).await?;
     let manager = SchemaManager::new(pool.connection());
@@ -424,12 +442,12 @@ async fn group_window_migration_backfills_state_and_only_active_requests()
     .one(pool.connection())
     .await?
     .expect("升级前在途普通请求必须获得分组兼容快照");
-    assert_eq!(snapshot.reserved_quota, request.reserved_quota);
-    assert_eq!(snapshot.daily_window_start, request.created_at);
-    assert_eq!(snapshot.weekly_window_start, request.created_at);
-    assert_eq!(snapshot.monthly_window_start, request.created_at);
-    assert_eq!(snapshot.created_at, request.created_at);
-    assert_eq!(snapshot.updated_at, request.created_at);
+    assert_eq!(snapshot.reserved_quota, 70);
+    assert_eq!(snapshot.daily_window_start, request_created_at);
+    assert_eq!(snapshot.weekly_window_start, request_created_at);
+    assert_eq!(snapshot.monthly_window_start, request_created_at);
+    assert_eq!(snapshot.created_at, request_created_at);
+    assert_eq!(snapshot.updated_at, request_created_at);
     assert!(
         billing_group_window_reservations::Entity::find_by_id(BillingReservationKey::parse(
             batch_key
@@ -462,15 +480,18 @@ async fn billing_reservation_kind_migration_backfills_existing_rows() -> Result<
     )
     .insert(pool.connection())
     .await?;
-    let token = token_active_model(user.id, group_id, TOKEN_HASH_A, "reservation-kind-token")
-        .insert(pool.connection())
-        .await?;
+    let token_id = insert_legacy_token(
+        pool.connection(),
+        90_045,
+        token_active_model(user.id, group_id, TOKEN_HASH_A, "reservation-kind-token"),
+    )
+    .await?;
     let reservation_id = "abababababababababababababababab";
     // 旧 schema 尚无用途列，插入时不能让 ORM 返回并投影新实体。
     billing_reservations::Entity::insert(reservation_active_model(
         reservation_id,
         user.id,
-        token.id,
+        token_id,
         group_id,
         100,
         100,
@@ -957,7 +978,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 6);
+    assert_eq!(pending_migrations.len(), 7);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -981,6 +1002,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[5].name(),
         "m20260816_000065_create_organization_budgets"
+    );
+    assert_eq!(
+        pending_migrations[6].name(),
+        "m20260817_000066_add_organization_tokens"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -1054,11 +1079,11 @@ async fn insert_legacy_debug_trace_snapshot(pool: &DatabasePool) -> Result<i64, 
         "debug-snapshot-upgrade-token",
     );
     token.status = Set(1);
-    let token = token.insert(pool.connection()).await?;
+    let token_id = insert_legacy_token(pool.connection(), 90_059, token).await?;
     let trace = debug_traces::ActiveModel {
         request_id: Set("debug-snapshot-upgrade-request".to_owned()),
         user_id: Set(user.id),
-        token_id: Set(token.id),
+        token_id: Set(token_id),
         group_id: Set(group.id),
         requested_model: Set("gpt-5.5".to_owned()),
         downstream_protocol: Set(1),
@@ -1162,9 +1187,9 @@ async fn exercise_usage_per_call_migration_upgrade(
     let user = user.insert(pool.connection()).await?;
     let mut token = token_active_model(user.id, group.id, TOKEN_HASH_E, "usage-v55-upgrade-token");
     token.status = Set(1);
-    let token = token.insert(pool.connection()).await?;
+    let token_id = insert_legacy_token(pool.connection(), 90_054, token).await?;
     let principal = GatewayPrincipal::new(
-        TokenId::new(token.id)?,
+        TokenId::new(token_id)?,
         UserId::new(user.id)?,
         GroupId::new(group.id)?,
     );
@@ -1225,7 +1250,7 @@ async fn exercise_usage_per_call_migration_upgrade(
         .filter(usage_logs::Column::UserId.eq(user.id))
         .exec(pool.connection())
         .await?;
-    tokens::Entity::delete_by_id(token.id)
+    tokens::Entity::delete_by_id(token_id)
         .exec(pool.connection())
         .await?;
     users::Entity::delete_by_id(user.id)
@@ -2672,6 +2697,17 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "organization_wallet_ledger_entries",
             "idx_organization_wallet_ledger_scope_id",
         ),
+        (
+            "organization_memberships",
+            "uq_organization_memberships_scope_id",
+        ),
+        ("tokens", "idx_tokens_organization_status_id"),
+        ("tokens", "idx_tokens_organization_owner_id"),
+        ("tokens", "idx_tokens_organization_membership_status"),
+        (
+            "billing_reservations",
+            "idx_billing_reservations_organization_status",
+        ),
     ] {
         assert!(
             manager.has_index(table, index).await?,
@@ -2763,6 +2799,46 @@ async fn exercise_organization_repository(pool: &DatabasePool) -> Result<(), Box
             ),
         )
         .await?;
+    let valid_hash = "f0".repeat(32);
+    let mut enterprise_token =
+        token_active_model(member.id, group.id, &valid_hash, "organization-smoke-token");
+    enterprise_token.group_id = Set(None);
+    enterprise_token.organization_id = Set(Some(organization.id().get()));
+    enterprise_token.organization_membership_id = Set(Some(membership.id().get()));
+    enterprise_token.organization_team_id = Set(Some(team.id().get()));
+    let enterprise_token = enterprise_token.insert(pool.connection()).await?;
+
+    let invalid_shape_hash = "f1".repeat(32);
+    let mut invalid_shape = token_active_model(
+        member.id,
+        group.id,
+        &invalid_shape_hash,
+        "organization-invalid-shape-token",
+    );
+    invalid_shape.group_id = Set(None);
+    invalid_shape.organization_id = Set(Some(organization.id().get()));
+    assert!(invalid_shape.insert(pool.connection()).await.is_err());
+
+    let (_, other_owner_membership) = repository
+        .create(OrganizationCreate::new(
+            "Other Organization Smoke".to_owned(),
+            "other-organization-smoke".to_owned(),
+            owner_user_id,
+            migration_test_entitlement()?,
+        ))
+        .await?
+        .into_parts();
+    let cross_scope_hash = "f2".repeat(32);
+    let mut cross_scope = token_active_model(
+        owner.id,
+        group.id,
+        &cross_scope_hash,
+        "organization-cross-scope-token",
+    );
+    cross_scope.group_id = Set(None);
+    cross_scope.organization_id = Set(Some(organization.id().get()));
+    cross_scope.organization_membership_id = Set(Some(other_owner_membership.id().get()));
+    assert!(cross_scope.insert(pool.connection()).await.is_err());
     assert_eq!(
         repository
             .disable_team(organization.id(), team.id(), team.version())
@@ -2781,6 +2857,14 @@ async fn exercise_organization_repository(pool: &DatabasePool) -> Result<(), Box
             ),
         )
         .await?;
+    assert_eq!(
+        tokens::Entity::find_by_id(enterprise_token.id)
+            .one(pool.connection())
+            .await?
+            .expect("调组后的企业 Key 必须保留审计事实")
+            .status,
+        2
+    );
     repository
         .disable_team(organization.id(), team.id(), team.version())
         .await?;
@@ -4306,6 +4390,19 @@ fn token_active_model(
         expired_at: Set(Some(future_expiration())),
         ..Default::default()
     }
+}
+
+/// 在历史 schema 上写入令牌时跳过当前实体的返回投影，避免提前读取尚未迁移的新列。
+async fn insert_legacy_token(
+    connection: &DatabaseConnection,
+    token_id: i64,
+    mut token: tokens::ActiveModel,
+) -> Result<i64, DbErr> {
+    token.id = Set(token_id);
+    tokens::Entity::insert(token)
+        .exec_without_returning(connection)
+        .await?;
+    Ok(token_id)
 }
 
 fn reservation_active_model(

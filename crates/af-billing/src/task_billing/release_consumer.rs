@@ -157,6 +157,7 @@ const fn map_release_error(error: QuotaRepositoryError) -> TaskBillingReleaseSin
         QuotaRepositoryError::InvalidConfiguration
         | QuotaRepositoryError::ZeroAmount
         | QuotaRepositoryError::UserQuotaInsufficient
+        | QuotaRepositoryError::OrganizationQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient
         | QuotaRepositoryError::GroupWindowQuotaInsufficient { .. }
         | QuotaRepositoryError::TokenWindowQuotaInsufficient { .. }

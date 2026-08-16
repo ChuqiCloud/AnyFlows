@@ -1112,6 +1112,10 @@ export type IssuedAdminToken = {
     api_key: string;
     token: AdminToken;
 };
+export type IssuedOrganizationTokenResponse = {
+    api_key: string;
+    token: OrganizationTokenResponse;
+};
 export type IssuedUserToken = {
     api_key: string;
     token: UserToken;
@@ -1128,7 +1132,7 @@ export type LoginResponse = {
     user: SessionUser;
 };
 export type ManagementError = {
-    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'organization_not_found' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
+    code: 'invalid_request' | 'invalid_credentials' | 'password_login_disabled' | 'invalid_session' | 'forbidden' | 'setup_conflict' | 'site_settings_conflict' | 'user_not_found' | 'group_not_found' | 'token_not_found' | 'token_limit_reached' | 'token_outcome_unknown' | 'channel_not_found' | 'credential_not_found' | 'probe_unavailable' | 'oauth_provider_not_configured' | 'oauth_credential_provider_mismatch' | 'oauth_authorization_capacity_exceeded' | 'oauth_authorization_not_found' | 'oauth_authorization_expired' | 'oauth_authorization_denied' | 'oauth_upstream_timeout' | 'oauth_upstream_rejected' | 'oauth_upstream_invalid_response' | 'oauth_unavailable' | 'playground_share_not_found' | 'playground_share_limit_reached' | 'playground_conversation_not_found' | 'playground_conversation_limit_reached' | 'playground_conversation_conflict' | 'user_conflict' | 'organization_not_found' | 'wallet_event_conflict' | 'wallet_insufficient_quota' | 'wallet_overflow' | 'wallet_outcome_unknown' | 'topup_unavailable' | 'topup_provider_rejected' | 'topup_order_conflict' | 'topup_order_outcome_unknown' | 'redemption_batch_not_found' | 'redemption_batch_conflict' | 'redemption_code_invalid' | 'redemption_batch_disabled' | 'redemption_code_expired' | 'redemption_code_already_used' | 'redemption_outcome_unknown' | 'subscription_plan_not_found' | 'subscription_plan_disabled' | 'subscription_not_found' | 'subscription_transition_invalid' | 'subscription_in_use' | 'subscription_conflict' | 'subscription_outcome_unknown' | 'registration_disabled' | 'registration_rate_limited' | 'registration_rejected' | 'invitation_rejected' | 'password_reset_rejected' | 'password_change_rejected' | 'email_not_configured' | 'email_delivery_failed' | 'group_conflict' | 'group_in_use' | 'route_not_found' | 'route_conflict' | 'route_invalid_reference' | 'debug_trace_not_found' | 'model_not_found' | 'model_conflict' | 'model_sync_channel_unavailable' | 'model_sync_unsupported_channel' | 'model_sync_upstream_timeout' | 'model_sync_upstream_rejected' | 'model_sync_invalid_response' | 'model_sync_candidate_limit_exceeded' | 'model_sync_preview_not_found' | 'model_sync_preview_expired' | 'model_sync_preview_already_applied' | 'model_sync_conflict' | 'model_price_conflict' | 'model_price_expression_invalid' | 'model_price_expression_preview_invalid' | 'model_price_expression_evaluation_failed' | 'model_price_source_timeout' | 'model_price_source_unavailable' | 'model_price_source_response_too_large' | 'model_price_source_invalid_response' | 'model_price_source_candidate_limit_exceeded' | 'internal_error';
     message: string;
 };
 export type ModelCatalogBillingMode = 'per_token' | 'free';
@@ -1427,6 +1431,48 @@ export type OrganizationTeamResponse = {
     created_at: number;
     updated_at: number;
     deleted_at?: number | null;
+};
+export type OrganizationTokenListResponse = {
+    tokens: Array<OrganizationTokenResponse>;
+    next_cursor: number | null;
+};
+export type OrganizationTokenResponse = {
+    id: number;
+    owner_user_id: number;
+    team_id: number | null;
+    key_prefix: string;
+    name: string;
+    status: OrganizationTokenStatusDto;
+    remain_quota: number;
+    unlimited_quota: boolean;
+    used_quota: number;
+    expired_at: number | null;
+    model_limits: Array<string> | null;
+    allow_ips: Array<string> | null;
+    rate_limit_5h: number | null;
+    rate_limit_1d: number | null;
+    rate_limit_7d: number | null;
+    usage_5h: number;
+    usage_1d: number;
+    usage_7d: number;
+    max_requests: number | null;
+    used_requests: number;
+    created_at: number;
+    updated_at: number;
+};
+export type OrganizationTokenStatusDto = 'enabled' | 'disabled';
+export type OrganizationTokenWriteRequest = {
+    name: string;
+    status: OrganizationTokenStatusDto;
+    remain_quota: number;
+    unlimited_quota: boolean;
+    expired_at: number | null;
+    model_limits: Array<string> | null;
+    allow_ips: Array<string> | null;
+    rate_limit_5h: number | null;
+    rate_limit_1d: number | null;
+    rate_limit_7d: number | null;
+    max_requests: number | null;
 };
 export type OrganizationTopupOrderCreateRequest = {
     idempotency_key: string;
@@ -5060,3 +5106,158 @@ export type GetOrganizationBudgetReservationResponses = {
     200: OrganizationBudgetReservationResponse;
 };
 export type GetOrganizationBudgetReservationResponse = GetOrganizationBudgetReservationResponses[keyof GetOrganizationBudgetReservationResponses];
+export type ListOrganizationTokensData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/tokens';
+};
+export type ListOrganizationTokensErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationTokensError = ListOrganizationTokensErrors[keyof ListOrganizationTokensErrors];
+export type ListOrganizationTokensResponses = {
+    200: OrganizationTokenListResponse;
+};
+export type ListOrganizationTokensResponse = ListOrganizationTokensResponses[keyof ListOrganizationTokensResponses];
+export type CreateOrganizationTokenData = {
+    body: OrganizationTokenWriteRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/tokens';
+};
+export type CreateOrganizationTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type CreateOrganizationTokenError = CreateOrganizationTokenErrors[keyof CreateOrganizationTokenErrors];
+export type CreateOrganizationTokenResponses = {
+    201: IssuedOrganizationTokenResponse;
+};
+export type CreateOrganizationTokenResponse = CreateOrganizationTokenResponses[keyof CreateOrganizationTokenResponses];
+export type ListOrganizationTokenDirectoryData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: {
+        after?: number;
+        limit?: number;
+    };
+    url: '/api/organizations/{organization_id}/tokens/directory';
+};
+export type ListOrganizationTokenDirectoryErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type ListOrganizationTokenDirectoryError = ListOrganizationTokenDirectoryErrors[keyof ListOrganizationTokenDirectoryErrors];
+export type ListOrganizationTokenDirectoryResponses = {
+    200: OrganizationTokenListResponse;
+};
+export type ListOrganizationTokenDirectoryResponse = ListOrganizationTokenDirectoryResponses[keyof ListOrganizationTokenDirectoryResponses];
+export type DisableOwnOrganizationTokenData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        token_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/tokens/{token_id}';
+};
+export type DisableOwnOrganizationTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type DisableOwnOrganizationTokenError = DisableOwnOrganizationTokenErrors[keyof DisableOwnOrganizationTokenErrors];
+export type DisableOwnOrganizationTokenResponses = {
+    200: OrganizationTokenResponse;
+};
+export type DisableOwnOrganizationTokenResponse = DisableOwnOrganizationTokenResponses[keyof DisableOwnOrganizationTokenResponses];
+export type GetOrganizationTokenData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        token_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/tokens/{token_id}';
+};
+export type GetOrganizationTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationTokenError = GetOrganizationTokenErrors[keyof GetOrganizationTokenErrors];
+export type GetOrganizationTokenResponses = {
+    200: OrganizationTokenResponse;
+};
+export type GetOrganizationTokenResponse = GetOrganizationTokenResponses[keyof GetOrganizationTokenResponses];
+export type UpdateOrganizationTokenData = {
+    body: OrganizationTokenWriteRequest;
+    path: {
+        organization_id: number;
+        token_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/tokens/{token_id}';
+};
+export type UpdateOrganizationTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type UpdateOrganizationTokenError = UpdateOrganizationTokenErrors[keyof UpdateOrganizationTokenErrors];
+export type UpdateOrganizationTokenResponses = {
+    200: OrganizationTokenResponse;
+};
+export type UpdateOrganizationTokenResponse = UpdateOrganizationTokenResponses[keyof UpdateOrganizationTokenResponses];
+export type DisableOrganizationTokenData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        token_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/tokens/{token_id}/disable';
+};
+export type DisableOrganizationTokenErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type DisableOrganizationTokenError = DisableOrganizationTokenErrors[keyof DisableOrganizationTokenErrors];
+export type DisableOrganizationTokenResponses = {
+    200: OrganizationTokenResponse;
+};
+export type DisableOrganizationTokenResponse = DisableOrganizationTokenResponses[keyof DisableOrganizationTokenResponses];

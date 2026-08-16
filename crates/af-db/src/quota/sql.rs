@@ -27,6 +27,7 @@ pub(crate) fn insert_reservation(
             billing_reservations::Column::UserId,
             billing_reservations::Column::TokenId,
             billing_reservations::Column::GroupId,
+            billing_reservations::Column::OrganizationId,
             billing_reservations::Column::Status,
             billing_reservations::Column::ReservationKind,
             billing_reservations::Column::FundingSource,
@@ -43,6 +44,10 @@ pub(crate) fn insert_reservation(
             principal.user_id().get().into(),
             principal.token_id().get().into(),
             principal.group_id().get().into(),
+            principal
+                .organization_principal()
+                .map(|organization| organization.organization_id().get())
+                .into(),
             QuotaReservationStatus::Reserved.code().into(),
             reservation_kind.code().into(),
             QuotaFundingSource::Wallet.code().into(),
@@ -64,6 +69,7 @@ pub(crate) fn reservation_state(key: String, lock: bool) -> SelectStatement {
             billing_reservations::Column::UserId,
             billing_reservations::Column::TokenId,
             billing_reservations::Column::GroupId,
+            billing_reservations::Column::OrganizationId,
             billing_reservations::Column::Status,
             billing_reservations::Column::ReservationKind,
             billing_reservations::Column::FundingSource,
@@ -129,6 +135,9 @@ pub(crate) fn token_state(token_id: i64, lock: bool) -> SelectStatement {
     statement
         .columns([
             tokens::Column::UserId,
+            tokens::Column::OrganizationId,
+            tokens::Column::OrganizationMembershipId,
+            tokens::Column::OrganizationTeamId,
             tokens::Column::RemainQuota,
             tokens::Column::UnlimitedQuota,
             tokens::Column::UsedQuota,
@@ -311,6 +320,34 @@ pub(crate) fn settle_user(
         .and_where(users::Column::Quota.gte(0_i64))
         .and_where(quota_guard)
         .and_where(users::Column::FrozenQuota.gte(reserved_units))
+        .and_where(users::Column::UsedQuota.gte(0_i64))
+        .and_where(users::Column::UsedQuota.lte(i64::MAX - actual_units))
+        .and_where(users::Column::RequestCount.gte(0_i64))
+        .and_where(users::Column::RequestCount.lt(i64::MAX))
+        .to_owned()
+}
+
+/// 企业请求只累计用户统计，不冻结、扣减或返还个人钱包余额。
+pub(crate) fn settle_organization_user(
+    user_id: i64,
+    actual: Quota,
+    now: TimeDateTimeWithTimeZone,
+) -> UpdateStatement {
+    let actual_units = actual.units();
+    Query::update()
+        .table(users::Entity)
+        .value(
+            users::Column::UsedQuota,
+            Expr::col(users::Column::UsedQuota).add(actual_units),
+        )
+        .value(
+            users::Column::RequestCount,
+            Expr::col(users::Column::RequestCount).add(1_i64),
+        )
+        .value(users::Column::UpdatedAt, now)
+        .and_where(users::Column::Id.eq(user_id))
+        .and_where(users::Column::Quota.gte(0_i64))
+        .and_where(users::Column::FrozenQuota.gte(0_i64))
         .and_where(users::Column::UsedQuota.gte(0_i64))
         .and_where(users::Column::UsedQuota.lte(i64::MAX - actual_units))
         .and_where(users::Column::RequestCount.gte(0_i64))

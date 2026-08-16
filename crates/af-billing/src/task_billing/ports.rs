@@ -156,6 +156,7 @@ impl TaskBillingSettlementPort for QuotaRepository {
 const fn map_reserve_error(error: QuotaRepositoryError) -> TaskBillingReserveError {
     match error {
         QuotaRepositoryError::UserQuotaInsufficient
+        | QuotaRepositoryError::OrganizationQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient => {
             TaskBillingReserveError::InsufficientQuota
         }
@@ -190,6 +191,7 @@ const fn map_settlement_error(error: QuotaRepositoryError) -> TaskBillingSettlem
         }
         QuotaRepositoryError::ZeroAmount
         | QuotaRepositoryError::UserQuotaInsufficient
+        | QuotaRepositoryError::OrganizationQuotaInsufficient
         | QuotaRepositoryError::TokenQuotaInsufficient
         | QuotaRepositoryError::GroupWindowQuotaInsufficient { .. }
         | QuotaRepositoryError::TokenWindowQuotaInsufficient { .. }
