@@ -1,16 +1,19 @@
 use std::{error::Error, time::Duration};
 
 use af_domain::{
-    GroupId, Quota, TopupOrderId, TopupOrderStatus, TopupPaymentEventId, TopupPaymentEventType,
-    TopupRequestId, UserId,
+    GroupId, OrganizationEntitlementCapacity, OrganizationEntitlementSnapshot, Quota, TopupOrderId,
+    TopupOrderStatus, TopupPaymentEventId, TopupPaymentEventType, TopupRequestId, UserId,
 };
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set};
 
 use super::*;
 use crate::{
     AdminUserCreateRecord, AdminUserRepository, DatabaseOptions, DatabasePool, MigrationOptions,
-    WalletLedgerEntryType, WalletLedgerListOutcome, WalletLedgerRepository,
-    entity::{groups, topup_payment_events, users, wallet_ledger_entries},
+    OrganizationCreate, OrganizationEntitlementWrite, OrganizationRepository,
+    OrganizationWalletBalanceLookupOutcome, OrganizationWalletLedgerEntryType,
+    OrganizationWalletLedgerListOutcome, OrganizationWalletRepository, WalletLedgerEntryType,
+    WalletLedgerListOutcome, WalletLedgerRepository,
+    entity::{groups, organization_wallets, topup_payment_events, users, wallet_ledger_entries},
 };
 
 const CREATED_AT: u64 = 1_900_000_000;
@@ -240,6 +243,155 @@ async fn succeeded_event_credits_once_and_unknown_outcome_replays() -> Result<()
 
     fixture.pool.close().await?;
     Ok(())
+}
+
+#[tokio::test]
+async fn organization_success_credits_only_the_enterprise_wallet() -> Result<(), Box<dyn Error>> {
+    let fixture = fixture(77).await?;
+    let organizations = OrganizationRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
+    let (organization, _) = organizations
+        .create(OrganizationCreate::new(
+            "Topup Organization".to_owned(),
+            "topup-organization".to_owned(),
+            fixture.user_id,
+            test_entitlement()?,
+        ))
+        .await?
+        .into_parts();
+
+    let order = TopupOrderCreate::new_for_organization(
+        topup_order_id(0xd1),
+        topup_request_id(0xd2),
+        fixture.user_id,
+        organization.id(),
+        "stripe".to_owned(),
+        "card".to_owned(),
+        1_000,
+        "USD".to_owned(),
+        Quota::new(25)?,
+        CREATED_AT,
+    )?;
+    assert!(matches!(
+        fixture.repository.create_order(order).await?,
+        TopupOrderCreateOutcome::Created(_)
+    ));
+    assert!(matches!(
+        fixture
+            .repository
+            .submit_order(fixture.submission(0xd1, 1, "provider-order-org")?)
+            .await?,
+        TopupOrderSubmitOutcome::Applied(_)
+    ));
+
+    let paid = fixture
+        .repository
+        .accept_verified_event(fixture.event(
+            0xd3,
+            0xd1,
+            "evt-paid-org",
+            Some("trade-org"),
+            TopupPaymentEventType::Succeeded,
+            0xd4,
+            "stripe",
+        )?)
+        .await?;
+    assert!(matches!(paid, TopupPaymentEventOutcome::Applied(_)));
+    assert_eq!(fixture.balance().await?, 77);
+
+    let wallet = OrganizationWalletRepository::new(fixture.pool.clone(), Duration::from_secs(5))?;
+    let OrganizationWalletBalanceLookupOutcome::Found(balance) =
+        wallet.balance(organization.id()).await?
+    else {
+        panic!("企业充值订单必须存在企业钱包")
+    };
+    assert_eq!(balance.quota().units(), 25);
+    assert_eq!(balance.version(), 2);
+    let OrganizationWalletLedgerListOutcome::Found(page) =
+        wallet.list(organization.id(), None, 10).await?
+    else {
+        panic!("企业充值必须产生企业账本")
+    };
+    let (entries, _) = page.into_parts();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(
+        entries[0].entry_type(),
+        OrganizationWalletLedgerEntryType::Topup
+    );
+    assert_eq!(entries[0].quota_delta().units(), 25);
+    assert_eq!(entries[0].balance_after().units(), 25);
+    assert_eq!(
+        wallet_ledger_topup_count(&fixture.pool).await?,
+        0,
+        "企业充值不能写入个人钱包账本"
+    );
+
+    let model = organization_wallets::Entity::find()
+        .filter(organization_wallets::Column::OrganizationId.eq(organization.id().get()))
+        .one(fixture.pool.connection())
+        .await?
+        .expect("测试企业钱包必须存在");
+    let mut saturated: organization_wallets::ActiveModel = model.into();
+    saturated.quota = Set(i64::MAX);
+    saturated.update(fixture.pool.connection()).await?;
+    let overflow_order = TopupOrderCreate::new_for_organization(
+        topup_order_id(0xd5),
+        topup_request_id(0xd6),
+        fixture.user_id,
+        organization.id(),
+        "stripe".to_owned(),
+        "card".to_owned(),
+        1_000,
+        "USD".to_owned(),
+        Quota::new(1)?,
+        CREATED_AT,
+    )?;
+    assert!(matches!(
+        fixture.repository.create_order(overflow_order).await?,
+        TopupOrderCreateOutcome::Created(_)
+    ));
+    assert!(matches!(
+        fixture
+            .repository
+            .submit_order(fixture.submission(0xd5, 1, "provider-order-org-overflow")?)
+            .await?,
+        TopupOrderSubmitOutcome::Applied(_)
+    ));
+    let overflow = fixture
+        .repository
+        .accept_verified_event(fixture.event(
+            0xd7,
+            0xd5,
+            "evt-paid-org-overflow",
+            Some("trade-org-overflow"),
+            TopupPaymentEventType::Succeeded,
+            0xd8,
+            "stripe",
+        )?)
+        .await?;
+    assert!(matches!(
+        overflow,
+        TopupPaymentEventOutcome::RecordedUnprocessed {
+            reason: TopupPaymentEventRejection::CreditOverflow,
+            ..
+        }
+    ));
+    let overflow_event = topup_payment_events::Entity::find()
+        .filter(topup_payment_events::Column::EventKey.eq(topup_event_id(0xd7).persistence_key()))
+        .one(fixture.pool.connection())
+        .await?
+        .expect("企业余额溢出事件必须保留审计事实");
+    assert!(overflow_event.processed_at.is_none());
+    assert_eq!(fixture.balance().await?, 77);
+
+    fixture.pool.close().await?;
+    Ok(())
+}
+
+async fn wallet_ledger_topup_count(pool: &DatabasePool) -> Result<u64, sea_orm::DbErr> {
+    wallet_ledger_entries::Entity::find()
+        .filter(wallet_ledger_entries::Column::EntryType.eq(WalletLedgerEntryType::Topup as i16))
+        .count(pool.connection())
+        .await
 }
 
 #[tokio::test]
@@ -593,6 +745,24 @@ async fn fixture(initial_quota: i64) -> Result<Fixture, Box<dyn Error>> {
         pool,
         user_id: user.user_id(),
     })
+}
+
+fn test_entitlement() -> Result<OrganizationEntitlementWrite, Box<dyn Error>> {
+    Ok(OrganizationEntitlementWrite::new(
+        OrganizationEntitlementSnapshot::new(
+            OrganizationEntitlementCapacity::new(10, 10, 2)?,
+            true,
+            false,
+            false,
+            90,
+            946_684_800,
+            4_102_444_800,
+            Some(4_102_444_800),
+        )?,
+        "contract".to_owned(),
+        None,
+        None,
+    )?)
 }
 
 fn topup_order_id(marker: u8) -> TopupOrderId {

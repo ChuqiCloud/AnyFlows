@@ -32,11 +32,12 @@ use crate::entity::{
     debug_trace_snapshot_access_audits, debug_trace_snapshots, debug_traces, email_settings,
     group_model_ratios, groups, invite_rebate_events, model_prices, model_sync_items,
     model_sync_runs, models, options, organization_entitlements, organization_invitations,
-    organization_memberships, organization_teams, organizations, payment_settings,
-    playground_conversations, playground_shares, redemption_batches, redemption_codes,
-    registration_rate_limits, scheduler_outbox_events, site_settings,
-    subscription_balance_alert_events, subscription_plans, tokens, topup_orders,
-    topup_payment_events, usage_logs, user_subscriptions, users, wallet_ledger_entries,
+    organization_memberships, organization_teams, organization_wallet_ledger_entries,
+    organization_wallets, organizations, payment_settings, playground_conversations,
+    playground_shares, redemption_batches, redemption_codes, registration_rate_limits,
+    scheduler_outbox_events, site_settings, subscription_balance_alert_events, subscription_plans,
+    tokens, topup_orders, topup_payment_events, usage_logs, user_subscriptions, users,
+    wallet_ledger_entries,
 };
 use crate::{
     AdminDashboardRepository, AuthChallengeConsume, AuthChallengeConsumeOutcome,
@@ -62,7 +63,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 63;
+const EXPECTED_MIGRATION_COUNT: usize = 64;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -81,7 +82,7 @@ const TOPUP_ORDER_KEY_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TOPUP_IDEMPOTENCY_KEY_A: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const TOPUP_EVENT_KEY_A: &str = "cccccccccccccccccccccccccccccccc";
 const TOPUP_PROVIDER_EVENT_ID_A: &str = "evt_paid_secret_a";
-const CORE_TABLES: [&str; 58] = [
+const CORE_TABLES: [&str; 60] = [
     "groups",
     "users",
     "channels",
@@ -140,6 +141,8 @@ const CORE_TABLES: [&str; 58] = [
     "organization_memberships",
     "organization_entitlements",
     "organization_invitations",
+    "organization_wallets",
+    "organization_wallet_ledger_entries",
 ];
 
 struct SlowMigrator;
@@ -933,7 +936,7 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     Migrator::up(pool.connection(), Some(54)).await?;
     exercise_usage_per_call_migration_upgrade(&pool).await?;
     let pending_migrations = Migrator::get_pending_migrations(pool.connection()).await?;
-    assert_eq!(pending_migrations.len(), 4);
+    assert_eq!(pending_migrations.len(), 5);
     assert_eq!(
         pending_migrations[0].name(),
         "m20260815_000060_secure_debug_trace_snapshots"
@@ -949,6 +952,10 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
     assert_eq!(
         pending_migrations[3].name(),
         "m20260816_000063_create_organization_invitations"
+    );
+    assert_eq!(
+        pending_migrations[4].name(),
+        "m20260816_000064_create_organization_wallets"
     );
     let legacy_debug_trace_id = insert_legacy_debug_trace_snapshot(&pool).await?;
     run_with::<Migrator>(&pool, MigrationOptions::default()).await?;
@@ -2379,6 +2386,12 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
     .await?;
     assert_entity_columns::<organization_invitations::Column>(&manager, "organization_invitations")
         .await?;
+    assert_entity_columns::<organization_wallets::Column>(&manager, "organization_wallets").await?;
+    assert_entity_columns::<organization_wallet_ledger_entries::Column>(
+        &manager,
+        "organization_wallet_ledger_entries",
+    )
+    .await?;
     assert_entity_columns::<channels::Column>(&manager, "channels").await?;
     assert_entity_columns::<credentials::Column>(&manager, "credentials").await?;
     assert_entity_columns::<tokens::Column>(&manager, "tokens").await?;
@@ -2606,6 +2619,19 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
             "organization_invitations",
             "uq_organization_invitations_batch_email",
         ),
+        ("topup_orders", "idx_topup_orders_organization"),
+        (
+            "organization_wallets",
+            "uq_organization_wallets_organization",
+        ),
+        (
+            "organization_wallet_ledger_entries",
+            "uq_organization_wallet_ledger_scope_event",
+        ),
+        (
+            "organization_wallet_ledger_entries",
+            "idx_organization_wallet_ledger_scope_id",
+        ),
     ] {
         assert!(
             manager.has_index(table, index).await?,
@@ -2648,6 +2674,22 @@ async fn exercise_organization_repository(pool: &DatabasePool) -> Result<(), Box
         ))
         .await?
         .into_parts();
+
+    let mut enterprise_order = topup_order_active_model(
+        owner.id,
+        "abababababababababababababababab",
+        "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+    );
+    enterprise_order.organization_id = Set(Some(organization.id().get()));
+    enterprise_order.insert(pool.connection()).await?;
+    let mut invalid_order = topup_order_active_model(
+        owner.id,
+        "efefefefefefefefefefefefefefefef",
+        "12121212121212121212121212121212",
+    );
+    invalid_order.organization_id = Set(Some(i64::MAX));
+    assert!(invalid_order.insert(pool.connection()).await.is_err());
+
     assert_eq!(
         repository
             .change_membership(

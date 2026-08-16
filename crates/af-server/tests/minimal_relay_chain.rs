@@ -1918,6 +1918,7 @@ async fn start_server(
         Arc::new(RejectUserWallet),
         None,
         None,
+        None,
         Arc::new(RejectRedemptions),
         Arc::new(RejectSubscriptions),
         Arc::new(RejectUserInvitations),

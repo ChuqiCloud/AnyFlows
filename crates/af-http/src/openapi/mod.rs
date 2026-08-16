@@ -15,6 +15,7 @@ mod model_sync;
 mod models;
 mod network_settings;
 mod oauth_connections;
+mod organization_wallet;
 mod organizations;
 mod password_reset;
 mod payment_settings;
@@ -91,6 +92,7 @@ pub fn openapi_document() -> OpenApi {
     document.merge(credential_proxies::document());
     document.merge(debug_traces::document());
     document.merge(payment_webhook::document());
+    document.merge(organization_wallet::document());
 
     document.tags = Some(vec![
         Tag::new("公开注册"),
@@ -110,6 +112,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("网络与代理"),
         Tag::new("支付设置"),
         Tag::new("OAuth 连接"),
+        Tag::new("企业钱包"),
         Tag::new("余额预警"),
         Tag::new("管理会话"),
         Tag::new("首次安装"),
@@ -169,7 +172,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 101);
+        assert_eq!(document.paths.paths.len(), 105);
         let operation_count = document
             .paths
             .paths
@@ -190,7 +193,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 145);
+        assert_eq!(operation_count, 149);
         assert!(
             document
                 .components
@@ -240,10 +243,12 @@ mod tests {
             "getUserProfile",
             "listAccountOrganizations",
             "getOrganizationOverview",
+            "getOrganizationWallet",
             "listOrganizationInvitations",
             "createOrganizationInvitation",
             "previewOrganizationInvitations",
             "createOrganizationInvitationBatch",
+            "createOrganizationTopupOrder",
             "revokeOrganizationInvitation",
             "resendOrganizationInvitation",
             "acceptOrganizationInvitation",
@@ -362,6 +367,8 @@ mod tests {
             "bindAdminUserSubscription",
             "transitionAdminUserSubscriptionLifecycle",
             "listAdminWalletEntries",
+            "listOrganizationWalletEntries",
+            "adjustOrganizationWallet",
         ]
         .into_iter()
         .map(str::to_owned)
@@ -369,7 +376,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 289);
+        assert_eq!(schemas.len(), 299);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationEntitlementResponse"));
         assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
@@ -384,6 +391,16 @@ mod tests {
         assert!(schemas.contains_key("OrganizationTeamDisableRequest"));
         assert!(schemas.contains_key("OrganizationTeamListResponse"));
         assert!(schemas.contains_key("OrganizationTeamResponse"));
+        assert!(schemas.contains_key("OrganizationWalletSummaryResponse"));
+        assert!(schemas.contains_key("OrganizationWalletEntryTypeResponse"));
+        assert!(schemas.contains_key("OrganizationWalletEntryResponse"));
+        assert!(schemas.contains_key("OrganizationWalletListResponse"));
+        assert!(schemas.contains_key("OrganizationWalletAdjustmentRequest"));
+        assert!(schemas.contains_key("OrganizationWalletAdjustmentResponse"));
+        assert!(schemas.contains_key("OrganizationTopupOrderCreateRequest"));
+        assert!(schemas.contains_key("OrganizationTopupOrderStatusResponse"));
+        assert!(schemas.contains_key("OrganizationTopupPaymentSessionResponse"));
+        assert!(schemas.contains_key("OrganizationTopupOrderResponse"));
         assert!(schemas.contains_key("ModelCatalogProvider"));
         assert!(schemas.contains_key("ModelCatalogProviderListResponse"));
         assert!(schemas.contains_key("AdminResponsesCompactProbe"));

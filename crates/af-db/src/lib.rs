@@ -109,6 +109,7 @@ mod options;
 mod organization;
 #[cfg(test)]
 mod organization_tests;
+mod organization_wallet;
 mod password_reset;
 mod payment_settings;
 #[cfg(test)]
@@ -392,6 +393,15 @@ pub use organization::{
     OrganizationOwnershipTransferRecord, OrganizationRecord, OrganizationRepository,
     OrganizationRepositoryConfigError, OrganizationRepositoryError, OrganizationTeamChange,
     OrganizationTeamCreate, OrganizationTeamPageRecord, OrganizationTeamRecord,
+};
+pub use organization_wallet::{
+    MAX_ORGANIZATION_WALLET_ADJUSTMENT_REASON_BYTES, MAX_ORGANIZATION_WALLET_LEDGER_PAGE_SIZE,
+    OrganizationWalletAdjustmentOutcome, OrganizationWalletAdjustmentWrite,
+    OrganizationWalletBalanceLookupOutcome, OrganizationWalletBalanceRecord,
+    OrganizationWalletError, OrganizationWalletLedgerEntryRecord,
+    OrganizationWalletLedgerEntryType, OrganizationWalletLedgerListOutcome,
+    OrganizationWalletLedgerPageRecord, OrganizationWalletRepository,
+    OrganizationWalletRepositoryConfigError,
 };
 pub use password_reset::{
     PasswordResetOutcome, PasswordResetRepository, PasswordResetRepositoryConfigError,
