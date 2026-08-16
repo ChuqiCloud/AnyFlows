@@ -1214,7 +1214,10 @@ impl Bootstrap<RelayReady> {
         let request_rate_limit_store = if let Some(redis_url) = self.config.redis().url() {
             let config = RedisRequestRateLimitConfig::new(
                 RedisConfig::new(redis_url.expose().to_owned()),
-                "anyflows.gateway.rpm.v1",
+                self.config
+                    .redis()
+                    .request_rate_limit_namespace()
+                    .unwrap_or("anyflows.gateway.rpm.v1"),
             )
             .map_err(BootstrapError::RequestRateLimit)?;
             let store = RedisRequestRateLimitStore::connect(config)

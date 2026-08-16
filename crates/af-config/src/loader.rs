@@ -87,6 +87,7 @@ struct DatabaseDefaults {
 #[derive(Default, Serialize)]
 struct RedisDefaults {
     url: Option<String>,
+    request_rate_limit_namespace: Option<String>,
 }
 
 #[derive(Default, Serialize)]
@@ -257,6 +258,7 @@ fn known_field(path: &str) -> Option<&'static str> {
         "credential_encryption.key" => "credential_encryption.key",
         "redis" => "redis",
         "redis.url" => "redis.url",
+        "redis.request_rate_limit_namespace" => "redis.request_rate_limit_namespace",
         "auth" => "auth",
         "auth.allow_query_api_key" => "auth.allow_query_api_key",
         "auth.lookup_timeout_secs" => "auth.lookup_timeout_secs",

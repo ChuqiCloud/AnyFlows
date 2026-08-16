@@ -107,6 +107,9 @@ mod oauth_credential;
 mod oauth_credential_tests;
 mod options;
 mod organization;
+mod organization_budget;
+#[cfg(test)]
+mod organization_budget_tests;
 #[cfg(test)]
 mod organization_tests;
 mod organization_wallet;
@@ -394,6 +397,13 @@ pub use organization::{
     OrganizationRepositoryConfigError, OrganizationRepositoryError, OrganizationTeamChange,
     OrganizationTeamCreate, OrganizationTeamPageRecord, OrganizationTeamRecord,
 };
+pub use organization_budget::{
+    OrganizationBillingMutationOutcome, OrganizationBillingPrincipal,
+    OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
+    OrganizationBudgetPolicyRecord, OrganizationBudgetPolicyWrite, OrganizationBudgetRepository,
+    OrganizationBudgetRepositoryConfigError, OrganizationBudgetRepositoryError,
+    OrganizationBudgetScope,
+};
 pub use organization_wallet::{
     MAX_ORGANIZATION_WALLET_ADJUSTMENT_REASON_BYTES, MAX_ORGANIZATION_WALLET_LEDGER_PAGE_SIZE,
     OrganizationWalletAdjustmentOutcome, OrganizationWalletAdjustmentWrite,
@@ -539,6 +549,15 @@ pub async fn connect_and_migrate(
     database_options: &DatabaseOptions,
     migration_options: MigrationOptions,
 ) -> Result<DatabasePool, DatabaseError> {
+    if let Some(dedicated_options) = database_options.dedicated_migration_options() {
+        let migration_pool = connect(&dedicated_options).await?;
+        if let Err(error) = run_pending_migrations(&migration_pool, migration_options).await {
+            let _ = migration_pool.close().await;
+            return Err(error);
+        }
+        migration_pool.close().await?;
+        return connect(database_options).await;
+    }
     let pool = connect(database_options).await?;
     if let Err(error) = run_pending_migrations(&pool, migration_options).await {
         // 迁移失败时主动执行有界关闭，同时保留原始迁移错误供启动层判定。

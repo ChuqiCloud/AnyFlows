@@ -109,6 +109,13 @@ async fn verify_request_rate_limit_contract(redis_url: &str, namespace: &str) {
     let first = RedisRequestRateLimitStore::connect(config()).await.unwrap();
     let second = RedisRequestRateLimitStore::connect(config()).await.unwrap();
     let window = Duration::from_millis(300);
+    let alignment_rule = RequestRateLimitRule::new(
+        RequestRateLimitSubject::User(UserId::new(100).unwrap()),
+        NonZeroU32::new(1).unwrap(),
+        window,
+    )
+    .unwrap();
+    align_to_fresh_rate_limit_window(&first, alignment_rule).await;
     let user_rule = RequestRateLimitRule::new(
         RequestRateLimitSubject::User(UserId::new(101).unwrap()),
         NonZeroU32::new(2).unwrap(),
@@ -150,6 +157,29 @@ async fn verify_request_rate_limit_contract(redis_url: &str, namespace: &str) {
         second.admit(&[user_rule, group_rule]).await.unwrap(),
         RequestRateLimitOutcome::Admitted
     );
+}
+
+/// 通过 Redis 返回的剩余时间进入新窗口，避免集成断言随机跨桶。
+async fn align_to_fresh_rate_limit_window(
+    store: &RedisRequestRateLimitStore,
+    rule: RequestRateLimitRule,
+) {
+    assert_eq!(
+        store.admit(&[rule]).await.unwrap(),
+        RequestRateLimitOutcome::Admitted
+    );
+    let mut retry_after = None;
+    for _ in 0..8 {
+        match store.admit(&[rule]).await.unwrap() {
+            RequestRateLimitOutcome::Limited(rejection) => {
+                retry_after = Some(rejection.retry_after());
+                break;
+            }
+            RequestRateLimitOutcome::Admitted => continue,
+        }
+    }
+    let retry_after = retry_after.expect("连续请求必须在同一固定窗口内触发限流");
+    tokio::time::sleep(retry_after + Duration::from_millis(10)).await;
 }
 
 async fn verify_health_contract(redis_url: &str, namespace: &str) {

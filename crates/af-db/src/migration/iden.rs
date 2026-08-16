@@ -1852,7 +1852,112 @@ pub(in crate::migration) mod organization_wallets {
         Quota,
         UsedQuota,
         FrozenQuota,
+        BillingProtected,
         Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_budget_policies {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_budget_policies")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        OrganizationId,
+        ScopeKind,
+        TeamId,
+        MembershipId,
+        PeriodKind,
+        FixedPeriodSeconds,
+        QuotaLimit,
+        EffectiveFrom,
+        EffectiveUntil,
+        CreatedByUserId,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod organization_budget_windows {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "organization_budget_windows")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        Id,
+        PolicyId,
+        OrganizationId,
+        ScopeKind,
+        TeamId,
+        MembershipId,
+        PolicyVersion,
+        LimitSnapshot,
+        UsedQuota,
+        FrozenQuota,
+        WindowStartsAt,
+        WindowEndsAt,
+        Version,
+        CreatedAt,
+        UpdatedAt,
+    }
+}
+
+pub(in crate::migration) mod billing_organization_reservations {
+    use super::DeriveIden;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Table {
+        #[sea_orm(iden = "billing_organization_reservations")]
+        Name,
+    }
+
+    pub(in crate::migration) use Table::Name as Entity;
+
+    #[derive(Clone, Copy, DeriveIden)]
+    pub(in crate::migration) enum Column {
+        IdempotencyKey,
+        OrganizationId,
+        MembershipId,
+        TeamId,
+        UserId,
+        Status,
+        ReservedQuota,
+        ActualQuota,
+        OrganizationPolicyId,
+        OrganizationWindowId,
+        OrganizationPolicyVersion,
+        OrganizationWindowVersion,
+        OrganizationReservedQuota,
+        TeamPolicyId,
+        TeamWindowId,
+        TeamPolicyVersion,
+        TeamWindowVersion,
+        TeamReservedQuota,
+        MemberPolicyId,
+        MemberWindowId,
+        MemberPolicyVersion,
+        MemberWindowVersion,
+        MemberReservedQuota,
+        ExpiresAt,
+        FinalizedAt,
         CreatedAt,
         UpdatedAt,
     }

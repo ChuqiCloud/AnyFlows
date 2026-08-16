@@ -109,6 +109,16 @@ principal_id! {
     OrganizationTeamId
 }
 
+principal_id! {
+    /// 企业预算策略的持久化标识。
+    OrganizationBudgetPolicyId
+}
+
+principal_id! {
+    /// 企业预算周期窗口的持久化标识。
+    OrganizationBudgetWindowId
+}
+
 /// 已完成令牌、用户与有效分组校验的网关请求主体。
 ///
 /// 该值只携带稳定标识，不包含 API Key、摘要、展示前缀或可变授权策略，且不实现

@@ -27,18 +27,23 @@ jobs:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
         shell: bash
-        env:
-          GITEA_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
           git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
-          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
 
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
 
       - name: Ensure Rust toolchain manager
         shell: bash
@@ -89,18 +94,23 @@ jobs:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
         shell: bash
-        env:
-          GITEA_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
           git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
-          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
 
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
 
       - name: Install frontend dependencies
         shell: bash
@@ -122,18 +132,23 @@ jobs:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
         shell: bash
-        env:
-          GITEA_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
           git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
-          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
 
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
 
       - name: Ensure Rust toolchain manager
         shell: bash
@@ -197,18 +212,23 @@ jobs:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
         shell: bash
-        env:
-          GITEA_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
           git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
-          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
 
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
 
       - name: Ensure Rust toolchain manager
         shell: bash
@@ -251,18 +271,23 @@ jobs:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
         shell: bash
-        env:
-          GITEA_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
           git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
-          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
 
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
 
       - name: Ensure Rust toolchain manager
         shell: bash
@@ -315,18 +340,23 @@ jobs:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
         shell: bash
-        env:
-          GITEA_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
           git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
-          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
 
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
 
       - name: Ensure Rust toolchain manager
         shell: bash
@@ -389,18 +419,23 @@ jobs:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
         shell: bash
-        env:
-          GITEA_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
           git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
-          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
 
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
 
       - name: Ensure Rust toolchain manager
         shell: bash
@@ -458,18 +493,23 @@ jobs:
       - name: Configure external Gitea checkout endpoint
         if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
         shell: bash
-        env:
-          GITEA_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
           git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
-          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
 
       - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
+        shell: bash
+        env:
+          CHECKOUT_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
+          CHECKOUT_SHA: ${{ github.sha }}
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$CHECKOUT_TOKEN" | base64 -w0)"
+          git init .
+          git remote add origin "$CHECKOUT_REPOSITORY_URL"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch --no-tags --depth=1 origin "$CHECKOUT_SHA"
+          git checkout --detach FETCH_HEAD
 
       - name: Ensure Rust toolchain manager
         shell: bash

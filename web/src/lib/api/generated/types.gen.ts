@@ -1384,7 +1384,7 @@ export type OrganizationWalletEntryResponse = {
     reason: string | null;
     created_at: number;
 };
-export type OrganizationWalletEntryTypeResponse = 'opening_balance' | 'admin_adjustment' | 'topup';
+export type OrganizationWalletEntryTypeResponse = 'opening_balance' | 'admin_adjustment' | 'topup' | 'usage_settlement';
 export type OrganizationWalletListResponse = {
     entries: Array<OrganizationWalletEntryResponse>;
     next_cursor: number | null;

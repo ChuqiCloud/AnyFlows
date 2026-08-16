@@ -9,6 +9,7 @@ pub struct Model {
     pub quota: i64,
     pub used_quota: i64,
     pub frozen_quota: i64,
+    pub billing_protected: bool,
     pub version: i64,
     pub created_at: TimeDateTimeWithTimeZone,
     pub updated_at: TimeDateTimeWithTimeZone,

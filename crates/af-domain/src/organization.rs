@@ -202,6 +202,8 @@ pub enum OrganizationPermission {
     WalletRead,
     /// 充值并管理企业预算。
     WalletManage,
+    /// 管理企业、团队与成员预算策略。
+    BudgetsManage,
     /// 查看企业全部 API Key 脱敏目录。
     KeysReadAll,
     /// 创建或停用当前成员自己的企业 Key。
@@ -227,6 +229,7 @@ impl OrganizationPermission {
             Self::TeamsManage => "organization.teams.manage",
             Self::WalletRead => "organization.wallet.read",
             Self::WalletManage => "organization.wallet.manage",
+            Self::BudgetsManage => "organization.budgets.manage",
             Self::KeysReadAll => "organization.keys.read_all",
             Self::KeysManageSelf => "organization.keys.manage_self",
             Self::UsageLogsReadAll => "organization.usage_logs.read_all",
@@ -280,6 +283,7 @@ impl OrganizationRole {
                 Permission::TeamsManage,
                 Permission::WalletRead,
                 Permission::WalletManage,
+                Permission::BudgetsManage,
                 Permission::KeysReadAll,
                 Permission::KeysManageSelf,
                 Permission::UsageLogsReadAll,
@@ -293,6 +297,7 @@ impl OrganizationRole {
                 Permission::TeamsManage,
                 Permission::WalletRead,
                 Permission::WalletManage,
+                Permission::BudgetsManage,
                 Permission::KeysReadAll,
                 Permission::KeysManageSelf,
                 Permission::UsageLogsReadAll,
@@ -303,6 +308,7 @@ impl OrganizationRole {
                 Permission::OverviewRead,
                 Permission::WalletRead,
                 Permission::WalletManage,
+                Permission::BudgetsManage,
                 Permission::UsageLogsReadAll,
                 Permission::UsageLogsReadSelf,
                 Permission::AuditRead,
