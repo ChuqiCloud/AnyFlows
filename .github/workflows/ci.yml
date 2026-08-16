@@ -24,6 +24,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        env:
+          GITEA_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
+
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -66,6 +77,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        env:
+          GITEA_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
+
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -88,6 +110,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        env:
+          GITEA_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
+
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -142,6 +175,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        env:
+          GITEA_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
+
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -175,6 +219,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        env:
+          GITEA_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
+
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -218,6 +273,17 @@ jobs:
           --health-timeout 5s
           --health-retries 30
     steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        env:
+          GITEA_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
+
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -262,6 +328,17 @@ jobs:
           --health-timeout 5s
           --health-retries 30
     steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        env:
+          GITEA_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
+
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -301,6 +378,17 @@ jobs:
           --health-timeout 5s
           --health-retries 30
     steps:
+      - name: Configure external Gitea checkout endpoint
+        if: ${{ startsWith(github.server_url, 'http://gitea_cps3:') }}
+        shell: bash
+        env:
+          GITEA_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GITEA_TOKEN" | base64 -w0)"
+          git config --global url."https://gitea.acmecloud.cn/".insteadOf "http://gitea_cps3:3000/"
+          git config --global http.https://gitea.acmecloud.cn/.extraheader "AUTHORIZATION: basic $auth"
+
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
