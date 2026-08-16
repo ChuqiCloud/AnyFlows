@@ -593,6 +593,18 @@ async fn update_wallet_settle(
         .ok_or(OrganizationBudgetRepositoryError::Invariant)?;
     let balance_after =
         Quota::new(quota).map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+    #[cfg(test)]
+    eprintln!(
+        "[DEBUG-organization-budget-settle] wallet quota={} reserved={} actual={} released={} supplemental={} next_quota={} balance_before={} balance_after={}",
+        wallet.quota,
+        reserved.units(),
+        actual.units(),
+        released,
+        supplemental,
+        quota,
+        balance_before.units(),
+        balance_after.units()
+    );
     update_wallet(
         transaction,
         wallet,
