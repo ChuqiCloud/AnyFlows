@@ -56,6 +56,7 @@ mod openai_responses_compact;
 mod openai_speech;
 mod openapi;
 mod operations;
+mod organization_budget;
 mod organization_wallet;
 mod organizations;
 mod password_reset;
@@ -109,6 +110,7 @@ pub use openapi::openapi_document;
 pub use operations::{
     HEALTH_PATH, READINESS_PATH, ReadinessFuture, ReadinessHandle, ReadinessProbe,
 };
+pub use organization_budget::build_organization_budget_router;
 pub use organization_wallet::build_organization_wallet_router;
 pub use organizations::build_organization_router;
 pub use payment_webhook::{PaymentWebhookProcessorRegistry, build_payment_webhook_router};

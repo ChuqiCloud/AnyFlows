@@ -133,6 +133,79 @@ impl OrganizationBudgetPolicyRecord {
     }
 }
 
+/// 预算窗口对管理端暴露的只读快照，不允许通过该类型修改计费事实。
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrganizationBudgetWindowRecord {
+    pub(crate) id: OrganizationBudgetWindowId,
+    pub(crate) policy_id: OrganizationBudgetPolicyId,
+    pub(crate) organization_id: OrganizationId,
+    pub(crate) scope: OrganizationBudgetScope,
+    pub(crate) policy_version: i64,
+    pub(crate) limit_snapshot: Quota,
+    pub(crate) used_quota: Quota,
+    pub(crate) frozen_quota: Quota,
+    pub(crate) window_starts_at: TimeDateTimeWithTimeZone,
+    pub(crate) window_ends_at: TimeDateTimeWithTimeZone,
+    pub(crate) version: i64,
+}
+
+impl OrganizationBudgetWindowRecord {
+    #[must_use]
+    pub const fn id(&self) -> OrganizationBudgetWindowId {
+        self.id
+    }
+
+    #[must_use]
+    pub const fn policy_id(&self) -> OrganizationBudgetPolicyId {
+        self.policy_id
+    }
+
+    #[must_use]
+    pub const fn organization_id(&self) -> OrganizationId {
+        self.organization_id
+    }
+
+    #[must_use]
+    pub const fn scope(&self) -> OrganizationBudgetScope {
+        self.scope
+    }
+
+    #[must_use]
+    pub const fn policy_version(&self) -> i64 {
+        self.policy_version
+    }
+
+    #[must_use]
+    pub const fn limit_snapshot(&self) -> Quota {
+        self.limit_snapshot
+    }
+
+    #[must_use]
+    pub const fn used_quota(&self) -> Quota {
+        self.used_quota
+    }
+
+    #[must_use]
+    pub const fn frozen_quota(&self) -> Quota {
+        self.frozen_quota
+    }
+
+    #[must_use]
+    pub const fn window_starts_at(&self) -> TimeDateTimeWithTimeZone {
+        self.window_starts_at
+    }
+
+    #[must_use]
+    pub const fn window_ends_at(&self) -> TimeDateTimeWithTimeZone {
+        self.window_ends_at
+    }
+
+    #[must_use]
+    pub const fn version(&self) -> i64 {
+        self.version
+    }
+}
+
 /// 企业请求的资金与预算归属；请求期间不得重新解析这些主体。
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct OrganizationBillingPrincipal {
@@ -243,6 +316,16 @@ pub struct OrganizationBillingReservationRecord {
 
 impl OrganizationBillingReservationRecord {
     #[must_use]
+    pub const fn id(&self) -> BillingReservationId {
+        self.id
+    }
+
+    #[must_use]
+    pub const fn principal(&self) -> OrganizationBillingPrincipal {
+        self.principal
+    }
+
+    #[must_use]
     pub const fn status(&self) -> OrganizationBillingReservationStatus {
         self.status
     }
@@ -255,6 +338,48 @@ impl OrganizationBillingReservationRecord {
     #[must_use]
     pub const fn actual_quota(&self) -> Option<Quota> {
         self.actual_quota
+    }
+
+    #[must_use]
+    pub const fn organization_allocation(&self) -> Option<OrganizationBudgetAllocationRecord> {
+        self.organization
+    }
+
+    #[must_use]
+    pub const fn team_allocation(&self) -> Option<OrganizationBudgetAllocationRecord> {
+        self.team
+    }
+
+    #[must_use]
+    pub const fn member_allocation(&self) -> Option<OrganizationBudgetAllocationRecord> {
+        self.member
+    }
+}
+
+impl OrganizationBudgetAllocationRecord {
+    #[must_use]
+    pub const fn policy_id(self) -> OrganizationBudgetPolicyId {
+        self.policy_id
+    }
+
+    #[must_use]
+    pub const fn window_id(self) -> OrganizationBudgetWindowId {
+        self.window_id
+    }
+
+    #[must_use]
+    pub const fn policy_version(self) -> i64 {
+        self.policy_version
+    }
+
+    #[must_use]
+    pub const fn window_version(self) -> i64 {
+        self.window_version
+    }
+
+    #[must_use]
+    pub const fn reserved_quota(self) -> Quota {
+        self.reserved_quota
     }
 }
 

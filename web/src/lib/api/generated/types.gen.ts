@@ -1184,6 +1184,99 @@ export type ModelCatalogTokenPrices = {
     cache_creation_5m: string;
     cache_creation_1h: string;
 };
+export type OrganizationBudgetAllocationResponse = {
+    policy_id: number;
+    window_id: number;
+    policy_version: number;
+    window_version: number;
+    reserved_quota: number;
+};
+export type OrganizationBudgetOverviewResponse = {
+    policies: Array<OrganizationBudgetPolicyResponse>;
+    windows: Array<OrganizationBudgetWindowResponse>;
+};
+export type OrganizationBudgetPeriodRequest = {
+    kind: 'utc_day';
+} | {
+    kind: 'utc_week';
+} | {
+    kind: 'utc_month';
+} | {
+    seconds: number;
+    kind: 'fixed';
+};
+export type OrganizationBudgetPeriodResponse = {
+    kind: 'utc_day';
+} | {
+    kind: 'utc_week';
+} | {
+    kind: 'utc_month';
+} | {
+    seconds: number;
+    kind: 'fixed';
+};
+export type OrganizationBudgetPolicyCreateRequest = {
+    scope: OrganizationBudgetScopeRequest;
+    period: OrganizationBudgetPeriodRequest;
+    quota_limit: number | null;
+    effective_from: number;
+};
+export type OrganizationBudgetPolicyResponse = {
+    id: number;
+    organization_id: number;
+    scope: OrganizationBudgetScopeResponse;
+    period: OrganizationBudgetPeriodResponse;
+    quota_limit: number | null;
+    effective_from: number;
+    effective_until: number | null;
+    version: number;
+};
+export type OrganizationBudgetReservationResponse = {
+    reservation_id: string;
+    organization_id: number;
+    membership_id: number;
+    team_id: number | null;
+    user_id: number;
+    status: OrganizationBudgetReservationStatusResponse;
+    reserved_quota: number;
+    actual_quota: number | null;
+    organization: null | OrganizationBudgetAllocationResponse;
+    team: null | OrganizationBudgetAllocationResponse;
+    member: null | OrganizationBudgetAllocationResponse;
+};
+export type OrganizationBudgetReservationStatusResponse = 'reserved' | 'settlement_pending' | 'settled' | 'released';
+export type OrganizationBudgetScopeRequest = {
+    kind: 'organization';
+} | {
+    team_id: number;
+    kind: 'team';
+} | {
+    membership_id: number;
+    kind: 'member';
+};
+export type OrganizationBudgetScopeResponse = {
+    kind: 'organization';
+} | {
+    team_id: number;
+    kind: 'team';
+} | {
+    membership_id: number;
+    kind: 'member';
+};
+export type OrganizationBudgetWindowResponse = {
+    id: number;
+    policy_id: number;
+    organization_id: number;
+    scope: OrganizationBudgetScopeResponse;
+    policy_version: number;
+    limit_snapshot: number;
+    used_quota: number;
+    frozen_quota: number;
+    remaining_quota: number;
+    window_starts_at: number;
+    window_ends_at: number;
+    version: number;
+};
 export type OrganizationEntitlementResponse = {
     status: string;
     team_management_enabled: boolean;
@@ -4904,3 +4997,66 @@ export type CreateOrganizationTopupOrderResponses = {
     201: OrganizationTopupOrderResponse;
 };
 export type CreateOrganizationTopupOrderResponse = CreateOrganizationTopupOrderResponses[keyof CreateOrganizationTopupOrderResponses];
+export type GetOrganizationBudgetsData = {
+    body?: never;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/budgets';
+};
+export type GetOrganizationBudgetsErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationBudgetsError = GetOrganizationBudgetsErrors[keyof GetOrganizationBudgetsErrors];
+export type GetOrganizationBudgetsResponses = {
+    200: OrganizationBudgetOverviewResponse;
+};
+export type GetOrganizationBudgetsResponse = GetOrganizationBudgetsResponses[keyof GetOrganizationBudgetsResponses];
+export type CreateOrganizationBudgetPolicyData = {
+    body: OrganizationBudgetPolicyCreateRequest;
+    path: {
+        organization_id: number;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/budgets';
+};
+export type CreateOrganizationBudgetPolicyErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    409: ManagementError;
+    500: ManagementError;
+    503: ManagementError;
+};
+export type CreateOrganizationBudgetPolicyError = CreateOrganizationBudgetPolicyErrors[keyof CreateOrganizationBudgetPolicyErrors];
+export type CreateOrganizationBudgetPolicyResponses = {
+    201: OrganizationBudgetPolicyResponse;
+};
+export type CreateOrganizationBudgetPolicyResponse = CreateOrganizationBudgetPolicyResponses[keyof CreateOrganizationBudgetPolicyResponses];
+export type GetOrganizationBudgetReservationData = {
+    body?: never;
+    path: {
+        organization_id: number;
+        reservation_id: string;
+    };
+    query?: never;
+    url: '/api/organizations/{organization_id}/budgets/reservations/{reservation_id}';
+};
+export type GetOrganizationBudgetReservationErrors = {
+    400: ManagementError;
+    401: ManagementError;
+    403: ManagementError;
+    404: ManagementError;
+    500: ManagementError;
+};
+export type GetOrganizationBudgetReservationError = GetOrganizationBudgetReservationErrors[keyof GetOrganizationBudgetReservationErrors];
+export type GetOrganizationBudgetReservationResponses = {
+    200: OrganizationBudgetReservationResponse;
+};
+export type GetOrganizationBudgetReservationResponse = GetOrganizationBudgetReservationResponses[keyof GetOrganizationBudgetReservationResponses];

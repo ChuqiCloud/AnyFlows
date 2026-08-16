@@ -400,9 +400,10 @@ pub use organization::{
 pub use organization_budget::{
     OrganizationBillingMutationOutcome, OrganizationBillingPrincipal,
     OrganizationBillingReservationRecord, OrganizationBillingReservationStatus,
-    OrganizationBudgetPolicyRecord, OrganizationBudgetPolicyWrite, OrganizationBudgetRepository,
+    OrganizationBudgetAllocationRecord, OrganizationBudgetPolicyRecord,
+    OrganizationBudgetPolicyWrite, OrganizationBudgetRepository,
     OrganizationBudgetRepositoryConfigError, OrganizationBudgetRepositoryError,
-    OrganizationBudgetScope,
+    OrganizationBudgetScope, OrganizationBudgetWindowRecord,
 };
 pub use organization_wallet::{
     MAX_ORGANIZATION_WALLET_ADJUSTMENT_REASON_BYTES, MAX_ORGANIZATION_WALLET_LEDGER_PAGE_SIZE,

@@ -59,6 +59,10 @@ pub(crate) enum ManagementError {
     WalletOverflow,
     /// 调账提交结果未知，调用方必须复用同一事件键确认。
     WalletOutcomeUnknown,
+    /// 预算策略版本或预留状态与请求不一致。
+    BudgetConflict,
+    /// 预算写入结果未知，调用方必须按原请求重试或查询。
+    BudgetOutcomeUnknown,
     /// 当前实例尚未配置可用的 Stripe 充值通道。
     TopupUnavailable,
     /// Stripe 确定拒绝服务端构造的 PaymentIntent 请求。
@@ -411,6 +415,20 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "wallet_outcome_unknown",
                     message: "Wallet outcome unknown",
+                },
+            ),
+            Self::BudgetConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "budget_conflict",
+                    message: "Budget state conflict",
+                },
+            ),
+            Self::BudgetOutcomeUnknown => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                ManagementErrorBody {
+                    code: "budget_outcome_unknown",
+                    message: "Budget write outcome unknown",
                 },
             ),
             Self::TopupUnavailable => (

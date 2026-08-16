@@ -1,10 +1,11 @@
 use af_domain::{
-    OrganizationBudgetPeriod, OrganizationBudgetPolicyId, OrganizationBudgetWindowId, Quota,
-    SubscriptionCycle, SubscriptionWindow,
+    OrganizationBudgetPeriod, OrganizationBudgetPolicyId, OrganizationBudgetScopeKind,
+    OrganizationBudgetWindowId, OrganizationId, OrganizationMembershipId, OrganizationTeamId,
+    Quota, SubscriptionCycle, SubscriptionWindow, UserId,
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
-    QueryFilter, QuerySelect, Set,
+    QueryFilter, QueryOrder, QuerySelect, Set,
     entity::prelude::TimeDateTimeWithTimeZone,
     sea_query::{Expr, ExprTrait, LockType},
 };
@@ -13,8 +14,43 @@ use crate::entity::{organization_budget_policies, organization_budget_windows};
 
 use super::{
     policy,
-    types::{OrganizationBudgetAllocationRecord, OrganizationBudgetRepositoryError},
+    types::{
+        OrganizationBudgetAllocationRecord, OrganizationBudgetRepositoryError,
+        OrganizationBudgetScope, OrganizationBudgetWindowRecord,
+    },
 };
+
+/// 读取仍在生效的窗口，历史窗口不在管理查询中无限累积。
+pub(super) async fn list_current(
+    transaction: &DatabaseTransaction,
+    organization_id: OrganizationId,
+    actor_user_id: UserId,
+    now: TimeDateTimeWithTimeZone,
+) -> Result<Vec<OrganizationBudgetWindowRecord>, OrganizationBudgetRepositoryError> {
+    use crate::entity::organizations;
+
+    if organizations::Entity::find_by_id(organization_id.get())
+        .filter(organizations::Column::Status.eq(1_i16))
+        .one(transaction)
+        .await
+        .map_err(|_| OrganizationBudgetRepositoryError::Query)?
+        .is_none()
+    {
+        return Err(OrganizationBudgetRepositoryError::NotFound);
+    }
+    super::policy::require_budget_manager(transaction, organization_id, actor_user_id).await?;
+    organization_budget_windows::Entity::find()
+        .filter(organization_budget_windows::Column::OrganizationId.eq(organization_id.get()))
+        .filter(organization_budget_windows::Column::WindowEndsAt.gt(now))
+        .order_by_asc(organization_budget_windows::Column::WindowStartsAt)
+        .order_by_asc(organization_budget_windows::Column::Id)
+        .all(transaction)
+        .await
+        .map_err(|_| OrganizationBudgetRepositoryError::Query)?
+        .into_iter()
+        .map(window_record)
+        .collect()
+}
 
 pub(super) async fn reserve(
     transaction: &DatabaseTransaction,
@@ -309,6 +345,59 @@ fn allocation(
         policy_version: window.policy_version,
         window_version: window.version,
         reserved_quota,
+    })
+}
+
+fn window_record(
+    model: organization_budget_windows::Model,
+) -> Result<OrganizationBudgetWindowRecord, OrganizationBudgetRepositoryError> {
+    let kind = OrganizationBudgetScopeKind::try_from(model.scope_kind)
+        .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?;
+    let scope = match (kind, model.team_id, model.membership_id) {
+        (OrganizationBudgetScopeKind::Organization, None, None) => {
+            OrganizationBudgetScope::Organization
+        }
+        (OrganizationBudgetScopeKind::Team, Some(team_id), None) => OrganizationBudgetScope::Team(
+            OrganizationTeamId::new(team_id)
+                .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+        ),
+        (OrganizationBudgetScopeKind::Member, None, Some(membership_id)) => {
+            OrganizationBudgetScope::Member(
+                OrganizationMembershipId::new(membership_id)
+                    .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+            )
+        }
+        _ => return Err(OrganizationBudgetRepositoryError::Invariant),
+    };
+    if model.policy_id <= 0
+        || model.organization_id <= 0
+        || model.policy_version <= 0
+        || model.limit_snapshot < 0
+        || model.used_quota < 0
+        || model.frozen_quota < 0
+        || model.version <= 0
+        || model.window_starts_at >= model.window_ends_at
+    {
+        return Err(OrganizationBudgetRepositoryError::Invariant);
+    }
+    Ok(OrganizationBudgetWindowRecord {
+        id: OrganizationBudgetWindowId::new(model.id)
+            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+        policy_id: OrganizationBudgetPolicyId::new(model.policy_id)
+            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+        organization_id: OrganizationId::new(model.organization_id)
+            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+        scope,
+        policy_version: model.policy_version,
+        limit_snapshot: Quota::new(model.limit_snapshot)
+            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+        used_quota: Quota::new(model.used_quota)
+            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+        frozen_quota: Quota::new(model.frozen_quota)
+            .map_err(|_| OrganizationBudgetRepositoryError::Invariant)?,
+        window_starts_at: model.window_starts_at,
+        window_ends_at: model.window_ends_at,
+        version: model.version,
     })
 }
 
