@@ -69,7 +69,6 @@ jobs:
 
       - name: Build release binary
         run: |
-          cargo clean --release --workspace
           cargo build --release --locked --package af-server
 
       - name: Package and verify release archive
@@ -155,6 +154,7 @@ jobs:
           rustc --version --verbose
 
       - name: Cache Rust build artifacts
+        if: ${{ !startsWith(github.server_url, 'http://gitea_cps3:') }}
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Install workspace tools
@@ -236,6 +236,7 @@ jobs:
           echo "toolchain=$toolchain" >> "$GITHUB_OUTPUT"
 
       - name: Cache Rust build artifacts
+        if: ${{ !startsWith(github.server_url, 'http://gitea_cps3:') }}
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: msrv
@@ -283,6 +284,7 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache database test artifacts
+        if: ${{ !startsWith(github.server_url, 'http://gitea_cps3:') }}
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: database-sqlite
@@ -347,6 +349,7 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache database test artifacts
+        if: ${{ !startsWith(github.server_url, 'http://gitea_cps3:') }}
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: database-postgres
@@ -412,6 +415,7 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache database test artifacts
+        if: ${{ !startsWith(github.server_url, 'http://gitea_cps3:') }}
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: database-mysql
@@ -472,6 +476,7 @@ jobs:
           rustup toolchain install "$toolchain" --profile minimal
 
       - name: Cache Redis test artifacts
+        if: ${{ !startsWith(github.server_url, 'http://gitea_cps3:') }}
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           shared-key: cache-redis

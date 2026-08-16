@@ -146,7 +146,7 @@ async fn backfill_advances_by_cursor_and_stops_after_the_tail() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn periodic_runner_starts_immediately_and_retries_after_load_failure() {
     let source = FakeSource::new(
         vec![Ok(OAuthRefreshBackfillPage::default())],
@@ -173,6 +173,7 @@ async fn periodic_runner_starts_immediately_and_retries_after_load_failure() {
     tokio::time::timeout(Duration::from_millis(100), source.wait_for_due_calls(1))
         .await
         .expect("首轮必须在启动后立即执行");
+    tokio::time::advance(Duration::from_millis(250)).await;
     tokio::time::timeout(Duration::from_secs(1), source.wait_for_due_calls(2))
         .await
         .expect("候选加载失败后必须进入下一周期");
