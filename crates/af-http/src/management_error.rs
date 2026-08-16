@@ -39,6 +39,18 @@ pub(crate) enum ManagementError {
     OrganizationInvitationExpired,
     /// 邀请令牌、邮箱或当前状态不允许接受；不细分具体事实。
     OrganizationInvitationRejected,
+    /// 企业成员或团队 CAS 版本冲突。
+    OrganizationLifecycleConflict,
+    /// 企业成员或团队生命周期状态不允许当前转换。
+    OrganizationLifecycleTransitionInvalid,
+    /// 当前操作会移除企业最后一个 Owner。
+    OrganizationLastOwner,
+    /// 团队仍有活动成员归属。
+    OrganizationTeamInUse,
+    /// 企业授权不允许当前生命周期写入。
+    OrganizationEntitlementRestricted,
+    /// 企业团队容量已用尽。
+    OrganizationTeamLimitReached,
     /// 钱包事件键已经绑定不同业务事实。
     WalletEventConflict,
     /// 负向调账会使用户余额低于零。
@@ -329,6 +341,48 @@ impl IntoResponse for ManagementError {
                 ManagementErrorBody {
                     code: "organization_invitation_rejected",
                     message: "Organization invitation rejected",
+                },
+            ),
+            Self::OrganizationLifecycleConflict => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_lifecycle_conflict",
+                    message: "Organization lifecycle conflict",
+                },
+            ),
+            Self::OrganizationLifecycleTransitionInvalid => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_lifecycle_transition_invalid",
+                    message: "Organization lifecycle transition invalid",
+                },
+            ),
+            Self::OrganizationLastOwner => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_last_owner",
+                    message: "Organization must retain an active owner",
+                },
+            ),
+            Self::OrganizationTeamInUse => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_team_in_use",
+                    message: "Organization team still has active members",
+                },
+            ),
+            Self::OrganizationEntitlementRestricted => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_entitlement_restricted",
+                    message: "Organization entitlement restricts this operation",
+                },
+            ),
+            Self::OrganizationTeamLimitReached => (
+                StatusCode::CONFLICT,
+                ManagementErrorBody {
+                    code: "organization_team_limit_reached",
+                    message: "Organization team limit reached",
                 },
             ),
             Self::WalletEventConflict => (

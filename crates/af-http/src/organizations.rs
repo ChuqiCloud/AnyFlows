@@ -6,19 +6,24 @@ use af_admin::{
     OrganizationEntitlementSummary, OrganizationInvitationBatchCommand,
     OrganizationInvitationBatchResult, OrganizationInvitationCommand, OrganizationInvitationError,
     OrganizationInvitationPreviewCommand, OrganizationInvitationPreviewResult,
-    OrganizationInvitationRecord, OrganizationInvitationService, OrganizationMembershipRecord,
-    SessionAuthentication,
+    OrganizationInvitationRecord, OrganizationInvitationService, OrganizationManagementError,
+    OrganizationManagementService, OrganizationMembershipChangeCommand,
+    OrganizationMembershipListQuery, OrganizationMembershipRecord,
+    OrganizationOwnershipTransferCommand, OrganizationTeamChangeCommand,
+    OrganizationTeamCreateCommand, OrganizationTeamDisableCommand, OrganizationTeamListQuery,
+    OrganizationTeamRecord, SessionAuthentication,
 };
 use af_domain::{
     OrganizationId, OrganizationInvitationKey, OrganizationInvitationStatus,
-    OrganizationMembershipStatus, OrganizationPermission, OrganizationRole, OrganizationTeamId,
+    OrganizationMembershipId, OrganizationMembershipStatus, OrganizationPermission,
+    OrganizationRole, OrganizationTeamId,
 };
 use axum::{
     Extension, Json, Router,
-    extract::{Path, State},
+    extract::{Path, RawQuery, State},
     middleware,
     response::Response,
-    routing::{get, post},
+    routing::{get, patch, post},
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -33,12 +38,14 @@ use crate::{
 pub(crate) struct OrganizationHttpState {
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     invitation_service: Option<Arc<dyn OrganizationInvitationService>>,
+    management_service: Option<Arc<dyn OrganizationManagementService>>,
 }
 
 /// 构建企业目录与企业概览只读入口；所有入口都要求有效管理会话。
 pub fn build_organization_router(
     authorization_service: Arc<dyn OrganizationAuthorizationService>,
     invitation_service: Option<Arc<dyn OrganizationInvitationService>>,
+    management_service: Option<Arc<dyn OrganizationManagementService>>,
     session_authenticator: Arc<dyn af_admin::SessionAuthenticator>,
 ) -> Router {
     let authentication = middleware::from_fn_with_state(
@@ -80,11 +87,41 @@ pub fn build_organization_router(
     } else {
         router
     };
+    let router = if management_service.is_some() {
+        router
+            .route(
+                "/api/organizations/{organization_id}/members",
+                get(list_organization_members),
+            )
+            .route(
+                "/api/organizations/{organization_id}/members/{membership_id}",
+                patch(change_organization_member),
+            )
+            .route(
+                "/api/organizations/{organization_id}/ownership-transfer",
+                post(transfer_organization_ownership),
+            )
+            .route(
+                "/api/organizations/{organization_id}/teams",
+                get(list_organization_teams).post(create_organization_team),
+            )
+            .route(
+                "/api/organizations/{organization_id}/teams/{team_id}",
+                patch(change_organization_team),
+            )
+            .route(
+                "/api/organizations/{organization_id}/teams/{team_id}/disable",
+                post(disable_organization_team),
+            )
+    } else {
+        router
+    };
     router
         .layer(authentication)
         .with_state(OrganizationHttpState {
             authorization_service,
             invitation_service,
+            management_service,
         })
 }
 
@@ -223,6 +260,324 @@ pub struct OrganizationInvitationAcceptResponse {
     team_id: Option<i64>,
     status: &'static str,
     version: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationMembershipChangeRequest {
+    role: String,
+    status: String,
+    team_id: Option<i64>,
+    expected_version: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationOwnershipTransferRequest {
+    target_membership_id: i64,
+    current_owner_version: i64,
+    target_expected_version: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationTeamCreateRequest {
+    name: String,
+    description: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationTeamChangeRequest {
+    name: String,
+    description: Option<String>,
+    expected_version: i64,
+}
+
+#[derive(Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationTeamDisableRequest {
+    expected_version: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationMembershipResponse {
+    id: i64,
+    organization_id: i64,
+    user_id: i64,
+    role: &'static str,
+    team_id: Option<i64>,
+    status: &'static str,
+    joined_at: i64,
+    suspended_at: Option<i64>,
+    removed_at: Option<i64>,
+    invited_by_user_id: Option<i64>,
+    version: i64,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationMembershipListResponse {
+    members: Vec<OrganizationMembershipResponse>,
+    next_cursor: Option<i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationTeamResponse {
+    id: i64,
+    organization_id: i64,
+    name: String,
+    description: Option<String>,
+    status: &'static str,
+    version: i64,
+    created_at: i64,
+    updated_at: i64,
+    deleted_at: Option<i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationTeamListResponse {
+    teams: Vec<OrganizationTeamResponse>,
+    next_cursor: Option<i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OrganizationOwnershipTransferResponse {
+    previous_owner: OrganizationMembershipResponse,
+    current_owner: OrganizationMembershipResponse,
+}
+
+async fn list_organization_members(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Path(organization_id): Path<i64>,
+    RawQuery(raw_query): RawQuery,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_lifecycle_context(
+        &state,
+        &authentication,
+        organization_id,
+        OrganizationPermission::OverviewRead,
+    )
+    .await?;
+    let query = parse_membership_list_query(raw_query.as_deref())?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let page = service
+        .list_members(context, query)
+        .await
+        .map_err(map_management_lifecycle_error)?;
+    Ok(no_store_json(OrganizationMembershipListResponse {
+        members: page
+            .records()
+            .iter()
+            .map(OrganizationMembershipResponse::from)
+            .collect(),
+        next_cursor: page.next_cursor().map(OrganizationMembershipId::get),
+    }))
+}
+
+async fn change_organization_member(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Path((organization_id, membership_id)): Path<(i64, i64)>,
+    Json(request): Json<OrganizationMembershipChangeRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let membership_id = OrganizationMembershipId::new(membership_id)
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_lifecycle_context(
+        &state,
+        &authentication,
+        organization_id,
+        OrganizationPermission::MembersManage,
+    )
+    .await?;
+    let command = OrganizationMembershipChangeCommand::new(
+        membership_id,
+        parse_organization_role(&request.role)?,
+        parse_organization_membership_status(&request.status)?,
+        request
+            .team_id
+            .map(OrganizationTeamId::new)
+            .transpose()
+            .map_err(|_| ManagementError::InvalidRequest)?,
+        request.expected_version,
+    )
+    .map_err(map_management_lifecycle_error)?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let member = service
+        .change_member(context, command)
+        .await
+        .map_err(map_management_lifecycle_error)?;
+    Ok(no_store_json(OrganizationMembershipResponse::from(&member)))
+}
+
+async fn transfer_organization_ownership(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Path(organization_id): Path<i64>,
+    Json(request): Json<OrganizationOwnershipTransferRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_lifecycle_context(
+        &state,
+        &authentication,
+        organization_id,
+        OrganizationPermission::OwnershipTransfer,
+    )
+    .await?;
+    let command = OrganizationOwnershipTransferCommand::new(
+        OrganizationMembershipId::new(request.target_membership_id)
+            .map_err(|_| ManagementError::InvalidRequest)?,
+        request.current_owner_version,
+        request.target_expected_version,
+    )
+    .map_err(map_management_lifecycle_error)?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let result = service
+        .transfer_ownership(context, command)
+        .await
+        .map_err(map_management_lifecycle_error)?;
+    Ok(no_store_json(OrganizationOwnershipTransferResponse {
+        previous_owner: OrganizationMembershipResponse::from(result.previous_owner()),
+        current_owner: OrganizationMembershipResponse::from(result.current_owner()),
+    }))
+}
+
+async fn list_organization_teams(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Path(organization_id): Path<i64>,
+    RawQuery(raw_query): RawQuery,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_lifecycle_context(
+        &state,
+        &authentication,
+        organization_id,
+        OrganizationPermission::OverviewRead,
+    )
+    .await?;
+    let query = parse_team_list_query(raw_query.as_deref())?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let page = service
+        .list_teams(context, query)
+        .await
+        .map_err(map_management_lifecycle_error)?;
+    Ok(no_store_json(OrganizationTeamListResponse {
+        teams: page
+            .records()
+            .iter()
+            .map(OrganizationTeamResponse::from)
+            .collect(),
+        next_cursor: page.next_cursor().map(OrganizationTeamId::get),
+    }))
+}
+
+async fn create_organization_team(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Path(organization_id): Path<i64>,
+    Json(request): Json<OrganizationTeamCreateRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let context = authorize_lifecycle_context(
+        &state,
+        &authentication,
+        organization_id,
+        OrganizationPermission::TeamsManage,
+    )
+    .await?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let team = service
+        .create_team(
+            context,
+            OrganizationTeamCreateCommand::new(request.name, request.description),
+        )
+        .await
+        .map_err(map_management_lifecycle_error)?;
+    Ok(no_store_json(OrganizationTeamResponse::from(&team)))
+}
+
+async fn change_organization_team(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Path((organization_id, team_id)): Path<(i64, i64)>,
+    Json(request): Json<OrganizationTeamChangeRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let team_id = OrganizationTeamId::new(team_id).map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_lifecycle_context(
+        &state,
+        &authentication,
+        organization_id,
+        OrganizationPermission::TeamsManage,
+    )
+    .await?;
+    let command = OrganizationTeamChangeCommand::new(
+        team_id,
+        request.name,
+        request.description,
+        request.expected_version,
+    )
+    .map_err(map_management_lifecycle_error)?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let team = service
+        .change_team(context, command)
+        .await
+        .map_err(map_management_lifecycle_error)?;
+    Ok(no_store_json(OrganizationTeamResponse::from(&team)))
+}
+
+async fn disable_organization_team(
+    State(state): State<OrganizationHttpState>,
+    Extension(authentication): Extension<SessionAuthentication>,
+    Path((organization_id, team_id)): Path<(i64, i64)>,
+    Json(request): Json<OrganizationTeamDisableRequest>,
+) -> Result<Response, ManagementError> {
+    let organization_id = parse_organization_id(organization_id)?;
+    let team_id = OrganizationTeamId::new(team_id).map_err(|_| ManagementError::InvalidRequest)?;
+    let context = authorize_lifecycle_context(
+        &state,
+        &authentication,
+        organization_id,
+        OrganizationPermission::TeamsManage,
+    )
+    .await?;
+    let command = OrganizationTeamDisableCommand::new(team_id, request.expected_version)
+        .map_err(map_management_lifecycle_error)?;
+    let service = state
+        .management_service
+        .as_ref()
+        .ok_or(ManagementError::Internal)?;
+    let team = service
+        .disable_team(context, command)
+        .await
+        .map_err(map_management_lifecycle_error)?;
+    Ok(no_store_json(OrganizationTeamResponse::from(&team)))
 }
 
 async fn list_organizations(
@@ -586,6 +941,40 @@ impl OrganizationInvitationAcceptResponse {
     }
 }
 
+impl From<&OrganizationMembershipRecord> for OrganizationMembershipResponse {
+    fn from(record: &OrganizationMembershipRecord) -> Self {
+        Self {
+            id: record.id().get(),
+            organization_id: record.organization_id().get(),
+            user_id: record.user_id().get(),
+            role: organization_role_code(record.role()),
+            team_id: record.team_id().map(OrganizationTeamId::get),
+            status: organization_membership_status_code(record.status()),
+            joined_at: record.joined_at(),
+            suspended_at: record.suspended_at(),
+            removed_at: record.removed_at(),
+            invited_by_user_id: record.invited_by_user_id().map(af_domain::UserId::get),
+            version: record.version(),
+        }
+    }
+}
+
+impl From<&OrganizationTeamRecord> for OrganizationTeamResponse {
+    fn from(record: &OrganizationTeamRecord) -> Self {
+        Self {
+            id: record.id().get(),
+            organization_id: record.organization_id().get(),
+            name: record.name().to_owned(),
+            description: record.description().map(str::to_owned),
+            status: organization_team_status_code(record.status()),
+            version: record.version(),
+            created_at: record.created_at(),
+            updated_at: record.updated_at(),
+            deleted_at: record.deleted_at(),
+        }
+    }
+}
+
 async fn authorize_invitation_management(
     state: &OrganizationHttpState,
     authentication: &SessionAuthentication,
@@ -605,6 +994,86 @@ async fn authorize_invitation_management(
     Ok(organization_id)
 }
 
+async fn authorize_lifecycle_context(
+    state: &OrganizationHttpState,
+    authentication: &SessionAuthentication,
+    organization_id: OrganizationId,
+    permission: OrganizationPermission,
+) -> Result<af_admin::OrganizationContext, ManagementError> {
+    state
+        .authorization_service
+        .context(authentication.principal(), organization_id, permission)
+        .await
+        .map_err(map_authorization_error)
+}
+
+fn parse_organization_id(value: i64) -> Result<OrganizationId, ManagementError> {
+    OrganizationId::new(value).map_err(|_| ManagementError::InvalidRequest)
+}
+
+fn parse_membership_list_query(
+    raw_query: Option<&str>,
+) -> Result<OrganizationMembershipListQuery, ManagementError> {
+    let (after, limit) = parse_directory_query(raw_query)?;
+    let after = after
+        .map(OrganizationMembershipId::new)
+        .transpose()
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    OrganizationMembershipListQuery::new(after, limit).map_err(map_management_lifecycle_error)
+}
+
+fn parse_team_list_query(
+    raw_query: Option<&str>,
+) -> Result<OrganizationTeamListQuery, ManagementError> {
+    let (after, limit) = parse_directory_query(raw_query)?;
+    let after = after
+        .map(OrganizationTeamId::new)
+        .transpose()
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    OrganizationTeamListQuery::new(after, limit).map_err(map_management_lifecycle_error)
+}
+
+fn parse_directory_query(raw_query: Option<&str>) -> Result<(Option<i64>, usize), ManagementError> {
+    let Some(raw_query) = raw_query.filter(|value| !value.is_empty()) else {
+        return Ok((None, af_admin::DEFAULT_ORGANIZATION_DIRECTORY_PAGE_SIZE));
+    };
+    let mut after = None;
+    let mut limit = None;
+    for (key, value) in url::form_urlencoded::parse(raw_query.as_bytes()) {
+        if key.contains('\u{fffd}') || value.contains('\u{fffd}') {
+            return Err(ManagementError::InvalidRequest);
+        }
+        match key.as_ref() {
+            "after" if after.is_none() => after = Some(parse_positive_i64(&value)?),
+            "limit" if limit.is_none() => {
+                limit = Some(
+                    parse_positive_i64(&value)?
+                        .try_into()
+                        .map_err(|_| ManagementError::InvalidRequest)?,
+                )
+            }
+            _ => return Err(ManagementError::InvalidRequest),
+        }
+    }
+    Ok((
+        after,
+        limit.unwrap_or(af_admin::DEFAULT_ORGANIZATION_DIRECTORY_PAGE_SIZE),
+    ))
+}
+
+fn parse_positive_i64(value: &str) -> Result<i64, ManagementError> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(ManagementError::InvalidRequest);
+    }
+    let parsed = value
+        .parse::<i64>()
+        .map_err(|_| ManagementError::InvalidRequest)?;
+    if parsed <= 0 {
+        return Err(ManagementError::InvalidRequest);
+    }
+    Ok(parsed)
+}
+
 fn parse_invitation_key(value: &str) -> Result<OrganizationInvitationKey, ManagementError> {
     OrganizationInvitationKey::from_persistence_key(value)
         .map_err(|_| ManagementError::InvalidRequest)
@@ -612,10 +1081,22 @@ fn parse_invitation_key(value: &str) -> Result<OrganizationInvitationKey, Manage
 
 fn parse_organization_role(value: &str) -> Result<OrganizationRole, ManagementError> {
     match value {
+        "owner" => Ok(OrganizationRole::Owner),
         "admin" => Ok(OrganizationRole::Admin),
         "billing" => Ok(OrganizationRole::Billing),
         "member" => Ok(OrganizationRole::Member),
         "viewer" => Ok(OrganizationRole::Viewer),
+        _ => Err(ManagementError::InvalidRequest),
+    }
+}
+
+fn parse_organization_membership_status(
+    value: &str,
+) -> Result<OrganizationMembershipStatus, ManagementError> {
+    match value {
+        "active" => Ok(OrganizationMembershipStatus::Active),
+        "suspended" => Ok(OrganizationMembershipStatus::Suspended),
+        "removed" => Ok(OrganizationMembershipStatus::Removed),
         _ => Err(ManagementError::InvalidRequest),
     }
 }
@@ -634,6 +1115,37 @@ fn organization_membership_status_code(status: OrganizationMembershipStatus) -> 
         OrganizationMembershipStatus::Active => "active",
         OrganizationMembershipStatus::Suspended => "suspended",
         OrganizationMembershipStatus::Removed => "removed",
+    }
+}
+
+fn organization_team_status_code(status: af_domain::OrganizationTeamStatus) -> &'static str {
+    match status {
+        af_domain::OrganizationTeamStatus::Active => "active",
+        af_domain::OrganizationTeamStatus::Disabled => "disabled",
+    }
+}
+
+fn map_management_lifecycle_error(error: OrganizationManagementError) -> ManagementError {
+    match error {
+        OrganizationManagementError::InvalidInput => ManagementError::InvalidRequest,
+        OrganizationManagementError::Forbidden => ManagementError::Forbidden,
+        OrganizationManagementError::NotFound => ManagementError::OrganizationNotFound,
+        OrganizationManagementError::Conflict => ManagementError::OrganizationLifecycleConflict,
+        OrganizationManagementError::InvalidTransition => {
+            ManagementError::OrganizationLifecycleTransitionInvalid
+        }
+        OrganizationManagementError::LastOwner => ManagementError::OrganizationLastOwner,
+        OrganizationManagementError::TeamHasActiveMembers => ManagementError::OrganizationTeamInUse,
+        OrganizationManagementError::EntitlementRestricted => {
+            ManagementError::OrganizationEntitlementRestricted
+        }
+        OrganizationManagementError::SeatLimitReached => {
+            ManagementError::OrganizationSeatLimitReached
+        }
+        OrganizationManagementError::TeamLimitReached => {
+            ManagementError::OrganizationTeamLimitReached
+        }
+        OrganizationManagementError::Internal => ManagementError::Internal,
     }
 }
 

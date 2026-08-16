@@ -3,17 +3,110 @@ use af_domain::{
     OrganizationKey, OrganizationMembershipId, OrganizationMembershipStatus, OrganizationRole,
     OrganizationStatus, OrganizationTeamId, OrganizationTeamStatus, UserId,
 };
-use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
+use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect};
 
 use crate::entity::{
     organization_entitlements, organization_memberships, organization_teams, organizations,
 };
 
 use super::{
-    OrganizationAccessRecord, OrganizationEntitlementRecord, OrganizationMembershipRecord,
-    OrganizationRecord, OrganizationRepository, OrganizationRepositoryError,
+    MAX_ORGANIZATION_DIRECTORY_PAGE_SIZE, OrganizationAccessRecord, OrganizationEntitlementRecord,
+    OrganizationMembershipPageRecord, OrganizationMembershipRecord, OrganizationRecord,
+    OrganizationRepository, OrganizationRepositoryError, OrganizationTeamPageRecord,
     OrganizationTeamRecord, record_internal_error,
 };
+
+/// 在企业路径内读取单个成员，禁止只凭全局成员 ID 查询。
+pub(super) async fn membership(
+    repository: &OrganizationRepository,
+    organization_id: OrganizationId,
+    membership_id: af_domain::OrganizationMembershipId,
+) -> Result<OrganizationMembershipRecord, OrganizationRepositoryError> {
+    let model = organization_memberships::Entity::find_by_id(membership_id.get())
+        .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+        .one(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?
+        .ok_or(OrganizationRepositoryError::NotFound)?;
+    membership_record(model)
+}
+
+/// 按稳定成员 ID 游标列出企业内全部生命周期记录。
+pub(super) async fn list_memberships(
+    repository: &OrganizationRepository,
+    organization_id: OrganizationId,
+    after: Option<af_domain::OrganizationMembershipId>,
+    limit: usize,
+) -> Result<OrganizationMembershipPageRecord, OrganizationRepositoryError> {
+    validate_directory_limit(limit)?;
+    let mut query = organization_memberships::Entity::find()
+        .filter(organization_memberships::Column::OrganizationId.eq(organization_id.get()))
+        .order_by_asc(organization_memberships::Column::Id);
+    if let Some(after) = after {
+        query = query.filter(organization_memberships::Column::Id.gt(after.get()));
+    }
+    let fetch_limit =
+        u64::try_from(limit.checked_add(1).ok_or_else(invariant)?).map_err(|_| invariant())?;
+    let mut models = query
+        .limit(fetch_limit)
+        .all(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let has_more = models.len() > limit;
+    if has_more {
+        models.truncate(limit);
+    }
+    let records = models
+        .into_iter()
+        .map(membership_record)
+        .collect::<Result<Vec<_>, _>>()?;
+    let next_cursor = has_more
+        .then(|| records.last().map(OrganizationMembershipRecord::id))
+        .flatten();
+    Ok(OrganizationMembershipPageRecord::new(records, next_cursor))
+}
+
+/// 按稳定团队 ID 游标列出企业内活动和已禁用团队。
+pub(super) async fn list_teams(
+    repository: &OrganizationRepository,
+    organization_id: OrganizationId,
+    after: Option<OrganizationTeamId>,
+    limit: usize,
+) -> Result<OrganizationTeamPageRecord, OrganizationRepositoryError> {
+    validate_directory_limit(limit)?;
+    let mut query = organization_teams::Entity::find()
+        .filter(organization_teams::Column::OrganizationId.eq(organization_id.get()))
+        .order_by_asc(organization_teams::Column::Id);
+    if let Some(after) = after {
+        query = query.filter(organization_teams::Column::Id.gt(after.get()));
+    }
+    let fetch_limit =
+        u64::try_from(limit.checked_add(1).ok_or_else(invariant)?).map_err(|_| invariant())?;
+    let mut models = query
+        .limit(fetch_limit)
+        .all(repository.pool.connection())
+        .await
+        .map_err(|_| record_internal_error(OrganizationRepositoryError::Query))?;
+    let has_more = models.len() > limit;
+    if has_more {
+        models.truncate(limit);
+    }
+    let records = models
+        .into_iter()
+        .map(team_record)
+        .collect::<Result<Vec<_>, _>>()?;
+    let next_cursor = has_more
+        .then(|| records.last().map(OrganizationTeamRecord::id))
+        .flatten();
+    Ok(OrganizationTeamPageRecord::new(records, next_cursor))
+}
+
+fn validate_directory_limit(limit: usize) -> Result<(), OrganizationRepositoryError> {
+    if !(1..=MAX_ORGANIZATION_DIRECTORY_PAGE_SIZE).contains(&limit) {
+        return Err(OrganizationRepositoryError::InvalidInput);
+    }
+    Ok(())
+}
 
 /// 按企业路径和用户主体同时解析活动授权，避免跨企业复用成员标识。
 pub(super) async fn authorized_access(

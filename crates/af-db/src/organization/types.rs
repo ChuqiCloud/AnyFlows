@@ -18,6 +18,8 @@ pub const MAX_ORGANIZATION_SLUG_BYTES: usize = 64;
 pub const MAX_ORGANIZATION_TEAM_NAME_BYTES: usize = 128;
 /// 企业团队说明最大 UTF-8 字节数。
 pub const MAX_ORGANIZATION_TEAM_DESCRIPTION_BYTES: usize = 2_000;
+/// 企业成员和团队目录单页最大记录数。
+pub const MAX_ORGANIZATION_DIRECTORY_PAGE_SIZE: usize = 100;
 /// 授权来源最大 UTF-8 字节数。
 pub const MAX_ORGANIZATION_ENTITLEMENT_SOURCE_BYTES: usize = 64;
 /// 授权外部引用最大 UTF-8 字节数。
@@ -251,6 +253,25 @@ impl OrganizationOwnershipTransfer {
 pub struct OrganizationTeamCreate {
     pub(super) name: String,
     pub(super) description: Option<String>,
+}
+
+/// 带 CAS 版本的企业团队资料目标快照。
+pub struct OrganizationTeamChange {
+    pub(super) name: String,
+    pub(super) description: Option<String>,
+    pub(super) expected_version: i64,
+}
+
+impl OrganizationTeamChange {
+    /// 组装团队资料更新，字段边界由仓储统一校验。
+    #[must_use]
+    pub fn new(name: String, description: Option<String>, expected_version: i64) -> Self {
+        Self {
+            name,
+            description,
+            expected_version,
+        }
+    }
 }
 
 impl OrganizationTeamCreate {
@@ -720,6 +741,30 @@ impl OrganizationMembershipRecord {
     pub const fn version(&self) -> i64 {
         self.version
     }
+
+    /// 返回加入企业的时间。
+    #[must_use]
+    pub const fn joined_at(&self) -> i64 {
+        self.joined_at
+    }
+
+    /// 返回首次停用时间。
+    #[must_use]
+    pub const fn suspended_at(&self) -> Option<i64> {
+        self.suspended_at
+    }
+
+    /// 返回移除时间。
+    #[must_use]
+    pub const fn removed_at(&self) -> Option<i64> {
+        self.removed_at
+    }
+
+    /// 返回可选邀请操作人。
+    #[must_use]
+    pub const fn invited_by_user_id(&self) -> Option<UserId> {
+        self.invited_by_user_id
+    }
 }
 
 impl fmt::Debug for OrganizationMembershipRecord {
@@ -807,6 +852,12 @@ impl OrganizationAccessRecord {
 }
 
 impl OrganizationTeamRecord {
+    /// 返回团队所属企业标识。
+    #[must_use]
+    pub const fn organization_id(&self) -> OrganizationId {
+        self.organization_id
+    }
+
     /// 返回团队内部标识。
     #[must_use]
     pub const fn id(&self) -> OrganizationTeamId {
@@ -823,6 +874,91 @@ impl OrganizationTeamRecord {
     #[must_use]
     pub const fn version(&self) -> i64 {
         self.version
+    }
+
+    /// 返回团队名称。
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// 返回可选团队说明。
+    #[must_use]
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+
+    /// 返回创建时间。
+    #[must_use]
+    pub const fn created_at(&self) -> i64 {
+        self.created_at
+    }
+
+    /// 返回最近更新时间。
+    #[must_use]
+    pub const fn updated_at(&self) -> i64 {
+        self.updated_at
+    }
+
+    /// 返回禁用时间。
+    #[must_use]
+    pub const fn deleted_at(&self) -> Option<i64> {
+        self.deleted_at
+    }
+}
+
+/// 按稳定成员 ID 游标返回的企业成员目录页。
+#[derive(Debug, PartialEq)]
+pub struct OrganizationMembershipPageRecord {
+    records: Vec<OrganizationMembershipRecord>,
+    next_cursor: Option<OrganizationMembershipId>,
+}
+
+impl OrganizationMembershipPageRecord {
+    pub(super) const fn new(
+        records: Vec<OrganizationMembershipRecord>,
+        next_cursor: Option<OrganizationMembershipId>,
+    ) -> Self {
+        Self {
+            records,
+            next_cursor,
+        }
+    }
+
+    /// 拆出本页记录与下一页游标。
+    #[must_use]
+    pub fn into_parts(
+        self,
+    ) -> (
+        Vec<OrganizationMembershipRecord>,
+        Option<OrganizationMembershipId>,
+    ) {
+        (self.records, self.next_cursor)
+    }
+}
+
+/// 按稳定团队 ID 游标返回的企业团队目录页。
+#[derive(Debug, PartialEq)]
+pub struct OrganizationTeamPageRecord {
+    records: Vec<OrganizationTeamRecord>,
+    next_cursor: Option<OrganizationTeamId>,
+}
+
+impl OrganizationTeamPageRecord {
+    pub(super) const fn new(
+        records: Vec<OrganizationTeamRecord>,
+        next_cursor: Option<OrganizationTeamId>,
+    ) -> Self {
+        Self {
+            records,
+            next_cursor,
+        }
+    }
+
+    /// 拆出本页记录与下一页游标。
+    #[must_use]
+    pub fn into_parts(self) -> (Vec<OrganizationTeamRecord>, Option<OrganizationTeamId>) {
+        (self.records, self.next_cursor)
     }
 }
 

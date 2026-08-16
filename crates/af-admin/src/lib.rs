@@ -26,6 +26,7 @@ mod model_sync;
 mod network_settings;
 mod organization;
 mod organization_invitation;
+mod organization_management;
 mod password_reset;
 mod payment_settings;
 #[cfg(test)]
@@ -60,7 +61,7 @@ mod wallet;
 pub use af_account::PlainCredentialSecret as AdminCredentialSecret;
 pub use af_db::{
     CredentialProxyScheme, NetworkSettingsMode, OrganizationInvitationRecord,
-    OrganizationMembershipRecord,
+    OrganizationMembershipRecord, OrganizationTeamRecord,
 };
 pub use api_key::{
     ApiKeyDigest, ApiKeyGenerationError, ApiKeyParseError, ApiKeyPrefix, IssuedApiKey,
@@ -194,6 +195,16 @@ pub use organization_invitation::{
     OrganizationInvitationPreviewCommand, OrganizationInvitationPreviewIssue,
     OrganizationInvitationPreviewItemResult, OrganizationInvitationPreviewResult,
     OrganizationInvitationService,
+};
+pub use organization_management::{
+    DEFAULT_ORGANIZATION_DIRECTORY_PAGE_SIZE, DatabaseOrganizationManagementService,
+    OrganizationManagementError, OrganizationManagementService,
+    OrganizationMembershipChangeCommand, OrganizationMembershipFuture,
+    OrganizationMembershipListQuery, OrganizationMembershipPage, OrganizationMembershipPageFuture,
+    OrganizationOwnershipTransferCommand, OrganizationOwnershipTransferFuture,
+    OrganizationOwnershipTransferResult, OrganizationTeamChangeCommand,
+    OrganizationTeamCreateCommand, OrganizationTeamDisableCommand, OrganizationTeamFuture,
+    OrganizationTeamListQuery, OrganizationTeamPage, OrganizationTeamPageFuture,
 };
 pub use password_reset::{
     DatabasePasswordResetService, MAX_PASSWORD_RESET_PASSWORD_BYTES,
