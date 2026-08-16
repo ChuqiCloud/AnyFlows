@@ -549,6 +549,15 @@ pub async fn connect_and_migrate(
     database_options: &DatabaseOptions,
     migration_options: MigrationOptions,
 ) -> Result<DatabasePool, DatabaseError> {
+    if let Some(dedicated_options) = database_options.dedicated_migration_options() {
+        let migration_pool = connect(&dedicated_options).await?;
+        if let Err(error) = run_pending_migrations(&migration_pool, migration_options).await {
+            let _ = migration_pool.close().await;
+            return Err(error);
+        }
+        migration_pool.close().await?;
+        return connect(database_options).await;
+    }
     let pool = connect(database_options).await?;
     if let Err(error) = run_pending_migrations(&pool, migration_options).await {
         // 迁移失败时主动执行有界关闭，同时保留原始迁移错误供启动层判定。
