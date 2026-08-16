@@ -115,6 +115,7 @@ pub fn openapi_document() -> OpenApi {
         Tag::new("支付设置"),
         Tag::new("OAuth 连接"),
         Tag::new("企业钱包"),
+        Tag::new("企业预算"),
         Tag::new("余额预警"),
         Tag::new("管理会话"),
         Tag::new("首次安装"),
@@ -174,7 +175,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 105);
+        assert_eq!(document.paths.paths.len(), 107);
         let operation_count = document
             .paths
             .paths
@@ -195,7 +196,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 149);
+        assert_eq!(operation_count, 152);
         assert!(
             document
                 .components
@@ -246,6 +247,9 @@ mod tests {
             "listAccountOrganizations",
             "getOrganizationOverview",
             "getOrganizationWallet",
+            "getOrganizationBudgets",
+            "createOrganizationBudgetPolicy",
+            "getOrganizationBudgetReservation",
             "listOrganizationInvitations",
             "createOrganizationInvitation",
             "previewOrganizationInvitations",
@@ -378,7 +382,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 299);
+        assert_eq!(schemas.len(), 310);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationEntitlementResponse"));
         assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
@@ -399,6 +403,17 @@ mod tests {
         assert!(schemas.contains_key("OrganizationWalletListResponse"));
         assert!(schemas.contains_key("OrganizationWalletAdjustmentRequest"));
         assert!(schemas.contains_key("OrganizationWalletAdjustmentResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetAllocationResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetOverviewResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetPeriodRequest"));
+        assert!(schemas.contains_key("OrganizationBudgetPeriodResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetPolicyCreateRequest"));
+        assert!(schemas.contains_key("OrganizationBudgetPolicyResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetReservationResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetReservationStatusResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetScopeRequest"));
+        assert!(schemas.contains_key("OrganizationBudgetScopeResponse"));
+        assert!(schemas.contains_key("OrganizationBudgetWindowResponse"));
         assert!(schemas.contains_key("OrganizationTopupOrderCreateRequest"));
         assert!(schemas.contains_key("OrganizationTopupOrderStatusResponse"));
         assert!(schemas.contains_key("OrganizationTopupPaymentSessionResponse"));
