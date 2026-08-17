@@ -15598,6 +15598,7 @@
           "rate_limit_reset_at",
           "overload_until",
           "temp_unschedulable_until",
+          "blocks_spark_shadow",
           "session_window_start",
           "session_window_end",
           "parent_id",
@@ -15654,6 +15655,7 @@
               "null"
             ],
             "format": "int32",
+            "description": "普通凭据的独立并发上限；Spark 影子为 null 并继承母凭据。",
             "minimum": 0
           },
           "load_factor_micros": {
@@ -15708,6 +15710,10 @@
             "format": "int64",
             "minimum": 0
           },
+          "blocks_spark_shadow": {
+            "type": "boolean",
+            "description": "当前凭据的共享认证健康是否会阻断 Spark 影子；普通额度冷却不会置为 true。"
+          },
           "session_window_start": {
             "type": [
               "integer",
@@ -15730,10 +15736,12 @@
               "null"
             ],
             "format": "int64",
+            "description": "Spark 影子的 OAuth 母凭据 ID；普通凭据为 null。",
             "minimum": 1
           },
           "quota_dimension": {
-            "$ref": "#/components/schemas/AdminCredentialQuotaDimension"
+            "$ref": "#/components/schemas/AdminCredentialQuotaDimension",
+            "description": "`global` 表示普通凭据，`spark` 表示仅供 Spark 模型使用的影子。"
           },
           "proxy_id": {
             "type": [
@@ -15741,6 +15749,7 @@
               "null"
             ],
             "format": "int64",
+            "description": "普通凭据的专属代理；Spark 影子为 null 并继承母凭据。",
             "minimum": 1
           },
           "oauth_provider": {
@@ -15832,7 +15841,7 @@
                 ]
               }
             ],
-            "description": "非空 secret 的 kind 必须一致；null 仅用于创建待授权 OAuth 凭据。"
+            "description": "普通凭据与非空 secret 的 kind 必须一致；Spark 影子固定为 oauth。"
           },
           "secret": {
             "oneOf": [
@@ -15841,7 +15850,7 @@
               },
               {
                 "$ref": "#/components/schemas/AdminCredentialSecret",
-                "description": "类型化明文；OAuth 可传 null 以创建待授权凭据，永不随响应返回。"
+                "description": "普通 OAuth 可传 null 创建待授权凭据；Spark 影子也必须传 null 且不进入授权流程。"
               }
             ]
           },
@@ -15873,6 +15882,8 @@
               "null"
             ],
             "format": "int32",
+            "description": "普通凭据的独立并发上限；Spark 影子必须为 null 并继承母凭据。",
+            "example": 8,
             "minimum": 0
           },
           "load_factor_micros": {
@@ -15901,11 +15912,14 @@
               "null"
             ],
             "format": "int64",
-            "description": "同渠道且同类型的母凭据 ID；母凭据本身不得再有父级。",
+            "description": "普通凭据必须为 null；Spark 影子填写同渠道、已授权 OAuth 根凭据 ID。",
+            "example": 41,
             "minimum": 1
           },
           "quota_dimension": {
-            "$ref": "#/components/schemas/AdminCredentialQuotaDimension"
+            "$ref": "#/components/schemas/AdminCredentialQuotaDimension",
+            "description": "普通凭据固定为 global；Spark 影子固定为 spark。",
+            "example": "global"
           },
           "proxy_id": {
             "type": [
@@ -15913,6 +15927,8 @@
               "null"
             ],
             "format": "int64",
+            "description": "普通凭据可绑定专属代理；Spark 影子必须为 null 并继承母凭据。",
+            "example": 7,
             "minimum": 1
           },
           "oauth_provider": {
@@ -15920,6 +15936,7 @@
               "string",
               "null"
             ],
+            "description": "仅普通 OAuth 凭据可写；Spark 影子必须为 null。",
             "maxLength": 64,
             "minLength": 1
           },
@@ -16318,7 +16335,7 @@
                 ]
               }
             ],
-            "description": "凭据类型必须与非空 secret 对象的 kind 完全一致。"
+            "description": "类型创建后不可修改；Spark 影子始终为 oauth。"
           },
           "secret": {
             "oneOf": [
@@ -16327,7 +16344,7 @@
               },
               {
                 "$ref": "#/components/schemas/AdminCredentialSecret",
-                "description": "新明文用于轮换；null 表示保留已有密文。"
+                "description": "普通凭据用新明文轮换，null 表示保留；Spark 影子必须为 null。"
               }
             ]
           },
@@ -16359,6 +16376,8 @@
               "null"
             ],
             "format": "int32",
+            "description": "普通凭据的独立并发上限；Spark 影子必须为 null 并继承母凭据。",
+            "example": 8,
             "minimum": 0
           },
           "load_factor_micros": {
@@ -16387,11 +16406,14 @@
               "null"
             ],
             "format": "int64",
-            "description": "同渠道且同类型的母凭据 ID；母凭据本身不得再有父级。",
+            "description": "父级创建后不可修改；普通凭据为 null，Spark 影子保留原母凭据 ID。",
+            "example": 41,
             "minimum": 1
           },
           "quota_dimension": {
-            "$ref": "#/components/schemas/AdminCredentialQuotaDimension"
+            "$ref": "#/components/schemas/AdminCredentialQuotaDimension",
+            "description": "额度维度创建后不可修改；普通凭据为 global，Spark 影子为 spark。",
+            "example": "global"
           },
           "proxy_id": {
             "type": [
@@ -16399,6 +16421,8 @@
               "null"
             ],
             "format": "int64",
+            "description": "普通凭据可绑定专属代理；Spark 影子必须为 null 并继承母凭据。",
+            "example": 7,
             "minimum": 1
           },
           "oauth_provider": {
@@ -16406,6 +16430,7 @@
               "string",
               "null"
             ],
+            "description": "仅普通 OAuth 凭据可写；Spark 影子必须为 null。",
             "maxLength": 64,
             "minLength": 1
           },
@@ -16491,6 +16516,8 @@
               "null"
             ],
             "format": "int32",
+            "description": "普通凭据的独立并发上限；Spark 影子必须为 null 并继承母凭据。",
+            "example": 8,
             "minimum": 0
           },
           "load_factor_micros": {
@@ -16519,11 +16546,14 @@
               "null"
             ],
             "format": "int64",
-            "description": "同渠道且同类型的母凭据 ID；母凭据本身不得再有父级。",
+            "description": "普通凭据必须为 null；Spark 影子填写同渠道、已授权 OAuth 根凭据 ID。",
+            "example": 41,
             "minimum": 1
           },
           "quota_dimension": {
-            "$ref": "#/components/schemas/AdminCredentialQuotaDimension"
+            "$ref": "#/components/schemas/AdminCredentialQuotaDimension",
+            "description": "普通凭据固定为 global；Spark 影子固定为 spark，创建后不可修改。",
+            "example": "global"
           },
           "proxy_id": {
             "type": [
@@ -16531,6 +16561,8 @@
               "null"
             ],
             "format": "int64",
+            "description": "普通凭据可绑定专属代理；Spark 影子必须为 null 并继承母凭据。",
+            "example": 7,
             "minimum": 1
           },
           "oauth_provider": {
@@ -16538,6 +16570,7 @@
               "string",
               "null"
             ],
+            "description": "仅普通 OAuth 凭据可写；Spark 影子必须为 null。",
             "maxLength": 64,
             "minLength": 1
           },

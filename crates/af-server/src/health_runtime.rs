@@ -125,19 +125,35 @@ pub(crate) async fn load_channel_health(
 /// 一次批量读取凭据健康状态，供账号过滤与请求内稳定调权使用。
 pub(crate) async fn load_credential_health(
     store: &Arc<dyn SchedulerHealthStore>,
-    credential_ids: &[CredentialId],
+    credential_ids: &[(CredentialId, CredentialId)],
 ) -> Result<BTreeMap<i64, RuntimeHealthState>, SchedulerHealthRuntimeError> {
     let targets = credential_ids
         .iter()
-        .copied()
-        .map(RedisHealthTarget::Credential)
+        .flat_map(|(routing_id, shared_health_id)| {
+            [
+                RedisHealthTarget::Credential(*routing_id),
+                RedisHealthTarget::CredentialShared(*shared_health_id),
+            ]
+        })
         .collect::<Vec<_>>();
     let states = load_exact_states(store, &targets).await?;
-    Ok(states
-        .into_iter()
+    states
+        .chunks_exact(2)
         .zip(credential_ids.iter().copied())
-        .map(|(state, credential_id)| (credential_id.get(), state))
-        .collect())
+        .map(|(states, (routing_id, _))| {
+            let [local, shared] = states else {
+                return Err(SchedulerHealthRuntimeError::Invariant);
+            };
+            Ok((
+                routing_id.get(),
+                RuntimeHealthState {
+                    target: RedisHealthTarget::Credential(routing_id),
+                    penalty_micros: local.penalty_micros.max(shared.penalty_micros),
+                    cooling: local.cooling || shared.cooling,
+                },
+            ))
+        })
+        .collect()
 }
 
 /// 最佳努力写入渠道与凭据双层反馈；失败不覆盖已确定的业务响应。
@@ -179,10 +195,11 @@ fn feedback_events(
         .checked_add(usize::from(report.successful_candidate_index().is_some()))?;
     let mut events = Vec::with_capacity(outcome_count.checked_mul(2)?);
     for failure in report.failures() {
-        let Some(kind) = health_failure(failure.error()) else {
-            continue;
-        };
-        append_failure(&mut events, *targets.get(failure.candidate_index())?, kind);
+        append_failure(
+            &mut events,
+            *targets.get(failure.candidate_index())?,
+            failure.error(),
+        );
     }
     if let Some(index) = report.successful_candidate_index() {
         append_success(&mut events, *targets.get(index)?);
@@ -193,19 +210,50 @@ fn feedback_events(
 fn append_failure(
     events: &mut Vec<RedisHealthEvent>,
     target: CredentialAttemptTarget,
-    failure: RedisHealthFailure,
+    error: UpstreamError,
 ) {
-    // 池模式由外部账号池负责渠道级熔断，平台仍记录凭据级健康反馈。
-    if !target.pool_mode() {
-        events.push(RedisHealthEvent::failed(
-            RedisHealthTarget::Channel(target.channel_id()),
-            failure,
-        ));
+    match error {
+        UpstreamError::BadRequest => {}
+        UpstreamError::AuthExpired
+        | UpstreamError::AuthRevoked
+        | UpstreamError::AccountDisabled => events.push(RedisHealthEvent::failed(
+            RedisHealthTarget::CredentialShared(target.shared_health_id()),
+            RedisHealthFailure::Authentication,
+        )),
+        UpstreamError::QuotaExhausted => events.push(RedisHealthEvent::failed(
+            RedisHealthTarget::Credential(target.credential_id()),
+            RedisHealthFailure::Quota,
+        )),
+        UpstreamError::RateLimited {
+            scope: RateLimitScope::Model,
+            ..
+        } => {}
+        UpstreamError::RateLimited { .. } => events.push(RedisHealthEvent::failed(
+            RedisHealthTarget::Credential(target.credential_id()),
+            RedisHealthFailure::RateLimited,
+        )),
+        UpstreamError::Overloaded { .. } => events.push(RedisHealthEvent::failed(
+            RedisHealthTarget::Credential(target.credential_id()),
+            RedisHealthFailure::Overloaded,
+        )),
+        UpstreamError::ModelUnsupported | UpstreamError::ProtocolError => {
+            if !target.pool_mode() {
+                events.push(RedisHealthEvent::failed(
+                    RedisHealthTarget::Channel(target.channel_id()),
+                    health_failure(error).expect("模型和协议错误必须有闭合健康分类"),
+                ));
+            }
+        }
+        UpstreamError::Network { .. } | UpstreamError::ServerError { .. } => {
+            let failure = health_failure(error).expect("网络和服务端错误必须有闭合健康分类");
+            let health_target = if target.pool_mode() {
+                RedisHealthTarget::Credential(target.credential_id())
+            } else {
+                RedisHealthTarget::Channel(target.channel_id())
+            };
+            events.push(RedisHealthEvent::failed(health_target, failure));
+        }
     }
-    events.push(RedisHealthEvent::failed(
-        RedisHealthTarget::Credential(target.credential_id()),
-        failure,
-    ));
 }
 
 fn append_success(events: &mut Vec<RedisHealthEvent>, target: CredentialAttemptTarget) {
@@ -217,6 +265,9 @@ fn append_success(events: &mut Vec<RedisHealthEvent>, target: CredentialAttemptT
     events.push(RedisHealthEvent::succeeded(RedisHealthTarget::Credential(
         target.credential_id(),
     )));
+    events.push(RedisHealthEvent::succeeded(
+        RedisHealthTarget::CredentialShared(target.shared_health_id()),
+    ));
 }
 
 const fn health_failure(error: UpstreamError) -> Option<RedisHealthFailure> {
@@ -227,9 +278,8 @@ const fn health_failure(error: UpstreamError) -> Option<RedisHealthFailure> {
         UpstreamError::AuthExpired | UpstreamError::AuthRevoked => {
             Some(RedisHealthFailure::Authentication)
         }
-        UpstreamError::AccountDisabled | UpstreamError::QuotaExhausted => {
-            Some(RedisHealthFailure::Quota)
-        }
+        UpstreamError::AccountDisabled => Some(RedisHealthFailure::Authentication),
+        UpstreamError::QuotaExhausted => Some(RedisHealthFailure::Quota),
         // 当前健康存储只有渠道/凭据粒度，模型级限流不能扩大到整个账号。
         UpstreamError::RateLimited {
             scope: RateLimitScope::Model,
@@ -275,7 +325,7 @@ impl fmt::Debug for dyn SchedulerHealthStore {
 
 #[cfg(test)]
 mod tests {
-    use af_domain::{CredentialKind, UpstreamServerStatus};
+    use af_domain::{CredentialKind, RateLimitScope, UpstreamServerStatus};
 
     use super::*;
 
@@ -297,7 +347,13 @@ mod tests {
             Some(RedisHealthFailure::Server)
         );
         let mut events = Vec::new();
-        append_failure(&mut events, target, RedisHealthFailure::Network);
+        append_failure(
+            &mut events,
+            target,
+            UpstreamError::Network {
+                kind: af_domain::NetworkFailureKind::Connect,
+            },
+        );
         append_success(&mut events, target);
         assert_eq!(events.len(), 4);
         assert_eq!(
@@ -305,8 +361,12 @@ mod tests {
             RedisHealthTarget::Channel(ChannelId::new(7).unwrap())
         );
         assert_eq!(
-            events[1].target(),
+            events[2].target(),
             RedisHealthTarget::Credential(CredentialId::new(9).unwrap())
+        );
+        assert_eq!(
+            events[3].target(),
+            RedisHealthTarget::CredentialShared(CredentialId::new(9).unwrap())
         );
     }
 
@@ -321,13 +381,59 @@ mod tests {
         )
         .unwrap();
         let mut events = Vec::new();
-        append_failure(&mut events, target, RedisHealthFailure::Network);
+        append_failure(
+            &mut events,
+            target,
+            UpstreamError::Network {
+                kind: af_domain::NetworkFailureKind::Connect,
+            },
+        );
         append_success(&mut events, target);
-        assert_eq!(events.len(), 2);
-        assert!(
-            events
-                .iter()
-                .all(|event| matches!(event.target(), RedisHealthTarget::Credential(_)))
+        assert_eq!(events.len(), 3);
+        assert!(matches!(
+            events[0].target(),
+            RedisHealthTarget::Credential(_)
+        ));
+        assert!(matches!(
+            events[2].target(),
+            RedisHealthTarget::CredentialShared(_)
+        ));
+    }
+
+    #[test]
+    fn spark_feedback_separates_local_quota_from_shared_authentication() {
+        let parent_id = CredentialId::new(9).unwrap();
+        let shadow_id = CredentialId::new(10).unwrap();
+        let target = CredentialAttemptTarget::with_runtime_identity(
+            ChannelId::new(7).unwrap(),
+            shadow_id,
+            parent_id,
+            parent_id,
+            CredentialKind::Oauth,
+            true,
+            true,
+        )
+        .unwrap();
+
+        let mut events = Vec::new();
+        append_failure(
+            &mut events,
+            target,
+            UpstreamError::rate_limited(RateLimitScope::Credential),
+        );
+        append_failure(&mut events, target, UpstreamError::AuthRevoked);
+        append_success(&mut events, target);
+
+        assert_eq!(events.len(), 4);
+        assert_eq!(events[0].target(), RedisHealthTarget::Credential(shadow_id));
+        assert_eq!(
+            events[1].target(),
+            RedisHealthTarget::CredentialShared(parent_id)
+        );
+        assert_eq!(events[2].target(), RedisHealthTarget::Credential(shadow_id));
+        assert_eq!(
+            events[3].target(),
+            RedisHealthTarget::CredentialShared(parent_id)
         );
     }
 }

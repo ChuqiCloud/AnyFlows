@@ -6,8 +6,10 @@ import type {
 } from '@/lib/api/generated/types.gen'
 
 export type CredentialFormKind = AdminCredentialCreateRequestWritable['kind']
+export type CredentialFormMode = 'standard' | 'spark_shadow'
 
 export type CredentialFormValues = {
+  mode: CredentialFormMode
   kind: CredentialFormKind
   oauthCreateMode: 'authorize' | 'access_token'
   rotateSecret: boolean

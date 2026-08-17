@@ -6,7 +6,10 @@ use af_db::{
     AdminCredentialMutationOutcome, AdminCredentialWriteRecord, DatabaseOptions, MigrationOptions,
     OAuthCredentialRepository,
 };
-use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, Protocol, Status, UserId};
+use af_domain::{
+    ChannelId, ChannelType, CredentialId, CredentialKind, CredentialQuotaDimension, Protocol,
+    Status, UserId,
+};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
 use super::*;
@@ -309,7 +312,7 @@ fn oauth_credential_record() -> AdminCredentialWriteRecord {
         Some(875_000),
         true,
         None,
-        "global",
+        CredentialQuotaDimension::Global,
         None,
         Some("codex".to_owned()),
         Some("account-key".to_owned()),

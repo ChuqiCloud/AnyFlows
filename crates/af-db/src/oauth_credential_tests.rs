@@ -1,6 +1,9 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::{ChannelId, ChannelType, CredentialId, CredentialKind, Protocol, Status};
+use af_domain::{
+    ChannelId, ChannelType, CredentialId, CredentialKind, CredentialQuotaDimension, Protocol,
+    Status,
+};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, PaginatorTrait, Set};
 
@@ -933,7 +936,7 @@ async fn create_credential(
                 Some(875_000),
                 true,
                 None,
-                "global",
+                CredentialQuotaDimension::Global,
                 None,
                 oauth_provider.map(str::to_owned),
                 (kind == CredentialKind::Oauth).then(|| "account-key".to_owned()),

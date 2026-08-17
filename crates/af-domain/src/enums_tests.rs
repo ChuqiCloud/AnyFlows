@@ -1,8 +1,9 @@
 use std::collections::HashSet;
 
 use crate::{
-    ChannelType, ClientSimulationProfile, ClientSimulationResult, CredentialKind, Operation,
-    Protocol, PublicErrorCode, ResponsesCompactMode, ResponsesCompactProbeResult, Role, Status,
+    ChannelType, ClientSimulationProfile, ClientSimulationResult, CredentialKind,
+    CredentialQuotaDimension, Operation, Protocol, PublicErrorCode, ResponsesCompactMode,
+    ResponsesCompactProbeResult, Role, Status,
 };
 
 macro_rules! assert_string_enum_contract {
@@ -120,6 +121,14 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
         ]
     );
     assert_string_enum_contract!(
+        CredentialQuotaDimension,
+        CredentialQuotaDimension::ALL,
+        [
+            (CredentialQuotaDimension::Global, "global"),
+            (CredentialQuotaDimension::Spark, "spark"),
+        ]
+    );
+    assert_string_enum_contract!(
         Role,
         Role::ALL,
         [
@@ -149,6 +158,25 @@ fn string_enums_have_unique_stable_parse_and_json_contracts() {
             (PublicErrorCode::InternalError, "internal_error"),
         ]
     );
+}
+
+#[test]
+fn credential_quota_dimension_only_selects_spark_for_the_closed_model() {
+    assert_eq!(
+        CredentialQuotaDimension::for_canonical_model("gpt-5.3-codex-spark"),
+        CredentialQuotaDimension::Spark
+    );
+    for model in [
+        "gpt-5.3-codex",
+        "gpt-5.3-codex-spark-high",
+        "GPT-5.3-CODEX-SPARK",
+        "",
+    ] {
+        assert_eq!(
+            CredentialQuotaDimension::for_canonical_model(model),
+            CredentialQuotaDimension::Global
+        );
+    }
 }
 
 #[test]

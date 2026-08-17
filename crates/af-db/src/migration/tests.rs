@@ -67,7 +67,7 @@ const TEST_DATABASE_URL: &str = "AF_TEST_DATABASE_URL";
 const REQUIRE_LIVE_DATABASE: &str = "AF_REQUIRE_LIVE_DATABASE";
 const ALLOW_DESTRUCTIVE_MIGRATION_TEST: &str = "AF_ALLOW_DESTRUCTIVE_MIGRATION_TEST";
 /// 当前必须完整应用的迁移数量。
-const EXPECTED_MIGRATION_COUNT: usize = 68;
+const EXPECTED_MIGRATION_COUNT: usize = 69;
 const ISOLATED_DATABASE_PREFIX: &str = "anyflows_migration_test_";
 const TEST_PASSWORD_HASH: &str =
     "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$MDEyMzQ1Njc4OWFiY2RlZg";
@@ -292,6 +292,61 @@ async fn credential_oauth_pending_migration_backfills_existing_rows() -> Result<
         .await?
         .expect("迁移后的凭据必须保留");
     assert!(!credential.oauth_token_pending);
+
+    pool.close().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn spark_shadow_shape_migration_preserves_legacy_rows_and_guards_new_writes()
+-> Result<(), Box<dyn Error>> {
+    let pool = connect(&DatabaseOptions::new("sqlite::memory:")?).await?;
+    Migrator::up(pool.connection(), Some(68)).await?;
+    let channel = channel_active_model("spark-shadow-shape")
+        .insert(pool.connection())
+        .await?;
+    let mut parent = credential_active_model(channel.id, "spark-parent");
+    parent.kind = Set(CredentialKind::Oauth.as_str().to_owned());
+    let parent = parent.insert(pool.connection()).await?;
+
+    // 旧脚手架可能留下 parent + global 密文，迁移只能保留并阻止继续写入。
+    let mut legacy = credential_active_model(channel.id, "legacy-shadow-ciphertext");
+    legacy.kind = Set(CredentialKind::Oauth.as_str().to_owned());
+    legacy.parent_id = Set(Some(parent.id));
+    let legacy = legacy.insert(pool.connection()).await?;
+
+    Migrator::up(pool.connection(), None).await?;
+    let manager = SchemaManager::new(pool.connection());
+    assert!(
+        manager
+            .has_index("credentials", "uq_credentials_active_spark_parent")
+            .await?
+    );
+    let preserved = credentials::Entity::find_by_id(legacy.id)
+        .one(pool.connection())
+        .await?
+        .expect("旧脚手架行必须保留供管理员删除重建");
+    assert_eq!(preserved.quota_dimension, "global");
+
+    let mut rejected = credential_active_model(channel.id, "new-invalid-shadow");
+    rejected.kind = Set(CredentialKind::Oauth.as_str().to_owned());
+    rejected.parent_id = Set(Some(parent.id));
+    assert!(rejected.insert(pool.connection()).await.is_err());
+
+    let mut deleted_legacy = preserved.into_active_model();
+    deleted_legacy.deleted_at = Set(Some(historical_audit_time()));
+    deleted_legacy.update(pool.connection()).await?;
+
+    let mut shadow = credential_active_model(channel.id, "spark-shadow-reference");
+    shadow.kind = Set(CredentialKind::Oauth.as_str().to_owned());
+    shadow.parent_id = Set(Some(parent.id));
+    shadow.quota_dimension = Set("spark".to_owned());
+    shadow.oauth_provider = Set(None);
+    shadow.oauth_account_key = Set(None);
+    shadow.oauth_project_id = Set(None);
+    shadow.oauth_token_pending = Set(false);
+    shadow.clone().insert(pool.connection()).await?;
+    assert!(shadow.insert(pool.connection()).await.is_err());
 
     pool.close().await?;
     Ok(())
@@ -2594,6 +2649,7 @@ async fn assert_core_schema(connection: &DatabaseConnection) -> Result<(), DbErr
         ("groups", "uq_groups_active_name"),
         ("tokens", "uq_tokens_key_hash"),
         ("credentials", "idx_credentials_channel_status_schedulable"),
+        ("credentials", "uq_credentials_active_spark_parent"),
         ("abilities", "idx_abilities_group_model_enabled"),
         (
             "billing_reservations",

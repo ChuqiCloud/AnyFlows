@@ -742,6 +742,24 @@ mod tests {
             schemas["AdminCredential"]["properties"]["oauth_token_pending"]["type"],
             "boolean"
         );
+        assert_eq!(
+            schemas["AdminCredential"]["properties"]["blocks_spark_shadow"]["type"],
+            "boolean"
+        );
+        assert_eq!(
+            schemas["AdminCredentialQuotaDimension"]["enum"],
+            serde_json::json!(["global", "spark"])
+        );
+        assert_eq!(create["properties"]["parent_id"]["example"], 41);
+        assert_eq!(create["properties"]["quota_dimension"]["example"], "global");
+        assert!(
+            create["properties"]["secret"]["oneOf"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|value| value["description"].as_str())
+                .any(|description| description.contains("Spark 影子"))
+        );
 
         let secret_variants = schemas["AdminCredentialSecret"]["oneOf"]
             .as_array()
@@ -782,6 +800,11 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|value| { value["$ref"] == "#/components/schemas/AdminCredentialSecret" })
+        );
+        assert!(
+            schemas["AdminCredentialUpdateRequest"]["properties"]["parent_id"]["description"]
+                .as_str()
+                .is_some_and(|description| description.contains("创建后不可修改"))
         );
         assert_eq!(
             schemas["AdminGroup"]["properties"]["flags"]["additionalProperties"],

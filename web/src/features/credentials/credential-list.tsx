@@ -10,9 +10,14 @@ import {
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { AdminChannel, AdminCredential } from '@/lib/api/generated/types.gen'
-import { useDeleteAdminCredential, useUpdateAdminCredential } from './credential-api'
+import {
+  useAdminChannelCredentialCatalog,
+  useDeleteAdminCredential,
+  useUpdateAdminCredential,
+} from './credential-api'
 import { updateCredentialStatusRequest } from './credential-form-model'
 import { CredentialItem } from './credential-item'
+import { supportsSparkShadow } from './credential-model'
 
 type CredentialListProps = {
   channel: AdminChannel
@@ -35,6 +40,14 @@ export function CredentialList(props: CredentialListProps) {
   const updateMutation = useUpdateAdminCredential()
   const deleteMutation = useDeleteAdminCredential()
   const [deleting, setDeleting] = useState<AdminCredential>()
+  const sparkChannel = supportsSparkShadow(props.channel)
+  const deleteCatalogQuery = useAdminChannelCredentialCatalog(
+    props.channel.id,
+    deleting !== undefined && sparkChannel,
+  )
+  const deleteCatalogReady = !sparkChannel || deleteCatalogQuery.isSuccess
+  const deleteCatalog = sparkChannel ? deleteCatalogQuery.data ?? [] : props.credentials
+  const shadowCount = deleteCatalog.filter((item) => item.parent_id === deleting?.id).length
 
   const toggle = async (credential: AdminCredential) => {
     const status = credential.status === 'enabled' ? 'disabled' : 'enabled'
@@ -82,6 +95,7 @@ export function CredentialList(props: CredentialListProps) {
               <CredentialItem
                 key={credential.id}
                 credential={credential}
+                parent={credential.parent_id ? props.credentials.find((item) => item.id === credential.parent_id) : undefined}
                 language={i18n.language}
                 pending={updateMutation.isPending && updateMutation.variables?.credentialId === credential.id}
                 active={props.active}
@@ -100,9 +114,10 @@ export function CredentialList(props: CredentialListProps) {
 
       <AlertDialog open={deleting !== undefined} onOpenChange={(open) => { if (!open && !deleteMutation.isPending) setDeleting(undefined) }}>
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>{t('credentials.delete.title')}</AlertDialogTitle><AlertDialogDescription>{t('credentials.delete.description', { id: deleting?.id ?? '' })}</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogHeader><AlertDialogTitle>{t('credentials.delete.title')}</AlertDialogTitle><AlertDialogDescription>{t(!deleteCatalogReady ? deleteCatalogQuery.isError ? 'credentials.delete.catalogError' : 'credentials.delete.catalogLoading' : shadowCount > 0 ? 'credentials.delete.cascadeDescription' : 'credentials.delete.description', { id: deleting?.id ?? '', count: shadowCount })}</AlertDialogDescription></AlertDialogHeader>
+          {deleteCatalogQuery.isError ? <Button type="button" size="sm" variant="secondary" onClick={() => deleteCatalogQuery.refetch()}>{t('credentials.actions.retry')}</Button> : null}
           {deleteMutation.isError ? <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">{t('credentials.errors.delete')}</p> : null}
-          <AlertDialogFooter><AlertDialogCancel disabled={deleteMutation.isPending}>{t('credentials.actions.cancel')}</AlertDialogCancel><AlertDialogAction className={buttonVariants({ variant: 'destructive' })} disabled={deleteMutation.isPending} onClick={remove}>{deleteMutation.isPending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Trash2 aria-hidden="true" />}{t('credentials.actions.delete')}</AlertDialogAction></AlertDialogFooter>
+          <AlertDialogFooter><AlertDialogCancel disabled={deleteMutation.isPending}>{t('credentials.actions.cancel')}</AlertDialogCancel><AlertDialogAction className={buttonVariants({ variant: 'destructive' })} disabled={deleteMutation.isPending || !deleteCatalogReady} onClick={remove}>{deleteMutation.isPending ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Trash2 aria-hidden="true" />}{t('credentials.actions.delete')}</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </>

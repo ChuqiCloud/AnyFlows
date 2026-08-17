@@ -5,8 +5,8 @@ use std::{
 };
 
 use af_domain::{
-    ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile, CredentialKind, GroupId,
-    Protocol, ResponsesCompactMode, ResponsesCompactProbeResult,
+    ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile, CredentialId, CredentialKind,
+    CredentialQuotaDimension, GroupId, Protocol, ResponsesCompactMode, ResponsesCompactProbeResult,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use sea_orm::entity::prelude::Json;
@@ -197,6 +197,14 @@ struct ProjectionTargetWire {
 #[serde(deny_unknown_fields)]
 struct ProjectionCredentialWire {
     credential_id: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    secret_owner_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    concurrency_owner_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    shared_health_id: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    quota_dimension: Option<String>,
     credential_kind: String,
     key_id: String,
     nonce_base64: String,
@@ -486,6 +494,10 @@ impl ProjectionCredentialWire {
     fn from_credential(credential: &SchedulerRuntimeCredentialRecord) -> Self {
         Self {
             credential_id: credential.credential_id(),
+            secret_owner_id: Some(credential.secret_owner_id().get()),
+            concurrency_owner_id: Some(credential.concurrency_owner_id().get()),
+            shared_health_id: Some(credential.shared_health_id().get()),
+            quota_dimension: Some(credential.quota_dimension().to_string()),
             credential_kind: credential.credential_kind().to_string(),
             key_id: credential.envelope().key_id().to_owned(),
             nonce_base64: BASE64_STANDARD.encode(credential.envelope().nonce()),
@@ -503,6 +515,24 @@ impl ProjectionCredentialWire {
     fn try_into_credential(
         self,
     ) -> Result<SchedulerRuntimeCredentialRecord, SchedulerRuntimeProjectionError> {
+        let routing_credential_id = CredentialId::new(self.credential_id)
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
+        let parse_owner = |value: Option<i64>| {
+            value
+                .map(CredentialId::new)
+                .transpose()
+                .map(|value| value.unwrap_or(routing_credential_id))
+                .map_err(|_| SchedulerRuntimeProjectionError::Invariant)
+        };
+        let secret_owner_id = parse_owner(self.secret_owner_id)?;
+        let concurrency_owner_id = parse_owner(self.concurrency_owner_id)?;
+        let shared_health_id = parse_owner(self.shared_health_id)?;
+        let quota_dimension = self
+            .quota_dimension
+            .map(|value| value.parse::<CredentialQuotaDimension>())
+            .transpose()
+            .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?
+            .unwrap_or(CredentialQuotaDimension::Global);
         let credential_kind: CredentialKind = self
             .credential_kind
             .parse()
@@ -522,8 +552,12 @@ impl ProjectionCredentialWire {
             .map(af_domain::ConcurrencyLimit::new)
             .transpose()
             .map_err(|_| SchedulerRuntimeProjectionError::Invariant)?;
-        let mut credential = SchedulerRuntimeCredentialRecord::with_scheduling_and_concurrency(
-            self.credential_id,
+        let mut credential = SchedulerRuntimeCredentialRecord::with_runtime_identity(
+            routing_credential_id,
+            secret_owner_id,
+            concurrency_owner_id,
+            shared_health_id,
+            quota_dimension,
             credential_kind,
             envelope,
             self.proxy_required,

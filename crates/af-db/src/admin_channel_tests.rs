@@ -114,7 +114,10 @@ async fn detail_exposes_only_validated_non_sensitive_metadata() -> Result<(), Bo
     assert_eq!(credential.multi_key_mode(), Some(1));
     assert_eq!(credential.load_factor_micros(), Some(1_100_000));
     assert_eq!(credential.rate_multiplier_micros(), Some(900_000));
-    assert_eq!(credential.quota_dimension(), "global");
+    assert_eq!(
+        credential.quota_dimension(),
+        af_domain::CredentialQuotaDimension::Global
+    );
     assert_eq!(credential.oauth_provider(), Some("example-oauth"));
     assert_eq!(
         format!("{credential:?}"),
@@ -369,7 +372,8 @@ fn read_queries_only_project_non_sensitive_channel_capabilities() {
     for sql in credential_queries {
         let sql = sql.to_ascii_lowercase();
         assert!(!sql.contains("secret"));
-        assert!(!sql.contains("temp_unschedulable_reason"));
+        // 内部原因只用于派生共享认证状态，不会进入管理 API 响应。
+        assert!(sql.contains("temp_unschedulable_reason"));
     }
 }
 

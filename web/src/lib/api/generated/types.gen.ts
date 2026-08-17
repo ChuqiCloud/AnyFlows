@@ -176,6 +176,7 @@ export type AdminCredential = {
     rate_limit_reset_at: number | null;
     overload_until: number | null;
     temp_unschedulable_until: number | null;
+    blocks_spark_shadow: boolean;
     session_window_start: number | null;
     session_window_end: number | null;
     parent_id: number | null;

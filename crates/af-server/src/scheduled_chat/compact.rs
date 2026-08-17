@@ -1,7 +1,10 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use af_adapter::{RelayContext, get_adaptor};
-use af_domain::{AfError, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, Protocol};
+use af_domain::{
+    AfError, ConcurrencyLimit, CredentialId, CredentialQuotaDimension, GatewayPrincipal, GroupId,
+    Protocol,
+};
 use af_protocol::{CanonicalResponsesCompactionRequest, openai_responses_compact};
 use af_relay::{
     RelayCandidate, RelayCandidateRequest, RelayStateMachine,
@@ -66,11 +69,15 @@ impl ResponsesCompactRoutePlanner for ScheduledChatService {
                     .ok_or_else(|| AfError::from(af_domain::UpstreamError::ModelUnsupported))?
             };
             let protocol = Protocol::OpenAiResponses;
-            let credential_health = self.load_credential_health(&route, protocol).await?;
+            let credential_health = self
+                .load_credential_health(&route, protocol, request.model())
+                .await?;
             let user_permit = self
                 .acquire_user_permit(*principal, user_concurrency)
                 .await?;
-            let account_loads = self.load_account_concurrency(&route, protocol).await?;
+            let account_loads = self
+                .load_account_concurrency(&route, protocol, request.model())
+                .await?;
             let plan = self.build_responses_compact_plan(
                 route,
                 request,
@@ -130,20 +137,29 @@ impl ScheduledChatService {
                 return Err(AfError::Internal);
             }
             let headers = header_overrides(target)?;
+            let quota_dimension = CredentialQuotaDimension::for_canonical_model(&model);
+            let eligible_credentials = target
+                .credentials()
+                .iter()
+                .filter(|credential| credential.quota_dimension() == quota_dimension)
+                .cloned()
+                .collect::<Vec<_>>();
             let ordered_credentials = ordered_credentials(
                 request_id,
                 target,
+                &eligible_credentials,
                 wait_plan.kind(),
                 account_loads,
                 credential_health,
             );
-            health_filtered |= !target.credentials().is_empty() && ordered_credentials.is_empty();
+            health_filtered |= !eligible_credentials.is_empty() && ordered_credentials.is_empty();
             for runtime_credential in ordered_credentials {
                 if relay_candidates.len() == RelayStateMachine::MAX_CANDIDATES {
                     break 'channels;
                 }
                 let credential_id = CredentialId::new(runtime_credential.credential_id())
                     .map_err(|_| AfError::Internal)?;
+                let secret_owner_id = runtime_credential.secret_owner_id();
                 let client = self.client_for_credential(target, runtime_credential)?;
                 let mut context = RelayContext::new(client);
                 if let Some(base_url) = target.base_url() {
@@ -158,7 +174,7 @@ impl ScheduledChatService {
                     .decryptor
                     .decrypt_envelope(
                         target.channel_id(),
-                        runtime_credential.credential_id(),
+                        secret_owner_id.get(),
                         runtime_credential.credential_kind(),
                         runtime_credential.envelope(),
                     )
@@ -171,7 +187,7 @@ impl ScheduledChatService {
                     .with_channel_group(target.channel_id());
                 if let Some(concurrency) = &self.concurrency {
                     relay_candidate = relay_candidate.with_attempt_gate(concurrency.account_gate(
-                        credential_id,
+                        runtime_credential.concurrency_owner_id(),
                         runtime_credential.concurrency(),
                         wait_plan.timeout(),
                     ));
@@ -180,9 +196,11 @@ impl ScheduledChatService {
                     relay_candidate = relay_candidate.with_request(candidate_request.clone());
                 }
                 relay_candidates.push(relay_candidate);
-                attempt_targets.push(CredentialAttemptTarget::new(
+                attempt_targets.push(CredentialAttemptTarget::with_runtime_identity(
                     target.channel_id(),
-                    runtime_credential.credential_id(),
+                    credential_id,
+                    secret_owner_id,
+                    runtime_credential.shared_health_id(),
                     runtime_credential.credential_kind(),
                     oauth_has_refresh_token,
                     target.pool_mode(),
@@ -301,7 +319,8 @@ fn compact_candidate_request(
 
 fn ordered_credentials<'a>(
     request_id: &str,
-    target: &'a af_db::SchedulerRuntimeTargetRecord,
+    target: &af_db::SchedulerRuntimeTargetRecord,
+    credentials: &'a [af_db::SchedulerRuntimeCredentialRecord],
     wait_kind: RouteWaitKind,
     account_loads: Option<&BTreeMap<i64, CredentialLoad>>,
     credential_health: Option<&BTreeMap<i64, RuntimeHealthState>>,
@@ -311,20 +330,17 @@ fn ordered_credentials<'a>(
             order_credentials_by_load_and_health(
                 request_id,
                 target.channel_id(),
-                target.credentials(),
+                credentials,
                 loads,
                 health,
             )
         }
         (RouteWaitKind::Fallback, Some(loads), None) => {
-            order_credentials_by_load(request_id, target.channel_id(), target.credentials(), loads)
+            order_credentials_by_load(request_id, target.channel_id(), credentials, loads)
         }
-        (_, _, Some(health)) => order_credentials_with_health(
-            request_id,
-            target.channel_id(),
-            target.credentials(),
-            health,
-        ),
-        _ => order_credentials(request_id, target.channel_id(), target.credentials()),
+        (_, _, Some(health)) => {
+            order_credentials_with_health(request_id, target.channel_id(), credentials, health)
+        }
+        _ => order_credentials(request_id, target.channel_id(), credentials),
     }
 }

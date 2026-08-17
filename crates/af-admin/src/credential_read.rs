@@ -64,25 +64,8 @@ impl AdminCredentialMultiKeyMode {
     }
 }
 
-/// 影子账号使用的稳定配额维度。
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AdminCredentialQuotaDimension {
-    /// 所有请求共享全局额度。
-    Global,
-    /// 使用 Spark 维度额度。
-    Spark,
-}
-
-impl AdminCredentialQuotaDimension {
-    fn from_database(value: &str) -> Result<Self, AdminChannelReadError> {
-        match value {
-            "global" => Ok(Self::Global),
-            "spark" => Ok(Self::Spark),
-            _ => Err(AdminChannelReadError::Internal),
-        }
-    }
-}
+/// 管理 API 沿用原有名称暴露领域层的稳定额度维度。
+pub use af_domain::CredentialQuotaDimension as AdminCredentialQuotaDimension;
 
 /// 管理 API 可读取的非敏感凭据元数据。
 pub struct AdminCredential {
@@ -101,6 +84,7 @@ pub struct AdminCredential {
     rate_limit_reset_at: Option<i64>,
     overload_until: Option<i64>,
     temp_unschedulable_until: Option<i64>,
+    shared_auth_cooling: bool,
     session_window_start: Option<i64>,
     session_window_end: Option<i64>,
     parent_id: Option<CredentialId>,
@@ -136,6 +120,7 @@ impl AdminCredential {
         rate_limit_reset_at: Option<i64>,
         overload_until: Option<i64>,
         temp_unschedulable_until: Option<i64>,
+        shared_auth_cooling: bool,
         session_window_start: Option<i64>,
         session_window_end: Option<i64>,
         parent_id: Option<CredentialId>,
@@ -166,6 +151,7 @@ impl AdminCredential {
             rate_limit_reset_at,
             overload_until,
             temp_unschedulable_until,
+            shared_auth_cooling,
             session_window_start,
             session_window_end,
             parent_id,
@@ -257,6 +243,20 @@ impl AdminCredential {
     pub const fn temp_unschedulable_until(&self) -> Option<i64> {
         self.temp_unschedulable_until
     }
+
+    /// 判断当前凭据能否作为可用的 Spark 影子母凭据。
+    #[must_use]
+    pub fn blocks_spark_shadow(&self, now_seconds: i64) -> bool {
+        self.kind != CredentialKind::Oauth
+            || self.status != AdminRoutingStatus::Enabled
+            || self.oauth_token_pending
+            || self.parent_id.is_some()
+            || self.quota_dimension != AdminCredentialQuotaDimension::Global
+            || (self.shared_auth_cooling
+                && self
+                    .temp_unschedulable_until
+                    .is_some_and(|until| until > now_seconds))
+    }
     /// 返回订阅额度窗口起点。
     #[must_use]
     pub const fn session_window_start(&self) -> Option<i64> {
@@ -346,10 +346,11 @@ impl AdminCredential {
             record.rate_limit_reset_at(),
             record.overload_until(),
             record.temp_unschedulable_until(),
+            record.shared_auth_cooling(),
             record.session_window_start(),
             record.session_window_end(),
             record.parent_id(),
-            AdminCredentialQuotaDimension::from_database(record.quota_dimension())?,
+            record.quota_dimension(),
             record.proxy_id(),
             record.oauth_provider().map(str::to_owned),
             record.oauth_token_pending(),
@@ -402,5 +403,51 @@ impl AdminCredentialPage {
 impl fmt::Debug for AdminCredentialPage {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("AdminCredentialPage(<redacted>)")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn oauth_parent(temp_until: Option<i64>, shared_auth_cooling: bool) -> AdminCredential {
+        AdminCredential::from_parts(
+            CredentialId::new(1).unwrap(),
+            ChannelId::new(1).unwrap(),
+            CredentialKind::Oauth,
+            AdminRoutingStatus::Enabled,
+            None,
+            0,
+            1,
+            Some(1),
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            temp_until,
+            shared_auth_cooling,
+            None,
+            None,
+            None,
+            AdminCredentialQuotaDimension::Global,
+            None,
+            Some("codex".to_owned()),
+            false,
+            None,
+            None,
+            0,
+            None,
+            1,
+            1,
+        )
+    }
+
+    #[test]
+    fn spark_shadow_blocking_ignores_local_quota_and_expires_auth_cooling() {
+        assert!(!oauth_parent(Some(2_000), false).blocks_spark_shadow(1_000));
+        assert!(oauth_parent(Some(2_000), true).blocks_spark_shadow(1_000));
+        assert!(!oauth_parent(Some(2_000), true).blocks_spark_shadow(2_000));
     }
 }

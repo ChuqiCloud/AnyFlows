@@ -25,6 +25,8 @@ const MAX_BREAKER_THRESHOLD: u32 = 64;
 pub enum RedisHealthTarget {
     Channel(ChannelId),
     Credential(CredentialId),
+    /// 引用同一密钥的逻辑凭据共享认证、撤销和账号停用健康。
+    CredentialShared(CredentialId),
 }
 
 /// 已归一化故障对健康分与连续瞬时故障窗口的影响。

@@ -17,25 +17,29 @@ import {
   type CredentialFormValues,
 } from './credential-form-model'
 import { CredentialKindPicker } from './credential-kind-picker'
-import { credentialKindsForChannel } from './credential-model'
+import { CredentialModePicker } from './credential-mode-picker'
+import { credentialKindsForChannel, supportsSparkShadow } from './credential-model'
 import { CredentialOAuthFields } from './credential-oauth-fields'
 import { CredentialScheduleFields } from './credential-schedule-fields'
 import { CredentialSecretFields } from './credential-secret-fields'
+import { CredentialSparkFields } from './credential-spark-fields'
 
 type CredentialFormProps = {
   channel: AdminChannel
   credential?: AdminCredential
   credentials: readonly AdminCredential[]
+  credentialCatalogStatus: 'loading' | 'error' | 'ready'
   active: boolean
   onSaved: (credential: AdminCredential) => void
 }
 
 /** 统一创建与编辑流程，编辑默认保留密文，显式轮换时才读取敏感输入。 */
-export function CredentialForm({ channel, credential, credentials, active, onSaved }: CredentialFormProps) {
+export function CredentialForm({ channel, credential, credentials, credentialCatalogStatus, active, onSaved }: CredentialFormProps) {
   const { t } = useTranslation()
   const creating = credential === undefined
   const allowedKinds = credentialKindsForChannel(channel.type)
   const initialKind = allowedKinds[0] ?? 'api_key'
+  const allowSparkShadow = supportsSparkShadow(channel)
   const controllerRef = useRef<AbortController | undefined>(undefined)
   const createMutation = useCreateAdminCredential()
   const updateMutation = useUpdateAdminCredential()
@@ -43,6 +47,7 @@ export function CredentialForm({ channel, credential, credentials, active, onSav
   const { reset: resetUpdateMutation } = updateMutation
   const schema = useMemo(() => buildCredentialFormSchema({
     channelType: channel.type,
+    allowSparkShadow,
     creating,
     currentId: credential?.id,
     messages: {
@@ -58,13 +63,14 @@ export function CredentialForm({ channel, credential, credentials, active, onSav
       parent: t('credentials.validation.parent'),
       optionalText: t('credentials.validation.optionalText'),
     },
-  }), [channel.type, creating, credential?.id, t])
+  }), [allowSparkShadow, channel.type, creating, credential?.id, t])
   const form = useForm<CredentialFormValues>({
     defaultValues: credentialFormValues(credential, initialKind),
     resolver: zodResolver(schema),
   })
   const busy = createMutation.isPending || updateMutation.isPending
   const kind = form.watch('kind')
+  const mode = form.watch('mode')
 
   useEffect(() => {
     controllerRef.current?.abort()
@@ -106,24 +112,54 @@ export function CredentialForm({ channel, credential, credentials, active, onSav
     form.clearErrors()
   }
 
+  const selectMode = (nextMode: CredentialFormValues['mode']) => {
+    form.setValue('mode', nextMode, { shouldDirty: true, shouldValidate: true })
+    form.setValue('kind', nextMode === 'spark_shadow' ? 'oauth' : initialKind, { shouldDirty: false })
+    form.setValue('oauthCreateMode', nextMode === 'spark_shadow' ? 'access_token' : initialKind === 'oauth' ? 'authorize' : 'access_token', { shouldDirty: false })
+    form.setValue('rotateSecret', nextMode !== 'spark_shadow', { shouldDirty: false })
+    form.setValue('parentId', '', { shouldDirty: false })
+    form.setValue('quotaDimension', nextMode === 'spark_shadow' ? 'spark' : 'global', { shouldDirty: false })
+    form.setValue('concurrency', '', { shouldDirty: false })
+    form.setValue('proxyId', '', { shouldDirty: false })
+    for (const field of ['apiKey', 'accessToken', 'accessKeyId', 'secretAccessKey', 'sessionToken', 'clientEmail', 'privateKeyId', 'privateKey', 'oauthProvider', 'oauthAccountKey', 'oauthProjectId'] as const) {
+      form.setValue(field, '', { shouldDirty: false })
+    }
+    form.clearErrors()
+  }
+
   return (
     <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit} noValidate>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <CredentialSection title={t('credentials.form.identityTitle')} description={t('credentials.form.identityDescription')}>
-          {creating ? <CredentialKindPicker value={kind} kinds={allowedKinds} disabled={busy} onChange={selectKind} /> : (
-            <div className="flex items-center gap-2"><Badge>{t(`credentials.kind.${kind}`)}</Badge><span className="text-[0.6875rem] text-muted-foreground">#{credential.id}</span></div>
+          {creating && allowSparkShadow ? (
+            <>
+              <CredentialModePicker value={mode} disabled={busy} sparkDisabled={credentialCatalogStatus !== 'ready'} onChange={selectMode} />
+              {credentialCatalogStatus !== 'ready' ? <p role={credentialCatalogStatus === 'error' ? 'alert' : 'status'} className={credentialCatalogStatus === 'error' ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>{t(`credentials.spark.catalog.${credentialCatalogStatus}`)}</p> : null}
+            </>
+          ) : null}
+          {mode === 'spark_shadow' ? (
+            <>
+              <div className="flex items-center gap-2"><Badge>{t('credentials.form.modeLabel.spark_shadow')}</Badge>{credential ? <span className="text-[0.6875rem] text-muted-foreground">#{credential.id}</span> : null}</div>
+              <CredentialSparkFields form={form} credentials={credentials} credential={credential} disabled={busy} />
+            </>
+          ) : (
+            <>
+              {creating ? <CredentialKindPicker value={kind} kinds={allowedKinds} disabled={busy} onChange={selectKind} /> : (
+                <div className="flex items-center gap-2"><Badge>{t(`credentials.kind.${kind}`)}</Badge><span className="text-[0.6875rem] text-muted-foreground">#{credential.id}</span></div>
+              )}
+              <CredentialSecretFields form={form} creating={creating} disabled={busy} />
+            </>
           )}
-          <CredentialSecretFields form={form} creating={creating} disabled={busy} />
         </CredentialSection>
 
-        {kind === 'oauth' ? (
+        {mode === 'standard' && kind === 'oauth' ? (
           <CredentialSection title={t('credentials.oauth.title')} description={t('credentials.oauth.description')}>
             <CredentialOAuthFields form={form} active={active} disabled={busy} />
           </CredentialSection>
         ) : null}
 
         <CredentialSection title={t('credentials.schedule.title')} description={t('credentials.schedule.description')}>
-          <CredentialScheduleFields form={form} credentials={credentials} credential={credential} disabled={busy} />
+          <CredentialScheduleFields form={form} credential={credential} mode={mode} disabled={busy} />
         </CredentialSection>
       </div>
 
