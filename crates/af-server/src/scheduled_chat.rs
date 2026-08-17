@@ -55,7 +55,9 @@ use af_scheduler::{
     ChannelRoutingHealth, IndexedRoutePlan, IndexedWeightedScheduler,
     IndexedWeightedSchedulerError, RouteWaitKind, StickyRouteOutcome, StickyWaitPolicy,
 };
-use af_telemetry::record_client_simulation_attempt;
+use af_telemetry::{
+    MetricClientSimulationProfile, MetricClientSimulationResult, record_client_simulation_attempt,
+};
 
 mod audio;
 mod compact;
@@ -1075,13 +1077,36 @@ fn record_client_simulation_metrics(report: &af_relay::RelayAttemptReport) {
     for failure in report.failures() {
         if let Some(client_simulation) = failure.client_simulation() {
             record_client_simulation_attempt(
-                client_simulation.profile(),
-                client_simulation.result(),
+                metric_client_simulation_profile(client_simulation.profile()),
+                metric_client_simulation_result(client_simulation.result()),
             );
         }
     }
     if let Some(client_simulation) = report.successful_client_simulation() {
-        record_client_simulation_attempt(client_simulation.profile(), client_simulation.result());
+        record_client_simulation_attempt(
+            metric_client_simulation_profile(client_simulation.profile()),
+            metric_client_simulation_result(client_simulation.result()),
+        );
+    }
+}
+
+const fn metric_client_simulation_profile(
+    profile: af_domain::ClientSimulationProfile,
+) -> MetricClientSimulationProfile {
+    match profile {
+        af_domain::ClientSimulationProfile::AnthropicCliHeadersV1 => {
+            MetricClientSimulationProfile::AnthropicCliHeadersV1
+        }
+    }
+}
+
+const fn metric_client_simulation_result(
+    result: af_domain::ClientSimulationResult,
+) -> MetricClientSimulationResult {
+    match result {
+        af_domain::ClientSimulationResult::NotApplied => MetricClientSimulationResult::NotApplied,
+        af_domain::ClientSimulationResult::Applied => MetricClientSimulationResult::Applied,
+        af_domain::ClientSimulationResult::Failed => MetricClientSimulationResult::Failed,
     }
 }
 

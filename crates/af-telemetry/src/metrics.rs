@@ -1,7 +1,6 @@
 use std::{fmt, sync::Arc, time::Duration};
 
 use ::metrics::Unit;
-use af_domain::{ClientSimulationProfile, ClientSimulationResult};
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle as ExporterHandle};
 
 use crate::{MetricLabelError, TelemetryError};
@@ -177,8 +176,8 @@ impl MetricsHandle {
 
 /// 记录一次配置了闭合档案的客户端仿真 Attempt。
 pub fn record_client_simulation_attempt(
-    profile: ClientSimulationProfile,
-    result: ClientSimulationResult,
+    profile: MetricClientSimulationProfile,
+    result: MetricClientSimulationResult,
 ) {
     ::metrics::counter!(
         CLIENT_SIMULATION_ATTEMPTS_TOTAL,
@@ -228,6 +227,38 @@ registered_label!(
     /// 经过受控注册且有容量上限的分组指标标签。
     GroupLabel
 );
+
+/// 指标使用的有限客户端仿真档案，避免 telemetry 反向依赖业务领域层。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MetricClientSimulationProfile {
+    AnthropicCliHeadersV1,
+}
+
+impl MetricClientSimulationProfile {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::AnthropicCliHeadersV1 => "anthropic_cli_headers_v1",
+        }
+    }
+}
+
+/// 指标使用的有限客户端仿真结果。
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum MetricClientSimulationResult {
+    NotApplied,
+    Applied,
+    Failed,
+}
+
+impl MetricClientSimulationResult {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::NotApplied => "not_applied",
+            Self::Applied => "applied",
+            Self::Failed => "failed",
+        }
+    }
+}
 
 /// 指标使用的有限协议分类。
 #[non_exhaustive]

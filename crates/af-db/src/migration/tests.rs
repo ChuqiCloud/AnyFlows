@@ -1133,7 +1133,7 @@ async fn insert_legacy_debug_trace_snapshot(pool: &DatabasePool) -> Result<i64, 
     }
     .insert(pool.connection())
     .await?;
-    debug_trace_attempts::ActiveModel {
+    let attempt = debug_trace_attempts::ActiveModel {
         trace_id: Set(trace.id),
         candidate_index: Set(0),
         channel_id: Set(101),
@@ -1158,9 +1158,11 @@ async fn insert_legacy_debug_trace_snapshot(pool: &DatabasePool) -> Result<i64, 
         response_status: Set(Some(200)),
         response_streamed: Set(false),
         ..Default::default()
-    }
-    .insert(pool.connection())
-    .await?;
+    };
+    // 历史 schema 尚无第 68 号列，禁止当前实体通过 RETURNING 提前投影新列。
+    debug_trace_attempts::Entity::insert(attempt)
+        .exec_without_returning(pool.connection())
+        .await?;
     Ok(trace.id)
 }
 

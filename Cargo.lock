@@ -317,7 +317,6 @@ name = "af-telemetry"
 version = "0.1.0"
 dependencies = [
  "af-config",
- "af-domain",
  "metrics",
  "metrics-exporter-prometheus",
  "serde_json",
