@@ -1032,26 +1032,43 @@ async fn migration_runner_smoke() -> Result<(), Box<dyn Error>> {
         EXPECTED_MIGRATION_COUNT
     );
 
+    eprintln!("迁移冒烟阶段：更新时间行为");
     assert_updated_at_behaviors(pool.connection()).await?;
+    eprintln!("迁移冒烟阶段：余额预警迁移");
     exercise_balance_alert_migration(pool.connection()).await?;
+    eprintln!("迁移冒烟阶段：调度发件箱仓储");
     exercise_scheduler_outbox_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：令牌鉴权仓储");
     exercise_token_auth_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：额度仓储");
     exercise_quota_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：批量计费仓储");
     exercise_billing_batch_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：模型价格仓储");
     exercise_model_price_repository(&pool).await?;
     // Expression 降级保护由独立测试覆盖；全量回滚前清理业务测试行以允许迁移降级。
     model_prices::Entity::delete_many()
         .exec(pool.connection())
         .await?;
+    eprintln!("迁移冒烟阶段：用量日志仓储");
     exercise_usage_log_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：试炼场分享仓储");
     exercise_playground_share_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：试炼场会话仓储");
     exercise_playground_conversation_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：注册仓储");
     exercise_registration_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：认证挑战仓储");
     exercise_auth_challenge_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：站点设置仓储");
     exercise_site_settings_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：邮件设置仓储");
     exercise_email_settings_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：管理看板仓储");
     exercise_admin_dashboard_repository(&pool).await?;
+    eprintln!("迁移冒烟阶段：核心结构校验");
     exercise_core_schema(pool.connection()).await?;
+    eprintln!("迁移冒烟阶段：企业仓储");
     exercise_organization_repository(&pool).await?;
 
     Migrator::down(pool.connection(), None).await?;

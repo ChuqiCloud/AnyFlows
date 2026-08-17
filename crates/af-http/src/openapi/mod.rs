@@ -182,7 +182,7 @@ mod tests {
     #[test]
     fn document_keeps_the_management_contract_surface() {
         let document = openapi_document();
-        assert_eq!(document.paths.paths.len(), 111);
+        assert_eq!(document.paths.paths.len(), 115);
         let operation_count = document
             .paths
             .paths
@@ -203,7 +203,7 @@ mod tests {
                 .count()
             })
             .sum::<usize>();
-        assert_eq!(operation_count, 159);
+        assert_eq!(operation_count, 163);
         assert!(
             document
                 .components
@@ -345,6 +345,10 @@ mod tests {
             "listMissingAdminModels",
             "listAdminTokens",
             "listAdminUsageLogs",
+            "listOrganizationUsageLogs",
+            "listOrganizationAuditLogs",
+            "listPlatformOrganizationUsageLogs",
+            "listPlatformOrganizationAuditLogs",
             "listUserUsageLogs",
             "listAdminUsers",
             "listModels",
@@ -396,7 +400,7 @@ mod tests {
         assert_eq!(operation_ids, expected);
 
         let schemas = document["components"]["schemas"].as_object().unwrap();
-        assert_eq!(schemas.len(), 315);
+        assert_eq!(schemas.len(), 320);
         assert!(schemas.keys().is_sorted());
         assert!(schemas.contains_key("OrganizationEntitlementResponse"));
         assert!(schemas.contains_key("OrganizationInvitationAcceptRequest"));
@@ -433,6 +437,11 @@ mod tests {
         assert!(schemas.contains_key("OrganizationTokenResponse"));
         assert!(schemas.contains_key("OrganizationTokenListResponse"));
         assert!(schemas.contains_key("IssuedOrganizationTokenResponse"));
+        assert!(schemas.contains_key("OrganizationAuditLogListResponse"));
+        assert!(schemas.contains_key("OrganizationAuditLogResponse"));
+        assert!(schemas.contains_key("OrganizationAuditOutcomeResponse"));
+        assert!(schemas.contains_key("OrganizationUsageLogListResponse"));
+        assert!(schemas.contains_key("OrganizationUsageLogSummaryResponse"));
         assert!(schemas.contains_key("OrganizationTopupOrderCreateRequest"));
         assert!(schemas.contains_key("OrganizationTopupOrderStatusResponse"));
         assert!(schemas.contains_key("OrganizationTopupPaymentSessionResponse"));
