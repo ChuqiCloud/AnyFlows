@@ -8,7 +8,11 @@ import {
   credentialFormValues,
   updateCredentialRequest,
 } from '../src/features/credentials/credential-form-request.ts'
-import { credentialRuntimeState } from '../src/features/credentials/credential-model.ts'
+import {
+  credentialRuntimeState,
+  sparkShadowParentBlocked,
+  sparkShadowParentCandidates,
+} from '../src/features/credentials/credential-model.ts'
 import {
   formatMicros,
   parseMicros,
@@ -40,6 +44,7 @@ const oauthCredential = {
   rate_limit_reset_at: null,
   overload_until: null,
   temp_unschedulable_until: null,
+  blocks_spark_shadow: false,
   session_window_start: null,
   session_window_end: null,
   parent_id: null,
@@ -108,6 +113,43 @@ test('OAuth 创建默认使用官方授权占位而不是伪 access token', () =
   assert.equal(request.oauth_provider, 'codex')
 })
 
+test('普通凭据请求固定为根凭据与全局额度', () => {
+  const request = createCredentialRequest({
+    ...credentialFormValues(undefined, 'api_key'),
+    apiKey: 'sk-test',
+    parentId: '9',
+    quotaDimension: 'spark',
+  })
+
+  assert.equal(request.parent_id, null)
+  assert.equal(request.quota_dimension, 'global')
+})
+
+test('Spark 影子创建请求不携带密钥代理或独立身份', () => {
+  const request = createCredentialRequest({
+    ...credentialFormValues(undefined, 'oauth'),
+    mode: 'spark_shadow',
+    parentId: '9',
+    quotaDimension: 'spark',
+    concurrency: '4',
+    proxyId: '7',
+    oauthProvider: 'codex',
+    oauthAccountKey: 'account',
+    oauthProjectId: 'project',
+    accessToken: 'must-not-leak',
+  })
+
+  assert.equal(request.kind, 'oauth')
+  assert.equal(request.secret, null)
+  assert.equal(request.parent_id, 9)
+  assert.equal(request.quota_dimension, 'spark')
+  assert.equal(request.concurrency, null)
+  assert.equal(request.proxy_id, null)
+  assert.equal(request.oauth_provider, null)
+  assert.equal(request.oauth_account_key, null)
+  assert.equal(request.oauth_project_id, null)
+})
+
 test('待授权状态由服务端字段独立驱动', () => {
   assert.equal(
     credentialRuntimeState({ ...oauthCredential, oauth_token_pending: true }),
@@ -124,6 +166,63 @@ test('编辑凭据默认保留密文且完整保留已有代理绑定', () => {
   assert.equal(request.proxy_id, 7)
   assert.equal(request.weight, 25)
   assert.equal(request.rate_multiplier_micros, 1_250_000)
+})
+
+test('编辑 Spark 影子锁定母凭据与继承字段', () => {
+  const shadow = {
+    ...oauthCredential,
+    id: 10,
+    parent_id: 9,
+    quota_dimension: 'spark',
+  }
+  const values = {
+    ...credentialFormValues(shadow),
+    rotateSecret: true,
+    accessToken: 'must-not-leak',
+    parentId: '99',
+    concurrency: '8',
+    proxyId: '7',
+    oauthProvider: 'codex',
+  }
+  const request = updateCredentialRequest(values, shadow)
+
+  assert.equal(request.secret, null)
+  assert.equal(request.parent_id, 9)
+  assert.equal(request.quota_dimension, 'spark')
+  assert.equal(request.concurrency, null)
+  assert.equal(request.proxy_id, null)
+  assert.equal(request.oauth_provider, null)
+})
+
+test('Spark 母凭据候选只包含未派生影子的已授权 OAuth 根凭据', () => {
+  const candidates = sparkShadowParentCandidates([
+    oauthCredential,
+    { ...oauthCredential, id: 10, parent_id: 9, quota_dimension: 'spark' },
+    { ...oauthCredential, id: 11 },
+    { ...oauthCredential, id: 12, oauth_token_pending: true },
+    { ...oauthCredential, id: 13, status: 'disabled' },
+    { ...oauthCredential, id: 14, kind: 'api_key' },
+    { ...oauthCredential, id: 15, blocks_spark_shadow: true },
+  ])
+
+  assert.deepEqual(candidates.map((credential) => credential.id), [11])
+})
+
+test('母凭据普通额度窗口不阻止影子，共享认证健康会阻止', () => {
+  const ordinaryCooling = {
+    ...oauthCredential,
+    schedulable: false,
+    rate_limit_reset_at: 2_000,
+    overload_until: 2_000,
+  }
+  assert.equal(sparkShadowParentBlocked(ordinaryCooling), false)
+  assert.equal(sparkShadowParentBlocked({
+    ...ordinaryCooling,
+    temp_unschedulable_until: 2_000,
+    blocks_spark_shadow: true,
+  }), true)
+  assert.equal(sparkShadowParentBlocked({ ...ordinaryCooling, status: 'disabled', blocks_spark_shadow: true }), true)
+  assert.equal(sparkShadowParentBlocked(undefined), true)
 })
 
 test('倍率在十进制字符串与百万分整数之间精确换算', () => {
@@ -210,6 +309,10 @@ test('独立账号池与 OAuth 固定终态都有中英文文案', () => {
       assert.equal(typeof messages.credentials.kind[kind], 'string')
     }
     assert.equal(typeof messages.credentials.runtime.authorizationPending, 'string')
+    assert.equal(typeof messages.credentials.runtime.parentBlocked, 'string')
+    assert.equal(typeof messages.credentials.form.modeLabel.standard, 'string')
+    assert.equal(typeof messages.credentials.form.modeLabel.spark_shadow, 'string')
+    assert.equal(typeof messages.credentials.spark.parent, 'string')
     assert.equal(typeof messages.credentials.secret.oauthMode.authorize, 'string')
     assert.equal(typeof messages.credentials.secret.oauthMode.access_token, 'string')
     for (const provider of ['claude_code', 'codex', 'gemini', 'antigravity']) {

@@ -639,6 +639,7 @@
       "autoDisabled": "Auto-disabled",
       "cooling": "Cooling down",
       "disabled": "Disabled",
+      "parentBlocked": "Blocked by parent credential",
       "paused": "Scheduling paused",
       "pending": "Awaiting first use"
     },
@@ -651,8 +652,12 @@
     "item": {
       "priorityWeight": "Priority {{priority}}, weight {{weight}}",
       "concurrency": "Concurrency {{value}}",
+      "inheritedConcurrency": "Inherited concurrency {{value}}",
       "parent": "Parent account #{{id}}",
+      "sharedParent": "Shared parent credential #{{id}}",
       "proxy": "Proxy #{{id}}",
+      "inheritedProxy": "Inherited proxy #{{id}}",
+      "inheritedGlobalProxy": "Inherited global network egress",
       "coolingUntil": "Cooling until {{value}}",
       "authorizationRequired": "Complete OAuth authorization before scheduling begins",
       "neverUsed": "Not used yet",
@@ -669,12 +674,40 @@
       "editDescription": "Update credential #{{id}} in “{{name}}”. Existing secrets are preserved by default."
     },
     "form": {
+      "mode": "Credential mode",
+      "modeLabel": {
+        "standard": "Standard credential",
+        "spark_shadow": "Spark shadow"
+      },
+      "modeHint": {
+        "standard": "Stores an independent secret, proxy, and quota state.",
+        "spark_shadow": "Inherits an OAuth parent and isolates only Spark quota."
+      },
       "kind": "Credential type",
       "identityTitle": "Identity material",
       "identityDescription": "Sensitive material is sent only with this request and is never echoed after storage.",
       "rotateSecret": "Rotate secret",
       "rotateSecretHint": "Replace the complete secret set with the fields below.",
       "secretPreserved": "This save will preserve the existing server-side secret."
+    },
+    "spark": {
+      "badge": "Spark shadow",
+      "parent": "OAuth parent credential",
+      "parentHint": "Only enabled, authorized root credentials without a Spark shadow are listed.",
+      "parentLocked": "The parent credential and quota dimension cannot change after creation.",
+      "selectParent": "Select an OAuth parent credential",
+      "noParent": "No eligible OAuth root credential is loaded. Create and authorize one first, or check whether it already has a Spark shadow.",
+      "catalog": {
+        "loading": "Checking the complete account catalog. Spark shadow mode will unlock when it finishes.",
+        "error": "The complete account catalog could not be loaded, so Spark shadows cannot be created right now."
+      },
+      "inheritance": "Inherited identity",
+      "secret": "Secret and OAuth lifecycle",
+      "proxy": "Egress proxy",
+      "concurrency": "Real account concurrency",
+      "fromParent": "Inherited from #{{id}}",
+      "globalProxy": "Global network egress",
+      "selectFirst": "Select a parent to preview"
     },
     "secret": {
       "apiKey": "Upstream API key",
@@ -806,7 +839,10 @@
     },
     "delete": {
       "title": "Delete credential",
-      "description": "Credential #{{id}} will be permanently removed. This action cannot be undone."
+      "description": "Credential #{{id}} will be permanently removed. This action cannot be undone.",
+      "cascadeDescription": "Parent credential #{{id}} and its {{count}} Spark shadow will be permanently removed. This action cannot be undone.",
+      "catalogLoading": "Checking the complete credential catalog for Spark shadows that would be deleted with this credential.",
+      "catalogError": "The complete credential catalog could not be loaded, so the cascade scope cannot be confirmed safely. Retry before deleting."
     },
     "validation": {
       "incompatibleKind": "This channel type does not support that credential.",

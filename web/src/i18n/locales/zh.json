@@ -639,6 +639,7 @@
       "autoDisabled": "自动停用",
       "cooling": "冷却中",
       "disabled": "已停用",
+      "parentBlocked": "被母凭据阻止",
       "paused": "暂停调度",
       "pending": "待首次使用"
     },
@@ -651,8 +652,12 @@
     "item": {
       "priorityWeight": "优先级 {{priority}}，权重 {{weight}}",
       "concurrency": "并发 {{value}}",
+      "inheritedConcurrency": "继承并发 {{value}}",
       "parent": "父账号 #{{id}}",
+      "sharedParent": "共享母凭据 #{{id}}",
       "proxy": "代理 #{{id}}",
+      "inheritedProxy": "继承代理 #{{id}}",
+      "inheritedGlobalProxy": "继承全局网络出口",
       "coolingUntil": "冷却至 {{value}}",
       "authorizationRequired": "完成 OAuth 授权后自动进入调度",
       "neverUsed": "尚未参与请求",
@@ -669,12 +674,40 @@
       "editDescription": "更新“{{name}}”中的凭据 #{{id}}；密文默认保持不变。"
     },
     "form": {
+      "mode": "凭据模式",
+      "modeLabel": {
+        "standard": "普通凭据",
+        "spark_shadow": "Spark 影子"
+      },
+      "modeHint": {
+        "standard": "保存独立密钥、代理和额度状态。",
+        "spark_shadow": "继承 OAuth 母凭据，仅隔离 Spark 额度。"
+      },
       "kind": "凭据类型",
       "identityTitle": "身份材料",
       "identityDescription": "敏感材料仅在本次提交中发送，保存后不再回显。",
       "rotateSecret": "轮换密文",
       "rotateSecretHint": "开启后使用下方输入替换整组密文。",
       "secretPreserved": "本次保存将保留服务端现有密文。"
+    },
+    "spark": {
+      "badge": "Spark 影子",
+      "parent": "OAuth 母凭据",
+      "parentHint": "仅显示已启用、已授权且尚未派生影子的根凭据。",
+      "parentLocked": "创建后母凭据与额度维度不可修改。",
+      "selectParent": "选择 OAuth 母凭据",
+      "noParent": "当前已加载账号中没有可用的 OAuth 根凭据；请先创建并完成授权，或检查是否已有 Spark 影子。",
+      "catalog": {
+        "loading": "正在核对完整账号目录，完成后可选择 Spark 影子模式。",
+        "error": "完整账号目录读取失败，暂时不能创建 Spark 影子。"
+      },
+      "inheritance": "继承关系",
+      "secret": "密钥与 OAuth 生命周期",
+      "proxy": "出口代理",
+      "concurrency": "真实账号并发",
+      "fromParent": "继承自 #{{id}}",
+      "globalProxy": "全局网络出口",
+      "selectFirst": "选择母凭据后显示"
     },
     "secret": {
       "apiKey": "上游 API Key",
@@ -806,7 +839,10 @@
     },
     "delete": {
       "title": "删除凭据",
-      "description": "将永久移除凭据 #{{id}}，此操作无法撤销。"
+      "description": "将永久移除凭据 #{{id}}，此操作无法撤销。",
+      "cascadeDescription": "将永久移除母凭据 #{{id}} 及其 {{count}} 个 Spark 影子，此操作无法撤销。",
+      "catalogLoading": "正在核对完整凭据目录，确认是否存在会被级联删除的 Spark 影子。",
+      "catalogError": "完整凭据目录读取失败，无法安全确认级联范围。请重试后再删除。"
     },
     "validation": {
       "incompatibleKind": "当前渠道类型不支持这种凭据。",

@@ -1,4 +1,5 @@
 import type {
+  AdminChannel,
   AdminChannelType,
   AdminCredential,
   AdminCredentialCreateRequestWritable,
@@ -14,6 +15,16 @@ export type CredentialRuntimeState =
   | 'disabled'
   | 'paused'
   | 'pending'
+
+/** 仅原生 OpenAI Responses 渠道允许派生 Spark 影子。 */
+export function supportsSparkShadow(channel: Pick<AdminChannel, 'type' | 'protocol'>) {
+  return channel.type === 'openai' && channel.protocol === 'openai_responses'
+}
+
+/** 额度维度是管理端识别影子的稳定事实；损坏记录也不会重新暴露密钥入口。 */
+export function isSparkShadowCredential(credential: AdminCredential) {
+  return credential.quota_dimension === 'spark'
+}
 
 export const writableCredentialKinds = [
   'api_key',
@@ -75,13 +86,22 @@ export function credentialCoolingUntil(credential: AdminCredential) {
   return value > 0 ? value : undefined
 }
 
-/** 只把同渠道、同类型且自身不是影子账号的凭据作为可选父账号。 */
-export function credentialParentCandidates(
+/** 只返回结构有效、已启用且尚未派生影子的 OAuth 根凭据。 */
+export function sparkShadowParentCandidates(
   credentials: readonly AdminCredential[],
-  kind: WritableCredentialKind,
-  currentId?: number,
+  currentShadowId?: number,
 ) {
-  return credentials.filter((credential) => credential.id !== currentId
-    && credential.kind === kind
-    && credential.parent_id === null)
+  return credentials.filter((credential) => credential.kind === 'oauth'
+    && credential.status === 'enabled'
+    && !credential.oauth_token_pending
+    && !credential.blocks_spark_shadow
+    && credential.parent_id === null
+    && credential.quota_dimension === 'global'
+    && !credentials.some((child) => child.parent_id === credential.id
+      && child.id !== currentShadowId))
+}
+
+/** 使用服务端派生事实判断母凭据是否阻止影子，避免把普通额度冷却误判为共享故障。 */
+export function sparkShadowParentBlocked(parent: AdminCredential | undefined) {
+  return parent === undefined || parent.blocks_spark_shadow
 }

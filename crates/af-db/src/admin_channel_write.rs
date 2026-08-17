@@ -6,14 +6,15 @@ use std::{
 
 use af_domain::{
     ChannelAutoBanRules, ChannelId, ChannelTimeout, ChannelType, ClientSimulationProfile,
-    CredentialId, CredentialKind, GroupId, Protocol, ResponsesCompactMode, Status,
+    CredentialId, CredentialKind, CredentialQuotaDimension, GroupId, Protocol,
+    ResponsesCompactMode, Status,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, QueryFilter,
-    QuerySelect, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, DbBackend, EntityTrait,
+    QueryFilter, QuerySelect, Set, TransactionTrait,
     entity::prelude::TimeDateTimeWithTimeZone,
-    sea_query::{Alias, Expr, Query},
+    sea_query::{Alias, Expr, LockType, Query},
 };
 use thiserror::Error;
 use tokio::time::timeout;
@@ -47,6 +48,8 @@ use crate::{
 
 /// 单次凭据父子图校验允许读取的最大有效记录数。
 pub const MAX_ADMIN_CREDENTIAL_GRAPH_SIZE: usize = 100_000;
+
+const SHADOW_REFERENCE_KEY_ID: &str = "shadow-reference";
 const SOFT_DELETE_BATCH_SIZE: usize = 500;
 
 /// 管理端创建或完整更新渠道时写入的业务字段。
@@ -243,7 +246,7 @@ pub struct AdminCredentialWriteRecord {
     rate_multiplier_micros: Option<i64>,
     schedulable: bool,
     parent_id: Option<CredentialId>,
-    quota_dimension: String,
+    quota_dimension: CredentialQuotaDimension,
     proxy_id: Option<i64>,
     oauth_provider: Option<String>,
     /// 创建时可显式声明等待 OAuth 首次授权；更新时为 `None` 表示保留数据库原值。
@@ -270,7 +273,7 @@ impl AdminCredentialWriteRecord {
         rate_multiplier_micros: Option<i64>,
         schedulable: bool,
         parent_id: Option<CredentialId>,
-        quota_dimension: impl Into<String>,
+        quota_dimension: CredentialQuotaDimension,
         proxy_id: Option<i64>,
         oauth_provider: Option<String>,
         oauth_account_key: Option<String>,
@@ -287,7 +290,7 @@ impl AdminCredentialWriteRecord {
             rate_multiplier_micros,
             schedulable,
             parent_id,
-            quota_dimension: quota_dimension.into(),
+            quota_dimension,
             proxy_id,
             oauth_provider,
             oauth_token_pending: None,
@@ -300,6 +303,18 @@ impl AdminCredentialWriteRecord {
     #[must_use]
     pub const fn kind(&self) -> CredentialKind {
         self.kind
+    }
+
+    /// 返回创建时固定的母凭据；普通凭据没有母级。
+    #[must_use]
+    pub const fn parent_id(&self) -> Option<CredentialId> {
+        self.parent_id
+    }
+
+    /// 返回创建时固定的额度维度。
+    #[must_use]
+    pub const fn quota_dimension(&self) -> CredentialQuotaDimension {
+        self.quota_dimension
     }
 
     /// 设置创建阶段的 OAuth 待授权标记；普通更新不得使用该字段覆盖数据库状态。
@@ -477,7 +492,12 @@ impl AdminChannelRepository {
     {
         match timeout(
             self.lookup_timeout,
-            self.create_credential_inner(channel_id, record, Some(prepare_secret)),
+            self.create_credential_inner(
+                channel_id,
+                record,
+                Some(prepare_secret),
+                CredentialPlaceholder::TransactionPending,
+            ),
         )
         .await
         {
@@ -498,6 +518,29 @@ impl AdminChannelRepository {
                 channel_id,
                 record,
                 None::<fn(CredentialId) -> Result<EncryptedCredentialEnvelope, ()>>,
+                CredentialPlaceholder::OauthPending,
+            ),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(internal_error(AdminChannelWriteRepositoryError::Timeout)),
+        }
+    }
+
+    /// 创建不持有密钥的 Spark 影子；运行时必须只读取母凭据密文。
+    pub async fn create_spark_shadow_credential(
+        &self,
+        channel_id: ChannelId,
+        record: AdminCredentialWriteRecord,
+    ) -> Result<AdminCredentialCreateOutcome, AdminChannelWriteRepositoryError> {
+        match timeout(
+            self.lookup_timeout,
+            self.create_credential_inner(
+                channel_id,
+                record,
+                None::<fn(CredentialId) -> Result<EncryptedCredentialEnvelope, ()>>,
+                CredentialPlaceholder::SparkShadow,
             ),
         )
         .await
@@ -877,14 +920,38 @@ impl AdminChannelRepository {
         channel_id: ChannelId,
         record: AdminCredentialWriteRecord,
         prepare_secret: Option<F>,
+        placeholder_kind: CredentialPlaceholder,
     ) -> Result<AdminCredentialCreateOutcome, AdminChannelWriteRepositoryError>
     where
         F: FnOnce(CredentialId) -> Result<EncryptedCredentialEnvelope, ()>,
     {
         let fields = validate_credential_fields(record)?;
         let oauth_token_pending = fields.oauth_token_pending.unwrap_or(false);
-        // 待授权创建只能走占位密文分支，普通创建必须提供真实加密回调。
-        if oauth_token_pending != prepare_secret.is_none() {
+        let valid_secret_path = matches!(
+            (
+                placeholder_kind,
+                prepare_secret.is_some(),
+                oauth_token_pending,
+                fields.quota_dimension
+            ),
+            (
+                CredentialPlaceholder::TransactionPending,
+                true,
+                false,
+                CredentialQuotaDimension::Global
+            ) | (
+                CredentialPlaceholder::OauthPending,
+                false,
+                true,
+                CredentialQuotaDimension::Global
+            ) | (
+                CredentialPlaceholder::SparkShadow,
+                false,
+                false,
+                CredentialQuotaDimension::Spark
+            )
+        );
+        if !valid_secret_path {
             return Err(AdminChannelWriteRepositoryError::InvalidInput);
         }
         let transaction = begin_transaction(self).await?;
@@ -892,12 +959,15 @@ impl AdminChannelRepository {
             return Ok(AdminCredentialCreateOutcome::ChannelNotFound);
         };
         validate_credential_channel_compatibility(&channel, fields.kind)?;
-        validate_parent(&transaction, channel_id, None, &fields).await?;
+        if fields.quota_dimension == CredentialQuotaDimension::Spark {
+            validate_spark_shadow_channel(&channel)?;
+            lock_and_validate_spark_parent(&transaction, channel_id, &fields, None).await?;
+        }
         validate_proxy_binding(&transaction, fields.proxy_id).await?;
-        let placeholder = if oauth_token_pending {
-            oauth_token_pending_encrypted_json()?
-        } else {
-            pending_encrypted_json()?
+        let placeholder = match placeholder_kind {
+            CredentialPlaceholder::TransactionPending => pending_encrypted_json()?,
+            CredentialPlaceholder::OauthPending => oauth_token_pending_encrypted_json()?,
+            CredentialPlaceholder::SparkShadow => spark_shadow_reference_encrypted_json()?,
         };
         let inserted = credentials::ActiveModel {
             channel_id: Set(channel_id.get()),
@@ -912,7 +982,7 @@ impl AdminChannelRepository {
             rate_multiplier_micros: Set(fields.rate_multiplier_micros),
             schedulable: Set(fields.schedulable),
             parent_id: Set(fields.parent_id.map(CredentialId::get)),
-            quota_dimension: Set(fields.quota_dimension),
+            quota_dimension: Set(fields.quota_dimension.as_str().to_owned()),
             proxy_id: Set(fields.proxy_id),
             oauth_provider: Set(fields.oauth_provider),
             oauth_token_pending: Set(oauth_token_pending),
@@ -979,8 +1049,21 @@ impl AdminChannelRepository {
         };
         let current_kind = CredentialKind::from_str(&current.kind)
             .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
-        if current_kind != fields.kind {
+        let current_quota_dimension = CredentialQuotaDimension::from_str(&current.quota_dimension)
+            .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+        if current_kind != fields.kind
+            || current.parent_id != fields.parent_id.map(CredentialId::get)
+            || current_quota_dimension != fields.quota_dimension
+        {
             return Err(AdminChannelWriteRepositoryError::InvalidInput);
+        }
+        if current_quota_dimension == CredentialQuotaDimension::Spark {
+            validate_spark_shadow_channel(&channel)?;
+            if has_replacement_secret || !is_spark_shadow_reference(&current.secret)? {
+                return Err(AdminChannelWriteRepositoryError::InvalidInput);
+            }
+            lock_and_validate_spark_parent(&transaction, channel_id, &fields, Some(credential_id))
+                .await?;
         }
         let oauth_contract_changed = current_kind == CredentialKind::Oauth
             && (has_replacement_secret
@@ -990,7 +1073,6 @@ impl AdminChannelRepository {
         {
             return Err(internal_error(AdminChannelWriteRepositoryError::Invariant));
         }
-        validate_parent(&transaction, channel_id, Some(credential_id), &fields).await?;
         validate_proxy_binding(&transaction, fields.proxy_id).await?;
 
         let now = TimeDateTimeWithTimeZone::now_utc();
@@ -1023,14 +1105,6 @@ impl AdminChannelRepository {
             .col_expr(
                 credentials::Column::Schedulable,
                 Expr::value(fields.schedulable),
-            )
-            .col_expr(
-                credentials::Column::ParentId,
-                Expr::value(fields.parent_id.map(CredentialId::get)),
-            )
-            .col_expr(
-                credentials::Column::QuotaDimension,
-                Expr::value(fields.quota_dimension),
             )
             .col_expr(credentials::Column::ProxyId, Expr::value(fields.proxy_id))
             .col_expr(
@@ -1287,12 +1361,19 @@ struct ValidatedCredentialFields {
     rate_multiplier_micros: Option<i64>,
     schedulable: bool,
     parent_id: Option<CredentialId>,
-    quota_dimension: String,
+    quota_dimension: CredentialQuotaDimension,
     proxy_id: Option<i64>,
     oauth_provider: Option<String>,
     oauth_token_pending: Option<bool>,
     oauth_account_key: Option<String>,
     oauth_project_id: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+enum CredentialPlaceholder {
+    TransactionPending,
+    OauthPending,
+    SparkShadow,
 }
 
 fn validate_credential_fields(
@@ -1302,6 +1383,17 @@ fn validate_credential_fields(
         || record.oauth_account_key.is_some()
         || record.oauth_project_id.is_some();
     let oauth_token_pending = record.oauth_token_pending;
+    let valid_shape = match record.quota_dimension {
+        CredentialQuotaDimension::Global => record.parent_id.is_none(),
+        CredentialQuotaDimension::Spark => {
+            record.kind == CredentialKind::Oauth
+                && record.parent_id.is_some()
+                && record.concurrency.is_none()
+                && record.proxy_id.is_none()
+                && !oauth_fields_present
+                && oauth_token_pending != Some(true)
+        }
+    };
     if !matches!(
         record.kind,
         CredentialKind::ApiKey
@@ -1316,7 +1408,6 @@ fn validate_credential_fields(
         || record.concurrency.is_some_and(|value| value < 0)
         || record.load_factor_micros.is_some_and(|value| value < 0)
         || record.rate_multiplier_micros.is_some_and(|value| value < 0)
-        || !matches!(record.quota_dimension.as_str(), "global" | "spark")
         || record.proxy_id.is_some_and(|value| value <= 0)
         || !valid_optional_text(record.oauth_provider.as_deref(), 64)
         || !valid_optional_text(record.oauth_account_key.as_deref(), 255)
@@ -1324,6 +1415,7 @@ fn validate_credential_fields(
         || (oauth_token_pending == Some(true)
             && (record.kind != CredentialKind::Oauth || record.oauth_provider.is_none()))
         || (record.kind != CredentialKind::Oauth && oauth_fields_present)
+        || !valid_shape
     {
         return Err(AdminChannelWriteRepositoryError::InvalidInput);
     }
@@ -1365,30 +1457,81 @@ fn validate_credential_channel_compatibility(
     Ok(())
 }
 
-async fn validate_parent(
+fn validate_spark_shadow_channel(
+    channel: &channels::Model,
+) -> Result<(), AdminChannelWriteRepositoryError> {
+    let channel_type = channel
+        .r#type
+        .parse::<ChannelType>()
+        .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+    let protocol = channel
+        .protocol
+        .parse::<Protocol>()
+        .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+    if channel_type != ChannelType::OpenAi || protocol != Protocol::OpenAiResponses {
+        return Err(AdminChannelWriteRepositoryError::InvalidInput);
+    }
+    Ok(())
+}
+
+async fn lock_and_validate_spark_parent(
     transaction: &DatabaseTransaction,
     channel_id: ChannelId,
-    credential_id: Option<CredentialId>,
     fields: &ValidatedCredentialFields,
+    current_shadow_id: Option<CredentialId>,
 ) -> Result<(), AdminChannelWriteRepositoryError> {
-    let Some(parent_id) = fields.parent_id else {
-        return Ok(());
-    };
-    if credential_id == Some(parent_id) {
-        return Err(AdminChannelWriteRepositoryError::InvalidReference);
-    }
-    let Some(parent) = find_active_credential(transaction, channel_id, parent_id).await? else {
+    let parent_id = fields
+        .parent_id
+        .ok_or(AdminChannelWriteRepositoryError::InvalidReference)?;
+    let Some(parent) = lock_active_credential(transaction, channel_id, parent_id).await? else {
         return Err(AdminChannelWriteRepositoryError::InvalidReference);
     };
-    if parent.parent_id.is_some() || parent.kind != fields.kind.as_str() {
-        return Err(AdminChannelWriteRepositoryError::InvalidReference);
-    }
-    if let Some(credential_id) = credential_id
-        && active_child_exists(transaction, channel_id, credential_id).await?
+    let parent_dimension = CredentialQuotaDimension::from_str(&parent.quota_dimension)
+        .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))?;
+    if parent.parent_id.is_some()
+        || parent.kind != CredentialKind::Oauth.as_str()
+        || parent_dimension != CredentialQuotaDimension::Global
+        || parent.oauth_token_pending
     {
         return Err(AdminChannelWriteRepositoryError::InvalidReference);
     }
+    if active_other_child_exists(transaction, channel_id, parent_id, current_shadow_id).await? {
+        return Err(AdminChannelWriteRepositoryError::InvalidReference);
+    }
     Ok(())
+}
+
+async fn lock_active_credential(
+    transaction: &DatabaseTransaction,
+    channel_id: ChannelId,
+    credential_id: CredentialId,
+) -> Result<Option<credentials::Model>, AdminChannelWriteRepositoryError> {
+    if transaction.get_database_backend() == DbBackend::Sqlite {
+        // SQLite 没有 FOR UPDATE，恒等写入先固定母凭据与影子唯一性检查。
+        credentials::Entity::update_many()
+            .filter(credentials::Column::Id.eq(credential_id.get()))
+            .filter(credentials::Column::ChannelId.eq(channel_id.get()))
+            .filter(credentials::Column::DeletedAt.is_null())
+            .col_expr(
+                credentials::Column::Priority,
+                Expr::col(credentials::Column::Priority).into(),
+            )
+            .exec(transaction)
+            .with_subscriber(NoSubscriber::default())
+            .await
+            .map_err(map_db_error)?;
+    }
+    let mut query = credentials::Entity::find_by_id(credential_id.get())
+        .filter(credentials::Column::ChannelId.eq(channel_id.get()))
+        .filter(credentials::Column::DeletedAt.is_null());
+    if transaction.get_database_backend() != DbBackend::Sqlite {
+        query = query.lock(LockType::Update);
+    }
+    query
+        .one(transaction)
+        .with_subscriber(NoSubscriber::default())
+        .await
+        .map_err(map_db_error)
 }
 
 /// 凭据只能绑定当前启用且未软删除的真实代理目录项。
@@ -1417,17 +1560,22 @@ async fn validate_proxy_binding(
     Ok(())
 }
 
-async fn active_child_exists(
+async fn active_other_child_exists(
     transaction: &DatabaseTransaction,
     channel_id: ChannelId,
-    credential_id: CredentialId,
+    parent_id: CredentialId,
+    current_shadow_id: Option<CredentialId>,
 ) -> Result<bool, AdminChannelWriteRepositoryError> {
-    let result = credentials::Entity::find()
+    let mut query = credentials::Entity::find()
         .select_only()
         .column(credentials::Column::Id)
         .filter(credentials::Column::ChannelId.eq(channel_id.get()))
-        .filter(credentials::Column::ParentId.eq(credential_id.get()))
-        .filter(credentials::Column::DeletedAt.is_null())
+        .filter(credentials::Column::ParentId.eq(parent_id.get()))
+        .filter(credentials::Column::DeletedAt.is_null());
+    if let Some(current_shadow_id) = current_shadow_id {
+        query = query.filter(credentials::Column::Id.ne(current_shadow_id.get()));
+    }
+    let result = query
         .limit(1)
         .into_tuple::<i64>()
         .one(transaction)
@@ -1609,6 +1757,28 @@ fn oauth_token_pending_encrypted_json() -> Result<EncryptedJson, AdminChannelWri
         "ciphertext": URL_SAFE_NO_PAD.encode([0_u8; 16]),
     }))
     .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))
+}
+
+/// Spark 影子只保存不可解密标记，任何解密路径都会因未知 key ID 失败关闭。
+fn spark_shadow_reference_encrypted_json() -> Result<EncryptedJson, AdminChannelWriteRepositoryError>
+{
+    EncryptedJson::from_envelope(serde_json::json!({
+        "version": 1,
+        "algorithm": "xchacha20poly1305",
+        "key_id": SHADOW_REFERENCE_KEY_ID,
+        "nonce": URL_SAFE_NO_PAD.encode([0_u8; 24]),
+        "ciphertext": URL_SAFE_NO_PAD.encode([0_u8; 16]),
+    }))
+    .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))
+}
+
+fn is_spark_shadow_reference(
+    secret: &EncryptedJson,
+) -> Result<bool, AdminChannelWriteRepositoryError> {
+    secret
+        .envelope_parts()
+        .map(|(key_id, _, _)| key_id == SHADOW_REFERENCE_KEY_ID)
+        .map_err(|_| internal_error(AdminChannelWriteRepositoryError::Invariant))
 }
 
 fn encrypted_json(

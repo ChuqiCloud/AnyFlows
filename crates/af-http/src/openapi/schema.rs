@@ -502,7 +502,9 @@ pub(crate) enum AdminCredentialMultiKeyModeSchema {
 #[derive(ToSchema)]
 #[schema(as = AdminCredentialQuotaDimension, rename_all = "snake_case")]
 pub(crate) enum AdminCredentialQuotaDimensionSchema {
+    /// 普通凭据使用的全局额度窗口。
     Global,
+    /// 仅 `gpt-5.3-codex-spark` 使用的影子额度窗口。
     Spark,
 }
 

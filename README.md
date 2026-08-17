@@ -34,7 +34,7 @@ cargo fmt --all -- --check                                              # 格式
 cargo run --locked --package xtask -- check-deps                        # crate 依赖边界
 cargo run --locked --package xtask -- openapi check                     # OpenAPI 契约漂移
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-cargo nextest run --workspace --all-features --locked                   # 测试
+cargo nextest run --workspace --all-features --locked --no-fail-fast    # 测试
 cargo test --workspace --all-features --doc --locked                    # 文档测试
 cargo deny --all-features --locked check advisories bans licenses sources
 

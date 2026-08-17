@@ -16,7 +16,8 @@ use af_db::{
     DatabaseOptions, DatabasePool, MigrationOptions, OAuthCredentialRepository,
 };
 use af_domain::{
-    ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind, Protocol, Status, UserId,
+    ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind, CredentialQuotaDimension,
+    Protocol, Status, UserId,
 };
 use af_httpclient::{
     HttpClientConfig, HttpClientProvider, HttpTimeouts, ProxyConfig, RemoteDnsPolicy,
@@ -762,7 +763,7 @@ fn oauth_credential_record(index: usize) -> AdminCredentialWriteRecord {
         Some(875_000),
         true,
         None,
-        "global",
+        CredentialQuotaDimension::Global,
         None,
         Some("codex".to_owned()),
         Some(format!("account-key-{index}")),

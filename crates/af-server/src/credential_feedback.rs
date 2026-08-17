@@ -13,7 +13,9 @@ use af_scheduler::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct CredentialAttemptTarget {
     channel_id: ChannelId,
-    credential_id: CredentialId,
+    routing_credential_id: CredentialId,
+    secret_owner_id: CredentialId,
+    shared_health_id: CredentialId,
     credential_kind: CredentialKind,
     oauth_has_refresh_token: bool,
     pool_mode: bool,
@@ -21,6 +23,7 @@ pub(crate) struct CredentialAttemptTarget {
 
 impl CredentialAttemptTarget {
     /// 校验凭据标识并收敛非敏感 OAuth 恢复能力后构造候选反馈目标。
+    #[cfg(test)]
     pub(crate) fn new(
         channel_id: ChannelId,
         credential_id: i64,
@@ -28,9 +31,45 @@ impl CredentialAttemptTarget {
         oauth_has_refresh_token: bool,
         pool_mode: bool,
     ) -> Result<Self, AfError> {
+        let credential_id = CredentialId::new(credential_id).map_err(|_| AfError::Internal)?;
+        Self::with_runtime_identity(
+            channel_id,
+            credential_id,
+            credential_id,
+            credential_id,
+            credential_kind,
+            oauth_has_refresh_token,
+            pool_mode,
+        )
+    }
+
+    /// 使用运行时拆分后的路由、密钥和共享健康身份构造反馈目标。
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "字段与脱敏运行时反馈身份一一对应"
+    )]
+    pub(crate) fn with_runtime_identity(
+        channel_id: ChannelId,
+        routing_credential_id: CredentialId,
+        secret_owner_id: CredentialId,
+        shared_health_id: CredentialId,
+        credential_kind: CredentialKind,
+        oauth_has_refresh_token: bool,
+        pool_mode: bool,
+    ) -> Result<Self, AfError> {
+        let root_identity =
+            routing_credential_id == secret_owner_id && secret_owner_id == shared_health_id;
+        let shadow_identity = credential_kind == CredentialKind::Oauth
+            && routing_credential_id != secret_owner_id
+            && secret_owner_id == shared_health_id;
+        if !root_identity && !shadow_identity {
+            return Err(AfError::Internal);
+        }
         Ok(Self {
             channel_id,
-            credential_id: CredentialId::new(credential_id).map_err(|_| AfError::Internal)?,
+            routing_credential_id,
+            secret_owner_id,
+            shared_health_id,
             credential_kind,
             oauth_has_refresh_token: matches!(credential_kind, CredentialKind::Oauth)
                 && oauth_has_refresh_token,
@@ -45,7 +84,18 @@ impl CredentialAttemptTarget {
 
     /// 返回与 Relay 候选对应的凭据标识，供健康反馈与调权使用。
     pub(crate) const fn credential_id(&self) -> CredentialId {
-        self.credential_id
+        self.routing_credential_id
+    }
+
+    /// 返回持久化认证故障和解密能力所属的母凭据。
+    #[cfg(test)]
+    pub(crate) const fn secret_owner_id(&self) -> CredentialId {
+        self.secret_owner_id
+    }
+
+    /// 返回 Redis 共享认证健康所属的母凭据。
+    pub(crate) const fn shared_health_id(&self) -> CredentialId {
+        self.shared_health_id
     }
 
     /// 返回渠道是否把渠道级健康交由外部账号池管理。
@@ -106,29 +156,57 @@ fn feedback_events(
         let Some(change) = change_for_error(target, failure.error()) else {
             continue;
         };
-        events.push(state_event(target, change)?);
+        events.push(state_event(target, state_owner(target, change), change)?);
         refresh_required = true;
     }
     if let Some(index) = report.successful_candidate_index() {
+        let target = *targets.get(index)?;
         events.push(state_event(
-            *targets.get(index)?,
+            target,
+            target.routing_credential_id,
             CredentialStateChange::Succeeded,
         )?);
+        if target.secret_owner_id != target.routing_credential_id {
+            events.push(state_event(
+                target,
+                target.secret_owner_id,
+                CredentialStateChange::AuthenticationSucceeded,
+            )?);
+            refresh_required = true;
+        }
     }
     Some((events, refresh_required))
 }
 
 fn state_event(
     target: CredentialAttemptTarget,
+    credential_id: CredentialId,
     change: CredentialStateChange,
 ) -> Option<CredentialStateEvent> {
     CredentialStateEvent::new(
         target.channel_id,
-        target.credential_id,
+        credential_id,
         target.credential_kind,
         change,
     )
     .ok()
+}
+
+const fn state_owner(
+    target: CredentialAttemptTarget,
+    change: CredentialStateChange,
+) -> CredentialId {
+    match change {
+        CredentialStateChange::AuthExpired
+        | CredentialStateChange::MissingRefreshToken
+        | CredentialStateChange::AuthRevoked
+        | CredentialStateChange::AccountDisabled
+        | CredentialStateChange::AuthenticationSucceeded => target.secret_owner_id,
+        CredentialStateChange::Succeeded
+        | CredentialStateChange::RateLimited { .. }
+        | CredentialStateChange::QuotaExhausted
+        | CredentialStateChange::Overloaded { .. } => target.routing_credential_id,
+    }
 }
 
 const fn change_for_error(
@@ -265,6 +343,58 @@ mod tests {
                 UpstreamError::AuthExpired,
             ),
             Some(CredentialStateChange::AuthExpired)
+        );
+    }
+
+    #[test]
+    fn spark_persistence_routes_quota_to_shadow_and_authentication_to_parent() {
+        let parent_id = CredentialId::new(9).unwrap();
+        let shadow_id = CredentialId::new(10).unwrap();
+        let target = CredentialAttemptTarget::with_runtime_identity(
+            ChannelId::new(7).unwrap(),
+            shadow_id,
+            parent_id,
+            parent_id,
+            CredentialKind::Oauth,
+            true,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(
+            state_owner(
+                target,
+                CredentialStateChange::RateLimited { retry_after: None }
+            ),
+            shadow_id
+        );
+        assert_eq!(
+            state_owner(target, CredentialStateChange::QuotaExhausted),
+            shadow_id
+        );
+        assert_eq!(
+            state_owner(target, CredentialStateChange::AuthRevoked),
+            parent_id
+        );
+        assert_eq!(
+            state_owner(target, CredentialStateChange::AuthenticationSucceeded),
+            parent_id
+        );
+    }
+
+    #[test]
+    fn runtime_feedback_rejects_mismatched_shared_health_identity() {
+        assert!(
+            CredentialAttemptTarget::with_runtime_identity(
+                ChannelId::new(7).unwrap(),
+                CredentialId::new(10).unwrap(),
+                CredentialId::new(9).unwrap(),
+                CredentialId::new(8).unwrap(),
+                CredentialKind::Oauth,
+                true,
+                true,
+            )
+            .is_err()
         );
     }
 

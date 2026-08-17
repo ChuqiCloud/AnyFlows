@@ -40,8 +40,8 @@ use af_db::{
     CredentialStateRepository, SmartRouteRuntimeRepository,
 };
 use af_domain::{
-    AfError, ChannelType, ConcurrencyLimit, CredentialId, GatewayPrincipal, GroupId, Operation,
-    Protocol,
+    AfError, ChannelType, ConcurrencyLimit, CredentialId, CredentialQuotaDimension,
+    GatewayPrincipal, GroupId, Operation, Protocol,
 };
 use af_httpclient::{HttpClientProvider, ProxyConfig, RemoteDnsPolicy};
 use af_protocol::CanonicalRequestEnvelope;
@@ -257,6 +257,7 @@ impl ScheduledChatService {
             user_permit,
         } = concurrency;
         let requested_model = request.canonical().model.clone();
+        let quota_dimension = CredentialQuotaDimension::for_canonical_model(&routed_model);
         let responses_websocket_session = session_scope.as_ref().map(StableSessionScope::as_str);
         let target_group_id = route.target_group_id();
         let mut relay_candidates = Vec::with_capacity(
@@ -291,6 +292,12 @@ impl ScheduledChatService {
             }
 
             let headers = header_overrides(target)?;
+            let eligible_credentials = target
+                .credentials()
+                .iter()
+                .filter(|credential| credential.quota_dimension() == quota_dimension)
+                .cloned()
+                .collect::<Vec<_>>();
             let order_scope = session_scope
                 .as_ref()
                 .map_or(request_id, StableSessionScope::as_str);
@@ -299,7 +306,7 @@ impl ScheduledChatService {
                     order_credentials_by_load_and_health(
                         order_scope,
                         target.channel_id(),
-                        target.credentials(),
+                        &eligible_credentials,
                         loads,
                         health,
                     )
@@ -307,24 +314,26 @@ impl ScheduledChatService {
                 (RouteWaitKind::Fallback, Some(loads), None) => order_credentials_by_load(
                     order_scope,
                     target.channel_id(),
-                    target.credentials(),
+                    &eligible_credentials,
                     loads,
                 ),
                 (_, _, Some(health)) => order_credentials_with_health(
                     order_scope,
                     target.channel_id(),
-                    target.credentials(),
+                    &eligible_credentials,
                     health,
                 ),
-                _ => order_credentials(order_scope, target.channel_id(), target.credentials()),
+                _ => order_credentials(order_scope, target.channel_id(), &eligible_credentials),
             };
-            health_filtered |= !target.credentials().is_empty() && ordered_credentials.is_empty();
+            health_filtered |= !eligible_credentials.is_empty() && ordered_credentials.is_empty();
             for runtime_credential in ordered_credentials {
                 if relay_candidates.len() == RelayStateMachine::MAX_CANDIDATES {
                     break 'channels;
                 }
                 let credential_id = CredentialId::new(runtime_credential.credential_id())
                     .map_err(|_| AfError::Internal)?;
+                let secret_owner_id = runtime_credential.secret_owner_id();
+                let concurrency_owner_id = runtime_credential.concurrency_owner_id();
                 let client = self.client_for_credential(target, runtime_credential)?;
                 let responses_websocket_pool = if target.responses_websocket_enabled()
                     && responses_websocket_session.is_some()
@@ -350,7 +359,7 @@ impl ScheduledChatService {
                     .decryptor
                     .decrypt_envelope(
                         target.channel_id(),
-                        runtime_credential.credential_id(),
+                        secret_owner_id.get(),
                         runtime_credential.credential_kind(),
                         runtime_credential.envelope(),
                     )
@@ -368,7 +377,7 @@ impl ScheduledChatService {
                 }
                 if let Some(concurrency) = &self.concurrency {
                     relay_candidate = relay_candidate.with_attempt_gate(concurrency.account_gate(
-                        credential_id,
+                        concurrency_owner_id,
                         runtime_credential.concurrency(),
                         wait_plan.timeout(),
                     ));
@@ -379,7 +388,7 @@ impl ScheduledChatService {
                 ) {
                     let key = ResponsesWebSocketPoolKey::new(
                         target.channel_id(),
-                        credential_id,
+                        secret_owner_id,
                         runtime_credential.credential_revision(),
                         session_scope,
                     )
@@ -392,9 +401,11 @@ impl ScheduledChatService {
                     relay_candidate = relay_candidate.with_request(candidate_request.clone());
                 }
                 relay_candidates.push(relay_candidate);
-                attempt_targets.push(CredentialAttemptTarget::new(
+                attempt_targets.push(CredentialAttemptTarget::with_runtime_identity(
                     target.channel_id(),
-                    runtime_credential.credential_id(),
+                    credential_id,
+                    secret_owner_id,
+                    runtime_credential.shared_health_id(),
                     runtime_credential.credential_kind(),
                     oauth_has_refresh_token,
                     target.pool_mode(),
@@ -568,11 +579,12 @@ impl ScheduledChatService {
         &self,
         route: &IndexedRoutePlan,
         upstream_protocol: Protocol,
+        model: &str,
     ) -> Result<Option<BTreeMap<i64, CredentialLoad>>, AfError> {
         let Some(concurrency) = &self.concurrency else {
             return Ok(None);
         };
-        let accounts = collect_route_accounts(route, upstream_protocol)?;
+        let accounts = collect_route_accounts(route, upstream_protocol, model)?;
         concurrency
             .account_loads(&accounts)
             .await
@@ -608,11 +620,12 @@ impl ScheduledChatService {
         &self,
         route: &IndexedRoutePlan,
         upstream_protocol: Protocol,
+        model: &str,
     ) -> Result<Option<BTreeMap<i64, RuntimeHealthState>>, AfError> {
         let Some(store) = &self.health else {
             return Ok(None);
         };
-        let credential_ids = collect_route_credentials(route, upstream_protocol)?;
+        let credential_ids = collect_route_credentials(route, upstream_protocol, model)?;
         load_credential_health(store, &credential_ids)
             .await
             .map(Some)
@@ -683,8 +696,13 @@ impl ScheduledChatService {
             };
             let unfiltered_protocol =
                 select_upstream_protocol(&unfiltered_route, request, response_protocol)?;
-            if route_availability(&unfiltered_route, unfiltered_protocol, request_id, None)
-                == RouteAvailability::Unsupported
+            if route_availability(
+                &unfiltered_route,
+                unfiltered_protocol,
+                &request.canonical().model,
+                request_id,
+                None,
+            ) == RouteAvailability::Unsupported
             {
                 // 模型存在但协议不匹配或没有静态凭据时属于不支持，不能伪装成运行时过载。
                 continue;
@@ -713,12 +731,13 @@ impl ScheduledChatService {
             self.apply_sticky_binding(&mut route, upstream_protocol, session_scope)
                 .await;
             let credential_health = self
-                .load_credential_health(&route, upstream_protocol)
+                .load_credential_health(&route, upstream_protocol, &request.canonical().model)
                 .await?;
             let order_scope = session_scope.map_or(request_id, StableSessionScope::as_str);
             match route_availability(
                 &route,
                 upstream_protocol,
+                &request.canonical().model,
                 order_scope,
                 credential_health.as_ref(),
             ) {
@@ -763,8 +782,13 @@ impl ScheduledChatService {
                     };
                     let unfiltered_protocol =
                         select_upstream_protocol(&unfiltered_route, request, response_protocol)?;
-                    if route_availability(&unfiltered_route, unfiltered_protocol, request_id, None)
-                        == RouteAvailability::Unsupported
+                    if route_availability(
+                        &unfiltered_route,
+                        unfiltered_protocol,
+                        rule.routed_model(),
+                        request_id,
+                        None,
+                    ) == RouteAvailability::Unsupported
                     {
                         continue;
                     }
@@ -795,12 +819,13 @@ impl ScheduledChatService {
                     self.apply_sticky_binding(&mut route, upstream_protocol, session_scope)
                         .await;
                     let credential_health = self
-                        .load_credential_health(&route, upstream_protocol)
+                        .load_credential_health(&route, upstream_protocol, rule.routed_model())
                         .await?;
                     let order_scope = session_scope.map_or(request_id, StableSessionScope::as_str);
                     match route_availability(
                         &route,
                         upstream_protocol,
+                        rule.routed_model(),
                         order_scope,
                         credential_health.as_ref(),
                     ) {
@@ -874,7 +899,7 @@ impl ChatRoutePlanner for ScheduledChatService {
                 .acquire_user_permit(*principal, user_concurrency)
                 .await?;
             let account_loads = self
-                .load_account_concurrency(&route, upstream_protocol)
+                .load_account_concurrency(&route, upstream_protocol, &routed_model)
                 .await?;
             let mut plan = self.build_plan(
                 PreparedExecutionRoute {
@@ -1113,21 +1138,27 @@ const fn metric_client_simulation_result(
 fn collect_route_accounts(
     route: &IndexedRoutePlan,
     upstream_protocol: Protocol,
+    model: &str,
 ) -> Result<Vec<(CredentialId, Option<ConcurrencyLimit>)>, AfError> {
     let mut accounts = Vec::with_capacity(RelayStateMachine::MAX_CANDIDATES);
+    let mut unique = BTreeSet::new();
+    let quota_dimension = CredentialQuotaDimension::for_canonical_model(model);
     'channels: for candidate in route.candidates() {
         let target = candidate.runtime_target();
         if !target_matches_protocol(target, upstream_protocol) {
             continue;
         }
         for credential in target.credentials() {
+            if credential.quota_dimension() != quota_dimension {
+                continue;
+            }
             if accounts.len() == RelayStateMachine::MAX_CANDIDATES {
                 break 'channels;
             }
-            accounts.push((
-                CredentialId::new(credential.credential_id()).map_err(|_| AfError::Internal)?,
-                credential.concurrency(),
-            ));
+            let owner = credential.concurrency_owner_id();
+            if unique.insert(owner) {
+                accounts.push((owner, credential.concurrency()));
+            }
         }
     }
     Ok(accounts)
@@ -1136,9 +1167,11 @@ fn collect_route_accounts(
 fn route_availability(
     route: &IndexedRoutePlan,
     upstream_protocol: Protocol,
+    model: &str,
     order_scope: &str,
     credential_health: Option<&BTreeMap<i64, RuntimeHealthState>>,
 ) -> RouteAvailability {
+    let quota_dimension = CredentialQuotaDimension::for_canonical_model(model);
     let mut matching_protocol = false;
     let mut static_credentials = false;
     for candidate in route.candidates() {
@@ -1147,7 +1180,13 @@ fn route_availability(
             continue;
         }
         matching_protocol = true;
-        if target.credentials().is_empty() {
+        let eligible_credentials = target
+            .credentials()
+            .iter()
+            .filter(|credential| credential.quota_dimension() == quota_dimension)
+            .cloned()
+            .collect::<Vec<_>>();
+        if eligible_credentials.is_empty() {
             continue;
         }
         static_credentials = true;
@@ -1156,7 +1195,7 @@ fn route_availability(
             Some(health) => !order_credentials_with_health(
                 order_scope,
                 target.channel_id(),
-                target.credentials(),
+                &eligible_credentials,
                 health,
             )
             .is_empty(),
@@ -1175,15 +1214,20 @@ fn route_availability(
 fn collect_route_credentials(
     route: &IndexedRoutePlan,
     upstream_protocol: Protocol,
-) -> Result<Vec<CredentialId>, AfError> {
+    model: &str,
+) -> Result<Vec<(CredentialId, CredentialId)>, AfError> {
     let mut credential_ids = Vec::with_capacity(RelayStateMachine::MAX_CANDIDATES);
     let mut unique = BTreeSet::new();
+    let quota_dimension = CredentialQuotaDimension::for_canonical_model(model);
     'channels: for candidate in route.candidates() {
         let target = candidate.runtime_target();
         if !target_matches_protocol(target, upstream_protocol) {
             continue;
         }
         for credential in target.credentials() {
+            if credential.quota_dimension() != quota_dimension {
+                continue;
+            }
             if credential_ids.len() == RelayStateMachine::MAX_CANDIDATES {
                 break 'channels;
             }
@@ -1192,7 +1236,7 @@ fn collect_route_credentials(
             if !unique.insert(credential_id) {
                 return Err(AfError::Internal);
             }
-            credential_ids.push(credential_id);
+            credential_ids.push((credential_id, credential.shared_health_id()));
         }
     }
     Ok(credential_ids)
@@ -1655,6 +1699,79 @@ mod tests {
             .unwrap();
 
         assert_eq!(execution.attempt_targets.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn spark_plan_uses_parent_aad_but_keeps_shadow_attempt_identity() {
+        let parent_id = CredentialId::new(CREDENTIAL_ID).unwrap();
+        let shadow_id = CredentialId::new(CREDENTIAL_ID + 1).unwrap();
+        let parent_envelope = valid_oauth_envelope(true, 0x28);
+        let parent = SchedulerRuntimeCredentialRecord::new(
+            CREDENTIAL_ID,
+            CredentialKind::Oauth,
+            parent_envelope.clone(),
+            false,
+        )
+        .unwrap();
+        let shadow = SchedulerRuntimeCredentialRecord::with_runtime_identity(
+            shadow_id,
+            parent_id,
+            parent_id,
+            parent_id,
+            CredentialQuotaDimension::Spark,
+            CredentialKind::Oauth,
+            parent_envelope,
+            false,
+            0,
+            10,
+            None,
+        )
+        .unwrap();
+        assert_eq!(shadow.concurrency_owner_id(), parent_id);
+
+        let model = "gpt-5.3-codex-spark";
+        let service = service(vec![record_pool_with_target_for_group_and_model(
+            GroupId::new(7).unwrap(),
+            model,
+            vec![parent, shadow],
+            ChannelType::OpenAi,
+            Protocol::OpenAiResponses,
+        )])
+        .await;
+        let route = service
+            .scheduler
+            .route_plan(GroupId::new(7).unwrap(), model)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            collect_route_credentials(&route, Protocol::OpenAiResponses, "gpt-5.3-codex").unwrap(),
+            vec![(parent_id, parent_id)]
+        );
+        assert_eq!(
+            collect_route_credentials(&route, Protocol::OpenAiResponses, model).unwrap(),
+            vec![(shadow_id, parent_id)]
+        );
+
+        let execution = service
+            .build_plan(
+                PreparedExecutionRoute {
+                    route,
+                    upstream_protocol: Protocol::OpenAiResponses,
+                    routed_model: model.to_owned(),
+                },
+                CanonicalRequest::new(Operation::Responses, model.to_owned(), Vec::new(), false)
+                    .into(),
+                Protocol::OpenAiResponses,
+                "request-spark-identity",
+                None,
+                PreparedConcurrencyPlan::disabled(),
+            )
+            .unwrap();
+
+        assert_eq!(execution.attempt_targets.len(), 1);
+        assert_eq!(execution.attempt_targets[0].credential_id(), shadow_id);
+        assert_eq!(execution.attempt_targets[0].secret_owner_id(), parent_id);
     }
 
     #[tokio::test]

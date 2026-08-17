@@ -163,6 +163,18 @@ string_enum! {
     }
 }
 
+impl CredentialQuotaDimension {
+    /// 根据已归一化的 Canonical 模型选择固定额度维度。
+    #[must_use]
+    pub fn for_canonical_model(model: &str) -> Self {
+        if model == "gpt-5.3-codex-spark" {
+            Self::Spark
+        } else {
+            Self::Global
+        }
+    }
+}
+
 string_enum! {
     /// 一次 Canonical 请求执行的操作类型。
     pub enum Operation {
@@ -272,6 +284,16 @@ string_enum! {
         ServiceAccount => "service_account",
         /// 存储为 `upstream` 的凭据种类。
         Upstream => "upstream",
+    }
+}
+
+string_enum! {
+    /// 凭据使用的固定上游额度维度。
+    pub enum CredentialQuotaDimension {
+        /// 普通模型共享的全局额度。
+        Global => "global",
+        /// GPT-5.3 Codex Spark 使用的独立额度。
+        Spark => "spark",
     }
 }
 

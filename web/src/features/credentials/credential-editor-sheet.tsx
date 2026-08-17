@@ -8,7 +8,9 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import type { AdminChannel, AdminCredential } from '@/lib/api/generated/types.gen'
+import { useAdminChannelCredentialCatalog } from './credential-api'
 import { CredentialForm } from './credential-form'
+import { supportsSparkShadow } from './credential-model'
 
 type CredentialEditorSheetProps = {
   open: boolean
@@ -27,6 +29,12 @@ export function CredentialEditorSheet({
 }: CredentialEditorSheetProps) {
   const { t } = useTranslation()
   const creating = credential === undefined
+  const sparkChannel = channel ? supportsSparkShadow(channel) : false
+  const catalogQuery = useAdminChannelCredentialCatalog(channel?.id, open && sparkChannel)
+  const formCredentials = catalogQuery.data ?? credentials
+  const catalogStatus = !sparkChannel || catalogQuery.isSuccess
+    ? 'ready'
+    : catalogQuery.isError ? 'error' : 'loading'
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -47,7 +55,8 @@ export function CredentialEditorSheet({
             key={`${channel.id}:${credential?.id ?? 'create'}`}
             channel={channel}
             credential={credential}
-            credentials={credentials}
+            credentials={formCredentials}
+            credentialCatalogStatus={catalogStatus}
             active={open}
             onSaved={() => onOpenChange(false)}
           />

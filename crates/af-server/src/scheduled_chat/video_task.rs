@@ -365,10 +365,10 @@ impl VideoTaskRuntime for ScheduledChatService {
         Box::pin(async move {
             let route = self.video_route(group_id, request.model().as_str()).await?;
             let credential_health = self
-                .load_credential_health(&route, Protocol::XaiVideo)
+                .load_credential_health(&route, Protocol::XaiVideo, request.model().as_str())
                 .await?;
             let account_loads = self
-                .load_account_concurrency(&route, Protocol::XaiVideo)
+                .load_account_concurrency(&route, Protocol::XaiVideo, request.model().as_str())
                 .await?;
             self.execute_video_submission(
                 route,
@@ -429,10 +429,10 @@ impl ScheduledChatService {
             return Err(AfError::Internal.into());
         }
         let credential_health = self
-            .load_credential_health(&route, Protocol::XaiVideo)
+            .load_credential_health(&route, Protocol::XaiVideo, request.model().as_str())
             .await?;
         let account_loads = self
-            .load_account_concurrency(&route, Protocol::XaiVideo)
+            .load_account_concurrency(&route, Protocol::XaiVideo, request.model().as_str())
             .await?;
         self.execute_video_submission(
             route,
@@ -509,6 +509,7 @@ impl ScheduledChatService {
                 }
                 let credential_id = CredentialId::new(runtime_credential.credential_id())
                     .map_err(|_| AfError::Internal)?;
+                let secret_owner_id = runtime_credential.secret_owner_id();
                 let client = self.client_for_credential(target, runtime_credential)?;
                 let mut context = RelayContext::new(client);
                 if let Some(base_url) = target.base_url() {
@@ -523,7 +524,7 @@ impl ScheduledChatService {
                     .decryptor
                     .decrypt_envelope(
                         target.channel_id(),
-                        runtime_credential.credential_id(),
+                        secret_owner_id.get(),
                         runtime_credential.credential_kind(),
                         runtime_credential.envelope(),
                     )
@@ -536,7 +537,7 @@ impl ScheduledChatService {
                     .with_channel_group(target.channel_id());
                 if let Some(concurrency) = &self.concurrency {
                     relay_target = relay_target.with_attempt_gate(concurrency.account_gate(
-                        credential_id,
+                        runtime_credential.concurrency_owner_id(),
                         runtime_credential.concurrency(),
                         wait_plan.timeout(),
                     ));
@@ -557,9 +558,11 @@ impl ScheduledChatService {
                         wait_plan.timeout(),
                     ),
                 });
-                attempt_targets.push(CredentialAttemptTarget::new(
+                attempt_targets.push(CredentialAttemptTarget::with_runtime_identity(
                     target.channel_id(),
-                    runtime_credential.credential_id(),
+                    credential_id,
+                    secret_owner_id,
+                    runtime_credential.shared_health_id(),
                     runtime_credential.credential_kind(),
                     oauth_has_refresh_token,
                     target.pool_mode(),
@@ -647,7 +650,7 @@ impl ScheduledChatService {
             .decryptor
             .decrypt_envelope(
                 target.channel_id(),
-                runtime_credential.credential_id(),
+                runtime_credential.secret_owner_id().get(),
                 runtime_credential.credential_kind(),
                 runtime_credential.envelope(),
             )
@@ -659,14 +662,16 @@ impl ScheduledChatService {
             .with_channel_group(target.channel_id());
         if let Some(concurrency) = &self.concurrency {
             relay_target = relay_target.with_attempt_gate(concurrency.account_gate(
-                binding.credential_id,
+                runtime_credential.concurrency_owner_id(),
                 runtime_credential.concurrency(),
                 binding.target_snapshot.attempt_timeout,
             ));
         }
-        let attempt_targets = [CredentialAttemptTarget::new(
+        let attempt_targets = [CredentialAttemptTarget::with_runtime_identity(
             target.channel_id(),
-            runtime_credential.credential_id(),
+            runtime_credential.routing_credential_id(),
+            runtime_credential.secret_owner_id(),
+            runtime_credential.shared_health_id(),
             runtime_credential.credential_kind(),
             oauth_has_refresh_token,
             target.pool_mode(),

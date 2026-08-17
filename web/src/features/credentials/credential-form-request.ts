@@ -13,6 +13,7 @@ import {
   optionalText,
 } from './credential-form-scalar.ts'
 import type { CredentialFormValues } from './credential-form-types'
+import { isSparkShadowCredential } from './credential-model.ts'
 
 /** 从脱敏凭据恢复非敏感字段；密文永远不会回填。 */
 export function credentialFormValues(
@@ -21,6 +22,7 @@ export function credentialFormValues(
 ): CredentialFormValues {
   const kind = credential ? asWritableCredentialKind(credential.kind) ?? initialKind : initialKind
   return {
+    mode: credential && isSparkShadowCredential(credential) ? 'spark_shadow' : 'standard',
     kind,
     oauthCreateMode: credential === undefined && initialKind === 'oauth'
       ? 'authorize'
@@ -46,14 +48,52 @@ export function credentialFormValues(
 }
 
 export function createCredentialRequest(values: CredentialFormValues): AdminCredentialCreateRequestWritable {
-  return { ...writeFields(values), secret: credentialSecret(values) }
+  if (values.mode === 'spark_shadow') {
+    return {
+      ...writeSchedulingFields(values),
+      kind: 'oauth',
+      secret: null,
+      concurrency: null,
+      parent_id: optionalInteger(values.parentId),
+      quota_dimension: 'spark',
+      proxy_id: null,
+      oauth_provider: null,
+      oauth_account_key: null,
+      oauth_project_id: null,
+    }
+  }
+  return {
+    ...writeSchedulingFields(values),
+    kind: values.kind,
+    secret: credentialSecret(values),
+    concurrency: optionalInteger(values.concurrency),
+    parent_id: null,
+    quota_dimension: 'global',
+    proxy_id: optionalInteger(values.proxyId),
+    oauth_provider: values.kind === 'oauth' ? optionalText(values.oauthProvider) : null,
+    oauth_account_key: values.kind === 'oauth' ? optionalText(values.oauthAccountKey) : null,
+    oauth_project_id: values.kind === 'oauth' ? optionalText(values.oauthProjectId) : null,
+  }
 }
 
 export function updateCredentialRequest(
   values: CredentialFormValues,
-  _credential: AdminCredential,
+  credential: AdminCredential,
 ): AdminCredentialUpdateRequestWritable {
-  return { ...writeFields(values), secret: values.rotateSecret ? credentialSecret(values) : null }
+  const shadow = isSparkShadowCredential(credential)
+  const kind = asWritableCredentialKind(credential.kind) ?? values.kind
+  return {
+    ...writeSchedulingFields(values),
+    kind,
+    secret: shadow || !values.rotateSecret ? null : credentialSecret(values),
+    concurrency: shadow ? null : optionalInteger(values.concurrency),
+    parent_id: shadow ? credential.parent_id : null,
+    quota_dimension: shadow ? 'spark' : 'global',
+    proxy_id: shadow ? null : optionalInteger(values.proxyId),
+    oauth_provider: !shadow && kind === 'oauth' ? optionalText(values.oauthProvider) : null,
+    oauth_account_key: !shadow && kind === 'oauth' ? optionalText(values.oauthAccountKey) : null,
+    oauth_project_id: !shadow && kind === 'oauth' ? optionalText(values.oauthProjectId) : null,
+  }
 }
 
 /** 快捷启停同样完整保留所有调度字段与原密文。 */
@@ -64,43 +104,36 @@ export function updateCredentialStatusRequest(
   if (credential.oauth_token_pending) return undefined
   const kind = asWritableCredentialKind(credential.kind)
   if (!kind) return undefined
+  const shadow = isSparkShadowCredential(credential)
   return {
     kind, secret: null, status,
     multi_key_mode: credential.multi_key_mode,
     priority: credential.priority,
     weight: credential.weight,
-    concurrency: credential.concurrency,
+    concurrency: shadow ? null : credential.concurrency,
     load_factor_micros: credential.load_factor_micros,
     rate_multiplier_micros: credential.rate_multiplier_micros,
     schedulable: credential.schedulable,
-    parent_id: credential.parent_id,
-    quota_dimension: credential.quota_dimension,
-    proxy_id: credential.proxy_id,
-    oauth_provider: kind === 'oauth' ? credential.oauth_provider : null,
-    oauth_account_key: kind === 'oauth' ? credential.oauth_account_key : null,
-    oauth_project_id: kind === 'oauth' ? credential.oauth_project_id : null,
+    parent_id: shadow ? credential.parent_id : null,
+    quota_dimension: shadow ? 'spark' : 'global',
+    proxy_id: shadow ? null : credential.proxy_id,
+    oauth_provider: !shadow && kind === 'oauth' ? credential.oauth_provider : null,
+    oauth_account_key: !shadow && kind === 'oauth' ? credential.oauth_account_key : null,
+    oauth_project_id: !shadow && kind === 'oauth' ? credential.oauth_project_id : null,
   }
 }
 
-function writeFields(values: CredentialFormValues) {
+function writeSchedulingFields(values: CredentialFormValues) {
   if (values.status === 'auto_disabled') throw new Error('自动停用凭据必须显式选择写入状态')
   return {
-    kind: values.kind,
     status: values.status,
     multi_key_mode: values.multiKeyMode === 'none' ? null : values.multiKeyMode,
     priority: Number(values.priority),
     weight: Number(values.weight),
-    concurrency: optionalInteger(values.concurrency),
     load_factor_micros: optionalMicros(values.loadFactor),
     rate_multiplier_micros: optionalMicros(values.rateMultiplier),
     schedulable: values.schedulable,
-    parent_id: optionalInteger(values.parentId),
-    quota_dimension: values.quotaDimension,
-    proxy_id: optionalInteger(values.proxyId),
-    oauth_provider: values.kind === 'oauth' ? optionalText(values.oauthProvider) : null,
-    oauth_account_key: values.kind === 'oauth' ? optionalText(values.oauthAccountKey) : null,
-    oauth_project_id: values.kind === 'oauth' ? optionalText(values.oauthProjectId) : null,
-  } satisfies Omit<AdminCredentialUpdateRequestWritable, 'secret'>
+  }
 }
 
 function credentialSecret(values: CredentialFormValues): AdminCredentialCreateRequestWritable['secret'] {

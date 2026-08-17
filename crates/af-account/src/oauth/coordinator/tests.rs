@@ -14,7 +14,8 @@ use af_db::{
     EncryptedCredentialEnvelope, MigrationOptions, OAuthCredentialRepository,
 };
 use af_domain::{
-    ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind, Protocol, Status, UserId,
+    ChannelId, ChannelTimeout, ChannelType, CredentialId, CredentialKind, CredentialQuotaDimension,
+    Protocol, Status, UserId,
 };
 use af_httpclient::{
     HttpClientConfig, HttpClientProvider, HttpTimeouts, ProxyConfig, RemoteDnsPolicy,
@@ -416,7 +417,7 @@ async fn create_credential(
                 Some(875_000),
                 true,
                 None,
-                "global",
+                CredentialQuotaDimension::Global,
                 None,
                 oauth_provider.map(str::to_owned),
                 Some("account-key".to_owned()),

@@ -74,6 +74,7 @@ mod m20260816_000065_create_organization_budgets;
 mod m20260817_000066_add_organization_tokens;
 mod m20260817_000067_create_organization_activity;
 mod m20260817_000068_add_client_simulation_observability;
+mod m20260817_000069_enforce_spark_shadow_shape;
 mod schema;
 
 #[cfg(test)]
@@ -185,6 +186,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260817_000066_add_organization_tokens::Migration),
             Box::new(m20260817_000067_create_organization_activity::Migration),
             Box::new(m20260817_000068_add_client_simulation_observability::Migration),
+            Box::new(m20260817_000069_enforce_spark_shadow_shape::Migration),
         ]
     }
 }

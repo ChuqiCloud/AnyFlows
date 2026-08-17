@@ -1,6 +1,8 @@
 use std::{error::Error, time::Duration};
 
-use af_domain::{ChannelId, ChannelType, CredentialKind, Protocol, Status};
+use af_domain::{
+    ChannelId, ChannelType, CredentialKind, CredentialQuotaDimension, Protocol, Status,
+};
 use sea_orm::ConnectionTrait;
 
 use crate::{
@@ -262,7 +264,7 @@ async fn create_credential(
                 None,
                 true,
                 None,
-                "global",
+                CredentialQuotaDimension::Global,
                 proxy_id.map(af_domain::ProxyId::get),
                 None,
                 None,

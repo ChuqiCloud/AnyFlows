@@ -122,6 +122,13 @@ impl RedisHealthStore {
             RedisHealthTarget::Credential(credential_id) => {
                 format!("{}:credential:{}", self.key_prefix, credential_id.get())
             }
+            RedisHealthTarget::CredentialShared(credential_id) => {
+                format!(
+                    "{}:credential-shared:{}",
+                    self.key_prefix,
+                    credential_id.get()
+                )
+            }
         };
         validate_cache_key(&key)?;
         Ok(key)

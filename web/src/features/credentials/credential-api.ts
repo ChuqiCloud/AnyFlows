@@ -11,6 +11,7 @@ import {
   updateAdminCredential,
 } from '@/lib/api/generated/sdk.gen'
 import type {
+  AdminCredential,
   AdminCredentialCreateRequestWritable,
   AdminCredentialUpdateRequestWritable,
   AdminOAuthProvider,
@@ -20,6 +21,11 @@ export const adminOAuthProvidersQueryKey = ['admin-oauth-providers'] as const
 export const adminChannelCredentialsQueryKey = (channelId: number) => [
   'admin-channel-credentials',
   channelId,
+] as const
+const adminChannelCredentialCatalogQueryKey = (channelId: number) => [
+  'admin-channel-credentials',
+  channelId,
+  'complete-catalog',
 ] as const
 
 const adminOAuthErrorCodes = [
@@ -63,6 +69,35 @@ export function useAdminChannelCredentials(channelId?: number) {
       return data
     },
     getNextPageParam: (page) => page.next_cursor ?? undefined,
+  })
+}
+
+/** 编辑器读取完整脱敏目录，避免分页边界遗漏已有影子或错误开放母凭据。 */
+export function useAdminChannelCredentialCatalog(channelId?: number, enabled = true) {
+  return useQuery({
+    queryKey: adminChannelCredentialCatalogQueryKey(channelId ?? 0),
+    enabled: enabled && channelId !== undefined,
+    staleTime: 30_000,
+    queryFn: async ({ signal }) => {
+      if (channelId === undefined) throw new Error('缺少渠道 ID')
+      const credentials: AdminCredential[] = []
+      const seenCursors = new Set<number>()
+      let after: number | undefined
+      while (true) {
+        const { data } = await listAdminCredentials({
+          client: apiClient,
+          path: { channel_id: channelId },
+          query: { after, limit: 100 },
+          signal,
+        })
+        credentials.push(...data.credentials)
+        const nextCursor = data.next_cursor ?? undefined
+        if (nextCursor === undefined) return credentials
+        if (seenCursors.has(nextCursor)) throw new Error('凭据列表返回了重复游标')
+        seenCursors.add(nextCursor)
+        after = nextCursor
+      }
+    },
   })
 }
 
