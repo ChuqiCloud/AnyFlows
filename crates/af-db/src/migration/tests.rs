@@ -2994,13 +2994,10 @@ async fn exercise_organization_activity_repository(
         UsageLogSemantics::Inclusive,
         Quota::new(15)?,
     );
-    let usage_outcome = usage_repository.record(&usage_write).await;
-    if usage_outcome != Ok(UsageLogWriteOutcome::Applied) {
-        usage_repository
-            .diagnose_record_failure(&usage_write)
-            .await?;
-        return Err("企业用量仓储失败，但诊断插入未复现底层错误".into());
-    }
+    assert_eq!(
+        usage_repository.record(&usage_write).await?,
+        UsageLogWriteOutcome::Applied
+    );
     let stored_usage = usage_logs::Entity::find()
         .filter(usage_logs::Column::OrganizationId.eq(organization_id.get()))
         .one(pool.connection())

@@ -433,14 +433,6 @@ impl UsageLogRepository {
             .store(true, Ordering::Release);
     }
 
-    /// 仅供迁移冒烟在正常仓储路径失败后输出底层数据库约束分类。
-    #[cfg(test)]
-    pub(crate) async fn diagnose_record_failure(&self, write: &UsageLogWrite) -> Result<(), DbErr> {
-        let model = usage_log_active_model(write)
-            .map_err(|_| DbErr::Custom("用量日志诊断模型无效".to_owned()))?;
-        model.insert(self.pool.connection()).await.map(|_| ())
-    }
-
     fn finish_operation(
         &self,
         result: Result<UsageLogWriteOutcome, UsageLogRepositoryError>,
